@@ -141,6 +141,9 @@ export function FloorBoard({
   slotTab,
   onSlotTab,
   mode,
+  assignContext,
+  contextMode,
+  onPickPicker,
   histDate,
   onEnterHistory,
   onExitHistory,
@@ -159,6 +162,14 @@ export function FloorBoard({
   slotTab: SlotTabKey;
   onSlotTab: (key: SlotTabKey) => void;
   mode: "flat" | "route" | "picker";
+  // Assign context (2026-08-11) — the picker the operator drilled into from the
+  // By-picker grid, or null for the ordinary board. null is the untouched path:
+  // every derivation below short-circuits to exactly what it did before.
+  assignContext: number | null;
+  contextMode: "pending" | "current";
+  // Fired by a picker card. floor-page owns what it means (set context, switch
+  // to By route) — this component only reports the tap.
+  onPickPicker: (pickerId: number) => void;
   histDate: string | null;
   onEnterHistory: () => void;
   onExitHistory: () => void;
@@ -177,17 +188,55 @@ export function FloorBoard({
   const rows = floor.rows;
   const nowMs = Date.now();
 
+  const dueRows = rows.filter((r) => r.zone !== "upcoming");
+  // ── Assign context — the ONE place the board narrows to a single picker ────
+  //
+  // `assignContext === null` is the ordinary board and is short-circuited on the
+  // first line: `viewRows` IS `dueRows`, so Flat, By route, the slot bands and
+  // every count below behave exactly as they did before this existed.
+  //
+  // Membership uses rowStatus() (status-pill.tsx) rather than a hand-written
+  // stage test, for the same reason the picker cards do: four stage meanings,
+  // one owner.
+  //   pending → status "waiting" (= pending_picking): nobody's yet, which is
+  //             precisely the set the operator is deciding to hand over.
+  //   current → this picker's rows that are still live work. Done/checked bills
+  //             are excluded: they are his history, not what is in his hands.
+  const inContext = assignContext !== null;
+  const contextPending = inContext && contextMode === "pending";
+  const viewRows = !inContext
+    ? dueRows
+    : contextPending
+      ? dueRows.filter((r) => rowStatus(r) === "waiting")
+      : dueRows.filter((r) => {
+          if (r.pickerId !== assignContext) return false;
+          const st = rowStatus(r);
+          return st === "withPicker" || st === "needsCheck";
+        });
+
   // Selection/urgent/detail wiring forwarded to every leaf table (live only —
   // the table ignores them on history/upcoming variants).
-  const selProps = { selection, onToggleRow, onToggleAll, onMarkUrgent, onOpenDetail };
+  //
+  // The "what he's holding" reading drops onToggleRow/onToggleAll/selection, and
+  // that ALONE makes the table read-only: floor-table's `interactive` now also
+  // tests for a wired onToggleRow, so no checkbox column and no `#` column
+  // render. ⚡ and ⋯ stay passed so neither becomes a dead button — "read only"
+  // here means "you cannot select and assign from this list", not "no controls".
+  const selProps =
+    inContext && !contextPending
+      ? { onMarkUrgent, onOpenDetail }
+      : { selection, onToggleRow, onToggleAll, onMarkUrgent, onOpenDetail };
 
-  const dueRows = rows.filter((r) => r.zone !== "upcoming");
-  const upcomingRows = isHistory ? [] : rows.filter((r) => r.zone === "upcoming");
+  // Upcoming is unassigned future-dated work — it belongs to no picker and is
+  // not part of either context reading, so the strip is suppressed there.
+  const upcomingRows = isHistory || inContext ? [] : rows.filter((r) => r.zone === "upcoming");
 
   // Whole-floor "everything done" (live only): every due bill is pick_checked.
-  const allDone = !isHistory && dueRows.length > 0 && dueRows.every((r) => r.isChecked);
+  // Suppressed in context: that celebration is a statement about the WHOLE
+  // floor, and it would hijack a view that was asked a narrower question.
+  const allDone = !isHistory && !inContext && dueRows.length > 0 && dueRows.every((r) => r.isChecked);
 
-  const tabRows = slotTab === "all" ? dueRows : dueRows.filter((r) => r.windowTime === slotTab);
+  const tabRows = slotTab === "all" ? viewRows : viewRows.filter((r) => r.windowTime === slotTab);
   const carried = isHistory ? [] : tabRows.filter((r) => (r.ageDays ?? 0) > 0);
 
   const bandOpen = (key: string) => openBands[key] ?? true; // default open (mockup)
@@ -256,6 +305,9 @@ export function FloorBoard({
               articles={sumArticles(g.rows)}
               routes={distinctRoutes(g.rows)}
               oldestMinutes={oldestWithPickerMinutes(g.rows, nowMs)}
+              // Orphan cards (a pickerId no longer on the roster) key on the
+              // same `id:N` shape, so the drill-in works for them too.
+              onClick={() => onPickPicker(Number(g.key.slice(3)))}
             />
           ))}
         </div>
@@ -278,25 +330,38 @@ export function FloorBoard({
         </p>
       </div>
     );
-  } else if (dueRows.length === 0) {
+  } else if (viewRows.length === 0) {
+    // In context the empty state describes the CONTEXT's question, not the
+    // floor's — "Nothing on the floor yet" would be a lie with 30 bills sitting
+    // under other pickers. The banner above already names the person.
+    const heading = inContext
+      ? contextPending
+        ? "Nothing waiting to hand over"
+        : "Nothing in this picker's hands"
+      : isHistory
+        ? `Nothing was dispatched for ${histDate ? fmtHistLabel(histDate) : "that day"}`
+        : "Nothing on the floor yet";
+    const detail = inContext
+      ? contextPending
+        ? "Every bill on the floor is already with someone. Release more from the rail, or check back after the next import."
+        : "Nothing is currently being picked or waiting to be checked by this picker."
+      : isHistory
+        ? "No bill carried a dispatch slot for this day."
+        : "Released bills appear here and update themselves as they're picked.";
     body = (
       <div className="px-5 py-14 text-center">
         <div className="text-[28px] leading-none text-gray-300">○</div>
-        <h4 className="mt-2 text-[13px] font-semibold text-gray-900">
-          {isHistory ? `Nothing was dispatched for ${histDate ? fmtHistLabel(histDate) : "that day"}` : "Nothing on the floor yet"}
-        </h4>
-        <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
-          {isHistory ? "No bill carried a dispatch slot for this day." : "Released bills appear here and update themselves as they're picked."}
-        </p>
+        <h4 className="mt-2 text-[13px] font-semibold text-gray-900">{heading}</h4>
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">{detail}</p>
       </div>
     );
   } else if (slotTab === "all") {
-    const noSlot = sort(dueRows.filter((r) => r.windowId === null));
+    const noSlot = sort(viewRows.filter((r) => r.windowId === null));
     body = (
       <>
         {carried.length > 0 && <CarryoverBanner rows={carried} />}
         {floor.windows.map((w) => {
-          const g = sort(dueRows.filter((r) => r.windowId === w.id));
+          const g = sort(viewRows.filter((r) => r.windowId === w.id));
           if (g.length === 0) return null;
           return (
             <SlotBand
@@ -362,7 +427,9 @@ export function FloorBoard({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {dateBar}
-      <FloorTabs windows={floor.windows} dueRows={dueRows} active={slotTab} onSelect={onSlotTab} />
+      {/* Counts follow `viewRows`, so a slot tab reading "12" in context opens
+          to 12 rows. Outside context viewRows IS dueRows — unchanged. */}
+      <FloorTabs windows={floor.windows} dueRows={viewRows} active={slotTab} onSelect={onSlotTab} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {body}
         {/* No Upcoming strip under the picker grid: an upcoming bill is unassigned

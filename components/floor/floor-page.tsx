@@ -14,6 +14,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
+import { AssignContextBanner } from "./assign-context-banner";
+import { rowStatus } from "./status-pill";
 import { FloorSkeleton } from "./floor-skeleton";
 import { AssignBar } from "./assign-bar";
 import { HoldTab } from "./hold-tab";
@@ -140,6 +142,15 @@ export function FloorPage() {
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
+  // ── Assign context (2026-08-11) ────────────────────────────────────────────
+  // Set by tapping a card in the By-picker grid: "I am deciding what to give
+  // THIS person." null is the ordinary board and every consumer short-circuits
+  // on it, so nothing below changes shape when it is unset.
+  //   pending → the waiting bills he could be given (selectable, assignable)
+  //   current → what is already in his hands (read-only, just for context)
+  const [assignContext, setAssignContext] = useState<number | null>(null);
+  const [contextMode, setContextMode] = useState<"pending" | "current">("pending");
+
   // Selection (design §7.8) — a Set of orderIds; survives a re-sort, cleared on
   // any tab/scope/date change below.
   const [selection, setSelection] = useState<FloorSelection>(new Set());
@@ -195,11 +206,44 @@ export function FloorPage() {
   // Selection does NOT survive a tab/scope/date change (design §7.8). Includes
   // the top tab: switching away from Floor drops the floor selection (Hold and
   // Cancelled own their own selection internally).
+  //
+  // `assignContext`/`contextMode` join the list for the same reason the others
+  // are on it: each one changes WHICH ROWS ARE ON SCREEN, and a tick surviving
+  // that change means assigning a bill the operator can no longer see.
   useEffect(() => {
     setSelection(new Set());
-  }, [slotTab, scope, viewMode, histDate, topTab]);
+  }, [slotTab, scope, viewMode, histDate, topTab, assignContext, contextMode]);
 
   const clearSelection = () => setSelection(new Set());
+
+  // Drop the assign context whenever its premise goes away. Leaving the Floor
+  // tab or stepping into History both mean "the operator is no longer handing
+  // work to anybody" — History is a read-only past day where assigning is not
+  // even possible.
+  useEffect(() => {
+    if (topTab !== "floor" || viewMode !== "live") {
+      setAssignContext(null);
+      setContextMode("pending");
+    }
+  }, [topTab, viewMode]);
+
+  // Tapping a picker card. Switches to By route because that is the shape the
+  // operator wants for handing over work (route blocks = one trip round the
+  // racks) — and because it REUSES the existing renderer rather than adding a
+  // list component that would then need its own selection wiring.
+  const openAssignContext = useCallback((pickerId: number) => {
+    setAssignContext(pickerId);
+    setContextMode("pending");
+    setMode("route");
+  }, []);
+
+  // Back to the grid. Both exits (the banner's Done and the "By picker" button)
+  // land here so there is one definition of what leaving the context means.
+  const closeAssignContext = useCallback(() => {
+    setAssignContext(null);
+    setContextMode("pending");
+    setMode("picker");
+  }, []);
 
   // UNSCOPED on purpose — this only resolves already-SELECTED ids into rows for
   // the bulk bar, and a selection can only ever hold in-scope ids (it is cleared
@@ -357,6 +401,36 @@ export function FloorPage() {
     () => (scopedCancelled ? applyFlagFilters(applySearch(scopedCancelled, parsed), filters) : null),
     [scopedCancelled, parsed, filters],
   );
+
+  // ── Assign-context derivations ─────────────────────────────────────────────
+  // Name: roster first, then any row the picker holds (an orphan — a pickerId
+  // still carrying bills whose user account was deactivated is off the roster
+  // but must not become "#42" on screen), then the id as a last resort.
+  const contextPickerName = useMemo<string | null>(() => {
+    if (assignContext === null) return null;
+    const rostered = data?.pickers.find((p) => p.id === assignContext)?.name;
+    if (rostered) return rostered;
+    const fromRow = (data?.floor.rows ?? []).find((r) => r.pickerId === assignContext)?.assignedToName;
+    return fromRow ?? `Picker #${assignContext}`;
+  }, [assignContext, data]);
+
+  // Banner counts. Derived from `filteredFloor` — the SAME rows FloorBoard sees
+  // — and with rowStatus(), the same predicate it filters on, so the number in
+  // the banner and the number of rows below it cannot disagree.
+  const contextCounts = useMemo(() => {
+    const due = (filteredFloor?.rows ?? []).filter((r) => r.zone !== "upcoming");
+    let pending = 0;
+    let current = 0;
+    for (const r of due) {
+      const st = rowStatus(r);
+      if (st === "waiting") pending++;
+      else if (r.pickerId === assignContext && (st === "withPicker" || st === "needsCheck")) current++;
+    }
+    return { pending, current };
+  }, [filteredFloor, assignContext]);
+
+  // "What he's holding" is a look, not a workspace — no ticks, so no bulk bar.
+  const contextReadOnly = assignContext !== null && contextMode === "current";
 
   // The rail is NEVER filtered (design §6.1) — it is the undecided pile and must
   // stay complete. Search only HIGHLIGHTS matching rail cards.
@@ -600,7 +674,7 @@ export function FloorPage() {
     .replace(",", "");
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
 
-  const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null;
+  const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null && !contextReadOnly;
 
   // Tab counts reflect the searched/filtered set of each surface (they equal the
   // full totals when no search/filter is active).
@@ -708,7 +782,11 @@ export function FloorPage() {
                     <button
                       key={m}
                       type="button"
-                      onClick={() => setMode(m)}
+                      // "By picker" IS the way back to the grid, so it routes
+                      // through the one close handler rather than just setting
+                      // mode — otherwise the context would survive underneath
+                      // and the banner would hang over the roster.
+                      onClick={() => (m === "picker" ? closeAssignContext() : setMode(m))}
                       className={`px-[11px] text-[11px] ${mode === m ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`}
                     >
                       {m === "flat" ? "Flat" : m === "route" ? "By route" : "By picker"}
@@ -718,6 +796,22 @@ export function FloorPage() {
               );
             })()}
           </div>
+
+          {/* Assign context band — only on the live Floor tab, only while a
+              picker card is open. Floor's OWN component: mail-orders'
+              InstructionsStrip renders a caption derived from its prop name
+              ("NOTES · …") with no way to suppress it, and belongs to the
+              Billing/Review surfaces — see assign-context-banner.tsx. */}
+          {topTab === "floor" && assignContext !== null && contextPickerName && (
+            <AssignContextBanner
+              pickerName={contextPickerName}
+              contextMode={contextMode}
+              pendingCount={contextCounts.pending}
+              currentCount={contextCounts.current}
+              onToggleMode={() => setContextMode((m) => (m === "pending" ? "current" : "pending"))}
+              onCancel={closeAssignContext}
+            />
+          )}
 
           {topTab === "floor" ? (
             loading && !data ? (
@@ -736,6 +830,9 @@ export function FloorPage() {
                 slotTab={slotTab}
                 onSlotTab={setSlotTab}
                 mode={mode}
+                assignContext={assignContext}
+                contextMode={contextMode}
+                onPickPicker={openAssignContext}
                 histDate={histDate}
                 onEnterHistory={enterHistory}
                 onExitHistory={exitHistory}
@@ -772,6 +869,12 @@ export function FloorPage() {
             <AssignBar
               selectedRows={selectedRows}
               pickers={data!.pickers}
+              // In an assign context the target is already decided — the bar
+              // drops the "which picker" step rather than asking a question
+              // the operator answered by tapping the card.
+              lockedPicker={
+                assignContext !== null && contextPickerName ? { id: assignContext, name: contextPickerName } : null
+              }
               windows={dispatchWindows}
               onAssign={bulkAssign}
               onChangeSlot={bulkChangeSlot}

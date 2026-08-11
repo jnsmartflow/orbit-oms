@@ -132,7 +132,14 @@ export function FloorTable({
   onMarkUrgent?: (id: number) => void;
   onOpenDetail?: (id: number) => void;
 }) {
-  const interactive = variant === "live";
+  // A live table is interactive only when a caller actually wired selection.
+  // Every existing live call site passes onToggleRow (floor-board's selProps),
+  // so this is byte-identical for all of them; history/upcoming were already
+  // false on `variant` alone. What it BUYS: the By-picker "what he's holding"
+  // view (2026-08-11) renders the ordinary live table — live status pills, ⚡
+  // and ⋯ still working — simply by omitting the selection handlers, with no
+  // new prop threaded through slot-band and route-row to reach here.
+  const interactive = variant === "live" && !!onToggleRow;
   // ☐ 4 · # 4 · OBD 14 · Ship 20 · Route 10 · Vol 7 · Article 12 · Picker 9 · Status 20.
   const widths = interactive ? [4, 4, 14, 20, 10, 7, 12, 9, 20] : [16, 24, 12, 7, 13, 9, 19];
   const allOn = interactive && selection ? isAllSelected(selection, rows) : false;

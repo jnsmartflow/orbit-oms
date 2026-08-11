@@ -82,6 +82,7 @@ export function PickerCard({
   articles,
   routes,
   oldestMinutes,
+  onClick,
 }: {
   name: string;
   counts: StatusCounts;
@@ -92,6 +93,8 @@ export function PickerCard({
   routes: string[];
   /** Minutes since the OLDEST still-with-picker assignment; null when none. */
   oldestMinutes: number | null;
+  /** Drill into this picker — opens the assign context (floor-page owns it). */
+  onClick?: () => void;
 }) {
   const status = pickerCardStatus(counts, oldestMinutes);
   const meta = STATUS_META[status];
@@ -113,11 +116,13 @@ export function PickerCard({
         : `On ${routes[0]} +${routes.length - 1} more`;
 
   return (
-    // TODO(next step): make the card clickable — open the floor board filtered
-    // to this picker, or his slice in the detail panel. Left inert on purpose
-    // so nothing here has to be unpicked when the target is decided.
-    <div
-      className={`rounded-lg border border-l-4 border-gray-200 bg-white px-3.5 py-3 ${meta.accent}`}
+    // A <button>, not a div+onClick: the whole card is one target and it has to
+    // be keyboard-reachable. A FREE picker's card is deliberately still
+    // clickable — he is exactly who the operator wants to hand work to.
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-lg border border-l-4 border-gray-200 bg-white px-3.5 py-3 text-left transition-colors hover:border-gray-300 hover:bg-[#fafafa] ${meta.accent}`}
     >
       {/* Identity line. font-semibold (600) is the heaviest weight anywhere on
           this card — CLAUDE_UI §60's card rule; no font-bold. */}
@@ -151,6 +156,6 @@ export function PickerCard({
       </div>
 
       <div className="mt-1.5 truncate text-[10.5px] text-gray-400">{routeLine}</div>
-    </div>
+    </button>
   );
 }

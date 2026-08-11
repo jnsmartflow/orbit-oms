@@ -26,6 +26,7 @@ import type { FloorBoardRow, FloorPicker } from "@/lib/floor/types";
 export function AssignBar({
   selectedRows,
   pickers,
+  lockedPicker = null,
   windows,
   onAssign,
   onChangeSlot,
@@ -33,6 +34,13 @@ export function AssignBar({
 }: {
   selectedRows: FloorBoardRow[];
   pickers: FloorPicker[];
+  /**
+   * When the operator arrived from a picker card (the By-picker assign context),
+   * the target is ALREADY chosen — the bar shows who it is and drops the
+   * dropdown rather than re-asking. null/omitted = the ordinary bar, byte for
+   * byte: the `pickers` select below is what renders and nothing else moves.
+   */
+  lockedPicker?: { id: number; name: string } | null;
   windows: DispatchWindow[];
   onAssign: (pickerId: number) => void;
   onChangeSlot: (date: string, windowId: number) => void;
@@ -119,25 +127,36 @@ export function AssignBar({
         {/* Divider */}
         <span className="h-[22px] w-px bg-gray-200" />
 
-        {/* Assign unit — dropdown + button touch and read as one control. */}
+        {/* Assign unit — dropdown + button touch and read as one control.
+            With a lockedPicker the dropdown becomes a static target label: same
+            box, same joined geometry, one less decision. */}
         <div className="flex h-[34px] items-stretch">
-          <select
-            value={pickerId}
-            onChange={(e) => setPickerId(e.target.value === "" ? "" : Number(e.target.value))}
-            className="h-[34px] min-w-[168px] cursor-pointer rounded-l-md border border-r-0 border-gray-300 bg-white pl-3 pr-7 text-[12px] text-gray-700"
-          >
-            <option value="">Choose picker</option>
-            {pickers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.onHand === 0 ? " - free" : ` - ${p.onHand} on hand`}
-              </option>
-            ))}
-          </select>
+          {lockedPicker ? (
+            <span className="flex h-[34px] min-w-[168px] items-center rounded-l-md border border-r-0 border-gray-300 bg-gray-50 px-3 text-[12px] text-gray-700">
+              To&nbsp;<span className="font-semibold text-gray-900">{lockedPicker.name}</span>
+            </span>
+          ) : (
+            <select
+              value={pickerId}
+              onChange={(e) => setPickerId(e.target.value === "" ? "" : Number(e.target.value))}
+              className="h-[34px] min-w-[168px] cursor-pointer rounded-l-md border border-r-0 border-gray-300 bg-white pl-3 pr-7 text-[12px] text-gray-700"
+            >
+              <option value="">Choose picker</option>
+              {pickers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.onHand === 0 ? " - free" : ` - ${p.onHand} on hand`}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
-            disabled={pickerId === ""}
-            onClick={() => pickerId !== "" && onAssign(pickerId)}
+            disabled={!lockedPicker && pickerId === ""}
+            onClick={() => {
+              if (lockedPicker) onAssign(lockedPicker.id);
+              else if (pickerId !== "") onAssign(pickerId);
+            }}
             className="h-[34px] rounded-r-md border border-teal-600 bg-teal-600 px-5 text-[12px] font-semibold text-white enabled:hover:bg-teal-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {assignLabel}
