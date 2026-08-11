@@ -16,11 +16,12 @@ import { FloorTabs, type SlotTabKey } from "./floor-tabs";
 import { FloorTable } from "./floor-table";
 import { SlotBand } from "./slot-band";
 import { RouteRow } from "./route-row";
+import { PickerCard } from "./picker-card";
 import { CarryoverBanner } from "./carryover-banner";
 import { UpcomingStrip } from "./upcoming-strip";
-import { countByStatus, sumLitres } from "./status-pill";
+import { countByStatus, rowStatus, sumLitres } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
-import type { FloorBoardResult, FloorBoardRow } from "@/lib/floor/types";
+import type { FloorBoardResult, FloorBoardRow, FloorPicker } from "@/lib/floor/types";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -47,8 +48,96 @@ function hhmm(ms: number): string {
 }
 const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
 
+// ── By picker — grouping + per-picker arithmetic ─────────────────────────────
+//
+// One entry per ACTIVE picker, plus a trailing entry for any picker who holds
+// rows but is no longer on the roster (deactivated mid-shift) — his bills must
+// never become invisible just because his account was switched off.
+//
+// ORDER IS FIXED (roster order, which the server already returns name-ascending,
+// then orphans by name). Deliberately NOT worst-first like the route groups:
+// Floor drops `byAssigned` from FLOOR_SPINE precisely so rows hold their place
+// instead of jumping when their status changes (CLAUDE_FLOOR §3), and a grid of
+// cards that re-sorts itself the moment a timer crosses 30m is that same defect
+// at card scale — the operator loses the person he was looking at.
+interface PickerGroup {
+  key: string;
+  name: string;
+  rows: FloorBoardRow[];
+}
+
+function buildPickerGroups(rows: FloorBoardRow[], pickers: FloorPicker[]): PickerGroup[] {
+  const byPickerId = new Map<number, FloorBoardRow[]>();
+  for (const r of rows) {
+    // A Waiting row has no pick_assignments row at all, so pickerId is null and
+    // it belongs to nobody. It is counted by the slot/route views, not here.
+    if (r.pickerId === null) continue;
+    const arr = byPickerId.get(r.pickerId) ?? [];
+    arr.push(r);
+    byPickerId.set(r.pickerId, arr);
+  }
+
+  // Roster first — seeded even at zero rows, so a picker with nothing on him
+  // shows a "Free" card rather than silently missing from the grid.
+  const groups: PickerGroup[] = pickers.map((p) => ({
+    key: `id:${p.id}`,
+    name: p.name,
+    rows: byPickerId.get(p.id) ?? [],
+  }));
+
+  // Orphans — a pickerId carrying rows that the active roster does not list.
+  const rostered = new Set(pickers.map((p) => p.id));
+  const orphans: PickerGroup[] = [];
+  for (const [pickerId, gr] of Array.from(byPickerId.entries())) {
+    if (rostered.has(pickerId)) continue;
+    orphans.push({
+      key: `id:${pickerId}`,
+      name: gr.find((r) => r.assignedToName)?.assignedToName ?? `Picker #${pickerId}`,
+      rows: gr,
+    });
+  }
+  orphans.sort((a, b) => a.name.localeCompare(b.name, "en"));
+
+  return [...groups, ...orphans];
+}
+
+/** Summed totalArticle, skipping unknowns. null when EVERY row is null — a
+ *  card must then read "—", never "0" (types.ts: null ≠ 0 on this field). */
+function sumArticles(rows: FloorBoardRow[]): number | null {
+  let total: number | null = null;
+  for (const r of rows) {
+    if (r.totalArticle === null) continue;
+    total = (total ?? 0) + r.totalArticle;
+  }
+  return total;
+}
+
+/** Minutes since the OLDEST assignment this picker is STILL holding.
+ *  withPicker rows only — a bill he has already marked done stopped being his
+ *  clock the moment he put it down. null when he is holding nothing. */
+function oldestWithPickerMinutes(rows: FloorBoardRow[], nowMs: number): number | null {
+  let oldest: number | null = null;
+  for (const r of rows) {
+    if (rowStatus(r) !== "withPicker") continue;
+    const iso = asStr(r.assignedAt);
+    if (!iso) continue;
+    const at = new Date(iso).getTime();
+    if (Number.isNaN(at)) continue;
+    const mins = Math.max(0, Math.floor((nowMs - at) / 60000));
+    if (oldest === null || mins > oldest) oldest = mins;
+  }
+  return oldest;
+}
+
+function distinctRoutes(rows: FloorBoardRow[]): string[] {
+  const set = new Set<string>();
+  for (const r of rows) if (r.route) set.add(r.route);
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "en"));
+}
+
 export function FloorBoard({
   floor,
+  pickers,
   slotTab,
   onSlotTab,
   mode,
@@ -63,9 +152,13 @@ export function FloorBoard({
   onOpenDetail,
 }: {
   floor: FloorBoardResult;
+  // Active picker roster — the By-picker grid seeds from this so a picker with
+  // zero rows still gets a "Free" card. Scope-independent (getFloorPickers has
+  // no delivery-type filter), so the page passes the unscoped list.
+  pickers: FloorPicker[];
   slotTab: SlotTabKey;
   onSlotTab: (key: SlotTabKey) => void;
-  mode: "flat" | "route";
+  mode: "flat" | "route" | "picker";
   histDate: string | null;
   onEnterHistory: () => void;
   onExitHistory: () => void;
@@ -133,7 +226,41 @@ export function FloorBoard({
   // ── Body ────────────────────────────────────────────────────────────────
   let body: ReactNode;
 
-  if (allDone) {
+  if (mode === "picker") {
+    // ⚠ THE ONE VIEW THAT IGNORES THE SLOT TAB — deliberate, not an oversight.
+    // Reads `dueRows`, NOT `tabRows`. A picker does not work one dispatch window
+    // at a time; his card has to show his whole load or it understates what is
+    // on him. That is also why this branch sits ABOVE the `slotTab === "all"`
+    // check below: switching slot tabs must not change these cards at all.
+    // Search and filter DO still apply (dueRows comes from the filtered set) —
+    // those narrow "which bills are we talking about", which is a real question
+    // to ask of a picker; the slot tab narrows "which window", which is not.
+    const groups = buildPickerGroups(dueRows, pickers);
+    body =
+      groups.length === 0 ? (
+        <div className="px-5 py-14 text-center">
+          <div className="text-[28px] leading-none text-gray-300">○</div>
+          <h4 className="mt-2 text-[13px] font-semibold text-gray-900">No active pickers</h4>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+            Nobody holds the picker role right now, so there is nothing to show here.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-4 p-4">
+          {groups.map((g) => (
+            <PickerCard
+              key={g.key}
+              name={g.name}
+              counts={countByStatus(g.rows)}
+              litres={sumLitres(g.rows)}
+              articles={sumArticles(g.rows)}
+              routes={distinctRoutes(g.rows)}
+              oldestMinutes={oldestWithPickerMinutes(g.rows, nowMs)}
+            />
+          ))}
+        </div>
+      );
+  } else if (allDone) {
     const litres = sumLitres(dueRows);
     const lastMs = Math.max(...dueRows.map((r) => { const s = asStr(r.checkedAt); return s ? new Date(s).getTime() : 0; }));
     body = (
@@ -238,7 +365,10 @@ export function FloorBoard({
       <FloorTabs windows={floor.windows} dueRows={dueRows} active={slotTab} onSelect={onSlotTab} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {body}
-        {!allDone && upcomingRows.length > 0 && <UpcomingStrip rows={sort(upcomingRows)} nowMs={nowMs} />}
+        {/* No Upcoming strip under the picker grid: an upcoming bill is unassigned
+            by definition, so it belongs to nobody and would read as a fifth
+            un-owned card's worth of work hanging off the bottom of a roster. */}
+        {!allDone && mode !== "picker" && upcomingRows.length > 0 && <UpcomingStrip rows={sort(upcomingRows)} nowMs={nowMs} />}
       </div>
     </div>
   );

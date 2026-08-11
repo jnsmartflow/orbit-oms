@@ -134,7 +134,9 @@ export function FloorPage() {
 
   const [topTab, setTopTab] = useState<TopTab>("floor");
   const [slotTab, setSlotTab] = useState<SlotTabKey>("10:30");
-  const [mode, setMode] = useState<"flat" | "route">("flat");
+  // "picker" (2026-08-11) is the odd one out: flat/route pivot the CURRENT slot
+  // tab, picker ignores the slot tab entirely — see floor-board.tsx's branch.
+  const [mode, setMode] = useState<"flat" | "route" | "picker">("flat");
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
@@ -690,20 +692,31 @@ export function FloorPage() {
             {tabPill("hold", "On hold", holdCount)}
             {tabPill("cancelled", "Cancelled", cancelledCount)}
 
-            {topTab === "floor" && slotTab !== "all" && (
-              <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">
-                {(["flat", "route"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMode(m)}
-                    className={`px-[11px] text-[11px] ${mode === m ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`}
-                  >
-                    {m === "flat" ? "Flat" : "By route"}
-                  </button>
-                ))}
-              </span>
-            )}
+            {/* View pivot. Flat / By route re-cut the CURRENT slot tab, so they
+                are meaningless on All (which renders slot bands and ignores
+                `mode` outright) and stay hidden there — unchanged behaviour.
+                By picker ignores the slot tab by design, so it is offered on
+                every tab including All. The `showSlotModes` term keeps all
+                three visible while picker mode is active, so there is always a
+                way back out of it — otherwise All + picker would be a trap. */}
+            {topTab === "floor" && (() => {
+              const showSlotModes = slotTab !== "all" || mode === "picker";
+              const modes = (["flat", "route", "picker"] as const).filter((m) => m === "picker" || showSlotModes);
+              return (
+                <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">
+                  {modes.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={`px-[11px] text-[11px] ${mode === m ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`}
+                    >
+                      {m === "flat" ? "Flat" : m === "route" ? "By route" : "By picker"}
+                    </button>
+                  ))}
+                </span>
+              );
+            })()}
           </div>
 
           {topTab === "floor" ? (
@@ -716,6 +729,10 @@ export function FloorPage() {
             ) : filteredFloor ? (
               <FloorBoard
                 floor={filteredFloor}
+                // Unscoped on purpose — the roster is scope-independent (see
+                // scopedData's note above; getFloorPickers applies no
+                // delivery-type filter), same as DetailPanel's `pickers`.
+                pickers={data?.pickers ?? []}
                 slotTab={slotTab}
                 onSlotTab={setSlotTab}
                 mode={mode}

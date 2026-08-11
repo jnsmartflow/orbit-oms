@@ -95,6 +95,21 @@ export interface FloorBoardRow extends PickingQueueRow {
   // (orders.orderDateTime) rather than SAP's own punch clock
   // (orders.obdEmailDate) — see lib/floor/format.ts resolveFloorDisplayDate().
   isEmailTime: boolean;
+  // import_obd_query_summary.totalArticle — the order-level PHYSICAL UNIT count
+  // (drums + bags + cartons + loose tins + pieces), i.e. the numeric twin of
+  // `articleTag` on PickingQueueRow. Added 2026-08-11 for the By-picker cards,
+  // which need a number they can SUM across a picker's bills; the tag is a
+  // comma-separated display string and cannot be added up.
+  //
+  // Floor-only on purpose: PickingQueueRow deliberately does not carry it, so
+  // lib/picking is untouched and its queue keeps the same payload size.
+  //
+  // ⚠ null ≠ 0. null = the OBD has no import_obd_query_summary row at all
+  // (unknown). 0 = the article rule ran and resolved nothing countable —
+  // lib/article-tag.ts returns null per line rather than guessing a pack size,
+  // and ~27% of active SAP codes are in neither catalog table (CORE §7.1.c).
+  // A consumer that renders these must show "—" for null, not "0".
+  totalArticle: number | null;
 }
 
 export interface FloorWindowCount {
