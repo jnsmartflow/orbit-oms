@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Loader2, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { OperatorPartyCards } from "@/components/tint/operator/party-cards";
+import { smartTitleCase } from "@/lib/mail-orders/utils";
+import { OperatorPartyCards, deliveryDotClass } from "@/components/tint/operator/party-cards";
 
 // Tint Operator — History body.
 //
@@ -98,6 +99,28 @@ function tins(n: number): string {
   return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
 }
 
+/**
+ * smartTitleCase for a nullable name, PRESERVING null.
+ *
+ * `smartTitleCase(null)` returns `""`, which would render as a blank cell
+ * instead of the "—" placeholder — so the null has to survive the call.
+ */
+function titleOrNull(name: string | null): string | null {
+  return name ? smartTitleCase(name) : null;
+}
+
+// ⚠ smartTitleCase is applied to SITE / DEALER NAMES ONLY (CLAUDE_UI.md §15's
+// apply-list: customer name, SO name, remarks, area, route). It is deliberately
+// NOT applied to two neighbouring fields, because §15's own exclusion list
+// ("do NOT apply to: codes") covers them and live data degrades visibly:
+//
+//   shadeName       "30GY 83/021" → "30gy 83/021"   ← shade codes, mangled
+//                   "SPL 0N17"    → "Spl 0n17"
+//   skuDescription  "Promise SmartChoice … 20L" → "… Smartchoice … 20l"
+//                   "DN WS Max Gen 10yr 90 Base 20L" → "Dn Ws Max Gen … 20l"
+//
+// Both are SAP-issued codes/specs, not prose. Leave them as stored.
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export function HistoryPanel({
@@ -169,24 +192,29 @@ export function HistoryPanel({
                       : "bg-white hover:bg-gray-50",
                   )}
                 >
-                  {/* Row 1: OBD + split badge + completion clock */}
+                  {/* Row 1: delivery dot + SITE NAME (the primary line) + clock.
+                      Site name leads and carries the weight, matching every
+                      other job list in the app; the OBD demotes to line 2. */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-mono text-[11px] text-gray-500 truncate">{job.obdNumber}</span>
-                      {job.kind === "split" && (
-                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-purple-50 border-purple-200 text-purple-700 flex-shrink-0">
-                          Split {job.splitNumber ?? "—"}
-                        </span>
-                      )}
+                      <span className={cn("w-[5px] h-[5px] rounded-full flex-shrink-0", deliveryDotClass(job.deliveryTypeName))} />
+                      <span className="text-[12.5px] font-semibold text-gray-900 truncate">
+                        {titleOrNull(job.siteName) ?? "—"}
+                      </span>
                     </div>
                     <span className="text-[11px] text-gray-400 flex-shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}>
                       {istClock(job.completedAt)}
                     </span>
                   </div>
 
-                  {/* Row 2: site name */}
-                  <div className="text-[12.5px] font-semibold text-gray-900 truncate mt-0.5">
-                    {job.siteName ?? "—"}
+                  {/* Row 2: OBD (mono gray-800 per UI §2/§4) + split badge */}
+                  <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                    <span className="font-mono text-[11px] text-gray-800 truncate">{job.obdNumber}</span>
+                    {job.kind === "split" && (
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-purple-50 border-purple-200 text-purple-700 flex-shrink-0">
+                        Split {job.splitNumber ?? "—"}
+                      </span>
+                    )}
                   </div>
 
                   {/* Row 3: lines · tins · volume */}
@@ -215,10 +243,12 @@ export function HistoryPanel({
 
             {/* Bill To / Ship To — the SAME cards the Jobs face renders */}
             <div className="bg-white border-b border-gray-200 px-5 py-2 grid grid-cols-2 gap-3">
+              {/* Names title-cased at the CALL SITE, not inside the component —
+                  the Jobs face shares OperatorPartyCards and is left untouched. */}
               <OperatorPartyCards
-                billToCustomerName={selected.dealerName}
+                billToCustomerName={titleOrNull(selected.dealerName)}
                 billToCustomerId={selected.billToCustomerId}
-                shipToName={selected.siteName}
+                shipToName={titleOrNull(selected.siteName)}
                 deliveryTypeName={selected.deliveryTypeName}
                 areaName={selected.areaName}
                 routeName={selected.routeName}
@@ -246,22 +276,23 @@ export function HistoryPanel({
             <div className="px-5 pb-5">
               <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
                 <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                  {/* Order: SKU · Pack · Qty · Type · Formula No. · Shade */}
                   <colgroup>
                     <col style={{ width: "26%" }} />
                     <col style={{ width: "9%" }} />
-                    <col style={{ width: "22%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "9%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "28%" }} />
                   </colgroup>
                   <thead>
                     <tr style={{ height: 32, borderBottom: "1px solid #ebebeb" }}>
                       <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">SKU</th>
                       <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Pack</th>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Shade</th>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Formula No.</th>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Type</th>
                       <th className="text-right px-3 text-[10px] font-medium uppercase tracking-wider text-gray-400">Qty</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Type</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Formula No.</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Shade</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -276,24 +307,27 @@ export function HistoryPanel({
                         <td className="px-3.5 text-[11px] text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">
                           {packLabel(line.packCode)}
                         </td>
-                        <td className="px-3.5 text-[11px] text-gray-900 font-medium whitespace-nowrap overflow-hidden text-ellipsis">
-                          {line.shadeName || <span className="text-gray-300">—</span>}
+                        <td className="px-3 text-right text-[11px] text-gray-900 font-medium" style={{ fontVariantNumeric: "tabular-nums" }}>
+                          {tins(line.tinQty)}
                         </td>
-                        <td className="px-3.5 font-mono text-[11px] text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">
-                          {line.samplingNo || <span className="font-sans text-gray-300">—</span>}
-                        </td>
+                        {/* Tinter-type tag — the SAME treatment this screen's
+                            shade-reuse list already uses (suggestion-card.tsx /
+                            flat-suggestion-list.tsx, themselves copied from the
+                            Sampling Library list pane): bare mono text, grey
+                            TINTER / orange ACOTONE. Never teal, never a box. */}
                         <td className="px-3.5">
                           <span className={cn(
-                            "inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-semibold",
-                            line.table === "ACOTONE"
-                              ? "bg-orange-50 border-orange-200 text-orange-700"
-                              : "bg-gray-50 border-gray-200 text-gray-600",
+                            "font-mono text-[10px] font-medium uppercase tracking-wider leading-none",
+                            line.table === "ACOTONE" ? "text-orange-700" : "text-gray-400",
                           )}>
                             {line.table}
                           </span>
                         </td>
-                        <td className="px-3 text-right text-[11px] text-gray-900 font-medium" style={{ fontVariantNumeric: "tabular-nums" }}>
-                          {tins(line.tinQty)}
+                        <td className="px-3.5 font-mono text-[11px] text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">
+                          {line.samplingNo || <span className="font-sans text-gray-300">—</span>}
+                        </td>
+                        <td className="px-3.5 text-[11px] text-gray-900 font-medium whitespace-nowrap overflow-hidden text-ellipsis">
+                          {line.shadeName || <span className="text-gray-300">—</span>}
                         </td>
                       </tr>
                     ))}
