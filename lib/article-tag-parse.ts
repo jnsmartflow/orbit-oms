@@ -32,10 +32,25 @@ export const TYPE_ORDER = ["Drum", "Bag", "Carton", "Tin", "Pcs"] as const;
  * up with a NULL order-level tag (e.g. OBD 9108735710, line "7 Carton 3 Tin",
  * order tag null). Carton math makes multi-group tags much more common, so
  * this parser walks number/word pairs instead.
+ *
+ * ⚠ SPLITS ON COMMAS AS WELL AS WHITESPACE (fixed 2026-08-11). It originally
+ * split on `/\s+/` alone, which is right for the LINE-level tags it was written
+ * for — cartonInfo builds those with `parts.join(" ")`, so they never contain a
+ * comma. ORDER-level tags are the output of aggregateArticleTags below, which
+ * joins with ", ", so "1 Drum, 2 Carton" tokenised to ["1","Drum,","2","Carton"]
+ * and every group but the LAST carried its comma into the type: "Drum," matches
+ * no known type, so it was dropped by aggregateArticleTags and rendered raw and
+ * unabbreviated ("1 Drum,") by lib/floor/format.ts's formatArticleBreakdown.
+ *
+ * The fix belongs here rather than in the caller: the parser was the thing that
+ * could not read its own module's output. Stripping commas is a strict no-op for
+ * line-level input (there are none) and makes aggregateArticleTags idempotent —
+ * it can now re-aggregate a tag it produced, which is what any consumer summing
+ * several ORDER tags is doing.
  */
 export function parseArticleTag(tag: string): Array<{ count: number; type: string }> {
   const out: Array<{ count: number; type: string }> = [];
-  const tokens = tag.trim().split(/\s+/);
+  const tokens = tag.trim().split(/[\s,]+/).filter(Boolean);
   for (let i = 0; i + 1 < tokens.length; i += 2) {
     const count = parseInt(tokens[i], 10);
     const type  = tokens[i + 1];

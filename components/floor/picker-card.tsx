@@ -10,8 +10,12 @@
 // ⚠ The four WORK statuses are NOT redefined here. `counts` arrives straight
 // from countByStatus() (status-pill.tsx) and the bar is the real <ProgressBar />
 // every slot band and route row already renders. What this file adds is a
-// FIFTH, person-level reading layered on top of those counts: is this picker
-// free, holding work, holding it too long, or waiting on someone to check?
+// person-level reading layered on top of those counts: is this picker free, or
+// holding work — and if so, for how long?
+//
+// Those are the only two questions the STATUS answers. A needs-check pile is
+// rendered too, but as a tag beside the chip, never as a state (see
+// pickerCardStatus below for why).
 
 import { ProgressBar } from "./progress-bar";
 import type { StatusCounts } from "./status-pill";
@@ -26,7 +30,7 @@ import type { StatusCounts } from "./status-pill";
 const AMBER_MINUTES = 30;
 const RED_MINUTES = 60;
 
-export type PickerCardStatus = "free" | "busy" | "busyWarn" | "busyLate" | "checking";
+export type PickerCardStatus = "free" | "busy" | "busyWarn" | "busyLate";
 
 // Left accent + chip, per status. Nothing else on the card is coloured.
 const STATUS_META: Record<PickerCardStatus, { accent: string; chip: string }> = {
@@ -34,21 +38,33 @@ const STATUS_META: Record<PickerCardStatus, { accent: string; chip: string }> = 
   busy: { accent: "border-l-gray-400", chip: "bg-gray-50 text-gray-500 border-gray-200" },
   busyWarn: { accent: "border-l-amber-500", chip: "bg-amber-50 text-amber-700 border-amber-200" },
   busyLate: { accent: "border-l-red-600", chip: "bg-red-50 text-red-600 border-red-200" },
-  checking: { accent: "border-l-purple-500", chip: "bg-purple-50 text-purple-700 border-purple-200" },
 };
 
+// The needs-check tag's purple. Same values the retired "checking" STATUS
+// carried — the colour was right, it was the PROMOTION to a status that was
+// wrong. Kept as its own constant so the status table above stays a closed set
+// of four mutually exclusive looks.
+const NEEDS_CHECK_TAG = "bg-purple-50 text-purple-700 border-purple-200";
+
 /**
- * Which of the five looks this picker wears.
+ * Which of the four looks this picker wears.
  *
- * Order matters and is not arbitrary: material still IN HIS HANDS outranks
- * everything, because that is the only state where the clock is running on
- * him. "Checking" means he has handed everything back and is waiting on a
- * supervisor — his queue is empty even though his bills are not closed. A
- * picker whose rows are all `done` (pick_checked) is Free, which is correct:
- * that work is finished, not pending.
+ * ⚠ THE ONLY INPUT IS `withPicker` (2026-08-11). Free means "nothing is in his
+ * hands, give him work" — and that is true whether or not bills he already
+ * finished are queued for a supervisor to check. Needs-check is somebody
+ * ELSE's outstanding task; blocking a picker's availability on it made idle
+ * people look occupied and, worse, sent the click straight to a read-only list
+ * when what the operator wanted was to hand them a bill.
  *
- * Exported so the grouping side can order or count by status later without
- * re-deriving the rule.
+ * needsCheck has NOT been discarded — it renders as a secondary tag beside the
+ * chip (see NEEDS_CHECK_TAG), so the supervisor's queue is still visible. It is
+ * additive information, not a state.
+ *
+ * A picker whose rows are all `done` (pick_checked) is Free too: that work is
+ * finished, not pending.
+ *
+ * Exported so the grouping side can order or count by status — and pick the
+ * click's landing view — without re-deriving the rule.
  */
 export function pickerCardStatus(counts: StatusCounts, oldestMinutes: number | null): PickerCardStatus {
   if (counts.withPicker > 0) {
@@ -60,7 +76,6 @@ export function pickerCardStatus(counts: StatusCounts, oldestMinutes: number | n
     if (mins >= AMBER_MINUTES) return "busyWarn";
     return "busy";
   }
-  if (counts.needsCheck > 0) return "checking";
   return "free";
 }
 
@@ -105,13 +120,7 @@ export function PickerCard({
   const meta = STATUS_META[status];
 
   const chipLabel =
-    status === "free"
-      ? "Free"
-      : status === "checking"
-        ? "Checking"
-        : oldestMinutes === null
-          ? "Picking"
-          : `Picking · ${elapsedLabel(oldestMinutes)}`;
+    status === "free" ? "Free" : oldestMinutes === null ? "Picking" : `Picking · ${elapsedLabel(oldestMinutes)}`;
 
   // Naming one route and counting the rest ("On Adajan +2 more") implies the
   // named one matters most — it does not, it is just first alphabetically. With
@@ -134,8 +143,19 @@ export function PickerCard({
     >
       {/* Identity line. font-semibold (600) is the heaviest weight anywhere on
           this card — CLAUDE_UI §60's card rule; no font-bold. */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900">{name}</span>
+        {/* Secondary, never a status: bills he has finished that a supervisor
+            has not approved yet. Shows alongside Free AND Picking. Sits left of
+            the chip so the status stays in the same place on every card. */}
+        {counts.needsCheck > 0 && (
+          <span
+            title="Picked bills waiting for a supervisor to check"
+            className={`shrink-0 rounded-[4px] border px-1.5 py-[2px] text-[10px] font-semibold tabular-nums ${NEEDS_CHECK_TAG}`}
+          >
+            {counts.needsCheck} to check
+          </span>
+        )}
         <span className={`shrink-0 rounded-[4px] border px-2 py-[2px] text-[10px] font-semibold ${meta.chip}`}>
           {chipLabel}
         </span>

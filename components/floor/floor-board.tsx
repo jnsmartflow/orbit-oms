@@ -160,8 +160,10 @@ export function FloorBoard({
   // Fired by a picker card. floor-page owns what it means (set context, switch
   // to By route) — this component only reports the tap, plus which reading to
   // open on. `initialMode` is derived from pickerCardStatus(), the SAME rule
-  // that already picked the card's colour: a busy or checking picker opens on
-  // what he is holding, a free one on what he could be given.
+  // that already picked the card's colour: a picker holding bills opens on what
+  // is in his hands, a free one on what he could be given. Since that rule now
+  // keys on `withPicker` ALONE, a picker with only needs-check bills is Free and
+  // lands on "pending" — which is the useful answer: his hands are empty.
   onPickPicker: (pickerId: number, initialMode: "pending" | "current") => void;
   histDate: string | null;
   onEnterHistory: () => void;
