@@ -5,6 +5,8 @@
 // Moved here from components/support/shared/table-cells.tsx (verbatim) as step 1
 // of the Support retirement — Floor is the only remaining consumer.
 
+import { parseArticleTag, TYPE_ORDER } from "@/lib/article-tag-parse";
+
 // ── Article pack-word abbreviation ───────────────────────────────────────────
 // articleTag is a comma-separated "{integer} {word}" list written at import
 // (e.g. "16 Drum, 14 Carton"). Abbreviates known words for display only —
@@ -12,6 +14,52 @@
 // "{integer} {word}" bails the whole string back to the raw original,
 // verbatim, rather than partially formatting it.
 export const ARTICLE_WORD_ABBR: Record<string, string> = { Drum: "D", Carton: "C", Tin: "T", Bag: "B" };
+
+/**
+ * Roll SEVERAL order-level tags into one abbreviated breakdown, e.g.
+ * ["16 Drum, 14 Carton", "2 Drum"] -> "18 D · 14 C".
+ *
+ * Used by the By-picker card to answer "how many physical things is this
+ * person carrying" across all his bills. Two reuses, no new rule:
+ *   - parsing + type vocabulary from lib/article-tag-parse.ts (the same
+ *     parseArticleTag the import roll-up runs, moved out of lib/article-tag.ts
+ *     so a client component can reach it without importing prisma);
+ *   - abbreviation from ARTICLE_WORD_ABBR above, so a card and the Flat table
+ *     spell the same goods the same way.
+ *
+ * Returns null when nothing parsed at all — a NULL tag is "unknown" and the
+ * caller must render an em dash, never "0". A null tag among parseable ones is
+ * SKIPPED, not counted as zero: an unmastered SKU (~27%, CORE §7.1.c) leaves
+ * its bill untagged, and letting one such bill blank the whole breakdown would
+ * hide the counts we do have.
+ *
+ * Types outside TYPE_ORDER cannot occur today (an order-level tag is written
+ * BY aggregateArticleTags, which only emits those five) but are appended rather
+ * than dropped — a card silently losing a count is worse than an odd word.
+ */
+export function formatArticleBreakdown(tags: Array<string | null | undefined>): string | null {
+  const totals = new Map<string, number>();
+  for (const tag of tags) {
+    if (!tag) continue;
+    for (const { count, type } of parseArticleTag(tag)) {
+      totals.set(type, (totals.get(type) ?? 0) + count);
+    }
+  }
+  if (totals.size === 0) return null;
+
+  const known: string[] = [];
+  for (const type of TYPE_ORDER) {
+    const n = totals.get(type);
+    if (n) known.push(`${n} ${ARTICLE_WORD_ABBR[type] ?? type}`);
+  }
+  const extra = Array.from(totals.keys())
+    .filter((t) => !(TYPE_ORDER as readonly string[]).includes(t) && (totals.get(t) ?? 0) > 0)
+    .sort((a, b) => a.localeCompare(b, "en"))
+    .map((t) => `${totals.get(t)} ${ARTICLE_WORD_ABBR[t] ?? t}`);
+
+  const parts = [...known, ...extra];
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 export function formatArticleTag(raw: string): string {
   const groups = raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);

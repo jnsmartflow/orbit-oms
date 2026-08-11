@@ -14,6 +14,7 @@ import type { FloorBoardRow } from "@/lib/floor/types";
 export function RouteRow({
   name,
   rows,
+  listRows,
   nowMs,
   open,
   onToggle,
@@ -25,7 +26,20 @@ export function RouteRow({
   onOpenDetail,
 }: {
   name: string;
+  /** The route's FULL row set — drives the summary line, bar and "N of M". */
   rows: FloorBoardRow[];
+  /**
+   * What the expanded table lists, when that differs from `rows`. Omitted (the
+   * ordinary board) it IS `rows` and nothing changes.
+   *
+   * The split exists for the assign context's pending view: the operator needs
+   * the route's REAL progress ("Adajan is 2 of 9") to judge where to send
+   * someone, while the list below it shows only the bills he can actually hand
+   * over. Summarising the filtered set instead would report every route as 0 of
+   * N with an all-grey bar — true of the waiting slice, useless as a picture of
+   * the route.
+   */
+  listRows?: FloorBoardRow[];
   nowMs: number;
   open: boolean;
   onToggle: () => void;
@@ -36,6 +50,8 @@ export function RouteRow({
   onMarkUrgent?: (id: number) => void;
   onOpenDetail?: (id: number) => void;
 }) {
+  // Summary reads the FULL set; only the table below reads the listed subset.
+  const listed = listRows ?? rows;
   const counts = countByStatus(rows);
   const litres = sumLitres(rows);
   const oldest = rows.reduce((mx, r) => Math.max(mx, r.ageDays ?? 0), 0);
@@ -62,18 +78,23 @@ export function RouteRow({
           {counts.done} of {rows.length} done
         </span>
       </button>
-      {open && (
-        <FloorTable
-          rows={rows}
-          nowMs={nowMs}
-          variant={variant}
-          selection={selection}
-          onToggleRow={onToggleRow}
-          onToggleAll={onToggleAll}
-          onMarkUrgent={onMarkUrgent}
-          onOpenDetail={onOpenDetail}
-        />
-      )}
+      {open &&
+        (listed.length === 0 ? (
+          <div className="border-b border-[#f0f0f0] bg-white px-3.5 py-3 pl-[26px] text-[11px] text-gray-400">
+            Nothing to assign here
+          </div>
+        ) : (
+          <FloorTable
+            rows={listed}
+            nowMs={nowMs}
+            variant={variant}
+            selection={selection}
+            onToggleRow={onToggleRow}
+            onToggleAll={onToggleAll}
+            onMarkUrgent={onMarkUrgent}
+            onOpenDetail={onOpenDetail}
+          />
+        ))}
     </>
   );
 }

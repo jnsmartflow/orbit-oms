@@ -421,11 +421,7 @@ const FLOOR_BOARD_INCLUDE = {
   customer: { select: FLOOR_DEALER_SELECT },
   shipToOverrideCustomer: { select: FLOOR_DEALER_SELECT },
   dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
-  // totalArticle rides alongside articleTag: same row, same import write. It is
-  // the NUMERIC twin of the tag (drums + bags + cartons + loose tins + pieces,
-  // lib/article-tag.ts) — the By-picker card needs a number it can add up across
-  // a picker's bills, which a comma-separated string cannot give it.
-  querySnapshot: { select: { articleTag: true, totalArticle: true, totalVolume: true, totalWeight: true } },
+  querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
   pickEarlyReleasedBy: { select: { name: true } },
   pickAssignment: {
     select: {
@@ -527,9 +523,6 @@ export async function getFloorBoard(
       priorityLevel: order.priorityLevel,
       isKeyCustomer: dealer?.isKeyCustomer ?? false,
       articleTag: order.querySnapshot?.articleTag ?? null,
-      // `?? null`, never `?? 0` — a missing query-summary row means "unknown",
-      // and 0 is a real answer the article rule can legitimately produce.
-      totalArticle: order.querySnapshot?.totalArticle ?? null,
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       weightKg: order.querySnapshot?.totalWeight ?? null,
       isTint: order.orderType === "tint",

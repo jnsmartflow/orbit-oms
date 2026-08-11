@@ -87,8 +87,13 @@ export function PickerCard({
   name: string;
   counts: StatusCounts;
   litres: number;
-  /** Summed totalArticle across this picker's rows; null = nothing known. */
-  articles: number | null;
+  /**
+   * Abbreviated article breakdown across this picker's bills — "18 D · 14 C",
+   * from formatArticleBreakdown() (lib/floor/format.ts). Already summed and
+   * already formatted; the card does not parse. null = nothing known, which
+   * renders an em dash rather than a zero.
+   */
+  articles: string | null;
   /** Distinct routes among this picker's rows, already de-duped and sorted. */
   routes: string[];
   /** Minutes since the OLDEST still-with-picker assignment; null when none. */
@@ -108,12 +113,15 @@ export function PickerCard({
           ? "Picking"
           : `Picking · ${elapsedLabel(oldestMinutes)}`;
 
+  // Naming one route and counting the rest ("On Adajan +2 more") implies the
+  // named one matters most — it does not, it is just first alphabetically. With
+  // several routes the only honest summary is how many.
   const routeLine =
     routes.length === 0
       ? "Nothing on him right now"
       : routes.length === 1
         ? `On ${routes[0]}`
-        : `On ${routes[0]} +${routes.length - 1} more`;
+        : `${routes.length} routes`;
 
   return (
     // A <button>, not a div+onClick: the whole card is one target and it has to
@@ -137,8 +145,9 @@ export function PickerCard({
           basis as every slot band and route row on this screen. */}
       <ProgressBar counts={counts} className="mt-2.5" />
 
-      {/* Metrics. "Articles" not "Drums": totalArticle folds drums, bags,
-          cartons, loose tins and pieces into one count (lib/article-tag.ts). */}
+      {/* Metrics. The article slot is a TYPED breakdown, not one number: a
+          picker cares whether 30 articles are 30 drums or 30 loose tins, and
+          the D/C/T/B vocabulary is the Flat table's own (ARTICLE_WORD_ABBR). */}
       <div className="mt-2 flex items-center gap-3 text-[10.5px] text-gray-400">
         <span>
           <span className="font-semibold tabular-nums text-gray-700">{counts.total}</span>{" "}
@@ -147,11 +156,14 @@ export function PickerCard({
         <span>
           <span className="font-semibold tabular-nums text-gray-700">{litres.toLocaleString("en-US")}</span> L
         </span>
-        <span>
-          <span className="font-semibold tabular-nums text-gray-700">
-            {articles === null ? "—" : articles.toLocaleString("en-US")}
-          </span>{" "}
-          Articles
+        <span className="min-w-0 truncate" title="Drums · Cartons · Tins · Bags">
+          {articles === null ? (
+            <>
+              <span className="font-semibold text-gray-700">—</span> articles
+            </>
+          ) : (
+            <span className="font-semibold tabular-nums text-gray-700">{articles}</span>
+          )}
         </span>
       </div>
 

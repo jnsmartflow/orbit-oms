@@ -136,9 +136,14 @@ export function FloorPage() {
 
   const [topTab, setTopTab] = useState<TopTab>("floor");
   const [slotTab, setSlotTab] = useState<SlotTabKey>("10:30");
-  // "picker" (2026-08-11) is the odd one out: flat/route pivot the CURRENT slot
-  // tab, picker ignores the slot tab entirely — see floor-board.tsx's branch.
-  const [mode, setMode] = useState<"flat" | "route" | "picker">("flat");
+  // Floor Control LANDS on the picker grid (2026-08-11). The desk operator's
+  // first question of the day is "who is free", not "what is in the 10:30
+  // window" — and from the grid every other view is one tap away, while the
+  // reverse was two. Flat and By route are unchanged and still on the toggle.
+  //
+  // "picker" is also the odd one out mechanically: flat/route pivot the CURRENT
+  // slot tab, picker ignores it entirely — see floor-board.tsx's branch.
+  const [mode, setMode] = useState<"flat" | "route" | "picker">("picker");
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
@@ -231,9 +236,14 @@ export function FloorPage() {
   // operator wants for handing over work (route blocks = one trip round the
   // racks) — and because it REUSES the existing renderer rather than adding a
   // list component that would then need its own selection wiring.
-  const openAssignContext = useCallback((pickerId: number) => {
+  //
+  // `initialMode` comes from the CARD's own status (floor-board derives it with
+  // pickerCardStatus, the same rule that coloured the card): a busy picker opens
+  // on what he is holding, a free one on what he could be given. The toggle in
+  // the banner still moves between the two — this only decides which loads.
+  const openAssignContext = useCallback((pickerId: number, initialMode: "pending" | "current") => {
     setAssignContext(pickerId);
-    setContextMode("pending");
+    setContextMode(initialMode);
     setMode("route");
   }, []);
 

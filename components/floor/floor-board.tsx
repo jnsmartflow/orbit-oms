@@ -16,7 +16,8 @@ import { FloorTabs, type SlotTabKey } from "./floor-tabs";
 import { FloorTable } from "./floor-table";
 import { SlotBand } from "./slot-band";
 import { RouteRow } from "./route-row";
-import { PickerCard } from "./picker-card";
+import { PickerCard, pickerCardStatus } from "./picker-card";
+import { formatArticleBreakdown } from "@/lib/floor/format";
 import { CarryoverBanner } from "./carryover-banner";
 import { UpcomingStrip } from "./upcoming-strip";
 import { countByStatus, rowStatus, sumLitres } from "./status-pill";
@@ -61,7 +62,7 @@ const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as F
 // cards that re-sorts itself the moment a timer crosses 30m is that same defect
 // at card scale — the operator loses the person he was looking at.
 interface PickerGroup {
-  key: string;
+  pickerId: number;
   name: string;
   rows: FloorBoardRow[];
 }
@@ -80,7 +81,7 @@ function buildPickerGroups(rows: FloorBoardRow[], pickers: FloorPicker[]): Picke
   // Roster first — seeded even at zero rows, so a picker with nothing on him
   // shows a "Free" card rather than silently missing from the grid.
   const groups: PickerGroup[] = pickers.map((p) => ({
-    key: `id:${p.id}`,
+    pickerId: p.id,
     name: p.name,
     rows: byPickerId.get(p.id) ?? [],
   }));
@@ -91,7 +92,7 @@ function buildPickerGroups(rows: FloorBoardRow[], pickers: FloorPicker[]): Picke
   for (const [pickerId, gr] of Array.from(byPickerId.entries())) {
     if (rostered.has(pickerId)) continue;
     orphans.push({
-      key: `id:${pickerId}`,
+      pickerId,
       name: gr.find((r) => r.assignedToName)?.assignedToName ?? `Picker #${pickerId}`,
       rows: gr,
     });
@@ -99,17 +100,6 @@ function buildPickerGroups(rows: FloorBoardRow[], pickers: FloorPicker[]): Picke
   orphans.sort((a, b) => a.name.localeCompare(b.name, "en"));
 
   return [...groups, ...orphans];
-}
-
-/** Summed totalArticle, skipping unknowns. null when EVERY row is null — a
- *  card must then read "—", never "0" (types.ts: null ≠ 0 on this field). */
-function sumArticles(rows: FloorBoardRow[]): number | null {
-  let total: number | null = null;
-  for (const r of rows) {
-    if (r.totalArticle === null) continue;
-    total = (total ?? 0) + r.totalArticle;
-  }
-  return total;
 }
 
 /** Minutes since the OLDEST assignment this picker is STILL holding.
@@ -168,8 +158,11 @@ export function FloorBoard({
   assignContext: number | null;
   contextMode: "pending" | "current";
   // Fired by a picker card. floor-page owns what it means (set context, switch
-  // to By route) — this component only reports the tap.
-  onPickPicker: (pickerId: number) => void;
+  // to By route) — this component only reports the tap, plus which reading to
+  // open on. `initialMode` is derived from pickerCardStatus(), the SAME rule
+  // that already picked the card's colour: a busy or checking picker opens on
+  // what he is holding, a free one on what he could be given.
+  onPickPicker: (pickerId: number, initialMode: "pending" | "current") => void;
   histDate: string | null;
   onEnterHistory: () => void;
   onExitHistory: () => void;
@@ -237,7 +230,18 @@ export function FloorBoard({
   const allDone = !isHistory && !inContext && dueRows.length > 0 && dueRows.every((r) => r.isChecked);
 
   const tabRows = slotTab === "all" ? viewRows : viewRows.filter((r) => r.windowTime === slotTab);
+  // The same slice WITHOUT the context's status filter. Outside context it is
+  // identical to tabRows (viewRows IS dueRows there). In the pending view it is
+  // the route UNIVERSE: By-route lists every route on the tab, each carrying its
+  // real progress, and only the rows inside a route narrow to waiting.
+  const tabRowsAll = slotTab === "all" ? dueRows : dueRows.filter((r) => r.windowTime === slotTab);
   const carried = isHistory ? [] : tabRows.filter((r) => (r.ageDays ?? 0) > 0);
+
+  // The slot tab is meaningless in the two PERSON-scoped views — the picker grid
+  // shows each picker's whole load, and "what he's holding" is everything in his
+  // hands whatever window it is due. Hide the tabs there rather than leave a
+  // control that filters nothing. (The picker grid rendered them dead until now.)
+  const showSlotTabs = mode !== "picker" && !(inContext && !contextPending);
 
   const bandOpen = (key: string) => openBands[key] ?? true; // default open (mockup)
   const toggleBand = (key: string) => setOpenBands((m) => ({ ...m, [key]: !bandOpen(key) }));
@@ -296,20 +300,27 @@ export function FloorBoard({
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-4 p-4">
-          {groups.map((g) => (
-            <PickerCard
-              key={g.key}
-              name={g.name}
-              counts={countByStatus(g.rows)}
-              litres={sumLitres(g.rows)}
-              articles={sumArticles(g.rows)}
-              routes={distinctRoutes(g.rows)}
-              oldestMinutes={oldestWithPickerMinutes(g.rows, nowMs)}
-              // Orphan cards (a pickerId no longer on the roster) key on the
-              // same `id:N` shape, so the drill-in works for them too.
-              onClick={() => onPickPicker(Number(g.key.slice(3)))}
-            />
-          ))}
+          {groups.map((g) => {
+            // Computed ONCE per group: the card renders from these and the
+            // click derives its landing view from the same status, so the
+            // colour the operator tapped and the list he lands on can never
+            // tell him different things.
+            const counts = countByStatus(g.rows);
+            const oldestMinutes = oldestWithPickerMinutes(g.rows, nowMs);
+            const status = pickerCardStatus(counts, oldestMinutes);
+            return (
+              <PickerCard
+                key={g.pickerId}
+                name={g.name}
+                counts={counts}
+                litres={sumLitres(g.rows)}
+                articles={formatArticleBreakdown(g.rows.map((r) => r.articleTag))}
+                routes={distinctRoutes(g.rows)}
+                oldestMinutes={oldestMinutes}
+                onClick={() => onPickPicker(g.pickerId, status === "free" ? "pending" : "current")}
+              />
+            );
+          })}
         </div>
       );
   } else if (allDone) {
@@ -355,6 +366,14 @@ export function FloorBoard({
         <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">{detail}</p>
       </div>
     );
+  } else if (inContext && !contextPending) {
+    // "What he's holding" is ALWAYS the flat table, whatever the Flat/By route
+    // toggle says: it is one person's short list, and route blocks would add a
+    // layer of chrome over three rows. It also ignores the slot tab (the tabs
+    // are hidden above) — his load is a property of him, not of a window, and
+    // the banner's count is floor-wide, so slot-filtering here would make the
+    // two disagree.
+    body = <FloorTable rows={sort(viewRows)} nowMs={nowMs} variant={variant} {...selProps} />;
   } else if (slotTab === "all") {
     const noSlot = sort(viewRows.filter((r) => r.windowId === null));
     body = (
@@ -383,8 +402,13 @@ export function FloorBoard({
     );
   } else if (mode === "route") {
     // Group by route, worst-first (least complete on top, larger on tie) — §7.2.
+    //
+    // Grouped over tabRowsAll, NOT tabRows: outside context they are the same
+    // array, and in the pending view this is what keeps every route on screen.
+    // A route whose waiting pile is empty is a real answer ("Adajan is covered")
+    // and dropping it would silently shorten the operator's map of the floor.
     const map = new Map<string, FloorBoardRow[]>();
-    for (const r of tabRows) {
+    for (const r of tabRowsAll) {
       const k = r.route ?? "No route";
       const arr = map.get(k) ?? [];
       arr.push(r);
@@ -406,6 +430,10 @@ export function FloorBoard({
             key={name}
             name={name}
             rows={sort(gr)}
+            // Outside context these are the same rows, so `listRows` is a
+            // no-op; in the pending view the bar summarises the whole route
+            // while the table lists only what can be handed over.
+            listRows={inContext && contextPending ? sort(gr.filter((r) => rowStatus(r) === "waiting")) : undefined}
             nowMs={nowMs}
             open={openRoute === name}
             onToggle={() => setOpenRoute((cur) => (cur === name ? null : name))}
@@ -428,8 +456,9 @@ export function FloorBoard({
     <div className="flex min-h-0 flex-1 flex-col">
       {dateBar}
       {/* Counts follow `viewRows`, so a slot tab reading "12" in context opens
-          to 12 rows. Outside context viewRows IS dueRows — unchanged. */}
-      <FloorTabs windows={floor.windows} dueRows={viewRows} active={slotTab} onSelect={onSlotTab} />
+          to 12 rows. Outside context viewRows IS dueRows — unchanged. Hidden
+          entirely in the two person-scoped views (see showSlotTabs above). */}
+      {showSlotTabs && <FloorTabs windows={floor.windows} dueRows={viewRows} active={slotTab} onSelect={onSlotTab} />}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {body}
         {/* No Upcoming strip under the picker grid: an upcoming bill is unassigned

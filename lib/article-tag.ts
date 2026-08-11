@@ -27,6 +27,9 @@
 // findMany via loadPackCatalog() or a single findUnique per call.
 
 import { prisma } from "./prisma";
+// Local binding for rollupArticleTagsBySku below — the `export { … } from` line
+// further down re-exports for outside callers but creates no binding in here.
+import { aggregateArticleTags } from "./article-tag-parse";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -216,51 +219,16 @@ export async function computeArticleTag(
 }
 
 // ─── Order-level aggregation ──────────────────────────────────────────────
-
-/** Display order for the rolled-up order tag. */
-const TYPE_ORDER = ["Drum", "Bag", "Carton", "Tin", "Pcs"] as const;
-
-/**
- * Parse one line tag into its {count, type} groups.
- *
- * A tag can hold MORE THAN ONE group — "1 Carton 3 Tin" is two. The previous
- * inline parsers took parts[0] as the count and joined the whole remainder as
- * the type, yielding the type string "Carton 3 Tin", which then matched no
- * known type and was silently dropped. 801 of 14,207 tagged production rows
- * are multi-group, and orders whose only tagged lines were multi-group ended
- * up with a NULL order-level tag (e.g. OBD 9108735710, line "7 Carton 3 Tin",
- * order tag null). Carton math makes multi-group tags much more common, so
- * this parser walks number/word pairs instead.
- */
-export function parseArticleTag(tag: string): Array<{ count: number; type: string }> {
-  const out: Array<{ count: number; type: string }> = [];
-  const tokens = tag.trim().split(/\s+/);
-  for (let i = 0; i + 1 < tokens.length; i += 2) {
-    const count = parseInt(tokens[i], 10);
-    const type  = tokens[i + 1];
-    if (!Number.isNaN(count) && type) out.push({ count, type });
-  }
-  return out;
-}
-
-/**
- * Roll a set of line tags into one order-level tag, e.g.
- * ["2 Drum", "1 Carton 3 Tin", "1 Carton"] -> "2 Drum, 2 Carton, 3 Tin".
- * Returns null when nothing summed.
- */
-export function aggregateArticleTags(tags: Array<string | null | undefined>): string | null {
-  const totals: Record<string, number> = {};
-  for (const tag of tags) {
-    if (!tag) continue;
-    for (const { count, type } of parseArticleTag(tag)) {
-      totals[type] = (totals[type] ?? 0) + count;
-    }
-  }
-  return TYPE_ORDER
-    .filter((t) => (totals[t] ?? 0) > 0)
-    .map((t) => `${totals[t]} ${t}`)
-    .join(", ") || null;
-}
+//
+// MOVED 2026-08-11 to lib/article-tag-parse.ts and re-exported here, so every
+// existing importer of this module is unchanged. The three functions are pure
+// string work with no DB access; this file imports prisma at the top, and
+// lib/prisma.ts constructs a PrismaClient at module scope, so a "use client"
+// component (Floor's picker card) could not reach them from here without
+// pulling PrismaClient into the browser bundle. See that file's header.
+//
+// The RULE — which pack is a drum, how a carton splits — stays owned here.
+export { TYPE_ORDER, parseArticleTag, aggregateArticleTags } from "./article-tag-parse";
 
 // ─── Order-level rollup, grouped by SKU ───────────────────────────────────
 
