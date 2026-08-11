@@ -276,23 +276,50 @@ export function HistoryPanel({
             <div className="px-5 pb-5">
               <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
                 <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-                  {/* Order: SKU · Pack · Qty · Type · Formula No. · Shade */}
+                  {/* Order: SKU · Pack · Qty · Type · Formula No. · Shade
+                      ────────────────────────────────────────────────────────
+                      Widths measured against 999 live TI rows across many jobs
+                      (both tables), not eyeballed. Character lengths observed:
+
+                        sku code         p50  7 · max 10  ("IN36819081")
+                        sku description  p50 37 · max 40  ← the size driver
+                        pack label       p50  3 · max  6  ("0.925L", 8 labels total)
+                        qty              p50  1 · max  3  ("220")
+                        samplingNo       p50  7 · max  7  ← NEVER longer than 7
+                        shadeName        p50 11 · p99 22 · max 30
+                                         ("8296" … "SPL 45YY 75/110 10LITR FORMULA")
+
+                      Two of these do NOT shrink as far as they look like they
+                      should, and the reason is not the data:
+
+                      · TYPE is sized by "ACOTONE" — 7 chars of 10px MONO with
+                        tracking-wider (~6.5px/char) ≈ 46px + 28px padding.
+                      · FORMULA NO. is sized by its own HEADER, not its values:
+                        7-char values need ~74px, but "FORMULA NO." at 10px
+                        uppercase tracking-wider needs ~103px. Shortening that
+                        header to "Formula" would free ~4 more points for SKU.
+
+                      Everything reclaimed went to SKU (26% → 39%), which is the
+                      only two-line cell and carries the 40-char description. */}
                   <colgroup>
-                    <col style={{ width: "26%" }} />
+                    <col style={{ width: "39%" }} />
+                    <col style={{ width: "8%" }} />
+                    <col style={{ width: "6%" }} />
                     <col style={{ width: "9%" }} />
-                    <col style={{ width: "9%" }} />
-                    <col style={{ width: "10%" }} />
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "28%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "25%" }} />
                   </colgroup>
                   <thead>
+                    {/* whitespace-nowrap on every header: the row is a fixed
+                        32px, so a header that wrapped to two lines would be
+                        clipped. "Formula No." is the one at risk. */}
                     <tr style={{ height: 32, borderBottom: "1px solid #ebebeb" }}>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">SKU</th>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Pack</th>
-                      <th className="text-right px-3 text-[10px] font-medium uppercase tracking-wider text-gray-400">Qty</th>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Type</th>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Formula No.</th>
-                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">Shade</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400 whitespace-nowrap">SKU</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400 whitespace-nowrap">Pack</th>
+                      <th className="text-right px-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 whitespace-nowrap">Qty</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400 whitespace-nowrap">Type</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400 whitespace-nowrap">Formula No.</th>
+                      <th className="text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400 whitespace-nowrap">Shade</th>
                     </tr>
                   </thead>
                   <tbody>
