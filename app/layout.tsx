@@ -3,6 +3,10 @@ import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { SessionProvider } from "@/components/shared/session-provider";
 import { Toaster } from "@/components/ui/sonner";
+// The NODE auth entry (lib/auth.ts), not the Edge config — this layout renders
+// on the server runtime. The Node/Edge split stays exactly as it is (CORE §3);
+// nothing here merges them.
+import { auth } from "@/lib/auth";
 
 export const dynamic = 'force-dynamic';
 
@@ -53,15 +57,27 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-export default function RootLayout({
+// ASYNC as of 2026-08-10 so the session can be resolved server-side and handed
+// to the provider. Safe here: this layout is already `force-dynamic` (above),
+// so it was never statically rendered and gains no new rendering constraint.
+//
+// auth() runs on EVERY page including the public ones (/po, /demo, /login) —
+// there it simply finds no cookie and returns null, which is exactly the value
+// the provider should start from for an anonymous visitor. The win is that an
+// authenticated page no longer makes the browser ask GET /api/auth/session for
+// something this render already knows. See session-provider.tsx for the full
+// reasoning and the accepted trade.
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+
   return (
     <html lang="en">
       <body className={`${jakarta.variable} ${mono.variable} font-sans`}>
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider session={session}>{children}</SessionProvider>
         <Toaster richColors position="top-right" />
       </body>
     </html>
