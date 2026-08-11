@@ -45,15 +45,32 @@ function shiftDay(d: Date, days: number): Date {
 export function HeaderDateStepper({
   currentDate,
   onDateChange,
+  minDate,
 }: {
   currentDate: Date;
   onDateChange: (date: Date) => void;
+  /**
+   * Optional LOWER bound. The left chevron disables at it, exactly the way the
+   * right one has always disabled at today — same derivation (IST YYYY-MM-DD
+   * string compare), same disabled classes.
+   *
+   * ⚠ It is also passed to DatePickerPopover below. Capping only the arrows
+   * leaks: the calendar is a separate control and would still hand back an
+   * out-of-range date.
+   *
+   * Undefined for every pre-existing caller → unchanged behaviour.
+   */
+  minDate?: Date;
 }) {
   const todayIST = getTodayIST();
   const todayStr = toISTDateStr(todayIST);
   const currentStr = toISTDateStr(currentDate);
   const yesterdayStr = toISTDateStr(shiftDay(todayIST, -1));
   const isToday = currentStr === todayStr;
+  // Mirrors `isToday` for the opposite end. `<=` not `===` so a date already
+  // below the bound (a stale client, a bound that moved at midnight) still
+  // reports as capped rather than letting the arrow step further back.
+  const isAtMin = minDate != null && currentStr <= toISTDateStr(minDate);
 
   const dateLabel = isToday
     ? `Today · ${formatDateShort(currentDate)}`
@@ -64,12 +81,16 @@ export function HeaderDateStepper({
   return (
     <div className="inline-flex items-center gap-0">
       <button
-        onClick={() => onDateChange(shiftDay(currentDate, -1))}
-        className="px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-l-[4px] cursor-pointer hover:bg-gray-50"
+        onClick={() => !isAtMin && onDateChange(shiftDay(currentDate, -1))}
+        className={`px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-l-[4px] ${
+          isAtMin
+            ? "opacity-40 cursor-not-allowed pointer-events-none"
+            : "cursor-pointer hover:bg-gray-50"
+        }`}
       >
         <ChevronLeft size={12} />
       </button>
-      <DatePickerPopover value={currentDate} onChange={onDateChange}>
+      <DatePickerPopover value={currentDate} onChange={onDateChange} minDate={minDate}>
         <button
           type="button"
           className="px-[10px] py-[3px] text-[10px] font-medium text-gray-900 border-t border-b border-gray-200 hover:bg-gray-50 cursor-pointer inline-flex items-center gap-[3px]"

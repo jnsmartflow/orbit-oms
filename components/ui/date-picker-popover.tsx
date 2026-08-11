@@ -44,10 +44,22 @@ const MONTHS = [
 export function DatePickerPopover({
   value,
   onChange,
+  minDate,
   children,
 }: {
   value: Date;
   onChange: (date: Date) => void;
+  /**
+   * Optional LOWER bound — days before it are unselectable, mirroring how
+   * future days have always been blocked against `today`. Undefined (every
+   * pre-existing caller) leaves the calendar open-ended backwards, unchanged.
+   *
+   * ⚠ Threading the bound through here is NOT optional when a caller caps the
+   * stepper arrows: the popover is a separate control that bypasses them
+   * entirely, so an arrows-only cap leaks the moment the user opens the
+   * calendar.
+   */
+  minDate?: Date;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -55,6 +67,9 @@ export function DatePickerPopover({
 
   const today = todayIST();
   const todayStr = toISTDateStr(today);
+  // Compared as IST YYYY-MM-DD strings, exactly like the `isFuture` gate below
+  // — no new date arithmetic, so the helpers above stay untouched.
+  const minStr = minDate ? toISTDateStr(minDate) : null;
 
   function handleOpenChange(next: boolean) {
     if (next) setViewMonth(startOfMonth(value));
@@ -83,6 +98,11 @@ export function DatePickerPopover({
 
   const nextMonthStart = addMonths(viewMonth, 1);
   const isNextMonthBlocked = toISTDateStr(nextMonthStart) > todayStr;
+  // Blocked once the LAST day of the previous month is already below the bound
+  // — i.e. that month holds nothing selectable. Day 0 of the current month is
+  // the last day of the previous one.
+  const prevMonthLastDay = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 0);
+  const isPrevMonthBlocked = minStr !== null && toISTDateStr(prevMonthLastDay) < minStr;
   const isOnToday = sameDay(value, today);
 
   return (
@@ -98,8 +118,14 @@ export function DatePickerPopover({
         <div className="flex items-center justify-between mb-2">
           <button
             type="button"
-            onClick={() => setViewMonth(addMonths(viewMonth, -1))}
-            className="w-[22px] h-[22px] rounded-md text-gray-600 hover:bg-gray-100 inline-flex items-center justify-center cursor-pointer"
+            onClick={() => !isPrevMonthBlocked && setViewMonth(addMonths(viewMonth, -1))}
+            disabled={isPrevMonthBlocked}
+            className={cn(
+              "w-[22px] h-[22px] rounded-md inline-flex items-center justify-center",
+              isPrevMonthBlocked
+                ? "text-gray-300 cursor-not-allowed"
+                : "text-gray-600 hover:bg-gray-100 cursor-pointer",
+            )}
             aria-label="Previous month"
           >
             <ChevronLeft size={14} />
@@ -142,18 +168,20 @@ export function DatePickerPopover({
             const isSelected = sameDay(d, value);
             const isToday = sameDay(d, today);
             const isFuture = toISTDateStr(d) > todayStr;
+            const isBeforeMin = minStr !== null && toISTDateStr(d) < minStr;
+            const isBlocked = isFuture || isBeforeMin;
 
             return (
               <button
                 key={i}
                 type="button"
-                disabled={isFuture}
-                onClick={() => !isFuture && selectDay(d)}
+                disabled={isBlocked}
+                onClick={() => !isBlocked && selectDay(d)}
                 className={cn(
                   "h-[28px] text-[11px] rounded-md inline-flex items-center justify-center",
                   isSelected
                     ? "bg-teal-600 text-white font-medium"
-                    : isFuture
+                    : isBlocked
                       ? "text-gray-300 cursor-not-allowed"
                       : !inMonth
                         ? "text-gray-300 hover:bg-gray-100 cursor-pointer"

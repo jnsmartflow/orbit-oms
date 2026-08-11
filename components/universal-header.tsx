@@ -77,6 +77,16 @@ export interface UniversalHeaderProps {
   showDatePicker?: boolean;
 
   /**
+   * Optional LOWER bound for the date stepper — the back arrow and the
+   * calendar popover both stop here. Pass it when a board's data only exists
+   * for a bounded window (e.g. Tint Operator History's last 7 days).
+   *
+   * Forwarded verbatim to HeaderDateStepper, which owns the behaviour.
+   * Undefined for every existing caller → unchanged.
+   */
+  minDate?: Date;
+
+  /**
    * Suppress Row 2 (the filter bar) entirely — the row, its border, and its
    * 40px of height. Default `false`, i.e. today's behaviour for every caller.
    *
@@ -190,6 +200,7 @@ export function UniversalHeader({
   currentDate,
   onDateChange,
   showDatePicker = true,
+  minDate,
   suppressFilterBar = false,
   searchPlaceholder = "Search...",
   searchValue,
@@ -590,7 +601,7 @@ export function UniversalHeader({
               {filterGroups && filterGroups.length > 0 && (
                 <div className="w-px h-4 bg-gray-200" />
               )}
-              <HeaderDateStepper currentDate={currentDate} onDateChange={onDateChange} />
+              <HeaderDateStepper currentDate={currentDate} onDateChange={onDateChange} minDate={minDate} />
             </>
           )}
         </div>

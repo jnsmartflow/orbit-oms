@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus, SkipForward, Pause, Eye, Inbox, Pencil } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
+import { HeaderDateStepper } from "@/components/header-date-stepper";
+import { HeaderViewToggle } from "@/components/shared/header-view-toggle";
+import { OperatorPartyCards } from "@/components/tint/operator/party-cards";
+import { HistoryPanel, type HistoryJob } from "@/components/tint/operator/history-panel";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
@@ -347,12 +351,36 @@ function derivePackCode(volumeLine: number | null, unitQty: number): string | nu
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function deliveryDotClass(type: string | null | undefined): string {
-  if (type === "Local") return "bg-blue-600";
-  if (type === "Upcountry") return "bg-orange-600";
-  if (type === "IGT") return "bg-teal-600";
-  if (type === "Cross Depot") return "bg-rose-600";
-  return "bg-gray-400";
+// `deliveryDotClass` MOVED to components/tint/operator/party-cards.tsx with the
+// Bill To / Ship To block that was its only call site (History reuses both).
+
+const HISTORY_DAYS = 7; // today + the 6 days before it — matches the route's cap
+
+/** Midnight IST today, as a Date. Same construction the header date controls use. */
+function istToday(): Date {
+  const istStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  return new Date(istStr + "T00:00:00+05:30");
+}
+
+/** Shift a Date by whole days (local arithmetic, read back in IST). */
+function shiftDays(d: Date, days: number): Date {
+  const next = new Date(d);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+/** IST YYYY-MM-DD — the wire format the history route expects. */
+function istDateParam(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+/** "Today" / "Yesterday" / "07 Aug" — mirrors HeaderDateStepper's label rules. */
+function historyDateLabel(d: Date): string {
+  const today = istToday();
+  const cur = istDateParam(d);
+  if (cur === istDateParam(today)) return "Today";
+  if (cur === istDateParam(shiftDays(today, -1))) return "Yesterday";
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" });
 }
 
 // Phase 4c — relative time formatter for paused-card "Last paused" summary.
@@ -391,6 +419,20 @@ export function TintOperatorContent() {
   const [hasActiveJob,    setHasActiveJob]    = useState(false);
   const [selectedJobId,   setSelectedJobId]   = useState<number | null>(null);
   const [selectedJobType, setSelectedJobType] = useState<"split" | "order" | null>(null);
+
+  // ── History face ─────────────────────────────────────────────────────────
+  // A second read-only view of the SAME screen: "what did I tint on day X".
+  // `view` is plain useState — nothing persists it (no localStorage, no URL
+  // param), so a refresh lands back on Jobs, which is the working face.
+  const [view,        setView]        = useState<"jobs" | "history">("jobs");
+  const [historyDate, setHistoryDate] = useState<Date>(() => istToday());
+  const [historyJobs,    setHistoryJobs]    = useState<HistoryJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError,   setHistoryError]   = useState<string | null>(null);
+  // Recomputed on every render rather than memoised on mount: a tab left open
+  // across midnight would otherwise keep yesterday's floor and let the stepper
+  // walk to an 8th day. The route clamps server-side regardless.
+  const historyMinDate = shiftDays(istToday(), -(HISTORY_DAYS - 1));
 
   // Phase 3c — Skip Job modal. Holds the assignment payload while open.
   const [skipModalJob, setSkipModalJob] = useState<{
@@ -520,6 +562,38 @@ export function TintOperatorContent() {
       // leave stale
     }
   }, []);
+
+  // History fetch. Gated on `view` so the Jobs face never pays for it, and
+  // keyed on the IST DATE STRING rather than the Date object — a Date is a new
+  // identity on every render and would re-fetch in a loop.
+  const historyDateParam = istDateParam(historyDate);
+  useEffect(() => {
+    if (view !== "history") return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/tint/operator/history?date=${historyDateParam}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { jobs?: HistoryJob[] };
+        if (cancelled) return;
+        setHistoryJobs(data.jobs ?? []);
+      } catch {
+        if (cancelled) return;
+        setHistoryJobs([]);
+        setHistoryError("Could not load history. Try again.");
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [view, historyDateParam]);
+
+  const historyTotals = useMemo(() => ({
+    jobs: historyJobs.length,
+    tins: Math.round(historyJobs.reduce((s, j) => s + j.totalTins, 0) * 100) / 100,
+  }), [historyJobs]);
 
   const loadExistingTIEntries = useCallback(async (job: Job) => {
     const fetchId   = job.type === "split" ? job.id : job.tintAssignmentId;
@@ -1519,16 +1593,52 @@ export function TintOperatorContent() {
 
       {/* UniversalHeader — Row 1 + Row 2 with job pill via leftExtra */}
       <UniversalHeader
-        title="My Jobs"
+        // Title carries the Jobs/History toggle. `title` is typed ReactNode
+        // already, so this needs no change in UniversalHeader.
+        title={
+          <div className="flex items-center gap-2.5">
+            <span>My Jobs</span>
+            <HeaderViewToggle
+              ariaLabel="View"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "jobs" as const,    label: "Jobs" },
+                { value: "history" as const, label: "History" },
+              ]}
+            />
+          </div>
+        }
         showImport={canImportOBDs}
         stats={[
           { label: "in queue", value: jobs.length },
           { label: "active", value: inProgressCount },
           { label: "done today", value: completedCount },
         ]}
+        // The stepper is rendered INSIDE leftExtra below, not in Row 2's own
+        // right-hand date slot, so this stays false on both faces.
         showDatePicker={false}
         leftExtra={
-          (selectedJob || pausedJobs.length > 0) ? (
+          view === "history" ? (
+            // History: the day control replaces the job pill + its dropdown.
+            // HeaderDateStepper is used directly (rather than via
+            // showDatePicker) purely so it sits on the LEFT of Row 2.
+            <div className="flex items-center gap-2.5">
+              <HeaderDateStepper
+                currentDate={historyDate}
+                onDateChange={setHistoryDate}
+                minDate={historyMinDate}
+              />
+              <span className="w-px h-4 bg-gray-200" />
+              <span className="text-[11px] text-gray-400">
+                <span className="text-gray-900 font-semibold">{historyTotals.jobs}</span>
+                {" "}{historyTotals.jobs === 1 ? "job" : "jobs"}
+                {" · "}
+                <span className="text-gray-900 font-semibold">{historyTotals.tins}</span>
+                {" "}{historyTotals.tins === 1 ? "tin" : "tins"}
+              </span>
+            </div>
+          ) : (selectedJob || pausedJobs.length > 0) ? (
             <div className="flex items-center gap-2">
               {/* Segment container + teal pill */}
               <div className="relative" ref={queueBadgeRef}>
@@ -1795,54 +1905,69 @@ export function TintOperatorContent() {
             </div>
           ) : undefined
         }
+        // History has no SKU display toggle (its line table shows the raw SAP
+        // code + description) and no today-progress bar (the day summary in
+        // leftExtra is the day-scoped equivalent). Undefined also drops the
+        // divider UniversalHeader renders after rightExtra.
         rightExtra={
-          <div className="flex items-center gap-2">
-            <SkuDisplayToggle />
-            <div className="w-px h-4 bg-gray-200" />
-            <div className="w-[48px] h-[4px] bg-gray-200 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
+          view === "history" ? undefined : (
+            <div className="flex items-center gap-2">
+              <SkuDisplayToggle />
+              <div className="w-px h-4 bg-gray-200" />
+              <div className="w-[48px] h-[4px] bg-gray-200 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
+              </div>
+              <span className={cn("text-[11px] font-semibold", progressTextColor)}>{totalDoneToday}/{totalAssignedToday}</span>
             </div>
-            <span className={cn("text-[11px] font-semibold", progressTextColor)}>{totalDoneToday}/{totalAssignedToday}</span>
-          </div>
+          )
         }
       />
 
-      {/* Row 3: Bill To / Ship To Cards */}
-      {selectedJob && (
+      {/* Row 3: Bill To / Ship To Cards — Jobs face only. History renders the
+          SAME cards (OperatorPartyCards) inside its own detail pane, where they
+          flow normally instead of sticking.
+
+          ⚠ `top: 96` is a pre-existing 4px overshoot on 52 (Row 1) + 40 (Row 2)
+          and is left alone deliberately: Row 2's height is hard-pinned by
+          UniversalHeader (`h-[40px] min-h-[40px]`), so swapping leftExtra for
+          the date stepper cannot change it, and History does not use this
+          wrapper at all. Nothing here needed adjusting for the new face. */}
+      {view === "jobs" && selectedJob && (
         <div className="bg-white border-b border-gray-200 px-5 py-2 grid grid-cols-2 gap-3 flex-shrink-0" style={{ position: "sticky", top: 96, zIndex: 30 }}>
-          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3">
-            <div className="text-[9px] font-semibold uppercase tracking-[.4px] text-gray-400 mb-1">Bill to (customer)</div>
-            <div className="text-[13px] font-semibold text-gray-900">{selectedJob.billToCustomerName ?? "—"}</div>
-            <div className="font-mono text-[11px] text-gray-400 mt-0.5">{selectedJob.billToCustomerId ?? "—"}</div>
-          </div>
-          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3">
-            <div className="text-[9px] font-semibold uppercase tracking-[.4px] text-gray-400 mb-1">Ship to (site)</div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="text-[13px] font-semibold text-gray-900">{selectedJob.customerName}</div>
-              {/* Phase 4 (step 16b) — site history badge. Violet for fresh
-                  sites, emerald for sites with prior TIs. Distinct from the
-                  amber cluster (Pending TI / MISSING / customer-missing
-                  strip) and from the purple Split / green Done cousins. */}
-              {siteHistorySummary && (
-                <span className={cn(
-                  "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium",
-                  siteHistorySummary.isNewSite
-                    ? "bg-violet-50 text-violet-700 border-violet-200"
-                    : "bg-emerald-50 text-emerald-700 border-emerald-200",
-                )}>
-                  {siteHistorySummary.isNewSite ? "New site" : "Repeat site"}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-0.5">
-              {selectedJob.deliveryTypeName && <span className={cn("w-[5px] h-[5px] rounded-full flex-shrink-0", deliveryDotClass(selectedJob.deliveryTypeName))} />}
-              {[selectedJob.deliveryTypeName, selectedJob.areaName, selectedJob.routeName].filter(Boolean).join(" · ")}
-            </div>
-          </div>
+          <OperatorPartyCards
+            billToCustomerName={selectedJob.billToCustomerName}
+            billToCustomerId={selectedJob.billToCustomerId}
+            shipToName={selectedJob.customerName}
+            deliveryTypeName={selectedJob.deliveryTypeName}
+            areaName={selectedJob.areaName}
+            routeName={selectedJob.routeName}
+            /* Phase 4 (step 16b) — site history badge. Violet for fresh
+               sites, emerald for sites with prior TIs. Distinct from the
+               amber cluster (Pending TI / MISSING / customer-missing
+               strip) and from the purple Split / green Done cousins. */
+            shipToBadge={siteHistorySummary && (
+              <span className={cn(
+                "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                siteHistorySummary.isNewSite
+                  ? "bg-violet-50 text-violet-700 border-violet-200"
+                  : "bg-emerald-50 text-emerald-700 border-emerald-200",
+              )}>
+                {siteHistorySummary.isNewSite ? "New site" : "Repeat site"}
+              </span>
+            )}
+          />
         </div>
       )}
 
       {/* ── MAIN SPLIT ──────────────────────────────────────────────── */}
+      {view === "history" ? (
+        <HistoryPanel
+          jobs={historyJobs}
+          loading={historyLoading}
+          error={historyError}
+          dateLabel={historyDateLabel(historyDate)}
+        />
+      ) : (
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── LEFT PANEL — SKU Lines (320px) ──────────────────────────── */}
@@ -2642,6 +2767,7 @@ export function TintOperatorContent() {
           )}
         </div>
       </div>
+      )}
     </div>
 
     {/* Phase 4 (step 12) — Save TI confirmation popup. Renders when a new
