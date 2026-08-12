@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "in.orbitoms.twa",
+    "sha256_cert_fingerprints": ["09:22:74:03:FB:01:D0:04:35:D6:DE:6D:42:E9:CB:E0:B6:D1:76:2D:53:BD:94:C9:73:44:AE:6E:41:1A:04:EA"]
+  }
+}]
