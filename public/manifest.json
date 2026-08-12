@@ -1,6 +1,6 @@
 {
   "name": "Orbit",
-  "short_name": "OrbitOMS",
+  "short_name": "Orbit",
   "description": "Depot Management Application",
   "start_url": "/",
   "display": "standalone",
