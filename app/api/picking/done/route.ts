@@ -4,7 +4,6 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { PICK_ASSIGNED, PICK_DONE } from "@/lib/workflow-stages";
 import { sendToUser } from "@/lib/push/send";
-import { isWithinDepotHours } from "@/lib/push/quiet-hours";
 import { getPickingSupervisorUserIds } from "@/lib/push/recipients";
 
 export const dynamic = "force-dynamic";
@@ -153,28 +152,28 @@ export async function POST(req: Request): Promise<NextResponse> {
   // the recipient list — no orders write (an extra one would fire a false
   // live-sync change on every board).
   //
-  // Skipped outside depot hours. Sequential awaits over the recipient list
-  // (CORE §3; the list is small — supervisors only) and never notifies the
-  // actor about their own tap. Awaited before the response because Vercel
-  // freezes the function afterwards, so un-awaited pushes are unreliable; the
-  // supervisor set is small enough that the added latency stays modest.
-  if (isWithinDepotHours(new Date())) {
-    try {
-      const dealerName =
-        order.shipToOverrideCustomer?.customerName ?? order.customer?.customerName ?? "(Unmatched)";
-      const recipients = await getPickingSupervisorUserIds();
-      for (const userId of recipients) {
-        if (userId === changedById) continue; // never notify the actor
-        await sendToUser(userId, {
-          title: "Pick completed",
-          body: `${picker.name} finished ${dealerName} · ${order.obdNumber}`,
-          tag: `pick-done-${orderId}`,
-          url: "/picking",
-        });
-      }
-    } catch (err) {
-      console.error("[picking/done] push notify failed (non-fatal):", err);
+  // There is NO time-of-day gate: quiet hours (09:00–20:00 IST) were removed
+  // 2026-08-12 and this now sends at any hour. Sequential awaits over the
+  // recipient list (CORE §3; the list is small — supervisors only) and never
+  // notifies the actor about their own tap. Awaited before the response because
+  // Vercel freezes the function afterwards, so un-awaited pushes are
+  // unreliable; the supervisor set is small enough that the added latency stays
+  // modest.
+  try {
+    const dealerName =
+      order.shipToOverrideCustomer?.customerName ?? order.customer?.customerName ?? "(Unmatched)";
+    const recipients = await getPickingSupervisorUserIds();
+    for (const userId of recipients) {
+      if (userId === changedById) continue; // never notify the actor
+      await sendToUser(userId, {
+        title: "Pick completed",
+        body: `${picker.name} finished ${dealerName} · ${order.obdNumber}`,
+        tag: `pick-done-${orderId}`,
+        url: "/picking",
+      });
     }
+  } catch (err) {
+    console.error("[picking/done] push notify failed (non-fatal):", err);
   }
 
   return NextResponse.json({ ok: true, orderId });

@@ -1,5 +1,5 @@
 # CLAUDE_NOTIFICATIONS.md — Push Notifications
-# v1.2 · Schema v27.13 · August 2026 · updated 2026-08-04
+# v1.3 · Schema v27.13 · August 2026 · updated 2026-08-12
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -51,13 +51,14 @@ assign from `/floor` buzzes the picker exactly like one from the supervisor boar
 picker; done skips the acting user from the supervisor recipient list. Nobody is ever notified about
 their own tap.
 
-**Quiet hours [LIVE] — 09:00–20:00 IST only.** Both triggers gate on `isWithinDepotHours(new Date())`
-(`lib/push/quiet-hours.ts`). Outside the window the notification is **DROPPED, not queued** — the work
-is still on the board next morning, and the 15s live-sync surfaces it. **Timezone is explicit IST
-(Asia/Kolkata, UTC+5:30):** Vercel runs in UTC, so the check shifts the instant by the IST offset and
-reads the hour off that (never `getHours()` on UTC, which would silence the working day and buzz at
-night). Bounds are named constants `DEPOT_HOURS_START_IST` (9) / `DEPOT_HOURS_END_IST` (20) — reuse
-them, never hardcode 9/20 elsewhere.
+**Quiet hours — REMOVED 2026-08-12. There is NO time-of-day gate.** Both triggers now send **at any
+hour**, every day. Until 2026-08-12 both gated on `isWithinDepotHours(new Date())` (09:00–20:00 IST,
+`lib/push/quiet-hours.ts`), dropping anything outside the window; that check, its two call sites and
+the whole file are **gone** — the file was deleted once the grep showed nothing else referenced it.
+Do not reintroduce a time gate without being asked, and do not "restore" the constants
+`DEPOT_HOURS_START_IST` / `DEPOT_HOURS_END_IST` — they no longer exist anywhere in the repo.
+⚠ The IST-vs-UTC reasoning that made that check correct is still worth reading before writing **any**
+new time-of-day rule on the server — it survives as landmine 4 (§8).
 
 ---
 
@@ -199,9 +200,13 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
 3. **[LANDMINE] `push_subscriptions.updatedAt` has a DB default but NO trigger.** It is a plain
    `@default(now())`, **NOT `@updatedAt`**. Every write must set `updatedAt: new Date()` explicitly, or
    updates carry a stale timestamp.
-4. **[LANDMINE] Vercel is UTC; the depot is IST (UTC+5:30).** A naive `getHours()` quiet-hours check
-   would silence the working day and buzz at night. `lib/push/quiet-hours.ts` computes in Asia/Kolkata
-   — keep it, and reuse the exported constants (§2).
+4. **[LANDMINE] Vercel is UTC; the depot is IST (UTC+5:30).** A naive `getHours()` check would read
+   the UTC hour — silencing the real working day and firing at night. This bit the quiet-hours gate,
+   which computed in Asia/Kolkata to avoid it. ⚠ **That gate and its file were removed 2026-08-12**
+   (§2), so there is no longer any implementation here to copy — but **the hazard is unchanged** and
+   applies to the next server-side time-of-day rule anyone writes (e.g. the deferred supervisor timer,
+   §7). Shift the instant by the IST offset and read the hour off that; IST has no DST, so it is exact
+   year-round. Related and still live: CORE §3's `Date.parse()` offset-less-string landmine.
 5. **[LANDMINE] Push must never break the action it hangs off.** Both triggers swallow all errors; any
    future trigger must too (§2).
 6. **[LANDMINE] Counts are derivable by READING `buildPickingWhere()` — never modify it.** "Ready to
@@ -248,7 +253,6 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-
 |---|---|
 | `public/sw.js` | Service worker — `push` + `notificationclick` ONLY; no fetch, no cache |
 | `lib/push/send.ts` | `sendToUser(userId, payload)` + `getVapid()`; dead-endpoint hygiene; never throws |
-| `lib/push/quiet-hours.ts` | `isWithinDepotHours()` (IST) + `DEPOT_HOURS_START_IST`/`_END_IST` |
 | `lib/push/recipients.ts` | `getPickingSupervisorUserIds()` — `PICKING_SUPERVISOR_ROLE_SLUGS = ["floor_supervisor","operations","admin"]`, matches PRIMARY role AND any secondary `user_roles` row, **`isActive` users only**, one sequential query (verified 2026-08-04) |
 | `app/api/push/subscribe/route.ts` | Upsert on endpoint; `userId` from session; reassigns a shared phone |
 | `app/api/push/unsubscribe/route.ts` | `isActive=false` for one endpoint, session-scoped |
@@ -260,6 +264,13 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-
 | `app/picking/push-test/page.tsx` + `push-test-client.tsx` | Diagnostic page (§9) |
 
 ---
+
+## Change log — v1.3 (2026-08-12, quiet-hours removal)
+
+- NTF-7 (§2): **quiet hours REMOVED.** The 09:00–20:00 IST gate is gone from both triggers — assign and done now send at any hour. Grep first confirmed §2's caller claim was CORRECT (only those two routes ever called it); `lib/push/quiet-hours.ts` was therefore unreferenced and **deleted** (`git rm`), taking `isWithinDepotHours` + `DEPOT_HOURS_START_IST`/`_END_IST` with it. Self-suppression, the try/catch swallow, and await-before-respond are **untouched** in both routes.
+- NTF-8 (§8 landmine 4): rewritten — it pointed at the now-deleted file. The IST-vs-UTC hazard is restated as a rule for the NEXT server-side time rule (e.g. §7's deferred timer) rather than as a description of live code.
+- NTF-9 (§10): `lib/push/quiet-hours.ts` row dropped from the key-files index.
+- ⚠ Left deliberately: §7's deferred supervisor timer still lists "quiet hours" among the work its future route would do. That is unbuilt design, not live code — whoever builds it decides whether a time gate comes back.
 
 ## Change log — v1.2 (2026-08-04 reconciliation pass, method v1.1)
 
@@ -275,4 +286,4 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-
 
 ---
 
-*CLAUDE_NOTIFICATIONS.md v1.2 · Schema v27.13 · Push Notifications · OrbitOMS · updated 2026-08-04*
+*CLAUDE_NOTIFICATIONS.md v1.3 · Schema v27.13 · Push Notifications · OrbitOMS · updated 2026-08-12*

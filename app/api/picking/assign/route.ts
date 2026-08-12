@@ -4,7 +4,6 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED } from "@/lib/workflow-stages";
 import { sendToUser } from "@/lib/push/send";
-import { isWithinDepotHours } from "@/lib/push/quiet-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -172,12 +171,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   // would fire a false change on every board) — only a read for names + the
   // sends (which touch push_subscriptions, not orders).
   //
-  // Skipped when the supervisor assigned to themselves, or outside depot hours.
+  // Skipped when the supervisor assigned to themselves. There is NO time-of-day
+  // gate: quiet hours (09:00–20:00 IST) were removed 2026-08-12 and this now
+  // sends at any hour.
   // Awaited (Vercel freezes the function after the response, so un-awaited work
   // is unreliable) but sent in PARALLEL via allSettled, so the added latency is
   // ~one push round-trip regardless of batch size, not N× — keeps the assign
   // action snappy. Each notification is per-bill (its own tag), as specced.
-  if (assignedOrderIds.length > 0 && assignedById !== pickerId && isWithinDepotHours(new Date())) {
+  if (assignedOrderIds.length > 0 && assignedById !== pickerId) {
     try {
       const notifyOrders = await prisma.orders.findMany({
         where: { id: { in: assignedOrderIds } },
