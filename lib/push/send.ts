@@ -78,6 +78,13 @@ export async function sendToUser(userId: number, payload: PushPayload): Promise<
         const res = await sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           body,
+          // urgency:'high' asks the push service to deliver NOW rather than
+          // batching behind the phone's power-saving state — the standard lever
+          // against the aggressive battery management on Indian budget Androids
+          // (§9 landmine). Delivery hint only: it does not change the payload,
+          // the retry/hygiene handling below, or the error swallowing this whole
+          // function depends on (§8 landmine 5).
+          { urgency: "high" },
         );
         // Success — device is alive: clear failures, stamp lastSeenAt.
         await prisma.push_subscriptions.update({
