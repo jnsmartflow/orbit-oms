@@ -67,8 +67,12 @@ export function AgeBadge({ row }: { row: PickingQueueRow }): React.JSX.Element |
   );
 }
 
-// One product-family chip. `families` arrives already display-resolved and
-// alpha-sorted from lib/picking/queue.ts — rendered AS-IS, never re-sorted or
+// One shelf chip. Named for its original and still-default content — the
+// product family, which arrives already display-resolved and alpha-sorted from
+// lib/picking/queue.ts — but the STYLE is the point: whatever a caller feeds
+// the shelf renders through this one component, never a hand-rolled span.
+// (The supervisor board feeds it article-tag pieces since 2026-08-14; see
+// CardShelf's `chips` prop.) Labels are rendered AS-IS, never re-sorted or
 // re-cased at the call site.
 //
 // `muted` is the supervisor's locked/checked-card treatment (assignLocked,
@@ -138,9 +142,9 @@ export function RouteDot({ deliveryType }: { deliveryType: string | null }): Rea
   return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />;
 }
 
-// Rich-card shelf — the DIVIDER + the grey band + FAMILY CHIPS, plus one
-// optional right-hand slot. Both boards render this; the band colour, the
-// divider and the fade gradient exist here and nowhere else.
+// Rich-card shelf — the DIVIDER + the grey band + CHIPS, plus one optional
+// right-hand slot. Both boards render this; the band colour, the divider and
+// the fade gradient exist here and nowhere else.
 //
 // The old goods/breakdown line (articleTag + volume) is gone (Option G,
 // 2026-07-21); volume moved to the route line. Chips are ONE horizontally-
@@ -150,9 +154,29 @@ export function RouteDot({ deliveryType }: { deliveryType: string | null }): Rea
 // does).
 //
 // Layout: a flex row — [chips: flex-1 min-w-0, scrolling] + [right slot: shrink-0].
-// `families` arrives already display-resolved + alpha-sorted from
-// lib/picking/queue.ts — rendered AS-IS. The "+N unlisted" chip trails only when
-// unresolvedLineCount > 0 (UnlistedChip self-guards at 0).
+//
+// ── WHAT GOES IN THE CHIPS (2026-08-14) ───────────────────────────────────
+// TWO sources, chosen by whether the caller passes `chips`:
+//
+//   chips OMITTED (the picker board) — FAMILIES, unchanged in every respect.
+//   `row.families` arrives already display-resolved + alpha-sorted from
+//   lib/picking/queue.ts and is rendered AS-IS, and the "+N unlisted" chip
+//   trails when unresolvedLineCount > 0 (UnlistedChip self-guards at 0).
+//
+//   chips PASSED (the supervisor board) — those labels, verbatim, and NO
+//   "+N unlisted". That pill counts lines whose SAP code resolved to no
+//   family, so it is meaningful ONLY against the family list; trailing it
+//   after article-tag pieces would be an unlisted-count for a list nothing
+//   was resolved against.
+//
+// An EMPTY `chips` array behaves exactly like an empty `families` array: the
+// shelf renders only if something else needs it (showViewItems / trailing),
+// so the Assign card keeps its arrow — and therefore its route to detail —
+// on a bill with nothing to chip (CLAUDE_UI.md §62).
+//
+// ⚠ The prop is a chip LIST, never a chip SOURCE: no formatting, splitting,
+// sorting or casing happens in here. A caller hands over the exact strings it
+// wants on screen.
 //
 // The right slot is filled by EITHER of two mutually-exclusive things:
 //
@@ -174,18 +198,26 @@ export function RouteDot({ deliveryType }: { deliveryType: string | null }): Rea
 // gets its receipt line.
 export function CardShelf({
   row,
+  chips,
   muted = false,
   showViewItems = false,
   onViewItems,
   trailing = null,
 }: {
   row: PickingQueueRow;
+  /** Chip labels, rendered verbatim. OMIT for the family chips + "+N unlisted". */
+  chips?: readonly string[];
   muted?: boolean;
   showViewItems?: boolean;
   onViewItems?: () => void;
   trailing?: React.ReactNode;
 }): React.JSX.Element | null {
-  const hasStrip = row.families.length > 0 || row.unresolvedLineCount > 0;
+  // `chips === undefined` is the discriminator, NOT `chips.length` — an empty
+  // array is a caller saying "this bill has nothing to chip", which must not
+  // fall back to families.
+  const ownChips = chips !== undefined;
+  const labels: readonly string[] = chips ?? row.families;
+  const hasStrip = labels.length > 0 || (!ownChips && row.unresolvedLineCount > 0);
   if (!hasStrip && !showViewItems && trailing === null) return null;
   return (
     <div className="border-t px-[14px] flex items-stretch gap-1" style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}>
@@ -194,10 +226,14 @@ export function CardShelf({
           className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] w-full [&::-webkit-scrollbar]:hidden"
           style={{ scrollbarWidth: "none" }}
         >
-          {row.families.map((f) => (
-            <FamilyChip key={f} label={f} muted={muted} />
+          {/* Keyed by index+label, not by label alone: families are distinct by
+              construction (a Set upstream) but a caller-supplied list can
+              legitimately repeat a value ("2 Drum, 2 Drum"). Same rendered
+              markup either way — these are static text spans with no state. */}
+          {labels.map((label, i) => (
+            <FamilyChip key={`${i}-${label}`} label={label} muted={muted} />
           ))}
-          <UnlistedChip key="__unlisted" count={row.unresolvedLineCount} />
+          {!ownChips && <UnlistedChip key="__unlisted" count={row.unresolvedLineCount} />}
         </div>
         {/* Fade cue — matches the shelf bg so chips dissolve under it, into the
             link (or the card edge on Picking). */}

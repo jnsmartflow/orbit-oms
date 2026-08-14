@@ -203,6 +203,34 @@ function formatObdDateTime(v: Date | string | null): string | null {
 // values live in exactly one place. Imported at the top of this file; every
 // call site below is unchanged.
 
+// ── Article-tag chips — THIS BOARD'S shelf content (2026-08-14) ────────────
+// The supervisor's shelf carries the bill's PACK BREAKDOWN, not its product
+// families: at the dispatch point the question is "how many physical things is
+// this", and articleTag is the order-level roll-up that answers it
+// (orders → import_obd_query_summary.articleTag, already on the row —
+// PickingQueueRow.articleTag, no new fetch). The picker's own board is
+// unchanged and still shows families.
+//
+// Split on commas, trim, drop empties. NOTHING ELSE — no abbreviation, no
+// re-casing, no re-ordering, no re-totalling: the value is rendered VERBATIM,
+// the same rule CLAUDE_PICKING.md §5.2 states for this field everywhere it
+// appears. "124 Drum, 27 Carton, 6 Tin" → three chips; "4 Drum" → one.
+//
+// ⚠ Deliberately NOT lib/floor/format.ts's formatArticleTag/ARTICLE_WORD_ABBR.
+// Those abbreviate to "18 D · 14 C" for Floor's dense table and by-picker card;
+// this shelf has room for the whole word and the floor reads the word.
+//
+// A null or blank tag yields [] — an empty chip list, which the shelf treats
+// exactly as it treats a bill with no families: the Assign card still renders
+// its shelf for the arrow (CLAUDE_UI.md §62), the other variants render none.
+function articleTagChips(tag: string | null): string[] {
+  if (tag === null) return [];
+  return tag
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 // CardShelf moved to ./card-atoms.tsx (2026-07-29) — the divider, the grey
 // band, the fade gradient and the chips are now ONE copy shared with the picker
 // card. Its props gained defaults (muted/showViewItems false, onViewItems
@@ -220,7 +248,11 @@ function formatObdDateTime(v: Date | string | null): string | null {
 //   caption-right — flags (assign) / elapsed pill (picking) / green (doneCheck) / none
 //   name-right    — slot hero (assign/picking) / none (done)
 //   where-right   — picker (picking/done) / none (assign)
-//   shelf         — RICH on assign + picking; LEAN (no shelf) on done
+//   shelf         — RICH on assign + picking; LEAN (no shelf) on done.
+//                   RICH = the grey band of article-tag chips (2026-08-14,
+//                   was family chips). "Done" here means BOTH done variants:
+//                   doneCheck and doneChecked render no shelf at all, so the
+//                   Done tab shows no chips of either kind.
 //   checker line  — doneChecked only ("✓ Checked by {name} · {time}")
 type PickingCardVariant = "assign" | "assignLocked" | "picking" | "doneCheck" | "doneChecked";
 
@@ -418,7 +450,16 @@ function PickingCard({
         </div>
       </div>
       {rich && (
-        <CardShelf row={row} muted={muted} showViewItems={variant === "assign"} onViewItems={onOpen} />
+        // `chips` is what makes this shelf the PACK breakdown rather than the
+        // family strip (see articleTagChips above). Passing it also suppresses
+        // the "+N unlisted" pill, which only means anything against families.
+        <CardShelf
+          row={row}
+          chips={articleTagChips(row.articleTag)}
+          muted={muted}
+          showViewItems={variant === "assign"}
+          onViewItems={onOpen}
+        />
       )}
       {variant === "doneChecked" && row.checkedByName !== null && (
         // Its OWN line, never folded into the where line (a long area + long
