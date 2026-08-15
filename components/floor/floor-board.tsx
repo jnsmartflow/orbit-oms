@@ -308,6 +308,17 @@ export function FloorBoard({
             // colour the operator tapped and the list he lands on can never
             // tell him different things.
             const counts = countByStatus(g.rows);
+            // ⚠ THE STATS ARE `held`, NOT `g.rows` (2026-08-15). Everything the
+            // card states as a NUMBER — picks, litres, articles, routes — is his
+            // current physical workload, so it must come from withPicker rows
+            // alone. g.rows also carries bills he has already put down
+            // (needsCheck, awaiting a supervisor) and finished ones (done);
+            // counting either inflates an idle picker into a loaded one, the
+            // same defect the STATUS colour was fixed for a round earlier.
+            // `counts` still spans all his rows on purpose: it feeds the
+            // four-segment bar and the "{n} to check" tag, which are the one
+            // place that pile is allowed to appear.
+            const held = g.rows.filter((r) => rowStatus(r) === "withPicker");
             const oldestMinutes = oldestWithPickerMinutes(g.rows, nowMs);
             const status = pickerCardStatus(counts, oldestMinutes);
             return (
@@ -315,9 +326,9 @@ export function FloorBoard({
                 key={g.pickerId}
                 name={g.name}
                 counts={counts}
-                litres={sumLitres(g.rows)}
-                articles={formatArticleBreakdown(g.rows.map((r) => r.articleTag))}
-                routes={distinctRoutes(g.rows)}
+                litres={sumLitres(held)}
+                articles={formatArticleBreakdown(held.map((r) => r.articleTag))}
+                routes={distinctRoutes(held)}
                 oldestMinutes={oldestMinutes}
                 onClick={() => onPickPicker(g.pickerId, status === "free" ? "pending" : "current")}
               />

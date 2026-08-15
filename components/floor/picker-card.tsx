@@ -16,6 +16,14 @@
 // Those are the only two questions the STATUS answers. A needs-check pile is
 // rendered too, but as a tag beside the chip, never as a state (see
 // pickerCardStatus below for why).
+//
+// ⚠ The same rule governs the NUMBERS, not just the colour (2026-08-15). Picks,
+// litres, articles and the route line all describe what is IN HIS HANDS RIGHT
+// NOW — withPicker only. The caller filters before summing; the picks count
+// here reads `counts.withPicker`, deliberately NOT `counts.total`, which also
+// spans bills he has finished and put down. A picker holding nothing reads
+// 0 picks / 0 L / — articles even with five bills waiting to be checked, which
+// is the same answer his chip already gives (Free).
 
 import { ProgressBar } from "./progress-bar";
 import type { StatusCounts } from "./status-pill";
@@ -100,16 +108,24 @@ export function PickerCard({
   onClick,
 }: {
   name: string;
+  /**
+   * Counts across ALL of this picker's rows — the only prop that spans more
+   * than his current load. It exists for the four-segment bar and the
+   * "{n} to check" tag; the picks number reads `withPicker` off it, never
+   * `total`. Everything else below is withPicker-only (see next comment).
+   */
   counts: StatusCounts;
+  /** Litres of the bills IN HIS HANDS — withPicker rows only, not his pile. */
   litres: number;
   /**
-   * Abbreviated article breakdown across this picker's bills — "18 D · 14 C",
+   * Abbreviated article breakdown across the bills IN HIS HANDS — "18 D · 14 C",
    * from formatArticleBreakdown() (lib/floor/format.ts). Already summed and
    * already formatted; the card does not parse. null = nothing known, which
-   * renders an em dash rather than a zero.
+   * renders an em dash rather than a zero — which is also what a picker holding
+   * nothing shows, needs-check pile or not.
    */
   articles: string | null;
-  /** Distinct routes among this picker's rows, already de-duped and sorted. */
+  /** Distinct routes among his withPicker rows, already de-duped and sorted. */
   routes: string[];
   /** Minutes since the OLDEST still-with-picker assignment; null when none. */
   oldestMinutes: number | null;
@@ -170,8 +186,8 @@ export function PickerCard({
           the D/C/T/B vocabulary is the Flat table's own (ARTICLE_WORD_ABBR). */}
       <div className="mt-2 flex items-center gap-3 text-[10.5px] text-gray-400">
         <span>
-          <span className="font-semibold tabular-nums text-gray-700">{counts.total}</span>{" "}
-          {counts.total === 1 ? "pick" : "picks"}
+          <span className="font-semibold tabular-nums text-gray-700">{counts.withPicker}</span>{" "}
+          {counts.withPicker === 1 ? "pick" : "picks"}
         </span>
         <span>
           <span className="font-semibold tabular-nums text-gray-700">{litres.toLocaleString("en-US")}</span> L
