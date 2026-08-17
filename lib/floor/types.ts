@@ -126,6 +126,59 @@ export interface FloorBoardResult {
   rows: FloorBoardRow[];
   windows: FloorWindowCount[];
   total: number; // due-zone rows (excludes upcoming)
+  // By-group candidates — one entry per WAITING due-zone row (see below). A
+  // SIBLING key, deliberately not a field on FloorBoardRow: only waiting bills
+  // can be bundled, so hanging the array off every row would ship an empty
+  // array on Assigned/Done/checked rows for no reader — the exact shape the
+  // removed `totalArticle` field was (FloorBoardRow above).
+  waitingSkus: FloorWaitingSkus[];
+}
+
+// ── By-group (pick bundling) ─────────────────────────────────────────────────
+// Nothing here is stored. The engine (lib/floor/grouping.ts) is recomputed on
+// every board load; there is no table and no column behind any of it.
+
+/** One waiting bill's distinct SAP codes, as they ride /api/floor/board.
+ *
+ *  `skus` is DISTINCT and sorted (locale "en") at the source, so the payload is
+ *  byte-stable between loads — grouping.ts is deterministic by contract and
+ *  cannot be if its input reshuffles.
+ *
+ *  ⚠ These are `import_raw_line_items.skuCodeRaw` values — the SAP code, the
+ *  stable natural key. NEVER a `skuId` and never anything read out of
+ *  `sku_master` (CORE §13 id-space landmine).
+ *
+ *  An EMPTY array is a real answer (a bill with no `lineStatus='active'` lines),
+ *  never an omission — grouping.ts drops those candidates explicitly, and the
+ *  comment there says why that guard is load-bearing. */
+export interface FloorWaitingSkus {
+  orderId: number;
+  skus: string[];
+}
+
+/** One candidate bill as the grouping engine sees it. The engine knows nothing
+ *  else about a bill — no route, no slot, no litres, no clock. */
+export interface PickGroupCandidate {
+  orderId: number;
+  obdNumber: string;
+  /** Distinct `skuCodeRaw`. The engine does not re-dedupe; the producer must. */
+  skus: string[];
+}
+
+/** One bundle: a main bill plus 1-3 riders, each of which adds ZERO new SKUs to
+ *  the main. Max 4 bills, no exceptions.
+ *
+ *  `totalVolume` is deliberately absent — the engine never sees litres. The
+ *  caller sums them from its own board rows, which is where volume lives. */
+export interface PickGroup {
+  /** Derived from the main bill: `id === main.orderId`. Stable across loads for
+   *  as long as the same bill leads the same bundle. */
+  id: number;
+  main: PickGroupCandidate;
+  riders: PickGroupCandidate[];
+  /** Sum of the riders' distinct-SKU counts — every rider SKU is a shelf the
+   *  picker was walking to for the main bill anyway. */
+  savedTrips: number;
 }
 
 // Hold tab row (design §8).

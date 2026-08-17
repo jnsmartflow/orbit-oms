@@ -9,14 +9,16 @@
 // LEAF group on screen (design §7.9): inside each slot band on All, across the
 // cutoff on a flat slot tab, inside each route on By-route.
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTabs, type SlotTabKey } from "./floor-tabs";
 import { FloorTable } from "./floor-table";
 import { SlotBand } from "./slot-band";
 import { RouteRow } from "./route-row";
+import { GroupRow } from "./group-row";
 import { PickerCard, pickerCardStatus } from "./picker-card";
+import { buildPickGroups } from "@/lib/floor/grouping";
 import { formatArticleBreakdown } from "@/lib/floor/format";
 import { CarryoverBanner } from "./carryover-banner";
 import { UpcomingStrip } from "./upcoming-strip";
@@ -132,8 +134,10 @@ export function FloorBoard({
   onSlotTab,
   mode,
   assignContext,
+  assignContextName,
   contextMode,
   onPickPicker,
+  onAssignGroup,
   histDate,
   onEnterHistory,
   onExitHistory,
@@ -151,12 +155,17 @@ export function FloorBoard({
   pickers: FloorPicker[];
   slotTab: SlotTabKey;
   onSlotTab: (key: SlotTabKey) => void;
-  mode: "flat" | "route" | "picker";
+  mode: "flat" | "route" | "picker" | "group";
   // Assign context (2026-08-11) — the picker the operator drilled into from the
   // By-picker grid, or null for the ordinary board. null is the untouched path:
   // every derivation below short-circuits to exactly what it did before.
   assignContext: number | null;
+  /** The context picker's display name, for the By-group header button. */
+  assignContextName: string | null;
   contextMode: "pending" | "current";
+  /** One-press assign of a whole bundle. Only wired in group mode, and only
+   *  offered when there IS a context picker to assign to. */
+  onAssignGroup: (orderIds: number[], pickerId: number) => void;
   // Fired by a picker card. floor-page owns what it means (set context, switch
   // to By route) — this component only reports the tap, plus which reading to
   // open on. `initialMode` is derived from pickerCardStatus(), the SAME rule
@@ -177,6 +186,25 @@ export function FloorBoard({
 }) {
   const [openBands, setOpenBands] = useState<Record<string, boolean>>({});
   const [openRoute, setOpenRoute] = useState<string | null>(null);
+  // By-group expand state — a SET OF MAIN BILL orderIds, not row indices.
+  //
+  // ⚠ THIS IS THE REFRESH MITIGATION, and it is why the key matters. With no
+  // selection and no panel open there is no pause rule (CLAUDE_FLOOR §5), so a
+  // 15s marker change re-runs load() and re-renders the bundles. The engine is
+  // deterministic, but its INPUT changes whenever any bill moves, so bundles can
+  // reorder. Keying on position ("index 0 is open") would silently move the open
+  // group to whatever floated to the top; keying on the main bill's orderId
+  // keeps the operator looking at the bundle he was actually reading.
+  //
+  //   null           = not seeded yet for this visit to group mode
+  //   Set(mainIds)   = exactly these are expanded
+  //
+  // A group whose main is gone simply disappears — no placeholder, no toast; a
+  // bill leaving the board is correct behaviour and must stay visible as such.
+  // Genuinely new bundles arrive collapsed because their id is not in the set.
+  // NOT one-open-at-a-time like the route rows: a bundle is a short list the
+  // operator compares against others, so closing one to open the next fights him.
+  const [openMains, setOpenMains] = useState<Set<number> | null>(null);
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
@@ -199,10 +227,15 @@ export function FloorBoard({
   //             are excluded: they are his history, not what is in his hands.
   const inContext = assignContext !== null;
   const contextPending = inContext && contextMode === "pending";
+  // THE waiting slice — nobody's yet, which is exactly the set that can be
+  // handed to somebody. ONE declaration, read by BOTH the assign context's
+  // pending reading and the By-group view, so the two surfaces can never answer
+  // "what is waiting" differently.
+  const waitingRows = dueRows.filter((r) => rowStatus(r) === "waiting");
   const viewRows = !inContext
     ? dueRows
     : contextPending
-      ? dueRows.filter((r) => rowStatus(r) === "waiting")
+      ? waitingRows
       : dueRows.filter((r) => {
           if (r.pickerId !== assignContext) return false;
           const st = rowStatus(r);
@@ -243,12 +276,85 @@ export function FloorBoard({
   // shows each picker's whole load, and "what he's holding" is everything in his
   // hands whatever window it is due. Hide the tabs there rather than leave a
   // control that filters nothing. (The picker grid rendered them dead until now.)
-  const showSlotTabs = mode !== "picker" && !(inContext && !contextPending);
+  //
+  // By group hides them for a DIFFERENT and stronger reason: grouping spans slots
+  // and dates on purpose, so a slot filter would cut most bundles in half. There
+  // is no date or slot term anywhere in that view — the header strip below says
+  // so in plain English, and each row carries its own Slot column instead.
+  const showSlotTabs = mode !== "picker" && mode !== "group" && !(inContext && !contextPending);
+
+  // ── By group — computed ONLY in group mode, so no other view pays for it ────
+  //
+  // Candidates are the waiting rows above, paired with the distinct skuCodeRaw
+  // list the board payload already carries (floor.waitingSkus, built by
+  // getFloorBoard from the same predicate). A waiting row with no payload entry
+  // gets an empty array and the engine drops it to `ungrouped` — the zero-SKU
+  // guard in lib/floor/grouping.ts, which is load-bearing: the empty set is a
+  // subset of everything and such a bill would otherwise ride free with anyone.
+  const groupData = (() => {
+    if (mode !== "group") return null;
+    const skusById = new Map(floor.waitingSkus.map((w) => [w.orderId, w.skus] as const));
+    const rowById = new Map(waitingRows.map((r) => [r.orderId, r] as const));
+    const { groups, ungrouped } = buildPickGroups(
+      waitingRows.map((r) => ({
+        orderId: r.orderId,
+        obdNumber: r.obdNumber,
+        skus: skusById.get(r.orderId) ?? [],
+      })),
+    );
+    const skuCountById = new Map(Array.from(skusById.entries()).map(([id, s]) => [id, s.length]));
+    return { groups, ungrouped, rowById, skuCountById };
+  })();
+
+  // Seeding + toggling for the expand set above. Both effects are no-ops outside
+  // group mode, so no other view is affected by their presence.
+  const topGroupId = groupData?.groups[0]?.id;
+  useEffect(() => {
+    if (mode !== "group") setOpenMains(null);
+  }, [mode]);
+  useEffect(() => {
+    // First entry to group mode: the top bundle expanded, the rest collapsed.
+    if (mode === "group" && openMains === null && topGroupId !== undefined) {
+      setOpenMains(new Set([topGroupId]));
+    }
+  }, [mode, openMains, topGroupId]);
+
+  const groupIsOpen = (id: number) => (openMains === null ? id === topGroupId : openMains.has(id));
+  const toggleGroup = (id: number) =>
+    setOpenMains((prev) => {
+      const base = prev ?? (topGroupId !== undefined ? new Set([topGroupId]) : new Set<number>());
+      const next = new Set(base);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const bandOpen = (key: string) => openBands[key] ?? true; // default open (mockup)
   const toggleBand = (key: string) => setOpenBands((m) => ({ ...m, [key]: !bandOpen(key) }));
 
   // ── Date bar ────────────────────────────────────────────────────────────
+  //
+  // Live-strip counts. Deliberately over `dueRows` — the SAME array the Floor
+  // tab badge counts (floor-page.tsx derives `total` from it), so the two
+  // numbers in the strip always sum to the number in the badge beside them.
+  // Upcoming rows are in neither: they are future-dated work with their own
+  // strip at the foot of the board.
+  //
+  // WHY THIS REPLACED A SENTENCE: the strip used to read "everything not yet
+  // checked, whenever it was due", which describes only arm 1 of
+  // floorLiveBaseWhere (CLAUDE_FLOOR §3). Arm 2 also puts everything CHECKED
+  // TODAY on the board — on 2026-08-17 that was 97 of 104 rows — so the copy
+  // promised a set roughly a fifteenth the size of the count next to it. The
+  // split states both arms instead of describing one.
+  //
+  // `countByStatus` is the shared helper (status-pill.tsx), not a hand-written
+  // stage test: four stage meanings, one owner. Its `done` bucket IS
+  // pick_checked, and on the live board a pick_checked row can only be there
+  // via arm 2 — i.e. it was checked today — so "checked today" is exact, not an
+  // approximation.
+  const liveCounts = countByStatus(dueRows);
+  const stillOpen = liveCounts.total - liveCounts.done;
+
   const yesterdayIso = addDaysIso(istTodayIso(), -1);
   const forwardDisabled = (histDate ?? "") >= yesterdayIso;
   const navCls = "flex h-6 w-6 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-500 disabled:opacity-40";
@@ -271,7 +377,9 @@ export function FloorBoard({
     <div className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-3.5 py-[7px] text-[11.5px]">
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#10b981]" />
       <span className="font-semibold">Live</span>
-      <span className="text-[10.5px] text-gray-400">everything not yet checked, whenever it was due</span>
+      <span className="text-[10.5px] text-gray-400">
+        {stillOpen} still open &middot; {liveCounts.done} checked today
+      </span>
       <button type="button" className="ml-auto text-[10.5px] font-semibold text-teal-600" onClick={onEnterHistory}>
         History ›
       </button>
@@ -335,6 +443,77 @@ export function FloorBoard({
             );
           })}
         </div>
+      );
+  } else if (mode === "group" && groupData) {
+    // ⚠ SITS ABOVE the `slotTab === "all"` check, for the same reason the picker
+    // grid does: switching slot tabs must not change these bundles at all.
+    // Search and filter DO still apply (waitingRows descends from the filtered
+    // set) — those narrow "which bills are we talking about", a fair question to
+    // ask of a bundle; the slot tab narrows "which window", which is the one
+    // question grouping exists to ignore.
+    const { groups, ungrouped, rowById, skuCountById } = groupData;
+    const ungroupedRows = ungrouped
+      .map((id) => rowById.get(id))
+      .filter((r): r is FloorBoardRow => r !== undefined);
+
+    body =
+      waitingRows.length === 0 ? (
+        <div className="px-5 py-14 text-center">
+          <div className="text-[28px] leading-none text-gray-300">○</div>
+          <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Nothing waiting to group</h4>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+            Every bill on the floor is already with someone. Release more from the rail, or check
+            back after the next import.
+          </p>
+        </div>
+      ) : (
+        <>
+          {groups.map((g) => {
+            // Main first, then the riders in the engine's order.
+            const members = [g.main, ...g.riders]
+              .map((m) => rowById.get(m.orderId))
+              .filter((r): r is FloorBoardRow => r !== undefined);
+            if (members.length === 0) return null;
+            return (
+              <GroupRow
+                key={g.id}
+                group={g}
+                rows={members}
+                skuCountById={skuCountById}
+                nowMs={nowMs}
+                open={groupIsOpen(g.id)}
+                onToggle={() => toggleGroup(g.id)}
+                variant={variant}
+                // Present only when a picker is already chosen. Without one the
+                // header button stays "Select all {n}" and the assign bar does
+                // the assigning, exactly as before.
+                assignTo={
+                  assignContext !== null && assignContextName
+                    ? { id: assignContext, name: assignContextName }
+                    : null
+                }
+                onAssignGroup={onAssignGroup}
+                {...selProps}
+              />
+            );
+          })}
+
+          {ungroupedRows.length > 0 && (
+            <>
+              {/* Not hidden, not dimmed — these are ordinary waiting bills that
+                  simply share nothing, and the operator still has to send them. */}
+              <div className="border-b border-[#f0f0f0] bg-[#fafafa] px-3.5 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[#6b7280]">
+                  On their own &middot; {ungroupedRows.length} bill{ungroupedRows.length === 1 ? "" : "s"}
+                </div>
+                <div className="text-[10.5px] text-gray-400">
+                  Nothing else waiting shares their items
+                </div>
+              </div>
+              <FloorTable rows={ungroupedRows} nowMs={nowMs} variant={variant} showSlot {...selProps} />
+            </>
+          )}
+        </>
       );
   } else if (allDone) {
     const litres = sumLitres(dueRows);
@@ -472,12 +651,37 @@ export function FloorBoard({
           to 12 rows. Outside context viewRows IS dueRows — unchanged. Hidden
           entirely in the two person-scoped views (see showSlotTabs above). */}
       {showSlotTabs && <FloorTabs windows={floor.windows} dueRows={viewRows} active={slotTab} onSelect={onSlotTab} />}
+
+      {/* By group — the strip that stands where the slot tabs would be. It has
+          one job: say out loud that this view is waiting-only and slot-blind,
+          because both of those look like bugs to anyone who has not been told. */}
+      {mode === "group" && groupData && (
+        <div className="border-b border-gray-200 bg-[#fcfcfd] px-3.5 py-2.5">
+          <div className="text-[11.5px] text-gray-700">
+            Waiting only &mdash; bills with no picker yet, grouped so one man fetches once
+          </div>
+          <div className="mt-0.5 text-[11.5px] font-semibold text-gray-900">
+            {waitingRows.length} waiting &middot; {groupData.groups.length} group
+            {groupData.groups.length === 1 ? "" : "s"} found
+          </div>
+          <p className="mt-1.5 max-w-[760px] text-[10.5px] leading-relaxed text-gray-400">
+            All dispatch times together. Grouping ignores the slot on purpose &mdash; an evening bill
+            needing the same material is fetched now, while the picker is already at that shelf.
+            Each row still shows its own time.
+          </p>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {body}
         {/* No Upcoming strip under the picker grid: an upcoming bill is unassigned
             by definition, so it belongs to nobody and would read as a fifth
-            un-owned card's worth of work hanging off the bottom of a roster. */}
-        {!allDone && mode !== "picker" && upcomingRows.length > 0 && <UpcomingStrip rows={sort(upcomingRows)} nowMs={nowMs} />}
+            un-owned card's worth of work hanging off the bottom of a roster.
+            Suppressed under By group for the opposite reason — that view states
+            it ignores dispatch dates, and a future-dated strip contradicts it. */}
+        {!allDone && mode !== "picker" && mode !== "group" && upcomingRows.length > 0 && (
+          <UpcomingStrip rows={sort(upcomingRows)} nowMs={nowMs} />
+        )}
       </div>
     </div>
   );

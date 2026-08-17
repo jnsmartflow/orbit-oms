@@ -58,6 +58,13 @@ export function railInScope(cards: FloorRailCard[], scope: FloorScope): FloorRai
  * The window LIST itself is scope-independent (the server maps over every
  * active dispatch_slot_master row regardless of scope, emitting zero counts for
  * empty ones), so only the counts are recomputed — never the set of windows.
+ *
+ * `waitingSkus` is narrowed for the SAME reason and by the same route: the
+ * server builds it from its rows AFTER the scope filter, so a spread that
+ * carried the unscoped array through would hand the By-group engine candidates
+ * for bills the operator cannot see on the chip he has open. Order is preserved
+ * (both this filter and `rowsInScope` are stable), which is what keeps the
+ * engine's determinism contract intact across a chip click.
  */
 export function scopeBoard(board: FloorBoardResult, scope: FloorScope): FloorBoardResult {
   const rows = rowsInScope(board.rows, scope);
@@ -66,5 +73,7 @@ export function scopeBoard(board: FloorBoardResult, scope: FloorScope): FloorBoa
     ...w,
     count: due.filter((r) => r.windowId === w.id).length,
   }));
-  return { ...board, rows, windows, total: due.length };
+  const visible = new Set(rows.map((r) => r.orderId));
+  const waitingSkus = board.waitingSkus.filter((w) => visible.has(w.orderId));
+  return { ...board, rows, windows, total: due.length, waitingSkus };
 }

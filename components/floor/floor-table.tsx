@@ -121,6 +121,8 @@ export function FloorTable({
   onToggleAll,
   onMarkUrgent,
   onOpenDetail,
+  showSlot = false,
+  chipFor,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
@@ -131,6 +133,21 @@ export function FloorTable({
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
   onOpenDetail?: (id: number) => void;
+  /**
+   * Swap the Picker column for a Slot column (time + date under it). For the
+   * By-group view ONLY, where there is no slot tab to carry the time (grouping
+   * deliberately spans slots) and no picker to name (every row is Waiting).
+   *
+   * Default false = every pre-existing call site is untouched: same nine
+   * columns, same widths array, same cells.
+   */
+  showSlot?: boolean;
+  /**
+   * Optional chip rendered under the dealer name in the Ship-to cell. The
+   * caller owns the whole element, so no tone/colour vocabulary leaks into this
+   * table. Undefined (every pre-existing call site) renders nothing at all.
+   */
+  chipFor?: (row: FloorBoardRow) => ReactNode;
 }) {
   // A live table is interactive only when a caller actually wired selection.
   // Every existing live call site passes onToggleRow (floor-board's selProps),
@@ -141,7 +158,19 @@ export function FloorTable({
   // new prop threaded through slot-band and route-row to reach here.
   const interactive = variant === "live" && !!onToggleRow;
   // ☐ 4 · # 4 · OBD 14 · Ship 20 · Route 10 · Vol 7 · Article 12 · Picker 9 · Status 20.
-  const widths = interactive ? [4, 4, 14, 20, 10, 7, 12, 9, 20] : [16, 24, 12, 7, 13, 9, 19];
+  // With showSlot the Picker column is REPLACED by a Slot column sitting after
+  // Route — same column COUNT either way, so both arms keep their length and
+  // still sum to 100 (§27). Both the interactive and the read-only arm need
+  // their own showSlot variant: the widths map positionally, so reusing the
+  // Picker-ordered array would hand Slot the Vol width and shunt the rest along
+  // (reachable today — By group is available on a History day).
+  const widths = interactive
+    ? showSlot
+      ? [4, 4, 14, 20, 10, 9, 7, 12, 20]
+      : [4, 4, 14, 20, 10, 7, 12, 9, 20]
+    : showSlot
+      ? [16, 24, 12, 9, 7, 13, 19]
+      : [16, 24, 12, 7, 13, 9, 19];
   const allOn = interactive && selection ? isAllSelected(selection, rows) : false;
 
   return (
@@ -168,9 +197,10 @@ export function FloorTable({
           <th className={HEAD_TH}>OBD</th>
           <th className={HEAD_TH}>Ship to</th>
           <th className={HEAD_TH}>Route</th>
+          {showSlot && <th className={HEAD_TH}>Slot</th>}
           <th className={`${HEAD_TH} text-right`}>Vol</th>
           <th className={HEAD_TH}>Article</th>
-          <th className={HEAD_TH}>Picker</th>
+          {!showSlot && <th className={HEAD_TH}>Picker</th>}
           <th className={HEAD_TH}>Status</th>
         </tr>
       </thead>
@@ -283,11 +313,20 @@ export function FloorTable({
                 {row.isTint && <Droplet size={12} className="ml-1 inline-block align-[-1px] text-[#7c3aed]" />}
                 {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}
                 {isRedirect && <div className="text-[11px] text-[#6d28d9]">→ ship-to changed</div>}
+                {chipFor?.(row)}
               </td>
               <td className={TD}>{row.route ?? "—"}</td>
+              {showSlot && (
+                <td className={TD}>
+                  {row.windowTime ?? <span className="text-[#9ca3af]">No slot</span>}
+                  {row.dispatchTargetDate && (
+                    <div className="text-[10px] text-[#9ca3af]">{fmtDay(row.dispatchTargetDate)}</div>
+                  )}
+                </td>
+              )}
               <td className={`${TD} text-right tabular-nums`}>{row.volumeLitres ?? 0}</td>
               <td className={`${TD} text-[10.5px] text-[#6b7280]`}>{row.articleTag ? formatArticleTag(row.articleTag) : "—"}</td>
-              <td className={TD}>{row.assignedToName ?? <span className="text-[#9ca3af]">—</span>}</td>
+              {!showSlot && <td className={TD}>{row.assignedToName ?? <span className="text-[#9ca3af]">—</span>}</td>}
               <td className={TD}>{statusCell}</td>
             </tr>
           );

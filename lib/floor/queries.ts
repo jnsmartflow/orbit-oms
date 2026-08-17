@@ -39,6 +39,7 @@ import type {
   FloorHoldRow,
   FloorCancelledRow,
   FloorPicker,
+  FloorWaitingSkus,
   TintState,
   TintStage,
   SlotSuggestion,
@@ -179,6 +180,48 @@ async function billToByObd(obdNumbers: string[]): Promise<Map<string, string | n
   });
   for (const r of rows) {
     if (!map.has(r.obdNumber)) map.set(r.obdNumber, r.billToCustomerName);
+  }
+  return map;
+}
+
+/** Distinct ACTIVE `skuCodeRaw` per OBD — the By-group view's raw material.
+ *  Same shape as billToByObd above (one `obdNumber: { in: [...] }` read, keyed
+ *  back by OBD), for the same reason: there is no FK from `orders` to its line
+ *  items, only the plain `obdNumber` string on `import_raw_line_items`.
+ *
+ *  ⚠ `skuCodeRaw` ONLY — the SAP code, never `skuId`, never a `sku_master`
+ *  lookup (CORE §13: the two catalog tables share no id space, so an id-based
+ *  comparison would bundle unrelated products with total confidence). No
+ *  catalog join happens here at all; the codes are compared to each other, so
+ *  an unmastered code is just as usable as a mastered one.
+ *
+ *  `lineStatus: 'active'` matches app/api/picking/order/[orderId]/route.ts —
+ *  removed lines are not on the bill and must not create shared material.
+ *  Unlike that route, this deliberately does NOT filter `rowStatus` either: a
+ *  parse-rejected row is still a tin the picker will be holding.
+ *
+ *  Each list is de-duplicated and sorted (locale "en") so the payload is
+ *  byte-stable between loads — lib/floor/grouping.ts is deterministic by
+ *  contract and cannot be if its input reshuffles. Sequential await, never
+ *  $transaction (CORE §3); SELECT-only, no `orders.update` anywhere near it
+ *  (FLOOR §10 — the live marker keys on MAX(orders.updatedAt)). */
+async function skusByObd(obdNumbers: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (obdNumbers.length === 0) return map;
+
+  const rows = await prisma.import_raw_line_items.findMany({
+    where: { obdNumber: { in: obdNumbers }, lineStatus: "active" },
+    select: { obdNumber: true, skuCodeRaw: true },
+  });
+
+  const sets = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const set = sets.get(r.obdNumber) ?? new Set<string>();
+    set.add(r.skuCodeRaw);
+    sets.set(r.obdNumber, set);
+  }
+  for (const [obd, set] of Array.from(sets.entries())) {
+    map.set(obd, Array.from(set).sort((a, b) => a.localeCompare(b, "en")));
   }
   return map;
 }
@@ -566,7 +609,47 @@ export async function getFloorBoard(
     count: dueRows.filter((r) => r.windowId === w.id).length,
   }));
 
-  return { mode, date: anchorIso, rows, windows, total: dueRows.length };
+  // ── By-group candidates — the WAITING bills' distinct SKUs ────────────────
+  //
+  // A post-fetch enrichment of rows the predicate above ALREADY returned: it
+  // adds no term to `floorLiveBaseWhere` and nothing to
+  // `getFloorLiveMarkerWhere`, so the board and the live marker stay on the ONE
+  // shared predicate (FLOOR §3/§5 — re-declaring the WHERE in either place is
+  // the drift the Picking §10 landmine warns about). One extra sequential
+  // await, SELECT-only, no `orders.update` (FLOOR §10).
+  //
+  // WAITING ONLY, and due-zone only. Only a waiting bill can be handed to a
+  // picker as part of a bundle; fetching lines for Assigned/Done/checked rows
+  // would be a payload with no reader. Measured 2026-08-17: the heaviest day in
+  // the preceding fortnight (2026-08-06, 205 bills at every stage) totals 1,044
+  // (bill, SKU) pairs ≈ 17 KB of JSON — the waiting slice is a fraction of it.
+  //
+  // The waiting predicate is INLINED rather than imported from
+  // components/floor/status-pill.tsx, which owns `rowStatus()` — that file is
+  // "use client" and importing it here would drag React into a server module.
+  // The two must stay in step: waiting = at `pending_picking`, i.e. none of the
+  // three later stage flags set.
+  //
+  // Computed in HISTORY mode too, deliberately: a past day has waiting rows
+  // (bills that were never picked), the data is equally true for them, and a
+  // mode branch here would leave a future caller with a silently empty array
+  // instead of an answer.
+  const waitingRows = rows.filter(
+    (r) => r.zone !== "upcoming" && !r.isAssigned && !r.isDone && !r.isChecked,
+  );
+  const waitingSkuMap = await skusByObd(waitingRows.map((r) => r.obdNumber));
+  // Emitted in `rows` order, which is FLOOR_SPINE-sorted and obdNumber-tie-
+  // broken above — so this array is byte-stable across loads, which is what
+  // lib/floor/grouping.ts's determinism contract rests on. A bill with no
+  // active lines gets an EMPTY array, never a missing entry: grouping.ts drops
+  // those candidates explicitly (the empty set is a subset of everything), and
+  // it can only do that if it is told they exist.
+  const waitingSkus: FloorWaitingSkus[] = waitingRows.map((r) => ({
+    orderId: r.orderId,
+    skus: waitingSkuMap.get(r.obdNumber) ?? [],
+  }));
+
+  return { mode, date: anchorIso, rows, windows, total: dueRows.length, waitingSkus };
 }
 
 // ── 3. HOLD ──────────────────────────────────────────────────────────────────

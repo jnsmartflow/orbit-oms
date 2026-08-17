@@ -142,8 +142,11 @@ export function FloorPage() {
   // reverse was two. Flat and By route are unchanged and still on the toggle.
   //
   // "picker" is also the odd one out mechanically: flat/route pivot the CURRENT
-  // slot tab, picker ignores it entirely — see floor-board.tsx's branch.
-  const [mode, setMode] = useState<"flat" | "route" | "picker">("picker");
+  // slot tab, picker ignores it entirely — see floor-board.tsx's branch. "group"
+  // (2026-08-17) is the second of that kind and ignores the slot tab for a
+  // stronger reason: bundles deliberately span slots and dates, so a slot filter
+  // would cut most of them in half.
+  const [mode, setMode] = useState<"flat" | "route" | "picker" | "group">("picker");
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
@@ -232,19 +235,24 @@ export function FloorPage() {
     }
   }, [topTab, viewMode]);
 
-  // Tapping a picker card. Switches to By route because that is the shape the
-  // operator wants for handing over work (route blocks = one trip round the
-  // racks) — and because it REUSES the existing renderer rather than adding a
-  // list component that would then need its own selection wiring.
-  //
-  // `initialMode` comes from the CARD's own status (floor-board derives it with
-  // pickerCardStatus, the same rule that coloured the card): a busy picker opens
-  // on what he is holding, a free one on what he could be given. The toggle in
-  // the banner still moves between the two — this only decides which loads.
+  // Which view a given context reading belongs in. ONE rule, used by the picker
+  // card and by the banner's toggle, so the band and the board below it can
+  // never describe different questions:
+  //   pending → By GROUP. "What can I give this man" is exactly the question
+  //             bundling answers, and handing him a bundle is one press.
+  //   current → By ROUTE. Grouping is meaningless on bills already assigned;
+  //             they are not candidates for anything.
+  const viewForContext = (m: "pending" | "current") => (m === "pending" ? "group" : "route");
+
+  // Tapping a picker card. `initialMode` comes from the CARD's own status
+  // (floor-board derives it with pickerCardStatus, the same rule that coloured
+  // the card): a busy picker opens on what he is holding, a free one on what he
+  // could be given. The toggle in the banner still moves between the two — this
+  // only decides which loads.
   const openAssignContext = useCallback((pickerId: number, initialMode: "pending" | "current") => {
     setAssignContext(pickerId);
     setContextMode(initialMode);
-    setMode("route");
+    setMode(viewForContext(initialMode));
   }, []);
 
   // Back to the grid. Both exits (the banner's Done and the "By picker" button)
@@ -253,6 +261,28 @@ export function FloorPage() {
     setAssignContext(null);
     setContextMode("pending");
     setMode("picker");
+  }, []);
+
+  // The banner's pending/current toggle moves the VIEW with the reading, by the
+  // same rule the picker card uses — otherwise the band would say "what he's
+  // holding" over a board showing bundles of unassigned bills.
+  const toggleContextMode = useCallback(() => {
+    setContextMode((m) => {
+      const next = m === "pending" ? "current" : "pending";
+      setMode(viewForContext(next));
+      return next;
+    });
+  }, []);
+
+  // The By-group CHIP. It does NOT clear the assign context — reversed from the
+  // first cut of this view. The precedent on this screen already settles it: the
+  // existing "pending" reading shows FLOOR-WIDE waiting bills while the banner
+  // names one picker. The view is not scoped to a person; the ACTION is, and the
+  // banner announces the action. Entering from the chip with nobody chosen is
+  // the same view with no banner and a select-only header button.
+  const openGroupMode = useCallback(() => {
+    setContextMode("pending");
+    setMode("group");
   }, []);
 
   // UNSCOPED on purpose — this only resolves already-SELECTED ids into rows for
@@ -318,15 +348,44 @@ export function FloorPage() {
   // Assignment REUSES the Picking endpoints unchanged. Assign/Reassign = put
   // every selected bill under the chosen picker: unassign any already-assigned
   // ones first (so they are back at pending_picking), then one assign batch.
-  const bulkAssign = async (pickerId: number) => {
-    if (selectedRows.length === 0) return;
-    const alreadyAssigned = selectedRows.filter((r) => r.isAssigned).map((r) => r.orderId);
+  //
+  // ⚠ `explicitIds` CLOSES A RACE, it is not a convenience. The By-group header
+  // button selects a group and assigns it in ONE press; `setSelection()` is
+  // asynchronous, so a handler that called it and then read `selectedIds` would
+  // post the PREVIOUS selection. The group passes its own ids straight down and
+  // this function never has to wait for state to commit. Omitted (the assign
+  // bar, the detail panel) it reads the live selection exactly as before.
+  const bulkAssign = async (pickerId: number, explicitIds?: number[]) => {
+    // Resolve against the UNSCOPED rows for the same reason onReassign does:
+    // "is this bill already assigned" is a property of the bill, not of the chip
+    // in view. A bill that vanished between render and click simply is not found
+    // and drops out — the server would have rejected it into `failed[]` anyway.
+    const targetRows = explicitIds
+      ? rows.filter((r) => explicitIds.includes(r.orderId))
+      : selectedRows;
+    if (targetRows.length === 0) return;
+    const targetIds = targetRows.map((r) => r.orderId);
+
+    const alreadyAssigned = targetRows.filter((r) => r.isAssigned).map((r) => r.orderId);
     for (const orderId of alreadyAssigned) {
       reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
     }
-    reportWrite("Assign", await postJson("/api/picking/assign", { orderIds: selectedIds, pickerId }));
+    // ONE call for the whole group — the existing batch endpoint, unchanged.
+    reportWrite("Assign", await postJson("/api/picking/assign", { orderIds: targetIds, pickerId }));
     clearSelection();
     await load();
+  };
+
+  // By-group one-press assign. Ticks the group (so the operator sees what went)
+  // and assigns it, passing the ids EXPLICITLY so the write cannot depend on
+  // that tick having landed. Nothing is hand-removed from the view afterwards:
+  // `load()` refetches and the bills leave the waiting set because they are no
+  // longer waiting, which is the honest reason. Failures surface through
+  // reportWrite — a non-empty `failed[]` raises a toast rather than reading as
+  // success (FLOOR §6b is the bug that rule came from).
+  const assignGroup = async (orderIds: number[], pickerId: number) => {
+    setSelection(new Set(orderIds));
+    await bulkAssign(pickerId, orderIds);
   };
   // (bulkUnassign was retired with the bulk-bar v2 rebuild — the bar keeps
   // reassign-to-picker via bulkAssign; per-bill Unassign stays in the panel ⋯.)
@@ -784,8 +843,12 @@ export function FloorPage() {
                 three visible while picker mode is active, so there is always a
                 way back out of it — otherwise All + picker would be a trap. */}
             {topTab === "floor" && (() => {
-              const showSlotModes = slotTab !== "all" || mode === "picker";
-              const modes = (["flat", "route", "picker"] as const).filter((m) => m === "picker" || showSlotModes);
+              // Both slot-blind views keep the whole toggle visible while they
+              // are active, so All + picker / All + group is never a trap.
+              const showSlotModes = slotTab !== "all" || mode === "picker" || mode === "group";
+              const modes = (["flat", "route", "picker", "group"] as const).filter(
+                (m) => m === "picker" || m === "group" || showSlotModes,
+              );
               return (
                 <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">
                   {modes.map((m) => (
@@ -795,11 +858,18 @@ export function FloorPage() {
                       // "By picker" IS the way back to the grid, so it routes
                       // through the one close handler rather than just setting
                       // mode — otherwise the context would survive underneath
-                      // and the banner would hang over the roster.
-                      onClick={() => (m === "picker" ? closeAssignContext() : setMode(m))}
+                      // and the banner would hang over the roster. "By group"
+                      // drops the context for the same reason (openGroupMode).
+                      onClick={() =>
+                        m === "picker"
+                          ? closeAssignContext()
+                          : m === "group"
+                            ? openGroupMode()
+                            : setMode(m)
+                      }
                       className={`px-[11px] text-[11px] ${mode === m ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`}
                     >
-                      {m === "flat" ? "Flat" : m === "route" ? "By route" : "By picker"}
+                      {m === "flat" ? "Flat" : m === "route" ? "By route" : m === "picker" ? "By picker" : "By group"}
                     </button>
                   ))}
                 </span>
@@ -818,7 +888,7 @@ export function FloorPage() {
               contextMode={contextMode}
               pendingCount={contextCounts.pending}
               currentCount={contextCounts.current}
-              onToggleMode={() => setContextMode((m) => (m === "pending" ? "current" : "pending"))}
+              onToggleMode={toggleContextMode}
               onCancel={closeAssignContext}
             />
           )}
@@ -841,8 +911,12 @@ export function FloorPage() {
                 onSlotTab={setSlotTab}
                 mode={mode}
                 assignContext={assignContext}
+                // Name, not just the id — the By-group header button says who it
+                // is assigning to, and floor-board has no roster of its own.
+                assignContextName={contextPickerName}
                 contextMode={contextMode}
                 onPickPicker={openAssignContext}
+                onAssignGroup={assignGroup}
                 histDate={histDate}
                 onEnterHistory={enterHistory}
                 onExitHistory={exitHistory}
