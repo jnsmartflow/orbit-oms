@@ -10,6 +10,9 @@ import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
+// The pick-bundling engine, shared with Floor's By-group view and used AS-IS.
+// Where the phone's shape differed, this caller adapted — the engine did not.
+import { buildPickGroups, buildOilGroups } from "@/lib/picking/grouping";
 import {
   FindingNote,
   FindingPopup,
@@ -261,6 +264,7 @@ function PickingCard({
   variant,
   nowTick = 0,
   selected = false,
+  stripe = null,
   onOpen,
   onToggleSelect,
   onLockTap,
@@ -269,6 +273,20 @@ function PickingCard({
   variant: PickingCardVariant;
   nowTick?: number;
   selected?: boolean;
+  /**
+   * Pick-bundling hint (2026-08-18) — a 4px full-height bar on the card's LEFT
+   * EDGE, inside its rounded corners. `"teal"` = SAME MATERIAL (Rule 1),
+   * `"amber"` = MOSTLY SAME (Rule 2), null/omitted = no bar.
+   *
+   * ⚠ OPTIONAL AND DEFAULTED, so every existing call site is byte-identical —
+   * this adds nothing to the card's layout, props-in-use, or render for any
+   * caller that does not pass it.
+   *
+   * It is a HINT, not a control: it carries no tap target and changes no
+   * behaviour. The supervisor still taps the card to select and uses the assign
+   * bar he already has.
+   */
+  stripe?: "teal" | "amber" | null;
   onOpen: () => void;
   onToggleSelect?: () => void;
   onLockTap?: () => void;
@@ -371,7 +389,7 @@ function PickingCard({
       )}
       <div
         className={
-          "rounded-[20px] overflow-hidden cursor-pointer border-[1.5px] " +
+          "relative rounded-[20px] overflow-hidden cursor-pointer border-[1.5px] " +
           (selected ? "bg-teal-50 border-teal-600 " : "bg-white border-[#eceef2] ") +
           (variant === "doneChecked" ? "opacity-75" : "")
         }
@@ -382,6 +400,26 @@ function PickingCard({
         // detail, unchanged.
         onClick={variant === "assign" ? () => onToggleSelect?.() : onOpen}
       >
+      {/* THE STRIPE. Absolutely positioned, so it takes NO part in layout —
+          nothing below it moves by a pixel, which is why the card's padding is
+          untouched. It overlays the leftmost 4px of the existing 16px (`px-4`)
+          left padding, i.e. it is absorbed by padding that was already there
+          rather than paid for with new space. `inset-y-0` makes it full-height
+          including the shelf; the card's own `overflow-hidden` clips it to the
+          20px corner radius, so it reads as part of the card, not a bar beside
+          it. `pointer-events-none` so it can never eat a tap meant for the card
+          body — this is a hint, and a hint must not be tappable.
+          ⚠ Only rendered when `stripe` is passed, so every other call site's
+          DOM is unchanged. */}
+      {stripe !== null && (
+        <span
+          aria-hidden="true"
+          className={
+            "absolute left-0 inset-y-0 w-[4px] pointer-events-none " +
+            (stripe === "teal" ? "bg-teal-500" : "bg-amber-400")
+          }
+        />
+      )}
       <div className={"flex items-start gap-3 " + (lead ? "pl-3.5 pr-4 pt-3.5 pb-3" : "px-4 pt-3.5 pb-3")}>
         {lead}
         <div className="flex-1 min-w-0">
@@ -479,6 +517,45 @@ function PickingCard({
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+// ── Pick-bundling headings (2026-08-18) ──────────────────────────────────
+//
+// One small grey caps line with a coloured dot, sitting above each bundle. The
+// dot is the ONLY colour, and it is the same colour as that bundle's card
+// stripe — so the eye joins heading to cards without a box, a border or a
+// background band, none of which this board uses anywhere else.
+//
+// THE WORDS ARE THE FLOOR'S WORDS, deliberately: SAME MATERIAL / MOSTLY SAME /
+// SINGLE PICKS. One supervisor moves between the desk screen and his phone
+// inside one shift; two vocabularies for the same two ideas is a defect, not a
+// detail. "· one picker" is the phone's own tail — the desk screen has an
+// assign bar in view that says it, the phone does not.
+//
+// ⚠ NOT ON THIS HEADING, all considered and rejected: a bill count (the cards
+// under it are countable and few), a "saves N trips" figure (Rule 2 has no such
+// number and showing one only for Rule 1 would make the two kinds read as
+// different sorts of thing), and any button — this is a hint, not a control.
+function BundleHeading({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "teal" | "amber" | "grey";
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-[7px] px-[2px]">
+      {tone !== "grey" && (
+        <span
+          aria-hidden="true"
+          className={
+            "w-[7px] h-[7px] rounded-full shrink-0 " + (tone === "teal" ? "bg-teal-500" : "bg-amber-400")
+          }
+        />
+      )}
+      {label}
     </div>
   );
 }
@@ -975,6 +1052,58 @@ export function PickingBoardMobile(): React.JSX.Element {
     () => filteredWaitingAll.filter((r) => r.zone === "due"),
     [filteredWaitingAll],
   );
+  // ── Pick bundling — ASSIGN TAB, ZONE 1 ONLY (2026-08-18) ─────────────────
+  //
+  // Runs over `filteredWaitingDue`, i.e. AFTER the type/route/search filters,
+  // for the same reason Floor's By-group view does: those narrow "which bills
+  // are we talking about", a fair question to ask of a bundle. Zone 2 is never
+  // fed in — an upcoming bill is not assignable, so bundling it would offer the
+  // supervisor work he is not allowed to hand out.
+  //
+  // ⚠️ ORDER OF PLAY, owned by the engine's contract: Rule 1 FIRST over the
+  // whole set, Rule 2 only over what Rule 1 left. A bill is never in both.
+  //
+  // ⚠ THE ENGINE IS USED AS-IS (lib/picking/grouping.ts, shared with Floor).
+  // Where the phone's shape differed, THE CALLER ADAPTED: the engine wants
+  // { orderId, obdNumber, skus }, so we build that from the payload's
+  // `waitingSkus` sibling here rather than teaching the engine about
+  // PickingQueueRow. Both boards therefore hand it the identical shape and can
+  // never disagree about a bundle.
+  //
+  // With PICKING_GROUPING_ENABLED false the payload's two arrays are empty, so
+  // `skusById` is empty, every candidate has zero SKUs, the engine drops them
+  // all, and this yields no groups and an `ungrouped` that is the whole list —
+  // which renders as today's flat list.
+  const bundles = useMemo(() => {
+    const skusById = new Map((data?.waitingSkus ?? []).map((w) => [w.orderId, w.skus] as const));
+    const oil = new Set<string>();
+    for (const entry of data?.oilSkus ?? []) {
+      for (const code of entry.skus) oil.add(code);
+    }
+    const rowById = new Map(filteredWaitingDue.map((r) => [r.orderId, r] as const));
+    const candidates = filteredWaitingDue.map((r) => ({
+      orderId: r.orderId,
+      obdNumber: r.obdNumber,
+      skus: skusById.get(r.orderId) ?? [],
+    }));
+
+    const one = buildPickGroups(candidates);
+    const leftover = new Set(one.ungrouped);
+    const two = buildOilGroups(candidates.filter((c) => leftover.has(c.orderId)), oil);
+
+    const rowsFor = (ids: { orderId: number }[]) =>
+      ids.map((m) => rowById.get(m.orderId)).filter((r): r is PickingQueueRow => r !== undefined);
+
+    return {
+      same: one.groups.map((g) => rowsFor([g.main, ...g.riders])).filter((rs) => rs.length > 0),
+      mostly: two.groups.map((g) => ({
+        rows: rowsFor(g.members),
+        hasNonOil: g.hasNonOil,
+      })).filter((g) => g.rows.length > 0),
+      singles: rowsFor(two.ungrouped.map((id) => ({ orderId: id }))),
+    };
+  }, [data?.waitingSkus, data?.oilSkus, filteredWaitingDue]);
+
   const filteredWaitingUpcoming: PickingQueueRow[] = useMemo(
     () => filteredWaitingAll.filter((r) => r.zone === "upcoming"),
     [filteredWaitingAll],
@@ -1785,7 +1914,14 @@ export function PickingBoardMobile(): React.JSX.Element {
                 <p className="text-[12.5px] text-gray-400 text-center py-6">
                   Nothing to assign right now.
                 </p>
-              ) : (
+              ) : bundles.same.length === 0 && bundles.mostly.length === 0 ? (
+                /* NO BUNDLES TODAY — the flat list, exactly as it has always
+                   been. No "SINGLE PICKS" heading over the whole screen: with
+                   nothing to distinguish them FROM, it would be chrome
+                   labelling the obvious, the same call this tab already makes
+                   for its "Due now" header above. This is ALSO the branch
+                   PICKING_GROUPING_ENABLED=false always lands in, which is what
+                   makes the flag-off board byte-identical to today. */
                 filteredWaitingDue.map((row) => (
                   <PickingCard
                     key={row.orderId}
@@ -1796,6 +1932,76 @@ export function PickingBoardMobile(): React.JSX.Element {
                     onToggleSelect={() => toggleSelect(row.orderId)}
                   />
                 ))
+              ) : (
+                /* BUNDLES PRESENT. Order is locked: SAME MATERIAL, then MOSTLY
+                   SAME, then SINGLE PICKS. Same-material leads because it is
+                   unconditionally the better deal — the supervisor should spend
+                   the ones that cost his picker nothing before he weighs one
+                   that costs him steps. Inside each kind the engine's own order
+                   is kept untouched. */
+                <>
+                  {bundles.same.map((rows) => (
+                    <div key={`same-${rows[0].orderId}`} className="mb-[6px]">
+                      <BundleHeading label="Same material · one picker" tone="teal" />
+                      {rows.map((row) => (
+                        <PickingCard
+                          key={row.orderId}
+                          row={row}
+                          variant="assign"
+                          stripe="teal"
+                          selected={selected.has(row.orderId)}
+                          onOpen={() => openDetail(row.orderId, "waiting")}
+                          onToggleSelect={() => toggleSelect(row.orderId)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+
+                  {bundles.mostly.map((g) => (
+                    <div key={`mostly-${g.rows[0].orderId}`} className="mb-[6px]">
+                      <BundleHeading label="Mostly same · one picker" tone="amber" />
+                      {/* The honest line. A MOSTLY SAME bundle earns its place
+                          on the premise that the material sits in one end of
+                          the depot — and sometimes part of it does not. Saying
+                          so is the point: he decides, and he can only decide if
+                          he is told. Grey, no red, no badge, no block. */}
+                      {g.hasNonOil && (
+                        <div className="text-[11px] leading-relaxed text-gray-400 mb-[7px] px-[2px]">
+                          Some items here are outside the oil paint area
+                        </div>
+                      )}
+                      {g.rows.map((row) => (
+                        <PickingCard
+                          key={row.orderId}
+                          row={row}
+                          variant="assign"
+                          stripe="amber"
+                          selected={selected.has(row.orderId)}
+                          onOpen={() => openDetail(row.orderId, "waiting")}
+                          onToggleSelect={() => toggleSelect(row.orderId)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+
+                  {bundles.singles.length > 0 && (
+                    <div className="mb-[6px]">
+                      {/* No dot: these are not a bundle, and a coloured dot
+                          would imply they were a third kind. */}
+                      <BundleHeading label="Single picks" tone="grey" />
+                      {bundles.singles.map((row) => (
+                        <PickingCard
+                          key={row.orderId}
+                          row={row}
+                          variant="assign"
+                          selected={selected.has(row.orderId)}
+                          onOpen={() => openDetail(row.orderId, "waiting")}
+                          onToggleSelect={() => toggleSelect(row.orderId)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* ── ZONE 2 · UPCOMING (LOCKED) ──────────────────────────────

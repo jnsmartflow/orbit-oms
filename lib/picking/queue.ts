@@ -14,6 +14,9 @@ import {
 } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
+// The oil-paint rule lives in the ENGINE, not here and not in the database.
+// Same import Floor makes (lib/floor/queries.ts) — one definition, two callers.
+import { buildOilSkuSet } from "./grouping";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -155,11 +158,57 @@ export interface PickingQueueOptions {
 // (it excludes future-dated rows, which is NOT obvious) and because
 // CLAUDE_NOTIFICATIONS.md §7 points a future supervisor-reminder timer at it.
 // Derive it from `rows`; do not modify buildPickingWhere() to serve a count.
+// Pick bundling on the SUPERVISOR'S ASSIGN TAB — the kill switch.
+//
+// Gates BOTH rules here, not just Rule 2: the whole grouping display is new on
+// the phone, so `false` must mean the board it has always been, not a board
+// missing half a feature it never had.
+//
+// ⚠ DELIBERATELY SEPARATE FROM FLOOR'S `RULE2_ENABLED` (lib/floor/queries.ts).
+// The two surfaces share the ENGINE (lib/picking/grouping.ts) but not their
+// rollout: the phone is used by three supervisors on the floor and Floor by the
+// operations desk, and either has to be switchable off alone without taking the
+// other with it. One shared flag would make the first bad reaction on either
+// screen cost both.
+//
+// FALSE means: neither query below is issued, both sibling arrays ship EMPTY,
+// and the client renders exactly today's flat list — no stripe, no heading, no
+// SINGLE PICKS. The FIELDS are always present, so no caller's type moves with
+// the flag.
+const PICKING_GROUPING_ENABLED = true;
+
+/** One bill's distinct SAP codes, as they ride the queue payload.
+ *
+ *  ⚠ `import_raw_line_items.skuCodeRaw` values — the SAP code, the stable
+ *  natural key. NEVER a `skuId` and never anything off old `sku_master`
+ *  (CORE §13 id-space landmine).
+ *
+ *  Used for BOTH sibling arrays below: `waitingSkus` carries every distinct
+ *  code on the bill, `oilSkus` the subset that resolves to an oil-paint family.
+ *  One shape rather than two named ones because the field name already carries
+ *  the meaning and a second identical interface is a thing to keep in step for
+ *  no gain. */
+export interface PickingBillSkus {
+  orderId: number;
+  skus: string[];
+}
+
 export interface PickingQueueResult {
   // 'single': the date the payload is fenced to. 'openPending': the IST day
   // used as the zone/ageDays anchor (rows themselves span many dates).
   date: string;
   rows: PickingQueueRow[];
+  // ── Pick-bundling siblings (2026-08-18) ─────────────────────────────────
+  // SIBLINGS of `rows`, deliberately not fields on PickingQueueRow: only a
+  // WAITING due-zone row can be bundled, so hanging these off every row would
+  // ship an empty array on every Picking/Done/upcoming row for no reader —
+  // exactly the shape Floor's removed `totalArticle` field had.
+  //
+  // EMPTY ARRAYS when PICKING_GROUPING_ENABLED is false, which yields no groups
+  // by construction (the engine drops zero-SKU candidates, and no bill reaches a
+  // 50% oil share against an empty oil set).
+  waitingSkus: PickingBillSkus[];
+  oilSkus: PickingBillSkus[];
 }
 
 // Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
@@ -654,8 +703,97 @@ export async function getPickingQueue(
 
   const sortedRows = sortPickingQueue(rows);
 
+  // ── Pick-bundling raw material (2026-08-18) ───────────────────────────────
+  //
+  // WAITING DUE-ZONE ROWS ONLY — the exact predicate this file's own §153
+  // comment preserved: !isAssigned && !isDone && !isChecked && zone !== 'upcoming'.
+  // Only such a row can be handed to a picker as part of a bundle; fetching for
+  // the Picking/Done tabs or Zone 2 would be a payload with no reader.
+  //
+  // ⚠ WHY THESE ARE TWO NEW QUERIES AND NOT THE FAMILY ONES ABOVE. The family
+  // aggregation already reads both tables — but its line query filters
+  // `rowStatus: 'valid'`, and Floor's skusByObd deliberately does NOT ("a
+  // parse-rejected row is still a tin the picker will be holding"). Reusing it
+  // would give the phone a DIFFERENT SKU set than Floor for any OBD carrying a
+  // parse-rejected line, so the same two bills could bundle on one screen and
+  // not the other — one rule, two answers, which is the defect that moving the
+  // engine into lib/picking existed to prevent. Its `rowStatus` filter is also
+  // load-bearing for the card's family chips, so it cannot simply be relaxed.
+  // The cost is two extra SELECTs on one tab's rows; the alternative is a
+  // silent desync between two screens one supervisor uses in the same shift.
+  //
+  // Sequential awaits, never prisma.$transaction (CORE §3). SELECT-only — no
+  // `orders.update` anywhere near this (a second write would fire a false
+  // "changed" on every board, the marker landmine).
+  //
+  // ⚠ Matched on `sku_master_v2.material` === `import_raw_line_items.skuCodeRaw`
+  // ONLY — never `skuId`, never old `sku_master` (CORE §13: the two catalog
+  // tables share no id space, so an id join would bundle unrelated products).
+  let waitingSkus: PickingBillSkus[] = [];
+  let oilSkus: PickingBillSkus[] = [];
+
+  if (PICKING_GROUPING_ENABLED) {
+    const bundleRows = sortedRows.filter(
+      (r) => !r.isAssigned && !r.isDone && !r.isChecked && r.zone !== "upcoming",
+    );
+    const bundleObds = Array.from(new Set(bundleRows.map((r) => r.obdNumber)));
+
+    // 1. Distinct active codes per OBD. No `rowStatus` filter — see above.
+    const bundleLines =
+      bundleObds.length > 0
+        ? await prisma.import_raw_line_items.findMany({
+            where: { obdNumber: { in: bundleObds }, lineStatus: "active" },
+            select: { obdNumber: true, skuCodeRaw: true },
+          })
+        : [];
+
+    const setByObd = new Map<string, Set<string>>();
+    for (const l of bundleLines) {
+      if (!l.skuCodeRaw) continue;
+      let set = setByObd.get(l.obdNumber);
+      if (!set) {
+        set = new Set<string>();
+        setByObd.set(l.obdNumber, set);
+      }
+      set.add(l.skuCodeRaw);
+    }
+
+    // Emitted in `sortedRows` order (spine-sorted, obdNumber tie-broken), and
+    // each list distinct + locale-"en" sorted — so the payload is byte-stable
+    // between loads, which is what the engine's determinism contract rests on.
+    // A bill with no active lines gets an EMPTY array, never a missing entry:
+    // the engine drops those candidates explicitly and can only do so if it is
+    // told they exist.
+    waitingSkus = bundleRows.map((r) => ({
+      orderId: r.orderId,
+      skus: Array.from(setByObd.get(r.obdNumber) ?? []).sort((a, b) => a.localeCompare(b, "en")),
+    }));
+
+    // 2. Catalog rows for those codes, for the oil-paint classification. An
+    //    UNMATCHED code simply never comes back, so it can never be classified
+    //    oil — unknown stays OUTSIDE, the safe direction.
+    const bundleCodes = new Set<string>();
+    for (const entry of waitingSkus) {
+      for (const code of entry.skus) bundleCodes.add(code);
+    }
+
+    if (bundleCodes.size > 0) {
+      const catalog = await prisma.sku_master_v2.findMany({
+        where: { material: { in: Array.from(bundleCodes) } },
+        select: { material: true, category: true, paintType: true },
+      });
+      const oil = buildOilSkuSet(catalog);
+      oilSkus = waitingSkus.map((entry) => ({
+        orderId: entry.orderId,
+        skus: entry.skus.filter((code) => oil.has(code)),
+      }));
+    }
+  }
+
   return {
     date: isoDate,
     rows: sortedRows,
+    waitingSkus,
+    oilSkus,
   };
 }
