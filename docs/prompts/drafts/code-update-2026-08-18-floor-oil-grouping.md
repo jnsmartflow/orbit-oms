@@ -315,3 +315,91 @@ that owns that file can fold it in.
 ---
 
 *Draft · 2026-08-18 · commit `3fadb0c7` · Floor · OrbitOMS*
+
+---
+
+## 11. The engine moved to `lib/picking/` — commit `3fdd0e13`
+
+Appended after the fact, same day. **A move, not a rewrite: zero behaviour change.**
+
+```
+lib/floor/grouping.ts  ->  lib/picking/grouping.ts        (git mv — history follows)
+PickGroupCandidate · PickGroup · OilGroup  ->  lib/picking/types.ts
+```
+
+`git mv`, never copy-and-delete, so `git log --follow lib/picking/grouping.ts` still
+reaches `3fadb0c7` and `3e989cb5` (CORE §3).
+
+### Why Picking owns it
+
+The rules answer a **picking** question — *can one man fetch these bills together?* — and
+the Picking phone board is about to ask it as well as Floor's By-group view. Two copies of
+a rule drift, and this repo has **ONE OWNER PER BEHAVIOUR**. It also already fixed the
+direction for exactly this case: **Picking owns the shared picking logic, Floor imports
+it.** `lib/floor/sort.ts` composes `FLOOR_SPINE` out of `lib/picking/sort.ts`'s rule
+objects and never copies one. **Being Floor's first consumer never made it Floor's**, any
+more than `sortPickingQueue` belongs to Floor.
+
+Consumers import from `@/lib/picking/*` **directly — no re-export shim through
+`lib/floor/types.ts`.** A shim would hide the ownership at exactly the call sites that need
+to see it, and `lib/floor/sort.ts` already sets the no-shim precedent.
+
+### What moved, what stayed, and the line between them
+
+| Moved to `lib/picking/` | Stayed in `lib/floor/` |
+|---|---|
+| The engine: `buildPickGroups`, `buildOilGroups`, `buildOilSkuSet`, `isOilPaint` | `RULE2_ENABLED` (`queries.ts`) |
+| `OIL_PAINT_RULES` — the oil-paint category constant | `FloorBoardResult`, `FloorWaitingSkus`, `FloorOilSkus`, the `waitingSkus` / `oilSkus` keys |
+| `PickGroupCandidate`, `PickGroup`, `OilGroup` — the engine's own shapes | `oilSkusByOrder()` — Floor's fetch; `scopeBoard`'s narrowing |
+
+**The line: the pure rule and its own shapes move; the board's wire format stays.**
+`FloorBoardResult` and friends describe what `/api/floor/board` ships to Floor's client —
+Floor's business, and no engine's. The engine never sees them.
+
+- **`RULE2_ENABLED` stayed** because it gates Floor's catalog **fetch**, not a rule, and a
+  second surface will want its own rollout switch rather than inheriting Floor's.
+- **`OIL_PAINT_RULES` moved** because *which products count as oil paint* **is** the rule.
+  A caller able to redefine it would be a second copy under another name.
+- **No genuinely ambiguous type.** The closest call was `FloorOilSkus` — it carries oil data
+  — but it is keyed by `orderId` and shaped for the payload, so it stayed.
+
+### Proof of no behaviour change
+
+`scripts/_rule2-preview.ts` gained a `--json` dump of the **complete** 30-day engine output
+(both rules, all groups, all days). It is a pure function of the same query, so it is
+deterministic by construction — unlike the script's live-board section, which reads whatever
+is waiting at that moment and would produce a false difference between two runs.
+
+```
+BEFORE.json  389,612 bytes  sha256 b7dac794…fd4a9d
+AFTER.json   389,612 bytes  sha256 b7dac794…fd4a9d      -> BYTE-IDENTICAL
+```
+
+The full text output also matches line for line — every summary figure, all six asserts, and
+the two named bills — the sole difference being the output path passed on the command line.
+`npx tsc --noEmit` exit 0 (the check that no import was missed). A filtered diff confirms the
+only non-comment edits across the change are **import paths** and the **three interface
+bodies relocated verbatim**.
+
+### Corrections owed to canon — ADDS TO THE TABLE IN THE PREVIOUS SECTION
+
+Still nothing written into any canonical file.
+
+| File | What needs saying at the next pass |
+|---|---|
+| **`CLAUDE_FLOOR.md`** — the ownership table near the top | **Row change: Floor no longer owns the grouping rules.** They belong in the right-hand "does NOT own — cross-reference only" column, pointing at `CLAUDE_PICKING.md` — **the same relationship Floor already has with `lib/picking/sort.ts`**, which sits in that column one row above. Floor owns the By-group VIEW, the payload, the flag and the labels; it is a CALLER of the rules. |
+| **`CLAUDE_PICKING.md` §8** key-files table | **New row:** `lib/picking/grouping.ts` — the two pick-bundling rules (Rule 1 exact, Rule 2 family), pure, no prisma/clock/IO. First consumer is Floor's By-group view; the phone board is next. |
+| **`CLAUDE_PICKING.md` §8** existing row | `lib/picking/types.ts` now also carries `PickGroupCandidate` / `PickGroup` / `OilGroup` |
+| **`CLAUDE_PICKING.md`** | Worth a short section of its own for the rules themselves — §2 and §3 above are the text to lift, since the shared-SKU mistake is the part a future reader most needs |
+
+### What this changes about §10's "Next"
+
+§10 said the engine *must* move out of `lib/floor/` when the phone board is built, following
+the `use-bill-pager.ts` precedent. **That move has now happened ahead of the board**, which is
+the better order: the phone board can import it on day one instead of the move being bundled
+into a feature commit where a behaviour change could hide inside a refactor. The remaining §10
+items are unaffected.
+
+---
+
+*Appended 2026-08-18 · move commit `3fdd0e13`*
