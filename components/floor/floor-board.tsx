@@ -18,7 +18,7 @@ import { SlotBand } from "./slot-band";
 import { RouteRow } from "./route-row";
 import { GroupRow } from "./group-row";
 import { PickerCard, pickerCardStatus } from "./picker-card";
-import { buildPickGroups, buildOilGroups } from "@/lib/floor/grouping";
+import { buildPickGroups, buildOilGroups } from "@/lib/picking/grouping";
 import { formatArticleBreakdown } from "@/lib/floor/format";
 import { CarryoverBanner } from "./carryover-banner";
 import { UpcomingStrip } from "./upcoming-strip";
@@ -289,7 +289,7 @@ export function FloorBoard({
   // list the board payload already carries (floor.waitingSkus, built by
   // getFloorBoard from the same predicate). A waiting row with no payload entry
   // gets an empty array and the engine drops it to `ungrouped` — the zero-SKU
-  // guard in lib/floor/grouping.ts, which is load-bearing: the empty set is a
+  // guard in lib/picking/grouping.ts, which is load-bearing: the empty set is a
   // subset of everything and such a bill would otherwise ride free with anyone.
   const groupData = (() => {
     if (mode !== "group") return null;

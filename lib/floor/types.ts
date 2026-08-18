@@ -142,7 +142,7 @@ export interface FloorBoardResult {
 }
 
 // ── By-group (pick bundling) ─────────────────────────────────────────────────
-// Nothing here is stored. The engine (lib/floor/grouping.ts) is recomputed on
+// Nothing here is stored. The engine (lib/picking/grouping.ts) is recomputed on
 // every board load; there is no table and no column behind any of it.
 
 /** One waiting bill's distinct SAP codes, as they ride /api/floor/board.
@@ -165,7 +165,7 @@ export interface FloorWaitingSkus {
 
 /** One waiting bill's OIL-PAINT subset — the same codes as its FloorWaitingSkus
  *  entry, filtered to those that resolve to a 10K-warehouse family in
- *  `sku_master_v2` (lib/floor/grouping.ts owns the rule: GLOSS · PROMISE ENAMEL
+ *  `sku_master_v2` (lib/picking/grouping.ts owns the rule: GLOSS · PROMISE ENAMEL
  *  · SATIN+oil · PRIMER+oil).
  *
  *  ⚠ Resolved on `sku_master_v2.material` === `import_raw_line_items.skuCodeRaw`
@@ -182,82 +182,6 @@ export interface FloorWaitingSkus {
 export interface FloorOilSkus {
   orderId: number;
   skus: string[];
-}
-
-/** One Rule 2 bundle: 2-4 bills that all live in the oil-paint end of the
- *  warehouse. **There is NO main bill and there are no riders — every member is
- *  a peer.**
- *
- *  ⚠ THIS SHAPE CHANGED ON 2026-08-18 AND THE OLD FIELDS ARE GONE ON PURPOSE.
- *  It first carried `main` / `riders` / `savedTrips` / `addedSteps`, because
- *  Rule 2 was first specified as "each rider shares ≥1 SKU with the main". That
- *  condition was Rule 1's test wearing Rule 2's name: Rule 1 saves a repeated
- *  SHELF, so a shared code is exactly its unit of saving; Rule 2 saves a
- *  repeated JOURNEY to a family of racks, and a journey is saved whether or not
- *  the two bills want the same tin. Live proof (18 Aug): 9108973203 (Gloss Sky
- *  Blue 1L + Gloss Bus Green 1L) and 9108973205 (Gloss Intermediate Base 0.9L +
- *  Gloss Dark Brown 500ML) — both 100% Gloss, both 2 items, plainly one walk to
- *  the Gloss racks, and the shared-SKU rule refused them because no code
- *  matched. `savedTrips` and `addedSteps` were arithmetic about riders relative
- *  to a main; with no main they measure nothing, so they were removed rather
- *  than redefined into something plausible-looking.
- *
- *  ⚠ `PickGroup` below is UNRELATED and unchanged — Rule 1 still has a main and
- *  riders, because for Rule 1 that is a true description. */
-export interface OilGroup {
-  /** The FIRST member's orderId. Not a "main" — purely a stable identity for
-   *  React keys and the board's expand-persistence set. Stable because the
-   *  member order is a total order (see buildOilGroups). */
-  id: number;
-  /** 2-4 bills, in the engine's packing order. Peers. */
-  members: PickGroupCandidate[];
-  /** Distinct SKUs across the whole bundle. Capped at 10 by the engine. */
-  totalSkus: number;
-  /** True when any member carries a SKU outside the oil-paint set. The UI says
-   *  so quietly; the engine only reports it. */
-  hasNonOil: boolean;
-  /** True when EVERY member is 100% oil paint. False when at least one member
-   *  sits between 50% and 99% — still qualifying, but the group is no longer a
-   *  clean single-area walk.
-   *
-   *  ⚠ DIAGNOSTIC ONLY — IT DRIVES NO COPY. It briefly split the group label into
-   *  "ALL OIL PAINT" / "MOSTLY OIL PAINT"; that split was dropped on 2026-08-18
-   *  because a group kind needs ONE name (see the label note in group-row.tsx).
-   *  Its only reader today is scripts/_rule2-preview.ts, which reports the
-   *  53/47 split as a measurement. Do NOT resurrect a label from it — if a
-   *  purity distinction is ever wanted on screen it is a fresh design decision,
-   *  not a field waiting to be re-used.
-   *
-   *  Kept rather than deleted, unlike the `totalArticle` precedent on
-   *  FloorBoardRow above: that was a PAYLOAD field crossing the wire with no
-   *  reader, this is a pure-function return value computed client-side from data
-   *  already in hand, so it costs nothing to carry. */
-  allPure: boolean;
-}
-
-/** One candidate bill as the grouping engine sees it. The engine knows nothing
- *  else about a bill — no route, no slot, no litres, no clock. */
-export interface PickGroupCandidate {
-  orderId: number;
-  obdNumber: string;
-  /** Distinct `skuCodeRaw`. The engine does not re-dedupe; the producer must. */
-  skus: string[];
-}
-
-/** One bundle: a main bill plus 1-3 riders, each of which adds ZERO new SKUs to
- *  the main. Max 4 bills, no exceptions.
- *
- *  `totalVolume` is deliberately absent — the engine never sees litres. The
- *  caller sums them from its own board rows, which is where volume lives. */
-export interface PickGroup {
-  /** Derived from the main bill: `id === main.orderId`. Stable across loads for
-   *  as long as the same bill leads the same bundle. */
-  id: number;
-  main: PickGroupCandidate;
-  riders: PickGroupCandidate[];
-  /** Sum of the riders' distinct-SKU counts — every rider SKU is a shelf the
-   *  picker was walking to for the main bill anyway. */
-  savedTrips: number;
 }
 
 // Hold tab row (design §8).

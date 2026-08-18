@@ -33,7 +33,7 @@ import { suggestSlot } from "./suggest";
 // Rule 2's oil-paint definition lives in the ENGINE, not here and not in the
 // database — grouping.ts is pure (no prisma, no clock), so importing it into a
 // server module is one-directional and safe.
-import { buildOilSkuSet } from "./grouping";
+import { buildOilSkuSet } from "@/lib/picking/grouping";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -93,7 +93,7 @@ const RAIL_SUGGESTIONS_ENABLED = true;
 //
 // ⚠ The reason a kill switch is warranted here and not for Rule 1: Rule 2's
 // bundles are deterministic per load but NOT stable across loads — the full
-// argument is above buildOilGroups in lib/floor/grouping.ts. Read it before
+// argument is above buildOilGroups in lib/picking/grouping.ts. Read it before
 // deciding this flag's fate.
 const RULE2_ENABLED = true;
 
@@ -226,7 +226,7 @@ async function billToByObd(obdNumbers: string[]): Promise<Map<string, string | n
  *  parse-rejected row is still a tin the picker will be holding.
  *
  *  Each list is de-duplicated and sorted (locale "en") so the payload is
- *  byte-stable between loads — lib/floor/grouping.ts is deterministic by
+ *  byte-stable between loads — lib/picking/grouping.ts is deterministic by
  *  contract and cannot be if its input reshuffles. Sequential await, never
  *  $transaction (CORE §3); SELECT-only, no `orders.update` anywhere near it
  *  (FLOOR §10 — the live marker keys on MAX(orders.updatedAt)). */
@@ -707,7 +707,7 @@ export async function getFloorBoard(
   const waitingSkuMap = await skusByObd(waitingRows.map((r) => r.obdNumber));
   // Emitted in `rows` order, which is FLOOR_SPINE-sorted and obdNumber-tie-
   // broken above — so this array is byte-stable across loads, which is what
-  // lib/floor/grouping.ts's determinism contract rests on. A bill with no
+  // lib/picking/grouping.ts's determinism contract rests on. A bill with no
   // active lines gets an EMPTY array, never a missing entry: grouping.ts drops
   // those candidates explicitly (the empty set is a subset of everything), and
   // it can only do that if it is told they exist.

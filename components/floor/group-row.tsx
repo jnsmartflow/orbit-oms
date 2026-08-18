@@ -1,7 +1,7 @@
 "use client";
 
 // Floor Control — one By-group bundle, in either of the TWO kinds the engine
-// produces. The rule and the arithmetic live in lib/floor/grouping.ts; this file
+// produces. The rule and the arithmetic live in lib/picking/grouping.ts; this file
 // only renders the answer and never re-decides anything.
 //
 //   variant="free"  Rule 1 (buildPickGroups) — a MAIN bill plus riders that add
@@ -45,7 +45,11 @@ import { FloorTable } from "./floor-table";
 import { sumLitres } from "./status-pill";
 import type { FloorTableVariant } from "./floor-table";
 import type { FloorSelection } from "@/lib/floor/selection";
-import type { FloorBoardRow, OilGroup, PickGroup } from "@/lib/floor/types";
+import type { FloorBoardRow } from "@/lib/floor/types";
+// The engine's own shapes are owned by Picking (lib/picking/types.ts) and
+// imported directly, never re-exported through lib/floor — the same shape
+// lib/floor/sort.ts already has with @/lib/picking/sort.
+import type { OilGroup, PickGroup } from "@/lib/picking/types";
 
 // Chip tokens. No new hues: grey is the Waiting status-pill's exact pair
 // (status-pill.tsx), teal is the screen's existing teal family — the same one

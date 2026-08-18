@@ -1,9 +1,25 @@
-// Floor Control — the By-group pick-bundling engine.
+// Picking — the pick-bundling engine. Two rules, both pure.
+//
+// ⚠ MOVED HERE FROM lib/floor/grouping.ts on 2026-08-18 (`git mv`, so
+// `git log --follow` keeps its history). ZERO behaviour change in that move —
+// not a rule, not a threshold, not a label. Only the address changed.
+//
+// WHY PICKING OWNS THIS. The rules answer a PICKING question — "can one man
+// fetch these bills together?" — and the Picking phone board is about to ask it
+// as well as Floor's By-group view. Two copies of a rule drift; this repo has
+// ONE OWNER PER BEHAVIOUR, and it already fixed the direction for exactly this
+// case: Picking owns the shared picking logic, Floor imports it. lib/picking/
+// sort.ts is the precedent — lib/floor/sort.ts composes FLOOR_SPINE out of its
+// rule objects and never copies one. Its FIRST consumer being Floor does not
+// make it Floor's, any more than sortPickingQueue belongs to Floor.
+//
+// OWNED BY `docs/CLAUDE_PICKING.md`. Floor is a CALLER (CLAUDE_FLOOR.md's
+// ownership table — "Floor Control reuses Picking as a CALLER").
 //
 // PURE. No Prisma, no fetch, no Date.now(), no clock of any kind, no I/O.
 // Everything it needs arrives in `candidates`. Nothing it produces is stored:
 // there is no table, no column, no cache — the board recomputes this on every
-// load (CLAUDE_FLOOR.md §3's feeds are the only reads involved).
+// load (CLAUDE_FLOOR.md §3's feeds are the only reads involved on Floor's side).
 //
 // THE RULE, locked from a 60-day data study. It is deliberately small:
 //   - Bills are compared on `skuCodeRaw` ONLY — the SAP code, the stable
@@ -70,7 +86,8 @@ function addsNothingNew(skus: string[], mainSkus: Set<string>): boolean {
  *
  * `candidates[].skus` must already be distinct; this function does not
  * re-dedupe, and a duplicated code would inflate `savedTrips`. The producer
- * (getFloorBoard's `waitingSkus`, lib/floor/queries.ts) guarantees it.
+ * (getFloorBoard's `waitingSkus`, lib/floor/queries.ts) guarantees it — each
+ * caller is responsible for its own producer.
  */
 export function buildPickGroups(candidates: PickGroupCandidate[]): {
   groups: PickGroup[];
@@ -149,7 +166,11 @@ export function buildPickGroups(candidates: PickGroupCandidate[]): {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // RULE 2 — the oil-paint (10K warehouse) bundler. A TRIAL, flag-gated at
-// RULE2_ENABLED (lib/floor/queries.ts). It lives ALONGSIDE Rule 1 and never
+// each CALLER's own flag — Floor's is RULE2_ENABLED in lib/floor/queries.ts,
+// which gates Floor's catalog fetch and therefore Floor's groups. The flag
+// deliberately did NOT move with the engine: it gates a FETCH, not a rule, and a
+// second surface will want its own rollout switch rather than sharing Floor's.
+// Rule 2 lives ALONGSIDE Rule 1 and never
 // inside it: buildPickGroups above is untouched and its output is unchanged
 // whether this half runs or not.
 //
