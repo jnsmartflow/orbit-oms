@@ -30,6 +30,10 @@ import {
   PICK_CHECKED,
 } from "@/lib/workflow-stages";
 import { suggestSlot } from "./suggest";
+// Rule 2's oil-paint definition lives in the ENGINE, not here and not in the
+// database — grouping.ts is pure (no prisma, no clock), so importing it into a
+// server module is one-directional and safe.
+import { buildOilSkuSet } from "./grouping";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -40,6 +44,7 @@ import type {
   FloorCancelledRow,
   FloorPicker,
   FloorWaitingSkus,
+  FloorOilSkus,
   TintState,
   TintStage,
   SlotSuggestion,
@@ -71,6 +76,26 @@ const RAIL_STAGES: string[] = STAGE_LADDER
 // The constant stays as the single kill switch: flip to `false` and every card
 // goes back to suggestion=null, no other edit needed.
 const RAIL_SUGGESTIONS_ENABLED = true;
+
+// Rule 2 — the oil-paint (10K warehouse) bundler, a TRIAL. Same shape and same
+// role as RAIL_SUGGESTIONS_ENABLED above: the single kill switch.
+//
+// FALSE REMOVES RULE 2 COMPLETELY. No catalog fetch happens (the extra await
+// below is inside the branch, so the flag costs a query, not just an if), and
+// `oilSkus` ships as an EMPTY ARRAY — which yields zero groups from
+// buildOilGroups by construction, since no bill can reach a 50% oil share
+// against an empty set. The FIELD still exists on FloorBoardResult either way,
+// so no caller's type changes with the flag and no branch is needed downstream.
+//
+// Rule 1 (buildPickGroups) is untouched by this in both directions: it never
+// sees the oil data, runs FIRST over the whole waiting pool, and always wins a
+// contested bill. Flipping this line cannot change a single Rule 1 group.
+//
+// ⚠ The reason a kill switch is warranted here and not for Rule 1: Rule 2's
+// bundles are deterministic per load but NOT stable across loads — the full
+// argument is above buildOilGroups in lib/floor/grouping.ts. Read it before
+// deciding this flag's fate.
+const RULE2_ENABLED = true;
 
 // Shared dealer projection — route/area/delivery-type/key-customer all come
 // from the effective dealer's AREA (design §D3 / matches lib/picking/queue.ts).
@@ -224,6 +249,48 @@ async function skusByObd(obdNumbers: string[]): Promise<Map<string, string[]>> {
     map.set(obd, Array.from(set).sort((a, b) => a.localeCompare(b, "en")));
   }
   return map;
+}
+
+/** Rule 2's raw material — each waiting bill's OIL-PAINT subset.
+ *
+ *  ONE extra sequential await (never `prisma.$transaction`, CORE §3) against
+ *  `sku_master_v2`, keyed on `material IN (the codes skusByObd already
+ *  returned)`. SELECT-only; no `orders.update` anywhere near it (FLOOR §10 —
+ *  the live marker keys on MAX(orders.updatedAt), so a second write would fire
+ *  a false "changed" on every board). It adds no term to `floorLiveBaseWhere`
+ *  and nothing to `getFloorLiveMarkerWhere`: like `waitingSkus`, this is a
+ *  post-fetch enrichment of rows the board predicate already returned, so the
+ *  board and the marker stay on the ONE shared predicate (FLOOR §3/§5).
+ *
+ *  ⚠ MATCHED ON `material` === `skuCodeRaw` ONLY — never `skuId`, never old
+ *  `sku_master` (CORE §13: the two catalog tables assign different ids to the
+ *  same code, zero overlap, so an id join would put unrelated products in the
+ *  same warehouse area with total confidence).
+ *
+ *  ⚠ An unmatched code simply never appears in the result set, so it can never
+ *  be classified oil — unknown stays OUTSIDE, which is the safe direction and
+ *  the same one the zero-SKU guard takes. ~24% of live codes are uncatalogued.
+ *
+ *  Order mirrors `waiting` exactly (which is the board's row order), keeping the
+ *  payload byte-stable between loads — grouping.ts's determinism contract. */
+async function oilSkusByOrder(waiting: FloorWaitingSkus[]): Promise<FloorOilSkus[]> {
+  const codes = new Set<string>();
+  for (const entry of waiting) {
+    for (const code of entry.skus) codes.add(code);
+  }
+  // No waiting bill has a line — nothing to classify, and no reason to ask.
+  if (codes.size === 0) return [];
+
+  const rows = await prisma.sku_master_v2.findMany({
+    where: { material: { in: Array.from(codes) } },
+    select: { material: true, category: true, paintType: true },
+  });
+
+  const oil = buildOilSkuSet(rows);
+  return waiting.map((entry) => ({
+    orderId: entry.orderId,
+    skus: entry.skus.filter((code) => oil.has(code)),
+  }));
 }
 
 // ── 0. PICKERS — active roster + current load, for the assignment bar ────────
@@ -649,7 +716,14 @@ export async function getFloorBoard(
     skus: waitingSkuMap.get(r.obdNumber) ?? [],
   }));
 
-  return { mode, date: anchorIso, rows, windows, total: dueRows.length, waitingSkus };
+  // Rule 2's oil-paint subset — one more sequential await, and ONLY when the
+  // trial is on. With the flag false this is a bare `[]`: no query is issued at
+  // all, and buildOilGroups against an empty set produces no groups, so the
+  // feature is gone rather than merely hidden. The field is always present, so
+  // no caller's type moves with the flag.
+  const oilSkus: FloorOilSkus[] = RULE2_ENABLED ? await oilSkusByOrder(waitingSkus) : [];
+
+  return { mode, date: anchorIso, rows, windows, total: dueRows.length, waitingSkus, oilSkus };
 }
 
 // ── 3. HOLD ──────────────────────────────────────────────────────────────────

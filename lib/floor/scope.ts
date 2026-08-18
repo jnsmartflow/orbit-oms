@@ -65,6 +65,12 @@ export function railInScope(cards: FloorRailCard[], scope: FloorScope): FloorRai
  * for bills the operator cannot see on the chip he has open. Order is preserved
  * (both this filter and `rowsInScope` are stable), which is what keeps the
  * engine's determinism contract intact across a chip click.
+ *
+ * `oilSkus` (Rule 2) is narrowed IDENTICALLY, by the same `visible` set and in
+ * the same pass — it is a sibling of waitingSkus, not a derivative of it, so it
+ * needs its own filter and would otherwise ride through untouched on the
+ * spread. When RULE2_ENABLED is false the server ships `[]` and this is a
+ * no-op, which is the correct behaviour and not a special case.
  */
 export function scopeBoard(board: FloorBoardResult, scope: FloorScope): FloorBoardResult {
   const rows = rowsInScope(board.rows, scope);
@@ -75,5 +81,6 @@ export function scopeBoard(board: FloorBoardResult, scope: FloorScope): FloorBoa
   }));
   const visible = new Set(rows.map((r) => r.orderId));
   const waitingSkus = board.waitingSkus.filter((w) => visible.has(w.orderId));
-  return { ...board, rows, windows, total: due.length, waitingSkus };
+  const oilSkus = board.oilSkus.filter((o) => visible.has(o.orderId));
+  return { ...board, rows, windows, total: due.length, waitingSkus, oilSkus };
 }

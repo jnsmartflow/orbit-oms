@@ -18,7 +18,7 @@ import { SlotBand } from "./slot-band";
 import { RouteRow } from "./route-row";
 import { GroupRow } from "./group-row";
 import { PickerCard, pickerCardStatus } from "./picker-card";
-import { buildPickGroups } from "@/lib/floor/grouping";
+import { buildPickGroups, buildOilGroups } from "@/lib/floor/grouping";
 import { formatArticleBreakdown } from "@/lib/floor/format";
 import { CarryoverBanner } from "./carryover-banner";
 import { UpcomingStrip } from "./upcoming-strip";
@@ -295,20 +295,53 @@ export function FloorBoard({
     if (mode !== "group") return null;
     const skusById = new Map(floor.waitingSkus.map((w) => [w.orderId, w.skus] as const));
     const rowById = new Map(waitingRows.map((r) => [r.orderId, r] as const));
-    const { groups, ungrouped } = buildPickGroups(
-      waitingRows.map((r) => ({
-        orderId: r.orderId,
-        obdNumber: r.obdNumber,
-        skus: skusById.get(r.orderId) ?? [],
-      })),
+    const candidates = waitingRows.map((r) => ({
+      orderId: r.orderId,
+      obdNumber: r.obdNumber,
+      skus: skusById.get(r.orderId) ?? [],
+    }));
+
+    // ⚠️ ORDER OF PLAY, non-negotiable and owned by the engine's contract:
+    // Rule 1 runs FIRST over the whole waiting pool, Rule 2 only over what it
+    // left. A bill can never be in both, and Rule 1 always wins a contested one.
+    const { groups: freeGroups, ungrouped: afterFree } = buildPickGroups(candidates);
+
+    // Rule 2's oil-paint set — the union of the per-bill subsets the board
+    // payload already carries. `floor.oilSkus` is an EMPTY ARRAY when
+    // RULE2_ENABLED is false (lib/floor/queries.ts), so `oilSkus` is empty, no
+    // bill can reach a 50% oil share, and buildOilGroups returns nothing: the
+    // whole second half of this view disappears with one const, no branch here.
+    const oilSkus = new Set<string>();
+    for (const entry of floor.oilSkus) {
+      for (const code of entry.skus) oilSkus.add(code);
+    }
+    // The one client-side signal for "is the trial on". `floor.oilSkus` is []
+    // with the flag off and one entry per waiting bill with it on — so a
+    // non-empty array can only mean the server ran the fetch. The one overlap
+    // (flag ON but not a single waiting bill has an active line) also yields
+    // zero groups of EITHER kind, so dropping the clause there says nothing
+    // false. Used ONLY to decide whether the header mentions oil at all.
+    const rule2On = floor.oilSkus.length > 0;
+
+    const leftover = new Set(afterFree);
+    const { groups: oilGroups, ungrouped } = buildOilGroups(
+      candidates.filter((c) => leftover.has(c.orderId)),
+      oilSkus,
     );
+
     const skuCountById = new Map(Array.from(skusById.entries()).map(([id, s]) => [id, s.length]));
-    return { groups, ungrouped, rowById, skuCountById };
+    return { freeGroups, oilGroups, oilSkus, rule2On, ungrouped, rowById, skuCountById };
   })();
 
   // Seeding + toggling for the expand set above. Both effects are no-ops outside
   // group mode, so no other view is affected by their presence.
-  const topGroupId = groupData?.groups[0]?.id;
+  // The bundle that opens on first entry: the best FREE one, falling back to the
+  // best oil one on a day with no free bundles at all. Free first because it is
+  // the one that costs the operator nothing — the seed should not teach him to
+  // start with the bundle that has a price. Still keyed on a MAIN BILL orderId,
+  // which is unique across both kinds (a bill can be in only one group), so the
+  // whole persistence mechanism below is unchanged.
+  const topGroupId = groupData?.freeGroups[0]?.id ?? groupData?.oilGroups[0]?.id;
   useEffect(() => {
     if (mode !== "group") setOpenMains(null);
   }, [mode]);
@@ -451,10 +484,26 @@ export function FloorBoard({
     // set) — those narrow "which bills are we talking about", a fair question to
     // ask of a bundle; the slot tab narrows "which window", which is the one
     // question grouping exists to ignore.
-    const { groups, ungrouped, rowById, skuCountById } = groupData;
+    // `oilSkus` is deliberately NOT taken here any more — the oil row no longer
+    // needs the set (its only consumer was the removed per-step arithmetic). It
+    // still lives on groupData for the engine call above.
+    const { freeGroups, oilGroups, ungrouped, rowById, skuCountById } = groupData;
     const ungroupedRows = ungrouped
       .map((id) => rowById.get(id))
       .filter((r): r is FloorBoardRow => r !== undefined);
+
+    // Rule 1: main first, then riders in the engine's order.
+    // Rule 2: the members in the engine's packing order — no main, no riders.
+    const rowsFor = (ids: { orderId: number }[]) =>
+      ids.map((m) => rowById.get(m.orderId)).filter((r): r is FloorBoardRow => r !== undefined);
+
+    // Present only when a picker is already chosen. Without one the header
+    // button stays "Select all {n}" and the assign bar does the assigning,
+    // exactly as before. Identical for both kinds — no new write path.
+    const groupAssignTo =
+      assignContext !== null && assignContextName
+        ? { id: assignContext, name: assignContextName }
+        : null;
 
     body =
       waitingRows.length === 0 ? (
@@ -468,30 +517,51 @@ export function FloorBoard({
         </div>
       ) : (
         <>
-          {groups.map((g) => {
-            // Main first, then the riders in the engine's order.
-            const members = [g.main, ...g.riders]
-              .map((m) => rowById.get(m.orderId))
-              .filter((r): r is FloorBoardRow => r !== undefined);
+          {/* ORDER ON SCREEN — free bundles, then oil paint bundles, then the
+              bills that ride with nobody. Within each kind the engine's own
+              order is kept untouched (best-first by its own arithmetic).
+              Free leads because it is unconditionally the better deal: the
+              operator should exhaust the ones that cost him nothing before he
+              is asked to weigh one that does. */}
+          {freeGroups.map((g) => {
+            const members = rowsFor([g.main, ...g.riders]);
             if (members.length === 0) return null;
             return (
               <GroupRow
                 key={g.id}
+                variant="free"
                 group={g}
                 rows={members}
                 skuCountById={skuCountById}
                 nowMs={nowMs}
                 open={groupIsOpen(g.id)}
                 onToggle={() => toggleGroup(g.id)}
-                variant={variant}
-                // Present only when a picker is already chosen. Without one the
-                // header button stays "Select all {n}" and the assign bar does
-                // the assigning, exactly as before.
-                assignTo={
-                  assignContext !== null && assignContextName
-                    ? { id: assignContext, name: assignContextName }
-                    : null
-                }
+                tableVariant={variant}
+                assignTo={groupAssignTo}
+                onAssignGroup={onAssignGroup}
+                {...selProps}
+              />
+            );
+          })}
+
+          {/* Oil paint bundles. Empty array when RULE2_ENABLED is false, so this
+              renders NOTHING — no header, no divider, no spacing: with the flag
+              off the screen is byte-identical to what it is today. */}
+          {oilGroups.map((g) => {
+            const members = rowsFor(g.members);
+            if (members.length === 0) return null;
+            return (
+              <GroupRow
+                key={g.id}
+                variant="oil"
+                group={g}
+                rows={members}
+                skuCountById={skuCountById}
+                nowMs={nowMs}
+                open={groupIsOpen(g.id)}
+                onToggle={() => toggleGroup(g.id)}
+                tableVariant={variant}
+                assignTo={groupAssignTo}
                 onAssignGroup={onAssignGroup}
                 {...selProps}
               />
@@ -504,7 +574,7 @@ export function FloorBoard({
                   simply share nothing, and the operator still has to send them. */}
               <div className="border-b border-[#f0f0f0] bg-[#fafafa] px-3.5 py-2">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[#6b7280]">
-                  On their own &middot; {ungroupedRows.length} bill{ungroupedRows.length === 1 ? "" : "s"}
+                  SINGLE PICKS &middot; {ungroupedRows.length} bill{ungroupedRows.length === 1 ? "" : "s"}
                 </div>
                 <div className="text-[10.5px] text-gray-400">
                   Nothing else waiting shares their items
@@ -660,9 +730,25 @@ export function FloorBoard({
           <div className="text-[11.5px] text-gray-700">
             Waiting only &mdash; bills with no picker yet, grouped so one man fetches once
           </div>
+          {/* THE COUNT LINE — the same three words as the pills and the ungrouped
+              header, so nothing on this screen calls one thing by two names.
+              The "mostly same" clause shows even at ZERO: it teaches the operator
+              that a second kind exists on the days it produces none, which is
+              most days, rather than letting him meet it by surprise on the one
+              day it fires.
+              ⚠ WITH RULE2_ENABLED FALSE THE CLAUSE IS DROPPED ENTIRELY, not shown
+              as zero — the feature does not exist then, and naming something that
+              cannot appear is worse than saying nothing. This used to revert the
+              WHOLE line to the pre-Rule-2 wording ("{g} groups found") to keep a
+              flag-off screen byte-identical to old HEAD; that promise is retired,
+              because this commit relabels Rule 1's own pill and the ungrouped
+              header too, so a flag-off screen is deliberately not the old screen
+              any more. What the flag still guarantees is unchanged and is the
+              part that matters: no second engine pass, no catalog fetch, no
+              groups, no clause. */}
           <div className="mt-0.5 text-[11.5px] font-semibold text-gray-900">
-            {waitingRows.length} waiting &middot; {groupData.groups.length} group
-            {groupData.groups.length === 1 ? "" : "s"} found
+            {waitingRows.length} waiting &middot; {groupData.freeGroups.length} same material
+            {groupData.rule2On && <> &middot; {groupData.oilGroups.length} mostly same</>}
           </div>
           <p className="mt-1.5 max-w-[760px] text-[10.5px] leading-relaxed text-gray-400">
             All dispatch times together. Grouping ignores the slot on purpose &mdash; an evening bill

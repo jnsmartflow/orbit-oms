@@ -30,7 +30,7 @@
 // is `@unique` on `orders`, and the locale is pinned exactly as
 // lib/picking/sort.ts pins it, so the depot PC and Vercel cannot disagree.
 
-import type { PickGroup, PickGroupCandidate } from "./types";
+import type { OilGroup, PickGroup, PickGroupCandidate } from "./types";
 
 /** Pinned for the same reason lib/picking/sort.ts pins it: an OS-locale
  *  difference between the depot PC and Vercel must not reorder anything. */
@@ -141,6 +141,263 @@ export function buildPickGroups(candidates: PickGroupCandidate[]): {
   for (const group of groups) {
     grouped.add(group.main.orderId);
     for (const rider of group.riders) grouped.add(rider.orderId);
+  }
+  const ungrouped = candidates.filter((c) => !grouped.has(c.orderId)).map((c) => c.orderId);
+
+  return { groups, ungrouped };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// RULE 2 — the oil-paint (10K warehouse) bundler. A TRIAL, flag-gated at
+// RULE2_ENABLED (lib/floor/queries.ts). It lives ALONGSIDE Rule 1 and never
+// inside it: buildPickGroups above is untouched and its output is unchanged
+// whether this half runs or not.
+//
+// ⚠️ ORDER OF PLAY, non-negotiable. Rule 1 runs FIRST over the whole waiting
+// pool; Rule 2 is handed only the bills Rule 1 left behind (`ungrouped`). A
+// bill can never appear in both, and Rule 1 always wins.
+//
+// WHY A SECOND RULE AT ALL, AND WHY IT IS NOT A VARIANT OF THE FIRST.
+// Rule 1 saves a repeated SHELF: two bills want the same tin, so one man picks
+// it once. Its unit of saving is a shared SKU code, which is why "adds zero new
+// SKUs" is exactly the right test for it.
+// Rule 2 saves a repeated JOURNEY: several bills all want material from the same
+// end of the depot, so one man walks there once instead of three men walking
+// there three times. A journey is saved whether or not the bills want the same
+// tin — and that is the whole point.
+//
+// ⚠️ THE SHARED-SKU CONDITION WAS HERE AND WAS WRONG. DO NOT REINTRODUCE IT.
+// Rule 2 was first written as "each rider shares ≥ 1 SKU with the main, at least
+// one of them oil" — Rule 1's test wearing Rule 2's name. Live counter-example,
+// 18 Aug, two bills waiting at the same moment:
+//     9108973203  Gloss Sky Blue 1L          + Gloss Bus Green 1L
+//     9108973205  Gloss Intermediate Base .9L + Gloss Dark Brown 500ML
+// Both 100% Gloss, both two items, plainly ONE man's trip to the Gloss racks —
+// and the rule refused them, because not one code matched. Any future "but they
+// should have something in common" instinct is this bug returning; the thing
+// they have in common is the AREA, and the qualifier already tests for it.
+//
+// STABILITY — this replaced a real weakness, it did not inherit one.
+// The old shared-SKU version was deterministic per load but NOT stable across
+// loads: a rider needing one shared code could legitimately attach to several
+// different mains, so which main won depended on the pool's exact composition
+// at that instant, and a bill arriving could reshuffle unrelated bundles. The
+// 30-day read caught the same main offering a 2-bill group at one moment and a
+// 3-bill group at another. THAT IS GONE. Membership is now a straight walk down
+// one total order, filling groups until they are full — no bill "attaches" to
+// any other, so nothing competes for a partner. An arriving bill can still shift
+// the packing boundaries downstream of where it lands (any packing has that),
+// but it cannot make two settled bills change their minds about each other.
+// Deterministic per load AND materially steadier across loads than the version
+// this replaced.
+
+/** The 10K warehouse's four product families, expressed as a RULE over the
+ *  catalog's OWN columns. Deliberately NOT a database column and NOT a new
+ *  table: there is no warehouse/zone/area field anywhere in the schema, adding
+ *  one would mean hand-tagging 1,743 SKUs and keeping them tagged, and a 30-day
+ *  read showed these four rules already place ~95% of live pick lines.
+ *
+ *  `paintType: null` means "category alone decides"; a string means BOTH must
+ *  match — `SATIN`/`PRIMER` genuinely straddle (SATIN is 27 oil vs 14 water,
+ *  PRIMER 16 oil / 15 water / 5 wood), so category alone would be wrong there. */
+const OIL_PAINT_RULES: ReadonlyArray<{ category: string; paintType: string | null }> = [
+  { category: "GLOSS", paintType: null },
+  { category: "PROMISE ENAMEL", paintType: null },
+  { category: "SATIN", paintType: "oil" },
+  { category: "PRIMER", paintType: "oil" },
+];
+
+/** A bill's SKUs must be at least HALF oil paint to qualify. Half, not more
+ *  than half: a 2-SKU bill of 1 oil + 1 other qualifies, and that is deliberate
+ *  — the 30-day read found 13 of 69 groups existed ONLY because of that case. */
+const OIL_QUALIFY_SHARE = 0.5;
+
+/** Cap on a finished group's TOTAL distinct SKUs. There is no separate per-bill
+ *  cap any more: with no main bill there is no bill whose width matters on its
+ *  own, and a single bill wider than this simply never fits with anything. */
+const OIL_MAX_SKUS = 10;
+
+/** 4 bills per group, same ceiling as Rule 1's 1 main + 3 riders. */
+const OIL_MAX_BILLS = 4;
+
+/**
+ * Is this catalog row an oil-paint (10K warehouse) SKU?
+ *
+ * ⚠ UNKNOWN IS NEVER INSIDE. A code with no `sku_master_v2` row never reaches
+ * this function at all (buildOilSkuSet only sees rows that matched), and a row
+ * with a null/blank category or a null paintType where the rule needs "oil"
+ * returns false. That is the same safe direction as the zero-SKU guard in
+ * buildPickGroups step 1: when in doubt, stay OUT of the bundle. ~24% of live
+ * SKU codes are uncatalogued, so this is the common case, not the corner.
+ */
+export function isOilPaint(category: string | null, paintType: string | null): boolean {
+  if (category === null || category === "") return false;
+  for (const rule of OIL_PAINT_RULES) {
+    if (rule.category !== category) continue;
+    if (rule.paintType === null) return true;
+    if (rule.paintType === paintType) return true;
+  }
+  return false;
+}
+
+/**
+ * Turn matched catalog rows into the set of oil-paint SAP codes.
+ *
+ * ⚠ The `material` values here are `sku_master_v2.material`, matched by the
+ * caller against `import_raw_line_items.skuCodeRaw` — the SAP code, the stable
+ * natural key. NEVER a `skuId` and never anything off old `sku_master`
+ * (CORE §13: the two catalog tables share no id space, so an id comparison
+ * would put unrelated products in the same warehouse area with total
+ * confidence).
+ */
+export function buildOilSkuSet(
+  rows: ReadonlyArray<{ material: string; category: string | null; paintType: string | null }>,
+): Set<string> {
+  const set = new Set<string>();
+  for (const row of rows) {
+    if (isOilPaint(row.category, row.paintType)) set.add(row.material);
+  }
+  return set;
+}
+
+/** How much of a bill is oil paint, as a fraction of its distinct SKUs.
+ *
+ *  ⚠ THE STEP-1 LANDMINE IN ITS RATIO FORM — the zero guard is load-bearing.
+ *  "All of this bill's SKUs are oil paint" is VACUOUSLY TRUE of a bill with no
+ *  SKUs, exactly as "adds zero new SKUs" is (see buildPickGroups step 1). Such a
+ *  bill would qualify at a perfect 100%, be packed into a group, and read to the
+ *  operator as a real bill to fetch when there is nothing on it at all. Guard
+ *  first, divide second — 0/0 is not 100%, and it is not a NaN we can afford to
+ *  let loose in a comparison either (every `NaN >= x` is false, so it would
+ *  behave correctly here by accident and wrongly the first time someone sorts
+ *  on it).
+ */
+function oilShare(candidate: PickGroupCandidate, oilSkus: ReadonlySet<string>): number {
+  if (candidate.skus.length === 0) return 0;
+  let oil = 0;
+  for (const code of candidate.skus) {
+    if (oilSkus.has(code)) oil++;
+  }
+  return oil / candidate.skus.length;
+}
+
+/**
+ * Pack waiting bills that live in the oil-paint end of the warehouse into
+ * shared trips.
+ *
+ * Takes the FULL leftover list from Rule 1 (qualifying or not) and returns, like
+ * buildPickGroups, the groups plus every candidate that ended in none — in the
+ * CALLER'S original order, so an ungrouped list renders without a second sort
+ * deciding something on its own. A bill that does not qualify is never eligible
+ * and falls straight through to `ungrouped`.
+ *
+ * QUALIFY: at least half of a bill's distinct SKUs are oil paint. Nothing else.
+ * Bills need NOTHING in common with each other — see the shared-SKU note above.
+ *
+ * PACK, in one deterministic walk:
+ *   1. sort the qualifiers: oil share DESC (purest bills first, so the cleanest
+ *      single-area trips form before anything gets diluted), then distinct-SKU
+ *      count DESC, then obdNumber ASC. obdNumber is `@unique` on `orders`, so
+ *      that last key makes this a TOTAL order — no ties survive it, which is
+ *      what the determinism contract rests on.
+ *   2. walk it, adding each bill to the open group while BOTH hold:
+ *        - the group has fewer than 4 bills
+ *        - the group's TOTAL distinct SKUs would stay at 10 or under
+ *      when a bill fits neither, close the open group and start a new one with
+ *      that bill.
+ *   3. a group of one is not a group — its bill goes to `ungrouped`.
+ *
+ * ⚠ THERE IS NO MAIN BILL. Every member is a peer, which is the honest
+ * description: the saving is one walk to a family of racks, not one man's walk
+ * that others happen to ride. Do not reintroduce a main to make the UI easier —
+ * the UI was stripped to match this, not the other way round.
+ *
+ * `candidates[].skus` must already be distinct; this does not re-dedupe.
+ * `oilSkus` is the output of buildOilSkuSet — an EMPTY set is a valid input and
+ * yields zero groups, which is exactly what RULE2_ENABLED=false produces.
+ */
+export function buildOilGroups(
+  candidates: PickGroupCandidate[],
+  oilSkus: ReadonlySet<string>,
+): { groups: OilGroup[]; ungrouped: number[] } {
+  // ── 1. Only bills that are at least half oil paint ────────────────────────
+  const shareOf = new Map<number, number>();
+  const eligible: PickGroupCandidate[] = [];
+  for (const c of candidates) {
+    const share = oilShare(c, oilSkus);
+    shareOf.set(c.orderId, share);
+    if (c.skus.length > 0 && share >= OIL_QUALIFY_SHARE) eligible.push(c);
+  }
+
+  // ── 2. The packing order — a TOTAL order, obdNumber last ──────────────────
+  const ordered = [...eligible].sort((a, b) => {
+    const sa = shareOf.get(a.orderId) ?? 0;
+    const sb = shareOf.get(b.orderId) ?? 0;
+    if (sa !== sb) return sb - sa;
+    if (a.skus.length !== b.skus.length) return b.skus.length - a.skus.length;
+    return a.obdNumber.localeCompare(b.obdNumber, LOCALE);
+  });
+
+  // ── 3. One straight walk, filling a group until it cannot take the next ───
+  // No bill chooses a partner and none competes for one, so nothing here can
+  // reshuffle settled pairs when the pool changes — see the STABILITY note
+  // above the oil-paint rules.
+  const packed: PickGroupCandidate[][] = [];
+  let open: PickGroupCandidate[] = [];
+  let openSkus = new Set<string>();
+
+  for (const cand of ordered) {
+    if (open.length > 0) {
+      const merged = new Set(Array.from(openSkus));
+      for (const code of cand.skus) merged.add(code);
+      const fits = open.length < OIL_MAX_BILLS && merged.size <= OIL_MAX_SKUS;
+      if (fits) {
+        open.push(cand);
+        openSkus = merged;
+        continue;
+      }
+      // Cannot be extended — close it and start again with this bill.
+      packed.push(open);
+    }
+    open = [cand];
+    openSkus = new Set(cand.skus);
+  }
+  if (open.length > 0) packed.push(open);
+
+  // ── 4. A group of one is not a group ──────────────────────────────────────
+  const groups: OilGroup[] = [];
+  for (const members of packed) {
+    if (members.length < 2) continue;
+
+    const all = new Set<string>();
+    let hasNonOil = false;
+    let allPure = true;
+    for (const m of members) {
+      for (const code of m.skus) {
+        all.add(code);
+        if (!oilSkus.has(code)) hasNonOil = true;
+      }
+      if ((shareOf.get(m.orderId) ?? 0) < 1) allPure = false;
+    }
+
+    groups.push({
+      // Identity, NOT a main: the first member in the packing order. Stable
+      // because that order is total.
+      id: members[0].orderId,
+      members,
+      totalSkus: all.size,
+      hasNonOil,
+      allPure,
+    });
+  }
+
+  // ── 5. Everything else, in the caller's original order ────────────────────
+  // Built from `candidates`, not `eligible`, so bills that never qualified and
+  // bills left alone by the packing are both accounted for here rather than
+  // vanishing from the answer.
+  const grouped = new Set<number>();
+  for (const group of groups) {
+    for (const m of group.members) grouped.add(m.orderId);
   }
   const ungrouped = candidates.filter((c) => !grouped.has(c.orderId)).map((c) => c.orderId);
 
