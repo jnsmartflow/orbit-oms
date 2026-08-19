@@ -17,6 +17,22 @@ export interface PickingQueueRow {
   articleTag: string | null;
   volumeLitres: number | null;
   weightKg: number | null;
+  // SAP SMU code as a STRING ("70" | "74" | "76" | "77" | "10"), or null when
+  // the order has no SMU / carries a name outside the map. Added 2026-08-19 for
+  // the card + detail SmuBadge.
+  //
+  // ⚠ DERIVED, NOT FETCHED — there is no `orders.smuCode` column and this
+  // change added none. It is `orders.smu` (the NAME, already on the row for
+  // free — queue.ts uses `include`, which returns every base scalar) run
+  // through SMU_CODE_BY_NAME in lib/import-upsert/types.ts. Sound because the
+  // name↔code relationship is a bijection verified against all 11,238
+  // import_raw_summary rows; the reasoning and the "Deco"/"10" caveat live on
+  // that constant, not repeated here.
+  //
+  // A string, not a number: it is an SAP identifier that happens to look
+  // numeric, never arithmetic, and the leading-zero risk is not worth the
+  // parse. Consumers compare it literally ("74" === code).
+  smuCode: string | null;
   // ── Product-family fields (Picking card redesign, 2026-07-21) ──────────────
   // True when the whole OBD is a tint order. Sourced from orders.orderType
   // === 'tint' (the canonical order-type set at import) — NOT from any tint

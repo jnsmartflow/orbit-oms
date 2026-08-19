@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
@@ -341,6 +341,26 @@ function PickingCard({
       </span>
     ) : null;
 
+  // Where-row right end: the picker name (as before) plus the SMU badge, on
+  // EVERY variant — the where-row itself is variant-independent, so a 74/77
+  // bill is marked whether it is waiting, locked, being picked or done.
+  //
+  // ⚠ NO WRAPPER WHEN THERE IS NO BADGE. `isSmuBadged` is checked here rather
+  // than leaning on SmuBadge's own null-return, because an element that renders
+  // null is still a flex CHILD: wrapping unconditionally would put a zero-width
+  // box at the end of a `justify-between gap-2.5` row and cost the area text
+  // 10px of truncation width on the ~81% of cards that show no badge. On that
+  // majority this expression is `whereRight` itself — byte-identical DOM to
+  // before this change, no gap, no alignment shift.
+  const whereRightNode = !isSmuBadged(row.smuCode) ? (
+    whereRight
+  ) : (
+    <span className="flex items-center gap-1.5 shrink-0">
+      {whereRight}
+      <SmuBadge code={row.smuCode} />
+    </span>
+  );
+
   // Lead gutter (self-stretch to card height).
   //   assign       — NO lead anymore (2026-07-21): the checkbox was removed so
   //                  the name row runs full-width to the card's left edge.
@@ -483,7 +503,7 @@ function PickingCard({
                 </>
               )}
             </span>
-            {whereRight}
+            {whereRightNode}
           </div>
         </div>
       </div>
@@ -2313,7 +2333,15 @@ export function PickingBoardMobile(): React.JSX.Element {
                 Support's purple 🎨) so a bill's flags survive from the card
                 into the detail. All fields come from detailRow — already in
                 memory, no fetch. */}
-            {detailRow && (detailRow.isKeyCustomer || detailRow.priorityLevel === 1 || detailRow.isTint) && (
+            {detailRow &&
+              (detailRow.isKeyCustomer ||
+                detailRow.priorityLevel === 1 ||
+                detailRow.isTint ||
+                // ⚠ The SMU badge MUST be in this guard, not only in the row
+                // below it: a 74/77 bill that is not a key dealer, not urgent
+                // and not a tint would otherwise have its whole flag row
+                // suppressed and show no badge at all.
+                isSmuBadged(detailRow.smuCode)) && (
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
                 {detailRow.isKeyCustomer && (
                   <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full pl-1.5 pr-2 py-[3px] text-[11px] font-semibold text-white">
@@ -2333,6 +2361,15 @@ export function PickingBoardMobile(): React.JSX.Element {
                     Tint
                   </span>
                 )}
+                {/* SMU — the SHARED atom, badge-to-badge with the three above.
+                    Deliberately NOT re-skinned as a frosted white/16 pill like
+                    its neighbours: those three carry their meaning in a WORD
+                    and use colour only for a glyph, while this one carries its
+                    meaning in the COLOUR (UI §1209's indigo/cyan), which a
+                    frosted overlay would erase. Same component, same hexes as
+                    the card, so a bill's SMU reads identically in both places.
+                    Self-gates to 74/77; the row's own guard above matches. */}
+                <SmuBadge code={detailRow.smuCode} />
               </div>
             )}
           </div>

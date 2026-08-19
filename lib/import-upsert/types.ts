@@ -212,6 +212,43 @@ export const DIVISION_TO_SMU: Record<string, { smu: string; smuCode: string }> =
 };
 
 /**
+ * SMU label → SAP code. The INVERSE of DIVISION_TO_SMU above, for readers that
+ * hold only the resolved name.
+ *
+ * ⚠ KEEP THIS DIRECTLY BESIDE DIVISION_TO_SMU. The two must never be edited
+ * independently — a division added above without its entry here silently
+ * yields `null` for every consumer of the reverse direction.
+ *
+ * WHY A REVERSE MAP RATHER THAN A COLUMN. `orders` carries the SMU *name*
+ * (`orders.smu`) and nothing else — there is no `smuCode` column on it, and
+ * the numeric code stops at `import_raw_summary.smuCode` (the importer writes
+ * both there, but only the name onto the order; lib/import-upsert.ts lines
+ * ~183 vs ~217). Deriving the code from the name is sound because the
+ * relationship is a verified BIJECTION: a read-only SELECT over all 11,238
+ * `import_raw_summary` rows on 2026-08-19 returned exactly six distinct
+ * (smu, smuCode) pairs — one per entry below plus the all-null row — with zero
+ * many-to-one or many-to-many cases, and zero rows where `orders.smu` and
+ * `import_raw_summary.smu` disagreed.
+ *
+ * "Deco"/"10" is the odd one out and is deliberately included: it is NOT in
+ * DIVISION_TO_SMU (so `resolveSmuFromDivision("10")` returns nulls), yet 18
+ * live orders carry the name. They came in through the legacy XLS path, which
+ * copies `summary.smu` verbatim instead of resolving through the map — see
+ * app/api/import/obd/route.ts's `smu: summary.smu` create. CLAUDE_CORE.md §618
+ * records the division itself as parked/un-mapped. Listing it here makes the
+ * reverse lookup total over what production actually holds, WITHOUT implying
+ * the forward map should learn it — that is an import decision, not a display
+ * one, and adding "10" above would change what the importer writes.
+ */
+export const SMU_CODE_BY_NAME: Record<string, string> = {
+  "Deco Retail":         "70",
+  "Decorative Projects": "74",
+  "Distributor":         "76",
+  "Retail Offtake":      "77",
+  "Deco":                "10",
+};
+
+/**
  * Per-source authority over line items. Authoritative sources may overwrite
  * qty/volume on existing lines and soft-remove lines absent from the incoming
  * set. Non-authoritative sources may only fill NULL fields and add new lines.

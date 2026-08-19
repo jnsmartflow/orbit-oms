@@ -67,6 +67,65 @@ export function AgeBadge({ row }: { row: PickingQueueRow }): React.JSX.Element |
   );
 }
 
+// ── SMU badge ───────────────────────────────────────────────────────────────
+// Marks the two PROJECT SMUs, and ONLY those two.
+//
+// ⚠ THE SILENCE IS THE FEATURE. Renders for smuCode "74" (Decorative Projects)
+// and "77" (Retail Offtake). EVERY other value — "70", "76", "10", null, or
+// anything unrecognised — renders NOTHING. This is the same rule AgeBadge
+// applies to `0d` and for the identical reason: on a live board (measured
+// 2026-08-19) "70" Deco Retail is 87 of 112 bills, so a badge on it would sit
+// on ~78% of cards and bury the ~19% it exists to surface. A signal that is
+// almost always present is not a signal.
+//
+// The two colours are CLAUDE_UI.md §1209's SMU palette — Decorative Projects
+// indigo #4f46e5, Retail Offtake cyan #0891b2 — which is the source of truth
+// for these two SMUs app-wide. NEVER invent a colour for either.
+//
+// Hardcoded rather than imported ON PURPOSE: the only other implementation is
+// `SMU_DOT` in components/reports/tint-summary-document.tsx, which is a
+// module-PRIVATE const (not exported), keyed by SMU *name* rather than code,
+// and holds one dot colour rather than the bg/text pair a pill needs. Nothing
+// importable exists. If that map is ever promoted to a shared export, this is
+// the second call site to repoint.
+//
+// Geometry mirrors AgeBadge above (rounded-full, px-2 py-[3px], shrink-0,
+// whitespace-nowrap, tabular-nums) so the two sit on a row as siblings — no new
+// spacing scale was invented for this.
+//
+// ⚠ 700 is heavier than CLAUDE_UI.md §60's "chips cap at 600". Deliberate and
+// specified: this is a rare accent (≈19% of cards), not a per-card chip, and
+// the weight is what separates a two-digit code from the 12px/500 area text
+// beside it. If the board ever reads heavy, this is a documented place to look.
+const SMU_BADGE_STYLE: Record<string, { bg: string; fg: string }> = {
+  "74": { bg: "#eef2ff", fg: "#4f46e5" }, // Decorative Projects — UI §1209 indigo
+  "77": { bg: "#ecfeff", fg: "#0891b2" }, // Retail Offtake      — UI §1209 cyan
+};
+
+/**
+ * Does this code get a badge? The gate rule, exported so a CALLER can decide
+ * whether to render a wrapper/row at all without duplicating the "74"/"77"
+ * literals. SmuBadge still self-guards, so a caller that skips this check gets
+ * nothing rendered rather than something wrong.
+ */
+export function isSmuBadged(code: string | null): boolean {
+  return code !== null && code in SMU_BADGE_STYLE;
+}
+
+export function SmuBadge({ code }: { code: string | null }): React.JSX.Element | null {
+  if (code === null) return null;
+  const style = SMU_BADGE_STYLE[code];
+  if (style === undefined) return null;
+  return (
+    <span
+      className="text-[11px] font-bold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums"
+      style={{ background: style.bg, color: style.fg }}
+    >
+      {code}
+    </span>
+  );
+}
+
 // One shelf chip. Named for its original and still-default content — the
 // product family, which arrives already display-resolved and alpha-sorted from
 // lib/picking/queue.ts — but the STYLE is the point: whatever a caller feeds

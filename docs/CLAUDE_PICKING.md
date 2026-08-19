@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.14 · Schema v27.15 · August 2026 · updated 2026-08-09
+# v1.15 · Schema v27.15 · August 2026 · updated 2026-08-19
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -360,9 +360,68 @@ row's `zone` (`due` | `upcoming`) is computed from `dispatchTargetDate` vs today
     checker identity — the whole point of this tab).
 
 **Card DNA (shared by all three tabs):** OBD (mono) + window tag · ★ `isKeyCustomer` · ⚡
-`priorityLevel === 1` (strict equality) · dealer name as hero · area + `articleTag` (Assign) or area +
-picker name (Picking/Done) rendered **verbatim** (no client-side drum/carton parsing). Type scale:
+`priorityLevel === 1` (strict equality) · dealer name as hero · **where-row = route dot + area +
+volume, with the picker name at its right end on Picking/Done** · **shelf = `articleTag` chips**
+(Assign + Picking only), rendered **verbatim** (no client-side drum/carton parsing). Type scale:
 `CLAUDE_UI.md §60`.
+
+> **⚠ CORRECTED 2026-08-19 — this line said "area + `articleTag` (Assign) or area + picker name
+> (Picking/Done)" and had been wrong since 2026-08-14.** `articleTag` LEFT the where-row on that
+> date and became the supervisor shelf's chip content (`articleTagChips` in
+> `picking-board-mobile.tsx`, fed to `CardShelf`'s `chips` prop). The where-row has carried
+> route dot + area + volume since Option G (2026-07-21) — volume, not `articleTag`, is what sits
+> after the area. The picker's card is the one that still shows `articleTag` on its where-row, and
+> that is recorded as DIVERGENCE 1 in §5.4, not here. Nothing shipped changed on this pass; the doc
+> was catching up to the code.
+
+**SMU badge [LIVE, 2026-08-19].** A small pill carrying the SAP SMU code, on **all four picking
+surfaces**: the where-row right end of BOTH cards (supervisor + picker) and BOTH detail-screen
+headers. One shared component — **`SmuBadge` in `components/picking/card-atoms.tsx`**, beside
+`AgeBadge`, whose geometry it mirrors (rounded-full, `px-2 py-[3px]`, `shrink-0`, `tabular-nums`).
+
+- **It renders for `smuCode` "74" and "77" ONLY.** `70`, `76`, `10`, `null` and anything
+  unrecognised render **nothing**. That silence is the design, not an omission: on a live board
+  (SELECT, 2026-08-19) `70` Deco Retail was **87 of 112** bills, so badging it would put a pill on
+  ~78% of cards and bury the ~19% worth seeing — the same reasoning that keeps `0d` off `AgeBadge`.
+  **The gate lives in that one component**; never re-test the codes at a call site. `isSmuBadged()`
+  is exported for callers that must decide whether to render a *wrapper* (see the two notes below).
+- **Colours are `CLAUDE_UI.md §1209`'s SMU palette** — Decorative Projects indigo `#4f46e5` on
+  `#eef2ff`, Retail Offtake cyan `#0891b2` on `#ecfeff`. §1209 is the source of truth for these two
+  SMUs app-wide; never invent one. They are hardcoded rather than imported because the only other
+  implementation (`SMU_DOT`, `components/reports/tint-summary-document.tsx`) is a module-private
+  const keyed by SMU *name* holding a single dot colour — nothing importable exists. If it is ever
+  promoted to a shared export, this is the second call site to repoint.
+- **⚠ NO NEW COLUMN, AND NONE IS NEEDED.** `orders` has only `smu` (the NAME); the numeric code
+  stops at `import_raw_summary.smuCode`, because the importer writes both to the summary and only
+  the name to the order (`lib/import-upsert.ts`, the `orders.create` at ~183 vs the
+  `import_raw_summary.create` at ~217). `PickingQueueRow.smuCode` is **derived in memory** in
+  `lib/picking/queue.ts` via **`SMU_CODE_BY_NAME`** (`lib/import-upsert/types.ts`, kept directly
+  beside its inverse `DIVISION_TO_SMU` so the two cannot be edited independently). Zero extra SQL —
+  `order.smu` was already in the payload, since that query uses `include`, which returns every base
+  scalar. Sound because the name↔code relationship is a **verified bijection**: all 11,238
+  `import_raw_summary` rows yield exactly six distinct pairs, with zero rows where `orders.smu` and
+  `import_raw_summary.smu` disagree.
+- **⚠ The "Deco"/"10" caveat.** `SMU_CODE_BY_NAME` contains a fifth entry, `"Deco" → "10"`, that
+  `DIVISION_TO_SMU` does NOT: 18 live orders carry that name, written by the legacy XLS path, which
+  copies `summary.smu` verbatim instead of resolving through the map. `CLAUDE_CORE.md §618` records
+  the division as parked/un-mapped, and `components/floor/floor-table.tsx` says the same. The
+  reverse entry exists so the lookup is total over what production actually holds — it does **not**
+  mean the forward map should learn `"10"`, which would change what the importer writes. `10` is
+  un-badged either way.
+- **⚠ Two placement traps, both already handled — do not "simplify" them out.**
+  (a) On the cards, the badge is wrapped only when `isSmuBadged()` is true. A component that returns
+  `null` is still a flex CHILD, so an unconditional wrapper would park a zero-width box at the end
+  of a `justify-between gap-2.5` row and cost the area text 10px of truncation width on the ~81% of
+  cards with no badge. As written, those cards render **byte-identical DOM to before** — no gap, no
+  alignment shift.
+  (b) On the SUPERVISOR detail header, `isSmuBadged` is also in the **flag-row guard**
+  (`isKeyCustomer || priorityLevel === 1 || isTint || …`). Without it, a 74/77 bill that is not a
+  key dealer, not urgent and not a tint would have the whole row suppressed and show no badge.
+  The PICKER detail header had no flag row at all, so one is created — conditionally, so that
+  header keeps its exact two-line height on every other bill.
+- **Floor fills the field but renders no badge.** `FloorBoardRow extends PickingQueueRow`, so
+  `lib/floor/queries.ts` supplies `smuCode` the same derived way. Floor's own SMU treatment is
+  unchanged (the `shipMarkers` site icon, `CLAUDE_FLOOR.md §7.5`).
 
 ### 5.3 Detail screen
 
@@ -1224,4 +1283,25 @@ Evidence: all nine commits confirmed present on `main` by `git log` before anyth
 
 ---
 
-*CLAUDE_PICKING.md v1.14 · Schema v27.15 · Picking Module · August 2026 · updated 2026-08-09 — §7's `articleTag`-is-null landmine closed out (root-caused + fixed, `9de0c55b`); detail now owned by `CLAUDE_IMPORT.md §8.2`, cross-referenced not duplicated*
+---
+
+## Change log — v1.15 (2026-08-19, SMU badge)
+
+- PCK-10 (§5.2 Card DNA): **corrected a line that had been wrong since 2026-08-14.** It claimed the
+  where-row carries "area + `articleTag` (Assign)"; `articleTag` became the supervisor SHELF's chip
+  content on that date (`articleTagChips` → `CardShelf`'s `chips` prop) and the where-row has
+  carried route dot + area + **volume** since Option G. No shipped behaviour changed — the doc was
+  catching up. The picker card's where-row `articleTag` is unaffected and stays recorded as
+  DIVERGENCE 1 in §5.4.
+- PCK-11 (§5.2, NEW block): **the SMU badge shipped** — shared `SmuBadge` + `isSmuBadged` in
+  `card-atoms.tsx`, on both cards' where-rows and both detail headers, rendering for `smuCode`
+  **74/77 only** and silent for 70/76/10/null by design (70 is ~78% of a live board). Colours are
+  `CLAUDE_UI.md §1209`'s palette, hardcoded with a citation because the only other implementation
+  is module-private. `PickingQueueRow.smuCode` is **derived in memory** from `orders.smu` via
+  `SMU_CODE_BY_NAME` — **no schema change, no migration, no extra query.** Records the
+  name↔code bijection evidence, the `"Deco"`/`"10"` parked-division caveat, and the two placement
+  traps (the no-wrapper-when-empty rule, and the supervisor flag-row guard).
+
+---
+
+*CLAUDE_PICKING.md v1.15 · Schema v27.15 · Picking Module · August 2026 · updated 2026-08-19 — SMU badge (74/77 only, derived code, no new column); §5.2's stale `articleTag` where-row claim corrected*

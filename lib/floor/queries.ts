@@ -34,6 +34,10 @@ import { suggestSlot } from "./suggest";
 // database — grouping.ts is pure (no prisma, no clock), so importing it into a
 // server module is one-directional and safe.
 import { buildOilSkuSet } from "@/lib/picking/grouping";
+// Same map the picking queue uses, for the same reason: FloorBoardRow extends
+// PickingQueueRow, so this board must fill `smuCode` too. One owner for the
+// name→code rule (lib/import-upsert/types.ts), two callers.
+import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -658,6 +662,12 @@ export async function getFloorBoard(
       dispatchTargetDate: targetDate ? targetDate.toISOString().slice(0, 10) : null,
       isEarlyReleased,
       earlyReleasedByName: order.pickEarlyReleasedBy?.name ?? null,
+      // Inherited from PickingQueueRow (2026-08-19) — derived from `order.smu`
+      // in memory, no column and no extra query, exactly as lib/picking/queue.ts
+      // does it. Floor renders no SmuBadge today; the field is filled because
+      // the shared interface requires it, and because Floor's own site marker
+      // already keys on the same SMU set (floor-table.tsx shipMarkers).
+      smuCode: order.smu !== null ? (SMU_CODE_BY_NAME[order.smu] ?? null) : null,
       // Floor-only extras.
       smu: order.smu,
       billToName: billTo.get(order.obdNumber) ?? null,

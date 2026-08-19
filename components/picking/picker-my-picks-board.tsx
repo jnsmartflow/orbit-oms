@@ -16,7 +16,7 @@ import { FindingTriangleButton } from "./finding-recorder";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
 import { NO_BILL_SWIPE_ATTR, useBillPager } from "./use-bill-pager";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
@@ -1473,6 +1473,15 @@ export function PickerMyPicksBoard({
                       </>
                     )}
                   </span>
+                  {/* SMU badge — the right end of the where-row, the slot
+                      DIVERGENCE 4 leaves empty on this card (no picker name
+                      here: on his own board the picker IS the viewer). Same
+                      shared atom and same 74/77-only gate as the supervisor's.
+                      `isSmuBadged` guards the render so the row keeps EXACTLY
+                      one child on the ~81% of bills with no badge — an element
+                      returning null would still be a flex child and the
+                      justify-between row would reserve gap for it. */}
+                  {isSmuBadged(row.smuCode) && <SmuBadge code={row.smuCode} />}
                 </div>
               </div>
 
@@ -1543,6 +1552,19 @@ export function PickerMyPicksBoard({
                   }`
                 : "—"}
             </div>
+            {/* SMU badge row (2026-08-19). Unlike the supervisor's detail
+                header there was NO flag row here to hang it on — that header
+                carries Key dealer / Urgent / Tint pills and this one carries
+                none — so the row is created, and created CONDITIONALLY: on a
+                bill that is not 74/77 nothing renders and the header keeps its
+                exact two-line height. Same `mt-2 gap-1.5` row shape as the
+                supervisor's, so if this face ever gains its own flag pills they
+                drop straight in beside it. */}
+            {detailRow && isSmuBadged(detailRow.smuCode) && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <SmuBadge code={detailRow.smuCode} />
+              </div>
+            )}
           </div>
           {/* Triangle — arms recording mode. Amber (#fbbf24 on #78350f), the
               mockup's exact pair, and the ONE amber control on a teal header:

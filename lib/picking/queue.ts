@@ -14,6 +14,11 @@ import {
 } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
+// Name → SAP code, the inverse of the importer's own DIVISION_TO_SMU. Imported
+// rather than re-declared so the picking board can never disagree with the
+// importer about which code a name means (the ONE OWNER PER BEHAVIOUR rule this
+// module already follows for sort.ts and grouping.ts).
+import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 // The oil-paint rule lives in the ENGINE, not here and not in the database.
 // Same import Floor makes (lib/floor/queries.ts) — one definition, two callers.
 import { buildOilSkuSet } from "./grouping";
@@ -660,6 +665,12 @@ export async function getPickingQueue(
       articleTag: order.querySnapshot?.articleTag ?? null,
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       weightKg: order.querySnapshot?.totalWeight ?? null,
+      // Pure in-memory reverse lookup — NO new query, no new column, no join.
+      // `order.smu` is already here: the findMany above uses `include`, which
+      // returns every base-model scalar (the same reason obdDateTime/orderType
+      // need no select entry). An unmapped or blank name yields null, which the
+      // UI treats exactly as "no SMU" — never a guess.
+      smuCode: order.smu !== null ? (SMU_CODE_BY_NAME[order.smu] ?? null) : null,
       // Tint is order-level — orders.orderType is the canonical source (set at
       // import), already present via `include`. Never a tint skuId (§13).
       isTint: order.orderType === "tint",
