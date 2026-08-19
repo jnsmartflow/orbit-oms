@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
 import { AssignContextBanner } from "./assign-context-banner";
-import { rowStatus } from "./status-pill";
+import { rowStatus, countByStatus } from "./status-pill";
 import { FloorSkeleton } from "./floor-skeleton";
 import { AssignBar } from "./assign-bar";
 import { HoldTab } from "./hold-tab";
@@ -751,6 +751,27 @@ export function FloorPage() {
   const holdCount = filteredHold?.length ?? 0;
   const cancelledCount = filteredCancelled?.length ?? 0;
 
+  // Bills ON the floor with nobody on them yet — the one number the operator
+  // cannot read off the badge beside it, which counts everything including work
+  // already finished today (a 42 made entirely of checked bills and a 42 with 40
+  // untouched ones look identical without this).
+  //
+  // ⚠ THE SAME SET AS `floorCount`, never the raw server payload: `filteredFloor`
+  // has already been scoped + searched + flag-filtered, and its `total` is the DUE
+  // rows (rows minus zone "upcoming"). Re-cutting due off that same object is what
+  // keeps the pair honest — narrow the search and both numbers move together, or
+  // the smaller one would quietly describe bills no longer on screen.
+  //
+  // ⚠ THE RULE IS NOT RE-DERIVED HERE. `countByStatus()` (status-pill.tsx) owns the
+  // four statuses for this whole screen and `waiting` IS its pending_picking
+  // bucket. queries.ts already carries one server-side inline copy for the By-group
+  // payload, flagged there as having to stay in step; a third copy would be a third
+  // place to forget.
+  const waitingCount = useMemo(
+    () => (filteredFloor ? countByStatus(filteredFloor.rows.filter((r) => r.zone !== "upcoming")).waiting : 0),
+    [filteredFloor],
+  );
+
   // Tab pill (Floor / On hold / Cancelled) — active is dark-underlined; the count
   // badge is dark on the active tab, grey otherwise.
   function tabPill(key: TopTab, label: string, count: number) {
@@ -831,7 +852,26 @@ export function FloorPage() {
         {/* Right main — tabs + board + (bulk bar overlay). */}
         <div className="relative flex min-h-0 flex-col overflow-hidden">
           <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
-            {tabPill("floor", "Floor", floorCount)}
+            {/* Floor + its waiting readout as ONE unit: a tight 8px gap binds the
+                label to the badge it qualifies while the row's own 18px gap still
+                separates it from "On hold" — spaced like a fourth tab it would read
+                as one. Plain grey inline stats (CLAUDE_UI §4), NOT a second pill:
+                the badge next door is already a filled one. NOT teal either — teal
+                on this screen is the active slot tab alone (CLAUDE_UI §6 colour
+                rule). It sits OUTSIDE the tab button on purpose: it reports, it is
+                not a fifth thing to click.
+
+                Rendered in every view mode, By group included — that view's own
+                strip is untouched and states the same number for the same set, so
+                the two agree rather than compete. Shown at ZERO deliberately: "0
+                waiting" is the good state and worth saying out loud, the same
+                reasoning the By-group count line is built on. */}
+            <span className="flex items-center gap-2">
+              {tabPill("floor", "Floor", floorCount)}
+              <span className="text-[11px] text-gray-400" title="Bills on the floor with no picker assigned yet">
+                <span className="font-semibold tabular-nums text-gray-700">{waitingCount}</span> waiting
+              </span>
+            </span>
             {tabPill("hold", "On hold", holdCount)}
             {tabPill("cancelled", "Cancelled", cancelledCount)}
 
