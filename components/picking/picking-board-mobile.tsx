@@ -2497,9 +2497,22 @@ export function PickingBoardMobile(): React.JSX.Element {
             </div>
 
             {/* Pack filter — only when the bill actually has more than one
-                pack to tell apart; a single-pack bill shows no row at all. */}
+                pack to tell apart; a single-pack bill shows no row at all.
+
+                WRAPS, never scrolls (2026-08-20). This strip used to be
+                `overflow-x-auto`, which put every chip past the right edge
+                behind a horizontal drag on a 390px phone — chips the picker
+                could not see and had no reason to believe were there.
+                `flex-wrap` breaks onto a second row instead and the line list
+                below simply shifts down (`shrink-0` here is what makes it push
+                rather than compress).
+                The chips keep `whitespace-nowrap shrink-0`: with wrap those are
+                right — each chip holds its natural size and the ROW breaks. At
+                320px the container leaves 292px and the widest chip ("No pack")
+                is ~74px, so nothing clips; a narrow screen just wraps sooner.
+                `gap-1.5` is both axes, so the second row spaces itself. */}
             {distinctPackKeys.length >= 2 && (
-              <div className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0">
+              <div className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center flex-wrap gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => setActivePackFilter("ALL")}

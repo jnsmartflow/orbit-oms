@@ -1211,9 +1211,14 @@ export function PickerMyPicksBoard({
               one pack has nothing to filter between). Its own state, so
               filtering here and inside an open bill never interfere.
               No NO_BILL_SWIPE needed — the bill-swipe pager lives on the
-              detail overlay, and this strip is on the list view. */}
+              detail overlay, and this strip is on the list view.
+              WRAPS with the other two (2026-08-20) — the Combined list merges
+              several bills, so it carries MORE distinct packs than any single
+              bill and overflowed soonest of the three. Kept identical to them
+              on purpose: three copies of one strip that disagree about whether
+              they scroll is worse than three that wrap. */}
           {combinedPackKeys.length >= 2 && (
-            <div className="shrink-0 bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto">
+            <div className="shrink-0 bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center flex-wrap gap-1.5">
               <button
                 type="button"
                 onClick={() => setCombinedPackFilter("ALL")}
@@ -1652,23 +1657,34 @@ export function PickerMyPicksBoard({
           </div>
         </div>
 
-        {/* Pack filter — unchanged in place and in styling (the supervisor's
-            exact treatment), but OPTED OUT of the bill-swipe gesture as of
-            2026-07-30. This strip scrolls horizontally, and a multi-pack bill
-            routinely has more chips than fit on a 390px screen; once the swipe
-            pager landed (dc32a476) its root-level handlers claimed the drag
-            that used to scroll this row, so every chip past the right edge
-            became unreachable — he would try to scroll to "1L" and get the
-            next bill instead. {...NO_BILL_SWIPE} hands this strip's horizontal
-            drag back to it. Swiping anywhere ELSE in the bill still pages.
+        {/* Pack filter — the supervisor's exact treatment, styling untouched.
+
+            WRAPS, never scrolls (2026-08-20). It used to be `overflow-x-auto`,
+            and a multi-pack bill routinely had more chips than fit on a 390px
+            screen. `flex-wrap` breaks onto a second row and the line list below
+            shifts down (`shrink-0` makes it push rather than compress). Chips
+            keep `whitespace-nowrap shrink-0` — with wrap that is what holds each
+            chip at its natural size and breaks the ROW instead. 320px-safe: 292px
+            of content against a ~74px worst-case chip ("No pack").
+
+            ⚠ {...NO_BILL_SWIPE} STAYS, and is now a GUARD rather than a repair.
+            It was added 2026-07-30 because the swipe pager (dc32a476) claimed the
+            horizontal drag that scrolled this row, so every chip past the right
+            edge became unreachable — he would reach for "1L" and get the next
+            bill. Wrapping removes that scroll and with it the original bug, but
+            the strip is now ~2x taller, and a sloppy thumb reaching for a chip
+            must still never page the bill away. Cost is one null `closest()` per
+            touch (use-bill-pager.ts:206). Swiping anywhere ELSE in the bill pages
+            as before. ⚠ The supervisor's identical strip still does not carry it
+            — that asymmetry is deliberate and unchanged (CLAUDE_PICKING §5.3).
+
             ⚠ Still gated on >= 2 distinct packs — an original-build rule
-            (a114cff9), NOT this session's: a bill whose lines all share one
-            pack has never shown this row, because there is nothing to filter
-            between. */}
+            (a114cff9): a bill whose lines all share one pack has never shown this
+            row, because there is nothing to filter between. */}
         {distinctPackKeys.length >= 2 && (
           <div
             {...NO_BILL_SWIPE}
-            className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0"
+            className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center flex-wrap gap-1.5 shrink-0"
           >
             <button
               type="button"
