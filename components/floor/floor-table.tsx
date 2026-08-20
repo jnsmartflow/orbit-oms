@@ -22,6 +22,13 @@ import { Building2, Droplet, Mail, MoreHorizontal, Zap } from "lucide-react";
 import { formatArticleTag } from "@/lib/floor/format";
 import { StatusPill, rowStatus } from "./status-pill";
 import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
+import {
+  DuplicateSoTag,
+  DUP_SO_BADGE_CLASS,
+  DUP_SO_MUTED,
+  DUP_SO_ROW_CLASS,
+  DUP_SO_TEXT,
+} from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export type FloorTableVariant = "live" | "history" | "upcoming";
@@ -109,8 +116,18 @@ function shipInfo(row: FloorBoardRow) {
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const HEAD_TH_NARROW = "h-[31px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
-const TD = "border-b border-[#f0f0f0] px-3.5 py-2 text-[11px] text-[#4b5563] whitespace-nowrap overflow-hidden text-ellipsis";
-const TD_NARROW = "border-b border-[#f0f0f0] px-1 py-2 text-center text-[11px] text-[#4b5563]";
+// ⚠ SPLIT INTO BASE + SKIN ON PURPOSE. A duplicate-SO row needs a different
+// border colour AND text colour, and appending `text-white` after `text-[#4b5563]`
+// would NOT reliably win: Tailwind resolves same-property utilities by their
+// order in the generated stylesheet, not by their order in the class string.
+// Building the two variants from a shared base means the conflicting utility is
+// only ever emitted once per cell.
+const TD_BASE = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b";
+const TD = `${TD_BASE} border-[#f0f0f0] text-[#4b5563]`;
+const TD_DUP = `${TD_BASE} border-[#b91c1c] text-[#fecaca]`;
+const TD_NARROW_BASE = "px-1 py-2 text-center text-[11px] border-b";
+const TD_NARROW = `${TD_NARROW_BASE} border-[#f0f0f0] text-[#4b5563]`;
+const TD_NARROW_DUP = `${TD_NARROW_BASE} border-[#b91c1c] text-[#fecaca]`;
 
 export function FloorTable({
   rows,
@@ -211,14 +228,23 @@ export function FloorTable({
           const { isSite, isRedirect } = shipInfo(row);
           const obd = asStr(row.obdDateTime);
           const target = row.dispatchTargetDate;
+          // ── Duplicate-SO red ────────────────────────────────────────────────
+          // Applies on every variant (live / history / upcoming) — a twin is a
+          // twin whichever view you found it in. Row fill + hover come from
+          // CLASSES, never an inline background: an inline style would beat the
+          // `hover:` rule and silently kill the row hover this board relies on.
+          const dup = row.hasDuplicateSo;
+          const td = dup ? TD_DUP : TD;
+          const tdNarrow = dup ? TD_NARROW_DUP : TD_NARROW;
+          // Grey chips (upcoming / "Not completed" / "Nd late") flip to the one
+          // shared white pill; so does every StatusPill on this row.
+          const chipCls = dup
+            ? `rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${DUP_SO_BADGE_CLASS}`
+            : "rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]";
 
           let statusCell: ReactNode;
           if (variant === "upcoming") {
-            statusCell = (
-              <span className="inline-flex items-center rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]">
-                for {fmtDay(target)}
-              </span>
-            );
+            statusCell = <span className={"inline-flex items-center " + chipCls}>for {fmtDay(target)}</span>;
           } else if (variant === "history") {
             if (row.isChecked) {
               const cAt = asStr(row.checkedAt);
@@ -226,25 +252,28 @@ export function FloorTable({
               const timeStr = lateDays > 0 ? fmtDateTime(cAt) : hhmm(cAt);
               statusCell = (
                 <span className="inline-flex items-center gap-1.5">
-                  <StatusPill status="done" time={timeStr} />
+                  <StatusPill status="done" time={timeStr} onRed={dup} />
                   {lateDays > 0 && (
-                    <span className="rounded-[3px] bg-[#f3f4f6] px-[5px] py-px text-[9.5px] font-bold text-[#6b7280]">{lateDays}d late</span>
+                    <span
+                      className={
+                        "rounded-[3px] px-[5px] py-px text-[9.5px] font-bold " +
+                        (dup ? DUP_SO_BADGE_CLASS : "bg-[#f3f4f6] text-[#6b7280]")
+                      }
+                    >
+                      {lateDays}d late
+                    </span>
                   )}
                 </span>
               );
             } else {
-              statusCell = (
-                <span className="inline-flex items-center rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]">
-                  Not completed
-                </span>
-              );
+              statusCell = <span className={"inline-flex items-center " + chipCls}>Not completed</span>;
             }
           } else {
             // live
             const urgent = row.priorityLevel === 1;
             statusCell = (
               <span className="inline-flex items-center gap-2">
-                <StatusPill status={st} time={liveTime(row, nowMs)} />
+                <StatusPill status={st} time={liveTime(row, nowMs)} onRed={dup} />
                 {/* Row hover actions (design §7.10). ⚡ is LIVE (instant urgent
                     toggle, lights red when urgent); ⋯ is INERT (detail panel is
                     a later step). */}
@@ -273,10 +302,12 @@ export function FloorTable({
           }
 
           return (
-            <tr key={row.orderId} className="group hover:bg-[#fafafa]">
+            <tr key={row.orderId} className={"group " + (dup ? DUP_SO_ROW_CLASS : "hover:bg-[#fafafa]")}>
               {interactive && (
-                <td className={TD_NARROW}>
-                  {/* Checkbox on Waiting / With-picker rows only (design §7.8). */}
+                <td className={tdNarrow}>
+                  {/* Checkbox on Waiting / With-picker rows only (design §7.8).
+                      accent-teal-600 stays: teal on red is high-contrast, and it
+                      keeps "ticked" reading the same on every row. */}
                   {pickable && (
                     <input
                       type="checkbox"
@@ -289,14 +320,34 @@ export function FloorTable({
                 </td>
               )}
               {interactive && (
-                <td className={`${TD_NARROW} text-[10.5px] text-[#9ca3af] tabular-nums`}>{i + 1}</td>
+                <td className={`${tdNarrow} text-[10.5px] tabular-nums`} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                  <span className={dup ? "" : "text-[#9ca3af]"}>{i + 1}</span>
+                </td>
               )}
-              <td className={TD}>
-                <span className="font-mono text-[11.5px] font-medium text-[#111827]">{row.obdNumber}</span>
+              <td className={td}>
+                <span
+                  className={"font-mono text-[11.5px] font-medium " + (dup ? "" : "text-[#111827]")}
+                  style={dup ? { color: DUP_SO_TEXT } : undefined}
+                >
+                  {row.obdNumber}
+                </span>
+                {/* The tag rides the OBD cell — first column a reader lands on,
+                    and it never displaces the Status column's own meaning. */}
+                {dup && <DuplicateSoTag className="ml-1.5 align-[1px]" />}
                 {(row.ageDays ?? 0) > 0 && (
-                  <span className="ml-1.5 rounded-[3px] bg-[#f3f4f6] px-[5px] py-px text-[9.5px] font-bold text-[#6b7280]">{row.ageDays}d</span>
+                  <span
+                    className={
+                      "ml-1.5 rounded-[3px] px-[5px] py-px text-[9.5px] font-bold " +
+                      (dup ? DUP_SO_BADGE_CLASS : "bg-[#f3f4f6] text-[#6b7280]")
+                    }
+                  >
+                    {row.ageDays}d
+                  </span>
                 )}
-                <div className="flex items-center gap-1 text-[10px] text-[#9ca3af]">
+                <div
+                  className={"flex items-center gap-1 text-[10px] " + (dup ? "" : "text-[#9ca3af]")}
+                  style={dup ? { color: DUP_SO_MUTED } : undefined}
+                >
                   {fmtDateTime(obd)}
                   {row.isEmailTime && (
                     <span title="Email time" className="inline-flex shrink-0">
@@ -305,29 +356,82 @@ export function FloorTable({
                   )}
                 </div>
               </td>
-              <td className={TD}>
-                <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>
-                {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
-                {row.priorityLevel === 1 && <span className="ml-1 text-[#ef4444]">⚡</span>}
-                {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}
-                {row.isTint && <Droplet size={12} className="ml-1 inline-block align-[-1px] text-[#7c3aed]" />}
-                {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}
-                {isRedirect && <div className="text-[11px] text-[#6d28d9]">→ ship-to changed</div>}
+              <td className={td}>
+                <span
+                  className={"text-[11.5px] font-medium " + (dup ? "" : "text-[#111827]")}
+                  style={dup ? { color: DUP_SO_TEXT } : undefined}
+                >
+                  {row.dealerName}
+                </span>
+                {/* ★ amber and ⚡ red are both eaten by the fill — white on a
+                    duplicate, glyph shapes unchanged. */}
+                {row.isKeyCustomer && (
+                  <span className="ml-1.5" style={{ color: dup ? DUP_SO_TEXT : "#f59e0b" }}>
+                    ★
+                  </span>
+                )}
+                {row.priorityLevel === 1 && (
+                  <span className="ml-1" style={{ color: dup ? DUP_SO_TEXT : "#ef4444" }}>
+                    ⚡
+                  </span>
+                )}
+                {isSite && (
+                  <Building2
+                    size={12}
+                    className="ml-1 inline-block align-[-1px]"
+                    style={{ color: dup ? DUP_SO_TEXT : "#475569" }}
+                  />
+                )}
+                {row.isTint && (
+                  <Droplet
+                    size={12}
+                    className="ml-1 inline-block align-[-1px]"
+                    style={{ color: dup ? DUP_SO_TEXT : "#7c3aed" }}
+                  />
+                )}
+                {isSite && (
+                  <div className={"text-[10.5px] " + (dup ? "" : "text-[#9ca3af]")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                    billed to {row.billToName ?? "—"}
+                  </div>
+                )}
+                {isRedirect && (
+                  <div className={"text-[11px] " + (dup ? "" : "text-[#6d28d9]")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                    → ship-to changed
+                  </div>
+                )}
                 {chipFor?.(row)}
               </td>
-              <td className={TD}>{row.route ?? "—"}</td>
+              <td className={td}>{row.route ?? "—"}</td>
               {showSlot && (
-                <td className={TD}>
-                  {row.windowTime ?? <span className="text-[#9ca3af]">No slot</span>}
+                <td className={td}>
+                  {row.windowTime ?? (
+                    <span className={dup ? "" : "text-[#9ca3af]"} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                      No slot
+                    </span>
+                  )}
                   {row.dispatchTargetDate && (
-                    <div className="text-[10px] text-[#9ca3af]">{fmtDay(row.dispatchTargetDate)}</div>
+                    <div className={"text-[10px] " + (dup ? "" : "text-[#9ca3af]")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                      {fmtDay(row.dispatchTargetDate)}
+                    </div>
                   )}
                 </td>
               )}
-              <td className={`${TD} text-right tabular-nums`}>{row.volumeLitres ?? 0}</td>
-              <td className={`${TD} text-[10.5px] text-[#6b7280]`}>{row.articleTag ? formatArticleTag(row.articleTag) : "—"}</td>
-              {!showSlot && <td className={TD}>{row.assignedToName ?? <span className="text-[#9ca3af]">—</span>}</td>}
-              <td className={TD}>{statusCell}</td>
+              <td className={`${td} text-right tabular-nums`}>{row.volumeLitres ?? 0}</td>
+              <td className={`${td} text-[10.5px]`}>
+                <span className={dup ? "" : "text-[#6b7280]"} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                  {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
+                </span>
+              </td>
+              {!showSlot && (
+                <td className={td}>
+                  {row.assignedToName ?? (
+                    <span className={dup ? "" : "text-[#9ca3af]"} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                      —
+                    </span>
+                  )}
+                </td>
+              )}
+              <td className={td}>{statusCell}</td>
             </tr>
           );
         })}

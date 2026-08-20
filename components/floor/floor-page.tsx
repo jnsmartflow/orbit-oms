@@ -565,6 +565,26 @@ export function FloorPage() {
     }
   }, [detail, scopedData, filteredFloor, filteredHold, filteredCancelled]);
 
+  // Duplicate-SO flag for the OPEN bill, taken from the row that is ALREADY
+  // loaded — no second fetch and no new field on /api/floor/order/[orderId],
+  // which would be a second source of truth for one fact.
+  //
+  // ⚠ Keyed on `detail.orderId`, NOT captured at click time: Prev/Next walks
+  // the panel to another bill (navigateDetail) without re-opening it, so a
+  // value frozen on open would describe the wrong bill from the second one on.
+  //
+  // Deliberately the UNSCOPED `data`, matching onReassign's reasoning below:
+  // "does this bill have a twin" is a property of the bill, not of the chip in
+  // view. Hold and Cancelled rows are not flagged at all (their feeds do not
+  // carry the field), so a panel opened from those tabs resolves to false —
+  // the known gap, not a bug.
+  const detailHasDuplicateSo = useMemo(() => {
+    if (!detail) return false;
+    const railHit = (data?.rail ?? []).find((c) => c.orderId === detail.orderId);
+    if (railHit) return railHit.hasDuplicateSo;
+    return (data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId)?.hasDuplicateSo ?? false;
+  }, [detail, data]);
+
   const detailActions: DetailActions = useMemo(
     () => ({
       onRelease: async (orderId, date, windowId) => {
@@ -1013,6 +1033,7 @@ export function FloorPage() {
         <DetailPanel
           orderId={detail.orderId}
           source={detail.source}
+          hasDuplicateSo={detailHasDuplicateSo}
           list={detailList}
           windows={dispatchWindows}
           pickers={data?.pickers ?? []}

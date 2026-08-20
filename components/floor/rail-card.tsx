@@ -41,6 +41,16 @@ import {
 } from "@/components/floor/dispatch-slot-picker";
 import { getTodayIST } from "@/lib/dates";
 import { TintStrip } from "./tint-strip";
+import {
+  DuplicateSoTag,
+  DUP_SO_BADGE_CLASS,
+  DUP_SO_BORDER,
+  DUP_SO_FILL,
+  DUP_SO_MUTED,
+  DUP_SO_TEXT,
+  DUP_SO_WASH,
+  DUP_SO_WASH_BORDER,
+} from "@/components/shared/duplicate-so-tag";
 import type { FloorRailCard as RailCardData } from "@/lib/floor/types";
 
 export interface RailReleaseSlot {
@@ -139,6 +149,22 @@ export function RailCard({
 
   const suggestionDay = suggestion ? fmtSuggestionDay(suggestion.targetDate, getTodayIST()) : "";
 
+  // ── Duplicate-SO red ──────────────────────────────────────────────────────
+  // ⚠ SEARCH-HIGHLIGHT ON RED. Normally a match is teal border + teal ring, and
+  // on a red card the border is already spoken for. So a highlighted duplicate
+  // keeps the ring OUTSIDE the box (white gap, then teal) and takes a WHITE
+  // border — the two states stay independently readable: red says "duplicate",
+  // the white-and-teal ring says "this is your search hit". The rail's list
+  // padding is p-2.5 (10px), which clears the 4px ring.
+  const dup = card.hasDuplicateSo;
+  const cardStyle: React.CSSProperties | undefined = dup
+    ? {
+        background: DUP_SO_FILL,
+        borderColor: highlighted ? DUP_SO_TEXT : DUP_SO_BORDER,
+        ...(highlighted ? { boxShadow: "0 0 0 2px #ffffff, 0 0 0 4px #0d9488" } : null),
+      }
+    : undefined;
+
   function confirmSuggestion() {
     if (!suggestion) return;
     if (suggestedWindowId === undefined) {
@@ -163,45 +189,91 @@ export function RailCard({
           onOpenDetail(card.orderId);
         }
       }}
-      className={`mb-2 cursor-pointer rounded-lg border bg-white px-3 py-[11px] transition-colors ${
-        highlighted ? "border-teal-400 ring-2 ring-teal-400/25" : "border-gray-200 hover:border-gray-300"
-      }`}
+      className={
+        "mb-2 cursor-pointer rounded-lg border px-3 py-[11px] transition-colors " +
+        (dup
+          ? // Colours come from cardStyle so the red beats the highlight classes.
+            ""
+          : highlighted
+            ? "bg-white border-teal-400 ring-2 ring-teal-400/25"
+            : "bg-white border-gray-200 hover:border-gray-300")
+      }
+      style={cardStyle}
     >
       {/* OBD · time · icons (fixed order: age → ★ → ⚡ → droplet) */}
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[11.5px] tracking-[-0.01em] text-gray-700">{card.obdNumber}</span>
-        <span className="text-[10.5px] text-gray-400">{fmtWhen(card.obdDateTime)}</span>
+        <span
+          className={"font-mono text-[11.5px] tracking-[-0.01em] " + (dup ? "" : "text-gray-700")}
+          style={dup ? { color: DUP_SO_TEXT } : undefined}
+        >
+          {card.obdNumber}
+        </span>
+        <span className={"text-[10.5px] " + (dup ? "" : "text-gray-400")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+          {fmtWhen(card.obdDateTime)}
+        </span>
         {card.isEmailTime && (
           <span title="Email time" className="inline-flex shrink-0">
-            <Mail size={10.5} className="text-gray-400" />
+            <Mail size={10.5} className={dup ? "" : "text-gray-400"} style={dup ? { color: DUP_SO_MUTED } : undefined} />
           </span>
         )}
         <span className="ml-auto flex items-center gap-1.5">
+          {/* The tag leads the icon cluster — it is why the card is red. */}
+          {dup && <DuplicateSoTag />}
           {card.ageDays > 0 && (
-            <span className="rounded-[3px] bg-gray-100 px-[5px] py-px text-[9.5px] font-bold leading-[1.5] text-gray-500">
+            <span
+              className={
+                "rounded-[3px] px-[5px] py-px text-[9.5px] font-bold leading-[1.5] " +
+                (dup ? DUP_SO_BADGE_CLASS : "bg-gray-100 text-gray-500")
+              }
+            >
               {card.ageDays}d
             </span>
           )}
-          {card.isKeyCustomer && <span className="text-[12px] leading-none text-[#f59e0b]">★</span>}
-          {card.priorityLevel === 1 && <span className="text-[12px] leading-none text-[#ef4444]">⚡</span>}
-          {card.isTint && <Droplet size={13} className={dropletReady ? "text-[#16a34a]" : "text-[#7c3aed]"} />}
+          {/* ★ amber and ⚡ red both die on the fill — white glyphs on a
+              duplicate, shapes unchanged so the two stay tellable apart. */}
+          {card.isKeyCustomer && (
+            <span className="text-[12px] leading-none" style={{ color: dup ? DUP_SO_TEXT : "#f59e0b" }}>
+              ★
+            </span>
+          )}
+          {card.priorityLevel === 1 && (
+            <span className="text-[12px] leading-none" style={{ color: dup ? DUP_SO_TEXT : "#ef4444" }}>
+              ⚡
+            </span>
+          )}
+          {card.isTint && (
+            <Droplet
+              size={13}
+              className={dup ? "" : dropletReady ? "text-[#16a34a]" : "text-[#7c3aed]"}
+              style={dup ? { color: DUP_SO_TEXT } : undefined}
+            />
+          )}
         </span>
       </div>
 
       {/* Customer (original ship-to) — largest thing on the card */}
-      <div className="mt-1.5 text-[14px] font-bold leading-[1.3] text-gray-900">
+      <div
+        className={"mt-1.5 text-[14px] font-bold leading-[1.3] " + (dup ? "" : "text-gray-900")}
+        style={dup ? { color: DUP_SO_TEXT } : undefined}
+      >
         {card.customerName ?? card.dealerName}
       </div>
 
       {/* Route · Vol */}
-      <div className="mt-[3px] text-[11.5px] text-gray-600">
-        {card.route ?? "—"} <span className="text-gray-400">&middot; {card.volumeLitres ?? 0} L</span>
+      <div className={"mt-[3px] text-[11.5px] " + (dup ? "" : "text-gray-600")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+        {card.route ?? "—"}{" "}
+        <span className={dup ? "" : "text-gray-400"} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+          &middot; {card.volumeLitres ?? 0} L
+        </span>
       </div>
 
       {/* Ship-to override line — override only (04-card-spec §4) */}
       {card.isShipToOverride && card.shipToOverrideName && (
-        <div className="mt-[3px] text-[11px] text-gray-600">
-          Ship to <b className="font-semibold text-gray-700">{card.shipToOverrideName}</b>
+        <div className={"mt-[3px] text-[11px] " + (dup ? "" : "text-gray-600")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+          Ship to{" "}
+          <b className={"font-semibold " + (dup ? "" : "text-gray-700")} style={dup ? { color: DUP_SO_TEXT } : undefined}>
+            {card.shipToOverrideName}
+          </b>
         </div>
       )}
 
@@ -277,11 +349,19 @@ export function RailCard({
         )}
 
         {/* Hold + ✕ (cancel) — wired to /api/floor/actions (Step 5). */}
+        {/* Both secondary controls take the white alpha wash on a duplicate —
+            a white-filled button would read as the card's primary action, and
+            the teal Release split button next to them must stay the loudest
+            thing on the row (UI §10, one teal per surface). */}
         <button
           type="button"
           title="Hold — remove from decisions to the hold list"
           onClick={() => onHold(card.orderId)}
-          className="h-[30px] rounded-md border border-gray-200 bg-white px-2.5 text-[11px] text-gray-500 hover:border-gray-300"
+          className={
+            "h-[30px] rounded-md border px-2.5 text-[11px] " +
+            (dup ? "" : "border-gray-200 bg-white text-gray-500 hover:border-gray-300")
+          }
+          style={dup ? { background: DUP_SO_WASH, borderColor: DUP_SO_WASH_BORDER, color: DUP_SO_TEXT } : undefined}
         >
           Hold
         </button>
@@ -289,7 +369,11 @@ export function RailCard({
           type="button"
           title="Cancel this bill"
           onClick={() => onCancel(card.orderId)}
-          className="h-[30px] rounded-md border border-gray-200 bg-white px-2.5 text-[11px] text-gray-500 hover:border-red-200 hover:text-red-600"
+          className={
+            "h-[30px] rounded-md border px-2.5 text-[11px] " +
+            (dup ? "" : "border-gray-200 bg-white text-gray-500 hover:border-red-200 hover:text-red-600")
+          }
+          style={dup ? { background: DUP_SO_WASH, borderColor: DUP_SO_WASH_BORDER, color: DUP_SO_TEXT } : undefined}
         >
           &#10005;
         </button>
@@ -304,11 +388,16 @@ export function RailCard({
           <button
             type="button"
             onClick={() => setWhyOpen((v) => !v)}
-            className="text-gray-400 underline underline-offset-2 hover:text-gray-600"
+            className={"underline underline-offset-2 " + (dup ? "" : "text-gray-400 hover:text-gray-600")}
+            style={dup ? { color: DUP_SO_MUTED } : undefined}
           >
             Why no slot?
           </button>
-          {whyOpen && <span className="ml-1.5 text-gray-500">{whyNoSlot(card.deliveryType)}</span>}
+          {whyOpen && (
+            <span className={"ml-1.5 " + (dup ? "" : "text-gray-500")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+              {whyNoSlot(card.deliveryType)}
+            </span>
+          )}
         </div>
       )}
     </div>

@@ -2,6 +2,16 @@
 
 import { ChevronRight } from "lucide-react";
 import type { PickingQueueRow } from "@/lib/picking/types";
+// The duplicate-SO red is owned by ONE file — never re-type its hexes here.
+// These atoms only need to know how to survive ON that fill, which is what the
+// `onRed` prop below does.
+import {
+  DUP_SO_BADGE_CLASS,
+  DUP_SO_BAND,
+  DUP_SO_MUTED,
+  DUP_SO_WASH,
+  DUP_SO_WASH_BORDER,
+} from "@/components/shared/duplicate-so-tag";
 
 // ── Shared Picking card atoms ───────────────────────────────────────────────
 // Extracted 2026-07-29 from components/picking/picking-board-mobile.tsx, where
@@ -40,18 +50,38 @@ import type { PickingQueueRow } from "@/lib/picking/types";
 //
 // ⚠ THE COLOUR SCALE LIVES HERE AND ONLY HERE. Both picking boards render
 // this component; never re-map days→colour at a call site.
-export function AgeBadge({ row }: { row: PickingQueueRow }): React.JSX.Element | null {
+//
+// ⚠ `onRed` — the duplicate-SO card fill (components/shared/duplicate-so-tag.tsx)
+// is solid #dc2626, and EVERY tier above is a red or amber wash that disappears
+// into it. On such a card the badge flips to the shared white pill with #b91c1c
+// text. The SCALE is unchanged — the badge still only renders for the same days
+// — only its skin swaps, so "how stale" still reads the same on both.
+// Optional and defaulted false, so the picker board and every existing call
+// site render byte-identical DOM.
+export function AgeBadge({
+  row,
+  onRed = false,
+}: {
+  row: PickingQueueRow;
+  onRed?: boolean;
+}): React.JSX.Element | null {
   if (row.noDispatchDate) {
     return (
-      <span className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-gray-100 text-gray-500">
+      <span
+        className={
+          "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap " +
+          (onRed ? DUP_SO_BADGE_CLASS : "bg-gray-100 text-gray-500")
+        }
+      >
         no date
       </span>
     );
   }
   const days = row.ageDays;
   if (days === null || days <= 0) return null;
-  const cls =
-    days >= 4
+  const cls = onRed
+    ? DUP_SO_BADGE_CLASS
+    : days >= 4
       ? "bg-red-50 text-red-700 border border-red-200"
       : days >= 2
         ? "bg-amber-100 text-amber-800 border border-amber-300"
@@ -142,17 +172,27 @@ export function SmuBadge({ code }: { code: string | null }): React.JSX.Element |
 // shrink-0 + whitespace-nowrap are part of the atom on purpose: every consumer
 // puts these in a single non-wrapping scroll row, and a chip that shrinks or
 // wraps breaks the uniform card height that layout depends on.
+//
+// `onRed` wins over `muted` — on a duplicate-SO card the slate chip is
+// invisible, so it becomes a white alpha wash with pale-red text. A locked
+// duplicate card is still first a duplicate.
 export function FamilyChip({
   label,
   muted = false,
+  onRed = false,
 }: {
   label: string;
   muted?: boolean;
+  onRed?: boolean;
 }): React.JSX.Element {
   return (
     <span
       className="shrink-0 whitespace-nowrap text-[10.5px] font-semibold rounded-[7px] py-[3px] px-[8px]"
-      style={{ color: muted ? "#8a929c" : "#667085", background: muted ? "#f1f3f6" : "#eef1f5" }}
+      style={
+        onRed
+          ? { color: DUP_SO_MUTED, background: DUP_SO_WASH }
+          : { color: muted ? "#8a929c" : "#667085", background: muted ? "#f1f3f6" : "#eef1f5" }
+      }
     >
       {label}
     </span>
@@ -167,12 +207,22 @@ export function FamilyChip({
 // Dashed and grey by design: it is an admission that the catalog is
 // incomplete, NOT a product family, so it must never read as one more chip in
 // the list. Renders nothing at 0 — the caller need not guard.
-export function UnlistedChip({ count }: { count: number }): React.JSX.Element | null {
+export function UnlistedChip({
+  count,
+  onRed = false,
+}: {
+  count: number;
+  onRed?: boolean;
+}): React.JSX.Element | null {
   if (count <= 0) return null;
   return (
     <span
       className="shrink-0 whitespace-nowrap text-[11.5px] font-semibold rounded-[8px] px-[9px] py-1 border border-dashed"
-      style={{ color: "#9aa2ac", borderColor: "#d8dce1" }}
+      style={
+        onRed
+          ? { color: DUP_SO_MUTED, borderColor: DUP_SO_WASH_BORDER }
+          : { color: "#9aa2ac", borderColor: "#d8dce1" }
+      }
     >
       +{count} unlisted
     </span>
@@ -196,9 +246,28 @@ const ROUTE_DOT_COLOR: Record<string, string> = {
   Upcountry: "#ea580c",
   Cross: "#e11d48",
 };
-export function RouteDot({ deliveryType }: { deliveryType: string | null }): React.JSX.Element {
+//
+// ⚠ `onRed` KEEPS THE COLOUR and adds a white ring — it does NOT recolour the
+// dot. Blue/rose on a #dc2626 fill is muddy, but painting the dot white would
+// destroy the only thing it carries (which lane this bill is on), and the
+// Assign board is exactly where a supervisor reads lanes. A 1.5px white ring
+// restores the contrast and keeps the hue. Costs no layout: a box-shadow ring
+// does not affect the 8px box.
+export function RouteDot({
+  deliveryType,
+  onRed = false,
+}: {
+  deliveryType: string | null;
+  onRed?: boolean;
+}): React.JSX.Element {
   const color = (deliveryType !== null && ROUTE_DOT_COLOR[deliveryType]) || "#9ca3af";
-  return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />;
+  return (
+    <span
+      className="w-2 h-2 rounded-full shrink-0"
+      style={{ background: color, ...(onRed ? { boxShadow: "0 0 0 1.5px #ffffff" } : null) }}
+      aria-hidden="true"
+    />
+  );
 }
 
 // Rich-card shelf — the DIVIDER + the grey band + CHIPS, plus one optional
@@ -255,10 +324,19 @@ export function RouteDot({ deliveryType }: { deliveryType: string | null }): Rea
 // which is exactly why that slot is free for a timestamp. Like showViewItems it
 // forces the shelf to render, so a Done bill with no resolved families still
 // gets its receipt line.
+//
+// ⚠ `onRed` — on a duplicate-SO card the grey band would read as a hole punched
+// in the fill, so it becomes an opaque DARKER red (DUP_SO_BAND) and every chip,
+// the "+N unlisted" pill and the arrow circle go to the white alpha wash. The
+// band is opaque rather than a wash for one specific reason: the right-edge
+// overflow cue is a GRADIENT, and a gradient whose end stop is semi-transparent
+// composites against the red parent differently along its length, which shows
+// as a smear. Opaque keeps that fade behaving exactly as it does on white.
 export function CardShelf({
   row,
   chips,
   muted = false,
+  onRed = false,
   showViewItems = false,
   onViewItems,
   trailing = null,
@@ -267,6 +345,7 @@ export function CardShelf({
   /** Chip labels, rendered verbatim. OMIT for the family chips + "+N unlisted". */
   chips?: readonly string[];
   muted?: boolean;
+  onRed?: boolean;
   showViewItems?: boolean;
   onViewItems?: () => void;
   trailing?: React.ReactNode;
@@ -278,8 +357,12 @@ export function CardShelf({
   const labels: readonly string[] = chips ?? row.families;
   const hasStrip = labels.length > 0 || (!ownChips && row.unresolvedLineCount > 0);
   if (!hasStrip && !showViewItems && trailing === null) return null;
+  const bandBg = onRed ? DUP_SO_BAND : "#f6f8fa";
   return (
-    <div className="border-t px-[14px] flex items-stretch gap-1" style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}>
+    <div
+      className="border-t px-[14px] flex items-stretch gap-1"
+      style={{ background: bandBg, borderColor: onRed ? DUP_SO_WASH_BORDER : "#eef1f4" }}
+    >
       <div className="relative flex-1 min-w-0 flex items-center py-[10px]">
         <div
           className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] w-full [&::-webkit-scrollbar]:hidden"
@@ -290,15 +373,20 @@ export function CardShelf({
               legitimately repeat a value ("2 Drum, 2 Drum"). Same rendered
               markup either way — these are static text spans with no state. */}
           {labels.map((label, i) => (
-            <FamilyChip key={`${i}-${label}`} label={label} muted={muted} />
+            <FamilyChip key={`${i}-${label}`} label={label} muted={muted} onRed={onRed} />
           ))}
-          {!ownChips && <UnlistedChip key="__unlisted" count={row.unresolvedLineCount} />}
+          {!ownChips && <UnlistedChip key="__unlisted" count={row.unresolvedLineCount} onRed={onRed} />}
         </div>
         {/* Fade cue — matches the shelf bg so chips dissolve under it, into the
-            link (or the card edge on Picking). */}
+            link (or the card edge on Picking). Both stops track `bandBg`, so
+            the red band fades to itself exactly as the grey one does. */}
         <div
           className="absolute top-0 right-0 w-[30px] h-full pointer-events-none"
-          style={{ background: "linear-gradient(90deg, rgba(246,248,250,0), #f6f8fa 72%)" }}
+          style={{
+            background: onRed
+              ? `linear-gradient(90deg, rgba(185,28,28,0), ${bandBg} 72%)`
+              : "linear-gradient(90deg, rgba(246,248,250,0), #f6f8fa 72%)",
+          }}
           aria-hidden="true"
         />
       </div>
@@ -317,9 +405,9 @@ export function CardShelf({
         >
           <span
             className="w-[30px] h-[30px] rounded-full flex items-center justify-center shrink-0"
-            style={{ background: "#eceff3" }}
+            style={{ background: onRed ? DUP_SO_WASH : "#eceff3" }}
           >
-            <ChevronRight size={16} style={{ color: "#8b93a0" }} />
+            <ChevronRight size={16} style={{ color: onRed ? "#ffffff" : "#8b93a0" }} />
           </span>
         </button>
       )}

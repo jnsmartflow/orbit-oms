@@ -7,6 +7,16 @@ import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+// Duplicate-SO red — tokens and tag from the ONE owner. Never re-type a hex.
+import {
+  DuplicateSoTag,
+  DUP_SO_BADGE_CLASS,
+  DUP_SO_BORDER,
+  DUP_SO_DIVIDER,
+  DUP_SO_FILL,
+  DUP_SO_MUTED,
+  DUP_SO_TEXT,
+} from "@/components/shared/duplicate-so-tag";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
@@ -140,16 +150,28 @@ const ELAPSED_PILL_CLASS: Record<ElapsedTier, string> = {
 // urgency signal the way the assign-elapsed pill is, just a receipt of when
 // the picker finished). Reuses elapsedSinceAssigned's minute/hour label
 // formatting for both — only the source timestamp and the pill style differ.
+// `onRed` — on a duplicate-SO card EVERY tier here (green receipt, grey/amber/
+// red elapsed) is a pale wash that the #dc2626 fill swallows, so all of them
+// flip to the ONE shared white pill with #b91c1c text. The elapsed TEXT is
+// unchanged, so "how long has he had it" still reads; only the skin swaps.
+// The "checked" arm is plain grey TEXT rather than a pill, so it just needs a
+// colour that survives the fill.
 function checkCardPill(
   row: PickingQueueRow,
   section: "needs" | "still" | "checked",
   nowTick: number,
+  onRed = false,
 ): React.ReactNode {
   if (section === "needs") {
     const p = elapsedSinceAssigned(row.pickedAt, nowTick);
     if (!p) return null;
     return (
-      <span className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 bg-green-50 text-green-700 border border-green-200">
+      <span
+        className={
+          "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 " +
+          (onRed ? DUP_SO_BADGE_CLASS : "bg-green-50 text-green-700 border border-green-200")
+        }
+      >
         Picked {p.label} ago
       </span>
     );
@@ -160,12 +182,24 @@ function checkCardPill(
     // {time}"), never an elapsed clock.
     const t = formatCheckedTime(row.checkedAt);
     if (t === null) return null;
-    return <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">checked {t}</span>;
+    return (
+      <span
+        className="text-[11px] font-semibold whitespace-nowrap"
+        style={onRed ? { color: DUP_SO_MUTED } : undefined}
+      >
+        <span className={onRed ? "" : "text-gray-400"}>checked {t}</span>
+      </span>
+    );
   }
   const p = elapsedSinceAssigned(row.assignedAt, nowTick);
   if (!p) return null;
   return (
-    <span className={"text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 " + ELAPSED_PILL_CLASS[p.tier]}>
+    <span
+      className={
+        "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 " +
+        (onRed ? DUP_SO_BADGE_CLASS : ELAPSED_PILL_CLASS[p.tier])
+      }
+    >
       {p.label}
     </span>
   );
@@ -293,6 +327,13 @@ function PickingCard({
 }): React.JSX.Element {
   const rich = variant === "assign" || variant === "assignLocked" || variant === "picking";
   const muted = variant === "assignLocked" || variant === "doneChecked";
+  // ── Duplicate-SO red ──────────────────────────────────────────────────────
+  // ALL FIVE VARIANTS. A duplicate is a duplicate at every stage: the case this
+  // exists for includes "already handed to a picker when the twin arrives", so
+  // gating it to the Assign tab would hide it exactly when it matters most.
+  // Sort order is deliberately untouched — a red card stays where the spine put
+  // it and is never floated or grouped (lib/picking/sort.ts is not involved).
+  const dup = row.hasDuplicateSo;
   const showSlotHero = rich && row.windowTime !== null;
   const secondary =
     variant === "doneCheck" || variant === "doneChecked" ? row.windowTime : formatObdDateTime(row.obdDateTime);
@@ -302,41 +343,57 @@ function PickingCard({
   // the two boards read identically; field is row.isTint (orders.orderType).
   // Urgent bolt stays AMBER (not the mockup's red) — red already means
   // "overdue" on the Picking elapsed badge; a second red would collide.
+  //
+  // ⚠ On a red card the amber ★ and ⚡ GLYPHS go white rather than becoming
+  // white pills. The flip-to-a-white-pill rule is for BADGES (AgeBadge, the
+  // elapsed pills, the day badge) — a white pill around each of three bare
+  // icons would out-shout the fill and the tag it exists to carry. The glyphs
+  // keep their shapes, which is what distinguishes them from each other.
+  const iconOnRed = dup ? { color: DUP_SO_TEXT, fill: DUP_SO_TEXT } : undefined;
   let captionRight: React.ReactNode = null;
   if (variant === "assign") {
     captionRight = (
       <span className="flex items-center gap-[7px] shrink-0">
-        {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
-        {row.priorityLevel === 1 && <Zap size={14} className="text-amber-500 fill-amber-500" />}
+        {row.isKeyCustomer && (
+          <Star size={14} className={dup ? "" : "text-amber-500 fill-amber-500"} style={iconOnRed} />
+        )}
+        {row.priorityLevel === 1 && (
+          <Zap size={14} className={dup ? "" : "text-amber-500 fill-amber-500"} style={iconOnRed} />
+        )}
         {row.isTint && <span className="text-[13px] text-purple-500 leading-none shrink-0">🎨</span>}
         {row.isEarlyReleased && (
           <span
-            className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-slate-100 text-slate-600 border border-slate-200"
+            className={
+              "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap " +
+              (dup ? DUP_SO_BADGE_CLASS : "bg-slate-100 text-slate-600 border border-slate-200")
+            }
             title={row.earlyReleasedByName !== null ? `Released early by ${row.earlyReleasedByName}` : "Released early"}
           >
             released
           </span>
         )}
-        <AgeBadge row={row} />
+        <AgeBadge row={row} onRed={dup} />
       </span>
     );
   } else if (variant === "assignLocked") {
     captionRight = (
       <span className="flex items-center gap-1.5 shrink-0">
-        {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
+        {row.isKeyCustomer && (
+          <Star size={14} className={dup ? "" : "text-amber-500 fill-amber-500"} style={iconOnRed} />
+        )}
         {row.isTint && <span className="text-[13px] text-purple-500 leading-none shrink-0">🎨</span>}
-        <UpcomingDayBadge row={row} />
+        <UpcomingDayBadge row={row} onRed={dup} />
       </span>
     );
   } else if (variant === "picking") {
-    captionRight = checkCardPill(row, "still", nowTick);
+    captionRight = checkCardPill(row, "still", nowTick, dup);
   } else if (variant === "doneCheck") {
-    captionRight = checkCardPill(row, "needs", nowTick);
+    captionRight = checkCardPill(row, "needs", nowTick, dup);
   } // doneChecked: none — the checked time moves down to the checker line.
 
   const whereRight =
     (variant === "picking" || variant === "doneCheck" || variant === "doneChecked") && row.assignedToName !== null ? (
-      <span className="text-[12px] font-semibold shrink-0" style={{ color: "#8a929c" }}>
+      <span className="text-[12px] font-semibold shrink-0" style={{ color: dup ? DUP_SO_MUTED : "#8a929c" }}>
         {row.assignedToName}
       </span>
     ) : null;
@@ -382,7 +439,8 @@ function PickingCard({
         aria-label={`Locked until ${formatDispatchDay(row.dispatchTargetDate) ?? "its dispatch date"} — tap to release early`}
         className="w-11 shrink-0 self-stretch min-h-[48px] flex items-center justify-center pt-px active:opacity-60"
       >
-        <LockGlyph className="w-5 h-5 text-gray-400" />
+        {/* Grey-400 vanishes on the red fill — white on a duplicate. */}
+        <LockGlyph className={dup ? "w-5 h-5 text-white" : "w-5 h-5 text-gray-400"} />
       </button>
     ) : null;
 
@@ -410,10 +468,35 @@ function PickingCard({
       <div
         className={
           "relative rounded-[20px] overflow-hidden cursor-pointer border-[1.5px] " +
-          (selected ? "bg-teal-50 border-teal-600 " : "bg-white border-[#eceef2] ") +
-          (variant === "doneChecked" ? "opacity-75" : "")
+          // On a duplicate the fill/border come from the style object below, so
+          // no colour class is emitted here at all — a `bg-*` class plus an
+          // inline background is a fight nobody needs to read later.
+          (dup ? "" : selected ? "bg-teal-50 border-teal-600 " : "bg-white border-[#eceef2] ") +
+          // ⚠ doneChecked's opacity-75 is SUPPRESSED on a duplicate. Dimming is
+          // "this one is settled, stop looking at it" — the exact opposite of
+          // what a flagged card is for. Full strength, always.
+          (variant === "doneChecked" && !dup ? "opacity-75" : "")
         }
-        style={{ boxShadow: CARD_SHADOW_V2, ...(variant === "assignLocked" ? { background: "#fcfcfd" } : null) }}
+        style={{
+          // ⚠ SELECTION ON RED. Teal fill is unavailable (red owns it), so a
+          // selected duplicate is marked by a ring OUTSIDE the border box —
+          // white gap then teal — while the floating teal check badge above
+          // stays exactly as it is. Two independent signals, neither of which
+          // needs the fill. The ring is a box-shadow, so it adds no layout and
+          // is not clipped by this card's own overflow-hidden; the list's 16px
+          // px-4 padding leaves room for its 4px.
+          boxShadow:
+            dup && selected
+              ? `${CARD_SHADOW_V2}, 0 0 0 2px #ffffff, 0 0 0 4px #0d9488`
+              : CARD_SHADOW_V2,
+          // ⚠ ORDER MATTERS. assignLocked sets an inline background of its own
+          // (#fcfcfd); the duplicate spread comes AFTER it so the red wins, and
+          // the locked arm is additionally gated on !dup so the two can never
+          // both be live. Inline-vs-inline is resolved here, in one place,
+          // rather than by className precedence — which would have lost.
+          ...(variant === "assignLocked" && !dup ? { background: "#fcfcfd" } : null),
+          ...(dup ? { background: DUP_SO_FILL, borderColor: DUP_SO_BORDER } : null),
+        }}
         // Assign (unlocked) card body toggles SELECTION (2026-07-21) — detail
         // opens only via the arrow button in the shelf. Every OTHER variant
         // (picking, doneCheck, doneChecked, assignLocked) keeps body-tap → open
@@ -447,32 +530,45 @@ function PickingCard({
           <div className="flex items-center justify-between gap-2.5 mb-1.5">
             <span
               className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap"
-              style={{ color: "#98a2b3" }}
+              style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}
             >
-              <span className="font-mono shrink-0" style={{ color: "#98a0aa" }}>
+              <span className="font-mono shrink-0" style={{ color: dup ? DUP_SO_TEXT : "#98a0aa" }}>
                 {row.obdNumber}
               </span>
               {secondary !== null && (
                 <>
-                  <span className="shrink-0" style={{ color: "#d8dce1" }}>
+                  <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d8dce1" }}>
                     &middot;
                   </span>
                   <span className="truncate">{secondary}</span>
                 </>
               )}
             </span>
-            {captionRight}
+            {/* The tag leads the right-hand cluster so it is the first thing
+                read after the OBD. Wrapped ONLY on a duplicate, so every other
+                card's caption row is byte-identical DOM. */}
+            {dup ? (
+              <span className="flex items-center gap-1.5 shrink-0">
+                <DuplicateSoTag />
+                {captionRight}
+              </span>
+            ) : (
+              captionRight
+            )}
           </div>
           {/* Title: customer name (truncates, never pushes the slot) + slot hero */}
           <div className="flex items-baseline justify-between gap-3">
             <span
               className="text-[16px] font-semibold leading-[1.25] truncate min-w-0"
-              style={{ color: "#1d2939" }}
+              style={{ color: dup ? DUP_SO_TEXT : "#1d2939" }}
             >
               {row.dealerName}
             </span>
             {showSlotHero && (
-              <span className="text-[15px] font-semibold tabular-nums shrink-0" style={{ color: "#475467" }}>
+              <span
+                className="text-[15px] font-semibold tabular-nums shrink-0"
+                style={{ color: dup ? DUP_SO_TEXT : "#475467" }}
+              >
                 {row.windowTime}
               </span>
             )}
@@ -483,20 +579,26 @@ function PickingCard({
               area truncates first when the line is tight. */}
           <div className="flex items-center justify-between gap-2.5 mt-1.5">
             <span className="flex items-center gap-2 min-w-0">
-              <RouteDot deliveryType={row.deliveryType} />
-              <span className="text-[12px] font-medium truncate min-w-0" style={{ color: "#667085" }}>
+              <RouteDot deliveryType={row.deliveryType} onRed={dup} />
+              <span
+                className="text-[12px] font-medium truncate min-w-0"
+                style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
+              >
                 {row.area ?? "—"}
               </span>
               {rich && row.volumeLitres != null && (
                 <>
-                  <span className="shrink-0" style={{ color: "#d3d8de" }}>
+                  <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
                     &middot;
                   </span>
                   <span className="flex items-baseline gap-[3px] shrink-0">
-                    <span className="text-[12px] font-semibold tabular-nums" style={{ color: "#667085" }}>
+                    <span
+                      className="text-[12px] font-semibold tabular-nums"
+                      style={{ color: dup ? DUP_SO_TEXT : "#667085" }}
+                    >
                       {formatLitres(row.volumeLitres)}
                     </span>
-                    <span className="text-[10.5px] font-medium" style={{ color: "#98a2b3" }}>
+                    <span className="text-[10.5px] font-medium" style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}>
                       L
                     </span>
                   </span>
@@ -515,6 +617,7 @@ function PickingCard({
           row={row}
           chips={articleTagChips(row.articleTag)}
           muted={muted}
+          onRed={dup}
           showViewItems={variant === "assign"}
           onViewItems={onOpen}
         />
@@ -523,15 +626,26 @@ function PickingCard({
         // Its OWN line, never folded into the where line (a long area + long
         // checker name overflow the card; this is the fact the tab exists to
         // show, so it must never be the piece a truncate silently clips).
-        <div className="px-4 pb-3.5 flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: "#8a929c" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22a06b" strokeWidth={2.4} className="shrink-0">
+        <div
+          className="px-4 pb-3.5 flex items-center gap-1.5 text-[12px] font-semibold"
+          style={{ color: dup ? DUP_SO_MUTED : "#8a929c" }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={dup ? DUP_SO_TEXT : "#22a06b"}
+            strokeWidth={2.4}
+            className="shrink-0"
+          >
             <path d="M5 13l4 4L19 7" />
           </svg>
           <span>Checked by {row.checkedByName}</span>
           {formatCheckedTime(row.checkedAt) !== null && (
             <>
-              <span style={{ color: "#d0d5db" }}>&middot;</span>
-              <span style={{ color: "#a2aab4" }}>{formatCheckedTime(row.checkedAt)}</span>
+              <span style={{ color: dup ? DUP_SO_DIVIDER : "#d0d5db" }}>&middot;</span>
+              <span style={{ color: dup ? DUP_SO_MUTED : "#a2aab4" }}>{formatCheckedTime(row.checkedAt)}</span>
             </>
           )}
         </div>
@@ -621,11 +735,22 @@ function formatDispatchDay(iso: string | null): string | null {
 // amber and NOT red: a bill scheduled for Thursday is EARLY, not late.
 // Colouring it on the staleness scale would teach the floor to discount
 // amber everywhere else on the board.
-function UpcomingDayBadge({ row }: { row: PickingQueueRow }): React.JSX.Element | null {
+function UpcomingDayBadge({
+  row,
+  onRed = false,
+}: {
+  row: PickingQueueRow;
+  onRed?: boolean;
+}): React.JSX.Element | null {
   const label = formatDispatchDay(row.dispatchTargetDate);
   if (label === null) return null;
   return (
-    <span className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-slate-100 text-slate-600 border border-slate-200">
+    <span
+      className={
+        "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap " +
+        (onRed ? DUP_SO_BADGE_CLASS : "bg-slate-100 text-slate-600 border border-slate-200")
+      }
+    >
       for {label}
     </span>
   );
@@ -2303,9 +2428,19 @@ export function PickingBoardMobile(): React.JSX.Element {
         }
         {...pager.touchHandlers}
       >
+        {/* ⚠ SUPERVISOR detail header. On a duplicate-SO bill the teal band goes
+            red and carries the same tag, so the flag survives from the card into
+            the screen where the supervisor is actually comparing line items —
+            which is where he decides which of the two bills is real.
+            The teal is a className and the red an inline style, so the red wins
+            without a class fight. The PICKER's detail header
+            (picker-my-picks-board.tsx) is deliberately NOT touched. */}
         <div
           className="bg-teal-600 px-3.5 pb-3.5 flex items-start gap-2.5 shrink-0"
-          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+          style={{
+            paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
+            ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
+          }}
         >
           <button
             type="button"
@@ -2319,7 +2454,10 @@ export function PickingBoardMobile(): React.JSX.Element {
             <div className="text-[16px] font-extrabold text-white truncate">
               {detailRow?.dealerName ?? "—"}
             </div>
-            <div className="text-[12px] text-white/75 truncate">
+            <div
+              className={"text-[12px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/75")}
+              style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
+            >
               {detailRow
                 ? `${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
@@ -2341,8 +2479,14 @@ export function PickingBoardMobile(): React.JSX.Element {
                 // below it: a 74/77 bill that is not a key dealer, not urgent
                 // and not a tint would otherwise have its whole flag row
                 // suppressed and show no badge at all.
-                isSmuBadged(detailRow.smuCode)) && (
+                isSmuBadged(detailRow.smuCode) ||
+                // ⚠ SAME TRAP, SAME FIX — the duplicate tag lives in this row,
+                // so a flagged bill that is none of the above would have the
+                // whole row suppressed and lose the one signal it came for.
+                detailRow.hasDuplicateSo) && (
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {/* Leads the row — it is the reason the header is red. */}
+                {detailRow.hasDuplicateSo && <DuplicateSoTag />}
                 {detailRow.isKeyCustomer && (
                   <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full pl-1.5 pr-2 py-[3px] text-[11px] font-semibold text-white">
                     <Star size={11} className="text-amber-500 fill-amber-500" />

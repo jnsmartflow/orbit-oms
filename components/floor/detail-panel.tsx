@@ -23,6 +23,7 @@ import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from 
 import { DetailItems } from "./detail-items";
 import { DetailDetails } from "./detail-details";
 import { DetailActivity } from "./detail-activity";
+import { DuplicateSoTag, DUP_SO_FILL, DUP_SO_MUTED, DUP_SO_TEXT } from "@/components/shared/duplicate-so-tag";
 import type { FloorDetail, FloorDetailSource, FloorPicker } from "@/lib/floor/types";
 
 // ── Slot-chip / Release launcher — a custom trigger that opens the reused
@@ -136,6 +137,7 @@ function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: strin
 export function DetailPanel({
   orderId,
   source,
+  hasDuplicateSo = false,
   list,
   windows,
   pickers,
@@ -145,6 +147,17 @@ export function DetailPanel({
 }: {
   orderId: number;
   source: FloorDetailSource;
+  /**
+   * Passed DOWN from the already-loaded board row (floor-page.tsx) — NOT
+   * fetched. `/api/floor/order/[orderId]` deliberately does not carry this
+   * field: the boolean already exists on the row the panel was opened from, and
+   * adding it to the detail payload would make the same fact answerable from
+   * two places that could disagree.
+   *
+   * False for Hold- and Cancelled-sourced panels — those feeds do not compute
+   * the flag at all (known gap, see components/shared/duplicate-so-tag.tsx).
+   */
+  hasDuplicateSo?: boolean;
   list: number[];
   windows: DispatchWindow[];
   pickers: FloorPicker[];
@@ -230,6 +243,7 @@ export function DetailPanel({
           <PanelBody
             d={detail}
             source={source}
+            hasDuplicateSo={hasDuplicateSo}
             tab={tab}
             setTab={setTab}
             windows={windows}
@@ -281,6 +295,7 @@ export function DetailPanel({
 function PanelBody({
   d,
   source,
+  hasDuplicateSo,
   tab,
   setTab,
   windows,
@@ -298,6 +313,7 @@ function PanelBody({
 }: {
   d: FloorDetail;
   source: FloorDetailSource;
+  hasDuplicateSo: boolean;
   tab: Tab;
   setTab: (t: Tab) => void;
   windows: DispatchWindow[];
@@ -338,10 +354,27 @@ function PanelBody({
   return (
     <>
       {/* ── Header (fixed) ─────────────────────────────────────────────────── */}
-      <div className="px-5 pt-3.5">
+      {/* On a duplicate-SO bill the whole header block takes the red fill, so
+          the flag survives from the row into the screen the operator uses to
+          compare the two bills. `pb-0.5` only on red: the tag row needs a hair
+          of breathing room under the fill's bottom edge. */}
+      <div
+        className={"px-5 pt-3.5 " + (hasDuplicateSo ? "pb-0.5" : "")}
+        style={hasDuplicateSo ? { background: DUP_SO_FILL } : undefined}
+      >
         <div className="flex items-baseline gap-2.5">
-          <span className="font-mono text-[19px] font-bold leading-none tracking-[-0.02em] text-gray-900">{d.obdNumber}</span>
-          <span className="text-[11px] tabular-nums text-gray-400">{fmtDateTime(d.obdDateTime)}</span>
+          <span
+            className={"font-mono text-[19px] font-bold leading-none tracking-[-0.02em] " + (hasDuplicateSo ? "" : "text-gray-900")}
+            style={hasDuplicateSo ? { color: DUP_SO_TEXT } : undefined}
+          >
+            {d.obdNumber}
+          </span>
+          <span
+            className={"text-[11px] tabular-nums " + (hasDuplicateSo ? "" : "text-gray-400")}
+            style={hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
+          >
+            {fmtDateTime(d.obdDateTime)}
+          </span>
           <div className="ml-auto flex items-center gap-2 self-center">
             {/* Slot chip — moved up beside the date; a chip with a pencil so it
                 reads as editable. Opens the reused picker. Deleted the old grey
@@ -353,28 +386,56 @@ function PanelBody({
                 windows={windows}
                 popoverDir="down"
                 popoverAlign="right"
-                className={`inline-flex h-[26px] items-center gap-1.5 rounded-md border bg-white px-2 text-[11.5px] transition-colors hover:border-gray-400 hover:bg-gray-50 ${
-                  currentSlotValue ? "border-gray-300 text-gray-700" : "border-dashed border-gray-300 text-gray-400"
-                }`}
+                className={
+                  hasDuplicateSo
+                    ? // White alpha wash so the chip stays legible on the fill
+                      // without reading as a filled primary control.
+                      `inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2 text-[11.5px] transition-colors border-white/45 bg-white/20 text-white ${
+                        currentSlotValue ? "" : "border-dashed"
+                      }`
+                    : `inline-flex h-[26px] items-center gap-1.5 rounded-md border bg-white px-2 text-[11.5px] transition-colors hover:border-gray-400 hover:bg-gray-50 ${
+                        currentSlotValue ? "border-gray-300 text-gray-700" : "border-dashed border-gray-300 text-gray-400"
+                      }`
+                }
               >
                 <ClockIcon />
                 <span>{slotText}</span>
-                <span className="ml-0.5 flex items-center border-l border-gray-200 pl-1.5">
+                <span className={"ml-0.5 flex items-center border-l pl-1.5 " + (hasDuplicateSo ? "border-white/40" : "border-gray-200")}>
                   <PencilIcon />
                 </span>
               </SlotPickerButton>
             )}
-            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <button
+              type="button"
+              onClick={onClose}
+              className={hasDuplicateSo ? "text-white/80 hover:text-white" : "text-gray-400 hover:text-gray-600"}
+            >
               <X size={15} />
             </button>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-[16px] font-bold text-gray-900">{d.shipToName}</span>
-          {d.shipToCode && <span className="font-mono text-[11.5px] text-gray-400">{d.shipToCode}</span>}
+          <span
+            className={"text-[16px] font-bold " + (hasDuplicateSo ? "" : "text-gray-900")}
+            style={hasDuplicateSo ? { color: DUP_SO_TEXT } : undefined}
+          >
+            {d.shipToName}
+          </span>
+          {d.shipToCode && (
+            <span
+              className={"font-mono text-[11.5px] " + (hasDuplicateSo ? "" : "text-gray-400")}
+              style={hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
+            >
+              {d.shipToCode}
+            </span>
+          )}
         </div>
-        {/* Tags carry treatment facts only (design §10.2): status, key, urgent, site, tint. */}
+        {/* Tags carry treatment facts only (design §10.2): status, key, urgent, site, tint.
+            All five are already LIGHT pills on a coloured text, so they stay
+            readable on the red fill and are deliberately left alone — only the
+            duplicate tag is added, leading the row. */}
         <div className="my-3 flex flex-wrap items-center gap-1.5">
+          {hasDuplicateSo && <DuplicateSoTag />}
           <span className={`rounded-[4px] px-2.5 py-1 text-[10.5px] font-semibold ${status.cls}`}>{status.label}</span>
           {d.isKeyCustomer && <span className="rounded-[4px] bg-[#fffbeb] px-2 py-[3px] text-[10px] font-semibold text-[#b45309]">★ Key</span>}
           {d.priorityLevel === 1 && <span className="rounded-[4px] bg-[#fef2f2] px-2 py-[3px] text-[10px] font-semibold text-[#b91c1c]">⚡ Urgent</span>}

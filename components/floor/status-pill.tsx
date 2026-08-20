@@ -8,6 +8,7 @@
 // Also exports the row→status mapping and count helper reused by the progress
 // bar, slot bands and route rows so the four surfaces can never disagree.
 
+import { DUP_SO_BADGE_CLASS } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export type FloorStatus = "waiting" | "withPicker" | "needsCheck" | "done";
@@ -33,10 +34,28 @@ const META: Record<FloorStatus, { label: string; cls: string }> = {
 
 // Radius 4px (design §7.6 — a pill, not a capsule). Time rides inside after a
 // faded dot; two-char units keep the pill from growing the column (§7.7).
-export function StatusPill({ status, time }: { status: FloorStatus; time?: string | null }) {
+// ⚠ `onRed` — on a duplicate-SO row (#dc2626 fill) all four pale washes above
+// are unreadable, so every status flips to the ONE shared white pill with
+// #b91c1c text. The LABEL still carries the status, which is what the column
+// is for; only the colour coding is spent — an acceptable trade, because on
+// that row the red outranks the status. Optional + defaulted, so every
+// non-duplicate row is byte-identical.
+export function StatusPill({
+  status,
+  time,
+  onRed = false,
+}: {
+  status: FloorStatus;
+  time?: string | null;
+  onRed?: boolean;
+}) {
   const m = META[status];
   return (
-    <span className={`inline-flex items-center rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${m.cls}`}>
+    <span
+      className={`inline-flex items-center rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${
+        onRed ? DUP_SO_BADGE_CLASS : m.cls
+      }`}
+    >
       {m.label}
       {time ? (
         <>
