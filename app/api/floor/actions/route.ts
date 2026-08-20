@@ -102,6 +102,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       let updateData: Prisma.ordersUncheckedUpdateInput;
       let toStage = order.workflowStage;
       let note: string;
+      // Set by 'cancel' only — see the write block below. Declared here rather
+      // than inside the branch because the writes are shared by all five
+      // actions and must stay in ONE place.
+      let clearAssignment = false;
 
       if (action === "mark-urgent") {
         const newLevel = typeof body.urgent === "boolean" ? (body.urgent ? 1 : 3) : order.priorityLevel === 1 ? 3 : 1;
@@ -131,6 +135,26 @@ export async function POST(req: Request): Promise<NextResponse> {
         updateData = { workflowStage: "cancelled", dispatchStatus: null };
         toStage = "cancelled";
         note = body.reason ? `Cancelled — ${body.reason}` : "Cancelled from floor";
+        // 🔴 ORPHAN FIX (2026-08-20). Cancel is NOT stage-gated here — it will
+        // happily kill a bill sitting at pick_assigned / pick_done /
+        // pick_checked — and until now it left the pick_assignments row behind,
+        // because this branch only ever wrote to `orders`.
+        //
+        // That row is a trap, not just litter. A cancelled bill can be Restored
+        // (the 'restore' arm below) to pending_support, then Released to
+        // pending_picking — at which point app/api/picking/assign/route.ts's
+        // guard (c) finds the surviving row and rejects with "Already
+        // assigned." FOREVER: `pick_assignments.orderId` is @unique and the
+        // ONLY deleter is app/api/picking/unassign/route.ts, which requires
+        // workflowStage === PICK_ASSIGNED — a stage the bill can never reach
+        // again. The bill is permanently un-assignable while the UI claims it
+        // is assigned to nobody.
+        //
+        // Clearing it also stops the row asserting a false present tense: once
+        // the order is dead, "Ramesh is picking this" is not true. Who held it
+        // survives on the assign event in order_status_logs, which is the right
+        // home for history.
+        clearAssignment = true;
       } else {
         // restore — cancelled → back onto the left rail as an undecided card
         // (design §9). pending_support (rank 50) satisfies the rail predicate
@@ -147,6 +171,19 @@ export async function POST(req: Request): Promise<NextResponse> {
 
       // ONE orders.update per bill.
       await prisma.orders.update({ where: { id: orderId }, data: updateData });
+      // Cancel only — clear the assignment AFTER the stage write, never before.
+      // Same ordering rule as app/api/picking/unassign/route.ts: if this fails,
+      // the order is cancelled with a stale row (a fixable leftover, and the
+      // state every cancel produced before this fix). Reversed, a failed stage
+      // write would delete the assignment record while the bill was still
+      // pick_assigned — on the picker's board with no record of who has it, and
+      // unrecoverable via unassign. deleteMany tolerates the common case of no
+      // row at all. Touches neither `orders` nor `order_status_logs`, so the
+      // one-update / one-log contract above is unchanged and the live-sync
+      // marker sees exactly one change.
+      if (clearAssignment) {
+        await prisma.pick_assignments.deleteMany({ where: { orderId } });
+      }
       // ONE log per bill per action.
       await prisma.order_status_logs.create({
         data: { orderId, fromStage: order.workflowStage, toStage, changedById, note },
