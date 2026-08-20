@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Search,
+  ChevronDown,
+  Check,
+  Star,
+  Zap,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  MoreVertical,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
@@ -19,6 +30,12 @@ import {
 } from "@/components/shared/duplicate-so-tag";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
+import { CancelSheet } from "./cancel-sheet";
+// Stage vocabulary — imported, never hard-coded. pickingRowStage() is the ONE
+// owner of the booleans→stage mapping; PICKING_CANCELLABLE_STAGES is exported
+// by the route that enforces it, so the ⋯ can never offer what the API refuses.
+import { pickingRowStage, PICKING_CANCELLABLE_STAGES } from "@/lib/workflow-stages";
+import type { CancelReason } from "@/lib/picking/cancel-reasons";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
 // The pick-bundling engine, shared with Floor's By-group view and used AS-IS.
 // Where the phone's shape differed, this caller adapted — the engine did not.
@@ -1030,9 +1047,23 @@ export function PickingBoardMobile(): React.JSX.Element {
   // it), so it is NOT re-included here. View-only filter sheets (route/picker
   // filters) are deliberately excluded — a background refresh behind a filter is
   // harmless and pausing on them would only starve the board of updates.
+  // ── Cancel bill (3b) — the ⋯ in the detail header opens this ──────────────
+  // `cancelTarget` is the OPEN bill being cancelled, or null. A row, not a
+  // boolean, so the sheet always renders the bill it was opened for even if the
+  // board's rows change underneath it.
+  const [cancelTarget, setCancelTarget] = useState<PickingQueueRow | null>(null);
+  const [cancelMenuOpen, setCancelMenuOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
   useEffect(() => {
-    setOverlayBusy(pickerSheetOpen || releaseTarget !== null);
-  }, [pickerSheetOpen, releaseTarget, setOverlayBusy]);
+    // The cancel sheet joins the pause set. `detailOpen` already covers it
+    // TODAY (the sheet only opens over the detail screen), but wiring it here
+    // makes the pause a property of the SHEET rather than of where it happens
+    // to be reachable from — so it stays safe if a later build ever opens it
+    // from the list. Never gate on detailOrderId: that is never reset to null
+    // (CLAUDE_PICKING.md §10), so it would pause forever after the first bill.
+    setOverlayBusy(pickerSheetOpen || releaseTarget !== null || cancelTarget !== null);
+  }, [pickerSheetOpen, releaseTarget, cancelTarget, setOverlayBusy]);
 
   // ── Detail-interactions Build A — in-module back navigation ─────────────
   // Copies the ESSENCE of /po's single-authority popstate model (discovery
@@ -1052,7 +1083,15 @@ export function PickingBoardMobile(): React.JSX.Element {
   // findingOpen joins the pair 2026-08-08 — the record popup is a second nested
   // overlay over the detail screen, and it needs the same close-and-re-push
   // treatment the picker sheet already gets.
-  const navStateRef = useRef({ detailOpen: false, pickerSheetOpen: false, findingOpen: false });
+  // cancelOpen joins the set 2026-08-20 (3b) — the cancel sheet is another
+  // nested overlay over the detail screen and needs the same close-and-re-push
+  // treatment the picker sheet and the record popup already get.
+  const navStateRef = useRef({
+    detailOpen: false,
+    pickerSheetOpen: false,
+    findingOpen: false,
+    cancelOpen: false,
+  });
   // The popstate listener registers ONCE, so it must not close over a
   // `recorder` object rebuilt on every render.
   const recorderRef = useRef(recorder);
@@ -1519,8 +1558,13 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Keeps navStateRef synced to live detailOpen/pickerSheetOpen so the
   // handler (registered once below) never reads a stale closure.
   useEffect(() => {
-    navStateRef.current = { detailOpen, pickerSheetOpen, findingOpen: recorder.target !== null };
-  }, [detailOpen, pickerSheetOpen, recorder.target]);
+    navStateRef.current = {
+      detailOpen,
+      pickerSheetOpen,
+      findingOpen: recorder.target !== null,
+      cancelOpen: cancelTarget !== null,
+    };
+  }, [detailOpen, pickerSheetOpen, recorder.target, cancelTarget]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1543,6 +1587,18 @@ export function PickingBoardMobile(): React.JSX.Element {
       }
       if (navStateRef.current.pickerSheetOpen && navStateRef.current.detailOpen) {
         setPickerSheetOpen(false);
+        pushScreen();
+        return;
+      }
+      // The cancel sheet — same shape as the two branches above. A back-press
+      // while it is open closes the SHEET and re-pushes, so the single "detail"
+      // entry survives for the NEXT back-press to close the bill. Without the
+      // re-push the depth desyncs and one more back would leave /picking
+      // entirely. It is NOT a branch on its own: like the picker sheet, it only
+      // ever floats over the detail screen, so it is guarded on both.
+      if (navStateRef.current.cancelOpen && navStateRef.current.detailOpen) {
+        setCancelTarget(null);
+        setCancelMenuOpen(false);
         pushScreen();
         return;
       }
@@ -1729,6 +1785,56 @@ export function PickingBoardMobile(): React.JSX.Element {
   // (no batch endpoint exists), refetch-after-action rather than patching
   // rows locally, and the same 409 handling (bill already moved out from
   // under us — refetch and say so honestly instead of a generic failure).
+  // ── Cancel bill (3b) ──────────────────────────────────────────────────────
+  // Modelled on handleApprove, NOT handleAssign. Cancel exists only inside the
+  // detail screen and has no bulk equivalent, so the history pop is
+  // UNCONDITIONAL — handleAssign's `if (detailOpen)` guard exists purely
+  // because the bulk floating bar reaches that function without ever having
+  // pushed an entry, which is not a case this action has.
+  //
+  // Order on success: close the sheet → pop the detail entry → toast → refetch.
+  // The pop is fired BEFORE the await so the screen leaves immediately (the
+  // bill is gone; keeping it on screen while a fetch resolves would be showing
+  // a dead order), and refetchQueue's own errors are swallowed by design.
+  const handleCancel = useCallback(
+    async (row: PickingQueueRow, reason: CancelReason, note: string) => {
+      if (cancelling) return; // in-flight guard — same double-tap shape as the other writes
+      setCancelling(true);
+      try {
+        const res = await fetch("/api/picking/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: row.orderId, reason, note: note.trim() || undefined }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok) {
+          if (res.status === 409) {
+            // The bill moved out from under him. EXISTING 409 copy and shape,
+            // word for word — same as handleUndo/handleAssign/handleApprove, so
+            // the module says this one thing one way.
+            setCancelTarget(null);
+            toast("Already changed — refreshed.");
+            if (detailOpen) window.history.back();
+            await refetchQueue();
+          } else {
+            toast.error(json.error ?? `Request failed (${res.status})`);
+          }
+          return;
+        }
+        setCancelTarget(null);
+        setCancelMenuOpen(false);
+        window.history.back();
+        toast.success(`Bill cancelled · ${row.obdNumber}`);
+        await refetchQueue();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Cancel failed");
+      } finally {
+        setCancelling(false);
+      }
+    },
+    [cancelling, detailOpen, refetchQueue],
+  );
+
   const handleUndo = useCallback(
     async (row: PickingQueueRow) => {
       if (unassigningIds.has(row.orderId)) return;
@@ -2528,6 +2634,66 @@ export function PickingBoardMobile(): React.JSX.Element {
               onToggle={() => recorder.setRecordMode(!recorder.recordMode)}
             />
           )}
+          {/* ⋯ — cancel the whole bill (3b). Sits LEFT of search, same 32px
+              box, same frosted-on-tap treatment, so the header's right cluster
+              reads as one row of equals.
+
+              ⚠ RENDERED ONLY when the bill's stage is cancellable. A
+              pick_checked bill gets NO ⋯ at all — not a disabled one, not an
+              empty menu: an approved bill is cancellable from Floor Control
+              only, and a greyed control would invite a tap that can never
+              succeed. Because the whole button is omitted rather than hidden,
+              the header does not shift or leave a gap — it is the last child of
+              a flex row, so its absence simply shortens the row (the same
+              no-placeholder rule ModuleMobileHeader's `showSearch` follows).
+
+              The stage comes from pickingRowStage() — the ONE owner of the
+              booleans→stage mapping — tested against PICKING_CANCELLABLE_STAGES,
+              the SAME list the route enforces. No stage name is written here. */}
+          {detailRow !== null &&
+            PICKING_CANCELLABLE_STAGES.includes(pickingRowStage(detailRow)) && (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCancelMenuOpen((v) => !v)}
+                  aria-label="More actions"
+                  aria-expanded={cancelMenuOpen}
+                  className="w-8 h-8 rounded-[9px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+                >
+                  <MoreVertical size={17} />
+                </button>
+                {cancelMenuOpen && (
+                  <>
+                    {/* Tap-outside catcher. Plain sibling, not a portal — the
+                        menu is a transient popover, not a history-tracked
+                        overlay, so it deliberately does NOT push an entry and
+                        the popstate handler knows nothing about it. */}
+                    <div
+                      className="fixed inset-0 z-[60]"
+                      onClick={() => setCancelMenuOpen(false)}
+                      aria-hidden="true"
+                    />
+                    <div className="absolute right-0 top-[38px] z-[61] w-[176px] overflow-hidden rounded-[12px] border border-gray-200 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.18)]">
+                      {/* ONE item. Undo / Assign / Approve stay on the bottom
+                          CTA row where they already live — see the report for
+                          the one candidate considered and deliberately left
+                          out of this commit. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelMenuOpen(false);
+                          setCancelTarget(detailRow);
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left text-[14px] font-semibold text-red-600 active:bg-red-50"
+                      >
+                        <XCircle size={16} className="shrink-0" />
+                        Cancel bill
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           <button
             type="button"
             onClick={() => setDetailSearching((v) => !v)}
@@ -2969,6 +3135,30 @@ export function PickingBoardMobile(): React.JSX.Element {
         {/* Record popup — the SHARED component, the same one the picker board
             renders. It carries its own NO_BILL_SWIPE opt-out. */}
         <FindingPopup {...recorder.popupProps} />
+
+        {/* Cancel sheet (3b). Mounted INSIDE the detail screen but OUTSIDE
+            pager.contentRef — same placement rule as the recording banner:
+            cancelling is a screen-level mode and must not slide away and back
+            on every swipe between bills. It is `fixed inset-0` anyway, so the
+            position in the tree costs nothing; what matters is that the pager's
+            transform never applies to it.
+
+            Rendered off `cancelTarget` (the row captured when ⋯ was tapped),
+            not off `detailRow`, so a background refetch that drops the row
+            cannot blank the sheet mid-decision. `lineCount` comes from the
+            already-loaded line items — no second fetch. */}
+        {cancelTarget !== null && (
+          <CancelSheet
+            row={cancelTarget}
+            stage={pickingRowStage(cancelTarget)}
+            lineCount={lineItems?.length ?? null}
+            busy={cancelling}
+            onClose={() => {
+              if (!cancelling) setCancelTarget(null);
+            }}
+            onConfirm={(reason, note) => void handleCancel(cancelTarget, reason, note)}
+          />
+        )}
       </div>
 
       {/* Floating assign bar — matches docs/mockups/picking/supervisor-assign-board.html's

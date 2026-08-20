@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE } from "@/lib/workflow-stages";
-import { buildCancelNote, isCancelReason, CANCEL_NOTE_MAX } from "@/lib/picking/cancel-reasons";
+import { PICKING_CANCELLABLE_STAGES } from "@/lib/workflow-stages";
+import {
+  buildCancelNote,
+  isCancelReason,
+  cancelRequiresNote,
+  CANCEL_NOTE_MAX,
+} from "@/lib/picking/cancel-reasons";
+import { sendToUser } from "@/lib/push/send";
 
 export const dynamic = "force-dynamic";
 
@@ -45,34 +51,12 @@ export const dynamic = "force-dynamic";
  * (the same three-write shape app/api/picking/unassign/route.ts already uses).
  */
 
-/**
- * Stages this route will cancel from.
- *
- * ⚠ EXPORTED so the 3b reason sheet can gate its own affordance on the SAME
- * list rather than hard-coding stage names in a component — the standing rule
- * from CLAUDE_PICKING.md §7 (every stage decision asks one owner).
- *
- * ⚠ DELIBERATELY NARROWER THAN FLOOR, and this is the one place the two
- * surfaces diverge. Floor's cancel branch refuses ONLY an already-cancelled
- * bill, so it can (and today will) cancel at `pick_checked` and even
- * `dispatched`. This route refuses both:
- *   - `pick_checked` — a supervisor has already ticked every line and signed
- *     off. Cancelling it erases a completed check from every live board.
- *   - `dispatched`   — the goods have left.
- * Refusing is the recoverable direction: Floor can still do it if a real case
- * appears, and this list is one edit away from admitting them. Permitting by
- * default is not recoverable — the log row is INSERT-ONLY.
- *
- * `pick_done` IS admitted even though the goods are physically staged, because
- * refusing it would leave the floor with no way to kill a bill that a customer
- * cancelled while it sat on the staging bench. The UI decides whether to OFFER
- * it there; this route is the backstop, not the policy.
- */
-export const PICKING_CANCELLABLE_STAGES: string[] = [
-  SUPPORT_DONE_OUTPUT, // pending_picking — the Assign tab. Nobody holds it.
-  PICK_ASSIGNED,       // a picker has it — the assignment row is cleared below.
-  PICK_DONE,           // picked, awaiting check.
-];
+// PICKING_CANCELLABLE_STAGES MOVED to lib/workflow-stages.ts (3b). It was
+// declared here when this route landed, but the ⋯ menu in the detail header
+// needs the same list to decide whether to render, and a "use client" component
+// importing from a route module would pull prisma and next-auth into the
+// browser bundle. The stage registry is pure and already owns every other
+// picking stage set. One list, imported by both sides.
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -134,11 +118,34 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 400 },
     );
   }
+  // ⚠ ADDED 2026-08-20 (3b). "Other" with no remark records nothing — it is the
+  // ABSENCE of a reason wearing a label, and the log row cannot be edited
+  // afterwards to add the missing words. The rule's single owner is
+  // cancelRequiresNote() in lib/picking/cancel-reasons.ts; this is the
+  // ENFORCING side of it. The sheet greys its confirm button on the same
+  // function so a supervisor never reaches this 400 — that is a preview of the
+  // rule, not a second copy of it.
+  if (cancelRequiresNote(reason) && (typeof body.note !== "string" || body.note.trim().length === 0)) {
+    return NextResponse.json(
+      { error: "A remark is required when the reason is Other" },
+      { status: 400 },
+    );
+  }
 
-  // a. Fetch the order.
+  // a. Fetch the order. The extra fields beyond the stage gate are all for the
+  // best-effort push in step (f): read HERE, before the assignment row is
+  // deleted in (d), because after that there is no way back to who held it.
   const order = await prisma.orders.findFirst({
     where: { id: orderId },
-    select: { id: true, workflowStage: true, isRemoved: true },
+    select: {
+      id: true,
+      workflowStage: true,
+      isRemoved: true,
+      obdNumber: true,
+      customer: { select: { customerName: true } },
+      shipToOverrideCustomer: { select: { customerName: true } },
+      pickAssignment: { select: { pickerId: true } },
+    },
   });
   if (!order || order.isRemoved) {
     // A soft-removed OBD is not a live bill (CORE §3's soft-delete read rule)
@@ -221,6 +228,42 @@ export async function POST(req: Request): Promise<NextResponse> {
       note: buildCancelNote(reason, body.note),
     },
   });
+
+  // f. ── Best-effort push to the PICKER who was holding it ──────────────────
+  // Added 2026-08-20 (3b) so the reason sheet's amber banner tells the truth.
+  // That banner says the bill vanishes from his phone AND that he is notified;
+  // without this the second half was a promise the code did not keep, and a
+  // supervisor who believed it might not walk over and tell him — leaving a man
+  // picking a dead bill. Copy of the block in app/api/picking/assign/route.ts:
+  //
+  //   - FULLY SWALLOWED. The response body and status are byte-identical
+  //     whether the push succeeds, fails, or is skipped. A notification is
+  //     never worth failing a completed cancel over.
+  //   - NO `orders` write anywhere in here (the live-sync marker keys on
+  //     MAX(orders.updatedAt); an extra write would fire a false "changed" on
+  //     every board). Only push_subscriptions is touched, by sendToUser.
+  //   - AWAITED, because Vercel freezes the function after the response and
+  //     un-awaited work is unreliable.
+  //   - Skipped when nobody held the bill, and when the supervisor cancelling
+  //     it IS the picker (he is looking at the screen that did it).
+  //
+  // The dealer name is resolved the same way every other surface resolves it:
+  // ship-to override first, plain customer second (CORE §7.3).
+  const heldByPickerId = order.pickAssignment?.pickerId ?? null;
+  if (heldByPickerId !== null && heldByPickerId !== changedById) {
+    try {
+      const dealerName =
+        order.shipToOverrideCustomer?.customerName ?? order.customer?.customerName ?? "(Unmatched)";
+      await sendToUser(heldByPickerId, {
+        title: "Bill cancelled",
+        body: `${dealerName} · ${order.obdNumber} — stop picking this bill`,
+        tag: `pick-cancelled-${order.id}`,
+        url: "/picking",
+      });
+    } catch (err) {
+      console.error("[picking/cancel] push notify failed (non-fatal):", err);
+    }
+  }
 
   // `clearedAssignment` is information, not an error: 0 is the correct answer
   // for a bill cancelled before anyone was assigned to it.

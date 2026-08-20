@@ -206,3 +206,69 @@ export const PICKING_ACTIVE_STAGES: string[] = [
   ...PICKING_OPEN_STAGES,
   PICK_CHECKED,
 ];
+
+/**
+ * Stages the supervisor board may CANCEL a bill from.
+ *
+ * ⚠ LIVES HERE, NOT IN THE ROUTE THAT ENFORCES IT. It was declared in
+ * app/api/picking/cancel/route.ts when that route landed (3a); the ⋯ menu needs
+ * the same list to decide whether to render at all, and a "use client"
+ * component importing from a route module would drag prisma and next-auth into
+ * the browser bundle. This file is pure (zero imports) and is already the owner
+ * of every other picking stage set, so it is the correct home. The route
+ * re-exports nothing — it imports from here, so there is exactly one list.
+ *
+ * ⚠ DELIBERATELY NARROWER THAN FLOOR'S CANCEL, which refuses only an
+ * already-cancelled bill and will therefore kill one at `pick_checked` or even
+ * `dispatched`. Picking refuses both: a checked bill has been ticked line by
+ * line and signed off, and a dispatched one has left. Refusing is the
+ * recoverable direction — Floor can still do it, and admitting a stage later is
+ * one edit — while permitting is not, because the audit row is INSERT-ONLY.
+ *
+ * `pick_done` IS admitted even though the goods are physically staged: refusing
+ * would leave the floor no way to kill a bill a customer cancelled while it sat
+ * on the bench. The sheet's two-stage confirm (CLAUDE_UI.md §13) carries the
+ * warning instead — the route is the backstop, the UI is the policy.
+ */
+export const PICKING_CANCELLABLE_STAGES: string[] = [
+  SUPPORT_DONE_OUTPUT, // pending_picking — the Assign tab. Nobody holds it.
+  PICK_ASSIGNED,       // a picker has it — the assignment row is cleared on cancel.
+  PICK_DONE,           // picked, awaiting check — two-stage confirm in the UI.
+];
+
+/**
+ * Recover a picking row's STAGE from the three booleans the queue payload
+ * carries. `PickingQueueRow` (lib/picking/types.ts) deliberately ships
+ * isAssigned / isDone / isChecked instead of `workflowStage`, so any consumer
+ * that needs to ask a STAGE question — "may this bill be cancelled?" — has to
+ * map back. This is the ONE place that mapping lives.
+ *
+ * 🔴 IT EXISTS SO NOBODY WRITES THE MAPPING INLINE AGAIN. The all-three-false
+ * fall-through is the exact bug class this module's header warns about and that
+ * has already bitten twice (pick_done, then pick_checked): a new stage is
+ * `false` on every existing boolean, so an inline `!isAssigned && !isDone`
+ * silently reads it as "still waiting". Composed from the exported constants,
+ * never string literals, so a renamed stage moves everything at once.
+ *
+ * ⚠ THE FALL-THROUGH IS ONLY SAFE BECAUSE OF THE QUERY. All three false maps to
+ * `pending_picking` — correct today ONLY because lib/picking/queue.ts's WHERE
+ * admits exactly PICKING_ACTIVE_STAGES and nothing else, so a row reaching a
+ * consumer cannot be `cancelled`, `dispatched`, or mid-tint. If that predicate
+ * ever widens, this function must gain the corresponding flag FIRST — it cannot
+ * infer a stage the payload does not describe.
+ *
+ * ⚠ `closed` (legacy, shares rank 60) also maps here to `pending_picking`, and
+ * that is correct behaviour-wise — the two share a rank precisely so a legacy
+ * order behaves identically — but note PICKING_OPEN_STAGES excludes `closed`,
+ * so no such row reaches a board in the first place.
+ */
+export function pickingRowStage(flags: {
+  isAssigned: boolean;
+  isDone: boolean;
+  isChecked: boolean;
+}): string {
+  if (flags.isChecked) return PICK_CHECKED;
+  if (flags.isDone) return PICK_DONE;
+  if (flags.isAssigned) return PICK_ASSIGNED;
+  return SUPPORT_DONE_OUTPUT;
+}
