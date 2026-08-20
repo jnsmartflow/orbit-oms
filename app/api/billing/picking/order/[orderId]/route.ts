@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { resolveCatalogByCode } from "@/lib/picking/resolve-lines";
+import { buildBillingPendingWhere } from "@/lib/billing/picking-where";
 import type { BillingDetailLine, BillingOrderDetail } from "@/lib/billing/types";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +12,9 @@ export const dynamic = "force-dynamic";
  * GET /api/billing/picking/order/[orderId] — one bill's line items for the
  * Billing Picking tab's detail panel.
  *
- * READ-ONLY. Four SELECTs and nothing else — no writes, no mutations, no side
- * effects anywhere in this file.
+ * READ-ONLY. SELECTs and nothing else — no writes, no mutations, no side
+ * effects anywhere in this file. (Five as of 2026-08-20: the `isPending` probe
+ * below joined the four originals. Still not a write, and still not a fence.)
  *
  * ── WHY THIS EXISTS RATHER THAN REUSING FLOOR'S ────────────────────────────
  * `GET /api/floor/order/[orderId]` returns very nearly this payload, and
@@ -97,6 +99,35 @@ export async function GET(
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+
+  // ── Still pending? ──────────────────────────────────────────────────────
+  // 2026-08-20, for the panel's "Mark done" button. A bill with a confirmed
+  // finding gets NO checkbox on the list, so this panel is the only place it
+  // can be invoiced — and a button that would silently update 0 rows must not
+  // be offered.
+  //
+  // ⚠ THIS IS NOT A FENCE, and does not become one. The route still returns
+  // the bill whatever this comes back as (no 404, no narrowed select) — see the
+  // block on `order` above for why fencing here would 404 a legitimately
+  // rendered row. It only reports a fact the client is allowed to act on.
+  //
+  // 🔒 buildBillingPendingWhere() ITSELF, never a re-spelled copy of its terms.
+  // The button's precondition and the write's WHERE
+  // (app/api/billing/picking/mark-done/route.ts, same helper AND-ed into its
+  // updateMany) are therefore the SAME predicate by construction: the button
+  // cannot appear on a bill the write would refuse, and cannot vanish from one
+  // it would accept. Hand-inlining `workflowStage/invoiceNo/invoicedAt` here
+  // would also silently drop the hide exclusion the helper carries.
+  //
+  // Costs one indexed SELECT (plus the helper's own obd_visibility_rules read)
+  // on a user-initiated panel open — not a poll. Placed AFTER the 404 so a bad
+  // id never pays for it. Sequential await, never prisma.$transaction (CORE §3).
+  const pendingWhere = await buildBillingPendingWhere();
+  const pendingHit = await prisma.orders.findFirst({
+    where: { AND: [pendingWhere, { id: order.id }] },
+    select: { id: true },
+  });
+  const isPending = pendingHit !== null;
 
   // ── Lines ───────────────────────────────────────────────────────────────
   // There is no FK from `orders` to its line items — `import_raw_line_items`
@@ -205,6 +236,7 @@ export async function GET(
     customerName: dealer?.customerName ?? order.shipToCustomerName ?? null,
     customerCode: dealer?.customerCode ?? order.shipToCustomerId ?? null,
     isShipToOverride: order.shipToOverrideCustomerId !== null,
+    isPending,
     lines,
     lineCount: lines.length,
     totalLitres,

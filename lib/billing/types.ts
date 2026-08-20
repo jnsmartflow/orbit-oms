@@ -45,6 +45,26 @@ export interface BillingPendingRow {
    * area is a record of what already happened and nobody works those rows.
    */
   hasConfirmedShortage: boolean;
+  /**
+   * TRUE when this bill carries a supervisor-CONFIRMED pick_findings row —
+   * the SAME fact as `hasConfirmedShortage` above, and computed from the SAME
+   * `Set` in one batched read (app/api/billing/picking/list/route.ts). They can
+   * never disagree, by construction, and they must not be given separate
+   * queries later.
+   *
+   * The two names exist because they drive two DIFFERENT decisions and are
+   * likely to want different predicates one day:
+   *   · `hasConfirmedShortage` → the ⚠ glyph + the red row wash (DISPLAY).
+   *   · `hasFinding`           → the row is NOT BULK-SELECTABLE (BEHAVIOUR).
+   * A flagged bill has to be opened and marked done from its own detail panel,
+   * so the operator reads the finding before invoicing against it — it must
+   * never be swept up in a Copy OBDs → Mark done batch.
+   *
+   * ⚠ ADVISORY ONLY. The server-side guard is the pending predicate AND-ed into
+   * app/api/billing/picking/mark-done's updateMany; this boolean removes the
+   * affordance, it does not enforce anything.
+   */
+  hasFinding: boolean;
 }
 
 export interface BillingDoneRow {
@@ -160,6 +180,20 @@ export interface BillingOrderDetail {
   /** True when a Support/Billing ship-to override resolved to a real dealer row
    *  — the panel labels the name so it is not mistaken for the SAP bill-to. */
   isShipToOverride: boolean;
+  /**
+   * TRUE when this bill still matches `buildBillingPendingWhere()` — approved,
+   * uninvoiced, not marked done, not removed, not hidden.
+   *
+   * The panel's ONE piece of state, and the only thing that shows its "Mark
+   * done" button. Read straight off the payload; the panel never re-derives it
+   * from lines, dates or anything else.
+   *
+   * ⚠ AN AFFORDANCE, NOT A FENCE. The route still returns the bill either way
+   * (never a 404 — see its block comment), and the real guard is the pending
+   * predicate AND-ed into the mark-done updateMany. This flag only decides
+   * whether a button that could do nothing is offered at all.
+   */
+  isPending: boolean;
   lines: BillingDetailLine[];
   lineCount: number;
   totalLitres: number;

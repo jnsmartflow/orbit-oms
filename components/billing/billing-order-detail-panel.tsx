@@ -1,10 +1,24 @@
 "use client";
 
-// Billing v2 — the Picking tab's read-only bill detail panel.
+// Billing v2 — the Picking tab's bill detail panel.
 //
-// Opens when the operator clicks a Pending row. Answers exactly one question:
-// "what is on this bill, and which line did the floor confirm short?" Nothing
-// on it writes.
+// Opens when the operator clicks a Pending row. Answers one question — "what is
+// on this bill, and which line did the floor confirm short?" — and, since
+// 2026-08-20, carries the ONE action that follows from the answer: Mark done.
+//
+// ── WHY IT IS NO LONGER READ-ONLY ──────────────────────────────────────────
+// A bill with a supervisor-confirmed finding renders NO checkbox on the list
+// (billing-picking-tab.tsx), so it cannot be swept into a Copy OBDs → Mark done
+// batch — the whole point being that someone must read the finding before
+// invoicing against it. This panel is where they read it, so this panel is
+// where the decision gets recorded. The button is shown for EVERY pending bill,
+// flagged or not; a second way to do a thing is fine, a bill with no way at all
+// is not.
+//
+// The write itself stays where it always was: POST /api/billing/picking/mark-done
+// with a one-element `orderIds`, the same route, the same canEdit gate, the same
+// single updateMany the bulk bar uses. This file adds a button and a marker
+// pause, not a write path.
 //
 // ── DELIBERATELY NOT components/floor/detail-panel.tsx ─────────────────────
 // That panel is the visual and structural reference — same 472px right-hand
@@ -14,10 +28,11 @@
 //   1. It fetches /api/floor/order/[orderId], gated on `floor`/canView, which
 //      the billing operators do not hold (CLAUDE_MAIL_ORDERS §23.3).
 //   2. It is an ACTION surface — ship-to, slot, assign, hold, cancel, tabs.
-//      This one has a ✕ and nothing else. Borrowing it would mean gating half
-//      its controls off from the inside, which is how a shared component ends
-//      up owned by nobody (§23.6: "filter/gate at the CALL SITE, never restyle
-//      the shared card" — here the honest call is a separate component).
+//      This one has a ✕ and a single Mark done. Borrowing it would mean gating
+//      nearly all of its controls off from the inside, which is how a shared
+//      component ends up owned by nobody (§23.6: "filter/gate at the CALL SITE,
+//      never restyle the shared card" — here the honest call is a separate
+//      component). One button of overlap does not change that arithmetic.
 //
 // ── RED = CONFIRMED, AND ONLY CONFIRMED ────────────────────────────────────
 // The server sends confirmed findings only, so anything red on this panel has a
@@ -37,9 +52,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { findingReasonLabel, mfgLabel } from "@/lib/picking/findings-reasons";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
+import { useBillingMarkerPause } from "@/components/billing/billing-marker-provider";
 import type { BillingDetailLine, BillingOrderDetail } from "@/lib/billing/types";
 
 const DETAIL_URL = "/api/billing/picking/order";
+// The SAME route the bulk bar posts to, with a one-element array — its contract
+// is `{ orderIds: number[] }` and a batch of one is an ordinary batch. Not a new
+// single-bill endpoint: the write, its canEdit gate, its pending-predicate WHERE
+// and its idempotence all stay in one place
+// (app/api/billing/picking/mark-done/route.ts).
+const MARK_DONE_URL = "/api/billing/picking/mark-done";
 
 // The two red tokens, verbatim from the shortfall mockup's `.line-card.short`
 // and finding-recorder.tsx's CONFIRMED_TEXT. Named here rather than inlined so
@@ -67,13 +89,37 @@ function fmtDateTime(iso: string | null): string {
 export function BillingOrderDetailPanel({
   orderId,
   onClose,
+  onMarkedDone,
 }: {
   orderId: number;
   onClose: () => void;
+  /**
+   * Fired AFTER the server has acknowledged the mark-done write for this bill.
+   * The parent closes the panel and refetches its list; this component does not
+   * call `onClose` itself on success, so there is exactly one place that decides
+   * what "done" looks like on the list behind it.
+   */
+  onMarkedDone: (orderId: number) => void;
 }) {
   const [detail, setDetail] = useState<BillingOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The write's own state, kept apart from `loading`/`error`, which belong to
+  // the fetch. A failed mark-done must not blank a panel that loaded fine.
+  const [marking, setMarking] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  /**
+   * Hold the SHARED billing marker while the write is in flight — the same
+   * contract the tab's bulk actions use (`useBillingMarkerPause`,
+   * components/billing/billing-marker-provider.tsx), under its OWN key so the
+   * two holders cannot clobber each other.
+   *
+   * Without it the 30s poll can land mid-write and re-render the list under the
+   * operator. Released on unmount by the hook itself, which matters here: on
+   * success this panel unmounts before `marking` ever flips back to false.
+   */
+  useBillingMarkerPause("picking-detail-mark-done", marking);
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -94,6 +140,56 @@ export function BillingOrderDetailPanel({
   useEffect(() => {
     void fetchDetail();
   }, [fetchDetail]);
+
+  /**
+   * Mark THIS bill done — the panel's only write, and the only route to
+   * invoicing a bill that carries a confirmed finding (those get no checkbox on
+   * the list, see billing-picking-tab.tsx).
+   *
+   * Deliberately the same shape as the tab's `post()`: POST, read the body,
+   * surface a shortfall rather than swallowing it, let the parent refetch. The
+   * route is IDEMPOTENT (its pending predicate is AND-ed into the updateMany),
+   * so a double-tap is a 0-row no-op, not a double invoice — `marking` guards
+   * the second click anyway.
+   *
+   * `updated === 0` is the interesting case and NOT an error: someone else
+   * marked it, or SAP invoiced it, between opening the panel and clicking. The
+   * bill is genuinely done, so the honest response is to say so and re-fetch —
+   * `isPending` comes back false and the button removes itself.
+   */
+  const markDone = async () => {
+    if (!detail || marking) return;
+    setMarking(true);
+    setActionError(null);
+    try {
+      const res = await fetch(MARK_DONE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: [detail.orderId] }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        updated?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        setActionError(body.error ?? `Failed (HTTP ${res.status}).`);
+        return;
+      }
+      if (body.updated === 0) {
+        setActionError("This bill had already moved on — nothing left to mark.");
+        await fetchDetail();
+        return;
+      }
+      onMarkedDone(detail.orderId);
+    } catch {
+      setActionError("Could not reach the server.");
+    } finally {
+      // Safe after the success path too: React 18 does not warn on a setState
+      // into an unmounted tree, and the pause is released by the hook's own
+      // unmount cleanup, not by this line.
+      setMarking(false);
+    }
+  };
 
   // Esc closes. CAPTURE PHASE + stopPropagation, the convention every other
   // overlay in this module follows (review-view.tsx:368-375,
@@ -197,6 +293,43 @@ export function BillingOrderDetailPanel({
               </span>
               <span className="ml-auto tabular-nums">{detail.totalLitres} L</span>
             </div>
+
+            {/* ── Action bar (fixed foot) ────────────────────────────────── */}
+            {/* A SEPARATE strip below the total, never a button dropped into
+                it: the total row is a fact about the bill and the operator
+                reads it right before invoicing, so nothing clickable belongs
+                on that line.
+
+                Shown while the bill is still pending — `detail.isPending`
+                straight off the payload, which the route computes from
+                buildBillingPendingWhere() itself, so the button cannot appear
+                on a bill the write would refuse. Also shown while an
+                actionError stands, so the "already moved on" message survives
+                the refetch that flips isPending false. */}
+            {(detail.isPending || actionError) && (
+              <div className="flex items-center gap-3 border-t border-gray-200 bg-white px-5 py-[11px]">
+                {actionError && (
+                  <span className="min-w-0 flex-1 text-[11px] leading-snug text-amber-700">
+                    {actionError}
+                  </span>
+                )}
+                {detail.isPending && (
+                  /* The SAME ghost styling as the bulk bar's Mark done
+                     (billing-picking-tab.tsx). One action, one look, wherever
+                     it is reached from. Not teal: on this screen teal means the
+                     primary CTA (Copy OBDs) and the live pip, and a teal button
+                     here would read as a different action. */
+                  <button
+                    type="button"
+                    onClick={markDone}
+                    disabled={marking}
+                    className="ml-auto inline-flex h-[34px] shrink-0 items-center gap-2 rounded-md border border-gray-300 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {marking ? "Marking…" : "Mark done"}
+                  </button>
+                )}
+              </div>
+            )}
           </>
         ) : null}
       </aside>

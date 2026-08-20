@@ -66,6 +66,8 @@ const DATE_STR_RE = /^\d{4}-\d{2}-\d{2}$/;
  * is a derived boolean on purpose: the raw form would be a per-row query, which
  * is exactly what the batched Set below exists to avoid. PENDING ROWS ONLY —
  * both Done arms are untouched, so their shape is byte-identical to before.
+ * `hasFinding` (2026-08-20) rides the SAME Set — one read, two booleans, no
+ * extra query and no way for them to drift. See the mapping below.
  *
  * Sequential awaits only, never prisma.$transaction (CORE §3).
  */
@@ -195,6 +197,15 @@ export async function GET(req: Request): Promise<NextResponse> {
     orderType: o.orderType,
     natureOfTransaction: o.natureOfTransaction,
     hasConfirmedShortage: shortageOrderIds.has(o.id),
+    // 🔒 THE SAME `Set`, DELIBERATELY — never a second query and never a second
+    // predicate. `hasConfirmedShortage` drives the ⚠ glyph and the red wash;
+    // `hasFinding` drives whether the row can be bulk-selected at all
+    // (lib/billing/types.ts explains why the two names exist). Feeding both
+    // from one read is what makes it impossible for a row to be un-tickable
+    // while showing no flag, or flagged while still sweepable into a batch —
+    // the same "two surfaces must never disagree" rule §23.4.1 states for the
+    // list flag and the detail panel.
+    hasFinding: shortageOrderIds.has(o.id),
   }));
 
   // ── Done (a) — MARKED: invoiced by the operator, in the selected IST day. ─

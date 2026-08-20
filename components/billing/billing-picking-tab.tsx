@@ -19,10 +19,18 @@
 // The section-tab active pill stays gray-900 (Floor's tabPill), and row
 // checkboxes use accent-teal-600 like every other data table in the app.
 //
-// A Pending row now has TWO click targets (2026-08-08): the checkbox cell ticks
-// it, anywhere else opens the read-only detail panel
+// A Pending row has TWO click targets (2026-08-08): the checkbox cell ticks it,
+// anywhere else opens the detail panel
 // (components/billing/billing-order-detail-panel.tsx). See the stopPropagation
 // note on that cell — the two intents must not fire together.
+//
+// …UNLESS THE BILL CARRIES A CONFIRMED FINDING (2026-08-20), in which case it
+// has ONE target: the whole row opens the panel, because it renders no checkbox
+// at all. A bill the floor has confirmed short is never swept into a Copy OBDs →
+// Mark done batch — the operator opens it, sees which line and who confirmed it,
+// and marks it done from the panel. That panel's Mark done button is therefore
+// the ONLY path to invoicing such a bill, and it works for every pending bill,
+// flagged or not.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -159,34 +167,66 @@ export function BillingPickingTab({ date }: { date?: string }) {
   const pending = useMemo(() => data?.pending ?? [], [data]);
   const done = useMemo(() => data?.done ?? [], [data]);
 
+  /**
+   * The rows a batch may touch: pending MINUS every bill carrying a confirmed
+   * finding (2026-08-20).
+   *
+   * 🔴 A FLAGGED BILL IS NEVER BULK-INVOICED. The floor has confirmed a line
+   * short on it, so the operator has to open it, read WHICH line and WHO
+   * confirmed it, and mark it done from the panel — a decision per bill, not a
+   * sweep. Its row therefore renders no checkbox at all (PendingRow below), and
+   * there is no click target left that could add its id.
+   *
+   * This list is the single source for every selection path — the header
+   * checkbox, the per-row toggle and the guard on `selectedRows` — so a flagged
+   * id cannot enter the Set through one path after being blocked on another.
+   */
+  const selectableRows = useMemo(() => pending.filter((r) => !r.hasFinding), [pending]);
+
   // Selection is a Set of order ids, so it survives a refetch/re-sort by
   // identity. Rows that vanished from the list are dropped here rather than
   // sent to the server as stale ids.
+  //
+  // ⚠ Derived from `selectableRows`, NOT `pending` — belt-and-braces. Nothing
+  // should ever put a flagged id in the Set, but a bill can also acquire a
+  // finding WHILE it sits ticked (the supervisor confirms one on the floor, the
+  // marker refetches). Filtering here means the next refetch drops it from the
+  // count, from Copy OBDs and from Mark done on its own, with no reconcile step.
   const selectedRows = useMemo(
-    () => pending.filter((r) => selection.has(r.id)),
-    [pending, selection],
+    () => selectableRows.filter((r) => selection.has(r.id)),
+    [selectableRows, selection],
   );
   const selectedIds = selectedRows.map((r) => r.id);
-  const allOn = pending.length > 0 && pending.every((r) => selection.has(r.id));
+  const allOn =
+    selectableRows.length > 0 && selectableRows.every((r) => selection.has(r.id));
   const litres = selectedRows.reduce((sum, r) => sum + (r.volume ?? 0), 0);
 
   const clear = () => setSelection(new Set());
 
-  const toggleOne = (id: number) =>
+  const toggleOne = (id: number) => {
+    // Explicit refusal, not just an absent checkbox. The UI element is gone, so
+    // this cannot fire today — it stays because the next caller (a keyboard
+    // shortcut, a shift-range select) would otherwise reintroduce the hole
+    // silently.
+    if (!selectableRows.some((r) => r.id === id)) return;
     setSelection((s) => {
       const next = new Set(s);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  };
 
+  // Select-all means select all SELECTABLE — a flagged bill is never added, and
+  // "all on" is measured against the same list, so the header checkbox still
+  // reads ticked on a list whose remaining rows are all flagged.
   const toggleAll = () =>
     setSelection((s) => {
       const next = new Set(s);
-      if (pending.every((r) => next.has(r.id))) {
-        for (const r of pending) next.delete(r.id);
+      if (selectableRows.every((r) => next.has(r.id))) {
+        for (const r of selectableRows) next.delete(r.id);
       } else {
-        for (const r of pending) next.add(r.id);
+        for (const r of selectableRows) next.add(r.id);
       }
       return next;
     });
@@ -238,6 +278,36 @@ export function BillingPickingTab({ date }: { date?: string }) {
 
   const markDone = () => post("/api/billing/picking/mark-done", selectedIds);
   const undo = (id: number) => post("/api/billing/picking/undo", [id]);
+
+  /**
+   * The detail panel marked ONE bill done (2026-08-20). The panel owns that
+   * write — it holds its own busy state and its own marker pause — so this is
+   * only the aftermath: close, forget the id, refetch.
+   *
+   * `load()` and not `post()`: the write has already happened and been
+   * acknowledged, and routing it back through `post()` would fire a second
+   * POST. This is the same refresh `post()` ends with, reached directly.
+   *
+   * The `selection.delete` is tidiness, not correctness — `selectedRows` is
+   * derived from the live list, so an id that has left `pending` stops counting
+   * the moment the refetch lands either way. Doing it here just keeps the
+   * "N selected" reading honest during the fetch. In practice a bill opened
+   * from a flagged row was never selectable to begin with.
+   */
+  const handleDetailMarkedDone = useCallback(
+    async (orderId: number) => {
+      setDetailOrderId(null);
+      setSelection((s) => {
+        if (!s.has(orderId)) return s;
+        const next = new Set(s);
+        next.delete(orderId);
+        return next;
+      });
+      setNotice(null);
+      await load();
+    },
+    [load],
+  );
 
   // The Done area's two halves. `marked` is what the operator did; `invoiced`
   // is what SAP had already done before the floor finished checking — carried
@@ -314,11 +384,16 @@ export function BillingPickingTab({ date }: { date?: string }) {
             <thead>
               <tr>
                 <th className={HEAD_TH_C}>
+                  {/* Disabled — not hidden — when every pending bill is
+                      flagged: the column keeps its header, and a control that
+                      cannot do anything does not silently no-op under the
+                      cursor. */}
                   <input
                     type="checkbox"
                     aria-label="Select all bills ready to invoice"
-                    className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                    className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
                     checked={allOn}
+                    disabled={selectableRows.length === 0}
                     onChange={toggleAll}
                   />
                 </th>
@@ -451,16 +526,19 @@ export function BillingPickingTab({ date }: { date?: string }) {
       )}
 
       {/* ── Detail panel ──────────────────────────────────────────────────── */}
-      {/* Read-only, no actions — so it is mounted OUTSIDE the bulk bar and does
-          not touch selection: closing it returns the operator to exactly the
-          list state they left, half-made tick set intact. Keyed on the order id
-          so opening a different bill remounts rather than showing the previous
-          bill's lines while the new ones load. */}
+      {/* Mounted OUTSIDE the bulk bar, and CLOSING it still touches nothing:
+          the operator returns to exactly the list state they left, half-made
+          tick set intact. Its one write — Mark done on a single bill
+          (2026-08-20) — reports back through `onMarkedDone` rather than
+          reaching into selection itself. Keyed on the order id so opening a
+          different bill remounts rather than showing the previous bill's lines
+          while the new ones load. */}
       {detailOrderId !== null && (
         <BillingOrderDetailPanel
           key={detailOrderId}
           orderId={detailOrderId}
           onClose={() => setDetailOrderId(null)}
+          onMarkedDone={handleDetailMarkedDone}
         />
       )}
     </div>
@@ -503,6 +581,8 @@ function PendingRow({
 }) {
   const flags = billingFlags(row);
   const short = row.hasConfirmedShortage;
+  // Server-decided, same batched read as `short` — never re-derived here.
+  const flagged = row.hasFinding;
   // Appended to every cell's class. Empty on an ordinary row, so a bill with no
   // finding renders byte-identically to before this feature existed.
   const cell = short && !selected ? " bg-red-50" : "";
@@ -511,24 +591,55 @@ function PendingRow({
       onClick={onOpen}
       className={`cursor-pointer ${selected ? "bg-teal-50/60" : short ? "" : "hover:bg-[#fafafa]"}`}
     >
-      {/* ⚠ THE CHECKBOX CELL SWALLOWS THE CLICK. Ticking a row and opening a row
-          are different intents, and the tick is the one that leads to a WRITE
-          (Copy OBDs → Mark done). Without this stop, every tick would also
-          throw a panel over the list the operator is working down, and a
-          bulk-select drag would open one bill after another. `onClick` on the
-          cell, not the input: the label-sized hit area around a 13px checkbox is
-          most of what a thumb actually lands on. */}
+      {/* ⚠ THE CHECKBOX CELL SWALLOWS THE CLICK — on a SELECTABLE row only.
+          Ticking a row and opening a row are different intents, and the tick is
+          the one that leads to a WRITE (Copy OBDs → Mark done). Without this
+          stop, every tick would also throw a panel over the list the operator is
+          working down, and a bulk-select drag would open one bill after another.
+          `onClick` on the cell, not the input: the label-sized hit area around a
+          13px checkbox is most of what a thumb actually lands on.
+
+          🔴 ON A FLAGGED ROW THE STOP IS REMOVED WITH THE CHECKBOX. There is no
+          longer a competing intent in this cell, and leaving the stop behind
+          would carve a dead 4%-wide strip out of the only row whose panel the
+          operator MUST open — the click would land on the one cell that eats it
+          and nothing would happen. `undefined`, not a no-op handler, so the
+          click reaches the row's own onOpen by ordinary bubbling. */}
       <td
-        onClick={(e) => e.stopPropagation()}
+        onClick={flagged ? undefined : (e) => e.stopPropagation()}
         className={`${TD_C}${cell}${short ? " border-l-[3px] border-l-red-500" : ""}`}
       >
-        <input
-          type="checkbox"
-          aria-label={`Select ${row.obdNumber}`}
-          className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
-          checked={selected}
-          onChange={onToggle}
-        />
+        {flagged ? (
+          /* NOT a disabled checkbox — genuinely absent. A greyed tickbox reads
+             as "try again later"; this bill is never going into a batch, and the
+             control should not exist to be argued with.
+
+             AMBER, per CLAUDE_UI §3's semantic table (Waiting = amber-50 /
+             amber-200 / amber-700): this bill is waiting on a person to look at
+             it. Not violet — that is the Done strip's "Already invoiced" badge
+             in this same tab (§23.4) — and not teal, which here means the
+             primary CTA and the live pip.
+
+             Occupies the 13px the checkbox did, so the column, the header tick
+             and every other row stay exactly where they were. The `title`
+             carries the WHY: a missing control has to explain itself, or it
+             reads as a bug. */
+          <span
+            title="Confirmed finding on this bill — open it and mark it done from the bill"
+            aria-label="Not selectable: confirmed finding — mark done from the bill"
+            className="inline-flex h-[13px] w-[13px] items-center justify-center rounded-[3px] border border-amber-200 bg-amber-50 align-middle text-[9px] font-bold leading-none text-amber-700"
+          >
+            !
+          </span>
+        ) : (
+          <input
+            type="checkbox"
+            aria-label={`Select ${row.obdNumber}`}
+            className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+            checked={selected}
+            onChange={onToggle}
+          />
+        )}
       </td>
       <td className={`${TD_C} text-gray-400${cell}`}>{index}</td>
       <td className={`${TD} font-medium text-gray-800${cell}`} style={{ fontVariantNumeric: "tabular-nums" }}>
