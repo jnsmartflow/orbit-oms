@@ -33,6 +33,25 @@ export interface PickingQueueRow {
   // numeric, never arithmetic, and the leading-zero risk is not worth the
   // parse. Consumers compare it literally ("74" === code).
   smuCode: string | null;
+  // True when TWO OR MORE live orders carry this row's soNumber. Computed in
+  // one bounded groupBy per fetch by lib/picking/duplicate-so.ts — that module
+  // owns the rule (which stages count, why blanks never do); it is not restated
+  // here. Filled by BOTH boards: lib/picking/queue.ts and, because
+  // FloorBoardRow extends this interface, lib/floor/queries.ts.
+  //
+  // ⚠ A BOOLEAN, AND ONLY A BOOLEAN — `soNumber` itself is deliberately NOT on
+  // this row and must not be added. The card's job is to say "same SO, go
+  // check"; the number is read on the detail panel, which fetches it itself
+  // (FloorDetail.soNumber). Shipping the value to every card would put a
+  // matching key on a client payload that has no use for one.
+  //
+  // ⚠ A GENUINE SAP SPLIT BILL IS ALSO FLAGGED, and that is accepted: one SO
+  // legitimately fans out to several OBDs (CORE §9's applyMailOrderEnrichment
+  // updateMany; app/api/billing/mail-order/actions/route.ts says the same).
+  // Nothing on `orders` distinguishes a split from a re-punch, so the signal is
+  // "worth a look", never "this is wrong". Do not add a suppression heuristic
+  // without a decision.
+  hasDuplicateSo: boolean;
   // ── Product-family fields (Picking card redesign, 2026-07-21) ──────────────
   // True when the whole OBD is a tint order. Sourced from orders.orderType
   // === 'tint' (the canonical order-type set at import) — NOT from any tint

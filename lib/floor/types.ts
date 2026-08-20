@@ -78,6 +78,12 @@ export interface FloorRailCard extends FloorPartyFields {
   // (orders.obdEmailDate) — see lib/floor/format.ts resolveFloorDisplayDate().
   isEmailTime: boolean;
   ageDays: number;            // days since arrival (carried-over tag); 0 = today
+  // True when two or more live orders carry this bill's soNumber. Same field,
+  // same rule and same one-query source as PickingQueueRow.hasDuplicateSo
+  // (lib/picking/duplicate-so.ts owns it) — declared here because the rail card
+  // does NOT extend the picking row, unlike FloorBoardRow which inherits it.
+  // A BOOLEAN ONLY: `soNumber` stays off this payload by design.
+  hasDuplicateSo: boolean;
   tint: TintState | null;
   suggestion: SlotSuggestion | null;
   // A human pre-set slot on a still-un-released bill (design §4.16 / §6.3 tint

@@ -38,6 +38,11 @@ import { buildOilSkuSet } from "@/lib/picking/grouping";
 // PickingQueueRow, so this board must fill `smuCode` too. One owner for the
 // name→code rule (lib/import-upsert/types.ts), two callers.
 import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
+// Same-SO detection — OWNED BY PICKING (lib/picking/duplicate-so.ts), imported
+// here exactly as assign/unassign and the sort rule objects are. One owner per
+// behaviour: a second copy of "what counts as a duplicate" is how the phone and
+// the desk would come to flag different bills.
+import { getDuplicateSoNumbers } from "@/lib/picking/duplicate-so";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -353,6 +358,13 @@ export async function getFloorRail(
   const obds = orders.map((o) => o.obdNumber);
   const billTo = await billToByObd(obds);
 
+  // Same-SO detection — one bounded groupBy for the whole rail, sequential
+  // await, never $transaction (CORE §3). Post-fetch: it adds nothing to the
+  // rail's WHERE and nothing to getFloorLiveMarkerWhere, so neither feed's row
+  // set nor the live marker moves. `order.soNumber` rides the `include` above
+  // for free — no select entry added.
+  const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
+
   // Tint split counts + operator, one bulk read for the tint orders on the rail.
   const tintIds = orders.filter((o) => o.orderType === "tint").map((o) => o.id);
   const splits =
@@ -478,6 +490,8 @@ export async function getFloorRail(
       obdDateTime: displayDate.obdDateTime?.toISOString() ?? null,
       isEmailTime: displayDate.isEmailTime,
       ageDays: arrivalAgeDays(order.obdEmailDate ?? order.orderDateTime, todayMs),
+      // Boolean only — the SO number itself never reaches the card payload.
+      hasDuplicateSo: order.soNumber !== null && duplicateSoNumbers.has(order.soNumber),
       tint,
       suggestion,
       presetWindowTime: order.dispatchWindow?.windowTime ?? null,
@@ -606,6 +620,12 @@ export async function getFloorBoard(
 
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
 
+  // Same-SO detection — see getFloorRail above for the full note. One bounded
+  // groupBy, sequential await, post-fetch: `base` / floorLiveBaseWhere() and
+  // getFloorLiveMarkerWhere() are untouched, so board and marker stay on the
+  // ONE shared predicate (FLOOR §3/§5).
+  const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
+
   let rows: FloorBoardRow[] = [];
   for (const order of orders) {
     const dealer = order.shipToOverrideCustomer ?? order.customer;
@@ -668,6 +688,9 @@ export async function getFloorBoard(
       // the shared interface requires it, and because Floor's own site marker
       // already keys on the same SMU set (floor-table.tsx shipMarkers).
       smuCode: order.smu !== null ? (SMU_CODE_BY_NAME[order.smu] ?? null) : null,
+      // Inherited from PickingQueueRow — same rule, same shared function, so a
+      // bill flagged on the phone is flagged on the desk. Boolean only.
+      hasDuplicateSo: order.soNumber !== null && duplicateSoNumbers.has(order.soNumber),
       // Floor-only extras.
       smu: order.smu,
       billToName: billTo.get(order.obdNumber) ?? null,

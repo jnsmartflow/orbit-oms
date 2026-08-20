@@ -22,6 +22,9 @@ import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 // The oil-paint rule lives in the ENGINE, not here and not in the database.
 // Same import Floor makes (lib/floor/queries.ts) — one definition, two callers.
 import { buildOilSkuSet } from "./grouping";
+// Same-SO detection. One bounded groupBy per fetch; the module owns the rule.
+// Floor imports the same function, so the two boards cannot disagree.
+import { getDuplicateSoNumbers } from "./duplicate-so";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -518,6 +521,19 @@ export async function getPickingQueue(
   // same value the old `?.name ?? null` produced for a null relation.
   const userNameById = new Map(userRows.map((u) => [u.id, u.name]));
 
+  // ── Same-SO detection — ONE bounded groupBy ───────────────────────────────
+  // A post-fetch enrichment of rows the predicate above ALREADY returned, in
+  // the same shape as the dealer/user/catalog lookups around it: one query for
+  // the whole page, never per row, sequential await, never prisma.$transaction
+  // (CORE §3). It adds NO term to buildPickingWhere(), so the live-sync marker
+  // watches exactly the set it watched before (PICKING §10 — re-declaring the
+  // filter is the drift that landmine warns about).
+  //
+  // `order.soNumber` is already in memory: the findMany above uses `include`,
+  // which returns every base-model scalar — the same free ride `order.smu`
+  // takes for smuCode. No select entry was added and no WHERE was touched.
+  const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
+
   // (A dispatch_slot_master read used to sit here, purely to build the removed
   // `windows[]` counters. It went with them 2026-07-28 — one fewer round trip
   // per fetch. Each row still carries its own windowId/windowTime/windowSortOrder
@@ -671,6 +687,11 @@ export async function getPickingQueue(
       // need no select entry). An unmapped or blank name yields null, which the
       // UI treats exactly as "no SMU" — never a guess.
       smuCode: order.smu !== null ? (SMU_CODE_BY_NAME[order.smu] ?? null) : null,
+      // Membership test against the Set built above — never a second query and
+      // never a re-test of the rule. The null guard is what stops a null
+      // soNumber ever reaching `.has()`; duplicate-so.ts drops nulls and blanks
+      // on the way in as well, so this can only ever be true for a real value.
+      hasDuplicateSo: order.soNumber !== null && duplicateSoNumbers.has(order.soNumber),
       // Tint is order-level — orders.orderType is the canonical source (set at
       // import), already present via `include`. Never a tint skuId (§13).
       isTint: order.orderType === "tint",
