@@ -187,6 +187,17 @@ model users {
   // generate time. Same rule as the three PickAssignment* relations above.
   pickFindingsReported      pick_findings[]          @relation("PickFindingReportedBy")
   pickFindingsRecorded      pick_findings[]          @relation("PickFindingRecordedBy")
+  // MRN back-relations (2026-08-20, v27.16) — FOUR FKs from `mrn` to `users`
+  // plus ONE from `mrn_lines`. All five relations MUST stay explicitly named on
+  // BOTH sides or Prisma throws an ambiguity ERROR at generate time, not a
+  // warning. Same rule as the two PickFinding* above and the three
+  // PickAssignment* before them — this is the largest such cluster in the
+  // schema, so it is also the easiest one to half-edit.
+  mrnsCreated               mrn[]                    @relation("MrnCreatedBy")
+  mrnsUnloadingStarted      mrn[]                    @relation("MrnUnloadingStartedBy")
+  mrnsUnloadingEnded        mrn[]                    @relation("MrnUnloadingEndedBy")
+  mrnsRemoved               mrn[]                    @relation("MrnRemovedBy")
+  mrnLinesChecked           mrn_lines[]              @relation("MrnLineCheckedBy")
   // Mail Order back-relations
   mailOrdersPunched         mo_orders[]              @relation("MoOrderPunchedBy")
   lineStatuses              mo_line_status[]
@@ -2116,4 +2127,193 @@ model TripReport {
   @@index([disDate])
   @@index([disDate, tripNo])
   @@map("trip_report")
+}
+
+// ─────────────────────────────────────────────
+// MRN — MATERIAL RECEIPT NOTE
+// ─────────────────────────────────────────────
+
+// Inbound goods receipt (v27.16, 2026-08-20). The only module that records
+// stock coming INTO the depot; it touches nothing in the OBD/orders pipeline.
+// Design record: docs/prompts/drafts/web-update-2026-08-20-mrn-module-design.md
+//
+// All three tables were created BY HAND in the Supabase SQL Editor and are
+// hand-mirrored here; never db push, never db pull (CORE §3 — db pull also
+// fails P1001 on this machine). camelCase columns, NO @map — the pick_findings
+// convention, deliberately NOT pick_assignments' snake_case legacy. Every
+// timestamp carries @db.Timestamptz(6) and every date @db.Date, or Prisma
+// emits a plain `timestamp` and mismatches the live column (CORE §7.1.c).
+//
+// Every index and unique name below is ALREADY Prisma's default for its shape,
+// so no `map:` argument is needed anywhere in this section — checked name by
+// name against pg_indexes, not assumed (contrast pick_findings_order_idx,
+// which does need one).
+
+// ⚠ FOUR FKs to `users` on this ONE table (createdById / unloadingStartById /
+// unloadingEndById / removedById), plus a fifth from mrn_lines below. ALL FIVE
+// relations must stay explicitly NAMED on BOTH sides — here and on the `users`
+// model — or Prisma throws an ambiguity ERROR at generate time, not a warning.
+// Same discipline as pick_findings' two and pick_assignments' three (CORE
+// §7.3), at double the usual scale.
+//
+// NOT EXPRESSIBLE IN PRISMA — live in Supabase, recorded here by hand:
+//   chk_mrn_status         CHECK (status IN ('open','checking','done'))
+//   chk_mrn_received_from  CHECK ("receivedFrom" IN ('TPW','CDC'))
+// A fourth status value or a third source depot is a SQL ALTER on the
+// constraint FIRST — never just a new literal in a route or a new option in a
+// segmented control. Same class as chk_pick_assignments_status (CORE §7.4).
+//
+// ⚠ srNo is UNIQUE per mrnDate and this table SOFT-deletes (isRemoved). The
+// srNo/mrnNumber allocator MUST COUNT REMOVED ROWS — it is the one read on
+// this table that deliberately does not filter isRemoved, exactly like challan
+// sequence allocation (CORE §13). Every other read filters isRemoved=false,
+// and a removed MRN disappears from BOTH faces.
+//
+// ⚠ mrnDate and truckReportingDate are DIFFERENT THINGS, and are usually the
+// same day — which is what makes confusing them easy. mrnDate = the IST date
+// the MRN was raised; it partners srNo in the unique key and drives billing's
+// date stepper. truckReportingDate = the day the truck reported; it is what
+// every screen labelled "reported" shows, and what the age tags key off. BOTH
+// are immutable after create — editing truckReportingDate later must never
+// renumber anything.
+model mrn {
+  id                 Int         @id @default(autoincrement())
+  mrnNumber          String      @unique
+  mrnDate            DateTime    @db.Date
+  srNo               Int
+  truckReportingDate DateTime    @db.Date
+  receivedFrom       String
+  receivingWarehouse String      @default("Surat")
+  stiRefNo           String?
+  deliveryNo         String?
+  otrNo              String?
+  status             String      @default("open")
+
+  unloadingStartAt   DateTime?   @db.Timestamptz(6)
+  unloadingStartById Int?
+  unloadingStartBy   users?      @relation("MrnUnloadingStartedBy", fields: [unloadingStartById], references: [id])
+  unloadingEndAt     DateTime?   @db.Timestamptz(6)
+  unloadingEndById   Int?
+  unloadingEndBy     users?      @relation("MrnUnloadingEndedBy", fields: [unloadingEndById], references: [id])
+
+  isRemoved          Boolean     @default(false)
+  removedAt          DateTime?   @db.Timestamptz(6)
+  removedById        Int?
+  removedBy          users?      @relation("MrnRemovedBy", fields: [removedById], references: [id])
+
+  // ON DELETE RESTRICT live, deliberately unlike the three SET NULL FKs above:
+  // an MRN must always know who raised it. Prisma's default action for a
+  // REQUIRED relation is already Restrict, so this matches with no onDelete:
+  // argument — stated here so nobody "adds the missing one" and changes it.
+  createdById        Int
+  createdBy          users       @relation("MrnCreatedBy", fields: [createdById], references: [id])
+
+  createdAt          DateTime    @default(now()) @db.Timestamptz(6)
+  // @updatedAt, NOT a plain @default(now()). The live column is NOT NULL
+  // DEFAULT now() with no trigger, so the DB covers INSERT only — precisely
+  // the shape that made push_subscriptions.updatedAt a landmine (CORE §13).
+  // Every write to this table goes through Prisma, so letting Prisma stamp
+  // UPDATEs removes that whole class instead of documenting it.
+  updatedAt          DateTime    @updatedAt @db.Timestamptz(6)
+
+  lines              mrn_lines[]
+
+  @@unique([mrnDate, srNo])
+  @@index([mrnDate(sort: Desc)])
+  @@index([status])
+}
+
+// One row per STI line, as pasted by billing.
+//
+// ⚠ `skuCode` is the raw SAP material code as typed — NOT a catalog row id,
+// and deliberately NOT an FK. Resolve it against sku_master_v2.material with a
+// raw-code fallback, NEVER via any id: the two catalog tables share ZERO id
+// space (CORE §13, the id-space landmine), so an id-based lookup renders a
+// confidently WRONG product name and pack. A code absent from the catalog is a
+// normal state, not an error — ~27% of distinct active SAP codes resolve in
+// neither table, and the screens render "Not in catalog" with a bare code.
+//
+// ⚠ There is deliberately NO shortQty / excessQty column. Short and Excess are
+// DERIVED — max(0, qtySti - physicalQty) and max(0, physicalQty - qtySti) —
+// computed at render and at export. Storing them would let two places
+// disagree. The report's eight condition columns are the six below plus those
+// two derived values.
+model mrn_lines {
+  id          Int                @id @default(autoincrement())
+  mrnId       Int
+  mrn         mrn                @relation(fields: [mrnId], references: [id], onDelete: Cascade)
+  lineNo      Int
+  skuCode     String
+  qtySti      Int
+  // The one supervisor-shaped column billing fills: it comes off the STI sheet.
+  cartonQty   Int?
+  physicalQty Int?
+  isChecked   Boolean            @default(false)
+  checkedAt   DateTime?          @db.Timestamptz(6)
+  checkedById Int?
+  checkedBy   users?             @relation("MrnLineCheckedBy", fields: [checkedById], references: [id])
+
+  // Condition split of what physically arrived. QTD's meaning is UNKNOWN — it
+  // is carried through the schema, the UI and the report because the source
+  // workbook has it. Do not repurpose it.
+  sndQty      Int?
+  leakyQty    Int?
+  damageQty   Int?
+  emptyQty    Int?
+  qtdQty      Int?
+  rejQty      Int?
+
+  createdAt   DateTime           @default(now()) @db.Timestamptz(6)
+  // @updatedAt for the same reason as mrn.updatedAt above.
+  updatedAt   DateTime           @updatedAt @db.Timestamptz(6)
+
+  batches     mrn_line_batches[]
+
+  @@unique([mrnId, lineNo])
+  @@index([skuCode])
+}
+
+// One row per manufacturing batch on a line. USUALLY exactly one; a line
+// occasionally splits across two or more (46 tins: 30 from Jun-26, 16 from
+// Jul-26), which is what makes this a table rather than four columns on
+// mrn_lines. The single-batch case is still a batch row — one owner per
+// behaviour, so a split line and a plain line take the identical code path.
+//
+// NOT EXPRESSIBLE IN PRISMA — live in Supabase, recorded here by hand:
+//   chk_mrn_batch_qty        CHECK (qty > 0)
+//   chk_mrn_batch_mfg_month  CHECK ("mfgMonth" BETWEEN 1 AND 12)
+//   chk_mrn_batch_bb_month   CHECK ("bestBeforeMonth" BETWEEN 1 AND 12)
+// There is deliberately NO year constraint on either pair — "a reasonable
+// year" is a UI judgement that ages, not an invariant (the pick_findings
+// precedent).
+//
+// ⚠ qty > 0 means a line confirmed at physicalQty = 0 carries NO batch row at
+// all. That is an ALLOWED state, decided 2026-08-20: a truck genuinely
+// bringing none of a line is a real receipt. Mfg and Best-before render "—" on
+// screen and blank in the export, and Short derives to the full qtySti. Zero
+// batches is not a missing write.
+//
+// ⚠ SUM(qty) across a line's batches must equal mrn_lines.physicalQty. The DB
+// does NOT enforce that — it lives in the confirm route and in the line
+// sheet's own arithmetic. Same "dependency no CHECK can hold" class as
+// pick_findings' reason↔mfgMonth rule (CORE §7.4).
+//
+// ⚠ bestBeforeMonth/Year are TYPED by the supervisor, per batch — they are NOT
+// derived from the mfg pair. Shelf life varies by product, so there is nothing
+// to calculate from. An earlier design had them as manufacturing + 24 months
+// rendered read-only; that was corrected 2026-08-20, before any code existed.
+// Do not reintroduce a 24-month default, not even as a pre-fill.
+model mrn_line_batches {
+  id              Int       @id @default(autoincrement())
+  lineId          Int
+  line            mrn_lines @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  batchNo         Int
+  qty             Int
+  mfgMonth        Int
+  mfgYear         Int
+  bestBeforeMonth Int
+  bestBeforeYear  Int
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([lineId, batchNo])
 }
