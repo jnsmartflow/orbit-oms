@@ -116,6 +116,31 @@ async function main() {
     // the row is kept so the seed remains a complete source of truth (CORE §3).
     { roleSlug: "admin",            pageKey: "floor",      canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operations",       pageKey: "floor",      canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+
+    // ── /mrn — Material Receipt Note (added 2026-08-20) ───────────────────
+    // Inbound goods receipt. One route, two faces branching by ROLE.
+    //
+    // canExport / canDelete are the whole shape of this grant:
+    //   billing_operator — raises the MRN, pastes the lines, owns the report,
+    //                      and is the only role that may delete one.
+    //   floor_supervisor — opens it on his phone, records what physically came
+    //                      off the truck. Deliberately export:false /
+    //                      delete:false — the report is billing's deliverable
+    //                      and deletion is billing's call.
+    //   operations       — same shape as floor_supervisor. It holds both
+    //                      `picking` and `floor` and is the account actually
+    //                      used to exercise mobile boards, so without a row
+    //                      here MRN could not be tested the way every other
+    //                      board is.
+    // `admin` needs no row — it bypasses this table in lib/permissions.ts.
+    //
+    // ⚠ All three rows were applied to LIVE by hand on 2026-08-20 and are
+    // seeded here so a wipe-and-reseed reproduces them. A live grant with no
+    // seed row is the exact landmine that hit operations/picking twice
+    // (CORE §13) — seed is not live, in both directions.
+    { roleSlug: "billing_operator", pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: true  },
+    { roleSlug: "floor_supervisor", pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",       pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
   ];
 
   for (const row of permRows) {

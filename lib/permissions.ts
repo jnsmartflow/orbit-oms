@@ -55,6 +55,26 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "trip_report",   label: "Trip Report",     href: "/trips" },
   { pageKey: "place_order",        label: "Purchase Order (PO)", href: "/place-order" },
   { pageKey: "mail_orders",        label: "Billing",       href: "/mail-orders" },
+  // MRN — Material Receipt Note (2026-08-20). Inbound goods receipt; one route,
+  // two faces branching by ROLE (billing desktop / floor_supervisor phone).
+  //
+  // ⚠ THIS POSITION IS BEHAVIOUR, NOT COSMETICS. MobileShell's phone Home
+  // target is navItems[0]?.href (components/shared/mobile-shell.tsx), and
+  // buildNavItems below preserves this array's order — so an entry becomes
+  // Home for any role whose first GRANTED entry it displaces.
+  //
+  // Sitting here after mail_orders, it displaces nobody. Verified 2026-08-20
+  // by computing navItems[0] against the LIVE grants: billing_operator
+  // place_order, floor_supervisor picking, operations operations_tinting —
+  // all three unchanged.
+  //
+  // The role actually at risk is ONE, not three: billing_operator, whose
+  // first granted entry (place_order) sits at index 12, so any insertion
+  // BEFORE that would take its Home button. floor_supervisor and operations
+  // are insensitive — picking and operations_tinting already sit at indices 2
+  // and 0. Re-derive it against the grants, never from this comment, before
+  // moving this line.
+  { pageKey: "mrn",                label: "MRN",           href: "/mrn" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },
@@ -149,6 +169,7 @@ export type PageKey =
   | "place_order"
   | "trip_report"
   | "mail_orders"
+  | "mrn"
   | "delivery_challans"
   | "shade_master"
   | "sampling_library"
@@ -195,7 +216,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "tint_manager", "tint_operator",
-  "place_order", "trip_report", "mail_orders",
+  "place_order", "trip_report", "mail_orders", "mrn",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   "settings_hide",
 ];

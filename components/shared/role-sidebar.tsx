@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
   Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard, Mail,
-  FlaskConical, Route, PackageCheck,
+  FlaskConical, Route, PackageCheck, Container,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -53,6 +53,11 @@ export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }
   shade_master:        Palette,
   ti_report:           BarChart2,
   mail_orders:         Mail,
+  // MRN (2026-08-20). `Container` reads as inbound freight while staying in
+  // the truck family. ⚠ `Truck` itself is NOT available — it is already the
+  // `vehicles` icon, and an admin sees both entries in the same sidebar and
+  // the same Menu sheet, so reusing it would make two rows indistinguishable.
+  mrn:                 Container,
 };
 
 export const DEFAULT_ICON = User;
