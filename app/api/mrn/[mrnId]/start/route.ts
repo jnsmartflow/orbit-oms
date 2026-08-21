@@ -107,6 +107,24 @@ export async function POST(
     );
   }
 
+  // Backstop: an MRN with no lines must not enter 'checking'. There is nothing
+  // to check, and moving it there would 409 billing out of the lines route with
+  // no un-start to recover (§11 OQ-7) — the truck would be stuck.
+  //
+  // Belt and braces, deliberately. buildMrnSupervisorWhere's `toCheck` branch
+  // already keeps a line-less MRN off the phone entirely (lib/mrn/queries.ts),
+  // so in normal use this never fires. It exists for the stale-list case: a
+  // phone holding a list fetched before billing cleared the lines can still
+  // fire Start at an MRN that has since emptied. The feed is the fix; this is
+  // the guard for the race the feed cannot see.
+  const lineCount = await prisma.mrn_lines.count({ where: { mrnId } });
+  if (lineCount === 0) {
+    return NextResponse.json(
+      { error: "Billing has not added the lines for this MRN yet — there is nothing to check." },
+      { status: 409 },
+    );
+  }
+
   const started = await prisma.mrn.update({
     where: { id: mrnId },
     data: {

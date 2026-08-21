@@ -113,9 +113,32 @@ export function buildMrnBillingWhere(dateOnly: Date): Prisma.mrnWhereInput {
  * marker can build the identical predicate. Same shape as floor's
  * floorLiveBaseWhere(todayRange).
  *
- *   toCheck  — ALL DATES, status 'open'. Not date-fenced on purpose: a truck
- *              left unchecked overnight must still be waiting next morning,
- *              which is what the card's age tag then reports.
+ *   toCheck  — ALL DATES, status 'open', AND AT LEAST ONE LINE. Not date-fenced
+ *              on purpose: a truck left unchecked overnight must still be
+ *              waiting next morning, which is what the card's age tag then
+ *              reports.
+ *
+ *              🔴 `lines: { some: {} }` is on THIS BRANCH ONLY. Design §5 says
+ *              the MRN reaches the phone the moment the header AND the lines
+ *              exist; this feed used to enforce only the header half, so a
+ *              header billing had not finished pasting into showed up as a
+ *              truck to check. The phone shows a truck only when there is
+ *              something to check.
+ *
+ *              That gap was not cosmetic — it could strand an MRN. Tapping
+ *              Start on a line-less MRN moves it to 'checking', which 409s
+ *              billing out of the lines route, and there is no un-start in v1
+ *              (§11 OQ-7). Closing it at the door is the fix; an un-start route
+ *              is a real decision about takeover semantics and is not being
+ *              made as a side effect.
+ *
+ *              ⚠ Do NOT copy this clause to `checking` or `done`. An MRN
+ *              already in flight is found by its status, and the clause there
+ *              would risk HIDING a live truck if its lines were ever cleared
+ *              mid-flight — the opposite of what this fixes. Billing's rail
+ *              (buildMrnBillingWhere) is likewise untouched: a line-less MRN is
+ *              a normal in-progress draft and must stay visible there, because
+ *              billing's rail is where it gets its lines.
  *   checking — ALL DATES, status 'checking', EVERY supervisor's, deliberately
  *              NOT scoped to the viewer. The mockup shows one worked by
  *              "Ramesh K." beside one marked "you": three supervisors share a
@@ -136,7 +159,9 @@ export function buildMrnSupervisorWhere(
 ): Prisma.mrnWhereInput {
   switch (tab) {
     case "toCheck":
-      return { isRemoved: false, status: "open" };
+      // `some: {}` = "has at least one mrn_lines row". See the doc comment —
+      // toCheck ONLY, never checking/done, never billing's rail.
+      return { isRemoved: false, status: "open", lines: { some: {} } };
     case "checking":
       return { isRemoved: false, status: "checking" };
     case "done":
