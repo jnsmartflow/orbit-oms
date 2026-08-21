@@ -1,0 +1,249 @@
+// lib/mrn/types.ts
+//
+// Wire shapes for the MRN module — the two board faces, one MRN's detail, its
+// lines and their manufacturing batches.
+//
+// ⚠ EVERY DERIVED FIELD IS PART OF THE SHAPE ON PURPOSE. Short, Excess,
+// hasIssue, ageDays and the per-MRN issue summary are computed ONCE, in
+// lib/mrn/derive.ts, on the way out of lib/mrn/queries.ts — never again by a
+// consumer. There are no shortQty / excessQty COLUMNS and none may be added
+// (design §11 OQ-2); if a card, a table, an XLS writer and a print sheet each
+// recomputed them, the four could disagree about the same truck, which is
+// exactly the failure storing them was rejected to avoid.
+//
+// Pure types + two guards. No Prisma import, no I/O — safe from a client
+// component and a route handler alike.
+
+// ── Closed vocabularies ──────────────────────────────────────────────────────
+
+/**
+ * `mrn.status`. Backed by the live CHECK `chk_mrn_status`, which Prisma cannot
+ * see. A fourth state is a SQL ALTER on that constraint FIRST — never just a
+ * new literal here. Same class as chk_pick_assignments_status (CORE §7.4).
+ */
+export type MrnStatus = "open" | "checking" | "done";
+
+export const MRN_STATUSES: readonly MrnStatus[] = ["open", "checking", "done"];
+
+export function isMrnStatus(value: string): value is MrnStatus {
+  return (MRN_STATUSES as readonly string[]).includes(value);
+}
+
+/**
+ * Narrow a status read back from the DB.
+ *
+ * THROWS on an unrecognised value rather than defaulting. The column is CHECK-
+ * constrained, so an unknown string can only mean the constraint was widened
+ * without this file following — and a board that silently files that row under
+ * "open" would hide the drift for weeks. Loud is correct here.
+ */
+export function asMrnStatus(value: string): MrnStatus {
+  if (!isMrnStatus(value)) {
+    throw new Error(
+      `Unknown mrn.status "${value}" — chk_mrn_status was widened without updating lib/mrn/types.ts`,
+    );
+  }
+  return value;
+}
+
+/**
+ * `mrn.receivedFrom`. Backed by the live CHECK `chk_mrn_received_from`. A third
+ * source depot is a SQL ALTER first — see MrnStatus above, same rule.
+ */
+export type MrnReceivedFrom = "TPW" | "CDC";
+
+export const MRN_RECEIVED_FROM: readonly MrnReceivedFrom[] = ["TPW", "CDC"];
+
+export function isMrnReceivedFrom(value: string): value is MrnReceivedFrom {
+  return (MRN_RECEIVED_FROM as readonly string[]).includes(value);
+}
+
+/** Which of the supervisor's three phone tabs a feed is for (design §11 OQ-6). */
+export type MrnSupervisorTab = "toCheck" | "checking" | "done";
+
+// ── Derived values ───────────────────────────────────────────────────────────
+
+/** Per-line derivations. Owner: lib/mrn/derive.ts. */
+export interface MrnLineDerived {
+  /** max(0, qtySti - physicalQty). 0 on an unchecked line. */
+  shortQty: number;
+  /** max(0, physicalQty - qtySti). 0 on an unchecked line. */
+  excessQty: number;
+  /**
+   * Anything the billing operator has to look at: short, excess, or any
+   * non-SND condition count. ⚠ SND is NOT an issue — it is the SOUND
+   * (undamaged) count, so a line with sndQty === physicalQty is the clean case.
+   */
+  hasIssue: boolean;
+}
+
+/** Per-MRN roll-up. Owner: lib/mrn/derive.ts. Drives the rail chips
+ *  ("All clear" / "4 issues") and the phone card badges. */
+export interface MrnIssueSummary {
+  issueLineCount: number;
+  totalShort: number;
+  totalExcess: number;
+  totalLeaky: number;
+  totalDamage: number;
+  totalEmpty: number;
+  totalQtd: number;
+  totalRej: number;
+}
+
+// ── Batches ──────────────────────────────────────────────────────────────────
+
+/**
+ * One manufacturing batch on a line. USUALLY exactly one per line; a line
+ * occasionally splits (30 tins Jun-26 + 16 tins Jul-26), which is why this is a
+ * table and not four columns on the line.
+ *
+ * ⚠ bestBefore* is TYPED by the supervisor, not derived from mfg* — shelf life
+ * varies by product (design §11 OQ-9). There is no 24-month rule anywhere in
+ * this module and none may be added, not even as a UI pre-fill.
+ */
+export interface MrnBatchRow {
+  id: number;
+  batchNo: number;
+  qty: number;
+  mfgMonth: number;
+  mfgYear: number;
+  bestBeforeMonth: number;
+  bestBeforeYear: number;
+}
+
+/** A batch as the phone SUBMITS it — no id yet, and the row may be brand new.
+ *  Shape accepted by validateBatches() in lib/mrn/derive.ts. */
+export interface MrnBatchInput {
+  qty: number;
+  mfgMonth: number;
+  mfgYear: number;
+  bestBeforeMonth: number;
+  bestBeforeYear: number;
+}
+
+// ── Lines ────────────────────────────────────────────────────────────────────
+
+/** The six STORED condition counts. Short and Excess are deliberately absent —
+ *  they are derived (MrnLineDerived). All six are null until the supervisor
+ *  opens the issue toggle on that line. */
+export interface MrnConditionCounts {
+  sndQty: number | null;
+  leakyQty: number | null;
+  damageQty: number | null;
+  emptyQty: number | null;
+  /** ⚠ Meaning UNKNOWN — carried through schema, UI and report because the
+   *  source workbook has it (design §4). Do not repurpose it. */
+  qtdQty: number | null;
+  rejQty: number | null;
+}
+
+export interface MrnDetailLine extends MrnConditionCounts, MrnLineDerived {
+  id: number;
+  lineNo: number;
+  /** The raw SAP material code as pasted. NOT a catalog row id. */
+  skuCode: string;
+  /**
+   * From `sku_master_v2.description`, matched on `material`. **null is a NORMAL
+   * state**, not an error — roughly 27% of distinct active SAP codes resolve in
+   * neither catalog table, and the screens render "Not in catalog" against the
+   * bare code with the line still fully usable.
+   */
+  description: string | null;
+  /** formatPack(packCode, unit). null for the same reason as `description`. */
+  pack: string | null;
+  /** false ⇒ render the "UNKNOWN SKU" treatment. Derived from the lookup, so
+   *  no consumer has to test `description === null` and invent the rule. */
+  isCatalogued: boolean;
+
+  qtySti: number;
+  cartonQty: number | null;
+  /** null until the supervisor confirms the line. 0 is a REAL, valid value —
+   *  the truck brought none of this line (design §11 OQ-4). */
+  physicalQty: number | null;
+
+  isChecked: boolean;
+  checkedAt: Date | null;
+  checkedByName: string | null;
+
+  /** Ordered by batchNo. EMPTY is valid and expected when physicalQty is 0. */
+  batches: MrnBatchRow[];
+}
+
+// ── Header / board rows ──────────────────────────────────────────────────────
+
+/** The header facts both faces show. Split out so the detail payload and the
+ *  board row cannot drift on the fields they share. */
+export interface MrnHeaderFields {
+  id: number;
+  mrnNumber: string;
+  /**
+   * The IST date the MRN was RAISED. Partners `srNo` in UNIQUE(mrnDate, srNo)
+   * and drives billing's date stepper.
+   *
+   * ⚠ NOT the same thing as truckReportingDate, and usually the same day —
+   * which is what makes confusing them easy. Both are immutable after create.
+   */
+  mrnDate: Date;
+  /** Truck 1, 2, 3… of that mrnDate. */
+  srNo: number;
+  /**
+   * The day the truck reported. THIS is what every screen labelled "reported"
+   * shows and what `ageDays` keys off (design §11 OQ-5).
+   */
+  truckReportingDate: Date;
+  receivedFrom: string;
+  receivingWarehouse: string;
+  stiRefNo: string | null;
+  deliveryNo: string | null;
+  otrNo: string | null;
+  status: MrnStatus;
+
+  createdAt: Date;
+  createdByName: string | null;
+
+  unloadingStartAt: Date | null;
+  unloadingStartById: number | null;
+  unloadingStartByName: string | null;
+  unloadingEndAt: Date | null;
+  unloadingEndByName: string | null;
+}
+
+export interface MrnBoardRow extends MrnHeaderFields, MrnIssueSummary {
+  lineCount: number;
+  checkedLineCount: number;
+  /** SUM(qtySti) — the "1,982 nos" chip on both faces. */
+  totalQtySti: number;
+  /** SUM(physicalQty) over CHECKED lines only. */
+  totalPhysicalQty: number;
+  /**
+   * Whole IST days between `truckReportingDate` and today, floored at 0. Feeds
+   * the phone card's `1d` / `{n}d` age tag — how long this truck has gone
+   * unchecked. Keyed off the REPORTING date, never mrnDate or createdAt.
+   */
+  ageDays: number;
+}
+
+export interface MrnDetail extends MrnHeaderFields, MrnIssueSummary {
+  lineCount: number;
+  checkedLineCount: number;
+  totalQtySti: number;
+  totalPhysicalQty: number;
+  /** Ordered by lineNo. */
+  lines: MrnDetailLine[];
+}
+
+/** Billing's rail: one mrnDate, newest truck first. */
+export interface MrnBillingBoard {
+  /** The YYYY-MM-DD the rail is fenced to. */
+  date: string;
+  rows: MrnBoardRow[];
+}
+
+/** The supervisor's three phone tabs, in one payload — ONE fetch feeding both
+ *  the cards and the tab counts, so the two can never drift (the invariant
+ *  CLAUDE_PICKING.md §5.1 is built on). */
+export interface MrnSupervisorBoard {
+  toCheck: MrnBoardRow[];
+  checking: MrnBoardRow[];
+  done: MrnBoardRow[];
+}
