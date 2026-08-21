@@ -6,10 +6,11 @@ import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
+import { BillingBoard } from "./billing-board";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
-import type { MrnBillingBoard, MrnSupervisorBoard, MrnSupervisorTab } from "@/lib/mrn/types";
+import type { MrnSupervisorBoard, MrnSupervisorTab } from "@/lib/mrn/types";
 
 // MRN's mobile shell — the same Direction-A shape Picking uses
 // (components/picking/picking-mobile-shell.tsx, the reference implementation
@@ -345,83 +346,8 @@ function MrnBillingShell({
       userInitials={userInitials}
       navItems={navItems}
     >
-      <MrnBillingPlaceholder />
+      <BillingBoard />
     </RoleLayoutClient>
   );
 }
 
-/**
- * PLACEHOLDER — deliberately thin. Step 8 builds the real billing rail.
- *
- * Owns its own small fetch rather than a context: there is no tab state to
- * share on this face and nothing else consumes the data, so a context here
- * would be scaffolding for its own sake. Step 8 can lift it if the real rail
- * needs one.
- */
-function MrnBillingPlaceholder(): React.JSX.Element {
-  const [data, setData] = useState<MrnBillingBoard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        // No `date` — the route resolves today IST itself.
-        const res = await fetch("/api/mrn/board?face=billing");
-        if (!res.ok) throw new Error(`Request failed (${res.status})`);
-        const json = (await res.json()) as MrnBillingBoard;
-        if (!cancelled) setData(json);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load MRN rail");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <div className="px-6 py-6">
-      <h1 className="text-[19px] font-extrabold tracking-tight text-gray-900">MRN</h1>
-      {data && (
-        <p className="mt-0.5 text-[12px] tabular-nums text-gray-500">{data.date}</p>
-      )}
-
-      <div className="mt-4">
-        {loading ? (
-          <p className="text-[13px] text-gray-500">Loading…</p>
-        ) : error ? (
-          <p className="text-[13px] text-red-600">{error}</p>
-        ) : !data || data.rows.length === 0 ? (
-          <p className="text-[13px] text-gray-500">No MRNs raised on this date.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {data.rows.map((row) => (
-              <li
-                key={row.id}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-700"
-              >
-                <span className="font-semibold tabular-nums">{row.mrnNumber}</span>
-                <span className="text-gray-400"> · </span>
-                <span>Sr {row.srNo}</span>
-                <span className="text-gray-400"> · </span>
-                <span>{row.receivedFrom}</span>
-                <span className="text-gray-400"> · </span>
-                <span>{row.status}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <p className="mt-4 text-[12px] leading-relaxed text-gray-400">
-        Placeholder. Step 8 builds the real billing rail — the date stepper,
-        cards, the paste flow, and the detail pane.
-      </p>
-    </div>
-  );
-}
