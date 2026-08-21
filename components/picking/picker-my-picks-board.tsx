@@ -17,6 +17,18 @@ import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+// The duplicate-SO red is owned by ONE file — never re-type its hexes here.
+// Same import list, same tokens and the same tag the supervisor board and Floor
+// use; this face was deliberately left out on 2026-08-20 and is now included
+// with the IDENTICAL treatment, not a second one.
+import {
+  DuplicateSoTag,
+  DUP_SO_BORDER,
+  DUP_SO_DIVIDER,
+  DUP_SO_FILL,
+  DUP_SO_MUTED,
+  DUP_SO_TEXT,
+} from "@/components/shared/duplicate-so-tag";
 import { usePickerBoard } from "./picking-mobile-shell";
 import { NO_BILL_SWIPE_ATTR, useBillPager } from "./use-bill-pager";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
@@ -1384,13 +1396,37 @@ export function PickerMyPicksBoard({
             {listKey === "pending" ? "Nothing pending." : "Nothing marked done yet today."}
           </p>
         ) : (
-          listRows.map((row) => (
+          listRows.map((row) => {
+            // ── Duplicate-SO red ───────────────────────────────────────────
+            // BOTH BANDS. A duplicate is a duplicate at every stage, so the
+            // Done band gets it too — and the Done band's "settled" language
+            // (the quiet receipt) must not soften it: nothing here dims a
+            // flagged card, exactly as the supervisor's doneChecked opacity-75
+            // is suppressed on red.
+            // Sort order is untouched — a red card holds the position the
+            // server spine gave it and is never floated or grouped.
+            const dup = row.hasDuplicateSo;
+            return (
             <button
               key={row.orderId}
               type="button"
               onClick={() => openDetail(row.orderId, listKey)}
-              className="block w-full text-left mb-[11px] rounded-[20px] overflow-hidden border-[1.5px] bg-white border-[#eceef2] active:bg-gray-50"
-              style={{ boxShadow: CARD_SHADOW_V2 }}
+              className={
+                "block w-full text-left mb-[11px] rounded-[20px] overflow-hidden border-[1.5px] " +
+                // On a duplicate the fill/border come from the style object
+                // below, so no colour class is emitted at all — the same rule
+                // the supervisor card follows (a bg-* class plus an inline
+                // background is a fight nobody needs to read later).
+                // `active:bg-gray-50` goes with them: an inline background beats
+                // a class rule whatever its state, so keeping it would leave an
+                // inert class on the card. A red card has no press tint, which
+                // is exactly what the supervisor's red cards do.
+                (dup ? "" : "bg-white border-[#eceef2] active:bg-gray-50")
+              }
+              style={{
+                boxShadow: CARD_SHADOW_V2,
+                ...(dup ? { background: DUP_SO_FILL, borderColor: DUP_SO_BORDER } : null),
+              }}
             >
               {/* Card body — the supervisor card's exact frame and rhythm
                   (px-4 pt-3.5 pb-3, caption mb-1.5, where-row mt-1.5). The
@@ -1409,15 +1445,30 @@ export function PickerMyPicksBoard({
                 <div className="flex items-center justify-between gap-2.5 mb-1.5">
                   <span
                     className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap"
-                    style={{ color: "#98a2b3" }}
+                    style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}
                   >
-                    <span className="font-mono shrink-0" style={{ color: "#98a0aa" }}>
+                    <span className="font-mono shrink-0" style={{ color: dup ? DUP_SO_TEXT : "#98a0aa" }}>
                       {row.obdNumber}
                     </span>
                   </span>
+                  {/* The tag LEADS the right cluster, so it is the first thing
+                      read after the OBD — same order as the supervisor card.
+                      Wrapped only on a duplicate, so every other card's caption
+                      row is byte-identical DOM.
+                      ⚠ The amber ★ goes WHITE rather than becoming a white
+                      pill: the flip-to-a-white-pill rule is for BADGES, and a
+                      pill around a bare glyph would out-shout the fill and the
+                      tag it exists to carry. */}
                   <span className="flex items-center gap-[7px] shrink-0">
-                    {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
-                    <AgeBadge row={row} />
+                    {dup && <DuplicateSoTag />}
+                    {row.isKeyCustomer && (
+                      <Star
+                        size={14}
+                        className={dup ? "" : "text-amber-500 fill-amber-500"}
+                        style={dup ? { color: DUP_SO_TEXT, fill: DUP_SO_TEXT } : undefined}
+                      />
+                    )}
+                    <AgeBadge row={row} onRed={dup} />
                   </span>
                 </div>
 
@@ -1427,12 +1478,15 @@ export function PickerMyPicksBoard({
                 <div className="flex items-baseline justify-between gap-3">
                   <span
                     className="text-[16px] font-semibold leading-[1.25] truncate min-w-0"
-                    style={{ color: "#1d2939" }}
+                    style={{ color: dup ? DUP_SO_TEXT : "#1d2939" }}
                   >
                     {row.dealerName}
                   </span>
                   {row.windowTime !== null && (
-                    <span className="text-[15px] font-semibold tabular-nums shrink-0" style={{ color: "#475467" }}>
+                    <span
+                      className="text-[15px] font-semibold tabular-nums shrink-0"
+                      style={{ color: dup ? DUP_SO_TEXT : "#475467" }}
+                    >
                       {row.windowTime}
                     </span>
                   )}
@@ -1448,30 +1502,45 @@ export function PickerMyPicksBoard({
                     on his own board, the picker IS the viewer. */}
                 <div className="flex items-center justify-between gap-2.5 mt-1.5">
                   <span className="flex items-center gap-2 min-w-0">
-                    <RouteDot deliveryType={row.deliveryType} />
-                    <span className="text-[12px] font-medium truncate min-w-0" style={{ color: "#667085" }}>
+                    <RouteDot deliveryType={row.deliveryType} onRed={dup} />
+                    <span
+                      className="text-[12px] font-medium truncate min-w-0"
+                      style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
+                    >
                       {row.area ?? "—"}
                     </span>
                     {row.articleTag !== null && (
                       <>
-                        <span className="shrink-0" style={{ color: "#d3d8de" }}>
+                        <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
                           &middot;
                         </span>
-                        <span className="text-[12px] font-medium truncate min-w-0" style={{ color: "#667085" }}>
+                        {/* articleTag is DIVERGENCE 1 (picker-only). It reads at
+                            the same weight as the area beside it, so it takes
+                            the same muted-on-red colour. */}
+                        <span
+                          className="text-[12px] font-medium truncate min-w-0"
+                          style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
+                        >
                           {row.articleTag}
                         </span>
                       </>
                     )}
                     {row.volumeLitres != null && (
                       <>
-                        <span className="shrink-0" style={{ color: "#d3d8de" }}>
+                        <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
                           &middot;
                         </span>
                         <span className="flex items-baseline gap-[3px] shrink-0">
-                          <span className="text-[12px] font-semibold tabular-nums" style={{ color: "#667085" }}>
+                          <span
+                            className="text-[12px] font-semibold tabular-nums"
+                            style={{ color: dup ? DUP_SO_TEXT : "#667085" }}
+                          >
                             {formatLitres(row.volumeLitres)}
                           </span>
-                          <span className="text-[10.5px] font-medium" style={{ color: "#98a2b3" }}>
+                          <span
+                            className="text-[10.5px] font-medium"
+                            style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}
+                          >
                             L
                           </span>
                         </span>
@@ -1500,20 +1569,30 @@ export function PickerMyPicksBoard({
                   pickedAt passes null and the slot stays empty. */}
               <CardShelf
                 row={row}
+                onRed={dup}
                 trailing={
                   listKey === "done" && formatPickedTime(row.pickedAt) !== null ? (
+                    // The Done receipt sits INSIDE the shelf band, which is an
+                    // opaque darker red on a duplicate — #8a929c/#a2aab4 would
+                    // disappear into it. Both halves go to DUP_SO_MUTED, the
+                    // same treatment the supervisor's own "checked {time}"
+                    // receipt takes. It stays a quiet receipt; nothing about a
+                    // flagged card makes the timestamp louder.
                     <span
                       className="shrink-0 self-stretch flex items-center gap-1 pl-1.5 text-[12px] font-semibold whitespace-nowrap"
-                      style={{ color: "#8a929c" }}
+                      style={{ color: dup ? DUP_SO_MUTED : "#8a929c" }}
                     >
                       done
-                      <span style={{ color: "#a2aab4" }}>{formatPickedTime(row.pickedAt)}</span>
+                      <span style={{ color: dup ? DUP_SO_MUTED : "#a2aab4" }}>
+                        {formatPickedTime(row.pickedAt)}
+                      </span>
                     </span>
                   ) : null
                 }
               />
             </button>
-          ))
+            );
+          })
         )}
       </div>
       )}
@@ -1531,9 +1610,18 @@ export function PickerMyPicksBoard({
         }
         {...pager.touchHandlers}
       >
+        {/* ⚠ PICKER detail header. On a duplicate-SO bill the teal band goes
+            red and carries the same tag, exactly as the supervisor's does
+            (picking-board-mobile.tsx) — the flag survives from the card into
+            the screen where he is actually reading line items. The teal is a
+            className and the red an inline style, so the red wins without a
+            class fight. */}
         <div
           className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
-          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+          style={{
+            paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
+            ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
+          }}
         >
           {/* Routes through history so the chevron, a hardware back press and
               the Mark Done success path all close via the ONE popstate
@@ -1550,7 +1638,10 @@ export function PickerMyPicksBoard({
             <div className="text-[16px] font-extrabold text-white truncate">
               {detailRow?.dealerName ?? "—"}
             </div>
-            <div className="text-[12px] text-white/75 truncate">
+            <div
+              className={"text-[12px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/75")}
+              style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
+            >
               {detailRow
                 ? `${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
@@ -1564,9 +1655,15 @@ export function PickerMyPicksBoard({
                 bill that is not 74/77 nothing renders and the header keeps its
                 exact two-line height. Same `mt-2 gap-1.5` row shape as the
                 supervisor's, so if this face ever gains its own flag pills they
-                drop straight in beside it. */}
-            {detailRow && isSmuBadged(detailRow.smuCode) && (
+                drop straight in beside it.
+                ⚠ SAME TRAP, SAME FIX as the supervisor's flag row — the
+                duplicate tag lives in this row, so a flagged bill that is not
+                74/77 would have the whole row suppressed and lose the one
+                signal it came for. Its condition is in the guard too. */}
+            {detailRow && (isSmuBadged(detailRow.smuCode) || detailRow.hasDuplicateSo) && (
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {/* Leads the row — it is the reason the header is red. */}
+                {detailRow.hasDuplicateSo && <DuplicateSoTag />}
                 <SmuBadge code={detailRow.smuCode} />
               </div>
             )}
