@@ -74,10 +74,37 @@ export async function PUT(
     );
   }
 
-  const body = (await req.json().catch(() => ({}))) as { block?: unknown };
-  if (typeof body.block !== "string" || body.block.trim() === "") {
+  // TWO INPUT SHAPES, ONE JOB (2026-08-22, step 8b).
+  //
+  //   { block }  — the raw paste. The SERVER parses it, so paste.ts stays the
+  //                single parsing authority and a client that parsed
+  //                differently cannot write a different answer.
+  //   { lines }  — an already-structured set, for the board's "Save lines"
+  //                action (a carton-qty edit or a row delete on the open
+  //                table).
+  //
+  // ⚠ WHY `lines` HAD TO EXIST. Re-serialising the board's draft back into a
+  // TSV block and sending it as `block` would round-trip lineNo / skuCode /
+  // qtySti — and SILENTLY DROP cartonQty, because parsePastedLines has no
+  // column for it and the createMany below would rewrite every one to NULL. A
+  // save that quietly discards the field the operator just typed is worse than
+  // no save at all. This shape carries it.
+  //
+  // Both paths converge on the SAME delete-then-create sequence below, so the
+  // ordering guarantee and the linesCleared contract are identical either way.
+  const body = (await req.json().catch(() => ({}))) as { block?: unknown; lines?: unknown };
+
+  const hasBlock = typeof body.block === "string" && body.block.trim() !== "";
+  const hasLines = Array.isArray(body.lines);
+  if (!hasBlock && !hasLines) {
     return NextResponse.json(
       { error: "`block` is required — paste the lines from the STI sheet" },
+      { status: 400 },
+    );
+  }
+  if (hasBlock && hasLines) {
+    return NextResponse.json(
+      { error: "Send `block` or `lines`, never both — they are two ways to say the same thing." },
       { status: 400 },
     );
   }
@@ -101,41 +128,124 @@ export async function PUT(
     );
   }
 
-  // ── 1. Parse. Nothing written yet. ─────────────────────────────────────────
-  // parsePastedLines NEVER throws — every problem comes back as a per-row error
-  // so the preview can render "34 matched, 2 could not be read" beside the rows
-  // that did parse.
-  const parsed = parsePastedLines(body.block);
+  // ── 1. Resolve the input to rows. Nothing written yet, on either path. ─────
+
+  /** What both shapes normalise to before anything is written. */
+  interface IncomingLine {
+    lineNo: number;
+    skuCode: string;
+    qtySti: number;
+    cartonQty: number | null;
+  }
+  let incoming: IncomingLine[];
+  /** Only a PASTE has these — how the block was read. Null on the `lines` path,
+   *  where there was no parse to explain. */
+  let pasteMeta: { numbering: string; delimiter: string; headerSkipped: boolean } | null = null;
+
+  if (hasLines) {
+    const raw = body.lines as unknown[];
+    const out: IncomingLine[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const l = raw[i] as Record<string, unknown>;
+      if (typeof l !== "object" || l === null) {
+        return NextResponse.json({ error: `Line ${i + 1} is not an object` }, { status: 400 });
+      }
+      if (typeof l.lineNo !== "number" || !Number.isInteger(l.lineNo) || l.lineNo <= 0) {
+        return NextResponse.json(
+          { error: `Line ${i + 1} needs a whole lineNo of 1 or more` },
+          { status: 400 },
+        );
+      }
+      const skuCode = typeof l.skuCode === "string" ? l.skuCode.trim().toUpperCase() : "";
+      if (skuCode === "") {
+        return NextResponse.json({ error: `Line ${i + 1} needs a SKU code` }, { status: 400 });
+      }
+      if (typeof l.qtySti !== "number" || !Number.isInteger(l.qtySti) || l.qtySti < 0) {
+        return NextResponse.json(
+          { error: `Line ${i + 1} needs a whole quantity of 0 or more` },
+          { status: 400 },
+        );
+      }
+      let cartonQty: number | null = null;
+      if (l.cartonQty !== undefined && l.cartonQty !== null) {
+        if (typeof l.cartonQty !== "number" || !Number.isInteger(l.cartonQty) || l.cartonQty < 0) {
+          return NextResponse.json(
+            { error: `Line ${i + 1} has an invalid carton qty — a whole number of 0 or more, or blank` },
+            { status: 400 },
+          );
+        }
+        cartonQty = l.cartonQty;
+      }
+      out.push({ lineNo: l.lineNo, skuCode, qtySti: l.qtySti, cartonQty });
+    }
+
+    // UNIQUE(mrnId, lineNo) would otherwise surface as a raw P2002 out of
+    // createMany — the same guard parsePastedLines applies to pasted Sr numbers.
+    const nos = out.map((l) => l.lineNo);
+    if (new Set(nos).size !== nos.length) {
+      return NextResponse.json(
+        { error: "Two lines share a line number — each must be distinct." },
+        { status: 400 },
+      );
+    }
+    if (out.length === 0) {
+      return NextResponse.json(
+        { error: "An MRN cannot be saved with no lines. Delete the MRN instead, or paste a new block." },
+        { status: 400 },
+      );
+    }
+    incoming = out;
+  } else {
+    // parsePastedLines NEVER throws — every problem comes back as a per-row
+    // error so the preview can render "34 matched, 2 could not be read" beside
+    // the rows that did parse.
+    const parsed = parsePastedLines(body.block as string);
 
   // Any unreadable row fails the WHOLE paste, and that is the safe direction on
   // a REPLACE: silently dropping 2 rows of 36 would delete two real lines the
   // operator believes they just saved. Nothing has been written at this point,
   // so the MRN keeps the lines it already had. (An unmatched SKU is NOT a
   // parse error — see the header note; it never reaches here.)
-  if (parsed.errors.length > 0) {
-    return NextResponse.json(
-      {
-        error: `${parsed.errors.length} row${parsed.errors.length === 1 ? "" : "s"} could not be read. Nothing was changed — fix ${parsed.errors.length === 1 ? "it" : "them"} and paste again.`,
-        errors: parsed.errors,
-        parsedCount: parsed.rows.length,
-      },
-      { status: 400 },
-    );
-  }
-  if (parsed.rows.length === 0) {
-    return NextResponse.json(
-      { error: "No lines found in that paste. Nothing was changed." },
-      { status: 400 },
-    );
+    if (parsed.errors.length > 0) {
+      return NextResponse.json(
+        {
+          error: `${parsed.errors.length} row${parsed.errors.length === 1 ? "" : "s"} could not be read. Nothing was changed — fix ${parsed.errors.length === 1 ? "it" : "them"} and paste again.`,
+          errors: parsed.errors,
+          parsedCount: parsed.rows.length,
+        },
+        { status: 400 },
+      );
+    }
+    if (parsed.rows.length === 0) {
+      return NextResponse.json(
+        { error: "No lines found in that paste. Nothing was changed." },
+        { status: 400 },
+      );
+    }
+
+    // A pasted block carries no carton qty — the STI columns are Sr · SKU ·
+    // Qty. Every line therefore starts NULL there, and billing types it after,
+    // which is what the `lines` shape above exists to save.
+    incoming = parsed.rows.map((r) => ({
+      lineNo: r.lineNo,
+      skuCode: r.skuCode,
+      qtySti: r.qtySti,
+      cartonQty: null,
+    }));
+    pasteMeta = {
+      numbering: parsed.numbering,
+      delimiter: parsed.delimiter,
+      headerSkipped: parsed.headerSkipped,
+    };
   }
 
   // Resolve for the REPORT ONLY — one batched query, keyed on
   // sku_master_v2.material, never an id (lib/mrn/resolve-lines.ts owns that
   // rule and carries the id-space warning). Cannot fail the save.
-  const catalog = await resolveMrnSkus(parsed.rows.map((r) => r.skuCode));
+  const catalog = await resolveMrnSkus(incoming.map((r) => r.skuCode));
   const unmatchedCodes = Array.from(
     new Set(
-      parsed.rows
+      incoming
         .filter((r) => !applyCatalog(r.skuCode, catalog).isCatalogued)
         .map((r) => r.skuCode),
     ),
@@ -149,14 +259,21 @@ export async function PUT(
   // From here until this resolves, the MRN has ZERO lines. See the header.
   try {
     await prisma.mrn_lines.createMany({
-      data: parsed.rows.map((r) => ({
+      data: incoming.map((r) => ({
         mrnId,
         lineNo: r.lineNo,
         skuCode: r.skuCode,
         qtySti: r.qtySti,
-        // Everything else stays at its column default: cartonQty and
-        // physicalQty NULL, isChecked false, all six condition counts NULL.
-        // The supervisor fills them (step 6); billing never pre-fills them.
+        // cartonQty is BILLING's own column — it comes off the STI sheet, so it
+        // is carried through on the `lines` path and NULL on a fresh paste.
+        cartonQty: r.cartonQty,
+        // Everything else stays at its column default: physicalQty NULL,
+        // isChecked false, all six condition counts NULL. The supervisor fills
+        // those (step 6); billing never pre-fills them.
+        //
+        // ⚠ A REPLACE IS A REPLACE. Saving here discards any supervisor data on
+        // the old rows — which is safe ONLY because this route 409s on
+        // status !== 'open', so by definition nothing has been checked yet.
       })),
     });
   } catch (err) {
@@ -175,12 +292,12 @@ export async function PUT(
   }
 
   return NextResponse.json({
-    lineCount: parsed.rows.length,
+    lineCount: incoming.length,
     // Surfaced so the preview can explain a surprising parse without a second
-    // round trip.
-    numbering: parsed.numbering,
-    delimiter: parsed.delimiter,
-    headerSkipped: parsed.headerSkipped,
+    // round trip. Null on the `lines` path — nothing was parsed there.
+    numbering: pasteMeta?.numbering ?? null,
+    delimiter: pasteMeta?.delimiter ?? null,
+    headerSkipped: pasteMeta?.headerSkipped ?? false,
     // Informational only — these lines ARE saved.
     unmatchedCount: unmatchedCodes.length,
     unmatchedCodes,

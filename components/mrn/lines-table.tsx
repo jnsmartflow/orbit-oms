@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertTriangle, Smartphone } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Smartphone, X } from "lucide-react";
 import type { MrnBatchRow, MrnDetail, MrnDetailLine } from "@/lib/mrn/types";
 import { formatCount, formatMonthYear } from "./format";
 
@@ -27,12 +27,20 @@ import { formatCount, formatMonthYear } from "./format";
 
 interface LinesTableProps {
   detail: MrnDetail;
+  /** Reported up so the board can warn before a dirty draft is discarded. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** After a successful save — the board refetches. */
+  onSaved?: () => void;
 }
 
-export function LinesTable({ detail }: LinesTableProps): React.JSX.Element {
+export function LinesTable({
+  detail,
+  onDirtyChange,
+  onSaved,
+}: LinesTableProps): React.JSX.Element {
   if (detail.status === "checking") return <CheckingTable detail={detail} />;
   if (detail.status === "done") return <DoneTable detail={detail} />;
-  return <OpenTable detail={detail} />;
+  return <OpenTable detail={detail} onDirtyChange={onDirtyChange} onSaved={onSaved} />;
 }
 
 // ── open ────────────────────────────────────────────────────────────────────
@@ -46,8 +54,106 @@ export function LinesTable({ detail }: LinesTableProps): React.JSX.Element {
  * it where the sheet has it. It therefore renders as a real (solid-bordered)
  * value cell when present, not as a dashed one.
  */
-function OpenTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
-  const unmatched = detail.lines.filter((l) => !l.isCatalogued).length;
+function OpenTable({
+  detail,
+  onDirtyChange,
+  onSaved,
+}: {
+  detail: MrnDetail;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSaved?: () => void;
+}): React.JSX.Element {
+  // ── The local draft (2026-08-22, step 8b) ─────────────────────────────────
+  //
+  // Carton-qty edits and row deletes change LOCAL state and mark the table
+  // dirty; an explicit "Save lines" writes the whole set. It is deliberately
+  // NOT a write per keystroke, for a reason specific to this route: the lines
+  // endpoint REPLACES everything (deleteMany then createMany), so every save is
+  // a moment where the MRN briefly has zero lines. Doing that on each character
+  // typed into a carton-qty box would be absurd — and would also fire the
+  // linesCleared failure mode mid-typing, which no operator could act on.
+  //
+  // Paste is the exception and writes immediately from its own modal: its
+  // confirm button IS the save, and the board re-reads afterwards.
+  //
+  // Seeded from `detail.lines`. Reset happens by REMOUNT — detail-pane keys
+  // this component on detail.id — rather than through an effect that would race
+  // the fetch and could silently discard an in-progress edit.
+  const [draft, setDraft] = useState<MrnDetailLine[]>(detail.lines);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty = useMemo(() => {
+    if (draft.length !== detail.lines.length) return true;
+    return draft.some((d, i) => {
+      const o = detail.lines[i];
+      return o === undefined || o.id !== d.id || o.cartonQty !== d.cartonQty;
+    });
+  }, [draft, detail.lines]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    // Clear the flag when this table unmounts, or the board keeps warning about
+    // a draft that no longer exists.
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
+
+  const unmatched = draft.filter((l) => !l.isCatalogued).length;
+  const draftQtySti = draft.reduce((s, l) => s + l.qtySti, 0);
+
+  function setCarton(id: number, raw: string) {
+    const trimmed = raw.trim();
+    // Blank clears it back to NULL — a carton qty the STI does not state is
+    // genuinely absent, not zero.
+    const next = trimmed === "" ? null : Number(trimmed);
+    if (next !== null && (!Number.isInteger(next) || next < 0)) return;
+    setDraft((rows) => rows.map((r) => (r.id === id ? { ...r, cartonQty: next } : r)));
+  }
+
+  function removeRow(id: number) {
+    setDraft((rows) => rows.filter((r) => r.id !== id));
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/mrn/${detail.id}/lines`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        // The STRUCTURED shape, not a re-serialised block — a block has no
+        // carton-qty column and would wipe every value typed above. The route's
+        // own header explains why it takes two shapes.
+        body: JSON.stringify({
+          lines: draft.map((l) => ({
+            lineNo: l.lineNo,
+            skuCode: l.skuCode,
+            qtySti: l.qtySti,
+            cartonQty: l.cartonQty,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          linesCleared?: boolean;
+        };
+        // Verbatim, including linesCleared's "this MRN now has no lines" — see
+        // components/mrn/modal-shell.tsx's ModalError for why that one in
+        // particular must never be generalised.
+        setError(json.error ?? `Could not save the lines (${res.status}).`);
+        // A 409 means the supervisor started while this draft was open. Refetch
+        // so the pane stops offering an edit the server has already refused.
+        if (res.status === 409 || json.linesCleared) onSaved?.();
+        return;
+      }
+      onSaved?.();
+    } catch {
+      setError("Could not reach the server. Nothing was saved — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <>
@@ -68,19 +174,46 @@ function OpenTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
         </Banner>
       )}
 
+      {error && (
+        <div className="mb-3.5 rounded-[9px] border border-red-200 bg-red-50 px-[13px] py-[11px] text-[12.5px] leading-[1.55] text-[#b42318]">
+          {error}
+        </div>
+      )}
+
       <TableShell
         title={
           <>
-            {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
+            {draft.length} lines · {formatCount(draftQtySti)} nos as per STI
             {unmatched > 0 && ` · ${unmatched} SKU${unmatched === 1 ? "" : "s"} not in catalog`}
+            {dirty && <span className="ml-2 text-[#b45309]">unsaved changes</span>}
           </>
+        }
+        right={
+          // Appears ONLY when dirty. A permanently visible Save would invite a
+          // pointless full replace of every line on a table nobody touched.
+          dirty ? (
+            <button
+              type="button"
+              onClick={save}
+              disabled={busy}
+              className={
+                "inline-flex h-7 items-center rounded-md border px-3 text-[11.5px] font-semibold " +
+                (busy
+                  ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+                  : "border-gray-900 bg-gray-900 text-white hover:bg-gray-800")
+              }
+            >
+              {busy ? "Saving…" : "Save lines"}
+            </button>
+          ) : undefined
         }
       >
         <table className="w-full table-fixed border-collapse">
+          {/* Rebalanced for the delete column — Description gave up the 4%. */}
           <colgroup>
             <col style={{ width: "4%" }} />
             <col style={{ width: "11%" }} />
-            <col style={{ width: "29%" }} />
+            <col style={{ width: "25%" }} />
             <col style={{ width: "7%" }} />
             <col style={{ width: "8%" }} />
             <col style={{ width: "7%" }} />
@@ -88,6 +221,7 @@ function OpenTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
             <col style={{ width: "9%" }} />
             <col style={{ width: "9%" }} />
             <col style={{ width: "8%" }} />
+            <col style={{ width: "4%" }} />
           </colgroup>
           <thead>
             <tr>
@@ -101,10 +235,11 @@ function OpenTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
               <Th center>Mfg m/y</Th>
               <Th center>Best before</Th>
               <Th center>Iss.</Th>
+              <Th center />
             </tr>
           </thead>
           <tbody>
-            {detail.lines.map((line) => (
+            {draft.map((line) => (
               <tr key={line.id} className={line.isCatalogued ? "" : "bg-amber-50/60"}>
                 <Td muted center>{line.lineNo}</Td>
                 <Td mono strong>{line.skuCode}</Td>
@@ -122,18 +257,38 @@ function OpenTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
                 </Td>
                 <Td center>{line.pack ?? "—"}</Td>
                 <Td center strong>{line.qtySti}</Td>
-                {/* Billing's own column — a real value when filled. */}
-                <Td center>{line.cartonQty === null ? <DashedCell /> : <ValueCell>{line.cartonQty}</ValueCell>}</Td>
-                {/* Supervisor's, all of them. */}
+                {/* BILLING'S ONE EDITABLE COLUMN. It comes off the STI sheet, so
+                    billing types it where the sheet has it — everything else on
+                    this row is either theirs already (SKU, qty) or the
+                    supervisor's, and the supervisor's stay dashed. */}
+                <Td center>
+                  <input
+                    value={line.cartonQty ?? ""}
+                    onChange={(e) => setCarton(line.id, e.target.value)}
+                    inputMode="numeric"
+                    aria-label={`Carton qty for line ${line.lineNo}`}
+                    className="h-[22px] w-[46px] rounded-[5px] border border-gray-200 bg-white text-center text-[11px] font-medium text-[#1d2939] outline-none focus:border-gray-400"
+                  />
+                </Td>
                 <Td center><DashedCell /></Td>
                 <Td center><DashedCell /></Td>
                 <Td center><DashedCell /></Td>
                 <Td center muted>—</Td>
+                <Td center>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(line.id)}
+                    aria-label={`Remove line ${line.lineNo}`}
+                    className="text-[#c2c8d0] hover:text-[#b42318]"
+                  >
+                    <X size={13} />
+                  </button>
+                </Td>
               </tr>
             ))}
           </tbody>
         </table>
-        {detail.lines.length === 0 && <EmptyLines />}
+        {draft.length === 0 && <EmptyLines />}
       </TableShell>
     </>
   );

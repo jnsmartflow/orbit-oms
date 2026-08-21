@@ -26,6 +26,7 @@ interface MrnRailProps {
   error: string | null;
   /** True when a search query is filtering the list — changes the empty copy. */
   filtered: boolean;
+  onNewMrn: () => void;
 }
 
 export function MrnRail({
@@ -36,23 +37,28 @@ export function MrnRail({
   loading,
   error,
   filtered,
+  onNewMrn,
 }: MrnRailProps): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-col border-r border-[#eceff2] bg-white">
       <div className="shrink-0 border-b border-[#f2f4f6] px-[13px] pb-2.5 pt-[11px]">
-        {/* ⚠ INERT IN 8a — this is a WRITE trigger and step 8b owns it. It is
-            rendered because it anchors the rail's layout and tells the operator
-            where creating a truck will live, but it does nothing yet, so it
-            wears the DISABLED treatment (UI §10: grey, never faded teal — a
-            faded primary reads as broken rather than as waiting).
-            ⚠ It is also not teal for a second reason: the selected rail card is
-            this surface's one teal element (UI §1). When 8b wires this up, that
-            conflict has to be resolved deliberately, not by making both teal. */}
+        {/* ⚠ TEAL ONLY WHILE NOTHING IS SELECTED, and that is the one-teal rule
+            applied rather than dodged. Teal follows the state's REAL job
+            (UI §10) — with no truck picked, the morning's job IS raising one,
+            so this is the board's single teal element. The moment an MRN is
+            selected the pane's own action row takes teal (Paste lines on an
+            open MRN), and this demotes to secondary so the two never compete.
+            Floor's detail panel already moves teal between buttons by state;
+            this is the same move across two regions. */}
         <button
           type="button"
-          disabled
-          title="Creating an MRN arrives in the next step"
-          className="flex h-9 w-full cursor-not-allowed items-center justify-center gap-[7px] rounded-[9px] border border-gray-200 bg-gray-100 text-[13px] font-semibold text-gray-400"
+          onClick={onNewMrn}
+          className={
+            "flex h-9 w-full items-center justify-center gap-[7px] rounded-[9px] border text-[13px] font-semibold transition-colors " +
+            (selectedId === null
+              ? "border-teal-600 bg-teal-600 text-white hover:bg-teal-700"
+              : "border-gray-200 bg-white text-[#475467] hover:bg-gray-50")
+          }
         >
           <Plus size={15} strokeWidth={2.4} />
           New MRN

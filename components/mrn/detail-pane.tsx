@@ -24,9 +24,24 @@ interface DetailPaneProps {
   error: string | null;
   /** No MRN picked — B2, the first thing billing sees each morning. */
   empty: boolean;
+  onPasteLines: () => void;
+  onEditHeader: () => void;
+  onDelete: () => void;
+  onLinesDirtyChange: (dirty: boolean) => void;
+  onLinesSaved: () => void;
 }
 
-export function DetailPane({ detail, loading, error, empty }: DetailPaneProps): React.JSX.Element {
+export function DetailPane({
+  detail,
+  loading,
+  error,
+  empty,
+  onPasteLines,
+  onEditHeader,
+  onDelete,
+  onLinesDirtyChange,
+  onLinesSaved,
+}: DetailPaneProps): React.JSX.Element {
   const [tab, setTab] = useState<"lines" | "activity">("lines");
 
   if (empty) {
@@ -72,11 +87,38 @@ export function DetailPane({ detail, loading, error, empty }: DetailPaneProps): 
             <p className="mt-[3px] text-[12px] text-[#667085]">{buildSubtitle(detail)}</p>
           </div>
 
+          {/* ── The action row, and where teal goes ────────────────────────
+              Teal follows the state's REAL job (UI §10), so it MOVES:
+
+                open     → Paste lines. Until an MRN has lines it has not
+                           reached the supervisor at all, so pasting them is
+                           unambiguously the job.
+                checking → NOTHING IS TEAL, deliberately. §10 says "never
+                           zero", but that assumes a state that HAS a job.
+                           This one has none: the header, the lines and the
+                           delete are all 409'd by the server, and the export
+                           does not exist until step 10. Manufacturing a teal
+                           button here would point the operator at something
+                           that cannot help them. The absence IS the message —
+                           the amber banner below carries it.
+                done     → Download XLS, which is the whole reason this screen
+                           replaces a sheet of paper. It stays DISABLED-GREY
+                           until step 10 builds the export route: teal arrives
+                           with the working button, never before it.
+
+              The selected rail card's teal tint is SELECTION, not an action,
+              and does not compete — the same way Delivery Challan's left panel
+              does not. */}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {detail.status === "open" ? (
               <>
-                <DeadButton icon={<Trash2 size={13} />} label="Delete" />
-                <DeadButton icon={<Clipboard size={13} />} label="Paste lines" />
+                <PaneButton icon={<Trash2 size={13} />} label="Delete" onClick={onDelete} />
+                <PaneButton
+                  icon={<Clipboard size={13} />}
+                  label="Paste lines"
+                  tone="primary"
+                  onClick={onPasteLines}
+                />
               </>
             ) : (
               <>
@@ -100,8 +142,16 @@ export function DetailPane({ detail, loading, error, empty }: DetailPaneProps): 
       <div className="min-h-0 flex-1 overflow-auto px-[18px] py-4">
         {tab === "lines" ? (
           <>
-            <HeaderCard detail={detail} />
-            <LinesTable detail={detail} />
+            <HeaderCard detail={detail} onEdit={onEditHeader} />
+            {/* Keyed on the MRN id so switching trucks REMOUNTS the table and
+                its draft, rather than leaving one MRN's unsaved carton qty
+                sitting on another's rows. */}
+            <LinesTable
+              key={detail.id}
+              detail={detail}
+              onDirtyChange={onLinesDirtyChange}
+              onSaved={onLinesSaved}
+            />
           </>
         ) : (
           <ActivityTab detail={detail} />
@@ -225,6 +275,36 @@ function PaneTab({
       }
     >
       {children}
+    </button>
+  );
+}
+
+/** A live action. `primary` is this surface's teal — exactly one per state, and
+ *  which one it is changes with status (see the action row above). */
+function PaneButton({
+  icon,
+  label,
+  tone,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  tone?: "primary";
+  onClick: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] transition-colors " +
+        (tone === "primary"
+          ? "border-teal-600 bg-teal-600 font-semibold text-white hover:bg-teal-700"
+          : "border-gray-200 bg-white font-medium text-[#475467] hover:bg-gray-50")
+      }
+    >
+      {icon}
+      {label}
     </button>
   );
 }

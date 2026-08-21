@@ -17,9 +17,10 @@ import { formatDateOnly, formatIstDateTime } from "./format";
 
 interface HeaderCardProps {
   detail: MrnDetail;
+  onEdit: () => void;
 }
 
-export function HeaderCard({ detail }: HeaderCardProps): React.JSX.Element {
+export function HeaderCard({ detail, onEdit }: HeaderCardProps): React.JSX.Element {
   const start = formatIstDateTime(detail.unloadingStartAt);
   const end = formatIstDateTime(detail.unloadingEndAt);
 
@@ -27,17 +28,16 @@ export function HeaderCard({ detail }: HeaderCardProps): React.JSX.Element {
     <div className="mb-3.5 rounded-[10px] border border-[#e6e9ec] bg-white px-[15px] py-[13px]">
       <div className="mb-[11px] flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.07em] text-gray-400">
         Header
-        {/* ⚠ INERT IN 8a — editing the header is a write and belongs to 8b.
-            Rendered only while the MRN is still `open`, because the PATCH route
-            409s on anything else: Start unloading is what locks billing out
-            (design §5), so an Edit button on a checking/done MRN would promise
-            something the server refuses. Disabled treatment per UI §10. */}
+        {/* ⚠ ABSENT rather than disabled on anything but `open`. The PATCH route
+            409s once the supervisor taps Start (design §5), so a greyed-out
+            Edit would advertise an action the server has already refused — and
+            UI §10's disabled treatment is for "not yet", not for "never here".
+            An editable value gets a pencil, not a label (§10). */}
         {detail.status === "open" && (
           <button
             type="button"
-            disabled
-            title="Editing the header arrives in the next step"
-            className="ml-auto inline-flex h-6 cursor-not-allowed items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 px-[9px] text-[11px] font-medium text-gray-400"
+            onClick={onEdit}
+            className="ml-auto inline-flex h-6 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-[9px] text-[11px] font-medium text-[#475467] hover:bg-gray-50"
           >
             <Pencil size={11} />
             Edit

@@ -6,6 +6,11 @@ import { getTodayIST } from "@/lib/dates";
 import type { MrnBillingBoard, MrnDetail } from "@/lib/mrn/types";
 import { MrnRail } from "./mrn-rail";
 import { DetailPane } from "./detail-pane";
+import { NewMrnModal } from "./new-mrn-modal";
+import { PasteLinesModal } from "./paste-lines-modal";
+import { EditHeaderModal } from "./edit-header-modal";
+import { DeleteMrnModal } from "./delete-mrn-modal";
+import { ModalButton, ModalShell } from "./modal-shell";
 import { toDateParam } from "./format";
 
 // Billing's desk board — composition root for /mrn's non-supervisor face.
@@ -71,6 +76,25 @@ export function BillingBoard(): React.JSX.Element {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
+  // Which modal is up, if any. One at a time — none of them compose.
+  const [modal, setModal] = useState<"new" | "paste" | "header" | "delete" | null>(null);
+
+  // Reported up by the open table's line draft, so a truck's unsaved carton qty
+  // cannot be discarded by a stray click on another card.
+  const [linesDirty, setLinesDirty] = useState(false);
+  /** The MRN the operator tried to switch to while a draft was dirty. */
+  const [pendingSelect, setPendingSelect] = useState<number | null>(null);
+
+  // Bumped after every successful write to force a re-read. A COUNTER rather
+  // than calling a fetch function directly: the two effects below already own
+  // the fetching, and giving writes their own path would mean two places that
+  // can disagree about what "current" means.
+  //
+  // 🔴 THIS IS THE REFRESH. NEVER router.refresh() — CORE §3, and this board
+  // has no marker to rescue a refresh the router throws away.
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey((n) => n + 1), []);
+
   const dateParam = toDateParam(date);
 
   // ── The rail ───────────────────────────────────────────────────────────────
@@ -96,7 +120,7 @@ export function BillingBoard(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [dateParam]);
+  }, [dateParam, reloadKey]);
 
   // ── The detail ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -130,14 +154,48 @@ export function BillingBoard(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, reloadKey]);
 
   // Changing the date clears the selection: the pane must never keep showing
   // yesterday's truck beside today's rail.
-  const handleDateChange = useCallback((next: Date) => {
-    setDate(next);
-    setSelectedId(null);
-  }, []);
+  const handleDateChange = useCallback(
+    (next: Date) => {
+      if (linesDirty) {
+        // Same guard as switching trucks — an unsaved carton qty is just as
+        // easy to lose by stepping the date.
+        setPendingSelect(-1); // sentinel: "discard, then apply the date change"
+        setDate(next);
+        return;
+      }
+      setDate(next);
+      setSelectedId(null);
+    },
+    [linesDirty],
+  );
+
+  // ⚠ THE DIRTY GUARD. A line draft lives only in the browser until Save lines
+  // is pressed, so selecting another truck would silently discard it. Ask
+  // first. The confirm is a real modal rather than window.confirm() so it looks
+  // like the rest of the board (UI §13).
+  const handleSelect = useCallback(
+    (id: number) => {
+      if (id === selectedId) return;
+      if (linesDirty) {
+        setPendingSelect(id);
+        return;
+      }
+      setSelectedId(id);
+    },
+    [linesDirty, selectedId],
+  );
+
+  const discardAndSwitch = useCallback(() => {
+    // The table clears its own flag on unmount; clearing here too keeps the
+    // guard from firing a second time on the way out.
+    setLinesDirty(false);
+    setSelectedId(pendingSelect === -1 ? null : pendingSelect);
+    setPendingSelect(null);
+  }, [pendingSelect]);
 
   const rows = board?.rows ?? [];
 
@@ -196,18 +254,96 @@ export function BillingBoard(): React.JSX.Element {
           dateLabel={dateLabel}
           rows={filteredRows}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={handleSelect}
           loading={boardLoading}
           error={boardError}
           filtered={search.trim() !== ""}
+          onNewMrn={() => setModal("new")}
         />
         <DetailPane
           detail={detail}
           loading={detailLoading}
           error={detailError}
           empty={selectedId === null}
+          onPasteLines={() => setModal("paste")}
+          onEditHeader={() => setModal("header")}
+          onDelete={() => setModal("delete")}
+          onLinesDirtyChange={setLinesDirty}
+          onLinesSaved={reload}
         />
       </div>
+
+      {/* ── Modals ────────────────────────────────────────────────────────────
+          Every one closes and then RELOADS via the counter above — a client
+          fetch, never router.refresh(). */}
+      {modal === "new" && (
+        <NewMrnModal
+          onClose={() => setModal(null)}
+          onCreated={(id) => {
+            setModal(null);
+            // Select the new MRN so the operator lands on it ready to paste —
+            // which is the next thing they will do every single time.
+            setSelectedId(id);
+            reload();
+          }}
+        />
+      )}
+
+      {modal === "paste" && detail && (
+        <PasteLinesModal
+          detail={detail}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            reload();
+          }}
+        />
+      )}
+
+      {modal === "header" && detail && (
+        <EditHeaderModal
+          detail={detail}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            reload();
+          }}
+        />
+      )}
+
+      {modal === "delete" && detail && (
+        <DeleteMrnModal
+          detail={detail}
+          onClose={() => setModal(null)}
+          onDeleted={() => {
+            setModal(null);
+            // Clear the selection FIRST: the row is soft-removed, so re-reading
+            // its detail would 404. The rail reload then drops the card.
+            setSelectedId(null);
+            reload();
+          }}
+        />
+      )}
+
+      {pendingSelect !== null && (
+        <ModalShell
+          title="Discard unsaved line changes?"
+          subtitle="The carton quantities and removed rows on this MRN have not been saved."
+          onClose={() => setPendingSelect(null)}
+          footer={
+            <>
+              <ModalButton onClick={() => setPendingSelect(null)}>Keep editing</ModalButton>
+              <ModalButton tone="danger" onClick={discardAndSwitch}>
+                Discard changes
+              </ModalButton>
+            </>
+          }
+        >
+          <p className="text-[12.5px] leading-[1.55] text-[#475467]">
+            Save lines first if you want to keep them.
+          </p>
+        </ModalShell>
+      )}
     </div>
   );
 }
