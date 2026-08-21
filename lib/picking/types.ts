@@ -12,6 +12,21 @@ export interface PickingQueueRow {
   deliveryType: string | null;
   route: string | null;
   area: string | null;
+  // The loading bay this bill's material is stacked at (2026-08-21) —
+  // `route_master.bayNumber`, reached through the effective dealer's AREA, i.e.
+  // the SAME route that fills `route` above. Null when the route has no bay
+  // (HAND, No Route) or the bill resolves to no route at all.
+  //
+  // ⚠ NOT PER DELIVERY TYPE and NOT UNIQUE. Bay 1 serves Adajan (Local) and
+  // Navsari (Upcountry) both, so the number alone does not identify a lane —
+  // it identifies a physical stack. Do not sort, group or filter on it without
+  // deciding what that would mean.
+  //
+  // ⚠ MUST come from `area.primaryRoute`, never `delivery_point_master
+  // .primaryRouteId` (stale, never read — lib/picking/queue.ts's DEALER_SELECT
+  // comment). A bay read off a different route than the one on screen would
+  // send a picker to the wrong stack, and nothing would look wrong.
+  bayNumber: number | null;
   priorityLevel: number | null;
   isKeyCustomer: boolean;
   articleTag: string | null;

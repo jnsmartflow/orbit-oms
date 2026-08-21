@@ -1,0 +1,1542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Picking — Supervisor Board v2 (mockup, 2026-08-21)</title>
+<!--
+  STATIC REVIEW MOCKUP. Not wired to app code or the DB. No React, no build step,
+  no external CDN, no JavaScript — every state below is rendered as its own frame.
+
+  WHERE THE STYLING COMES FROM — nothing here was invented:
+    · Type scale + colours  → CLAUDE_UI.md §60's token table (hero 16/600 #1d2939,
+      slot 15/600 #475467, area-line 12/500 #667085, volume 12/600 #667085 + 10.5/500
+      #98a2b3 unit, caption 11.5/400 #98a2b3, mono OBD #98a0aa, chips 10.5/600
+      #667085 on #eef1f5, route dot 8px Local #2563eb / Upcountry #ea580c /
+      Cross #e11d48 / else #9ca3af).
+    · Card shell, shelf, badges → components/picking/card-atoms.tsx
+      (CARD_SHADOW_V2, CardShelf, AgeBadge, SmuBadge, FamilyChip, RouteDot).
+    · Card body → components/picking/picking-board-mobile.tsx PickingCard (~:560-640).
+    · Filter sheet → same file, FilterBottomSheet (:851-919).
+    · Assign-to-picker sheet → same file (:3209-3259).
+    · Header → components/shared/module-mobile-header.tsx.
+    · Bottom bar → components/shared/workflow-tab-bar.tsx (icon on top, badge
+      top-right of the icon, teal underline on the active tab).
+
+  FONT: the app uses Plus Jakarta Sans via next/font (CLAUDE_UI.md §60). No CDN is
+  allowed in a mockup, so the stack below names it first and falls back to the system
+  UI font. Weights and sizes are the real ones; only the face may differ on your
+  machine.
+
+  DELIVERY-TYPE COLOURS ARE NOT ROUTE COLOURS. The dot keys on `deliveryType`
+  (card-atoms.tsx RouteDot, CLAUDE_UI.md §62.3) and keeps doing so after the
+  where-line starts printing a route name. That is a locked decision, mocked as-is.
+-->
+<style>
+  :root{
+    /* Teal */
+    --teal-600:#0d9488; --teal-700:#0f766e; --teal-500:#14b8a6;
+    --teal-50:#f0fdfa;  --teal-200:#99f6e4;
+    /* Ink + greys — CLAUDE_UI.md §60 */
+    --ink:#1d2939; --slot:#475467; --area:#667085; --unit:#98a2b3;
+    --obd:#98a0aa; --middot:#d8dce1; --middot2:#d3d8de;
+    --chip-fg:#667085; --chip-bg:#eef1f5;
+    --gray-900:#111827; --gray-700:#374151; --gray-600:#4b5563; --gray-500:#6b7280;
+    --gray-400:#9ca3af; --gray-300:#d1d5db; --gray-200:#e5e7eb; --gray-100:#f3f4f6;
+    --gray-50:#f9fafb;
+    --card-border:#eceef2; --band-bg:#f6f8fa; --band-line:#eef1f4; --arrow-bg:#eceff3; --arrow-fg:#8b93a0;
+    /* Route dot — deliveryType, never route */
+    --dt-local:#2563eb; --dt-upc:#ea580c; --dt-cross:#e11d48; --dt-unknown:#9ca3af;
+    /* Badge palettes, straight off the live components */
+    --amber-50:#fffbeb; --amber-100:#fef3c7; --amber-200:#fde68a; --amber-300:#fcd34d;
+    --amber-500:#f59e0b; --amber-700:#b45309; --amber-800:#92400e;
+    --red-50:#fef2f2; --red-200:#fecaca; --red-700:#b91c1c;
+    --green-50:#f0fdf4; --green-200:#bbf7d0; --green-700:#15803d;
+    --slate-100:#f1f5f9; --slate-200:#e2e8f0; --slate-600:#475569;
+    --smu74-bg:#eef2ff; --smu74-fg:#4f46e5;
+    /* ── Floor Control's real state colours — READ, NOT GUESSED ───────────
+       --floor-picking  #6d28d9  components/floor/status-pill.tsx:30
+                                 META.withPicker = "bg-[#ede9fe] text-[#6d28d9]"
+                                 ("With picker" = a bill at pick_assigned).
+                                 The saturated half of that pair is what a solid
+                                 dot needs; #ede9fe is the pale wash behind text.
+       --floor-free     #15803d  components/floor/status-pill.tsx:32
+                                 META.done = "bg-[#dcfce7] text-[#15803d]"
+                                 — and components/floor/picker-card.tsx:45
+                                 STATUS_META.free chip = "text-green-700"
+                                 (#15803d). The two files agree, so one value.
+
+       ⚠ NOT USED, on purpose, and worth knowing before anyone "corrects" this:
+       components/floor/progress-bar.tsx:18 carries a SECOND withPicker purple,
+       #a78bfa — the lighter four-segment bar tone. That file says in its own
+       header comment: "distinct from the pill text/bg colours
+       (status-pill.tsx) — do not merge the two sets." So the bar tone is
+       deliberately left alone here.
+
+       ⚠ ONE REAL DIVERGENCE, stated rather than hidden. Floor already has a
+       per-PICKER card (components/floor/picker-card.tsx) and its busy states
+       are grey / amber / red by elapsed time (STATUS_META, :45-48) — NOT
+       purple. Purple on that card is reserved for the "N to check" tag
+       (NEEDS_CHECK_TAG, :55). The purple used below is Floor's BILL-level
+       "With picker" violet promoted to picker level, which is what this design
+       asked for. It reads correctly, but it is not a colour Floor's own picker
+       card uses, and Smart Flow should know that before the two screens sit
+       side by side. */
+    --floor-picking:#6d28d9;
+    --floor-free:#15803d;
+    /* ── Loading bay — SPEC CORRECTED 2026-08-21, this section was rebuilt ──
+       `route_master.bayNumber` — nullable, NOT unique (several routes share a
+       bay: bay 1 carries Adajan, Parvat, Navsari, Chikhli, Bhagal and Olpad).
+
+       ⚠ AN EARLIER DRAFT OF THIS PAGE GOT TWO THINGS WRONG and they are fixed
+       here rather than left to confuse a reader:
+         1. It coloured the bay BY DELIVERY TYPE, on the theory that a bay
+            number is ambiguous without one. It is not — a bay is a physical
+            stack and bay 1 serves Local and Upcountry routes BOTH, so a
+            type-coloured bay implied a split that does not exist.
+         2. It put a bay TAG on the card. There is no card tag: the cards
+            already carry an amber age badge (CLAUDE_UI.md §62.1) and an amber
+            urgent bolt, so a third amber object there reads as a third warning.
+
+       WHAT SHIPPED: ONE 44px SOLID AMBER circle, #f59e0b, white number over the
+       word BAY, at the right end of the DETAIL header on both faces — and
+       nowhere else. Not on a card, not in the route sheet, not on the
+       Picking-tab list.
+
+       🔴 THE RULE: no bayNumber ⇒ NOTHING renders. No circle, no dash, no
+       placeholder, no zero-width box. `BayCircle` returns null, and a null
+       render is no DOM node at all, so the header's gap is not spent on it —
+       which is why the call sites render it BARE with no conditional wrapper.
+       Every no-bay frame below is byte-identical to the header it had before. */
+    --bay-amber:#f59e0b;
+    /* Shadows — the only two on this board */
+    --card-shadow-v2:0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2);
+    --soft-card-shadow:0 1px 2px rgba(16,24,40,.04), 0 3px 12px rgba(16,24,40,.05);
+    --font-sans:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:#e9ecef;color:var(--ink);font-family:var(--font-sans);}
+  body{padding:28px 12px 80px;}
+
+  /* ── Page furniture (not part of the app) ─────────────────────────── */
+  .page{max-width:1240px;margin:0 auto;}
+  .doc{background:#fff;border-radius:16px;padding:22px 24px;box-shadow:var(--soft-card-shadow);margin-bottom:34px;}
+  .doc h1{margin:0 0 4px;font-size:22px;font-weight:800;letter-spacing:-.01em;}
+  .doc .stamp{font-size:12px;color:var(--gray-500);margin-bottom:16px;}
+  .doc h2{margin:20px 0 8px;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);}
+  .doc ol,.doc ul{margin:0;padding-left:20px;font-size:13.5px;line-height:1.75;color:var(--gray-700);}
+  .doc li b{color:var(--ink);}
+  .doc .keep{margin-top:14px;background:var(--teal-50);border:1px solid var(--teal-200);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;color:var(--teal-700);}
+  .doc .keep b{color:var(--teal-700);}
+
+  .cap{max-width:1240px;margin:34px auto 12px;}
+  .cap h3{margin:0 0 5px;font-size:16px;font-weight:800;color:var(--ink);}
+  .cap p{margin:0;font-size:13.5px;line-height:1.65;color:var(--gray-600);max-width:900px;}
+  .cap .flag{display:inline-block;background:var(--amber-100);color:var(--amber-800);font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:5px;margin-right:8px;vertical-align:2px;text-transform:uppercase;}
+
+  .pair{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+  .col{width:390px;max-width:100%;}
+  .col > .lbl{font-size:12px;font-weight:800;color:var(--gray-700);text-transform:uppercase;letter-spacing:.05em;margin:0 0 6px 4px;}
+  .col > .cost{font-size:12.5px;line-height:1.6;color:var(--gray-500);margin:9px 4px 0;}
+  .col > .cost b{color:var(--gray-700);}
+
+  /* ── Phone frame ──────────────────────────────────────────────────── */
+  .frame{width:390px;max-width:100%;background:#0b0f14;border-radius:38px;padding:9px;box-shadow:0 18px 44px rgba(16,24,40,.28);}
+  .frame .screen{position:relative;background:var(--gray-50);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;}
+  .frame.tall .screen{height:756px;}
+  .frame.mid  .screen{height:560px;}
+  .frame.auto .screen{height:auto;}
+
+  /* ── Header (module-mobile-header.tsx) ────────────────────────────── */
+  .hdr{flex-shrink:0;background:var(--teal-600);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 10px;}
+  .hdr.detail{align-items:flex-start;padding:12px 14px 14px;gap:10px;}
+  .hdr .av{width:40px;height:40px;min-width:44px;min-height:44px;border-radius:999px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex:0 0 auto;}
+  .hdr h1{margin:0;font-size:19px;font-weight:800;color:#fff;letter-spacing:-.01em;}
+  .hdr .right{display:flex;align-items:center;gap:2px;flex:0 0 auto;}
+  .hdr .ico{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;}
+  .hdr .back{width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;flex:0 0 auto;}
+  .hdr .dtext{min-width:0;flex:1;}
+  .hdr .dname{font-size:16px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hdr .dsub{font-size:12px;color:rgba(255,255,255,.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hdr .flagrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;}
+  .hdr .fpill{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.16);border-radius:999px;padding:3px 8px 3px 6px;font-size:11px;font-weight:600;color:#fff;}
+
+  /* ── Filter / search row ──────────────────────────────────────────── */
+  .controls{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 16px 0;}
+  .filterrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;}
+  .pills{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
+  .pill{font-size:12.5px;font-weight:500;padding:6px 12px;border-radius:999px;border:1px solid var(--gray-200);background:#fff;color:var(--gray-700);white-space:nowrap;}
+  .pill.on{background:var(--gray-900);border-color:var(--gray-900);color:#fff;font-weight:600;}
+  .dd{flex:1 1 auto;min-width:0;max-width:150px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12.5px;font-weight:500;padding:6px 12px;border-radius:999px;border:1px solid var(--gray-200);background:#fff;color:var(--gray-500);}
+  .dd span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dd.on{border-color:var(--teal-500);background:var(--teal-50);color:var(--teal-700);}
+  .lane{margin:0 -16px;background:var(--teal-50);border-top:1px solid var(--teal-200);padding:8px 16px;font-size:12px;font-weight:500;color:var(--teal-700);display:flex;align-items:center;gap:2px;}
+  .lane b{font-weight:700;}
+  .searchrow{display:flex;align-items:center;gap:8px;padding-bottom:10px;}
+  .searchrow .field{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:9px 12px;}
+  .searchrow .field .txt{flex:1;min-width:0;font-size:15px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .searchrow .field .ph{flex:1;min-width:0;font-size:15px;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .searchrow .cancel{font-size:13px;font-weight:600;color:var(--teal-700);padding:4px;flex:0 0 auto;}
+  .caret{display:inline-block;width:1.5px;height:16px;background:var(--teal-600);vertical-align:-3px;margin-left:1px;}
+
+  /* ── Scroll body ──────────────────────────────────────────────────── */
+  .body{flex:1;min-height:0;overflow-y:auto;padding:10px 16px 84px;}
+  .body.flat{padding-bottom:16px;}
+  .empty{font-size:13px;color:var(--gray-400);text-align:center;padding:64px 20px;}
+  .sect{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-700);margin:0 0 8px;padding:0 2px;}
+  .sect .n{font-variant-numeric:tabular-nums;margin-left:6px;}
+  .sect.quiet{color:var(--gray-400);font-weight:600;margin-top:18px;}
+
+  /* ── THE CARD (PickingCard) ───────────────────────────────────────── */
+  .cardwrap{position:relative;margin-bottom:11px;}
+  .card{position:relative;border-radius:20px;overflow:hidden;border:1.5px solid var(--card-border);background:#fff;box-shadow:var(--card-shadow-v2);}
+  .card.sel{background:var(--teal-50);border-color:var(--teal-600);}
+  .card .cbody{padding:14px 16px 12px;}
+  .capline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;}
+  .capleft{display:flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;color:var(--unit);overflow:hidden;white-space:nowrap;}
+  .capleft .mono{font-family:var(--font-mono);color:var(--obd);flex:0 0 auto;}
+  .capleft .md{flex:0 0 auto;color:var(--middot);}
+  .capleft .sec{overflow:hidden;text-overflow:ellipsis;}
+  .capright{display:flex;align-items:center;gap:7px;flex:0 0 auto;}
+  .title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
+  .name{font-size:16px;font-weight:600;line-height:1.25;color:var(--ink);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .slot{font-size:15px;font-weight:600;color:var(--slot);font-variant-numeric:tabular-nums;flex:0 0 auto;}
+  .where{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;}
+  .whereleft{display:flex;align-items:center;gap:8px;min-width:0;}
+  .dot{width:8px;height:8px;border-radius:999px;flex:0 0 auto;}
+  .dot.local{background:var(--dt-local);} .dot.upc{background:var(--dt-upc);}
+  .dot.cross{background:var(--dt-cross);} .dot.unk{background:var(--dt-unknown);}
+  .place{font-size:12px;font-weight:500;color:var(--area);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .md2{flex:0 0 auto;color:var(--middot2);}
+  .vol{display:flex;align-items:baseline;gap:3px;flex:0 0 auto;}
+  .vol .n{font-size:12px;font-weight:600;color:var(--area);font-variant-numeric:tabular-nums;}
+  .vol .u{font-size:10.5px;font-weight:500;color:var(--unit);}
+  .whoright{font-size:12px;font-weight:600;color:#8a929c;flex:0 0 auto;}
+  .whoright.grp{display:flex;align-items:center;gap:6px;}
+
+  /* Shelf (CardShelf) */
+  .shelf{border-top:1px solid var(--band-line);background:var(--band-bg);padding:0 14px;display:flex;align-items:stretch;gap:4px;}
+  .shelf .chips{position:relative;flex:1;min-width:0;display:flex;align-items:center;padding:10px 0;}
+  .shelf .chiprow{display:flex;flex-wrap:nowrap;gap:6px;overflow:hidden;padding-right:26px;width:100%;}
+  .chip{flex:0 0 auto;white-space:nowrap;font-size:10.5px;font-weight:600;border-radius:7px;padding:3px 8px;color:var(--chip-fg);background:var(--chip-bg);}
+  .shelf .fade{position:absolute;top:0;right:0;width:30px;height:100%;background:linear-gradient(90deg,rgba(246,248,250,0),#f6f8fa 72%);}
+  .shelf .arrow{flex:0 0 auto;align-self:stretch;min-height:44px;min-width:44px;padding-left:6px;display:flex;align-items:center;justify-content:center;}
+  .shelf .arrow i{width:30px;height:30px;border-radius:999px;background:var(--arrow-bg);display:flex;align-items:center;justify-content:center;}
+  .shelf .trail{flex:0 0 auto;align-self:stretch;display:flex;align-items:center;gap:4px;padding-left:6px;font-size:12px;font-weight:600;color:#8a929c;white-space:nowrap;}
+
+  /* Badges */
+  .badge{font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:999px;flex:0 0 auto;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .badge.age1{background:var(--amber-50);color:var(--amber-700);}
+  .badge.age2{background:var(--amber-100);color:var(--amber-800);border:1px solid var(--amber-300);}
+  .badge.age4{background:var(--red-50);color:var(--red-700);border:1px solid var(--red-200);}
+  .badge.grey{background:var(--gray-100);color:var(--gray-500);}
+  .badge.amber{background:var(--amber-50);color:var(--amber-700);border:1px solid var(--amber-200);}
+  .badge.red{background:var(--red-50);color:var(--red-700);border:1px solid var(--red-200);}
+  .badge.green{background:var(--green-50);color:var(--green-700);border:1px solid var(--green-200);}
+  .badge.slate{background:var(--slate-100);color:var(--slate-600);border:1px solid var(--slate-200);}
+  .smu{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;flex:0 0 auto;background:var(--smu74-bg);color:var(--smu74-fg);font-variant-numeric:tabular-nums;}
+
+  /* ── Bottom sheet (FilterBottomSheet / assign sheet) ───────────────── */
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.4);}
+  .sheet{position:absolute;left:0;right:0;bottom:76px;background:#fff;border-radius:18px 18px 0 0;padding:20px;max-height:70%;overflow:hidden;}
+  .sheet .grip{width:36px;height:4px;border-radius:999px;background:var(--gray-300);margin:0 auto 14px;}
+  .sheet h3{margin:0;font-size:16px;font-weight:800;color:var(--gray-900);}
+  .sheet .sub{font-size:12.5px;color:var(--gray-400);margin:3px 0 14px;}
+  .srow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 4px;border-bottom:1px solid var(--gray-100);}
+  .srow:last-child{border-bottom:none;}
+  .srow .lab{display:flex;align-items:center;gap:8px;min-width:0;font-size:14px;font-weight:500;color:var(--gray-900);}
+  .srow.on .lab{color:var(--teal-700);font-weight:600;}
+  .srow .cnt{font-size:12px;color:var(--gray-400);flex:0 0 auto;font-variant-numeric:tabular-nums;}
+  /* (.prow — the flat picker LIST row — went with the two rejected sheet
+      designs on 2026-08-21. `.prow2`, the Picking tab's compact picker row in
+      screen 4, is a different class and is still live.) */
+  .divider{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);padding:12px 4px 6px;display:flex;align-items:center;justify-content:space-between;}
+  .divider:first-of-type{padding-top:2px;}
+
+  /* Picker tiles — the assign sheet's two-up grid */
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  .tile{position:relative;border:1px solid var(--gray-200);border-radius:14px;background:#fff;padding:11px 10px;display:flex;align-items:center;gap:9px;min-width:0;}
+  .tile.busy{background:var(--gray-50);}
+  .tile .tav{width:32px;height:32px;border-radius:999px;background:var(--teal-600);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .tile.busy .tav{background:var(--gray-400);}
+  .tile .tnm{min-width:0;}
+  .tile .tn{font-size:12.5px;font-weight:600;color:var(--gray-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tile .ts{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:var(--floor-free);margin-top:2px;white-space:nowrap;}
+  .tile.busy .ts{color:var(--gray-500);}
+
+  /* ── BAY CIRCLE — detail header, both faces, and NOWHERE ELSE ──────────
+     44px solid amber disc: the number over the word BAY. One look, no
+     variants — the type-coloured version and the card tag were both wrong
+     and are gone (see the :root note).
+     Weight 800 on the number is deliberate: CLAUDE_UI.md §60's "nothing is
+     700" governs CARDS, and this is a detail-screen header whose title is
+     already extrabold on both faces. */
+  .baycircle{width:44px;height:44px;border-radius:999px;background:var(--bay-amber);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto;line-height:1;}
+  .baycircle .n{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;}
+  .baycircle .k{font-size:7.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-top:1px;opacity:.8;}
+
+  /* THE STATUS DOT — Floor's tokens. File + line are in the :root comment. */
+  .sd{width:7px;height:7px;border-radius:999px;flex:0 0 auto;}
+  .sd.free{background:var(--floor-free);}
+  .sd.picking{background:var(--floor-picking);}
+
+  /* Tall assign sheet — pinned header, scrolling grid, safe-area floor */
+  .sheet.tall{bottom:0;height:90%;max-height:90%;display:flex;flex-direction:column;padding:0;}
+  .sheet.tall .shead{flex:0 0 auto;padding:12px 20px;border-bottom:1px solid var(--gray-100);}
+  .sheet.tall .shead .grip{margin-bottom:12px;}
+  .sheet.tall .sbody{flex:1;min-height:0;overflow-y:auto;padding:14px 20px;padding-bottom:24px;}
+  .divider.first{padding-top:0;}
+  .showall{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:16px;padding:13px 12px;border:1px solid var(--gray-200);border-radius:12px;background:var(--gray-50);font-size:13px;font-weight:600;color:var(--gray-600);}
+  .showall .cnt{color:var(--gray-400);font-weight:500;}
+  .quietline{font-size:12.5px;color:var(--gray-400);padding:0 2px 12px;}
+
+  /* ── Picker cards (Picking tab level 1) ───────────────────────────── */
+  .pcard{border-radius:20px;border:1.5px solid var(--card-border);background:#fff;box-shadow:var(--card-shadow-v2);padding:14px 16px 12px;margin-bottom:11px;}
+  .pcard .top{display:flex;align-items:center;gap:11px;}
+  .pcard .cav{width:38px;height:38px;border-radius:999px;background:var(--teal-600);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .pcard .mid{flex:1;min-width:0;}
+  .pcard .pn{font-size:16px;font-weight:600;color:var(--ink);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pcard .pm{display:flex;align-items:baseline;gap:5px;margin-top:2px;font-size:12px;color:var(--area);}
+  .pcard .pm .n{font-weight:600;font-variant-numeric:tabular-nums;}
+  .pcard .pm .u{font-size:10.5px;font-weight:500;color:var(--unit);}
+  .pcard .routes{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--band-line);min-width:0;}
+  .pcard .routes .place{font-weight:500;}
+  .prow2{display:flex;align-items:center;gap:11px;border-radius:16px;border:1.5px solid var(--card-border);background:#fff;box-shadow:var(--card-shadow-v2);padding:11px 14px;margin-bottom:9px;}
+  .prow2 .cav{width:32px;height:32px;border-radius:999px;background:var(--teal-600);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .prow2 .mid{flex:1;min-width:0;}
+  .prow2 .pn{font-size:14.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .prow2 .pm{font-size:11.5px;color:var(--unit);margin-top:1px;font-variant-numeric:tabular-nums;}
+
+  /* ── Detail screen bits ───────────────────────────────────────────── */
+  .stat{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .stat .l{display:flex;align-items:baseline;gap:7px;min-width:0;font-size:12px;color:var(--area);}
+  .stat .l .md{color:var(--middot2);}
+  .pager{display:flex;align-items:center;gap:9px;flex:0 0 auto;font-size:12px;font-weight:600;color:var(--gray-500);font-variant-numeric:tabular-nums;}
+  .pager .arw{color:var(--gray-400);font-size:14px;}
+  .packrow{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:9px 16px;display:flex;gap:6px;overflow:hidden;}
+  .packchip{flex:0 0 auto;font-size:12px;font-weight:600;padding:5px 12px;border-radius:999px;border:1px solid var(--gray-200);background:#fff;color:var(--gray-500);}
+  .packchip.on{background:var(--gray-900);border-color:var(--gray-900);color:#fff;}
+  .li{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border-radius:12px;box-shadow:var(--soft-card-shadow);padding:11px 13px;margin-bottom:8px;}
+  .li .pk{flex:0 0 58px;text-align:center;font-size:12px;font-weight:700;color:var(--slot);background:var(--chip-bg);border-radius:8px;padding:6px 0;}
+  .li .txt{flex:1;min-width:0;}
+  .li .sku{font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600;}
+  .li .nm{font-size:11.5px;color:var(--unit);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .li .q{flex:0 0 auto;font-size:15px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
+
+  /* ── Bottom bar (workflow-tab-bar.tsx) ────────────────────────────── */
+  .bar{position:absolute;left:0;right:0;bottom:0;display:flex;background:#fff;border-top:1px solid var(--gray-200);padding-bottom:10px;}
+  .bar .t{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;font-size:11px;font-weight:600;color:var(--gray-400);}
+  .bar .t.on{color:var(--teal-700);}
+  .bar .t .ic{position:relative;display:flex;align-items:center;justify-content:center;}
+  .bar .t .bg{position:absolute;top:-4px;right:-6px;min-width:16px;height:16px;padding:0 3px;border-radius:999px;background:var(--gray-400);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;line-height:1;}
+  .bar .t.on .bg{background:var(--teal-600);}
+  .bar .t .ul{position:absolute;left:50%;transform:translateX(-50%);bottom:0;height:3px;width:32px;border-radius:999px;background:var(--teal-600);opacity:0;}
+  .bar .t.on .ul{opacity:1;}
+
+  .assignbar{position:absolute;left:12px;right:12px;bottom:88px;background:var(--gray-900);border-radius:16px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 10px 26px rgba(0,0,0,.28);}
+  .assignbar .info{color:#fff;font-size:13px;font-weight:600;min-width:0;}
+  .assignbar .info span{color:var(--gray-400);font-weight:400;}
+  .assignbar .go{background:var(--teal-600);color:#fff;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;flex:0 0 auto;}
+  .assignbar .clr{color:var(--gray-400);font-size:12.5px;font-weight:600;padding:8px 4px;}
+
+  @media (max-width:430px){
+    body{padding:16px 8px 60px;}
+    .frame{border-radius:26px;padding:6px;}
+    .frame .screen{border-radius:21px;}
+    .doc{padding:16px;}
+    .cap p{font-size:13px;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ══════════════════════════════════════════════════════════════════
+     INDEX
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="doc">
+  <h1>Picking — Supervisor Board v2</h1>
+  <div class="stamp">Static review mockup · 2026-08-21 · <code>docs/mockups/picking/board-v2-2026-08-21.html</code> · nothing here is wired to code or the database</div>
+
+  <p style="margin:0 0 4px;font-size:13.5px;line-height:1.7;color:var(--gray-700);max-width:900px;">
+    Five changes to the supervisor face of <b>/picking</b>, drawn from the findings in
+    <code>docs/prompts/drafts/code-discovery-2026-08-21-picking-board-v2.md</code>. Every screen below is
+    390px wide, the real phone width the floor uses, and every colour, size and weight is taken from
+    the live components — nothing new was designed.
+  </p>
+
+  <h2>What is on this page</h2>
+  <ol>
+    <li><b>Route filter sheet — fixed.</b> Only routes that actually have a bill under the selected type. No more "Vapi 0". Shown twice: with Local selected, and with UPC selected — where <b>Adajan appears again, at 3</b>, because one route name can sit under two delivery types. <i>(An optional third frame printing the bay after each route name was drawn and dropped — the bay is not on this sheet.)</i></li>
+    <li><b>The card prints the ROUTE, not the area.</b> Current and new side by side, on the same bill, plus a long-route case so you can see what truncates. The detail-screen header moves with it (<b>2b</b>).</li>
+    <li><b>The LOADING BAY.</b> <code>route_master.bayNumber</code> — which bay the route's material is stacked at. <b>ON THE OPEN BILL ONLY:</b> one 44px solid <b>amber</b> circle at the right end of the detail header, on both faces (<b>2c</b>, and <b>2d</b> for the picker's). Not on a card, not in the route sheet, not on the Picking-tab list. <b>It is NOT coloured by delivery type</b> — an earlier draft did that and it was wrong: a bay is a physical stack and bay&nbsp;1 serves Local and Upcountry routes both, so the colour would have implied a split that does not exist. A bill with no bay (HAND, No Route) renders <b>nothing at all</b>.</li>
+    <li><b>Assign-to-picker sheet — one design, three states.</b> A tall sheet of two-up picker cards, each with a green/purple status dot borrowed from Floor Control. It opens showing <i>free pickers only</i>; one grey row reveals the rest. Shown collapsed, expanded, and in the case that decides whether collapsing is safe at all — nobody free.</li>
+    <li><b>Picking tab becomes picker-first — three levels.</b> Level 1 the pickers (two designs), level 2 that man's bills, level 3 the bill itself. Plus the empty state.</li>
+    <li><b>Search widened to five fields</b> — picker name · customer name · route · area · OBD. Four demo queries, all on the Picking tab, because that is where the new picker-first list makes the answer visible.</li>
+  </ol>
+
+  <div class="keep">
+    <b>What is NOT changing.</b> The <b>Done tab</b> keeps its two bands, its own picker dropdown and its
+    current cards — untouched. The <b>swipe-between-bills gesture</b> is unchanged, including its four
+    tuning constants — it still pages a flat list of bills, it just pages one picker's bills now. The
+    <b>Picking tab badge stays a BILL count</b>, not a picker count, on every screen below. And
+    <b>a bill with no bay number shows nothing at all</b> — no circle, no chip, no dash, no empty
+    placeholder; its card and its header render exactly as they do today (HAND and No Route have no
+    bay, and both are on this page proving it).
+    <br><br>
+    <i>The picker's own "My Picks" board is otherwise untouched — screen <b>2d</b> is the one place it
+    appears, because the bay is his information before it is anybody else's.</i>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     1 — ROUTE FILTER SHEET
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="cap">
+  <h3>1 · Route filter sheet — only routes that have a bill under this type</h3>
+  <p>
+    Today the list of routes is built once from every waiting bill and never narrowed by the type pills,
+    while the <i>counts</i> beside them are. That is why "Vapi 0" sits in the list with Local selected.
+    Both sides now come from the same filtered set, so a route with nothing under the current type simply
+    is not offered. The subtitle changes with it: the old line, "counts reflect the current Type filter",
+    stops being what the sheet does.
+  </p>
+</div>
+
+<div class="pair">
+
+  <!-- 1a — Local -->
+  <div class="col">
+    <div class="lbl">1a · Type = Local</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr">
+          <div class="av">CS</div>
+          <h1>Picking</h1>
+          <div class="right">
+            <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+            <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="filterrow">
+            <div class="pills"><span class="pill">All</span><span class="pill on">Local</span><span class="pill">UPC</span></div>
+            <div class="dd"><span>All routes</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="lane"><b>Local</b><span>&nbsp;·&nbsp;306 due&nbsp;·&nbsp;12,480 L ready to load</span></div>
+        </div>
+        <div class="body"></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grip"></div>
+          <h3>Filter by route</h3>
+          <div class="sub">Single-select · only routes with a Local bill</div>
+          <div class="srow on">
+            <span class="lab"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>All routes</span>
+            <span class="cnt">306</span>
+          </div>
+          <div class="srow"><span class="lab">Adajan</span><span class="cnt">123</span></div>
+          <div class="srow"><span class="lab">Ghod Dod</span><span class="cnt">100</span></div>
+          <div class="srow"><span class="lab">Varachha</span><span class="cnt">46</span></div>
+          <div class="srow"><span class="lab">Udhana</span><span class="cnt">30</span></div>
+          <div class="srow"><span class="lab">Parvat</span><span class="cnt">7</span></div>
+        </div>
+        <div class="bar">
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">306</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>Total is now honest too.</b> "All routes 306" is the sum of what the list shows. Today that number quietly includes upcoming, locked bills that the strip above it does not count.</p>
+  </div>
+
+  <!-- 1b — UPC -->
+  <div class="col">
+    <div class="lbl">1b · Type = UPC — Adajan is here too, at 3</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr">
+          <div class="av">CS</div>
+          <h1>Picking</h1>
+          <div class="right">
+            <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+            <div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="filterrow">
+            <div class="pills"><span class="pill">All</span><span class="pill">Local</span><span class="pill on">UPC</span></div>
+            <div class="dd"><span>All routes</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="lane"><b>UPC</b><span>&nbsp;·&nbsp;84 due&nbsp;·&nbsp;3,910 L ready to load</span></div>
+        </div>
+        <div class="body"></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grip"></div>
+          <h3>Filter by route</h3>
+          <div class="sub">Single-select · only routes with an Upcountry bill</div>
+          <div class="srow on">
+            <span class="lab"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>All routes</span>
+            <span class="cnt">84</span>
+          </div>
+          <div class="srow"><span class="lab">Vapi</span><span class="cnt">27</span></div>
+          <div class="srow"><span class="lab">Navsari</span><span class="cnt">25</span></div>
+          <div class="srow"><span class="lab">Bharuch</span><span class="cnt">13</span></div>
+          <div class="srow"><span class="lab">Chikhli</span><span class="cnt">10</span></div>
+          <div class="srow"><span class="lab">Bardoli</span><span class="cnt">6</span></div>
+          <div class="srow"><span class="lab">Adajan</span><span class="cnt">3</span></div>
+        </div>
+        <div class="bar">
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">84</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>The case to keep in mind.</b> "Adajan" is a Local route with 123 bills AND an Upcountry route with 3. They are different lanes with the same name. The sheet is per-type, so it never has to show both at once — but anything that ever lists routes across types will.</p>
+  </div>
+
+</div>
+
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     2 — CARD: ROUTE INSTEAD OF AREA
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="cap">
+  <h3>2 · The card prints the route, not the area</h3>
+  <p>
+    Same bill, same everything else. The word after the coloured dot changes from the area
+    (<i>Pal</i>) to the route (<i>Adajan</i>). Nothing else on the card moves — the route has been on
+    every row all along, it was just never rendered.
+    <b>The dot still means delivery type</b> (Local blue · Upcountry orange · Cross red · unknown grey)
+    and does not become a route colour.
+  </p>
+</div>
+
+<div class="pair">
+  <div class="col">
+    <div class="lbl">Current — area</div>
+    <div class="frame auto">
+      <div class="screen"><div class="body flat" style="padding-top:14px;">
+        <div class="cardwrap"><div class="card">
+          <div class="cbody">
+            <div class="capline">
+              <span class="capleft"><span class="mono">9108049119</span><span class="md">·</span><span class="sec">20 Aug, 4:05 PM</span></span>
+              <span class="capright">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>
+                <span class="badge age1">1d</span>
+              </span>
+            </div>
+            <div class="title"><span class="name">Time Sqaure</span><span class="slot">10:30</span></div>
+            <div class="where">
+              <span class="whereleft">
+                <span class="dot local"></span>
+                <span class="place">Pal</span>
+                <span class="md2">·</span>
+                <span class="vol"><span class="n">84</span><span class="u">L</span></span>
+              </span>
+              <span class="whoright grp"><span class="smu">74</span></span>
+            </div>
+          </div>
+          <div class="shelf">
+            <div class="chips"><div class="chiprow"><span class="chip">2 Drum</span><span class="chip">4 Carton</span><span class="chip">6 Loose</span></div><div class="fade"></div></div>
+            <div class="arrow"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b93a0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></i></div>
+          </div>
+        </div></div>
+
+        <div class="cardwrap"><div class="card">
+          <div class="cbody">
+            <div class="capline">
+              <span class="capleft"><span class="mono">9108441207</span><span class="md">·</span><span class="sec">20 Aug, 11:40 AM</span></span>
+              <span class="capright"><span class="badge age2">2d</span></span>
+            </div>
+            <div class="title"><span class="name">Shree Yamunaji Paints &amp; Hardware</span><span class="slot">16:00</span></div>
+            <div class="where">
+              <span class="whereleft">
+                <span class="dot cross"></span>
+                <span class="place">Sachin GIDC Phase&nbsp;II</span>
+                <span class="md2">·</span>
+                <span class="vol"><span class="n">1,204</span><span class="u">L</span></span>
+              </span>
+            </div>
+          </div>
+          <div class="shelf">
+            <div class="chips"><div class="chiprow"><span class="chip">8 Drum</span><span class="chip">14 Carton</span></div><div class="fade"></div></div>
+            <div class="arrow"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b93a0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></i></div>
+          </div>
+        </div></div>
+      </div></div>
+    </div>
+    <p class="cost">The area is a sub-lane inside a route. Two bills in the same truck can read "Pal" and "Rander", which tells the supervisor nothing about which van they go on.</p>
+  </div>
+
+  <div class="col">
+    <div class="lbl">New — route</div>
+    <div class="frame auto">
+      <div class="screen"><div class="body flat" style="padding-top:14px;">
+        <div class="cardwrap"><div class="card">
+          <div class="cbody">
+            <div class="capline">
+              <span class="capleft"><span class="mono">9108049119</span><span class="md">·</span><span class="sec">20 Aug, 4:05 PM</span></span>
+              <span class="capright">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>
+                <span class="badge age1">1d</span>
+              </span>
+            </div>
+            <div class="title"><span class="name">Time Sqaure</span><span class="slot">10:30</span></div>
+            <div class="where">
+              <span class="whereleft">
+                <span class="dot local"></span>
+                <span class="place">Adajan</span>
+                <span class="md2">·</span>
+                <span class="vol"><span class="n">84</span><span class="u">L</span></span>
+              </span>
+              <span class="whoright grp"><span class="smu">74</span></span>
+            </div>
+          </div>
+          <div class="shelf">
+            <div class="chips"><div class="chiprow"><span class="chip">2 Drum</span><span class="chip">4 Carton</span><span class="chip">6 Loose</span></div><div class="fade"></div></div>
+            <div class="arrow"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b93a0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></i></div>
+          </div>
+        </div></div>
+
+        <div class="cardwrap"><div class="card">
+          <div class="cbody">
+            <div class="capline">
+              <span class="capleft"><span class="mono">9108441207</span><span class="md">·</span><span class="sec">20 Aug, 11:40 AM</span></span>
+              <span class="capright"><span class="badge age2">2d</span></span>
+            </div>
+            <div class="title"><span class="name">Shree Yamunaji Paints &amp; Hardware</span><span class="slot">16:00</span></div>
+            <div class="where">
+              <span class="whereleft">
+                <span class="dot cross"></span>
+                <span class="place">IGT / CROSS</span>
+                <span class="md2">·</span>
+                <span class="vol"><span class="n">1,204</span><span class="u">L</span></span>
+              </span>
+            </div>
+          </div>
+          <div class="shelf">
+            <div class="chips"><div class="chiprow"><span class="chip">8 Drum</span><span class="chip">14 Carton</span></div><div class="fade"></div></div>
+            <div class="arrow"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b93a0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></i></div>
+          </div>
+        </div></div>
+      </div></div>
+    </div>
+    <p class="cost"><b>Truncation, second card.</b> The dealer name clips first (it always has) and the route holds. Route names are shorter than area names in practice, so the line gets easier, not tighter. Litres are <code>shrink-0</code> and are never the part that clips.</p>
+  </div>
+</div>
+
+
+<div class="cap" style="margin-top:26px;">
+  <h3>2b · The detail-screen header moves too</h3>
+  <p>
+    The header's second line is the same fact one tap deeper. If the card says Adajan and the header
+    still says Pal, the supervisor is reading two different answers to one question.
+  </p>
+</div>
+
+<div class="pair">
+  <div class="col">
+    <div class="lbl">Current</div>
+    <div class="frame auto">
+      <div class="screen">
+        <div class="hdr detail">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Time Sqaure</div>
+            <div class="dsub">9108049119 · Pal · 10:30</div>
+            <div class="flagrow">
+              <span class="fpill"><svg width="11" height="11" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>Key dealer</span>
+              <span class="smu">74</span>
+            </div>
+          </div>
+          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+        </div>
+        <div class="stat">
+          <span class="l"><span>2 Drum · 4 Carton</span><span class="md">·</span><span>84 L</span></span>
+          <span class="pager"><span class="arw">‹</span>3 of 12<span class="arw">›</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">New</div>
+    <div class="frame auto">
+      <div class="screen">
+        <div class="hdr detail">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Time Sqaure</div>
+            <div class="dsub">9108049119 · Adajan · 10:30</div>
+            <div class="flagrow">
+              <span class="fpill"><svg width="11" height="11" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>Key dealer</span>
+              <span class="smu">74</span>
+            </div>
+          </div>
+          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+        </div>
+        <div class="stat">
+          <span class="l"><span>2 Drum · 4 Carton</span><span class="md">·</span><span>84 L</span></span>
+          <span class="pager"><span class="arw">‹</span>3 of 12<span class="arw">›</span></span>
+        </div>
+      </div>
+    </div>
+    <p class="cost">One word, same line, same height. The flag row and the SMU badge are untouched.</p>
+  </div>
+</div>
+<div class="cap" style="margin-top:26px;">
+  <h3>2c · The bay circle on the open bill — the point of the whole change</h3>
+  <p>
+    A picker opens a bill and needs one thing before he moves: <b>which bay do I walk to.</b> A 44px
+    solid amber disc at the right end of the detail header, number over the word BAY, big enough to
+    read at arm's length off a trolley. Both faces, same position, same look.
+  </p>
+  <p style="margin-top:10px;">
+    <span class="flag">Corrected</span>
+    <b>The circle is ONE colour, and it is not the delivery type.</b> An earlier draft of this page
+    coloured it blue / orange / red by type, on the theory that a bay number is ambiguous without
+    one. It is not — a bay is a physical stack and <b>bay 1 serves Local and Upcountry routes
+    both</b>, so a type-coloured bay implied a split that does not exist. Amber, once, everywhere.
+    The first two headers below are the case that made the point: bay 1 on a Local bill and bay 1 on
+    an Upcountry bill are <i>the same bay</i>, and now they look it.
+  </p>
+  <p style="margin-top:10px;">
+    <b>Amber is used here and on no card.</b> The cards already carry an amber age badge
+    (CLAUDE_UI.md §62.1) and an amber urgent bolt; a third amber object there would read as a third
+    warning. On the detail header it is the only warm colour, which is what makes it findable.
+  </p>
+</div>
+
+<div class="pair">
+
+  <!-- The one treatment -->
+  <div class="col">
+    <div class="lbl">Supervisor detail header — four cases</div>
+    <div class="frame auto">
+      <div class="screen">
+
+        <div class="hdr detail">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Time Sqaure</div>
+            <div class="dsub">9108049119 · Adajan · 10:30</div>
+          </div>
+          <div class="baycircle"><span class="n">1</span><span class="k">Bay</span></div>
+        </div>
+        <div class="stat"><span class="l"><span>Local</span></span></div>
+
+        <div class="hdr detail" style="margin-top:10px;">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Sunil Hardware Stores</div>
+            <div class="dsub">9108440677 · Navsari · 12:30</div>
+          </div>
+          <div class="baycircle"><span class="n">1</span><span class="k">Bay</span></div>
+        </div>
+        <div class="stat"><span class="l"><span>Upcountry — same number, different stack</span></span></div>
+
+        <div class="hdr detail" style="margin-top:10px;">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Shree Yamunaji Paints &amp; Hardware</div>
+            <div class="dsub">9108441207 · IGT / CROSS · 16:00</div>
+          </div>
+          <div class="baycircle"><span class="n">2</span><span class="k">Bay</span></div>
+        </div>
+        <div class="stat"><span class="l"><span>Cross</span></span></div>
+
+        <!-- NO BAY — no circle, and no wrapper either. The header is the
+             approved 2b header, unchanged: back button, two lines, nothing
+             at the right end. -->
+        <div class="hdr detail" style="margin-top:10px;">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Ambika Paints</div>
+            <div class="dsub">9108440992 · HAND · 10:30</div>
+          </div>
+        </div>
+        <div class="stat"><span class="l"><span>No bay — header identical to today</span></span></div>
+
+      </div>
+    </div>
+    <p class="cost"><b>Costs, stated plainly.</b> A filled #f59e0b disc on #0d9488 is a second saturated colour in a header that has only ever carried white and frosted-white — a real departure from §1's "minimal colour", made on purpose because the circle has to survive being read while walking. It also sits beside the findings triangle on the picker's face, which itself turns amber <i>while recording is armed</i>; un-armed that button is frosted white, so the two only coincide in record mode, and the triangle is a 30% wash against this solid fill. Known overlap, accepted, not designed around.</p>
+  </div>
+
+</div>
+
+<div class="cap" style="margin-top:6px;">
+  <p>
+    <b>Why solid amber and not a pale tinted disc.</b> A white numeral on a saturated fill holds its
+    contrast at any distance and under any light; a tinted version puts the colour into a thin ring
+    and a numeral, and the ring stops resolving well before the number does. Since the whole reason
+    the circle exists is to be read from across a warehouse, the treatment that survives the walk is
+    the one that shipped.
+    <br><br>
+    <b>And nothing renders when there is no bay.</b> HAND and No Route have no bay number, and those
+    bills get no circle, no dash and no placeholder — the fourth header in each column below is that
+    case, and it is byte-identical to the header it had before any of this. Not "hidden with CSS":
+    the component returns null, which produces no DOM node, so the header's gap is not spent on it.
+  </p>
+</div>
+
+<div class="cap" style="margin-top:26px;">
+  <h3>2d · The picker's own board — he is the man who walks to the bay</h3>
+  <p>
+    Everything above is the supervisor's face. The bay matters more on the <b>picker's</b> "My Picks"
+    board, because he is the one carrying the trolley: <b>same circle, same position, same rule for a
+    bill with no bay.</b> His CARD gets the route swap and nothing else — no bay tag, here or
+    anywhere. His card keeps its own divergence, the <code>articleTag</code> pack summary on the
+    where-line, which the supervisor card dropped.
+  </p>
+</div>
+
+<div class="pair">
+
+  <div class="col">
+    <div class="lbl">His card — Pending tab</div>
+    <div class="frame auto">
+      <div class="screen">
+        <div class="hdr"><div class="av">SP</div><h1>My Picks</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div></div></div>
+        <div class="body flat" style="padding-top:14px;">
+          <div class="cardwrap"><div class="card">
+            <div class="cbody">
+              <div class="capline">
+                <span class="capleft"><span class="mono">9108049119</span></span>
+                <span class="capright">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>
+                  <span class="badge age1">1d</span>
+                </span>
+              </div>
+              <div class="title"><span class="name">Time Sqaure</span><span class="slot">10:30</span></div>
+              <div class="where">
+                <span class="whereleft">
+                  <span class="dot local"></span>
+                  <span class="place">Adajan</span>
+                  
+                  <span class="md2">·</span>
+                  <span class="place">2 Drum · 4 Carton</span>
+                  <span class="md2">·</span>
+                  <span class="vol"><span class="n">84</span><span class="u">L</span></span>
+                </span>
+                <span class="whoright grp"><span class="smu">74</span></span>
+              </div>
+            </div>
+            <div class="shelf"><div class="chips"><div class="chiprow"><span class="chip">Weathershield</span><span class="chip">Superclean</span></div><div class="fade"></div></div></div>
+          </div></div>
+
+          <!-- No bay — his line reads exactly as it does today. -->
+          <div class="cardwrap"><div class="card">
+            <div class="cbody">
+              <div class="capline"><span class="capleft"><span class="mono">9108440992</span></span></div>
+              <div class="title"><span class="name">Ambika Paints</span><span class="slot">10:30</span></div>
+              <div class="where">
+                <span class="whereleft">
+                  <span class="dot unk"></span>
+                  <span class="place">HAND</span>
+                  <span class="md2">·</span>
+                  <span class="place">3 Loose</span>
+                  <span class="md2">·</span>
+                  <span class="vol"><span class="n">38</span><span class="u">L</span></span>
+                </span>
+              </div>
+            </div>
+            <div class="shelf"><div class="chips"><div class="chiprow"><span class="chip">Promise</span></div><div class="fade"></div></div></div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>The tightest line in the design</b> — route, pack summary and litres on one row on the narrowest face. At 320px the pack summary and the route share the squeeze; both truncate, litres do not. No bay tag: the bay lives on the open bill only.</p>
+  </div>
+
+  <div class="col">
+    <div class="lbl">His open bill</div>
+    <div class="frame auto">
+      <div class="screen">
+        <div class="hdr detail" style="align-items:center;">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Time Sqaure</div>
+            <div class="dsub">9108049119 · Adajan · 10:30</div>
+          </div>
+          <div class="baycircle"><span class="n">1</span><span class="k">Bay</span></div>
+        </div>
+        <div class="stat">
+          <span class="l"><span>2 Drum · 4 Carton</span><span class="md">·</span><span>3 of 8 ticked</span><span class="md">·</span><span>84 L</span></span>
+          <span class="pager"><span class="arw">‹</span>1 of 3<span class="arw">›</span></span>
+        </div>
+        <div class="packrow">
+          <span class="packchip on">All</span><span class="packchip">20L</span><span class="packchip">10L</span><span class="packchip">4L</span>
+        </div>
+        <div class="body flat" style="padding-top:12px;">
+          <div class="li"><span class="pk">20L</span><span class="txt"><span class="sku">IN28916271</span><span class="nm">Weathershield Max Exterior — 90 Base</span></span><span class="q">6</span></div>
+          <div class="li"><span class="pk">10L</span><span class="txt"><span class="sku">IN28916289</span><span class="nm">Weathershield Max Exterior — Brilliant White</span></span><span class="q">4</span></div>
+          <div class="li"><span class="pk">4L</span><span class="txt"><span class="sku">IN28904177</span><span class="nm">Superclean Interior Emulsion</span></span><span class="q">12</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost">The circle takes the right end of the header, where the supervisor's face puts the search and ⋯ buttons. On the picker's header that slot is empty except for the findings triangle, so there is room — but the two would sit side by side on a bill he can still record against, and that pairing is not mocked here.</p>
+  </div>
+
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     3 — ASSIGN-TO-PICKER SHEET
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="cap">
+  <h3>3 · Assign-to-picker sheet</h3>
+  <p>
+    One design. The sheet <b>opens tall</b> — roughly the whole phone, grab handle on top, header
+    pinned, the grid scrolling under it — so the supervisor sees every free picker without a scroll.
+    Pickers are two-up cards, and each carries a <b>status dot</b> taken from Floor Control:
+    <span style="display:inline-flex;align-items:center;gap:5px;vertical-align:-1px;"><i style="display:inline-block;width:7px;height:7px;border-radius:999px;background:#15803d;"></i><b>green = Free</b></span>
+    ·
+    <span style="display:inline-flex;align-items:center;gap:5px;vertical-align:-1px;"><i style="display:inline-block;width:7px;height:7px;border-radius:999px;background:#6d28d9;"></i><b>purple = Picking</b></span>.
+    A free card says just "Free"; a busy card says how many bills are actually in his hands —
+    still at <code>pick_assigned</code>, any date. A bill he marks done frees him immediately.
+    Today the chip reads "5 jobs", which counts everything handed to him since midnight including
+    the ones he already finished, so a man with empty hands can read as the busiest on the floor.
+  </p>
+  <p style="margin-top:10px;">
+    <span class="flag">Default</span>
+    <b>Free pickers only.</b> Busy pickers are not rendered until the supervisor asks for them —
+    the sheet exists to answer "who can take this", and four names that cannot are noise. One
+    full-width row at the bottom opens the rest. It is grey, not teal: it is navigation, not the
+    action this sheet is for.
+  </p>
+</div>
+
+<div class="pair">
+
+  <!-- 3a — collapsed -->
+  <div class="col">
+    <div class="lbl">3a · Default — free only</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="body"></div>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="shead">
+            <div class="grip"></div>
+            <h3>Assign to picker <span style="font-size:12.5px;font-weight:500;color:#9ca3af;">· 3 bills selected</span></h3>
+          </div>
+          <div class="sbody">
+            <div class="divider first"><span>Free</span><span>6</span></div>
+            <div class="tiles">
+              <div class="tile"><span class="tav">H</span><span class="tnm"><span class="tn">Harish Padvi</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">A</span><span class="tnm"><span class="tn">Abhay Rathod</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">A</span><span class="tnm"><span class="tn">Ajay Vasava</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">M</span><span class="tnm"><span class="tn">Markesh Valvi</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">R</span><span class="tnm"><span class="tn">Rakesh Gamit</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">V</span><span class="tnm"><span class="tn">Vipul Chaudhari</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+            </div>
+            <div class="showall">
+              Show all pickers <span class="cnt">· 4 picking</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cost">Six free men, no scroll, nothing between the supervisor and the tap he came to make.</p>
+  </div>
+
+  <!-- 3b — expanded -->
+  <div class="col">
+    <div class="lbl">3b · Expanded — all 10</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="body"></div>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="shead">
+            <div class="grip"></div>
+            <h3>Assign to picker <span style="font-size:12.5px;font-weight:500;color:#9ca3af;">· 3 bills selected</span></h3>
+          </div>
+          <div class="sbody">
+            <div class="divider first"><span>Free</span><span>6</span></div>
+            <div class="tiles">
+              <div class="tile"><span class="tav">H</span><span class="tnm"><span class="tn">Harish Padvi</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">A</span><span class="tnm"><span class="tn">Abhay Rathod</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">A</span><span class="tnm"><span class="tn">Ajay Vasava</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">M</span><span class="tnm"><span class="tn">Markesh Valvi</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">R</span><span class="tnm"><span class="tn">Rakesh Gamit</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+              <div class="tile"><span class="tav">V</span><span class="tnm"><span class="tn">Vipul Chaudhari</span><span class="ts"><i class="sd free"></i>Free</span></span></div>
+            </div>
+            <div class="divider"><span>Picking now</span><span>4</span></div>
+            <div class="tiles">
+              <div class="tile busy"><span class="tav">S</span><span class="tnm"><span class="tn">Sanjay Padvi</span><span class="ts"><i class="sd picking"></i>3 picking</span></span></div>
+              <div class="tile busy"><span class="tav">A</span><span class="tnm"><span class="tn">Akash Padvi</span><span class="ts"><i class="sd picking"></i>2 picking</span></span></div>
+              <div class="tile busy"><span class="tav">A</span><span class="tnm"><span class="tn">Aditya</span><span class="ts"><i class="sd picking"></i>2 picking</span></span></div>
+              <div class="tile busy"><span class="tav">M</span><span class="tnm"><span class="tn">Mehul</span><span class="ts"><i class="sd picking"></i>1 picking</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cost">Free still leads. The show-all row is gone once it has been used — it has nothing left to reveal.</p>
+  </div>
+
+  <!-- 3c — zero free -->
+  <div class="col">
+    <div class="lbl">3c · Edge case — nobody is free</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="body"></div>
+        <div class="scrim"></div>
+        <div class="sheet tall">
+          <div class="shead">
+            <div class="grip"></div>
+            <h3>Assign to picker <span style="font-size:12.5px;font-weight:500;color:#9ca3af;">· 3 bills selected</span></h3>
+          </div>
+          <div class="sbody">
+            <p class="quietline">Everyone is picking right now.</p>
+            <div class="divider first"><span>Picking now</span><span>10</span></div>
+            <div class="tiles">
+              <div class="tile busy"><span class="tav">S</span><span class="tnm"><span class="tn">Sanjay Padvi</span><span class="ts"><i class="sd picking"></i>3 picking</span></span></div>
+              <div class="tile busy"><span class="tav">A</span><span class="tnm"><span class="tn">Akash Padvi</span><span class="ts"><i class="sd picking"></i>2 picking</span></span></div>
+              <div class="tile busy"><span class="tav">A</span><span class="tnm"><span class="tn">Aditya</span><span class="ts"><i class="sd picking"></i>2 picking</span></span></div>
+              <div class="tile busy"><span class="tav">H</span><span class="tnm"><span class="tn">Harish Padvi</span><span class="ts"><i class="sd picking"></i>2 picking</span></span></div>
+              <div class="tile busy"><span class="tav">M</span><span class="tnm"><span class="tn">Mehul</span><span class="ts"><i class="sd picking"></i>1 picking</span></span></div>
+              <div class="tile busy"><span class="tav">A</span><span class="tnm"><span class="tn">Abhay Rathod</span><span class="ts"><i class="sd picking"></i>1 picking</span></span></div>
+              <div class="tile busy"><span class="tav">A</span><span class="tnm"><span class="tn">Ajay Vasava</span><span class="ts"><i class="sd picking"></i>1 picking</span></span></div>
+              <div class="tile busy"><span class="tav">M</span><span class="tnm"><span class="tn">Markesh Valvi</span><span class="ts"><i class="sd picking"></i>1 picking</span></span></div>
+              <div class="tile busy"><span class="tav">R</span><span class="tnm"><span class="tn">Rakesh Gamit</span><span class="ts"><i class="sd picking"></i>1 picking</span></span></div>
+              <div class="tile busy"><span class="tav">V</span><span class="tnm"><span class="tn">Vipul Chaudhari</span><span class="ts"><i class="sd picking"></i>1 picking</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>This is the frame that decides whether collapsing is safe.</b> With nobody free the sheet has no default content, so it drops the collapse entirely: every picker, immediately, one quiet line saying why, and no show-all row — there is nothing left to show. A sheet that opened empty with only a grey row on it would read as broken at the exact moment the floor is busiest.</p>
+  </div>
+
+</div>
+
+<div class="cap" style="margin-top:6px;">
+  <p>
+    <b>What the collapse costs.</b> One extra tap, and only for a supervisor who wants a specific busy
+    man — to stack a second bill on the picker already walking that aisle, or to reassign work off
+    someone. That is a real habit on a small floor, and this design makes it slower. The trade is
+    that the common case, "hand this to whoever is free", loses the four names that cannot take it.
+    If the floor turns out to reach past the row often, the honest fix is to open expanded and keep
+    the ordering, not to shrink the tap target.
+  </p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     4 — PICKING TAB, PICKER-FIRST
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="cap">
+  <h3>4a · Picking tab, level 1 — the pickers</h3>
+  <p>
+    The tab stops listing bills and starts listing the men holding them. Two designs.
+    <b>In both, the bottom-bar badge still reads 8 — the number of BILLS out on the floor, not the four
+    pickers holding them.</b> That is deliberate: the badge answers "how much work is in progress", and
+    that has always been a bill count. The summary strip above says the same thing in words
+    ("8 picking · 3 over 30m"), and "over 30m" also stays a bill count.
+  </p>
+</div>
+
+<div class="pair">
+
+  <!-- 4a Option A -->
+  <div class="col">
+    <div class="lbl">Option A · A card per picker</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="controls">
+          <div class="filterrow">
+            <div class="pills"><span class="pill on">All</span><span class="pill">Local</span><span class="pill">UPC</span></div>
+            <div class="dd"><span>All pickers</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="lane"><b>All pickers</b><span>&nbsp;·&nbsp;8 picking&nbsp;·&nbsp;3 over 30m</span></div>
+        </div>
+        <div class="body">
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">S</span>
+              <span class="mid">
+                <span class="pn">Sanjay Padvi</span>
+                <span class="pm"><span class="n">3</span>&nbsp;bills<span class="md2">·</span><span class="n">1,637</span><span class="u">L</span></span>
+              </span>
+              <span class="badge amber">42m</span>
+            </div>
+            <div class="routes"><span class="dot local"></span><span class="place">Adajan, Ghod Dod</span></div>
+          </div>
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">A</span>
+              <span class="mid">
+                <span class="pn">Akash Padvi</span>
+                <span class="pm"><span class="n">2</span>&nbsp;bills<span class="md2">·</span><span class="n">921</span><span class="u">L</span></span>
+              </span>
+              <span class="badge red">1h 8m</span>
+            </div>
+            <div class="routes"><span class="dot upc"></span><span class="place">Vapi, Navsari</span></div>
+          </div>
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">A</span>
+              <span class="mid">
+                <span class="pn">Aditya</span>
+                <span class="pm"><span class="n">2</span>&nbsp;bills<span class="md2">·</span><span class="n">610</span><span class="u">L</span></span>
+              </span>
+              <span class="badge grey">12m</span>
+            </div>
+            <div class="routes"><span class="dot local"></span><span class="place">Varachha</span></div>
+          </div>
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">M</span>
+              <span class="mid">
+                <span class="pn">Mehul</span>
+                <span class="pm"><span class="n">1</span>&nbsp;bill<span class="md2">·</span><span class="n">240</span><span class="u">L</span></span>
+              </span>
+              <span class="badge grey">8m</span>
+            </div>
+            <div class="routes"><span class="dot local"></span><span class="place">Udhana</span></div>
+          </div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>Cost: a third card design.</b> Four pickers fill the screen, so ten would scroll. Everything a supervisor asks — who, how much, how long, which lanes — is answered without a tap. But this board already has a bill card and a shelf; this adds a third thing to keep in step whenever the card language changes. The elapsed pill is the <b>oldest</b> bill in his hands, and one number for three bills has to be explained once.</p>
+  </div>
+
+  <!-- 4a Option B -->
+  <div class="col">
+    <div class="lbl">Option B · A compact row per picker</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="controls">
+          <div class="filterrow">
+            <div class="pills"><span class="pill on">All</span><span class="pill">Local</span><span class="pill">UPC</span></div>
+            <div class="dd"><span>All pickers</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="lane"><b>All pickers</b><span>&nbsp;·&nbsp;8 picking&nbsp;·&nbsp;3 over 30m</span></div>
+        </div>
+        <div class="body">
+          <div class="prow2"><span class="cav">S</span><span class="mid"><span class="pn">Sanjay Padvi</span><span class="pm">3 bills</span></span><span class="badge amber">42m</span></div>
+          <div class="prow2"><span class="cav">A</span><span class="mid"><span class="pn">Akash Padvi</span><span class="pm">2 bills</span></span><span class="badge red">1h 8m</span></div>
+          <div class="prow2"><span class="cav">A</span><span class="mid"><span class="pn">Aditya</span><span class="pm">2 bills</span></span><span class="badge grey">12m</span></div>
+          <div class="prow2"><span class="cav">M</span><span class="mid"><span class="pn">Mehul</span><span class="pm">1 bill</span></span><span class="badge grey">8m</span></div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>Cost: a tap to answer "who takes the next one".</b> All ten pickers fit on one screen with room to spare, and the row is the assign sheet's row shape, so nothing new is designed. But route and volume are gone, so deciding who should take the next Adajan bill means opening someone. Reads as a status list rather than a work board.</p>
+  </div>
+
+</div>
+
+<div class="cap" style="margin-top:26px;">
+  <h3>4b · Level 2 — one picker's bills, and 4c · level 3 — the bill</h3>
+  <p>
+    Level 2 is <b>the existing bill card, unchanged</b>, under a header naming the picker with a back
+    chevron. Level 3 is <b>the existing bill detail, unchanged</b> — the only difference is what the
+    pager counts: "‹ 2 of 3 ›" is now Sanjay's three bills, not the whole tab. The swipe gesture is
+    untouched; it pages a flat list of bills exactly as it always has, and the list it is handed is
+    simply narrower.
+  </p>
+</div>
+
+<div class="pair">
+
+  <!-- 4b -->
+  <div class="col">
+    <div class="lbl">4b · Level 2 — Sanjay Padvi's 3 bills</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr detail" style="align-items:center;">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Sanjay Padvi</div>
+            <div class="dsub">3 bills · 1,637 L · oldest 42m</div>
+          </div>
+          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+        </div>
+        <div class="body">
+          <div class="cardwrap"><div class="card">
+            <div class="cbody">
+              <div class="capline">
+                <span class="capleft"><span class="mono">9108049119</span><span class="md">·</span><span class="sec">10:30</span></span>
+                <span class="capright"><span class="badge amber">42m</span></span>
+              </div>
+              <div class="title"><span class="name">Time Sqaure</span><span class="slot">10:30</span></div>
+              <div class="where">
+                <span class="whereleft"><span class="dot local"></span><span class="place">Adajan</span><span class="md2">·</span><span class="vol"><span class="n">84</span><span class="u">L</span></span></span>
+                <span class="whoright grp"><span class="smu">74</span></span>
+              </div>
+            </div>
+            <div class="shelf"><div class="chips"><div class="chiprow"><span class="chip">2 Drum</span><span class="chip">4 Carton</span></div><div class="fade"></div></div></div>
+          </div></div>
+
+          <div class="cardwrap"><div class="card">
+            <div class="cbody">
+              <div class="capline">
+                <span class="capleft"><span class="mono">9108440731</span><span class="md">·</span><span class="sec">12:30</span></span>
+                <span class="capright"><span class="badge grey">21m</span></span>
+              </div>
+              <div class="title"><span class="name">Ambika Paints</span><span class="slot">12:30</span></div>
+              <div class="where">
+                <span class="whereleft"><span class="dot local"></span><span class="place">Adajan</span><span class="md2">·</span><span class="vol"><span class="n">733</span><span class="u">L</span></span></span>
+              </div>
+            </div>
+            <div class="shelf"><div class="chips"><div class="chiprow"><span class="chip">5 Drum</span><span class="chip">9 Carton</span><span class="chip">2 Loose</span></div><div class="fade"></div></div></div>
+          </div></div>
+
+          <div class="cardwrap"><div class="card">
+            <div class="cbody">
+              <div class="capline">
+                <span class="capleft"><span class="mono">9108441064</span><span class="md">·</span><span class="sec">12:30</span></span>
+                <span class="capright"><span class="badge grey">14m</span></span>
+              </div>
+              <div class="title"><span class="name">Sunil Hardware Stores</span><span class="slot">12:30</span></div>
+              <div class="where">
+                <span class="whereleft"><span class="dot local"></span><span class="place">Ghod Dod</span><span class="md2">·</span><span class="vol"><span class="n">820</span><span class="u">L</span></span></span>
+              </div>
+            </div>
+            <div class="shelf"><div class="chips"><div class="chiprow"><span class="chip">6 Drum</span><span class="chip">11 Carton</span></div><div class="fade"></div></div></div>
+          </div></div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost">Cards are today's <code>variant="picking"</code> card — elapsed pill, no detail arrow (the whole body opens the bill) — plus the bay tag. The picker name is gone from the right of the where-line; the header already says whose bills these are.
+    <br><br>
+    <b>No bay on this list, deliberately.</b> The bay lives on the open bill and nowhere else in this build, so these cards carry the route swap and nothing more.
+    <br><br>
+    <b>The idea that got deferred, kept here because it is the good one:</b> when a picker's whole set shares a bay, the list stops being three errands and becomes one walk — "3 bills · 1,637 L · all Bay 1" is a sentence he can act on before reading a single card. Sanjay's three do not qualify (two at bay 1 via Adajan, one at bay 2 via Ghod Dod, which follows from 4a's "Adajan, Ghod Dod"), so this frame cannot show it. Whether such a summary belongs in this header, on the level-1 picker card, or nowhere is a separate decision and is not part of what shipped.</p>
+  </div>
+
+  <!-- 4c -->
+  <div class="col">
+    <div class="lbl">4c · Level 3 — the bill, pager scoped to his 3</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr detail">
+          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+          <div class="dtext">
+            <div class="dname">Ambika Paints</div>
+            <div class="dsub">9108440731 · Adajan · 12:30</div>
+          </div>
+          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+        </div>
+        <div class="stat">
+          <span class="l"><span>5 Drum · 9 Carton · 2 Loose</span><span class="md">·</span><span>733 L</span></span>
+          <span class="pager"><span class="arw">‹</span>2 of 3<span class="arw">›</span></span>
+        </div>
+        <div class="packrow">
+          <span class="packchip on">All</span><span class="packchip">20L</span><span class="packchip">10L</span><span class="packchip">4L</span><span class="packchip">1L</span>
+        </div>
+        <div class="body flat" style="padding-top:12px;">
+          <div class="li"><span class="pk">20L</span><span class="txt"><span class="sku">IN28916271</span><span class="nm">Weathershield Max Exterior — 90 Base</span></span><span class="q">12</span></div>
+          <div class="li"><span class="pk">10L</span><span class="txt"><span class="sku">IN28916289</span><span class="nm">Weathershield Max Exterior — Brilliant White</span></span><span class="q">8</span></div>
+          <div class="li"><span class="pk">4L</span><span class="txt"><span class="sku">5961032</span><span class="nm">DN WS Metallic Gold</span></span><span class="q">6</span></div>
+          <div class="li"><span class="pk">1L</span><span class="txt"><span class="sku">IN28904177</span><span class="nm">Superclean Interior Emulsion</span></span><span class="q">24</span></div>
+          <div class="li"><span class="pk">20L</span><span class="txt"><span class="sku">IN28911844</span><span class="nm">Promise Interior Emulsion — Base P</span></span><span class="q">4</span></div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>The pager is the whole point of this frame.</b> "2 of 3" — Sanjay's bills. Today the same screen would read "2 of 8", the whole tab. Nothing else on this screen changes, and the swipe still never crosses into another picker's work.</p>
+  </div>
+
+</div>
+
+<div class="cap" style="margin-top:26px;">
+  <h3>4d · Empty state</h3>
+  <p>Unchanged wording. The badge disappears at 0 — it always has.</p>
+</div>
+
+<div class="pair">
+  <div class="col">
+    <div class="frame mid">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="controls">
+          <div class="filterrow">
+            <div class="pills"><span class="pill on">All</span><span class="pill">Local</span><span class="pill">UPC</span></div>
+            <div class="dd"><span>All pickers</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="lane"><b>All pickers</b><span>&nbsp;·&nbsp;0 picking</span></div>
+        </div>
+        <div class="body"><p class="empty">Nobody is picking right now.</p></div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     5 — SEARCH
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="cap">
+  <h3>5 · Search — one box, five fields</h3>
+  <p>
+    The box already exists and already works; it just only looks at two of these five today.
+    All five, plainly:
+    <b>picker name</b> · <b>customer name</b> · <b>route</b> · <b>area</b> · <b>OBD</b>.
+    Customer name and OBD are the two it already matches; picker name, route and area are new — and
+    all five are already on every row of the payload, so none of this needs a new query.
+    The placeholder changes from "Search customer or OBD…" to
+    <b>"Search picker, customer, route, area or OBD…"</b>, which names every one of them rather than
+    leaving the floor to discover the rest by accident.
+  </p>
+  <p style="margin-top:10px;">
+    <span class="flag">Decision</span>
+    <b>At level 1, search filters to the PICKERS WHO HAVE A MATCHING BILL — and drilling in shows only
+    the bills that matched.</b> That is the reading these four frames show, and it is worth agreeing
+    before it is built. The alternative — leave the picker list whole and only narrow it at level 2 —
+    is defensible (you keep the whole floor in view) but it makes searching feel like it did nothing.
+    The card's "2 of 3 bills" line is what stops the narrowing from being invisible.
+  </p>
+</div>
+
+<div class="pair">
+
+  <!-- 5a -->
+  <div class="col">
+    <div class="lbl">5a · "sanj" — a picker name</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico" style="background:rgba(255,255,255,.15);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="controls">
+          <div class="searchrow">
+            <div class="field">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <span class="txt">sanj<span class="caret"></span></span>
+            </div>
+            <span class="cancel">Cancel</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">S</span>
+              <span class="mid">
+                <span class="pn">Sanjay Padvi</span>
+                <span class="pm"><span class="n">3</span>&nbsp;bills<span class="md2">·</span><span class="n">1,637</span><span class="u">L</span></span>
+              </span>
+              <span class="badge amber">42m</span>
+            </div>
+            <div class="routes"><span class="dot local"></span><span class="place">Adajan, Ghod Dod</span></div>
+          </div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost">All three of his bills match, so the card is unchanged — no "N of M" line is needed. The badge still reads 8: search narrows what is <i>shown</i>, never what is <i>out on the floor</i>.</p>
+  </div>
+
+  <!-- 5b -->
+  <div class="col">
+    <div class="lbl">5b · "adaj" — a route</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico" style="background:rgba(255,255,255,.15);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="controls">
+          <div class="searchrow">
+            <div class="field">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <span class="txt">adaj<span class="caret"></span></span>
+            </div>
+            <span class="cancel">Cancel</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">S</span>
+              <span class="mid">
+                <span class="pn">Sanjay Padvi</span>
+                <span class="pm"><span class="n">2</span>&nbsp;of 3 bills<span class="md2">·</span><span class="n">817</span><span class="u">L</span></span>
+              </span>
+              <span class="badge amber">42m</span>
+            </div>
+            <div class="routes"><span class="dot local"></span><span class="place">Adajan</span></div>
+          </div>
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">A</span>
+              <span class="mid">
+                <span class="pn">Akash Padvi</span>
+                <span class="pm"><span class="n">1</span>&nbsp;of 2 bills<span class="md2">·</span><span class="n">386</span><span class="u">L</span></span>
+              </span>
+              <span class="badge red">1h 8m</span>
+            </div>
+            <div class="routes"><span class="dot upc"></span><span class="place">Adajan</span></div>
+          </div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>Two pickers, two different Adajans.</b> Sanjay's is the Local route (blue), Akash's is the Upcountry one (orange). The dot is the only thing separating them, which is a second reason it must stay a delivery-type colour. The count line reads <b>"2 of 3 bills"</b> when only some of a man's bills matched.</p>
+  </div>
+
+  <!-- 5c -->
+  <div class="col">
+    <div class="lbl">5c · "049119" — part of an OBD</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico" style="background:rgba(255,255,255,.15);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="controls">
+          <div class="searchrow">
+            <div class="field">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <span class="txt">049119<span class="caret"></span></span>
+            </div>
+            <span class="cancel">Cancel</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">S</span>
+              <span class="mid">
+                <span class="pn">Sanjay Padvi</span>
+                <span class="pm"><span class="n">1</span>&nbsp;of 3 bills<span class="md2">·</span><span class="n">84</span><span class="u">L</span></span>
+              </span>
+              <span class="badge amber">42m</span>
+            </div>
+            <div class="routes"><span class="dot local"></span><span class="place">Adajan</span></div>
+          </div>
+        </div>
+        <div class="body flat" style="flex:0 0 auto;padding:0 16px 14px;">
+          <div class="sect quiet" style="margin-top:2px;">Matching bill<span class="n">1</span></div>
+          <div class="cardwrap"><div class="card">
+            <div class="cbody">
+              <div class="capline">
+                <span class="capleft"><span class="mono">9108049119</span><span class="md">·</span><span class="sec">10:30</span></span>
+                <span class="capright"><span class="badge amber">42m</span></span>
+              </div>
+              <div class="title"><span class="name">Time Sqaure</span><span class="slot">10:30</span></div>
+              <div class="where">
+                <span class="whereleft"><span class="dot local"></span><span class="place">Adajan</span><span class="md2">·</span><span class="vol"><span class="n">84</span><span class="u">L</span></span></span>
+                <span class="whoright grp"><span class="smu">74</span></span>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>A second decision, shown rather than argued.</b> When exactly one bill matches, dropping the bill card straight underneath saves the tap — the supervisor searched an OBD because he wants <i>that bill</i>, not the man holding it. Cheap to build, easy to drop if it feels like a special case.</p>
+  </div>
+
+  <!-- 5d -->
+  <div class="col">
+    <div class="lbl">5d · "ambika" — a customer name</div>
+    <div class="frame tall">
+      <div class="screen">
+        <div class="hdr"><div class="av">CS</div><h1>Picking</h1><div class="right"><div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div><div class="ico" style="background:rgba(255,255,255,.15);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div></div></div>
+        <div class="controls">
+          <div class="searchrow">
+            <div class="field">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <span class="txt">ambika<span class="caret"></span></span>
+            </div>
+            <span class="cancel">Cancel</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="pcard">
+            <div class="top">
+              <span class="cav">S</span>
+              <span class="mid">
+                <span class="pn">Sanjay Padvi</span>
+                <span class="pm"><span class="n">1</span>&nbsp;of 3 bills<span class="md2">·</span><span class="n">733</span><span class="u">L</span></span>
+              </span>
+              <span class="badge amber">42m</span>
+            </div>
+            <div class="routes"><span class="dot local"></span><span class="place">Adajan</span></div>
+          </div>
+        </div>
+        <div class="body flat" style="flex:0 0 auto;padding:0 16px 14px;">
+          <div class="sect quiet" style="margin-top:2px;">Matching bill<span class="n">1</span></div>
+          <div class="cardwrap"><div class="card">
+            <div class="cbody">
+              <div class="capline">
+                <span class="capleft"><span class="mono">9108440731</span><span class="md">·</span><span class="sec">12:30</span></span>
+                <span class="capright"><span class="badge grey">21m</span></span>
+              </div>
+              <div class="title"><span class="name">Ambika Paints</span><span class="slot">12:30</span></div>
+              <div class="where">
+                <span class="whereleft"><span class="dot local"></span><span class="place">Adajan</span><span class="md2">·</span><span class="vol"><span class="n">733</span><span class="u">L</span></span></span>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="bar">
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.5-6.5A2 2 0 0016.7 4H7.3a2 2 0 00-1.8 1.5z"/></svg><span class="bg">390</span></span><span>Assign</span><span class="ul"></span></div>
+          <div class="t on"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4L7.5 4.2"/><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg><span class="bg">8</span></span><span>Picking</span><span class="ul"></span></div>
+          <div class="t"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg><span class="bg">4</span></span><span>Done</span><span class="ul"></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>The field the box has always searched, on the screen where it now has to work harder.</b> A customer name identifies one bill, not a person, so the picker-first list has to answer a question it was not built for: "who is holding Ambika's order?" — the card says Sanjay, "1 of 3 bills", and the bill itself drops underneath. Same single-match shortcut as 5c, which is why the two should be decided together rather than one at a time.</p>
+  </div>
+
+</div>
+
+
+<div class="doc" style="margin-top:40px;">
+  <h2>Notes for whoever builds this</h2>
+  <ul>
+    <li><b>Nothing here needs a new query, a new column or a migration.</b> Route, area, picker name and picker id are all already on every row of the picking payload; the route filter and the search both run on rows the board has already loaded.</li>
+    <li><b>The one server change is the assign sheet's count.</b> The route already returns a pending figure — it is just not the number the chip renders, and it is fenced to a UTC day, which is why a carry-over bill can leave a busy picker reading Free. Both are described in the discovery report's Q3.</li>
+    <li><b>The roster is fetched once, on mount.</b> That was fine for a list of names and is not fine for a live count — every number in screen 3 goes stale the moment the supervisor assigns anything. Refreshing it when the sheet opens is the small piece of plumbing this design assumes.</li>
+    <li><b>The route sheet must also decide about upcoming bills.</b> The list and the counts both include locked, future-dated bills today, while the strip above the control counts only what is due. Filtering by type alone leaves that mismatch in place.</li>
+    <li><b>The elapsed pill on a picker card is the oldest bill in his hands.</b> Every frame here uses that reading. It is not the only possible one — an average, or the count over 30m, would both be defensible — but one bill's clock is the one a supervisor can act on.</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

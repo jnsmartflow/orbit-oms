@@ -402,6 +402,14 @@ model route_master {
   id                    Int                     @id @default(autoincrement())
   name                  String                  @unique
   description           String?
+  /// The loading bay this route's material is stacked at (2026-08-21).
+  /// NULLABLE and NOT UNIQUE — several routes share a bay (bay 1 serves Adajan,
+  /// Parvat, Navsari, Chikhli, Bhagal and Olpad), and HAND / No Route have none.
+  /// It is NOT a route id and it is NOT per delivery type: bay 1 carries Local
+  /// and Upcountry routes both, so the number alone never identifies a lane.
+  /// Column already exists in Supabase and was hand-mirrored here — CORE §3
+  /// (never db push, never db pull, ALTER in the SQL Editor then generate).
+  bayNumber             Int?
   isActive              Boolean                 @default(true)
   createdAt             DateTime                @default(now())
   areaRoutes            area_route_map[]

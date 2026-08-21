@@ -17,6 +17,7 @@ import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+import { BayCircle } from "./bay-circle";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // Same import list, same tokens and the same tag the supervisor board and Floor
 // use; this face was deliberately left out on 2026-08-20 and is now included
@@ -1507,7 +1508,11 @@ export function PickerMyPicksBoard({
                       className="text-[12px] font-medium truncate min-w-0"
                       style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
                     >
-                      {row.area ?? "—"}
+                      {/* ROUTE, not area (2026-08-21) — same swap as the
+                          supervisor card, so both faces name the same lane.
+                          The dot beside it still keys on deliveryType, not on
+                          route (CLAUDE_UI.md §62.3). */}
+                      {row.route ?? "—"}
                     </span>
                     {row.articleTag !== null && (
                       <>
@@ -1642,8 +1647,10 @@ export function PickerMyPicksBoard({
               className={"text-[12px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/75")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
+              {/* ROUTE, not area (2026-08-21) — matches his card and the
+                  supervisor's header. `?? "Unmatched"` unchanged. */}
               {detailRow
-                ? `${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
+                ? `${detailRow.obdNumber} · ${detailRow.route ?? "Unmatched"}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
                   }`
                 : "—"}
@@ -1683,6 +1690,16 @@ export function PickerMyPicksBoard({
               onToggle={() => recorder.setRecordMode(!recorder.recordMode)}
             />
           )}
+          {/* Loading bay — LAST in the cluster, same position as the
+              supervisor's, so one bill's bay is in the same place on both
+              faces. Bare render: null is no DOM node, so a HAND / No Route
+              header keeps its exact current shape and gap.
+              ⚠ The comment on the triangle above calls itself "the ONE amber
+              control on a teal header". That is now true only while recording
+              is ARMED — un-armed it is frosted white, and this circle is the
+              header's standing amber. See bay-circle.tsx for why the overlap is
+              accepted rather than designed around. */}
+          <BayCircle bayNumber={detailRow?.bayNumber ?? null} />
         </div>
 
         {/* Recording banner — OUTSIDE pager.contentRef on purpose: recording is

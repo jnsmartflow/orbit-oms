@@ -115,7 +115,10 @@ const FLOOR_DEALER_SELECT = {
   area: {
     select: {
       name: true,
-      primaryRoute: { select: { name: true } },
+      // `bayNumber` rides the relation already being selected (2026-08-21) — no
+      // new query, no new join. FloorBoardRow extends PickingQueueRow, which now
+      // carries the field, so it has to be fetched here too.
+      primaryRoute: { select: { name: true, bayNumber: true } },
       deliveryType: { select: { name: true } },
     },
   },
@@ -653,6 +656,13 @@ export async function getFloorBoard(
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,
       deliveryType,
       route: dealer?.area?.primaryRoute?.name ?? null,
+      // Inherited from PickingQueueRow (2026-08-21) — FloorBoardRow extends it,
+      // so this board has to FILL the field even though it renders nothing with
+      // it today. Same rule and same source as Picking's own: `area.primaryRoute`
+      // ONLY, never delivery_point_master.primaryRouteId (stale, never read), so
+      // the bay can never describe a different route than `route` above.
+      // Same shape as `smuCode` below, for the same reason.
+      bayNumber: dealer?.area?.primaryRoute?.bayNumber ?? null,
       area: dealer?.area?.name ?? null,
       priorityLevel: order.priorityLevel,
       isKeyCustomer: dealer?.isKeyCustomer ?? false,

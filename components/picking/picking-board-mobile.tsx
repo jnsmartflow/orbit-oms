@@ -49,6 +49,7 @@ import {
   findingState,
   useFindingRecorder,
 } from "./finding-recorder";
+import { BayCircle } from "./bay-circle";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
@@ -86,6 +87,18 @@ const SOFT_CARD_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 3px 12px rgba(16,24,4
 const NO_PACK_KEY = "__no_pack__";
 
 type TypeFilter = "All" | "Local" | "Upcountry";
+
+// THE type-pill predicate, in one place (2026-08-21). Extracted when the route
+// sheet's option list started reading it: the list, the counts and the
+// reset-on-type-change below must agree about what "under this type" means, and
+// three hand-written copies of `t !== "All" && r.deliveryType !== t` is exactly
+// how the sheet came to list a route its own counts said had nothing in it.
+// Deliberately NOT applied to the Assign / Picking / Done list filters — those
+// are correct, out of scope, and changing them would be a silent refactor
+// inside a bug-fix commit.
+function matchesType(row: PickingQueueRow, type: TypeFilter): boolean {
+  return type === "All" || row.deliveryType === type;
+}
 
 // Detail-interactions Build A (2026-07-19) — which of the four already-
 // memoized lists (waitingRows/needsCheck/stillPicking/checked) a bill's
@@ -601,7 +614,15 @@ function PickingCard({
                 className="text-[12px] font-medium truncate min-w-0"
                 style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
               >
-                {row.area ?? "—"}
+                {/* ROUTE, not area (2026-08-21). The area is a sub-lane inside
+                    a route; two bills on one truck read "Pal" and "Rander",
+                    which tells a supervisor nothing about which van they go on.
+                    The route is the work lane the whole board already filters
+                    and sorts by. Same `?? "—"` fallback, same everything else.
+                    ⚠ The dot to the left still keys on deliveryType, NOT on
+                    route (card-atoms.tsx RouteDot, CLAUDE_UI.md §62.3) — it did
+                    not become a route colour when the text beside it did. */}
+                {row.route ?? "—"}
               </span>
               {rich && row.volumeLitres != null && (
                 <>
@@ -1196,26 +1217,42 @@ export function PickingBoardMobile(): React.JSX.Element {
     [data],
   );
 
-  // Route list — distinct non-null `route` across ALL waiting rows (stable,
-  // not narrowed by the Type pill). Counts DO reflect the current Type pill
-  // (live), mirroring the approved mockup's route sheet exactly.
-  const availableRoutes = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of waitingRows) {
-      if (r.route !== null) set.add(r.route);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
-  }, [waitingRows]);
-
+  // Route counts — one bill each, narrowed by the active Type pill.
+  //
+  // ⚠ NOT ZONE-FILTERED, on purpose. An "upcoming" (locked) bill still counts
+  // its route as present: the supervisor can open and read a locked bill, so a
+  // route that has one is a route he may legitimately want to filter to. This
+  // is why the number here can exceed the lane strip's `{filteredWaitingDue
+  // .length} due` — different questions, both correct.
   const routeCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of waitingRows) {
       if (r.route === null) continue;
-      if (activeType !== "All" && r.deliveryType !== activeType) continue;
+      if (!matchesType(r, activeType)) continue;
       map.set(r.route, (map.get(r.route) ?? 0) + 1);
     }
     return map;
   }, [waitingRows, activeType]);
+
+  // ⚠ THE OPTION LIST COMES OFF THE COUNT MAP — this is the whole 2026-08-21 fix.
+  //
+  // It used to be a SECOND memo (`availableRoutes`) that walked `waitingRows`
+  // and never read `activeType`, so the list and the counts answered two
+  // different questions: with Local selected the sheet still offered "Vapi",
+  // an Upcountry-only route, and the `?? 0` below printed a literal 0 beside
+  // it. Deriving the keys from the already-narrowed map means a route with no
+  // bill under the active type CANNOT appear — the zero row is unreachable by
+  // construction rather than filtered out after the fact, and `?? 0` is now
+  // dead code kept only for the type.
+  //
+  // Same shape as `pickerOptions` / `checkedPickerOptions` below, which have
+  // always been built this way and have never had this bug. Three sheets, one
+  // pattern.
+  const routeOptions: FilterSheetOption[] = useMemo(() => {
+    return Array.from(routeCounts.keys())
+      .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
+      .map((route) => ({ value: route, label: route, count: routeCounts.get(route) ?? 0 }));
+  }, [routeCounts]);
 
   const q = query.trim().toLowerCase();
   const filteredWaitingAll: PickingQueueRow[] = useMemo(() => {
@@ -1307,7 +1344,47 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Lane strip counts the WORKING list only. An upcoming bill is not "ready
   // to load" — folding it in would overstate the floor's actual workload.
   const totalLitres = filteredWaitingDue.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
+  // Unchanged, and now provably consistent: the options ARE `routeCounts`'
+  // keys, so this sum is exactly the sum of the numbers on screen. Before the
+  // fix it was already the sum of the counts — but the list carried extra rows
+  // at 0, so "All routes 306" sat above rows that did not add up to it.
   const allRoutesCount = Array.from(routeCounts.values()).reduce((a, b) => a + b, 0);
+
+  // The sheet describes what it is actually showing. The old string,
+  // "counts reflect the current Type filter", stopped being the interesting
+  // fact the moment the LIST started reflecting it too.
+  const routeSheetSubtitle =
+    activeType === "Local"
+      ? "Single-select · only routes with a Local bill"
+      : activeType === "Upcountry"
+        ? "Single-select · only routes with an Upcountry bill"
+        : "Single-select · every route with a waiting bill";
+
+  // ⚠ CHANGING THE TYPE CAN ORPHAN THE SELECTED ROUTE. Vapi is Upcountry-only,
+  // so switching to Local leaves `activeRoute = "Vapi"` pointing at a route the
+  // sheet no longer offers: the board goes empty and the pill keeps showing a
+  // confident teal "Vapi" with nothing on screen explaining why. Reset to All
+  // routes when — and only when — the selection has no bill under the new type.
+  //
+  // ⚠ THIS LIVES IN THE PILL'S HANDLER, NOT AN EFFECT, and that is load-bearing.
+  // An effect keyed on `routeCounts` would also fire on the 15s marker refetch
+  // (§10), clearing a supervisor's filter the instant somebody else assigned the
+  // last bill on his route — a background refresh must never move the ground
+  // under a hand. Here it can only ever be the consequence of his own tap.
+  //
+  // ⚠ There was NO existing reset to lean on. `setActiveRoute` had exactly one
+  // caller (the sheet's own onChange) and nothing reset it on tab change either
+  // — CLAUDE_PICKING.md §3 claims the route filter "resets to 'All' on tab
+  // change"; the code has never done that. Doc drift, reported, not fixed here.
+  const handleTypeChange = useCallback(
+    (next: TypeFilter): void => {
+      setActiveType(next);
+      if (activeRoute === null) return;
+      const survives = waitingRows.some((r) => r.route === activeRoute && matchesType(r, next));
+      if (!survives) setActiveRoute(null);
+    },
+    [activeRoute, waitingRows],
+  );
 
   // FIX 3 — pickers who currently have bills out on the floor, client-derived
   // from the already-loaded rows (no new fetch). Counts reflect the current
@@ -2016,7 +2093,9 @@ export function PickingBoardMobile(): React.JSX.Element {
         ) : activeTab === "assign" ? (
           <>
             <div className="flex items-center justify-between gap-2 pb-2.5">
-              <TypeFilterPills value={activeType} onChange={setActiveType} />
+              {/* handleTypeChange, not setActiveType — it also drops an
+                  orphaned route selection. See its comment. */}
+              <TypeFilterPills value={activeType} onChange={handleTypeChange} />
               <button
                 type="button"
                 onClick={() => setRouteSheetOpen(true)}
@@ -2415,10 +2494,10 @@ export function PickingBoardMobile(): React.JSX.Element {
         open={routeSheetOpen}
         onClose={() => setRouteSheetOpen(false)}
         title="Filter by route"
-        subtitle="Single-select · counts reflect the current Type filter"
+        subtitle={routeSheetSubtitle}
         allLabel="All routes"
         allCount={allRoutesCount}
-        options={availableRoutes.map((route) => ({ value: route, label: route, count: routeCounts.get(route) ?? 0 }))}
+        options={routeOptions}
         value={activeRoute}
         onChange={setActiveRoute}
       />
@@ -2542,7 +2621,13 @@ export function PickingBoardMobile(): React.JSX.Element {
             without a class fight. The PICKER's detail header
             (picker-my-picks-board.tsx) is deliberately NOT touched. */}
         <div
-          className="bg-teal-600 px-3.5 pb-3.5 flex items-start gap-2.5 shrink-0"
+          // items-CENTER since 2026-08-21 (was items-start). The 44px bay
+          // circle at the right end has to sit level with the title block
+          // rather than hang off its top edge; centring is what makes the whole
+          // right-hand cluster read as one row. Nothing inside the title block
+          // moved — the dealer name and the OBD line still stack exactly as
+          // they did, and the flag row still hangs below them.
+          className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
           style={{
             paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
@@ -2564,8 +2649,12 @@ export function PickingBoardMobile(): React.JSX.Element {
               className={"text-[12px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/75")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
+              {/* ROUTE, not area (2026-08-21) — the same swap the card made, so
+                  a bill names the same lane on the card and one tap deeper.
+                  `?? "Unmatched"` is unchanged and still covers a bill whose
+                  dealer resolved to nothing. */}
               {detailRow
-                ? `${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
+                ? `${detailRow.obdNumber} · ${detailRow.route ?? "Unmatched"}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
                   }`
                 : "—"}
@@ -2702,6 +2791,13 @@ export function PickingBoardMobile(): React.JSX.Element {
           >
             <Search size={17} />
           </button>
+          {/* Loading bay — LAST in the cluster, so it is the outermost thing on
+              the row and the controls keep the positions they already had.
+              Rendered BARE, with no conditional wrapper: BayCircle returns null
+              on a bill with no bay, and a null render is no DOM node at all, so
+              the row's gap-2.5 is not spent on it. A HAND / No Route header is
+              byte-identical to the one it had before this shipped. */}
+          <BayCircle bayNumber={detailRow?.bayNumber ?? null} />
         </div>
 
         {/* Recording banner — OUTSIDE pager.contentRef, same as the picker

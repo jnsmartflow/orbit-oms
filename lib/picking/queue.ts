@@ -230,7 +230,11 @@ const DEALER_SELECT = {
   area: {
     select: {
       name: true,
-      primaryRoute: { select: { name: true } },
+      // `bayNumber` rides the SAME relation as `name` (2026-08-21) — one extra
+      // scalar on a select that was already being made, so no new query, no new
+      // join and no extra round trip. Reading it here is what guarantees the
+      // bay and the route name on screen describe the same route_master row.
+      primaryRoute: { select: { name: true, bayNumber: true } },
       deliveryType: { select: { name: true } },
     },
   },
@@ -675,6 +679,11 @@ export async function getPickingQueue(
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,
       deliveryType: effectiveDealer?.area?.deliveryType?.name ?? null,
       route: effectiveDealer?.area?.primaryRoute?.name ?? null,
+      // Same relation, same optional chain, one line apart — deliberately, so
+      // the two can never be read off different routes. `?? null` covers both
+      // "no route" and "route with no bay" (HAND, No Route); the UI treats them
+      // identically and renders nothing.
+      bayNumber: effectiveDealer?.area?.primaryRoute?.bayNumber ?? null,
       area: effectiveDealer?.area?.name ?? null,
       priorityLevel: order.priorityLevel,
       isKeyCustomer: effectiveDealer?.isKeyCustomer ?? false,
