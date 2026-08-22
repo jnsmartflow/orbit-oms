@@ -58,11 +58,17 @@ import {
 // — only its skin swaps, so "how stale" still reads the same on both.
 // Optional and defaulted false, so the picker board and every existing call
 // site render byte-identical DOM.
+// ⚠ THE PROP IS NARROWED TO WHAT THIS READS (2026-08-22), not the whole
+// PickingQueueRow. It only ever touched `ageDays` and `noDispatchDate`, and
+// MRN's supervisor board needs the SAME days→colour scale on a row shape that
+// is not a picking bill. Narrowing rather than copying is the point of the
+// rule in the header: a second implementation is what drifts. Every existing
+// call site passes a full PickingQueueRow and still satisfies this.
 export function AgeBadge({
   row,
   onRed = false,
 }: {
-  row: PickingQueueRow;
+  row: Pick<PickingQueueRow, "ageDays" | "noDispatchDate">;
   onRed?: boolean;
 }): React.JSX.Element | null {
   if (row.noDispatchDate) {

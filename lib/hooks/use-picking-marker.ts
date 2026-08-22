@@ -181,7 +181,13 @@ export function usePickingMarker({
   // re-baselines, precisely as before this was hoisted.
   const requestUrl = useMemo(() => {
     const markerBase = url ?? "/api/picking/marker";
-    return `${markerBase}?scope=${encodeURIComponent(scope)}${
+    // ⚠ The base may already CARRY a query (2026-08-22). MRN points this at
+    // `/api/mrn/marker?tab=…` because its route is per-tab and 400s without
+    // one; a hardcoded `?` would have produced `…?tab=x?scope=y` and the tab
+    // would arrive as the literal string "x?scope=y". Picking, Floor and
+    // Billing all pass a bare path, so this is byte-identical for them.
+    const sep = markerBase.includes("?") ? "&" : "?";
+    return `${markerBase}${sep}scope=${encodeURIComponent(scope)}${
       date ? `&date=${encodeURIComponent(date)}` : ""
     }${pickerId !== undefined ? `&pickerId=${pickerId}` : ""}`;
   }, [url, scope, date, pickerId]);

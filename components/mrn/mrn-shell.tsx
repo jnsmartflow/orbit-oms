@@ -3,10 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Inbox, Package, CheckCircle2 } from "lucide-react";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
-import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
-import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
-import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { BillingBoard } from "./billing-board";
+// Aliased: the payload TYPE `MrnSupervisorBoard` (lib/mrn/types) already owns
+// that name in this file. The screen is the thing being renamed, not the type.
+import { MrnSupervisorBoard as SupervisorBoardScreen } from "./supervisor-board";
+import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -62,6 +63,14 @@ interface MrnBoardContextValue {
    */
   detailOpen: boolean;
   setDetailOpen: (open: boolean) => void;
+  /**
+   * Reported UP by the board when a sheet floats over the LIST-less detail —
+   * the one mid-action state `detailOpen` does not already cover. Feeds the
+   * marker pause below. Same lift-to-shell the picking supervisor makes.
+   */
+  setOverlayBusy: (busy: boolean) => void;
+  /** The signed-in user, so a truck he holds reads "you" on the card. */
+  viewerId: number | null;
 }
 
 const MrnBoardContext = createContext<MrnBoardContextValue | null>(null);
@@ -100,6 +109,8 @@ export interface MrnPerms {
 
 interface MrnShellProps {
   perms: MrnPerms;
+  /** session.user.id, resolved server-side. */
+  viewerId: number | null;
   role: RoleSidebarRole;
   userName: string;
   userInitials: string;
@@ -110,6 +121,7 @@ interface MrnShellProps {
 
 export function MrnShell({
   perms,
+  viewerId,
   role,
   userName,
   userInitials,
@@ -118,6 +130,7 @@ export function MrnShell({
 }: MrnShellProps): React.JSX.Element {
   return showSupervisorFace ? (
     <MrnSupervisorShell
+      viewerId={viewerId}
       role={role}
       userName={userName}
       userInitials={userInitials}
@@ -154,16 +167,18 @@ interface FaceProps {
  * this shell is the consumer that makes it pay.
  */
 function MrnSupervisorShell({
+  viewerId,
   role,
   userName,
   userInitials,
   navItems,
-}: FaceProps): React.JSX.Element {
+}: FaceProps & { viewerId: number | null }): React.JSX.Element {
   const [data, setData] = useState<MrnSupervisorBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<MrnSupervisorTab>("toCheck");
   const [detailOpen, setDetailOpen] = useState(false);
+  const [overlayBusy, setOverlayBusy] = useState(false);
 
   // Sends NO `date` — the route 400s on `date` with face=supervisor rather than
   // ignoring it, because the three tabs span all dates (design §11 OQ-6).
@@ -210,6 +225,31 @@ function MrnSupervisorShell({
     }
   }, [fetchBoard]);
 
+  // ── Live sync ─────────────────────────────────────────────────────────────
+  //
+  // The SAME hook both picking faces and Floor use, pointed at MRN's own marker
+  // via the optional `url` param — the reuse Floor established, so this board
+  // watches ITS set rather than silently depending on what picking's scope
+  // means. `?tab=` is carried on the base URL because /api/mrn/marker is
+  // per-tab and 400s without one; the hook appends its own `&scope=`, which
+  // that route ignores.
+  //
+  // Re-baselines automatically when the tab changes, because `url` is in the
+  // hook's requestUrl memo — switching tabs therefore never fires a spurious
+  // onChange for a set the supervisor was not looking at.
+  //
+  // 🔴 PAUSED while the detail screen is open OR a sheet is up. A background
+  // refetch must never move the ground under a hand — he is reading truck facts
+  // against the paper in his other hand, or has the Start confirm open.
+  usePickingMarker({
+    scope: "openPending",
+    url: `/api/mrn/marker?tab=${activeTab}`,
+    onChange: () => {
+      void refetchBoard();
+    },
+    paused: detailOpen || overlayBusy,
+  });
+
   // Tabs: To check · Checking · Done, keys matching the labels and reusing
   // MrnSupervisorTab so the UI and the API can never disagree about a key.
   //
@@ -232,8 +272,18 @@ function MrnSupervisorShell({
   );
 
   const contextValue = useMemo<MrnBoardContextValue>(
-    () => ({ data, loading, error, activeTab, refetchBoard, detailOpen, setDetailOpen }),
-    [data, loading, error, activeTab, refetchBoard, detailOpen],
+    () => ({
+      data,
+      loading,
+      error,
+      activeTab,
+      refetchBoard,
+      detailOpen,
+      setDetailOpen,
+      setOverlayBusy,
+      viewerId,
+    }),
+    [data, loading, error, activeTab, refetchBoard, detailOpen, viewerId],
   );
 
   return (
@@ -254,81 +304,9 @@ function MrnSupervisorShell({
       hideBar={detailOpen}
     >
       <MrnBoardContext.Provider value={contextValue}>
-        <MrnSupervisorPlaceholder />
+        <SupervisorBoardScreen />
       </MrnBoardContext.Provider>
     </RoleLayoutClient>
-  );
-}
-
-/**
- * PLACEHOLDER — deliberately thin. Step 9 builds the real supervisor board.
- *
- * It exists to prove the whole circuit end to end: auth and the canView gate,
- * the role branch, the API payload, the three tabs, the counts, and that
- * useMrnBoard() reaches a descendant. No cards, no sheets, no detail screen —
- * those are step 9 and must not be started here.
- */
-function MrnSupervisorPlaceholder(): React.JSX.Element {
-  // Read from the shared provider rather than prop-drilled — the handlers stay
-  // with the CALLER, which is why ModuleMobileHeader never calls
-  // useMobileShell() itself (CLAUDE_UI.md §59.7).
-  const { openMenu, openYou, userInitials } = useMobileShell();
-  const { data, loading, error, activeTab } = useMrnBoard();
-
-  const rows = data ? data[activeTab] : [];
-
-  return (
-    // fixed inset-0 escapes RoleLayoutClient's non-scrolling ancestor chain, so
-    // the header pins and only the region below it scrolls — the frame
-    // ModuleMobileHeader documents itself as expecting.
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#f9fafb]">
-      <ModuleMobileHeader
-        title="MRN"
-        avatarInitials={userInitials}
-        onAvatarClick={openYou}
-        onMenuClick={openMenu}
-        // No search on the board — the same choice the picker face makes. The
-        // icon is omitted with no gap left behind.
-        showSearch={false}
-      />
-
-      {/* Only this scrolls. Bottom padding reserves room for the fixed
-          WorkflowTabBar — MOBILE_NAV_CLEARANCE is imported, never retyped as
-          76px: that literal was hand-copied three times before the constant
-          existed and produced a render-behind-the-nav bug each time. */}
-      <div
-        className="flex-1 overflow-y-auto px-3.5 pt-3"
-        style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
-      >
-        {loading ? (
-          <p className="text-[13px] text-gray-500">Loading…</p>
-        ) : error ? (
-          <p className="text-[13px] text-red-600">{error}</p>
-        ) : rows.length === 0 ? (
-          <p className="text-[13px] text-gray-500">Nothing in this tab.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {rows.map((row) => (
-              <li
-                key={row.id}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-700"
-              >
-                <span className="font-semibold tabular-nums">{row.mrnNumber}</span>
-                <span className="text-gray-400"> · </span>
-                <span>Sr {row.srNo}</span>
-                <span className="text-gray-400"> · </span>
-                <span>{row.receivedFrom}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <p className="mt-4 text-[12px] leading-relaxed text-gray-400">
-          Placeholder. Step 9 builds the real supervisor board — cards, the
-          detail screen, and line confirm.
-        </p>
-      </div>
-    </div>
   );
 }
 

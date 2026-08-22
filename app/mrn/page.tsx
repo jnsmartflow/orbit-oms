@@ -89,10 +89,19 @@ export default async function MrnPage() {
     canDelete: perms?.canDelete ?? false,
   };
 
+  // session.user.id is a string (lib/auth.ts). The supervisor card compares it
+  // against `unloadingStartById` so a truck he holds reads "you" rather than his
+  // own name back at him. Null rather than 0 on a garbage id — a 0 would match
+  // nothing, but it would also read as a real id to anything downstream.
+  const parsedViewerId = Number(session.user.id);
+  const viewerId =
+    Number.isInteger(parsedViewerId) && parsedViewerId > 0 ? parsedViewerId : null;
+
   return (
     <RoleSidebarProvider>
       <MrnShell
         perms={mrnPerms}
+        viewerId={viewerId}
         // `floor_supervisor` and `picker` are not in the RoleSidebarRole union;
         // app/picking/page.tsx casts here for the same reason. Widening the
         // union is a shared-component change and belongs in its own commit.
