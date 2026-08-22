@@ -53,15 +53,22 @@ import { BillBand } from "./bill-band";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
+//
+// ⚠ SHRANK 2026-08-22, in step with the route. `assignedCount`, `pickedCount`
+// and `totalKg` are gone from BOTH sides. They were derived from a broken
+// date window (see that route's header); the first had one reader — the
+// sheet's "N jobs" label, which now reads `pendingCount` — and the other two
+// had none at all.
+//
+// `pendingCount` is now how many OPEN bills the man is holding (order still at
+// pick_assigned), with no date fence, and `status` is derived from it
+// server-side. Do not recompute either here.
 interface Picker {
   id: number;
   name: string;
   avatarInitial: string;
   status: "available" | "picking";
-  assignedCount: number;
-  pickedCount: number;
   pendingCount: number;
-  totalKg: number;
 }
 
 interface AssignResponse {
@@ -992,8 +999,14 @@ export function PickingBoardMobile(): React.JSX.Element {
   }, []);
 
   const [pickers, setPickers] = useState<Picker[]>([]);
-  const [pickersLoading, setPickersLoading] = useState(true);
+  // Starts FALSE, not true (changed 2026-08-22 with the fetch trigger below).
+  // Nothing loads on mount any more, so an unopened sheet is not "loading".
+  const [pickersLoading, setPickersLoading] = useState(false);
   const [pickerSheetOpen, setPickerSheetOpen] = useState(false);
+  // Sheet default is FREE PICKERS ONLY; this reveals the busy ones too. Reset
+  // on every open (in the fetch effect) so the sheet always opens collapsed —
+  // a supervisor who expanded it once should not find it expanded next week.
+  const [showAllPickers, setShowAllPickers] = useState(false);
   // In-flight guard — disables the Assign button + every picker row so a
   // double-tap can't fire two overlapping POSTs.
   const [assigning, setAssigning] = useState(false);
@@ -1129,10 +1142,33 @@ export function PickingBoardMobile(): React.JSX.Element {
     depthRef.current += 1;
   }
 
-  // Picker roster for the assign sheet — same endpoint desktop uses, fetched
-  // once (the picker roster doesn't change within a session).
+  // Picker roster for the assign sheet.
+  //
+  // 🔴 REFETCHED ON EVERY SHEET OPEN (2026-08-22). This used to run once on
+  // mount with an empty dep array, and its comment justified that with "the
+  // picker roster doesn't change within a session" — TRUE of a list of NAMES,
+  // and false of the live pending count that rides along with it. The moment
+  // three bills were assigned, every number in the sheet was wrong until the
+  // page was reloaded, and a man who had just been given four bills still read
+  // "Free". The count is the whole basis of the free/busy split the sheet now
+  // renders, so a stale one does not just mislabel a card — it puts the man in
+  // the wrong half of the sheet.
+  //
+  // The sheet is open for a few seconds at a time and this is a two-query
+  // endpoint, so its open is the cheapest correct trigger. Deliberately NOT on
+  // the 15s live-sync marker: that marker keys on MAX(orders.updatedAt) and
+  // must stay cheap (CORE §3 + CLAUDE_PICKING.md §10 both forbid adding work
+  // to it). Deliberately not on an interval either — nobody is watching this
+  // sheet, they are acting on it.
+  //
+  // The early return means this fires ONLY on the false → true edge: the
+  // effect re-runs on both transitions, and the close is discarded here.
   useEffect(() => {
+    if (!pickerSheetOpen) return;
     let cancelled = false;
+    // Collapse back to free-only for this open, whatever the last one left.
+    setShowAllPickers(false);
+    setPickersLoading(true);
     async function loadPickers() {
       try {
         const res = await fetch("/api/warehouse/pickers");
@@ -1149,7 +1185,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pickerSheetOpen]);
 
   // Line items for the detail screen — fetched on demand per the task brief
   // ("do NOT bloat the main queue payload"). Re-fires only when the target
@@ -3377,14 +3413,25 @@ export function PickingBoardMobile(): React.JSX.Element {
         </div>
       )}
 
-      {/* Picker sheet — tap a row to fire the assign immediately (no separate
-          confirm step), per the approved mockup. Geometry (bottom offset,
-          max-height/scroll, z-index) reads from SHEET_GEOMETRY — the same
-          single source FilterBottomSheet above uses, so this sheet can't
-          drift out of sync with it again (see that constant's comment for
-          the bug this fixes: this sheet used to be pinned at `bottom: 0`
-          with no mobile-shell-nav reservation and no internal scroll,
-          rendering its last row under the fixed bottom nav). */}
+      {/* ── Assign-to-picker sheet — REBUILT 2026-08-22 ────────────────────
+          Tap a card to fire the assign immediately (no separate confirm step),
+          exactly as the row version did. POST /api/picking/assign, its
+          payload, and its two-write order (CLAUDE_PICKING.md §4) are all
+          untouched — only what the supervisor is looking at when he taps.
+
+          GEOMETRY. z-indexes and the bottom offset still read from
+          SHEET_GEOMETRY, the same single source FilterBottomSheet uses. Only
+          the HEIGHT is this sheet's own: it is a near-full-height sheet now
+          (a 12-man roster two-up does not fit in 70vh), so `maxHeight` is the
+          one field it does not take from the shared constant. Do NOT "fix"
+          that by raising SHEET_GEOMETRY.maxHeight — that would drag the route
+          and picker FILTER sheets up with it.
+          ⚠ The bottom offset is NOT optional and is not decoration: this
+          sheet used to be pinned at `bottom: 0` with no mobile-shell-nav
+          reservation and no internal scroll, and rendered its last row under
+          the fixed bottom nav (CLAUDE_PICKING.md §7's MOBILE_NAV_CLEARANCE
+          note). The pinned header + scrolling grid below makes that failure
+          mode MORE likely, not less — the grid is the part that runs long. */}
       {pickerSheetOpen && (
         <>
           <div
@@ -3395,44 +3442,180 @@ export function PickingBoardMobile(): React.JSX.Element {
             aria-hidden="true"
           />
           <div
-            className={`fixed left-0 right-0 ${SHEET_GEOMETRY.panelZ} bg-white rounded-t-[18px] p-5 ${SHEET_GEOMETRY.maxHeight} overflow-y-auto`}
-            style={{ bottom: SHEET_GEOMETRY.bottomOffset }}
+            className={`fixed left-0 right-0 ${SHEET_GEOMETRY.panelZ} bg-white rounded-t-[18px] flex flex-col`}
+            style={{
+              bottom: SHEET_GEOMETRY.bottomOffset,
+              height: "90vh",
+              // 90vh would overflow the top of the screen once the nav
+              // clearance is subtracted from the bottom; this clamps it to
+              // whatever is actually left, with 16px of air above.
+              maxHeight: `calc(100vh - ${SHEET_GEOMETRY.bottomOffset} - 16px)`,
+            }}
           >
-            <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
-            <h3 className="text-[16px] font-extrabold text-gray-900">Assign to picker</h3>
-            <p className="text-[12.5px] text-gray-400 mt-[3px] mb-3.5">{pickerSheetSubtitle}</p>
-            {pickersLoading ? (
-              <p className="text-[13px] text-gray-400 text-center py-6">Loading pickers&hellip;</p>
-            ) : pickers.length === 0 ? (
-              <p className="text-[13px] text-gray-400 text-center py-6">No active pickers found.</p>
-            ) : (
-              pickers.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => void handleAssign(p.id, p.name)}
-                  disabled={assigning}
-                  className="w-full flex items-center gap-[11px] py-[11px] px-1 border-b border-gray-100 last:border-b-0 disabled:opacity-50"
-                >
-                  <span className="w-9 h-9 rounded-full bg-teal-600 text-white text-[13px] font-bold flex items-center justify-center shrink-0">
-                    {p.avatarInitial}
-                  </span>
-                  <span className="flex-1 min-w-0 text-[14px] font-semibold text-gray-900 text-left truncate">
-                    {p.name}
-                  </span>
-                  <span
-                    className={
-                      "text-[10.5px] font-semibold px-2.5 py-[3px] rounded-full shrink-0 " +
-                      (p.status === "available"
-                        ? "bg-green-50 text-green-700 border border-green-200"
-                        : "bg-gray-100 text-gray-600 border border-gray-200")
-                    }
-                  >
-                    {p.status === "available" ? "Free" : `${p.assignedCount} jobs`}
-                  </span>
-                </button>
-              ))
-            )}
+            {/* PINNED header — outside the scroll container, so "Assign to
+                picker · N bills selected" stays legible while the grid moves
+                under it. Copy is unchanged. */}
+            <div className="shrink-0 px-5 pt-3.5 pb-3">
+              <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
+              <h3 className="text-[16px] font-extrabold text-gray-900">Assign to picker</h3>
+              <p className="text-[12.5px] text-gray-400 mt-[3px]">{pickerSheetSubtitle}</p>
+            </div>
+
+            {/* SCROLLING grid. The safe-area floor is the /po convention
+                (CLAUDE_UI.md §55) rather than a bare 16px — the sheet's own
+                bottom already clears the nav, so on a device with no inset
+                this simply resolves to the 16px it would have had. */}
+            <div
+              className="flex-1 min-h-0 overflow-y-auto px-5"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+            >
+              {pickersLoading && pickers.length === 0 ? (
+                <p className="text-[13px] text-gray-400 text-center py-6">Loading pickers&hellip;</p>
+              ) : pickers.length === 0 ? (
+                <p className="text-[13px] text-gray-400 text-center py-6">No active pickers found.</p>
+              ) : (
+                <>
+                  {/* ⚠ WHILE A REFETCH IS IN FLIGHT WITH STALE DATA ON SCREEN,
+                      the free/busy SPLIT is suspended and every picker is
+                      shown, with the counts replaced by a quiet placeholder.
+                      Rendering the old split would be worse than rendering
+                      nothing: the count is what decides which half of the
+                      sheet a man appears in, so a stale one does not merely
+                      print an old number — it hides a picker who has since
+                      become busy, or offers one who has. Showing everyone,
+                      unlabelled, for the ~200ms of the fetch is honest about
+                      what is not yet known. */}
+                  {(() => {
+                    const refreshing = pickersLoading;
+                    const freePickers = pickers.filter((p) => p.status === "available");
+                    const busyPickers = pickers.filter((p) => p.status === "picking");
+                    // ZERO FREE — everyone is out. Show the busy list
+                    // immediately with a quiet line; the sheet must never open
+                    // empty, and a "Show all" row would be the only thing on
+                    // screen. Also no row when there is nothing to reveal
+                    // (busy === 0), which with a 12-man roster is the ordinary
+                    // state, not an edge case.
+                    const noneFree = !refreshing && freePickers.length === 0;
+                    const visible = refreshing
+                      ? pickers
+                      : noneFree
+                        ? busyPickers
+                        : showAllPickers
+                          ? [...freePickers, ...busyPickers]
+                          : freePickers;
+                    const showRow =
+                      !refreshing && !noneFree && !showAllPickers && busyPickers.length > 0;
+                    return (
+                      <>
+                        {noneFree && (
+                          <p className="text-[12.5px] text-gray-400 pb-2.5">
+                            Everyone is picking right now.
+                          </p>
+                        )}
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {visible.map((p) => {
+                            const free = p.status === "available";
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => void handleAssign(p.id, p.name)}
+                                disabled={assigning}
+                                className={
+                                  "flex items-center gap-2.5 rounded-[14px] border p-[11px] min-w-0 text-left active:opacity-70 disabled:opacity-50 " +
+                                  (free || refreshing
+                                    ? "border-gray-200 bg-white"
+                                    : "border-gray-200 bg-gray-50")
+                                }
+                              >
+                                <span
+                                  className={
+                                    "w-8 h-8 rounded-full text-white text-[12px] font-bold flex items-center justify-center shrink-0 " +
+                                    (free || refreshing ? "bg-teal-600" : "bg-gray-400")
+                                  }
+                                >
+                                  {p.avatarInitial}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-[12.5px] font-semibold text-gray-900 truncate">
+                                    {p.name}
+                                  </span>
+                                  {/* ⚠ THE DOT IS NEVER THE ONLY SIGNAL — the
+                                      word "Free" or the count sits beside it.
+                                      A dot alone fails for anyone who cannot
+                                      separate the two hues, and this is a
+                                      warehouse floor, not a design review.
+
+                                      🔴 THE TWO HEXES COME FROM
+                                      components/floor/status-pill.tsx:30,32 —
+                                      Floor's own "With picker" violet #6d28d9
+                                      and "Done" green #15803d, whose own file
+                                      header says the colour lives there and
+                                      nowhere else on the floor. Same meaning,
+                                      same values, no new colours.
+                                      Do NOT harmonise these with either
+                                      near-miss in that folder: picker-card.tsx
+                                      's NEEDS_CHECK_TAG is a Tailwind purple
+                                      meaning "needs check" (a retired status),
+                                      and progress-bar.tsx's #a78bfa/#22c55e
+                                      are stated in its own comment to be
+                                      deliberately distinct segment tones. */}
+                                  <span className="mt-[3px] flex items-center gap-1.5 text-[10.5px] font-semibold whitespace-nowrap">
+                                    <span
+                                      className="w-[7px] h-[7px] rounded-full shrink-0"
+                                      style={{
+                                        background: refreshing
+                                          ? "#d1d5db"
+                                          : free
+                                            ? "#15803d"
+                                            : "#6d28d9",
+                                      }}
+                                      aria-hidden="true"
+                                    />
+                                    <span
+                                      style={{
+                                        color: refreshing
+                                          ? "#9ca3af"
+                                          : free
+                                            ? "#15803d"
+                                            : "#6d28d9",
+                                      }}
+                                    >
+                                      {refreshing
+                                        ? "…"
+                                        : free
+                                          ? "Free"
+                                          : `${p.pendingCount} picking`}
+                                    </span>
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {/* GREY, not teal — this reveals a list, it does not
+                            act on a bill, and teal on this screen belongs to
+                            the Assign CTA (CLAUDE_UI.md §1's one-teal rule).
+                            Rendered ONLY when it has something to reveal:
+                            never "Show all · 0", never a disabled row. */}
+                        {showRow && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllPickers(true)}
+                            className="mt-3 w-full rounded-[12px] border border-gray-200 bg-gray-50 px-3 py-3 text-[13px] font-semibold text-gray-600 active:bg-gray-100"
+                          >
+                            Show all pickers
+                            <span className="font-medium text-gray-400">
+                              {" "}&middot; {busyPickers.length} picking
+                            </span>
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
           </div>
         </>
       )}
