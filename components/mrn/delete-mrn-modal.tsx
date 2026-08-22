@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { MrnDetail } from "@/lib/mrn/types";
-import { ModalButton, ModalError, ModalShell } from "./modal-shell";
+import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
 
 // P5 — delete an MRN.
 //
@@ -49,7 +49,7 @@ export function DeleteMrnModal({
         // Verbatim — a 409 here reads "The supervisor is checking this truck —
         // it can no longer be removed", which tells billing exactly what
         // changed while the modal was open.
-        setError(json.error ?? `Could not delete this MRN (${res.status}).`);
+        setError(describeWriteError(res.status, json.error, "delete an MRN"));
         return;
       }
       onDeleted();

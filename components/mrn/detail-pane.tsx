@@ -7,16 +7,27 @@ import { CheckingPill } from "./rail-card";
 import { HeaderCard } from "./header-card";
 import { LinesTable } from "./lines-table";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
+import type { MrnPerms } from "./mrn-shell";
 
 // The right-hand working pane: identity, an action row, and two tabs.
 //
-// ⚠️ EVERY ACTION BUTTON HERE IS INERT IN 8a. They render because the action
-// row is part of the screen's shape and tells the operator what this MRN
-// affords, but every one of them is a WRITE and step 8b owns them. They wear
-// the DISABLED treatment (UI §10: grey — `bg-gray-100 border-gray-200
-// text-gray-400` — never faded teal, because a faded primary reads as broken
-// rather than as waiting). Which button becomes teal in 8b is a real decision:
-// this surface's one teal element (UI §1) is currently the selected rail card.
+// ⚠️ HIDDEN vs DISABLED — THE DISTINCTION IS THE WHOLE POINT (UI §10).
+//
+//   HIDDEN  = "not yours". A control the ROLE may never use is not rendered at
+//             all. `operations` holds canEdit true but canDelete FALSE, and
+//             before this it saw a Delete button, clicked it, and got a raw
+//             "Forbidden" back. The route was right to refuse; offering the
+//             button was the bug.
+//   DISABLED = "not yet". A control that exists for this role but cannot act in
+//             this state or this build step — Download XLS on a done MRN, which
+//             waits on step 10's export route.
+//
+// Getting these the wrong way round teaches the operator to distrust the
+// screen: a greyed control they can never earn reads as broken software.
+//
+// ⚠️ THE CLIENT IS NEVER THE AUTHORITY. Every route re-checks the same
+// permission server-side; this only stops the screen offering what the server
+// would refuse. Defence in depth — if the two disagree, the ROUTE is right.
 
 interface DetailPaneProps {
   detail: MrnDetail | null;
@@ -27,7 +38,7 @@ interface DetailPaneProps {
   onPasteLines: () => void;
   onEditHeader: () => void;
   onDelete: () => void;
-  onLinesDirtyChange: (dirty: boolean) => void;
+  perms: MrnPerms;
   onLinesSaved: () => void;
 }
 
@@ -39,7 +50,7 @@ export function DetailPane({
   onPasteLines,
   onEditHeader,
   onDelete,
-  onLinesDirtyChange,
+  perms,
   onLinesSaved,
 }: DetailPaneProps): React.JSX.Element {
   const [tab, setTab] = useState<"lines" | "activity">("lines");
@@ -112,19 +123,34 @@ export function DetailPane({
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {detail.status === "open" ? (
               <>
-                <PaneButton icon={<Trash2 size={13} />} label="Delete" onClick={onDelete} />
-                <PaneButton
-                  icon={<Clipboard size={13} />}
-                  label="Paste lines"
-                  tone="primary"
-                  onClick={onPasteLines}
-                />
+                {/* HIDDEN without canDelete — `operations` never sees it. */}
+                {perms.canDelete && (
+                  <PaneButton icon={<Trash2 size={13} />} label="Delete" onClick={onDelete} />
+                )}
+                {/* HIDDEN without canEdit. Teal because on an open MRN this is
+                    the job — and it stays teal even when Delete is hidden, so
+                    the state still has exactly one. */}
+                {perms.canEdit && (
+                  <PaneButton
+                    icon={<Clipboard size={13} />}
+                    label="Paste lines"
+                    tone="primary"
+                    onClick={onPasteLines}
+                  />
+                )}
               </>
             ) : (
-              <>
-                <DeadButton icon={<Printer size={13} />} label="Print / PDF" />
-                <DeadButton icon={<Download size={13} />} label="Download XLS" />
-              </>
+              // HIDDEN without canExport — `operations` and `floor_supervisor`
+              // both hold it false: they can open and record, but the report
+              // stays billing's (design §11 OQ-11). DISABLED rather than hidden
+              // for those who DO have it, because the export route itself
+              // arrives in step 10.
+              perms.canExport && (
+                <>
+                  <DeadButton icon={<Printer size={13} />} label="Print / PDF" />
+                  <DeadButton icon={<Download size={13} />} label="Download XLS" />
+                </>
+              )
             )}
           </div>
         </div>
@@ -142,14 +168,14 @@ export function DetailPane({
       <div className="min-h-0 flex-1 overflow-auto px-[18px] py-4">
         {tab === "lines" ? (
           <>
-            <HeaderCard detail={detail} onEdit={onEditHeader} />
+            <HeaderCard detail={detail} onEdit={onEditHeader} canEdit={perms.canEdit} />
             {/* Keyed on the MRN id so switching trucks REMOUNTS the table and
                 its draft, rather than leaving one MRN's unsaved carton qty
                 sitting on another's rows. */}
             <LinesTable
               key={detail.id}
               detail={detail}
-              onDirtyChange={onLinesDirtyChange}
+              canEdit={perms.canEdit}
               onSaved={onLinesSaved}
             />
           </>

@@ -11,8 +11,8 @@ import { NewMrnModal } from "./new-mrn-modal";
 import { PasteLinesModal } from "./paste-lines-modal";
 import { EditHeaderModal } from "./edit-header-modal";
 import { DeleteMrnModal } from "./delete-mrn-modal";
-import { ModalButton, ModalShell } from "./modal-shell";
 import { toDateParam } from "./format";
+import type { MrnPerms } from "./mrn-shell";
 
 // Billing's desk board — composition root for /mrn's non-supervisor face.
 //
@@ -64,7 +64,7 @@ function istTodayLocal(): Date {
   return new Date(y, m - 1, d);
 }
 
-export function BillingBoard(): React.JSX.Element {
+export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element {
   const [date, setDate] = useState<Date>(istTodayLocal);
   const [search, setSearch] = useState("");
 
@@ -79,12 +79,6 @@ export function BillingBoard(): React.JSX.Element {
 
   // Which modal is up, if any. One at a time — none of them compose.
   const [modal, setModal] = useState<"new" | "paste" | "header" | "delete" | null>(null);
-
-  // Reported up by the open table's line draft, so a truck's unsaved carton qty
-  // cannot be discarded by a stray click on another card.
-  const [linesDirty, setLinesDirty] = useState(false);
-  /** The MRN the operator tried to switch to while a draft was dirty. */
-  const [pendingSelect, setPendingSelect] = useState<number | null>(null);
 
   // Bumped after every successful write to force a re-read. A COUNTER rather
   // than calling a fetch function directly: the two effects below already own
@@ -159,44 +153,17 @@ export function BillingBoard(): React.JSX.Element {
 
   // Changing the date clears the selection: the pane must never keep showing
   // yesterday's truck beside today's rail.
-  const handleDateChange = useCallback(
-    (next: Date) => {
-      if (linesDirty) {
-        // Same guard as switching trucks — an unsaved carton qty is just as
-        // easy to lose by stepping the date.
-        setPendingSelect(-1); // sentinel: "discard, then apply the date change"
-        setDate(next);
-        return;
-      }
-      setDate(next);
-      setSelectedId(null);
-    },
-    [linesDirty],
-  );
-
-  // ⚠ THE DIRTY GUARD. A line draft lives only in the browser until Save lines
-  // is pressed, so selecting another truck would silently discard it. Ask
-  // first. The confirm is a real modal rather than window.confirm() so it looks
-  // like the rest of the board (UI §13).
-  const handleSelect = useCallback(
-    (id: number) => {
-      if (id === selectedId) return;
-      if (linesDirty) {
-        setPendingSelect(id);
-        return;
-      }
-      setSelectedId(id);
-    },
-    [linesDirty, selectedId],
-  );
-
-  const discardAndSwitch = useCallback(() => {
-    // The table clears its own flag on unmount; clearing here too keeps the
-    // guard from firing a second time on the way out.
-    setLinesDirty(false);
-    setSelectedId(pendingSelect === -1 ? null : pendingSelect);
-    setPendingSelect(null);
-  }, [pendingSelect]);
+  //
+  // ⚠ THE DIRTY GUARD THAT USED TO LIVE HERE IS GONE (2026-08-22), and its
+  // absence is the point. The line table no longer holds a draft — carton qty
+  // is derived at paste rather than typed, and a row delete now writes
+  // immediately behind its own confirm — so there is no unsaved work left for a
+  // card click or a date step to discard. Do not reinstate a guard for state
+  // that no longer exists.
+  const handleDateChange = useCallback((next: Date) => {
+    setDate(next);
+    setSelectedId(null);
+  }, []);
 
   const rows = board?.rows ?? [];
 
@@ -254,6 +221,7 @@ export function BillingBoard(): React.JSX.Element {
            single teal element; the moment an MRN is selected the pane's action
            row takes teal and this demotes to secondary. */
         leftExtra={
+          perms.canEdit ? (
           <button
             type="button"
             onClick={() => setModal("new")}
@@ -267,6 +235,7 @@ export function BillingBoard(): React.JSX.Element {
             <Plus size={14} strokeWidth={2.4} />
             New MRN
           </button>
+          ) : undefined
         }
       />
 
@@ -281,7 +250,7 @@ export function BillingBoard(): React.JSX.Element {
           dateLabel={dateLabel}
           rows={filteredRows}
           selectedId={selectedId}
-          onSelect={handleSelect}
+          onSelect={setSelectedId}
           loading={boardLoading}
           error={boardError}
           filtered={search.trim() !== ""}
@@ -294,7 +263,7 @@ export function BillingBoard(): React.JSX.Element {
           onPasteLines={() => setModal("paste")}
           onEditHeader={() => setModal("header")}
           onDelete={() => setModal("delete")}
-          onLinesDirtyChange={setLinesDirty}
+          perms={perms}
           onLinesSaved={reload}
         />
       </div>
@@ -351,25 +320,6 @@ export function BillingBoard(): React.JSX.Element {
         />
       )}
 
-      {pendingSelect !== null && (
-        <ModalShell
-          title="Discard unsaved line changes?"
-          subtitle="The carton quantities and removed rows on this MRN have not been saved."
-          onClose={() => setPendingSelect(null)}
-          footer={
-            <>
-              <ModalButton onClick={() => setPendingSelect(null)}>Keep editing</ModalButton>
-              <ModalButton tone="danger" onClick={discardAndSwitch}>
-                Discard changes
-              </ModalButton>
-            </>
-          }
-        >
-          <p className="text-[12.5px] leading-[1.55] text-[#475467]">
-            Save lines first if you want to keep them.
-          </p>
-        </ModalShell>
-      )}
     </div>
   );
 }

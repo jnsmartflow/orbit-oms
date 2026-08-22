@@ -7,8 +7,10 @@ import {
   ModalButton,
   ModalError,
   ModalShell,
+  ReadOnlyField,
   ReceivedFromToggle,
   TextField,
+  describeWriteError,
 } from "./modal-shell";
 import { isMrnReceivedFrom } from "@/lib/mrn/types";
 
@@ -81,7 +83,7 @@ export function EditHeaderModal({
         const json = (await res.json().catch(() => ({}))) as { error?: string };
         // Verbatim. A 409 here means the supervisor started while this modal was
         // open — "The supervisor is checking this truck — the header is locked."
-        setError(json.error ?? `Could not save the header (${res.status}).`);
+        setError(describeWriteError(res.status, json.error, "edit this MRN"));
         return;
       }
       onSaved();
@@ -137,13 +139,11 @@ export function EditHeaderModal({
         </div>
         <div>
           <FieldLabel>OTR no</FieldLabel>
-          <TextField value={otrNo} onChange={setOtrNo} mono placeholder="—" />
+          <TextField value={otrNo} onChange={setOtrNo} mono placeholder="e.g. OTR-4471" />
         </div>
         <div>
           <FieldLabel>Receiving warehouse</FieldLabel>
-          <div className="mt-1 flex h-[34px] items-center rounded-lg border border-gray-200 bg-gray-50 px-2.5 text-[13px] text-[#98a2b3]">
-            {detail.receivingWarehouse}
-          </div>
+          <ReadOnlyField value={detail.receivingWarehouse} />
         </div>
       </div>
     </ModalShell>

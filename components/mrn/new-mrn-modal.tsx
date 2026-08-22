@@ -6,8 +6,10 @@ import {
   ModalButton,
   ModalError,
   ModalShell,
+  ReadOnlyField,
   ReceivedFromToggle,
   TextField,
+  describeWriteError,
 } from "./modal-shell";
 import { getTodayIST } from "@/lib/dates";
 
@@ -62,7 +64,7 @@ export function NewMrnModal({ onClose, onCreated }: NewMrnModalProps): React.JSX
       if (!res.ok) {
         // The route's own sentence, verbatim — including the 409 that means two
         // people created at the same moment and this one lost. See ModalError.
-        setError(json.error ?? `Could not create the MRN (${res.status}).`);
+        setError(describeWriteError(res.status, json.error, "create an MRN"));
         return;
       }
       if (typeof json.id !== "number") {
@@ -109,24 +111,25 @@ export function NewMrnModal({ onClose, onCreated }: NewMrnModalProps): React.JSX
         </div>
         <div>
           <FieldLabel>STI / PO ref no.</FieldLabel>
-          <TextField value={stiRefNo} onChange={setStiRefNo} mono placeholder="I106571012" />
+          <TextField value={stiRefNo} onChange={setStiRefNo} mono placeholder="e.g. I106571012" />
         </div>
         <div>
           <FieldLabel>Delivery no</FieldLabel>
-          <TextField value={deliveryNo} onChange={setDeliveryNo} mono placeholder="9108851173" />
+          <TextField value={deliveryNo} onChange={setDeliveryNo} mono placeholder="e.g. 9108851173" />
         </div>
         <div>
           <FieldLabel>
             OTR no <span className="font-medium normal-case text-[#c2c8d0]">optional</span>
           </FieldLabel>
-          <TextField value={otrNo} onChange={setOtrNo} mono placeholder="—" />
+          <TextField value={otrNo} onChange={setOtrNo} mono placeholder="e.g. OTR-4471" />
         </div>
         <div>
           <FieldLabel>Receiving warehouse</FieldLabel>
-          {/* Read-only: the create route hardcodes "Surat". */}
-          <div className="mt-1 flex h-[34px] items-center rounded-lg border border-gray-200 bg-gray-50 px-2.5 text-[13px] text-[#98a2b3]">
-            Surat
-          </div>
+          {/* Read-only: the create route hardcodes "Surat". The disabled
+              treatment is load-bearing — beside a grey placeholder, a
+              near-white box read as an empty field a tester thought he had
+              filled. */}
+          <ReadOnlyField value="Surat" />
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { parsePastedLines, type MrnPasteResult } from "@/lib/mrn/paste";
 import type { MrnDetail } from "@/lib/mrn/types";
-import { ModalButton, ModalError, ModalShell } from "./modal-shell";
+import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
 
 // P2 + P3 — the paste flow, two steps in one modal.
 //
@@ -113,7 +113,7 @@ export function PasteLinesModal({
         // their old lines survived. It is rendered verbatim, and the modal
         // stays OPEN on the input step with the block intact so they can simply
         // press the button again.
-        setError(json.error ?? `Could not save the lines (${res.status}).`);
+        setError(describeWriteError(res.status, json.error, "paste lines"));
         if (json.errors) setRowErrors(json.errors);
         if (json.linesCleared || json.errors) setStep("input");
         return;

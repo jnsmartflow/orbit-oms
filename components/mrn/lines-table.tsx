@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Smartphone, X } from "lucide-react";
 import type { MrnBatchRow, MrnDetail, MrnDetailLine } from "@/lib/mrn/types";
 import { formatCount, formatMonthYear } from "./format";
+import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
 
 // The line-items table.
 //
@@ -75,20 +76,20 @@ const SUPERVISOR_COLUMN_COUNT = 11;
 
 interface LinesTableProps {
   detail: MrnDetail;
-  /** Reported up so the board can warn before a dirty draft is discarded. */
-  onDirtyChange?: (dirty: boolean) => void;
+  /** HIDDEN without it — see detail-pane.tsx on hidden vs disabled. */
+  canEdit: boolean;
   /** After a successful save — the board refetches. */
   onSaved?: () => void;
 }
 
 export function LinesTable({
   detail,
-  onDirtyChange,
+  canEdit,
   onSaved,
 }: LinesTableProps): React.JSX.Element {
   if (detail.status === "checking") return <CheckingTable detail={detail} />;
   if (detail.status === "done") return <DoneTable detail={detail} />;
-  return <OpenTable detail={detail} onDirtyChange={onDirtyChange} onSaved={onSaved} />;
+  return <OpenTable detail={detail} canEdit={canEdit} onSaved={onSaved} />;
 }
 
 // ── open ────────────────────────────────────────────────────────────────────
@@ -103,81 +104,45 @@ export function LinesTable({
  */
 function OpenTable({
   detail,
-  onDirtyChange,
+  canEdit,
   onSaved,
 }: {
   detail: MrnDetail;
-  onDirtyChange?: (dirty: boolean) => void;
+  canEdit: boolean;
   onSaved?: () => void;
 }): React.JSX.Element {
-  // ── The local draft ───────────────────────────────────────────────────────
+  // ── NO DRAFT, NO DIRTY STATE, NO "Save lines" (2026-08-22) ────────────────
   //
-  // Carton-qty edits and row deletes change LOCAL state and mark the table
-  // dirty; an explicit "Save lines" writes the whole set. It is deliberately
-  // NOT a write per keystroke, for a reason specific to this route: the lines
-  // endpoint REPLACES everything (deleteMany then createMany), so every save is
-  // a moment where the MRN briefly has zero lines. Doing that on each character
-  // typed into a carton-qty box would be absurd — and would also fire the
-  // linesCleared failure mode mid-typing, which no operator could act on.
+  // All three are gone, and their absence is the design. Carton qty is now
+  // DERIVED from the catalog at paste (see the lines route), so billing types
+  // nothing into this table — which left row delete as the only action, and a
+  // draft-plus-save built for a whole table of edits was heavier than one
+  // button needs. A delete now confirms and writes immediately.
   //
-  // Paste is the exception and writes immediately from its own modal: its
-  // confirm button IS the save, and the board re-reads afterwards.
-  //
-  // Seeded from `detail.lines`. Reset happens by REMOUNT — detail-pane keys
-  // this component on detail.id — rather than through an effect that would race
-  // the fetch and could silently discard an in-progress edit.
-  const [draft, setDraft] = useState<MrnDetailLine[]>(detail.lines);
+  // The payoff is that there is no unsaved work anywhere on this board: no
+  // discard-changes guard on a card click, no guard on a date step, and no way
+  // to lose typed input because there is none left to lose. Do not reintroduce
+  // a draft for a single action.
+  const [confirming, setConfirming] = useState<MrnDetailLine | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dirty = useMemo(() => {
-    if (draft.length !== detail.lines.length) return true;
-    return draft.some((d, i) => {
-      const o = detail.lines[i];
-      return o === undefined || o.id !== d.id || o.cartonQty !== d.cartonQty;
-    });
-  }, [draft, detail.lines]);
+  const unmatched = detail.lines.filter((l) => !l.isCatalogued).length;
 
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-    // Clear the flag when this table unmounts, or the board keeps warning about
-    // a draft that no longer exists.
-    return () => onDirtyChange?.(false);
-  }, [dirty, onDirtyChange]);
-
-  const unmatched = draft.filter((l) => !l.isCatalogued).length;
-  const draftQtySti = draft.reduce((s, l) => s + l.qtySti, 0);
-
-  function setCarton(id: number, raw: string) {
-    const trimmed = raw.trim();
-    // Blank clears it back to NULL — a carton qty the STI does not state is
-    // genuinely absent, not zero.
-    const next = trimmed === "" ? null : Number(trimmed);
-    if (next !== null && (!Number.isInteger(next) || next < 0)) return;
-    setDraft((rows) => rows.map((r) => (r.id === id ? { ...r, cartonQty: next } : r)));
-  }
-
-  function removeRow(id: number) {
-    setDraft((rows) => rows.filter((r) => r.id !== id));
-  }
-
-  async function save() {
+  async function removeLine(line: MrnDetailLine) {
     setBusy(true);
     setError(null);
     try {
+      // The SAME replace-everything route the paste uses — it sends the lines
+      // that REMAIN. There is no per-line delete endpoint and none is needed:
+      // this route already owns "these are the MRN's lines now".
       const res = await fetch(`/api/mrn/${detail.id}/lines`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        // The STRUCTURED shape, not a re-serialised block — a block has no
-        // carton-qty column and would wipe every value typed above. The route's
-        // own header explains why it takes two shapes.
         body: JSON.stringify({
-          lines: draft.map((l) => ({
-            lineNo: l.lineNo,
-            skuCode: l.skuCode,
-            qtySti: l.qtySti,
-            cartonQty: l.cartonQty,
-          })),
+          lines: detail.lines
+            .filter((l) => l.id !== line.id)
+            .map((l) => ({ lineNo: l.lineNo, skuCode: l.skuCode, qtySti: l.qtySti })),
         }),
       });
       if (!res.ok) {
@@ -185,18 +150,19 @@ function OpenTable({
           error?: string;
           linesCleared?: boolean;
         };
-        // Verbatim, including linesCleared's "this MRN now has no lines" — see
-        // components/mrn/modal-shell.tsx's ModalError for why that one in
-        // particular must never be generalised.
-        setError(json.error ?? `Could not save the lines (${res.status}).`);
-        // A 409 means the supervisor started while this draft was open. Refetch
-        // so the pane stops offering an edit the server has already refused.
+        // The route's own sentence passes through — including linesCleared's
+        // "this MRN now has no lines", and the 400 that refuses to save an MRN
+        // down to zero lines. Only a bare 401/403 is translated.
+        setError(describeWriteError(res.status, json.error, "change these lines"));
+        // A 409 means the supervisor started while this pane was open; a
+        // linesCleared means the table on screen is now wrong either way.
         if (res.status === 409 || json.linesCleared) onSaved?.();
         return;
       }
+      setConfirming(null);
       onSaved?.();
     } catch {
-      setError("Could not reach the server. Nothing was saved — try again.");
+      setError("Could not reach the server. Nothing was changed — try again.");
     } finally {
       setBusy(false);
     }
@@ -230,36 +196,17 @@ function OpenTable({
       <TableShell
         title={
           <>
-            {draft.length} lines · {formatCount(draftQtySti)} nos as per STI
+            {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
             {unmatched > 0 && ` · ${unmatched} SKU${unmatched === 1 ? "" : "s"} not in catalog`}
-            {dirty && <span className="ml-2 text-[#b45309]">unsaved changes</span>}
           </>
         }
-        right={
-          // Appears ONLY when dirty. A permanently visible Save would invite a
-          // pointless full replace of every line on a table nobody touched.
-          dirty ? (
-            <button
-              type="button"
-              onClick={save}
-              disabled={busy}
-              className={
-                "inline-flex h-7 items-center rounded-md border px-3 text-[11.5px] font-semibold " +
-                (busy
-                  ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
-                  : "border-gray-900 bg-gray-900 text-white hover:bg-gray-800")
-              }
-            >
-              {busy ? "Saving…" : "Save lines"}
-            </button>
-          ) : undefined
-        }
-        /* The one extra column billing gets on an open MRN — row delete. It is
-           an ACTION, not data, so it lives outside COLUMNS and is appended by
-           the frame rather than folded into the shared 17. */
-        extraColumn
+        /* The row-delete column. HIDDEN entirely without canEdit — an action the
+           role can never perform is not rendered (see detail-pane.tsx on hidden
+           vs disabled). It is an ACTION, not data, so it lives outside COLUMNS
+           and cannot shift the shared column widths. */
+        extraColumn={canEdit}
       >
-        {draft.map((line) => (
+        {detail.lines.map((line) => (
           <tr key={line.id} className={line.isCatalogued ? "" : "bg-amber-50/60"}>
             <Td muted center>{line.lineNo}</Td>
             <Td mono strong>{line.skuCode}</Td>
@@ -268,38 +215,67 @@ function OpenTable({
             </Td>
             <Td center>{line.pack ?? "—"}</Td>
             <Td center strong>{line.qtySti}</Td>
-            {/* BILLING'S ONE EDITABLE COLUMN. It comes off the STI sheet, so
-                billing types it where the sheet has it — everything else on this
-                row is either theirs already (SKU, qty) or the supervisor's, and
-                the supervisor's stay dashed. */}
-            <Td center>
-              <input
-                value={line.cartonQty ?? ""}
-                onChange={(e) => setCarton(line.id, e.target.value)}
-                inputMode="numeric"
-                aria-label={`Carton qty for line ${line.lineNo}`}
-                className="h-[22px] w-[42px] rounded-[5px] border border-gray-200 bg-white text-center text-[11px] font-medium text-[#1d2939] outline-none focus:border-gray-400"
-              />
-            </Td>
+            {/* READ-ONLY. Derived from the catalog at paste — 4L packs only —
+                never typed here. See the lines route for the rule. */}
+            <Td center>{line.cartonQty ?? "—"}</Td>
             {Array.from({ length: SUPERVISOR_COLUMN_COUNT }).map((_, i) => (
               <Td key={i} center>
                 <DashedCell />
               </Td>
             ))}
-            <Td center>
-              <button
-                type="button"
-                onClick={() => removeRow(line.id)}
-                aria-label={`Remove line ${line.lineNo}`}
-                className="text-[#c2c8d0] hover:text-[#b42318]"
-              >
-                <X size={13} />
-              </button>
-            </Td>
+            {canEdit && (
+              <Td center>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(line)}
+                  aria-label={`Remove line ${line.lineNo}`}
+                  className="text-[#c2c8d0] hover:text-[#b42318]"
+                >
+                  <X size={13} />
+                </button>
+              </Td>
+            )}
           </tr>
         ))}
-        {draft.length === 0 && <EmptyRow colSpan={COLUMNS.length + 1} />}
+        {detail.lines.length === 0 && (
+          <EmptyRow colSpan={COLUMNS.length + (canEdit ? 1 : 0)} />
+        )}
       </TableShell>
+
+      {confirming && (
+        <ModalShell
+          title={`Remove line ${confirming.lineNo}?`}
+          subtitle={
+            <>
+              <span className="font-mono font-semibold">{confirming.skuCode}</span>
+              {confirming.isCatalogued && ` · ${confirming.description}`} ·{" "}
+              {confirming.qtySti} nos
+            </>
+          }
+          busy={busy}
+          onClose={() => setConfirming(null)}
+          footer={
+            <>
+              <ModalButton onClick={() => setConfirming(null)} disabled={busy}>
+                Cancel
+              </ModalButton>
+              <ModalButton
+                tone="danger"
+                onClick={() => void removeLine(confirming)}
+                disabled={busy}
+              >
+                {busy ? "Removing…" : "Remove line"}
+              </ModalButton>
+            </>
+          }
+        >
+          {error && <ModalError message={error} />}
+          <p className="text-[12.5px] leading-[1.55] text-[#475467]">
+            It disappears from the supervisor&apos;s phone too. Paste the block again
+            if you need it back.
+          </p>
+        </ModalShell>
+      )}
     </>
   );
 }

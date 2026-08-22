@@ -68,9 +68,31 @@ export default async function MrnPage() {
   // later, but that is a product decision, not a default.
   const showSupervisorFace = primaryRole === "floor_supervisor";
 
+  // What this role may DO, resolved from the same map buildNavItems already
+  // read — no second query.
+  //
+  // ⚠ THIS IS FOR HIDING CONTROLS, NEVER FOR AUTHORISATION. Every MRN route
+  // re-checks the permission server-side and that is what actually stops a
+  // write; this only stops the screen offering a button the server would
+  // refuse. Defence in depth: if these two ever disagree, the ROUTE is right.
+  //
+  // `operations` was the case that exposed the gap — it holds canEdit true but
+  // canDelete FALSE, so Delete rendered, was clickable, and came back
+  // "Forbidden". Correct refusal, wrong screen.
+  const perms = allPerms["mrn"];
+  const mrnPerms = {
+    // admin has no role_permissions rows at all — getAllPermissionsForRoles
+    // short-circuits it to all-true, but an absent entry must still fail
+    // CLOSED for everyone else rather than opening every control.
+    canEdit: perms?.canEdit ?? false,
+    canExport: perms?.canExport ?? false,
+    canDelete: perms?.canDelete ?? false,
+  };
+
   return (
     <RoleSidebarProvider>
       <MrnShell
+        perms={mrnPerms}
         // `floor_supervisor` and `picker` are not in the RoleSidebarRole union;
         // app/picking/page.tsx casts here for the same reason. Widening the
         // union is a shared-component change and belongs in its own commit.

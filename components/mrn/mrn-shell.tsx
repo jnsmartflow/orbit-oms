@@ -89,7 +89,17 @@ function isMrnTabKey(key: string): key is MrnSupervisorTab {
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 
+/** What this role may DO on MRN. Resolved server-side in app/mrn/page.tsx.
+ *  ⚠ For HIDING controls only — never for authorisation. Every route re-checks
+ *  the same permission server-side, and the ROUTE is the authority. */
+export interface MrnPerms {
+  canEdit: boolean;
+  canExport: boolean;
+  canDelete: boolean;
+}
+
 interface MrnShellProps {
+  perms: MrnPerms;
   role: RoleSidebarRole;
   userName: string;
   userInitials: string;
@@ -99,6 +109,7 @@ interface MrnShellProps {
 }
 
 export function MrnShell({
+  perms,
   role,
   userName,
   userInitials,
@@ -114,6 +125,7 @@ export function MrnShell({
     />
   ) : (
     <MrnBillingShell
+      perms={perms}
       role={role}
       userName={userName}
       userInitials={userInitials}
@@ -334,11 +346,12 @@ function MrnSupervisorPlaceholder(): React.JSX.Element {
  * which is also why /api/mrn/marker is supervisor-only. Nothing here polls.
  */
 function MrnBillingShell({
+  perms,
   role,
   userName,
   userInitials,
   navItems,
-}: FaceProps): React.JSX.Element {
+}: FaceProps & { perms: MrnPerms }): React.JSX.Element {
   return (
     <RoleLayoutClient
       role={role}
@@ -346,7 +359,7 @@ function MrnBillingShell({
       userInitials={userInitials}
       navItems={navItems}
     >
-      <BillingBoard />
+      <BillingBoard perms={perms} />
     </RoleLayoutClient>
   );
 }

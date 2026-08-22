@@ -18,9 +18,11 @@ import { formatDateOnly, formatIstDateTime } from "./format";
 interface HeaderCardProps {
   detail: MrnDetail;
   onEdit: () => void;
+  /** HIDDEN without it — see detail-pane.tsx on hidden vs disabled. */
+  canEdit: boolean;
 }
 
-export function HeaderCard({ detail, onEdit }: HeaderCardProps): React.JSX.Element {
+export function HeaderCard({ detail, onEdit, canEdit }: HeaderCardProps): React.JSX.Element {
   const start = formatIstDateTime(detail.unloadingStartAt);
   const end = formatIstDateTime(detail.unloadingEndAt);
 
@@ -33,7 +35,7 @@ export function HeaderCard({ detail, onEdit }: HeaderCardProps): React.JSX.Eleme
             Edit would advertise an action the server has already refused — and
             UI §10's disabled treatment is for "not yet", not for "never here".
             An editable value gets a pencil, not a label (§10). */}
-        {detail.status === "open" && (
+        {detail.status === "open" && canEdit && (
           <button
             type="button"
             onClick={onEdit}

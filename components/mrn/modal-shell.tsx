@@ -144,7 +144,12 @@ export function TextField({
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
       className={
-        "mt-1 h-[34px] w-full rounded-lg border border-gray-200 px-2.5 text-[13px] text-[#1d2939] outline-none focus:border-gray-400 " +
+        // ⚠ ENTERED text is #1d2939 (near-black); the PLACEHOLDER is gray-300.
+        // They were previously close enough that a tester read an example STI
+        // ref as a value he had typed. Tailwind does NOT style placeholders by
+        // default — the text- colour applies to the VALUE only — so the
+        // placeholder: variant below is what actually creates the contrast.
+        "mt-1 h-[34px] w-full rounded-lg border border-gray-200 px-2.5 text-[13px] text-[#1d2939] placeholder:text-gray-300 placeholder:font-normal outline-none focus:border-gray-400 " +
         (mono ? "font-mono" : "")
       }
     />
@@ -182,15 +187,57 @@ export function ReceivedFromToggle({
 }
 
 /**
- * The one place a failed write speaks.
+ * A value the operator cannot change — Surat.
  *
- * 🔴 IT RENDERS THE SERVER'S OWN SENTENCE, VERBATIM. Every MRN write route
- * returns `{ error }` written in the operator's words — "The supervisor is
- * checking this truck — the lines are locked", "The previous lines were cleared
- * but the new ones could not be saved…". Replacing any of those with a generic
- * "Something went wrong" throws away the entire reason they were written that
- * way, and in the linesCleared case actively misleads: the operator would not
- * know their lines are now gone.
+ * ⚠ It reads as a FACT, not as an input waiting to be filled: gray-100 fill,
+ * dashed-free solid border, muted text, and no focus affordance. It previously
+ * used the same near-white box as a real field, which — beside a grey
+ * placeholder — made two different things look identical.
+ */
+export function ReadOnlyField({ value }: { value: string }): React.JSX.Element {
+  return (
+    <div className="mt-1 flex h-[34px] cursor-not-allowed select-none items-center rounded-lg border border-gray-200 bg-gray-100 px-2.5 text-[13px] font-medium text-gray-400">
+      {value}
+    </div>
+  );
+}
+
+/**
+ * Turn a failed response into something an operator can read.
+ *
+ * 🔴 THE ROUTE'S OWN SENTENCE ALWAYS WINS. Every MRN write route returns
+ * `{ error }` written in the operator's words — "The supervisor is checking
+ * this truck — the lines are locked", "The previous lines were cleared but the
+ * new ones could not be saved…". Those pass through UNTOUCHED. Do not wrap,
+ * prefix or summarise them.
+ *
+ * ⚠ THE 401/403 BRANCH IS A BACKSTOP, NOT THE NORMAL PATH. Those routes answer
+ * with the bare HTTP word "Forbidden", which is what leaked to a tester on the
+ * `operations` account. The controls are now hidden for roles that cannot use
+ * them (see detail-pane.tsx), so this should never fire — but if the client and
+ * the server ever disagree, the operator gets a sentence rather than a status
+ * code. `action` names what was refused, since "Forbidden" alone does not say
+ * whether it was the delete, the edit or the paste.
+ */
+export function describeWriteError(
+  status: number,
+  serverMessage: string | undefined,
+  action: string,
+): string {
+  if (status === 403 || serverMessage === "Forbidden") {
+    return `Your role cannot ${action}.`;
+  }
+  if (status === 401 || serverMessage === "Unauthorized") {
+    return "Your session has expired. Sign in again.";
+  }
+  if (serverMessage && serverMessage.trim() !== "") return serverMessage;
+  return `Could not ${action} (${status}).`;
+}
+
+/**
+ * The one place a failed write speaks. Feed it describeWriteError() above —
+ * which passes the route's own operator-facing sentence through untouched and
+ * only substitutes plain words for a bare HTTP status.
  */
 export function ModalError({ message }: { message: string }): React.JSX.Element {
   return (

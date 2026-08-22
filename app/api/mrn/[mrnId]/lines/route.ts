@@ -79,16 +79,13 @@ export async function PUT(
   //   { block }  — the raw paste. The SERVER parses it, so paste.ts stays the
   //                single parsing authority and a client that parsed
   //                differently cannot write a different answer.
-  //   { lines }  — an already-structured set, for the board's "Save lines"
-  //                action (a carton-qty edit or a row delete on the open
-  //                table).
+  //   { lines }  — an already-structured set, for the board's row-delete on the
+  //                open table: it sends the lines that REMAIN.
   //
-  // ⚠ WHY `lines` HAD TO EXIST. Re-serialising the board's draft back into a
-  // TSV block and sending it as `block` would round-trip lineNo / skuCode /
-  // qtySti — and SILENTLY DROP cartonQty, because parsePastedLines has no
-  // column for it and the createMany below would rewrite every one to NULL. A
-  // save that quietly discards the field the operator just typed is worse than
-  // no save at all. This shape carries it.
+  // ⚠ NEITHER SHAPE CARRIES cartonQty. It was briefly a typed field on the
+  // `lines` path (2026-08-22, same day) and is now DERIVED from the catalog for
+  // both shapes further down — so the two paths cannot drift, and a client
+  // cannot write a carton count at all.
   //
   // Both paths converge on the SAME delete-then-create sequence below, so the
   // ordering guarantee and the linesCleared contract are identical either way.
@@ -166,17 +163,12 @@ export async function PUT(
           { status: 400 },
         );
       }
-      let cartonQty: number | null = null;
-      if (l.cartonQty !== undefined && l.cartonQty !== null) {
-        if (typeof l.cartonQty !== "number" || !Number.isInteger(l.cartonQty) || l.cartonQty < 0) {
-          return NextResponse.json(
-            { error: `Line ${i + 1} has an invalid carton qty — a whole number of 0 or more, or blank` },
-            { status: 400 },
-          );
-        }
-        cartonQty = l.cartonQty;
-      }
-      out.push({ lineNo: l.lineNo, skuCode, qtySti: l.qtySti, cartonQty });
+      // ⚠ cartonQty is NOT read from the body on this path either. It is
+      // DERIVED below from the catalog on both shapes, so a client cannot set
+      // it and the paste path and the save path cannot drift apart. Any
+      // cartonQty sent here is ignored rather than rejected — it is not the
+      // caller's field to send.
+      out.push({ lineNo: l.lineNo, skuCode, qtySti: l.qtySti, cartonQty: null });
     }
 
     // UNIQUE(mrnId, lineNo) would otherwise surface as a raw P2002 out of
@@ -239,9 +231,9 @@ export async function PUT(
     };
   }
 
-  // Resolve for the REPORT ONLY — one batched query, keyed on
-  // sku_master_v2.material, never an id (lib/mrn/resolve-lines.ts owns that
-  // rule and carries the id-space warning). Cannot fail the save.
+  // One batched query, keyed on sku_master_v2.material, never an id
+  // (lib/mrn/resolve-lines.ts owns that rule and carries the id-space warning).
+  // Cannot fail the save.
   const catalog = await resolveMrnSkus(incoming.map((r) => r.skuCode));
   const unmatchedCodes = Array.from(
     new Set(
@@ -251,6 +243,58 @@ export async function PUT(
     ),
   );
 
+  // ── Carton qty — DERIVED, NEVER TYPED (2026-08-22) ─────────────────────────
+  //
+  // Billing types nothing into this column. It exists as a REFERENCE FIGURE for
+  // the supervisor on the floor, and it is computed here from the catalog:
+  //
+  //     pack is 4L AND piecesPerCarton > 0  →  floor(qtySti / piecesPerCarton)
+  //     anything else                        →  null
+  //
+  // 🔴 4L PACKS ONLY — owner's ruling. Larger packs arrive loose and carry no
+  // carton count on the paper sheet, so a computed number there would be an
+  // invention. Do NOT relax this to "whatever has a piecesPerCarton": the
+  // catalog gives 1L SKUs a piecesPerCarton too, and using it would print
+  // carton counts the depot has never recorded.
+  //
+  // ⚠ HOW "IS 4L" IS TESTED, AND WHY IT IS NOT `packCode === "4"`. packCode is
+  // TEXT and `unit` is a SEPARATE column, so packCode "4" is 4L with unit L but
+  // 4KG with unit KG and "1 pc" with unit PC (lib/place-order/pack.ts). The
+  // test therefore runs against the FORMATTED pack string that resolveMrnSkus
+  // already returns — the same formatPack() every other surface renders — which
+  // makes the KG/GM/PC exclusions automatic and keeps one owner for the rule.
+  //
+  // ⚠ SNAPSHOT, NOT A RENDER-TIME DERIVATION. It is written to
+  // mrn_lines.cartonQty at paste, so the report keeps what was true when the
+  // truck arrived even if the catalog is edited later. A truck received in
+  // August must not silently restate itself because a SKU's piecesPerCarton
+  // changed in November.
+  const cartonFor = async (): Promise<Map<string, number>> => {
+    const codes = Array.from(new Set(incoming.map((r) => r.skuCode)));
+    const rows = await prisma.sku_master_v2.findMany({
+      where: { material: { in: codes } },
+      select: { material: true, piecesPerCarton: true },
+    });
+    const out = new Map<string, number>();
+    for (const r of rows) {
+      if (typeof r.piecesPerCarton === "number" && r.piecesPerCarton > 0) {
+        if (!out.has(r.material)) out.set(r.material, r.piecesPerCarton);
+      }
+    }
+    return out;
+  };
+  const piecesPerCarton = await cartonFor();
+
+  const withCarton = incoming.map((r) => {
+    const entry = catalog.get(r.skuCode);
+    const ppc = piecesPerCarton.get(r.skuCode);
+    const is4L = entry?.pack === "4L";
+    return {
+      ...r,
+      cartonQty: is4L && ppc ? Math.floor(r.qtySti / ppc) : null,
+    };
+  });
+
   // ── 2. Clear. Batches cascade on lineId. ───────────────────────────────────
   // Sequential awaits, never prisma.$transaction (CORE §3).
   await prisma.mrn_lines.deleteMany({ where: { mrnId } });
@@ -259,13 +303,13 @@ export async function PUT(
   // From here until this resolves, the MRN has ZERO lines. See the header.
   try {
     await prisma.mrn_lines.createMany({
-      data: incoming.map((r) => ({
+      data: withCarton.map((r) => ({
         mrnId,
         lineNo: r.lineNo,
         skuCode: r.skuCode,
         qtySti: r.qtySti,
-        // cartonQty is BILLING's own column — it comes off the STI sheet, so it
-        // is carried through on the `lines` path and NULL on a fresh paste.
+        // DERIVED above, on BOTH input shapes, so the two paths agree — see the
+        // carton block. Never taken from the request body.
         cartonQty: r.cartonQty,
         // Everything else stays at its column default: physicalQty NULL,
         // isChecked false, all six condition counts NULL. The supervisor fills
