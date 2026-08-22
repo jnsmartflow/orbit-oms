@@ -43,6 +43,11 @@ import { CancelSheet } from "./cancel-sheet";
 import { pickingRowStage, PICKING_CANCELLABLE_STAGES } from "@/lib/workflow-stages";
 import type { CancelReason } from "@/lib/picking/cancel-reasons";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
+// THE search predicate — one owner for all four list memos below. Picking's
+// own, deliberately not lib/floor/search.ts (that file is Floor's, lacks two of
+// the five fields, and has an Enter-driven numbers mode this board must not
+// inherit). Reasoning lives in the file.
+import { matchesPickingSearch } from "@/lib/picking/search";
 // The pick-bundling engine, shared with Floor's By-group view and used AS-IS.
 // Where the phone's shape differed, this caller adapted — the engine did not.
 import { buildPickGroups, buildOilGroups } from "@/lib/picking/grouping";
@@ -1301,7 +1306,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     return waitingRows.filter((r) => {
       if (activeType !== "All" && r.deliveryType !== activeType) return false;
       if (activeRoute !== null && r.route !== activeRoute) return false;
-      if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
+      if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
   }, [waitingRows, activeType, activeRoute, q]);
@@ -1491,7 +1496,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     return assignedRows.filter((r) => {
       if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) return false;
       if (activePicker !== null && r.assignedToName !== activePicker) return false;
-      if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
+      if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
   }, [assignedRows, checkTypeFilter, activePicker, q]);
@@ -1507,7 +1512,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     return doneRows.filter((r) => {
       if (checkedTypeFilter !== "All" && r.deliveryType !== checkedTypeFilter) return false;
       if (activeCheckedPicker !== null && r.assignedToName !== activeCheckedPicker) return false;
-      if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
+      if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
   }, [doneRows, checkedTypeFilter, activeCheckedPicker, q]);
@@ -1523,7 +1528,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     const filtered = checkedRows.filter((r) => {
       if (checkedTypeFilter !== "All" && r.deliveryType !== checkedTypeFilter) return false;
       if (activeCheckedPicker !== null && r.assignedToName !== activeCheckedPicker) return false;
-      if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
+      if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
     return filtered.slice().sort((a, b) => {
@@ -2117,7 +2122,27 @@ export function PickingBoardMobile(): React.JSX.Element {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search customer or OBD…"
+                // WIDENED 2026-08-22 with the match rule (lib/picking/search.ts).
+                // "Search customer or OBD…" had stopped describing what the box
+                // does — it also matches picker, route and area now.
+                //
+                // ⚠ THE SHORTER OF THE TWO SPEC'D STRINGS, on width. At 320px
+                // the row is 288px of content; Cancel takes ~53 + an 8px gap,
+                // and the box spends 48 on its own padding and the magnifier —
+                // leaving ~179px, about 25 characters at 15px. The longer
+                // wording ("…, route, area or OBD…", 44 chars) is ~317px of
+                // text; this one is 38 chars / ~266px. Both clip, this one by
+                // far less, and at the 390px design target (§60) it very nearly
+                // fits.
+                //
+                // ⚠ IT UNDER-PROMISES ON PURPOSE: `area` IS searchable and is
+                // not named here. Under-promising is the safe direction for a
+                // hint that clips — a name the box does not mention still
+                // works, whereas one it promises and cannot show is a lie the
+                // reader never sees. Do not "complete" the list without
+                // re-measuring; the placeholder is not a spec of the predicate,
+                // lib/picking/search.ts is.
+                placeholder="Search picker, customer, route or OBD…"
                 className="flex-1 bg-transparent border-none outline-none text-[15px] text-gray-900 placeholder:text-gray-400"
               />
             </div>
