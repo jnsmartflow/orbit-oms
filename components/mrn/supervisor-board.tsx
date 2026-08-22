@@ -8,7 +8,7 @@ import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import type { MrnDetail, MrnDetailLine, MrnSupervisorTab } from "@/lib/mrn/types";
 import { useMrnBoard } from "./mrn-shell";
 import { SupervisorCard } from "./supervisor-card";
-import { formatCount, formatDateOnly, formatIstDateTime } from "./format";
+import { formatIstDateTime } from "./format";
 import { describeWriteError } from "./modal-shell";
 import { LineList } from "./line-list";
 import { LineSheet } from "./line-sheet";
@@ -16,8 +16,8 @@ import { EndSheet } from "./end-sheet";
 
 // The supervisor's phone board + the detail screen behind it.
 //
-// Scope: the three tabs, the cards, the truck-facts screen, Start unloading,
-// the line list, the line sheet and End unloading — the full supervisor flow.
+// Scope: the three tabs, the cards, the detail screen, Start unloading, the
+// line list, the line sheet and End unloading — the full supervisor flow.
 // The only thing left for the module is the export (step 10).
 
 const EMPTY_COPY: Record<MrnSupervisorTab, { title: string; hint: string }> = {
@@ -405,15 +405,26 @@ export function MrnSupervisorBoard(): React.JSX.Element {
           >
             <ChevronLeft size={20} />
           </button>
-          {/* Falls back to the CARD the supervisor just tapped, which the board
-              already holds — so the header reads the right truck from the first
-              frame instead of "—" while the detail fetch is in flight. */}
+          {/* THE TRUCK, NOT THE RECORD (2026-08-22). Line 1 is the source
+              depot; line 2 is the STI / PO ref — the number on the paper in his
+              hand, and what he actually matches against.
+              ⚠ stiRefNo is NULLABLE (mrn.stiRefNo String?), and is empty on the
+              first test MRN. It falls back to the MRN NUMBER so the second line
+              is never blank — a header that collapses to one line reads as a
+              broken screen.
+              Both fall back again to the board row already in hand, so the
+              header names the right truck from the first frame rather than "—"
+              while the detail fetch is in flight. */}
           <div className="min-w-0">
             <div className="truncate text-[16px] font-bold text-white">
               {detail?.receivedFrom ?? openRow?.receivedFrom ?? "—"}
             </div>
             <div className="truncate font-mono text-[11px] text-white/75">
-              {detail?.mrnNumber ?? openRow?.mrnNumber ?? ""}
+              {detail?.stiRefNo ??
+                openRow?.stiRefNo ??
+                detail?.mrnNumber ??
+                openRow?.mrnNumber ??
+                ""}
             </div>
           </div>
         </div>
@@ -438,10 +449,18 @@ export function MrnSupervisorBoard(): React.JSX.Element {
             </div>
           ) : detail ? (
             <>
-              <FactsCard detail={detail} />
+              {/* ⚠ THE TRUCK-FACTS CARD IS GONE (2026-08-22). It rendered six
+                  fields — reporting date, received from, STI ref, delivery no,
+                  lines, qty as per STI — and SUPERSEDES mockup S4, which drew
+                  it. On a phone at the moment of unloading he needs the LINES,
+                  not a form restating the board card he just tapped. Every one
+                  of those six facts is either on that card or now in the
+                  header. Do not restore it; the mockup is stale here.
 
+                  The progress strip survived and lives in LineList — it is the
+                  only header data he uses while counting. */}
               {detail.status === "open" && (
-                <div className="mt-3 rounded-[13px] bg-white p-[15px] text-[13.5px] leading-[1.55] text-[#475467]">
+                <div className="rounded-[13px] bg-white p-[15px] text-[13.5px] leading-[1.55] text-[#475467]">
                   Tap <b className="text-gray-900">Start unloading</b> when the truck door
                   opens. The clock starts then — you cannot change it later.
                 </div>
@@ -449,20 +468,16 @@ export function MrnSupervisorBoard(): React.JSX.Element {
 
               {/* The working screen — S5/S6. */}
               {detail.status === "checking" && (
-                <div className="mt-3">
-                  <LineList
-                    detail={detail}
-                    onOpenLine={(line, index) => setLineTarget({ line, index })}
-                  />
-                </div>
+                <LineList
+                  detail={detail}
+                  onOpenLine={(line, index) => setLineTarget({ line, index })}
+                />
               )}
 
               {/* A finished truck is read-only. He can still open it from Done
                   to check what he recorded; the route 409s any change. */}
               {detail.status === "done" && (
-                <div className="mt-3">
-                  <LineList detail={detail} onOpenLine={() => undefined} />
-                </div>
+                <LineList detail={detail} onOpenLine={() => undefined} />
               )}
             </>
           ) : (
@@ -588,48 +603,6 @@ export function MrnSupervisorBoard(): React.JSX.Element {
           onConfirm={() => void confirmStart()}
         />
       )}
-    </div>
-  );
-}
-
-function FactsCard({ detail }: { detail: MrnDetail }): React.JSX.Element {
-  return (
-    <div className="rounded-[13px] bg-white p-[15px]">
-      <div className="grid grid-cols-2 gap-x-4 gap-y-[13px]">
-        <Fact label="Truck reporting date" value={formatDateOnly(detail.truckReportingDate)} />
-        <Fact label="Received from" value={detail.receivedFrom} />
-        <Fact label="STI / PO ref" value={detail.stiRefNo} mono />
-        <Fact label="Delivery no" value={detail.deliveryNo} mono />
-        <Fact label="Lines" value={String(detail.lineCount)} />
-        <Fact label="Qty as per STI" value={`${formatCount(detail.totalQtySti)} nos`} />
-      </div>
-    </div>
-  );
-}
-
-function Fact({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string | null;
-  mono?: boolean;
-}): React.JSX.Element {
-  return (
-    <div className="min-w-0">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">
-        {label}
-      </div>
-      <div
-        className={
-          "mt-[3px] truncate text-[13.5px] font-medium " +
-          (value ? "text-[#1d2939] " : "text-[#c2c8d0] ") +
-          (mono && value ? "font-mono text-[12.5px]" : "")
-        }
-      >
-        {value ?? "—"}
-      </div>
     </div>
   );
 }
