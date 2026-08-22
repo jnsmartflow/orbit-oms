@@ -3420,12 +3420,13 @@ export function PickingBoardMobile(): React.JSX.Element {
           untouched — only what the supervisor is looking at when he taps.
 
           GEOMETRY. z-indexes and the bottom offset still read from
-          SHEET_GEOMETRY, the same single source FilterBottomSheet uses. Only
-          the HEIGHT is this sheet's own: it is a near-full-height sheet now
-          (a 12-man roster two-up does not fit in 70vh), so `maxHeight` is the
-          one field it does not take from the shared constant. Do NOT "fix"
-          that by raising SHEET_GEOMETRY.maxHeight — that would drag the route
-          and picker FILTER sheets up with it.
+          SHEET_GEOMETRY, the same single source FilterBottomSheet uses. What
+          this sheet does NOT take from that constant is `maxHeight`: it is a
+          near-full-height sheet (a 12-man roster two-up does not fit in the
+          shared 70vh) and sizes itself from top + bottom instead — see the
+          style block below for why it uses no viewport unit at all. Do NOT
+          "fix" the difference by raising SHEET_GEOMETRY.maxHeight; that would
+          drag the route and picker FILTER sheets up with it.
           ⚠ The bottom offset is NOT optional and is not decoration: this
           sheet used to be pinned at `bottom: 0` with no mobile-shell-nav
           reservation and no internal scroll, and rendered its last row under
@@ -3443,13 +3444,36 @@ export function PickingBoardMobile(): React.JSX.Element {
           />
           <div
             className={`fixed left-0 right-0 ${SHEET_GEOMETRY.panelZ} bg-white rounded-t-[18px] flex flex-col`}
+            // 🔴 TOP + BOTTOM, NEVER A `vh` HEIGHT. The height is derived by
+            // the browser from the fixed-positioning containing block, which is
+            // always the REAL visible viewport.
+            //
+            // ⚠ THE BUG THIS REPLACES (shipped ffbe85e2, live for hours):
+            // `height: 90vh` clamped by `maxHeight: calc(100vh - <navClearance>
+            // - 16px)`. On a mobile browser `vh` resolves against the LARGE
+            // viewport — the one with the URL bar hidden — while `bottom`
+            // positions against the visible one. With the URL bar showing those
+            // differ by ~100px, so on a 700px visible / 800px large viewport the
+            // sheet computed a 674px height and sat 110px off the bottom of a
+            // 700px box: its top edge landed at −84px and the grab handle, the
+            // "Assign to picker" title and the bill-count subtitle were all
+            // above the fold. The maths was self-consistent and still wrong,
+            // because the two numbers were measured against different viewports.
+            //
+            // The old row-list sheet never showed this ONLY because
+            // SHEET_GEOMETRY.maxHeight is `max-h-[70vh]` — small enough that the
+            // same error still left the top on screen. It is latent there, not
+            // absent. Do not "fix" this by reaching for 90dvh either: dvh tracks
+            // the right viewport but is a newer unit, and top+bottom needs no
+            // unit support at all.
             style={{
+              // Clears a notch, floors at 16px — the same
+              // `max(env(...), Npx)` convention the detail header's paddingTop
+              // uses (CLAUDE_UI.md §55).
+              top: "max(env(safe-area-inset-top, 0px), 16px)",
+              // NOT optional: this is what keeps the sheet's last row clear of
+              // the fixed bottom nav (CLAUDE_PICKING.md §7).
               bottom: SHEET_GEOMETRY.bottomOffset,
-              height: "90vh",
-              // 90vh would overflow the top of the screen once the nav
-              // clearance is subtracted from the bottom; this clamps it to
-              // whatever is actually left, with 16px of air above.
-              maxHeight: `calc(100vh - ${SHEET_GEOMETRY.bottomOffset} - 16px)`,
             }}
           >
             {/* PINNED header — outside the scroll container, so "Assign to
