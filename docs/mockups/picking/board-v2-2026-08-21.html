@@ -84,31 +84,39 @@
        side by side. */
     --floor-picking:#6d28d9;
     --floor-free:#15803d;
-    /* ── Loading bay — SPEC CORRECTED 2026-08-21, this section was rebuilt ──
+    /* ── Loading bay — SPEC REVISED 2026-08-22, the circle is GONE ─────────
        `route_master.bayNumber` — nullable, NOT unique (several routes share a
        bay: bay 1 carries Adajan, Parvat, Navsari, Chikhli, Bhagal and Olpad).
 
-       ⚠ AN EARLIER DRAFT OF THIS PAGE GOT TWO THINGS WRONG and they are fixed
-       here rather than left to confuse a reader:
-         1. It coloured the bay BY DELIVERY TYPE, on the theory that a bay
-            number is ambiguous without one. It is not — a bay is a physical
-            stack and bay 1 serves Local and Upcountry routes BOTH, so a
-            type-coloured bay implied a split that does not exist.
-         2. It put a bay TAG on the card. There is no card tag: the cards
-            already carry an amber age badge (CLAUDE_UI.md §62.1) and an amber
-            urgent bolt, so a third amber object there reads as a third warning.
+       ⚠ TWO SUPERSEDED TREATMENTS HAVE BEEN DELETED FROM THIS PAGE, not left
+       to confuse a reader. Neither is coming back:
+         1. A bay coloured BY DELIVERY TYPE (dropped 2026-08-21). A bay is a
+            physical stack and bay 1 serves Local and Upcountry routes BOTH, so
+            a type-coloured bay implied a split that does not exist.
+         2. A 44px solid amber CIRCLE at the right end of the detail header
+            (shipped 2026-08-21, dropped 2026-08-22 — one day). It worked, but
+            it was competing for the header's icon cluster with the search, the
+            kebab and the findings triangle, and it could only ever show the
+            NUMBER — never the route name the number belongs to.
+       There has never been a bay TAG on a CARD, and there must not be: the
+       cards already carry an amber age badge (CLAUDE_UI.md §62.1) and an amber
+       urgent bolt, so a third amber object there reads as a third warning.
 
-       WHAT SHIPPED: ONE 44px SOLID AMBER circle, #f59e0b, white number over the
-       word BAY, at the right end of the DETAIL header on both faces — and
-       nowhere else. Not on a card, not in the route sheet, not on the
-       Picking-tab list.
+       WHAT SHIPPED INSTEAD: a full-width BAND directly under the detail header,
+       both faces — a darker teal strip carrying the bay number, a rule, the
+       route NAME, and the findings triangle at its right end. The number and
+       the name sit on one line so the bay can never be read against the wrong
+       route.
 
-       🔴 THE RULE: no bayNumber ⇒ NOTHING renders. No circle, no dash, no
-       placeholder, no zero-width box. `BayCircle` returns null, and a null
-       render is no DOM node at all, so the header's gap is not spent on it —
-       which is why the call sites render it BARE with no conditional wrapper.
-       Every no-bay frame below is byte-identical to the header it had before. */
-    --bay-amber:#f59e0b;
+       🔴 #fbbf24, NOT #f59e0b. The circle's darker amber goes muddy on the
+       band's dark teal. This is the ONLY amber on the detail screen.
+
+       🔴 THE RULE: no bayNumber ⇒ no number and no rule; the band shows the
+       route side alone. A null route does NOT collapse the band — it prints
+       "Unmatched", because the route came off the header subtitle in the same
+       change and an unmatched bill would otherwise lose that word entirely. */
+    --bay-amber:#fbbf24;
+    --band-bg:#0a5049;
     /* Shadows — the only two on this board */
     --card-shadow-v2:0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2);
     --soft-card-shadow:0 1px 2px rgba(16,24,40,.04), 0 3px 12px rgba(16,24,40,.05);
@@ -150,17 +158,47 @@
 
   /* ── Header (module-mobile-header.tsx) ────────────────────────────── */
   .hdr{flex-shrink:0;background:var(--teal-600);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px 10px;}
-  .hdr.detail{align-items:flex-start;padding:12px 14px 14px;gap:10px;}
+  /* ── DETAIL HEADER — REBUILT 2026-08-22 as TWO ROWS ──────────────────
+     Row 1 is back · title + subtitle · icons. Row 2 is the chip row,
+     indented 44px so it sits under the TITLE and not under the back button
+     (38px back + 6px gap = 44px — the two numbers are one setting).
+     Right padding is 6px, not 14px: the icons are 44px tap targets now and
+     their glyphs sit ~11px inside that box, so a 14px gutter would push the
+     visible glyph a clear 25px off the screen edge. */
+  .hdr.detail{flex-direction:column;align-items:stretch;padding:12px 6px 14px 14px;gap:0;}
+  .hdr.detail .drow1{display:flex;align-items:center;gap:6px;}
   .hdr .av{width:40px;height:40px;min-width:44px;min-height:44px;border-radius:999px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex:0 0 auto;}
   .hdr h1{margin:0;font-size:19px;font-weight:800;color:#fff;letter-spacing:-.01em;}
   .hdr .right{display:flex;align-items:center;gap:2px;flex:0 0 auto;}
   .hdr .ico{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;}
-  .hdr .back{width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:#fff;flex:0 0 auto;}
+  /* Back — 38px / radius 10 / white 16% (was 32 / 9 / 15%). */
+  .hdr .back{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;color:#fff;flex:0 0 auto;}
   .hdr .dtext{min-width:0;flex:1;}
-  .hdr .dname{font-size:16px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .hdr .dsub{font-size:12px;color:rgba(255,255,255,.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .hdr .flagrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;}
-  .hdr .fpill{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.16);border-radius:999px;padding:3px 8px 3px 6px;font-size:11px;font-weight:600;color:#fff;}
+  /* 16.5px/600 — the name gets the WHOLE line now that the route left the
+     subtitle and the bay circle left the right end. Weight 800 → 600: with
+     nothing competing beside it, extrabold was emphasis it no longer earns. */
+  .hdr .dname{font-size:16.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hdr .dsub{font-size:11.5px;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* The icon pair — gap 0 so the two read as ONE cluster, not two loose
+     buttons. Bare: no tile, no fill, glyph 22px in a 44px target. */
+  .hdr .dicons{display:flex;align-items:center;gap:0;flex:0 0 auto;}
+  .hdr .dico{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;flex:0 0 auto;}
+  /* Row 2. min-height 38px so the row holds its height on a bill whose only
+     chip is a 26px circle — without it the header changes height depending
+     on WHICH flags a bill happens to carry. */
+  .hdr .flagrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;padding-left:44px;min-height:38px;}
+  /* ── SYMBOL-ONLY FLAG CHIPS (2026-08-22) ─────────────────────────────
+     ★ ⚡ 🎨 were frosted pills carrying their own word. The words are now in
+     the aria-label AND the title attribute in the real build, so the meaning
+     is still announced to a screen reader and still reachable on a long
+     press. SUPERVISOR FACE ONLY — the picker's chip row carries the
+     duplicate tag and the SMU badge and nothing else, exactly as before.
+     ⚠ The words are NOT optional. If these are ever restyled the labels go
+     with them: three unlabelled coloured dots is a puzzle, not a header. */
+  .fsym{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;flex:0 0 auto;font-size:13px;line-height:1;}
+  .fsym.key{background:#fef3c7;color:#b45309;}
+  .fsym.urg{background:#fee2e2;color:#b91c1c;}
+  .fsym.tint{background:#f3e8ff;color:#7e22ce;}
 
   /* ── Filter / search row ──────────────────────────────────────────── */
   .controls{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 16px 0;}
@@ -265,16 +303,43 @@
   .tile .ts{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:var(--floor-free);margin-top:2px;white-space:nowrap;}
   .tile.busy .ts{color:var(--gray-500);}
 
-  /* ── BAY CIRCLE — detail header, both faces, and NOWHERE ELSE ──────────
-     44px solid amber disc: the number over the word BAY. One look, no
-     variants — the type-coloured version and the card tag were both wrong
-     and are gone (see the :root note).
+  /* ── THE BAND — detail screen, both faces, and NOWHERE ELSE ────────────
+     Replaces the 44px amber bay CIRCLE that this page carried on 2026-08-21.
+     Same field, same question, a full-width strip instead of a disc jammed
+     into the header's icon cluster.
+
+     The seam is an INSET SHADOW, not a border. Two teals meeting need a
+     shadow — a 1px border line between them reads as a mistake.
+
      Weight 800 on the number is deliberate: CLAUDE_UI.md §60's "nothing is
-     700" governs CARDS, and this is a detail-screen header whose title is
-     already extrabold on both faces. */
-  .baycircle{width:44px;height:44px;border-radius:999px;background:var(--bay-amber);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto;line-height:1;}
-  .baycircle .n{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;}
-  .baycircle .k{font-size:7.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-top:1px;opacity:.8;}
+     700" governs CARDS, and this is a detail screen whose header title is
+     the only other heavy thing on it. */
+  .billband{flex-shrink:0;display:flex;align-items:center;gap:12px;padding:9px 6px 9px 14px;background:var(--band-bg);box-shadow:inset 0 1px 0 rgba(0,0,0,.18);}
+  .billband .bay{display:flex;flex-direction:column;align-items:center;flex:0 0 auto;line-height:1;}
+  .billband .bay .n{font-size:30px;font-weight:800;color:var(--bay-amber);font-variant-numeric:tabular-nums;line-height:1;}
+  .billband .rule{width:1px;flex:0 0 auto;align-self:stretch;margin:3px 0;background:rgba(255,255,255,.2);}
+  .billband .rt{display:flex;flex-direction:column;min-width:0;}
+  /* The route TRUNCATES and the number NEVER SHRINKS — a bay read wrong is a
+     trolley in the wrong aisle; a route name read short is still
+     recognisable. */
+  .billband .rt .v{font-size:15px;font-weight:600;color:#fff;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* "BAY" and "ROUTE" are the same type by design. */
+  .billband .k{font-size:8.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5);line-height:1;}
+  .billband .bay .k{margin-top:3px;}
+  /* The triangle — BARE. No tile, no fill. 24px glyph in a 42px target,
+     white when idle, the band's own amber while recording is armed. */
+  .billband .tri{margin-left:auto;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff;}
+  .billband .tri.on{color:var(--bay-amber);}
+
+  /* ── Recording banner — components/picking/finding-recorder.tsx ─────────
+     ⚠ THE COPY IS LIFTED VERBATIM from FindingRecordBanner. Do not reword it
+     on this page: a mockup that paraphrases the shipped string is how the two
+     drift. It says "record what you found", never "remark" — a finding is a
+     structured qty + reason, not free text (the remarks field was removed from
+     the popup on 2026-08-08 and is deliberately not sent). */
+  .recbanner{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fffbeb;border-bottom:1px solid #fde68a;padding:10px 16px;}
+  .recbanner .rbt{font-size:12px;font-weight:600;color:#92400e;}
+  .recbanner .rbd{font-size:12px;font-weight:600;color:#78350f;text-decoration:underline;flex:0 0 auto;}
 
   /* THE STATUS DOT — Floor's tokens. File + line are in the :root comment. */
   .sd{width:7px;height:7px;border-radius:999px;flex:0 0 auto;}
@@ -309,13 +374,24 @@
   .prow2 .pm{font-size:11.5px;color:var(--unit);margin-top:1px;font-variant-numeric:tabular-nums;}
 
   /* ── Detail screen bits ───────────────────────────────────────────── */
-  .stat{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
-  .stat .l{display:flex;align-items:baseline;gap:7px;min-width:0;font-size:12px;color:var(--area);}
-  .stat .l .md{color:var(--middot2);}
-  .pager{display:flex;align-items:center;gap:9px;flex:0 0 auto;font-size:12px;font-weight:600;color:var(--gray-500);font-variant-numeric:tabular-nums;}
-  .pager .arw{color:var(--gray-400);font-size:14px;}
+  /* ── ARTICLE ROW — padding 12px 14px (2026-08-22) ─────────────────────
+     ⚠ THE LEFT SIDE WRAPS. It used to be a single truncating line, and it is
+     the ONE place on this screen where an ellipsis was eating information the
+     reader came for: "4 Drum, 23 Carton, 27 Tin · 612 L" is a live bill, and
+     what it lost was the tail of the pack list. Two lines cost less than a
+     wrong trolley. Do not put a truncate back. */
+  .stat{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .stat .l{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px;min-width:0;font-size:15px;font-weight:700;color:#2a323c;}
+  .stat .l .md{color:var(--middot2);font-weight:400;}
+  .stat .l .vol{font-weight:600;color:#8a929c;}
+  .stat .l .sub{font-size:11.5px;font-weight:400;color:var(--gray-400);font-variant-numeric:tabular-nums;flex-basis:100%;}
+  /* gap 10px (was 9px) and 17px arrows so each is separately tappable — at
+     the old spacing a thumb aiming at ‹ on the move regularly caught › or the
+     counter, and paging the wrong way costs two more taps to undo. */
+  .pager{display:flex;align-items:center;gap:10px;flex:0 0 auto;font-size:12.5px;font-weight:600;color:var(--gray-500);font-variant-numeric:tabular-nums;}
+  .pager .arw{color:var(--gray-400);font-size:17px;}
   .packrow{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:9px 16px;display:flex;gap:6px;overflow:hidden;}
-  .packchip{flex:0 0 auto;font-size:12px;font-weight:600;padding:5px 12px;border-radius:999px;border:1px solid var(--gray-200);background:#fff;color:var(--gray-500);}
+  .packchip{flex:0 0 auto;font-size:12px;font-weight:600;padding:7px 12px;border-radius:999px;border:1px solid var(--gray-200);background:#fff;color:var(--gray-500);}
   .packchip.on{background:var(--gray-900);border-color:var(--gray-900);color:#fff;}
   .li{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border-radius:12px;box-shadow:var(--soft-card-shadow);padding:11px 13px;margin-bottom:8px;}
   .li .pk{flex:0 0 58px;text-align:center;font-size:12px;font-weight:700;color:var(--slot);background:var(--chip-bg);border-radius:8px;padding:6px 0;}
@@ -357,7 +433,7 @@
      ══════════════════════════════════════════════════════════════════ -->
 <div class="doc">
   <h1>Picking — Supervisor Board v2</h1>
-  <div class="stamp">Static review mockup · 2026-08-21 · <code>docs/mockups/picking/board-v2-2026-08-21.html</code> · nothing here is wired to code or the database</div>
+  <div class="stamp">Static review mockup · 2026-08-21, detail screen revised 2026-08-22 · <code>docs/mockups/picking/board-v2-2026-08-21.html</code> · nothing here is wired to code or the database</div>
 
   <p style="margin:0 0 4px;font-size:13.5px;line-height:1.7;color:var(--gray-700);max-width:900px;">
     Five changes to the supervisor face of <b>/picking</b>, drawn from the findings in
@@ -370,7 +446,7 @@
   <ol>
     <li><b>Route filter sheet — fixed.</b> Only routes that actually have a bill under the selected type. No more "Vapi 0". Shown twice: with Local selected, and with UPC selected — where <b>Adajan appears again, at 3</b>, because one route name can sit under two delivery types. <i>(An optional third frame printing the bay after each route name was drawn and dropped — the bay is not on this sheet.)</i></li>
     <li><b>The card prints the ROUTE, not the area.</b> Current and new side by side, on the same bill, plus a long-route case so you can see what truncates. The detail-screen header moves with it (<b>2b</b>).</li>
-    <li><b>The LOADING BAY.</b> <code>route_master.bayNumber</code> — which bay the route's material is stacked at. <b>ON THE OPEN BILL ONLY:</b> one 44px solid <b>amber</b> circle at the right end of the detail header, on both faces (<b>2c</b>, and <b>2d</b> for the picker's). Not on a card, not in the route sheet, not on the Picking-tab list. <b>It is NOT coloured by delivery type</b> — an earlier draft did that and it was wrong: a bay is a physical stack and bay&nbsp;1 serves Local and Upcountry routes both, so the colour would have implied a split that does not exist. A bill with no bay (HAND, No Route) renders <b>nothing at all</b>.</li>
+    <li><b>The detail header, rebuilt — and THE BAND (<span style="color:#b45309;">revised 2026-08-22</span>).</b> The header goes to two rows so the dealer name gets a whole line; the route leaves its subtitle; the three flag pills become 26px symbols; the icons grow to 22px in 44px targets (<b>2b</b>). <code>route_master.bayNumber</code> — which bay the route's material is stacked at — now rides a full-width <b>band</b> under that header, carrying <b>bay · route · the recording triangle</b> on one strip, on both faces (<b>2c</b>, and <b>2d</b> for the picker's). Still <b>on the open bill only</b>: not on a card, not in the route sheet, not on the Picking-tab list. <b>Two treatments were tried and dropped</b> — a bay coloured by delivery type (a bay is a physical stack; bay&nbsp;1 serves Local and Upcountry both) and the 44px amber circle that shipped on 08-21 and lasted a day. A null bay drops the number and the rule; a null route prints <b>Unmatched</b> and the band stays.</li>
     <li><b>Assign-to-picker sheet — one design, three states.</b> A tall sheet of two-up picker cards, each with a green/purple status dot borrowed from Floor Control. It opens showing <i>free pickers only</i>; one grey row reveals the rest. Shown collapsed, expanded, and in the case that decides whether collapsing is safe at all — nobody free.</li>
     <li><b>Picking tab becomes picker-first — three levels.</b> Level 1 the pickers (two designs), level 2 that man's bills, level 3 the bill itself. Plus the empty state.</li>
     <li><b>Search widened to five fields</b> — picker name · customer name · route · area · OBD. Four demo queries, all on the Picking tab, because that is where the new picker-first list makes the answer visible.</li>
@@ -634,165 +710,251 @@
 
 
 <div class="cap" style="margin-top:26px;">
-  <h3>2b · The detail-screen header moves too</h3>
+  <h3>2b · The detail-screen header — rebuilt 2026-08-22</h3>
   <p>
-    The header's second line is the same fact one tap deeper. If the card says Adajan and the header
-    still says Pal, the supervisor is reading two different answers to one question.
+    Four changes, one idea: <b>give the dealer name the whole line, and move everything that was
+    fighting it for space somewhere it fits.</b>
+  </p>
+  <ul style="margin:10px 0 0;padding-left:18px;">
+    <li><b>The route leaves the subtitle.</b> It moves to the band below, so it appears
+      <b>exactly once</b> on the screen. The subtitle is now just <code>{obdNumber} · {window}</code>.
+      The <code>?? "Unmatched"</code> that used to sit here did not vanish with it — the band prints
+      "Unmatched" on its route side when the route is null, which is why removing it here loses
+      nothing.</li>
+    <li><b>The three flag pills become symbols</b> — ★ ⚡ 🎨, a 26px coloured circle each. The words
+      they carried live on in the <code>aria-label</code> and the <code>title</code>, so a screen
+      reader still announces them and a long press still shows them. Supervisor face only.</li>
+    <li><b>The chips get their own line</b>, indented 44px to sit under the title. That is what frees
+      row 1 entirely for the name.</li>
+    <li><b>The icons grow</b> — glyph 17 → 22px in a 44px tap target, gap 0 so the pair reads as one
+      cluster. The back tile goes 32 → 38px, radius 10, white 16%. Right padding drops to 6px.</li>
+  </ul>
+  <p style="margin-top:10px;">
+    <span class="flag">Unchanged</span> The <b>SMU badge</b> and the <b>duplicate-SO tag</b> keep their
+    exact treatment — the SMU badge carries its meaning in its colour (UI §1209), which a frosted
+    overlay or a symbol swap would erase. The chip row's five-way render guard keeps all five of its
+    conditions; two of them are recorded bug-fixes.
   </p>
 </div>
 
 <div class="pair">
   <div class="col">
-    <div class="lbl">Current</div>
+    <div class="lbl">Before — 2026-08-21</div>
     <div class="frame auto">
       <div class="screen">
-        <div class="hdr detail">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+        <!-- ⚠ HISTORY, NOT SPEC. This frame is the 2026-08-21 header, kept as
+             the left half of a before/after pair so the change is legible. It
+             is drawn with INLINE styles on purpose — it must not track the
+             shared classes, and nothing on this page should copy from it. The
+             44px amber circle in it is the treatment that was replaced. -->
+        <div class="hdr detail" style="flex-direction:row;align-items:flex-start;padding:12px 14px 14px;gap:10px;">
+          <div class="back" style="width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
           <div class="dtext">
-            <div class="dname">Time Sqaure</div>
-            <div class="dsub">9108049119 · Pal · 10:30</div>
-            <div class="flagrow">
+            <div class="dname" style="font-size:16px;font-weight:800;">Shree Yamunaji Paints &amp; Har…</div>
+            <div class="dsub" style="font-size:12px;color:rgba(255,255,255,.75);">9108049119 · Adajan · 10:30</div>
+            <div class="flagrow" style="padding-left:0;min-height:0;margin-top:8px;">
               <span class="fpill"><svg width="11" height="11" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>Key dealer</span>
+              <span class="fpill"><svg width="11" height="11" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>Urgent</span>
               <span class="smu">74</span>
             </div>
           </div>
-          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+          <div class="back" style="width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+          <div class="baycircle-old" style="width:44px;height:44px;border-radius:999px;background:#f59e0b;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto;line-height:1;"><span style="font-size:19px;font-weight:800;">1</span><span style="font-size:7.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;opacity:.8;margin-top:1px;">Bay</span></div>
         </div>
-        <div class="stat">
-          <span class="l"><span>2 Drum · 4 Carton</span><span class="md">·</span><span>84 L</span></span>
-          <span class="pager"><span class="arw">‹</span>3 of 12<span class="arw">›</span></span>
+        <div class="stat" style="padding:11px 16px;">
+          <span class="l" style="font-size:12px;font-weight:400;color:var(--area);flex-wrap:nowrap;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;">4 Drum, 23 Carton, 27 Ti…</span>
+          <span class="pager" style="gap:9px;font-size:12px;"><span class="arw" style="font-size:14px;">‹</span>3 of 12<span class="arw" style="font-size:14px;">›</span></span>
         </div>
       </div>
     </div>
+    <p class="cost"><b>Four things competed for one row</b> — a truncated name, two word-pills, a search button and a 44px amber disc. The name lost, and the packs line below it was cutting mid-list.</p>
   </div>
   <div class="col">
-    <div class="lbl">New</div>
+    <div class="lbl">After — 2026-08-22</div>
     <div class="frame auto">
       <div class="screen">
         <div class="hdr detail">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Time Sqaure</div>
-            <div class="dsub">9108049119 · Adajan · 10:30</div>
-            <div class="flagrow">
-              <span class="fpill"><svg width="11" height="11" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>Key dealer</span>
-              <span class="smu">74</span>
+          <div class="drow1">
+            <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+            <div class="dtext">
+              <div class="dname">Shree Yamunaji Paints &amp; Hardware</div>
+              <div class="dsub">9108049119 · 10:30</div>
+            </div>
+            <div class="dicons">
+              <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg></div>
+              <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
             </div>
           </div>
-          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+          <div class="flagrow">
+            <span class="fsym key" title="Key dealer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg></span>
+            <span class="fsym urg" title="Urgent"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span>
+            <span class="fsym tint" title="Tint">🎨</span>
+            <span class="smu">74</span>
+          </div>
+        </div>
+        <div class="billband">
+          <div class="bay"><span class="n">1</span><span class="k">Bay</span></div>
+          <div class="rule"></div>
+          <div class="rt"><span class="k">Route</span><span class="v">Adajan</span></div>
         </div>
         <div class="stat">
-          <span class="l"><span>2 Drum · 4 Carton</span><span class="md">·</span><span>84 L</span></span>
+          <span class="l"><span>4 Drum, 23 Carton, 27 Tin</span><span class="md">·</span><span class="vol">612 L</span></span>
           <span class="pager"><span class="arw">‹</span>3 of 12<span class="arw">›</span></span>
         </div>
       </div>
     </div>
-    <p class="cost">One word, same line, same height. The flag row and the SMU badge are untouched.</p>
+    <p class="cost"><b>The full dealer name fits.</b> Three symbols replace two pills and still say more. The packs line wraps instead of cutting. The route is on the screen once, on the band, beside the bay it belongs to.</p>
   </div>
 </div>
 <div class="cap" style="margin-top:26px;">
-  <h3>2c · The bay circle on the open bill — the point of the whole change</h3>
+  <h3>2c · The band — bay, route and the recording triangle on one strip</h3>
   <p>
-    A picker opens a bill and needs one thing before he moves: <b>which bay do I walk to.</b> A 44px
-    solid amber disc at the right end of the detail header, number over the word BAY, big enough to
-    read at arm's length off a trolley. Both faces, same position, same look.
+    A picker opens a bill and needs one thing before he moves: <b>which bay do I walk to.</b> The
+    answer is now a full-width strip directly under the header — a darker teal (#0a5049) carrying the
+    bay number in amber, a rule, the route name, and the findings triangle at its right end. Both
+    faces, same strip, same position.
   </p>
   <p style="margin-top:10px;">
-    <span class="flag">Corrected</span>
-    <b>The circle is ONE colour, and it is not the delivery type.</b> An earlier draft of this page
-    coloured it blue / orange / red by type, on the theory that a bay number is ambiguous without
-    one. It is not — a bay is a physical stack and <b>bay 1 serves Local and Upcountry routes
-    both</b>, so a type-coloured bay implied a split that does not exist. Amber, once, everywhere.
-    The first two headers below are the case that made the point: bay 1 on a Local bill and bay 1 on
-    an Upcountry bill are <i>the same bay</i>, and now they look it.
+    <span class="flag">Superseded</span>
+    <b>The 44px amber circle is gone — it lasted one day (2026-08-21 → 08-22).</b> It worked, but it
+    was competing for the header's icon cluster with the search, the kebab and the triangle, and it
+    could only ever show the NUMBER. A bay number with no route beside it is a number you have to
+    trust; on the band the two sit on one line, so the bay can never be read against the wrong route.
+    <b>The earlier type-coloured bay is gone too</b>, and for the original reason: a bay is a physical
+    stack, and bay 1 serves Local and Upcountry routes both, so colouring it by type implied a split
+    that does not exist.
   </p>
   <p style="margin-top:10px;">
-    <b>Amber is used here and on no card.</b> The cards already carry an amber age badge
-    (CLAUDE_UI.md §62.1) and an amber urgent bolt; a third amber object there would read as a third
-    warning. On the detail header it is the only warm colour, which is what makes it findable.
+    <b>#fbbf24, not #f59e0b.</b> The circle's darker amber goes muddy on this teal. This is the only
+    amber on the detail screen — the cards keep their amber age badge (CLAUDE_UI.md §62.1) and amber
+    urgent bolt, and no bay object has ever gone on a card.
+  </p>
+  <p style="margin-top:10px;">
+    <b>The seam is an inset shadow, not a border.</b> Two teals meeting need a shadow; a 1px line
+    between them reads as a mistake rather than a division.
   </p>
 </div>
 
 <div class="pair">
 
-  <!-- The one treatment -->
   <div class="col">
-    <div class="lbl">Supervisor detail header — four cases</div>
+    <div class="lbl">Supervisor — the four band states</div>
     <div class="frame auto">
       <div class="screen">
 
-        <div class="hdr detail">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Time Sqaure</div>
-            <div class="dsub">9108049119 · Adajan · 10:30</div>
-          </div>
-          <div class="baycircle"><span class="n">1</span><span class="k">Bay</span></div>
+        <!-- 1 · bay + route -->
+        <div class="billband">
+          <div class="bay"><span class="n">1</span><span class="k">Bay</span></div>
+          <div class="rule"></div>
+          <div class="rt"><span class="k">Route</span><span class="v">Adajan</span></div>
         </div>
-        <div class="stat"><span class="l"><span>Local</span></span></div>
+        <div class="stat"><span class="l" style="font-size:12px;font-weight:400;color:var(--area);">Local · the ordinary case</span></div>
 
-        <div class="hdr detail" style="margin-top:10px;">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Sunil Hardware Stores</div>
-            <div class="dsub">9108440677 · Navsari · 12:30</div>
-          </div>
-          <div class="baycircle"><span class="n">1</span><span class="k">Bay</span></div>
+        <!-- 2 · same bay, different lane. The number is the same because the
+             STACK is the same — this is the frame that killed the
+             type-coloured version. -->
+        <div class="billband" style="margin-top:10px;">
+          <div class="bay"><span class="n">1</span><span class="k">Bay</span></div>
+          <div class="rule"></div>
+          <div class="rt"><span class="k">Route</span><span class="v">Navsari</span></div>
         </div>
-        <div class="stat"><span class="l"><span>Upcountry — same number, different stack</span></span></div>
+        <div class="stat"><span class="l" style="font-size:12px;font-weight:400;color:var(--area);">Upcountry — same bay, and it looks it</span></div>
 
-        <div class="hdr detail" style="margin-top:10px;">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Shree Yamunaji Paints &amp; Hardware</div>
-            <div class="dsub">9108441207 · IGT / CROSS · 16:00</div>
-          </div>
-          <div class="baycircle"><span class="n">2</span><span class="k">Bay</span></div>
+        <!-- 3 · route, NO bay. Number and rule both omitted; the route side
+             slides left and takes the whole strip. -->
+        <div class="billband" style="margin-top:10px;">
+          <div class="rt"><span class="k">Route</span><span class="v">Kamrej</span></div>
         </div>
-        <div class="stat"><span class="l"><span>Cross</span></span></div>
+        <div class="stat"><span class="l" style="font-size:12px;font-weight:400;color:var(--area);">Route with no bay set — no number, no rule</span></div>
 
-        <!-- NO BAY — no circle, and no wrapper either. The header is the
-             approved 2b header, unchanged: back button, two lines, nothing
-             at the right end. -->
-        <div class="hdr detail" style="margin-top:10px;">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Ambika Paints</div>
-            <div class="dsub">9108440992 · HAND · 10:30</div>
-          </div>
+        <!-- 4 · neither. The band still renders and still says "Unmatched" —
+             see the note below for why it does not collapse. -->
+        <div class="billband" style="margin-top:10px;">
+          <div class="rt"><span class="k">Route</span><span class="v">Unmatched</span></div>
         </div>
-        <div class="stat"><span class="l"><span>No bay — header identical to today</span></span></div>
+        <div class="stat"><span class="l" style="font-size:12px;font-weight:400;color:var(--area);">HAND / No Route — the word survives</span></div>
 
       </div>
     </div>
-    <p class="cost"><b>Costs, stated plainly.</b> A filled #f59e0b disc on #0d9488 is a second saturated colour in a header that has only ever carried white and frosted-white — a real departure from §1's "minimal colour", made on purpose because the circle has to survive being read while walking. It also sits beside the findings triangle on the picker's face, which itself turns amber <i>while recording is armed</i>; un-armed that button is frosted white, so the two only coincide in record mode, and the triangle is a 30% wash against this solid fill. Known overlap, accepted, not designed around.</p>
+    <p class="cost"><b>The route truncates, the number never shrinks.</b> A bay read wrong is a trolley in the wrong aisle; a route name read short is still recognisable.</p>
+  </div>
+
+  <div class="col">
+    <div class="lbl">With the triangle — where it lives now</div>
+    <div class="frame auto">
+      <div class="screen">
+
+        <div class="billband">
+          <div class="bay"><span class="n">2</span><span class="k">Bay</span></div>
+          <div class="rule"></div>
+          <div class="rt"><span class="k">Route</span><span class="v">Parvat</span></div>
+          <div class="tri"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18.1a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+        </div>
+        <div class="stat"><span class="l" style="font-size:12px;font-weight:400;color:var(--area);">Idle — bare white glyph, no tile, no fill</span></div>
+
+        <div class="billband" style="margin-top:10px;">
+          <div class="bay"><span class="n">2</span><span class="k">Bay</span></div>
+          <div class="rule"></div>
+          <div class="rt"><span class="k">Route</span><span class="v">Parvat</span></div>
+          <div class="tri on"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18.1a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+        </div>
+        <div class="recbanner">
+          <span class="rbt">Recording mode — tap any line to record what you found</span>
+          <span class="rbd">Done</span>
+        </div>
+        <div class="stat"><span class="l" style="font-size:12px;font-weight:400;color:var(--area);">Armed — the glyph goes amber and the banner appears</span></div>
+
+        <!-- The sparse case ruling 1 accepted on purpose. -->
+        <div class="billband" style="margin-top:10px;">
+          <div class="rt"><span class="k">Route</span><span class="v">Unmatched</span></div>
+          <div class="tri"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18.1a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+        </div>
+        <div class="stat"><span class="l" style="font-size:12px;font-weight:400;color:var(--area);">Unmatched bill, still recordable — sparse, on purpose</span></div>
+
+      </div>
+    </div>
+    <p class="cost"><b>The triangle ALWAYS lives on the band, on both faces, and never returns to the header.</b> A control that moves between two homes depending on the bill is worse than a band that is occasionally sparse. What it DOES is unchanged: it toggles one screen-level mode, writes nothing, and makes the line rows tappable. Its gate is unchanged too — the supervisor gets it on a bill he is checking, the picker on a bill he can still act on.</p>
   </div>
 
 </div>
 
 <div class="cap" style="margin-top:6px;">
   <p>
-    <b>Why solid amber and not a pale tinted disc.</b> A white numeral on a saturated fill holds its
-    contrast at any distance and under any light; a tinted version puts the colour into a thin ring
-    and a numeral, and the ring stops resolving well before the number does. Since the whole reason
-    the circle exists is to be read from across a warehouse, the treatment that survives the walk is
-    the one that shipped.
+    <b>Why the band does not collapse on an unmatched bill.</b> The route left the header subtitle in
+    this same change. If the band ALSO dropped out when there is no route, the word "Unmatched" would
+    disappear from the screen entirely — and "this bill's dealer resolved to nothing" is exactly the
+    thing a supervisor must not have to infer from an absence. So a null route prints "Unmatched" on
+    the route side and the band stays. What a null <i>bay</i> drops is only the number and the rule.
     <br><br>
-    <b>And nothing renders when there is no bay.</b> HAND and No Route have no bay number, and those
-    bills get no circle, no dash and no placeholder — the fourth header in each column below is that
-    case, and it is byte-identical to the header it had before any of this. Not "hidden with CSS":
-    the component returns null, which produces no DOM node, so the header's gap is not spent on it.
+    <b>Why 30px and 800 on the number.</b> CLAUDE_UI.md §60's "nothing is 700" governs mobile CARDS,
+    where competing weights make a list read dense. This is a single figure on a strip of its own,
+    read at arm's length from a moving trolley, and it is the one number on the screen that decides
+    where the picker physically walks.
   </p>
 </div>
 
 <div class="cap" style="margin-top:26px;">
   <h3>2d · The picker's own board — he is the man who walks to the bay</h3>
   <p>
-    Everything above is the supervisor's face. The bay matters more on the <b>picker's</b> "My Picks"
-    board, because he is the one carrying the trolley: <b>same circle, same position, same rule for a
-    bill with no bay.</b> His CARD gets the route swap and nothing else — no bay tag, here or
-    anywhere. His card keeps its own divergence, the <code>articleTag</code> pack summary on the
-    where-line, which the supervisor card dropped.
+    Everything above is the supervisor's face. The band matters more on the <b>picker's</b> "My Picks"
+    board, because he is the one carrying the trolley: <b>same band, same position, same rules.</b>
+    His CARD gets the route swap and nothing else — no bay object, here or anywhere. His card keeps
+    its own divergence, the <code>articleTag</code> pack summary on the where-line, which the
+    supervisor card dropped.
+  </p>
+  <p style="margin-top:10px;">
+    <b>Two things differ on his header, and only two.</b> His chip row carries the duplicate tag and
+    the SMU badge and <i>nothing else</i> — the ★ ⚡ 🎨 symbols were deliberately NOT added here,
+    because this header has never carried Key dealer / Urgent / Tint and gaining them was not part of
+    this change. And <b>his header has no right-hand icons at all</b>: this face has no search and no
+    kebab, and the triangle — the one control that was up there — is on the band now. So row 1 is
+    back plus the name, and the name gets all of it.
+  </p>
+  <p style="margin-top:10px;">
+    <span class="flag">Changed</span> His article row gains the <b>volume</b>, which used to sit on
+    the right beside the bill arrows. Left is now <code>packs · litres</code> — the supervisor's exact
+    treatment — and the right holds the pager alone. Three separate things on the right is what made
+    that strip read as one undifferentiated slab (CLAUDE_PICKING.md §7's deferred note).
   </p>
 </div>
 
@@ -858,16 +1020,24 @@
     <div class="lbl">His open bill</div>
     <div class="frame auto">
       <div class="screen">
-        <div class="hdr detail" style="align-items:center;">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Time Sqaure</div>
-            <div class="dsub">9108049119 · Adajan · 10:30</div>
+        <div class="hdr detail">
+          <div class="drow1">
+            <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+            <div class="dtext">
+              <div class="dname">Time Sqaure</div>
+              <div class="dsub">9108049119 · 10:30</div>
+            </div>
           </div>
-          <div class="baycircle"><span class="n">1</span><span class="k">Bay</span></div>
+          <div class="flagrow"><span class="smu">74</span></div>
+        </div>
+        <div class="billband">
+          <div class="bay"><span class="n">1</span><span class="k">Bay</span></div>
+          <div class="rule"></div>
+          <div class="rt"><span class="k">Route</span><span class="v">Adajan</span></div>
+          <div class="tri"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18.1a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
         </div>
         <div class="stat">
-          <span class="l"><span>2 Drum · 4 Carton</span><span class="md">·</span><span>3 of 8 ticked</span><span class="md">·</span><span>84 L</span></span>
+          <span class="l"><span>2 Drum · 4 Carton</span><span class="md">·</span><span class="vol">84 L</span><span class="sub">3 of 8 ticked</span></span>
           <span class="pager"><span class="arw">‹</span>1 of 3<span class="arw">›</span></span>
         </div>
         <div class="packrow">
@@ -880,7 +1050,7 @@
         </div>
       </div>
     </div>
-    <p class="cost">The circle takes the right end of the header, where the supervisor's face puts the search and ⋯ buttons. On the picker's header that slot is empty except for the findings triangle, so there is room — but the two would sit side by side on a bill he can still record against, and that pairing is not mocked here.</p>
+    <p class="cost"><b>His header's right end is now empty, and that is the point.</b> The triangle moved down onto the band where it sits beside the bay and the route — the three things that describe this bill as a physical job. His chip row carries the SMU badge alone here; no ★ ⚡ 🎨 were added to this face.</p>
   </div>
 
 </div>
@@ -1168,13 +1338,21 @@
     <div class="lbl">4b · Level 2 — Sanjay Padvi's 3 bills</div>
     <div class="frame tall">
       <div class="screen">
-        <div class="hdr detail" style="align-items:center;">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Sanjay Padvi</div>
-            <div class="dsub">3 bills · 1,637 L · oldest 42m</div>
+        <!-- A LIST header, not a bill detail — no band and no chip row: there
+             is no single bill to name a bay or a route for. It takes the 2b
+             sizing (38px back, 22px icon, 44px target) because that is a
+             header-wide change, not a detail-screen one. -->
+        <div class="hdr detail">
+          <div class="drow1">
+            <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+            <div class="dtext">
+              <div class="dname">Sanjay Padvi</div>
+              <div class="dsub">3 bills · 1,637 L · oldest 42m</div>
+            </div>
+            <div class="dicons">
+              <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+            </div>
           </div>
-          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
         </div>
         <div class="body">
           <div class="cardwrap"><div class="card">
@@ -1240,15 +1418,25 @@
     <div class="frame tall">
       <div class="screen">
         <div class="hdr detail">
-          <div class="back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
-          <div class="dtext">
-            <div class="dname">Ambika Paints</div>
-            <div class="dsub">9108440731 · Adajan · 12:30</div>
+          <div class="drow1">
+            <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
+            <div class="dtext">
+              <div class="dname">Ambika Paints</div>
+              <div class="dsub">9108440731 · 12:30</div>
+            </div>
+            <div class="dicons">
+              <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg></div>
+              <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+            </div>
           </div>
-          <div class="back" style="background:rgba(255,255,255,.15);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+        </div>
+        <div class="billband">
+          <div class="bay"><span class="n">1</span><span class="k">Bay</span></div>
+          <div class="rule"></div>
+          <div class="rt"><span class="k">Route</span><span class="v">Adajan</span></div>
         </div>
         <div class="stat">
-          <span class="l"><span>5 Drum · 9 Carton · 2 Loose</span><span class="md">·</span><span>733 L</span></span>
+          <span class="l"><span>5 Drum · 9 Carton · 2 Loose</span><span class="md">·</span><span class="vol">733 L</span></span>
           <span class="pager"><span class="arw">‹</span>2 of 3<span class="arw">›</span></span>
         </div>
         <div class="packrow">

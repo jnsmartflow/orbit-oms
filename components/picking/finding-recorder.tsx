@@ -58,18 +58,35 @@ const CONFIRMED_COLOR = "#dc2626";
 const PENDING_TEXT    = "#92400e";
 const CONFIRMED_TEXT  = "#b91c1c";
 
-// ── The header triangle ────────────────────────────────────────────────────
+// ── The recording triangle ─────────────────────────────────────────────────
 /**
  * Arms recording mode.
  *
- * ⚠ QUIET BY DESIGN (2026-08-08, from live-testing feedback). This was a solid
- * 38px #fbbf24 block, which read as the loudest thing on the header — louder
- * than the customer name, and competing with the CTA for "what do I press".
- * It now matches the BACK BUTTON's frosted treatment exactly (w-8 h-8,
- * rounded-[9px], bg-white/15), carrying its meaning through an amber ICON
- * rather than an amber slab. Armed state is a soft amber wash plus a ring, not
- * a fill. Do not re-solidify it: the banner below is what announces the mode,
- * and it does that job without shouting from the header.
+ * ⚠ WHAT IT DOES IS UNCHANGED, AND MUST STAY UNCHANGED. It toggles one
+ * screen-level boolean (`recordMode`). It performs NO write and makes no
+ * network call of any kind — the POST happens on Save inside FindingPopup.
+ * Arming does exactly three things: this button changes state, the banner
+ * below the header appears, and the line rows become tappable. Both boards
+ * gate it themselves (supervisor on `isDone`, picker on `!isDone`) and those
+ * gates are theirs, not this component's.
+ *
+ * ⚠ IT LIVES ON THE BAND NOW, NOT IN THE HEADER (2026-08-22). It used to sit
+ * in the header's right-hand icon cluster wearing the BACK BUTTON's frosted
+ * tile (w-8 h-8, rounded-[9px], bg-white/15). The band it moved to is a dark
+ * #0a5049 strip that already reads as a distinct surface, so the tile had
+ * nothing left to separate the glyph FROM and became a box drawn for its own
+ * sake. It is now bare: a 24px white glyph in a 42px tap target.
+ *
+ * ⚠ QUIET BY DESIGN — the 2026-08-08 rule SURVIVES this move and still binds.
+ * Before that date this was a solid 38px #fbbf24 block that read as the
+ * loudest thing on the screen, louder than the customer name, competing with
+ * the CTA for "what do I press". Do NOT re-solidify it — no tile, no fill, no
+ * slab. The banner is what announces the mode, and it does that job without
+ * the header shouting. Armed is carried by the GLYPH going amber (#fbbf24,
+ * the band's own amber), which is the same "colour the icon, not the box"
+ * principle the frosted version used.
+ *
+ * Both call sites now render it through `BillBand`'s `trailing` slot.
  */
 export function FindingTriangleButton({
   armed,
@@ -84,14 +101,10 @@ export function FindingTriangleButton({
       onClick={onToggle}
       aria-label={armed ? "Stop recording shortages" : "Record a shortage"}
       aria-pressed={armed}
-      className={
-        "w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 transition-colors " +
-        (armed
-          ? "bg-[#fbbf24]/30 ring-1 ring-[#fcd34d] text-[#fde68a]"
-          : "bg-white/15 text-white/80 active:bg-white/25")
-      }
+      className="w-[42px] h-[42px] flex items-center justify-center shrink-0 transition-colors active:opacity-60"
+      style={{ color: armed ? "#fbbf24" : "#ffffff" }}
     >
-      <AlertTriangle size={16} strokeWidth={2.25} />
+      <AlertTriangle size={24} strokeWidth={2.25} />
     </button>
   );
 }

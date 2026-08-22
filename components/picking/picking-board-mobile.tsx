@@ -49,7 +49,7 @@ import {
   findingState,
   useFindingRecorder,
 } from "./finding-recorder";
-import { BayCircle } from "./bay-circle";
+import { BillBand } from "./bill-band";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
@@ -2621,51 +2621,152 @@ export function PickingBoardMobile(): React.JSX.Element {
             without a class fight. The PICKER's detail header
             (picker-my-picks-board.tsx) is deliberately NOT touched. */}
         <div
-          // items-CENTER since 2026-08-21 (was items-start). The 44px bay
-          // circle at the right end has to sit level with the title block
-          // rather than hang off its top edge; centring is what makes the whole
-          // right-hand cluster read as one row. Nothing inside the title block
-          // moved — the dealer name and the OBD line still stack exactly as
-          // they did, and the flag row still hangs below them.
-          className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
+          // TWO ROWS since 2026-08-22 (was one). The chips moved OUT of the
+          // title block and became the header's own second line, indented to
+          // sit under the title — which is what frees the whole first line for
+          // the dealer name. `flex-col`; the row-1 wrapper below owns the
+          // items-center that used to live here.
+          //
+          // Right padding is 6px, not 14px: the icon buttons are 44px tap
+          // targets now, and their glyphs sit ~11px inside that box, so a 14px
+          // gutter would push the visible glyph a clear 25px off the edge.
+          className="bg-teal-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
           style={{
             paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
           }}
         >
+          {/* Row 1 — back · title + subtitle · icons. gap-1.5 (6px) is load-
+              bearing: 38px back + 6px = the 44px the chip row below indents by,
+              so the chips line up under the title rather than under the back
+              button. Change one and change the other. */}
+          <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => window.history.back()}
             aria-label="Back"
-            className="w-8 h-8 rounded-[9px] bg-white/15 flex items-center justify-center text-white shrink-0"
+            className="w-[38px] h-[38px] rounded-[10px] bg-white/[0.16] flex items-center justify-center text-white shrink-0"
           >
-            <ChevronLeft size={17} />
+            <ChevronLeft size={20} />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-extrabold text-white truncate">
+            {/* 16.5px/600 — the name now gets the WHOLE line (the route left
+                the subtitle and the bay circle left the right end), so it
+                truncates far later than it did. Weight dropped 800 → 600: with
+                nothing competing beside it, extrabold was carrying emphasis it
+                no longer had to earn. */}
+            <div className="text-[16.5px] font-semibold text-white truncate min-w-0">
               {detailRow?.dealerName ?? "—"}
             </div>
             <div
-              className={"text-[12px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/75")}
+              className={"text-[11.5px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
-              {/* ROUTE, not area (2026-08-21) — the same swap the card made, so
-                  a bill names the same lane on the card and one tap deeper.
-                  `?? "Unmatched"` is unchanged and still covers a bill whose
-                  dealer resolved to nothing. */}
+              {/* ⚠ THE ROUTE IS GONE FROM HERE (2026-08-22) — it moved to the
+                  band below, so it appears EXACTLY ONCE on this screen. Do not
+                  put it back: two copies of a lane name is how one of them goes
+                  stale. The `?? "Unmatched"` that used to sit here did not
+                  simply disappear either — the band renders the route side even
+                  when route is null, and prints "Unmatched" there, which is why
+                  removing it from this line loses nothing. See bill-band.tsx. */}
               {detailRow
-                ? `${detailRow.obdNumber} · ${detailRow.route ?? "Unmatched"}${
+                ? `${detailRow.obdNumber}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
                   }`
                 : "—"}
             </div>
-            {/* Row 3 — flag chips (frosted pills), each shown only when its
-                field is true; the whole row is omitted when none are, so there
-                is no empty gap. Reuses the CARD's EXACT glyphs (amber star,
-                amber urgent bolt — NOT red, avoids clashing with any red;
-                Support's purple 🎨) so a bill's flags survive from the card
-                into the detail. All fields come from detailRow — already in
-                memory, no fetch. */}
+          </div>
+          {/* Icons — the pair this face has always had, at their new size.
+              Glyphs 17 → 22px, each in a 44px tap target, and gap-0 so the two
+              read as ONE control cluster rather than two loose buttons. The
+              triangle is NOT here any more: it moved to the band (bill-band.tsx
+              `trailing`), which is why this is a clean pair. */}
+          <div className="flex items-center shrink-0">
+            {/* ⋯ — cancel the whole bill (3b).
+
+                ⚠ RENDERED ONLY when the bill's stage is cancellable. A
+                pick_checked bill gets NO ⋯ at all — not a disabled one, not an
+                empty menu: an approved bill is cancellable from Floor Control
+                only, and a greyed control would invite a tap that can never
+                succeed. Because the whole button is omitted rather than hidden,
+                the header does not shift or leave a gap — it is the first child
+                of this cluster, so its absence simply shortens the row (the
+                same no-placeholder rule ModuleMobileHeader's `showSearch`
+                follows).
+
+                The stage comes from pickingRowStage() — the ONE owner of the
+                booleans→stage mapping — tested against
+                PICKING_CANCELLABLE_STAGES, the SAME list the route enforces. No
+                stage name is written here. */}
+            {detailRow !== null &&
+              PICKING_CANCELLABLE_STAGES.includes(pickingRowStage(detailRow)) && (
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setCancelMenuOpen((v) => !v)}
+                    aria-label="More actions"
+                    aria-expanded={cancelMenuOpen}
+                    className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+                  >
+                    <MoreVertical size={22} />
+                  </button>
+                  {cancelMenuOpen && (
+                    <>
+                      {/* Tap-outside catcher. Plain sibling, not a portal — the
+                          menu is a transient popover, not a history-tracked
+                          overlay, so it deliberately does NOT push an entry and
+                          the popstate handler knows nothing about it. */}
+                      <div
+                        className="fixed inset-0 z-[60]"
+                        onClick={() => setCancelMenuOpen(false)}
+                        aria-hidden="true"
+                      />
+                      <div className="absolute right-0 top-[46px] z-[61] w-[176px] overflow-hidden rounded-[12px] border border-gray-200 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.18)]">
+                        {/* ONE item. Undo / Assign / Approve stay on the bottom
+                            CTA row where they already live. */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCancelMenuOpen(false);
+                            setCancelTarget(detailRow);
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left text-[14px] font-semibold text-red-600 active:bg-red-50"
+                        >
+                          <XCircle size={16} className="shrink-0" />
+                          Cancel bill
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            <button
+              type="button"
+              onClick={() => setDetailSearching((v) => !v)}
+              aria-label="Search line items"
+              className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+            >
+              <Search size={22} />
+            </button>
+          </div>
+          </div>
+          {/* Row 2 — flag chips, the header's own second line now (2026-08-22).
+              Indented 44px to sit under the title, NOT under the back button.
+
+              ⚠ THREE OF THESE ARE SYMBOL-ONLY as of 2026-08-22 — a 26px
+              coloured circle each, no words. Every one carries BOTH an
+              aria-label and a title holding the words it replaced: a symbol
+              with no accessible name is a regression, not a simplification.
+              The glyph colours are the CARD's own, so a bill's flags still
+              survive from the card into the detail.
+
+              ⚠ min-h-[38px] so the row holds its height on a bill whose only
+              chip is a 26px circle — without it the header's second line
+              changes height depending on WHICH flags a bill carries.
+
+              ⚠ THE GUARD BELOW KEEPS ALL FIVE DISJUNCTS. Two of them are
+              recorded bug-fixes (SMU and duplicate-SO) and neither is
+              removable; see their own comments inside it. */}
             {detailRow &&
               (detailRow.isKeyCustomer ||
                 detailRow.priorityLevel === 1 ||
@@ -2679,25 +2780,50 @@ export function PickingBoardMobile(): React.JSX.Element {
                 // so a flagged bill that is none of the above would have the
                 // whole row suppressed and lose the one signal it came for.
                 detailRow.hasDuplicateSo) && (
-              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-[44px] min-h-[38px]">
                 {/* Leads the row — it is the reason the header is red. */}
                 {detailRow.hasDuplicateSo && <DuplicateSoTag />}
+                {/* ★ ⚡ 🎨 — SYMBOL ONLY since 2026-08-22. Each was a frosted
+                    pill carrying its own word ("Key dealer" / "Urgent" /
+                    "Tint"); the words are now in the aria-label AND the title,
+                    so the meaning is still announced to a screen reader and
+                    still reachable on a long-press, while the row itself costs
+                    a fraction of the width it used to.
+
+                    ⚠ THE WORDS ARE NOT OPTIONAL. If you ever restyle these,
+                    the aria-label and title go with them — three unlabelled
+                    coloured dots is a puzzle, not a header. */}
                 {detailRow.isKeyCustomer && (
-                  <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full pl-1.5 pr-2 py-[3px] text-[11px] font-semibold text-white">
-                    <Star size={11} className="text-amber-500 fill-amber-500" />
-                    Key dealer
+                  <span
+                    className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-full shrink-0"
+                    style={{ background: "#fef3c7", color: "#b45309" }}
+                    aria-label="Key dealer"
+                    title="Key dealer"
+                    role="img"
+                  >
+                    <Star size={14} className="fill-current" />
                   </span>
                 )}
                 {detailRow.priorityLevel === 1 && (
-                  <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full pl-1.5 pr-2 py-[3px] text-[11px] font-semibold text-white">
-                    <Zap size={11} className="text-amber-500 fill-amber-500" />
-                    Urgent
+                  <span
+                    className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-full shrink-0"
+                    style={{ background: "#fee2e2", color: "#b91c1c" }}
+                    aria-label="Urgent"
+                    title="Urgent"
+                    role="img"
+                  >
+                    <Zap size={14} className="fill-current" />
                   </span>
                 )}
                 {detailRow.isTint && (
-                  <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full px-2 py-[3px] text-[11px] font-semibold text-white">
-                    <span className="text-[11px] leading-none">🎨</span>
-                    Tint
+                  <span
+                    className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-full shrink-0"
+                    style={{ background: "#f3e8ff", color: "#7e22ce" }}
+                    aria-label="Tint"
+                    title="Tint"
+                    role="img"
+                  >
+                    <span className="text-[13px] leading-none">🎨</span>
                   </span>
                 )}
                 {/* SMU — the SHARED atom, badge-to-badge with the three above.
@@ -2711,94 +2837,40 @@ export function PickingBoardMobile(): React.JSX.Element {
                 <SmuBadge code={detailRow.smuCode} />
               </div>
             )}
-          </div>
-          {/* Triangle — arms recording mode, only on a bill he is actually
-              checking (isDone = the Done tab's "Check now" band, the same
-              condition that renders the tick column and the Approve CTA).
-              Sits LEFT of search: search is the incumbent control and moving
-              it would re-teach a position for no reason. */}
-          {detailRow?.isDone && (
-            <FindingTriangleButton
-              armed={recorder.recordMode}
-              onToggle={() => recorder.setRecordMode(!recorder.recordMode)}
-            />
-          )}
-          {/* ⋯ — cancel the whole bill (3b). Sits LEFT of search, same 32px
-              box, same frosted-on-tap treatment, so the header's right cluster
-              reads as one row of equals.
-
-              ⚠ RENDERED ONLY when the bill's stage is cancellable. A
-              pick_checked bill gets NO ⋯ at all — not a disabled one, not an
-              empty menu: an approved bill is cancellable from Floor Control
-              only, and a greyed control would invite a tap that can never
-              succeed. Because the whole button is omitted rather than hidden,
-              the header does not shift or leave a gap — it is the last child of
-              a flex row, so its absence simply shortens the row (the same
-              no-placeholder rule ModuleMobileHeader's `showSearch` follows).
-
-              The stage comes from pickingRowStage() — the ONE owner of the
-              booleans→stage mapping — tested against PICKING_CANCELLABLE_STAGES,
-              the SAME list the route enforces. No stage name is written here. */}
-          {detailRow !== null &&
-            PICKING_CANCELLABLE_STAGES.includes(pickingRowStage(detailRow)) && (
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setCancelMenuOpen((v) => !v)}
-                  aria-label="More actions"
-                  aria-expanded={cancelMenuOpen}
-                  className="w-8 h-8 rounded-[9px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
-                >
-                  <MoreVertical size={17} />
-                </button>
-                {cancelMenuOpen && (
-                  <>
-                    {/* Tap-outside catcher. Plain sibling, not a portal — the
-                        menu is a transient popover, not a history-tracked
-                        overlay, so it deliberately does NOT push an entry and
-                        the popstate handler knows nothing about it. */}
-                    <div
-                      className="fixed inset-0 z-[60]"
-                      onClick={() => setCancelMenuOpen(false)}
-                      aria-hidden="true"
-                    />
-                    <div className="absolute right-0 top-[38px] z-[61] w-[176px] overflow-hidden rounded-[12px] border border-gray-200 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.18)]">
-                      {/* ONE item. Undo / Assign / Approve stay on the bottom
-                          CTA row where they already live — see the report for
-                          the one candidate considered and deliberately left
-                          out of this commit. */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCancelMenuOpen(false);
-                          setCancelTarget(detailRow);
-                        }}
-                        className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left text-[14px] font-semibold text-red-600 active:bg-red-50"
-                      >
-                        <XCircle size={16} className="shrink-0" />
-                        Cancel bill
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          <button
-            type="button"
-            onClick={() => setDetailSearching((v) => !v)}
-            aria-label="Search line items"
-            className="w-8 h-8 rounded-[9px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
-          >
-            <Search size={17} />
-          </button>
-          {/* Loading bay — LAST in the cluster, so it is the outermost thing on
-              the row and the controls keep the positions they already had.
-              Rendered BARE, with no conditional wrapper: BayCircle returns null
-              on a bill with no bay, and a null render is no DOM node at all, so
-              the row's gap-2.5 is not spent on it. A HAND / No Route header is
-              byte-identical to the one it had before this shipped. */}
-          <BayCircle bayNumber={detailRow?.bayNumber ?? null} />
         </div>
+
+        {/* ── The band (2026-08-22) — bay · route · triangle ────────────────
+            Directly under the header, outside it, so the header keeps its own
+            teal and this keeps its darker #0a5049.
+
+            ⚠ THE ROUTE IS `row.route` — the SAME field the card renders and
+            the route filter narrows on. Never delivery_point_master's
+            primaryRouteId (bill-band.tsx says why).
+
+            ⚠ THE TRIANGLE LIVES HERE NOW, on both faces, and never returns to
+            the header. Its gate is unchanged (`isDone` on this face) and what
+            it does is unchanged — one screen-level boolean, no write. A
+            control that moves between two homes depending on the bill is worse
+            than a band that is occasionally sparse, so on a bill with neither
+            bay nor route the band still renders and holds it.
+
+            Gated on `detailRow !== null` only: the detail screen is always
+            mounted (it slides in via translate-x), so between bills and while
+            closed there is no row to describe. */}
+        {detailRow !== null && (
+          <BillBand
+            bayNumber={detailRow.bayNumber}
+            route={detailRow.route}
+            trailing={
+              detailRow.isDone ? (
+                <FindingTriangleButton
+                  armed={recorder.recordMode}
+                  onToggle={() => recorder.setRecordMode(!recorder.recordMode)}
+                />
+              ) : null
+            }
+          />
+        )}
 
         {/* Recording banner — OUTSIDE pager.contentRef, same as the picker
             board: recording is a screen-level mode and must not slide away on
@@ -2847,9 +2919,16 @@ export function PickingBoardMobile(): React.JSX.Element {
                 only one bill (nothing to page between). Weight/KG and any
                 line count are deliberately gone — a picker doesn't need
                 them here. */}
-            <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-center justify-between gap-3 shrink-0">
+            <div className="bg-white border-b border-gray-200 px-[14px] py-3 flex items-center justify-between gap-3 shrink-0">
               <div className="min-w-0">
-                <div className="text-[15px] font-bold leading-snug truncate" style={{ color: "#2a323c" }}>
+                {/* ⚠ THIS LINE WRAPS — the `truncate` came off 2026-08-22 and
+                    must not go back. It is the one place on this screen where a
+                    truncation was cutting REAL information rather than a name
+                    the reader already knows: "4 Drum, 23 Carton, 27 Tin · 612 L"
+                    is a live bill, and what it lost to the ellipsis was the tail
+                    of the pack list — exactly the part a supervisor is reading
+                    it for. Two lines here cost less than a wrong trolley. */}
+                <div className="text-[15px] font-bold leading-snug" style={{ color: "#2a323c" }}>
                   {detailRow?.articleTag ?? "—"}
                   {detailRow?.volumeLitres != null && (
                     <span className="font-semibold" style={{ color: "#8a929c" }}>
@@ -2875,8 +2954,12 @@ export function PickingBoardMobile(): React.JSX.Element {
                   a primary action. Both arrows call the SAME
                   triggerPageTransition the swipe gesture uses, so arrow taps
                   and swipes produce an identical slide. */}
+              {/* gap-[10px] (was gap-0.5 = 2px) so the two arrows are
+                  separately tappable — at 2px apart a thumb aiming at ‹ on the
+                  move regularly caught the counter or ›, and paging the wrong
+                  way costs two more taps to undo. */}
               {pager.count > 1 && (
-                <div className="flex items-center gap-0.5 shrink-0">
+                <div className="flex items-center gap-[10px] shrink-0">
                   <button
                     type="button"
                     onClick={pager.goPrev}
@@ -2884,9 +2967,9 @@ export function PickingBoardMobile(): React.JSX.Element {
                     aria-label="Previous bill"
                     className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                   >
-                    <ChevronLeft size={18} />
+                    <ChevronLeft size={17} />
                   </button>
-                  <span className="text-[12.5px] font-medium text-gray-500 tabular-nums px-0.5 whitespace-nowrap">
+                  <span className="text-[12.5px] font-medium text-gray-500 tabular-nums whitespace-nowrap">
                     {detailIndex + 1} of {pager.count}
                   </span>
                   <button
@@ -2896,7 +2979,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     aria-label="Next bill"
                     className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                   >
-                    <ChevronRight size={18} />
+                    <ChevronRight size={17} />
                   </button>
                 </div>
               )}
@@ -2923,7 +3006,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   type="button"
                   onClick={() => setActivePackFilter("ALL")}
                   className={
-                    "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                    "text-[12.5px] font-medium px-3 py-[7px] rounded-full border whitespace-nowrap shrink-0 " +
                     (activePackFilter === "ALL"
                       ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                       : "bg-white border-gray-200 text-[#6b7480]")
@@ -2937,7 +3020,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     type="button"
                     onClick={() => setActivePackFilter(key)}
                     className={
-                      "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                      "text-[12.5px] font-medium px-3 py-[7px] rounded-full border whitespace-nowrap shrink-0 " +
                       (activePackFilter === key
                         ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                         : "bg-white border-gray-200 text-[#6b7480]")
@@ -3041,7 +3124,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   </div>
                   {/* QTY — fixed, plain, no "x" prefix. */}
                   <div className="shrink-0 flex items-center justify-center px-3.5">
-                    <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
+                    <span className="text-[26px] font-extrabold text-gray-900 tabular-nums">{li.qty}</span>
                   </div>
                   {/* TICK — needs-check rows only (detailRow.isDone; the Done
                       tab's top band since 2026-07-20), in the gutter

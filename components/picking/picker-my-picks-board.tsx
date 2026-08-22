@@ -17,7 +17,7 @@ import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
-import { BayCircle } from "./bay-circle";
+import { BillBand } from "./bill-band";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // Same import list, same tokens and the same tag the supervisor board and Floor
 // use; this face was deliberately left out on 2026-08-20 and is now included
@@ -1236,7 +1236,7 @@ export function PickerMyPicksBoard({
                 type="button"
                 onClick={() => setCombinedPackFilter("ALL")}
                 className={
-                  "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                  "text-[12.5px] font-medium px-3 py-[7px] rounded-full border whitespace-nowrap shrink-0 " +
                   (combinedPackFilter === "ALL"
                     ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                     : "bg-white border-gray-200 text-gray-700")
@@ -1250,7 +1250,7 @@ export function PickerMyPicksBoard({
                   type="button"
                   onClick={() => setCombinedPackFilter(key)}
                   className={
-                    "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                    "text-[12.5px] font-medium px-3 py-[7px] rounded-full border whitespace-nowrap shrink-0 " +
                     (combinedPackFilter === key
                       ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                       : "bg-white border-gray-200 text-gray-700")
@@ -1304,7 +1304,7 @@ export function PickerMyPicksBoard({
                       above say which bills are in play, and a "2 + 1 + 3" line
                       on every row is arithmetic he did not ask for. */}
                   <div className="shrink-0 flex items-center justify-center px-3.5">
-                    <span className="text-[26px] font-extrabold text-gray-900">{row.qty}</span>
+                    <span className="text-[26px] font-extrabold text-gray-900 tabular-nums">{row.qty}</span>
                   </div>
                   {/* Same slate circle as the single-bill screen, and the same
                       contract: his private note, gating nothing. One tap
@@ -1622,12 +1622,22 @@ export function PickerMyPicksBoard({
             className and the red an inline style, so the red wins without a
             class fight. */}
         <div
-          className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
+          // TWO ROWS since 2026-08-22, matching the supervisor's exactly: row 1
+          // is back · title + subtitle · icons, row 2 is the chip row indented
+          // under the title. This face has NO right-hand icons at all — the
+          // triangle was the only one and it moved to the band — so row 1 here
+          // is back + title and nothing else. The pr-1.5 is kept anyway so the
+          // two headers stay literally the same markup; a face-specific padding
+          // is one more thing to drift.
+          className="bg-teal-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
           style={{
             paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
           }}
         >
+          {/* Row 1. gap-1.5 (6px) is load-bearing: 38px back + 6px = the 44px
+              the chip row below indents by. Change one and change the other. */}
+          <div className="flex items-center gap-1.5">
           {/* Routes through history so the chevron, a hardware back press and
               the Mark Done success path all close via the ONE popstate
               authority — see closeDetail's comment. */}
@@ -1635,72 +1645,84 @@ export function PickerMyPicksBoard({
             type="button"
             onClick={() => window.history.back()}
             aria-label="Back"
-            className="w-8 h-8 rounded-[9px] bg-white/15 flex items-center justify-center text-white shrink-0"
+            className="w-[38px] h-[38px] rounded-[10px] bg-white/[0.16] flex items-center justify-center text-white shrink-0"
           >
-            <ChevronLeft size={17} />
+            <ChevronLeft size={20} />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-extrabold text-white truncate">
+            {/* 16.5px/600 — the name gets the whole line now that the route
+                left the subtitle and the bay circle left the right end. Same
+                treatment as the supervisor's, deliberately. */}
+            <div className="text-[16.5px] font-semibold text-white truncate min-w-0">
               {detailRow?.dealerName ?? "—"}
             </div>
             <div
-              className={"text-[12px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/75")}
+              className={"text-[11.5px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
-              {/* ROUTE, not area (2026-08-21) — matches his card and the
-                  supervisor's header. `?? "Unmatched"` unchanged. */}
+              {/* ⚠ THE ROUTE IS GONE FROM HERE (2026-08-22) — it moved to the
+                  band below so it appears EXACTLY ONCE on the screen, same as
+                  the supervisor's. The `?? "Unmatched"` did not vanish with it:
+                  the band prints "Unmatched" on its route side when route is
+                  null, which is why removing it here loses nothing. */}
               {detailRow
-                ? `${detailRow.obdNumber} · ${detailRow.route ?? "Unmatched"}${
+                ? `${detailRow.obdNumber}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
                   }`
                 : "—"}
             </div>
-            {/* SMU badge row (2026-08-19). Unlike the supervisor's detail
-                header there was NO flag row here to hang it on — that header
-                carries Key dealer / Urgent / Tint pills and this one carries
-                none — so the row is created, and created CONDITIONALLY: on a
-                bill that is not 74/77 nothing renders and the header keeps its
-                exact two-line height. Same `mt-2 gap-1.5` row shape as the
-                supervisor's, so if this face ever gains its own flag pills they
-                drop straight in beside it.
-                ⚠ SAME TRAP, SAME FIX as the supervisor's flag row — the
-                duplicate tag lives in this row, so a flagged bill that is not
-                74/77 would have the whole row suppressed and lose the one
-                signal it came for. Its condition is in the guard too. */}
-            {detailRow && (isSmuBadged(detailRow.smuCode) || detailRow.hasDuplicateSo) && (
-              <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                {/* Leads the row — it is the reason the header is red. */}
-                {detailRow.hasDuplicateSo && <DuplicateSoTag />}
-                <SmuBadge code={detailRow.smuCode} />
-              </div>
-            )}
           </div>
-          {/* Triangle — arms recording mode. Amber (#fbbf24 on #78350f), the
-              mockup's exact pair, and the ONE amber control on a teal header:
-              it is deliberately not teal, because teal here belongs to Mark
-              done (CLAUDE_UI §1's one-teal rule) and this must not read as the
-              primary action. The ring when armed is the mockup's
-              `.triangle-btn.on` box-shadow. 38px, matching the mockup, which
-              also clears the 44px-ish tap floor the rest of this screen uses.
-              Only on a bill he can still act on — a Done bill has nothing to
-              record against, the same condition that hides the Mark done CTA. */}
-          {detailRow && !detailRow.isDone && (
-            <FindingTriangleButton
-              armed={recorder.recordMode}
-              onToggle={() => recorder.setRecordMode(!recorder.recordMode)}
-            />
+          </div>
+          {/* Row 2 — the chip row, indented 44px to sit under the title.
+
+              ⚠ THIS FACE CARRIES ONLY THESE TWO. The supervisor's ★/⚡/🎨
+              symbols were deliberately NOT added here — this header has never
+              carried Key dealer / Urgent / Tint and gaining them was not part
+              of the 2026-08-22 change.
+
+              SMU badge row (2026-08-19). Unlike the supervisor's flag row there
+              was NO existing row here to hang it on, so the row is created, and
+              created CONDITIONALLY: on a bill that is not 74/77 nothing renders.
+              ⚠ SAME TRAP, SAME FIX as the supervisor's flag row — the duplicate
+              tag lives in this row, so a flagged bill that is not 74/77 would
+              have the whole row suppressed and lose the one signal it came for.
+              Its condition is in the guard too. */}
+          {detailRow && (isSmuBadged(detailRow.smuCode) || detailRow.hasDuplicateSo) && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-[44px] min-h-[38px]">
+              {/* Leads the row — it is the reason the header is red. */}
+              {detailRow.hasDuplicateSo && <DuplicateSoTag />}
+              <SmuBadge code={detailRow.smuCode} />
+            </div>
           )}
-          {/* Loading bay — LAST in the cluster, same position as the
-              supervisor's, so one bill's bay is in the same place on both
-              faces. Bare render: null is no DOM node, so a HAND / No Route
-              header keeps its exact current shape and gap.
-              ⚠ The comment on the triangle above calls itself "the ONE amber
-              control on a teal header". That is now true only while recording
-              is ARMED — un-armed it is frosted white, and this circle is the
-              header's standing amber. See bay-circle.tsx for why the overlap is
-              accepted rather than designed around. */}
-          <BayCircle bayNumber={detailRow?.bayNumber ?? null} />
         </div>
+
+        {/* ── The band (2026-08-22) — bay · route · triangle ────────────────
+            Identical to the supervisor's, same component, same position, so one
+            bill's bay reads the same on both faces.
+
+            ⚠ THE TRIANGLE LIVES HERE NOW and never returns to the header. Its
+            gate is unchanged (`!isDone` on this face — a Done bill has nothing
+            left to record against, the same condition that hides Mark done) and
+            what it does is unchanged: one screen-level boolean, no write.
+
+            ⚠ The old bay circle's comment claimed the triangle was "the ONE
+            amber control on a teal header". Neither half survives: the triangle
+            is white until armed, and the standing amber is now the BAY NUMBER
+            on the band below, not a circle in this header. */}
+        {detailRow !== null && (
+          <BillBand
+            bayNumber={detailRow.bayNumber}
+            route={detailRow.route}
+            trailing={
+              !detailRow.isDone ? (
+                <FindingTriangleButton
+                  armed={recorder.recordMode}
+                  onToggle={() => recorder.setRecordMode(!recorder.recordMode)}
+                />
+              ) : null
+            }
+          />
+        )}
 
         {/* Recording banner — OUTSIDE pager.contentRef on purpose: recording is
             a screen-level mode, so it must not slide away and back on every
@@ -1713,10 +1735,27 @@ export function PickerMyPicksBoard({
             updates at the swap instant, same as the stat strip and counter
             below it. Same structure as the supervisor's detail screen. */}
         <div ref={pager.contentRef} className="flex-1 min-h-0 flex flex-col">
-        <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-center justify-between gap-3 shrink-0">
+        <div className="bg-white border-b border-gray-200 px-[14px] py-3 flex items-center justify-between gap-3 shrink-0">
           <div className="min-w-0">
-            <div className="text-[16px] font-extrabold text-gray-900 leading-snug">
+            {/* ⚠ THIS LINE WRAPS, and the volume now sits ON it (2026-08-22) —
+                the supervisor's exact "4 Drum, 23 Carton, 27 Tin · 612 L"
+                treatment, so the two faces read the same. The litres used to
+                live on the RIGHT of this row beside the bill arrows; three
+                separate things over there was what made the strip read as one
+                undifferentiated slab (CLAUDE_PICKING.md §7's deferred note).
+                Do not re-add a truncate here: the pack list is the one thing on
+                this screen where an ellipsis eats information the picker came
+                for. */}
+            <div className="text-[15px] font-bold leading-snug" style={{ color: "#2a323c" }}>
               {detailRow?.articleTag ?? "—"}
+              {detailRow?.volumeLitres != null && (
+                <span className="font-semibold" style={{ color: "#8a929c" }}>
+                  {" "}&middot; {formatLitres(detailRow.volumeLitres)}{" "}
+                  <span className="text-[11px]" style={{ color: "#aab2bb" }}>
+                    L
+                  </span>
+                </span>
+              )}
             </div>
             {/* Tick progress — quiet, grey, informational, in the same slot the
                 supervisor uses for its own "N / M checked" line. Carries the
@@ -1732,19 +1771,18 @@ export function PickerMyPicksBoard({
               </div>
             )}
           </div>
-          <div className="shrink-0 flex items-center gap-1">
-            <div className="text-[13px] font-semibold text-gray-500 whitespace-nowrap">
-              {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
-            </div>
+          <div className="shrink-0 flex items-center">
             {/* Bill-position counter — the supervisor's exact control
                 (CLAUDE_PICKING.md §5.3 Option F): neutral gray, tap arrows,
                 same "N of M" wording, HIDDEN when the list has one bill
                 (nothing to page between). Teal stays reserved for the Mark
                 done CTA — this is navigation, not a primary action. Both
                 arrows call the same pager the swipe does, so an arrow tap and
-                a swipe produce an identical slide. */}
+                a swipe produce an identical slide.
+                gap-[10px] (was gap-0.5) so each arrow is separately tappable —
+                same change, same reason, as the supervisor's. */}
             {pager.count > 1 && (
-              <div className="flex items-center gap-0.5 shrink-0">
+              <div className="flex items-center gap-[10px] shrink-0">
                 <button
                   type="button"
                   onClick={pager.goPrev}
@@ -1752,9 +1790,9 @@ export function PickerMyPicksBoard({
                   aria-label="Previous bill"
                   className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={17} />
                 </button>
-                <span className="text-[12.5px] font-medium text-gray-500 tabular-nums px-0.5 whitespace-nowrap">
+                <span className="text-[12.5px] font-medium text-gray-500 tabular-nums whitespace-nowrap">
                   {pager.index + 1} of {pager.count}
                 </span>
                 <button
@@ -1764,7 +1802,7 @@ export function PickerMyPicksBoard({
                   aria-label="Next bill"
                   className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                 >
-                  <ChevronRight size={18} />
+                  <ChevronRight size={17} />
                 </button>
               </div>
             )}
@@ -1804,7 +1842,7 @@ export function PickerMyPicksBoard({
               type="button"
               onClick={() => setActivePackFilter("ALL")}
               className={
-                "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                "text-[12.5px] font-medium px-3 py-[7px] rounded-full border whitespace-nowrap shrink-0 " +
                 (activePackFilter === "ALL"
                   ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                   : "bg-white border-gray-200 text-gray-700")
@@ -1818,7 +1856,7 @@ export function PickerMyPicksBoard({
                 type="button"
                 onClick={() => setActivePackFilter(key)}
                 className={
-                  "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                  "text-[12.5px] font-medium px-3 py-[7px] rounded-full border whitespace-nowrap shrink-0 " +
                   (activePackFilter === key
                     ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                     : "bg-white border-gray-200 text-gray-700")
@@ -1944,7 +1982,7 @@ export function PickerMyPicksBoard({
                     )}
                   </div>
                   <div className="shrink-0 flex items-center justify-center px-3.5">
-                    <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
+                    <span className="text-[26px] font-extrabold text-gray-900 tabular-nums">{li.qty}</span>
                   </div>
                   {/* TICK — his private note that he has fetched this line.
                       The supervisor's identical control is filled TEAL; this
