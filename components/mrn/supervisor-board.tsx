@@ -43,8 +43,34 @@ export function MrnSupervisorBoard(): React.JSX.Element {
 
   const rows = data ? data[activeTab] : [];
 
+
   // ── Detail screen state ───────────────────────────────────────────────────
-  const [detailId, setDetailId] = useState<number | null>(null);
+  /**
+   * ⚠ A REQUEST, NOT A BARE ID — and the nonce is the whole point.
+   *
+   * This was `detailId: number | null`, and re-opening the SAME MRN left it
+   * unchanged, so the fetch effect below never re-ran. openDetail had already
+   * nulled `detail`, and nothing then set loading or error, so the screen
+   * rendered its null branch: a teal header reading "—" over an empty body.
+   * It was reachable on the FIRST truck — open it, press Start (which closes
+   * through history but leaves the id set), tap the same card under Checking.
+   *
+   * Bumping `nonce` on every open makes the effect fire every time, so a fetch
+   * is guaranteed to be in flight whenever `detail` is null.
+   */
+  const [detailReq, setDetailReq] = useState<{ id: number; nonce: number } | null>(null);
+  const detailId = detailReq?.id ?? null;
+
+  /** The card behind the open detail screen — used only to seed the header
+   *  while the detail fetch is in flight. Searched across ALL three tabs, not
+   *  just the active one: Start moves a truck from toCheck to checking, so the
+   *  row can legitimately live on a tab he is no longer looking at. */
+  const openRow =
+    detailId === null || !data
+      ? null
+      : ([...data.toCheck, ...data.checking, ...data.done].find((r) => r.id === detailId) ??
+        null);
+
   const [detail, setDetail] = useState<MrnDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -70,13 +96,14 @@ export function MrnSupervisorBoard(): React.JSX.Element {
   }, [toast]);
 
   useEffect(() => {
-    if (detailId === null) return;
+    if (detailReq === null) return;
+    const { id } = detailReq;
     let cancelled = false;
     async function load() {
       setDetailLoading(true);
       setDetailError(null);
       try {
-        const res = await fetch(`/api/mrn/${detailId}`);
+        const res = await fetch(`/api/mrn/${id}`);
         if (!res.ok) {
           throw new Error(
             res.status === 404
@@ -98,7 +125,9 @@ export function MrnSupervisorBoard(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [detailId]);
+    // The NONCE is in here on purpose — see detailReq. Keying on the id alone
+    // is the bug this replaced.
+  }, [detailReq]);
 
   // ── ONE history entry, ONE close authority ────────────────────────────────
   //
@@ -161,8 +190,21 @@ export function MrnSupervisorBoard(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Re-read the open MRN after a line confirm. Client fetch, never
-   *  router.refresh() — see confirmStart's comment for why. */
+  /**
+   * BACKGROUND refresh of an ALREADY-LOADED screen — after a line confirm, or
+   * a 409 that means the screen is stale. Client fetch, never router.refresh()
+   * (see confirmStart).
+   *
+   * ⚠ DELIBERATELY SILENT, AND DELIBERATELY NOT THE INITIAL LOAD. It never
+   * touches `detailLoading` and never sets `detailError`: he is mid-count, and
+   * blanking the list or throwing an error screen over it on a network blip
+   * would be far worse than one stale tick. The next confirm retries.
+   *
+   * That silence is right HERE and wrong for the first load, which is why the
+   * two are separate paths. The effect above owns the initial load and always
+   * ends in a visible state — content, or an error with a retry, or loading.
+   * Do not merge them.
+   */
   const refetchDetail = useCallback(async (): Promise<MrnDetail | null> => {
     if (detailId === null) return null;
     try {
@@ -179,11 +221,24 @@ export function MrnSupervisorBoard(): React.JSX.Element {
   }, [detailId]);
 
   function openDetail(id: number): void {
-    setDetailId(id);
+    // Bump the nonce every time, so opening the same truck twice still refetches.
+    setDetailReq((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
     setDetail(null);
     setDetailError(null);
+    // Loading up front rather than waiting for the effect: the screen slides in
+    // on the same tick, and it must never be on screen without a state.
+    setDetailLoading(true);
     setDetailOpen(true);
     pushScreen();
+  }
+
+  /** Re-run the initial load after a failure. Same path as opening it. */
+  function retryDetail(): void {
+    if (detailReq === null) return;
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    setDetailReq((prev) => (prev === null ? prev : { ...prev, nonce: prev.nonce + 1 }));
   }
 
   // ── Start unloading ───────────────────────────────────────────────────────
@@ -350,21 +405,37 @@ export function MrnSupervisorBoard(): React.JSX.Element {
           >
             <ChevronLeft size={20} />
           </button>
+          {/* Falls back to the CARD the supervisor just tapped, which the board
+              already holds — so the header reads the right truck from the first
+              frame instead of "—" while the detail fetch is in flight. */}
           <div className="min-w-0">
             <div className="truncate text-[16px] font-bold text-white">
-              {detail?.receivedFrom ?? "—"}
+              {detail?.receivedFrom ?? openRow?.receivedFrom ?? "—"}
             </div>
             <div className="truncate font-mono text-[11px] text-white/75">
-              {detail?.mrnNumber ?? ""}
+              {detail?.mrnNumber ?? openRow?.mrnNumber ?? ""}
             </div>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3">
-          {detailLoading ? (
-            <p className="px-1 py-3 text-[13px] text-gray-400">Loading…</p>
-          ) : detailError ? (
-            <p className="px-1 py-3 text-[13px] text-red-600">{detailError}</p>
+          {/* ⚠ ORDER MATTERS, AND LOADING IS THE FALLBACK — NOT A BRANCH.
+              This used to end in `: null`, so a null payload with neither flag
+              set rendered an empty screen. Now the only way to reach the last
+              arm is to have no detail and no error, which IS the loading state
+              by definition. A blank body is unreachable by construction rather
+              than by every caller remembering to set a flag. */}
+          {detailError ? (
+            <div className="px-1 py-8 text-center">
+              <p className="text-[13.5px] leading-relaxed text-[#b42318]">{detailError}</p>
+              <button
+                type="button"
+                onClick={retryDetail}
+                className="mt-4 h-11 rounded-[11px] bg-gray-900 px-5 text-[14px] font-semibold text-white active:bg-gray-800"
+              >
+                Try again
+              </button>
+            </div>
           ) : detail ? (
             <>
               <FactsCard detail={detail} />
@@ -394,7 +465,9 @@ export function MrnSupervisorBoard(): React.JSX.Element {
                 </div>
               )}
             </>
-          ) : null}
+          ) : (
+            <p className="px-1 py-3 text-[13px] text-gray-400">Loading…</p>
+          )}
         </div>
 
         {/* CTA. ⚠ The bottom bar is HIDDEN while this screen is open (hideBar in
