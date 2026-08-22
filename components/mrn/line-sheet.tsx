@@ -300,13 +300,31 @@ export function LineSheet({
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
         <div className="flex items-start gap-2">
+          {/* ⚠ THE SKU IS THE HERO, THE NAME CONFIRMS — swapped 2026-08-22, and
+              this is the SAME rule the line list follows: he matches the CODE
+              against the tin in his hand, then reads the name to check he
+              opened the right one. It was the other way round, which made the
+              thing he is actually looking for the small grey line.
+              It also costs less height: a long product name used to wrap the
+              hero onto three lines, and as a single truncated line beneath it
+              can only ever be two. */}
           <div className="min-w-0 flex-1">
-            <div className="text-[17px] font-bold leading-tight text-gray-900">
-              {line.isCatalogued ? line.description : "Not in catalog"}
+            {/* Row 1 — mono SKU large and bold, meta trailing it on the same
+                baseline. `items-baseline` is what keeps the 12.5px meta sitting
+                on the 20px code's baseline rather than centred against it. */}
+            <div className="flex flex-wrap items-baseline gap-x-1.5">
+              <span className="font-mono text-[20px] font-bold leading-tight text-gray-900">
+                {line.skuCode}
+              </span>
+              <span className="text-[12.5px] text-[#98a2b3]">
+                {line.pack && `· ${line.pack} `}· line {position.index} of {position.total}
+              </span>
             </div>
-            <div className="mt-1 text-[13px] text-[#98a2b3]">
-              <span className="font-mono text-[12px]">{line.skuCode}</span>
-              {line.pack && ` · ${line.pack}`} · line {position.index} of {position.total}
+            {/* Row 2 — the product name, demoted. ONE line: `truncate` needs the
+                `min-w-0` on the flex parent above to actually ellipsis rather
+                than push the ✕ off the row. */}
+            <div className="mt-0.5 truncate text-[12.5px] text-gray-500">
+              {line.isCatalogued ? line.description : "Not in catalog"}
             </div>
           </div>
           {/* Routes through the SAME onClose as Cancel and the hardware back —
