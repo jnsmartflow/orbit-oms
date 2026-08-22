@@ -97,9 +97,14 @@ export interface MrnIssueSummary {
  * occasionally splits (30 tins Jun-26 + 16 tins Jul-26), which is why this is a
  * table and not four columns on the line.
  *
- * ⚠ bestBefore* is TYPED by the supervisor, not derived from mfg* — shelf life
- * varies by product (design §11 OQ-9). There is no 24-month rule anywhere in
- * this module and none may be added, not even as a UI pre-fill.
+ * 🔴 bestBefore* IS NO LONGER COLLECTED (2026-08-22, schema v27.17). The
+ * supervisor does not record it, so both halves are nullable here and in live,
+ * and every row written from that date has NULL in both. Nothing displays them
+ * either — they are off the line sheet, the desktop table and the report. See
+ * prisma/schema.prisma’s mrn_line_batches header for the full rationale.
+ *
+ * They survive on the ROW type because historical rows may still carry values;
+ * they are absent from MrnBatchInput below because nothing may send them.
  */
 export interface MrnBatchRow {
   id: number;
@@ -107,18 +112,21 @@ export interface MrnBatchRow {
   qty: number;
   mfgMonth: number;
   mfgYear: number;
-  bestBeforeMonth: number;
-  bestBeforeYear: number;
+  /** Null on every row written since 2026-08-22 — see above. */
+  bestBeforeMonth: number | null;
+  bestBeforeYear: number | null;
 }
 
 /** A batch as the phone SUBMITS it — no id yet, and the row may be brand new.
- *  Shape accepted by validateBatches() in lib/mrn/derive.ts. */
+ *  Shape accepted by validateBatches() in lib/mrn/derive.ts.
+ *
+ *  ⚠ NO bestBefore FIELDS, deliberately. Nothing collects them, so nothing may
+ *  send them; the confirm route rejects nothing but also writes nothing there.
+ *  Adding them back here is the first step of accidentally reviving the field. */
 export interface MrnBatchInput {
   qty: number;
   mfgMonth: number;
   mfgYear: number;
-  bestBeforeMonth: number;
-  bestBeforeYear: number;
 }
 
 // ── Lines ────────────────────────────────────────────────────────────────────

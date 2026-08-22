@@ -6,12 +6,15 @@
 // the write route validates it with, so the two can never disagree about
 // whether a line is confirmable.
 //
-// 🔴 THERE IS NO BEST-BEFORE DERIVATION IN THIS FILE, AND NONE MAY BE ADDED.
-// Best before is TYPED by the supervisor, per batch, because shelf life varies
-// by product (design §11 OQ-9). An earlier design had it as manufacturing + 24
-// months rendered read-only; that was corrected before any code existed. Do not
-// add a 24-month helper — not as a default, not as a UI pre-fill, not "unused
-// for now". An unused helper is an invitation.
+// 🔴 THERE IS NO BEST-BEFORE ANYTHING IN THIS FILE, AND NONE MAY BE ADDED.
+// As of 2026-08-22 the supervisor does not record a best-before date at all —
+// it is off the line sheet, out of MrnBatchInput, out of the confirm route and
+// off every display surface (schema v27.17). Before that it was TYPED per batch
+// rather than derived, because shelf life varies by product; before THAT an
+// early design computed it as manufacturing + 24 months. Both reversals are
+// recorded so neither is re-reversed. Do not add a 24-month helper in any
+// direction — not as a default, not as a pre-fill, not "unused for now". An
+// unused helper is an invitation.
 
 import type {
   MrnBatchInput,
@@ -218,16 +221,22 @@ export function validateBatches(
     };
   }
 
-  // Mirrors chk_mrn_batch_mfg_month and chk_mrn_batch_bb_month. There is
-  // deliberately NO year check — "a reasonable year" is a UI judgement that
-  // ages, not an invariant (the pick_findings precedent).
+  // Mirrors chk_mrn_batch_mfg_month. There is deliberately NO year check — "a
+  // reasonable year" is a UI judgement that ages, not an invariant (the
+  // pick_findings precedent).
+  //
+  // ⚠ THE BEST-BEFORE HALF OF THIS CHECK IS GONE (2026-08-22). It read
+  // `|| !monthOk(b.bestBeforeMonth)` and the message named both months. The
+  // supervisor no longer records a best-before date at all, so requiring one
+  // would block every confirm. chk_mrn_batch_bb_month is still live but passes
+  // on NULL. Do not restore this without restoring the input that feeds it.
   const monthOk = (m: number) => Number.isInteger(m) && m >= 1 && m <= 12;
-  if (batches.some((b) => !monthOk(b.mfgMonth) || !monthOk(b.bestBeforeMonth))) {
+  if (batches.some((b) => !monthOk(b.mfgMonth))) {
     return {
       ...base,
       ok: false,
       problem: "INVALID_MONTH",
-      message: "Every batch needs a manufacturing month and a best-before month.",
+      message: "Every batch needs a manufacturing month.",
     };
   }
 

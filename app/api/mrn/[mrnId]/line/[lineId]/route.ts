@@ -11,8 +11,7 @@ export const dynamic = "force-dynamic";
  * PUT /api/mrn/[mrnId]/line/[lineId] — the supervisor confirms ONE line.
  *
  * Body: { physicalQty, sndQty?, leakyQty?, damageQty?, emptyQty?, qtdQty?,
- *         rejQty?, batches: [{ batchNo, qty, mfgMonth, mfgYear,
- *         bestBeforeMonth, bestBeforeYear }] }
+ *         rejQty?, batches: [{ batchNo, qty, mfgMonth, mfgYear }] }
  *
  * 409 unless status === 'checking'. RE-CONFIRMING AN ALREADY-CHECKED LINE IS
  * ALLOWED while the MRN is 'checking' — a supervisor correcting himself before
@@ -32,10 +31,12 @@ export const dynamic = "force-dynamic";
  * requires qty > 0 per row, so a zero line simply has no rows — validateBatches
  * encodes exactly that, and an empty array is never treated as a failure here.
  *
- * 🔴 BEST BEFORE COMES FROM THE BODY. There is no calculation, no default and
- * no fallback to manufacturing + 24 months (design §11 OQ-9 — shelf life varies
- * by product, so there is nothing to calculate from). A missing best-before is
- * a 400. Do not add a pre-fill, not even an "unused for now" helper.
+ * 🔴 BEST BEFORE IS NOT COLLECTED AT ALL (2026-08-22, schema v27.17). It is not
+ * in the body, not validated, and not written — the column is nullable and
+ * every row created here has NULL in both halves. Earlier revisions required it
+ * from the body, and before that derived it as manufacturing + 24 months; both
+ * are recorded in prisma/schema.prisma so neither is revived. Do not add a
+ * pre-fill or a default in any direction.
  *
  * ── WRITE ORDER — THE ONE DANGEROUS SEQUENCE IN THIS MODULE ─────────────────
  *
@@ -187,15 +188,14 @@ export async function PUT(
     // NULL Int, so a non-integer would throw out of Prisma instead of returning
     // a sentence. In particular this is NOT a "reasonable year" test — derive.ts
     // deliberately declines to make that judgement (it ages), and so does this.
-    for (const key of ["qty", "mfgMonth", "mfgYear", "bestBeforeMonth", "bestBeforeYear"] as const) {
+    // ⚠ bestBefore* IS NOT READ (2026-08-22, schema v27.17). The supervisor no
+    // longer records it, so the client sends nothing and this writes NULL. A
+    // caller that sends it anyway is IGNORED rather than rejected — it is not
+    // an error, it is a field that stopped existing. See prisma/schema.prisma.
+    for (const key of ["qty", "mfgMonth", "mfgYear"] as const) {
       if (typeof b[key] !== "number" || !Number.isInteger(b[key])) {
         return NextResponse.json(
-          {
-            error:
-              key === "bestBeforeMonth" || key === "bestBeforeYear"
-                ? `Batch ${i + 1} needs a best-before month and year — they are typed, never calculated.`
-                : `Batch ${i + 1} needs a whole ${key}.`,
-          },
+          { error: `Batch ${i + 1} needs a whole ${key}.` },
           { status: 400 },
         );
       }
@@ -205,8 +205,6 @@ export async function PUT(
       qty: b.qty as number,
       mfgMonth: b.mfgMonth as number,
       mfgYear: b.mfgYear as number,
-      bestBeforeMonth: b.bestBeforeMonth as number,
-      bestBeforeYear: b.bestBeforeYear as number,
     });
   }
   if (new Set(batchNos).size !== batchNos.length) {

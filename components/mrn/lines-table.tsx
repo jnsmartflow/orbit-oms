@@ -15,7 +15,13 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 // supervisor-owned column renders as an empty dashed cell.
 //
 //   # · SKU · Description · Pack · Qty STI · Ctn · Physical · Mfg m/y ·
-//   BB m/y · SND · Lky · Damage · Empty · QTD · REJ · Short · Excess
+//   SND · Lky · Damage · Empty · QTD · REJ · Short · Excess
+//
+// ⚠️ THE BB m/y COLUMN WAS REMOVED (2026-08-22, schema v27.17). Best before is
+// no longer collected anywhere — the pickers are gone from the line sheet and
+// the columns are nullable — so displaying it would have shown an empty column
+// on every truck from that date. Its 5% went to Description. Do not restore it
+// without restoring the input that feeds it.
 //
 // ⚠️ Mfg and Best Before are ONE cell each, rendered `06/26` — matching the
 // source workbook's PRINT sheet, which is what the depot already reads. They
@@ -46,20 +52,19 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 // collapsing into unreadable slivers on a narrow window.
 
 /** Wide enough that every column stays legible; the box scrolls past it. */
-const TABLE_MIN_WIDTH = 1480;
+const TABLE_MIN_WIDTH = 1400;
 
 /** ONE definition, read by the colgroup and the header row alike, so a column
  *  can never be added to one and forgotten in the other. Percentages sum to 100. */
 const COLUMNS: { key: string; label: string; width: number; left?: boolean }[] = [
   { key: "no", label: "#", width: 3 },
   { key: "sku", label: "SKU", width: 8, left: true },
-  { key: "desc", label: "Description", width: 20, left: true },
+  { key: "desc", label: "Description", width: 25, left: true },
   { key: "pack", label: "Pack", width: 5 },
   { key: "sti", label: "Qty STI", width: 5 },
   { key: "ctn", label: "Ctn", width: 4 },
   { key: "phy", label: "Physical", width: 5 },
   { key: "mfg", label: "Mfg m/y", width: 5 },
-  { key: "bb", label: "BB m/y", width: 5 },
   { key: "snd", label: "SND", width: 5 },
   { key: "lky", label: "Lky", width: 5 },
   { key: "dmg", label: "Damage", width: 5 },
@@ -70,9 +75,9 @@ const COLUMNS: { key: string; label: string; width: number; left?: boolean }[] =
   { key: "exc", label: "Excess", width: 5 },
 ];
 
-/** Physical · Mfg · BB · the eight condition columns = 11 cells the supervisor
- *  owns, dashed in both billing-facing states. */
-const SUPERVISOR_COLUMN_COUNT = 11;
+/** Physical · Mfg · the eight condition columns = 10 cells the supervisor owns,
+ *  dashed in both billing-facing states. BB left this count on 2026-08-22. */
+const SUPERVISOR_COLUMN_COUNT = 10;
 
 interface LinesTableProps {
   detail: MrnDetail;
@@ -478,14 +483,10 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
               <Td center strong bad={!cont && l.shortQty > 0}>
                 {r.qtyForRow ?? "—"}
               </Td>
-              {/* Mfg and Best Before — ONE cell each, and they VARY per sub-row. */}
+              {/* Mfg — ONE cell, and it VARIES per sub-row. Best before had a
+                  cell here until 2026-08-22; see the file header. */}
               <Td center>
                 {r.batch ? formatMonthYear(r.batch.mfgMonth, r.batch.mfgYear) : "—"}
-              </Td>
-              <Td center>
-                {r.batch
-                  ? formatMonthYear(r.batch.bestBeforeMonth, r.batch.bestBeforeYear)
-                  : "—"}
               </Td>
               <Cond value={cont ? null : l.sndQty} />
               <Cond value={cont ? null : l.leakyQty} bad />
@@ -515,7 +516,6 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
             <Td center strong>{formatCount(detail.totalQtySti)}</Td>
             <Td center muted>—</Td>
             <Td center strong>{formatCount(detail.totalPhysicalQty)}</Td>
-            <Td center muted>—</Td>
             <Td center muted>—</Td>
             <Cond value={totalSnd || null} />
             <Cond value={detail.totalLeaky || null} bad />

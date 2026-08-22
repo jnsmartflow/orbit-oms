@@ -2141,7 +2141,9 @@ model TripReport {
 // MRN — MATERIAL RECEIPT NOTE
 // ─────────────────────────────────────────────
 
-// Inbound goods receipt (v27.16, 2026-08-20). The only module that records
+// Inbound goods receipt (v27.16, 2026-08-20; **v27.17** 2026-08-22 —
+// mrn_line_batches.bestBeforeMonth/Year made NULLABLE and retired from every
+// surface, see that model's header). The only module that records
 // stock coming INTO the depot; it touches nothing in the OBD/orders pipeline.
 // Design record: docs/prompts/drafts/web-update-2026-08-20-mrn-module-design.md
 //
@@ -2291,6 +2293,12 @@ model mrn_lines {
 //   chk_mrn_batch_qty        CHECK (qty > 0)
 //   chk_mrn_batch_mfg_month  CHECK ("mfgMonth" BETWEEN 1 AND 12)
 //   chk_mrn_batch_bb_month   CHECK ("bestBeforeMonth" BETWEEN 1 AND 12)
+//                            ⚠ STILL LIVE, and harmless now the column is
+//                            nullable: a CHECK passes when its expression is
+//                            NULL (NULL is not FALSE), so a row with no
+//                            best-before satisfies it. Left in place rather
+//                            than dropped — if the field is ever collected
+//                            again the guard is already there.
 // There is deliberately NO year constraint on either pair — "a reasonable
 // year" is a UI judgement that ages, not an invariant (the pick_findings
 // precedent).
@@ -2306,11 +2314,31 @@ model mrn_lines {
 // sheet's own arithmetic. Same "dependency no CHECK can hold" class as
 // pick_findings' reason↔mfgMonth rule (CORE §7.4).
 //
-// ⚠ bestBeforeMonth/Year are TYPED by the supervisor, per batch — they are NOT
-// derived from the mfg pair. Shelf life varies by product, so there is nothing
-// to calculate from. An earlier design had them as manufacturing + 24 months
-// rendered read-only; that was corrected 2026-08-20, before any code existed.
-// Do not reintroduce a 24-month default, not even as a pre-fill.
+// 🔴 bestBeforeMonth / bestBeforeYear ARE DELIBERATELY UNUSED as of 2026-08-22
+// (v27.17), and NULLABLE in live — the ALTER ran through Smart Flow and was
+// SELECT-verified before any code changed.
+//
+// THIS IS NOT A FORGOTTEN FIELD. Nothing collects it and nothing displays it:
+// the supervisor does not record a best-before date, so the pickers were
+// removed from the line sheet, the requirement was removed from
+// validateBatches(), the confirm route no longer accepts it, and the column
+// was removed from the desktop lines table. A future session reading these two
+// columns as "we capture this, it just isn't shown" would be wrong.
+//
+// The columns STAY rather than being dropped because the decision is about who
+// records the data, not about whether the shape is right — if the depot ever
+// starts capturing it, the column, its CHECK and the type are all still here.
+// Every row written from 2026-08-22 onward has NULL in both.
+//
+// ⚠ chk_mrn_batch_bb_month is STILL LIVE and is harmless now the column is
+// nullable: a CHECK passes when its expression is NULL (NULL is not FALSE), so
+// a row with no best-before satisfies it. Left in place deliberately.
+//
+// History, so the reversal is not re-reversed: an early design derived these as
+// manufacturing + 24 months and rendered them read-only. That was corrected
+// 2026-08-20 to TYPED-by-the-supervisor, because shelf life varies by product
+// and there is nothing to calculate from. Two days later the field was dropped
+// altogether. Do NOT reintroduce a 24-month default in either direction.
 model mrn_line_batches {
   id              Int       @id @default(autoincrement())
   lineId          Int
@@ -2319,8 +2347,9 @@ model mrn_line_batches {
   qty             Int
   mfgMonth        Int
   mfgYear         Int
-  bestBeforeMonth Int
-  bestBeforeYear  Int
+  // Nullable since v27.17 — see the block above. Not collected, not displayed.
+  bestBeforeMonth Int?
+  bestBeforeYear  Int?
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
 
   @@unique([lineId, batchNo])

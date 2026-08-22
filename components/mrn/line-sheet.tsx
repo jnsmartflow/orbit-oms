@@ -20,11 +20,13 @@ import { describeWriteError } from "./modal-shell";
 // turn a 36-line truck from 36 taps into 36 numbers typed on a phone in a
 // warehouse — design §6.1-6.2.
 //
-// 🔴 BEST BEFORE IS TYPED, PER BATCH. There is NO calculation here and none may
-// be added: no manufacturing + 24 months, no default, no pre-fill, not even a
-// suggestion. Shelf life varies by product, so there is nothing to calculate
-// FROM (design §11 OQ-9, which reversed v1.0 of the design record). lib/mrn/
-// derive.ts carries the same prohibition at the other end.
+// 🔴 THERE IS NO BEST-BEFORE INPUT (2026-08-22, schema v27.17). The supervisor
+// does not record one. Both pickers were removed from here, the requirement
+// from validateBatches(), the field from MrnBatchInput, and the column from the
+// desktop table. Earlier revisions had it TYPED per batch, and before that
+// DERIVED as manufacturing + 24 months; both reversals are recorded in
+// prisma/schema.prisma so neither is revived. Per batch there are now exactly
+// three inputs: qty, month, year.
 //
 // ⚠️ EVERY RULE IS CALLED, NEVER RESTATED. validateBatches() and
 // validateConditionCounts() own the arithmetic and the wording; this sheet
@@ -50,8 +52,6 @@ interface DraftBatch {
   qty: number;
   mfgMonth: number | null;
   mfgYear: number | null;
-  bbMonth: number | null;
-  bbYear: number | null;
 }
 
 type CountKey = "sndQty" | "leakyQty" | "damageQty" | "emptyQty" | "qtdQty" | "rejQty";
@@ -94,13 +94,22 @@ export function LineSheet({
         qty: b.qty,
         mfgMonth: b.mfgMonth,
         mfgYear: b.mfgYear,
-        bbMonth: b.bestBeforeMonth,
-        bbYear: b.bestBeforeYear,
       }));
     }
     // The DEFAULT is always ONE batch — a single mfg pair and a single BB pair,
     // exactly as S7 draws it. Splitting is the rare path behind a link.
-    return [{ key: 0, qty: line.physicalQty ?? line.qtySti, mfgMonth: null, mfgYear: null, bbMonth: null, bbYear: null }];
+    // YEAR defaults to the current year — it is right on almost every line, so
+    // it saves a tap each time, and a wrong year is obvious at a glance. MONTH
+    // stays unset: nothing can guess it, and a pre-filled month is a month
+    // nobody read off a tin.
+    return [
+      {
+        key: 0,
+        qty: line.physicalQty ?? line.qtySti,
+        mfgMonth: null,
+        mfgYear: new Date().getFullYear(),
+      },
+    ];
   });
 
   const [issueOpen, setIssueOpen] = useState<boolean>(
@@ -137,8 +146,6 @@ export function LineSheet({
           qty: b.qty,
           mfgMonth: b.mfgMonth ?? 0,
           mfgYear: b.mfgYear ?? 0,
-          bestBeforeMonth: b.bbMonth ?? 0,
-          bestBeforeYear: b.bbYear ?? 0,
         }));
 
   // CALLED, not restated. Its `message` is what the sheet shows.
@@ -166,7 +173,7 @@ export function LineSheet({
   // not a second copy of the domain rule.
   const yearsMissing =
     physicalQty > 0 &&
-    effectiveBatches.some((b) => !b.mfgMonth || !b.mfgYear || !b.bbMonth || !b.bbYear);
+    effectiveBatches.some((b) => !b.mfgMonth || !b.mfgYear);
 
   const canConfirm = batchCheck.ok && (countCheck === null || countCheck.ok) && !yearsMissing && !busy;
 
@@ -205,7 +212,7 @@ export function LineSheet({
       const remaining = Math.max(0, physicalQty - (rows.length === 1 ? (first[0].qty || physicalQty) : used));
       return [
         ...first,
-        { key: nextKey, qty: remaining, mfgMonth: null, mfgYear: null, bbMonth: null, bbYear: null },
+        { key: nextKey, qty: remaining, mfgMonth: null, mfgYear: new Date().getFullYear() },
       ];
     });
   }
@@ -248,25 +255,47 @@ export function LineSheet({
     }
   }
 
+  // ⚠ FULL SCREEN since 2026-08-22 — it was a bottom sheet, and the content
+  // stopped fitting once the chip pickers replaced the dropdowns.
+  //
+  // 🔴 THE BACK-PRESS CONTRACT IS UNCHANGED. There is still ONE history entry
+  // and ONE popstate handler, both owned by supervisor-board.tsx: this screen
+  // pushes nothing and closes nothing itself. ✕, Cancel and the hardware back
+  // ALL call the same `onClose`, which is `window.history.back()` at the call
+  // site — so every close runs the identical path and the handler's nested
+  // branch re-pushes, leaving him in the truck. Now that ✕ makes the close
+  // VISIBLE it would be easy to wire it straight to a setState; that is exactly
+  // the two-paths-disagree desync this module has been protected against since
+  // 9a. Never close directly.
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={busy ? undefined : onClose} />
-
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative flex max-h-[92vh] flex-col rounded-t-[22px] bg-white"
-      >
-        <div className="shrink-0 px-4 pt-2.5">
-          <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-gray-200" />
-          <div className="text-[17px] font-bold leading-tight text-gray-900">
-            {line.isCatalogued ? line.description : "Not in catalog"}
-          </div>
-          <div className="mt-1 text-[13px] text-[#667085]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[60] flex flex-col bg-white"
+    >
+      <div className="shrink-0 border-b border-gray-100 px-4 pt-3 pb-3">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-[17px] font-bold leading-tight text-gray-900">
+              {line.isCatalogued ? line.description : "Not in catalog"}
+            </div>
+            <div className="mt-1 text-[13px] text-[#667085]">
             <span className="font-mono">{line.skuCode}</span>
-            {line.pack && ` · ${line.pack}`} · line {position.index} of {position.total}
+              {line.pack && ` · ${line.pack}`} · line {position.index} of {position.total}
+            </div>
           </div>
+          {/* Routes through the SAME onClose as Cancel and the hardware back —
+              see the block comment above. 44px tap target (UI §60). */}
+          <button
+            type="button"
+            onClick={busy ? undefined : onClose}
+            aria-label="Close"
+            className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-400 active:bg-gray-100"
+          >
+            <X size={22} />
+          </button>
         </div>
+      </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
           {/* ── Physical qty ─────────────────────────────────────────────── */}
@@ -326,24 +355,17 @@ export function LineSheet({
           ) : !split ? (
             <>
               <Label className="mt-4">Manufacturing</Label>
-              <MonthYear
+              <MfgPicker
                 month={batches[0].mfgMonth}
                 year={batches[0].mfgYear}
-                onMonth={(m) => setBatch(batches[0].key, { mfgMonth: m })}
-                onYear={(y) => setBatch(batches[0].key, { mfgYear: y })}
-                onBlur={() => setTouched(true)}
-                idPrefix="mfg"
-              />
-
-              {/* 🔴 TYPED, NEVER CALCULATED. No +24 months. See the file header. */}
-              <Label className="mt-4">Best before</Label>
-              <MonthYear
-                month={batches[0].bbMonth}
-                year={batches[0].bbYear}
-                onMonth={(m) => setBatch(batches[0].key, { bbMonth: m })}
-                onYear={(y) => setBatch(batches[0].key, { bbYear: y })}
-                onBlur={() => setTouched(true)}
-                idPrefix="bb"
+                onMonth={(m) => {
+                  setBatch(batches[0].key, { mfgMonth: m });
+                  setTouched(true);
+                }}
+                onYear={(y) => {
+                  setBatch(batches[0].key, { mfgYear: y });
+                  setTouched(true);
+                }}
               />
 
               <AddBatchLink onClick={addBatch} />
@@ -379,30 +401,22 @@ export function LineSheet({
                       }}
                       className="h-[46px] w-[72px] shrink-0 rounded-[10px] border border-gray-200 text-center text-[16px] font-semibold tabular-nums outline-none"
                     />
-                    <MonthYear
-                      month={b.mfgMonth}
-                      year={b.mfgYear}
-                      onMonth={(m) => setBatch(b.key, { mfgMonth: m })}
-                      onYear={(y) => setBatch(b.key, { mfgYear: y })}
-                      onBlur={() => setTouched(true)}
-                      idPrefix={`mfg-${b.key}`}
-                      compact
-                    />
+                    <span className="text-[12px] text-gray-400">tins in this batch</span>
                   </div>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <span className="w-[72px] shrink-0 text-center text-[11px] font-semibold uppercase tracking-[0.05em] text-gray-400">
-                      BB
-                    </span>
-                    <MonthYear
-                      month={b.bbMonth}
-                      year={b.bbYear}
-                      onMonth={(m) => setBatch(b.key, { bbMonth: m })}
-                      onYear={(y) => setBatch(b.key, { bbYear: y })}
-                      onBlur={() => setTouched(true)}
-                      idPrefix={`bb-${b.key}`}
-                      compact
-                    />
-                  </div>
+                  {/* The SAME picker as the unsplit case — one implementation,
+                      so a split line cannot drift from a plain one. */}
+                  <MfgPicker
+                    month={b.mfgMonth}
+                    year={b.mfgYear}
+                    onMonth={(m) => {
+                      setBatch(b.key, { mfgMonth: m });
+                      setTouched(true);
+                    }}
+                    onYear={(y) => {
+                      setBatch(b.key, { mfgYear: y });
+                      setTouched(true);
+                    }}
+                  />
                 </div>
               ))}
 
@@ -504,7 +518,7 @@ export function LineSheet({
           {showValidation && yearsMissing && batchCheck.ok && (
             <div className="mt-3 flex gap-2.5 rounded-[11px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-[1.55] text-amber-900">
               <AlertTriangle size={15} className="mt-px shrink-0" />
-              <div>Every batch needs a manufacturing and a best-before month and year.</div>
+              <div>Every batch needs a manufacturing month and year.</div>
             </div>
           )}
 
@@ -559,7 +573,6 @@ export function LineSheet({
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }
@@ -605,70 +618,116 @@ function StepButton({
 }
 
 /**
- * A month + year pair. Native <select> on purpose: it raises the OS wheel on
- * both platforms, needs no custom scroll trapping inside an already-scrolling
- * sheet, and is reachable with one thumb. text-[16px] so iOS does not zoom.
+ * Manufacturing month + year, as INLINE CHIPS. No dropdown.
  *
- * ⚠ NOTHING HERE DEFAULTS. Both start empty and stay empty until he chooses —
- * a pre-filled month is a month nobody read off a tin.
+ * ⚠️ THIS REPLACED TWO NATIVE <select>s (2026-08-22). They raised the iOS wheel,
+ * which is slow to spin on a warehouse floor, and — worse — they offered
+ * impossible values: the year list ran to 2035, so a mis-spin could record a
+ * tin manufactured nine years in the future and nothing downstream would catch
+ * it (validateBatches deliberately does not judge years, and there is no DB
+ * constraint on them either). Chips make the wrong answers unreachable rather
+ * than merely discouraged.
+ *
+ * 🔴 THE RANGES ARE THE VALIDATION. There is no year check anywhere in the
+ * stack, so this control IS the guard:
+ *   • YEAR — exactly four chips, currentYear − 3 … currentYear. A manufacturing
+ *     date cannot be in the future, and the depot does not receive stock older
+ *     than three years.
+ *   • MONTH — when the selected year IS the current year, months after the
+ *     current month are DISABLED. A tin cannot be made next month. Recomputed
+ *     whenever the year chip changes, so picking an older year re-enables all
+ *     twelve.
+ *
+ * The clock is read ONCE per mount. A sheet open across midnight on 31 Dec
+ * would keep the year list it opened with, which is correct — re-deriving
+ * mid-edit could disable a month he had already chosen.
+ *
+ * Chips reuse the pack-chip treatment already on this screen, at a 44px minimum
+ * tap target (UI §60).
  */
-function MonthYear({
+function MfgPicker({
   month,
   year,
   onMonth,
   onYear,
-  onBlur,
-  idPrefix,
-  compact,
 }: {
   month: number | null;
   year: number | null;
-  onMonth: (m: number | null) => void;
-  onYear: (y: number | null) => void;
-  onBlur?: () => void;
-  idPrefix: string;
-  compact?: boolean;
+  onMonth: (m: number) => void;
+  onYear: (y: number) => void;
 }): React.JSX.Element {
-  // Wide enough for a best-before years ahead of a manufacturing date already
-  // years old. Computed from the current year rather than hardcoded, so it does
-  // not need editing in 2030.
-  const thisYear = new Date().getFullYear();
-  const years = Array.from({ length: 16 }, (_, i) => thisYear - 5 + i);
+  const now = useMemo(() => new Date(), []);
+  const thisYear = now.getFullYear();
+  const thisMonth = now.getMonth() + 1;
 
-  const cls =
-    "h-[46px] min-w-0 flex-1 rounded-[10px] border border-gray-200 bg-white px-2.5 text-[16px] text-[#1d2939] outline-none";
+  const years = [thisYear - 3, thisYear - 2, thisYear - 1, thisYear];
+
+  // Only the CURRENT year can have unreachable months. Any earlier year is
+  // wholly in the past, so all twelve are live.
+  const maxMonth = year === thisYear ? thisMonth : 12;
 
   return (
-    <div className={"flex gap-2 " + (compact ? "" : "mt-1.5")}>
-      <select
-        aria-label={`${idPrefix} month`}
-        value={month ?? ""}
-        onBlur={onBlur}
-        onChange={(e) => onMonth(e.target.value === "" ? null : Number(e.target.value))}
-        className={cls + (month === null ? " text-gray-400" : "")}
-      >
-        <option value="">Month</option>
-        {MONTHS.map((m, i) => (
-          <option key={m} value={i + 1}>
-            {m}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={`${idPrefix} year`}
-        value={year ?? ""}
-        onBlur={onBlur}
-        onChange={(e) => onYear(e.target.value === "" ? null : Number(e.target.value))}
-        className={cls + (year === null ? " text-gray-400" : "")}
-      >
-        <option value="">Year</option>
+    <div className="mt-1.5">
+      <div className="flex flex-wrap gap-1.5">
         {years.map((y) => (
-          <option key={y} value={y}>
+          <Chip key={y} active={year === y} onClick={() => onYear(y)}>
             {y}
-          </option>
+          </Chip>
         ))}
-      </select>
+      </div>
+
+      <div className="mt-2 grid grid-cols-4 gap-1.5">
+        {MONTHS.map((label, i) => {
+          const m = i + 1;
+          const disabled = m > maxMonth;
+          return (
+            <Chip
+              key={label}
+              active={month === m}
+              disabled={disabled}
+              onClick={() => onMonth(m)}
+            >
+              {label}
+            </Chip>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+/**
+ * The pack-chip treatment from components/mrn/line-list.tsx, at a thumb-sized
+ * tap target. `disabled` is a real attribute, not just a colour — a month in
+ * the future must be unpressable, not merely discouraged.
+ */
+function Chip({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={
+        "h-11 rounded-full border px-3 text-[13px] font-medium whitespace-nowrap " +
+        (disabled
+          ? "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed"
+          : active
+            ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
+            : "bg-white border-gray-200 text-[#6b7480] active:bg-gray-50")
+      }
+    >
+      {children}
+    </button>
   );
 }
 
