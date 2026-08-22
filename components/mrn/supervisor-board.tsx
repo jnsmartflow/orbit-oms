@@ -10,7 +10,7 @@ import { useMrnBoard } from "./mrn-shell";
 import { SupervisorCard } from "./supervisor-card";
 import { formatIstDateTime } from "./format";
 import { describeWriteError } from "./modal-shell";
-import { LineList } from "./line-list";
+import { MrnLineBand, MrnLineRows } from "./line-list";
 import { LineSheet } from "./line-sheet";
 import { EndSheet } from "./end-sheet";
 
@@ -79,6 +79,9 @@ export function MrnSupervisorBoard(): React.JSX.Element {
   /** The line whose sheet is open, plus its 1-based position for the subtitle. */
   const [lineTarget, setLineTarget] = useState<{ line: MrnDetailLine; index: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** Shared by the band and the rows — they are siblings now, so the filter
+   *  cannot live inside either one. Reset on every open (see openDetail). */
+  const [activePackFilter, setActivePackFilter] = useState<string>("ALL");
 
   // Report the sheet up so the shell's marker pauses while it is open — the
   // same lift the picking supervisor makes with overlayBusy.
@@ -225,6 +228,9 @@ export function MrnSupervisorBoard(): React.JSX.Element {
     setDetailReq((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
     setDetail(null);
     setDetailError(null);
+    // A pack filter is a per-truck view setting — it must never carry from one
+    // MRN into the next.
+    setActivePackFilter("ALL");
     // Loading up front rather than waiting for the effect: the screen slides in
     // on the same tick, and it must never be on screen without a state.
     setDetailLoading(true);
@@ -429,6 +435,19 @@ export function MrnSupervisorBoard(): React.JSX.Element {
           </div>
         </div>
 
+        {/* 🔴 THE BAND SITS OUTSIDE THE SCROLL AREA, and that is the only way
+            it can be FULL-BLEED while the list below keeps its px-3 gutter.
+            Flush under the teal header, no top margin, no rounding, one bottom
+            border — picking’s arrangement exactly. It used to float on the grey
+            page with margins and rounded corners, which is what this fixes. */}
+        {detail && (detail.status === "checking" || detail.status === "done") && (
+          <MrnLineBand
+            detail={detail}
+            activePackFilter={activePackFilter}
+            onPackFilter={setActivePackFilter}
+          />
+        )}
+
         <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3">
           {/* ⚠ ORDER MATTERS, AND LOADING IS THE FALLBACK — NOT A BRANCH.
               This used to end in `: null`, so a null payload with neither flag
@@ -457,8 +476,9 @@ export function MrnSupervisorBoard(): React.JSX.Element {
                   of those six facts is either on that card or now in the
                   header. Do not restore it; the mockup is stale here.
 
-                  The progress strip survived and lives in LineList — it is the
-                  only header data he uses while counting. */}
+                  The progress strip survived and moved into the BAND above,
+                  outside this scroll area — it is the only header data he uses
+                  while counting. */}
               {detail.status === "open" && (
                 <div className="rounded-[13px] bg-white p-[15px] text-[13.5px] leading-[1.55] text-[#475467]">
                   Tap <b className="text-gray-900">Start unloading</b> when the truck door
@@ -466,10 +486,12 @@ export function MrnSupervisorBoard(): React.JSX.Element {
                 </div>
               )}
 
-              {/* The working screen — S5/S6. */}
+              {/* The working screen. The band above carries the progress strip
+                  and the pack chips; only the cards scroll here. */}
               {detail.status === "checking" && (
-                <LineList
+                <MrnLineRows
                   detail={detail}
+                  activePackFilter={activePackFilter}
                   onOpenLine={(line, index) => setLineTarget({ line, index })}
                 />
               )}
@@ -477,7 +499,11 @@ export function MrnSupervisorBoard(): React.JSX.Element {
               {/* A finished truck is read-only. He can still open it from Done
                   to check what he recorded; the route 409s any change. */}
               {detail.status === "done" && (
-                <LineList detail={detail} onOpenLine={() => undefined} />
+                <MrnLineRows
+                  detail={detail}
+                  activePackFilter={activePackFilter}
+                  onOpenLine={() => undefined}
+                />
               )}
             </>
           ) : (
