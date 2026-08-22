@@ -31,11 +31,16 @@ import { AgeBadge, CardShelf, CARD_SHADOW_V2, FamilyChip, RouteDot, SmuBadge, is
 import {
   DuplicateSoTag,
   DUP_SO_BADGE_CLASS,
+  // The opaque darker red the shelf band uses on a duplicate card — the green
+  // footer takes the same treatment for the same reason (a wash over the fill
+  // would read as a hole punched in it).
+  DUP_SO_BAND,
   DUP_SO_BORDER,
   DUP_SO_DIVIDER,
   DUP_SO_FILL,
   DUP_SO_MUTED,
   DUP_SO_TEXT,
+  DUP_SO_WASH_BORDER,
 } from "@/components/shared/duplicate-so-tag";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
@@ -71,6 +76,8 @@ import {
   useFindingRecorder,
 } from "./finding-recorder";
 import { BillBand } from "./bill-band";
+// The detail header's symbol run — the five flags that used to be a chip row.
+import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
@@ -397,6 +404,7 @@ function PickingCard({
   stripe = null,
   hidePickerName = false,
   shelfTrailing = null,
+  captionSmu = false,
   onOpen,
   onToggleSelect,
   onLockTap,
@@ -426,6 +434,16 @@ function PickingCard({
    * Optional and defaulted null, so every existing call site is unchanged.
    */
   shelfTrailing?: React.ReactNode;
+  /**
+   * Render the SMU as a BARE NUMBER at the end of the caption instead of as
+   * SmuBadge's pill on the where-row (2026-08-22). Passed ONLY by the Done
+   * tab's CHECKED band, whose where-row right end is now the volume.
+   *
+   * ⚠ SmuBadge ITSELF IS UNTOUCHED and still renders its indigo/cyan pill on
+   * every other card. This is a call-site choice, not a change to the atom.
+   * Optional and defaulted false, so every existing call site is unchanged.
+   */
+  captionSmu?: boolean;
   /**
    * Pick-bundling hint (2026-08-18) — a 4px full-height bar on the card's LEFT
    * EDGE, inside its rounded corners. `"teal"` = SAME MATERIAL (Rule 1),
@@ -516,11 +534,35 @@ function PickingCard({
     // repeating his name on every card is the same fact N times. Defaulted
     // false, so every other call site renders byte-identical DOM.
     !hidePickerName &&
-    (variant === "picking" || variant === "doneCheck" || variant === "doneChecked") && row.assignedToName !== null ? (
+    // ⚠ doneChecked DROPPED OUT 2026-08-22. On a checked card the picker's
+    // name moved into the green footer's sentence ("✓ Picked X · checked Y"),
+    // where it is anchored to what he did. Floating on the right of the
+    // where-row it was a name with nothing attaching it to a verb — and it left
+    // the checked card as the only one on the board that never said how much
+    // was in the bill. The volume takes that slot instead.
+    (variant === "picking" || variant === "doneCheck") && row.assignedToName !== null ? (
       <span className="text-[12px] font-semibold shrink-0" style={{ color: dup ? DUP_SO_MUTED : "#8a929c" }}>
         {row.assignedToName}
       </span>
     ) : null;
+
+  // The litres block, used in TWO positions: inline after the route on the rich
+  // variants, and as the where-row's RIGHT end on doneChecked. One definition
+  // so the two cannot drift in type or colour.
+  const volumeNode =
+    row.volumeLitres == null ? null : (
+      <span className="flex items-baseline gap-[3px] shrink-0">
+        <span
+          className="text-[12px] font-semibold tabular-nums"
+          style={{ color: dup ? DUP_SO_TEXT : "#667085" }}
+        >
+          {formatLitres(row.volumeLitres)}
+        </span>
+        <span className="text-[10.5px] font-medium" style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}>
+          L
+        </span>
+      </span>
+    );
 
   // Where-row right end: the picker name (as before) plus the SMU badge, on
   // EVERY variant — the where-row itself is variant-independent, so a 74/77
@@ -533,7 +575,15 @@ function PickingCard({
   // 10px of truncation width on the ~81% of cards that show no badge. On that
   // majority this expression is `whereRight` itself — byte-identical DOM to
   // before this change, no gap, no alignment shift.
-  const whereRightNode = !isSmuBadged(row.smuCode) ? (
+  //
+  // ⚠ doneChecked TAKES A DIFFERENT RIGHT END (2026-08-22): the VOLUME, not
+  // the picker + badge. Its SMU moved up to the caption as a bare number
+  // (`captionSmu`) and its picker moved down to the footer, which is what frees
+  // this slot for the one fact the checked card never carried.
+  const whereRightNode =
+    variant === "doneChecked"
+      ? volumeNode
+      : !isSmuBadged(row.smuCode) ? (
     whereRight
   ) : (
     <span className="flex items-center gap-1.5 shrink-0">
@@ -667,6 +717,29 @@ function PickingCard({
                   <span className="truncate">{secondary}</span>
                 </>
               )}
+              {/* The SMU as a BARE NUMBER — Done tab's checked band only.
+                  ⚠ SmuBadge is NOT used here and NOT changed; its pill still
+                  renders on every other card's where-row. Same 74/77 gate via
+                  the shared isSmuBadged, never re-typed literals. Indigo
+                  #4f46e5 is UI §1209's own Decorative-Projects value, the same
+                  hex the badge uses — the pill is what was dropped, not the
+                  colour. `shrink-0` so the OBD/time text truncates before this
+                  two-digit number ever does. */}
+              {captionSmu && isSmuBadged(row.smuCode) && (
+                <>
+                  <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d8dce1" }}>
+                    &middot;
+                  </span>
+                  <span
+                    className="shrink-0 font-bold tabular-nums"
+                    style={{ color: dup ? DUP_SO_TEXT : "#4f46e5" }}
+                    aria-label={`SMU ${row.smuCode}`}
+                    title={`SMU ${row.smuCode}`}
+                  >
+                    {row.smuCode}
+                  </span>
+                </>
+              )}
             </span>
             {/* The tag leads the right-hand cluster so it is the first thing
                 read after the OBD. Wrapped ONLY on a duplicate, so every other
@@ -718,22 +791,12 @@ function PickingCard({
                     not become a route colour when the text beside it did. */}
                 {row.route ?? "—"}
               </span>
-              {rich && row.volumeLitres != null && (
+              {rich && volumeNode !== null && (
                 <>
                   <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
                     &middot;
                   </span>
-                  <span className="flex items-baseline gap-[3px] shrink-0">
-                    <span
-                      className="text-[12px] font-semibold tabular-nums"
-                      style={{ color: dup ? DUP_SO_TEXT : "#667085" }}
-                    >
-                      {formatLitres(row.volumeLitres)}
-                    </span>
-                    <span className="text-[10.5px] font-medium" style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}>
-                      L
-                    </span>
-                  </span>
+                  {volumeNode}
                 </>
               )}
             </span>
@@ -755,31 +818,65 @@ function PickingCard({
           trailing={shelfTrailing}
         />
       )}
-      {variant === "doneChecked" && row.checkedByName !== null && (
-        // Its OWN line, never folded into the where line (a long area + long
-        // checker name overflow the card; this is the fact the tab exists to
-        // show, so it must never be the piece a truncate silently clips).
+      {/* ── THE GREEN FOOTER — CHECKED band only (2026-08-22) ────────────────
+          Replaces the plain grey "✓ Checked by {name}" line. It sits in the
+          same position the shelf occupies on the other cards, so the card's
+          silhouette is unchanged; only this band's colour says "settled".
+
+          ⚠ THE NEEDS-CHECK BAND MUST NEVER GET THIS. `variant === "doneChecked"`
+          is the whole gate. Those bills still need an action from the
+          supervisor and these are finished — green on both would erase the one
+          difference the Done tab exists to show, and the tab would become a
+          list of things that all look done.
+
+          🔴 IT WRAPS, IT DOES NOT TRUNCATE. Two variable-length names on one
+          line is exactly the overflow the old separate line existed to avoid —
+          but truncating is the wrong escape here, because this sentence records
+          who is ACCOUNTABLE and half a checker's name records nobody. The
+          sentence wraps to a second line and the card grows; the TIME stays
+          shrink-0 and aligned to the first line, so it is never the piece that
+          moves.
+
+          🔴 NULLS DEGRADE, THEY DO NOT BLANK THE FOOTER. checkedByName null →
+          "✓ Picked {picker}" with the clause dropped, never "checked null".
+          Both names null → the tick and the time alone, never an empty
+          sentence. The band renders for every checked bill. */}
+      {variant === "doneChecked" && (
         <div
-          className="px-4 pb-3.5 flex items-center gap-1.5 text-[12px] font-semibold"
-          style={{ color: dup ? DUP_SO_MUTED : "#8a929c" }}
+          className="border-t px-4 py-2.5 flex items-start justify-between gap-2.5 text-[12px] font-semibold"
+          style={
+            dup
+              ? { background: DUP_SO_BAND, borderColor: DUP_SO_WASH_BORDER, color: DUP_SO_TEXT }
+              : { background: "#f0fdf4", borderColor: "#bbf7d0", color: "#166534" }
+          }
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={dup ? DUP_SO_TEXT : "#22a06b"}
-            strokeWidth={2.4}
-            className="shrink-0"
-          >
-            <path d="M5 13l4 4L19 7" />
-          </svg>
-          <span>Checked by {row.checkedByName}</span>
+          <span className="flex items-start gap-1.5 min-w-0">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.4}
+              className="shrink-0 mt-[2px]"
+            >
+              <path d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="min-w-0">
+              {row.assignedToName !== null && <>Picked {row.assignedToName}</>}
+              {row.assignedToName !== null && row.checkedByName !== null && (
+                <span style={{ color: dup ? DUP_SO_DIVIDER : "#86b89a" }}>{" · "}</span>
+              )}
+              {row.checkedByName !== null && <>checked {row.checkedByName}</>}
+            </span>
+          </span>
           {formatCheckedTime(row.checkedAt) !== null && (
-            <>
-              <span style={{ color: dup ? DUP_SO_DIVIDER : "#d0d5db" }}>&middot;</span>
-              <span style={{ color: dup ? DUP_SO_MUTED : "#a2aab4" }}>{formatCheckedTime(row.checkedAt)}</span>
-            </>
+            <span
+              className="shrink-0 tabular-nums font-medium"
+              style={{ color: dup ? DUP_SO_MUTED : "#4d7c5a" }}
+            >
+              {formatCheckedTime(row.checkedAt)}
+            </span>
           )}
         </div>
       )}
@@ -3040,6 +3137,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   row={row}
                   variant="doneChecked"
                   nowTick={nowTick}
+                  captionSmu
                   onOpen={() => openDetail(row.orderId, { kind: "checked" })}
                 />
               ))
@@ -3196,10 +3294,20 @@ export function PickingBoardMobile(): React.JSX.Element {
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
           }}
         >
-          {/* Row 1 — back · title + subtitle · icons. gap-1.5 (6px) is load-
-              bearing: 38px back + 6px = the 44px the chip row below indents by,
-              so the chips line up under the title rather than under the back
-              button. Change one and change the other. */}
+          {/* ⚠ ONE ROW NOW (2026-08-22). The second row — the chip row that
+              carried Same-SO / Key dealer / Urgent / Tint / SMU, first as
+              frosted word-pills and briefly as 26px circles — IS GONE. Those
+              five facts moved into the subtitle as a bare symbol run
+              (bill-symbols.tsx), which is what lets the dealer name have row 1
+              to itself at 18px.
+
+              🔴 NOTHING THE OLD FIVE-DISJUNCT GUARD PROTECTED WAS LOST. That
+              guard existed because two of its arms were recorded bug-fixes — a
+              bill that was ONLY 74/77-badged, or ONLY duplicate-flagged, would
+              otherwise have had the whole row suppressed and shown nothing.
+              Both cases now render unconditionally: `BillSymbols` tests each of
+              the five independently and has no all-or-nothing wrapper to
+              suppress. There is no guard left to get wrong. */}
           <div className="flex items-center gap-1.5">
           <button
             type="button"
@@ -3210,18 +3318,25 @@ export function PickingBoardMobile(): React.JSX.Element {
             <ChevronLeft size={20} />
           </button>
           <div className="min-w-0 flex-1">
-            {/* 16.5px/600 — the name now gets the WHOLE line (the route left
-                the subtitle and the bay circle left the right end), so it
-                truncates far later than it did. Weight dropped 800 → 600: with
-                nothing competing beside it, extrabold was carrying emphasis it
-                no longer had to earn. */}
-            <div className="text-[16.5px] font-semibold text-white truncate min-w-0">
+            {/* 18px/600 — THE LARGEST TEXT ON THE SCREEN, and it has to stay
+                that way. The route left this block for the band, the bay circle
+                left the right end, and the chip row left entirely; the name is
+                what all three made room for. If something new ever wants to be
+                bigger than this, it is competing with the one fact that says
+                which bill you are holding. */}
+            <div className="text-[18px] font-semibold text-white truncate min-w-0">
               {detailRow?.dealerName ?? "—"}
             </div>
+            {/* Subtitle: OBD · time, a faint rule, then the symbol run.
+                ⚠ THE TEXT TRUNCATES AND THE SYMBOLS DO NOT — the run is
+                shrink-0 and the OBD span is the min-w-0 that gives way. A flag
+                you cannot see is worse than an OBD you have to open the bill
+                to read. */}
             <div
-              className={"text-[11.5px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
+              className={"flex items-center gap-2 text-[11.5px] " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
+              <span className="truncate min-w-0">
               {/* ⚠ THE ROUTE IS GONE FROM HERE (2026-08-22) — it moved to the
                   band below, so it appears EXACTLY ONCE on this screen. Do not
                   put it back: two copies of a lane name is how one of them goes
@@ -3234,6 +3349,19 @@ export function PickingBoardMobile(): React.JSX.Element {
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
                   }`
                 : "—"}
+              </span>
+              {/* The faint separator — a hairline, not a fourth middot. The
+                  line already carries two of those, and a third would read as
+                  more of the same list rather than as "facts end, flags
+                  begin". Rendered only when there is a run to separate. */}
+              {detailRow !== null && hasBillSymbols(detailRow) && (
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 w-px self-stretch my-[2px]"
+                  style={{ background: detailRow.hasDuplicateSo ? DUP_SO_DIVIDER : "rgba(255,255,255,0.25)" }}
+                />
+              )}
+              {detailRow !== null && <BillSymbols row={detailRow} />}
             </div>
           </div>
           {/* Icons — the pair this face has always had, at their new size.
@@ -3310,93 +3438,6 @@ export function PickingBoardMobile(): React.JSX.Element {
             </button>
           </div>
           </div>
-          {/* Row 2 — flag chips, the header's own second line now (2026-08-22).
-              Indented 44px to sit under the title, NOT under the back button.
-
-              ⚠ THREE OF THESE ARE SYMBOL-ONLY as of 2026-08-22 — a 26px
-              coloured circle each, no words. Every one carries BOTH an
-              aria-label and a title holding the words it replaced: a symbol
-              with no accessible name is a regression, not a simplification.
-              The glyph colours are the CARD's own, so a bill's flags still
-              survive from the card into the detail.
-
-              ⚠ min-h-[38px] so the row holds its height on a bill whose only
-              chip is a 26px circle — without it the header's second line
-              changes height depending on WHICH flags a bill carries.
-
-              ⚠ THE GUARD BELOW KEEPS ALL FIVE DISJUNCTS. Two of them are
-              recorded bug-fixes (SMU and duplicate-SO) and neither is
-              removable; see their own comments inside it. */}
-            {detailRow &&
-              (detailRow.isKeyCustomer ||
-                detailRow.priorityLevel === 1 ||
-                detailRow.isTint ||
-                // ⚠ The SMU badge MUST be in this guard, not only in the row
-                // below it: a 74/77 bill that is not a key dealer, not urgent
-                // and not a tint would otherwise have its whole flag row
-                // suppressed and show no badge at all.
-                isSmuBadged(detailRow.smuCode) ||
-                // ⚠ SAME TRAP, SAME FIX — the duplicate tag lives in this row,
-                // so a flagged bill that is none of the above would have the
-                // whole row suppressed and lose the one signal it came for.
-                detailRow.hasDuplicateSo) && (
-              <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-[44px] min-h-[38px]">
-                {/* Leads the row — it is the reason the header is red. */}
-                {detailRow.hasDuplicateSo && <DuplicateSoTag />}
-                {/* ★ ⚡ 🎨 — SYMBOL ONLY since 2026-08-22. Each was a frosted
-                    pill carrying its own word ("Key dealer" / "Urgent" /
-                    "Tint"); the words are now in the aria-label AND the title,
-                    so the meaning is still announced to a screen reader and
-                    still reachable on a long-press, while the row itself costs
-                    a fraction of the width it used to.
-
-                    ⚠ THE WORDS ARE NOT OPTIONAL. If you ever restyle these,
-                    the aria-label and title go with them — three unlabelled
-                    coloured dots is a puzzle, not a header. */}
-                {detailRow.isKeyCustomer && (
-                  <span
-                    className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-full shrink-0"
-                    style={{ background: "#fef3c7", color: "#b45309" }}
-                    aria-label="Key dealer"
-                    title="Key dealer"
-                    role="img"
-                  >
-                    <Star size={14} className="fill-current" />
-                  </span>
-                )}
-                {detailRow.priorityLevel === 1 && (
-                  <span
-                    className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-full shrink-0"
-                    style={{ background: "#fee2e2", color: "#b91c1c" }}
-                    aria-label="Urgent"
-                    title="Urgent"
-                    role="img"
-                  >
-                    <Zap size={14} className="fill-current" />
-                  </span>
-                )}
-                {detailRow.isTint && (
-                  <span
-                    className="inline-flex items-center justify-center w-[26px] h-[26px] rounded-full shrink-0"
-                    style={{ background: "#f3e8ff", color: "#7e22ce" }}
-                    aria-label="Tint"
-                    title="Tint"
-                    role="img"
-                  >
-                    <span className="text-[13px] leading-none">🎨</span>
-                  </span>
-                )}
-                {/* SMU — the SHARED atom, badge-to-badge with the three above.
-                    Deliberately NOT re-skinned as a frosted white/16 pill like
-                    its neighbours: those three carry their meaning in a WORD
-                    and use colour only for a glyph, while this one carries its
-                    meaning in the COLOUR (UI §1209's indigo/cyan), which a
-                    frosted overlay would erase. Same component, same hexes as
-                    the card, so a bill's SMU reads identically in both places.
-                    Self-gates to 74/77; the row's own guard above matches. */}
-                <SmuBadge code={detailRow.smuCode} />
-              </div>
-            )}
         </div>
 
         {/* ── The band (2026-08-22) — bay · route · triangle ────────────────
@@ -3487,16 +3528,27 @@ export function PickingBoardMobile(): React.JSX.Element {
                     the reader already knows: "4 Drum, 23 Carton, 27 Tin · 612 L"
                     is a live bill, and what it lost to the ellipsis was the tail
                     of the pack list — exactly the part a supervisor is reading
-                    it for. Two lines here cost less than a wrong trolley. */}
-                <div className="text-[15px] font-bold leading-snug" style={{ color: "#2a323c" }}>
+                    it for. Two lines here cost less than a wrong trolley.
+
+                    ⚠ DEMOTED, NOT SHRUNK FOR ITS OWN SAKE. At 15px/700 this row
+                    was outshouting the dealer name in the header — the pack
+                    string is CONTEXT, and the name is which bill you are
+                    holding. The packs drop to 13/500; the LITRES stay bold
+                    (13/600, near-black) because that is the number people say
+                    out loud on the floor. Weight is the dial here, not size:
+                    both halves are 13px and only their weight separates them. */}
+                <div className="text-[13px] font-medium leading-snug" style={{ color: "#475467" }}>
                   {detailRow?.articleTag ?? "—"}
                   {detailRow?.volumeLitres != null && (
-                    <span className="font-semibold" style={{ color: "#8a929c" }}>
-                      {" "}&middot; {formatLitres(detailRow.volumeLitres)}{" "}
-                      <span className="text-[11px]" style={{ color: "#aab2bb" }}>
-                        L
+                    <>
+                      <span style={{ color: "#c3c9d0" }}>{" · "}</span>
+                      <span className="font-semibold" style={{ color: "#1d2939" }}>
+                        {formatLitres(detailRow.volumeLitres)}
+                        <span className="text-[11px] font-medium" style={{ color: "#8a929c" }}>
+                          {" L"}
+                        </span>
                       </span>
-                    </span>
+                    </>
                   )}
                 </div>
                 {/* Denominator is RAW LINES, not rows on screen — the same
@@ -3519,7 +3571,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   move regularly caught the counter or ›, and paging the wrong
                   way costs two more taps to undo. */}
               {pager.count > 1 && (
-                <div className="flex items-center gap-[10px] shrink-0">
+                <div className="flex items-center gap-[9px] shrink-0">
                   <button
                     type="button"
                     onClick={pager.goPrev}
@@ -3527,7 +3579,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     aria-label="Previous bill"
                     className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                   >
-                    <ChevronLeft size={17} />
+                    <ChevronLeft size={16} />
                   </button>
                   <span className="text-[12.5px] font-medium text-gray-500 tabular-nums whitespace-nowrap">
                     {detailIndex + 1} of {pager.count}
@@ -3539,7 +3591,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     aria-label="Next bill"
                     className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                   >
-                    <ChevronRight size={17} />
+                    <ChevronRight size={16} />
                   </button>
                 </div>
               )}

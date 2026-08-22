@@ -20,17 +20,26 @@
 // area.primaryRoute one line below `route` in queue.ts specifically so the
 // number and the name on this strip can never describe different routes.
 //
-// ⚠ #fbbf24, NOT #f59e0b. The darker amber the circle used goes muddy on this
-// dark teal. This is also THE ONLY AMBER ON THE DETAIL SCREEN — do not add a
-// second one. (The triangle, which lives on this same strip, is white when
-// idle and goes amber only WHILE RECORDING IS ARMED, so the two coincide for
-// the duration of a mode rather than standing side by side.)
+// 🔴 THE BAND IS WHITE (2026-08-22). It shipped one day earlier as a dark
+// #0a5049 strip. White puts the bay number on the same ground as everything
+// below it and stops the screen reading as two headers stacked.
+//
+// ⚠ #d97706, NOT #fbbf24, AND THE VALUE IS BOUND TO THE BACKGROUND. #fbbf24 was
+// chosen to carry on dark teal and it does not survive white — at arm's length
+// from a moving trolley a light amber on white is a smudge, which defeats the
+// one thing this number exists for. If the band's background ever changes
+// again, this hex changes with it: they are one decision, not two.
+//
+// ⚠ THE SEAM IS NOW A BORDER, NOT AN INSET SHADOW. A shadow seam is what two
+// DARK surfaces need; white meeting white needs a line, and a shadow there
+// reads as a smudge rather than a division.
 
 import type { ReactNode } from "react";
 
 /** Caption pair — "BAY" and "ROUTE" are the same type by design. */
 const CAPTION_CLASS =
-  "text-[8.5px] font-bold uppercase tracking-[0.16em] text-white/50 leading-none";
+  "text-[8.5px] font-bold uppercase tracking-[0.16em] leading-none";
+const CAPTION_COLOR = "#98a2b3";
 
 /**
  * The band under the detail header: bay number · rule · route · triangle.
@@ -65,37 +74,39 @@ export function BillBand({
 }): React.JSX.Element {
   return (
     <div
-      className="shrink-0 w-full flex items-center gap-3 pl-[14px] pr-[6px] py-[9px]"
-      style={{
-        background: "#0a5049",
-        // A SEAM, not a border. Two teals meeting need a shadow — a 1px border
-        // line between them reads as a mistake rather than a division.
-        boxShadow: "inset 0 1px 0 rgba(0,0,0,.18)",
-      }}
+      className="shrink-0 w-full flex items-center gap-3 border-b pl-[14px] pr-[6px] py-[9px]"
+      style={{ background: "#ffffff", borderColor: "#e7eaee" }}
     >
       {bayNumber !== null && (
         <>
           <div className="shrink-0 flex flex-col items-center leading-none">
             <span
               className="text-[30px] font-extrabold tabular-nums leading-none"
-              style={{ color: "#fbbf24" }}
+              style={{ color: "#d97706" }}
             >
               {bayNumber}
             </span>
-            <span className={CAPTION_CLASS + " mt-[3px]"}>Bay</span>
+            <span className={CAPTION_CLASS + " mt-[3px]"} style={{ color: CAPTION_COLOR }}>
+              Bay
+            </span>
           </div>
           {/* 1px rule, stretched to the band's height less a 3px inset top and
               bottom — a divider, not a full-bleed border. */}
           <div
             className="w-px shrink-0 self-stretch my-[3px]"
-            style={{ background: "rgba(255,255,255,.2)" }}
+            style={{ background: "#e7eaee" }}
             aria-hidden="true"
           />
         </>
       )}
       <div className="min-w-0 flex flex-col">
-        <span className={CAPTION_CLASS}>Route</span>
-        <span className="text-[15px] font-semibold text-white truncate mt-1">
+        <span className={CAPTION_CLASS} style={{ color: CAPTION_COLOR }}>
+          Route
+        </span>
+        <span
+          className="text-[15px] font-semibold truncate mt-1"
+          style={{ color: "#1d2939" }}
+        >
           {route ?? "Unmatched"}
         </span>
       </div>

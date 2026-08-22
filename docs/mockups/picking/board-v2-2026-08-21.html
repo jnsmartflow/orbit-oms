@@ -102,21 +102,32 @@
        cards already carry an amber age badge (CLAUDE_UI.md §62.1) and an amber
        urgent bolt, so a third amber object there reads as a third warning.
 
-       WHAT SHIPPED INSTEAD: a full-width BAND directly under the detail header,
-       both faces — a darker teal strip carrying the bay number, a rule, the
-       route NAME, and the findings triangle at its right end. The number and
-       the name sit on one line so the bay can never be read against the wrong
-       route.
+       WHAT SHIPPED INSTEAD: a full-width WHITE BAND directly under the detail
+       header, both faces — the bay number, a rule, the route NAME, and the
+       findings triangle at its right end. The number and the name sit on one
+       line so the bay can never be read against the wrong route.
 
-       🔴 #fbbf24, NOT #f59e0b. The circle's darker amber goes muddy on the
-       band's dark teal. This is the ONLY amber on the detail screen.
+       ⚠ IT WAS A DARK #0a5049 TEAL STRIP FOR PART OF ONE DAY and is white as of
+       2026-08-22. White puts the number on the same ground as everything below
+       it and stops the screen reading as two headers stacked. Superseded — do
+       not restore it.
+
+       🔴 #d97706, AND THE VALUE IS BOUND TO THE BACKGROUND. #fbbf24 carried on
+       the dark strip and does not survive white. If the band ever changes
+       background again, this changes with it: one decision, not two.
 
        🔴 THE RULE: no bayNumber ⇒ no number and no rule; the band shows the
        route side alone. A null route does NOT collapse the band — it prints
        "Unmatched", because the route came off the header subtitle in the same
        change and an unmatched bill would otherwise lose that word entirely. */
-    --bay-amber:#fbbf24;
-    --band-bg:#0a5049;
+    /* ⚠ BOUND TO THE BAND BACKGROUND. #fbbf24 was chosen for a dark teal band
+       and does not survive white — at arm~s length a light amber on white is a
+       smudge, which defeats the one thing this number exists for. The band went
+       white 2026-08-22 and this went with it. One decision, not two. */
+    --bay-amber:#d97706;
+    --band-bg-strip:#ffffff;
+    --band-strip-line:#e7eaee;
+    --band-caption:#98a2b3;
     /* Shadows — the only two on this board */
     --card-shadow-v2:0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2);
     --soft-card-shadow:0 1px 2px rgba(16,24,40,.04), 0 3px 12px rgba(16,24,40,.05);
@@ -165,6 +176,8 @@
      Right padding is 6px, not 14px: the icons are 44px tap targets now and
      their glyphs sit ~11px inside that box, so a 14px gutter would push the
      visible glyph a clear 25px off the screen edge. */
+  /* ONE ROW since 2026-08-22 — the chip row is gone and its five facts ride at
+     the end of the subtitle as bare glyphs (.symrun). */
   .hdr.detail{flex-direction:column;align-items:stretch;padding:12px 6px 14px 14px;gap:0;}
   .hdr.detail .drow1{display:flex;align-items:center;gap:6px;}
   .hdr .av{width:40px;height:40px;min-width:44px;min-height:44px;border-radius:999px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex:0 0 auto;}
@@ -177,8 +190,18 @@
   /* 16.5px/600 — the name gets the WHOLE line now that the route left the
      subtitle and the bay circle left the right end. Weight 800 → 600: with
      nothing competing beside it, extrabold was emphasis it no longer earns. */
-  .hdr .dname{font-size:16.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .hdr .dsub{font-size:11.5px;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hdr .dname{font-size:18px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hdr .dsub{font-size:11.5px;color:rgba(255,255,255,.7);display:flex;align-items:center;gap:8px;min-width:0;}
+  .hdr .dsub .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  /* The faint separator — a hairline, not a fourth middot. */
+  .hdr .dsub .sep{flex:0 0 auto;width:1px;align-self:stretch;margin:2px 0;background:rgba(255,255,255,.25);}
+  /* ⚠ THE RUN NEVER TRUNCATES. shrink-0; the OBD text beside it gives way, and
+     the dealer name on row 1 gives way before either. Every glyph carries an
+     aria-label AND a title in the real build — there is no text on them now. */
+  .symrun{flex:0 0 auto;display:flex;align-items:center;gap:7px;line-height:1;}
+  .symrun .same{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#fecaca;white-space:nowrap;}
+  .symrun .key{color:#fcd34d;} .symrun .urg{color:#fca5a5;} .symrun .tint{color:#e9d5ff;font-size:14px;}
+  .symrun .smu{font-size:12px;font-weight:700;color:#c7d2fe;font-variant-numeric:tabular-nums;background:none;padding:0;border-radius:0;}
   /* The icon pair — gap 0 so the two read as ONE cluster, not two loose
      buttons. Bare: no tile, no fill, glyph 22px in a 44px target. */
   .hdr .dicons{display:flex;align-items:center;gap:0;flex:0 0 auto;}
@@ -195,10 +218,10 @@
      duplicate tag and the SMU badge and nothing else, exactly as before.
      ⚠ The words are NOT optional. If these are ever restyled the labels go
      with them: three unlabelled coloured dots is a puzzle, not a header. */
-  .fsym{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;flex:0 0 auto;font-size:13px;line-height:1;}
-  .fsym.key{background:#fef3c7;color:#b45309;}
-  .fsym.urg{background:#fee2e2;color:#b91c1c;}
-  .fsym.tint{background:#f3e8ff;color:#7e22ce;}
+  /* ⚠ .fsym — the 26px COLOURED CIRCLES — was deleted 2026-08-22. It lived for
+     part of one day between the frosted word-pills and the bare glyphs that
+     replaced both (.symrun above). Do not resurrect it: the circles needed a
+     row of their own, and that row is the thing this change removed. */
 
   /* ── Filter / search row ──────────────────────────────────────────── */
   .controls{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 16px 0;}
@@ -314,22 +337,36 @@
      Weight 800 on the number is deliberate: CLAUDE_UI.md §60's "nothing is
      700" governs CARDS, and this is a detail screen whose header title is
      the only other heavy thing on it. */
-  .billband{flex-shrink:0;display:flex;align-items:center;gap:12px;padding:9px 6px 9px 14px;background:var(--band-bg);box-shadow:inset 0 1px 0 rgba(0,0,0,.18);}
+  .billband{flex-shrink:0;display:flex;align-items:center;gap:12px;padding:9px 6px 9px 14px;background:var(--band-bg-strip);border-bottom:1px solid var(--band-strip-line);}
   .billband .bay{display:flex;flex-direction:column;align-items:center;flex:0 0 auto;line-height:1;}
   .billband .bay .n{font-size:30px;font-weight:800;color:var(--bay-amber);font-variant-numeric:tabular-nums;line-height:1;}
-  .billband .rule{width:1px;flex:0 0 auto;align-self:stretch;margin:3px 0;background:rgba(255,255,255,.2);}
+  .billband .rule{width:1px;flex:0 0 auto;align-self:stretch;margin:3px 0;background:var(--band-strip-line);}
   .billband .rt{display:flex;flex-direction:column;min-width:0;}
   /* The route TRUNCATES and the number NEVER SHRINKS — a bay read wrong is a
      trolley in the wrong aisle; a route name read short is still
      recognisable. */
-  .billband .rt .v{font-size:15px;font-weight:600;color:#fff;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .billband .rt .v{font-size:15px;font-weight:600;color:#1d2939;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   /* "BAY" and "ROUTE" are the same type by design. */
-  .billband .k{font-size:8.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5);line-height:1;}
+  .billband .k{font-size:8.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--band-caption);line-height:1;}
   .billband .bay .k{margin-top:3px;}
   /* The triangle — BARE. No tile, no fill. 24px glyph in a 42px target,
      white when idle, the band's own amber while recording is armed. */
-  .billband .tri{margin-left:auto;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff;}
+  .billband .tri{margin-left:auto;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:#475467;}
   .billband .tri.on{color:var(--bay-amber);}
+
+  /* ── CHECKED-CARD FOOTER (2026-08-22) — Done tab, CHECKED band ONLY ──────
+     Sits where the shelf sits on the other cards, so the silhouette is
+     unchanged and only the colour says "settled".
+     ⚠ THE NEEDS-CHECK BAND MUST NEVER GET THIS. Those bills still want an
+     action; green on both erases the one difference the Done tab exists to
+     show. The sentence WRAPS rather than truncating — it records who is
+     accountable, and half a name records nobody — while the time stays
+     shrink-0 on the first line. */
+  .ckfoot{border-top:1px solid #bbf7d0;background:#f0fdf4;color:#166534;padding:10px 16px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;font-size:12px;font-weight:600;}
+  .ckfoot .who{display:flex;align-items:flex-start;gap:6px;min-width:0;}
+  .ckfoot .who svg{flex:0 0 auto;margin-top:2px;}
+  .ckfoot .mid{color:#86b89a;}
+  .ckfoot .t{flex:0 0 auto;color:#4d7c5a;font-weight:500;font-variant-numeric:tabular-nums;}
 
   /* ── Recording banner — components/picking/finding-recorder.tsx ─────────
      ⚠ THE COPY IS LIFTED VERBATIM from FindingRecordBanner. Do not reword it
@@ -381,15 +418,17 @@
      what it lost was the tail of the pack list. Two lines cost less than a
      wrong trolley. Do not put a truncate back. */
   .stat{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
-  .stat .l{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px;min-width:0;font-size:15px;font-weight:700;color:#2a323c;}
+  /* DEMOTED 2026-08-22 — packs are context, litres are the number said out
+     loud, and at 15/700 the pair was outshouting the dealer name. */
+  .stat .l{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px;min-width:0;font-size:13px;font-weight:500;color:#475467;}
   .stat .l .md{color:var(--middot2);font-weight:400;}
-  .stat .l .vol{font-weight:600;color:#8a929c;}
+  .stat .l .vol{font-weight:600;color:#1d2939;}
   .stat .l .sub{font-size:11.5px;font-weight:400;color:var(--gray-400);font-variant-numeric:tabular-nums;flex-basis:100%;}
   /* gap 10px (was 9px) and 17px arrows so each is separately tappable — at
      the old spacing a thumb aiming at ‹ on the move regularly caught › or the
      counter, and paging the wrong way costs two more taps to undo. */
-  .pager{display:flex;align-items:center;gap:10px;flex:0 0 auto;font-size:12.5px;font-weight:600;color:var(--gray-500);font-variant-numeric:tabular-nums;}
-  .pager .arw{color:var(--gray-400);font-size:17px;}
+  .pager{display:flex;align-items:center;gap:9px;flex:0 0 auto;font-size:12.5px;font-weight:600;color:var(--gray-500);font-variant-numeric:tabular-nums;}
+  .pager .arw{color:var(--gray-400);font-size:16px;}
   .packrow{flex-shrink:0;background:#fff;border-bottom:1px solid var(--gray-200);padding:9px 16px;display:flex;gap:6px;overflow:hidden;}
   .packchip{flex:0 0 auto;font-size:12px;font-weight:600;padding:7px 12px;border-radius:999px;border:1px solid var(--gray-200);background:#fff;color:var(--gray-500);}
   .packchip.on{background:var(--gray-900);border-color:var(--gray-900);color:#fff;}
@@ -778,18 +817,12 @@
             <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
             <div class="dtext">
               <div class="dname">Shree Yamunaji Paints &amp; Hardware</div>
-              <div class="dsub">9108049119 · 10:30</div>
+              <div class="dsub"><span class="txt">9108049119 · 10:30</span><span class="sep"></span><span class="symrun"><span class="key"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg></span><span class="urg"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span><span class="tint">🎨</span><span class="smu">74</span></span></div>
             </div>
             <div class="dicons">
               <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg></div>
               <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
             </div>
-          </div>
-          <div class="flagrow">
-            <span class="fsym key" title="Key dealer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg></span>
-            <span class="fsym urg" title="Urgent"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span>
-            <span class="fsym tint" title="Tint">🎨</span>
-            <span class="smu">74</span>
           </div>
         </div>
         <div class="billband">
@@ -810,9 +843,9 @@
   <h3>2c · The band — bay, route and the recording triangle on one strip</h3>
   <p>
     A picker opens a bill and needs one thing before he moves: <b>which bay do I walk to.</b> The
-    answer is now a full-width strip directly under the header — a darker teal (#0a5049) carrying the
-    bay number in amber, a rule, the route name, and the findings triangle at its right end. Both
-    faces, same strip, same position.
+    answer is now a full-width <b>white</b> strip directly under the header, carrying the bay number
+    in amber, a rule, the route name, and the findings triangle at its right end. Both faces, same
+    strip, same position.
   </p>
   <p style="margin-top:10px;">
     <span class="flag">Superseded</span>
@@ -825,13 +858,17 @@
     that does not exist.
   </p>
   <p style="margin-top:10px;">
-    <b>#fbbf24, not #f59e0b.</b> The circle's darker amber goes muddy on this teal. This is the only
-    amber on the detail screen — the cards keep their amber age badge (CLAUDE_UI.md §62.1) and amber
-    urgent bolt, and no bay object has ever gone on a card.
+    <b>#d97706, and the hex is bound to the background.</b> The band was a dark #0a5049 teal for part
+    of one day, with the number at #fbbf24; white ground needs the darker amber, because a light amber
+    on white is a smudge at arm's length and being readable from across a warehouse is the only thing
+    this number is for. <b>Change the band's background and you change this hex with it.</b> It is
+    still the only amber on the detail screen — the cards keep their amber age badge
+    (CLAUDE_UI.md §62.1) and amber urgent bolt, and no bay object has ever gone on a card.
   </p>
   <p style="margin-top:10px;">
-    <b>The seam is an inset shadow, not a border.</b> Two teals meeting need a shadow; a 1px line
-    between them reads as a mistake rather than a division.
+    <b>The seam is a border now, not an inset shadow.</b> A shadow seam is what two DARK surfaces
+    need; white meeting white needs a line, and a shadow there reads as a smudge rather than a
+    division. It changed with the background, for the same reason the amber did.
   </p>
 </div>
 
@@ -1025,10 +1062,9 @@
             <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
             <div class="dtext">
               <div class="dname">Time Sqaure</div>
-              <div class="dsub">9108049119 · 10:30</div>
+              <div class="dsub"><span class="txt">9108049119 · 10:30</span><span class="sep"></span><span class="symrun"><span class="key"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg></span><span class="urg"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span><span class="tint">🎨</span><span class="smu">74</span></span></div>
             </div>
           </div>
-          <div class="flagrow"><span class="smu">74</span></div>
         </div>
         <div class="billband">
           <div class="bay"><span class="n">1</span><span class="k">Bay</span></div>
@@ -1050,9 +1086,110 @@
         </div>
       </div>
     </div>
-    <p class="cost"><b>His header's right end is now empty, and that is the point.</b> The triangle moved down onto the band where it sits beside the bay and the route — the three things that describe this bill as a physical job. His chip row carries the SMU badge alone here; no ★ ⚡ 🎨 were added to this face.</p>
+    <p class="cost"><b>His header's right end is now empty, and that is the point.</b> The triangle moved down onto the band where it sits beside the bay and the route — the three things that describe this bill as a physical job. His subtitle now carries ALL FIVE flags, where its old chip row had only the duplicate tag and the SMU badge — the run is one shared component, and a bill that is urgent on the supervisor's screen must not be un-urgent on the man walking to it.</p>
   </div>
 
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     2e — THE DONE TAB'S CHECKED CARD
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="cap" style="margin-top:26px;">
+  <h3>2e · The Done tab's CHECKED card — rebuilt</h3>
+  <p>
+    The lower band of the Done tab: bills the supervisor has already approved. Settled history,
+    and it should look it. Four changes, and one hard rule about the band above it.
+  </p>
+  <ul style="margin:10px 0 0;padding-left:18px;">
+    <li><b>The volume arrives.</b> This was the only card on the board that showed a bill without
+      ever saying how much was in it. It takes the right end of the where-row.</li>
+    <li><b>The picker's name leaves that slot</b> and moves into the footer sentence, where a verb
+      anchors it. Floating on the right it was a name attached to nothing.</li>
+    <li><b>The SMU loses its pill</b> and rides the caption as a bare indigo number.
+      <i>SmuBadge itself is untouched — every other card still shows the pill.</i></li>
+    <li><b>A green footer</b> in the shelf's position, so the card's silhouette is unchanged and
+      only the colour says "settled".</li>
+  </ul>
+  <p style="margin-top:10px;">
+    <span class="flag">Hard rule</span>
+    <b>The NEEDS-CHECK band never gets this footer.</b> Those bills still want an action from the
+    supervisor; these are finished. Green on both would erase the one difference the tab exists to
+    show, and it would become a list of things that all look done.
+  </p>
+  <p style="margin-top:10px;">
+    <b>The sentence wraps, it does not truncate.</b> Two variable-length names on one line is real
+    overflow — but this footer records who is <i>accountable</i>, and half a checker's name records
+    nobody. It wraps to a second line and the card grows; the time stays pinned to the first line so
+    it is never the piece that moves. A null checker degrades to "✓ Picked {name}" with the clause
+    dropped — never "checked null", and never a suppressed footer.
+  </p>
+</div>
+
+<div class="pair">
+  <div class="col">
+    <div class="lbl">Checked card — the ordinary case</div>
+    <div class="frame auto">
+      <div class="screen">
+        <div class="cardwrap"><div class="card">
+          <div class="cbody">
+            <div class="capline">
+              <span class="capleft"><span class="mono">9108440731</span><span class="md2">·</span><span>12:30</span><span class="md2">·</span><span style="color:#4f46e5;font-weight:700;">74</span></span>
+            </div>
+            <div class="title"><span class="name">Ambika Paints</span></div>
+            <div class="where">
+              <span class="whereleft"><span class="dot local"></span><span class="place">Adajan</span></span>
+              <span class="vol"><span class="n">733</span><span class="u">L</span></span>
+            </div>
+          </div>
+          <div class="ckfoot">
+            <span class="who"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg><span>Picked Sanjay Padvi<span class="mid"> · </span>checked Chandresh</span></span>
+            <span class="t">4:22 PM</span>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <p class="cost">Caption carries the SMU as a bare number. Volume sits where the picker's name used to.</p>
+  </div>
+
+  <div class="col">
+    <div class="lbl">Long pair — the footer wraps</div>
+    <div class="frame auto">
+      <div class="screen">
+        <div class="cardwrap"><div class="card">
+          <div class="cbody">
+            <div class="capline">
+              <span class="capleft"><span class="mono">9108441207</span><span class="md2">·</span><span>16:00</span></span>
+            </div>
+            <div class="title"><span class="name">Shree Yamunaji Paints &amp; Hardware</span></div>
+            <div class="where">
+              <span class="whereleft"><span class="dot upc"></span><span class="place">Navsari</span></span>
+              <span class="vol"><span class="n">1,204</span><span class="u">L</span></span>
+            </div>
+          </div>
+          <div class="ckfoot">
+            <span class="who"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg><span>Picked Markesh Valvi<span class="mid"> · </span>checked Test Supervisor 1</span></span>
+            <span class="t">5:07 PM</span>
+          </div>
+        </div></div>
+        <!-- NULL CHECKER — the clause is dropped, never "checked null". -->
+        <div class="cardwrap"><div class="card">
+          <div class="cbody">
+            <div class="capline"><span class="capleft"><span class="mono">9108440992</span><span class="md2">·</span><span>10:30</span></span></div>
+            <div class="title"><span class="name">Ambika Paints</span></div>
+            <div class="where">
+              <span class="whereleft"><span class="dot unk"></span><span class="place">HAND</span></span>
+              <span class="vol"><span class="n">38</span><span class="u">L</span></span>
+            </div>
+          </div>
+          <div class="ckfoot">
+            <span class="who"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg><span>Picked Rohit Padvi</span></span>
+            <span class="t">3:48 PM</span>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <p class="cost">The card grows by one line rather than clipping a name. The time never moves off the first line.</p>
+  </div>
 </div>
 
 
@@ -1422,7 +1559,7 @@
             <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg></div>
             <div class="dtext">
               <div class="dname">Ambika Paints</div>
-              <div class="dsub">9108440731 · 12:30</div>
+              <div class="dsub"><span class="txt">9108440731 · 12:30</span><span class="sep"></span><span class="symrun"><span class="key"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg></span><span class="urg"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span><span class="tint">🎨</span><span class="smu">74</span></span></div>
             </div>
             <div class="dicons">
               <div class="dico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg></div>

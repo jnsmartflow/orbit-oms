@@ -18,6 +18,8 @@ import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
 import { BillBand } from "./bill-band";
+// The detail header's symbol run — the five flags that used to be a chip row.
+import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // Same import list, same tokens and the same tag the supervisor board and Floor
 // use; this face was deliberately left out on 2026-08-20 and is now included
@@ -1650,16 +1652,19 @@ export function PickerMyPicksBoard({
             <ChevronLeft size={20} />
           </button>
           <div className="min-w-0 flex-1">
-            {/* 16.5px/600 — the name gets the whole line now that the route
-                left the subtitle and the bay circle left the right end. Same
-                treatment as the supervisor's, deliberately. */}
-            <div className="text-[16.5px] font-semibold text-white truncate min-w-0">
+            {/* 18px/600 — THE LARGEST TEXT ON THE SCREEN. Same treatment as
+                the supervisor's, deliberately: one face must not read as a
+                different app from the other. */}
+            <div className="text-[18px] font-semibold text-white truncate min-w-0">
               {detailRow?.dealerName ?? "—"}
             </div>
+            {/* Subtitle: OBD · time, a faint rule, then the symbol run. The
+                text truncates; the run is shrink-0 and never does. */}
             <div
-              className={"text-[11.5px] truncate " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
+              className={"flex items-center gap-2 text-[11.5px] " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
+              <span className="truncate min-w-0">
               {/* ⚠ THE ROUTE IS GONE FROM HERE (2026-08-22) — it moved to the
                   band below so it appears EXACTLY ONCE on the screen, same as
                   the supervisor's. The `?? "Unmatched"` did not vanish with it:
@@ -1670,30 +1675,24 @@ export function PickerMyPicksBoard({
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
                   }`
                 : "—"}
+              </span>
+              {detailRow !== null && hasBillSymbols(detailRow) && (
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 w-px self-stretch my-[2px]"
+                  style={{ background: detailRow.hasDuplicateSo ? DUP_SO_DIVIDER : "rgba(255,255,255,0.25)" }}
+                />
+              )}
+              {/* ⚠ THIS FACE NOW SHOWS ALL FIVE FLAGS, where its old chip row
+                  carried only the duplicate tag and the SMU badge. That is a
+                  GAIN, not a scope slip: the shared run is one component, and
+                  giving the picker a hand-trimmed subset would mean a bill that
+                  is urgent on the supervisor's screen is not urgent on his —
+                  which is exactly backwards, since he is the one walking to it. */}
+              {detailRow !== null && <BillSymbols row={detailRow} />}
             </div>
           </div>
           </div>
-          {/* Row 2 — the chip row, indented 44px to sit under the title.
-
-              ⚠ THIS FACE CARRIES ONLY THESE TWO. The supervisor's ★/⚡/🎨
-              symbols were deliberately NOT added here — this header has never
-              carried Key dealer / Urgent / Tint and gaining them was not part
-              of the 2026-08-22 change.
-
-              SMU badge row (2026-08-19). Unlike the supervisor's flag row there
-              was NO existing row here to hang it on, so the row is created, and
-              created CONDITIONALLY: on a bill that is not 74/77 nothing renders.
-              ⚠ SAME TRAP, SAME FIX as the supervisor's flag row — the duplicate
-              tag lives in this row, so a flagged bill that is not 74/77 would
-              have the whole row suppressed and lose the one signal it came for.
-              Its condition is in the guard too. */}
-          {detailRow && (isSmuBadged(detailRow.smuCode) || detailRow.hasDuplicateSo) && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-2 pl-[44px] min-h-[38px]">
-              {/* Leads the row — it is the reason the header is red. */}
-              {detailRow.hasDuplicateSo && <DuplicateSoTag />}
-              <SmuBadge code={detailRow.smuCode} />
-            </div>
-          )}
         </div>
 
         {/* ── The band (2026-08-22) — bay · route · triangle ────────────────
@@ -1745,16 +1744,24 @@ export function PickerMyPicksBoard({
                 undifferentiated slab (CLAUDE_PICKING.md §7's deferred note).
                 Do not re-add a truncate here: the pack list is the one thing on
                 this screen where an ellipsis eats information the picker came
-                for. */}
-            <div className="text-[15px] font-bold leading-snug" style={{ color: "#2a323c" }}>
+                for.
+
+                ⚠ DEMOTED 2026-08-22, same as the supervisor's. Packs 13/500,
+                litres bold 13/600 near-black — the litres are the number said
+                out loud, the pack list beside them is context, and at 15/700
+                the pair was outshouting the dealer name in the header. */}
+            <div className="text-[13px] font-medium leading-snug" style={{ color: "#475467" }}>
               {detailRow?.articleTag ?? "—"}
               {detailRow?.volumeLitres != null && (
-                <span className="font-semibold" style={{ color: "#8a929c" }}>
-                  {" "}&middot; {formatLitres(detailRow.volumeLitres)}{" "}
-                  <span className="text-[11px]" style={{ color: "#aab2bb" }}>
-                    L
+                <>
+                  <span style={{ color: "#c3c9d0" }}>{" · "}</span>
+                  <span className="font-semibold" style={{ color: "#1d2939" }}>
+                    {formatLitres(detailRow.volumeLitres)}
+                    <span className="text-[11px] font-medium" style={{ color: "#8a929c" }}>
+                      {" L"}
+                    </span>
                   </span>
-                </span>
+                </>
               )}
             </div>
             {/* Tick progress — quiet, grey, informational, in the same slot the
@@ -1782,7 +1789,7 @@ export function PickerMyPicksBoard({
                 gap-[10px] (was gap-0.5) so each arrow is separately tappable —
                 same change, same reason, as the supervisor's. */}
             {pager.count > 1 && (
-              <div className="flex items-center gap-[10px] shrink-0">
+              <div className="flex items-center gap-[9px] shrink-0">
                 <button
                   type="button"
                   onClick={pager.goPrev}
@@ -1790,7 +1797,7 @@ export function PickerMyPicksBoard({
                   aria-label="Previous bill"
                   className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                 >
-                  <ChevronLeft size={17} />
+                  <ChevronLeft size={16} />
                 </button>
                 <span className="text-[12.5px] font-medium text-gray-500 tabular-nums whitespace-nowrap">
                   {pager.index + 1} of {pager.count}
@@ -1802,7 +1809,7 @@ export function PickerMyPicksBoard({
                   aria-label="Next bill"
                   className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                 >
-                  <ChevronRight size={17} />
+                  <ChevronRight size={16} />
                 </button>
               </div>
             )}
