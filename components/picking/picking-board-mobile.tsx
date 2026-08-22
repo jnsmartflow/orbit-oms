@@ -11,6 +11,12 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreVertical,
+  // ⚠ TWO DIFFERENT GLYPHS, DO NOT SWAP THEM. `XCircle` is the filled mark
+  // inside the ⋯ menu's "Cancel bill" row — it kills a BILL. `X` is the bare
+  // cross that closes a SHEET and changes nothing (added 2026-08-22). The app's
+  // close control is `<X />` + aria-label="Close" — 12 call sites, e.g.
+  // components/tint/RemoveObdModal.tsx.
+  X,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -3432,9 +3438,39 @@ export function PickingBoardMobile(): React.JSX.Element {
           reservation and no internal scroll, and rendered its last row under
           the fixed bottom nav (CLAUDE_PICKING.md §7's MOBILE_NAV_CLEARANCE
           note). The pinned header + scrolling grid below makes that failure
-          mode MORE likely, not less — the grid is the part that runs long. */}
+          mode MORE likely, not less — the grid is the part that runs long.
+
+          WAYS OUT — there are TWO, and a near-full-height sheet needs both:
+          the ✕ in the pinned header, and a tap on the dimmed backdrop. The ✕
+          was added 2026-08-22; before it, growing this sheet to near-full
+          height had quietly turned the backdrop into a strip too thin to aim
+          at, and the sheet became a trap.
+
+          ⚠ STILL MISSING: hardware BACK / iOS edge-swipe does not close this
+          sheet. That is DELIBERATELY not fixed here. It is the standing
+          ROADMAP item covering FOUR sheets together (this one, the two filter
+          sheets, the cancel sheet) and it wants ONE shared model — /po's
+          single-authority popstate pattern, the same one the detail screen
+          already runs (§5.3) — not a fifth hand-rolled handler that has to be
+          reconciled later. A back-press here still exits the detail screen or
+          the module underneath, which is exactly the confusion the shared fix
+          exists to end. Do not solve it one sheet at a time.
+
+          NOT ADDED: drag-the-handle-down. The module has no drag-to-dismiss
+          helper (grepped — the only touch-gesture file is use-bill-pager.ts,
+          which is the horizontal bill pager). Hand-rolling one on a sheet that
+          floats over a swipeable board is a good way to break that pager, and
+          the ✕ plus the backdrop already answer the question. */}
       {pickerSheetOpen && (
         <>
+          {/* BACKDROP — tap to close. This has ALWAYS worked and needed no
+              change: the scrim is `inset-0` at scrimZ and the panel sits above
+              it at panelZ, so a tap inside the sheet lands on the panel and
+              never reaches this handler, while a tap on the dimmed area does.
+              What changed on 2026-08-22 is that the sheet grew to near-full
+              height, leaving only a thin strip of backdrop to aim at — which is
+              why the ✕ in the header below now exists. Two ways out, not one
+              replacing the other. */}
           <div
             className={`fixed inset-0 bg-black/40 ${SHEET_GEOMETRY.scrimZ}`}
             onClick={() => {
@@ -3481,7 +3517,42 @@ export function PickingBoardMobile(): React.JSX.Element {
                 under it. Copy is unchanged. */}
             <div className="shrink-0 px-5 pt-3.5 pb-3">
               <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
-              <h3 className="text-[16px] font-extrabold text-gray-900">Assign to picker</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="min-w-0 flex-1 text-[16px] font-extrabold text-gray-900">
+                  Assign to picker
+                </h3>
+                {/* 🔴 THE WAY OUT. Added 2026-08-22 because this sheet was a
+                    TRAP: it opens near-full-height, so the tappable backdrop
+                    above it is a thin strip, and it carried no close control of
+                    its own. A supervisor who opened it by mistake, or changed
+                    his mind, had nowhere to go — Android back does not close
+                    these sheets (see the popstate note below).
+
+                    ⚠ IT CLOSES THE SHEET AND DOES NOTHING ELSE. Same one-line
+                    close path the backdrop uses, and deliberately NOT paired
+                    with a selection reset: the bills he ticked on the board are
+                    still ticked when this closes. Backing out of "who gets it"
+                    must never cost him "which ones" — that is a second trap
+                    wearing the first one's clothes.
+
+                    Guarded on `assigning` exactly as the backdrop is, so a
+                    close cannot race an in-flight POST.
+
+                    Negative margins bleed the 44px tap target into the header's
+                    own padding: the target is full size, the row stays the
+                    height of the title. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!assigning) setPickerSheetOpen(false);
+                  }}
+                  disabled={assigning}
+                  aria-label="Close"
+                  className="-my-3 -mr-2.5 w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-[10px] text-gray-400 active:bg-gray-100 active:text-gray-600 disabled:opacity-40"
+                >
+                  <X size={24} />
+                </button>
+              </div>
               <p className="text-[12.5px] text-gray-400 mt-[3px]">{pickerSheetSubtitle}</p>
             </div>
 
