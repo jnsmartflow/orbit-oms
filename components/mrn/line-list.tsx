@@ -17,11 +17,11 @@ import { formatIstTime, formatMonthYear } from "./format";
 // mockup's row; the mockup is stale on this point, deliberately.
 //
 // WHAT MRN ADDS, INSIDE PICKING'S STRUCTURE — never around it:
-//   • the qty column becomes a STACK: picking's 26px number, with a muted
-//     "of {STI}" beneath it in the same column. The number does not move or
-//     change size.
-//   • that number goes RED when physical ≠ STI. Picking has one number and so
-//     has nothing to disagree with.
+//   • the qty goes RED when physical ≠ STI. Picking has one number and so has
+//     nothing to disagree with. The column is otherwise picking's exactly: one
+//     centred value, no sub-label.
+//   • a confirmed row grows a second line under the SKU carrying the
+//     manufacturing dates it recorded.
 //
 // WHAT MRN DROPS FROM PICKING'S ROW, on purpose:
 //   • the TICK CIRCLE. A picker can genuinely tick a line from picking's list;
@@ -293,14 +293,32 @@ function LineRow({
 
   return (
     // Picking's card: flex bg-white rounded-[14px] overflow-hidden mb-2 + shadow.
+    //
+    // 🔴 `items-stretch` IS LOAD-BEARING, AND IT IS HERE BECAUSE THIS IS A
+    // <button> WHERE PICKING USES A <div>. Tailwind's `flex` sets display only;
+    // the initial `align-items: stretch` is what makes the pack gutter fill the
+    // card. A <div> gets that initial value — a <button> does NOT, because the
+    // UA stylesheet supplies its own align-items for buttons, and nothing here
+    // overrode it. That is why the gutter rendered short with white card above
+    // and below it despite the classNames matching picking exactly. MRN needs
+    // the button for tappability and a11y, so the alignment has to be stated.
+    //
+    // min-h-[64px] gives a one-line row presence. Picking's two-line row
+    // measures ~66px (py-2.5 = 20px + a 17px SKU at 1.5 = 25.5px + mt-0.5 = 2px
+    // + a 12px description at 1.5 = 18px); without a floor an unchecked MRN row
+    // is only ~45px and reads squeezed. A CHECKED row grows past this on its
+    // own (~65px with the mfg-date line), so the minimum never fights it.
     <button
       type="button"
       onClick={onClick}
-      className="flex bg-white rounded-[14px] overflow-hidden mb-2 w-full text-left active:opacity-90"
+      className="flex items-stretch min-h-[64px] bg-white rounded-[14px] overflow-hidden mb-2 w-full text-left active:opacity-90"
       style={{ boxShadow: SOFT_CARD_SHADOW }}
     >
-      {/* PACK GUTTER — picking verbatim. Fixed 56px, FULL CARD HEIGHT (flex
-          stretch), flush to the card's left edge with a divider on its right.
+      {/* PACK GUTTER — picking verbatim. Fixed 56px WIDE, FULL CARD HEIGHT via
+          the card's items-stretch above. It carries NO height and NO vertical
+          margin on purpose — either would stop it filling. `items-center` here
+          is a DIFFERENT element from the card's alignment: it centres the pack
+          LABEL inside the full-height block. Do not confuse the two.
           Slate when known, muted em-dash when missing — never an error style.
           This column is what makes packs align down the left edge; it must not
           flex. */}
@@ -333,20 +351,22 @@ function LineRow({
         )}
       </span>
 
-      {/* QTY — picking's column (shrink-0, px-3.5, 26px extrabold tabular) with
-          MRN's sub-label STACKED beneath it in the same column. The number does
-          not move or change size. Red when physical ≠ STI. */}
-      <span className="shrink-0 flex flex-col items-center justify-center px-3.5">
+      {/* QTY — picking's column verbatim: shrink-0, px-3.5, ONE centred value.
+          ⚠ The "of {STI}" sub-label was dropped (owner's call). On an unchecked
+          row it repeated the number directly above it, and on a checked row the
+          second line already says "Short 3" whenever the two differ — so the
+          STI figure is not lost, it just stops being shouted twice.
+          Unchecked shows the STI qty; checked shows what he actually counted,
+          red when that differs. `physicalQty` is null until confirmed, so the
+          coalesce below IS that switch. */}
+      <span className="shrink-0 flex items-center justify-center px-3.5">
         <span
           className={
-            "text-[26px] font-extrabold tabular-nums leading-none " +
+            "text-[26px] font-extrabold tabular-nums " +
             (differs ? "text-[#b42318]" : done ? "text-[#b6bcc6]" : "text-gray-900")
           }
         >
           {line.physicalQty ?? line.qtySti}
-        </span>
-        <span className="text-[11px] text-gray-400 tabular-nums mt-1 whitespace-nowrap">
-          of {line.qtySti}
         </span>
       </span>
     </button>
