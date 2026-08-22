@@ -63,6 +63,8 @@ interface MrnBoardContextValue {
    */
   detailOpen: boolean;
   setDetailOpen: (open: boolean) => void;
+  /** End unloading lands the supervisor on Done, where his receipt now is. */
+  setActiveTab: (tab: MrnSupervisorTab) => void;
   /**
    * Reported UP by the board when a sheet floats over the LIST-less detail —
    * the one mid-action state `detailOpen` does not already cover. Feeds the
@@ -280,6 +282,7 @@ function MrnSupervisorShell({
       refetchBoard,
       detailOpen,
       setDetailOpen,
+      setActiveTab,
       setOverlayBusy,
       viewerId,
     }),
