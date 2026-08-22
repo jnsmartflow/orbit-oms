@@ -23,7 +23,10 @@ import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+// FamilyChip joins the list 2026-08-22 — the picker card renders his ARTICLE
+// TOTALS in the same chip as a bill renders its own packs, so one man's
+// "12 Carton" and one bill's cannot drift apart in style.
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, FamilyChip, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
 // Duplicate-SO red — tokens and tag from the ONE owner. Never re-type a hex.
 import {
   DuplicateSoTag,
@@ -43,6 +46,13 @@ import { CancelSheet } from "./cancel-sheet";
 import { pickingRowStage, PICKING_CANCELLABLE_STAGES } from "@/lib/workflow-stages";
 import type { CancelReason } from "@/lib/picking/cancel-reasons";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
+// THE roll-up, reused — not a second summer written here. It is already the
+// function that WRITES the order-level articleTag at import, its parser is
+// documented as idempotent precisely so a consumer can re-aggregate tags it
+// produced, and it lives in the PURE half of the module (no prisma) so a client
+// component can import it. lib/article-tag.ts owns the rule; this file owns
+// nothing about pack maths and must not learn any.
+import { aggregateArticleTags } from "@/lib/article-tag-parse";
 // THE search predicate — one owner for all four list memos below. Picking's
 // own, deliberately not lib/floor/search.ts (that file is Floor's, lacks two of
 // the five fields, and has an Enter-driven numbers mode this board must not
@@ -146,11 +156,30 @@ function matchesType(row: PickingQueueRow, type: TypeFilter): boolean {
 // "tidy" this by giving them all an optional pickerId — an optional field that
 // is meaningless on three of four variants is exactly the ambiguity a
 // discriminated union exists to remove.
+// Picking tab shape — people or bills. See the state declaration for why this
+// is narrowed with a guard and never cast (§5.1).
+type PickingView = "picker" | "bill";
+const PICKING_VIEW_KEYS: readonly PickingView[] = ["picker", "bill"];
+function isPickingView(key: string): key is PickingView {
+  return (PICKING_VIEW_KEYS as readonly string[]).includes(key);
+}
+
 type DetailListKey =
   | { kind: "waiting" }
   | { kind: "needsCheck" }
   | { kind: "checked" }
-  | { kind: "stillPicking"; pickerId: number };
+  // ⚠ `pickerId: null` IS A REAL SCOPE, NOT AN ABSENCE (2026-08-22, with the
+  // Picker | Bill toggle). null = the whole still-picking band, which is what
+  // Bill view renders and therefore what its pager must page; a number = that
+  // one picker's bills, which is what level 2 renders. Getting this wrong is
+  // silent and specific: open a bill from the flat list with a picker id on the
+  // key and "‹ 2 of 3 ›" would count his three while the list behind it holds
+  // eleven.
+  //
+  // This is NOT the "optional field on every variant" shape the note above
+  // warns against — it sits on the ONE variant where a scope exists, and both
+  // of its values mean something.
+  | { kind: "stillPicking"; pickerId: number | null };
 
 // The swipe/slide tuning constants that used to sit here (edge exclusion,
 // deadzone, axis-lock ratio, commit threshold, drag-follow, slide duration)
@@ -367,6 +396,7 @@ function PickingCard({
   selected = false,
   stripe = null,
   hidePickerName = false,
+  shelfTrailing = null,
   onOpen,
   onToggleSelect,
   onLockTap,
@@ -382,6 +412,20 @@ function PickingCard({
    * Assign, Done's two bands, and level 2's own future callers — is unchanged.
    */
   hidePickerName?: boolean;
+  /**
+   * An already-styled node for the SHELF's right slot — CardShelf's `trailing`,
+   * the same slot the picker board's Done receipt uses. The Picking tab's
+   * level-2 list puts its Undo control here (2026-08-22).
+   *
+   * ⚠ MUTUALLY EXCLUSIVE WITH the Assign card's arrow by construction: that is
+   * `showViewItems`, which only `variant === "assign"` sets, and nothing passes
+   * both. Like `trailing`, a non-null value FORCES the shelf to render even
+   * when the bill has no chips — which is correct here: an Undo that vanished
+   * on an untagged bill would be unreachable.
+   *
+   * Optional and defaulted null, so every existing call site is unchanged.
+   */
+  shelfTrailing?: React.ReactNode;
   /**
    * Pick-bundling hint (2026-08-18) — a 4px full-height bar on the card's LEFT
    * EDGE, inside its rounded corners. `"teal"` = SAME MATERIAL (Rule 1),
@@ -708,6 +752,7 @@ function PickingCard({
           onRed={dup}
           showViewItems={variant === "assign"}
           onViewItems={onOpen}
+          trailing={shelfTrailing}
         />
       )}
       {variant === "doneChecked" && row.checkedByName !== null && (
@@ -1013,10 +1058,24 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
-  // FIX 3 — Check tab's picker filter (by PERSON, not lane). Same shape as
-  // the Assign tab's route filter, entirely separate state/sheet.
-  const [activePicker, setActivePicker] = useState<string | null>(null); // null = "All pickers"
-  const [pickerFilterSheetOpen, setPickerFilterSheetOpen] = useState(false);
+  // ── Picking tab VIEW toggle (2026-08-22) ─────────────────────────────────
+  // Replaces the "All pickers" dropdown that stood here. Filtering a flat bill
+  // list by picker is now done by typing his name into search — which matches
+  // assignedToName since lib/picking/search.ts landed — and the SHAPE question
+  // ("show me people" vs "show me bills") is what this control answers instead.
+  //
+  // Removed with it: activePicker, pickerCounts, pickerOptions,
+  // allPickersCount and that FilterBottomSheet instance. FilterBottomSheet
+  // itself STAYS — the route filter and the Done tab's own picker dropdown
+  // both still use it.
+  //
+  // 🔴 NARROWED, NEVER CAST (§5.1). The same discipline PICKER_TAB_KEYS /
+  // isPickerTabKey uses on the picker shell, and for the same recorded reason:
+  // `key as PickingView` compiles unconditionally, so a value outside the union
+  // would be written into state silently and every `=== "picker"` downstream
+  // would fall through to its else-branch. Widening a two-key union is exactly
+  // the change that exposes it. There is no cast anywhere in this file.
+  const [pickingView, setPickingView] = useState<PickingView>("picker");
   // FIX 3 (reversed decision) — Check's OWN delivery-type filter. Deliberately
   // NOT shared with Assign's activeType: switching one tab's type pills must
   // never silently change what the other tab shows (no behaviour change to
@@ -1494,37 +1553,18 @@ export function PickingBoardMobile(): React.JSX.Element {
     [activeRoute, waitingRows],
   );
 
-  // FIX 3 — pickers who currently have bills out on the floor, client-derived
-  // from the already-loaded rows (no new fetch). Counts reflect the current
-  // Picking-tab type pill (live) — same convention as routeCounts reflecting
-  // activeType above. Rows with a null assignedToName (shouldn't happen for an
-  // assigned bill, but the field is nullable) are skipped from the option
-  // list — they still show up under "All pickers", just never become a
-  // selectable filter value.
-  // Tab re-slot (2026-07-20) — NARROWED from [...assignedRows, ...doneRows] to
-  // assignedRows alone. This dropdown now belongs to the Picking tab, which
-  // holds exactly one band (pick_assigned); the done rows it used to cover
-  // moved to the Done tab and are counted by checkedPickerCounts below.
-  // Leaving the old union here would show picker counts higher than the
-  // number of cards actually on screen.
-  const pickerCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of assignedRows) {
-      if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) continue;
-      if (r.assignedToName === null) continue;
-      map.set(r.assignedToName, (map.get(r.assignedToName) ?? 0) + 1);
-    }
-    return map;
-  }, [assignedRows, checkTypeFilter]);
-  const pickerOptions: FilterSheetOption[] = useMemo(() => {
-    return Array.from(pickerCounts.keys())
-      .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
-      .map((name) => ({ value: name, label: name, count: pickerCounts.get(name) ?? 0 }));
-  }, [pickerCounts]);
-  const allPickersCount = Array.from(pickerCounts.values()).reduce((a, b) => a + b, 0);
+  // ⚠ `pickerCounts` / `pickerOptions` / `allPickersCount` STOOD HERE and were
+  // deleted 2026-08-22 with the Picking tab's "All pickers" dropdown. They fed
+  // that sheet and nothing else. Picker filtering is now: switch to Picker view
+  // (people, grouped), or type his name in search (bills, flat).
+  //
+  // ⚠ DO NOT CONFUSE THEM WITH THE THREE BELOW. `checkedPickerCounts` /
+  // `checkedPickerOptions` / `allCheckedPickersCount` are the DONE tab's,
+  // separate state and a separate sheet, and are deliberately untouched — that
+  // tab keeps its dropdown.
 
   // Done tab's picker filter (2026-07-18, WIDENED 2026-07-20) — same shape as
-  // pickerCounts above. Was scoped to checkedRows alone when "Checked" was its
+  // the deleted pickerCounts above. Was scoped to checkedRows alone when "Checked" was its
   // own single-band tab; the re-slot gave that tab a second band on top
   // (needs-check / pick_done), so this dropdown must cover BOTH bands or its
   // counts undercount what the tab actually shows. Still filters by PICKER
@@ -1556,11 +1596,15 @@ export function PickingBoardMobile(): React.JSX.Element {
   const filteredStillPicking: PickingQueueRow[] = useMemo(() => {
     return assignedRows.filter((r) => {
       if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) return false;
-      if (activePicker !== null && r.assignedToName !== activePicker) return false;
+      // ⚠ THE activePicker CLAUSE WAS REMOVED HERE (2026-08-22) with the
+      // dropdown that fed it. This memo is now type-pill + search only, so it
+      // is WIDER than it was — and the summary strip figures computed off it
+      // widen with it, which is intended: "N picking" and "N over 30m" answer
+      // "how much work is on the floor", never "how much for this one man".
       if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
-  }, [assignedRows, checkTypeFilter, activePicker, q]);
+  }, [assignedRows, checkTypeFilter, q]);
 
   // REPOINTED 2026-07-20 — was driven by checkTypeFilter/activePicker (the
   // Check tab's filter state) back when this band lived there. The re-slot
@@ -1624,11 +1668,16 @@ export function PickingBoardMobile(): React.JSX.Element {
   interface PickerGroup {
     pickerId: number;
     name: string;
-    initial: string;
     bills: PickingQueueRow[];
     litres: number;
     /** Oldest assignedAt in ms — the sort key AND the elapsed pill's source. */
     oldestMs: number;
+    /**
+     * His ARTICLE TOTALS across every bill he holds, as chip labels:
+     * ["7 Drum", "12 Carton", "43 Tin"]. EMPTY when nothing summed — see the
+     * no-chips-no-shelf rule at the render.
+     */
+    articleChips: string[];
   }
   const pickerGroups: PickerGroup[] = useMemo(() => {
     const map = new Map<number, PickerGroup>();
@@ -1643,15 +1692,10 @@ export function PickingBoardMobile(): React.JSX.Element {
         g = {
           pickerId: r.pickerId,
           name: r.assignedToName ?? "—",
-          // ⚠ FROM THE NAME, NOT THE ROSTER. `avatarInitial` exists only on
-          // /api/warehouse/pickers, and since 2026-08-22 that roster is not
-          // fetched until the assign sheet is opened — so joining to it would
-          // render initial-less cards on first paint until somebody happened to
-          // open that sheet. The name is already on every row.
-          initial: (r.assignedToName ?? "?").charAt(0).toUpperCase(),
           bills: [],
           litres: 0,
           oldestMs: Number.POSITIVE_INFINITY,
+          articleChips: [],
         };
         map.set(r.pickerId, g);
       }
@@ -1668,6 +1712,33 @@ export function PickingBoardMobile(): React.JSX.Element {
     // sorted by urgency because the pill beside it already is.
     // A group whose bills all lack assignedAt keeps Infinity and sorts last —
     // it has no waiting time to claim a place with.
+    // ── His article totals ────────────────────────────────────────────────
+    // TWO EXISTING FUNCTIONS COMPOSED, no third rule invented here:
+    //   aggregateArticleTags(...)  sums the per-bill order-level tags into one
+    //                              rolled-up string ("7 Drum, 12 Carton")
+    //   articleTagChips(...)       splits that on commas into chip labels
+    // The second is the SAME splitter the bill shelf uses, so a picker's chips
+    // and his bills' chips can never disagree about where a chip ends.
+    //
+    // Safe to sum because the vocabulary is CLOSED: aggregateArticleTags emits
+    // only TYPE_ORDER's five words, and it is what writes the order-level tag
+    // in the first place, so its own output is its input here — the parser
+    // documents that idempotence explicitly. Confirmed against production
+    // (read-only census, 5,599 tagged rows / 7,685 groups): exactly Drum,
+    // Carton, Tin, Bag, Pcs in that casing, zero variants, zero malformed
+    // pairs.
+    //
+    // ⚠ A NULL TAG IS SKIPPED, NOT COUNTED AS ZERO. ~27% of SAP codes resolve
+    // in neither catalog table (§7's blank-pack landmine) and leave their bill
+    // untagged. Letting one such bill blank a picker's whole breakdown would
+    // hide the counts we DO have — the same call lib/floor/format.ts makes for
+    // the same reason. So this total can under-report, and that is the
+    // deliberate direction.
+    // Array.from around the Map iterator — CORE §3 (the tsconfig target is
+    // below ES2015, so a bare `for…of map.values()` does not compile).
+    for (const g of Array.from(map.values())) {
+      g.articleChips = articleTagChips(aggregateArticleTags(g.bills.map((b) => b.articleTag)));
+    }
     return Array.from(map.values()).sort((a, b) => {
       if (a.oldestMs !== b.oldestMs) return a.oldestMs - b.oldestMs;
       return a.name.localeCompare(b.name);
@@ -1808,7 +1879,9 @@ export function PickingBoardMobile(): React.JSX.Element {
       // its own: index → -1, both arrows unreachable, a past-threshold swipe
       // snaps back rather than committing (use-bill-pager.ts).
       case "stillPicking":
-        return filteredStillPicking.filter((r) => r.pickerId === detailListKey.pickerId);
+        return detailListKey.pickerId === null
+          ? filteredStillPicking
+          : filteredStillPicking.filter((r) => r.pickerId === detailListKey.pickerId);
       case "checked": return filteredChecked;
     }
   }, [detailListKey, filteredWaiting, filteredNeedsCheck, filteredStillPicking, filteredChecked]);
@@ -2351,7 +2424,7 @@ export function PickingBoardMobile(): React.JSX.Element {
           // the same question twice, with two different right answers.
           //
           // 🔴 THE FILTER STATE IS UNTOUCHED WHILE HIDDEN. checkTypeFilter and
-          // activePicker keep their values, keep narrowing filteredStillPicking
+          // pickingView keep their values, keep narrowing filteredStillPicking
           // (and therefore the groups and this picker's bill list), and are
           // back on screen exactly as they were the moment you back out. A
           // control that silently resets when it scrolls out of view is a far
@@ -2359,41 +2432,64 @@ export function PickingBoardMobile(): React.JSX.Element {
           // this up" by resetting either one here.
           openPickerId !== null ? null : (
           <>
-            {/* FIX 3 (reversed decision) — SAME type pills as Assign (reused
-                component, own independent state) on the left, picker dropdown
-                on the right — same position/styling as the route dropdown.
-                Mirrors Assign's row exactly; fixes BUG 2's lopsided layout.
-                2026-07-20: this row followed the "Still picking" band to the
-                Picking tab; it now filters ONE band, not two. */}
+            {/* Type pills left (own independent state, same component Assign
+                uses), and the Picker | Bill view toggle right — occupying the
+                slot the "All pickers" dropdown held until 2026-08-22. */}
             <div className="flex items-center justify-between gap-2 pb-2.5">
               <TypeFilterPills value={checkTypeFilter} onChange={setCheckTypeFilter} />
-              <button
-                type="button"
-                onClick={() => setPickerFilterSheetOpen(true)}
-                className={
-                  "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
-                  (activePicker !== null
-                    ? "border-teal-500 bg-teal-50 text-teal-700"
-                    : "border-gray-200 bg-white text-gray-500")
-                }
-              >
-                <span className="truncate">{activePicker ?? "All pickers"}</span>
-                <ChevronDown size={13} className="shrink-0" />
-              </button>
+              {/* DARK when active, never teal — CLAUDE_UI.md §21's rule for a
+                  view toggle: this is NAVIGATION (which shape am I looking at),
+                  and teal on this board belongs to the Assign CTA. Same
+                  bordered-container / dark-active / white-inactive treatment
+                  Mail Orders' Table|Review toggle uses.
+                  Narrowed through isPickingView, never cast — the value is
+                  local and could simply be passed, but routing it through the
+                  guard is what keeps the pattern honest if this ever becomes
+                  URL- or storage-backed. */}
+              <div className="shrink-0 flex items-center rounded-[5px] border border-gray-300 overflow-hidden">
+                {PICKING_VIEW_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      if (!isPickingView(key)) return;
+                      setPickingView(key);
+                      // Leaving Picker view drops the open picker, so coming
+                      // back lands on the cards rather than inside whoever was
+                      // open when you switched away.
+                      if (key === "bill") setOpenPickerId(null);
+                    }}
+                    className={
+                      "px-3 py-1.5 text-[12.5px] font-medium " +
+                      (pickingView === key
+                        ? "bg-gray-800 text-white font-semibold"
+                        : "bg-white text-gray-500")
+                    }
+                  >
+                    {key === "picker" ? "Picker" : "Bill"}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* FIX 4 — summary strip, same teal-tint style as the lane strip,
-                reflecting ALL active filters (type + picker + search).
-                2026-07-20: reverted to counting ONE band. Step 5 had widened
-                this to needsCheck + stillPicking because the tab held both;
-                needs-check has now moved to the Done tab, so counting it here
-                would describe cards that aren't on this screen. "over 30m"
-                was always scoped to still-picking (see overThresholdCount) and
-                is unchanged. Segment omitted entirely when the count is 0. */}
+            {/* Summary strip. ⚠ BOTH NUMBERS ARE BILL COUNTS IN BOTH VIEWS —
+                the picker count is an extra segment in Picker view, never a
+                replacement for them. "N picking" and "N over 30m" answer "how
+                much work is on the floor", which was never a per-picker
+                question, and they now read tab-wide because the picker
+                dropdown that used to narrow them is gone.
+                "over 30m" is scoped to still-picking (see overThresholdCount)
+                and is unchanged. Segment omitted entirely when the count is 0. */}
             <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
-              <b className="font-bold">{activePicker ?? "All pickers"}</b>
-              <span>
-                &nbsp;·&nbsp;{filteredStillPicking.length} picking
+              <span className="tabular-nums">
+                {pickingView === "picker" && (
+                  <>
+                    <b className="font-bold">{pickerGroups.length}</b>
+                    {" "}{pickerGroups.length === 1 ? "picker" : "pickers"}
+                    &nbsp;·&nbsp;
+                  </>
+                )}
+                {filteredStillPicking.length} picking
                 {overThresholdCount > 0 && (
                   <>&nbsp;·&nbsp;{overThresholdCount} over {ELAPSED_AMBER_MINUTES}m</>
                 )}
@@ -2631,7 +2727,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             The empty-state copy is UNCHANGED and still reads off BILLS: zero
             groups and zero bills are the same condition (a group exists only
             because a bill put it there), so the two can never disagree. */}
-        {!loading && !error && data && openPickerId === null &&
+        {!loading && !error && data && pickingView === "picker" && openPickerId === null &&
           (pickerGroups.length === 0 ? (
             <p className="text-[13px] text-gray-400 text-center py-16">
               {assignedRows.length === 0 ? "Nobody is picking right now." : "No bills match."}
@@ -2657,53 +2753,113 @@ export function PickingBoardMobile(): React.JSX.Element {
                 new Set(g.bills.map((b) => b.route).filter((r): r is string => r !== null)),
               );
               return (
+                // NO AVATAR (2026-08-22). The card is a plain stack, everything
+                // left-aligned to the card's own padding: name, load, routes,
+                // shelf. A 40px circle carrying one letter bought nothing the
+                // name beside it did not already say, and it pushed all three
+                // text lines in by 52px on a 390px screen — the routes line,
+                // which is the one that truncates, paid for it.
                 <button
                   key={g.pickerId}
                   type="button"
                   onClick={() => setOpenPickerId(g.pickerId)}
-                  className="w-full text-left bg-white border border-gray-200 rounded-[16px] px-3.5 py-3 mb-2.5 active:opacity-70"
+                  className="w-full text-left bg-white border border-gray-200 rounded-[16px] overflow-hidden mb-2.5 active:opacity-70"
                   style={{ boxShadow: CARD_SHADOW_V2 }}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="w-10 h-10 rounded-full bg-teal-600 text-white text-[14px] font-bold flex items-center justify-center shrink-0">
-                      {g.initial}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2.5">
-                        <span className="text-[16px] font-semibold text-[#1d2939] truncate min-w-0">
-                          {g.name}
+                  <div className="px-3.5 py-3">
+                    {/* 1 — name, elapsed pill right-aligned on the same line */}
+                    <div className="flex items-center justify-between gap-2.5">
+                      <span className="text-[16.5px] font-semibold text-[#1d2939] truncate min-w-0">
+                        {g.name}
+                      </span>
+                      {oldest !== null && (
+                        <span
+                          className={
+                            "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums " +
+                            ELAPSED_PILL_CLASS[oldest.tier]
+                          }
+                        >
+                          {oldest.label}
                         </span>
-                        {oldest !== null && (
-                          <span
-                            className={
-                              "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums " +
-                              ELAPSED_PILL_CLASS[oldest.tier]
-                            }
-                          >
-                            {oldest.label}
-                          </span>
-                        )}
+                      )}
+                    </div>
+                    {/* 2 — his load. The NUMBERS are 600 and tabular-nums so
+                        they align down a stack of cards; the words "bills" and
+                        "L" drop to 500 and a lighter grey, because the figure
+                        is what is being compared and the unit is only there to
+                        say what of. */}
+                    <div className="text-[13px] font-semibold text-[#2a323c] mt-[3px] tabular-nums">
+                      {g.bills.length}
+                      <span className="font-medium text-[#8a929c]">
+                        {" "}{g.bills.length === 1 ? "bill" : "bills"}
                       </span>
-                      <span className="block text-[12px] font-medium text-[#667085] mt-[3px] tabular-nums">
-                        {g.bills.length} {g.bills.length === 1 ? "bill" : "bills"}
-                        {g.litres > 0 && (
-                          <>
-                            {" · "}
-                            {formatLitres(g.litres)}{" "}
-                            <span className="text-[10.5px] text-[#98a2b3]">L</span>
-                          </>
-                        )}
-                      </span>
-                    </span>
+                      {g.litres > 0 && (
+                        <>
+                          <span className="font-medium text-[#c3c9d0]">{" · "}</span>
+                          {formatLitres(g.litres)}
+                          <span className="font-medium text-[#8a929c]">{" L"}</span>
+                        </>
+                      )}
+                    </div>
+                    {/* 3 — where he is */}
+                    {routes.length > 0 && (
+                      <div className="text-[12.5px] font-medium text-[#98a2b3] mt-1.5 truncate">
+                        {routes.join(", ")}
+                      </div>
+                    )}
                   </div>
-                  {routes.length > 0 && (
-                    <div className="text-[11.5px] text-[#98a2b3] mt-2 truncate">
-                      {routes.join(", ")}
+                  {/* 4 — THE SHELF: his article totals, in the same tinted
+                      band + chip style CardShelf gives a bill's own packs, so
+                      "12 Carton" reads identically whether it is one bill's or
+                      one man's.
+
+                      🔴 NO CHIPS → NO SHELF. Not an empty tinted strip, not a
+                      placeholder: the card simply ends after the routes line,
+                      exactly as if the shelf had never existed. Same rule the
+                      bay follows — render nothing rather than an empty
+                      container. This is reachable: a picker every one of whose
+                      bills carries a null articleTag (unmastered SKUs, §7)
+                      sums to nothing at all. */}
+                  {g.articleChips.length > 0 && (
+                    <div
+                      className="border-t px-[14px] py-[10px] flex flex-nowrap gap-1.5 overflow-hidden"
+                      style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}
+                    >
+                      {g.articleChips.map((label, i) => (
+                        <FamilyChip key={`${i}-${label}`} label={label} />
+                      ))}
                     </div>
                   )}
                 </button>
               );
             })
+          ))}
+
+        {/* ── BILL VIEW — today's flat list, unchanged ────────────────────
+            The list this tab showed before it grew levels: every assigned bill,
+            PICKING_SPINE order, one card each. The picker's name is BACK on the
+            where-line here (no `hidePickerName`) because nothing else on this
+            screen says whose bill it is — that prop exists for level 2, where a
+            header does.
+            Narrowing to one picker in this view is done by typing his name into
+            search, which matches assignedToName (lib/picking/search.ts). */}
+        {!loading && !error && data && pickingView === "bill" &&
+          (filteredStillPicking.length === 0 ? (
+            <p className="text-[13px] text-gray-400 text-center py-16">
+              {assignedRows.length === 0 ? "Nobody is picking right now." : "No bills match."}
+            </p>
+          ) : (
+            filteredStillPicking.map((row) => (
+              <PickingCard
+                key={row.orderId}
+                row={row}
+                variant="picking"
+                nowTick={nowTick}
+                // pickerId NULL — this list is the whole band, so the pager
+                // must page all of it, not just this bill's picker.
+                onOpen={() => openDetail(row.orderId, { kind: "stillPicking", pickerId: null })}
+              />
+            ))
           ))}
 
         {/* ── LEVEL 2 — one picker's bills ────────────────────────────────
@@ -2713,7 +2869,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             with the back chevron still live, NOT a jump back to level 1.
             Moving the screen out from under a thumb mid-tap is worse than an
             empty list he can read and leave on his own. */}
-        {!loading && !error && data && openPickerId !== null && (
+        {!loading && !error && data && pickingView === "picker" && openPickerId !== null && (
           <>
             {/* Sub-header. This REPLACES the Type pill row and the summary
                 strip at this level (both hidden above) — two sets of numbers
@@ -2771,6 +2927,45 @@ export function PickingBoardMobile(): React.JSX.Element {
                   hidePickerName
                   onOpen={() =>
                     openDetail(row.orderId, { kind: "stillPicking", pickerId: openPickerGroup.pickerId })
+                  }
+                  // ── UNDO (2026-08-22) — the shelf's right slot, where the
+                  // Assign card puts its arrow.
+                  //
+                  // 🔴 THE SAME handleUndo THE DETAIL SCREEN CALLS. One
+                  // behaviour in two places, not two implementations: same
+                  // POST /api/picking/unassign, same NO confirm step (the
+                  // detail screen has none, so this has none), same
+                  // toast-then-refetchQueue, same 409 → "Already changed —
+                  // refreshed." + refetch, same failure toasts. If that handler
+                  // ever gains a confirm, this gains it for free — which is the
+                  // whole point of not writing a second one.
+                  //
+                  // Red OUTLINE on white, never filled: it releases a bill back
+                  // to the queue, it does not destroy anything, and a solid red
+                  // control sitting on every card would read as danger on the
+                  // most ordinary action here.
+                  //
+                  // stopPropagation is load-bearing — without it the tap also
+                  // lands on the card body and opens the bill underneath the
+                  // request. Guarded on the SAME per-order `unassigningIds` Set
+                  // the detail CTA uses, so a double tap cannot fire twice and
+                  // the two surfaces cannot disagree about whether one is in
+                  // flight.
+                  shelfTrailing={
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleUndo(row);
+                      }}
+                      disabled={unassigningIds.has(row.orderId)}
+                      aria-label={`Undo assignment for ${row.dealerName}`}
+                      className="shrink-0 self-stretch min-h-[44px] pl-1.5 flex items-center justify-center active:opacity-60 disabled:opacity-40"
+                    >
+                      <span className="rounded-full border border-red-200 bg-white px-2.5 py-[3px] text-[10.5px] font-semibold text-red-600 whitespace-nowrap">
+                        {unassigningIds.has(row.orderId) ? "Undoing…" : "Undo"}
+                      </span>
+                    </button>
                   }
                 />
               ))
@@ -2874,18 +3069,11 @@ export function PickingBoardMobile(): React.JSX.Element {
         onChange={setActiveRoute}
       />
 
-      {/* Picker filter sheet (Check, FIX 3) — SAME reused sheet, different data */}
-      <FilterBottomSheet
-        open={pickerFilterSheetOpen}
-        onClose={() => setPickerFilterSheetOpen(false)}
-        title="Filter by picker"
-        subtitle="Single-select · counts reflect the current Type filter"
-        allLabel="All pickers"
-        allCount={allPickersCount}
-        options={pickerOptions}
-        value={activePicker}
-        onChange={setActivePicker}
-      />
+      {/* ⚠ THE PICKING TAB'S "Filter by picker" SHEET STOOD HERE and was
+          removed 2026-08-22 with its dropdown. The Picker | Bill toggle answers
+          the shape question and search answers the who question.
+          FilterBottomSheet itself is UNCHANGED and still has two instances —
+          the route filter above and the Done tab's own picker filter below. */}
 
       {/* Picker filter sheet (Checked tab, 2026-07-18) — SAME reused sheet,
           own data/state — this dropdown filters by picker (who picked the
