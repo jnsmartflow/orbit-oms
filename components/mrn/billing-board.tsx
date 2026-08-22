@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
 import { getTodayIST } from "@/lib/dates";
 import type { MrnBillingBoard, MrnDetail } from "@/lib/mrn/types";
@@ -241,6 +242,32 @@ export function BillingBoard(): React.JSX.Element {
         searchPlaceholder="Search MRN, STI, delivery no…"
         searchValue={search}
         onSearchChange={setSearch}
+        /* Row 2's LEFT slot — the date strip. The CTA moved here from the top
+           of the rail (2026-08-22) so the rail is nothing but trucks, and it
+           sits opposite the date stepper: raise a truck for THIS day, step to
+           another day, one strip.
+           ⚠ `suppressFilterBar` must never be set on this board — Row 2 is what
+           carries both this button and the stepper (UniversalHeader's own
+           warning).
+           Teal only while nothing is selected — unchanged by the move. With no
+           truck picked the morning's job IS raising one, so this is the board's
+           single teal element; the moment an MRN is selected the pane's action
+           row takes teal and this demotes to secondary. */
+        leftExtra={
+          <button
+            type="button"
+            onClick={() => setModal("new")}
+            className={
+              "inline-flex h-[30px] items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-colors " +
+              (selectedId === null
+                ? "border-teal-600 bg-teal-600 text-white hover:bg-teal-700"
+                : "border-gray-200 bg-white text-[#475467] hover:bg-gray-50")
+            }
+          >
+            <Plus size={14} strokeWidth={2.4} />
+            New MRN
+          </button>
+        }
       />
 
       {/* Body — 344px rail + working pane, the same two-track grid /floor uses
@@ -258,7 +285,6 @@ export function BillingBoard(): React.JSX.Element {
           loading={boardLoading}
           error={boardError}
           filtered={search.trim() !== ""}
-          onNewMrn={() => setModal("new")}
         />
         <DetailPane
           detail={detail}

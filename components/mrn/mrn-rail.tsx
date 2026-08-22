@@ -1,6 +1,5 @@
 "use client";
 
-import { Plus } from "lucide-react";
 import type { MrnBoardRow } from "@/lib/mrn/types";
 import { RailCard } from "./rail-card";
 
@@ -26,8 +25,13 @@ interface MrnRailProps {
   error: string | null;
   /** True when a search query is filtering the list — changes the empty copy. */
   filtered: boolean;
-  onNewMrn: () => void;
 }
+
+// ⚠ THE "NEW MRN" CTA IS NOT HERE ANY MORE (2026-08-22). It moved to the
+// header's Row 2 — the date strip — where it sits opposite the date stepper
+// (components/mrn/billing-board.tsx, via UniversalHeader's `leftExtra` slot).
+// The rail now starts straight into its caption and cards. The teal rule went
+// with it unchanged: teal only while nothing is selected.
 
 export function MrnRail({
   dateLabel,
@@ -37,34 +41,9 @@ export function MrnRail({
   loading,
   error,
   filtered,
-  onNewMrn,
 }: MrnRailProps): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-col border-r border-[#eceff2] bg-white">
-      <div className="shrink-0 border-b border-[#f2f4f6] px-[13px] pb-2.5 pt-[11px]">
-        {/* ⚠ TEAL ONLY WHILE NOTHING IS SELECTED, and that is the one-teal rule
-            applied rather than dodged. Teal follows the state's REAL job
-            (UI §10) — with no truck picked, the morning's job IS raising one,
-            so this is the board's single teal element. The moment an MRN is
-            selected the pane's own action row takes teal (Paste lines on an
-            open MRN), and this demotes to secondary so the two never compete.
-            Floor's detail panel already moves teal between buttons by state;
-            this is the same move across two regions. */}
-        <button
-          type="button"
-          onClick={onNewMrn}
-          className={
-            "flex h-9 w-full items-center justify-center gap-[7px] rounded-[9px] border text-[13px] font-semibold transition-colors " +
-            (selectedId === null
-              ? "border-teal-600 bg-teal-600 text-white hover:bg-teal-700"
-              : "border-gray-200 bg-white text-[#475467] hover:bg-gray-50")
-          }
-        >
-          <Plus size={15} strokeWidth={2.4} />
-          New MRN
-        </button>
-      </div>
-
       <div className="shrink-0 px-3.5 pb-[3px] pt-[11px] text-[10px] font-semibold uppercase tracking-[0.07em] text-gray-400">
         Trucks · {dateLabel}
       </div>
