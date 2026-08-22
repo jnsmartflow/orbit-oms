@@ -131,7 +131,26 @@ function matchesType(row: PickingQueueRow, type: TypeFilter): boolean {
 // that array, so a band carries its key with it when it moves tabs. Keep it
 // that way — deriving a DetailListKey from activeTab would re-couple them and
 // break paging the next time a band moves.
-type DetailListKey = "waiting" | "needsCheck" | "stillPicking" | "checked";
+// ⚠ WIDENED TO A DISCRIMINATED UNION 2026-08-22, when the Picking tab became
+// three levels (pickers → that picker's bills → one bill). It was a four-string
+// union until then.
+//
+// A per-picker bill list is a FIFTH kind of list identity, and a bare string
+// cannot express it: "stillPicking" alone no longer says WHICH list, because
+// there is now one per picker. The id rides on the identity itself rather than
+// being read out of some other state at resolve time — which is the same
+// principle the note above states, applied one level further.
+//
+// 🔴 THE OTHER FOUR ARE UNCHANGED IN MEANING and stay parameterless. Only
+// `stillPicking` carries data, because only it names a list that varies. Do not
+// "tidy" this by giving them all an optional pickerId — an optional field that
+// is meaningless on three of four variants is exactly the ambiguity a
+// discriminated union exists to remove.
+type DetailListKey =
+  | { kind: "waiting" }
+  | { kind: "needsCheck" }
+  | { kind: "checked" }
+  | { kind: "stillPicking"; pickerId: number };
 
 // The swipe/slide tuning constants that used to sit here (edge exclusion,
 // deadzone, axis-lock ratio, commit threshold, drag-follow, slide duration)
@@ -347,6 +366,7 @@ function PickingCard({
   nowTick = 0,
   selected = false,
   stripe = null,
+  hidePickerName = false,
   onOpen,
   onToggleSelect,
   onLockTap,
@@ -355,6 +375,13 @@ function PickingCard({
   variant: PickingCardVariant;
   nowTick?: number;
   selected?: boolean;
+  /**
+   * Suppress the picker's name at the right end of the where-row (2026-08-22).
+   * Passed ONLY by the Picking tab's level-2 list, where the sub-header already
+   * names the picker. Optional and defaulted false, so every other call site —
+   * Assign, Done's two bands, and level 2's own future callers — is unchanged.
+   */
+  hidePickerName?: boolean;
   /**
    * Pick-bundling hint (2026-08-18) — a 4px full-height bar on the card's LEFT
    * EDGE, inside its rounded corners. `"teal"` = SAME MATERIAL (Rule 1),
@@ -440,6 +467,11 @@ function PickingCard({
   } // doneChecked: none — the checked time moves down to the checker line.
 
   const whereRight =
+    // ⚠ `hidePickerName` is the level-2 case (2026-08-22): inside ONE picker's
+    // bill list, the sub-header above already says whose bills these are, so
+    // repeating his name on every card is the same fact N times. Defaulted
+    // false, so every other call site renders byte-identical DOM.
+    !hidePickerName &&
     (variant === "picking" || variant === "doneCheck" || variant === "doneChecked") && row.assignedToName !== null ? (
       <span className="text-[12px] font-semibold shrink-0" style={{ color: dup ? DUP_SO_MUTED : "#8a929c" }}>
         {row.assignedToName}
@@ -1026,12 +1058,41 @@ export function PickingBoardMobile(): React.JSX.Element {
   // rows undone in quick succession can't lose track of each other.
   const [unassigningIds, setUnassigningIds] = useState<Set<number>>(new Set());
 
+  // ── Picking tab, LEVEL 2 (2026-08-22) ─────────────────────────────────────
+  // null = level 1, the picker cards. A number = we are inside that picker's
+  // bill list. Level 3 (one bill) is the existing `detailOpen`, unchanged.
+  //
+  // 🔴 THE ID, NEVER THE NAME. `assignedToName` is a display string and
+  // lib/picking/types.ts says outright that a display-name match is not a scope
+  // boundary — two pickers can share a first name, a rename would silently
+  // re-point this, and a null name is not a null picker. Every grouping,
+  // lookup and slice below keys on `pickerId`.
+  //
+  // ⚠ HARDWARE BACK DOES NOT POP THIS LEVEL. Android back / iOS edge-swipe at
+  // level 2 exits the module, exactly as it does at level 1 today. That is a
+  // KNOWN GAP, deliberately not patched here: the board already has one
+  // popstate authority (the detail screen, §5.3) and a second hand-rolled one
+  // for this depth is the fifth one-off the shared /po single-authority model
+  // is meant to replace. It is on the ROADMAP entry that covers the four
+  // sheets — this picker level was ADDED to that entry in the same commit that
+  // created it, named explicitly, so the shared fix covers it when built.
+  const [openPickerId, setOpenPickerId] = useState<number | null>(null);
+  // Leaving the Picking tab drops the open picker, so switching away and back
+  // lands on level 1 rather than inside whoever you were reading three tabs
+  // ago. Keyed on `activeTab` only — NOT on the row data, because an effect
+  // that watched the rows would also fire on the 15s marker refetch and throw
+  // a supervisor out of a picker he is mid-read on (the same trap the route
+  // filter's reset avoided by living in its pill's own handler).
+  useEffect(() => {
+    if (activeTab !== "picking") setOpenPickerId(null);
+  }, [activeTab]);
+
   // Detail screen — a full-screen overlay that stays MOUNTED (translateX
   // slide, per the approved mockup) rather than conditionally rendered, so
   // the board underneath (filters + scroll position) is never torn down.
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
   // Which list this bill's detail was opened from — see DetailListKey.
-  const [detailListKey, setDetailListKey] = useState<DetailListKey>("waiting");
+  const [detailListKey, setDetailListKey] = useState<DetailListKey>({ kind: "waiting" });
   const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
@@ -1538,6 +1599,90 @@ export function PickingBoardMobile(): React.JSX.Element {
     });
   }, [checkedRows, checkedTypeFilter, activeCheckedPicker, q]);
 
+  // ── Picking tab LEVEL 1 — one entry per picker (2026-08-22) ───────────────
+  // Built FROM `filteredStillPicking`, never from `assignedRows`: the Type pill
+  // and the search term are applied first and the grouping happens afterwards,
+  // so this level obeys exactly the filters level 2 and the summary strip do.
+  //
+  // 🔴 GROUPED ON `pickerId`, THE NUMERIC FK — never on `assignedToName`
+  // (lib/picking/types.ts: "a display-name match is not a scope boundary").
+  // The name is carried along for DISPLAY only.
+  //
+  // 🔴 BILL ORDER INSIDE A PICKER IS UNTOUCHED. `PICKING_SPINE` is applied
+  // server-side and a Map-insertion walk over an already-sorted array preserves
+  // it — no `.sort()` runs on `bills` here or anywhere below. Only the GROUPS
+  // are ordered (see the sort at the end); the bills inside each group come out
+  // in the exact order the server sent them. Do not add a per-group sort.
+  //
+  // ⚠ SEARCH AT THIS LEVEL KEEPS THE PICKER CARD WHOLE. A query that matches
+  // one of a man's five bills shows him with all five still on his card, not
+  // "1 bill". That is deliberate and it is the kind of thing a later session
+  // will "fix" the wrong way: the card is a statement about how loaded HE is,
+  // and a load figure that shrinks because of a search box is a lie. The search
+  // decides WHICH PICKERS appear; it never edits what a card says about one.
+  // (Level 2, one tap down, is where the filtered bill list itself lives.)
+  interface PickerGroup {
+    pickerId: number;
+    name: string;
+    initial: string;
+    bills: PickingQueueRow[];
+    litres: number;
+    /** Oldest assignedAt in ms — the sort key AND the elapsed pill's source. */
+    oldestMs: number;
+  }
+  const pickerGroups: PickerGroup[] = useMemo(() => {
+    const map = new Map<number, PickerGroup>();
+    for (const r of filteredStillPicking) {
+      // Defensive: `isAssigned` implies a pick_assignments row, so pickerId is
+      // non-null in practice. A row that somehow lacks one is DROPPED rather
+      // than bucketed under a fabricated id — an "Unknown picker" card would be
+      // a data-integrity bug wearing a UI costume.
+      if (r.pickerId === null) continue;
+      let g = map.get(r.pickerId);
+      if (g === undefined) {
+        g = {
+          pickerId: r.pickerId,
+          name: r.assignedToName ?? "—",
+          // ⚠ FROM THE NAME, NOT THE ROSTER. `avatarInitial` exists only on
+          // /api/warehouse/pickers, and since 2026-08-22 that roster is not
+          // fetched until the assign sheet is opened — so joining to it would
+          // render initial-less cards on first paint until somebody happened to
+          // open that sheet. The name is already on every row.
+          initial: (r.assignedToName ?? "?").charAt(0).toUpperCase(),
+          bills: [],
+          litres: 0,
+          oldestMs: Number.POSITIVE_INFINITY,
+        };
+        map.set(r.pickerId, g);
+      }
+      g.bills.push(r);
+      g.litres += r.volumeLitres ?? 0;
+      const t = r.assignedAt !== null ? new Date(r.assignedAt).getTime() : NaN;
+      if (!Number.isNaN(t) && t < g.oldestMs) g.oldestMs = t;
+    }
+    // LONGEST-WAITING PICKER FIRST, then name. The man who has been holding
+    // work the longest is the one a supervisor needs to see, and it is the same
+    // instinct the amber elapsed pill already encodes. Deliberately NOT Floor's
+    // most-first ordering (floor-board.tsx sorts routes worst-completion
+    // first): bill count is LOAD, elapsed time is URGENCY, and this list is
+    // sorted by urgency because the pill beside it already is.
+    // A group whose bills all lack assignedAt keeps Infinity and sorts last —
+    // it has no waiting time to claim a place with.
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.oldestMs !== b.oldestMs) return a.oldestMs - b.oldestMs;
+      return a.name.localeCompare(b.name);
+    });
+  }, [filteredStillPicking]);
+
+  // The picker whose bills level 2 is showing, re-resolved every render off the
+  // live groups — never a snapshot taken when the card was tapped. So a refetch
+  // that empties him resolves to `undefined` here and level 2 renders its empty
+  // line; it does NOT navigate away under his thumb (see the render below).
+  const openPickerGroup: PickerGroup | undefined = useMemo(
+    () => (openPickerId === null ? undefined : pickerGroups.find((g) => g.pickerId === openPickerId)),
+    [pickerGroups, openPickerId],
+  );
+
   // FIX 4 — count of the CURRENTLY VISIBLE (filtered) "Still picking" bills
   // whose elapsed-since-assigned time has crossed the amber threshold.
   // Needs-check rows are deliberately excluded — their pill counts minutes
@@ -1647,10 +1792,23 @@ export function PickingBoardMobile(): React.JSX.Element {
   // the board itself renders, so a post-Undo refetch is reflected
   // automatically (never a frozen snapshot captured at open time).
   const activeDetailList: PickingQueueRow[] = useMemo(() => {
-    switch (detailListKey) {
+    switch (detailListKey.kind) {
       case "waiting": return filteredWaiting;
       case "needsCheck": return filteredNeedsCheck;
-      case "stillPicking": return filteredStillPicking;
+      // ⚠ ONE PICKER'S BILLS, NOT THE WHOLE TAB (2026-08-22). This is the
+      // entire point of putting the id on the key: the pager's "‹ 2 of 3 ›"
+      // must count the three bills the supervisor is looking at, not the eight
+      // on the tab behind them. Filtered off the SAME `filteredStillPicking`
+      // the groups are built from, so it obeys the Type pill and the search
+      // term identically and stays in PICKING_SPINE order.
+      //
+      // Resolved live every render, like the other three arms — so a refetch
+      // that removes a bill is reflected immediately, and one that empties the
+      // picker yields [] rather than a stale array. The pager handles that on
+      // its own: index → -1, both arrows unreachable, a past-threshold swipe
+      // snaps back rather than committing (use-bill-pager.ts).
+      case "stillPicking":
+        return filteredStillPicking.filter((r) => r.pickerId === detailListKey.pickerId);
       case "checked": return filteredChecked;
     }
   }, [detailListKey, filteredWaiting, filteredNeedsCheck, filteredStillPicking, filteredChecked]);
@@ -2186,6 +2344,20 @@ export function PickingBoardMobile(): React.JSX.Element {
             </div>
           </>
         ) : activeTab === "picking" ? (
+          // ⚠ HIDDEN AT LEVEL 2, NOT CLEARED (2026-08-22). Inside one picker's
+          // bills the sub-header carries that man's own numbers, and leaving
+          // the tab-wide row and strip above it would put "8 picking · 3 over
+          // 30m" directly over "3 bills · oldest 42m" — one screen answering
+          // the same question twice, with two different right answers.
+          //
+          // 🔴 THE FILTER STATE IS UNTOUCHED WHILE HIDDEN. checkTypeFilter and
+          // activePicker keep their values, keep narrowing filteredStillPicking
+          // (and therefore the groups and this picker's bill list), and are
+          // back on screen exactly as they were the moment you back out. A
+          // control that silently resets when it scrolls out of view is a far
+          // worse bug than one that is briefly out of reach — do not "clean
+          // this up" by resetting either one here.
+          openPickerId !== null ? null : (
           <>
             {/* FIX 3 (reversed decision) — SAME type pills as Assign (reused
                 component, own independent state) on the left, picker dropdown
@@ -2228,6 +2400,7 @@ export function PickingBoardMobile(): React.JSX.Element {
               </span>
             </div>
           </>
+          )
         ) : (
           <>
             {/* Done tab (2026-07-18, re-slotted 2026-07-20) — same row shape as
@@ -2325,7 +2498,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     row={row}
                     variant="assign"
                     selected={selected.has(row.orderId)}
-                    onOpen={() => openDetail(row.orderId, "waiting")}
+                    onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
                     onToggleSelect={() => toggleSelect(row.orderId)}
                   />
                 ))
@@ -2347,7 +2520,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                           variant="assign"
                           stripe="teal"
                           selected={selected.has(row.orderId)}
-                          onOpen={() => openDetail(row.orderId, "waiting")}
+                          onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
                           onToggleSelect={() => toggleSelect(row.orderId)}
                         />
                       ))}
@@ -2374,7 +2547,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                           variant="assign"
                           stripe="amber"
                           selected={selected.has(row.orderId)}
-                          onOpen={() => openDetail(row.orderId, "waiting")}
+                          onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
                           onToggleSelect={() => toggleSelect(row.orderId)}
                         />
                       ))}
@@ -2392,7 +2565,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                           row={row}
                           variant="assign"
                           selected={selected.has(row.orderId)}
-                          onOpen={() => openDetail(row.orderId, "waiting")}
+                          onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
                           onToggleSelect={() => toggleSelect(row.orderId)}
                         />
                       ))}
@@ -2417,7 +2590,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                       key={row.orderId}
                       row={row}
                       variant="assignLocked"
-                      onOpen={() => openDetail(row.orderId, "waiting")}
+                      onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
                       onLockTap={() => setReleaseTarget(row)}
                     />
                   ))}
@@ -2454,24 +2627,156 @@ export function PickingBoardMobile(): React.JSX.Element {
           </p>
         )}
 
-        {!loading &&
-          !error &&
-          data &&
-          (filteredStillPicking.length === 0 ? (
+        {/* ── LEVEL 1 — one card per picker (2026-08-22) ──────────────────
+            The empty-state copy is UNCHANGED and still reads off BILLS: zero
+            groups and zero bills are the same condition (a group exists only
+            because a bill put it there), so the two can never disagree. */}
+        {!loading && !error && data && openPickerId === null &&
+          (pickerGroups.length === 0 ? (
             <p className="text-[13px] text-gray-400 text-center py-16">
               {assignedRows.length === 0 ? "Nobody is picking right now." : "No bills match."}
             </p>
           ) : (
-            filteredStillPicking.map((row) => (
-              <PickingCard
-                key={row.orderId}
-                row={row}
-                variant="picking"
-                nowTick={nowTick}
-                onOpen={() => openDetail(row.orderId, "stillPicking")}
-              />
-            ))
+            pickerGroups.map((g) => {
+              // The OLDEST bill's elapsed time, through the SAME helper and
+              // therefore the SAME grey/amber/red thresholds the bill cards
+              // use — never a second calculation, and never an average. One
+              // number standing for several bills has to be unambiguous, and
+              // "the longest anything here has been waiting" is the one a
+              // supervisor can act on. An average hides a 90-minute bill
+              // behind four fresh ones.
+              const oldest =
+                g.oldestMs === Number.POSITIVE_INFINITY
+                  ? null
+                  : elapsedSinceAssigned(new Date(g.oldestMs), nowTick);
+              // Distinct routes, first-appearance order (the bills are still
+              // in PICKING_SPINE order, so this reads in the order he will
+              // work them). Deliberately not sorted or counted — it is a
+              // "where is he" line, not a statistic.
+              const routes = Array.from(
+                new Set(g.bills.map((b) => b.route).filter((r): r is string => r !== null)),
+              );
+              return (
+                <button
+                  key={g.pickerId}
+                  type="button"
+                  onClick={() => setOpenPickerId(g.pickerId)}
+                  className="w-full text-left bg-white border border-gray-200 rounded-[16px] px-3.5 py-3 mb-2.5 active:opacity-70"
+                  style={{ boxShadow: CARD_SHADOW_V2 }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="w-10 h-10 rounded-full bg-teal-600 text-white text-[14px] font-bold flex items-center justify-center shrink-0">
+                      {g.initial}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2.5">
+                        <span className="text-[16px] font-semibold text-[#1d2939] truncate min-w-0">
+                          {g.name}
+                        </span>
+                        {oldest !== null && (
+                          <span
+                            className={
+                              "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums " +
+                              ELAPSED_PILL_CLASS[oldest.tier]
+                            }
+                          >
+                            {oldest.label}
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-[12px] font-medium text-[#667085] mt-[3px] tabular-nums">
+                        {g.bills.length} {g.bills.length === 1 ? "bill" : "bills"}
+                        {g.litres > 0 && (
+                          <>
+                            {" · "}
+                            {formatLitres(g.litres)}{" "}
+                            <span className="text-[10.5px] text-[#98a2b3]">L</span>
+                          </>
+                        )}
+                      </span>
+                    </span>
+                  </div>
+                  {routes.length > 0 && (
+                    <div className="text-[11.5px] text-[#98a2b3] mt-2 truncate">
+                      {routes.join(", ")}
+                    </div>
+                  )}
+                </button>
+              );
+            })
           ))}
+
+        {/* ── LEVEL 2 — one picker's bills ────────────────────────────────
+            ⚠ NO AUTO-NAVIGATION WHEN A REFETCH EMPTIES HIM. `openPickerGroup`
+            resolves live, so a picker whose last bill was just approved or
+            unassigned becomes `undefined` here — and we render a quiet line
+            with the back chevron still live, NOT a jump back to level 1.
+            Moving the screen out from under a thumb mid-tap is worse than an
+            empty list he can read and leave on his own. */}
+        {!loading && !error && data && openPickerId !== null && (
+          <>
+            {/* Sub-header. This REPLACES the Type pill row and the summary
+                strip at this level (both hidden above) — two sets of numbers
+                on one screen, "8 picking · 3 over 30m" for the whole tab over
+                "3 bills · oldest 42m" for this man, is a screen answering the
+                same question twice with different answers. The filters
+                themselves stay APPLIED underneath and are restored exactly as
+                they were on the way back out: hiding a control must never
+                silently clear it. */}
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                type="button"
+                onClick={() => setOpenPickerId(null)}
+                aria-label="Back to pickers"
+                className="w-11 h-11 -ml-2.5 shrink-0 flex items-center justify-center rounded-[10px] text-gray-500 active:bg-gray-100"
+              >
+                <ChevronLeft size={22} />
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="text-[16px] font-semibold text-[#1d2939] truncate">
+                  {openPickerGroup?.name ?? "—"}
+                </div>
+                <div className="text-[12px] font-medium text-[#667085] tabular-nums">
+                  {(() => {
+                    const g = openPickerGroup;
+                    if (g === undefined) return "0 bills";
+                    const oldest =
+                      g.oldestMs === Number.POSITIVE_INFINITY
+                        ? null
+                        : elapsedSinceAssigned(new Date(g.oldestMs), nowTick);
+                    return (
+                      `${g.bills.length} ${g.bills.length === 1 ? "bill" : "bills"}` +
+                      (g.litres > 0 ? ` · ${formatLitres(g.litres)} L` : "") +
+                      (oldest !== null ? ` · oldest ${oldest.label}` : "")
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {openPickerGroup === undefined ? (
+              <p className="text-[13px] text-gray-400 text-center py-16">
+                Nothing left with this picker.
+              </p>
+            ) : (
+              // TODAY'S EXACT CARD, unchanged — same variant, same elapsed
+              // pill, same clock. The only difference is hidePickerName: the
+              // sub-header above already says whose bills these are.
+              openPickerGroup.bills.map((row) => (
+                <PickingCard
+                  key={row.orderId}
+                  row={row}
+                  variant="picking"
+                  nowTick={nowTick}
+                  hidePickerName
+                  onOpen={() =>
+                    openDetail(row.orderId, { kind: "stillPicking", pickerId: openPickerGroup.pickerId })
+                  }
+                />
+              ))
+            )}
+          </>
+        )}
       </div>
       )}
 
@@ -2521,7 +2826,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   row={row}
                   variant="doneCheck"
                   nowTick={nowTick}
-                  onOpen={() => openDetail(row.orderId, "needsCheck")}
+                  onOpen={() => openDetail(row.orderId, { kind: "needsCheck" })}
                 />
               ))
             )}
@@ -2540,7 +2845,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   row={row}
                   variant="doneChecked"
                   nowTick={nowTick}
-                  onOpen={() => openDetail(row.orderId, "checked")}
+                  onOpen={() => openDetail(row.orderId, { kind: "checked" })}
                 />
               ))
             )}

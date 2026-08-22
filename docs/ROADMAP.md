@@ -615,12 +615,26 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
   firing the *same* `handleApprove(detailRow)` → `POST /api/picking/approve` `{orderId}`. The
   `allLinesChecked` gate and the API are unchanged — only the input mechanism changes. **Green**, not
   teal (separates "finish" from teal "assign").
-- [ ] **Four detail-area sheets ship with no Back affordance** — route filter, check-picker filter,
-  checked-picker filter, and the bulk-bar assign sheet. They push no history entry, so Android
-  hardware back / iOS edge-swipe navigates the *browser* instead of closing them. Same gap class the
-  detail screen had pre-Build-A; copy the `/po` single-authority popstate model
-  (`CLAUDE_PLACE_ORDER.md §25`). The nested assign sheet opened *from* the detail screen is already
-  handled — not on this list.
+- [ ] **FIVE in-app depths on the supervisor board ship with no Back affordance** *(was four — the
+  fifth was added 2026-08-22, see below)*. They push no history entry, so Android hardware back /
+  iOS edge-swipe navigates the *browser* instead of closing them. Same gap class the detail screen
+  had pre-Build-A; copy the `/po` single-authority popstate model (`CLAUDE_PLACE_ORDER.md §25`).
+  1. route filter sheet
+  2. check-picker filter sheet
+  3. checked-picker filter sheet
+  4. the bulk-bar assign sheet
+  5. **the Picking tab's LEVEL 2 — one picker's bill list** *(added 2026-08-22 with the three-level
+     Picking tab)*. ⚠ **This one is NOT a sheet, and that is why it matters most of the five.** It
+     is a navigation DEPTH: `openPickerId` in `picking-board-mobile.tsx` moves the tab from the
+     picker cards to one man's bills, with an on-screen back chevron and no history entry. So a
+     hardware back from *two* levels in throws the supervisor clean out of the module — strictly
+     worse than the same press from one level in, which is all the four sheets above cost.
+     It was built this way ON PURPOSE rather than growing a fifth hand-rolled popstate handler
+     beside the detail screen's: that is the exact proliferation this item exists to end. The code
+     carries the same note at the `openPickerId` declaration. **When the shared model lands, this
+     depth is part of it — do not treat the list above as sheets-only.**
+
+  The nested assign sheet opened *from* the detail screen is already handled — not on this list.
 - [ ] **Feel-tuning pending real-device use:** the 0.65× drag-follow and ~260ms slide are subjective
   one-number tweaks if the floor wants faster/stiffer.
 
