@@ -278,14 +278,34 @@ export function LineSheet({
       aria-modal="true"
       className="fixed inset-0 z-[60] flex flex-col bg-white"
     >
-      <div className="shrink-0 border-b border-gray-100 px-4 pt-3 pb-3">
+      {/* ── HEADER BAND ─────────────────────────────────────────────────────
+          🔴 THE SAFE-AREA INSET IS INSIDE THIS BAND'S OWN PADDING, and that is
+          the whole fix. app/layout.tsx sets `viewportFit: "cover"` app-wide
+          (CLAUDE_UI.md §55), which tells iOS to paint the page BENEATH the
+          status bar and the notch — so every full-screen surface has to reserve
+          that space itself. This header had a bare `pt-3`: the right 12px
+          floor, but no `env()`, so on an iPhone the product title drew under
+          the clock and the ✕ under the battery icon.
+          `max(env(safe-area-inset-top, 0px), 12px)` is the SAME shape the MRN
+          detail screen uses (supervisor-board.tsx), and the same shape both
+          picking boards and ModuleMobileHeader use — a deliberate app-wide
+          convention, not an accident of one screen. The 0px fallback matters:
+          Android and desktop report no inset, and a bare `env()` there would
+          collapse to nothing.
+          The band is `shrink-0` inside the `flex flex-col` root and carries its
+          own white ground, so the scrolling body passes UNDER it and can never
+          appear in the inset. */}
+      <div
+        className="shrink-0 border-b border-[#eceff2] bg-white px-4 pb-3"
+        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+      >
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-[17px] font-bold leading-tight text-gray-900">
               {line.isCatalogued ? line.description : "Not in catalog"}
             </div>
-            <div className="mt-1 text-[13px] text-[#667085]">
-            <span className="font-mono">{line.skuCode}</span>
+            <div className="mt-1 text-[13px] text-[#98a2b3]">
+              <span className="font-mono text-[12px]">{line.skuCode}</span>
               {line.pack && ` · ${line.pack}`} · line {position.index} of {position.total}
             </div>
           </div>
@@ -307,11 +327,13 @@ export function LineSheet({
         </div>
       </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+      {/* The BODY scrolls UNDER the pinned band above. Padding is the mock’s
+          .body exactly: 14px 16px 20px. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 pt-3.5">
           {/* ── Physical qty ─────────────────────────────────────────────── */}
-          {/* mt-4 — the first section was sitting hard against "line 1 of 10"
-              in the sheet header with no separation. */}
-          <Label className="mt-4">Physical qty received</Label>
+          {/* No top margin: the header is a real bordered band now and the body
+              carries the mock’s own 14px of top padding. */}
+          <Label>Physical qty received</Label>
           <div className="mt-1.5 flex items-center gap-2.5">
             <StepButton
               label="Decrease"
