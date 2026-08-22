@@ -170,6 +170,27 @@ export function LineSheet({
 
   const canConfirm = batchCheck.ok && (countCheck === null || countCheck.ok) && !yearsMissing && !busy;
 
+  /**
+   * 🔴 VALIDATION MESSAGES ARE SILENT UNTIL HE HAS ACTUALLY DONE SOMETHING.
+   *
+   * The amber "Every batch needs a manufacturing month and a best-before
+   * month" banner used to render from the moment the sheet OPENED, before the
+   * operator had touched a control — a warning present at rest, which is noise
+   * and which trains people to ignore the warnings that matter.
+   *
+   * Two triggers now reveal them, and nothing else:
+   *   • `attempted` — he pressed Confirm while it was blocked. He asked, so he
+   *     gets the reason.
+   *   • `touched` — he VISITED a field and left it (blur), so the message is
+   *     about something he was just looking at.
+   *
+   * Until then Confirm is simply disabled, which already says "not yet"
+   * without scolding him.
+   */
+  const [attempted, setAttempted] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const showValidation = attempted || touched;
+
   function setBatch(key: number, patch: Partial<DraftBatch>): void {
     setBatches((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
@@ -249,7 +270,9 @@ export function LineSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
           {/* ── Physical qty ─────────────────────────────────────────────── */}
-          <Label>Physical qty received</Label>
+          {/* mt-4 — the first section was sitting hard against "line 1 of 10"
+              in the sheet header with no separation. */}
+          <Label className="mt-4">Physical qty received</Label>
           <div className="mt-1.5 flex items-center gap-2.5">
             <StepButton
               label="Decrease"
@@ -308,6 +331,7 @@ export function LineSheet({
                 year={batches[0].mfgYear}
                 onMonth={(m) => setBatch(batches[0].key, { mfgMonth: m })}
                 onYear={(y) => setBatch(batches[0].key, { mfgYear: y })}
+                onBlur={() => setTouched(true)}
                 idPrefix="mfg"
               />
 
@@ -318,6 +342,7 @@ export function LineSheet({
                 year={batches[0].bbYear}
                 onMonth={(m) => setBatch(batches[0].key, { bbMonth: m })}
                 onYear={(y) => setBatch(batches[0].key, { bbYear: y })}
+                onBlur={() => setTouched(true)}
                 idPrefix="bb"
               />
 
@@ -359,6 +384,7 @@ export function LineSheet({
                       year={b.mfgYear}
                       onMonth={(m) => setBatch(b.key, { mfgMonth: m })}
                       onYear={(y) => setBatch(b.key, { mfgYear: y })}
+                      onBlur={() => setTouched(true)}
                       idPrefix={`mfg-${b.key}`}
                       compact
                     />
@@ -372,6 +398,7 @@ export function LineSheet({
                       year={b.bbYear}
                       onMonth={(m) => setBatch(b.key, { bbMonth: m })}
                       onYear={(y) => setBatch(b.key, { bbYear: y })}
+                      onBlur={() => setTouched(true)}
                       idPrefix={`bb-${b.key}`}
                       compact
                     />
@@ -383,10 +410,16 @@ export function LineSheet({
                   count. Confirm is blocked until it reads ✓. */}
               <div
                 className={
+                  // Green as soon as it MATCHES — that is a positive
+                  // confirmation, not a complaint, so it needs no gate. Red
+                  // only once he has engaged; before that it sits neutral
+                  // rather than accusing him of a sum he has not finished.
                   "mt-2.5 flex items-center justify-between rounded-[11px] px-3 py-2.5 text-[13px] font-semibold " +
                   (batchCheck.ok
                     ? "bg-green-50 text-green-700"
-                    : "bg-red-50 text-[#b42318]")
+                    : showValidation
+                      ? "bg-red-50 text-[#b42318]"
+                      : "bg-gray-50 text-[#667085]")
                 }
               >
                 <span className="tabular-nums">
@@ -441,6 +474,7 @@ export function LineSheet({
                     label={c.label}
                     value={counts[c.key]}
                     onChange={(v) => setCounts((p) => ({ ...p, [c.key]: v }))}
+                    onBlur={() => setTouched(true)}
                   />
                 ))}
                 {/* 🔴 READ-ONLY. Derived from the stepper above by derive.ts —
@@ -451,7 +485,7 @@ export function LineSheet({
                 <ReadOnlyCount label="Exc" value={excess} />
               </div>
 
-              {countCheck && !countCheck.ok && (
+              {showValidation && countCheck && !countCheck.ok && (
                 <div className="mt-2.5 flex gap-2.5 rounded-[11px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-[1.55] text-amber-900">
                   <AlertTriangle size={15} className="mt-px shrink-0" />
                   {/* derive.ts's own sentence, verbatim. */}
@@ -461,13 +495,13 @@ export function LineSheet({
             </>
           )}
 
-          {!batchCheck.ok && physicalQty > 0 && !split && (
+          {showValidation && !batchCheck.ok && physicalQty > 0 && !split && (
             <div className="mt-3 flex gap-2.5 rounded-[11px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-[1.55] text-amber-900">
               <AlertTriangle size={15} className="mt-px shrink-0" />
               <div>{batchCheck.message}</div>
             </div>
           )}
-          {yearsMissing && batchCheck.ok && (
+          {showValidation && yearsMissing && batchCheck.ok && (
             <div className="mt-3 flex gap-2.5 rounded-[11px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-[1.55] text-amber-900">
               <AlertTriangle size={15} className="mt-px shrink-0" />
               <div>Every batch needs a manufacturing and a best-before month and year.</div>
@@ -499,10 +533,20 @@ export function LineSheet({
               >
                 Cancel
               </button>
+              {/* ⚠ NOT `disabled` — deliberately. It LOOKS disabled (grey,
+                  not-allowed) and cannot submit, but it still takes the tap, so
+                  pressing it while blocked sets `attempted` and reveals WHY.
+                  A truly disabled button swallows the event, leaving him
+                  pressing a dead control with no explanation — which is how the
+                  banner ended up permanently visible in the first place.
+                  `busy` is inside canConfirm, so this cannot double-submit. */}
               <button
                 type="button"
-                onClick={() => void confirm()}
-                disabled={!canConfirm}
+                aria-disabled={!canConfirm}
+                onClick={() => {
+                  setAttempted(true);
+                  if (canConfirm) void confirm();
+                }}
                 className={
                   "h-[50px] flex-1 rounded-[13px] text-[15px] font-bold " +
                   (canConfirm
@@ -573,6 +617,7 @@ function MonthYear({
   year,
   onMonth,
   onYear,
+  onBlur,
   idPrefix,
   compact,
 }: {
@@ -580,6 +625,7 @@ function MonthYear({
   year: number | null;
   onMonth: (m: number | null) => void;
   onYear: (y: number | null) => void;
+  onBlur?: () => void;
   idPrefix: string;
   compact?: boolean;
 }): React.JSX.Element {
@@ -597,6 +643,7 @@ function MonthYear({
       <select
         aria-label={`${idPrefix} month`}
         value={month ?? ""}
+        onBlur={onBlur}
         onChange={(e) => onMonth(e.target.value === "" ? null : Number(e.target.value))}
         className={cls + (month === null ? " text-gray-400" : "")}
       >
@@ -610,6 +657,7 @@ function MonthYear({
       <select
         aria-label={`${idPrefix} year`}
         value={year ?? ""}
+        onBlur={onBlur}
         onChange={(e) => onYear(e.target.value === "" ? null : Number(e.target.value))}
         className={cls + (year === null ? " text-gray-400" : "")}
       >
@@ -641,10 +689,12 @@ function CountBox({
   label,
   value,
   onChange,
+  onBlur,
 }: {
   label: string;
   value: number | null;
   onChange: (v: number | null) => void;
+  onBlur?: () => void;
 }): React.JSX.Element {
   return (
     <label className="flex flex-col items-center rounded-[10px] border border-gray-200 px-1 py-1.5">
@@ -657,6 +707,7 @@ function CountBox({
         placeholder="0"
         aria-label={label}
         onFocus={(e) => e.currentTarget.select()}
+        onBlur={onBlur}
         onChange={(e) => {
           const v = e.target.value.trim();
           if (v === "") return onChange(null);

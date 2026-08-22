@@ -22,11 +22,17 @@ import { formatIstTime, formatMonthYear } from "./format";
 //     change size.
 //   • that number goes RED when physical ≠ STI. Picking has one number and so
 //     has nothing to disagree with.
-//   • the tick circle uses picking's exact column and circle geometry but
-//     fills GREEN rather than teal, and a ticked row mutes.
+//
+// WHAT MRN DROPS FROM PICKING'S ROW, on purpose:
+//   • the TICK CIRCLE. A picker can genuinely tick a line from picking's list;
+//     a supervisor cannot — confirming an MRN line needs a quantity and
+//     manufacturing dates, which only the sheet can take. See LineRow.
+//   • the DESCRIPTION. The row is the mono SKU he matches against the shelf;
+//     the product name is the sheet's title, where he confirms he opened the
+//     right one.
 //
 // ⚠️ Ordering is the STI's, which is the order the pallets come off the truck.
-// Never sort ticked rows to the bottom.
+// Never sort confirmed rows to the bottom.
 
 // Duplicated from picking-board-mobile.tsx, which does not export them — the
 // same way picker-my-picks-board.tsx carries its own copies. Tokens, not rules.
@@ -214,21 +220,37 @@ export function MrnLineRows({
 }
 
 /**
- * ONE white rounded card, left to right — picking's card, matched:
+ * ONE white rounded card — picking's card, matched:
  *
- *   [ full-height grey gutter | divider ] [ mono SKU bold      ] [ big qty ] [ circle ]
- *                                         [ description, muted ] [ of {STI} ]
+ *   [ full-height grey gutter | divider ] [ mono SKU ] [ big qty ]
+ *                                         [ mfg dates ] [ of {STI} ]
  *
- * 🔴 THE TICK IS INSIDE THE CARD, TO THE RIGHT OF THE QTY. It used to lead the
- * row on the left, which was the single biggest visual difference from picking.
+ * ⚠️ THERE IS NO TICK CIRCLE, AND ADDING ONE BACK WOULD BE A LIE. The
+ * supervisor cannot mark a line done from this list — confirming needs a
+ * quantity and manufacturing dates, which only the sheet can take. A circle
+ * here would be a control that does nothing while reading exactly like a
+ * checkbox he could tap. The row has ONE action: open me. (Picking's rows DO
+ * carry a tick because a picker genuinely can tick a line from the list; the
+ * layouts match, the affordances differ, and that difference is deliberate.)
+ *
+ * ⚠️ NO DESCRIPTION EITHER. The row is the mono SKU code and nothing else —
+ * that is what he matches against the shelf. The product name is the sheet's
+ * title, which is where he confirms he opened the right one.
+ *
+ * ⚠️ CHECKED STATE IS CARRIED BY DATA, NOT A BADGE. A confirmed row mutes AND
+ * grows a second line showing the manufacturing dates it recorded. An unchecked
+ * row has nothing true to put there, so it stays a single line. Row heights
+ * therefore differ between the two states — INTENDED, not a layout bug: the
+ * taller rows are the finished ones, and scanning the list tells him both what
+ * is done and what he actually wrote down.
  *
  * ── 320px budget (every column shrink-0 or min-w-0) ─────────────────────────
  *   pack   56px  (w-14)
  *   qty    ~75px (px-3.5 = 28px + ~47px for three digits at 26px)
- *   tick   44px  (w-11)
- *   body   320 − 175 = 145px outer, ~121px of text after px-3
- * Both text lines `truncate` inside a `min-w-0` flex child, so they ellipsis
- * rather than push. At 390px the body gets ~191px.
+ *   body   320 − 131 = 189px outer, ~165px of text after px-3
+ * The SKU line `truncate`s inside a `min-w-0` flex child. Dropping the tick
+ * column returned 44px to the text, so the longest SAP code (IN28129271, ~102px
+ * at 17px mono bold) now clears comfortably at 320px. At 390px: ~235px.
  */
 function LineRow({
   line,
@@ -240,8 +262,9 @@ function LineRow({
   const done = line.isChecked;
   const differs = done && line.physicalQty !== null && line.physicalQty !== line.qtySti;
 
-  // A split line shows BOTH batches inline — "06/26 · 9 + 07/26 · 6" — so the
-  // split is readable without opening the sheet.
+  // The second line, and the ONLY thing that marks a row as done besides the
+  // mute. A split line shows every batch — "06/26 · 30  +  07/26 · 16" — so the
+  // split is readable without reopening the sheet.
   const batchText =
     line.batches.length === 0
       ? null
@@ -263,6 +286,10 @@ function LineRow({
             : (line.emptyQty ?? 0) > 0
               ? `Empty ${line.emptyQty}`
               : null;
+
+  // Only ever populated on a checked row — an unchecked line has no batches and
+  // derives no issue, so this is null and the row stays one line high.
+  const showSecondLine = done && (batchText !== null || issue !== null);
 
   return (
     // Picking's card: flex bg-white rounded-[14px] overflow-hidden mb-2 + shadow.
@@ -286,22 +313,19 @@ function LineRow({
         </span>
       </span>
 
-      {/* BODY — picking verbatim. SKU is the loudest thing on the card; the
-          product name is muted confirmation underneath. Mutes once ticked: no
-          ring, no left border, just a quiet row. */}
+      {/* BODY — the SKU, and on a checked row the dates beneath it. Mutes once
+          confirmed: no ring, no left border, just a quiet row. */}
       <span
         className={
-          "flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (done ? "opacity-55" : "")
+          "flex-1 min-w-0 px-3 py-2.5 flex flex-col justify-center transition-opacity " +
+          (done ? "opacity-55" : "")
         }
       >
         <span className="block font-mono text-[17px] font-bold text-gray-900 truncate">
           {line.skuCode}
         </span>
-        <span className="block text-[12px] text-gray-500 truncate mt-0.5">
-          {line.isCatalogued ? line.description : "Not in catalog"}
-        </span>
-        {(batchText || issue) && (
-          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-[#98a2b3]">
+        {showSecondLine && (
+          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-gray-500">
             {batchText && <span className="tabular-nums">{batchText}</span>}
             {batchText && issue && <span className="text-[#d8dce1]">·</span>}
             {issue && <span className="font-semibold text-[#b42318]">{issue}</span>}
@@ -311,8 +335,7 @@ function LineRow({
 
       {/* QTY — picking's column (shrink-0, px-3.5, 26px extrabold tabular) with
           MRN's sub-label STACKED beneath it in the same column. The number does
-          not move or change size; `justify-center` on a flex-col keeps the pair
-          optically where picking's single number sat. Red when physical ≠ STI. */}
+          not move or change size. Red when physical ≠ STI. */}
       <span className="shrink-0 flex flex-col items-center justify-center px-3.5">
         <span
           className={
@@ -324,31 +347,6 @@ function LineRow({
         </span>
         <span className="text-[11px] text-gray-400 tabular-nums mt-1 whitespace-nowrap">
           of {line.qtySti}
-        </span>
-      </span>
-
-      {/* TICK — picking's column and circle geometry verbatim: w-11 tap zone,
-          20px circle, 2px border, no border on the column itself (a tap zone,
-          not a compartment). GREEN rather than picking's teal: on MRN this is
-          completion, and teal is the module's "the job" colour. */}
-      <span className="w-11 shrink-0 flex items-center justify-center">
-        <span
-          className={
-            "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
-            (done ? "bg-green-500 border-green-500" : "bg-white border-gray-300")
-          }
-        >
-          {done && (
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M5 13l4 4L19 7"
-                stroke="#fff"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          )}
         </span>
       </span>
     </button>
