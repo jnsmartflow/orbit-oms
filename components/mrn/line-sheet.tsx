@@ -12,7 +12,13 @@ import type { MrnBatchInput, MrnDetailLine } from "@/lib/mrn/types";
 import { useKeyboardOpen } from "@/lib/hooks/use-keyboard-open";
 import { describeWriteError } from "./modal-shell";
 
-// S7 / S7b / S8 — the line sheet. The heart of the module.
+// The line sheet — the heart of the module.
+//
+// ⚠️ THE SPEC IS docs/mockups/mrn/03-line-sheet.html, frames L1-L5. It
+// SUPERSEDES 02-supervisor-mobile.html's S7 / S7b / S8, which drew a bottom
+// sheet with native dropdowns and a best-before pair — all three are STALE and
+// must not be rebuilt from. The new mock's ALT frame (a recent-months shortcut
+// row) is an idea for later and is deliberately NOT built.
 //
 // 🔴 PHYSICAL QTY OPENS PRE-FILLED TO qtySti, AND THAT IS THE WHOLE DESIGN.
 // The common case is that the stock is there: he taps Confirm and types
@@ -43,7 +49,6 @@ import { describeWriteError } from "./modal-shell";
 // ⚠️ EVERY INPUT IS text-[16px]. iOS auto-zooms any focused field below 16px and
 // then leaves the page zoomed (UI §9). There is no exception on this screen.
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** One batch as the sheet holds it while being edited — months/years may still
  *  be unset, which MrnBatchInput (a submit shape) cannot express. */
@@ -290,9 +295,14 @@ export function LineSheet({
             type="button"
             onClick={busy ? undefined : onClose}
             aria-label="Close"
-            className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-400 active:bg-gray-100"
+            // RED (mock L1): a #fef2f2 disc with a #dc2626 glyph, 34px. The
+            // 44px tap target is preserved by the wrapper, so the visible disc
+            // can be small without the target being.
+            className="flex h-11 w-11 shrink-0 items-center justify-center"
           >
-            <X size={22} />
+            <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#fef2f2] text-[#dc2626] active:bg-[#fde4e4]">
+              <X size={17} strokeWidth={2.4} />
+            </span>
           </button>
         </div>
       </div>
@@ -333,62 +343,83 @@ export function LineSheet({
               <Plus size={20} />
             </StepButton>
           </div>
-          <p
-            className={
-              "mt-[7px] text-[11.5px] leading-[1.5] " +
-              (short > 0 || excess > 0 ? "font-semibold text-[#b42318]" : "text-[#98a2b3]")
-            }
-          >
-            {short > 0
-              ? `${short} less than the STI qty of ${line.qtySti} → recorded as Short ${short}.`
-              : excess > 0
-                ? `${excess} more than the STI qty of ${line.qtySti} → recorded as Excess ${excess}.`
-                : `Matches the STI qty of ${line.qtySti}. Change it only if the count differs.`}
-          </p>
 
-          {/* ── Batches ──────────────────────────────────────────────────── */}
+          {/* ⚠ THE NEUTRAL HELPER IS GONE (2026-08-22, mock L1). It read
+              "Matches the STI qty of N. Change it only if the count differs."
+              and sat under the stepper on EVERY untouched line — a sentence
+              present at rest, telling him nothing he could act on. The RED one
+              stays: "3 less than the STI qty of 32 → recorded as Short 3" names
+              a consequence he has just caused, and it is the only warning that
+              a mis-tap on the stepper produces. */}
+          {(short > 0 || excess > 0) && (
+            <p className="mt-[7px] text-[11.5px] font-semibold leading-[1.5] text-[#b42318]">
+              {short > 0
+                ? `${short} less than the STI qty of ${line.qtySti} → recorded as Short ${short}.`
+                : `${excess} more than the STI qty of ${line.qtySti} → recorded as Excess ${excess}.`}
+            </p>
+          )}
+
+          {/* ── Manufacturing ────────────────────────────────────────────────
+              ⚠ NO SECTION LABEL. "MANUFACTURING" (and its
+              "Manufacturing · N batches" variant) were removed per mock L1/L4 —
+              the block describes itself, the caption underneath names its two
+              halves, and the batch cards carry their own "Batch 1 / Batch 2"
+              headers. The 20px top margin is what separates it from the
+              stepper now that no label does. */}
           {physicalQty === 0 ? (
-            // Nothing arrived. No batch, no month — see the OQ-4 note above.
-            <div className="mt-4 rounded-[11px] border border-gray-200 bg-gray-50 px-3 py-2.5 text-[13px] leading-[1.55] text-[#667085]">
+            // Nothing arrived. No batch, no month, and the whole date block
+            // disappears — mock L5, design §11 OQ-4.
+            <div className="mt-[18px] flex gap-[9px] rounded-[11px] border border-gray-200 bg-[#f7f8fa] px-[13px] py-[11px] text-[12.5px] font-medium leading-[1.5] text-[#667085]">
               Nothing was received on this line, so it carries no manufacturing batch.
             </div>
           ) : !split ? (
             <>
-              <Label className="mt-4">Manufacturing</Label>
-              <MfgPicker
-                month={batches[0].mfgMonth}
-                year={batches[0].mfgYear}
-                onMonth={(m) => {
-                  setBatch(batches[0].key, { mfgMonth: m });
-                  setTouched(true);
-                }}
-                onYear={(y) => {
-                  setBatch(batches[0].key, { mfgYear: y });
-                  setTouched(true);
-                }}
-              />
+              <div className="mt-5">
+                <DateBlock
+                  month={batches[0].mfgMonth}
+                  year={batches[0].mfgYear}
+                  onMonth={(m) => {
+                    setBatch(batches[0].key, { mfgMonth: m });
+                    setTouched(true);
+                  }}
+                  onYear={(y) => {
+                    setBatch(batches[0].key, { mfgYear: y });
+                    setTouched(true);
+                  }}
+                />
+                <DateCaption />
+              </div>
 
               <AddBatchLink onClick={addBatch} />
             </>
           ) : (
             <>
-              <Label className="mt-4">Manufacturing · {batches.length} batches</Label>
               {batches.map((b, i) => (
-                <div key={b.key} className="mt-2 rounded-[13px] border border-gray-200 p-3">
-                  <div className="mb-2 flex items-center">
-                    <span className="text-[12px] font-semibold text-[#475467]">
-                      Batch {i + 1}
-                    </span>
+                // .bcard — the first card carries no top margin because the
+                // stepper's own 20px already separates them (mock L4).
+                <div
+                  key={b.key}
+                  className={
+                    "rounded-[12px] border border-gray-200 bg-[#fcfcfd] px-3 pb-3 pt-[11px] " +
+                    (i === 0 ? "mt-5" : "mt-2.5")
+                  }
+                >
+                  <div className="mb-[9px] flex items-center justify-between text-[10.5px] font-bold uppercase tracking-[0.05em] text-gray-400">
+                    Batch {i + 1}
                     <button
                       type="button"
                       onClick={() => removeBatch(b.key)}
                       aria-label={`Remove batch ${i + 1}`}
-                      className="ml-auto flex h-11 w-11 items-center justify-center text-[#c2c8d0] active:text-[#b42318]"
+                      className="-mr-2 flex h-11 w-11 items-center justify-center text-[#c2c8d0] active:text-[#b42318]"
                     >
                       <X size={16} />
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
+
+                  <div className="mb-[9px] flex items-center gap-[9px]">
+                    <span className="w-[34px] shrink-0 text-[10.5px] font-bold uppercase tracking-[0.05em] text-gray-400">
+                      Qty
+                    </span>
                     <input
                       value={b.qty}
                       inputMode="numeric"
@@ -397,15 +428,20 @@ export function LineSheet({
                       onChange={(e) => {
                         const v = e.target.value.trim();
                         const n = v === "" ? 0 : Number(v);
-                        if (Number.isInteger(n) && n >= 0) setBatch(b.key, { qty: n });
+                        if (Number.isInteger(n) && n >= 0) {
+                          setBatch(b.key, { qty: n });
+                          setTouched(true);
+                        }
                       }}
-                      className="h-[46px] w-[72px] shrink-0 rounded-[10px] border border-gray-200 text-center text-[16px] font-semibold tabular-nums outline-none"
+                      className="h-[42px] min-w-0 flex-1 rounded-[10px] border border-gray-200 bg-white text-center text-[18px] font-bold tabular-nums text-[#1d2939] outline-none"
                     />
-                    <span className="text-[12px] text-gray-400">tins in this batch</span>
                   </div>
-                  {/* The SAME picker as the unsplit case — one implementation,
-                      so a split line cannot drift from a plain one. */}
-                  <MfgPicker
+
+                  {/* The SAME block as the unsplit case — one implementation,
+                      so a split line cannot drift from a plain one. No caption
+                      inside a card; the first card's caption would repeat on
+                      every one. */}
+                  <DateBlock
                     month={b.mfgMonth}
                     year={b.mfgYear}
                     onMonth={(m) => {
@@ -428,21 +464,19 @@ export function LineSheet({
                   // confirmation, not a complaint, so it needs no gate. Red
                   // only once he has engaged; before that it sits neutral
                   // rather than accusing him of a sum he has not finished.
-                  "mt-2.5 flex items-center justify-between rounded-[11px] px-3 py-2.5 text-[13px] font-semibold " +
+                  "mt-[11px] flex items-center justify-between rounded-[10px] border px-3 py-[9px] text-[12.5px] font-semibold " +
                   (batchCheck.ok
-                    ? "bg-green-50 text-green-700"
+                    ? "border-green-200 bg-green-50 text-green-700"
                     : showValidation
-                      ? "bg-red-50 text-[#b42318]"
-                      : "bg-gray-50 text-[#667085]")
+                      ? "border-red-200 bg-red-50 text-[#b42318]"
+                      : "border-gray-200 bg-gray-50 text-[#667085]")
                 }
               >
                 <span className="tabular-nums">
-                  {batches.map((b) => b.qty).join(" + ")} = <b>{batchCheck.actual}</b>
+                  {batches.map((b) => b.qty).join(" + ")} = {batchCheck.actual}
                 </span>
                 <span>
-                  {batchCheck.ok
-                    ? "matches qty received ✓"
-                    : `needs ${batchCheck.expected}`}
+                  {batchCheck.ok ? "matches qty received ✓" : `needs ${batchCheck.expected}`}
                 </span>
               </div>
 
@@ -481,22 +515,35 @@ export function LineSheet({
 
           {issueOpen && (
             <>
-              <div className="mt-2.5 grid grid-cols-4 gap-2">
-                {COUNT_KEYS.map((c) => (
-                  <CountBox
+              {/* ⚠ FOUR COLUMNS, JOINED CELLS — was a 3-wide grid of separate
+                  boxes with gaps. Eight cells over four columns is exactly two
+                  rows, and its dividers line up with the date block above, so
+                  the sheet sits on ONE column rhythm instead of three
+                  competing ones (mock L3). Same border/divider treatment as
+                  DateBlock: one outer border, 1px internal rules, corners
+                  clipped by overflow-hidden, no gaps anywhere.
+                  Order is fixed: SND · Lky · Dmg · Emp / QTD · REJ · Short ·
+                  Excess — the two derived cells land in the bottom row on the
+                  tinted ground, which is what makes them read as not-inputs. */}
+              <div className="mt-2.5 grid grid-cols-4 overflow-hidden rounded-[12px] border border-[#dfe3e8]">
+                {COUNT_KEYS.map((c, i) => (
+                  <CountCell
                     key={c.key}
                     label={c.label}
                     value={counts[c.key]}
                     onChange={(v) => setCounts((p) => ({ ...p, [c.key]: v }))}
                     onBlur={() => setTouched(true)}
+                    noRightBorder={(i + 1) % 4 === 0}
+                    noBottomBorder={i >= 4}
                   />
                 ))}
                 {/* 🔴 READ-ONLY. Derived from the stepper above by derive.ts —
                     they have no columns of their own and must never become
                     inputs (§11 OQ-2). Shown so he can see the consequence of
-                    the number he just typed. */}
-                <ReadOnlyCount label="Sht" value={short} />
-                <ReadOnlyCount label="Exc" value={excess} />
+                    the number he just typed. Cells 7 and 8, so both sit on the
+                    bottom row with no bottom border. */}
+                <ReadOnlyCell label="Short" value={short} />
+                <ReadOnlyCell label="Excess" value={excess} noRightBorder />
               </div>
 
               {showValidation && countCheck && !countCheck.ok && (
@@ -639,13 +686,46 @@ function StepButton({
  *     twelve.
  *
  * The clock is read ONCE per mount. A sheet open across midnight on 31 Dec
- * would keep the year list it opened with, which is correct — re-deriving
- * mid-edit could disable a month he had already chosen.
+/**
+ * ONE 4-COLUMN BLOCK — year on the top row, months on the three beneath.
  *
- * Chips reuse the pack-chip treatment already on this screen, at a 44px minimum
- * tap target (UI §60).
+ * ⚠️ THIS REPLACED A YEAR STRIP PLUS A SEPARATE MONTH GRID (2026-08-22, mock
+ * L1). Four year chips could never line up with a six-column month grid because
+ * they were two controls; joining them into one 4-column grid makes every
+ * vertical divider run the full height BY CONSTRUCTION rather than by matching
+ * two sets of widths by hand. It also reads as a small calendar instead of two
+ * unrelated strips.
+ *
+ * ⚠️ THE MOCK IS docs/mockups/mrn/03-line-sheet.html (frames L1-L5). It
+ * SUPERSEDES 02-supervisor-mobile.html's S7 / S7b / S8, which drew the old
+ * bottom sheet with dropdowns and a best-before pair — all three are stale and
+ * must not be rebuilt from. The ALT frame in the new mock (a recent-months
+ * shortcut row) is an idea for later and is deliberately NOT built.
+ *
+ * 🔴 THE RANGES ARE THE VALIDATION. Nothing downstream judges a year —
+ * validateBatches deliberately declines to, and there is no DB constraint — so
+ * this control is the guard:
+ *   • YEAR — exactly four cells, currentYear − 3 … currentYear. A manufacturing
+ *     date cannot be in the future, and the depot does not receive stock older
+ *     than three years.
+ *   • MONTH — when the selected year IS the current year, months after the
+ *     current month are DISABLED, recomputed on every year tap. Picking an
+ *     earlier year re-enables all twelve.
+ *
+ * 🔴 `disabled` IS A REAL ATTRIBUTE, not just the #d6dade colour. A future month
+ * must be genuinely unpressable — styling alone leaves it tappable, and a tap
+ * that silently does nothing reads as a broken screen.
+ *
+ * Geometry, from the mock: 46px cells, one outer border #dfe3e8 at radius 12,
+ * 1px internal rules #e6eaee, corners clipped by overflow-hidden, NO gaps. The
+ * year row is tinted #f6f8f9 so it reads as its own band; months are white.
+ * Selected is #1d2939 with white bold text.
+ *
+ * The clock is read ONCE per mount. A sheet left open across midnight on 31 Dec
+ * keeps the year list it opened with, which is right — re-deriving mid-edit
+ * could disable a month he had already chosen.
  */
-function MfgPicker({
+function DateBlock({
   month,
   year,
   onMonth,
@@ -662,72 +742,82 @@ function MfgPicker({
 
   const years = [thisYear - 3, thisYear - 2, thisYear - 1, thisYear];
 
-  // Only the CURRENT year can have unreachable months. Any earlier year is
+  // Only the CURRENT year can have unreachable months; any earlier year is
   // wholly in the past, so all twelve are live.
   const maxMonth = year === thisYear ? thisMonth : 12;
 
-  return (
-    <div className="mt-1.5">
-      <div className="flex flex-wrap gap-1.5">
-        {years.map((y) => (
-          <Chip key={y} active={year === y} onClick={() => onYear(y)}>
-            {y}
-          </Chip>
-        ))}
-      </div>
+  // Every cell: 46px, centred, tabular. The right border is dropped on column 4
+  // and the bottom border on the last row, so the outer border is never
+  // doubled.
+  const cell =
+    "h-[46px] flex items-center justify-center font-semibold tabular-nums border-r border-b border-[#e6eaee]";
 
-      <div className="mt-2 grid grid-cols-4 gap-1.5">
-        {MONTHS.map((label, i) => {
-          const m = i + 1;
-          const disabled = m > maxMonth;
-          return (
-            <Chip
-              key={label}
-              active={month === m}
-              disabled={disabled}
-              onClick={() => onMonth(m)}
-            >
-              {label}
-            </Chip>
-          );
-        })}
-      </div>
+  return (
+    <div className="grid grid-cols-4 overflow-hidden rounded-[12px] border border-[#dfe3e8]">
+      {years.map((y, i) => {
+        const on = year === y;
+        return (
+          <button
+            key={y}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onYear(y)}
+            className={
+              cell +
+              " text-[14.5px] tracking-[0.01em] " +
+              // The year row's bottom rule is the DARKER outer colour, so the
+              // band reads as separated from the months rather than as a
+              // fourth month row.
+              "border-b-[#dfe3e8] " +
+              (i === 3 ? "border-r-0 " : "") +
+              (on ? "bg-[#1d2939] font-bold text-white" : "bg-[#f6f8f9] text-[#475467]")
+            }
+          >
+            {y}
+          </button>
+        );
+      })}
+
+      {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+        const on = month === m;
+        const disabled = m > maxMonth;
+        return (
+          <button
+            key={m}
+            type="button"
+            disabled={disabled}
+            aria-pressed={on}
+            aria-label={`Month ${m}`}
+            onClick={() => onMonth(m)}
+            className={
+              cell +
+              " text-[15.5px] " +
+              (m % 4 === 0 ? "border-r-0 " : "") +
+              (m >= 9 ? "border-b-0 " : "") +
+              (on
+                ? "bg-[#1d2939] font-bold text-white"
+                : disabled
+                  ? "cursor-not-allowed bg-[#fbfcfd] text-[#d6dade]"
+                  : "bg-white text-[#475467]")
+            }
+          >
+            {m}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-/**
- * The pack-chip treatment from components/mrn/line-list.tsx, at a thumb-sized
- * tap target. `disabled` is a real attribute, not just a colour — a month in
- * the future must be unpressable, not merely discouraged.
- */
-function Chip({
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}): React.JSX.Element {
+/** The one-line legend under the block. It earns its place on someone's first
+ *  day — two rows of numbers with no headers are ambiguous until you have used
+ *  it once — and costs a single 10px line after that. */
+function DateCaption(): React.JSX.Element {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={
-        "h-11 rounded-full border px-3 text-[13px] font-medium whitespace-nowrap " +
-        (disabled
-          ? "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed"
-          : active
-            ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
-            : "bg-white border-gray-200 text-[#6b7480] active:bg-gray-50")
-      }
-    >
-      {children}
-    </button>
+    <div className="mt-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-[0.04em] text-[#b6bcc4]">
+      <span>Year on top</span>
+      <span>Month below</span>
+    </div>
   );
 }
 
@@ -736,28 +826,51 @@ function AddBatchLink({ onClick }: { onClick: () => void }): React.JSX.Element {
     <button
       type="button"
       onClick={onClick}
-      className="mt-3 flex h-11 items-center gap-1.5 text-[13.5px] font-semibold text-teal-700"
+      className="mt-3.5 flex h-11 items-center gap-1.5 text-[13.5px] font-semibold text-teal-700"
     >
-      <Plus size={14} strokeWidth={2.4} />
+      <Plus size={13} strokeWidth={2.6} />
       Add another manufacturing batch
     </button>
   );
 }
 
-function CountBox({
+/**
+ * One TYPED condition count, as a joined cell in the 4-column grid.
+ *
+ * The borders are passed in rather than derived with nth-child, because two of
+ * the eight cells (Short / Excess) are a different component — a CSS rule
+ * keyed on position would have to know about both.
+ */
+function CountCell({
   label,
   value,
   onChange,
   onBlur,
+  noRightBorder,
+  noBottomBorder,
 }: {
   label: string;
   value: number | null;
   onChange: (v: number | null) => void;
   onBlur?: () => void;
+  noRightBorder?: boolean;
+  noBottomBorder?: boolean;
 }): React.JSX.Element {
+  const set = value !== null && value > 0;
   return (
-    <label className="flex flex-col items-center rounded-[10px] border border-gray-200 px-1 py-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-400">
+    <label
+      className={
+        "flex flex-col items-center bg-white px-1 pb-[9px] pt-2 text-center border-[#e6eaee] " +
+        (noRightBorder ? "" : "border-r ") +
+        (noBottomBorder ? "" : "border-b")
+      }
+    >
+      <span
+        className={
+          "text-[9.5px] font-bold uppercase tracking-[0.05em] " +
+          (set ? "text-[#b42318]" : "text-gray-400")
+        }
+      >
         {label}
       </span>
       <input
@@ -773,38 +886,52 @@ function CountBox({
           const n = Number(v);
           if (Number.isInteger(n) && n >= 0) onChange(n);
         }}
-        className="mt-0.5 h-[30px] w-full min-w-0 border-0 bg-transparent text-center text-[16px] font-semibold tabular-nums text-[#1d2939] outline-none placeholder:font-normal placeholder:text-gray-300"
+        // text-[16px] would be the iOS rule, but the mock's value type here is
+        // 19px — larger, so the zoom guard holds comfortably (UI §9).
+        className={
+          "mt-0.5 w-full min-w-0 border-0 bg-transparent text-center text-[19px] font-bold tabular-nums outline-none placeholder:font-bold placeholder:text-[#c2c8d0] " +
+          (set ? "text-[#b42318]" : "text-[#c2c8d0]")
+        }
       />
     </label>
   );
 }
 
-/** Short / Excess. Derived, and visibly not an input. */
-function ReadOnlyCount({ label, value }: { label: string; value: number }): React.JSX.Element {
+/** Short / Excess — DERIVED, and visibly not an input: tinted ground, no field,
+ *  no caret. Bottom row of the grid, so neither carries a bottom border. */
+function ReadOnlyCell({
+  label,
+  value,
+  noRightBorder,
+}: {
+  label: string;
+  value: number;
+  noRightBorder?: boolean;
+}): React.JSX.Element {
   const set = value > 0;
   return (
     <div
       className={
-        "flex flex-col items-center rounded-[10px] border px-1 py-1.5 " +
-        (set ? "border-red-200 bg-red-50" : "border-gray-200 bg-gray-50")
+        "bg-[#f6f8f9] px-1 pb-[9px] pt-2 text-center border-[#e6eaee] " +
+        (noRightBorder ? "" : "border-r")
       }
     >
-      <span
+      <div
         className={
-          "text-[10px] font-semibold uppercase tracking-[0.05em] " +
-          (set ? "text-[#b42318]" : "text-gray-400")
+          "text-[9.5px] font-bold uppercase tracking-[0.05em] " +
+          (set ? "text-[#b42318]" : "text-[#b0b6bf]")
         }
       >
         {label}
-      </span>
-      <span
+      </div>
+      <div
         className={
-          "mt-0.5 flex h-[30px] items-center text-[16px] font-semibold tabular-nums " +
-          (set ? "text-[#b42318]" : "text-gray-400")
+          "mt-0.5 text-[19px] font-bold tabular-nums " +
+          (set ? "text-[#b42318]" : "text-[#667085]")
         }
       >
-        {value === 0 ? "—" : value}
-      </span>
+        {value === 0 ? "0" : value}
+      </div>
     </div>
   );
 }
