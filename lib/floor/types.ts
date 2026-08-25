@@ -97,6 +97,28 @@ export interface FloorRailCard extends FloorPartyFields {
 export interface FloorBoardRow extends PickingQueueRow {
   smu: string | null;
   billToName: string | null;
+  // The ship-to PAIR, mirroring FloorRailCard above: `customerName` is the
+  // ORIGINAL ship-to (orders.customer) and `shipToOverrideName` is the redirect
+  // target (shipToOverrideCustomer). Both are distinct from
+  // PickingQueueRow.dealerName, which is the EFFECTIVE dealer (override ??
+  // customer) and therefore loses the original name on a redirect — the table
+  // could only print a nameless "→ ship-to changed" caption without these
+  // (CLAUDE_FLOOR §8b: "the ship-to original→redirect name pair is missing on
+  // the floor table (rail already has it)").
+  //
+  // ⚠ DECLARED HERE, NOT ON PickingQueueRow. lib/picking/types.ts is owned by
+  // CLAUDE_PICKING §3 and Floor is a CALLER only (FLOOR §1 ownership boundary) —
+  // widen the Floor type, never the Picking one. Same reason `smu` and
+  // `billToName` above live here.
+  //
+  // Both come free: getFloorBoard's include already selects `customerName` on
+  // BOTH relations via FLOOR_DEALER_SELECT, so filling them adds no query and no
+  // await (FLOOR §5/§10 — the live marker keys on MAX(orders.updatedAt)).
+  //
+  // Nullable on purpose: an unmatched bill has no `customer` row at all, and the
+  // table falls back to its old caption rather than printing a blank arrow.
+  customerName: string | null;
+  shipToOverrideName: string | null;
   // True when obdDateTime (on PickingQueueRow) is the EMAIL clock
   // (orders.orderDateTime) rather than SAP's own punch clock
   // (orders.obdEmailDate) — see lib/floor/format.ts resolveFloorDisplayDate().
