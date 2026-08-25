@@ -26,6 +26,23 @@
   margin: 10mm;
 }
 
+/* @page (named) — MRN A4 print sheet. Top-level per CORE §3 / UI §32, exactly
+   like the two above: an @page nested inside @media print is silently ignored
+   by every engine, and this file has been bitten by that before.
+
+   🔴 LANDSCAPE, and it is the only landscape @page in this file that is in the
+   right place. (`@page mo-landscape` further down IS nested inside @media print
+   — a pre-existing violation of the same rule, left alone here because fixing
+   the mail-order print path is not this change. Do not copy it.)
+
+   8mm rather than the challan's 10mm: the sheet is sixteen columns wide and
+   every millimetre of the 297mm goes to keeping the condition counts legible.
+   Applied via `page: mrn-sheet` on #mrn-print-area inside @media print below. */
+@page mrn-sheet {
+  size: A4 landscape;
+  margin: 8mm;
+}
+
 /* --vvh fallback — /po's <main> consumes var(--vvh, 100vh) for keyboard-
    aware sizing (app/po/po-page.tsx:946 writes it, :2216 reads it). The
    visualViewport useEffect overwrites this on mount, but before JS runs (SSR
@@ -723,4 +740,73 @@ html, body { overscroll-behavior: none; }
 
   /* Never split a band's header row-group across a page. */
   #floor-hold-print-area tr { page-break-inside: avoid; }
+}
+
+/* ═════════════════════════════════════════════
+   MRN — A4 landscape print sheet isolation  (/mrn/[mrnId]/sheet)
+   (the challan block above already sets `body * { visibility: hidden }` in
+   print; here we reveal only the MRN sheet's print area and switch it to the
+   landscape `@page mrn-sheet` declared TOP-LEVEL at the head of this file.
+   id-scoped so challan / mail-order / tint-report / trip-sheet / floor-hold
+   prints are untouched.
+
+   🔴 visibility, NEVER display:none — CORE §3 and UI §32. `display: none`
+   collapses the document before the print pass measures it, and the page comes
+   out blank. This has bitten this repo before; the mechanism above is the one
+   that works and this block deliberately copies it rather than inventing a
+   variant.)
+   ═════════════════════════════════════════════ */
+@media print {
+  #mrn-print-area,
+  #mrn-print-area * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #mrn-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    /* The component pins itself to 1120px on screen so billing sees the true
+       A4-landscape shape. In print the PAGE BOX governs, so that pin is lifted
+       — leaving it on would print a 1120px document into a 281mm-wide box and
+       scale everything down by a fifth. */
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    page: mrn-sheet;
+  }
+
+  /* 🔴 THE COLUMN HEADERS MUST REPEAT ON EVERY PAGE. A 40-line truck runs to
+     two sheets, and page 2 arriving with sixteen unlabelled number columns is
+     a useless document — nobody can tell Lky from Empty by eye. This IS the
+     browser default for a <thead>, and it is restated because it only takes
+     one well-meaning `display: block` on a table element somewhere to lose it
+     silently: it looks identical on screen and only ever fails on paper. */
+  #mrn-print-area thead {
+    display: table-header-group !important;
+  }
+  #mrn-print-area tfoot {
+    display: table-footer-group !important;
+  }
+
+  /* A row never straddles a page break — a split line's 6a/6b are two rows and
+     may separate, but neither may be cut through the middle. */
+  #mrn-print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* The header block, the TOTAL row and the signature lines each stay whole.
+     A TOTAL row orphaned onto page 2 under no headers, or a signature line cut
+     in half, are the two ways this document fails at the last inch. */
+  #mrn-print-area .mrn-sheet-meta,
+  #mrn-print-area .mrn-sheet-total,
+  #mrn-print-area .mrn-sheet-foot {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 }

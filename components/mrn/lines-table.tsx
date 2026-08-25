@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Smartphone, X } from "lucide-react";
-import type { MrnBatchRow, MrnDetail, MrnDetailLine } from "@/lib/mrn/types";
+import type { MrnDetail, MrnDetailLine } from "@/lib/mrn/types";
+import { buildRenderRows, reportTotals } from "@/lib/mrn/report";
 import { formatCount, formatMonthYear } from "./format";
 import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
 
 // The line-items table.
 //
 // ⚠️ ONE COLUMN SET, ALL THREE STATES (2026-08-22). open / checking / done now
-// render the SAME 17 columns in the same order, so the operator learns one
+// render the SAME 16 columns in the same order, so the operator learns one
 // table and never has to re-find a column when a truck changes state. What
 // varies is only what is IN the cells: in `open` and `checking` every
 // supervisor-owned column renders as an empty dashed cell.
@@ -23,10 +24,15 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 // on every truck from that date. Its 5% went to Description. Do not restore it
 // without restoring the input that feeds it.
 //
-// ⚠️ Mfg and Best Before are ONE cell each, rendered `06/26` — matching the
-// source workbook's PRINT sheet, which is what the depot already reads. They
-// are STORED as four integers (month + year, twice) and joined only here; do
-// NOT split them into four columns to mirror the schema.
+// ⚠️ Mfg is ONE cell, rendered `06/26`. It is STORED as two integers and joined
+// only for display; do NOT split it into two columns to mirror the schema.
+//
+// ⚠️ THAT IS A DEPARTURE FROM THE WORKBOOK, NOT A MATCH TO IT — this comment
+// used to claim it matched. The `PRINT` sheet has `Manufacturing Month` and
+// `Manufacturing Year` as TWO columns (it had two more for best before). The
+// merge is a screen-width decision, and the A4 sheet copies it; the XLS export
+// keeps the workbook's two columns, because a spreadsheet is the thing people
+// sort and filter. See lib/mrn/report.ts.
 //
 // ⚠️ THE "Iss." COLUMN WAS REMOVED (2026-08-22). It was a yes/no restatement of
 // the eight condition columns sitting immediately beside it, and the signal is
@@ -34,8 +40,10 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 // `N issues` chip on the rail card. Do not reinstate it.
 //
 // ⚠️ EIGHT condition columns, not the six the mockup drew — SND · Lky · Damage ·
-// Empty · QTD · REJ · Short · Excess is row 16 of the source workbook and what
-// design §11 OQ-3 settled. QTD's meaning is still unknown (design §4): it is
+// Empty · QTD · REJ · Short · Excess is row 17 of the source workbook's PRINT
+// sheet (⚠ NOT row 16 — that row is empty; this comment and design §11 OQ-3
+// both said 16, and both were off by one. lib/mrn/report.ts carries the
+// verification) and what OQ-3 settled. QTD's meaning is still unknown (§4): it is
 // carried through schema, UI and report because the workbook carries it, and
 // must never be repurposed to mean something helpful.
 //
@@ -44,11 +52,11 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 // getMrnDetail(). Nothing here recomputes them, which is the whole reason the
 // card, this table, the XLS and the print sheet cannot disagree about one truck.
 //
-// ⚠️ 17 COLUMNS OVERFLOW, AND THAT IS HANDLED IN ONE PLACE. The table sits in
+// ⚠️ 16 COLUMNS OVERFLOW, AND THAT IS HANDLED IN ONE PLACE. The table sits in
 // its own `overflow-x-auto` box with a min-width, so IT scrolls sideways and the
 // PAGE never does. The fixed-table standard still applies (UI §27): table-layout
 // fixed with a <colgroup> of percentages — the percentages now resolve against
-// TABLE_MIN_WIDTH rather than against the pane, which is what stops 17 columns
+// TABLE_MIN_WIDTH rather than against the pane, which is what stops 16 columns
 // collapsing into unreadable slivers on a narrow window.
 
 /** Wide enough that every column stays legible; the box scrolls past it. */
@@ -344,65 +352,14 @@ function CheckingTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
 }
 
 // ── done ────────────────────────────────────────────────────────────────────
-
-/** One rendered row. A multi-batch line becomes several of these. */
-interface RenderRow {
-  key: string;
-  /** "6" for a single-batch line, "6a" / "6b" for a split one. */
-  label: string;
-  line: MrnDetailLine;
-  batch: MrnBatchRow | null;
-  /**
-   * True on the first (or only) row for a line. Everything belonging to the
-   * LINE rather than to a batch renders here and nowhere else — see below.
-   */
-  carriesLineTotals: boolean;
-  /** The quantity this row accounts for: the batch's, or the whole line's. */
-  qtyForRow: number | null;
-}
-
-/**
- * Flatten lines into render rows, splitting a multi-batch line into sub-rows.
- *
- * 🔴 `Qty STI` SITS ON THE FIRST SUB-ROW ONLY. Repeating it on 6b would
- * double-count the column and break the TOTAL row — design §6 says so about the
- * report, and the same arithmetic applies to this table.
- *
- * ⚠ THE SAME RULE EXTENDS TO THE EIGHT CONDITION COLUMNS, and the mockup does
- * not settle this. It draws SND split across 6a/6b as 9 and 6, which reads as a
- * per-batch count — but the counts are stored on `mrn_lines`, not on
- * `mrn_line_batches`, so there is no per-batch value to render and inventing a
- * split would be fabricating data. They render on the first sub-row only, for
- * exactly the reason Qty STI does. Only PHYSICAL, MFG and BEST BEFORE vary per
- * sub-row, which is the entire reason a line splits.
- */
-function buildRenderRows(lines: readonly MrnDetailLine[]): RenderRow[] {
-  const out: RenderRow[] = [];
-  for (const line of lines) {
-    if (line.batches.length > 1) {
-      line.batches.forEach((batch, i) => {
-        out.push({
-          key: `${line.id}-${batch.id}`,
-          label: `${line.lineNo}${String.fromCharCode(97 + i)}`,
-          line,
-          batch,
-          carriesLineTotals: i === 0,
-          qtyForRow: batch.qty,
-        });
-      });
-    } else {
-      out.push({
-        key: String(line.id),
-        label: String(line.lineNo),
-        line,
-        batch: line.batches[0] ?? null,
-        carriesLineTotals: true,
-        qtyForRow: line.physicalQty,
-      });
-    }
-  }
-  return out;
-}
+//
+// 🔴 buildRenderRows() AND THE TOTAL ROW NOW LIVE IN lib/mrn/report.ts, and the
+// copies that used to sit here are GONE ON PURPOSE (step 10, 2026-08-25). The
+// XLS export and the A4 print sheet render the same truck from the same rows,
+// and the sub-row rule — line-level values on the FIRST sub-row only — is the
+// one piece of logic that silently doubles a total if any one of the three
+// surfaces gets it wrong. Three copies could drift; one cannot. Do not re-inline
+// either function here "to keep the table self-contained".
 
 function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
   // Local, read-only view filter (mockup B4's .seg). Not teal — teal on this
@@ -415,14 +372,11 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
   );
   const rows = useMemo(() => buildRenderRows(lines), [lines]);
 
-  // SND is summed here rather than read off the payload because
-  // MrnIssueSummary deliberately has no `totalSnd`: SND is the SOUND count, the
-  // clean case, and folding it into an ISSUE summary would have made that
-  // type's name a lie. It is still a real column with a real total.
-  const totalSnd = useMemo(
-    () => detail.lines.reduce((s, l) => s + (l.sndQty ?? 0), 0),
-    [detail.lines],
-  );
+  // The TOTAL row, from the SAME function the XLS and the print sheet use — it
+  // includes the SND sum that MrnIssueSummary deliberately has no field for
+  // (SND is the SOUND count; folding it into an ISSUE summary would make that
+  // type's name a lie). See lib/mrn/report.ts.
+  const totals = useMemo(() => reportTotals(detail), [detail]);
 
   const issueParts: string[] = [];
   if (detail.totalShort > 0) issueParts.push(`${detail.totalShort} short`);
@@ -500,10 +454,11 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
           );
         })}
 
-        {/* TOTAL row. Sums come from the payload (computed once, server-side, by
-            summariseMrn) except SND — see totalSnd above. It totals the WHOLE
-            MRN, not the filtered view: a total that changed with a view filter
-            would be a different number wearing the same label. */}
+        {/* TOTAL row. Sums come from reportTotals() — the same function the XLS
+            and the A4 sheet total with, so the three cannot disagree about one
+            truck. It totals the WHOLE MRN, not the filtered view: a total that
+            changed with a view filter would be a different number wearing the
+            same label. */}
         {detail.lines.length > 0 && (
           <tr className="bg-[#f7f8fa] font-semibold">
             <Td center muted>{""}</Td>
@@ -513,18 +468,18 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
             >
               TOTAL
             </td>
-            <Td center strong>{formatCount(detail.totalQtySti)}</Td>
+            <Td center strong>{formatCount(totals.qtySti)}</Td>
             <Td center muted>—</Td>
-            <Td center strong>{formatCount(detail.totalPhysicalQty)}</Td>
+            <Td center strong>{formatCount(totals.physical)}</Td>
             <Td center muted>—</Td>
-            <Cond value={totalSnd || null} />
-            <Cond value={detail.totalLeaky || null} bad />
-            <Cond value={detail.totalDamage || null} bad />
-            <Cond value={detail.totalEmpty || null} bad />
-            <Cond value={detail.totalQtd || null} />
-            <Cond value={detail.totalRej || null} bad />
-            <Cond value={detail.totalShort || null} bad />
-            <Cond value={detail.totalExcess || null} bad />
+            <Cond value={totals.snd || null} />
+            <Cond value={totals.leaky || null} bad />
+            <Cond value={totals.damage || null} bad />
+            <Cond value={totals.empty || null} bad />
+            <Cond value={totals.qtd || null} />
+            <Cond value={totals.rej || null} bad />
+            <Cond value={totals.short || null} bad />
+            <Cond value={totals.excess || null} bad />
           </tr>
         )}
 

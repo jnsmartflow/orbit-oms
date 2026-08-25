@@ -19,8 +19,10 @@ import type { MrnPerms } from "./mrn-shell";
 //             "Forbidden" back. The route was right to refuse; offering the
 //             button was the bug.
 //   DISABLED = "not yet". A control that exists for this role but cannot act in
-//             this state or this build step — Download XLS on a done MRN, which
-//             waits on step 10's export route.
+//             this STATE — the two report buttons on a `checking` MRN, where
+//             the supervisor still holds the truck and there is no report to
+//             give. (Until step 10 they were disabled on `done` too, because
+//             the routes did not exist. They do now.)
 //
 // Getting these the wrong way round teaches the operator to distrust the
 // screen: a greyed control they can never earn reads as broken software.
@@ -107,15 +109,16 @@ export function DetailPane({
                 checking → NOTHING IS TEAL, deliberately. §10 says "never
                            zero", but that assumes a state that HAS a job.
                            This one has none: the header, the lines and the
-                           delete are all 409'd by the server, and the export
-                           does not exist until step 10. Manufacturing a teal
-                           button here would point the operator at something
-                           that cannot help them. The absence IS the message —
-                           the amber banner below carries it.
+                           delete are all 409'd by the server, and the report
+                           routes 409 too — the truck is still being counted.
+                           Manufacturing a teal button here would point the
+                           operator at something that cannot help them. The
+                           absence IS the message — the amber banner carries it.
                 done     → Download XLS, which is the whole reason this screen
-                           replaces a sheet of paper. It stays DISABLED-GREY
-                           until step 10 builds the export route: teal arrives
-                           with the working button, never before it.
+                           replaces a sheet of paper. It was disabled-grey
+                           through steps 8b–9 and went teal in step 10, WITH
+                           the working route — teal arrives with the button
+                           that does something, never before it.
 
               The selected rail card's teal tint is SELECTION, not an action,
               and does not compete — the same way Delivery Challan's left panel
@@ -147,8 +150,51 @@ export function DetailPane({
               // arrives in step 10.
               perms.canExport && (
                 <>
-                  <DeadButton icon={<Printer size={13} />} label="Print / PDF" />
-                  <DeadButton icon={<Download size={13} />} label="Download XLS" />
+                  {/* Both are plain <a>, not fetch calls. Print opens the A4
+                      document route; Download hits the export route, whose
+                      Content-Disposition makes the browser save the file. A
+                      fetch would have to blob-and-revoke it by hand for no gain.
+
+                      🔴 BOTH ARE LIVE ONLY ON A `done` MRN. Server-side the
+                      route answers 409 and the sheet page renders its "not
+                      checked yet" screen; this just stops the operator finding
+                      that out by clicking. `checking` keeps the disabled-grey
+                      pair — the truck is genuinely mid-count, and there is no
+                      report to give. */}
+                  {detail.status === "done" ? (
+                    <>
+                      <PaneLink
+                        icon={<Printer size={13} />}
+                        label="Print / PDF"
+                        href={`/mrn/${detail.id}/sheet`}
+                        newTab
+                      />
+                      {/* THE TEAL ONE. Ruled at step 8b, deferred to step 10,
+                          and it arrives WITH the working route — never before
+                          it (see the action-row note above). On a done MRN this
+                          is the whole reason the screen replaces a sheet of
+                          paper. */}
+                      <PaneLink
+                        icon={<Download size={13} />}
+                        label="Download XLS"
+                        href={`/api/mrn/${detail.id}/export`}
+                        tone="primary"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <DeadButton
+                        icon={<Printer size={13} />}
+                        label="Print / PDF"
+                        title="The report is ready once the supervisor finishes unloading"
+                      />
+                      <DeadButton
+                        icon={<Download size={13} />}
+                        label="Download XLS"
+                        title="The report is ready once the supervisor finishes unloading"
+                      />
+                    </>
+                  )}
                 </>
               )
             )}
@@ -335,20 +381,68 @@ function PaneButton({
   );
 }
 
-/** An action that exists on the screen but not yet in the code. See the file
- *  header — grey and genuinely disabled, never a faded primary. */
-function DeadButton({
+/**
+ * A live action that NAVIGATES rather than calling a handler — the two report
+ * links. Visually identical to PaneButton so the action row reads as one set of
+ * controls; it is an <a> because a download and a document both want real link
+ * behaviour (middle-click, copy address, the browser's own save flow).
+ */
+function PaneLink({
   icon,
   label,
+  href,
+  tone,
+  newTab,
 }: {
   icon: React.ReactNode;
   label: string;
+  href: string;
+  tone?: "primary";
+  /** The A4 sheet opens in its own tab — billing prints it and comes straight
+   *  back to a board that never lost its place. The XLS does NOT: a download
+   *  navigation would leave an orphan blank tab behind. */
+  newTab?: boolean;
+}): React.JSX.Element {
+  return (
+    <a
+      href={href}
+      {...(newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      className={
+        "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] transition-colors " +
+        (tone === "primary"
+          ? "border-teal-600 bg-teal-600 font-semibold text-white hover:bg-teal-700"
+          : "border-gray-200 bg-white font-medium text-[#475467] hover:bg-gray-50")
+      }
+    >
+      {icon}
+      {label}
+    </a>
+  );
+}
+
+/**
+ * An action that exists on the screen but cannot act in THIS state. See the file
+ * header — grey and genuinely disabled, never a faded primary.
+ *
+ * ⚠ It no longer means "not built yet". Step 10 shipped both report routes, so
+ * the only thing this now says is "not on a truck the supervisor is still
+ * counting" — hence the caller-supplied title. The default is kept for any
+ * future control that IS still waiting on a build step.
+ */
+function DeadButton({
+  icon,
+  label,
+  title,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  title?: string;
 }): React.JSX.Element {
   return (
     <button
       type="button"
       disabled
-      title="This action arrives in the next step"
+      title={title ?? "This action arrives in the next step"}
       className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 px-3 text-[12px] font-medium text-gray-400"
     >
       {icon}
