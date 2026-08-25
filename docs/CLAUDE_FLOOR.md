@@ -58,7 +58,7 @@ Four SELECT-only feeds, sequential awaits, never `prisma.$transaction` (CORE §3
 | Feed | Function | Route | Scope / anchor |
 |---|---|---|---|
 | Rail | `getFloorRail(scope)` | `GET /api/floor/board` | Pure open state — `workflowStage` rank < 60 AND `dispatchStatus IS NULL` AND `isRemoved=false`. No date anchor (yesterday's undecided bills stay). Oldest-first. |
-| Floor board | `getFloorBoard({mode,date,scope})` | `GET /api/floor/board` | **Live:** `floorLiveBaseWhere` (below). **History:** released bills dated D (`dispatchTargetDate=D`, active stages) — read-only. |
+| Floor board | `getFloorBoard({mode,date,scope})` | `GET /api/floor/board` | **Live:** `floorLiveBaseWhere` (below). **History:** TWO arms under one `OR`, active stages, read-only — (a) bills **promised** for D (`dispatchTargetDate=D`) **OR** (b) bills **checked** on D (`pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange(D)`). See below. |
 | Hold | `getFloorHold(scope)` | `GET /api/floor/hold` | `dispatchStatus="hold"`, all dates (pure open state), recent-held-first. |
 | Cancelled | `getFloorCancelled(scope)` | `GET /api/floor/cancelled` | `workflowStage="cancelled"`, **today only** (IST, by the cancel log's `createdAt`). |
 
@@ -69,6 +69,12 @@ Also `getFloorPickers()` (active picker roster + on-hand load, for the assign ba
 2. everything the floor **CHECKED TODAY** — `workflowStage=pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange()` (today, IST), whatever day it was due.
 
 Plain English: everything still open whatever day it was due, plus everything the floor finished today whatever day it was due.
+
+**The HISTORY predicate (`mode="history"`) — two arms under one `OR`, added 2026-08-25.** Outer AND terms (`dispatchStatus="dispatch"`, `isRemoved=false`, `workflowStage ∈ PICKING_ACTIVE_STAGES`) are unchanged; only the date anchor grew:
+1. **promised for D** — `dispatchTargetDate = D`. The original and only arm until 2026-08-25.
+2. **checked on D** — `workflowStage=pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange(D)` (IST), whatever day it was promised. Same helper and same half-open shape as the live arm above, with the viewed day instead of today.
+
+Plain English: what was owed that day, plus what was finished that day. A bill matching both appears **once**; a bill finished early appears under **two** days (its promise day and its check day) — both statements are true, and that is the owner decision, not a predicate accident. ⚠ This is the **same promise-vs-completion anchor class** as §6c / the 2026-08-02 picking `checkedAt` fix: a completion belongs to the day it happened. Arm 2 exists because without it a bill promised for D+1 but checked on D was on **no reachable screen at all** — live had dropped it, D's history never had it, and D+1's history is unreachable behind the stepper clamp (§10). The marker does **not** consume this predicate (§5 — it is live-only).
 
 ⚠ **Floor's carry-over is its OWN scope — NOT `lib/picking/queue.ts`'s WHERE.** Picking's carry-over deliberately excludes `pick_done`/`pick_checked` (a documented "workaround, not a fix"). Floor's arm 1 keeps anything not-yet-checked. Do not "align" the two.
 

@@ -586,18 +586,64 @@ export async function getFloorBoard(
   const anchorDate = mode === "history" && opts.date ? parseFloorDate(opts.date) : todayDateOnly;
   const anchorMs = anchorDate.getTime();
   const anchorIso = anchorDate.toISOString().slice(0, 10);
+  // The anchor day as an IST [start, end) INSTANT window — history's checked arm
+  // below. Same helper, same half-open shape as the live arm's range (:611);
+  // `checkedAt` is a timestamp and cannot be compared to a @db.Date value. Pure
+  // and cheap, so it is computed for both modes and simply unused by live.
+  const anchorRange = getISTDayRange(anchorIso);
 
   // Floor's OWN scope filter — NOT buildPickingWhere().
   const base: Prisma.ordersWhereInput =
     mode === "history"
       ? {
-          // What was PROMISED for that day (design §4.4): every released bill
-          // dated D, any active stage. Read-only in the UI. Excludes legacy
-          // 'closed' (PICKING_ACTIVE_STAGES omits it — workflow-stages.ts).
+          // What HAPPENED on that day (design §4.4): read-only in the UI, any
+          // active stage. Excludes legacy 'closed' (PICKING_ACTIVE_STAGES omits
+          // it — workflow-stages.ts). TWO date anchors under one OR:
+          //
+          //   (a) PROMISED for D — `dispatchTargetDate = D`. The original and
+          //       only arm until 2026-08-25.
+          //   (b) CHECKED on D — `pick_checked` whose
+          //       `pick_assignments.checkedAt` falls inside D's IST day,
+          //       whatever day it was promised for.
+          //
+          // ⚠ WHY (b) EXISTS. Anchoring history on the promise day alone left a
+          // finished bill reachable on NO screen at all. OBD 9109086370 (order
+          // 13532) was promised for 2026-08-25 and checked at 18:34 IST on
+          // 2026-08-24: the live board dropped it (its checked arm fences on
+          // checkedAt within TODAY, and the check was yesterday), 24-Aug history
+          // dropped it (promised for the 25th), and 25-Aug history — which would
+          // have matched — is unreachable because the stepper clamps at
+          // yesterday (components/floor/floor-page.tsx). The floor finished the
+          // work and then could not see that it had.
+          //
+          // This is the SAME promise-vs-completion anchor class as the
+          // 2026-08-02 picking fix (lib/picking/queue.ts, commit e37cbe74) and
+          // Floor's own live checked arm (floorLiveBaseWhere, above): a bill's
+          // COMPLETION belongs to the day it was completed, not to the day it
+          // was owed. The rule is now applied to history as well as live.
+          //
+          // A bill matching both arms appears ONCE (one row, one OR match). A
+          // bill finished early appears under its promise day AND its check day
+          // — two different days, deliberately: both statements are true, and
+          // the day's record must not lie by omission in either direction.
+          // OWNER DECISION 2026-08-25, not an accident of the predicate.
+          //
+          // The range comes from getISTDayRange(anchorIso) — the SAME helper the
+          // live arm's range comes from (:611 passes it with no argument for
+          // "today"; this passes the viewed day). One owner for "what is an IST
+          // day", never a second hand-rolled offset calculation.
           dispatchStatus: "dispatch",
           isRemoved: false,
-          dispatchTargetDate: anchorDate,
           workflowStage: { in: PICKING_ACTIVE_STAGES },
+          OR: [
+            { dispatchTargetDate: anchorDate },
+            {
+              workflowStage: PICK_CHECKED,
+              pickAssignment: {
+                checkedAt: { gte: anchorRange.start, lt: anchorRange.end },
+              },
+            },
+          ],
         }
       : // Live: everything still open, whatever day it was due (carry-over —
         // design §4.2; this was Floor's fix over the picking desktop board's
@@ -651,6 +697,20 @@ export async function getFloorBoard(
       obdNumber: order.obdNumber,
       dealerName: dealer?.customerName ?? "(Unmatched)",
       isShipToOverride: order.shipToOverrideCustomerId !== null,
+      // The ship-to PAIR — the ORIGINAL and the redirect target, kept apart from
+      // `dealerName` above (the EFFECTIVE dealer, which IS the override on a
+      // redirect and so cannot carry the original). Same two fields the rail has
+      // always emitted (getFloorRail, above), so the desk table and the rail card
+      // can describe a redirect the same way instead of the table printing a
+      // nameless caption (FLOOR §8b).
+      //
+      // FREE: `customer` and `shipToOverrideCustomer` are ALREADY in
+      // FLOOR_BOARD_INCLUDE, both with FLOOR_DEALER_SELECT, which selects
+      // `customerName` — `dealer` on the line above is built from exactly these
+      // two. No extra findMany, no extra await, and above all no write: the
+      // live-sync marker keys on MAX(orders.updatedAt) (FLOOR §5/§10).
+      customerName: order.customer?.customerName ?? null,
+      shipToOverrideName: order.shipToOverrideCustomer?.customerName ?? null,
       windowId: order.dispatchWindow?.id ?? null,
       windowTime: order.dispatchWindow?.windowTime ?? null,
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,
