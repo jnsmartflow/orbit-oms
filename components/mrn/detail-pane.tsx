@@ -84,7 +84,16 @@ export function DetailPane({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
+    /* 🔴 `min-w-0` IS LOAD-BEARING — THIS ELEMENT IS THE GRID ITEM.
+       A grid item defaults to `min-width: auto`, which resolves to its
+       content-based minimum. The lines table's 1440px floor propagates up
+       to here through three plain blocks, so without this the pane measured
+       1438px wide inside an ~830px track: everything in it — the header
+       strip, the header card's four columns, the tabs — was laid out at
+       1438px and then clipped by the grid's overflow-hidden.
+       billing-board.tsx's `minmax(0, 1fr)` is the other half. NEITHER
+       WORKS ALONE — they are two separate floors. */
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-gray-50">
       <div className="shrink-0 border-b border-[#eceff2] bg-white px-[18px] pt-3">
         <div className="flex items-start">
           <div className="min-w-0">

@@ -47,7 +47,22 @@ export function HeaderCard({ detail, onEdit, canEdit }: HeaderCardProps): React.
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-x-[22px] gap-y-[13px]">
+      {/* 2 columns, 4 from `xl` (1280px) up. Stock Tailwind breakpoints — this
+          project defines no custom `screens`, and `lg:grid-cols-4` is the
+          existing convention elsewhere in the tree.
+
+          ⚠ WHY `xl` AND NOT `lg`, given the target was "2 below about 1100px":
+          the breakpoint reads the VIEWPORT, but these columns live in the pane,
+          which is viewport − 72 (sidebar) − 344 (rail). Four columns need
+          4×190 + 3×22 gap + 30 padding ≈ 856px of pane, i.e. a 1272px viewport.
+          `xl` (1280) clears that with 192px columns; `lg` (1024) would hand
+          them a 608px pane and 128px columns, and "TRUCK REPORTING DATE" and
+          "RECEIVING WAREHOUSE" would still wrap. The labels are the constraint,
+          not the values.
+
+          Eight fields divide evenly by both 2 and 4, so neither layout leaves a
+          ragged last row. */}
+      <div className="grid grid-cols-2 gap-x-[22px] gap-y-[13px] xl:grid-cols-4">
         <Field label="Truck reporting date" value={formatDateOnly(detail.truckReportingDate)} />
         <Field label="Received from" value={detail.receivedFrom} />
         <Field label="Receiving warehouse" value={detail.receivingWarehouse} />

@@ -242,9 +242,22 @@ export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element 
       {/* Body — 344px rail + working pane, the same two-track grid /floor uses
           (components/floor/floor-page.tsx). Only the geometry is borrowed; the
           header above is UniversalHeader, not floor's hand-rolled one. */}
+      {/* 🔴 `minmax(0, 1fr)`, NEVER PLAIN `1fr`. Plain `1fr` is shorthand for
+          `minmax(auto, 1fr)`, and that `auto` floor resolves to the grid
+          ITEM's automatic minimum size — its content-based minimum. The lines
+          table carries a 1440px min-width, so the track inflated to ~1440 and
+          the pane was laid out at 1438px inside a window half that wide, then
+          clipped by the overflow-hidden on this very element. (Clipping does
+          not shrink layout geometry, which is why the symptom read as content
+          cut off at the right edge rather than as a scrollbar.)
+
+          The `min-w-0` on DetailPane's root is the other half. There are TWO
+          floors here — the track's min sizing function and the item's own
+          `min-width: auto` — and removing either one alone leaves the other
+          in force. Do not "simplify" this back to `1fr`. */}
       <div
         className="grid min-h-0 flex-1 overflow-hidden"
-        style={{ gridTemplateColumns: "344px 1fr" }}
+        style={{ gridTemplateColumns: "344px minmax(0, 1fr)" }}
       >
         <MrnRail
           dateLabel={dateLabel}
