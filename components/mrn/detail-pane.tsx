@@ -163,13 +163,12 @@ export function DetailPane({
        rather than as a scrollbar. billing-board.tsx's `minmax(0, 1fr)` is the
        other half — NEITHER WORKS ALONE, they are two separate floors.
 
-       🔴 `relative` IS THE DRAWER'S MOUNT POINT, and it belongs HERE — on the
-       pane root, a sibling of the scroll box — NOT on the scroll box itself.
-       An absolutely-positioned child of an `overflow-auto` container scrolls
-       WITH its content, so a drawer mounted in the scroll box would slide up
-       the moment the operator scrolls the table. Mockup 09 frame S does it
-       this way for the same reason: `.pane{position:relative;overflow:hidden}`
-       with `.drawer` a sibling of `.pane-body`. */
+       ⚠ `relative` WAS THE DRAWER'S MOUNT POINT and no longer needs to be —
+       the drawer became a `fixed inset-0` overlay on 2026-08-26 to match Floor
+       Control's panel, so it is positioned against the viewport and not against
+       this box. The class is kept because it costs nothing and a positioned
+       root is the correct default for a pane that may want an in-flow overlay
+       again; nothing in this subtree is absolutely positioned today. */
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-gray-50">
       <div className="shrink-0 border-b border-[#eceff2] bg-white px-[18px] pb-4 pt-3">
         {/* ── Title row ─────────────────────────────────────────────────────
@@ -387,15 +386,12 @@ export function DetailPane({
           Keyed on the MRN id so switching trucks REMOUNTS the table rather than
           leaving one MRN's view filter sitting on another's rows.
 
-          ⚠ The right padding widens to clear the drawer while it is open, so no
-          part of the table ever sits underneath it. 402px = the drawer's 384
-          plus the 18px gutter the pane already uses. */}
-      <div
-        className={
-          "min-h-0 flex-1 overflow-auto py-4 pl-[18px] " +
-          (openLine ? "pr-[402px]" : "pr-[18px]")
-        }
-      >
+          ⚠ THE RIGHT PADDING THAT USED TO WIDEN FOR THE DRAWER IS GONE
+          (2026-08-26). While the drawer was an in-pane slab it had to push the
+          table aside so nothing sat underneath it; it is now a full-height
+          overlay with a scrim, and an overlay does not move the page it covers.
+          See line-drawer.tsx's header for the reversal. */}
+      <div className="min-h-0 flex-1 overflow-auto px-[18px] py-4">
         <LinesTable
           key={detail.id}
           detail={detail}
@@ -406,12 +402,14 @@ export function DetailPane({
         />
       </div>
 
-      {/* 🔴 A SIBLING OF THE SCROLL BOX, INSIDE THE RELATIVE PANE ROOT — the
-          placement decided in e71ecca7. Do NOT move it inside the scroll
-          container: an absolutely-positioned child of an `overflow-auto` box
-          scrolls with the content, so the drawer would slide up the moment the
-          operator scrolls the table. Mockup 09 frame S has it this way for the
-          same reason.
+      {/* ⚠ PLACEMENT NO LONGER MATTERS — AND THAT IS THE CHANGE (2026-08-26).
+          Through e71ecca7 and 5c91657d this had to be a sibling of the scroll
+          box inside the pane's `relative` root, because an absolutely-positioned
+          child of an `overflow-auto` container scrolls away with the content.
+          The drawer is now a `fixed inset-0` overlay matching Floor Control's
+          panel, so it escapes this subtree entirely and renders against the
+          viewport. It stays here for readability — this is where the state that
+          drives it lives — not because the DOM position is load-bearing.
 
           position/total/hasPrev/hasNext all come from the index within
           `openableLines`, never from detail.lines — see that memo above. */}

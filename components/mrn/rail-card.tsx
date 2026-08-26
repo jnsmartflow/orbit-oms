@@ -86,10 +86,17 @@ export function RailCard({ row, selected, onSelect }: RailCardProps): React.JSX.
           {row.stiRefNo ?? "—"}
         </span>
 
-        {/* 4 — size of the job. RAW line count, not distinct SKUs: two lines can
-            legitimately carry the same SKU (queries.ts counts rows). */}
-        <span className="mt-[5px] block text-[11.5px] text-gray-400">
-          <b className="font-bold text-gray-600">{row.lineCount}</b> lines
+        {/* 4 — size of the job, as a chip. RAW line count, not distinct SKUs:
+            two lines can legitimately carry the same SKU (queries.ts counts
+            rows).
+
+            ⚠ The chip scale is the module's existing one — rounded-[5px],
+            px-[7px] py-[3px], 10.5px — shared with status-pill.tsx:89, NOT a
+            new one invented here. If that scale ever changes, both move. */}
+        <span className="mt-[6px] block">
+          <span className="inline-flex items-center rounded-[5px] bg-gray-100 px-[7px] py-[3px] text-[10.5px] text-gray-600">
+            <b className="font-bold">{row.lineCount}</b>&nbsp;lines
+          </span>
         </span>
       </span>
     </button>
