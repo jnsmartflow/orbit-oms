@@ -98,6 +98,38 @@ export function lineHasIssue(line: MrnDerivableLine): boolean {
   return deriveLine(line).hasIssue;
 }
 
+// ── Openable lines ───────────────────────────────────────────────────────────
+//
+// A line the operator can open a drawer on. Two kinds qualify and no others: one
+// with an ISSUE, and one the supervisor SPLIT across manufacturing months. Every
+// other line already shows everything it has on its own row, so opening it would
+// present an empty panel — which is worse than a row that never invited the
+// click.
+
+/** The minimum a line must carry to answer "can this be opened" — its issue
+ *  inputs plus its batches. Structurally satisfied by MrnDetailLine. */
+export interface MrnOpenableLine extends MrnDerivableLine {
+  batches: readonly unknown[];
+}
+
+/**
+ * How many batches beyond the first — the `+1` / `+2` badge beside Mfg m/y.
+ *
+ * 0 for a single-batch line AND for a line with none at all (a line received at
+ * zero takes zero batch rows — design §11 OQ-4), so the badge simply does not
+ * render in either case. Never negative.
+ */
+export function extraBatchCount(line: MrnOpenableLine): number {
+  return Math.max(0, line.batches.length - 1);
+}
+
+/** 🔴 THE SINGLE DEFINITION OF "this row can be opened" — the chevron, the
+ *  pointer cursor, the click handler and the drawer's prev/next stepping must
+ *  ALL read this one function and never re-derive the condition inline. */
+export function isLineOpenable(line: MrnOpenableLine): boolean {
+  return lineHasIssue(line) || line.batches.length > 1;
+}
+
 // ── Per-MRN roll-up ──────────────────────────────────────────────────────────
 
 /**
