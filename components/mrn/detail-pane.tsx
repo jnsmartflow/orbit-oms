@@ -310,10 +310,20 @@ export function DetailPane({
             — can widen the row past the pane. Without BOTH, one long value
             pushes a horizontal scrollbar onto the whole board. */}
         <div className="mt-3.5 flex">
-          <Fact label="Received from">
-            {detail.receivedFrom}
-            <Small> → {detail.receivingWarehouse}</Small>
-          </Fact>
+          {/* ⚠ SOURCE ONLY — the "→ Surat" suffix was dropped 2026-08-26.
+              `receivingWarehouse` defaults to 'Surat', is hardcoded by the
+              create route and is read-only in the edit modal, so it read the
+              same on every MRN the depot has ever raised. A fact that never
+              varies is not information; it is width. `receivedFrom` is the half
+              that actually changes (TPW / CDC).
+
+              🔴 THE PRINTED DOCUMENTS STILL CARRY IT IN FULL, and must — the
+              A4 sheet and the XLS both list "Receiving warehouse" as a header
+              field (reportHeaderFields, lib/mrn/report.ts). Different audience:
+              a sheet that gets signed and filed has to say where the goods
+              landed, because the reader is not sitting in the depot. Do not
+              "tidy" the report to match this screen. */}
+          <Fact label="Received from">{detail.receivedFrom}</Fact>
 
           {/* "Reported" is truckReportingDate — the day the truck showed up.
               NOT mrnDate, the day the MRN was raised, which is already
