@@ -1,91 +1,119 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Smartphone, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, ChevronRight, Smartphone, X } from "lucide-react";
 import type { MrnDetail, MrnDetailLine } from "@/lib/mrn/types";
-import { buildRenderRows, reportTotals } from "@/lib/mrn/report";
+import { extraBatchCount, isLineOpenable } from "@/lib/mrn/derive";
+import { reportTotals } from "@/lib/mrn/report";
 import { formatCount, formatMonthYear } from "./format";
 import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
 
 // The line-items table.
 //
-// ⚠️ ONE COLUMN SET, ALL THREE STATES (2026-08-22). open / checking / done now
-// render the SAME 16 columns in the same order, so the operator learns one
-// table and never has to re-find a column when a truck changes state. What
-// varies is only what is IN the cells: in `open` and `checking` every
-// supervisor-owned column renders as an empty dashed cell.
+// ══════════════════════════════════════════════════════════════════════════
+// 🔴 ONE COLUMN SET FOR ALL THREE STATES IS REVERSED (2026-08-26).
 //
-//   # · SKU · Description · Pack · Qty STI · Ctn · Physical · Mfg m/y ·
-//   SND · Lky · Damage · Empty · QTD · REJ · Short · Excess
+// From 2026-08-22 until today this file rendered the SAME 16 columns in
+// open, checking and done, on the reasoning that the operator should learn
+// one table and never re-find a column when a truck changes state. That
+// traded the wrong thing away. Holding the shape steady meant `open` and
+// `checking` rendered TEN empty dashed cells per row — Physical, Mfg and all
+// eight condition counts — before anyone had touched the truck. A column of
+// dashes does not teach where a number will appear; it just costs the width
+// that Description and Qty STI needed, on the two states where the STI sheet
+// is the only thing on screen. Eight empty condition columns tell the reader
+// nothing.
 //
-// ⚠️ THE BB m/y COLUMN WAS REMOVED (2026-08-22, schema v27.17). Best before is
-// no longer collected anywhere — the pickers are gone from the line sheet and
-// the columns are nullable — so displaying it would have shown an empty column
-// on every truck from that date. Its 5% went to Description. Do not restore it
-// without restoring the input that feeds it.
+// Each state now gets the columns it has data for:
+//
+//   open + checking → # · SKU · Description · Pack · Qty STI          (5)
+//   done            → # · SKU · Description · Pack · Qty STI ·
+//                     Physical · Mfg M/Y · chevron                    (8)
+//
+// A FUTURE SESSION MUST NOT "FIX" THIS BACK. The one-column-set rule is not
+// lost knowledge to be rediscovered — it was tried, it shipped, and it was
+// reversed deliberately on the date above.
+// ══════════════════════════════════════════════════════════════════════════
+//
+// 🔴 THE EIGHT CONDITION COLUMNS AND Ctn LEFT THE SCREEN ENTIRELY (same date).
+// SND · Lky · Damage · Empty · QTD · REJ · Short · Excess now live in the LINE
+// DRAWER (components/mrn/line-drawer.tsx) and in the report — the XLS keeps all
+// eight in the source workbook's order, and the A4 sheet prints them. Nothing
+// was dropped from the DATA; it moved off the row, where sixteen numbers
+// competed for the two that matter. Ctn went with them: it is derived from the
+// catalog at paste and nobody reads it on screen.
+//
+// ⚠️ ONE ROW PER LINE IN `done` — NO 6a/6b SUB-ROWS ANY MORE. A split line used
+// to render one row per manufacturing batch. It now renders ONE row carrying a
+// `+N` badge on Mfg, and the batches are listed inside the drawer, which is the
+// whole reason a split line is openable. This is a deliberate divergence from
+// the REPORT, which still emits sub-rows: buildRenderRows() lives in
+// lib/mrn/report.ts and is still the single definition for the XLS and the A4
+// sheet, where there is no drawer to open and the sub-row IS how a split line
+// gets expressed on paper. The screen has somewhere better to put it.
 //
 // ⚠️ Mfg is ONE cell, rendered `06/26`. It is STORED as two integers and joined
-// only for display; do NOT split it into two columns to mirror the schema.
+// only for display; do NOT split it into two columns to mirror the schema. That
+// is a departure from the workbook, not a match to it — the `PRINT` sheet has
+// Manufacturing Month and Manufacturing Year as TWO columns, and the XLS export
+// keeps both because a spreadsheet is the thing people sort and filter.
 //
-// ⚠️ THAT IS A DEPARTURE FROM THE WORKBOOK, NOT A MATCH TO IT — this comment
-// used to claim it matched. The `PRINT` sheet has `Manufacturing Month` and
-// `Manufacturing Year` as TWO columns (it had two more for best before). The
-// merge is a screen-width decision, and the A4 sheet copies it; the XLS export
-// keeps the workbook's two columns, because a spreadsheet is the thing people
-// sort and filter. See lib/mrn/report.ts.
-//
-// ⚠️ THE "Iss." COLUMN WAS REMOVED (2026-08-22). It was a yes/no restatement of
-// the eight condition columns sitting immediately beside it, and the signal is
-// already carried twice over — by the issues banner above the table and by the
-// `N issues` chip on the rail card. Do not reinstate it.
-//
-// ⚠️ EIGHT condition columns, not the six the mockup drew — SND · Lky · Damage ·
-// Empty · QTD · REJ · Short · Excess is row 17 of the source workbook's PRINT
-// sheet (⚠ NOT row 16 — that row is empty; this comment and design §11 OQ-3
-// both said 16, and both were off by one. lib/mrn/report.ts carries the
-// verification) and what OQ-3 settled. QTD's meaning is still unknown (§4): it is
-// carried through schema, UI and report because the workbook carries it, and
-// must never be repurposed to mean something helpful.
-//
-// ⚠️ Short and Excess are DERIVED, never stored (§11 OQ-2) — they arrive already
-// computed on every line by lib/mrn/derive.ts, applied server-side in
+// ⚠️ Short and Excess are DERIVED, never stored (design §11 OQ-2) — they arrive
+// already computed on every line by lib/mrn/derive.ts, applied server-side in
 // getMrnDetail(). Nothing here recomputes them, which is the whole reason the
 // card, this table, the XLS and the print sheet cannot disagree about one truck.
 //
-// ⚠️ 16 COLUMNS OVERFLOW, AND THAT IS HANDLED IN ONE PLACE. The table sits in
-// its own `overflow-x-auto` box with a min-width, so IT scrolls sideways and the
-// PAGE never does. The fixed-table standard still applies (UI §27): table-layout
-// fixed with a <colgroup> of percentages — the percentages now resolve against
-// TABLE_MIN_WIDTH rather than against the pane, which is what stops 16 columns
-// collapsing into unreadable slivers on a narrow window.
+// ⚠️ WHICH ROWS OPEN IS NOT DECIDED HERE. isLineOpenable() in lib/mrn/derive.ts
+// is THE definition — an issue, or more than one manufacturing batch. The
+// chevron, the pointer cursor and the click handler all read that one function
+// and none of them re-derives it inline. The drawer's ‹ › steps the same list.
+//
+// ⚠️ FIXED-TABLE STANDARD (UI §27) — table-layout: fixed with a <colgroup> of
+// percentages, one constant per state read by BOTH the colgroup and the header
+// row, so a column can never be added to one and forgotten in the other. Never
+// `auto`, never `fr`.
 
-/** Wide enough that every column stays legible; the box scrolls past it. */
-const TABLE_MIN_WIDTH = 1400;
+interface Column {
+  key: string;
+  label: string;
+  /** Percent. Each set sums to 100. */
+  width: number;
+  left?: boolean;
+}
 
-/** ONE definition, read by the colgroup and the header row alike, so a column
- *  can never be added to one and forgotten in the other. Percentages sum to 100. */
-const COLUMNS: { key: string; label: string; width: number; left?: boolean }[] = [
-  { key: "no", label: "#", width: 3 },
-  { key: "sku", label: "SKU", width: 8, left: true },
-  { key: "desc", label: "Description", width: 25, left: true },
-  { key: "pack", label: "Pack", width: 5 },
-  { key: "sti", label: "Qty STI", width: 5 },
-  { key: "ctn", label: "Ctn", width: 4 },
-  { key: "phy", label: "Physical", width: 5 },
-  { key: "mfg", label: "Mfg m/y", width: 5 },
-  { key: "snd", label: "SND", width: 5 },
-  { key: "lky", label: "Lky", width: 5 },
-  { key: "dmg", label: "Damage", width: 5 },
-  { key: "emp", label: "Empty", width: 5 },
-  { key: "qtd", label: "QTD", width: 5 },
-  { key: "rej", label: "REJ", width: 5 },
-  { key: "sht", label: "Short", width: 5 },
-  { key: "exc", label: "Excess", width: 5 },
+/** `open` and `checking` — everything billing has before the truck is touched. */
+const BILLING_COLUMNS: Column[] = [
+  { key: "no", label: "#", width: 6 },
+  { key: "sku", label: "SKU", width: 16, left: true },
+  { key: "desc", label: "Description", width: 50, left: true },
+  { key: "pack", label: "Pack", width: 10 },
+  { key: "sti", label: "Qty STI", width: 18 },
 ];
 
-/** Physical · Mfg · the eight condition columns = 10 cells the supervisor owns,
- *  dashed in both billing-facing states. BB left this count on 2026-08-22. */
-const SUPERVISOR_COLUMN_COUNT = 10;
+/** `done` — what the supervisor brought back, plus the chevron column. */
+const DONE_COLUMNS: Column[] = [
+  { key: "no", label: "#", width: 6 },
+  { key: "sku", label: "SKU", width: 14, left: true },
+  { key: "desc", label: "Description", width: 34, left: true },
+  { key: "pack", label: "Pack", width: 8 },
+  { key: "sti", label: "Qty STI", width: 11 },
+  { key: "phy", label: "Physical", width: 11 },
+  { key: "mfg", label: "Mfg M/Y", width: 12 },
+  { key: "chev", label: "", width: 4 },
+];
+
+/**
+ * A floor so the columns stay legible on a narrow window; the box scrolls past
+ * it if the pane is ever smaller.
+ *
+ * ⚠ THIS USED TO BE 1400 AND THAT NUMBER CAUSED A REAL BUG (c16e59df). Sixteen
+ * columns needed it, and it propagated up through three plain blocks into the
+ * grid track, laying the whole pane out at 1438px inside an ~830px column. Five
+ * and eight columns need nothing like it. Keep it well under any realistic pane
+ * width — if a future column set needs more than this, the columns are the
+ * problem, not the floor.
+ */
+const TABLE_MIN_WIDTH = 720;
 
 interface LinesTableProps {
   detail: MrnDetail;
@@ -93,27 +121,34 @@ interface LinesTableProps {
   canEdit: boolean;
   /** After a successful save — the board refetches. */
   onSaved?: () => void;
+  /** The line whose drawer is open, or null. Owned by detail-pane.tsx. */
+  openLineId?: number | null;
+  /** Called with a line id when an OPENABLE row is clicked. */
+  onOpenLine?: (lineId: number) => void;
 }
 
 export function LinesTable({
   detail,
   canEdit,
   onSaved,
+  openLineId = null,
+  onOpenLine,
 }: LinesTableProps): React.JSX.Element {
   if (detail.status === "checking") return <CheckingTable detail={detail} />;
-  if (detail.status === "done") return <DoneTable detail={detail} />;
+  if (detail.status === "done") {
+    return <DoneTable detail={detail} openLineId={openLineId} onOpenLine={onOpenLine} />;
+  }
   return <OpenTable detail={detail} canEdit={canEdit} onSaved={onSaved} />;
 }
 
 // ── open ────────────────────────────────────────────────────────────────────
 
 /**
- * Billing's working view. Every column the SUPERVISOR owns renders as an empty
- * dashed cell — visible, never fillable here. The screen itself is what says
- * whose job each column is, which is cheaper than training and does not decay.
+ * Billing's working view — the STI sheet, and nothing the supervisor owns.
  *
- * Carton qty is the ONE exception: it comes off the STI sheet, so billing types
- * it where the sheet has it.
+ * Five columns, because five is all billing has at this point. The dashed
+ * placeholder cells that used to stand in for the supervisor's ten columns are
+ * gone; see this file's header for why that reversal happened.
  */
 function OpenTable({
   detail,
@@ -207,6 +242,7 @@ function OpenTable({
       )}
 
       <TableShell
+        columns={BILLING_COLUMNS}
         title={
           <>
             {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
@@ -215,12 +251,19 @@ function OpenTable({
         }
         /* The row-delete column. HIDDEN entirely without canEdit — an action the
            role can never perform is not rendered (see detail-pane.tsx on hidden
-           vs disabled). It is an ACTION, not data, so it lives outside COLUMNS
-           and cannot shift the shared column widths. */
+           vs disabled). It is an ACTION, not data, so it lives outside the
+           column set and cannot shift the data columns' widths. */
         extraColumn={canEdit}
       >
         {detail.lines.map((line) => (
-          <tr key={line.id} className={line.isCatalogued ? "" : "bg-amber-50/60"}>
+          /* ⚠ NO ROW WASH FOR AN UNCATALOGUED SKU. This row carried
+             `bg-amber-50/60` until 2026-08-26 and it is gone on purpose: an
+             unknown SKU is a gap in OUR CATALOG, not a problem with the goods,
+             and the `done` table now washes issue rows red. Two washes meaning
+             two different things is how a screen stops communicating. The
+             inline UNKNOWN SKU tag carries it, and carries it better — it says
+             which fact is missing. */
+          <tr key={line.id}>
             <Td muted center>{line.lineNo}</Td>
             <Td mono strong>{line.skuCode}</Td>
             <Td>
@@ -228,19 +271,18 @@ function OpenTable({
             </Td>
             <Td center>{line.pack ?? "—"}</Td>
             <Td center strong>{line.qtySti}</Td>
-            {/* READ-ONLY. Derived from the catalog at paste — 4L packs only —
-                never typed here. See the lines route for the rule. */}
-            <Td center>{line.cartonQty ?? "—"}</Td>
-            {Array.from({ length: SUPERVISOR_COLUMN_COUNT }).map((_, i) => (
-              <Td key={i} center>
-                <DashedCell />
-              </Td>
-            ))}
             {canEdit && (
               <Td center>
                 <button
                   type="button"
-                  onClick={() => setConfirming(line)}
+                  /* stopPropagation so a delete can never also open a drawer.
+                     Rows are not clickable in THIS state today — but the guard
+                     belongs on the control, not on the assumption that the row
+                     around it will stay inert. */
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirming(line);
+                  }}
                   aria-label={`Remove line ${line.lineNo}`}
                   className="text-[#c2c8d0] hover:text-[#b42318]"
                 >
@@ -251,7 +293,7 @@ function OpenTable({
           </tr>
         ))}
         {detail.lines.length === 0 && (
-          <EmptyRow colSpan={COLUMNS.length + (canEdit ? 1 : 0)} />
+          <EmptyRow colSpan={BILLING_COLUMNS.length + (canEdit ? 1 : 0)} />
         )}
       </TableShell>
 
@@ -319,6 +361,7 @@ function CheckingTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
 
       <div className="opacity-55">
         <TableShell
+          columns={BILLING_COLUMNS}
           title={
             <>
               {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
@@ -334,17 +377,9 @@ function CheckingTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
               </Td>
               <Td center>{line.pack ?? "—"}</Td>
               <Td center strong>{line.qtySti}</Td>
-              <Td center>{line.cartonQty ?? "—"}</Td>
-              {/* Deliberately dashed even though the supervisor may already have
-                  filled them server-side. See this component's header. */}
-              {Array.from({ length: SUPERVISOR_COLUMN_COUNT }).map((_, i) => (
-                <Td key={i} center>
-                  <DashedCell />
-                </Td>
-              ))}
             </tr>
           ))}
-          {detail.lines.length === 0 && <EmptyRow colSpan={COLUMNS.length} />}
+          {detail.lines.length === 0 && <EmptyRow colSpan={BILLING_COLUMNS.length} />}
         </TableShell>
       </div>
     </>
@@ -352,16 +387,16 @@ function CheckingTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
 }
 
 // ── done ────────────────────────────────────────────────────────────────────
-//
-// 🔴 buildRenderRows() AND THE TOTAL ROW NOW LIVE IN lib/mrn/report.ts, and the
-// copies that used to sit here are GONE ON PURPOSE (step 10, 2026-08-25). The
-// XLS export and the A4 print sheet render the same truck from the same rows,
-// and the sub-row rule — line-level values on the FIRST sub-row only — is the
-// one piece of logic that silently doubles a total if any one of the three
-// surfaces gets it wrong. Three copies could drift; one cannot. Do not re-inline
-// either function here "to keep the table self-contained".
 
-function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
+function DoneTable({
+  detail,
+  openLineId,
+  onOpenLine,
+}: {
+  detail: MrnDetail;
+  openLineId: number | null;
+  onOpenLine?: (lineId: number) => void;
+}): React.JSX.Element {
   // Local, read-only view filter (mockup B4's .seg). Not teal — teal on this
   // board belongs to New MRN / the pane's action row (UI §1).
   const [onlyIssues, setOnlyIssues] = useState(false);
@@ -370,7 +405,6 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
     () => (onlyIssues ? detail.lines.filter((l) => l.hasIssue) : detail.lines),
     [detail.lines, onlyIssues],
   );
-  const rows = useMemo(() => buildRenderRows(lines), [lines]);
 
   // The TOTAL row, from the SAME function the XLS and the print sheet use — it
   // includes the SND sum that MrnIssueSummary deliberately has no field for
@@ -403,12 +437,15 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
       )}
 
       <TableShell
+        columns={DONE_COLUMNS}
         title={
           <>
             {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI ·{" "}
             {formatCount(detail.totalPhysicalQty)} received
           </>
         }
+        /* The strip keeps ONLY the view segment. Activity was removed from this
+           module entirely on 2026-08-26 — do not add a button here. */
         right={
           <div className="inline-flex gap-0.5 rounded-[7px] bg-gray-100 p-[3px]">
             <SegButton active={!onlyIssues} onClick={() => setOnlyIssues(false)}>
@@ -420,36 +457,66 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
           </div>
         }
       >
-        {rows.map((r) => {
-          const l = r.line;
-          const cont = !r.carriesLineTotals;
+        {lines.map((l) => {
+          // 🔴 THE ONE DEFINITION. Never `l.hasIssue || l.batches.length > 1`
+          // spelled out here — lib/mrn/derive.ts owns it, and the drawer's
+          // ‹ › stepping reads the same function over the same lines.
+          const openable = isLineOpenable(l);
+          const isOpen = openLineId === l.id;
+          const extra = extraBatchCount(l);
+
           return (
-            <tr key={r.key} className={l.hasIssue ? "bg-amber-50/60" : ""}>
-              <Td muted center>{r.label}</Td>
-              <Td mono strong={!cont} muted={cont}>{l.skuCode}</Td>
-              <Td muted={cont}>
-                {cont ? "↳ second mfg batch" : <Description line={l} />}
+            <tr
+              key={l.id}
+              onClick={openable && onOpenLine ? () => onOpenLine(l.id) : undefined}
+              className={
+                (l.hasIssue ? "bg-[#fef2f2] " : "") + (openable ? "cursor-pointer" : "")
+              }
+            >
+              {/* 🔴 THE SELECTED BAR IS AN INSET SHADOW ON THIS FIRST <td>, AND
+                  IT MUST NEVER MOVE TO THE <tr>. A shadow on a row is painted
+                  once per CELL, which draws a 3px stripe down every column
+                  divider instead of one bar at the left edge. That exact bug
+                  has already shipped once — do not rediscover it. */}
+              <Td muted center issue={l.hasIssue} bar={isOpen ? (l.hasIssue ? "#dc2626" : "#111827") : undefined}>
+                {l.lineNo}
               </Td>
-              <Td center muted={cont}>{l.pack ?? "—"}</Td>
-              {/* First sub-row only — see buildRenderRows. */}
-              <Td center strong={!cont}>{cont ? "—" : l.qtySti}</Td>
-              <Td center>{cont ? "—" : (l.cartonQty ?? "—")}</Td>
-              <Td center strong bad={!cont && l.shortQty > 0}>
-                {r.qtyForRow ?? "—"}
+              <Td mono strong issue={l.hasIssue} skuIssue={l.hasIssue}>
+                {l.skuCode}
               </Td>
-              {/* Mfg — ONE cell, and it VARIES per sub-row. Best before had a
-                  cell here until 2026-08-22; see the file header. */}
-              <Td center>
-                {r.batch ? formatMonthYear(r.batch.mfgMonth, r.batch.mfgYear) : "—"}
+              <Td issue={l.hasIssue}>
+                <Description line={l} />
               </Td>
-              <Cond value={cont ? null : l.sndQty} />
-              <Cond value={cont ? null : l.leakyQty} bad />
-              <Cond value={cont ? null : l.damageQty} bad />
-              <Cond value={cont ? null : l.emptyQty} bad />
-              <Cond value={cont ? null : l.qtdQty} />
-              <Cond value={cont ? null : l.rejQty} bad />
-              <Cond value={cont ? null : l.shortQty || null} bad />
-              <Cond value={cont ? null : l.excessQty || null} bad />
+              <Td center issue={l.hasIssue}>{l.pack ?? "—"}</Td>
+              <Td center strong issue={l.hasIssue}>{l.qtySti}</Td>
+              {/* Red under the STI, blue over it, plain when it matched. Blue
+                  rather than red for excess on purpose: more than expected is a
+                  discrepancy to reconcile, not damage. */}
+              <Td center strong issue={l.hasIssue} tone={physicalTone(l)}>
+                {l.physicalQty ?? "—"}
+              </Td>
+              {/* ONE cell. `+N` when the supervisor split the line across
+                  manufacturing months — the months themselves are in the
+                  drawer, which is exactly why a split line is openable. */}
+              <Td center issue={l.hasIssue}>
+                {l.batches[0]
+                  ? formatMonthYear(l.batches[0].mfgMonth, l.batches[0].mfgYear)
+                  : "—"}
+                {extra > 0 && (
+                  <span className="ml-[5px] rounded-[4px] bg-[#f0fdfa] px-[4px] py-px text-[10px] font-bold text-[#0f766e]">
+                    +{extra}
+                  </span>
+                )}
+              </Td>
+              {/* No chevron, no pointer, no click on a clean single-batch line —
+                  everything it has is already on the row, and a row that looks
+                  clickable but opens an empty panel is worse than one that never
+                  invited the click. */}
+              <Td center issue={l.hasIssue}>
+                {openable && (
+                  <ChevronRight size={13} className="inline text-[#b6bcc6]" aria-hidden="true" />
+                )}
+              </Td>
             </tr>
           );
         })}
@@ -469,23 +536,15 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
               TOTAL
             </td>
             <Td center strong>{formatCount(totals.qtySti)}</Td>
-            <Td center muted>—</Td>
             <Td center strong>{formatCount(totals.physical)}</Td>
             <Td center muted>—</Td>
-            <Cond value={totals.snd || null} />
-            <Cond value={totals.leaky || null} bad />
-            <Cond value={totals.damage || null} bad />
-            <Cond value={totals.empty || null} bad />
-            <Cond value={totals.qtd || null} />
-            <Cond value={totals.rej || null} bad />
-            <Cond value={totals.short || null} bad />
-            <Cond value={totals.excess || null} bad />
+            <Td center />
           </tr>
         )}
 
-        {rows.length === 0 && (
+        {lines.length === 0 && (
           <EmptyRow
-            colSpan={COLUMNS.length}
+            colSpan={DONE_COLUMNS.length}
             text={onlyIssues ? "No lines with issues." : "No lines on this MRN."}
           />
         )}
@@ -494,30 +553,39 @@ function DoneTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
   );
 }
 
+/** Physical against the STI. Equal is the clean case and gets no colour at all. */
+function physicalTone(l: MrnDetailLine): CellTone {
+  if (l.physicalQty === null) return "plain";
+  if (l.physicalQty < l.qtySti) return "bad";
+  if (l.physicalQty > l.qtySti) return "excess";
+  return "plain";
+}
+
 // ── Shared bits ─────────────────────────────────────────────────────────────
 
 /**
  * The card, the header strip, the horizontal scroll box, the colgroup and the
- * header row. Callers supply only <tr>s.
+ * header row. Callers supply the column set and only <tr>s.
  *
  * `extraColumn` appends one narrow action column (the open state's row delete).
- * It is deliberately NOT part of COLUMNS: COLUMNS is the DATA shape, shared by
- * all three states, and an action that exists in only one state must not be
- * able to shift the others' widths.
+ * It is deliberately NOT part of any column set: those are the DATA shape, and
+ * an action that exists in one state must not shift another state's widths.
  */
 function TableShell({
+  columns,
   title,
   right,
   extraColumn,
   children,
 }: {
+  columns: Column[];
   title: React.ReactNode;
   right?: React.ReactNode;
   extraColumn?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   // The action column takes its width ON TOP of the 100%, so the data columns
-  // keep the exact same proportions in every state.
+  // keep their exact proportions whether or not it is there.
   const minWidth = TABLE_MIN_WIDTH + (extraColumn ? 40 : 0);
 
   return (
@@ -529,24 +597,23 @@ function TableShell({
         {right}
       </div>
 
-      {/* 🔴 THE TABLE SCROLLS, THE PAGE DOES NOT. 17 columns cannot fit a pane
-          sitting beside a 344px rail at any realistic width, so the overflow is
-          owned here and nowhere else. Without this box the whole board scrolls
-          sideways and the rail slides off screen. */}
+      {/* The overflow is owned HERE and nowhere else, so the table scrolls and
+          the page never does. Five and eight columns fit a real pane without
+          scrolling at all; the box is the floor's safety net, not its purpose. */}
       <div className="overflow-x-auto">
         <table
           className="w-full table-fixed border-collapse"
           style={{ minWidth: `${minWidth}px` }}
         >
           <colgroup>
-            {COLUMNS.map((c) => (
+            {columns.map((c) => (
               <col key={c.key} style={{ width: `${c.width}%` }} />
             ))}
             {extraColumn && <col style={{ width: "40px" }} />}
           </colgroup>
           <thead>
             <tr>
-              {COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <Th key={c.key} center={!c.left}>
                   {c.label}
                 </Th>
@@ -562,7 +629,8 @@ function TableShell({
 }
 
 /** The product name, or the UNKNOWN SKU treatment. One definition — it renders
- *  identically in all three states. */
+ *  identically in all three states. Since 2026-08-26 this tag is the ONLY signal
+ *  for an uncatalogued line; the row wash that used to accompany it is gone. */
 function Description({ line }: { line: MrnDetailLine }): React.JSX.Element {
   if (line.isCatalogued) return <>{line.description}</>;
   return (
@@ -604,58 +672,57 @@ function Th({
   );
 }
 
+type CellTone = "plain" | "bad" | "excess";
+
 function Td({
   children,
   center,
   muted,
   strong,
   mono,
-  bad,
+  tone = "plain",
+  issue,
+  skuIssue,
+  bar,
 }: {
   children?: React.ReactNode;
   center?: boolean;
   muted?: boolean;
   strong?: boolean;
   mono?: boolean;
-  bad?: boolean;
+  /** Value colour — red under, blue over. */
+  tone?: CellTone;
+  /** The row has an issue: softens the bottom border to match the red wash. */
+  issue?: boolean;
+  /** The SKU cell on an issue row goes dark red. */
+  skuIssue?: boolean;
+  /** Hex for the 3px selected bar. FIRST CELL ONLY — see DoneTable. */
+  bar?: string;
 }): React.JSX.Element {
-  const colour = bad
-    ? "text-[#b42318] font-semibold"
-    : muted
-      ? "text-gray-400"
-      : strong
-        ? "text-gray-900 font-medium"
-        : "text-[#4b5563]";
+  const colour = skuIssue
+    ? "text-[#7f1d1d] font-semibold"
+    : tone === "bad"
+      ? "text-[#b42318] font-semibold"
+      : tone === "excess"
+        ? "text-[#0369a1] font-semibold"
+        : muted
+          ? "text-gray-400"
+          : strong
+            ? "text-gray-900 font-medium"
+            : "text-[#4b5563]";
   return (
     <td
       className={
-        "h-9 overflow-hidden text-ellipsis whitespace-nowrap border-b border-[#f0f0f0] px-2 text-[11px] " +
+        "h-9 overflow-hidden text-ellipsis whitespace-nowrap border-b px-2 text-[11px] " +
+        (issue ? "border-[#f7e4e2] " : "border-[#f0f0f0] ") +
         (center ? "text-center " : "") +
         (mono ? "font-mono " : "") +
         colour
       }
+      style={bar ? { boxShadow: `inset 3px 0 0 ${bar}` } : undefined}
     >
       {children}
     </td>
-  );
-}
-
-/** A condition count. Null renders as a dash — 0 and null mean the same thing
- *  to a reader here, and a grid of zeroes buries the numbers that matter. */
-function Cond({ value, bad }: { value: number | null; bad?: boolean }): React.JSX.Element {
-  return (
-    <Td center bad={bad && value !== null && value > 0} muted={value === null}>
-      {value === null || value === 0 ? "—" : value}
-    </Td>
-  );
-}
-
-/** A column the SUPERVISOR fills — visible to billing, never fillable here. */
-function DashedCell(): React.JSX.Element {
-  return (
-    <span className="inline-flex h-[22px] min-w-[34px] items-center justify-center rounded-[5px] border border-dashed border-[#d8dce1] text-[11px] text-[#c2c8d0]">
-      —
-    </span>
   );
 }
 

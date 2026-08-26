@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { Clipboard, Download, Pencil, Printer, Trash2 } from "lucide-react";
 import type { MrnDetail } from "@/lib/mrn/types";
+import { isLineOpenable } from "@/lib/mrn/derive";
 import { CheckingPill } from "./rail-card";
+import { LineDrawer } from "./line-drawer";
 import { LinesTable } from "./lines-table";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
 import type { MrnPerms } from "./mrn-shell";
@@ -75,6 +78,47 @@ export function DetailPane({
   perms,
   onLinesSaved,
 }: DetailPaneProps): React.JSX.Element {
+  // ── The line drawer ───────────────────────────────────────────────────────
+  //
+  // 🔴 THESE HOOKS SIT ABOVE THE EARLY RETURNS AND MUST STAY THERE. React
+  // requires the same hooks in the same order on every render, and the three
+  // returns below are all reachable — a hook after them fires on some renders
+  // and not others.
+  //
+  // ⚠ NO ESCAPE LISTENER, DELIBERATELY. components/mrn/modal-shell.tsx:36
+  // already owns a window-level `keydown` for this tree, mounted whenever any
+  // MRN modal is up — including the remove-line confirm, which opens from the
+  // same table as this drawer. Two window-level Esc listeners fire in
+  // registration order and one surface closes under the other; CLAUDE_FLOOR.md
+  // §4.6 minted a rule against exactly that ("the SINGLE window-level Esc
+  // owner … never add a second"). Closing is ✕. If Esc is ever wanted here it
+  // belongs in ONE guarded owner for the whole billing tree.
+  const [openLineId, setOpenLineId] = useState<number | null>(null);
+
+  // A stale id would point at a line belonging to the PREVIOUS truck — same
+  // lineNo, different MRN, wrong numbers in the drawer.
+  useEffect(() => {
+    setOpenLineId(null);
+  }, [detail?.id]);
+
+  // 🔴 BUILT ONCE, FROM isLineOpenable(), IN TABLE ORDER. This list is what
+  // makes ‹ › step between the rows worth looking at and skip the clean ones —
+  // the arrows walk THIS array, not detail.lines, so position/total read
+  // "3 of 4" against the openable set and not against every line on the truck.
+  // The table decides which rows get a chevron from the same function, so the
+  // two can never disagree about what is clickable.
+  const openableLines = useMemo(
+    () => (detail ? detail.lines.filter(isLineOpenable) : []),
+    [detail],
+  );
+
+  // -1 when nothing is open, and also when the open line stopped being openable
+  // across a refetch — in which case the drawer simply unmounts rather than
+  // showing a line the table no longer offers.
+  const openIndex =
+    openLineId === null ? -1 : openableLines.findIndex((l) => l.id === openLineId);
+  const openLine = openIndex >= 0 ? openableLines[openIndex] : null;
+
   // 🔴 `min-w-0` ON EVERY ONE OF THESE EARLY RETURNS TOO, not just the real
   // pane below. Each is the GRID ITEM in billing-board's `344px minmax(0,1fr)`
   // track when it renders, and a grid item defaults to `min-width: auto`. They
@@ -334,15 +378,48 @@ export function DetailPane({
 
       {/* The table starts immediately below the header block — no tab strip.
           Keyed on the MRN id so switching trucks REMOUNTS the table rather than
-          leaving one MRN's view filter sitting on another's rows. */}
-      <div className="min-h-0 flex-1 overflow-auto px-[18px] py-4">
+          leaving one MRN's view filter sitting on another's rows.
+
+          ⚠ The right padding widens to clear the drawer while it is open, so no
+          part of the table ever sits underneath it. 402px = the drawer's 384
+          plus the 18px gutter the pane already uses. */}
+      <div
+        className={
+          "min-h-0 flex-1 overflow-auto py-4 pl-[18px] " +
+          (openLine ? "pr-[402px]" : "pr-[18px]")
+        }
+      >
         <LinesTable
           key={detail.id}
           detail={detail}
           canEdit={perms.canEdit}
           onSaved={onLinesSaved}
+          openLineId={openLineId}
+          onOpenLine={setOpenLineId}
         />
       </div>
+
+      {/* 🔴 A SIBLING OF THE SCROLL BOX, INSIDE THE RELATIVE PANE ROOT — the
+          placement decided in e71ecca7. Do NOT move it inside the scroll
+          container: an absolutely-positioned child of an `overflow-auto` box
+          scrolls with the content, so the drawer would slide up the moment the
+          operator scrolls the table. Mockup 09 frame S has it this way for the
+          same reason.
+
+          position/total/hasPrev/hasNext all come from the index within
+          `openableLines`, never from detail.lines — see that memo above. */}
+      {openLine && (
+        <LineDrawer
+          line={openLine}
+          position={openIndex + 1}
+          total={openableLines.length}
+          hasPrev={openIndex > 0}
+          hasNext={openIndex < openableLines.length - 1}
+          onPrev={() => setOpenLineId(openableLines[openIndex - 1].id)}
+          onNext={() => setOpenLineId(openableLines[openIndex + 1].id)}
+          onClose={() => setOpenLineId(null)}
+        />
+      )}
     </div>
   );
 }
