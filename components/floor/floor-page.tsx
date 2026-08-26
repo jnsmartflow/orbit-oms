@@ -556,7 +556,13 @@ export function FloorPage() {
     switch (detail.source) {
       case "rail":
         return (scopedData?.rail ?? []).map((c) => c.orderId);
+      // Both floor sources walk the SAME list, and that is already the right
+      // one for either: `filteredFloor` is derived from `scopedData.floor.rows`,
+      // which IS the history payload in history mode. So Prev/Next steps
+      // through the viewed day's rows and can never reach a live row — the two
+      // never coexist in one payload.
       case "floor":
+      case "history":
         return (filteredFloor?.rows ?? []).filter((r) => r.zone !== "upcoming").map((r) => r.orderId);
       case "hold":
         return (filteredHold ?? []).map((r) => r.orderId);
@@ -985,7 +991,14 @@ export function FloorPage() {
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
                 onMarkUrgent={rowMarkUrgent}
-                onOpenDetail={(id) => openDetail(id, "floor")}
+                // The SAME board renders live and history, so the source is
+                // decided here by the view (2026-08-25). "history" is the
+                // read-only source — it suppresses every action in the panel
+                // (detail-panel's `readOnly`). `isLive` is the one flag this
+                // screen already uses for the live/history split (the sync
+                // pauses key off it), so the panel can never disagree with the
+                // board about which day it is showing.
+                onOpenDetail={(id) => openDetail(id, isLive ? "floor" : "history")}
               />
             ) : null
           ) : topTab === "hold" ? (

@@ -259,11 +259,25 @@ export function FloorTable({
           if (variant === "upcoming") {
             statusCell = <span className={"inline-flex items-center " + chipCls}>for {fmtDay(target)}</span>;
           } else if (variant === "history") {
+            // The day's outcome, plus a ⋯ that opens the READ-ONLY detail panel
+            // (2026-08-25). Before this, `onOpenDetail` was passed to this table
+            // on every variant (floor-board's selProps) and simply had no
+            // trigger here — the prop was wired and unreachable, so a past bill
+            // could not be opened at all and its SKU lines and Activity log were
+            // on no screen.
+            //
+            // ⚠ ⋯ ONLY — deliberately NOT the ⚡ the live arm carries. ⚡ is
+            // `onMarkUrgent`, a WRITE (/api/floor/actions mark-urgent), and
+            // prioritising a bill on a day that has already shipped is
+            // meaningless. The panel it opens is view-only: floor-page passes
+            // source "history", which suppresses every action (detail-panel's
+            // `readOnly`).
+            let histBody: ReactNode;
             if (row.isChecked) {
               const cAt = asStr(row.checkedAt);
               const lateDays = cAt && target ? diffDays(target, istDay(cAt)) : 0;
               const timeStr = lateDays > 0 ? fmtDateTime(cAt) : hhmm(cAt);
-              statusCell = (
+              histBody = (
                 <span className="inline-flex items-center gap-1.5">
                   <StatusPill status="done" time={timeStr} />
                   {lateDays > 0 && (
@@ -279,8 +293,23 @@ export function FloorTable({
                 </span>
               );
             } else {
-              statusCell = <span className={"inline-flex items-center " + chipCls}>Not completed</span>;
+              histBody = <span className={"inline-flex items-center " + chipCls}>Not completed</span>;
             }
+            statusCell = (
+              <span className="inline-flex items-center gap-2">
+                {histBody}
+                <span className="hidden items-center gap-1 group-hover:inline-flex">
+                  <button
+                    type="button"
+                    title="Open details"
+                    onClick={() => onOpenDetail?.(row.orderId)}
+                    className="inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
+                  >
+                    <MoreHorizontal size={12} />
+                  </button>
+                </span>
+              </span>
+            );
           } else {
             // live
             const urgent = row.priorityLevel === 1;

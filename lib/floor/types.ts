@@ -239,7 +239,22 @@ export interface FloorCancelledRow extends FloorPartyFields {
 // ── Detail panel (design §10) ────────────────────────────────────────────────
 // Which surface the panel was opened FROM — drives the context-primary action
 // and which list Prev/Next walks (design §10.3 / §10.5).
-export type FloorDetailSource = "rail" | "floor" | "hold" | "cancelled";
+//
+// ⚠ `"history"` is READ-ONLY and is the ONLY source that is (2026-08-25). It is
+// the same bill `"floor"` describes, opened from a PAST day, so every action
+// that would write must be absent — not disabled — because a write from a
+// history panel edits a day the depot has already closed and invoiced.
+//
+// The suppression works by DEFAULT rather than by enumeration, which is the
+// reason this is a new member of this union instead of a separate `readOnly`
+// prop: every gate in detail-panel.tsx is written as `source === "floor"` /
+// `=== "rail"` / `=== "hold"` / `=== "cancelled"`, so a NEW member matches none
+// of them and each action disappears on its own. Only gates phrased as a
+// NEGATION (`source !== "cancelled"`) and controls that are ungated had to be
+// touched — see `readOnly` in detail-panel.tsx, which is the one derived
+// boolean, mirroring `interactive` in floor-table.tsx. Do not add a third
+// read-only concept; extend this union.
+export type FloorDetailSource = "rail" | "floor" | "hold" | "cancelled" | "history";
 
 // One line item on the Items tab. Pack resolves via sku_master_v2 on
 // material === skuCodeRaw (CORE §13); raw-text fallback preserved. Gift lines

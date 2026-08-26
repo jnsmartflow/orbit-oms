@@ -123,6 +123,28 @@ function fmtDateTime(iso: string | null): string {
 }
 
 function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: string; cls: string } {
+  // HISTORY FIRST, and specifically ABOVE the `d.dispatchStatus === "hold"`
+  // line below — that term reads the bill's CURRENT status, so without this a
+  // bill put on hold last week would render "On hold" inside the record of a
+  // day on which it was picked and checked. A past day's header must describe
+  // what happened THAT DAY, from the work facts (isChecked / isDone /
+  // isAssigned), and must never be rewritten by something that happened after.
+  //
+  // Same rule already canonised for the Billing day-record in
+  // lib/billing/picking-where.ts ("a later hold must not retroactively erase
+  // the fact that the bill was checked that day"). The labels deliberately
+  // match the `"floor"` ladder below so one bill reads the same in both views.
+  //
+  // The stage facts themselves are safe to read here: getFloorBoard's history
+  // predicate admits only PICKING_ACTIVE_STAGES, so a row that reaches this
+  // panel is at pending_picking / pick_assigned / pick_done / pick_checked —
+  // never cancelled, and `pick_checked` is terminal for picking.
+  if (source === "history") {
+    if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
+    if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
+    if (d.isAssigned) return { label: "With picker", cls: "bg-[#ede9fe] text-[#6d28d9]" };
+    return { label: "Not completed", cls: "bg-[#f3f4f6] text-[#6b7280]" };
+  }
   if (source === "cancelled") return { label: "Cancelled", cls: "bg-[#fef2f2] text-[#b91c1c]" };
   if (source === "hold" || d.dispatchStatus === "hold") return { label: "On hold", cls: "bg-[#fef2f2] text-[#b91c1c]" };
   if (source === "floor") {
@@ -334,6 +356,22 @@ function PanelBody({
   onClose: () => void;
 }) {
   const status = headerStatus(d, source);
+  // THE read-only gate. ONE boolean derived from the existing source vocabulary
+  // — the same shape as `interactive` in floor-table.tsx (derived from
+  // FloorTableVariant), deliberately not a new prop or a third concept.
+  //
+  // It guards the TWO places a write can still be reached on a source this file
+  // does not name explicitly: the header slot chip (gated by NEGATION,
+  // `source !== "cancelled"`) and the whole action row (the Ship-to button in
+  // it is ungated — "Never disappears"). Everything else — Release, Restore,
+  // Assign/Reassign, and the ⋯ Hold/Cancel/Unassign menu — is gated as
+  // `source === "floor" | "rail" | "hold" | "cancelled"` and so excludes
+  // "history" on its own.
+  //
+  // ⚠ Grep `actions.on` in this file: every hit must sit inside one of those
+  // two guarded regions. That is the whole zero-write proof, and it is one
+  // grep — keep it that way.
+  const readOnly = source === "history";
   const canReassign = source === "floor" && !d.isDone && !d.isChecked;
   const railReleasable = source === "rail" && d.workflowStage === "pending_support";
 
@@ -388,8 +426,12 @@ function PanelBody({
           <div className="ml-auto flex items-center gap-2 self-center">
             {/* Slot chip — moved up beside the date; a chip with a pencil so it
                 reads as editable. Opens the reused picker. Deleted the old grey
-                "Slot" label. Hidden on cancelled (no dispatch slot to set). */}
-            {source !== "cancelled" && (
+                "Slot" label. Hidden on cancelled (no dispatch slot to set), and
+                on history — this chip WRITES (actions.onUpdateSlot →
+                /api/floor/actions change-slot), and re-slotting a bill from a
+                past day would move a dispatch that has already happened. The
+                slot itself still reads on the Details tab. */}
+            {source !== "cancelled" && !readOnly && (
               <SlotPickerButton
                 value={currentSlotValue}
                 onPick={(v) => run(() => actions.onUpdateSlot(d.orderId, v.date, v.dispatchWindowId))}
@@ -460,8 +502,17 @@ function PanelBody({
         </div>
       </div>
 
-      {/* ── Action row (fixed) — or the ship-to editor when editing ──────────── */}
-      {editingShipTo ? (
+      {/* ── Action row (fixed) — or the ship-to editor when editing ────────────
+          SUPPRESSED WHOLESALE on a history-sourced panel. One gate rather than
+          five: the row is the only host of Release, Restore, Ship-to,
+          Assign/Reassign and the ⋯ (Hold / Cancel / Unassign) menu, and
+          `setEditingShipTo(true)` — the ONLY trigger for the ShipToEditor — is
+          a button inside it, so the editor branch above becomes unreachable
+          too. Removing the container is what makes the zero-write claim hold by
+          construction; gating each control would leave the next control added
+          here silently reachable from a past day. The panel keeps its header,
+          tabs, Details / Items / Activity and Prev/Next. */}
+      {readOnly ? null : editingShipTo ? (
         <ShipToEditor
           busy={busy}
           onCancel={() => setEditingShipTo(false)}
