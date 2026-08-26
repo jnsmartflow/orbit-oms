@@ -47,11 +47,32 @@ export function FilterSheet({
       ...filters,
       status: filters.status.includes(s) ? filters.status.filter((x) => x !== s) : [...filters.status, s],
     });
-  const toggleFlag = (f: FloorFilterFlag) =>
-    onChange({
-      ...filters,
-      flags: filters.flags.includes(f) ? filters.flags.filter((x) => x !== f) : [...filters.flags, f],
-    });
+  // ⚠ `site` and `redirect` are MUTUALLY EXCLUSIVE BY CONSTRUCTION, and the
+  // sheet is where that is enforced. lib/floor/filter.ts defines site as
+  // "…&& !isShipToOverride" and redirect as "isShipToOverride", and matchesFlags
+  // ANDs the selected flags with `.every` — so ticking both could only ever
+  // return zero rows, on every board, silently, with the Filter button showing a
+  // confident "2". Turning one on now turns the other OFF, which is visible in
+  // the chips and undoable in one tap.
+  //
+  // Deliberately NOT fixed in the predicate: `matchesFlags` is the one owner of
+  // what each flag MEANS and is shared by the floor, hold and cancelled surfaces
+  // (applyFloorFilters / applyFlagFilters). Special-casing a pair inside it would
+  // put "these two cancel out" in a file that answers a different question.
+  // Untouched there, on purpose.
+  const EXCLUSIVE_WITH: Partial<Record<FloorFilterFlag, FloorFilterFlag>> = {
+    site: "redirect",
+    redirect: "site",
+  };
+  const toggleFlag = (f: FloorFilterFlag) => {
+    if (filters.flags.includes(f)) {
+      onChange({ ...filters, flags: filters.flags.filter((x) => x !== f) });
+      return;
+    }
+    const opposite = EXCLUSIVE_WITH[f];
+    const kept = opposite ? filters.flags.filter((x) => x !== opposite) : filters.flags;
+    onChange({ ...filters, flags: [...kept, f] });
+  };
 
   return (
     <div className="relative">

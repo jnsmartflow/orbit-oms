@@ -22,12 +22,15 @@ import { Building2, Droplet, Mail, MoreHorizontal, Zap } from "lucide-react";
 import { formatArticleTag } from "@/lib/floor/format";
 import { StatusPill, rowStatus } from "./status-pill";
 import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
+// SOFT variant only (2026-08-25). The solid DUP_SO_* tokens are the PICKING
+// treatment and are deliberately no longer imported here: under `soft` every
+// cell, badge and pill on a duplicate row renders exactly as it does on an
+// ordinary row, so there is nothing left to flip. See the two-treatment note at
+// the top of duplicate-so-tag.tsx.
 import {
   DuplicateSoTag,
-  DUP_SO_BADGE_CLASS,
-  DUP_SO_MUTED,
-  DUP_SO_ROW_CLASS,
-  DUP_SO_TEXT,
+  DUP_SO_SOFT_BAR,
+  DUP_SO_SOFT_ROW_CLASS,
 } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -107,27 +110,27 @@ function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   return null;
 }
 
-// Ship-to flags (design §7.5) — LIMITED by the payload: FloorBoardRow carries
-// only the EFFECTIVE dealer (override ?? customer). So a redirect shows a violet
-// marker, not the "Original → Redirect" pair. The site marker is exact.
+// Ship-to flags (design §7.5). Both markers are exact: the site rule reads the
+// SMU set above, and a redirect now prints the real ORIGINAL → REDIRECT pair —
+// FloorBoardRow carries `customerName` + `shipToOverrideName` alongside the
+// effective `dealerName` (lib/floor/types.ts), the same pair the rail card has
+// always shown. (It used to have only the effective dealer and could print a
+// nameless "→ ship-to changed" caption — CLAUDE_FLOOR §8b.)
 function shipInfo(row: FloorBoardRow) {
   return shipMarkers(row);
 }
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const HEAD_TH_NARROW = "h-[31px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
-// ⚠ SPLIT INTO BASE + SKIN ON PURPOSE. A duplicate-SO row needs a different
-// border colour AND text colour, and appending `text-white` after `text-[#4b5563]`
-// would NOT reliably win: Tailwind resolves same-property utilities by their
-// order in the generated stylesheet, not by their order in the class string.
-// Building the two variants from a shared base means the conflicting utility is
-// only ever emitted once per cell.
-const TD_BASE = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b";
-const TD = `${TD_BASE} border-[#f0f0f0] text-[#4b5563]`;
-const TD_DUP = `${TD_BASE} border-[#b91c1c] text-[#fecaca]`;
-const TD_NARROW_BASE = "px-1 py-2 text-center text-[11px] border-b";
-const TD_NARROW = `${TD_NARROW_BASE} border-[#f0f0f0] text-[#4b5563]`;
-const TD_NARROW_DUP = `${TD_NARROW_BASE} border-[#b91c1c] text-[#fecaca]`;
+// ⚠ THE BASE + SKIN SPLIT IS GONE, and its absence is the point. It existed
+// because the SOLID duplicate-SO row needed its own border AND text colour, and
+// appending `text-white` after `text-[#4b5563]` does not reliably win (Tailwind
+// resolves same-property utilities by stylesheet order, not class-string order).
+// Under the SOFT variant a duplicate row keeps the standard border and the
+// standard text — only its ground and its left bar change — so there is exactly
+// one cell class again and no conflicting utility to sequence.
+const TD = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
+const TD_NARROW = "px-1 py-2 text-center text-[11px] border-b border-[#f0f0f0] text-[#4b5563]";
 
 export function FloorTable({
   rows,
@@ -228,19 +231,29 @@ export function FloorTable({
           const { isSite, isRedirect } = shipInfo(row);
           const obd = asStr(row.obdDateTime);
           const target = row.dispatchTargetDate;
-          // ── Duplicate-SO red ────────────────────────────────────────────────
+          // ── Duplicate-SO, SOFT variant (2026-08-25) ─────────────────────────
           // Applies on every variant (live / history / upcoming) — a twin is a
-          // twin whichever view you found it in. Row fill + hover come from
+          // twin whichever view you found it in. Ground + hover come from
           // CLASSES, never an inline background: an inline style would beat the
           // `hover:` rule and silently kill the row hover this board relies on.
+          //
+          // ⚠ NOTHING ELSE ON THE ROW BRANCHES ON `dup` ANY MORE. Cells, chips,
+          // the age badge, the ⚡, the site/tint glyphs and the StatusPill all
+          // render exactly as they do on an ordinary row — that is the whole
+          // difference between this and the solid treatment, which had to flip
+          // every one of them to white so they would not vanish into the fill.
+          // The signal is carried by the ground and the 3px bar alone.
           const dup = row.hasDuplicateSo;
-          const td = dup ? TD_DUP : TD;
-          const tdNarrow = dup ? TD_NARROW_DUP : TD_NARROW;
-          // Grey chips (upcoming / "Not completed" / "Nd late") flip to the one
-          // shared white pill; so does every StatusPill on this row.
-          const chipCls = dup
-            ? `rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${DUP_SO_BADGE_CLASS}`
-            : "rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]";
+          const chipCls =
+            "rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]";
+          // The 3px red-500 left bar, as an inset shadow (never border-left —
+          // this table is table-layout:fixed with colgroup percentages, UI §27,
+          // and the first column's pl-[10px] pr-[4px] would be eaten by a real
+          // border). It rides whichever cell is FIRST, and that changes with
+          // `interactive`: the checkbox cell when the table is selectable, the
+          // OBD cell when it is not (history / upcoming / the read-only
+          // "what he's holding" list).
+          const barStyle = dup ? { boxShadow: DUP_SO_SOFT_BAR } : undefined;
 
           let statusCell: ReactNode;
           if (variant === "upcoming") {
@@ -252,12 +265,12 @@ export function FloorTable({
               const timeStr = lateDays > 0 ? fmtDateTime(cAt) : hhmm(cAt);
               statusCell = (
                 <span className="inline-flex items-center gap-1.5">
-                  <StatusPill status="done" time={timeStr} onRed={dup} />
+                  <StatusPill status="done" time={timeStr} />
                   {lateDays > 0 && (
                     <span
                       className={
                         "rounded-[3px] px-[5px] py-px text-[9.5px] font-bold " +
-                        (dup ? DUP_SO_BADGE_CLASS : "bg-[#f3f4f6] text-[#6b7280]")
+                        "bg-[#f3f4f6] text-[#6b7280]"
                       }
                     >
                       {lateDays}d late
@@ -273,7 +286,7 @@ export function FloorTable({
             const urgent = row.priorityLevel === 1;
             statusCell = (
               <span className="inline-flex items-center gap-2">
-                <StatusPill status={st} time={liveTime(row, nowMs)} onRed={dup} />
+                <StatusPill status={st} time={liveTime(row, nowMs)} />
                 {/* Row hover actions (design §7.10). ⚡ is LIVE (instant urgent
                     toggle, lights red when urgent); ⋯ is INERT (detail panel is
                     a later step). */}
@@ -302,12 +315,14 @@ export function FloorTable({
           }
 
           return (
-            <tr key={row.orderId} className={"group " + (dup ? DUP_SO_ROW_CLASS : "hover:bg-[#fafafa]")}>
+            <tr key={row.orderId} className={"group " + (dup ? DUP_SO_SOFT_ROW_CLASS : "hover:bg-[#fafafa]")}>
               {interactive && (
-                <td className={tdNarrow}>
+                /* FIRST CELL when the table is selectable — it carries the bar. */
+                <td className={TD_NARROW} style={barStyle}>
                   {/* Checkbox on Waiting / With-picker rows only (design §7.8).
-                      accent-teal-600 stays: teal on red is high-contrast, and it
-                      keeps "ticked" reading the same on every row. */}
+                      accent-teal-600 stays: it now sits on a pale wash rather
+                      than a red fill, and reads the same on every row either
+                      way. */}
                   {pickable && (
                     <input
                       type="checkbox"
@@ -320,34 +335,30 @@ export function FloorTable({
                 </td>
               )}
               {interactive && (
-                <td className={`${tdNarrow} text-[10.5px] tabular-nums`} style={dup ? { color: DUP_SO_MUTED } : undefined}>
-                  <span className={dup ? "" : "text-[#9ca3af]"}>{i + 1}</span>
+                <td className={`${TD_NARROW} text-[10.5px] tabular-nums`}>
+                  <span className="text-[#9ca3af]">{i + 1}</span>
                 </td>
               )}
-              <td className={td}>
-                <span
-                  className={"font-mono text-[11.5px] font-medium " + (dup ? "" : "text-[#111827]")}
-                  style={dup ? { color: DUP_SO_TEXT } : undefined}
-                >
+              {/* On a NON-interactive table (history / upcoming / the read-only
+                  "what he's holding" list) the two narrow columns are not
+                  rendered, so THIS is the first cell and the bar lands here
+                  instead. `interactive` is the same flag that drives `widths`
+                  above, so the two can never disagree about which cell is first. */}
+              <td className={TD} style={interactive ? undefined : barStyle}>
+                <span className="font-mono text-[11.5px] font-medium text-[#111827]">
                   {row.obdNumber}
                 </span>
                 {/* The tag rides the OBD cell — first column a reader lands on,
                     and it never displaces the Status column's own meaning. */}
-                {dup && <DuplicateSoTag className="ml-1.5 align-[1px]" />}
+                {dup && <DuplicateSoTag variant="soft" className="ml-1.5 align-[1px]" />}
                 {(row.ageDays ?? 0) > 0 && (
                   <span
-                    className={
-                      "ml-1.5 rounded-[3px] px-[5px] py-px text-[9.5px] font-bold " +
-                      (dup ? DUP_SO_BADGE_CLASS : "bg-[#f3f4f6] text-[#6b7280]")
-                    }
+                    className="ml-1.5 rounded-[3px] px-[5px] py-px text-[9.5px] font-bold bg-[#f3f4f6] text-[#6b7280]"
                   >
                     {row.ageDays}d
                   </span>
                 )}
-                <div
-                  className={"flex items-center gap-1 text-[10px] " + (dup ? "" : "text-[#9ca3af]")}
-                  style={dup ? { color: DUP_SO_MUTED } : undefined}
-                >
+                <div className="flex items-center gap-1 text-[10px] text-[#9ca3af]">
                   {fmtDateTime(obd)}
                   {row.isEmailTime && (
                     <span title="Email time" className="inline-flex shrink-0">
@@ -356,22 +367,21 @@ export function FloorTable({
                   )}
                 </div>
               </td>
-              <td className={td}>
-                <span
-                  className={"text-[11.5px] font-medium " + (dup ? "" : "text-[#111827]")}
-                  style={dup ? { color: DUP_SO_TEXT } : undefined}
-                >
+              <td className={TD}>
+                <span className="text-[11.5px] font-medium text-[#111827]">
                   {row.dealerName}
                 </span>
-                {/* ★ amber and ⚡ red are both eaten by the fill — white on a
-                    duplicate, glyph shapes unchanged. */}
+                {/* ★ amber and ⚡ red now render exactly as on an ordinary row — the
+                    soft variant has no fill to eat them, which is why the ⚡ can
+                    still carry Urgent on a Same-SO row (see the colour ruling in
+                    duplicate-so-tag.tsx). */}
                 {row.isKeyCustomer && (
-                  <span className="ml-1.5" style={{ color: dup ? DUP_SO_TEXT : "#f59e0b" }}>
+                  <span className="ml-1.5" style={{ color: "#f59e0b" }}>
                     ★
                   </span>
                 )}
                 {row.priorityLevel === 1 && (
-                  <span className="ml-1" style={{ color: dup ? DUP_SO_TEXT : "#ef4444" }}>
+                  <span className="ml-1" style={{ color: "#ef4444" }}>
                     ⚡
                   </span>
                 )}
@@ -379,59 +389,89 @@ export function FloorTable({
                   <Building2
                     size={12}
                     className="ml-1 inline-block align-[-1px]"
-                    style={{ color: dup ? DUP_SO_TEXT : "#475569" }}
+                    style={{ color: "#475569" }}
                   />
                 )}
                 {row.isTint && (
                   <Droplet
                     size={12}
                     className="ml-1 inline-block align-[-1px]"
-                    style={{ color: dup ? DUP_SO_TEXT : "#7c3aed" }}
+                    style={{ color: "#7c3aed" }}
                   />
                 )}
                 {isSite && (
-                  <div className={"text-[10.5px] " + (dup ? "" : "text-[#9ca3af]")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                  <div className="text-[10.5px] text-[#9ca3af]">
                     billed to {row.billToName ?? "—"}
                   </div>
                 )}
+                {/* Ship-to redirect — the ORIGINAL → REDIRECT pair, worded and
+                    emphasised like rail-card.tsx's own ship-to line ("Ship to
+                    <b>{target}</b>") so the desk table and the rail card describe
+                    one bill the same way. Violet is unchanged.
+
+                    ⚠ FIXED-LAYOUT TABLE (CLAUDE_UI §27): this rides INSIDE the
+                    existing Ship-to column — no new column, no widened `widths`
+                    entry. Two names in one 20% track will overflow, so the line
+                    truncates with an ellipsis of its own (the <td>'s overflow
+                    rules clip a child but give it no ellipsis) and the full pair
+                    is on `title` for a hover.
+
+                    An unmatched bill has no `customer` row, so `customerName` is
+                    null — it keeps the old nameless caption rather than printing
+                    a blank on one side of the arrow. */}
                 {isRedirect && (
-                  <div className={"text-[11px] " + (dup ? "" : "text-[#6d28d9]")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
-                    → ship-to changed
+                  <div
+                    className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-[#6d28d9]"
+                    title={
+                      row.customerName && row.shipToOverrideName
+                        ? `${row.customerName} → ship to ${row.shipToOverrideName}`
+                        : undefined
+                    }
+                  >
+                    {row.customerName && row.shipToOverrideName ? (
+                      <>
+                        {row.customerName}
+                        <span className="mx-1 opacity-60">→</span>
+                        <b className="font-semibold">{row.shipToOverrideName}</b>
+                      </>
+                    ) : (
+                      "→ ship-to changed"
+                    )}
                   </div>
                 )}
                 {chipFor?.(row)}
               </td>
-              <td className={td}>{row.route ?? "—"}</td>
+              <td className={TD}>{row.route ?? "—"}</td>
               {showSlot && (
-                <td className={td}>
+                <td className={TD}>
                   {row.windowTime ?? (
-                    <span className={dup ? "" : "text-[#9ca3af]"} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                    <span className="text-[#9ca3af]">
                       No slot
                     </span>
                   )}
                   {row.dispatchTargetDate && (
-                    <div className={"text-[10px] " + (dup ? "" : "text-[#9ca3af]")} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                    <div className="text-[10px] text-[#9ca3af]">
                       {fmtDay(row.dispatchTargetDate)}
                     </div>
                   )}
                 </td>
               )}
-              <td className={`${td} text-right tabular-nums`}>{row.volumeLitres ?? 0}</td>
-              <td className={`${td} text-[10.5px]`}>
-                <span className={dup ? "" : "text-[#6b7280]"} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+              <td className={`${TD} text-right tabular-nums`}>{row.volumeLitres ?? 0}</td>
+              <td className={`${TD} text-[10.5px]`}>
+                <span className="text-[#6b7280]">
                   {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
                 </span>
               </td>
               {!showSlot && (
-                <td className={td}>
+                <td className={TD}>
                   {row.assignedToName ?? (
-                    <span className={dup ? "" : "text-[#9ca3af]"} style={dup ? { color: DUP_SO_MUTED } : undefined}>
+                    <span className="text-[#9ca3af]">
                       —
                     </span>
                   )}
                 </td>
               )}
-              <td className={td}>{statusCell}</td>
+              <td className={TD}>{statusCell}</td>
             </tr>
           );
         })}

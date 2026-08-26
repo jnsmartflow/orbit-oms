@@ -23,7 +23,11 @@ import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from 
 import { DetailItems } from "./detail-items";
 import { DetailDetails } from "./detail-details";
 import { DetailActivity } from "./detail-activity";
-import { DuplicateSoTag, DUP_SO_FILL, DUP_SO_MUTED, DUP_SO_TEXT } from "@/components/shared/duplicate-so-tag";
+import {
+  DuplicateSoTag,
+  DUP_SO_SOFT_BAR,
+  DUP_SO_SOFT_SURFACE,
+} from "@/components/shared/duplicate-so-tag";
 import type { FloorDetail, FloorDetailSource, FloorPicker } from "@/lib/floor/types";
 
 // ── Slot-chip / Release launcher — a custom trigger that opens the reused
@@ -354,24 +358,30 @@ function PanelBody({
   return (
     <>
       {/* ── Header (fixed) ─────────────────────────────────────────────────── */}
-      {/* On a duplicate-SO bill the whole header block takes the red fill, so
-          the flag survives from the row into the screen the operator uses to
-          compare the two bills. `pb-0.5` only on red: the tag row needs a hair
-          of breathing room under the fill's bottom edge. */}
+      {/* On a duplicate-SO bill the header block takes the SOFT treatment —
+          a red-50 wash and a 3px red-500 left accent — so the flag survives from
+          the row into the screen the operator uses to compare the two bills, in
+          the same language the row and the rail card now speak. `pb-0.5` only
+          there: the tag row needs a hair of breathing room under the wash edge.
+          The accent is an INSET SHADOW, so it costs no layout and cannot shift
+          the header. Every heading, code and tag below keeps its ordinary
+          colour — there is no fill left for them to vanish into. */}
       <div
         className={"px-5 pt-3.5 " + (hasDuplicateSo ? "pb-0.5" : "")}
-        style={hasDuplicateSo ? { background: DUP_SO_FILL } : undefined}
+        style={
+          hasDuplicateSo
+            ? { background: DUP_SO_SOFT_SURFACE, boxShadow: DUP_SO_SOFT_BAR }
+            : undefined
+        }
       >
         <div className="flex items-baseline gap-2.5">
           <span
-            className={"font-mono text-[19px] font-bold leading-none tracking-[-0.02em] " + (hasDuplicateSo ? "" : "text-gray-900")}
-            style={hasDuplicateSo ? { color: DUP_SO_TEXT } : undefined}
+            className={"font-mono text-[19px] font-bold leading-none tracking-[-0.02em] " + "text-gray-900"}
           >
             {d.obdNumber}
           </span>
           <span
-            className={"text-[11px] tabular-nums " + (hasDuplicateSo ? "" : "text-gray-400")}
-            style={hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
+            className={"text-[11px] tabular-nums " + "text-gray-400"}
           >
             {fmtDateTime(d.obdDateTime)}
           </span>
@@ -416,26 +426,24 @@ function PanelBody({
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
-            className={"text-[16px] font-bold " + (hasDuplicateSo ? "" : "text-gray-900")}
-            style={hasDuplicateSo ? { color: DUP_SO_TEXT } : undefined}
+            className={"text-[16px] font-bold " + "text-gray-900"}
           >
             {d.shipToName}
           </span>
           {d.shipToCode && (
             <span
-              className={"font-mono text-[11.5px] " + (hasDuplicateSo ? "" : "text-gray-400")}
-              style={hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
+              className={"font-mono text-[11.5px] " + "text-gray-400"}
             >
               {d.shipToCode}
             </span>
           )}
         </div>
         {/* Tags carry treatment facts only (design §10.2): status, key, urgent, site, tint.
-            All five are already LIGHT pills on a coloured text, so they stay
-            readable on the red fill and are deliberately left alone — only the
-            duplicate tag is added, leading the row. */}
+            All five are ordinary light pills and render unchanged on the soft
+            wash — no flipping, no special case — only the duplicate tag is
+            added, leading the row. */}
         <div className="my-3 flex flex-wrap items-center gap-1.5">
-          {hasDuplicateSo && <DuplicateSoTag />}
+          {hasDuplicateSo && <DuplicateSoTag variant="soft" />}
           <span className={`rounded-[4px] px-2.5 py-1 text-[10.5px] font-semibold ${status.cls}`}>{status.label}</span>
           {d.isKeyCustomer && <span className="rounded-[4px] bg-[#fffbeb] px-2 py-[3px] text-[10px] font-semibold text-[#b45309]">★ Key</span>}
           {d.priorityLevel === 1 && <span className="rounded-[4px] bg-[#fef2f2] px-2 py-[3px] text-[10px] font-semibold text-[#b91c1c]">⚡ Urgent</span>}

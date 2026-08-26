@@ -264,6 +264,36 @@ export function FloorBoard({
   // floor, and it would hijack a view that was asked a narrower question.
   const allDone = !isHistory && !inContext && dueRows.length > 0 && dueRows.every((r) => r.isChecked);
 
+  // ⚠ THE ✓ IS A BANNER, NOT A BODY. It used to be an `else if` branch in the
+  // chain below and rendered INSTEAD of the row list — so the moment the last
+  // bill was checked, the operator lost every bill he had just finished and had
+  // nothing left on screen to look back at. The rows were never missing: the
+  // payload keeps everything CHECKED TODAY via floorLiveBaseWhere's second arm
+  // (CLAUDE_FLOOR §3), and only the render dropped them. It is now a strip ABOVE
+  // the active view — shaped like CarryoverBanner, which is the established
+  // whole-view summary on this board — and every branch below still draws its
+  // list underneath it.
+  //
+  // Rendered ONCE, in the scroll container. NOT inside a branch: the slot-band
+  // and By-route views would each grow their own copy.
+  //
+  // Scoped to the three ROW-LIST views on purpose. By picker and By group never
+  // reached the old branch either (both sit above it in the chain), so gating
+  // here keeps them byte-identical rather than hanging a strip over a card grid.
+  //
+  // GREEN, NEVER TEAL — teal on this screen is the active slot tab and the
+  // state's one real job (CLAUDE_UI §10 / FLOOR §4.6, exactly one teal per
+  // state); "done" is green, the same green the Done status pill carries.
+  const showAllDoneBanner = allDone && mode !== "picker" && mode !== "group";
+  const allDoneLastMs = showAllDoneBanner
+    ? Math.max(
+        ...dueRows.map((r) => {
+          const s = asStr(r.checkedAt);
+          return s ? new Date(s).getTime() : 0;
+        }),
+      )
+    : 0;
+
   const tabRows = slotTab === "all" ? viewRows : viewRows.filter((r) => r.windowTime === slotTab);
   // The same slice WITHOUT the context's status filter. Outside context it is
   // identical to tabRows (viewRows IS dueRows there). In the pending view it is
@@ -585,24 +615,6 @@ export function FloorBoard({
           )}
         </>
       );
-  } else if (allDone) {
-    const litres = sumLitres(dueRows);
-    const lastMs = Math.max(...dueRows.map((r) => { const s = asStr(r.checkedAt); return s ? new Date(s).getTime() : 0; }));
-    body = (
-      <div className="px-5 py-14 text-center">
-        <div className="text-[28px] leading-none text-[#22c55e]">✓</div>
-        <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Everything on the floor is done.</h4>
-        <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
-          {dueRows.length} bills · {litres} L · all checked.
-          {lastMs > 0 && (
-            <>
-              <br />
-              Last one closed at {hhmm(lastMs)}.
-            </>
-          )}
-        </p>
-      </div>
-    );
   } else if (viewRows.length === 0) {
     // In context the empty state describes the CONTEXT's question, not the
     // floor's — "Nothing on the floor yet" would be a lie with 30 bills sitting
@@ -705,6 +717,30 @@ export function FloorBoard({
         ))}
       </>
     );
+  } else if (tabRows.length === 0) {
+    // The flat slot-tab view with nothing in the open window. Without this it
+    // drew a column header over zero rows and said nothing — a blank that reads
+    // as a broken board rather than an empty window. Quiet neutral text, no red
+    // and no amber: an empty window is a fact, not a fault.
+    //
+    // `viewRows` is non-empty here (the branch above catches the empty board), so
+    // the honest message is "not in THIS window" — the tabs overhead carry the
+    // other windows' counts. In the pending assign context `tabRows` is already
+    // narrowed to waiting rows, so the copy says so rather than claiming the
+    // window is empty when it is merely fully covered.
+    body = (
+      <div className="px-5 py-14 text-center">
+        <div className="text-[28px] leading-none text-gray-300">○</div>
+        <h4 className="mt-2 text-[13px] font-semibold text-gray-900">
+          {contextPending ? `Nothing waiting in the ${slotTab} window` : `Nothing in the ${slotTab} window`}
+        </h4>
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+          {contextPending
+            ? "Every bill in this window is already with someone. Try another window, or All."
+            : "Other windows still have bills — the counts sit on the tabs above."}
+        </p>
+      </div>
+    );
   } else {
     body = (
       <>
@@ -759,13 +795,37 @@ export function FloorBoard({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* The day-finished strip. Same shape, spacing and type scale as
+            CarryoverBanner (the board's other whole-view summary) so the two read
+            as one family; green wash + green ✓ because "done" is green here.
+            It sits ABOVE the body, so the bills it is talking about are still on
+            screen underneath it. */}
+        {showAllDoneBanner && (
+          <div className="flex items-center gap-2 border-b border-[#f0f0f0] bg-[#f0fdf4] px-3.5 py-2.5 text-[11px] text-gray-500">
+            <span className="text-[#22c55e]">✓</span>
+            <span>
+              <b className="font-semibold text-gray-900">Everything on the floor is done.</b>{" "}
+              {dueRows.length} bill{dueRows.length === 1 ? "" : "s"} · {sumLitres(dueRows)} L · all checked.
+              {allDoneLastMs > 0 && <> Last one closed at {hhmm(allDoneLastMs)}.</>}
+            </span>
+          </div>
+        )}
         {body}
         {/* No Upcoming strip under the picker grid: an upcoming bill is unassigned
             by definition, so it belongs to nobody and would read as a fifth
             un-owned card's worth of work hanging off the bottom of a roster.
             Suppressed under By group for the opposite reason — that view states
-            it ignores dispatch dates, and a future-dated strip contradicts it. */}
-        {!allDone && mode !== "picker" && mode !== "group" && upcomingRows.length > 0 && (
+            it ignores dispatch dates, and a future-dated strip contradicts it.
+
+            ⚠ `!allDone` USED TO BE A TERM HERE and is deliberately gone. It made
+            sense only while allDone REPLACED the body: hanging a future-dated
+            strip off the bottom of a celebration panel read as work arriving
+            under a "nothing left to do" sign. Now that the panel is a banner and
+            the list renders underneath it, an all-checked day is exactly when
+            tomorrow's work is the most useful thing on screen — keeping the term
+            would have half-fixed the original complaint (the day's checked bills
+            came back, the upcoming strip stayed missing). */}
+        {mode !== "picker" && mode !== "group" && upcomingRows.length > 0 && (
           <UpcomingStrip rows={sort(upcomingRows)} nowMs={nowMs} />
         )}
       </div>

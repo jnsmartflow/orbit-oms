@@ -871,6 +871,24 @@ NOT repeated:
   (`CLAUDE_PICKING.md §7`).
 - **P2 — Real pick durations** — the 30m/60m elapsed thresholds are still a guess; the 2026-07-29
   test plan asked the floor to time 3-4 real picks and no numbers came back.
+- **P1 — Bring the two picking PHONE boards onto the SOFT duplicate-SO treatment** (opened
+  2026-08-25). Floor moved its three surfaces (`floor-table.tsx`, `rail-card.tsx`,
+  `detail-panel.tsx`) from the solid red fill to the soft treatment — a `#fef2f2` ground with a
+  3px `#ef4444` inset left bar, all text and badges at their ordinary tokens, and the tag reading
+  **"SAME"**. **`components/picking/picking-board-mobile.tsx`, `picker-my-picks-board.tsx`,
+  `card-atoms.tsx` and `bill-symbols.tsx` were deliberately left on the SOLID fill**, so today a
+  Same-SO bill looks like one thing on the phone and another on the desk. That is a known,
+  accepted split, not a miss: restyling those files is a PICKING change and needs this module's
+  sign-off (`CLAUDE_FLOOR.md §1` — Floor reuses Picking as a CALLER and does not modify it).
+  ⚠ **THE MECHANISM ALREADY EXISTS — do not rebuild it.** `components/shared/duplicate-so-tag.tsx`
+  now owns BOTH treatments: the original `DUP_SO_*` tokens (untouched, still what Picking reads)
+  and a parallel `DUP_SO_SOFT_*` set, with a `variant?: "solid" | "soft"` prop on `DuplicateSoTag`
+  that DEFAULTS to `"solid"`. Bringing a picking board across is: pass `variant="soft"`, swap its
+  fill/border tokens for the soft pair, and delete the white-on-red flips (`DUP_SO_BADGE_CLASS`
+  and friends) that only existed so badges would not vanish into the fill — the soft variant needs
+  none of them. Note the label change too: "Same SO" → "SAME", one word, because the second word
+  was clipping the floor table's 14% OBD track; the phone cards have more room, so decide there
+  whether they keep the longer wording or match.
 
 ---
 
