@@ -351,14 +351,14 @@ function OpenTable({
  * It should not. Adding it is a new product decision, not a bug fix.
  */
 function CheckingTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
+  // ⚠ THE "Locked — the supervisor is checking this truck" BANNER IS GONE
+  // (2026-08-26, v9 mockup). The status pill one line above already reads
+  // "Unloading" in amber, and the table below is visibly greyed to 55% — the
+  // banner was a third telling of the same fact. What it said is NOT lost
+  // knowledge: the locked behaviour is documented in this component's header
+  // above, which is where a future session needs it. Do not restore it.
   return (
     <>
-      <Banner tone="amber" icon={<Smartphone size={16} />}>
-        <b>Locked — the supervisor is checking this truck.</b> Everything he records
-        arrives here in one go when he finishes. Nothing changes on this screen
-        until then.
-      </Banner>
-
       <div className="opacity-55">
         <TableShell
           columns={BILLING_COLUMNS}
@@ -421,7 +421,16 @@ function DoneTable({
 
   return (
     <>
-      {detail.issueLineCount > 0 ? (
+      {/* ⚠ THE "All clear" BANNER IS GONE (2026-08-26, v9 mockup). It said
+          "All clear. Every line matched the STI exactly." one line under a
+          status pill already reading "Done" in green — the same fact, twice,
+          on the state where there is nothing to act on. Do not restore it.
+
+          THIS ONE STAYS, and the asymmetry is the point: it carries numbers
+          that appear nowhere else on the screen — how many lines need
+          attention, and the short / excess / leaky / damaged / empty split.
+          The pill can only say "Done · 4 issues"; this says which four. */}
+      {detail.issueLineCount > 0 && (
         <Banner tone="amber" icon={<AlertTriangle size={16} />}>
           <b>
             {detail.issueLineCount} line{detail.issueLineCount === 1 ? "" : "s"} need
@@ -429,10 +438,6 @@ function DoneTable({
           </b>
           {issueParts.length > 0 && ` — ${issueParts.join(", ")}`}. Everything else
           matched the STI exactly.
-        </Banner>
-      ) : (
-        <Banner tone="grey" icon={<AlertTriangle size={16} />}>
-          <b>All clear.</b> Every line matched the STI exactly.
         </Banner>
       )}
 
