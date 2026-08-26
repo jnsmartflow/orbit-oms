@@ -1,31 +1,51 @@
 "use client";
 
-import { useState } from "react";
-import { Clipboard, Download, Printer, Trash2 } from "lucide-react";
+import { Clipboard, Download, Pencil, Printer, Trash2 } from "lucide-react";
 import type { MrnDetail } from "@/lib/mrn/types";
 import { CheckingPill } from "./rail-card";
-import { HeaderCard } from "./header-card";
 import { LinesTable } from "./lines-table";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
 import type { MrnPerms } from "./mrn-shell";
 
-// The right-hand working pane: identity, an action row, and two tabs.
+// The right-hand working pane: ONE header block, then the line-items table.
 //
-// ⚠️ HIDDEN vs DISABLED — THE DISTINCTION IS THE WHOLE POINT (UI §10).
+// ⚠️ NO TABS, AND NO ACTIVITY — BOTH DELETED 2026-08-26, DELIBERATELY.
+// The Lines/Activity pair, the PaneTab component and ActivityTab are gone and
+// none of them is coming back as a button, a drawer or a link. Activity was
+// never a log: MRN has no audit table, writes nothing to `order_status_logs`
+// (design §1) and never will, so that tab could only ever render the same three
+// timestamps already sitting on this row — created, unloading start, unloading
+// end. Two of the three now appear as FACTS in the header below, which is where
+// a fact belongs. A tab strip that hides one panel behind another earns its
+// keep only when the hidden panel has something the visible one does not.
 //
-//   HIDDEN  = "not yours". A control the ROLE may never use is not rendered at
-//             all. `operations` holds canEdit true but canDelete FALSE, and
-//             before this it saw a Delete button, clicked it, and got a raw
-//             "Forbidden" back. The route was right to refuse; offering the
-//             button was the bug.
-//   DISABLED = "not yet". A control that exists for this role but cannot act in
-//             this STATE — the two report buttons on a `checking` MRN, where
-//             the supervisor still holds the truck and there is no report to
-//             give. (Until step 10 they were disabled on `done` too, because
-//             the routes did not exist. They do now.)
+// ⚠️ THE HEADER CARD IS GONE TOO — components/mrn/header-card.tsx was deleted in
+// the same change and its eight fields became the facts row here. It was a
+// bordered card floating inside the scroll area, so the identity of the truck
+// scrolled away from the number naming it. Do not reintroduce a second header
+// surface; this block is the only one.
+//
+// ⚠️ HIDDEN vs DISABLED — THE DISTINCTION IS THE WHOLE POINT (UI §10), and the
+// action row below is built on it:
+//
+//   HIDDEN  = "not yours" — a ROLE thing. A control the role may never use is
+//             not rendered at all. `operations` holds canEdit true but
+//             canDelete FALSE, and before this it saw a Delete button, clicked
+//             it, and got a raw "Forbidden" back. The route was right to
+//             refuse; offering the button was the bug. Same for canExport,
+//             which `operations` and `floor_supervisor` both hold false: the
+//             report is billing's (design §11 OQ-11).
+//   DISABLED = "not yet" — a STATE thing. The two report buttons on an `open`
+//             or `checking` MRN: the role owns them, the truck is simply still
+//             being counted and the routes 409.
 //
 // Getting these the wrong way round teaches the operator to distrust the
 // screen: a greyed control they can never earn reads as broken software.
+//
+// 🔴 THE TWO REPORT BUTTONS HOLD THE SAME CORNER IN ALL THREE STATES so their
+// position is learnable — grey on open and checking, live on done. What they
+// never do is APPEAR AND DISAPPEAR with status. They still vanish entirely
+// without canExport, because that is the role axis, not the state axis.
 //
 // ⚠️ THE CLIENT IS NEVER THE AUTHORITY. Every route re-checks the same
 // permission server-side; this only stops the screen offering what the server
@@ -55,11 +75,16 @@ export function DetailPane({
   perms,
   onLinesSaved,
 }: DetailPaneProps): React.JSX.Element {
-  const [tab, setTab] = useState<"lines" | "activity">("lines");
-
+  // 🔴 `min-w-0` ON EVERY ONE OF THESE EARLY RETURNS TOO, not just the real
+  // pane below. Each is the GRID ITEM in billing-board's `344px minmax(0,1fr)`
+  // track when it renders, and a grid item defaults to `min-width: auto`. They
+  // hold small content today so none of them can blow the track out — but the
+  // day one gains a long error string or a wide illustration it would, and the
+  // failure mode (commit c16e59df) is silent: the pane lays out wider than the
+  // track and is clipped, so nothing looks broken, things are just missing.
   if (empty) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 bg-gray-50 text-gray-400">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2.5 bg-gray-50 text-gray-400">
         <Clipboard size={42} strokeWidth={1.5} className="text-[#cbd2da]" />
         <h3 className="text-[15px] font-semibold text-[#475467]">Pick a truck from the left</h3>
         <p className="text-[12.5px]">or start a new MRN when one reports</p>
@@ -69,7 +94,7 @@ export function DetailPane({
 
   if (loading) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-50 text-[13px] text-gray-400">
+      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-gray-50 text-[13px] text-gray-400">
         Loading…
       </div>
     );
@@ -77,7 +102,7 @@ export function DetailPane({
 
   if (error || !detail) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-gray-50 text-[13px] text-red-600">
+      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-gray-50 text-[13px] text-red-600">
         {error ?? "This MRN could not be loaded."}
       </div>
     );
@@ -86,30 +111,35 @@ export function DetailPane({
   return (
     /* 🔴 `min-w-0` IS LOAD-BEARING — THIS ELEMENT IS THE GRID ITEM.
        A grid item defaults to `min-width: auto`, which resolves to its
-       content-based minimum. The lines table's 1440px floor propagates up
-       to here through three plain blocks, so without this the pane measured
-       1438px wide inside an ~830px track: everything in it — the header
-       strip, the header card's four columns, the tabs — was laid out at
-       1438px and then clipped by the grid's overflow-hidden.
-       billing-board.tsx's `minmax(0, 1fr)` is the other half. NEITHER
-       WORKS ALONE — they are two separate floors. */
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-gray-50">
-      <div className="shrink-0 border-b border-[#eceff2] bg-white px-[18px] pt-3">
-        <div className="flex items-start">
-          <div className="min-w-0">
-            <div className="flex items-center gap-[9px]">
-              <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[7px] bg-gray-100 text-[11px] font-bold tabular-nums text-gray-500">
-                {detail.srNo}
-              </span>
-              <span className="font-mono text-[15px] font-bold text-gray-900">
-                {detail.mrnNumber}
-              </span>
-              {detail.status === "checking" && <CheckingPill />}
-            </div>
-            <p className="mt-[3px] text-[12px] text-[#667085]">{buildSubtitle(detail)}</p>
-          </div>
+       content-based minimum. The lines table's 1440px floor propagates up to
+       here through three plain blocks, so without this the pane measured
+       1438px wide inside an ~830px track: everything in it was laid out at
+       1438px and then clipped by the grid's overflow-hidden. Clipping does not
+       shrink layout geometry, which is why the symptom read as content cut off
+       rather than as a scrollbar. billing-board.tsx's `minmax(0, 1fr)` is the
+       other half — NEITHER WORKS ALONE, they are two separate floors.
 
-          {/* ── The action row, and where teal goes ────────────────────────
+       🔴 `relative` IS THE DRAWER'S MOUNT POINT, and it belongs HERE — on the
+       pane root, a sibling of the scroll box — NOT on the scroll box itself.
+       An absolutely-positioned child of an `overflow-auto` container scrolls
+       WITH its content, so a drawer mounted in the scroll box would slide up
+       the moment the operator scrolls the table. Mockup 09 frame S does it
+       this way for the same reason: `.pane{position:relative;overflow:hidden}`
+       with `.drawer` a sibling of `.pane-body`. */
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-gray-50">
+      <div className="shrink-0 border-b border-[#eceff2] bg-white px-[18px] pb-4 pt-3">
+        {/* ── Title row ─────────────────────────────────────────────────────
+            srNo · MRN number · status pill · [ml-auto] the action row. */}
+        <div className="flex items-center gap-[9px]">
+          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-gray-900 text-[11px] font-bold tabular-nums text-white">
+            {detail.srNo}
+          </span>
+          <span className="font-mono text-[16px] font-bold tracking-[0.02em] text-gray-900">
+            {detail.mrnNumber}
+          </span>
+          <StatusPill detail={detail} />
+
+          {/* ── The action row, and where teal goes ──────────────────────
               Teal follows the state's REAL job (UI §10), so it MOVES:
 
                 open     → Paste lines. Until an MRN has lines it has not
@@ -122,26 +152,34 @@ export function DetailPane({
                            routes 409 too — the truck is still being counted.
                            Manufacturing a teal button here would point the
                            operator at something that cannot help them. The
-                           absence IS the message — the amber banner carries it.
+                           absence IS the message.
                 done     → Download XLS, which is the whole reason this screen
-                           replaces a sheet of paper. It was disabled-grey
-                           through steps 8b–9 and went teal in step 10, WITH
-                           the working route — teal arrives with the button
-                           that does something, never before it.
+                           replaces a sheet of paper.
 
               The selected rail card's teal tint is SELECTION, not an action,
               and does not compete — the same way Delivery Challan's left panel
               does not. */}
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            {detail.status === "open" ? (
+            {detail.status === "open" && (
               <>
-                {/* HIDDEN without canDelete — `operations` never sees it. */}
-                {perms.canDelete && (
-                  <PaneButton icon={<Trash2 size={13} />} label="Delete" onClick={onDelete} />
+                {/* 🔴 THE ONLY ENTRY POINT TO EditHeaderModal. It used to be a
+                    pencil inside header-card.tsx, which was deleted in this
+                    change; the gate travelled with it UNALTERED —
+                    `status === "open" && canEdit`. The PATCH route 409s once
+                    the supervisor taps Start (design §5), so this is ABSENT on
+                    checking/done rather than disabled: UI §10's disabled
+                    treatment means "not yet", not "never here". If this button
+                    is ever removed, edit-header becomes unreachable. */}
+                {perms.canEdit && (
+                  <PaneButton
+                    icon={<Pencil size={13} />}
+                    label="Edit header"
+                    onClick={onEditHeader}
+                  />
                 )}
                 {/* HIDDEN without canEdit. Teal because on an open MRN this is
-                    the job — and it stays teal even when Delete is hidden, so
-                    the state still has exactly one. */}
+                    the job — and it stays teal even when the others are
+                    hidden, so the state still has exactly one. */}
                 {perms.canEdit && (
                   <PaneButton
                     icon={<Clipboard size={13} />}
@@ -150,215 +188,265 @@ export function DetailPane({
                     onClick={onPasteLines}
                   />
                 )}
+                {/* HIDDEN without canDelete — `operations` never sees it. */}
+                {perms.canDelete && (
+                  <PaneButton icon={<Trash2 size={13} />} label="Delete" onClick={onDelete} />
+                )}
               </>
-            ) : (
-              // HIDDEN without canExport — `operations` and `floor_supervisor`
-              // both hold it false: they can open and record, but the report
-              // stays billing's (design §11 OQ-11). DISABLED rather than hidden
-              // for those who DO have it, because the export route itself
-              // arrives in step 10.
-              perms.canExport && (
-                <>
-                  {/* Both are plain <a>, not fetch calls. Print opens the A4
-                      document route; Download hits the export route, whose
-                      Content-Disposition makes the browser save the file. A
-                      fetch would have to blob-and-revoke it by hand for no gain.
-
-                      🔴 BOTH ARE LIVE ONLY ON A `done` MRN. Server-side the
-                      route answers 409 and the sheet page renders its "not
-                      checked yet" screen; this just stops the operator finding
-                      that out by clicking. `checking` keeps the disabled-grey
-                      pair — the truck is genuinely mid-count, and there is no
-                      report to give. */}
-                  {detail.status === "done" ? (
-                    <>
-                      <PaneLink
-                        icon={<Printer size={13} />}
-                        label="Print / PDF"
-                        href={`/mrn/${detail.id}/sheet`}
-                        newTab
-                      />
-                      {/* THE TEAL ONE. Ruled at step 8b, deferred to step 10,
-                          and it arrives WITH the working route — never before
-                          it (see the action-row note above). On a done MRN this
-                          is the whole reason the screen replaces a sheet of
-                          paper. */}
-                      <PaneLink
-                        icon={<Download size={13} />}
-                        label="Download XLS"
-                        href={`/api/mrn/${detail.id}/export`}
-                        tone="primary"
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <DeadButton
-                        icon={<Printer size={13} />}
-                        label="Print / PDF"
-                        title="The report is ready once the supervisor finishes unloading"
-                      />
-                      <DeadButton
-                        icon={<Download size={13} />}
-                        label="Download XLS"
-                        title="The report is ready once the supervisor finishes unloading"
-                      />
-                    </>
-                  )}
-                </>
-              )
             )}
+
+            {/* HIDDEN without canExport — the ROLE axis. Present in all three
+                states for a role that HAS it — the STATE axis — so the corner
+                never changes shape under the operator's hand. */}
+            {perms.canExport &&
+              (detail.status === "done" ? (
+                <>
+                  {/* Plain <a>, not fetch calls. Print opens the A4 document
+                      route; Download hits the export route, whose
+                      Content-Disposition makes the browser save the file. A
+                      fetch would have to blob-and-revoke it by hand for no
+                      gain. */}
+                  <PaneLink
+                    icon={<Printer size={13} />}
+                    label="Print / PDF"
+                    href={`/mrn/${detail.id}/sheet`}
+                    newTab
+                  />
+                  <PaneLink
+                    icon={<Download size={13} />}
+                    label="Download XLS"
+                    href={`/api/mrn/${detail.id}/export`}
+                    tone="primary"
+                  />
+                </>
+              ) : (
+                <>
+                  <DeadButton
+                    icon={<Printer size={13} />}
+                    label="Print / PDF"
+                    title={DISABLED_REPORT_TITLE}
+                  />
+                  {/* `strong` matches the enabled version's font-semibold. The
+                      box model must be IDENTICAL enabled vs disabled — same
+                      height, padding, gap, icon and text size — or the whole
+                      right-aligned row shifts a couple of pixels when a truck
+                      finishes, which is exactly the twitch that stops a
+                      position being learnable. */}
+                  <DeadButton
+                    icon={<Download size={13} />}
+                    label="Download XLS"
+                    title={DISABLED_REPORT_TITLE}
+                    strong
+                  />
+                </>
+              ))}
           </div>
         </div>
 
-        <div className="mt-3 flex gap-5">
-          <PaneTab active={tab === "lines"} onClick={() => setTab("lines")}>
-            Lines
-          </PaneTab>
-          <PaneTab active={tab === "activity"} onClick={() => setTab("activity")}>
-            Activity
-          </PaneTab>
+        {/* ── Facts row ─────────────────────────────────────────────────────
+            ONE flex row, evenly divided, no group captions and no vertical
+            dividers. Six facts always; Unloading and Checked by append once
+            `unloadingStartAt` exists.
+
+            🔴 THE RULE IS "a fact disappears only when it cannot exist yet",
+            and it deliberately SUPERSEDES mockup 09's Waiting/Unloading frames,
+            which dropped Delivery no and OTR no in some states and not others.
+            A field that vanishes when empty teaches the operator to distrust
+            the row: they cannot tell "no OTR number" from "OTR number not
+            shown on this kind of truck". An empty fact renders a muted dash and
+            holds its place.
+
+            🔴 EVERY CELL IS `flex-1 basis-0 min-w-0` AND TRUNCATES — the same
+            floor that bit this pane in c16e59df, one level down. `basis-0`
+            stops content setting the base width and `min-w-0` removes the flex
+            item's automatic minimum, so no fact — however long an STI ref gets
+            — can widen the row past the pane. Without BOTH, one long value
+            pushes a horizontal scrollbar onto the whole board. */}
+        <div className="mt-3.5 flex">
+          <Fact label="Received from">
+            {detail.receivedFrom}
+            <Small> → {detail.receivingWarehouse}</Small>
+          </Fact>
+
+          {/* "Reported" is truckReportingDate — the day the truck showed up.
+              NOT mrnDate, the day the MRN was raised, which is already
+              expressed by which day's rail you are looking at (design §11
+              OQ-5). In normal operation they are the same day, which is
+              exactly what makes confusing them easy. */}
+          <Fact label="Reported">{formatDateOnly(detail.truckReportingDate)}</Fact>
+
+          <Fact label="STI / PO ref no." mono>
+            {detail.stiRefNo}
+          </Fact>
+
+          <Fact label="Delivery no" mono>
+            {detail.deliveryNo}
+          </Fact>
+
+          <Fact label="OTR no">{detail.otrNo}</Fact>
+
+          {/* 🔴 THE ONLY PLACE A CREATION TIME APPEARS IN THIS MODULE (design
+              §11 OQ-5). The wall-clock at which billing typed the MRN in is a
+              different fact from the reporting date, useful only here, and it
+              is worded "Created by {name} {HH:MM}" so the two can never be
+              mistaken for each other. Do not put a creation time on the rail
+              card; that was the mockup's error and it was corrected. */}
+          <Fact label="Created by">
+            {detail.createdByName}
+            {detail.createdByName && <Small> {formatIstTime(detail.createdAt)}</Small>}
+          </Fact>
+
+          {/* Appended only once the supervisor has actually started — before
+              that these two CANNOT exist, which is the one condition under
+              which a fact is allowed to be absent rather than dashed. */}
+          {detail.unloadingStartAt && (
+            <>
+              <Fact label="Unloading">
+                {detail.status === "done" ? (
+                  <>
+                    {formatIstTime(detail.unloadingStartAt)} →{" "}
+                    {formatIstTime(detail.unloadingEndAt)}
+                    <Small>
+                      {" "}
+                      {formatDuration(detail.unloadingStartAt, detail.unloadingEndAt)}
+                    </Small>
+                  </>
+                ) : (
+                  <>
+                    {formatIstTime(detail.unloadingStartAt)}
+                    <Small> → running</Small>
+                  </>
+                )}
+              </Fact>
+
+              {/* ⚠ unloadingStartByName — who OPENED the truck, per the step
+                  spec. Note this is not necessarily who FINISHED it: the A4
+                  sheet's signature line (reportSignatures, lib/mrn/report.ts)
+                  reads `unloadingEndByName ?? unloadingStartByName`. The two
+                  are the same supervisor in normal operation; where they are
+                  not, this cell and the printed sheet will name different
+                  people. Flagged, not silently reconciled. */}
+              <Fact label="Checked by">{detail.unloadingStartByName}</Fact>
+            </>
+          )}
         </div>
       </div>
 
+      {/* The table starts immediately below the header block — no tab strip.
+          Keyed on the MRN id so switching trucks REMOUNTS the table rather than
+          leaving one MRN's view filter sitting on another's rows. */}
       <div className="min-h-0 flex-1 overflow-auto px-[18px] py-4">
-        {tab === "lines" ? (
-          <>
-            <HeaderCard detail={detail} onEdit={onEditHeader} canEdit={perms.canEdit} />
-            {/* Keyed on the MRN id so switching trucks REMOUNTS the table and
-                its draft, rather than leaving one MRN's unsaved carton qty
-                sitting on another's rows. */}
-            <LinesTable
-              key={detail.id}
-              detail={detail}
-              canEdit={perms.canEdit}
-              onSaved={onLinesSaved}
-            />
-          </>
-        ) : (
-          <ActivityTab detail={detail} />
-        )}
+        <LinesTable
+          key={detail.id}
+          detail={detail}
+          canEdit={perms.canEdit}
+          onSaved={onLinesSaved}
+        />
       </div>
     </div>
   );
 }
 
-/**
- * 🔴 THE ONLY PLACE A CREATION TIME APPEARS IN THIS MODULE (design §11 OQ-5).
- *
- * "reported" everywhere else means `truckReportingDate` — the day the truck
- * showed up. The wall-clock at which billing typed the MRN into the system is a
- * different fact, useful only here, and it is worded "created by {name} {HH:MM}"
- * so it can never be mistaken for the reporting date. Do not put a creation
- * time on the rail card; that was the mockup's error and it was corrected.
- */
-function buildSubtitle(detail: MrnDetail): string {
-  const parts: string[] = [`${detail.receivedFrom} → ${detail.receivingWarehouse}`];
+const DISABLED_REPORT_TITLE = "The report is ready once the supervisor finishes unloading";
 
-  if (detail.status === "checking") {
-    const at = formatIstTime(detail.unloadingStartAt);
-    const who = detail.unloadingStartByName ?? "A supervisor";
-    parts.push(at ? `${who} started unloading ${at}` : `${who} is unloading`);
-  } else if (detail.status === "done") {
-    const who = detail.unloadingEndByName ?? detail.unloadingStartByName;
-    if (who) parts.push(`checked by ${who}`);
-    const from = formatIstTime(detail.unloadingStartAt);
-    const to = formatIstTime(detail.unloadingEndAt);
-    const dur = formatDuration(detail.unloadingStartAt, detail.unloadingEndAt);
-    if (from && to) parts.push(dur ? `${from} → ${to} (${dur})` : `${from} → ${to}`);
-  } else {
-    const on = formatDateOnly(detail.truckReportingDate);
-    if (on) parts.push(`reported ${on}`);
-  }
-
-  const createdAt = formatIstTime(detail.createdAt);
-  if (detail.createdByName && createdAt) {
-    parts.push(`created by ${detail.createdByName} ${createdAt}`);
-  }
-
-  return parts.join(" · ");
-}
+// ── Header bits ─────────────────────────────────────────────────────────────
 
 /**
- * 🔴 DERIVED ENTIRELY FROM TIMESTAMPS ALREADY ON THE ROW. There is no audit
- * table for MRN, none may be added, and MRN never writes to `order_status_logs`
- * — it is standalone and touches nothing in the orders pipeline (design §1).
+ * The truck's state, as one pill on the title row.
  *
- * Everything this tab can ever show is here: created / createdBy,
- * unloadingStart + by, unloadingEnd + by. If a future session wants a richer
- * history it needs a new table and a new decision, not a quiet
- * `mrn_status_logs` bolted on the side.
+ * ⚠ `checking` REUSES rail-card's CheckingPill rather than restating it. One
+ * state must not have two words on one screen — the rail says "Checking" and so
+ * does this. Mockup 09 draws "Unloading" for the same state; changing the word
+ * is a rail-card change and belongs in its own step, not a quiet divergence
+ * where the same truck reads two ways depending on which half you look at.
  */
-function ActivityTab({ detail }: { detail: MrnDetail }): React.JSX.Element {
-  const events: { when: Date | string | null; what: string; who: string | null }[] = [
-    { when: detail.createdAt, what: "MRN created", who: detail.createdByName },
-    {
-      when: detail.unloadingStartAt,
-      what: "Unloading started",
-      who: detail.unloadingStartByName,
-    },
-    {
-      when: detail.unloadingEndAt,
-      what: "Unloading finished",
-      who: detail.unloadingEndByName,
-    },
-  ];
+function StatusPill({ detail }: { detail: MrnDetail }): React.JSX.Element | null {
+  if (detail.status === "checking") return <CheckingPill />;
 
-  const shown = events.filter((e) => e.when !== null);
+  if (detail.status === "open") {
+    return (
+      <Pill dot="bg-[#98a2b3]" className="border-gray-200 bg-gray-100 text-[#667085]">
+        Waiting
+      </Pill>
+    );
+  }
 
-  return (
-    <div className="rounded-[10px] border border-[#e6e9ec] bg-white px-[15px] py-[13px]">
-      <div className="mb-[11px] text-[10px] font-semibold uppercase tracking-[0.07em] text-gray-400">
-        Activity
-      </div>
-      <ol className="space-y-3">
-        {shown.map((e) => (
-          <li key={e.what} className="flex gap-3">
-            <span className="mt-[6px] h-[7px] w-[7px] shrink-0 rounded-full bg-gray-300" aria-hidden="true" />
-            <div className="min-w-0">
-              <div className="text-[13px] font-medium text-[#1d2939]">{e.what}</div>
-              <div className="mt-px text-[11.5px] text-gray-400">
-                {formatIstTime(e.when)}
-                {e.who && ` · ${e.who}`}
-              </div>
-            </div>
-          </li>
-        ))}
-      </ol>
-      {detail.status !== "done" && (
-        <p className="mt-3.5 border-t border-gray-100 pt-3 text-[11.5px] leading-relaxed text-gray-400">
-          {detail.status === "open"
-            ? "Nothing else has happened yet — the next entry appears when the supervisor taps Start unloading."
-            : "The supervisor is checking this truck. The final entry appears when he taps End unloading."}
-        </p>
-      )}
-    </div>
+  // done — green when the truck matched the STI, red when it did not. The count
+  // is LINES needing attention, not units: a line 3 short and 2 leaky is one
+  // thing for the operator to look at, not five (lib/mrn/derive.ts).
+  return detail.issueLineCount > 0 ? (
+    <Pill dot="bg-[#ef4444]" className="border-red-200 bg-red-50 text-[#b42318]">
+      Done · {detail.issueLineCount} issue{detail.issueLineCount === 1 ? "" : "s"}
+    </Pill>
+  ) : (
+    <Pill dot="bg-[#22c55e]" className="border-green-200 bg-green-50 text-[#15803d]">
+      Done
+    </Pill>
   );
 }
 
-function PaneTab({
-  active,
-  onClick,
+function Pill({
+  dot,
+  className,
   children,
 }: {
-  active: boolean;
-  onClick: () => void;
+  dot: string;
+  className: string;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "border-b-2 pb-[9px] text-[12.5px] " +
-        (active
-          ? "border-gray-900 font-semibold text-gray-900"
-          : "border-transparent font-medium text-gray-400 hover:text-gray-600")
-      }
+    <span
+      className={`inline-flex shrink-0 items-center gap-[5px] rounded-[5px] border px-[7px] py-[3px] text-[10.5px] font-semibold ${className}`}
     >
+      <span className={`h-[7px] w-[7px] rounded-full ${dot}`} aria-hidden="true" />
       {children}
-    </button>
+    </span>
   );
 }
+
+/**
+ * One cell of the facts row.
+ *
+ * An EMPTY value renders a muted dash and keeps its slot — see the facts-row
+ * comment on why a field must not vanish just because it is blank. `children`
+ * is treated as empty only when it is null/undefined/"" so a value carrying a
+ * <Small> suffix still counts as present.
+ */
+function Fact({
+  label,
+  mono,
+  children,
+}: {
+  label: string;
+  mono?: boolean;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  const empty = children === null || children === undefined || children === "";
+  return (
+    <div className="min-w-0 flex-1 basis-0 pr-[22px] last:pr-0">
+      <div className="truncate text-[9.5px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+        {label}
+      </div>
+      <div
+        className={
+          "mt-1 truncate text-[13px] " +
+          (empty ? "font-normal text-[#c8ced6]" : "font-semibold text-gray-900 ") +
+          (mono && !empty ? " font-mono" : "")
+        }
+      >
+        {empty ? "—" : children}
+      </div>
+    </div>
+  );
+}
+
+/** The lighter half of a fact — a destination, a duration, a time. Always a
+ *  qualifier on the value beside it, never a value of its own. */
+function Small({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <span className="text-[11.5px] font-normal text-gray-400">{children}</span>;
+}
+
+// ── Buttons ─────────────────────────────────────────────────────────────────
 
 /** A live action. `primary` is this surface's teal — exactly one per state, and
  *  which one it is changes with status (see the action row above). */
@@ -430,29 +518,35 @@ function PaneLink({
 }
 
 /**
- * An action that exists on the screen but cannot act in THIS state. See the file
- * header — grey and genuinely disabled, never a faded primary.
+ * An action that exists for this role but cannot act in THIS STATE — grey and
+ * genuinely disabled, never a faded primary (UI §10).
  *
- * ⚠ It no longer means "not built yet". Step 10 shipped both report routes, so
- * the only thing this now says is "not on a truck the supervisor is still
- * counting" — hence the caller-supplied title. The default is kept for any
- * future control that IS still waiting on a build step.
+ * ⚠ Box model is deliberately identical to PaneButton / PaneLink: same h-8,
+ * gap-1.5, rounded-lg, border, px-3, text-[12px]. `strong` matches the enabled
+ * teal's font-semibold so the label occupies the same width in both states —
+ * without it the right-aligned row shifts a couple of pixels the moment a truck
+ * flips to done.
  */
 function DeadButton({
   icon,
   label,
   title,
+  strong,
 }: {
   icon: React.ReactNode;
   label: string;
   title?: string;
+  strong?: boolean;
 }): React.JSX.Element {
   return (
     <button
       type="button"
       disabled
-      title={title ?? "This action arrives in the next step"}
-      className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 px-3 text-[12px] font-medium text-gray-400"
+      title={title}
+      className={
+        "inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 px-3 text-[12px] text-gray-400 " +
+        (strong ? "font-semibold" : "font-medium")
+      }
     >
       {icon}
       {label}
