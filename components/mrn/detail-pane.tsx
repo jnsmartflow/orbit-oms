@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Clipboard, Download, Pencil, Printer, Trash2 } from "lucide-react";
 import type { MrnDetail } from "@/lib/mrn/types";
 import { isLineOpenable } from "@/lib/mrn/derive";
-import { CheckingPill } from "./rail-card";
+import { StatusPill } from "./status-pill";
 import { LineDrawer } from "./line-drawer";
 import { LinesTable } from "./lines-table";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
@@ -181,7 +181,11 @@ export function DetailPane({
           <span className="font-mono text-[16px] font-bold tracking-[0.02em] text-gray-900">
             {detail.mrnNumber}
           </span>
-          <StatusPill detail={detail} />
+          {/* The SAME pill the rail card renders — components/mrn/status-pill.tsx
+              owns all four states. The pane used to hand-roll Waiting and Done
+              here and import rail-card's CheckingPill for the third; that was
+              three definitions of one idea across two files. */}
+          <StatusPill row={detail} />
 
           {/* ── The action row, and where teal goes ──────────────────────
               Teal follows the state's REAL job (UI §10), so it MOVES:
@@ -363,14 +367,17 @@ export function DetailPane({
                 )}
               </Fact>
 
-              {/* ⚠ unloadingStartByName — who OPENED the truck, per the step
-                  spec. Note this is not necessarily who FINISHED it: the A4
-                  sheet's signature line (reportSignatures, lib/mrn/report.ts)
-                  reads `unloadingEndByName ?? unloadingStartByName`. The two
-                  are the same supervisor in normal operation; where they are
-                  not, this cell and the printed sheet will name different
-                  people. Flagged, not silently reconciled. */}
-              <Fact label="Checked by">{detail.unloadingStartByName}</Fact>
+              {/* 🔴 THE SAME EXPRESSION reportSignatures() USES — end first,
+                  falling back to start (lib/mrn/report.ts:215). This cell read
+                  `unloadingStartByName` alone until 2026-08-26, so on a truck
+                  one supervisor opened and another finished, the screen and the
+                  PRINTED SHEET named different people for the same signature
+                  line. Whoever ENDED the unloading is the one who counted it.
+                  If report.ts's rule ever changes, change this with it — two
+                  surfaces, one answer. */}
+              <Fact label="Checked by">
+                {detail.unloadingEndByName ?? detail.unloadingStartByName}
+              </Fact>
             </>
           )}
         </div>
@@ -427,59 +434,6 @@ export function DetailPane({
 const DISABLED_REPORT_TITLE = "The report is ready once the supervisor finishes unloading";
 
 // ── Header bits ─────────────────────────────────────────────────────────────
-
-/**
- * The truck's state, as one pill on the title row.
- *
- * ⚠ `checking` REUSES rail-card's CheckingPill rather than restating it. One
- * state must not have two words on one screen — the rail says "Checking" and so
- * does this. Mockup 09 draws "Unloading" for the same state; changing the word
- * is a rail-card change and belongs in its own step, not a quiet divergence
- * where the same truck reads two ways depending on which half you look at.
- */
-function StatusPill({ detail }: { detail: MrnDetail }): React.JSX.Element | null {
-  if (detail.status === "checking") return <CheckingPill />;
-
-  if (detail.status === "open") {
-    return (
-      <Pill dot="bg-[#98a2b3]" className="border-gray-200 bg-gray-100 text-[#667085]">
-        Waiting
-      </Pill>
-    );
-  }
-
-  // done — green when the truck matched the STI, red when it did not. The count
-  // is LINES needing attention, not units: a line 3 short and 2 leaky is one
-  // thing for the operator to look at, not five (lib/mrn/derive.ts).
-  return detail.issueLineCount > 0 ? (
-    <Pill dot="bg-[#ef4444]" className="border-red-200 bg-red-50 text-[#b42318]">
-      Done · {detail.issueLineCount} issue{detail.issueLineCount === 1 ? "" : "s"}
-    </Pill>
-  ) : (
-    <Pill dot="bg-[#22c55e]" className="border-green-200 bg-green-50 text-[#15803d]">
-      Done
-    </Pill>
-  );
-}
-
-function Pill({
-  dot,
-  className,
-  children,
-}: {
-  dot: string;
-  className: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-[5px] rounded-[5px] border px-[7px] py-[3px] text-[10.5px] font-semibold ${className}`}
-    >
-      <span className={`h-[7px] w-[7px] rounded-full ${dot}`} aria-hidden="true" />
-      {children}
-    </span>
-  );
-}
 
 /**
  * One cell of the facts row.

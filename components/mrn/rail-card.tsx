@@ -1,24 +1,35 @@
 "use client";
 
 import type { MrnBoardRow } from "@/lib/mrn/types";
-import { formatCount, formatDateOnly, formatIstTime } from "./format";
+import { StatusPill } from "./status-pill";
 
-// One truck on billing's rail. Drawn to docs/mockups/mrn/01-billing-desktop.html
-// (.card / .sr / .card-r1…r4).
+// One truck on billing's rail — mockup 09-billing-desktop-v9.html, frame S.
 //
-// 🔴 EXACTLY ONE STATUS PILL EXISTS IN THIS MODULE: **Checking**. Nothing
-// renders on `open` and nothing renders on `done` — the v2 changelog removed
-// the Draft and Done pills on owner instruction, and they must not come back. A
-// finished MRN says so with plain grey caption text ("done 10:12") and a
-// NEUTRAL chip (All clear / N issues). Those are facts about the receipt, not
-// badges competing for attention: a rail where three of four cards wear a pill
-// is a rail where the pill means nothing.
+// 🔴 FOUR LINES, AND ONLY FOUR (2026-08-26). MRN number · received-from with the
+// status pill · STI ref · line count. Everything else that used to ride along
+// was REMOVED, deliberately, and must not creep back:
 //
-// 🔴 "reported {date}" IS `truckReportingDate` — NEVER a creation time. The
-// mockup drew "reported 11:04", a wall-clock, and that was corrected in design
-// §11 OQ-5: the reporting DATE is the day the truck showed up, and it is what
-// every screen labelled "reported" shows. Creation time appears in exactly one
-// place in this whole module, the detail pane's subtitle.
+//   • the trailing caption — "done 10:12" / "with Ramesh K." / "reported 17 Aug".
+//     Three different sentences in one slot meant the operator had to READ the
+//     card to find out what kind of card it was. The pill says it at a glance.
+//   • the "All clear" / "N issues" chip — absorbed into the pill, which now
+//     reads "Done · 4 issues" and carries the same fact in the same place the
+//     eye already goes.
+//   • the "{n} nos" STI quantity chip — a number nobody picks a truck by. The
+//     line count stayed because it is a size cue; the quantity is detail-pane
+//     work.
+//
+// The old rule this replaces said rail cards should have NO pill on open and
+// NO pill on done, because "a rail where three of four cards wear a pill is a
+// rail where the pill means nothing". That held while the card carried a chip
+// AND a caption AND a pill — three signals fighting. With the other two gone the
+// pill is the only status signal left, so it covers all four states. See
+// components/mrn/status-pill.tsx, which owns every one of them.
+//
+// 🔴 THE ORDER OF THE CARDS IS THE SERVER'S — `srNo` ASC since 2026-08-26, truck
+// 1 at the top (lib/mrn/queries.ts). This component never re-sorts: two sort
+// rules for one list is how a rail starts disagreeing with the numbering the
+// operator reads off the badges.
 
 interface RailCardProps {
   row: MrnBoardRow;
@@ -27,19 +38,6 @@ interface RailCardProps {
 }
 
 export function RailCard({ row, selected, onSelect }: RailCardProps): React.JSX.Element {
-  // The third line's caption is the one thing that changes with status, because
-  // "what do I most need to know about this truck right now" changes with it.
-  let caption: string | null;
-  if (row.status === "checking") {
-    caption = row.unloadingStartByName ? `with ${row.unloadingStartByName}` : "being checked";
-  } else if (row.status === "done") {
-    const at = formatIstTime(row.unloadingEndAt);
-    caption = at ? `done ${at}` : "done";
-  } else {
-    const on = formatDateOnly(row.truckReportingDate);
-    caption = on ? `reported ${on}` : null;
-  }
-
   return (
     <button
       type="button"
@@ -50,12 +48,13 @@ export function RailCard({ row, selected, onSelect }: RailCardProps): React.JSX.
           ? // THE one teal element on this board (UI §1 / §10). Nothing else
             // here is teal — not the New MRN button, not the table's segmented
             // filter — so the operator's eye lands on the truck they are
-            // looking at and nowhere else.
+            // looking at and nowhere else. Unchanged by the 2026-08-26 trim.
             "border-teal-600 bg-teal-50"
           : "border-[#e6e9ec] bg-white hover:bg-gray-50")
       }
     >
-      {/* Sr no — truck 1, 2, 3… of this mrnDate. Teal when selected. */}
+      {/* Sr no — truck 1, 2, 3… of this mrnDate, and now also the rail's sort
+          key top-to-bottom. Teal when selected. */}
       <span
         className={
           "mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] text-[12px] font-bold tabular-nums " +
@@ -66,73 +65,33 @@ export function RailCard({ row, selected, onSelect }: RailCardProps): React.JSX.
       </span>
 
       <span className="min-w-0 flex-1">
-        <span className="flex items-center justify-between gap-2">
-          <span className="font-mono text-[11.5px] tracking-[0.02em] text-[#98a0aa]">
-            {row.mrnNumber}
+        {/* 1 — the MRN number, quietest thing on the card. It is what you quote
+            on the phone, not what you scan the rail for. */}
+        <span className="block truncate font-mono text-[10.5px] tracking-[0.02em] text-gray-400">
+          {row.mrnNumber}
+        </span>
+
+        {/* 2 — where it came from, the loudest thing on the card, with the
+            status pill opposite it. `min-w-0 truncate` on the left half so a
+            long source can never squeeze the pill, which is shrink-0. */}
+        <span className="mt-[3px] flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-[16px] font-bold leading-[1.2] text-gray-900">
+            {row.receivedFrom}
           </span>
-          {row.status === "checking" && <CheckingPill />}
+          <StatusPill row={row} />
         </span>
 
-        <span className="mt-[5px] block text-[15px] font-semibold leading-[1.25] text-[#1d2939]">
-          {row.receivedFrom}
+        {/* 3 — the STI ref, the thing billing actually matches against paper. */}
+        <span className="mt-[4px] block truncate font-mono text-[12px] text-gray-500">
+          {row.stiRefNo ?? "—"}
         </span>
 
-        <span className="mt-[5px] flex items-center gap-[7px] text-[12px] text-[#667085]">
-          {row.stiRefNo && (
-            <span className="truncate font-mono text-[11.5px]">{row.stiRefNo}</span>
-          )}
-          {row.stiRefNo && caption && <span className="text-[#d8dce1]">·</span>}
-          {caption && <span className="truncate">{caption}</span>}
-        </span>
-
-        <span className="mt-2 flex flex-wrap items-center gap-1.5">
-          <Chip>{row.lineCount} lines</Chip>
-          {/* On a finished MRN the outcome replaces the quantity chip: once the
-              truck is counted, "did anything go wrong" is the only question
-              left. Before that, the STI quantity is what billing is working to. */}
-          {row.status === "done" ? (
-            row.issueLineCount > 0 ? (
-              <Chip tone="warn">
-                {row.issueLineCount} issue{row.issueLineCount === 1 ? "" : "s"}
-              </Chip>
-            ) : (
-              <Chip tone="ok">All clear</Chip>
-            )
-          ) : (
-            <Chip>{formatCount(row.totalQtySti)} nos</Chip>
-          )}
+        {/* 4 — size of the job. RAW line count, not distinct SKUs: two lines can
+            legitimately carry the same SKU (queries.ts counts rows). */}
+        <span className="mt-[5px] block text-[11.5px] text-gray-400">
+          <b className="font-bold text-gray-600">{row.lineCount}</b> lines
         </span>
       </span>
     </button>
-  );
-}
-
-/** The module's ONLY status pill. See this file's header before adding another. */
-export function CheckingPill(): React.JSX.Element {
-  return (
-    <span className="inline-flex shrink-0 items-center gap-[5px] rounded-[5px] border border-amber-200 bg-amber-50 px-[7px] py-[3px] text-[10.5px] font-semibold text-amber-700">
-      <span className="h-[7px] w-[7px] rounded-full bg-amber-500" aria-hidden="true" />
-      Checking
-    </span>
-  );
-}
-
-function Chip({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone?: "ok" | "warn";
-}): React.JSX.Element {
-  const toneClass =
-    tone === "ok"
-      ? "bg-green-50 text-green-700"
-      : tone === "warn"
-        ? "bg-orange-50 text-orange-700"
-        : "bg-[#eef1f5] text-[#667085]";
-  return (
-    <span className={`rounded-[5px] px-[7px] py-[3px] text-[10.5px] font-semibold ${toneClass}`}>
-      {children}
-    </span>
   );
 }

@@ -17,7 +17,13 @@ import { isMrnReceivedFrom } from "@/lib/mrn/types";
 // P4 — edit the header.
 //
 // ⚠ REACHABLE ONLY WHILE `status === 'open'`, and the Edit control that opens it
-// is ABSENT rather than disabled on anything else (see header-card.tsx). That is
+// is ABSENT rather than disabled on anything else. That control is the
+// [Edit header] button in the detail pane's action row
+// (components/mrn/detail-pane.tsx), gated `status === "open" && canEdit` — it is
+// the ONLY caller of this modal. It used to be a pencil inside
+// components/mrn/header-card.tsx; that file was deleted on 2026-08-26 when its
+// fields became the pane header's facts row, and the gate moved with it
+// unchanged. That is
 // deliberate: the PATCH route 409s the moment the supervisor taps Start, so a
 // greyed-out Edit would advertise an action the server has already refused. A
 // control that cannot ever work in this state should not be on the screen.

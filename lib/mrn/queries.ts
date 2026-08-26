@@ -284,10 +284,20 @@ function toBoardRow(
 /**
  * Billing's rail for one day.
  *
- * Ordered `srNo` DESC — newest truck on top, which is where the operator's
- * attention is. The rail is one flat list with no Open/Done/All tabs (design
- * §3.1, simplified on owner instruction); status is a per-card treatment, not a
- * filter.
+ * 🔴 ORDERED `srNo` ASC — TRUCK 1 FIRST, THEN 2, THEN 3. REVERSED 2026-08-26 ON
+ * SMART FLOW'S DIRECT INSTRUCTION: "seq by which truck come first which second
+ * — so seq 1 first then second."
+ *
+ * The old rule and its reasoning, kept because a reversal nobody recorded is a
+ * reversal somebody undoes: this sorted `srNo` DESC, on the argument that the
+ * newest truck belongs on top because that is where the operator's attention
+ * is. The owner overruled it. `srNo` counts arrival order within the day, so
+ * reading the rail top-to-bottom now matches the order the trucks actually
+ * showed up — and matches the numbers printed on the cards themselves. Do not
+ * flip this back without a new decision from the owner.
+ *
+ * The rail is one flat list with no Open/Done/All tabs (design §3.1, simplified
+ * on owner instruction); status is a per-card treatment, not a filter.
  *
  * `dateStr` omitted → today IST.
  */
@@ -298,7 +308,7 @@ export async function getMrnBillingBoard(dateStr?: string): Promise<MrnBillingBo
   const rows = await prisma.mrn.findMany({
     where: buildMrnBillingWhere(dateOnly),
     select: { ...MRN_HEADER_SELECT, lines: { select: MRN_AGGREGATE_LINE_SELECT } },
-    orderBy: { srNo: "desc" },
+    orderBy: { srNo: "asc" },
   });
 
   return {
