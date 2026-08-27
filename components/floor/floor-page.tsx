@@ -52,6 +52,10 @@ const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
 // request legible in the network tab and the server logs.
 const UNSCOPED_QS = "scope=All";
 
+// The view the board opens on, and the view closing an assign context returns
+// to. One definition so the two can never drift apart.
+const DEFAULT_VIEW_MODE = "route" as const;
+
 // The three top tabs (design §3 — Floor / On hold / Cancelled).
 type TopTab = "floor" | "hold" | "cancelled";
 
@@ -146,7 +150,7 @@ export function FloorPage() {
   // (2026-08-17) is the second of that kind and ignores the slot tab for a
   // stronger reason: bundles deliberately span slots and dates, so a slot filter
   // would cut most of them in half.
-  const [mode, setMode] = useState<"flat" | "route" | "picker" | "group">("picker");
+  const [mode, setMode] = useState<"flat" | "route" | "picker" | "group">(DEFAULT_VIEW_MODE);
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
@@ -260,7 +264,7 @@ export function FloorPage() {
   const closeAssignContext = useCallback(() => {
     setAssignContext(null);
     setContextMode("pending");
-    setMode("picker");
+    setMode(DEFAULT_VIEW_MODE);
   }, []);
 
   // The banner's pending/current toggle moves the VIEW with the reading, by the
