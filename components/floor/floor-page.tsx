@@ -140,16 +140,21 @@ export function FloorPage() {
 
   const [topTab, setTopTab] = useState<TopTab>("floor");
   const [slotTab, setSlotTab] = useState<SlotTabKey>("10:30");
-  // Floor Control LANDS on the picker grid (2026-08-11). The desk operator's
-  // first question of the day is "who is free", not "what is in the 10:30
-  // window" — and from the grid every other view is one tap away, while the
-  // reverse was two. Flat and By route are unchanged and still on the toggle.
+  // The board LANDS on DEFAULT_VIEW_MODE — currently "route" (changed
+  // 2026-08-27, commit 8468297a). Closing an assign context returns to the same
+  // constant, so the landing view and the exit view can never drift apart:
+  // change the constant and both move together.
   //
-  // "picker" is also the odd one out mechanically: flat/route pivot the CURRENT
-  // slot tab, picker ignores it entirely — see floor-board.tsx's branch. "group"
+  // Previously landed on the picker grid (2026-08-11), on the reasoning that the
+  // desk operator's first question of the day is "who is free"; superseded
+  // 2026-08-27. Recorded so it is not rediscovered as a new idea.
+  //
+  // "picker" is the odd one out mechanically: flat/route pivot the CURRENT slot
+  // tab, picker ignores it entirely — see floor-board.tsx's branch. "group"
   // (2026-08-17) is the second of that kind and ignores the slot tab for a
   // stronger reason: bundles deliberately span slots and dates, so a slot filter
-  // would cut most of them in half.
+  // would cut most of them in half. With the landing view now "route", the slot
+  // tab matters on first paint where under the picker default it did not.
   const [mode, setMode] = useState<"flat" | "route" | "picker" | "group">(DEFAULT_VIEW_MODE);
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
