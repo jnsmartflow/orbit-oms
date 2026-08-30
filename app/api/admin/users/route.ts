@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -62,6 +63,18 @@ export async function POST(req: Request) {
       createdAt: true,
       role: { select: { id: true, name: true } },
     },
+  });
+
+  // AFTER the create succeeds (audit RULE 2). 🔴 name/email/roleId only —
+  // the password and its bcrypt hash NEVER reach the log (RULE 3). The helper
+  // redacts them too, so this is belt and braces, deliberately.
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "users",
+    entityId: String(user.id),
+    action: "create",
+    summary: `created user ${user.name} <${user.email}> with roleId ${roleId}`,
+    after: { name: user.name, email: user.email, roleId },
   });
 
   return NextResponse.json(user, { status: 201 });

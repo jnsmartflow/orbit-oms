@@ -232,6 +232,10 @@ model users {
   samplingUsageEntries         sampling_usage_log[]  @relation("SamplingUsageOperator")
   // Web Push — one user → many devices. Single FK to users, so no named relation.
   pushSubscriptions            push_subscriptions[]
+  // Admin audit trail — one user → many logged actions. Single FK to users, so
+  // no named relation (contrast the PickFinding*/Mrn* clusters above, which have
+  // several FKs to `users` and MUST stay named on both sides — CORE §7.3).
+  adminAuditLogs               admin_audit_log[]
 }
 
 // Web Push device subscriptions. Table created by hand in Supabase (11 cols,
@@ -253,6 +257,47 @@ model push_subscriptions {
   lastSeenAt   DateTime? @db.Timestamptz(6)
   createdAt    DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt    DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+// Admin audit trail — WHO changed WHAT, for the admin writes that record no
+// actor on the row itself (v27.18, 2026-09-01). Table created BY HAND in the
+// Supabase SQL Editor by the owner and hand-mirrored here; never db push, never
+// db pull (CORE §3 — db pull also fails P1001 on this machine). camelCase
+// columns, NO @map — the live names already match.
+//
+// `createdAt` carries @db.Timestamptz(6) or Prisma emits plain `timestamp` and
+// silently mismatches the live `timestamp with time zone` (CORE §7.1.c).
+//
+// APPEND-ONLY BY CONVENTION, not by constraint. Nothing in the schema stops an
+// UPDATE or DELETE — the discipline lives in the fact that `lib/audit/log.ts` is
+// the only writer and only ever inserts. Do not add an edit path.
+//
+// 🔴 `id` is BigInt, matching the live BIGSERIAL and the tint_skip_events /
+// tint_pause_events precedent. JSON.stringify THROWS on a BigInt
+// ("Do not know how to serialize a BigInt"), so a future read API must convert
+// (`Number(row.id)` or `.toString()`) before returning rows. The write helper is
+// safe today only because it never returns the created row.
+//
+// 🔴 beforeData / afterData MUST NEVER contain a password or a password hash.
+// The redaction lives in lib/audit/log.ts, not here — Prisma cannot enforce it.
+model admin_audit_log {
+  id         BigInt   @id @default(autoincrement())
+  userId     Int
+  user       users    @relation(fields: [userId], references: [id])
+  entity     String
+  entityId   String?
+  action     String
+  summary    String?
+  beforeData Json?
+  afterData  Json?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  // Explicit `map:` on all three — the live index names are hand-made and do
+  // not match what Prisma would generate by default. Same reason
+  // pick_findings_order_idx carries one (CORE §7.4).
+  @@index([createdAt(sort: Desc)], map: "admin_audit_log_created_idx")
+  @@index([entity, entityId], map: "admin_audit_log_entity_idx")
+  @@index([userId], map: "admin_audit_log_user_idx")
 }
 
 model status_master {
