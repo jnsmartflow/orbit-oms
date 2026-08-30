@@ -904,6 +904,37 @@ NOT repeated:
 
 ---
 
+## Mail Orders cleanup (opened 2026-09-01, from the write-route permission fix)
+
+Left over from `mail-orders: gate 11 write routes on mail_orders/canEdit` — the guards shipped; these
+three did not. Evidence for all three: `docs/prompts/drafts/code-discovery-2026-09-01-mail-orders-gate.md`.
+
+- **[P3] `[id]/punch` is a route with no button — wire it or remove it.** Its `onPunch` prop is
+  threaded four component levels (`mail-orders-page.tsx:1465` → `mail-orders-table.tsx:49 → :118 →
+  :219 → :258 → :286 → :331 → :629`) and **never invoked** — `grep "onPunch("` returns nothing.
+  Punching actually happens through `[id]/so-number` PATCH, which sets `status: "punched"`,
+  `punchedAt` and `punchedById` itself (`so-number/route.ts:43-51`). The route is gated and live but
+  unreachable from the UI. Decide: wire the button back, or retire the route per
+  `archive/RETIREMENT-PLAYBOOK.md`. ⚠ Do not assume it is dead data — it is a live *address*.
+- **[P2] A 403 is silent on four of the eleven — no toast, console only.** `note`
+  (`review-view.tsx:936`), `split` (`mail-orders-table.tsx:1527`, `review-view.tsx:956`),
+  `lines/[lineId]/status`, and `learn-customer` (`lib/mail-orders/api.ts:145-147`, which swallows
+  every error by design) all fail into `console.error` with nothing on screen; the four handlers in
+  `mail-orders-page.tsx` refetch and visibly revert the optimistic row, also with no message.
+  **This became a real gap on 2026-09-01** — before the fix these routes could not return 403, so a
+  denial was not a reachable state. Nobody is affected today (all six canView holders also hold
+  canEdit), but the symptom of any future narrowed grant is "the button does nothing". Add error
+  surfacing.
+- **[P3] `backfill-enrich` and `backfill-customers` — confirm not needed, then retire both.** Zero
+  callers each; neither is reachable from any button. `backfill-customers` (POST, session+canEdit) is
+  a finished one-time job kept "for emergency" per `CORE §13`. `backfill-enrich` is worse: its GET is
+  now admin-gated (2026-09-01) but it still runs the **v1** enrichment, six args, no
+  `productProfiles` — `CONTEXT_v56.md:113-116` says by name *"Do NOT use it for re-enrichment"*, and
+  live enrichment is v3. Both still carry `TEMPORARY`/one-time labels. `re-enrich` is the maintained
+  tool and **stays** — it has no UI by design. Retire the two per the playbook.
+
+---
+
 ## Documentation hygiene
 
 ### Schema docs consolidation cadence

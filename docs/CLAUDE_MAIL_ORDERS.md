@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module (+ Billing v2 pilot, §23)
-# v1.12 · Schema v27.15 · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · August 2026 · updated 2026-08-09
+# v1.13 · Schema v27.15 · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · September 2026 · updated 2026-09-01
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -781,8 +781,8 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 - **Table-mode parity gap.** `mail-orders-table.tsx` (§9.1) does NOT show the ALT SKU column. Only the Review View (§9.2) has it. Small/deferred per 2026-06-19 handoff.
 - **Bounce / DTS signal badges deferred.** Parser v7.2 delivers `Bounce` and `DTS` remark text from app-format emails, but badge wiring (meaning, colour, card routing) is not yet built. `Truck Order` is already in the signal catalog.
 - **`shipToOverrideCustomerId` can be null even when `shipToOverride` is true** (§6) — free-text redirects that never resolved to a real `delivery_point_master` row. Any code path reading the override must handle flag-true/id-null as valid, not treat it as a data-integrity error.
-- **Most `app/api/mail-orders/**` routes check session only, never role/permission** [LANDMINE — security gap, surfaced 2026-07-10, not fixed]: `route.ts` (GET list), `[id]/punch`, `[id]/so-number`, `[id]/customer`, `[id]/lock`, `[id]/split`, `[id]/original-lines`, `[id]/note`, `lines/[lineId]/resolve`, `lines/[lineId]/status`, `skus`, `customers/search`, `re-enrich`, `debug-enrich`, `learn-customer`, `backfill-customers`. Any logged-in user of ANY role can PATCH/POST Mail Orders data by calling these directly, bypassing the layout guard (§22). Consequence: `tint_manager`'s view-only (`canEdit=false`) grant is a **UI illusion only** — nothing server-side enforces it. (Intentionally exempt, not part of this gap: `ingest` = HMAC-authenticated; `keywords` = deliberately public for the parser.)
-- **`GET /api/mail-orders/backfill-enrich` is fully unauthenticated** [LANDMINE — security gap, surfaced 2026-07-10, not fixed] — no session check, no HMAC. Marked `TEMPORARY — delete after backfill` in its own source but still live. Performs a bulk write across `mo_order_lines`. Reachable by anyone with the URL.
+- **~~Most `app/api/mail-orders/**` routes check session only, never role/permission~~ — FIXED 2026-09-01** (surfaced 2026-07-10; open for seven weeks). **The ELEVEN write routes now gate on `checkAnyPermission(roles, "mail_orders", "canEdit")`**, the same block as `app/api/billing/mail-order/actions/route.ts:66-77`: `[id]/customer`, `[id]/lock`, `[id]/note`, `[id]/punch`, `[id]/so-number`, `[id]/split`, `lines/[lineId]/resolve`, `lines/[lineId]/status`, `re-enrich`, `backfill-customers`, `learn-customer`. **`checkAnyPermission`, never `checkPermission`** — the latter reads only the primary role and would deny a grant held on a secondary one. The READ routes were deliberately left as they were (`route.ts` GET list, `[id]/original-lines`, `skus`, `customers/search`, `debug-enrich`) — the fix gated writes, not reads. (Still intentionally exempt: `ingest` = HMAC-authenticated; `keywords` = deliberately public for the parser.) ⚠ The gap was **no check at all**, not `canView` — `CORE §13` mis-stated it as `canView` the whole time it was open.
+- **~~`GET /api/mail-orders/backfill-enrich` is fully unauthenticated~~ — FIXED 2026-09-01** (surfaced 2026-07-10). The GET now runs `requireRole(session, [ROLES.ADMIN])` before `runBackfill()`. **The POST's HMAC path was left untouched** — that is the machine path and it works. The `TEMPORARY — delete after backfill` comment is still in its own source; retire-or-keep is a ROADMAP item.
 
 ---
 
@@ -863,25 +863,37 @@ Access to `/mail-orders` is **entirely DB-driven** via `role_permissions` — no
 | Sidebar | `lib/permissions.ts` — `PAGE_NAV_MAP` + `buildNavItems()` | filters nav entries by `allPerms[pageKey]?.canView === true` |
 | Page guard | `app/(mail-orders)/mail-orders/layout.tsx` | `checkAnyPermission(roles, "mail_orders", "canView")` → redirect `/unauthorized` |
 | `middleware.ts` | — | **no role check at all** for `/mail-orders`; only "has a session" |
-| API routes | `app/api/mail-orders/**` | **no role check at all** on most routes (see §18 landmine below); only "has a session" |
+| API routes — WRITES | the eleven in §18 | `checkAnyPermission(roles, "mail_orders", "canEdit")` → 403 (*added 2026-09-01; previously "has a session" only*) |
+| API routes — READS | `route.ts` GET, `[id]/original-lines`, `skus`, `customers/search`, `debug-enrich` | **no role check** — only "has a session". Deliberately left; the 2026-09-01 fix gated writes, not reads |
 
 `admin` bypasses the permission table entirely (hard-coded bypass in `lib/permissions.ts`). **Testing
 access while logged in as admin proves nothing** — always test as the actual role being granted.
 
-### Current `mail_orders` grants [LIVE — re-verified by SELECT 2026-08-04, CORE §5 owns the table]
+### Current `mail_orders` grants [LIVE — re-verified by SELECT 2026-09-01, CORE §5 owns the table]
 
 | roleSlug | canView | canEdit |
 |---|---|---|
 | `billing_operator` | true | true |
 | `operations` | true | true — **granted 2026-07-10**, one additive `role_permissions` row, applied directly to production DB (no code deploy) |
 | `operation_manager` | true | true |
-| `tint_manager` | true | **false** (view-only) |
+| `tint_manager` | true | **true** (*corrected 2026-09-01 — this row read `false` (view-only); live SELECT shows `canEdit=true`*) |
+
+**All four rows are View+Edit.** There is no view-only grant on this page key, so the
+`canView`-without-`canEdit` population is empty — which is why gating the eleven write routes
+(§18) blocked nobody. The six people who reach this screen all hold `canEdit`: Harsh (admin
+bypass), Operations User, Chandresh Kolgha, Deepanshu Thakur, Bankim, Prakash. Evidence:
+`docs/prompts/drafts/code-discovery-2026-09-01-mail-orders-gate.md §1-2`.
 
 **Facts this grant surfaced (both since settled):**
 - **`operation_manager` — RESOLVED 2026-08-04:** a real role, `role_master` id 15, one active user
   (Prakash, id 32) — `CORE §5` now owns it. The "legacy slug?" question is closed.
-- `tint_manager` holds a **view-only** `mail_orders` grant (previously undocumented; note §18's
-  landmine — view-only is UI-enforced only).
+- **`tint_manager` — CORRECTED 2026-09-01.** This bullet said he holds a **view-only** grant, and
+  `CORE §5` said the same. **Live says `canEdit=true`.** Both were stamped against a SELECT of
+  2026-08-04, so either the row was flipped after that date or the 08-04 reading was wrong —
+  unrecoverable, and `admin/permissions` POST records no actor (`code-discovery-2026-08-31-role-census.md
+  §6c`). ⚠ **Do not "fix" the live row back to match the old prose without deciding out loud whether
+  Chandresh keeps editing Mail Orders** — since 2026-09-01 the routes enforce `canEdit`, so flipping
+  that row now genuinely revokes his writes instead of changing nothing.
 
 ### Two authorization systems coexist
 
@@ -1136,4 +1148,4 @@ Evidence: `42f14de4` + `bfff2400` confirmed on `main` by `git log` before either
 
 ---
 
-*Mail Orders v1.12 · Schema v27.15 · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-08-09*
+*Mail Orders v1.13 · Schema v27.15 · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-09-01 — the eleven write routes now gate on mail_orders/canEdit and backfill-enrich GET requires admin (§18 landmines closed); §22 tint_manager corrected to view+edit against live*
