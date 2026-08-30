@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
+import { auth } from "@/lib/auth";
+import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import {
   enrichLine,
@@ -160,6 +162,12 @@ export async function POST(req: NextRequest) {
 
 // TEMPORARY — delete after backfill
 export async function GET() {
+  // The POST above is the machine path (HMAC). This GET is the hand-run one and
+  // had NO check of any kind — it ran the same runBackfill() bulk write for
+  // anyone with the URL (CORE §13 security entry, surfaced 2026-07-10).
+  const session = await auth();
+  requireRole(session, [ROLES.ADMIN]);
+
   try {
     const result = await runBackfill();
     return NextResponse.json(result);
