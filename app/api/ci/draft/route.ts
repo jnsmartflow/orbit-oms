@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { parseCiDateOnly, resolveCiDealer } from "@/lib/ci/derive";
-import { isCiMaterialMoved, isCiReturnType } from "@/lib/ci/types";
+import { resolveCiDealer } from "@/lib/ci/derive";
+import { isCiReturnType } from "@/lib/ci/types";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +11,12 @@ export const dynamic = "force-dynamic";
  * POST /api/ci/draft — step 1 of 3. Creates the CI header as `status = 'draft'`
  * and returns its id. NO CI NUMBER IS ALLOCATED HERE.
  *
- * Body: { orderId, returnType, materialMoved, materialReceivedDate, reasonId,
- *         reasonRemark? }
+ * Body: { orderId, returnType }
+ *
+ * ⚠ THAT IS THE WHOLE BODY. The stage-1 answers — materialMoved,
+ * materialReceivedDate, reasonId, reasonLabel — are NOT collected here and the
+ * draft stores NULL for all four (owner ruling 2026-09-01). They belong to the
+ * details screen, which comes after the line selection.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * 🔴 WHY THIS IS A SEPARATE ROUTE — THE SPLIT *IS* THE IDEMPOTENCY
@@ -36,14 +40,12 @@ export const dynamic = "force-dynamic";
  * 🔴 THE CLIENT IS NOT TRUSTED WITH ANYTHING IT DID NOT DECIDE
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * ACCEPTED (the supervisor's actual decisions): orderId · returnType ·
- * materialMoved · materialReceivedDate · reasonId · reasonRemark.
+ * ACCEPTED (the supervisor's actual decisions here): orderId · returnType.
  *
  * DERIVED SERVER-SIDE, re-read from the database every time:
  *   obdNumber, invoiceNo, invoiceDate, soNumber   ← from `orders`
  *   customerId, customerCode, customerName        ← from `orders` + the dealer
  *                                                   rule (lib/ci/derive.ts)
- *   reasonLabel                                   ← from `ci_reason_master`
  *   supervisorId                                  ← from the SESSION, never
  *                                                   from the body
  *
@@ -82,10 +84,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   const body = (await req.json().catch(() => ({}))) as {
     orderId?: unknown;
     returnType?: unknown;
-    materialMoved?: unknown;
-    materialReceivedDate?: unknown;
-    reasonId?: unknown;
-    reasonRemark?: unknown;
   };
 
   // ── Validate EVERYTHING before the first write ─────────────────────────────
@@ -109,45 +107,22 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   const returnType = body.returnType;
 
-  if (typeof body.materialMoved !== "string" || !isCiMaterialMoved(body.materialMoved)) {
-    return NextResponse.json(
-      { error: '`materialMoved` is required — expected "moved" or "not_moved"' },
-      { status: 400 },
-    );
-  }
-  const materialMoved = body.materialMoved;
-
-  if (typeof body.materialReceivedDate !== "string") {
-    return NextResponse.json(
-      { error: "`materialReceivedDate` is required — expected YYYY-MM-DD" },
-      { status: 400 },
-    );
-  }
-  let materialReceivedDate: Date;
-  try {
-    materialReceivedDate = parseCiDateOnly(body.materialReceivedDate);
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Invalid materialReceivedDate" },
-      { status: 400 },
-    );
-  }
-
-  const reasonId = Number(body.reasonId);
-  if (!Number.isInteger(reasonId) || reasonId <= 0) {
-    return NextResponse.json(
-      { error: "`reasonId` is required — expected a positive integer" },
-      { status: 400 },
-    );
-  }
-
-  // Optional. Empty/whitespace collapses to null rather than being stored as ""
-  // — a blank remark and no remark are the same thing, and two representations
-  // of it means two render branches downstream.
-  const reasonRemark =
-    typeof body.reasonRemark === "string" && body.reasonRemark.trim() !== ""
-      ? body.reasonRemark.trim()
-      : null;
+  // 🔴 THE STAGE-1 ANSWERS ARE NOT COLLECTED HERE, AND THE DRAFT STORES NULL
+  // FOR ALL FOUR (owner ruling, 2026-09-01).
+  //
+  // materialMoved · materialReceivedDate · reasonId · reasonLabel are answered
+  // on the DETAILS screen, which comes after the line selection — so at the
+  // moment this row is written they genuinely have no value. The four columns
+  // were made nullable live for exactly this.
+  //
+  // An earlier shape had this route invent defaults ("not_moved", today,
+  // reason 1) to satisfy NOT NULL, to be patched before submit. That is gone,
+  // and must not come back: a placeholder is a fact that is not true, and the
+  // day someone forgets the patch it prints on a signed return.
+  //
+  // The submit route validates all four before flipping status, and
+  // chk_ci_returns_complete_when_not_draft is the database backstop behind it.
+  // Nullable in a draft, mandatory in a record.
 
   // ── Re-read the bill. THE SERVER'S COPY IS THE ONE THAT COUNTS. ────────────
   const order = await prisma.orders.findFirst({
@@ -167,27 +142,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   });
   if (!order) {
     return NextResponse.json({ error: "Bill not found" }, { status: 404 });
-  }
-
-  // ── Re-read the reason, and SNAPSHOT ITS LABEL. ───────────────────────────
-  // The label is stored beside the FK so renaming a reason never rewrites the
-  // history of CIs raised under the old wording (spec §3.1). Reading it here
-  // rather than accepting it from the body is what makes that snapshot
-  // trustworthy: a client cannot file "Return by Dealer" against the id for
-  // "Wrong Punching".
-  //
-  // isActive is checked — a retired reason must not be selectable on a NEW CI,
-  // while existing CIs keep pointing at it (which is why reasons are retired by
-  // flag and never deleted).
-  const reason = await prisma.ci_reason_master.findFirst({
-    where: { id: reasonId, isActive: true },
-    select: { id: true, label: true },
-  });
-  if (!reason) {
-    return NextResponse.json(
-      { error: `Reason ${reasonId} not found or no longer active` },
-      { status: 400 },
-    );
   }
 
   // ── ONE write. Nothing partial can be left behind. ─────────────────────────
@@ -213,12 +167,17 @@ export async function POST(req: Request): Promise<NextResponse> {
       // null id and have no master row to resolve.
       customerName: resolveCiDealer(order),
 
+      // Answered on the first screen (Full bill / Part), so it is real here.
       returnType,
-      materialMoved,
-      materialReceivedDate,
-      reasonId: reason.id,
-      reasonLabel: reason.label,
-      reasonRemark,
+      // 🔴 NULL, DELIBERATELY — see the block above. The details step writes
+      // these; chk_ci_returns_complete_when_not_draft enforces them the moment
+      // this stops being a draft. Written out explicitly rather than omitted so
+      // the intent is visible at the write site, not inferred from an absence.
+      materialMoved: null,
+      materialReceivedDate: null,
+      reasonId: null,
+      reasonLabel: null,
+      reasonRemark: null,
       supervisorId,
     },
     select: { id: true, status: true, orderId: true, obdNumber: true, returnType: true },

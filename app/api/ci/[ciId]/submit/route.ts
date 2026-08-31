@@ -107,6 +107,12 @@ export async function POST(
       status: true,
       ciNumber: true,
       supervisorId: true,
+      // The four stage-1 answers. NULL on a draft by design (owner ruling
+      // 2026-09-01 — no placeholders); all four must be present to leave draft.
+      materialMoved: true,
+      materialReceivedDate: true,
+      reasonId: true,
+      reasonLabel: true,
       _count: { select: { lines: true } },
     },
   });
@@ -148,6 +154,44 @@ export async function POST(
   if (ci._count.lines === 0) {
     return NextResponse.json(
       { error: "This return has no lines. Choose at least one line before submitting." },
+      { status: 400 },
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 🔴 THE STAGE-1 ANSWERS MUST ALL BE PRESENT BEFORE THIS LEAVES DRAFT
+  // ═════════════════════════════════════════════════════════════════════════
+  //
+  // The four columns are NULLABLE so a draft can exist before the details
+  // screen has been answered (owner ruling 2026-09-01 — a draft carries NULL,
+  // never a placeholder). `chk_ci_returns_complete_when_not_draft` enforces
+  // that at the database:
+  //
+  //   CHECK (status = 'draft' OR (materialMoved IS NOT NULL
+  //          AND materialReceivedDate IS NOT NULL
+  //          AND reasonId IS NOT NULL AND reasonLabel IS NOT NULL))
+  //
+  // ⚠ THAT CHECK IS THE BACKSTOP, NOT THE ERROR MESSAGE. Without the guard
+  // below, an incomplete submit would surface to a supervisor's phone as
+  // `violates check constraint "chk_ci_returns_complete_when_not_draft"` —
+  // technically correct, and useless to a man holding returned stock. This
+  // names the field he still has to fill.
+  //
+  // If that raw string ever DOES reach the UI, this guard has a hole. Fix the
+  // guard; never weaken the CHECK.
+  const missing: string[] = [];
+  if (ci.materialMoved === null) missing.push("whether the material has moved");
+  if (ci.materialReceivedDate === null) missing.push("the date it was received");
+  // reasonId and reasonLabel are written together and can only disagree if
+  // something wrote one directly; report the reason once either way.
+  if (ci.reasonId === null || ci.reasonLabel === null) missing.push("a reason");
+
+  if (missing.length > 0) {
+    return NextResponse.json(
+      {
+        error: `This return is missing ${formatList(missing)}. Fill the details step, then submit.`,
+        missing,
+      },
       { status: 400 },
     );
   }
@@ -227,4 +271,12 @@ export async function POST(
   // Unreachable: the loop either returns or throws. Present so the function has
   // a total return type rather than an implicit undefined path.
   return NextResponse.json({ error: "Could not allocate a CI number." }, { status: 409 });
+}
+
+/** "a" · "a and b" · "a, b and c" — so the error reads as a sentence rather
+ *  than a comma-joined field dump. */
+function formatList(items: string[]): string {
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }

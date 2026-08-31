@@ -1,7 +1,12 @@
 # CI Module — Goods Return Note (CI-Form)
 
 **Draft type:** `web-update` (owner decision record)
-**Version:** v3.2 · 2026-09-01 — **design locked, building**
+**Version:** v3.3 · 2026-09-01 — **design locked, building**
+
+**v3.3 — a draft carries NULL for the stage-1 answers, no placeholders** (owner
+ruling). `materialMoved`, `materialReceivedDate`, `reasonId` and `reasonLabel`
+are now NULLABLE, guarded by the new `chk_ci_returns_complete_when_not_draft`,
+which makes all four mandatory the moment `status` stops being `'draft'` — §6.
 
 **v3.2 folds in the four things step 3a measured against production:** the
 litres guard is on `unitQty` only (`volumeLine = 0` is a real value on 346
@@ -229,11 +234,11 @@ customerName          String?
 -- stage 1 (floor)
 returnType            String                    -- full | part
                                                 -- CHECK chk_ci_returns_return_type
-materialMoved         String                    -- moved | not_moved
+materialMoved         String?                   -- moved | not_moved · 🔴 NULLABLE
                                                 -- CHECK chk_ci_returns_material_moved
-materialReceivedDate  DateTime  @db.Date
-reasonId              Int   FK -> ci_reason_master.id (RESTRICT) @relation("CiReturnReason")
-reasonLabel           String                    -- snapshot, so a rename never rewrites history
+materialReceivedDate  DateTime? @db.Date        -- 🔴 NULLABLE
+reasonId              Int?  FK -> ci_reason_master.id (RESTRICT) @relation("CiReturnReason")
+reasonLabel           String?                   -- snapshot, so a rename never rewrites history
 reasonRemark          String?
 supervisorId          Int   FK -> users.id  @relation("CiReturnSupervisor")
 submittedAt           DateTime? @db.Timestamptz(6)
@@ -270,6 +275,40 @@ pane renders `102492 · OBD 9109145575 · Ghod Dod` — that third part is the a
 and stops. `customerCode` / `customerName` ARE snapshotted; the area is not, because it is depot
 master data that can legitimately be corrected after a CI is closed, and a signed return should show
 where the dealer *is*, not where the master said they were that afternoon.
+
+### 🔴 A draft carries NULL for the stage-1 answers — no placeholders [v3.3, owner ruling]
+
+`materialMoved`, `materialReceivedDate`, `reasonId` and `reasonLabel` are **NULLABLE**, and the
+new CHECK is what makes that safe:
+
+```
+chk_ci_returns_complete_when_not_draft
+  CHECK (status = 'draft' OR ("materialMoved" IS NOT NULL
+         AND "materialReceivedDate" IS NOT NULL
+         AND "reasonId" IS NOT NULL AND "reasonLabel" IS NOT NULL))
+```
+
+**Nullable in a draft, MANDATORY in a record.**
+
+*Why.* The details screen comes AFTER the line selection, so between the draft insert and the
+details step these four genuinely have no value. Under the old NOT NULL shape `POST /api/ci/draft`
+had to invent defaults — `"not_moved"`, today's date, reason 1 — to be patched before submit.
+**That is how a wrong fact reaches a signed document**: the placeholder is not true, and the day
+someone forgets the patch it prints. The workaround is deleted and must not come back.
+
+- `returnType` stays **NOT NULL** — it is answered on the first bill screen (Full bill / Part), so
+  a draft cannot exist without it.
+- ⚠ A NULL `materialMoved` also satisfies `chk_ci_returns_material_moved`: `NULL = ANY(ARRAY[…])`
+  is NULL, and a CHECK passes on anything that is not FALSE. The two compose; neither needed
+  changing.
+- 🔴 **The CHECK is the BACKSTOP, not the error message.** `POST /api/ci/[ciId]/submit` validates
+  all four itself and names the missing one ("This return is missing the date it was received and
+  a reason"). A raw `violates check constraint "chk_ci_returns_complete_when_not_draft"` reaching a
+  supervisor's phone is not something he can act on. If that string ever surfaces in the UI, the
+  route's guard has a hole — **fix the guard, never weaken the CHECK.**
+- `getCiDetail()` excludes drafts, so the CHECK guarantees all four are present on anything it
+  returns and `CiDetail` types them non-null. If one is null anyway that is an integrity violation,
+  and the query returns **null (not found) and logs loudly** rather than fabricating a default.
 
 🔴 **Put `returned_to_floor` in the status CHECK from day one**, even though no UI uses it yet
 (§10.1). Adding a value later means an ALTER on a live CHECK constraint; allowing an unused one

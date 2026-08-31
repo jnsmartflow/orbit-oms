@@ -2482,6 +2482,30 @@ model ci_reason_master {
 //   chk_ci_returns_status         CHECK (status IN ('draft','submitted','closed','returned_to_floor'))
 //   chk_ci_returns_return_type    CHECK ("returnType" IN ('full','part'))
 //   chk_ci_returns_material_moved CHECK ("materialMoved" IN ('moved','not_moved'))
+//   chk_ci_returns_complete_when_not_draft
+//     CHECK (status = 'draft' OR ("materialMoved" IS NOT NULL
+//            AND "materialReceivedDate" IS NOT NULL
+//            AND "reasonId" IS NOT NULL AND "reasonLabel" IS NOT NULL))
+//
+// 🔴 THE FOURTH ONE IS LOAD-BEARING: IT IS WHAT STOPS AN INCOMPLETE CI BEING
+// SUBMITTED. Those four columns are NULLABLE precisely so a draft can exist
+// before the supervisor has answered the details step (owner ruling
+// 2026-09-01 — a draft carries NULL, never a placeholder). This CHECK is what
+// makes that safe: nullable in a draft, MANDATORY the moment status stops
+// being 'draft'. Without it, "nullable" would mean a submitted CI could be
+// missing its reason.
+//
+// ⚠ IT IS THE BACKSTOP, NOT THE ERROR MESSAGE. app/api/ci/[ciId]/submit/route.ts
+// validates all four itself and names the missing one, because a raw
+// "violates check constraint chk_ci_returns_complete_when_not_draft" reaching a
+// supervisor's phone is not something he can act on. If that string ever
+// surfaces in the UI, the route's guard has a hole — fix the guard, do not
+// weaken the CHECK.
+//
+// ⚠ A NULL "materialMoved" also satisfies chk_ci_returns_material_moved above:
+// `NULL = ANY(ARRAY[...])` is NULL, and a CHECK passes on anything that is not
+// FALSE. The two constraints therefore compose correctly and neither needed
+// changing when the columns went nullable.
 // A FOURTH status value needs a SQL ALTER on chk_ci_returns_status in the
 // Supabase SQL Editor FIRST — never just a new string in application code. This
 // is the same trap chk_pick_assignments_status documents, and it is why
@@ -2534,13 +2558,31 @@ model ci_returns {
   customerName         String?
 
   // ── stage 1 (floor supervisor, phone) ─────────────────────────────────────
+  // `returnType` is answered on the FIRST screen (Full bill / Part), so it is
+  // NOT NULL — a draft cannot exist without it.
   returnType           String
-  materialMoved        String
-  materialReceivedDate DateTime               @db.Date
-  reasonId             Int
-  reason               ci_reason_master       @relation("CiReturnReason", fields: [reasonId], references: [id], onDelete: Restrict)
+  // 🔴 THE NEXT FOUR ARE NULLABLE, AND THAT IS THE OWNER'S RULING (2026-09-01).
+  // A DRAFT CARRIES NULL FOR THE STAGE-1 ANSWERS — no placeholders, ever.
+  //
+  // The details screen that collects them comes AFTER the line selection, so
+  // between the draft insert and the details step these genuinely have no
+  // value. The earlier shape forced the draft route to invent defaults
+  // ("not_moved", today, reason 1) that were never true and had to be patched
+  // before submit; inventing a fact to satisfy a NOT NULL is how a wrong fact
+  // reaches a printed document when the patch is later forgotten.
+  //
+  // What makes this safe is chk_ci_returns_complete_when_not_draft (see the
+  // block above this model): the moment `status` stops being 'draft' all four
+  // must be present. Nullable in a draft, mandatory in a record.
+  materialMoved        String?
+  materialReceivedDate DateTime?              @db.Date
+  reasonId             Int?
+  reason               ci_reason_master?      @relation("CiReturnReason", fields: [reasonId], references: [id], onDelete: Restrict)
   // Snapshot beside the FK, so renaming a reason never rewrites history.
-  reasonLabel          String
+  // Nullable for the same reason as `reasonId` above — they are written
+  // together, at the details step, and the CHECK requires both on anything that
+  // is not a draft.
+  reasonLabel          String?
   reasonRemark         String?
   supervisorId         Int
   supervisor           users                  @relation("CiReturnSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)

@@ -495,6 +495,34 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
 
   const totals = ciTotals(lines);
 
+  // ⚠ NARROWING THE FOUR NULLABLE STAGE-1 COLUMNS, NOT DEFAULTING THEM.
+  //
+  // They are nullable so a DRAFT can exist before the details step is answered
+  // (owner ruling 2026-09-01 — a draft carries NULL, never a placeholder). This
+  // query already excludes drafts (`status: { not: "draft" }` above), and
+  // chk_ci_returns_complete_when_not_draft guarantees that a non-draft row has
+  // all four. So on every row that reaches here they ARE present, and CiDetail
+  // types them non-null.
+  //
+  // 🔴 IF ONE IS NULL ANYWAY, THAT IS A DATA-INTEGRITY VIOLATION — the CHECK was
+  // dropped or bypassed — and the honest response is "not found", not a
+  // fabricated default. Substituting "not_moved" or today's date here would put
+  // an invented fact on billing's screen and, from there, onto a signed
+  // document. Logged loudly because nothing else would notice.
+  if (
+    row.materialMoved === null ||
+    row.materialReceivedDate === null ||
+    row.reasonLabel === null
+  ) {
+    console.error(
+      `[ci/detail] ci #${row.id} is ${row.status} but is missing a stage-1 answer ` +
+        `(materialMoved=${row.materialMoved}, materialReceivedDate=${row.materialReceivedDate}, ` +
+        `reasonLabel=${row.reasonLabel}). chk_ci_returns_complete_when_not_draft should ` +
+        `have made this impossible — check the constraint still exists.`,
+    );
+    return null;
+  }
+
   return {
     id: row.id,
     ciNumber: row.ciNumber,
