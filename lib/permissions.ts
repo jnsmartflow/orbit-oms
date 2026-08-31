@@ -170,6 +170,14 @@ export type PageKey =
   | "trip_report"
   | "mail_orders"
   | "mrn"
+  // CI — Goods Return Note (2026-09-01). Live `role_permissions` rows exist for
+  // billing_operator / floor_supervisor / operations, and prisma/seed.ts carries
+  // them, so the key is real — the API routes gate on it today.
+  // ⚠ DELIBERATELY NOT IN PAGE_NAV_MAP YET. There is no /ci page until step 5;
+  // a nav entry now would put a sidebar link in front of three roles that 404s.
+  // It joins the nav in step 6, and its POSITION there is behaviour, not
+  // cosmetics — see the PAGE_NAV_MAP comment above `mrn`.
+  | "ci"
   | "delivery_challans"
   | "shade_master"
   | "sampling_library"
@@ -216,7 +224,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "tint_manager", "tint_operator",
-  "place_order", "trip_report", "mail_orders", "mrn",
+  "place_order", "trip_report", "mail_orders", "mrn", "ci",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   "settings_hide",
 ];

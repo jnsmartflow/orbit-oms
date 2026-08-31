@@ -911,6 +911,14 @@ model orders {
   // machine (CORE §3). Do NOT db push/pull.
   @@index([updatedAt(sort: Desc)])
 
+  // Created directly in Supabase 2026-08-31 (orders_invoiceNo_idx) and mirrored
+  // here so schema and database stay in step. Backs CI's stage-1 search, which
+  // matches on invoiceNo OR obdNumber (spec §4): obdNumber already had two
+  // indexes, invoiceNo had NONE, so half of every CI search was a sequential
+  // scan. Prisma's default name for this is exactly `orders_invoiceNo_idx`, so
+  // no `map:` is needed. Recorded by hand — db pull cannot run here (CORE §3).
+  @@index([invoiceNo])
+
   // Partial index created directly in Supabase, NOT expressible in Prisma
   // syntax — do NOT model it as @@index:
   //   orders_billing_pending_idx ON orders ("workflowStage")
