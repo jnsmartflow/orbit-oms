@@ -141,6 +141,25 @@ async function main() {
     { roleSlug: "billing_operator", pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: true  },
     { roleSlug: "floor_supervisor", pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operations",       pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    // ── CI (Goods Return Note), 2026-09-01 ────────────────────────────────
+    // Same three roles as `mrn`, because it is the same two people plus the
+    // operations test account: floor_supervisor raises the CI on his phone
+    // (stage 1), billing_operator closes it at the desk (stage 2).
+    //
+    // ⚠ FLAGS ARE THE LIVE ROWS, NOT A COPY OF THE mrn LINES ABOVE — verified
+    // by SELECT 2026-09-01. `operations` holds canExport on ci; the mrn line
+    // above says false, and that line is itself stale (live mrn/operations has
+    // canExport TRUE). Do not "align" the two by copying either way; check the
+    // database. Live-vs-seed drift on the mrn row is flagged, not fixed here —
+    // changing what a reseed grants MRN is a different decision.
+    //
+    // ⚠ These rows were applied to LIVE by sql/2026-08-31-ci-module.sql and are
+    // seeded here so a wipe-and-reseed reproduces them. A live grant with no
+    // seed row is the landmine CORE §13 records — seed is not live, in both
+    // directions.
+    { roleSlug: "billing_operator", pageKey: "ci",         canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: true  },
+    { roleSlug: "floor_supervisor", pageKey: "ci",         canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",       pageKey: "ci",         canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: false },
   ];
 
   for (const row of permRows) {
@@ -157,6 +176,56 @@ async function main() {
     });
   }
   console.log(`  ✓ role_permissions — ${permRows.length} rows`);
+
+  // ── ci_reason_master ───────────────────────────────────────────────────────
+  // The CI reason picker's vocabulary (spec §3.1). A MASTER TABLE, not a CHECK
+  // constraint, because the list will change and a CHECK makes every change a
+  // schema migration.
+  //
+  // 🔴 WITHOUT THESE ROWS A RESEED LEAVES THE TABLE EMPTY AND THE REASON PICKER
+  // BREAKS WITH NO ERROR MESSAGE — the screen renders an empty list and the
+  // supervisor simply cannot submit. That failure mode is why they are seeded
+  // rather than left as one-off SQL: the 8 rows went LIVE via
+  // sql/2026-08-31-ci-module.sql, and seed is not live, in both directions.
+  //
+  // ⚠ RETIRE A REASON WITH isActive = false — NEVER DELETE. Old CIs point at
+  // the reason they were raised under (ci_returns.reasonId, ON DELETE RESTRICT),
+  // and ci_returns also snapshots reasonLabel so a rename never rewrites
+  // history. Upsert-on-`code` below is what makes a relabel safe: the row keeps
+  // its id, so every CI already pointing at it still resolves.
+  //
+  // sortOrder 1-8; the first three are isPinned and sit above a divider in the
+  // picker, the rest under "More". One struck-through entry on the owner's sheet
+  // is deliberately excluded.
+  const ciReasonRows: {
+    code: string;
+    label: string;
+    sortOrder: number;
+    isPinned: boolean;
+  }[] = [
+    { code: "WRONG_ORDER_BY_SO",      label: "Wrong Order by S.O.",    sortOrder: 1, isPinned: true  },
+    { code: "PHYSICALLY_CROSS",       label: "Physically Cross",       sortOrder: 2, isPinned: true  },
+    { code: "RETURN_BY_DEALER",       label: "Return by Dealer",       sortOrder: 3, isPinned: true  },
+    { code: "ORDER_CANCEL_BY_DEALER", label: "Order Cancel by Dealer", sortOrder: 4, isPinned: false },
+    { code: "DOUBLE_ORDER",           label: "Double Order",           sortOrder: 5, isPinned: false },
+    { code: "WRONG_PUNCHING",         label: "Wrong Punching",         sortOrder: 6, isPinned: false },
+    { code: "RE_BILL",                label: "Re Bill",                sortOrder: 7, isPinned: false },
+    { code: "COMPLAINT_MATERIAL",     label: "Complaint Material",     sortOrder: 8, isPinned: false },
+  ];
+
+  for (const row of ciReasonRows) {
+    await prisma.ci_reason_master.upsert({
+      where: { code: row.code },
+      update: {
+        label:     row.label,
+        sortOrder: row.sortOrder,
+        isPinned:  row.isPinned,
+        isActive:  true,
+      },
+      create: { ...row, isActive: true },
+    });
+  }
+  console.log(`  ✓ ci_reason_master — ${ciReasonRows.length} rows`);
 
   // ── status_master ──────────────────────────────────────────────────────────
   const statusRows: {

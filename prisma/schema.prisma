@@ -236,6 +236,15 @@ model users {
   // no named relation (contrast the PickFinding*/Mrn* clusters above, which have
   // several FKs to `users` and MUST stay named on both sides — CORE §7.3).
   adminAuditLogs               admin_audit_log[]
+  // CI (Goods Return Note) back-relations (2026-09-01) — THREE FKs from
+  // `ci_returns` to `users`: supervisorId / billingOperatorId / voidedById.
+  // ⚠ ALL THREE MUST STAY EXPLICITLY NAMED ON BOTH SIDES. Three FKs to the same
+  // model is exactly the ambiguity CORE §7.3 records: an unnamed one is a Prisma
+  // ERROR at generate time, not a warning. Same discipline as the Mrn*/
+  // PickFinding* clusters above.
+  ciReturnsAsSupervisor        ci_returns[]          @relation("CiReturnSupervisor")
+  ciReturnsAsBillingOperator   ci_returns[]          @relation("CiReturnBillingOperator")
+  ciReturnsVoided              ci_returns[]          @relation("CiReturnVoidedBy")
 }
 
 // Web Push device subscriptions. Table created by hand in Supabase (11 cols,
@@ -605,6 +614,11 @@ model delivery_point_master {
   samplingUsageLogEntries sampling_usage_log[]
   // Phase 1 multi-SO back-relation
   salesOfficerLinks       customer_sales_officers[]
+  // CI returns back-relation (2026-09-01). ci_returns has ONE FK here
+  // (customerId, ON DELETE SET NULL) but the relation is NAMED anyway, to match
+  // the name carried on the ci_returns side — spec §6 lists it as
+  // @relation("CiReturnCustomer"). A name on one side only is a Prisma error.
+  ciReturns               ci_returns[]              @relation("CiReturnCustomer")
 }
 
 model delivery_point_contacts {
@@ -838,6 +852,12 @@ model orders {
   // pick_findings has exactly ONE FK to `orders`, so this back-relation needs
   // no @relation name (same rule as push_subscriptions → users).
   pickFindings         pick_findings[]
+  // CI returns (2026-09-01) — many CIs may be raised against one bill. NAMED
+  // (@relation("CiReturnOrder")) because ci_returns is the side that could grow
+  // a second FK here later; the name costs nothing now and is not a rename then.
+  // ⚠ NO BEHAVIOUR HANGS OFF THIS. Spec §2: a CI never changes the order's
+  // workflowStage or any other column — the FK is a stored link only.
+  ciReturns            ci_returns[]              @relation("CiReturnOrder")
   // TM Remove OBD (Feature 1)
   isRemoved            Boolean                   @default(false)
   removalReason        String?
@@ -2398,4 +2418,216 @@ model mrn_line_batches {
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
 
   @@unique([lineId, batchNo])
+}
+
+// ── CI module — Goods Return Note (CI-Form), 2026-09-01 ──────────────────────
+//
+// The RETURN counterpart to MRN, running the opposite way: MRN is stock coming
+// IN from TPW/CDC and is started by billing; CI is stock coming BACK from a
+// customer and is started by the FLOOR SUPERVISOR on his phone, then finished
+// by the billing operator at the desk.
+//
+// Spec: docs/prompts/drafts/web-update-2026-08-31-ci-module.md (v3.1, §6).
+// DDL:  sql/2026-08-31-ci-module.sql — ALREADY RUN against production.
+//
+// ⚠ HAND-MIRRORED FROM THE LIVE DATABASE, field by field, on 2026-09-01.
+// `npx prisma db pull` cannot run on this machine (P1001 — the Supabase direct
+// host is IPv6-only, the depot ISP is IPv4-only; CORE §3). These three models
+// were reconciled against information_schema.columns for name, type,
+// nullability and numeric precision. Never `db push`, never `db pull`.
+//
+// 🔴 THREE TABLES, NOT FOUR — THERE IS DELIBERATELY NO BATCH CHILD TABLE.
+// MRN needs mrn_line_batches because one inbound line can split across
+// manufacturing dates. A CI takes a single quantity per line and has nothing to
+// split, and v1 captures no manufacturing dates at all. Copying MRN's schema
+// wholesale is the obvious mistake, which is why this is written down. If mfg
+// dates are ever added they need a child table — a mfgMonth/mfgYear pair on the
+// line cannot express a split — and do NOT copy MRN's bestBefore* pair, nullable
+// since v27.17 and retired from every surface.
+
+// The reason picker's vocabulary. A MASTER TABLE, NOT A CHECK CONSTRAINT
+// (spec §3.1): the list will change, and a CHECK makes every change a schema
+// migration. Retire a reason with isActive = false and NEVER DELETE — old CIs
+// must keep pointing at the reason they were raised under, which is also why
+// ci_returns snapshots `reasonLabel` beside the FK.
+//
+// 8 rows live (sortOrder 1-8; the first three isPinned, shown above a divider
+// in the picker with the rest under "More"). They are ALSO in prisma/seed.ts —
+// without that, a wipe-and-reseed leaves this table EMPTY and the reason picker
+// breaks with no error message.
+model ci_reason_master {
+  id        Int          @id @default(autoincrement())
+  code      String       @unique
+  label     String
+  sortOrder Int
+  isPinned  Boolean      @default(false)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now()) @db.Timestamptz(6)
+
+  ciReturns ci_returns[] @relation("CiReturnReason")
+}
+
+// The CI header. 31 columns.
+//
+// 🔴 THREE LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA (CORE §7.4), so
+// they are invisible in this file and are recorded here by hand:
+//   chk_ci_returns_status         CHECK (status IN ('draft','submitted','closed','returned_to_floor'))
+//   chk_ci_returns_return_type    CHECK ("returnType" IN ('full','part'))
+//   chk_ci_returns_material_moved CHECK ("materialMoved" IN ('moved','not_moved'))
+// A FOURTH status value needs a SQL ALTER on chk_ci_returns_status in the
+// Supabase SQL Editor FIRST — never just a new string in application code. This
+// is the same trap chk_pick_assignments_status documents, and it is why
+// 'returned_to_floor' is already in the list from day one (spec §11.1) even
+// though no UI writes it yet: allowing an unused value costs nothing, ALTERing a
+// live CHECK later does not.
+//
+// 🔴 THREE FKs TO `users` — supervisorId / billingOperatorId / voidedById. All
+// three carry an explicitly NAMED @relation on BOTH sides (back-relations on the
+// users model). An unnamed one is a Prisma ambiguity ERROR at generate time, not
+// a warning — CORE §7.3.
+model ci_returns {
+  id                   Int                    @id @default(autoincrement())
+  // ⚠ NULLABLE, AND THAT IS THE WHOLE POINT (spec §6, "ciNumber is NULLABLE").
+  // A DRAFT CARRIES NO NUMBER: the write order is insert header → insert lines →
+  // allocate the number and flip to 'submitted', so a failure part-way leaves a
+  // numberless draft rather than a numbered CI with no lines on the floor's
+  // screen. Every list, board, marker and search filters `status <> 'draft'`, so
+  // a null-numbered row is never user-visible; if one is visible, the FILTER is
+  // missing, not the number.
+  // ⚠ Postgres treats NULLs as DISTINCT under a unique index, so any number of
+  // concurrent drafts coexist. The live index has NO `NULLS NOT DISTINCT` — do
+  // not add it, it would permit exactly one draft at a time depot-wide.
+  ciNumber             String?                @unique
+  status               String
+
+  // ── the bill ──────────────────────────────────────────────────────────────
+  // 🔴 orderId IS THE IDENTITY OF THE BILL, never invoiceNo (spec §4).
+  orderId              Int
+  order                orders                 @relation("CiReturnOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  // Snapshot, and also the TEXT join key to import_raw_line_items — there is NO
+  // FK from `orders` to its line items; Picking and Floor both join on the
+  // string, and CI does the same.
+  obdNumber            String
+  // ⚠ NULLABLE ON PURPOSE AND LOAD-BEARING (spec §4). 5.0% of bills dispatched
+  // in the last 30 days carry no invoice number, and 429 `dispatched` rows going
+  // back to 2026-05-15 never received one. The supervisor is NEVER BLOCKED.
+  // 🔴 DO NOT BUILD A BACK-FILL JOB. The CI holds orderId, so any screen reads
+  // the invoice number through the order at render time and it simply appears
+  // once SAP sends it. This is the ONE place CI deliberately does not snapshot:
+  // print and export must PREFER the live order value and fall back to this,
+  // never the reverse. A patch job would fight that and could rewrite a closed
+  // document.
+  invoiceNo            String?
+  invoiceDate          DateTime?              @db.Date
+  soNumber             String?
+  customerId           Int?
+  customer             delivery_point_master? @relation("CiReturnCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  customerCode         String?
+  customerName         String?
+
+  // ── stage 1 (floor supervisor, phone) ─────────────────────────────────────
+  returnType           String
+  materialMoved        String
+  materialReceivedDate DateTime               @db.Date
+  reasonId             Int
+  reason               ci_reason_master       @relation("CiReturnReason", fields: [reasonId], references: [id], onDelete: Restrict)
+  // Snapshot beside the FK, so renaming a reason never rewrites history.
+  reasonLabel          String
+  reasonRemark         String?
+  supervisorId         Int
+  supervisor           users                  @relation("CiReturnSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
+  submittedAt          DateTime?              @db.Timestamptz(6)
+
+  // ── stage 2 (billing operator, desk) ──────────────────────────────────────
+  ciDate               DateTime?              @db.Date
+  // 🔴 TWO SEPARATE NUMBERS, AND ONLY ONE OF THEM IS LABELLED (spec §5).
+  // `ciNumber` above is OrbitOMS's own reference, allocated at submit.
+  // `sapCiNumber` is SAP's, typed by billing after punching — and the billing
+  // screen labels THAT field plain "CI number", which is exactly why the two
+  // look mergeable. THEY ARE NOT. Merging leaves every pending CI with no way to
+  // name it for the hours or days before SAP sees it.
+  sapCiNumber          String?
+  ciValue              Decimal?               @db.Decimal(12, 2)
+  billingOperatorId    Int?
+  billingOperator      users?                 @relation("CiReturnBillingOperator", fields: [billingOperatorId], references: [id], onDelete: SetNull)
+  closedAt             DateTime?              @db.Timestamptz(6)
+
+  // ── void (never hard-delete a numbered document) ───────────────────────────
+  isVoided             Boolean                @default(false)
+  voidReason           String?
+  voidRemark           String?
+  voidedAt             DateTime?              @db.Timestamptz(6)
+  voidedById           Int?
+  voidedBy             users?                 @relation("CiReturnVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+
+  createdAt            DateTime               @default(now()) @db.Timestamptz(6)
+  // ⚠ A REAL @updatedAt, NOT a plain @default(now()). The live column is
+  // NOT NULL DEFAULT now(), which covers the INSERT only; @updatedAt is what
+  // restamps it on every UPDATE. Getting this wrong is the shape that made
+  // push_subscriptions.updatedAt a landmine (CORE §13) — and CI's live marker
+  // keys on MAX(updatedAt), so a column that silently stops moving freezes the
+  // board. Same as `mrn`.
+  updatedAt            DateTime               @updatedAt @db.Timestamptz(6)
+
+  lines                ci_return_lines[]
+
+  // Index names below match the LIVE ones exactly (verified against pg_indexes
+  // 2026-09-01) — Prisma's defaults happen to be identical, so no `map:` is
+  // needed on any of them. Do not rename a field without checking that again.
+  @@index([orderId])
+  @@index([status])
+  @@index([materialReceivedDate])
+  // 🔴 BOTH search keys, and this pair IS spec §4's ruling in schema form: the
+  // supervisor searches by invoice number OR OBD number, because 5% of bills
+  // never get an invoice number at all.
+  @@index([invoiceNo])
+  @@index([obdNumber])
+}
+
+// One returned line. 12 columns.
+model ci_return_lines {
+  id                Int        @id @default(autoincrement())
+  ciReturnId        Int
+  ciReturn          ci_returns @relation(fields: [ciReturnId], references: [id], onDelete: Cascade)
+  lineNumber        Int
+  // A plain nullable Int, NOT a foreign key — deliberate. Spec §6 calls it a
+  // "pointer back to import_raw_line_items" and names ON DELETE only for
+  // ciReturnId; the live table has no FK here either. (Contrast pick_findings,
+  // which does carry a UNIQUE FK to that table.)
+  rawLineItemId     Int?
+
+  // 🔴 The raw SAP material code. Resolved against `sku_master_v2.material` and
+  // NOTHING ELSE — never a catalog row id. The old `sku_master` and
+  // `sku_master_v2` assign COMPLETELY DIFFERENT ids to the same material code
+  // (CORE §13, the id-space landmine), so following an id would print a
+  // confidently WRONG product name on a signed goods-return document.
+  skuCode           String
+  skuDescription    String?
+  packCode          String?
+
+  // ⚠ SNAPSHOT of import_raw_line_items.unitQty, which is SAP's DELIVERY
+  // quantity. THERE IS NO INVOICED-QUANTITY COLUMN ANYWHERE IN THIS DATABASE —
+  // do not label this "invoiced qty" on a screen or in a later doc. Snapshotted
+  // because a re-import PATCHES the raw line in place, and a closed CI must not
+  // silently change what it claims was delivered.
+  deliveryQty       Int?
+  // What came back, in TINS — the only number the supervisor types.
+  returnedQty       Int
+  // Litres are CALCULATED, never typed (spec §6):
+  //   litresPerTin      = import_raw_line_items.volumeLine / unitQty  (snapshot)
+  //   returnedQtyLitres = litresPerTin × returnedQty                  (at save)
+  // 🔴 GUARD THE DIVISION: unitQty is nullable and could be 0, giving
+  // null/Infinity, which prints as garbage. If it is null or 0, leave
+  // litresPerTin NULL and render the litres cell blank.
+  // (12,3) NOT (12,2) — pack sizes carry three decimals and a 0.925 L pack would
+  // round away at two (spec §6).
+  litresPerTin      Decimal?   @db.Decimal(12, 3)
+  returnedQtyLitres Decimal?   @db.Decimal(12, 3)
+
+  createdAt         DateTime   @default(now()) @db.Timestamptz(6)
+
+  // Live name ci_return_lines_ciReturnId_lineNumber_key — Prisma's default for
+  // this pair is identical, so no `map:`. No separate index on ciReturnId: it is
+  // the LEADING column here, which already serves every lookup by parent.
+  @@unique([ciReturnId, lineNumber])
 }
