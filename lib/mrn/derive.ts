@@ -141,11 +141,22 @@ export function isLineOpenable(line: MrnOpenableLine): boolean {
 
 /**
  * The Batch No every MRN report surface prints: one letter for where the truck
- * came from, the manufacturing month as two digits, then the FOUR-digit
- * manufacturing year. No separators, no year truncation, nothing else.
+ * came from, then a full eight-digit date — the FOUR-digit manufacturing year,
+ * the manufacturing month as two digits, and a day. No separators, no year
+ * truncation, nothing else.
  *
- *   TPW + month 8 + year 2026 → "T082026"
- *   CDC + month 8 + year 2026 → "C082026"
+ *   TPW + month 8 + year 2026 → "T20260801"
+ *   CDC + month 1 + year 2027 → "C20270101"
+ *
+ * ⚠ THE DAY IS A HARDCODED "01" AND THERE IS NOTHING BEHIND IT. No day is
+ * stored on mrn_line_batches, none is collected, and none is wanted — it is a
+ * fixed filler so the number reads as a whole date rather than a year-month
+ * stub. Do not add a day input, a day column, or a "the real day once we have
+ * one" fallback: there is no day to have.
+ *
+ * ⚠ THE ORDER WAS MONTH-THEN-YEAR ("T082026") UNTIL 2026-08-31 and is now
+ * YEAR-THEN-MONTH-THEN-DAY. The prefix still leads; only the digits after it
+ * changed. Anything still writing T082026 in a comment or a fixture is stale.
  *
  * ⚠ IT IS A PROPERTY OF A BATCH ROW, NOT OF A LINE. A line split across two
  * manufacturing months carries TWO different batch numbers — which is exactly
@@ -166,7 +177,7 @@ export function isLineOpenable(line: MrnOpenableLine): boolean {
  *
  * ⚠ FOUR DIGITS OF YEAR, and NEVER formatMonthYear() (components/mrn/format.ts:91).
  * That helper truncates to `06/26` for a column with no width to spare; this is
- * an identifier, and "T0826" is a different string from "T082026".
+ * an identifier, and "T260801" is a different string from "T20260801".
  */
 export function formatBatchNo(
   receivedFrom: MrnReceivedFrom,
@@ -188,7 +199,8 @@ export function formatBatchNo(
       );
     }
   }
-  return `${prefix}${String(mfgMonth).padStart(2, "0")}${mfgYear}`;
+  // Day is a fixed "01" — see the header. Year, then month, then day.
+  return `${prefix}${mfgYear}${String(mfgMonth).padStart(2, "0")}01`;
 }
 
 // ── Per-MRN roll-up ──────────────────────────────────────────────────────────

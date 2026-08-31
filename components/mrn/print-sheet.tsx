@@ -44,7 +44,7 @@ import { formatCount } from "./format";
  *  Pack and Batch No. Widths sum to 100.
  *
  *  ⚠ Batch No REPLACED Mfg m/y here rather than joining it — still 16 columns,
- *  no width added. "T082026" already CONTAINS 08/2026, so nothing is lost and
+ *  no width added. "T20260801" already CONTAINS 08/2026, so nothing is lost and
  *  A4 landscape gains no column. The XLS keeps Manufacturing Month and Year as
  *  two sortable integers ALONGSIDE Batch No because a spreadsheet is filtered
  *  and a sheet of paper is not; see lib/mrn/workbook.ts. The 1 point Batch No

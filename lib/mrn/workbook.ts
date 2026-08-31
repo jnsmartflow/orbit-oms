@@ -36,7 +36,7 @@ import { buildRenderRows, reportHeaderFields, reportTotals } from "./report";
  *
  * ⚠ BOTH OF THEM STAY HERE, EVEN THOUGH Batch No NOW REPEATS THEM. This sheet
  * mirrors the paper TPW template column for column, and an .xlsx is the thing
- * someone SORTS and FILTERS — two integers do that and "T082026" does not. The
+ * someone SORTS and FILTERS — two integers do that and "T20260801" does not. The
  * A4 sheet and the desktop table, which have a width budget and no filter, drop
  * Mfg and keep only the batch number. Keeping all three here is the trade, not
  * an oversight.

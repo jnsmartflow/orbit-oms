@@ -193,7 +193,7 @@ export function LineDrawer({
                 >
                   {/* Batch number, then the month and year it is BUILT FROM.
                       The repetition is correct on this surface and only this
-                      one: the drawer exists to remove doubt, and "T082026" next
+                      one: the drawer exists to remove doubt, and "T20260801" next
                       to "08 / 2026" is how the reader confirms the identifier
                       says what they think it says. The table and the A4 sheet,
                       which have a width budget, print the batch number alone. */}

@@ -54,7 +54,7 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 // gets expressed on paper. The screen has somewhere better to put it.
 //
 // ⚠️ Batch No REPLACED the Mfg M/Y cell here — same 12%, same eight columns.
-// "T082026" already contains 08/2026, so the month and year are still on the
+// "T20260801" already contains 08/2026, so the month and year are still on the
 // row; they are just no longer a second thing to read. It is DERIVED at render
 // by formatBatchNo() (lib/mrn/derive.ts) from mrn.receivedFrom plus the batch’s
 // own mfgMonth/mfgYear — there is NO batch-number column and none may be added,
