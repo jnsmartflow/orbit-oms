@@ -140,18 +140,20 @@ async function main() {
     // (CORE §13) — seed is not live, in both directions.
     { roleSlug: "billing_operator", pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: true  },
     { roleSlug: "floor_supervisor", pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
-    { roleSlug: "operations",       pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    // ⚠ canExport CORRECTED false → true, 2026-09-01. This row said false while
+    // LIVE said true (SELECT, all five flags, all three mrn rows — the other two
+    // matched). A reseed would have silently revoked MRN export from operations.
+    // LIVE IS THE AUTHORITY (CORE §3 — seed is not live, in both directions).
+    { roleSlug: "operations",       pageKey: "mrn",        canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: false },
     // ── CI (Goods Return Note), 2026-09-01 ────────────────────────────────
     // Same three roles as `mrn`, because it is the same two people plus the
     // operations test account: floor_supervisor raises the CI on his phone
     // (stage 1), billing_operator closes it at the desk (stage 2).
     //
     // ⚠ FLAGS ARE THE LIVE ROWS, NOT A COPY OF THE mrn LINES ABOVE — verified
-    // by SELECT 2026-09-01. `operations` holds canExport on ci; the mrn line
-    // above says false, and that line is itself stale (live mrn/operations has
-    // canExport TRUE). Do not "align" the two by copying either way; check the
-    // database. Live-vs-seed drift on the mrn row is flagged, not fixed here —
-    // changing what a reseed grants MRN is a different decision.
+    // by SELECT 2026-09-01. `operations` holds canExport on ci, and on mrn too
+    // (the mrn line above said false and was corrected in the same pass). Do not
+    // "align" these blocks by copying either way; check the database.
     //
     // ⚠ These rows were applied to LIVE by sql/2026-08-31-ci-module.sql and are
     // seeded here so a wipe-and-reseed reproduces them. A live grant with no
