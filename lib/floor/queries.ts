@@ -698,10 +698,11 @@ export async function getFloorBoard(
       dealerName: dealer?.customerName ?? "(Unmatched)",
       // ⚠ COMPILE-REQUIRED ONLY — NOT a Floor feature (2026-08-31).
       // `FloorBoardRow extends PickingQueueRow`, and Picking added
-      // `dealerInMaster` for its own "not in master" card marker
-      // (lib/picking/queue.ts + components/picking/card-atoms.tsx). A required
-      // field on the base interface has to be filled here or this file does not
-      // build — this is the ONE construction site tsc named.
+      // `dealerInMaster` alongside its SAP-name fallback (lib/picking/queue.ts).
+      // A required field on the base interface has to be filled here or this
+      // file does not build — this is the ONE construction site tsc named.
+      // (It briefly also fed a Picking card chip; that chip was removed
+      // 2026-09-01 and its sole consumer is now lib/picking/search.ts.)
       //
       // 🔴 NOTHING ON FLOOR READS IT, AND NOTHING ON FLOOR CHANGED. Floor's
       // `dealerName` above still prints the literal, deliberately: Floor already

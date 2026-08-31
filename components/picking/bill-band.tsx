@@ -47,14 +47,26 @@ const CAPTION_COLOR = "#98a2b3";
  * 🔴 WHAT RENDERS WHEN — the rule, in one place:
  *   bayNumber !== null   → number block + rule. Otherwise BOTH are omitted and
  *                          the band shows the route side only.
- *   route === null       → the text block still renders, reading "Unmatched".
- *                          It does NOT collapse. This is the whole reason the
- *                          band exists in the shape it does: the route came OFF
- *                          the header subtitle when this landed, so if an
- *                          unmatched bill also dropped its band the word
- *                          "Unmatched" would vanish from the screen entirely.
- *                          That is a loss of information, not a simplification.
+ *   route === null       → the text block still renders, reading "—".
+ *                          It does NOT collapse — that half of the 2026-08-22
+ *                          rule is unchanged and still load-bearing: the route
+ *                          came OFF the header subtitle when this landed, so a
+ *                          band that also collapsed would leave the screen
+ *                          saying nothing at all about the lane.
  *   trailing === null    → no triangle. The band still renders.
+ *
+ * ⚠ IT WAS THE WORD "Unmatched" UNTIL 2026-09-01, and the comment here argued
+ * for it. THE OWNER HAS DECIDED OTHERWISE — reviewed on a real phone, along
+ * with the short-lived "not in master" card chip (47791643), which was removed
+ * in the same pass. Both said the same thing twice and neither earned its
+ * space. Two reasons the word is not missed: "Unmatched" sat under a caption
+ * reading ROUTE, so it could be read as "no route" rather than "no dealer";
+ * and the dealer name in the header above is now the real SAP name
+ * (lib/picking/queue.ts's fallback, which STAYS), so the screen no longer has
+ * a nameless bill to explain. Finding these bills is the SEARCH BOX's job —
+ * typing "unmatched" still returns exactly them (lib/picking/search.ts), and
+ * that clause is now the only route to them. Do not re-derive a word or a badge
+ * here; see docs/prompts/drafts/code-update-2026-08-31-picking-sap-name-fallback.md §9.
  *
  * The caller decides whether there is a bill at all; this component is not
  * rendered when `detailRow` is null.
@@ -107,7 +119,7 @@ export function BillBand({
           className="text-[15px] font-semibold truncate mt-1"
           style={{ color: "#1d2939" }}
         >
-          {route ?? "Unmatched"}
+          {route ?? "—"}
         </span>
       </div>
       {trailing !== null && <div className="ml-auto shrink-0 flex items-center">{trailing}</div>}

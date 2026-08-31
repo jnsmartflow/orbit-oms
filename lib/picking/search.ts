@@ -84,6 +84,15 @@ export interface PickingSearchable {
  * It behaves exactly like `route`/`area` above: a field that is "" for most
  * rows, and `"".includes(q)` is false for every non-empty q. So this widens the
  * match for unmastered bills ONLY and cannot affect any other row.
+ *
+ * 🔴 IT IS NOW THE ONLY WAY TO FIND THESE BILLS (2026-09-01). The "not in
+ * master" chip that marked them on the cards and detail headers for one day
+ * (47791643) was removed after phone review — owner decision — so NOTHING on
+ * screen distinguishes an unmastered bill any more. The route filter still
+ * cannot reach one (its route is null), so deleting this clause as "an
+ * undocumented leftover" would leave the supervisor with no route to them at
+ * all. It is load-bearing. Do not remove it, and do not let a future search
+ * refactor drop the sixth field because five look tidier.
  */
 export function matchesPickingSearch(row: PickingSearchable, q: string): boolean {
   if (q === "") return true;

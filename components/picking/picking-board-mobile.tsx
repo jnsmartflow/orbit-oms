@@ -26,17 +26,7 @@ import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 // FamilyChip joins the list 2026-08-22 — the picker card renders his ARTICLE
 // TOTALS in the same chip as a bill renders its own packs, so one man's
 // "12 Carton" and one bill's cannot drift apart in style.
-import {
-  AgeBadge,
-  CardShelf,
-  CARD_SHADOW_V2,
-  FamilyChip,
-  NotInMasterChip,
-  RouteDot,
-  showsRouteSlotMarker,
-  SmuBadge,
-  isSmuBadged,
-} from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, FamilyChip, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
 // Duplicate-SO red — tokens and tag from the ONE owner. Never re-type a hex.
 import {
   DuplicateSoTag,
@@ -787,33 +777,27 @@ function PickingCard({
           <div className="flex items-center justify-between gap-2.5 mt-1.5">
             <span className="flex items-center gap-2 min-w-0">
               <RouteDot deliveryType={row.deliveryType} onRed={dup} />
-              {/* ⚠ THE MARKER REPLACES THE EM-DASH, IT DOES NOT JOIN IT
-                  (2026-08-31). When the dealer is not in master, `route` is null
-                  for the SAME reason the name was — one null FK empties route,
-                  area, deliveryType and bay together — so that `—` is not a
-                  coincidental gap, it is the same fact twice. Spending the slot
-                  that was already saying nothing keeps the row width-neutral,
-                  which is what 320px (CLAUDE_UI.md §60) can afford; a sixth
-                  element on this line is not. The rule itself lives in
-                  showsRouteSlotMarker() so both cards ask it identically. */}
-              {showsRouteSlotMarker(row) ? (
-                <NotInMasterChip onDark={dup} />
-              ) : (
-                <span
-                  className="text-[12px] font-medium truncate min-w-0"
-                  style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
-                >
-                  {/* ROUTE, not area (2026-08-21). The area is a sub-lane inside
-                      a route; two bills on one truck read "Pal" and "Rander",
-                      which tells a supervisor nothing about which van they go on.
-                      The route is the work lane the whole board already filters
-                      and sorts by. Same `?? "—"` fallback, same everything else.
-                      ⚠ The dot to the left still keys on deliveryType, NOT on
-                      route (card-atoms.tsx RouteDot, CLAUDE_UI.md §62.3) — it did
-                      not become a route colour when the text beside it did. */}
-                  {row.route ?? "—"}
-                </span>
-              )}
+              <span
+                className="text-[12px] font-medium truncate min-w-0"
+                style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
+              >
+                {/* ROUTE, not area (2026-08-21). The area is a sub-lane inside
+                    a route; two bills on one truck read "Pal" and "Rander",
+                    which tells a supervisor nothing about which van they go on.
+                    The route is the work lane the whole board already filters
+                    and sorts by. Same `?? "—"` fallback, same everything else.
+                    ⚠ The dot to the left still keys on deliveryType, NOT on
+                    route (card-atoms.tsx RouteDot, CLAUDE_UI.md §62.3) — it did
+                    not become a route colour when the text beside it did.
+                    ⚠ THE `—` STAYS A BARE `—` (2026-09-01). A "not in master"
+                    chip briefly took this slot on an unmastered bill (47791643)
+                    and was REMOVED after phone review — owner decision, not a
+                    bug. Do not re-derive it: the SAP-name fallback in
+                    lib/picking/queue.ts already puts a real dealer name on the
+                    card, which was the actual problem. See
+                    docs/prompts/drafts/code-update-2026-08-31-picking-sap-name-fallback.md §9. */}
+                {row.route ?? "—"}
+              </span>
               {rich && volumeNode !== null && (
                 <>
                   <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
@@ -3347,21 +3331,13 @@ export function PickingBoardMobile(): React.JSX.Element {
                 what all three made room for. If something new ever wants to be
                 bigger than this, it is competing with the one fact that says
                 which bill you are holding. */}
-            {/* ⚠ THE MARKER SITS BESIDE THE NAME HERE, NOT IN A ROUTE SLOT
-                (2026-08-31) — the header has no route slot any more (it moved to
-                BillBand below on 2026-08-22), and the picker face is written
-                identically so one screen never reads as a different app.
-                The name keeps `truncate min-w-0` and the chip is `shrink-0`, so
-                the NAME is what gives way — the same ordering bill-symbols.tsx
-                states for the symbol run ("a name is recoverable by opening the
-                bill, a flag you cannot see is not"). Gate is the bare
-                `!dealerInMaster`, NOT showsRouteSlotMarker(): there is no
-                em-dash up here for it to be replacing. */}
-            <div className="flex items-baseline gap-2 min-w-0">
-              <div className="text-[18px] font-semibold text-white truncate min-w-0">
-                {detailRow?.dealerName ?? "—"}
-              </div>
-              {detailRow !== null && !detailRow.dealerInMaster && <NotInMasterChip onDark />}
+            {/* ⚠ THE NAME HAS ROW 1 TO ITSELF (restored 2026-09-01). A
+                "not in master" chip sat beside it for one day (47791643) and was
+                REMOVED after phone review — owner decision, not a bug. Nothing
+                else belongs on this line; that is the whole point of the header
+                collapsing to one row. */}
+            <div className="text-[18px] font-semibold text-white truncate min-w-0">
+              {detailRow?.dealerName ?? "—"}
             </div>
             {/* Subtitle: OBD · time, a faint rule, then the symbol run.
                 ⚠ THE TEXT TRUNCATES AND THE SYMBOLS DO NOT — the run is
@@ -3378,8 +3354,10 @@ export function PickingBoardMobile(): React.JSX.Element {
                   put it back: two copies of a lane name is how one of them goes
                   stale. The `?? "Unmatched"` that used to sit here did not
                   simply disappear either — the band renders the route side even
-                  when route is null, and prints "Unmatched" there, which is why
-                  removing it from this line loses nothing. See bill-band.tsx. */}
+                  when route is null, which is why removing it from this line
+                  loses nothing. ⚠ That band now prints a plain "—" rather than
+                  the word "Unmatched" (2026-09-01, owner decision after phone
+                  review); bill-band.tsx carries the reasoning. */}
               {detailRow
                 ? `${detailRow.obdNumber}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""

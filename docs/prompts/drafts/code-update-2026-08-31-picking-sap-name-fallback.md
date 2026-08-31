@@ -279,3 +279,61 @@ No code anywhere string-compares `dealerName` against the literal (`dealerName =
    SMU badge).
 4. Typing `unmatched` in the search box still returns exactly those bills.
 5. Both detail headers show the chip beside the name, on both faces.
+
+---
+
+## 9. UPDATE 2026-09-01 — the marker was REMOVED. The name fallback STAYED.
+
+**Owner decision, made after reviewing the chip on a real phone. Not a bug, not a regression,
+not something to re-litigate.** Commit `47791643` shipped two things; only one of them survives.
+
+### What went
+
+The `not in master` chip, at all four call sites — both card route slots and both detail-screen
+headers — plus its two exports, `NotInMasterChip` and `showsRouteSlotMarker`, deleted from
+`components/picking/card-atoms.tsx` (grep-confirmed: no other consumer ever existed). The card's
+route slot is back to exactly `{row.route ?? "—"}`; the detail header is back to name + OBD + slot
+and nothing else.
+
+`components/picking/bill-band.tsx` went with it: the route side now prints a plain `—` instead of
+the word `"Unmatched"`. That file's comment argued *for* the word on 2026-08-22; it has been
+rewritten to record the reversal and the date, so nothing in the source now contradicts the code.
+Two detail-header comments that cited the band's old wording were corrected in the same pass.
+
+**Two reasons the word and the chip are not missed:**
+1. They said the same thing twice, on one screen, and neither earned its space.
+2. `"Unmatched"` sat under a caption reading **ROUTE**, so it read as "no route" at least as
+   easily as "no dealer" — an ambiguity the chip did not fix.
+
+### What stayed, and why
+
+- 🔴 **The SAP-name fallback in `lib/picking/queue.ts` — this was always the real fix.** The
+  defect was a bill with *no dealer name anywhere on it*. A real name on the card solves that;
+  the badge was decoration on top of a problem already solved.
+- **`dealerInMaster` on `PickingQueueRow`**, and Floor's compile-fill. Still produced, still
+  correct — it simply has one consumer now instead of three, and that consumer is not visual.
+- **The three push-notification fallbacks** — unchanged.
+- 🔴 **The `"unmatched"` clause in `lib/picking/search.ts`. It matters MORE now, not less.**
+  With no marker anywhere on screen, typing `unmatched` in the search box is the **only** way left
+  to find these bills: the route filter still cannot reach one, because its route is null and
+  `routeCounts` skips it. §3.E's original argument survives the removal intact and is now the
+  clause's whole justification. Deleting it as "an undocumented leftover" would leave the
+  supervisor with no route to these bills at all.
+
+### For the next session — do not re-derive the chip
+
+A future reader will find `dealerInMaster` on the payload with no UI reading it and may conclude a
+badge is the obvious missing piece. **It is not missing. It was built, shipped, seen on a phone,
+and removed.** The visible-marker question is CLOSED. If unmastered bills need to be *found*, that
+is the search box's job and it already works. If they need to stop existing, the fix is the actual
+root cause — **the 39 live (472 historical) ship-to codes missing from `delivery_point_master`** —
+which is a data task and remains open (§7).
+
+Sections 1-8 above describe `47791643` as shipped and are left unedited as the historical record.
+Where they describe the marker — §3.C, §3.D, §4, and checklist items 2, 3 and 5 in §8 — read them
+as superseded by this section.
+
+### Verification (2026-09-01)
+
+`npx tsc --noEmit` — **clean, exit 0.** Not re-verified on a phone: same credential limit as §8;
+`/picking` still 307s to `/login` and the dev server still points at the production DB.

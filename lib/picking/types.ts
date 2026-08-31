@@ -26,6 +26,14 @@ export interface PickingQueueRow {
    * ⚠ NOT `orders.customerMissing`. That column is stamped at import and can go
    * stale after a master backfill; this is computed at render time from whether
    * the lookup found a row, which is the only truthful answer.
+   *
+   * 🔴 EXACTLY ONE CONSUMER, AND IT IS NOT VISUAL (2026-09-01):
+   * lib/picking/search.ts, where it drives the synthetic "unmatched" search
+   * term. It briefly fed a card/header chip too (47791643); that chip was
+   * REMOVED after phone review — owner decision, not a bug. Nothing on screen
+   * marks these bills any more, which is exactly why the search clause is now
+   * load-bearing rather than a nicety. Keep the field; do not re-derive a badge
+   * from it. See docs/prompts/drafts/code-update-2026-08-31-picking-sap-name-fallback.md §9.
    */
   dealerInMaster: boolean;
   isShipToOverride: boolean;
