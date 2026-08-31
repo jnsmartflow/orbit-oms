@@ -31,6 +31,19 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 /**
+ * A name that is only whitespace is not a name.
+ *
+ * Exists for the `dealerName` fallback chain below: a plain `??` treats `""`
+ * and `"   "` as present and would render a BLANK card hero — which looks like
+ * a render bug, where "(Unmatched)" at least states the truth. Returns the
+ * ORIGINAL value when it survives, deliberately not the trimmed one, so no
+ * currently-rendering name changes a single byte because of this helper.
+ */
+function nonBlank(value: string | null | undefined): string | null {
+  return value != null && value.trim() !== "" ? value : null;
+}
+
+/**
  * Today's calendar date in IST, as a UTC-midnight Date — the shape Postgres
  * expects for a @db.Date column (date only, no time-of-day). Built by
  * shifting the current instant by the IST offset FIRST, then reading the
@@ -672,7 +685,42 @@ export async function getPickingQueue(
           : null,
       orderId: order.id,
       obdNumber: order.obdNumber,
-      dealerName: effectiveDealer?.customerName ?? "(Unmatched)",
+      // ── THE SAP-NAME FALLBACK (2026-08-31) ───────────────────────────────
+      // Master name first, then the name SAP itself put on the bill, then the
+      // literal. `order.shipToCustomerName` costs NOTHING to read: the findMany
+      // above uses `include` with no top-level `select`, so every base scalar is
+      // already on this object — the same reason `order.smu`, `order.orderType`
+      // and `order.orderDateTime` need no select entry. No new query, no join.
+      //
+      // WHY: 39 of 39 unmatched bills in the picking-visible set carried a
+      // non-empty shipToCustomerName (live SELECT 2026-08-31), and 472 of 472
+      // across every unmatched bill ever recorded — zero blanks. Picking was
+      // the ONLY surface printing the literal with a real name sitting unread
+      // on the row; Floor's detail route, Tint Manager, Tint Operator, the
+      // challan print, Tint Summary and both Billing pilot routes all already
+      // fall back this way.
+      //
+      // ⚠ `nonBlank`, not a bare `??`. A whitespace-only name is not a name,
+      // and letting one through renders a BLANK hero — which reads as a render
+      // bug rather than a data gap, i.e. strictly worse than the literal. It
+      // returns the ORIGINAL string when non-blank (never the trimmed one), so
+      // every matched bill renders byte-identically to before this change.
+      dealerName:
+        nonBlank(effectiveDealer?.customerName) ??
+        nonBlank(order.shipToCustomerName) ??
+        "(Unmatched)",
+      // ⚠ DERIVED FROM RESOLUTION, NEVER FROM `orders.customerMissing`. That
+      // column is stamped once at import (app/api/import/obd/route.ts) and goes
+      // STALE the moment an admin backfills the customer — the admin route
+      // clears it, but nothing re-runs on the ~10-minute auto-import path, so a
+      // resolved bill can still carry `customerMissing: true`. Whether the FK
+      // resolved HERE, at render time, is the truthful test and the only one.
+      //
+      // ⚠ This is NOT "does dealerName read '(Unmatched)'". A dealer can
+      // resolve and still have a blank name (never seen live, but the type
+      // allows it); this flag answers "is this dealer in
+      // delivery_point_master", which is the question the marker asks.
+      dealerInMaster: effectiveDealer != null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
       windowId: order.dispatchWindow?.id ?? null,
       windowTime: order.dispatchWindow?.windowTime ?? null,

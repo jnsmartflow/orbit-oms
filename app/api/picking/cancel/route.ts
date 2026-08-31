@@ -144,6 +144,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       obdNumber: true,
       customer: { select: { customerName: true } },
       shipToOverrideCustomer: { select: { customerName: true } },
+      // SAP's own name for the bill (2026-08-31) — explicit `select` here, so
+      // the column must be asked for; it does not ride along the way it does
+      // under lib/picking/queue.ts's `include`.
+      shipToCustomerName: true,
       pickAssignment: { select: { pickerId: true } },
     },
   });
@@ -248,12 +252,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   //     it IS the picker (he is looking at the screen that did it).
   //
   // The dealer name is resolved the same way every other surface resolves it:
-  // ship-to override first, plain customer second (CORE §7.3).
+  // ship-to override first, plain customer second (CORE §7.3), then SAP's own
+  // shipToCustomerName (2026-08-31) before the literal — matching the board.
+  // ⚠ No data-quality marker in a push body — see assign/route.ts.
   const heldByPickerId = order.pickAssignment?.pickerId ?? null;
   if (heldByPickerId !== null && heldByPickerId !== changedById) {
     try {
       const dealerName =
-        order.shipToOverrideCustomer?.customerName ?? order.customer?.customerName ?? "(Unmatched)";
+        order.shipToOverrideCustomer?.customerName ??
+        order.customer?.customerName ??
+        order.shipToCustomerName ??
+        "(Unmatched)";
       await sendToUser(heldByPickerId, {
         title: "Bill cancelled",
         body: `${dealerName} · ${order.obdNumber} — stop picking this bill`,

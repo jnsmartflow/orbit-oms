@@ -696,6 +696,24 @@ export async function getFloorBoard(
       orderId: order.id,
       obdNumber: order.obdNumber,
       dealerName: dealer?.customerName ?? "(Unmatched)",
+      // ⚠ COMPILE-REQUIRED ONLY — NOT a Floor feature (2026-08-31).
+      // `FloorBoardRow extends PickingQueueRow`, and Picking added
+      // `dealerInMaster` for its own "not in master" card marker
+      // (lib/picking/queue.ts + components/picking/card-atoms.tsx). A required
+      // field on the base interface has to be filled here or this file does not
+      // build — this is the ONE construction site tsc named.
+      //
+      // 🔴 NOTHING ON FLOOR READS IT, AND NOTHING ON FLOOR CHANGED. Floor's
+      // `dealerName` above still prints the literal, deliberately: Floor already
+      // shows a real name through `billToName` (billToByObd), so it never had
+      // Picking's blank-card problem. Whether Floor should ALSO fall back to
+      // orders.shipToCustomerName is a Floor decision for a Floor session
+      // (FLOOR §1 — Floor is a CALLER of Picking, and Picking must not reach in
+      // here to change what this board renders).
+      //
+      // Same expression as Picking's, so the flag cannot mean two things: it is
+      // "did the effective dealer FK resolve", never `orders.customerMissing`.
+      dealerInMaster: dealer != null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
       // The ship-to PAIR — the ORIGINAL and the redirect target, kept apart from
       // `dealerName` above (the EFFECTIVE dealer, which IS the override on a

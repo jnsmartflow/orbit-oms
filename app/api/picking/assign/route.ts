@@ -187,12 +187,24 @@ export async function POST(req: Request): Promise<NextResponse> {
           obdNumber: true,
           customer: { select: { customerName: true } },
           shipToOverrideCustomer: { select: { customerName: true } },
+          // SAP's own name for the bill (2026-08-31). This route uses an
+          // explicit `select`, unlike lib/picking/queue.ts's `include`, so the
+          // column has to be ASKED FOR — it does not ride along.
+          shipToCustomerName: true,
         },
       });
       await Promise.allSettled(
         notifyOrders.map((o) => {
+          // Same three-step fallback the board renders (lib/picking/queue.ts) —
+          // a push that says "(Unmatched)" while the card behind it names the
+          // dealer is two answers to one question.
+          // ⚠ NO MARKER HERE. A push body is 2-3 words of context on a lock
+          // screen, not a place for a data-quality badge.
           const dealerName =
-            o.shipToOverrideCustomer?.customerName ?? o.customer?.customerName ?? "(Unmatched)";
+            o.shipToOverrideCustomer?.customerName ??
+            o.customer?.customerName ??
+            o.shipToCustomerName ??
+            "(Unmatched)";
           return sendToUser(pickerId, {
             title: "New pick assigned",
             body: `${dealerName} · ${o.obdNumber}`,

@@ -16,7 +16,16 @@ import { FindingTriangleButton } from "./finding-recorder";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+import {
+  AgeBadge,
+  CardShelf,
+  CARD_SHADOW_V2,
+  NotInMasterChip,
+  RouteDot,
+  showsRouteSlotMarker,
+  SmuBadge,
+  isSmuBadged,
+} from "./card-atoms";
 import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
@@ -1506,16 +1515,25 @@ export function PickerMyPicksBoard({
                 <div className="flex items-center justify-between gap-2.5 mt-1.5">
                   <span className="flex items-center gap-2 min-w-0">
                     <RouteDot deliveryType={row.deliveryType} onRed={dup} />
-                    <span
-                      className="text-[12px] font-medium truncate min-w-0"
-                      style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
-                    >
-                      {/* ROUTE, not area (2026-08-21) — same swap as the
-                          supervisor card, so both faces name the same lane.
-                          The dot beside it still keys on deliveryType, not on
-                          route (CLAUDE_UI.md §62.3). */}
-                      {row.route ?? "—"}
-                    </span>
+                    {/* ⚠ SAME SWAP AS THE SUPERVISOR CARD (2026-08-31), through
+                        the same shared predicate — the picker must not read a
+                        different card language for the same bill. The marker
+                        REPLACES the em-dash and never joins it; see the longer
+                        note at the supervisor call site and in card-atoms.tsx. */}
+                    {showsRouteSlotMarker(row) ? (
+                      <NotInMasterChip onDark={dup} />
+                    ) : (
+                      <span
+                        className="text-[12px] font-medium truncate min-w-0"
+                        style={{ color: dup ? DUP_SO_MUTED : "#667085" }}
+                      >
+                        {/* ROUTE, not area (2026-08-21) — same swap as the
+                            supervisor card, so both faces name the same lane.
+                            The dot beside it still keys on deliveryType, not on
+                            route (CLAUDE_UI.md §62.3). */}
+                        {row.route ?? "—"}
+                      </span>
+                    )}
                     {row.articleTag !== null && (
                       <>
                         <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
@@ -1655,8 +1673,14 @@ export function PickerMyPicksBoard({
             {/* 18px/600 — THE LARGEST TEXT ON THE SCREEN. Same treatment as
                 the supervisor's, deliberately: one face must not read as a
                 different app from the other. */}
-            <div className="text-[18px] font-semibold text-white truncate min-w-0">
-              {detailRow?.dealerName ?? "—"}
+            {/* ⚠ Beside the name, not in a route slot (2026-08-31) — byte-for-
+                byte the supervisor's treatment, deliberately: same reason the
+                18px hero above is shared. Name truncates, chip is shrink-0. */}
+            <div className="flex items-baseline gap-2 min-w-0">
+              <div className="text-[18px] font-semibold text-white truncate min-w-0">
+                {detailRow?.dealerName ?? "—"}
+              </div>
+              {detailRow !== null && !detailRow.dealerInMaster && <NotInMasterChip onDark />}
             </div>
             {/* Subtitle: OBD · time, a faint rule, then the symbol run. The
                 text truncates; the run is shrink-0 and never does. */}

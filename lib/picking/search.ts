@@ -38,6 +38,11 @@ export interface PickingSearchable {
   area: string | null;
   /** Nullable — an unassigned bill has no picker. */
   assignedToName: string | null;
+  /**
+   * False ⇒ the dealer is not in `delivery_point_master`. Matched against the
+   * SYNTHETIC term "unmatched" below — this field is never itself displayed.
+   */
+  dealerInMaster: boolean;
 }
 
 /**
@@ -65,6 +70,20 @@ export interface PickingSearchable {
  * Each of those is a real feature with a real cost, and none has been asked
  * for; adding one here changes every list on the board at once. Floor's numbers
  * mode is the closest precedent and it is deliberately not copied (see above).
+ *
+ * 🔴 SIX FIELDS NOW, AND THE SIXTH IS SYNTHETIC — "unmatched" (2026-08-31).
+ * Before the SAP-name fallback landed, an unmastered bill's `dealerName` WAS
+ * the literal "(Unmatched)", so typing "unmatched" found every one of them.
+ * Nobody designed that, but it became the ONLY way to find them: the route
+ * filter cannot reach a bill whose route is null (routeCounts skips it), so
+ * these bills vanish the instant any route is selected. Giving them their real
+ * SAP name would have silently deleted that escape hatch on the same commit
+ * that made them findable by name — so the term is preserved DELIBERATELY, as
+ * a synthetic value rather than as a leftover of how the name used to read.
+ *
+ * It behaves exactly like `route`/`area` above: a field that is "" for most
+ * rows, and `"".includes(q)` is false for every non-empty q. So this widens the
+ * match for unmastered bills ONLY and cannot affect any other row.
  */
 export function matchesPickingSearch(row: PickingSearchable, q: string): boolean {
   if (q === "") return true;
@@ -76,6 +95,9 @@ export function matchesPickingSearch(row: PickingSearchable, q: string): boolean
     row.obdNumber.toLowerCase().includes(q) ||
     (row.assignedToName ?? "").toLowerCase().includes(q) ||
     (row.route ?? "").toLowerCase().includes(q) ||
-    (row.area ?? "").toLowerCase().includes(q)
+    (row.area ?? "").toLowerCase().includes(q) ||
+    // Already lowercase, so no .toLowerCase() — `q` arrives lowercased per this
+    // function's contract above, and a literal cannot drift from itself.
+    (row.dealerInMaster ? "" : "unmatched").includes(q)
   );
 }

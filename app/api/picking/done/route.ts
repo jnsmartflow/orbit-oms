@@ -83,6 +83,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       obdNumber: true,
       customer: { select: { customerName: true } },
       shipToOverrideCustomer: { select: { customerName: true } },
+      // SAP's own name for the bill (2026-08-31) — explicit `select` here, so
+      // the column must be asked for; it does not ride along the way it does
+      // under lib/picking/queue.ts's `include`.
+      shipToCustomerName: true,
     },
   });
   if (!order) {
@@ -160,8 +164,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   // unreliable; the supervisor set is small enough that the added latency stays
   // modest.
   try {
+    // Same three-step fallback the board renders (lib/picking/queue.ts).
+    // ⚠ No data-quality marker in a push body — see assign/route.ts.
     const dealerName =
-      order.shipToOverrideCustomer?.customerName ?? order.customer?.customerName ?? "(Unmatched)";
+      order.shipToOverrideCustomer?.customerName ??
+      order.customer?.customerName ??
+      order.shipToCustomerName ??
+      "(Unmatched)";
     const recipients = await getPickingSupervisorUserIds();
     for (const userId of recipients) {
       if (userId === changedById) continue; // never notify the actor

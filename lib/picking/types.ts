@@ -4,7 +4,30 @@
 export interface PickingQueueRow {
   orderId: number;
   obdNumber: string;
+  /**
+   * The dealer to show, in this order: the `delivery_point_master` name, then
+   * `orders.shipToCustomerName` (SAP's own name for the bill), then the literal
+   * `"(Unmatched)"` (2026-08-31). STILL NON-NULLABLE — do not widen it; every
+   * consumer may keep printing it bare.
+   *
+   * ⚠ A name alone no longer tells you whether the dealer is on file. Before
+   * this change `dealerName === "(Unmatched)"` was a usable (if ugly) test for
+   * that; now an unmastered bill carries a real SAP name and that test silently
+   * returns false. Read `dealerInMaster` instead — never string-compare this.
+   */
   dealerName: string;
+  /**
+   * Did the effective dealer FK actually resolve against
+   * `delivery_point_master`? False ⇒ the bill's ship-to code is not in the
+   * master, so `dealerName` came from SAP and `route`/`area`/`deliveryType`/
+   * `bayNumber` are all null together — they hang off the same relation and
+   * SAP supplies no equivalent for any of them.
+   *
+   * ⚠ NOT `orders.customerMissing`. That column is stamped at import and can go
+   * stale after a master backfill; this is computed at render time from whether
+   * the lookup found a row, which is the only truthful answer.
+   */
+  dealerInMaster: boolean;
   isShipToOverride: boolean;
   windowId: number | null;
   windowTime: string | null;
