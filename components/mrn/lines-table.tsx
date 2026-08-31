@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, ChevronRight, Smartphone, X } from "lucide-react";
 import type { MrnDetail, MrnDetailLine } from "@/lib/mrn/types";
-import { extraBatchCount, isLineOpenable } from "@/lib/mrn/derive";
+import { isMrnReceivedFrom } from "@/lib/mrn/types";
+import { extraBatchCount, formatBatchNo, isLineOpenable } from "@/lib/mrn/derive";
 import { reportTotals } from "@/lib/mrn/report";
-import { formatCount, formatMonthYear } from "./format";
+import { formatCount } from "./format";
 import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
 
 // The line-items table.
@@ -28,7 +29,7 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 //
 //   open + checking → # · SKU · Description · Pack · Qty STI          (5)
 //   done            → # · SKU · Description · Pack · Qty STI ·
-//                     Physical · Mfg M/Y · chevron                    (8)
+//                     Physical · Batch No · chevron                   (8)
 //
 // A FUTURE SESSION MUST NOT "FIX" THIS BACK. The one-column-set rule is not
 // lost knowledge to be rediscovered — it was tried, it shipped, and it was
@@ -52,11 +53,17 @@ import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal
 // sheet, where there is no drawer to open and the sub-row IS how a split line
 // gets expressed on paper. The screen has somewhere better to put it.
 //
-// ⚠️ Mfg is ONE cell, rendered `06/26`. It is STORED as two integers and joined
-// only for display; do NOT split it into two columns to mirror the schema. That
-// is a departure from the workbook, not a match to it — the `PRINT` sheet has
-// Manufacturing Month and Manufacturing Year as TWO columns, and the XLS export
-// keeps both because a spreadsheet is the thing people sort and filter.
+// ⚠️ Batch No REPLACED the Mfg M/Y cell here — same 12%, same eight columns.
+// "T082026" already contains 08/2026, so the month and year are still on the
+// row; they are just no longer a second thing to read. It is DERIVED at render
+// by formatBatchNo() (lib/mrn/derive.ts) from mrn.receivedFrom plus the batch’s
+// own mfgMonth/mfgYear — there is NO batch-number column and none may be added,
+// exactly as with Short and Excess below.
+//
+// ⚠️ The XLS export keeps Manufacturing Month and Manufacturing Year as two
+// integers ALONGSIDE Batch No, because a spreadsheet is the thing people sort
+// and filter. That is a deliberate divergence from this table, not drift — see
+// lib/mrn/workbook.ts.
 //
 // ⚠️ Short and Excess are DERIVED, never stored (design §11 OQ-2) — they arrive
 // already computed on every line by lib/mrn/derive.ts, applied server-side in
@@ -98,7 +105,7 @@ const DONE_COLUMNS: Column[] = [
   { key: "pack", label: "Pack", width: 8 },
   { key: "sti", label: "Qty STI", width: 11 },
   { key: "phy", label: "Physical", width: 11 },
-  { key: "mfg", label: "Mfg M/Y", width: 12 },
+  { key: "batch", label: "Batch No", width: 12 },
   { key: "chev", label: "", width: 4 },
 ];
 
@@ -412,6 +419,11 @@ function DoneTable({
   // type's name a lie). See lib/mrn/report.ts.
   const totals = useMemo(() => reportTotals(detail), [detail]);
 
+  // Narrowed once for the table — `receivedFrom` arrives as a plain string
+  // (lib/mrn/queries.ts:181). null is unreachable while chk_mrn_received_from
+  // stands, and renders the existing "—" if it ever is.
+  const receivedFrom = isMrnReceivedFrom(detail.receivedFrom) ? detail.receivedFrom : null;
+
   const issueParts: string[] = [];
   if (detail.totalShort > 0) issueParts.push(`${detail.totalShort} short`);
   if (detail.totalExcess > 0) issueParts.push(`${detail.totalExcess} excess`);
@@ -500,12 +512,14 @@ function DoneTable({
               <Td center strong issue={l.hasIssue} tone={physicalTone(l)}>
                 {l.physicalQty ?? "—"}
               </Td>
-              {/* ONE cell. `+N` when the supervisor split the line across
-                  manufacturing months — the months themselves are in the
-                  drawer, which is exactly why a split line is openable. */}
-              <Td center issue={l.hasIssue}>
-                {l.batches[0]
-                  ? formatMonthYear(l.batches[0].mfgMonth, l.batches[0].mfgYear)
+              {/* ONE cell, showing the FIRST batch’s number. `+N` when the
+                  supervisor split the line across manufacturing months — a
+                  split line has more than one batch number, and the rest are in
+                  the drawer, which is exactly why a split line is openable. The
+                  report keeps its 6a/6b sub-rows and prints all of them. */}
+              <Td center mono issue={l.hasIssue}>
+                {l.batches[0] && receivedFrom
+                  ? formatBatchNo(receivedFrom, l.batches[0].mfgMonth, l.batches[0].mfgYear)
                   : "—"}
                 {extra > 0 && (
                   <span className="ml-[5px] rounded-[4px] bg-[#f0fdfa] px-[4px] py-px text-[10px] font-bold text-[#0f766e]">

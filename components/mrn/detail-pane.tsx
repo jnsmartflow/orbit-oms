@@ -426,6 +426,7 @@ export function DetailPane({
       {openLine && (
         <LineDrawer
           line={openLine}
+          receivedFrom={detail.receivedFrom}
           position={openIndex + 1}
           total={openableLines.length}
           hasPrev={openIndex > 0}

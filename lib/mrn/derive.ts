@@ -21,6 +21,7 @@ import type {
   MrnConditionCounts,
   MrnIssueSummary,
   MrnLineDerived,
+  MrnReceivedFrom,
 } from "./types";
 
 // ── Short / Excess ───────────────────────────────────────────────────────────
@@ -128,6 +129,66 @@ export function extraBatchCount(line: MrnOpenableLine): number {
  *  ALL read this one function and never re-derive the condition inline. */
 export function isLineOpenable(line: MrnOpenableLine): boolean {
   return lineHasIssue(line) || line.batches.length > 1;
+}
+
+// ── Batch number ────────────────────────────────────────────────────────────
+//
+// 🔴 DERIVED AT RENDER TIME, NEVER STORED — the same rule Short and Excess live
+// under (design §11 OQ-2). There is NO batch-number column on mrn_line_batches
+// and none may be added: every character of the value already exists on rows the
+// depot has been filling since 2026-08-22, so a stored copy could only ever
+// drift away from the three values it was copied from.
+
+/**
+ * The Batch No every MRN report surface prints: one letter for where the truck
+ * came from, the manufacturing month as two digits, then the FOUR-digit
+ * manufacturing year. No separators, no year truncation, nothing else.
+ *
+ *   TPW + month 8 + year 2026 → "T082026"
+ *   CDC + month 8 + year 2026 → "C082026"
+ *
+ * ⚠ IT IS A PROPERTY OF A BATCH ROW, NOT OF A LINE. A line split across two
+ * manufacturing months carries TWO different batch numbers — which is exactly
+ * why this takes a month and a year rather than a line, and why every surface
+ * that emits sub-rows (buildRenderRows(), lib/mrn/report.ts) must call it once
+ * per SUB-ROW and never gate it behind `carriesLineTotals`.
+ *
+ * ⚠ `mrn_line_batches.batchNo` IS NOT THIS. That column is an INT ordinal
+ * (1, 2, …) backing UNIQUE(lineId, batchNo) and driving the report’s 6a/6b
+ * labels. The two are unrelated. Do not fold either into the other, and do not
+ * write this string anywhere near that column.
+ *
+ * 🔴 THE PREFIX SWITCH IS EXHAUSTIVE ON PURPOSE, AND THE `never` DEFAULT IS THE
+ * WHOLE POINT. `chk_mrn_received_from` is a live CHECK Prisma cannot see
+ * (lib/mrn/types.ts:52). Widening it to a third source depot must fail the BUILD
+ * here rather than quietly print a blank prefix onto a document billing hands to
+ * a supplier. Do not replace the default with a fallback string.
+ *
+ * ⚠ FOUR DIGITS OF YEAR, and NEVER formatMonthYear() (components/mrn/format.ts:91).
+ * That helper truncates to `06/26` for a column with no width to spare; this is
+ * an identifier, and "T0826" is a different string from "T082026".
+ */
+export function formatBatchNo(
+  receivedFrom: MrnReceivedFrom,
+  mfgMonth: number,
+  mfgYear: number,
+): string {
+  let prefix: string;
+  switch (receivedFrom) {
+    case "TPW":
+      prefix = "T";
+      break;
+    case "CDC":
+      prefix = "C";
+      break;
+    default: {
+      const unreachable: never = receivedFrom;
+      throw new Error(
+        `Unknown mrn.receivedFrom "${String(unreachable)}" — chk_mrn_received_from was widened without updating formatBatchNo()`,
+      );
+    }
+  }
+  return `${prefix}${String(mfgMonth).padStart(2, "0")}${mfgYear}`;
 }
 
 // ── Per-MRN roll-up ──────────────────────────────────────────────────────────

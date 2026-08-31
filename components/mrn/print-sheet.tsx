@@ -5,7 +5,9 @@ import {
   reportSignatures,
   reportTotals,
 } from "@/lib/mrn/report";
-import { formatCount, formatMonthYear } from "./format";
+import { formatBatchNo } from "@/lib/mrn/derive";
+import { isMrnReceivedFrom } from "@/lib/mrn/types";
+import { formatCount } from "./format";
 
 // The A4 LANDSCAPE print sheet — mockup P7.
 //
@@ -38,18 +40,24 @@ import { formatCount, formatMonthYear } from "./format";
 // The column order and the sub-row rule come from lib/mrn/report.ts. Read its
 // header — including the row-17-not-row-16 correction — before touching either.
 
-/** 16 columns: the workbook's order, minus best before, plus Description and
- *  Pack, with Mfg month+year merged into one `06/26` cell. Widths sum to 100.
- *  The XLS keeps month and year apart; see lib/mrn/report.ts on why. */
+/** 16 columns: the workbook's order, minus best before, plus Description,
+ *  Pack and Batch No. Widths sum to 100.
+ *
+ *  ⚠ Batch No REPLACED Mfg m/y here rather than joining it — still 16 columns,
+ *  no width added. "T082026" already CONTAINS 08/2026, so nothing is lost and
+ *  A4 landscape gains no column. The XLS keeps Manufacturing Month and Year as
+ *  two sortable integers ALONGSIDE Batch No because a spreadsheet is filtered
+ *  and a sheet of paper is not; see lib/mrn/workbook.ts. The 1 point Batch No
+ *  costs over the old Mfg cell came out of Description (24 → 23). */
 const COLUMNS: { key: string; label: string; width: number; left?: boolean }[] = [
   { key: "no", label: "Sr", width: 3 },
   { key: "sku", label: "Product SKU", width: 9 },
-  { key: "desc", label: "Description", width: 24, left: true },
+  { key: "desc", label: "Description", width: 23, left: true },
   { key: "pack", label: "Pack", width: 5 },
   { key: "sti", label: "Qty STI", width: 6 },
   { key: "ctn", label: "Ctn", width: 4 },
   { key: "phy", label: "Physical", width: 6 },
-  { key: "mfg", label: "Mfg m/y", width: 6 },
+  { key: "batch", label: "Batch No", width: 7 },
   { key: "snd", label: "SND", width: 4.5 },
   { key: "lky", label: "Lky", width: 4.5 },
   { key: "dmg", label: "Damage", width: 5 },
@@ -73,6 +81,9 @@ interface PrintSheetProps {
 export function PrintSheet({ detail, printedAt }: PrintSheetProps): React.JSX.Element {
   const rows = buildRenderRows(detail.lines);
   const t = reportTotals(detail);
+  // Narrowed once for the sheet — see lib/mrn/workbook.ts for the same two
+  // lines and the reason the fallback prints EMPTY rather than a wrong prefix.
+  const receivedFrom = isMrnReceivedFrom(detail.receivedFrom) ? detail.receivedFrom : null;
 
   return (
     <div
@@ -159,11 +170,16 @@ export function PrintSheet({ detail, printedAt }: PrintSheetProps): React.JSX.El
                 <Cell center>{first ? (l.pack ?? "") : ""}</Cell>
                 <Cell center>{first ? l.qtySti : ""}</Cell>
                 <Cell center>{first ? (l.cartonQty ?? "") : ""}</Cell>
-                {/* Physical and Mfg are the two that VARY down a split line —
-                    the entire reason a line splits at all. */}
+                {/* Physical and Batch No are the two that VARY down a split
+                    line — the entire reason a line splits at all. The batch
+                    number is derived from THIS sub-row’s mfg month and year, so
+                    6a and 6b print two different ones and neither is gated by
+                    `first`. */}
                 <Cell center>{r.qtyForRow ?? ""}</Cell>
-                <Cell center>
-                  {r.batch ? formatMonthYear(r.batch.mfgMonth, r.batch.mfgYear) : ""}
+                <Cell center mono>
+                  {r.batch && receivedFrom
+                    ? formatBatchNo(receivedFrom, r.batch.mfgMonth, r.batch.mfgYear)
+                    : ""}
                 </Cell>
                 <Cell center>{first ? blank(l.sndQty) : ""}</Cell>
                 <Cell center>{first ? blank(l.leakyQty) : ""}</Cell>

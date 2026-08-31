@@ -2,10 +2,14 @@
 
 import { X } from "lucide-react";
 import type { MrnDetailLine } from "@/lib/mrn/types";
+import { isMrnReceivedFrom } from "@/lib/mrn/types";
+import { formatBatchNo } from "@/lib/mrn/derive";
 // ⚠ formatMonthYear() is NOT used here, deliberately. It renders `07/26` — the
-// compact form the table and the A4 sheet need to fit a column. The drawer has
+// compact form the table and the A4 sheet needed to fit a column. The drawer has
 // room for the unambiguous `07 / 2026`, and a two-digit year on the one surface
-// that exists to remove doubt would be the wrong trade.
+// that exists to remove doubt would be the wrong trade. formatBatchNo() has the
+// same rule for the opposite reason: its year is FOUR digits because a batch
+// number is an identifier, not a label (lib/mrn/derive.ts).
 import { formatIstTime } from "./format";
 
 // One MRN line, opened from the line-items table.
@@ -60,6 +64,13 @@ import { formatIstTime } from "./format";
 interface LineDrawerProps {
   /** The line to show. Already SKU-resolved and already derived. */
   line: MrnDetailLine;
+  /**
+   * `mrn.receivedFrom` off the MRN HEADER — the T/C half of every batch number
+   * on this line. Passed in as the plain wire string and narrowed below, rather
+   * than pre-narrowed by the pane: this is the only surface that needs it and
+   * the guard belongs beside the render that uses it.
+   */
+  receivedFrom: string;
   /** 1-based index among the OPENABLE lines — not among all lines. Both this
    *  and `total` must be counted with isLineOpenable() (lib/mrn/derive.ts), the
    *  single definition; counting them any other way makes the footer lie. */
@@ -88,6 +99,7 @@ interface LineDrawerProps {
 
 export function LineDrawer({
   line,
+  receivedFrom,
   position,
   total,
   hasPrev,
@@ -96,6 +108,10 @@ export function LineDrawer({
   onNext,
   onClose,
 }: LineDrawerProps): React.JSX.Element {
+  // Narrowed once — see lib/mrn/workbook.ts for the same two lines. null is
+  // unreachable while chk_mrn_received_from stands and renders "—" if it is.
+  const rf = isMrnReceivedFrom(receivedFrom) ? receivedFrom : null;
+
   return (
     <div className="fixed inset-0 z-[110]">
       {/* Scrim — click to close. */}
@@ -175,8 +191,19 @@ export function LineDrawer({
                   key={b.id}
                   className="flex items-center justify-between border-b border-[#f4f6f8] px-3 py-[9px] text-[12.5px] last:border-b-0"
                 >
-                  <span className="font-mono text-[#475467]">
-                    {String(b.mfgMonth).padStart(2, "0")} / {b.mfgYear}
+                  {/* Batch number, then the month and year it is BUILT FROM.
+                      The repetition is correct on this surface and only this
+                      one: the drawer exists to remove doubt, and "T082026" next
+                      to "08 / 2026" is how the reader confirms the identifier
+                      says what they think it says. The table and the A4 sheet,
+                      which have a width budget, print the batch number alone. */}
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="font-mono font-semibold text-gray-900">
+                      {rf ? formatBatchNo(rf, b.mfgMonth, b.mfgYear) : "—"}
+                    </span>
+                    <span className="font-mono text-[11.5px] text-[#98a2b3]">
+                      {String(b.mfgMonth).padStart(2, "0")} / {b.mfgYear}
+                    </span>
                   </span>
                   <span className="font-bold tabular-nums text-gray-900">{b.qty}</span>
                 </div>

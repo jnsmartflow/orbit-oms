@@ -40,13 +40,22 @@
 //   • DESCRIPTION and PACK are ADDED, straight after Product SKU. The workbook
 //     has neither (its `HELPER - 1` sheet VLOOKUPs them in); MRN resolves both
 //     from sku_master_v2 and mockup P7 draws them.
+//   • BATCH NO is ADDED (2026-08-31), straight after Manufacturing Year. It is
+//     DERIVED, never stored — formatBatchNo() in lib/mrn/derive.ts joins
+//     `mrn.receivedFrom` to the batch’s own mfg month and year as T082026 /
+//     C082026. There is no column behind it and none may be added, exactly as
+//     with Short and Excess above.
 //
 // Manufacturing month and year stay TWO columns in the XLS, exactly as the
 // workbook has them — an .xlsx is the thing someone sorts and filters, and two
-// integers beat one string there. The A4 sheet merges them into a single
-// `06/26` cell, matching mockup P7 and the desktop table, because A4 landscape
-// has no width to spend on a second column. That is the ONLY difference between
-// the two outputs, and it is a rendering choice, not a different column order.
+// integers beat one string there. The A4 sheet carries NEITHER: it prints the
+// Batch No alone, in the cell that used to hold a merged `06/26`, because
+// "T082026" already contains both halves and A4 landscape has no width to spend
+// on saying so twice. The desktop table made the same trade. That is the ONLY
+// difference between the outputs, and it is a rendering choice, not a different
+// column order — buildRenderRows() below is still the single sub-row rule for
+// all three, and the batch number is a PER-SUB-ROW value like Physical and Mfg,
+// never gated by `carriesLineTotals`.
 
 import type { MrnBatchRow, MrnDetail, MrnDetailLine } from "./types";
 import { formatDateOnly, formatIstDateTime } from "@/components/mrn/format";

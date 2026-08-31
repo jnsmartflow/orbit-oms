@@ -21,15 +21,25 @@
 
 import * as XLSX from "xlsx";
 import type { MrnDetail } from "./types";
+import { isMrnReceivedFrom } from "./types";
+import { formatBatchNo } from "./derive";
 import { buildRenderRows, reportHeaderFields, reportTotals } from "./report";
 
 /**
- * The 17 columns, in workbook order (`PRINT` row 17, minus best before, plus
- * Description and Pack). Widths are Excel character units.
+ * The 18 columns, in workbook order (`PRINT` row 17, minus best before, plus
+ * Description, Pack and Batch No). Widths are Excel character units.
  *
- * Manufacturing Month and Manufacturing Year are TWO columns here and one
- * merged `06/26` cell on the A4 sheet — see lib/mrn/report.ts's header for why
- * that is deliberate and not drift.
+ * Manufacturing Month and Manufacturing Year are TWO columns here and NO
+ * columns at all on the A4 sheet or the desktop table, which carry only the
+ * derived Batch No — see lib/mrn/report.ts's header for why that divergence is
+ * deliberate and not drift.
+ *
+ * ⚠ BOTH OF THEM STAY HERE, EVEN THOUGH Batch No NOW REPEATS THEM. This sheet
+ * mirrors the paper TPW template column for column, and an .xlsx is the thing
+ * someone SORTS and FILTERS — two integers do that and "T082026" does not. The
+ * A4 sheet and the desktop table, which have a width budget and no filter, drop
+ * Mfg and keep only the batch number. Keeping all three here is the trade, not
+ * an oversight.
  */
 const XLS_COLUMNS: { header: string; width: number }[] = [
   { header: "Sr No.", width: 7 },
@@ -41,6 +51,7 @@ const XLS_COLUMNS: { header: string; width: number }[] = [
   { header: "Qty as per Physical", width: 17 },
   { header: "Manufacturing Month", width: 19 },
   { header: "Manufacturing Year", width: 18 },
+  { header: "Batch No", width: 12 },
   { header: "SND", width: 7 },
   { header: "Lky", width: 7 },
   { header: "Damage", width: 8 },
@@ -74,6 +85,14 @@ type Cell = string | number | null;
 export function buildMrnWorkbook(detail: MrnDetail): ArrayBuffer {
   const rows: Cell[][] = [];
 
+  // Narrowed ONCE for the whole sheet. `receivedFrom` crosses the wire as a
+  // plain string (lib/mrn/queries.ts:181 — it is TEXT with a CHECK Prisma cannot
+  // see), and formatBatchNo() takes the UNION so that widening the CHECK breaks
+  // the build. `null` is unreachable while chk_mrn_received_from stands; if it
+  // ever is reached the Batch No column prints EMPTY rather than a wrong
+  // prefix, which is the only safe failure on a document billing sends out.
+  const receivedFrom = isMrnReceivedFrom(detail.receivedFrom) ? detail.receivedFrom : null;
+
   rows.push(["MATERIAL RECEIPT NOTE"]);
   rows.push(["JSW Dulux Limited · Surat Depot"]);
   rows.push([]);
@@ -98,6 +117,14 @@ export function buildMrnWorkbook(detail: MrnDetail): ArrayBuffer {
       r.qtyForRow,
       r.batch ? r.batch.mfgMonth : null,
       r.batch ? r.batch.mfgYear : null,
+      // 🔴 PER SUB-ROW, LIKE Physical AND Mfg — deliberately NOT behind `first`.
+      // The batch number is derived FROM this sub-row’s own mfg month and year,
+      // so on a split line 6a and 6b carry two DIFFERENT numbers and printing
+      // only 6a’s would attribute half the tins to the wrong batch. It is not a
+      // line total and cannot double-count one.
+      r.batch && receivedFrom
+        ? formatBatchNo(receivedFrom, r.batch.mfgMonth, r.batch.mfgYear)
+        : null,
       first ? l.sndQty : null,
       first ? l.leakyQty : null,
       first ? l.damageQty : null,
@@ -121,6 +148,8 @@ export function buildMrnWorkbook(detail: MrnDetail): ArrayBuffer {
     null,
     t.physical,
     null,
+    null,
+    // Batch No — blank. A sum of identifiers is not a number.
     null,
     t.snd || null,
     t.leaky || null,
