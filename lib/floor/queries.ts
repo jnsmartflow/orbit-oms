@@ -783,6 +783,18 @@ export async function getFloorBoard(
       // Floor-only extras.
       smu: order.smu,
       billToName: billTo.get(order.obdNumber) ?? null,
+      // SAP's invoice facts — NOT orders.invoicedAt, which is Billing's own
+      // mark-done decision (CORE §7.3). Both ride FLOOR_BOARD_INCLUDE for free:
+      // that is an `include`, not a `select`, so every `orders` scalar is
+      // already on the fetched row — same "comes free" argument as the ship-to
+      // pair above. No extra findMany, no extra await, and no write (FLOOR
+      // §5/§10 — the live marker keys on MAX(orders.updatedAt), so a second
+      // write would fire a false "changed" on every board).
+      invoiceNo: order.invoiceNo ?? null,
+      // ISO for the wire, like every other date on this payload. The column is
+      // date-only in practice (all values 00:00:00 UTC, verified live
+      // 2026-08-31) — formatting is the renderer's job, not this feed's.
+      invoiceDate: order.invoiceDate ? order.invoiceDate.toISOString() : null,
     });
   }
 

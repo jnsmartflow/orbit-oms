@@ -9,17 +9,24 @@
 // toggle). The ⋯ (details) button stays INERT — the detail panel is a later
 // step. On history/upcoming variants everything stays read-only.
 //
-// COLUMNS: ☐ · # · OBD+date · Ship to · Route · Vol · Article · Picker · Status
+// COLUMNS: ☐ · # · OBD+date · Invoice · Ship to · Route · Vol · Article · Picker · Status
 //  - There is NO per-row Slot column: on All the slot is carried by the band
 //    header, on a slot tab by the active tab (design §7.1). Matches the mockup.
 //  - Vol right-aligned, plain litres. Gift lines are OUT OF SCOPE.
 //  - Article reuses formatArticleTag (D/C/T/B), CLAUDE_SUPPORT §4.19.
 //  - The ☐ and # columns use NARROW padding so the row number never truncates
 //    (Step-5 bug fix — 3% + 28px padding was clipping "1" to "1…").
+//  - Invoice (2026-08-31) is SAP's own invoiceNo + invoiceDate, two lines,
+//    shaped like the OBD cell and sitting right next to it — the two reference
+//    numbers are scanned together. BLANK until SAP stamps the bill; absent
+//    entirely on the showSlot (By group) arms. See the cell and `showInvoice`.
 
 import type { ReactNode } from "react";
 import { Building2, Droplet, Mail, MoreHorizontal, Zap } from "lucide-react";
-import { formatArticleTag } from "@/lib/floor/format";
+// formatDateIST is the SHARED date-only formatter — the same one the detail
+// panel's "Invoice date" cell reads (it used to be a private fmtDate in
+// detail-details.tsx). One formatter, so the two surfaces cannot disagree.
+import { formatArticleTag, formatDateIST } from "@/lib/floor/format";
 import { StatusPill, rowStatus } from "./status-pill";
 import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
 // SOFT variant only (2026-08-25). The solid DUP_SO_* tokens are the PICKING
@@ -177,20 +184,56 @@ export function FloorTable({
   // and ⋯ still working — simply by omitting the selection handlers, with no
   // new prop threaded through slot-band and route-row to reach here.
   const interactive = variant === "live" && !!onToggleRow;
-  // ☐ 4 · # 4 · OBD 14 · Ship 20 · Route 10 · Vol 7 · Article 12 · Picker 9 · Status 20.
+  // ── THE ONE CONDITION behind the Invoice column ────────────────────────────
+  // Derived ONCE and read by the colgroup, the header cell and the body cell.
+  // Three separate `!showSlot` tests would be three things that can drift, and
+  // the widths map POSITIONALLY (see the warning below) — a header that grew a
+  // column the colgroup did not would silently shunt every column right.
+  //
+  // OWNER DECISION 2026-08-31: NO Invoice column on the showSlot (By group)
+  // arms. Those views are WAITING-ONLY, and a waiting bill has no invoice by
+  // construction (live check that day: 0 of the 4 still-open rows carried one,
+  // against 65 of the 70 at pick_checked) — so the column would be a
+  // permanently blank 10% on the one view with the least room to spare.
+  //
+  // It falls out that Invoice is PRESENT exactly when Picker is. That is a
+  // consequence, not the rule — and it is about presence only, not position:
+  // the two are not adjacent (Invoice sits up beside OBD, see below). If a
+  // future column ever splits them, give Invoice its own flag rather than
+  // reusing `!showSlot` again.
+  const showInvoice = !showSlot;
+  // ☐ 4 · # 4 · OBD 13 · Invoice 10 · Ship 20 · Route 9 · Vol 6 · Article 10 ·
+  // Picker 8 · Status 16.
+  //
+  // ⚠ INVOICE SITS IMMEDIATELY AFTER OBD (owner call 2026-08-31, on the live
+  // screen). The OBD number and the invoice number are the two REFERENCE
+  // NUMBERS the operator scans together — reading one off the board to find
+  // the other is the whole job — so they belong side by side rather than at
+  // opposite ends of the row. Same widths as the first cut, reordered only.
+  //
   // With showSlot the Picker column is REPLACED by a Slot column sitting after
-  // Route — same column COUNT either way, so both arms keep their length and
-  // still sum to 100 (§27). Both the interactive and the read-only arm need
-  // their own showSlot variant: the widths map positionally, so reusing the
-  // Picker-ordered array would hand Slot the Vol width and shunt the rest along
-  // (reachable today — By group is available on a History day).
+  // Route, and the Invoice column is absent — so that arm keeps its ORIGINAL
+  // nine-entry width array untouched (2026-08-31), while the two showInvoice
+  // arms grew a tenth/eighth entry. Every arm still sums to 100 (§27).
+  //
+  // ⚠ THE WIDTHS MAP POSITIONALLY, and this is exactly the trap: reusing the
+  // Picker-ordered array under showSlot would hand Slot the Vol width and shunt
+  // the rest along (reachable today — By group is available on a History day),
+  // and reusing the showSlot array under showInvoice would leave the tenth
+  // column with no <col> at all. Branching on `showInvoice` rather than
+  // `showSlot` keeps this ternary on the SAME single condition the header and
+  // body cells use — the arms are inverted from what they were, deliberately.
+  // Moving the column means moving its <col> width, its <th> and its <td>
+  // together; any one left behind shunts every column to its right.
+  //
+  //                        ☐  #  OBD INV Ship Rt Vol Art Pk Status
   const widths = interactive
-    ? showSlot
-      ? [4, 4, 14, 20, 10, 9, 7, 12, 20]
-      : [4, 4, 14, 20, 10, 7, 12, 9, 20]
-    : showSlot
-      ? [16, 24, 12, 9, 7, 13, 19]
-      : [16, 24, 12, 7, 13, 9, 19];
+    ? showInvoice
+      ? [4, 4, 13, 10, 20, 9, 6, 10, 8, 16] //                            = 100
+      : [4, 4, 14, 20, 10, 9, 7, 12, 20] //  ☐ # OBD Ship Rt Slot Vol Art Status = 100
+    : showInvoice
+      ? [14, 10, 24, 11, 6, 11, 8, 16] //    OBD INV Ship Rt Vol Art Pk Status  = 100
+      : [16, 24, 12, 9, 7, 13, 19]; //       OBD Ship Rt Slot Vol Art Status    = 100
   const allOn = interactive && selection ? isAllSelected(selection, rows) : false;
 
   return (
@@ -215,6 +258,7 @@ export function FloorTable({
           )}
           {interactive && <th className={HEAD_TH_NARROW}>#</th>}
           <th className={HEAD_TH}>OBD</th>
+          {showInvoice && <th className={HEAD_TH}>Invoice</th>}
           <th className={HEAD_TH}>Ship to</th>
           <th className={HEAD_TH}>Route</th>
           {showSlot && <th className={HEAD_TH}>Slot</th>}
@@ -396,6 +440,49 @@ export function FloorTable({
                   )}
                 </div>
               </td>
+              {/* INVOICE — SAP's own invoiceNo + invoiceDate, shaped like the
+                  OBD cell it now sits beside: mono number on line 1, muted 10px
+                  date underneath. Adjacent to OBD on purpose (owner call
+                  2026-08-31) — these are the two reference numbers the operator
+                  scans together, so reading one to find the other is one glance
+                  rather than a trip across the row.
+
+                  ⚠ EMPTY WHEN EMPTY. No em dash, no "pending", no placeholder —
+                  unlike Route / Picker / Article below, which all print "—" for
+                  a value that SHOULD be there and is not. A missing invoice is
+                  not a gap in the data: SAP stamps invoices in its own
+                  sub-hourly batches, so a bill still being picked simply has
+                  none yet (0 of the 4 open rows on 2026-08-31 carried one). A
+                  dash would read as "we looked and found nothing", which is a
+                  different and wrong claim — and it would put a mark on nearly
+                  every row of a busy morning's board.
+
+                  The two lines are independent rather than sharing one guard:
+                  patch-headers fills invoiceNo and invoiceDate with separate
+                  fill-if-null tests (app/api/import/obd/route.ts), so one can
+                  in principle arrive without the other, and each line should
+                  tell the truth about its own field.
+
+                  ⚠ NOT THE FIRST CELL, even on a read-only table — the OBD cell
+                  above still is, so the duplicate-SO bar (`barStyle`) stays put
+                  and must NOT be moved here.
+
+                  formatDateIST is the SHARED formatter the detail panel's
+                  "Invoice date" reads — never a second local one. */}
+              {showInvoice && (
+                <td className={TD}>
+                  {row.invoiceNo && (
+                    <span className="font-mono text-[11.5px] font-medium text-[#111827]">
+                      {row.invoiceNo}
+                    </span>
+                  )}
+                  {row.invoiceDate && (
+                    <div className="text-[10px] text-[#9ca3af]">
+                      {formatDateIST(row.invoiceDate)}
+                    </div>
+                  )}
+                </td>
+              )}
               <td className={TD}>
                 <span className="text-[11.5px] font-medium text-[#111827]">
                   {row.dealerName}

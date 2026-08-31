@@ -123,6 +123,27 @@ export interface FloorBoardRow extends PickingQueueRow {
   // (orders.orderDateTime) rather than SAP's own punch clock
   // (orders.obdEmailDate) — see lib/floor/format.ts resolveFloorDisplayDate().
   isEmailTime: boolean;
+  // SAP's own invoice facts (orders.invoiceNo / orders.invoiceDate), distinct
+  // from orders.invoicedAt — which is Billing's "I marked this done" decision,
+  // not a SAP fact (CORE §7.3). Blank until SAP stamps the bill: verified live
+  // 2026-08-31, 65 of the 74 rows on the board carried one and every single one
+  // of those was at pick_checked — nothing still open had an invoice yet.
+  //
+  // ⚠ ALSO FREE, same as the ship-to pair above: getFloorBoard uses `include`,
+  // not `select`, so every `orders` scalar is already on the fetched row. No
+  // extra query, no extra await, and above all no write (FLOOR §5/§10 — the
+  // live marker keys on MAX(orders.updatedAt)).
+  //
+  // ⚠ DECLARED HERE, NOT ON PickingQueueRow — same boundary as `smu`,
+  // `billToName` and the ship-to pair above (FLOOR §1: Floor is a CALLER of
+  // Picking; widen the Floor type, never the Picking one).
+  invoiceNo: string | null;
+  // ISO string, serialised like every other date on this payload (a Date would
+  // promise the client something JSON never delivers). DATE-ONLY IN PRACTICE:
+  // every non-null value in `orders` is 00:00:00 UTC (verified live 2026-08-31,
+  // 6,962 rows, zero exceptions), so an IST render lands on the same calendar
+  // day and there is no midnight-rollover class here.
+  invoiceDate: string | null;
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()

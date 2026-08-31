@@ -75,6 +75,36 @@ export function formatArticleTag(raw: string): string {
   return parts.join(" · ");
 }
 
+// ── Date-only display, IST ──────────────────────────────────────────────────
+/**
+ * "31 Aug 2026" — en-GB, `Asia/Kolkata`. THE shared date-only formatter for
+ * Floor: it lived as a private `fmtDate` inside components/floor/detail-details.tsx
+ * and was lifted here verbatim (same options, same "" on null) when the floor
+ * TABLE grew an Invoice column, so the table cell and the detail panel's
+ * "Invoice date" can never render the same value two different ways.
+ *
+ * ⚠ ISO STRINGS ONLY. Every date on the /floor payloads is serialised with
+ * `.toISOString()`, so the offset is always present — `new Date(iso)` here is
+ * safe. Never hand this an offset-less string: those are read in the HOST's
+ * timezone (CORE §3), which on a depot phone in IST is 5.5 hours from the
+ * server's answer.
+ *
+ * `orders.invoiceDate`, its first caller, is date-only in practice — every
+ * non-null value is 00:00:00 UTC (verified live 2026-08-31, 6,962 rows, zero
+ * exceptions) — so +05:30 lands on the same calendar day and there is no
+ * rollover to guard against. It is still formatted in IST rather than UTC
+ * because every other date on this screen is.
+ */
+export function formatDateIST(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
 // ── Rail/board display date — which clock to show, email or SAP ────────────
 //
 // orders.orderDateTime gets permanently overwritten to the customer's email-

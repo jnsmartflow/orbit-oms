@@ -4,6 +4,11 @@
 // (design §10.4 — the status pill says it in English, Activity shows how it got
 // there). Slot editing lives on the fixed action row, not inside this tab.
 
+// The date-only IST formatter used to be a private `fmtDate` right here. It
+// moved to lib/floor/format.ts (verbatim — same options, same "" on null) when
+// the floor TABLE grew an Invoice column, so this panel and that cell cannot
+// render the same invoice date two different ways.
+import { formatDateIST } from "@/lib/floor/format";
 import type { FloorDetail } from "@/lib/floor/types";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -14,10 +19,6 @@ function fmtDateTime(iso: string | null): string {
   return new Date(iso)
     .toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })
     .replace(",", " ·");
-}
-function fmtDate(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 }
 // dispatchTargetDate is date-only — parse the Date.UTC way, never new Date(str).
 function fmtDayOnly(dateOnly: string | null): string {
@@ -57,7 +58,7 @@ export function DetailDetails({ d }: { d: FloorDetail }) {
       <div className="grid grid-cols-2">
         <Cell k="OBD date" v={fmtDateTime(d.obdDateTime)} />
         <Cell k="SO number" v={d.soNumber} mono />
-        <Cell k="Invoice date" v={fmtDate(d.invoiceDate)} />
+        <Cell k="Invoice date" v={formatDateIST(d.invoiceDate)} />
         <Cell k="Invoice number" v={d.invoiceNo} mono />
       </div>
 
