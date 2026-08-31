@@ -32,7 +32,7 @@
 // margin. Verified 2026-08-25 by reading the cells at their true addresses. Do
 // not "correct" 17 back to 16.
 //
-// Two documented departures from that row, both decided before this step:
+// Four documented departures from that row:
 //
 //   • BEST BEFORE IS GONE, both halves. Not collected since 2026-08-22 (schema
 //     v27.17, design §11 OQ-9) — every row written since carries NULL, so the
@@ -40,23 +40,50 @@
 //   • DESCRIPTION and PACK are ADDED, straight after Product SKU. The workbook
 //     has neither (its `HELPER - 1` sheet VLOOKUPs them in); MRN resolves both
 //     from sku_master_v2 and mockup P7 draws them.
-//   • BATCH NO is ADDED (2026-08-31), straight after Manufacturing Year. It is
+//   • DATE OF MANUFACTURING is ADDED (2026-08-31), straight after Manufacturing
+//     Year and straight BEFORE Batch No. DERIVED, never stored — formatMfgDate()
+//     in lib/mrn/derive.ts renders the batch’s own mfg month and year as
+//     15.MM.YYYY, e.g. "15.08.2026".
+//   • BATCH NO is ADDED (2026-08-31), immediately after Date of Manufacturing.
 //     DERIVED, never stored — formatBatchNo() in lib/mrn/derive.ts joins
-//     `mrn.receivedFrom` to the batch’s own mfg month and year as prefix +
-//     YYYY + MM + a hardcoded day of 01: T20260801 / C20260801. There is no
-//     column behind it and none may be added, exactly as with Short and Excess
-//     above. (It was prefix + MM + YYYY — "T082026" — until 2026-08-31.)
+//     `mrn.receivedFrom` to the same two integers as prefix + YYYY + MM + a
+//     hardcoded day of 01: T20260801 / C20260801. Neither string has a column
+//     behind it and neither may be given one, exactly as with Short and Excess
+//     above. (Batch No was prefix + MM + YYYY — "T082026" — until 2026-08-31.)
 //
-// Manufacturing month and year stay TWO columns in the XLS, exactly as the
-// workbook has them — an .xlsx is the thing someone sorts and filters, and two
-// integers beat one string there. The A4 sheet carries NEITHER: it prints the
-// Batch No alone, in the cell that used to hold a merged `06/26`, because
-// "T20260801" already contains both halves and A4 landscape has no width to spend
-// on saying so twice. The desktop table made the same trade. That is the ONLY
-// difference between the outputs, and it is a rendering choice, not a different
-// column order — buildRenderRows() below is still the single sub-row rule for
-// all three, and the batch number is a PER-SUB-ROW value like Physical and Mfg,
-// never gated by `carriesLineTotals`.
+// 🔴 THE TWO DERIVED STRINGS USE DIFFERENT FILLER DAYS — 15 for the date, 01 for
+// the batch number — and that is owner-specified, not drift. lib/mrn/derive.ts
+// carries the reasoning for each. Do not unify them here or there.
+//
+// ── WHAT EACH OUTPUT ACTUALLY RENDERS ─────────────────────────────────
+//
+// The three surfaces DIVERGE only in which of the four manufacturing columns
+// they carry. That is a rendering choice, not a different column order:
+//
+//   XLS (19 cols, lib/mrn/workbook.ts)   Mfg Month · Mfg Year · Date of
+//                                        Manufacturing · Batch No  — ALL FOUR.
+//                                        A spreadsheet is sorted and filtered,
+//                                        and two integers do that where two
+//                                        strings do not.
+//   A4 sheet (17 cols, print-sheet.tsx)  Mfg Date · Batch No only. The two
+//                                        integers are dropped: both strings
+//                                        already contain 08/2026, nobody filters
+//                                        paper, and A4 landscape has no width to
+//                                        say it three times. Header is the short
+//                                        "Mfg Date"; the long one does not fit.
+//   Desktop done table (lines-table.tsx) Batch No ALONE, in the cell that used
+//                                        to hold a merged `06/26`. It is a
+//                                        screen with a drawer, and the drawer
+//                                        carries the month and year in full.
+//                                        DELIBERATELY UNCHANGED on 2026-08-31 —
+//                                        the Mfg Date column is an EXPORT
+//                                        feature. Do not add it here to "make
+//                                        the three agree".
+//
+// buildRenderRows() below is still the single sub-row rule for all three, and
+// BOTH derived strings are PER-SUB-ROW values like Physical and Mfg — a split
+// line's 6a and 6b carry two different dates and two different batch numbers.
+// Neither is ever gated by `carriesLineTotals`.
 
 import type { MrnBatchRow, MrnDetail, MrnDetailLine } from "./types";
 import { formatDateOnly, formatIstDateTime } from "@/components/mrn/format";

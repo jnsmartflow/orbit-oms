@@ -5,7 +5,7 @@ import {
   reportSignatures,
   reportTotals,
 } from "@/lib/mrn/report";
-import { formatBatchNo } from "@/lib/mrn/derive";
+import { formatBatchNo, formatMfgDate } from "@/lib/mrn/derive";
 import { isMrnReceivedFrom } from "@/lib/mrn/types";
 import { formatCount } from "./format";
 
@@ -40,32 +40,60 @@ import { formatCount } from "./format";
 // The column order and the sub-row rule come from lib/mrn/report.ts. Read its
 // header — including the row-17-not-row-16 correction — before touching either.
 
-/** 16 columns: the workbook's order, minus best before, plus Description,
- *  Pack and Batch No. Widths sum to 100.
+/** 17 columns: the workbook's order, minus best before and minus the two
+ *  integer Mfg columns, plus Description, Pack, Mfg Date and Batch No. Widths
+ *  sum to EXACTLY 100 and every change to this list must keep them summing to
+ *  100 — the <colgroup> below feeds them straight to `width: N%`.
  *
- *  ⚠ Batch No REPLACED Mfg m/y here rather than joining it — still 16 columns,
- *  no width added. "T20260801" already CONTAINS 08/2026, so nothing is lost and
- *  A4 landscape gains no column. The XLS keeps Manufacturing Month and Year as
- *  two sortable integers ALONGSIDE Batch No because a spreadsheet is filtered
- *  and a sheet of paper is not; see lib/mrn/workbook.ts. The 1 point Batch No
- *  costs over the old Mfg cell came out of Description (24 → 23). */
+ *  ⚠ Mfg Date is labelled "Mfg Date", not "Date of Manufacturing" as in the
+ *  XLS. The long header is 21 characters and there is no A4 column that can
+ *  hold it; the short one is the same value under a name that fits. Do not
+ *  "align the two exports" by widening this one.
+ *
+ *  ⚠ Batch No REPLACED Mfg m/y here rather than joining it — "T20260801"
+ *  already CONTAINS 08/2026, so the integers are not lost. The XLS keeps
+ *  Manufacturing Month and Year as two sortable integers ALONGSIDE both derived
+ *  strings because a spreadsheet is filtered and a sheet of paper is not; see
+ *  lib/mrn/workbook.ts.
+ *
+ *  🔴 WHERE THE 7 POINTS FOR Mfg Date CAME FROM (2026-08-31), so the next
+ *  session does not take them back out of the wrong column:
+ *
+ *    • 4 from Description (23 → 19). It is the largest single contributor and
+ *      the only column with points to spare — but it has a FLOOR OF 18 and this
+ *      is close to it. At 19% ≈ 202px, minus the 8px of px-1 padding, a real
+ *      worst case like "DN WS PROTECT DUSTPROOF 92 BASE 18L" (~187px at 10px)
+ *      still fits. At 18 it would ellipsis. Do not cut Description further.
+ *    • 3 from the eight condition columns, which are now ONE UNIFORM 4.25 each
+ *      (they were 4.5 / 4.5 / 5 / 5 / 4.5 / 4.5 / 4.5 / 4.5 = 37). At 4.25%
+ *      ≈ 45px the widest of their headers, "Damage", needs ~30px and fits. They
+ *      hold counts of at most three digits, so the data was never the
+ *      constraint — the header always was.
+ *
+ *  The two 7-point string columns are sized off the PRINT box, not the screen:
+ *  A4 landscape is 297mm less the 8mm `@page mrn-sheet` margin each side = 281mm
+ *  ≈ 1062px, and #mrn-print-area's padding is forced to 0 in print. 7% is
+ *  ≈ 74px, leaving ≈ 66px inside px-1 — against ≈ 60px for "15.08.2026" (10
+ *  monospace characters at 10px, worst-case 0.6em advance) and ≈ 54px for the
+ *  9-character batch number. Both fit; neither can wrap (whitespace-nowrap). */
 const COLUMNS: { key: string; label: string; width: number; left?: boolean }[] = [
   { key: "no", label: "Sr", width: 3 },
   { key: "sku", label: "Product SKU", width: 9 },
-  { key: "desc", label: "Description", width: 23, left: true },
+  { key: "desc", label: "Description", width: 19, left: true },
   { key: "pack", label: "Pack", width: 5 },
   { key: "sti", label: "Qty STI", width: 6 },
   { key: "ctn", label: "Ctn", width: 4 },
   { key: "phy", label: "Physical", width: 6 },
+  { key: "mfgdate", label: "Mfg Date", width: 7 },
   { key: "batch", label: "Batch No", width: 7 },
-  { key: "snd", label: "SND", width: 4.5 },
-  { key: "lky", label: "Lky", width: 4.5 },
-  { key: "dmg", label: "Damage", width: 5 },
-  { key: "emp", label: "Empty", width: 5 },
-  { key: "qtd", label: "QTD", width: 4.5 },
-  { key: "rej", label: "REJ", width: 4.5 },
-  { key: "sht", label: "Short", width: 4.5 },
-  { key: "exc", label: "Excess", width: 4.5 },
+  { key: "snd", label: "SND", width: 4.25 },
+  { key: "lky", label: "Lky", width: 4.25 },
+  { key: "dmg", label: "Damage", width: 4.25 },
+  { key: "emp", label: "Empty", width: 4.25 },
+  { key: "qtd", label: "QTD", width: 4.25 },
+  { key: "rej", label: "REJ", width: 4.25 },
+  { key: "sht", label: "Short", width: 4.25 },
+  { key: "exc", label: "Excess", width: 4.25 },
 ];
 
 interface PrintSheetProps {
@@ -170,12 +198,15 @@ export function PrintSheet({ detail, printedAt }: PrintSheetProps): React.JSX.El
                 <Cell center>{first ? (l.pack ?? "") : ""}</Cell>
                 <Cell center>{first ? l.qtySti : ""}</Cell>
                 <Cell center>{first ? (l.cartonQty ?? "") : ""}</Cell>
-                {/* Physical and Batch No are the two that VARY down a split
-                    line — the entire reason a line splits at all. The batch
-                    number is derived from THIS sub-row’s mfg month and year, so
-                    6a and 6b print two different ones and neither is gated by
-                    `first`. */}
+                {/* Physical, Mfg Date and Batch No are the three that VARY down
+                    a split line — the entire reason a line splits at all. Both
+                    strings are derived from THIS sub-row’s mfg month and year,
+                    so 6a and 6b print two different dates and two different
+                    batch numbers, and neither is gated by `first`. */}
                 <Cell center>{r.qtyForRow ?? ""}</Cell>
+                <Cell center mono>
+                  {r.batch ? formatMfgDate(r.batch.mfgMonth, r.batch.mfgYear) : ""}
+                </Cell>
                 <Cell center mono>
                   {r.batch && receivedFrom
                     ? formatBatchNo(receivedFrom, r.batch.mfgMonth, r.batch.mfgYear)
@@ -206,6 +237,9 @@ export function PrintSheet({ detail, printedAt }: PrintSheetProps): React.JSX.El
               <Cell center>{formatCount(t.qtySti)}</Cell>
               <Cell center>{""}</Cell>
               <Cell center>{formatCount(t.physical)}</Cell>
+              {/* Mfg Date, then Batch No — both blank. A sum of dates is not a
+                  date and a sum of identifiers is not a number. */}
+              <Cell center>{""}</Cell>
               <Cell center>{""}</Cell>
               <Cell center>{blank(t.snd)}</Cell>
               <Cell center>{blank(t.leaky)}</Cell>

@@ -22,24 +22,32 @@
 import * as XLSX from "xlsx";
 import type { MrnDetail } from "./types";
 import { isMrnReceivedFrom } from "./types";
-import { formatBatchNo } from "./derive";
+import { formatBatchNo, formatMfgDate } from "./derive";
 import { buildRenderRows, reportHeaderFields, reportTotals } from "./report";
 
 /**
- * The 18 columns, in workbook order (`PRINT` row 17, minus best before, plus
- * Description, Pack and Batch No). Widths are Excel character units.
+ * The 19 columns, in workbook order (`PRINT` row 17, minus best before, plus
+ * Description, Pack, Date of Manufacturing and Batch No). Widths are Excel
+ * character units.
  *
  * Manufacturing Month and Manufacturing Year are TWO columns here and NO
- * columns at all on the A4 sheet or the desktop table, which carry only the
- * derived Batch No — see lib/mrn/report.ts's header for why that divergence is
+ * columns at all on the A4 sheet or the desktop table, which carry only the two
+ * derived strings — see lib/mrn/report.ts's header for why that divergence is
  * deliberate and not drift.
  *
- * ⚠ BOTH OF THEM STAY HERE, EVEN THOUGH Batch No NOW REPEATS THEM. This sheet
- * mirrors the paper TPW template column for column, and an .xlsx is the thing
- * someone SORTS and FILTERS — two integers do that and "T20260801" does not. The
- * A4 sheet and the desktop table, which have a width budget and no filter, drop
- * Mfg and keep only the batch number. Keeping all three here is the trade, not
- * an oversight.
+ * ⚠ ALL FOUR STAY HERE, EVEN THOUGH Date of Manufacturing AND Batch No BOTH
+ * REPEAT THE SAME TWO INTEGERS. This sheet mirrors the paper TPW template column
+ * for column, and an .xlsx is the thing someone SORTS and FILTERS — two integers
+ * do that and neither "15.08.2026" nor "T20260801" does. The A4 sheet and the
+ * desktop table, which have a width budget and no filter, drop the integers.
+ * Keeping all four here is the trade, not an oversight.
+ *
+ * ⚠ THE THREE MFG COLUMNS ARE ADJACENT AND IN THIS ORDER — Month, Year, Date,
+ * then Batch No (Date of Manufacturing added 2026-08-31, immediately after
+ * Manufacturing Year on owner instruction). The two hand-written positional
+ * arrays below MUST be read against this list element for element; there is no
+ * key on either of them, so a column inserted here and missed there silently
+ * shifts every value to its right.
  */
 const XLS_COLUMNS: { header: string; width: number }[] = [
   { header: "Sr No.", width: 7 },
@@ -51,6 +59,7 @@ const XLS_COLUMNS: { header: string; width: number }[] = [
   { header: "Qty as per Physical", width: 17 },
   { header: "Manufacturing Month", width: 19 },
   { header: "Manufacturing Year", width: 18 },
+  { header: "Date of Manufacturing", width: 20 },
   { header: "Batch No", width: 12 },
   { header: "SND", width: 7 },
   { header: "Lky", width: 7 },
@@ -117,6 +126,15 @@ export function buildMrnWorkbook(detail: MrnDetail): ArrayBuffer {
       r.qtyForRow,
       r.batch ? r.batch.mfgMonth : null,
       r.batch ? r.batch.mfgYear : null,
+      // 🔴 PER SUB-ROW, for the same reason as Batch No directly below — it is
+      // derived from THIS sub-row's own mfg month and year, so a split line's 6a
+      // and 6b carry two DIFFERENT dates. Never behind `first`.
+      //
+      // ⚠ A STRING, NOT A DATE. There is no day on the row (lib/mrn/derive.ts
+      // supplies a fixed 15), so writing a real Date here would hand Excel a
+      // precise timestamp nobody recorded and let the cell re-format itself by
+      // locale. Text is the honest cell type for a date that is part filler.
+      r.batch ? formatMfgDate(r.batch.mfgMonth, r.batch.mfgYear) : null,
       // 🔴 PER SUB-ROW, LIKE Physical AND Mfg — deliberately NOT behind `first`.
       // The batch number is derived FROM this sub-row’s own mfg month and year,
       // so on a split line 6a and 6b carry two DIFFERENT numbers and printing
@@ -149,7 +167,9 @@ export function buildMrnWorkbook(detail: MrnDetail): ArrayBuffer {
     t.physical,
     null,
     null,
-    // Batch No — blank. A sum of identifiers is not a number.
+    // Date of Manufacturing — blank, and Batch No below it likewise. A sum of
+    // dates is not a date and a sum of identifiers is not a number.
+    null,
     null,
     t.snd || null,
     t.leaky || null,

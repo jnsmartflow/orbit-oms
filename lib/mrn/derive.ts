@@ -203,6 +203,54 @@ export function formatBatchNo(
   return `${prefix}${mfgYear}${String(mfgMonth).padStart(2, "0")}01`;
 }
 
+// ── Date of manufacturing ────────────────────────────────────────────
+//
+// 🔴 SAME TWO INTEGERS AS formatBatchNo, SECOND DISPLAY FORMAT, NOTHING STORED.
+// Added 2026-08-31 for the XLS export and the A4 sheet. There is no date column
+// on mrn_line_batches, no day is collected anywhere in MRN, and neither of these
+// functions invents data — they are two renderings of `mfgMonth` + `mfgYear`,
+// which is all the depot has ever recorded.
+
+/**
+ * The human-readable manufacturing date the export and the printed sheet carry:
+ * a fixed day, the zero-padded month and the four-digit year, dot-separated.
+ *
+ *   month 8, year 2026 → "15.08.2026"
+ *   month 5, year 2026 → "15.05.2026"
+ *
+ * 🔴 THE DAY IS 15 HERE AND 01 IN formatBatchNo(), AND THAT IS DELIBERATE.
+ * BOTH DAYS ARE FILLER — no day exists on any row — but they are filler for two
+ * different things and the owner specified them separately on 2026-08-31:
+ *
+ *   • formatBatchNo() → "01". It is an IDENTIFIER handed to a supplier. The
+ *     first of the month is the conventional stand-in for "this month's batch",
+ *     and the string has to be stable and comparable, not plausible.
+ *   • formatMfgDate() → "15". It is a DISPLAYED DATE a reader parses as a date.
+ *     Mid-month is the honest stand-in for an unknown day inside a known month:
+ *     it is never off by more than a fortnight, whereas the 1st reads as a
+ *     precise claim about the first day that nobody made.
+ *
+ * ⚠ DO NOT "HARMONISE" THEM. A future session will notice two hardcoded days in
+ * one file and unify them; that silently changes either the batch identifier on
+ * a supplier-facing document or the date on the printed sheet. They differ on
+ * purpose. Change either one only on a fresh owner instruction.
+ *
+ * ⚠ IT IS A PROPERTY OF A BATCH ROW, NOT OF A LINE — exactly like the batch
+ * number. A line split across two manufacturing months carries TWO different
+ * dates, so every surface that emits sub-rows (buildRenderRows(),
+ * lib/mrn/report.ts) calls this once per SUB-ROW and never gates it behind
+ * `carriesLineTotals`.
+ *
+ * ⚠ DOTS, NOT SLASHES, and NEVER formatDateOnly() / formatIstDateTime()
+ * (components/mrn/format.ts). Those two take a real Date off a real column and
+ * carry a UTC-vs-IST rule that matters; there is no Date here to get wrong. This
+ * is string assembly over two integers and must not grow a Date in the middle,
+ * which is the one way this could start reporting a different day by timezone.
+ */
+export function formatMfgDate(mfgMonth: number, mfgYear: number): string {
+  return `15.${String(mfgMonth).padStart(2, "0")}.${mfgYear}`;
+}
+
 // ── Per-MRN roll-up ──────────────────────────────────────────────────────────
 
 /**
