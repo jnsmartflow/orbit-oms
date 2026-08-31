@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { FilePlus2, Send } from "lucide-react";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { CiNewReturn } from "./new-return";
+import { CiSubmittedBoard } from "./submitted-board";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -61,6 +62,14 @@ export function CiShell({
 }): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<CiTabKey>("new");
   const [insideBill, setInsideBill] = useState(false);
+  // Bumped after a submit so the Submitted board refetches. A counter, not a
+  // boolean, so two submits in a row both trigger a reload.
+  const [refreshKey, setRefreshKey] = useState(0);
+  // 🔴 FROM THE BOARD'S OWN FETCH, NEVER A GUESSED INCREMENT. An optimistic
+  // "+1" drifts the moment a submit fails after the bump, or two phones submit
+  // at once. undefined until the board has loaded, and WorkflowTabBar renders no
+  // badge for undefined — an honest blank beats a confident 0.
+  const [withBillingCount, setWithBillingCount] = useState<number | undefined>(undefined);
 
   // Stable, so CiNewReturn's effect does not re-fire on every render of this
   // shell — an unstable callback in that dependency list would loop.
@@ -68,17 +77,32 @@ export function CiShell({
     setInsideBill(inside);
   }, []);
 
+  const handleSubmitted = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  /** "Done" on the success screen — land him on Submitted, where the CI he just
+   *  raised is sitting with billing. */
+  const handleFinished = useCallback(() => {
+    setActiveTab("submitted");
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  const handleCounts = useCallback((withBilling: number) => {
+    setWithBillingCount(withBilling);
+  }, []);
+
   // Icons: lucide FilePlus2 → Send. The vocabulary the picking and MRN
   // supervisor boards already taught this user — start something new, then hand
   // it on.
   //
-  // 🔴 NEITHER TAB PASSES A COUNT. WorkflowTabBar renders no badge when `count`
-  // is undefined, and step 4a has no board fetch to count from. A count on
-  // "Submitted" arrives with the board in 4b — a badge showing 0 because nothing
-  // has been fetched is worse than no badge.
+  // 🔴 "New" PASSES NO COUNT — there is nothing to count, it is an action.
+  // "Submitted" carries what billing still holds, and that number comes from the
+  // BOARD'S OWN FETCH (see withBillingCount above), never an increment.
+  // undefined until it loads, and WorkflowTabBar renders no badge for undefined.
   const workflowTabs: WorkflowTab[] = [
     { key: "new", label: "New", icon: FilePlus2 },
-    { key: "submitted", label: "Submitted", icon: Send },
+    { key: "submitted", label: "Submitted", icon: Send, count: withBillingCount },
   ];
 
   return (
@@ -96,26 +120,20 @@ export function CiShell({
       hideBar={insideBill}
     >
       {activeTab === "new" ? (
-        <CiNewReturn userInitials={userInitials} onInsideBill={handleInsideBill} />
+        <CiNewReturn
+          userInitials={userInitials}
+          onInsideBill={handleInsideBill}
+          onSubmitted={handleSubmitted}
+          onFinished={handleFinished}
+        />
       ) : (
-        <SubmittedPlaceholder />
+        <CiSubmittedBoard
+          userInitials={userInitials}
+          refreshKey={refreshKey}
+          onCounts={handleCounts}
+        />
       )}
     </RoleLayoutClient>
   );
 }
 
-/** Step 4b builds the real Submitted board (the "With billing" / "Finished"
- *  bands off GET /api/ci/board?face=supervisor, which already exists). This
- *  placeholder keeps the tab honest rather than rendering a blank screen. */
-function SubmittedPlaceholder(): React.JSX.Element {
-  return (
-    <div className="min-h-full bg-[#F4F6F7] px-5 py-10">
-      <p className="text-[15px] font-semibold text-gray-900">Submitted</p>
-      <p className="text-[13px] text-gray-500 mt-2 leading-relaxed">
-        The list of returns you have handed to billing, and the ones billing has finished, is
-        step 4b. Its feed — <span className="font-mono text-[12px]">GET /api/ci/board?face=supervisor</span>{" "}
-        — is already built.
-      </p>
-    </div>
-  );
-}

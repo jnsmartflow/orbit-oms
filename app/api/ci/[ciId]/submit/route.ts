@@ -5,6 +5,8 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { allocateCiNumber } from "@/lib/ci/number";
+import { parseCiDateOnly } from "@/lib/ci/derive";
+import { isCiMaterialMoved } from "@/lib/ci/types";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +15,11 @@ export const dynamic = "force-dynamic";
  * the draft to `status = 'submitted'`. This is the moment the return becomes a
  * record and appears on billing's rail.
  *
- * Body: none.
+ * Body: { materialMoved, materialReceivedDate, reasonId, reasonRemark? }
+ *
+ * ⚠ THE STAGE-1 ANSWERS ARRIVE HERE, not in a separate PATCH. They are written
+ * in the SAME guarded updateMany as the number and the flip — see the block
+ * above that statement for why a PATCH-then-submit pair is unsafe.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * 🔴 THE DOUBLE-TAP GUARD — `WHERE status = 'draft'`
@@ -55,7 +61,7 @@ export const dynamic = "force-dynamic";
 const SUBMIT_ROLES = [ROLES.FLOOR_SUPERVISOR, ROLES.OPERATIONS, ROLES.ADMIN];
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: { ciId: string } },
 ): Promise<NextResponse> {
   const session = await auth();
@@ -99,6 +105,51 @@ export async function POST(
     );
   }
 
+  // ── The stage-1 answers, from the body. Validated BEFORE any write. ───────
+  const body = (await req.json().catch(() => ({}))) as {
+    materialMoved?: unknown;
+    materialReceivedDate?: unknown;
+    reasonId?: unknown;
+    reasonRemark?: unknown;
+  };
+
+  // Parsed to null-or-value rather than rejected field by field, so the error
+  // below can name EVERYTHING that is missing in one sentence. Three separate
+  // 400s would make the supervisor fix one thing, tap Submit, and be told about
+  // the next.
+  const materialMoved =
+    typeof body.materialMoved === "string" && isCiMaterialMoved(body.materialMoved)
+      ? body.materialMoved
+      : null;
+
+  let materialReceivedDate: Date | null = null;
+  let dateError: string | null = null;
+  if (typeof body.materialReceivedDate === "string") {
+    try {
+      materialReceivedDate = parseCiDateOnly(body.materialReceivedDate);
+    } catch (err) {
+      // A MALFORMED date is different from a MISSING one and must not be
+      // reported as "missing" — the supervisor typed something and deserves to
+      // know it was rejected rather than ignored.
+      dateError = err instanceof Error ? err.message : "Invalid materialReceivedDate";
+    }
+  }
+  if (dateError !== null) {
+    return NextResponse.json({ error: dateError }, { status: 400 });
+  }
+
+  const parsedReasonId = Number(body.reasonId);
+  const reasonId =
+    Number.isInteger(parsedReasonId) && parsedReasonId > 0 ? parsedReasonId : null;
+
+  // Optional. Empty/whitespace collapses to null rather than being stored as ""
+  // — a blank remark and no remark are the same thing, and two representations
+  // of it means two render branches downstream.
+  const reasonRemark =
+    typeof body.reasonRemark === "string" && body.reasonRemark.trim() !== ""
+      ? body.reasonRemark.trim()
+      : null;
+
   // ── Read the draft and check it is submittable. NO WRITES YET. ────────────
   const ci = await prisma.ci_returns.findFirst({
     where: { id: ciId, isVoided: false },
@@ -107,12 +158,9 @@ export async function POST(
       status: true,
       ciNumber: true,
       supervisorId: true,
-      // The four stage-1 answers. NULL on a draft by design (owner ruling
-      // 2026-09-01 — no placeholders); all four must be present to leave draft.
-      materialMoved: true,
-      materialReceivedDate: true,
-      reasonId: true,
-      reasonLabel: true,
+      // ⚠ The four stage-1 columns are NOT read here. They are NULL on a draft
+      // by design and this request is what fills them — reading the row's
+      // (null) values to validate against would be checking the wrong copy.
       _count: { select: { lines: true } },
     },
   });
@@ -159,32 +207,37 @@ export async function POST(
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // 🔴 THE STAGE-1 ANSWERS MUST ALL BE PRESENT BEFORE THIS LEAVES DRAFT
+  // 🔴 THE STAGE-1 ANSWERS ARRIVE IN THIS REQUEST AND ARE WRITTEN WITH THE FLIP
   // ═════════════════════════════════════════════════════════════════════════
   //
   // The four columns are NULLABLE so a draft can exist before the details
   // screen has been answered (owner ruling 2026-09-01 — a draft carries NULL,
-  // never a placeholder). `chk_ci_returns_complete_when_not_draft` enforces
-  // that at the database:
+  // never a placeholder), and `chk_ci_returns_complete_when_not_draft` makes
+  // them mandatory the moment status stops being 'draft':
   //
   //   CHECK (status = 'draft' OR (materialMoved IS NOT NULL
   //          AND materialReceivedDate IS NOT NULL
   //          AND reasonId IS NOT NULL AND reasonLabel IS NOT NULL))
   //
-  // ⚠ THAT CHECK IS THE BACKSTOP, NOT THE ERROR MESSAGE. Without the guard
+  // 🔴 THEY ARE WRITTEN IN THE SAME updateMany AS THE NUMBER AND THE FLIP, AND
+  // THAT IS NOT AN OPTIMISATION. A PATCH-then-submit pair would leave a window
+  // in which the row carries the details but is still a draft — and a phone that
+  // dies in that window has a CI that is invisible to every screen (all reads
+  // filter `status <> 'draft'`) with no way for the supervisor to find it again.
+  // He would simply re-do the whole return. ONE guarded statement means the
+  // details and the number land together or not at all, and a double-tap still
+  // matches zero rows the second time.
+  //
+  // ⚠ THE CHECK IS THE BACKSTOP, NOT THE ERROR MESSAGE. Without the validation
   // below, an incomplete submit would surface to a supervisor's phone as
   // `violates check constraint "chk_ci_returns_complete_when_not_draft"` —
-  // technically correct, and useless to a man holding returned stock. This
-  // names the field he still has to fill.
-  //
-  // If that raw string ever DOES reach the UI, this guard has a hole. Fix the
-  // guard; never weaken the CHECK.
+  // technically correct, useless to a man holding returned stock. If that string
+  // ever reaches the UI, this validation has a hole: fix it, never weaken the
+  // CHECK.
   const missing: string[] = [];
-  if (ci.materialMoved === null) missing.push("whether the material has moved");
-  if (ci.materialReceivedDate === null) missing.push("the date it was received");
-  // reasonId and reasonLabel are written together and can only disagree if
-  // something wrote one directly; report the reason once either way.
-  if (ci.reasonId === null || ci.reasonLabel === null) missing.push("a reason");
+  if (materialMoved === null) missing.push("whether the material has moved");
+  if (materialReceivedDate === null) missing.push("the date it was received");
+  if (reasonId === null) missing.push("a reason");
 
   if (missing.length > 0) {
     return NextResponse.json(
@@ -192,6 +245,41 @@ export async function POST(
         error: `This return is missing ${formatList(missing)}. Fill the details step, then submit.`,
         missing,
       },
+      { status: 400 },
+    );
+  }
+
+  // TypeScript cannot see that the `missing` return above already proved these
+  // three are non-null — it does not follow the array. Narrowed here rather than
+  // asserted with `!`, so that a future edit which drops a field from `missing`
+  // fails loudly instead of quietly writing a null into a column the CHECK
+  // requires the moment this row stops being a draft.
+  if (materialMoved === null || materialReceivedDate === null || reasonId === null) {
+    return NextResponse.json(
+      { error: "This return is missing part of the details step." },
+      { status: 400 },
+    );
+  }
+
+  // ── Resolve the reason, and SNAPSHOT ITS LABEL. ───────────────────────────
+  // A READ, not a second write — the one statement rule below is about writes.
+  //
+  // The label is stored beside the FK so renaming a reason never rewrites the
+  // history of CIs raised under the old wording (spec §3.1). Reading it here
+  // rather than accepting it from the body is what makes that snapshot
+  // trustworthy: a client cannot file "Return by Dealer" against the id for
+  // "Wrong Punching".
+  //
+  // isActive is checked — a retired reason must not be selectable on a NEW CI,
+  // while existing CIs keep pointing at it (which is why reasons are retired by
+  // flag and never deleted).
+  const reason = await prisma.ci_reason_master.findFirst({
+    where: { id: reasonId, isActive: true },
+    select: { id: true, label: true },
+  });
+  if (!reason) {
+    return NextResponse.json(
+      { error: "That reason is no longer available — pick another." },
       { status: 400 },
     );
   }
@@ -213,6 +301,12 @@ export async function POST(
       const res = await prisma.ci_returns.updateMany({
         where: { id: ciId, status: "draft", isVoided: false },
         data: {
+          // The four stage-1 answers, written WITH the flip — never before it.
+          materialMoved,
+          materialReceivedDate,
+          reasonId: reason.id,
+          reasonLabel: reason.label,
+          reasonRemark,
           ciNumber: identity.ciNumber,
           status: "submitted",
           submittedAt: now,

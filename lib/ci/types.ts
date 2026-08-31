@@ -279,3 +279,21 @@ export interface CiMarker {
   count: number;
   latest: string | null;
 }
+
+// ── Reason picker (supervisor frame 7) ───────────────────────────────────────
+
+/**
+ * One selectable reason, from `ci_reason_master` via GET /api/ci/reasons.
+ *
+ * 🔴 NEVER HARDCODE THIS LIST IN A COMPONENT. It is data so the depot can
+ * change it without a deploy (spec §3.1); a client-side copy goes stale the
+ * first time a row is edited and offers a reason the submit route refuses.
+ */
+export interface CiReasonOption {
+  id: number;
+  code: string;
+  label: string;
+  sortOrder: number;
+  /** The three common ones sit above the divider; the rest under "More". */
+  isPinned: boolean;
+}

@@ -7,15 +7,22 @@ import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { CiLineRows, CiPackChips } from "./line-list";
 import { CiQtySheet } from "./qty-sheet";
-import type { CiBillLine, CiBillResult, CiSearchHit, CiSearchResult } from "@/lib/ci/types";
+import { CiDetailsStep, CiReasonSheet } from "./details-step";
+import type {
+  CiBillLine,
+  CiBillResult,
+  CiReasonOption,
+  CiSearchHit,
+  CiSearchResult,
+} from "@/lib/ci/types";
 
 // The supervisor's New tab — frames 1-5 of docs/mockups/ci/supervisor.html:
-// search → results → bill (Full bill / Part) → line list → quantity sheet →
-// Next.
+// search → results → bill (Full bill / Part) → lines → quantity sheet → Next →
+// details → reason → Submit → success.
 //
-// ⚠ STEP 4a ENDS AT "NEXT". Tapping it creates a REAL draft with REAL lines, so
-// the journey is hand-testable end to end; the details screen it lands on is a
-// placeholder that step 4b replaces.
+// ⚠ Frames 6-8 (details, reason sheet, success) live here too since 4b; the
+// header and sub-header strip are rendered once and stay fixed across frames
+// 3-7, which is what keeps the bill identity on screen while the rest moves.
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔴 TWO CORE §3 RULES THIS SCREEN IS SHAPED BY
@@ -35,18 +42,29 @@ import type { CiBillLine, CiBillResult, CiSearchHit, CiSearchResult } from "@/li
 //    navigates. The Next handler defers its screen change with
 //    setTimeout(…, 0) for that reason.
 
-type Step = "search" | "results" | "bill" | "details";
+type Step = "search" | "results" | "bill" | "details" | "success";
 
 interface Props {
   /** For the module header's avatar. Passed down rather than re-derived. */
   userInitials: string;
-  /** Placeholder hand-off for step 4b. Called once the draft + lines are saved. */
+  /** Called once the draft + lines are saved. */
   onDraftReady?: (ciId: number, bill: CiBillResult) => void;
+  /** Fired when he taps Done — the shell switches to the Submitted tab. */
+  onFinished?: () => void;
+  /** Fired after a successful submit so the shell can refetch the Submitted
+   *  board — its count then comes from that fetch, never a guessed increment. */
+  onSubmitted?: () => void;
   /** Lets the shell hide the module tab bar while a bill is open. */
   onInsideBill?: (inside: boolean) => void;
 }
 
-export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props): React.JSX.Element {
+export function CiNewReturn({
+  userInitials,
+  onDraftReady,
+  onSubmitted,
+  onFinished,
+  onInsideBill,
+}: Props): React.JSX.Element {
   // The shared Menu / You sheets RoleLayoutClient mounts once for this subtree.
   const { openMenu, openYou } = useMobileShell();
   const [step, setStep] = useState<Step>("search");
@@ -63,6 +81,19 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
   const [returned, setReturned] = useState<Map<number, number>>(new Map());
   const [sheetLine, setSheetLine] = useState<CiBillLine | null>(null);
 
+  // ── Details step state (frames 6-7) ───────────────────────────────────────
+  const [materialMoved, setMaterialMoved] = useState<"moved" | "not_moved">("not_moved");
+  // Defaults to TODAY IN IST. Not `toISOString().slice(0,10)` — that is the UTC
+  // day, and between 18:30 and 24:00 IST it is YESTERDAY, which is exactly the
+  // shift a depot evening runs in.
+  const [receivedOn, setReceivedOn] = useState<string>(() =>
+    new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+  );
+  const [reason, setReason] = useState<CiReasonOption | null>(null);
+  const [remark, setRemark] = useState("");
+  const [reasonSheetOpen, setReasonSheetOpen] = useState(false);
+  const [submitted, setSubmitted] = useState<{ ciNumber: string | null } | null>(null);
+
   const [saving, setSaving] = useState(false);
   // 🔴 ONE ciId PER BILL, HELD FOR THE WHOLE FLOW. Going Back and changing the
   // lines re-PUTs onto this SAME id — /draft is never called twice for one bill.
@@ -74,7 +105,7 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
   // disappears inside a bill"). Reported UP rather than owned here, because
   // RoleLayoutClient's hideBar slot lives above this component.
   useEffect(() => {
-    onInsideBill?.(step === "bill" || step === "details");
+    onInsideBill?.(step === "bill" || step === "details" || step === "success");
   }, [step, onInsideBill]);
 
   // ── Search ────────────────────────────────────────────────────────────────
@@ -218,9 +249,102 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
     }
   }, [bill, mode, returned, lineCount, saving, onDraftReady]);
 
+  // ── Submit — the details land WITH the flip, in one guarded statement ──────
+  const onSubmit = useCallback(async () => {
+    const ciId = ciIdRef.current;
+    if (ciId === null || saving) return;
+    // The button is disabled without a reason; this is the second guard, and the
+    // route's is the one that actually refuses.
+    if (reason === null) {
+      toast.error("Pick a reason before submitting.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ci/${ciId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          materialMoved,
+          materialReceivedDate: receivedOn,
+          reasonId: reason.id,
+          reasonRemark: remark,
+        }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ciNumber?: string | null;
+      };
+      if (!res.ok) {
+        // The route names what is missing in a sentence — surface it verbatim
+        // rather than replacing it with a generic failure.
+        toast.error(j.error ?? "Could not submit.");
+        return;
+      }
+      // ⚠ A SECOND TAP LANDS HERE TOO, and that is correct. The route answers a
+      // repeat submit with 200 + the existing number (its updateMany matched
+      // zero rows and wrote nothing), so the phone shows the same success screen
+      // instead of an error the supervisor cannot act on.
+      setSubmitted({ ciNumber: j.ciNumber ?? null });
+      // Deferred (CORE §3) — a screen change is a navigation.
+      setTimeout(() => setStep("success"), 0);
+      onSubmitted?.();
+    } catch {
+      toast.error("Could not submit — check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, reason, materialMoved, receivedOn, remark, onSubmitted]);
+
+  /**
+   * The litres actually coming back — what the success screen reports.
+   *
+   * ⚠ NOT the strip's bill total. The strip shows the whole BILL's litres and is
+   * deliberately fixed across frames 3-7 (mockup: "the strip never changes"), so
+   * reusing it here would tell him 212 L came back when only 120 L did.
+   * Full bill: every line's own litres. Part: per-tin × what he entered.
+   */
+  const submittedLitres = useMemo(() => {
+    if (bill === null) return 0;
+    const total =
+      mode === "full"
+        ? bill.lines.reduce((s, l) => s + l.lineLitres, 0)
+        : bill.lines.reduce((s, l) => {
+            const qty = returned.get(l.rawLineItemId);
+            if (qty === undefined || l.litresPerTin === null) return s;
+            return s + l.litresPerTin * qty;
+          }, 0);
+    return Math.round(total * 1000) / 1000;
+  }, [bill, mode, returned]);
+
+  /** Back to the search box, everything cleared — the mockup's "New CI". */
+  const resetAll = useCallback(() => {
+    ciIdRef.current = null;
+    setBill(null);
+    setHits([]);
+    setQuery("");
+    setSearchedTerm(null);
+    setReturned(new Map());
+    setMode("full");
+    setActivePackFilter("ALL");
+    setReason(null);
+    setRemark("");
+    setMaterialMoved("not_moved");
+    setSubmitted(null);
+    setStep("search");
+  }, []);
+
+  /** "Done" — clear the flow and hand the viewport back to the tab bar. The
+   *  shell switches to Submitted, so he lands on the CI he just raised sitting
+   *  with billing rather than on an empty search box. */
+  const onDone = useCallback(() => {
+    resetAll();
+    onFinished?.();
+  }, [resetAll, onFinished]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (step === "bill" || step === "details") {
+  if (step === "bill" || step === "details" || step === "success") {
     if (bill === null) return <div className="p-6 text-[13px] text-gray-400">Loading…</div>;
     return (
       <div className="fixed inset-0 z-30 bg-[#F4F6F7] flex flex-col">
@@ -233,12 +357,23 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
           style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
         >
           <div className="flex items-center gap-1.5">
+            {/* ⚠ NO BACK ON THE SUCCESS SCREEN. The CI is submitted and numbered;
+                a back arrow there would offer to re-open a finished document.
+                His two exits are the pills at the bottom — New CI or Done. */}
+            {step !== "success" && (
             <button
               type="button"
               onClick={() => {
-                // Straight back to the list this bill came from. No history
-                // pop: this screen was never pushed onto history, so popping
-                // would leave /ci entirely.
+                // From the details step, Back returns to the LINES — on the
+                // SAME ciId. He can change what came back and tap Next again;
+                // PUT /lines replaces, and /draft is never called twice.
+                if (step === "details") {
+                  setStep("bill");
+                  return;
+                }
+                // From the bill, straight back to the list it came from. No
+                // history pop: this screen was never pushed onto history, so
+                // popping would leave /ci entirely.
                 setStep(hits.length > 1 ? "results" : "search");
               }}
               aria-label="Back"
@@ -246,6 +381,7 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
             >
               <ChevronLeft size={20} />
             </button>
+            )}
             <div className="min-w-0 flex-1">
               <div className="text-[18px] font-semibold text-white truncate min-w-0">
                 {bill.customerName}
@@ -255,9 +391,13 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
           </div>
         </div>
 
+        {/* ⚠ HIDDEN ON SUCCESS — the strip describes the BILL, and the success
+            screen is about the CI. Everywhere else it is fixed across frames 3-7,
+            which is what keeps the bill identity on screen. */}
         {/* SUB-HEADER STRIP — identical on every screen of the flow:
             date · invoice · litres. A white band flush under the header, no
             rounding, one bottom border — picking's stat-band material. */}
+        {step !== "success" && (
         <div className="bg-white border-b border-gray-200 shrink-0 px-[14px] py-3 flex items-center gap-2 text-[12.5px]">
           <span className="text-gray-600 shrink-0">{formatDay(bill.invoiceDate ?? bill.obdDateTime)}</span>
           <span className="text-[#d8dce1]">·</span>
@@ -269,9 +409,50 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
             {bill.totalLitres} L
           </span>
         </div>
+        )}
 
-        {step === "details" ? (
-          <PlaceholderDetails ciId={ciIdRef.current} lineCount={lineCount} />
+        {step === "success" ? (
+          <CiSuccess
+            ciNumber={submitted?.ciNumber ?? null}
+            customerName={bill.customerName}
+            lineCount={lineCount}
+            litres={submittedLitres}
+            onNewCi={resetAll}
+            onDone={onDone}
+          />
+        ) : step === "details" ? (
+          <>
+            <CiDetailsStep
+              materialMoved={materialMoved}
+              onMaterialMoved={setMaterialMoved}
+              receivedOn={receivedOn}
+              onReceivedOn={setReceivedOn}
+              reason={reason}
+              onOpenReasons={() => setReasonSheetOpen(true)}
+              remark={remark}
+              onRemark={setRemark}
+            />
+            {/* Bottom pill — Submit. DISABLED until a reason is chosen; the
+                route refuses without one too, and names it. */}
+            <div
+              className="shrink-0 px-3.5 pb-3.5 bg-[#F4F6F7]"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+            >
+              <button
+                type="button"
+                onClick={() => void onSubmit()}
+                disabled={reason === null || saving}
+                className={
+                  "w-full h-12 rounded-full text-[14.5px] font-bold " +
+                  (reason !== null && !saving
+                    ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed")
+                }
+              >
+                {saving ? "Submitting…" : "Submit"}
+              </button>
+            </div>
+          </>
         ) : (
           <>
             {/* SEGMENTED CONTROL — its own strip. */}
@@ -344,6 +525,17 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
               </button>
             </div>
           </>
+        )}
+
+        {reasonSheetOpen && (
+          <CiReasonSheet
+            selectedId={reason?.id ?? null}
+            onCancel={() => setReasonSheetOpen(false)}
+            onPick={(r) => {
+              setReason(r);
+              setReasonSheetOpen(false);
+            }}
+          />
         )}
 
         {sheetLine !== null && (
@@ -459,27 +651,66 @@ export function CiNewReturn({ userInitials, onDraftReady, onInsideBill }: Props)
   );
 }
 
-// ── Placeholder for step 4b ──────────────────────────────────────────────────
+// ── Success (frame 8) ────────────────────────────────────────────────────────
 
-function PlaceholderDetails({
-  ciId,
+/**
+ * The CI number appears HERE and nowhere earlier — it does not exist until
+ * submit allocates it (spec §5). Two exits, exactly as the mockup draws them:
+ * "New CI" resets to the search box, "Done" hands the viewport back to the tab
+ * bar.
+ */
+function CiSuccess({
+  ciNumber,
+  customerName,
   lineCount,
+  litres,
+  onNewCi,
+  onDone,
 }: {
-  ciId: number | null;
+  ciNumber: string | null;
+  customerName: string;
   lineCount: number;
+  litres: number;
+  onNewCi: () => void;
+  onDone: () => void;
 }): React.JSX.Element {
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-8">
-      <p className="text-[15px] font-semibold text-gray-900">Draft saved</p>
-      <p className="text-[13px] text-gray-500 mt-2 leading-relaxed">
-        CI draft <span className="font-mono font-semibold">#{ciId ?? "?"}</span> now holds{" "}
-        {lineCount} line{lineCount === 1 ? "" : "s"}.
-      </p>
-      <p className="text-[12.5px] text-gray-400 mt-4 leading-relaxed">
-        The details step — Material moved, Received on, Reason, Remark — and Submit are step 4b.
-        Nothing here is visible to billing yet: a draft is filtered out of every board, list,
-        marker and search.
-      </p>
+    <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-[#E7F6EE] flex items-center justify-center text-[#0A7C4A] text-[26px] leading-none">
+          ✓
+        </div>
+        <div className="font-mono text-[22px] font-bold text-gray-900 mt-4">
+          {/* Null would mean the route returned success without a number, which
+              cannot happen — the em-dash is a seatbelt, not an expected state. */}
+          {ciNumber ?? "—"}
+        </div>
+        <div className="text-[15px] text-gray-700 mt-1.5 truncate max-w-full">
+          {customerName}
+        </div>
+        <div className="text-[12.5px] text-gray-500 mt-1 tabular-nums">
+          {lineCount} line{lineCount === 1 ? "" : "s"} · {litres} L
+        </div>
+      </div>
+      <div
+        className="shrink-0 px-3.5 pb-3.5 flex gap-2.5"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+      >
+        <button
+          type="button"
+          onClick={onNewCi}
+          className="flex-1 h-12 rounded-full border border-gray-200 bg-white text-[14.5px] font-bold text-gray-700 active:bg-gray-50"
+        >
+          New CI
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="flex-1 h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+        >
+          Done
+        </button>
+      </div>
     </div>
   );
 }
