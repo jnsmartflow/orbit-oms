@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
+import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { CiShell } from "@/components/ci/ci-shell";
+import { CiBillingBoardScreen } from "@/components/ci/billing-board";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +20,11 @@ export const dynamic = "force-dynamic";
 // — the reference server page for a role-branched module shell
 // (CLAUDE_UI.md §59.4).
 //
-// ⚠ STEP 4a IS THE SUPERVISOR FACE ONLY. Billing's desk screen is step 5, and
-// there is deliberately no role branch here yet: adding one now would mean
-// writing a second face that renders nothing. Every role that holds `ci` canView
-// gets the phone face today; the branch goes in with billing's screen, at which
-// point it mirrors app/mrn/page.tsx's `primaryRole === "floor_supervisor"`.
+// ⚠ TWO FACES, BRANCHED ON primaryRole — NEVER ON VIEWPORT. There is no `md:`
+// switch here: /picking removed its width switch in July 2026 and neither MRN
+// nor CI ever had one. floor_supervisor gets the phone face with its own bottom
+// tabs; everyone else who can see CI (billing_operator, operations, admin) gets
+// billing's desk rail. Mirrors app/mrn/page.tsx exactly.
 //
 // ⚠ NOT IN THE SIDEBAR YET. `ci` is in the PageKey union and ALL_PAGE_KEYS but
 // deliberately NOT in PAGE_NAV_MAP — that is step 6, and its POSITION there is
@@ -72,6 +74,31 @@ export default async function CiPage() {
 
   const userName = session.user.name ?? "User";
   const userInitials = getInitials(userName);
+
+  const showSupervisorFace = primaryRole === "floor_supervisor";
+
+  if (!showSupervisorFace) {
+    // Billing's desk face — RoleLayoutClient with NO workflowTabs, so the
+    // default Home/Menu/You bar stands and the desktop sidebar renders as
+    // normal.
+    //
+    // ⚠ `workflowTabs={[]}` would NOT do this — an empty array falls through to
+    // the default bar anyway (CLAUDE_UI.md §59.2's landmine), but passing it
+    // would read as an intent to hide something. Omitting the prop is the
+    // honest way to say "this face has no module tabs".
+    return (
+      <RoleSidebarProvider>
+        <RoleLayoutClient
+          role={primaryRole as RoleSidebarRole}
+          userName={userName}
+          userInitials={userInitials}
+          navItems={dedupedNavItems}
+        >
+          <CiBillingBoardScreen />
+        </RoleLayoutClient>
+      </RoleSidebarProvider>
+    );
+  }
 
   return (
     <RoleSidebarProvider>

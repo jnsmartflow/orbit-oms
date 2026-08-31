@@ -75,6 +75,23 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   // and 0. Re-derive it against the grants, never from this comment, before
   // moving this line.
   { pageKey: "mrn",                label: "MRN",           href: "/mrn" },
+  // CI — Goods Return Note (2026-09-01). Stock coming BACK from a customer; the
+  // return counterpart to MRN directly above. One route, two faces branching by
+  // ROLE (floor_supervisor phone / billing desk), same as MRN.
+  //
+  // ⚠ THIS POSITION IS BEHAVIOUR, NOT COSMETICS — the same warning MRN's line
+  // carries, for the same reason. MobileShell's phone Home target is
+  // navItems[0]?.href (components/shared/mobile-shell.tsx) and buildNavItems
+  // preserves this array's order, so an entry becomes Home for any role whose
+  // first GRANTED entry it displaces.
+  //
+  // Sitting here after mrn, it displaces nobody. VERIFIED 2026-09-01 by deriving
+  // navItems[0] against the LIVE grants, before and after this line:
+  //   floor_supervisor  /picking            (idx 2,  picking)            unchanged
+  //   billing_operator  /place-order        (idx 12, place_order)        unchanged
+  //   operations        /operations/tinting (idx 0,  operations_tinting) unchanged
+  // Re-derive that comparison before moving this line; do not trust this comment.
+  { pageKey: "ci",                 label: "CI",            href: "/ci" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },

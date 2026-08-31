@@ -246,18 +246,41 @@ export async function getCiBill(orderId: number): Promise<CiBillResult | null> {
  * 🔴 THE ONE PREDICATE. The billing board renders it and the marker aggregates
  * over it — never two copies. See this file's header.
  *
- * `date` fences on `submittedAt`, which is when the CI reached billing, NOT
- * `materialReceivedDate` (when goods physically arrived) and NOT `createdAt`
- * (when a draft was opened). Billing's rail answers "what landed on my desk
- * today", and those three dates genuinely differ: material can arrive on the
- * 24th against a bill dated the 22nd and be submitted on the 25th.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 PENDING IS NEVER DATE-FENCED. THE STEPPER DRIVES THE CLOSED SECTION ONLY.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Pending is the WHOLE BACKLOG — every CI the floor has handed over and billing
+ * has not closed, however old. A CI raised on Friday and still open on Monday is
+ * exactly the row billing most needs to see, and a today-fence would hide it.
+ *
+ * The billing Picking tab learned this the hard way: a today-fence there
+ * rendered an EMPTY TAB over a real backlog of older bills — a screen
+ * confidently reporting "nothing to do" while work sat behind it. Do not
+ * reintroduce a date fence on the pending arm for symmetry with the closed one.
+ *
+ * CLOSED fences on `closedAt` — the day billing FINISHED it, which is the
+ * question a date stepper on this screen asks ("what did I close on the 31st").
+ * Not `submittedAt`: a CI submitted Friday and closed Monday belongs to
+ * Monday's closed list, and the two dates genuinely differ.
+ *
+ * ⚠ ONE `OR`, NOT TWO CALLS. The marker aggregates COUNT + MAX(updatedAt) over
+ * a single WHERE, so the two arms have to compose into one predicate or the
+ * marker could only ever watch half the rail.
  */
 export function buildCiBillingWhere(range: { start: Date; end: Date }): Prisma.ci_returnsWhereInput {
   return {
     isVoided: false,
-    // Both bands of the rail: pending (submitted) and closed. Never 'draft'.
-    status: { in: ["submitted", "closed", "returned_to_floor"] },
-    submittedAt: { gte: range.start, lt: range.end },
+    OR: [
+      // Pending — the whole backlog, no date at all. `returned_to_floor` rides
+      // with it: if that flow is ever built, such a CI is still billing's
+      // outstanding work, not a closed one.
+      { status: { in: ["submitted", "returned_to_floor"] } },
+      // Closed — only the day the stepper is on.
+      { status: "closed", closedAt: { gte: range.start, lt: range.end } },
+    ],
+    // Never 'draft'. A draft is an in-flight write, not a record — and both arms
+    // above name their statuses explicitly, so a draft cannot match either.
   };
 }
 
@@ -353,10 +376,17 @@ export async function getCiBillingBoard(dateStr?: string): Promise<CiBillingBoar
   });
 
   const mapped = rows.map(toBoardRow);
-  // A partition, not a second query — the rail is one fetch (design §8: "one
-  // panel, no second tab to switch to").
+  // A partition, not a second query — the rail is ONE fetch and ONE list
+  // (design §8: "one panel, no second tab to switch to"). Closing a CI moves the
+  // card from the top section to the bottom one in front of the operator, and
+  // that visible movement is the point; a second tab would destroy it.
   const pending = mapped.filter((r) => r.status !== "closed");
-  const closed = mapped.filter((r) => r.status === "closed");
+  // Newest-closed first, so the one he just finished lands at the top of the
+  // closed section where he is looking. `submittedAt` order is right for
+  // pending — oldest work is the most urgent — but wrong here.
+  const closed = mapped
+    .filter((r) => r.status === "closed")
+    .sort((a, b) => (b.closedAt ?? "").localeCompare(a.closedAt ?? ""));
 
   return {
     face: "billing",

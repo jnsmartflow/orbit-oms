@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
   Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard, Mail,
-  FlaskConical, Route, PackageCheck, Container,
+  FlaskConical, Route, PackageCheck, Container, Undo2,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -58,6 +58,13 @@ export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }
   // `vehicles` icon, and an admin sees both entries in the same sidebar and
   // the same Menu sheet, so reusing it would make two rows indistinguishable.
   mrn:                 Container,
+  // CI — Goods Return Note (2026-09-01). `Undo2` is the RETURN arrow: CI is
+  // MRN running backwards, stock going out and coming back.
+  // ⚠ NOT `Container` — that is MRN's, and the two modules are adjacent in the
+  // sidebar and in the Menu sheet, so a shared icon would make the two rows
+  // indistinguishable at a glance. Same rule that kept `Truck` off MRN because
+  // `vehicles` already had it.
+  ci:                  Undo2,
 };
 
 export const DEFAULT_ICON = User;
