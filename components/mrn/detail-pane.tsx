@@ -7,6 +7,7 @@ import { isLineOpenable } from "@/lib/mrn/derive";
 import { StatusPill } from "./status-pill";
 import { LineDrawer } from "./line-drawer";
 import { LinesTable } from "./lines-table";
+import { PhotoBand } from "./photo-band";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
 import type { MrnPerms } from "./mrn-shell";
 
@@ -404,6 +405,23 @@ export function DetailPane({
           )}
         </div>
       </div>
+
+      {/* ── The photo band ──────────────────────────────────────────────────
+          A SIBLING of the header block and the scroll box, deliberately: it is
+          pinned above the table rather than scrolling with it, so a thumbnail
+          stays reachable while billing reads down forty lines.
+
+          🔴 IT RENDERS null WHEN THE MRN HAS NO PHOTOS — no empty state, no
+          border, no reserved space. Most trucks will never carry one.
+
+          ⚠ AND IT IS NOT A FACT. A photo count in the Facts row above would
+          inherit that row's rule ("a fact disappears only when it cannot exist
+          yet") and be forced to print "0 photos" on every MRN for ever. Being a
+          band rather than a fact is what buys the right to vanish.
+
+          ⚠ NOT A SECOND HEADER either — no MRN number, no status pill, no
+          document actions. header-card.tsx was deleted for being one. */}
+      <PhotoBand detail={detail} canDelete={perms.canDelete} />
 
       {/* The table starts immediately below the header block — no tab strip.
           Keyed on the MRN id so switching trucks REMOUNTS the table rather than
