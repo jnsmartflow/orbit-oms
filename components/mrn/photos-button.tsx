@@ -102,23 +102,48 @@ export function PhotosButton({ detail, canDelete }: PhotosButtonProps): React.JS
 
   return (
     <>
+      {/* ⚠ `relative` IS LOAD-BEARING — it is what the badge below positions
+          against. Everything else here is PaneButton's box model from
+          detail-pane.tsx, unchanged, so this button is the same width and
+          weight as Print / PDF beside it. */}
       <button
         type="button"
         onClick={() => setOpen(0)}
-        // Box model copied from PaneButton in detail-pane.tsx — see the header.
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-[#475467] transition-colors hover:bg-gray-50"
+        className="relative inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-[#475467] transition-colors hover:bg-gray-50"
       >
         <Camera size={13} />
         Photos
-        {/* The count badge.
-            🔴 THE SHADE HAS ONE OWNER AND THIS IS NOT IT. #f5f3ff / #5b21b6 are
-            copied from components/floor/tint-strip.tsx:30 — the same pair
+
+        {/* ── The count badge ───────────────────────────────────────────────
+            An app-icon unread count: absolutely positioned on the TOP-RIGHT
+            corner and sitting ON the boundary, half on the button and half
+            off. It was an inline pill after the word "Photos" until
+            2026-09-01; that made the button wider than its neighbours and read
+            as part of the label rather than as a count.
+
+            ⚠ IT OVERFLOWS THE BUTTON ON PURPOSE, so nothing in its ancestry
+            may clip it. Verified 2026-09-01: the action row, the header block
+            and the pane root carry no overflow — the nearest is the two-track
+            grid in billing-board.tsx:259, and the button sits 18px inside the
+            pane's right edge against a 6px overhang, so there is no contact.
+            If a wrapper ever gains overflow-hidden, this corner is what is lost
+            first, and it will look like a missing badge rather than a clip.
+
+            🔴 THE SHADE HAS ONE OWNER AND IT IS NOT THIS FILE. #f5f3ff /
+            #5b21b6 come from components/floor/tint-strip.tsx:30 — the pair
             CLAUDE_UI.md §28 documents as the notes/remark treatment
-            (InstructionsStrip tone="violet"). instructions-strip.tsx:16 says in
-            so many words: "Do not substitute a Tailwind `purple-*` here: one
-            owner for the shade, so the two screens cannot drift apart." That
-            applies here for the same reason — use the hexes, not purple-50. */}
-        <span className="ml-0.5 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#f5f3ff] px-[5px] text-[10.5px] font-bold tabular-nums text-[#5b21b6]">
+            (InstructionsStrip tone="violet"). instructions-strip.tsx:16 puts it
+            plainly: "Do not substitute a Tailwind `purple-*` here: one owner
+            for the shade, so the two screens cannot drift apart." Use the
+            hexes, never purple-50. The #e9e3fb hairline is from the same file
+            (:43, the progress track) — it gives the chip an edge against a
+            white button, where a #f5f3ff fill is otherwise almost white.
+
+            SHAPE: a 17px circle at one or two digits; `min-w` plus `px-1`
+            lets three digits grow it into a pill instead of squashing the
+            number or bursting the circle. The white ring is what lifts it off
+            the button rather than letting it look inset. */}
+        <span className="absolute -right-1.5 -top-1.5 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#f5f3ff] px-1 text-[10px] font-bold leading-none tabular-nums text-[#5b21b6] ring-2 ring-white [box-shadow:inset_0_0_0_1px_#e9e3fb]">
           {ordered.length}
         </span>
       </button>
