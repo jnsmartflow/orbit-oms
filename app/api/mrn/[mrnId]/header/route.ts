@@ -9,8 +9,20 @@ export const dynamic = "force-dynamic";
 /**
  * PATCH /api/mrn/[mrnId]/header — billing edits the MRN header.
  *
- * Body (every field optional): { truckReportingDate, receivedFrom, stiRefNo,
- * deliveryNo, otrNo }
+ * Body (every field optional): { truckReportingDate, receivedFrom, stiRefNo }
+ *
+ * 🔴 deliveryNo AND otrNo ARE NO LONGER EDITABLE HERE (2026-09-01), and this
+ * route was the last writer of either. Sending them is IGNORED rather than
+ * rejected — a stale client should lose the field, not the save.
+ *
+ * The point is ONE OWNER PER FIELD. Before this, mrn.deliveryNo could be set
+ * here AND at create, and otrNo here AND at create AND at close; two writers
+ * for one field is how two screens end up disagreeing about the same truck.
+ * Now:
+ *   • the delivery number belongs to the LINES (mrn_lines.deliveryNo, written
+ *     by the paste route, once per delivery) — mrn.deliveryNo has NO writer at
+ *     all and is frozen history;
+ *   • otrNo has exactly one writer, POST /api/mrn/[mrnId]/close.
  *
  * 🔴 409 UNLESS status === 'open'. Start unloading is what locks billing out
  * (design §5 — the "Send to supervisor" step was removed precisely so that
@@ -93,8 +105,6 @@ export async function PATCH(
     truckReportingDate?: Date;
     receivedFrom?: string;
     stiRefNo?: string | null;
-    deliveryNo?: string | null;
-    otrNo?: string | null;
   } = {};
 
   if (body.truckReportingDate !== undefined) {
@@ -126,8 +136,8 @@ export async function PATCH(
   }
 
   if ("stiRefNo" in body) data.stiRefNo = optionalText(body.stiRefNo) ?? null;
-  if ("deliveryNo" in body) data.deliveryNo = optionalText(body.deliveryNo) ?? null;
-  if ("otrNo" in body) data.otrNo = optionalText(body.otrNo) ?? null;
+  // deliveryNo and otrNo are deliberately absent — see the header. They are
+  // ignored if sent, never written.
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

@@ -249,6 +249,16 @@ export interface MrnHeaderFields {
 }
 
 export interface MrnBoardRow extends MrnHeaderFields, MrnIssueSummary {
+  /**
+   * The DISTINCT delivery numbers on this MRN's lines, '' excluded
+   * (lib/mrn/delivery.ts is the owner of that rule).
+   *
+   * 🔴 THE ROW ALSO CARRIES THE LEGACY `deliveryNo` HEADER FIELD via
+   * MrnHeaderFields, and they are not the same thing. The header one is frozen
+   * history — no writer since 2026-09-01, NULL on every MRN raised from now on.
+   * This is the live answer. Billing's rail search reads THIS.
+   */
+  deliveryNos: string[];
   lineCount: number;
   checkedLineCount: number;
   /** SUM(qtySti) — the "1,982 nos" chip on both faces. */

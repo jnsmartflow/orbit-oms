@@ -7,6 +7,7 @@ import { isLineOpenable } from "@/lib/mrn/derive";
 import { StatusPill } from "./status-pill";
 import { LineDrawer } from "./line-drawer";
 import { LinesTable } from "./lines-table";
+import { formatDeliveryNos } from "@/lib/mrn/delivery";
 import { PhotosButton } from "./photos-button";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
 import type { MrnPerms } from "./mrn-shell";
@@ -400,8 +401,15 @@ export function DetailPane({
             {detail.stiRefNo}
           </Fact>
 
+          {/* 🔴 OFF THE LINES. `detail.deliveryNo` is the legacy header column,
+              frozen 2026-09-01 with no writer — it is NULL on every MRN raised
+              since, so reading it here would show an em-dash on a truck that
+              plainly has delivery numbers on its own lines.
+              One number renders as itself, two as "A, B", three or more as
+              "3 deliveries" — lib/mrn/delivery.ts owns that rule and every
+              other surface uses the same function. */}
           <Fact label="Delivery no" mono>
-            {detail.deliveryNo}
+            {formatDeliveryNos(detail.lines)}
           </Fact>
 
           <Fact label="OTR no">{detail.otrNo}</Fact>

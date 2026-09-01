@@ -86,6 +86,7 @@
 // Neither is ever gated by `carriesLineTotals`.
 
 import type { MrnBatchRow, MrnDetail, MrnDetailLine } from "./types";
+import { formatDeliveryNos } from "./delivery";
 import { formatDateOnly, formatIstDateTime } from "@/components/mrn/format";
 
 // ── Sub-rows ────────────────────────────────────────────────────────────────
@@ -233,7 +234,16 @@ export function reportHeaderFields(detail: MrnDetail): MrnReportField[] {
     { label: "Received from", value: detail.receivedFrom },
     { label: "Receiving warehouse", value: detail.receivingWarehouse },
     { label: "STI / PO ref no.", value: detail.stiRefNo ?? "—", mono: true },
-    { label: "Delivery no", value: detail.deliveryNo ?? "—", mono: true },
+    // 🔴 OFF THE LINES, NOT THE HEADER COLUMN (2026-09-01). This one field
+    // feeds BOTH the XLS header block (lib/mrn/workbook.ts) and the A4 sheet
+    // (components/mrn/print-sheet.tsx), so reading the frozen `detail.deliveryNo`
+    // here would print a BLANK delivery number on the document billing hands to
+    // a supplier, on every MRN raised from 2026-09-01 onward. The header column
+    // has had no writer since that date.
+    //
+    // formatDeliveryNos returns null for "none" and the em-dash stays this
+    // file's choice — a pure module must not decide what a blank looks like.
+    { label: "Delivery no", value: formatDeliveryNos(detail.lines) ?? "—", mono: true },
     { label: "Unloading start", value: formatIstDateTime(detail.unloadingStartAt) ?? "—" },
     { label: "Unloading end", value: formatIstDateTime(detail.unloadingEndAt) ?? "—" },
   ];

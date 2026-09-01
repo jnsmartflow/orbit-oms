@@ -82,7 +82,22 @@ const COUNT_KEYS: { key: CountKey; label: string }[] = [
 interface LineSheetProps {
   mrnId: number;
   line: MrnDetailLine;
-  /** "line 4 of 36" — position in the sheet's subtitle. */
+  /**
+   * "line 4 of 36" — the RUNNING POSITION across the whole MRN, 1..n.
+   *
+   * 🔴 THIS IS A DISPLAY POSITION AND IT IS NOT `lineNo`. Since 2026-09-01 the
+   * stored lineNo is scoped to its DELIVERY — each delivery numbers from 1, so
+   * a two-delivery truck has two lines called 1. The supervisor sees one flat
+   * list of the whole truck (owner ruling: no tabs, no grouping on the phone),
+   * so he needs a number that counts across it.
+   *
+   * It is computed by the caller as `detail.lines.indexOf(line) + 1` over the
+   * server's ordering (deliveryNo ASC, then lineNo ASC — lib/mrn/queries.ts),
+   * which makes it stable.
+   *
+   * ⚠ NEVER SEND IT TO THE SERVER, NEVER STORE IT, NEVER PASS IT WHERE A
+   * lineNo IS EXPECTED. It exists only to be read by a human on this screen.
+   */
   position: { index: number; total: number };
   onClose: () => void;
   onConfirmed: () => void;
@@ -825,7 +840,11 @@ export function LineSheet({
           it — see lib/mrn/photo.ts. */}
       {capturing && (
         <MrnPhotoCamera
-          title={`Photo · line ${line.lineNo}`}
+          // 🔴 THE RUNNING POSITION, NOT line.lineNo. Since 2026-09-01 each
+          // delivery numbers its lines from 1, so a two-delivery truck has two
+          // lines called 1 and this caption would name both the same. The rest
+          // of this sheet already reads position.index for exactly that reason.
+          title={`Photo · line ${position.index}`}
           onCaptured={(blob, dataUrl) => {
             // Belt and braces against a double tap racing the disabled state:
             // the strip hides Add at the cap, but the camera is already open by

@@ -61,7 +61,15 @@ export function SupervisorCard({
   } else if (tab === "done") {
     who = formatDuration(row.unloadingStartAt, row.unloadingEndAt);
   } else {
-    who = row.deliveryNo ? `Dly ${row.deliveryNo}` : null;
+    // 🔴 STI, NOT THE DELIVERY NUMBER (owner, 2026-09-01): "just show MRN no
+    // and STI no, no need for del no on the supervisor screen."
+    //
+    // An MRN can now carry several delivery numbers, and the supervisor works
+    // the truck as ONE list regardless — he has no tabs, no grouping and no
+    // decision that depends on which delivery a line came under. Naming one of
+    // several here would have been actively misleading. Same slot, same style,
+    // a value that is always singular.
+    who = row.stiRefNo ? `STI ${row.stiRefNo}` : null;
   }
 
   return (

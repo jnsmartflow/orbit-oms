@@ -18,6 +18,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
 import { deriveLine, summariseMrn } from "./derive";
+import { deliveryNumbers } from "./delivery";
 import { applyCatalog, resolveMrnSkus } from "./resolve-lines";
 import { asMrnStatus } from "./types";
 import type {
@@ -228,6 +229,11 @@ const MRN_HEADER_SELECT = {
  * finished yet.
  */
 const MRN_AGGREGATE_LINE_SELECT = {
+  // Not an aggregate input — carried so a board row can report its DISTINCT
+  // delivery numbers without a second query. The lines already ride this feed
+  // for the issue roll-up, so this costs one more column, not one more round
+  // trip.
+  deliveryNo: true,
   qtySti: true,
   physicalQty: true,
   isChecked: true,
@@ -277,6 +283,10 @@ function toBoardRow(
   return {
     ...toHeaderFields(row),
     ...summary,
+    // The LIVE delivery numbers, off the lines. toHeaderFields also spreads the
+    // legacy `deliveryNo` header column — frozen since 2026-09-01 and NULL on
+    // anything new. Do not confuse the two; see lib/mrn/delivery.ts.
+    deliveryNos: deliveryNumbers(row.lines),
     lineCount: row.lines.length,
     checkedLineCount: row.lines.filter((l) => l.isChecked).length,
     totalQtySti: row.lines.reduce((s, l) => s + l.qtySti, 0),

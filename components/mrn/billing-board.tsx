@@ -175,9 +175,16 @@ export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (q === "") return rows;
-    return rows.filter((r) =>
-      [r.mrnNumber, r.stiRefNo, r.deliveryNo, r.otrNo]
-        .some((v) => v !== null && v.toLowerCase().includes(q)),
+    // 🔴 r.deliveryNos (the LIVE numbers off the lines), never r.deliveryNo
+    // (the frozen header column). Searching the header would find only the
+    // thirteen MRNs raised before 2026-09-01 and silently miss every one since
+    // — a search box that quietly stops working is worse than one that never
+    // did.
+    return rows.filter(
+      (r) =>
+        [r.mrnNumber, r.stiRefNo, r.otrNo].some(
+          (v) => v !== null && v.toLowerCase().includes(q),
+        ) || r.deliveryNos.some((d) => d.toLowerCase().includes(q)),
     );
   }, [rows, search]);
 

@@ -39,8 +39,6 @@ export function NewMrnModal({ onClose, onCreated }: NewMrnModalProps): React.JSX
   const [truckReportingDate, setTruckReportingDate] = useState(() => getTodayIST());
   const [receivedFrom, setReceivedFrom] = useState<"TPW" | "CDC">("TPW");
   const [stiRefNo, setStiRefNo] = useState("");
-  const [deliveryNo, setDeliveryNo] = useState("");
-  const [otrNo, setOtrNo] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,8 +54,6 @@ export function NewMrnModal({ onClose, onCreated }: NewMrnModalProps): React.JSX
           truckReportingDate: truckReportingDate.trim(),
           receivedFrom,
           stiRefNo: stiRefNo.trim() || null,
-          deliveryNo: deliveryNo.trim() || null,
-          otrNo: otrNo.trim() || null,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: number; error?: string };
@@ -113,16 +109,21 @@ export function NewMrnModal({ onClose, onCreated }: NewMrnModalProps): React.JSX
           <FieldLabel>STI / PO ref no.</FieldLabel>
           <TextField value={stiRefNo} onChange={setStiRefNo} mono placeholder="e.g. I106571012" />
         </div>
-        <div>
-          <FieldLabel>Delivery no</FieldLabel>
-          <TextField value={deliveryNo} onChange={setDeliveryNo} mono placeholder="e.g. 9108851173" />
-        </div>
-        <div>
-          <FieldLabel>
-            OTR no <span className="font-medium normal-case text-[#c2c8d0]">optional</span>
-          </FieldLabel>
-          <TextField value={otrNo} onChange={setOtrNo} mono placeholder="e.g. OTR-4471" />
-        </div>
+        {/* 🔴 DELIVERY NO AND OTR NO WERE REMOVED FROM THIS MODAL ON
+            2026-09-01, AND NEITHER MAY COME BACK.
+
+              • The DELIVERY NUMBER now arrives with the LINES. One STI can
+                carry several, so it lives on mrn_lines and is typed on the
+                PASTE modal, once per delivery. mrn.deliveryNo is frozen
+                history with no writer at all.
+              • The OTR NUMBER arrives at CLOSING. Its only writer is
+                POST /api/mrn/[mrnId]/close.
+
+            Both were being asked for at the one moment nobody has them. The
+            evidence is in the data: otrNo was NULL on ALL 13 MRNs raised while
+            this modal offered it, while stiRefNo (7/10) and deliveryNo (8/10)
+            were routinely filled. A field offered at the wrong moment does not
+            get filled — it teaches the operator to tab past it. */}
         <div>
           <FieldLabel>Receiving warehouse</FieldLabel>
           {/* Read-only: the create route hardcodes "Surat". The disabled

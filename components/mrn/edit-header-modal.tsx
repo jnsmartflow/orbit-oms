@@ -64,8 +64,6 @@ export function EditHeaderModal({
     isMrnReceivedFrom(detail.receivedFrom) ? detail.receivedFrom : "TPW",
   );
   const [stiRefNo, setStiRefNo] = useState(detail.stiRefNo ?? "");
-  const [deliveryNo, setDeliveryNo] = useState(detail.deliveryNo ?? "");
-  const [otrNo, setOtrNo] = useState(detail.otrNo ?? "");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,8 +79,6 @@ export function EditHeaderModal({
           truckReportingDate: truckReportingDate.trim(),
           receivedFrom,
           stiRefNo: stiRefNo.trim() || null,
-          deliveryNo: deliveryNo.trim() || null,
-          otrNo: otrNo.trim() || null,
         }),
       });
       if (!res.ok) {
@@ -139,14 +135,21 @@ export function EditHeaderModal({
           <FieldLabel>STI / PO ref no.</FieldLabel>
           <TextField value={stiRefNo} onChange={setStiRefNo} mono />
         </div>
-        <div>
-          <FieldLabel>Delivery no</FieldLabel>
-          <TextField value={deliveryNo} onChange={setDeliveryNo} mono />
-        </div>
-        <div>
-          <FieldLabel>OTR no</FieldLabel>
-          <TextField value={otrNo} onChange={setOtrNo} mono placeholder="e.g. OTR-4471" />
-        </div>
+        {/* 🔴 DELIVERY NO AND OTR NO WERE REMOVED FROM THIS MODAL ON
+            2026-09-01, AND NEITHER MAY COME BACK.
+
+              • The DELIVERY NUMBER now arrives with the LINES. One STI can
+                carry several, so it lives on mrn_lines and is typed on the
+                PASTE modal, once per delivery. mrn.deliveryNo is frozen
+                history with no writer at all.
+              • The OTR NUMBER arrives at CLOSING. Its only writer is
+                POST /api/mrn/[mrnId]/close.
+
+            Both were being asked for at the one moment nobody has them. The
+            evidence is in the data: otrNo was NULL on ALL 13 MRNs raised while
+            this modal offered it, while stiRefNo (7/10) and deliveryNo (8/10)
+            were routinely filled. A field offered at the wrong moment does not
+            get filled — it teaches the operator to tab past it. */}
         <div>
           <FieldLabel>Receiving warehouse</FieldLabel>
           <ReadOnlyField value={detail.receivingWarehouse} />

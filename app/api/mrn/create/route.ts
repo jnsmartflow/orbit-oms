@@ -12,7 +12,24 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/mrn/create — billing raises a new MRN header.
  *
- * Body: { truckReportingDate, receivedFrom, stiRefNo?, deliveryNo?, otrNo? }
+ * Body: { truckReportingDate, receivedFrom, stiRefNo? }
+ *
+ * 🔴 deliveryNo AND otrNo ARE NO LONGER ACCEPTED HERE (2026-09-01). Anything
+ * sent under those keys is IGNORED, not rejected — they are not the caller's
+ * to send any more, and 400ing a stale client would break a screen over a field
+ * it no longer needs.
+ *
+ *   • The delivery number moved onto mrn_lines: one STI can carry several, so
+ *     it is typed on the PASTE modal, once per delivery.
+ *     `mrn.deliveryNo` is frozen history — this route was its last writer.
+ *   • The OTR number arrives at CLOSING. Its only writer is
+ *     POST /api/mrn/[mrnId]/close, which is also the only place it can be
+ *     known: the real OTR turns up after unloading, which is precisely when the
+ *     header locks. That is why otrNo was NULL on all 13 MRNs raised while this
+ *     route offered it.
+ *
+ * ⚠ THE COLUMNS STAY. mrn.deliveryNo and mrn.otrNo hold real values for those
+ * 13 MRNs and are not dropped.
  *
  * `mrnDate` is TODAY IST — the date the MRN was RAISED — and is never taken
  * from the body. It partners `srNo` in UNIQUE(mrnDate, srNo) and drives
@@ -74,8 +91,6 @@ export async function POST(req: Request): Promise<NextResponse> {
     truckReportingDate?: unknown;
     receivedFrom?: unknown;
     stiRefNo?: unknown;
-    deliveryNo?: unknown;
-    otrNo?: unknown;
   };
 
   // ── Validate everything BEFORE the first write ──────────────────────────────
@@ -106,8 +121,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const stiRefNo = optionalText(body.stiRefNo) ?? null;
-  const deliveryNo = optionalText(body.deliveryNo) ?? null;
-  const otrNo = optionalText(body.otrNo) ?? null;
 
   const mrnDate = parseMrnDate(getTodayIST());
 
@@ -145,8 +158,8 @@ export async function POST(req: Request): Promise<NextResponse> {
           receivingWarehouse: "Surat",
           status: "open",
           stiRefNo,
-          deliveryNo,
-          otrNo,
+          // deliveryNo and otrNo are deliberately NOT written — see the header.
+          // Both stay NULL on every MRN raised from 2026-09-01.
           createdById,
         },
         select: { id: true, mrnNumber: true, mrnDate: true, srNo: true, status: true },
