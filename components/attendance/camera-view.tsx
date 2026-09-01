@@ -17,19 +17,46 @@ export interface LocationInfo {
 interface CameraViewProps {
   onCapture(blob: Blob, dataUrl: string): void;
   onClose(): void;
-  locationStatus: LocationStatus;
-  locationDistanceMeters: number | null;
+  /**
+   * OPTIONAL, and `null` hides the pill entirely. Attendance always passes a
+   * real status; MRN passes nothing, because a damage photo has no geofence to
+   * report and a "Locating…" pill over a leaking tin describes something the
+   * screen is not doing.
+   */
+  locationStatus?: LocationStatus | null;
+  locationDistanceMeters?: number | null;
   photoMaxWidth: number;
+  /** 🔴 0–100, NOT 0–1 — captureFromVideo (lib/attendance/photo.ts:45) divides
+   *  by 100, so passing 0.8 here encodes at quality 0.008. */
   photoJpegQuality: number;
+  /**
+   * Which camera. DEFAULTS TO "user" — the selfie camera — so every existing
+   * attendance call site keeps its behaviour byte for byte without passing
+   * anything. MRN passes "environment": a damaged tin is in front of the phone,
+   * not behind it.
+   *
+   * 🔴 THE DEFAULT IS WHAT PROTECTS CLOCK-IN. Do not flip it and do not make
+   * this prop required — a broken selfie camera means nobody can clock in
+   * tomorrow morning.
+   */
+  facingMode?: "user" | "environment";
+  /**
+   * The dashed face oval. DEFAULTS TO true; every attendance call site wants
+   * it. MRN passes false — an oval drawn over a pallet reads as an instruction
+   * to put your face in it.
+   */
+  showFaceGuide?: boolean;
 }
 
 export function CameraView({
   onCapture,
   onClose,
-  locationStatus,
-  locationDistanceMeters,
+  locationStatus = null,
+  locationDistanceMeters = null,
   photoMaxWidth,
   photoJpegQuality,
+  facingMode = "user",
+  showFaceGuide = true,
 }: CameraViewProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -48,7 +75,7 @@ export function CameraView({
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: "user",
+            facingMode,
             width: { ideal: 1280 },
             height: { ideal: 1280 },
           },
@@ -137,41 +164,48 @@ export function CameraView({
         <X className="w-5 h-5" />
       </button>
 
-      {/* Mirrored selfie preview — captured photo is unmirrored (photo.ts) */}
+      {/* Mirrored for the SELFIE camera only; the captured photo is unmirrored
+          either way (photo.ts). The rear camera must NOT be mirrored — it points
+          at the world, and a mirrored preview renders every batch code and label
+          on a tin backwards while he is trying to read it. */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover"
-        style={{ transform: "scaleX(-1)" }}
+        style={facingMode === "user" ? { transform: "scaleX(-1)" } : undefined}
         playsInline
         muted
         autoPlay
       />
 
-      {/* Face oval guide overlay */}
-      <svg
-        className="absolute inset-0 w-full h-full pointer-events-none"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden
-      >
-        <ellipse
-          cx="50"
-          cy="42"
-          rx="30"
-          ry="38"
-          fill="none"
-          stroke="rgba(255,255,255,0.4)"
-          strokeWidth="0.4"
-          strokeDasharray="2 2"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
+      {/* Face oval guide overlay — selfie framing, so opt-out for MRN. */}
+      {showFaceGuide && (
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <ellipse
+            cx="50"
+            cy="42"
+            rx="30"
+            ry="38"
+            fill="none"
+            stroke="rgba(255,255,255,0.4)"
+            strokeWidth="0.4"
+            strokeDasharray="2 2"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      )}
 
       <div
         className="absolute bottom-0 inset-x-0 pb-8 px-6 flex flex-col items-center gap-5"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 2rem)" }}
       >
-        <LocationPill status={locationStatus} distanceMeters={locationDistanceMeters} />
+        {locationStatus !== null && (
+          <LocationPill status={locationStatus} distanceMeters={locationDistanceMeters} />
+        )}
         <button
           type="button"
           onClick={handleCapture}

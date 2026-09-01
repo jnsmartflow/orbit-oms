@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertTriangle, Minus, Plus, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Camera, Minus, Plus, X } from "lucide-react";
 import {
   excessQty,
   shortQty,
@@ -10,6 +10,8 @@ import {
 } from "@/lib/mrn/derive";
 import type { MrnBatchInput, MrnDetailLine } from "@/lib/mrn/types";
 import { useKeyboardOpen } from "@/lib/hooks/use-keyboard-open";
+import { MRN_PHOTO_KIND_LABEL, type MrnPhotoKind } from "@/lib/mrn/photo";
+import { MrnPhotoCapture, PhotoKindSheet } from "./photo-capture";
 import { describeWriteError } from "./modal-shell";
 
 // The line sheet — the heart of the module.
@@ -166,6 +168,41 @@ export function LineSheet({
     () => validateConditionCounts(physicalQty, counts),
     [physicalQty, counts],
   );
+
+  // ── Photos on this line ───────────────────────────────────────────────────
+  //
+  // ⚠ COUNTED FROM THE SERVER, NOT FROM THIS SESSION. Re-opening a line he
+  // photographed ten minutes ago must show the photos it already carries, not
+  // zero — otherwise the count reads as "your save was lost" and he takes it
+  // again. The fetch is fire-and-forget: a photo count is not worth blocking
+  // the sheet on, and a failure simply leaves it unknown rather than wrong.
+  //
+  // ⚠ NOT ON MrnDetailLine. The board payload deliberately does not carry
+  // photos — billing's face loads them separately (step 6) and the phone has no
+  // use for the metadata, only the count. Widening the board payload for this
+  // would put a join on every card render.
+  const [photoCount, setPhotoCount] = useState<number | null>(null);
+  const [kindSheet, setKindSheet] = useState(false);
+  const [capturingKind, setCapturingKind] = useState<MrnPhotoKind | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/mrn/${mrnId}/photos`, { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { photos: { lineId: number | null }[] };
+        if (cancelled) return;
+        setPhotoCount(json.photos.filter((ph) => ph.lineId === line.id).length);
+      } catch {
+        // Leave it null — "unknown" renders as no badge, which is honest. A 0
+        // here would claim there are none.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mrnId, line.id]);
 
   // Derived, never typed — rendered read-only in the grid below.
   const short = shortQty({ qtySti: line.qtySti, physicalQty });
@@ -596,6 +633,44 @@ export function LineSheet({
             </>
           )}
 
+          {/* ── Photos ───────────────────────────────────────────────────────
+              🔴 ALWAYS ENABLED. Never gated on a condition count being
+              non-zero: he is standing in front of a leaking tin, and making him
+              type a number before he can photograph it inverts the real
+              sequence. The photo is often how he works out what the number
+              should be.
+
+              ⚠ THE WORD "Batch" IS FORBIDDEN ON THIS BUTTON AND ITS SHEETS.
+              This same screen already says "Batch 1 / Batch 2" for the first
+              and second MANUFACTURING group; a second meaning for that word,
+              inches away, would be read as the first. It is "photo", or the
+              kind's own name. */}
+          <button
+            type="button"
+            onClick={() => setKindSheet(true)}
+            className="mt-2.5 flex w-full items-center gap-3 rounded-[13px] border border-gray-200 px-3 py-3 text-left active:bg-gray-50"
+          >
+            <Camera size={18} className="shrink-0 text-[#667085]" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-semibold text-[#1d2939]">Add a photo</div>
+              <div className="mt-0.5 text-[12px] text-[#98a2b3]">
+                {photoCount === null
+                  ? "Leaky, damaged, anything worth showing billing"
+                  : photoCount === 0
+                    ? "Leaky, damaged, anything worth showing billing"
+                    : `${photoCount} photo${photoCount === 1 ? "" : "s"} on this line`}
+              </div>
+            </div>
+            {/* The count rides on the row itself so a save he just made is
+                visible without opening anything. A save he cannot see is a save
+                he will make twice. */}
+            {photoCount !== null && photoCount > 0 && (
+              <span className="shrink-0 rounded-[6px] bg-teal-50 px-[7px] py-[3px] text-[12px] font-bold text-teal-700">
+                {photoCount}
+              </span>
+            )}
+          </button>
+
           {showValidation && !batchCheck.ok && physicalQty > 0 && !split && (
             <div className="mt-3 flex gap-2.5 rounded-[11px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-[1.55] text-amber-900">
               <AlertTriangle size={15} className="mt-px shrink-0" />
@@ -660,6 +735,46 @@ export function LineSheet({
             </div>
           </div>
         )}
+
+      {/* ── Photo capture ─────────────────────────────────────
+          Both overlays sit INSIDE this sheet's root and above it in z-order,
+          so the line stays mounted underneath: the physical qty, the batches
+          and the counts he has already typed are still there when the camera
+          closes. Unmounting the sheet to take a photo would throw all of that
+          away.
+
+          ⚠ ORDER MATTERS — the kind is chosen BEFORE the camera opens, never
+          after. Asking "what was that?" once he has already taken the shot
+          invites the wrong answer, and the kind is what billing filters on. */}
+      {kindSheet && (
+        <PhotoKindSheet
+          onPick={(k) => {
+            setKindSheet(false);
+            setCapturingKind(k);
+          }}
+          onCancel={() => setKindSheet(false)}
+        />
+      )}
+
+      {capturingKind && (
+        <MrnPhotoCapture
+          mrnId={mrnId}
+          lineId={line.id}
+          kind={capturingKind}
+          title={`${MRN_PHOTO_KIND_LABEL[capturingKind]} photo · line ${line.lineNo}`}
+          onUploaded={() => {
+            // Optimistic +1 rather than a refetch: the row is on the server (a
+            // 201 is what got us here), and a second round trip to learn a
+            // number we already know would leave the count stale for a beat on
+            // a slow depot connection. The null-coalesce covers the case where
+            // the initial count fetch failed — one photo he just took is a
+            // better answer than none.
+            setPhotoCount((n) => (n ?? 0) + 1);
+            setCapturingKind(null);
+          }}
+          onCancel={() => setCapturingKind(null)}
+        />
+      )}
     </div>
   );
 }
