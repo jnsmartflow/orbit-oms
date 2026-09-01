@@ -44,6 +44,21 @@ import type {
 
 const BARE_INVOICE_DIGITS = /^\d{9}$/;
 
+/** The last-4 shortcut: exactly four digits and nothing else. */
+const LAST_FOUR_DIGITS = /^\d{4}$/;
+
+/**
+ * 🔴 HOW FAR BACK A BILL IS SEARCHABLE (owner ruling 2026-09-01, step 9).
+ *
+ * A return comes back within days, not months, so nothing older than a month
+ * is worth offering — and the fence is also what makes the last-4 SUFFIX match
+ * affordable. A suffix cannot use `orders_invoiceNo_idx` (a b-tree indexes
+ * prefixes, so `LIKE '%1234'` is a scan by definition); fencing the scan to
+ * one calendar month is what keeps it small instead of growing with the table
+ * forever.
+ */
+export const CI_SEARCH_WINDOW_DAYS = 31;
+
 /**
  * Normalise what the supervisor typed into what we query.
  *
@@ -60,9 +75,15 @@ const BARE_INVOICE_DIGITS = /^\d{9}$/;
  *
  * Returns the term to match against BOTH `invoiceNo` and `obdNumber`; the caller
  * does not need to know which one it will hit.
+ *
+ * ⚠ FOUR DIGITS ARE LEFT ALONE. The last-4 shortcut is a SUFFIX, not a whole
+ * number, so it must not be prefixed with `I` — `I2577` is not the start of
+ * anything. searchCiBills below decides what to do with it; this function's job
+ * is only to canonicalise a WHOLE term.
  */
 export function normaliseCiSearchTerm(raw: string): string {
   const q = raw.trim().toUpperCase();
+  if (LAST_FOUR_DIGITS.test(q)) return q;
   return BARE_INVOICE_DIGITS.test(q) ? `I${q}` : q;
 }
 
@@ -78,11 +99,47 @@ const ORDER_DEALER_SELECT = {
 /**
  * Search for the bill a return belongs to, by invoice number OR OBD number.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THREE WAYS TO MATCH (owner ruling 2026-09-01, step 9)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ *   1. the FULL invoice number   — `I536225770`, or bare `536225770`
+ *   2. the FULL OBD number       — `9109145575`
+ *   3. THE LAST FOUR DIGITS of the invoice number — `5770`
+ *
+ * (3) is what he can read off a crumpled delivery copy without squinting at ten
+ * digits. It is deliberately invoice-ONLY: applying it to the OBD as well would
+ * roughly double the hits for no gain, because he is reading a paper invoice.
+ *
  * 🔴 ALWAYS RETURNS A LIST, NEVER findFirst (spec §4). 11 live invoice numbers
  * map to TWO OBDs each — a split bill fanning out, always sharing one soNumber.
  * Picking the first would silently file returned goods against the wrong half.
- * With exactly one hit the UI opens the bill directly; that is a UI shortcut,
- * not a query shortcut.
+ *
+ * ⚠ AND THE UI NO LONGER SHORTCUTS A SINGLE HIT EITHER. That is not a UI note
+ * misfiled here: it is the direct consequence of (3), and the reason is written
+ * at the call site in components/ci/new-return.tsx. A four-digit suffix is not
+ * unique, so "exactly one hit" stopped meaning "he finished typing".
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 FENCED TO THE LAST MONTH — AND THE FENCE IS LATCHED TO THE INDEX
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A suffix match cannot use `orders_invoiceNo_idx`: a b-tree indexes prefixes,
+ * so `endsWith` is a scan whatever exists. The date window is what bounds that
+ * scan — without it the cost grows with the orders table forever. Nothing older
+ * than CI_SEARCH_WINDOW_DAYS is searchable, and that is a product rule too: a
+ * dealer does not return goods off a three-month-old bill through this screen.
+ *
+ * ⚠ THE WINDOW IS ON `orderDateTime`, NOT `invoiceDate`. Measured 2026-09-01:
+ * `invoiceDate` is NULL on 5,546 of 12,569 live orders (44%), because an invoice
+ * number arrives after dispatch (spec §4) — fencing on it would make the NEWEST
+ * bills, the ones most likely to come back, the only ones not findable.
+ * `orderDateTime` is non-null on all 12,569 and is the same column
+ * CiBillResult.obdDateTime already reports.
+ *
+ * SCAN SIZE: 3,217 of 12,569 orders fall inside 31 days (26%). That is what the
+ * suffix arm walks — a bounded few thousand rows, not the whole table, and it
+ * does not grow as the table does.
  *
  * Both columns are indexed: `orders_obdNumber_key`/`_idx` were always there and
  * `orders_invoiceNo_idx` was added 2026-08-31 — before it, half of every search
@@ -94,10 +151,27 @@ export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
   const query = normaliseCiSearchTerm(rawQuery);
   if (query === "") return { query, hits: [] };
 
+  // The window's floor, in IST. `getISTDayRange()` gives today's IST midnight;
+  // stepping back from it keeps the fence on a calendar boundary rather than on
+  // "now minus 31 × 86400s", which would drift the cut through the working day.
+  const windowStart = new Date(
+    getISTDayRange().start.getTime() - CI_SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  );
+
+  // The suffix arm is added ONLY for a bare 4-digit term. On a full number it is
+  // absent, so those searches stay pure equality and keep using the index.
+  const suffix = LAST_FOUR_DIGITS.test(query);
+
   const orders = await prisma.orders.findMany({
     where: {
       isRemoved: false,
-      OR: [{ invoiceNo: query }, { obdNumber: query }],
+      // ⚠ orderDateTime, not invoiceDate — see the header. 44% of live orders
+      // have no invoiceDate, and they are the recent ones.
+      orderDateTime: { gte: windowStart },
+      OR: suffix
+        ? // 🔴 INVOICE ONLY on the suffix arm, deliberately (see the header).
+          [{ invoiceNo: { endsWith: query } }]
+        : [{ invoiceNo: query }, { obdNumber: query }],
     },
     select: {
       id: true,

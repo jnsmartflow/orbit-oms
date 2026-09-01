@@ -1,138 +1,211 @@
 "use client";
 
-// The CI list card — mockup `.rcard`, shared by BOTH supervisor tabs.
-//
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔴 SHARED, NOT COPIED — AND THAT IS NOT A CONTRADICTION OF THE MODULE RULE.
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// components/ci/line-list.tsx records the convention "COPIED, NOT IMPORTED",
-// and that rule is about crossing MODULE lines: picking does not export its
-// row, MRN's is module-private and typed on MrnDetailLine, so CI carries its
-// own copy of each. Tokens travel between modules; components do not.
-//
-// This is the other case. The New tab's search result (frame 2) and the
-// Submitted tab's return (frame 9) are ONE drawn object inside ONE module —
-// same `.rcard` chrome, same three rows, same `.rMeta` shape down to the
-// `<b>212</b> L` — differing only in what fills them. components/ci/sheet.tsx
-// set the precedent when the two CI sheets were pulled onto one shell.
-//
-// They had already drifted: this card was rebuilt to the drawn 22px/750 name on
-// the New tab in step 7c while the Submitted tab stayed at 13.5px, and the two
-// tabs of one screen visibly disagreed. Sharing the component is what stops
-// that recurring, since the next change cannot land on one tab only.
-//
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔴 THE DEALER NAME IS THE SUBJECT OF THIS CARD.
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// 22px/750 on its own line, with the identifier demoted to a grey header row.
-// Both faces originally led with the number at 15px bold and put the name third
-// at 13.5px, which is a LIST ROW — fine on a desk, wrong in a warehouse. The
-// name is the only thing that confirms the right bill: the two OBDs of a split
-// invoice differ in their LAST DIGIT, so a number-led card is exactly the
-// hardest way to tell them apart at arm's length.
+import { ChevronRight } from "lucide-react";
 
-/** The mockup's `--card-sh`, verbatim (supervisor.html:26). Exported because
- *  the search FIELD casts the same shadow — it is the same physical object. */
-export const CI_CARD_SHADOW =
-  "0 1px 2px rgba(16,25,29,.05), 0 6px 16px rgba(16,25,29,.05)";
+// The CI list card — shared by BOTH supervisor tabs.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 THIS IS PICKING'S CARD, SLOT FOR SLOT (2026-09-01, step 9).
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Not "like" Picking's, and not the mockup's. The owner saw both on a real
+// phone and ruled that CI's card and Picking's card are the SAME OBJECT, so the
+// anatomy is copied from components/picking/picking-board-mobile.tsx's
+// PickingCard (its render body) and components/picking/card-atoms.tsx's
+// CardShelf, and CI's data is mapped onto those slots:
+//
+//   ROW 1 · caption   mono identifier (11.5px, #98a0aa) · secondary (#98a2b3)
+//                     OBD · invoice date        (search)
+//                     CI number · time          (Submitted)
+//   ROW 2 · title     the DEALER NAME, 16px/600 #1d2939, truncating,
+//                     with a right-hand value that never truncates
+//                     → the volume, "120 L"
+//   ROW 3 · meta      the second identifier, 12px #667085, truncating
+//                     · right end: the STATUS PILL
+//                     invoice no  · (no pill — a bill has no status)  (search)
+//                     OBD number  · With billing / Done               (Submitted)
+//   ROW 4 · shelf     the grey band (#f6f8fa, border-t #eef1f4) carrying chips
+//                     that scroll under a fade, with the CHEVRON at its right
+//                     → "12 lines", "Full bill" / "Part"
+//
+// ⚠ WHERE CI DIVERGES FROM PICKING, AND WHY — three places, all forced:
+//
+//   1. NO RouteDot before the meta text. The dot keys on `deliveryType`
+//      (card-atoms.tsx, CLAUDE_UI.md §62.3), which is a property of a DISPATCH.
+//      A CI is not dispatched, so there is no value to colour it by and a
+//      decorative dot would be inventing a signal.
+//   2. THE CHEVRON IS A CUE, NOT A BUTTON. Picking's is a real control because
+//      an Assign card's BODY toggles selection, so detail needs its own target.
+//      CI cards have no selection — the whole card opens — so a second tap
+//      target for the same action would be noise. Same 30px #eceff3 circle and
+//      the same 16px #8b93a0 ChevronRight, `pointer-events-none`, so the tap
+//      lands on the card.
+//   3. NO `variant`. Picking has five (assign, assignLocked, picking,
+//      doneCheck, doneChecked) because one board shows a bill at five stages.
+//      CI shows two things — a bill you might return, and a return — and the
+//      difference is carried by the PILL and the CHIPS, which is what those
+//      slots are for.
+//
+// ⚠ SHARED, NOT COPIED, ACROSS THE TWO CI TABS — and that does not contradict
+// components/ci/line-list.tsx's "COPIED, NOT IMPORTED". That rule is about
+// crossing MODULE lines: picking does not export PickingCard, and MRN's row is
+// module-private, so CI carries its own copy of each. Tokens travel between
+// modules; components do not. Within ONE module, two screens rendering one
+// object share it — the precedent components/ci/sheet.tsx set — because the
+// alternative is what actually happened in step 7c, when the search card was
+// rebuilt and the Submitted card silently stayed behind.
 
-/** `.chip`, `.chip.amber`, `.chip.green` — the mockup's three tones. */
-export type CiChipTone = "neutral" | "amber" | "green";
+/** Picking's card shadow, verbatim (card-atoms.tsx:240). */
+const CARD_SHADOW_V2 = "0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2)";
 
-const CHIP_TONE: Record<CiChipTone, string> = {
+/** `.chip` tones. Neutral is Picking's FamilyChip; the other two are the CI
+ *  mockup's amber/green, used only for a status pill. */
+export type CiChipTone = "neutral" | "amber" | "green" | "violet";
+
+const PILL_TONE: Record<CiChipTone, string> = {
   neutral: "bg-[#EDF1F2] text-[#5C666E]",
   amber: "bg-[#FDF4E3] text-[#A8620A]",
   green: "bg-[#E7F6EE] text-[#0A7C4A]",
+  violet: "bg-[#F5F1FE] text-[#6941C6]",
 };
 
 export function CiResultCard({
   identifier,
-  chipLabel,
-  chipTone = "neutral",
+  caption,
   name,
-  leading,
-  litres,
+  value,
+  meta,
+  pillLabel,
+  pillTone = "neutral",
+  chips,
   onClick,
 }: {
-  /** OBD number on the New tab, CI number on the Submitted tab. */
+  /** Row 1 left, mono — the OBD on search, the CI number on Submitted. */
   identifier: string;
-  /** "12 lines" · "With billing" · "Done". */
-  chipLabel: string;
-  chipTone?: CiChipTone;
-  /** The dealer. The reason this card is a card. */
+  /** Row 1 right of the dot — a date or a time. */
+  caption: string;
+  /** Row 2 — the dealer. The reason this is a card and not a list row. */
   name: string;
-  /** The left half of `.rMeta`: a date on the New tab, "Full bill" or
-   *  "Part · 3 lines" on the Submitted tab. */
-  leading: string;
-  /** The right half. Rendered here rather than passed in as text so the two
-   *  tabs cannot drift on how a volume looks — `<b>212</b> L` is one decision,
-   *  made once. */
-  litres: number;
-  /** Omitted ⇒ renders a <div>. ⚠ A pressable card that does nothing is worse
-   *  than a flat one: it invites the tap and then ignores it. The Submitted tab
-   *  is READ-ONLY and passes nothing; making its cards open a CI is a product
-   *  decision (step 7e), not a styling one. */
-  onClick?: () => void;
+  /** Row 2's right end. Never truncates; the name truncates first. */
+  value: string;
+  /** Row 3 left — the OTHER identifier. */
+  meta: string;
+  /** Row 3's right end. Omitted on a card with no status (a bill). */
+  pillLabel?: string;
+  pillTone?: CiChipTone;
+  /** Row 4 — the shelf. Rendered verbatim, in order; no formatting happens
+   *  here. An empty array still renders the shelf, because the CHEVRON lives in
+   *  it and a card without one would lose its "this opens" cue. */
+  chips: readonly string[];
+  onClick: () => void;
 }): React.JSX.Element {
-  const body = (
-    <>
-      {/* `.rTop` */}
-      <div className="flex items-center justify-between gap-2.5">
-        {/* `.rObd`. Mono is this app's convention for a scannable identifier
-            (JetBrains Mono is loaded for exactly this); the mockup's own
-            stylesheet leaves it in the body face. Digits over drawing. */}
-        <span className="font-mono text-[14.5px] font-medium text-[#8A9299] truncate">
-          {identifier}
-        </span>
-        {/* The status/count WORD, never a colour-only signal — the mockup
-            writes "With billing" and "Done", and they say the same thing to a
-            reader who cannot tell the two tints apart. */}
-        <span
-          className={
-            "shrink-0 whitespace-nowrap rounded-full px-3 py-[5px] text-[12.5px] font-[650] " +
-            CHIP_TONE[chipTone]
-          }
-        >
-          {chipLabel}
-        </span>
-      </div>
-
-      {/* `.rName` — 22px/750, tracking -.02em, its own line. */}
-      <div className="text-[22px] font-[750] tracking-[-0.02em] leading-[1.15] text-[#16191D] mt-[7px] break-words">
-        {name}
-      </div>
-
-      {/* `.rMeta` */}
-      <div className="flex items-center gap-2.5 mt-[9px] text-[15px] text-[#5C666E]">
-        <span>{leading}</span>
-        <span className="text-[#B7BFC5]">·</span>
-        <span>
-          <b className="font-[750] text-[#16191D] tabular-nums">{litres}</b>{" "}
-          <span className="text-[#8A9299] font-[650]">L</span>
-        </span>
-      </div>
-    </>
-  );
-
-  const chrome = "w-full text-left bg-white rounded-[18px] px-[18px] py-[15px] mb-3";
-
-  if (onClick === undefined) {
-    return (
-      <div className={chrome} style={{ boxShadow: CI_CARD_SHADOW }}>
-        {body}
-      </div>
-    );
-  }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`${chrome} active:opacity-90`}
-      style={{ boxShadow: CI_CARD_SHADOW }}
-    >
-      {body}
-    </button>
+    <div className="relative mb-[11px]">
+      <div
+        className="relative rounded-[20px] overflow-hidden cursor-pointer border-[1.5px] bg-white border-[#eceef2]"
+        style={{ boxShadow: CARD_SHADOW_V2 }}
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        <div className="flex items-start gap-3 px-4 pt-3.5 pb-3">
+          <div className="flex-1 min-w-0">
+            {/* ── ROW 1 · caption ─────────────────────────────────────────── */}
+            <div className="flex items-center justify-between gap-2.5 mb-1.5">
+              <span className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap text-[#98a2b3]">
+                <span className="font-mono shrink-0 text-[#98a0aa]">{identifier}</span>
+                {caption !== "" && (
+                  <>
+                    <span className="shrink-0 text-[#d8dce1]">&middot;</span>
+                    <span className="truncate">{caption}</span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            {/* ── ROW 2 · title ───────────────────────────────────────────── */}
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[16px] font-semibold leading-[1.25] truncate min-w-0 text-[#1d2939]">
+                {name}
+              </span>
+              {/* `shrink-0` — the value is never the piece that gets clipped;
+                  a long dealer name truncates instead. Picking's slot hero. */}
+              <span className="text-[15px] font-semibold tabular-nums shrink-0 text-[#475467]">
+                {value}
+              </span>
+            </div>
+
+            {/* ── ROW 3 · meta ────────────────────────────────────────────── */}
+            <div className="flex items-center justify-between gap-2.5 mt-1.5">
+              <span className="text-[12px] font-medium truncate min-w-0 text-[#667085]">
+                {meta}
+              </span>
+              {pillLabel !== undefined && (
+                <span
+                  className={
+                    "shrink-0 whitespace-nowrap rounded-full px-2 py-[3px] text-[10.5px] font-semibold " +
+                    PILL_TONE[pillTone]
+                  }
+                >
+                  {pillLabel}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── ROW 4 · the shelf ───────────────────────────────────────────── */}
+        <div
+          className="border-t px-[14px] flex items-stretch gap-1"
+          style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}
+        >
+          <div className="relative flex-1 min-w-0 flex items-center py-[10px]">
+            <div
+              className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] w-full [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: "none" }}
+            >
+              {/* Keyed by index+label, not by label alone: a caller-supplied
+                  list can legitimately repeat a value. Picking's rule. */}
+              {chips.map((label, i) => (
+                <span
+                  key={`${i}-${label}`}
+                  className="shrink-0 whitespace-nowrap text-[10.5px] font-semibold rounded-[7px] py-[3px] px-[8px] text-[#667085] bg-[#eef1f5]"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+            {/* The fade cue — chips dissolve under it into the chevron. Both
+                stops are the band colour, so it fades to itself. */}
+            <div
+              className="absolute top-0 right-0 w-[30px] h-full pointer-events-none"
+              style={{
+                background: "linear-gradient(90deg, rgba(246,248,250,0), #f6f8fa 72%)",
+              }}
+              aria-hidden="true"
+            />
+          </div>
+          {/* ⚠ A CUE, NOT A CONTROL — see this file's header. `pointer-events-none`
+              so the tap falls through to the card. */}
+          <span
+            className="shrink-0 self-stretch min-h-[44px] min-w-[44px] pl-1.5 flex items-center justify-center pointer-events-none"
+            aria-hidden="true"
+          >
+            <span
+              className="w-[30px] h-[30px] rounded-full flex items-center justify-center shrink-0"
+              style={{ background: "#eceff3" }}
+            >
+              <ChevronRight size={16} style={{ color: "#8b93a0" }} />
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }

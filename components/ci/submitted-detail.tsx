@@ -81,6 +81,7 @@ export function CiSubmittedDetail({
   onSave: () => void;
 }): React.JSX.Element {
   const closed = detail?.status === "closed";
+  const isFull = detail?.returnType === "full";
   // 🔴 A FULL-BILL RETURN'S LINES ARE NOT EDITABLE HERE, and that is not an
   // omission. "Full bill" MEANS every active line at its delivered quantity, and
   // the lines route COMPUTES that set server-side precisely so a stale phone
@@ -173,36 +174,13 @@ export function CiSubmittedDetail({
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* ── The lines ─────────────────────────────────────────────────── */}
-          <SectionLabel>
-            {detail.lineCount} line{detail.lineCount === 1 ? "" : "s"} · {detail.totalTins} tins ·{" "}
-            {detail.totalLitres} L
-          </SectionLabel>
-
-          {linesEditable && bill !== null ? (
-            <>
-              <CiPackChips
-                lines={bill.lines}
-                activePackFilter={activePackFilter}
-                onPackFilter={onPackFilter}
-              />
-              {/* THE SAME ROW COMPONENT THE NEW FLOW USES, in `part` mode, seeded
-                  from what is already on the CI. Tapping one opens the same
-                  quantity sheet. Editing a return and raising one are the same
-                  gesture. */}
-              <CiLineRows
-                lines={bill.lines}
-                activePackFilter={activePackFilter}
-                mode="part"
-                returned={returned}
-                onOpenLine={onOpenLine}
-              />
-            </>
-          ) : (
-            <ReadOnlyLines detail={detail} />
-          )}
-
-          {/* ── The four stage-1 answers ──────────────────────────────────── */}
+          {/* ═══════════════════════════════════════════════════════════════
+              🔴 DETAILS FIRST, LINES AFTER (owner ruling 2026-09-01, step 9).
+              ═══════════════════════════════════════════════════════════════
+              The line list used to open this screen and the details sat under
+              it, so on a long return he scrolled past everything he already
+              knew to reach the four answers — which are the only part he can
+              change. Order now follows what he came here to do. */}
           <SectionLabel>Details</SectionLabel>
           {editable ? (
             /* THE NEW FLOW'S OWN DETAILS STEP, unchanged. Four rows, no helper
@@ -228,20 +206,73 @@ export function CiSubmittedDetail({
             </>
           )}
 
+          {/* ── The lines ─────────────────────────────────────────────────────
+              ═══════════════════════════════════════════════════════════════
+              🔴 A FULL-BILL CI SHOWS NO LINE LIST AT ALL (ruling, step 9).
+              ═══════════════════════════════════════════════════════════════
+              "Full bill" means the WHOLE invoice came back. Listing it tells him
+              nothing he does not already know from those two words, and a long
+              list of every line on the bill buries the one thing this screen is
+              for. The totals below the heading carry the size.
+
+              PART shows the list, because on a part return WHICH lines came back
+              is the whole content of the document. */}
+          {isFull ? (
+            <SectionLabel>
+              Whole bill · {detail.lineCount} line{detail.lineCount === 1 ? "" : "s"} ·{" "}
+              {detail.totalTins} tins · {detail.totalLitres} L
+            </SectionLabel>
+          ) : (
+            <>
+              <SectionLabel>
+                {detail.lineCount} line{detail.lineCount === 1 ? "" : "s"} · {detail.totalTins}{" "}
+                tins · {detail.totalLitres} L
+              </SectionLabel>
+
+              {linesEditable && bill !== null ? (
+                <>
+                  <CiPackChips
+                    lines={bill.lines}
+                    activePackFilter={activePackFilter}
+                    onPackFilter={onPackFilter}
+                  />
+                  {/* THE SAME ROW COMPONENT THE NEW FLOW USES, in `part` mode,
+                      seeded from what is already on the CI. Tapping one opens the
+                      same quantity sheet. Editing a return and raising one are
+                      the same gesture. */}
+                  <CiLineRows
+                    lines={bill.lines}
+                    activePackFilter={activePackFilter}
+                    mode="part"
+                    returned={returned}
+                    onOpenLine={onOpenLine}
+                  />
+                </>
+              ) : (
+                <ReadOnlyLines detail={detail} />
+              )}
+            </>
+          )}
+
           {/* ── What billing entered ──────────────────────────────────────────
-              🔴 ONLY ONCE CLOSED. Before that these three columns are empty by
-              definition, and rendering three em-dashes would suggest the floor
-              was meant to fill them. */}
+              🔴 ONLY ONCE CLOSED. Before that these columns are empty by
+              definition, and rendering em-dashes would suggest the floor was
+              meant to fill them.
+
+              ═══════════════════════════════════════════════════════════════
+              🔴 NO VALUE HERE (owner ruling 2026-09-01, step 9).
+              ═══════════════════════════════════════════════════════════════
+              The rupee figure is BILLING'S BUSINESS. It still exists, is still
+              stored as a string, and is still shown on billing's own pane
+              (components/ci/ci-detail-pane.tsx) — it simply is not the floor's
+              to read. Putting money in front of a supervisor invites a
+              conversation about a number he did not enter and cannot change.
+              Do not add it back "for completeness". */}
           {closed && (
             <>
               <SectionLabel>Billing</SectionLabel>
               <ReadRow label="CI date" value={formatDay(detail.ciDate)} />
               <ReadRow label="CI number" value={detail.sapCiNumber ?? "—"} mono />
-              {/* 🔴 THE VALUE IS RENDERED AS THE STRING THE ROUTE STORED. Never
-                  parsed to a number on the way to the eye: binary floating point
-                  cannot hold 0.1, and this is money on a document someone
-                  signed. */}
-              <ReadRow label="Value" value={`₹ ${detail.ciValue ?? "—"}`} nums />
               <ReadRow label="Closed by" value={detail.billingOperatorName ?? "—"} />
             </>
           )}

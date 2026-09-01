@@ -443,8 +443,31 @@ export function CiSubmittedBoard({
     {/* 🔴 ONE TREE, AND THE LIST STAYS MOUNTED — the structure 7b established
         on the New tab. The detail slides over the board rather than replacing
         it, which is what gives the transition AND scroll restoration: coming
-        back from a CI lands him where he was in the list, not at the top. */}
-    <div className="min-h-full bg-[#F4F6F7]">
+        back from a CI lands him where he was in the list, not at the top.
+
+        ═══════════════════════════════════════════════════════════════════
+        🔴 `fixed inset-0 flex flex-col`, NOT `min-h-full`. THIS IS THE FIX
+           FOR THE GREY/WHITE SEAM.
+        ═══════════════════════════════════════════════════════════════════
+        `min-h-full` is `min-height: 100%`, and a percentage min-height
+        resolves against the CONTAINING BLOCK'S HEIGHT. RoleLayoutClient's
+        content wrapper is `min-h-screen … pb-[76px]` — min-height, never
+        height — so its used height is AUTO, the percentage had nothing to
+        resolve against, and the grey ground was only ever as tall as the
+        cards in it. Below the last card, the wrapper's own `bg-white` showed
+        through. That is the seam, and it was worst on the emptiest screens,
+        where the ground stopped after one line of text.
+
+        Picking's root is `fixed inset-0 flex flex-col overflow-hidden
+        bg-[#f9fafb]` (picking-board-mobile.tsx:2410) for exactly this reason:
+        a fixed box is measured against the VIEWPORT, so the ground fills to
+        the tab bar at every list length, empty ones included. Its scroll area
+        is the `flex-1 min-h-0` child below, which also escapes
+        RoleLayoutClient's non-scrolling ancestor chain.
+
+        ⚠ z-INDEX: this root is unpositioned in the stack (z-auto), and the CI
+        overlay below is `z-30`, so the detail still slides OVER the list. */}
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#F4F6F7]">
       <ModuleMobileHeader
         title="CI"
         avatarInitials={userInitials}
@@ -453,9 +476,17 @@ export function CiSubmittedBoard({
         showSearch={false}
       />
 
-      {/* px-4 = the mockup's 16px `.body` gutter, matching the New tab. The two
+      {/* THE ONLY SCROLLING ELEMENT. `min-h-0` is what lets a flex child
+          actually shrink — without it the default `min-height:auto` makes the
+          list push the box past the viewport and the whole screen scrolls,
+          taking the teal header with it.
+
+          px-4 = the mockup's 16px `.body` gutter, matching the New tab. The two
           tabs are one screen; a 4px step between them shows when he switches. */}
-      <div className="px-4 pt-3" style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}>
+      <div
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pt-3"
+        style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+      >
         {loading && board === null && (
           <p className="text-[13px] text-gray-400 text-center py-10">Loading…</p>
         )}
@@ -643,19 +674,38 @@ function CiCard({
   return (
     <CiResultCard
       onClick={() => onOpen(row.id)}
+      // Row 1 — the CI number, and the time it reached (or left) billing.
       identifier={row.ciNumber}
+      caption={formatIstTime(done ? row.closedAt : row.submittedAt)}
+      // Row 2 — the dealer, with the return's size on the right.
+      name={row.customerName}
+      value={`${row.totalLitres} L`}
+      // Row 3 — the bill it came off, and the status pill.
+      meta={`OBD ${row.obdNumber}`}
       // The status WORD, never a colour-only signal — it says the same thing to
       // a reader who cannot tell amber from green. Tones are the mockup's:
       // `.chip.amber` while billing still holds it, `.chip.green` once closed.
-      chipLabel={done ? "Done" : "With billing"}
-      chipTone={done ? "green" : "amber"}
-      name={row.customerName}
-      leading={
-        row.returnType === "full"
-          ? "Full bill"
-          : `Part · ${row.lineCount} line${row.lineCount === 1 ? "" : "s"}`
-      }
-      litres={row.totalLitres}
+      pillLabel={done ? "Done" : "With billing"}
+      pillTone={done ? "green" : "amber"}
+      // Row 4 — the shelf. Kind first, then size, because "Full bill" is the
+      // fact a wrong assumption costs most on.
+      chips={[
+        row.returnType === "full" ? "Full bill" : "Part",
+        `${row.lineCount} line${row.lineCount === 1 ? "" : "s"}`,
+        `${row.totalTins} tins`,
+      ]}
     />
   );
+}
+
+/** "12:20" in IST. Blank input → em-dash; never a fabricated clock. */
+function formatIstTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

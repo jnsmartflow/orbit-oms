@@ -9,7 +9,7 @@ import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { CiLineRows, CiPackChips } from "./line-list";
 import { CiQtySheet } from "./qty-sheet";
 import { CiDetailsStep, CiReasonSheet } from "./details-step";
-import { CiResultCard, CI_CARD_SHADOW } from "./result-card";
+import { CiResultCard } from "./result-card";
 import type {
   CiBillLine,
   CiBillResult,
@@ -94,6 +94,22 @@ export function CiNewReturn({
   const [step, setStep] = useState<Step>("search");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  /**
+   * 🔴 IS THE SEARCH STRIP OPEN? (2026-09-01, step 9)
+   *
+   * The New tab used to BE a big white search card sitting on an otherwise
+   * empty screen. Owner ruling after phone testing: search moves behind the ⌕
+   * in the teal header, the way Picking does it
+   * (picking-board-mobile.tsx:1158 / :2435). Search still exists and still
+   * works — it just stops being a box.
+   *
+   * ⚠ OPEN BY DEFAULT, and that is the ONE place this diverges from Picking.
+   * Picking's board has a list to show before you search; the New tab has
+   * NOTHING else on it — its entire job is "find the bill" — so landing with
+   * the strip closed would be landing on a blank screen with a hidden control.
+   * The ⌕ still toggles it, and Cancel still closes it.
+   */
+  const [searchOpen, setSearchOpen] = useState(true);
   const [hits, setHits] = useState<CiSearchHit[]>([]);
   const [searchedTerm, setSearchedTerm] = useState<string | null>(null);
 
@@ -330,22 +346,26 @@ export function CiNewReturn({
         setStep("search");
         return;
       }
-      // ⚠ A UI SHORTCUT, NOT A QUERY SHORTCUT. The route always returns a list
-      // (11 live invoice numbers map to two OBDs each); with exactly one hit
-      // there is simply no list worth showing, so we skip straight to the bill.
+      // ═══════════════════════════════════════════════════════════════════
+      // 🔴 THE SINGLE-HIT AUTO-OPEN WAS REMOVED (2026-09-01, step 9).
+      // ═══════════════════════════════════════════════════════════════════
       //
-      // 🔴 THIS IS SAFE TO DO WHILE HE IS STILL TYPING, and only because
-      // searchCiBills matches on EQUALITY — `{ invoiceNo: query }` /
-      // `{ obdNumber: query }`, never contains/startsWith (lib/ci/queries.ts).
-      // A half-typed number therefore returns ZERO hits, never one, so "exactly
-      // one hit" can only mean he has finished typing the whole number. If that
-      // predicate is ever loosened to a prefix match, THIS AUTO-OPEN MUST GO
-      // FIRST — a prefix that happens to be unique would drag him into a bill
-      // mid-keystroke.
-      if (data.hits.length === 1) {
-        void openBill(data.hits[0].orderId);
-        return;
-      }
+      // It used to skip the list and open the bill when exactly one hit came
+      // back, and the comment that stood here said it was safe ONLY because
+      // searchCiBills matched on EQUALITY — a half-typed number returns zero
+      // hits, never one, so "one hit" could only mean he had finished typing.
+      // It ended: "if that predicate is ever loosened, THIS AUTO-OPEN MUST GO
+      // FIRST."
+      //
+      // The predicate was loosened. The last-4 SUFFIX match (owner ruling, same
+      // day) means one hit no longer proves anything: "5770" can match exactly
+      // one bill in the window by pure coincidence, MID-TYPING, on the way to
+      // a longer number — and the screen would have yanked him into a bill he
+      // never chose, from a keystroke.
+      //
+      // So the list ALWAYS renders, however many hits there are. A one-card
+      // list costs him one tap; opening the wrong bill costs a return filed
+      // against the wrong dealer. Do not reinstate this as an optimisation.
       setStep("results");
     } catch {
       if (seq !== searchSeqRef.current) return;
@@ -875,70 +895,94 @@ export function CiNewReturn({
   // overlay above so it stays mounted and keeps its scroll position.
   function renderList(): React.JSX.Element {
     return (
-    <div className="min-h-full bg-[#F4F6F7]">
+    /* ═══════════════════════════════════════════════════════════════════════
+       🔴 `fixed inset-0 flex flex-col`, NOT `min-h-full`. THE GREY/WHITE SEAM.
+       ═══════════════════════════════════════════════════════════════════════
+       `min-h-full` is `min-height: 100%`, and a percentage min-height resolves
+       against the CONTAINING BLOCK'S HEIGHT. RoleLayoutClient's content wrapper
+       is `min-h-screen … pb-[76px]` — min-height, never height — so its used
+       height is AUTO, the percentage had nothing to resolve against, and the
+       grey ground was only ever as tall as its content. Below that, the
+       wrapper's own `bg-white` showed through. Worst on the emptiest screens,
+       which on this tab is most of them.
+
+       Picking's root is `fixed inset-0 flex flex-col overflow-hidden` for
+       exactly this reason (picking-board-mobile.tsx:2410): a fixed box measures
+       against the VIEWPORT, so the ground fills to the tab bar at every list
+       length. Its scroll area is the `flex-1 min-h-0` child below.
+
+       ⚠ z-INDEX: unpositioned here (z-auto); the bill overlay is `z-30`, so it
+       still slides OVER this. */
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#F4F6F7]">
       <ModuleMobileHeader
         title="CI"
         avatarInitials={userInitials}
         onAvatarClick={openYou}
         onMenuClick={openMenu}
-        // The body carries a full search FIELD; a header search ICON would be a
-        // second control for the one action this screen exists to perform.
-        showSearch={false}
+        // 🔴 THE SEARCH LIVES HERE NOW (step 9). It used to be false, with a
+        // comment saying the body's own field made a header icon redundant —
+        // true while that field existed, and the field is what went.
+        showSearch
+        searchActive={searchOpen}
+        onSearchToggle={() => setSearchOpen((v) => !v)}
       />
 
       {/* ═══════════════════════════════════════════════════════════════════
-          THE FIELD — mockup `.searchBig`: a 58px WHITE CARD, radius 16, on the
-          app card shadow. Not the thin outlined pill this was.
+          🔴 THE SEARCH STRIP — PICKING'S, NOT A CARD OF OUR OWN.
           ═══════════════════════════════════════════════════════════════════
-          The difference is not decoration. This field IS the New tab — frame
-          1 is nothing but this and the empty state — so it has to read as the
-          screen's subject, which at 48px with a hairline border it did not.
-          Picking's search is a thin strip because it sits in a header above a
-          board that is the real content; here there is no other content. */}
-      <div className="px-4 pt-3.5">
-        <div
-          className="flex items-center gap-3 bg-white rounded-[16px] px-[18px] h-[58px]"
-          style={{ boxShadow: CI_CARD_SHADOW }}
-        >
-          <Search size={19} className="text-[#8A9299] shrink-0" strokeWidth={2.25} />
-          <input
-            // Picking autoFocuses the moment its search strip opens; the New
-            // tab IS a search box, so the keyboard should be up when he lands
-            // on it. Saves a tap on every single return.
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              // The keyboard's own search key, still an immediate submit — it
-              // bypasses BOTH the debounce and the already-dispatched guard, so
-              // pressing it always does something even on a term just searched.
-              if (e.key === "Enter") void runSearch(query, false);
-            }}
-            inputMode="search"
-            enterKeyHint="search"
-            placeholder="Invoice or OBD number"
-            aria-label="Invoice or OBD number"
-            // 18px/650 with the mockup's placeholder weight and colour.
-            className="flex-1 min-w-0 text-[18px] font-[650] tracking-[0.01em] text-[#16191D] outline-none bg-transparent placeholder:text-[#B7BFC5] placeholder:font-medium"
-          />
-          {query !== "" && (
+          The 58px white `.searchBig` card that lived here is GONE (owner
+          ruling, 2026-09-01, after phone testing). It was a box sitting on an
+          empty screen; this is the same control Picking uses, in the same
+          place, with the same tokens — `bg-gray-50 border border-gray-200
+          rounded-[10px] px-3 py-2.5`, a 16px magnifier, 15px text, and a teal
+          "Cancel" that clears as it closes
+          (picking-board-mobile.tsx:2452-2492).
+
+          ⚠ autoFocus IS PICKING'S BEHAVIOUR, not an extra: its strip focuses
+          the moment it opens, so the keyboard is up and he can type. Kept. */}
+      {searchOpen && (
+        <div className="bg-white border-b border-gray-200 px-4 pt-2.5 shrink-0">
+          <div className="flex items-center gap-2 pb-2.5">
+            <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5">
+              <Search size={16} className="text-gray-400 shrink-0" />
+              <input
+                autoFocus
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  // The keyboard's own search key, still an immediate submit —
+                  // it bypasses BOTH the debounce and the already-dispatched
+                  // guard, so pressing it always does something.
+                  if (e.key === "Enter") void runSearch(query, false);
+                }}
+                inputMode="search"
+                enterKeyHint="search"
+                // ⚠ NAMES THE SUFFIX RULE. "Invoice or OBD number" undersold a
+                // box that now also takes the last 4 digits, and a supervisor
+                // who does not know that will type all ten every time.
+                placeholder="Invoice, OBD, or last 4 digits…"
+                aria-label="Search invoice or OBD number"
+                className="flex-1 bg-transparent border-none outline-none text-[15px] text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
             <button
               type="button"
               onClick={() => {
+                setSearchOpen(false);
                 setQuery("");
                 setHits([]);
                 dispatchedRef.current = null;
                 setSearchedTerm(null);
                 setStep("search");
               }}
-              aria-label="Clear"
-              className="text-[#B7BFC5] text-[17px] leading-none shrink-0 -mr-1 p-1"
+              className="text-[13px] font-semibold text-teal-700 px-1 shrink-0"
             >
-              ✕
+              Cancel
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
           THE EMPTY STATE — mockup `.empty`. This is where "Search the bill"
@@ -947,13 +991,25 @@ export function CiNewReturn({
           Two of them share one geometry, because they answer the same question
           ("why is this screen blank?") at two different moments.
 
-          Padding 130/30/0, measured from below the field, exactly as drawn.
+          ⚠ 110px, NOT the mockup's 130. The mockup measured that gap from below
+          a 58px search CARD; step 9 replaced it with Picking's ~46px strip, so
+          holding 130 would have opened a hole where the card used to be. The
+          glyph sits where it was drawn relative to the SCREEN, which is what the
+          drawing was actually about.
           ⚠ autoFocus means the keyboard is usually UP when he lands here, so on
           a short phone the glyph may sit below the fold until he dismisses it.
-          That is the mockup's geometry and it is deliberate — the empty state is
-          reassurance, not an instruction he has to read. */}
+          That is deliberate — the empty state is reassurance, not an instruction
+          he has to read. */}
+      {/* THE ONLY SCROLLING ELEMENT. `min-h-0` is what lets a flex child
+          actually shrink — without it the default `min-height:auto` lets the
+          list push the box past the viewport and the whole screen scrolls,
+          taking the teal header with it. */}
+      <div
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+        style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+      >
       {hits.length === 0 && (
-        <div className="flex flex-col items-center text-center px-[30px] pt-[130px]">
+        <div className="flex flex-col items-center text-center px-[30px] pt-[110px]">
           <ReceiptText
             size={50}
             strokeWidth={1.5}
@@ -987,7 +1043,7 @@ export function CiNewReturn({
           — a blank screen under a field with his number still in it. Rendering
           from the data shows him the one card he came back to. */}
       {hits.length > 0 && (
-        <div className="px-4 pt-4" style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}>
+        <div className="px-4 pt-4">
           {/* `.countLine` — uppercase, tracked, above the cards. */}
           <p className="text-[12.5px] font-bold uppercase tracking-[0.06em] text-[#8A9299] px-1 pb-2.5">
             {hits.length} bill{hits.length === 1 ? "" : "s"}
@@ -997,16 +1053,24 @@ export function CiNewReturn({
           {hits.map((h) => (
             <CiResultCard
               key={h.orderId}
+              // Row 1 — the OBD, and when the bill went out.
               identifier={h.obdNumber}
-              chipLabel={`${h.lineCount} line${h.lineCount === 1 ? "" : "s"}`}
+              caption={formatDay(h.invoiceDate ?? h.obdDateTime)}
+              // Row 2 — the dealer, with the bill's size on the right.
               name={h.customerName}
-              leading={formatDay(h.invoiceDate ?? h.obdDateTime)}
-              litres={h.totalLitres}
+              value={`${h.totalLitres} L`}
+              // Row 3 — the OTHER identifier. NO PILL: a bill has no status, and
+              // a pill slot filled with something invented would be worse than
+              // an empty one.
+              meta={h.invoiceNo ?? "No invoice yet"}
+              // Row 4 — the shelf.
+              chips={[`${h.lineCount} line${h.lineCount === 1 ? "" : "s"}`]}
               onClick={() => void openBill(h.orderId)}
             />
           ))}
         </div>
       )}
+      </div>
       </div>
     );
   }
