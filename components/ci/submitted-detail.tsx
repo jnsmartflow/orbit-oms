@@ -3,6 +3,19 @@
 import { ChevronLeft } from "lucide-react";
 import { CiLineRows, CiPackChips } from "./line-list";
 import { CiDetailsStep } from "./details-step";
+import {
+  CARD_PAD,
+  CARD_SURFACE,
+  CiSpineRow,
+  CiSpineValue,
+  FACT_LABEL,
+  SECTION_COUNT,
+  SECTION_HEAD,
+  SECTION_INSET,
+  STRIP_MUTED,
+  STRIP_VALUE,
+  UNIT_SUFFIX,
+} from "./spine";
 import type { CiBillResult, CiDetail, CiReasonOption, CiBillLine } from "@/lib/ci/types";
 
 // One submitted CI, opened from the Submitted tab.
@@ -70,24 +83,11 @@ import type { CiBillResult, CiDetail, CiReasonOption, CiBillLine } from "@/lib/c
 // because a section rule is not a field label — and it is Picking's own
 // (picker-my-picks-board.tsx:1925).
 
-// ── The scale, each with its source ──────────────────────────────────────────
-
-/** Card gutter. ⚠ DELIBERATELY THE SAME STRING AS `SECTION_INSET`, so a field
- *  label and a section title sit on ONE left edge. That is why both exist as
- *  constants rather than as literals typed twice. */
-const CARD_PAD = "px-[14px]";
-const SECTION_INSET = "px-[14px]";
-
-/** picking-board-mobile.tsx:3555 — the stat strip's left half. */
-const FACT_LABEL = "text-[13px] font-medium text-[#667085]";
-/** picking-board-mobile.tsx:3559 — the stat strip's right half. */
-const FACT_VALUE = "text-[13px] font-semibold text-[#1d2939]";
-/** picker-my-picks-board.tsx:1925 — "a section rule, not a chip". */
-const SECTION_HEAD = "text-[11px] font-bold uppercase tracking-[0.06em] text-[#8a929c]";
-/** picker-my-picks-board.tsx:1928 — the count opposite it. */
-const SECTION_COUNT = "text-[11px] font-semibold text-[#b6bcc4] tabular-nums";
-/** A full-bleed white band on the grey ground, the way Picking's strips sit. */
-const CARD_SURFACE = "bg-white border-y border-gray-200";
+// ⚠ THE SCALE MOVED TO components/ci/spine.tsx (step 11), where the EDITABLE
+// details step reads the same constants. It used to be declared here, and that
+// is precisely why the two screens drifted: the entry step could not import
+// from this file (this file imports IT — a cycle), so it re-typed its own
+// values and then diverged. One module, both screens, no local overrides.
 
 export function CiSubmittedDetail({
   detail,
@@ -191,16 +191,18 @@ export function CiSubmittedDetail({
           CARD_PAD
         }
       >
-        <span className={FACT_LABEL + " truncate min-w-0"}>
+        {/* 🔴 15px — see spine.tsx. This is the most-read line on the screen
+            and it was set BELOW the facts underneath it. */}
+        <span className={STRIP_MUTED + " truncate min-w-0"}>
           {formatDay(detail?.invoiceDate ?? null)}
           <span className="text-[#c3c9d0]">{" · "}</span>
           {/* A blank invoice is NORMAL — 5% of bills have none when the CI is
               raised and SAP sends it later. Said in words, never an error. */}
           {detail?.invoiceNo ?? "No invoice yet"}
         </span>
-        <span className={FACT_VALUE + " tabular-nums shrink-0"}>
+        <span className={STRIP_VALUE + " tabular-nums shrink-0"}>
           {detail?.totalLitres ?? 0}
-          <span className="text-[11px] font-medium text-[#8a929c]">{" L"}</span>
+          <span className={UNIT_SUFFIX}>{" L"}</span>
         </span>
       </div>
 
@@ -254,18 +256,21 @@ export function CiSubmittedDetail({
             />
           ) : (
             <div className={CARD_SURFACE + " mt-3"}>
-              <FactRow label="Received on" value={formatDay(detail.materialReceivedDate)} />
+              <CiSpineRow label="Received on">
+                <CiSpineValue>{formatDay(detail.materialReceivedDate)}</CiSpineValue>
+              </CiSpineRow>
               {/* 🔴 THE ONLY PLACE PART/FULL IS SAID on this screen now. */}
-              <FactRow label="Return" value={isFull ? "Full bill" : "Part"} />
-              <FactRow
-                label="Material"
-                value={detail.materialMoved === "moved" ? "Moved" : "Not moved"}
-              />
-              <FactRow
-                label="Reason"
-                value={detail.reasonLabel}
-                last={detail.reasonRemark === null}
-              />
+              <CiSpineRow label="Return">
+                <CiSpineValue>{isFull ? "Full bill" : "Part"}</CiSpineValue>
+              </CiSpineRow>
+              <CiSpineRow label="Material">
+                <CiSpineValue>
+                  {detail.materialMoved === "moved" ? "Moved" : "Not moved"}
+                </CiSpineValue>
+              </CiSpineRow>
+              <CiSpineRow label="Reason" last={detail.reasonRemark === null}>
+                <CiSpineValue>{detail.reasonLabel}</CiSpineValue>
+              </CiSpineRow>
               {/* The remark runs FULL WIDTH beneath, not opposite a label: it is
                   a sentence, and a sentence squeezed into a value column wraps
                   into a ribbon two words wide. */}
@@ -347,8 +352,12 @@ export function CiSubmittedDetail({
 
           {closed ? (
             <div className={CARD_SURFACE}>
-              <FactRow label="CI date" value={formatDay(detail.ciDate)} />
-              <FactRow label="CI number" value={detail.sapCiNumber ?? "—"} mono last />
+              <CiSpineRow label="CI date">
+                <CiSpineValue>{formatDay(detail.ciDate)}</CiSpineValue>
+              </CiSpineRow>
+              <CiSpineRow label="CI number" last>
+                <CiSpineValue mono>{detail.sapCiNumber ?? "—"}</CiSpineValue>
+              </CiSpineRow>
               {/* A FOOTER LINE, not a row — it names a PERSON, and a name sitting
                   opposite a label reads as a field he might be able to edit. */}
               <div className={CARD_PAD + " pb-3"}>
@@ -397,42 +406,6 @@ export function CiSubmittedDetail({
 }
 
 // ── Pieces ───────────────────────────────────────────────────────────────────
-
-/**
- * One row on the spine: label left, value right, hairline under.
- *
- * ⚠ THE VALUE WRAPS RATHER THAN TRUNCATES. The values here are dates, numbers
- * and reason labels — half of any of those is worse than two lines, and the
- * spine survives a wrap because the right edge is where the text ENDS, not
- * where the box does.
- */
-function FactRow({
-  label,
-  value,
-  mono = false,
-  last = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  /** Drops the hairline on a card's last row. */
-  last?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      className={
-        CARD_PAD +
-        " py-3 flex items-baseline justify-between gap-4 " +
-        (last ? "" : "border-b border-gray-100")
-      }
-    >
-      <span className={FACT_LABEL + " shrink-0"}>{label}</span>
-      <span className={FACT_VALUE + " text-right min-w-0 " + (mono ? "font-mono" : "")}>
-        {value}
-      </span>
-    </div>
-  );
-}
 
 function StatusChip({ status }: { status: CiDetail["status"] }): React.JSX.Element {
   // ⚠ WHITE-ALPHA, NOT the card's amber/green pills — this one sits ON THE TEAL
@@ -486,7 +459,7 @@ function ReadOnlyLines({ detail }: { detail: CiDetail }): React.JSX.Element {
             {/* Null litres = genuinely unknown (unitQty null or 0). ZERO renders
                 "0 L" — brushes and rollers have a real volume of nothing, and
                 blanking those would claim "unknown" about a known thing. */}
-            <span className="text-[11px] font-medium text-[#8a929c] mt-1 tabular-nums">
+            <span className={UNIT_SUFFIX + " mt-1 tabular-nums"}>
               {l.returnedQtyLitres === null ? "—" : `${l.returnedQtyLitres} L`}
             </span>
           </div>

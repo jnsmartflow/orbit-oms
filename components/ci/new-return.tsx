@@ -10,6 +10,7 @@ import { CiLineRows, CiPackChips } from "./line-list";
 import { CiQtySheet } from "./qty-sheet";
 import { CiDetailsStep, CiReasonSheet } from "./details-step";
 import { CiResultCard } from "./result-card";
+import { STRIP_MUTED, STRIP_VALUE, UNIT_SUFFIX } from "./spine";
 import type {
   CiBillLine,
   CiBillResult,
@@ -125,7 +126,10 @@ export function CiNewReturn({
   const [sheetLine, setSheetLine] = useState<CiBillLine | null>(null);
 
   // ── Details step state (frames 6-7) ───────────────────────────────────────
-  const [materialMoved, setMaterialMoved] = useState<"moved" | "not_moved">("not_moved");
+  // 🔴 "moved" IS THE DEFAULT (owner ruling, step 11). A UI DEFAULT ONLY — the
+  // column stays nullable, chk_ci_returns_complete_when_not_draft still requires
+  // it on any non-draft row, and the submit route's validation is untouched.
+  const [materialMoved, setMaterialMoved] = useState<"moved" | "not_moved">("moved");
   // Defaults to TODAY IN IST. Not `toISOString().slice(0,10)` — that is the UTC
   // day, and between 18:30 and 24:00 IST it is YESTERDAY, which is exactly the
   // shift a depot evening runs in.
@@ -600,7 +604,7 @@ export function CiNewReturn({
     setActivePackFilter("ALL");
     setReason(null);
     setRemark("");
-    setMaterialMoved("not_moved");
+    setMaterialMoved("moved");
     setSubmitted(null);
     setStep("search");
   }, []);
@@ -694,17 +698,26 @@ export function CiNewReturn({
             which is what keeps the bill identity on screen. */}
         {/* SUB-HEADER STRIP — identical on every screen of the flow:
             date · invoice · litres. A white band flush under the header, no
-            rounding, one bottom border — picking's stat-band material. */}
+            rounding, one bottom border — picking's stat-band material.
+
+            🔴 15px, FROM spine.tsx — the same constants the read-only detail
+            screen reads, so the two cannot drift. This is the most-read line in
+            the flow and it was set at 12.5px, BELOW the facts underneath it. */}
         {step !== "success" && (
-        <div className="bg-white border-b border-gray-200 shrink-0 px-[14px] py-3 flex items-center gap-2 text-[12.5px]">
-          <span className="text-gray-600 shrink-0">{formatDay(bill ? (bill.invoiceDate ?? bill.obdDateTime) : null)}</span>
-          <span className="text-[#d8dce1]">·</span>
+        <div className="bg-white border-b border-gray-200 shrink-0 px-[14px] py-3 flex items-center gap-2">
+          <span className={STRIP_MUTED + " shrink-0"}>
+            {formatDay(bill ? (bill.invoiceDate ?? bill.obdDateTime) : null)}
+          </span>
+          <span className="text-[#c3c9d0]">·</span>
           {/* Blank invoice is NORMAL — 5% of dispatched bills have none yet and
-              SAP sends it later. An em-dash, never an error. */}
-          <span className="text-gray-600 truncate min-w-0">{bill?.invoiceNo ?? "—"}</span>
-          <span className="text-[#d8dce1]">·</span>
-          <span className="font-semibold tabular-nums text-gray-700 shrink-0">
-            {bill?.totalLitres ?? 0} L
+              SAP sends it later. Said in words, never an error. */}
+          <span className={STRIP_MUTED + " truncate min-w-0"}>
+            {bill?.invoiceNo ?? "No invoice yet"}
+          </span>
+          <span className="text-[#c3c9d0]">·</span>
+          <span className={STRIP_VALUE + " tabular-nums shrink-0 ml-auto"}>
+            {bill?.totalLitres ?? 0}
+            <span className={UNIT_SUFFIX}>{" L"}</span>
           </span>
         </div>
         )}
@@ -751,6 +764,13 @@ export function CiNewReturn({
           />
         ) : step === "details" ? (
           <>
+            {/* ⚠ THE SCROLLER LIVES HERE NOW (step 11). CiDetailsStep used to
+                carry `flex-1 overflow-y-auto` on its own root, which was right
+                here and WRONG inside submitted-detail.tsx — that screen already
+                provides a scroller, so the two nested and the inner one was
+                unbounded. The card is now a plain card and each caller owns its
+                own scroll region. */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
             <CiDetailsStep
               materialMoved={materialMoved}
               onMaterialMoved={setMaterialMoved}
@@ -761,18 +781,25 @@ export function CiNewReturn({
               remark={remark}
               onRemark={setRemark}
             />
+            </div>
             {/* Bottom pill — Submit. DISABLED until a reason is chosen; the
-                route refuses without one too, and names it. */}
+                route refuses without one too, and names it.
+
+                ⚠ THE SAME BAR AS THE READ-ONLY SCREEN'S SAVE (step 11): white
+                ground with a top border, `pt-2.5`, 15px label. It used to sit on
+                the grey ground with no border and a 14.5px label — three small
+                differences that made the two screens' bottom edges look like
+                two different products. */}
             <div
-              className="shrink-0 px-3.5 pb-3.5 bg-[#F4F6F7]"
-              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+              className="shrink-0 bg-white border-t border-gray-200 px-3.5 pt-2.5"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 10px)" }}
             >
               <button
                 type="button"
                 onClick={() => void onSubmit()}
                 disabled={reason === null || saving}
                 className={
-                  "w-full h-12 rounded-full text-[14.5px] font-bold " +
+                  "w-full h-12 rounded-full text-[15px] font-bold " +
                   (reason !== null && !saving
                     ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed")
