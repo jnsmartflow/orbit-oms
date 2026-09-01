@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { isFindingReason, isMfgMonth, isMfgYear } from "@/lib/picking/findings-reasons";
+import { reconcileAutoCi, type CiAutoOrder } from "@/lib/ci/auto";
 
 export const dynamic = "force-dynamic";
 
@@ -152,9 +153,36 @@ export async function POST(req: Request): Promise<NextResponse> {
     typeof body.remarks === "string" && body.remarks.trim() !== "" ? body.remarks.trim() : null;
 
   // Soft-delete read (CORE §3) — never record against a removed order.
+  //
+  // ⚠ THE EXTRA FIELDS ARE FOR THE AUTO-CI, AND THIS IS THE ONLY QUERY FOR THEM.
+  // lib/ci/auto.ts needs the invoice, the customer snapshot and the SO number;
+  // all of it lives on this row, which was already being fetched. A second
+  // findFirst for the same order would be a query bought for nothing.
+  //
+  // 🔴 `invoiceNo` IS THE TRIGGER — the DATABASE COLUMN, not billing's "Already
+  // invoiced" badge, not `invoicedAt`, not any marker. That badge means two
+  // different things (the invoice genuinely arrived early, or the operator
+  // forgot to mark done), so it cannot be a trigger.
   const order = await prisma.orders.findFirst({
     where: { id: orderId, isRemoved: false },
-    select: { id: true, obdNumber: true },
+    select: {
+      id: true,
+      obdNumber: true,
+      invoiceNo: true,
+      invoiceDate: true,
+      customerId: true,
+      // ⚠ THE CODE IS `shipToCustomerId`, and the NAME comes from the two dealer
+      // relations through resolveCiDealer() — exactly what lib/ci/queries.ts's
+      // bill route does for the manual path (queries.ts:305-312). `orders` has
+      // no customerCode/customerName columns of its own; snapshotting anything
+      // else here would put a different dealer on an auto CI than on a manual
+      // one for the same bill.
+      shipToCustomerId: true,
+      shipToCustomerName: true,
+      shipToOverrideCustomer: { select: { customerName: true } },
+      customer: { select: { customerName: true } },
+      soNumber: true,
+    },
   });
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -220,6 +248,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       },
       select: SAVED_SELECT,
     });
+    // The confirm is written. Everything below is the side effect.
+    await raiseAutoCi(order, recordedById, rawLineItemId);
     return NextResponse.json({ ok: true, finding: updated });
   }
 
@@ -250,5 +280,45 @@ export async function POST(req: Request): Promise<NextResponse> {
     select: SAVED_SELECT,
   });
 
+  // The confirm is written. Everything below is the side effect.
+  await raiseAutoCi(order, recordedById, rawLineItemId);
   return NextResponse.json({ ok: true, finding: created });
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE AUTO-CI, AND IT MUST NEVER BLOCK THE CONFIRM.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The findings board is the primary job here; raising a return is a SIDE
+ * EFFECT. The confirm is already written by the time this runs, so a failure in
+ * lib/ci/auto.ts is LOGGED and swallowed — it must not roll back, must not turn
+ * a successful confirm into an error the supervisor sees, and must not leave him
+ * tapping Confirm again on a line that is already recorded.
+ *
+ * ⚠ AWAITED, NOT FIRE-AND-FORGET. A floating promise on a serverless function
+ * can be killed the moment the response is returned, which would drop the CI
+ * silently and non-deterministically. Sequential awaits, never
+ * prisma.$transaction (CORE §3).
+ *
+ * ⚠ HOOKED ON CONFIRM ONLY — never on findings/report. The trigger is the
+ * SUPERVISOR's sign-off, a human action; a picker's unconfirmed claim must never
+ * raise a document.
+ */
+async function raiseAutoCi(
+  order: CiAutoOrder,
+  supervisorId: number,
+  rawLineItemId: number,
+): Promise<void> {
+  try {
+    await reconcileAutoCi(order, supervisorId);
+  } catch (err) {
+    console.error(
+      `[picking/findings/confirm] auto-CI reconcile FAILED for order #${order.id} ` +
+        `/ OBD ${order.obdNumber} (line ${rawLineItemId}). The finding IS saved; the ` +
+        `CI is not. Raise it by hand from /ci if goods came back:`,
+      err,
+    );
+  }
+}
+

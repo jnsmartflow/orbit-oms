@@ -146,6 +146,14 @@ export interface CiBillResult {
 
 /** One card, on either face. The supervisor's Submitted list and billing's rail
  *  show the same facts at different densities, so one row type serves both. */
+/**
+ * Who raised a CI. 'manual' is the default on every row that predates the
+ * findings trigger and on every hand-walked return; 'auto_finding' is raised as
+ * a side effect of a supervisor confirming a pick finding (lib/ci/auto.ts).
+ * Mirrors chk_ci_returns_source.
+ */
+export type CiSource = "manual" | "auto_finding";
+
 export interface CiBoardRow {
   id: number;
   /** Never null on a board row: every board filters `status <> 'draft'`, and a
@@ -169,6 +177,9 @@ export interface CiBoardRow {
   /** Same live-then-snapshot rule as `invoiceNo`. "YYYY-MM-DD". */
   invoiceDate: string | null;
   returnType: CiReturnType;
+  /** ⚠ Drives the "Auto" tag on billing's rail. A manual CI must render exactly
+   *  as it did before this existed — no tag, no reserved space. */
+  source: CiSource;
   lineCount: number;
   totalLitres: number;
   totalTins: number;
@@ -288,6 +299,18 @@ export interface CiDetail {
   reasonLabel: string;
   reasonRemark: string | null;
   supervisorName: string | null;
+  source: CiSource;
+  /**
+   * The route the bill is going out on, for the auto badge's third part.
+   *
+   * ⚠ NULLABLE AND DERIVED AT READ TIME — there is no route column on
+   * ci_returns and there must not be one. Resolved
+   * customerId → delivery_point_master → area_master → route_master.name, which
+   * is the SAME chain lib/picking/queue.ts:729 uses. ⚠ NOT
+   * delivery_point_master.primaryRouteId: that column is stale and is never read
+   * (locked decision, picking step 1) — only area.primaryRoute counts.
+   */
+  routeName: string | null;
   submittedAt: string | null;
 
   // stage 2

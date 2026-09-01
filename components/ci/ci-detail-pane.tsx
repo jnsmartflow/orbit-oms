@@ -177,6 +177,28 @@ export function CiDetailPane({
               Raised by {detail.supervisorName ?? "—"}
               {detail.submittedAt !== null && ` · ${formatIstDateTime(detail.submittedAt)}`}
             </div>
+            {/* ══ THE AUTO LINE — auto CIs ONLY ═══════════════════════════════
+                "Auto · Harish Padvi · Adajan" = raised automatically, checked by
+                that supervisor, going out on that route. It tells billing in one
+                line that the document was assembled by the system rather than
+                stated by a person, and who to ask.
+
+                ⚠ NOTHING CHANGES ON A MANUAL CI. The whole element is absent —
+                no empty line, no reserved height — so a manual CI's header is
+                byte-identical to what it was before this existed.
+
+                🔴 A NULL ROUTE DROPS THE SEGMENT ENTIRELY. Never a dash, never a
+                stranded separator: an unmastered dealer has no area and so no
+                route, which is a normal state and not a missing value. The parts
+                are joined, so the separator can only ever sit between two things
+                that are actually there. */}
+            {detail.source === "auto_finding" && (
+              <div className="text-[11px] font-medium text-[#6b7480] mt-0.5">
+                {["Auto", detail.supervisorName, detail.routeName]
+                  .filter((p): p is string => Boolean(p))
+                  .join(" · ")}
+              </div>
+            )}
           </div>
         </div>
       </div>

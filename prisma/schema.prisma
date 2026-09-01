@@ -2635,6 +2635,7 @@ model ci_reason_master {
 //   chk_ci_returns_status         CHECK (status IN ('draft','submitted','closed','returned_to_floor'))
 //   chk_ci_returns_return_type    CHECK ("returnType" IN ('full','part'))
 //   chk_ci_returns_material_moved CHECK ("materialMoved" IN ('moved','not_moved'))
+//   chk_ci_returns_source         CHECK (source IN ('manual','auto_finding'))
 //   chk_ci_returns_complete_when_not_draft
 //     CHECK (status = 'draft' OR ("materialMoved" IS NOT NULL
 //            AND "materialReceivedDate" IS NOT NULL
@@ -2756,6 +2757,29 @@ model ci_returns {
   closedAt             DateTime?              @db.Timestamptz(6)
 
   // ── void (never hard-delete a numbered document) ───────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔴 WHO RAISED THIS — A HUMAN, OR THE FINDINGS PATH (2026-09-01, step 15)
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  //   'manual'       — the supervisor walked the /ci New flow himself.
+  //   'auto_finding' — raised as a SIDE EFFECT of confirming a pick finding on
+  //                    an already-invoiced bill (lib/ci/auto.ts).
+  //
+  // ⚠ NOT COSMETIC. It is the only thing that tells billing a document was
+  // assembled by the system rather than stated by a person, and it is the key
+  // the reconcile in lib/ci/auto.ts finds its own CI by — orderId + source.
+  // Without it a second confirm could not tell "the CI I raised" from "a CI the
+  // supervisor raised by hand for the same bill", and would edit his.
+  //
+  // ⚠ DEFAULT 'manual' IS LOAD-BEARING: every write path that predates this
+  // column — draft/route.ts and every screen — keeps working untouched and its
+  // rows stay correctly labelled. Do not make it required.
+  //
+  // Column and CHECK both already live (verified 2026-09-01 against
+  // information_schema: text, NOT NULL, DEFAULT 'manual'::text, and
+  // chk_ci_returns_source). Mirrored here by hand — never db push (CORE §3).
+  source               String                 @default("manual")
+
   isVoided             Boolean                @default(false)
   voidReason           String?
   voidRemark           String?

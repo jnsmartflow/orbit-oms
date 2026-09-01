@@ -253,6 +253,23 @@ function CiRailCard({
         >
           {row.ciNumber}
         </span>
+        {/* ⚠ AUTO CIs ONLY, AND NOTHING CHANGES ON A MANUAL ONE — no tag, no
+            reserved space, no gap. This is a sibling in a `gap-2` flex row, and
+            a row with one fewer child has one fewer gap, so a manual card's DOM
+            and metrics are byte-identical to before this existed.
+
+            NEUTRAL, and it reuses the module's existing PART tone (#E7EBEC on
+            #5C666E) — it is INFORMATION, not a warning, and the CI screens get
+            no new colour for it. The word is what carries the meaning, as
+            everywhere else in this module. */}
+        {row.source === "auto_finding" && (
+          <span
+            className="shrink-0 rounded-full bg-[#E7EBEC] px-[6px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#5C666E]"
+            title="Raised automatically from a picking finding"
+          >
+            Auto
+          </span>
+        )}
         {/* Mention 2 of 3 (see the header). `shrink-0` so a long CI number
             truncates rather than squeezing the tag out of existence. */}
         <span

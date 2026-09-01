@@ -420,6 +420,7 @@ const BOARD_SELECT = {
   submittedAt: true,
   closedAt: true,
   // The snapshots — the FALLBACK half of the invoice rule below.
+  source: true,
   invoiceNo: true,
   invoiceDate: true,
   // 🔴 THE LIVE HALF. ci_returns.invoiceNo's own comment states the rule: any
@@ -457,6 +458,11 @@ function toBoardRow(r: BoardRow): CiBoardRow {
       ? isoDate((r.order?.invoiceDate ?? r.invoiceDate) as Date)
       : null,
     returnType: r.returnType as CiReturnType,
+    // Narrowed, not defaulted: chk_ci_returns_source permits exactly these two,
+    // so anything else is a constraint that has been dropped — and 'manual' is
+    // the honest read of an unrecognised value, since it is what every row
+    // predating the findings trigger carries.
+    source: r.source === "auto_finding" ? "auto_finding" : "manual",
     lineCount: r.lines.length,
     totalTins: r.lines.reduce((s, l) => s + l.returnedQty, 0),
     totalLitres: round3(
@@ -572,9 +578,18 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
       invoiceNo: true,
       invoiceDate: true,
       soNumber: true,
+      source: true,
       customerId: true,
       customerCode: true,
       customerName: true,
+      // ⚠ THE ROUTE, DERIVED AT READ TIME — one nested include off the CI's own
+      // customer relation, no extra query and no route column on ci_returns.
+      // customerId → delivery_point_master → area_master → route_master.name,
+      // the SAME chain lib/picking/queue.ts:729 walks. ⚠ NOT
+      // delivery_point_master.primaryRouteId: that column is stale and is never
+      // read (locked decision, picking step 1) — only area.primaryRoute counts.
+      // Verified live 2026-09-01: all 23 ci_returns rows resolve to a name.
+      customer: { select: { area: { select: { primaryRoute: { select: { name: true } } } } } },
       returnType: true,
       materialMoved: true,
       materialReceivedDate: true,
@@ -706,6 +721,10 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
     reasonLabel: row.reasonLabel,
     reasonRemark: row.reasonRemark,
     supervisorName: row.supervisor?.name ?? null,
+    source: row.source === "auto_finding" ? "auto_finding" : "manual",
+    // Null is a NORMAL state — an unmastered dealer has no area and therefore no
+    // route. The badge drops the segment rather than printing a dash.
+    routeName: row.customer?.area?.primaryRoute?.name ?? null,
     submittedAt: row.submittedAt?.toISOString() ?? null,
 
     ciDate: row.ciDate ? isoDate(row.ciDate) : null,
