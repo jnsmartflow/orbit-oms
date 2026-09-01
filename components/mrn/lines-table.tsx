@@ -218,15 +218,27 @@ function OpenTable({
     setBusy(true);
     setError(null);
     try {
-      // The SAME replace-everything route the paste uses — it sends the lines
-      // that REMAIN. There is no per-line delete endpoint and none is needed:
-      // this route already owns "these are the MRN's lines now".
+      // The SAME replace route the paste uses — it sends the lines that REMAIN.
+      // There is no per-line delete endpoint and none is needed: this route
+      // already owns "these are the delivery's lines now".
+      //
+      // 🔴 SCOPED TO THE DELETED LINE'S OWN DELIVERY (2026-09-01), AND IT HAS
+      // TO BE. The route's deleteMany is now { mrnId, deliveryNo }; this used to
+      // send EVERY line on the MRN, so against the scoped route it would have
+      // re-created the other deliveries' lines under THIS delivery's number —
+      // silently, with the right row count and the wrong grouping, and nothing
+      // anywhere reporting it. A scoped route with an unscoped caller is a
+      // data-loss bug, and tsc cannot see it because the body is JSON.
+      //
+      // Both the filter and the deliveryNo come off the line being deleted, so
+      // the request describes exactly one delivery.
       const res = await fetch(`/api/mrn/${detail.id}/lines`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          deliveryNo: line.deliveryNo,
           lines: detail.lines
-            .filter((l) => l.id !== line.id)
+            .filter((l) => l.deliveryNo === line.deliveryNo && l.id !== line.id)
             .map((l) => ({ lineNo: l.lineNo, skuCode: l.skuCode, qtySti: l.qtySti })),
         }),
       });

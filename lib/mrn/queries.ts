@@ -372,6 +372,7 @@ export async function getMrnSupervisorBoard(): Promise<MrnSupervisorBoard> {
 
 const MRN_DETAIL_LINE_SELECT = {
   id: true,
+  deliveryNo: true,
   lineNo: true,
   skuCode: true,
   qtySti: true,
@@ -418,7 +419,15 @@ export async function getMrnDetail(mrnId: number): Promise<MrnDetail | null> {
     where: { id: mrnId, isRemoved: false },
     select: {
       ...MRN_HEADER_SELECT,
-      lines: { select: MRN_DETAIL_LINE_SELECT, orderBy: { lineNo: "asc" } },
+      // 🔴 deliveryNo FIRST, THEN lineNo (2026-09-01). Ordering by lineNo
+      // alone now INTERLEAVES two deliveries — both number from 1, so the truck
+      // would read 1,1,2,2,3,3 with the two deliveries shuffled together. The
+      // tab strip in step 5 and the running position in step 4 both depend on
+      // lines arriving grouped.
+      lines: {
+        select: MRN_DETAIL_LINE_SELECT,
+        orderBy: [{ deliveryNo: "asc" }, { lineNo: "asc" }],
+      },
     },
   });
   if (!row) return null;
@@ -430,6 +439,9 @@ export async function getMrnDetail(mrnId: number): Promise<MrnDetail | null> {
 
   const lines: MrnDetailLine[] = row.lines.map((l) => ({
     id: l.id,
+    // Carried to the client so billing's tab strip (step 5) can group by it and
+    // the row-delete in lines-table.tsx can scope its replace to one delivery.
+    deliveryNo: l.deliveryNo,
     lineNo: l.lineNo,
     skuCode: l.skuCode,
     ...applyCatalog(l.skuCode, catalog),

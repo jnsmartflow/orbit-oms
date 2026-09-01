@@ -167,6 +167,18 @@ export interface MrnConditionCounts {
 
 export interface MrnDetailLine extends MrnConditionCounts, MrnLineDerived {
   id: number;
+  /**
+   * The delivery number this line arrived under (v27.20, 2026-09-01).
+   *
+   * ⚠ '' IS A REAL VALUE, NOT "missing". 32 backfilled lines carry it — three
+   * MRNs had no header delivery number to copy down. Billing's tab strip
+   * (step 5) renders it as an unnamed group rather than hiding those lines.
+   *
+   * ⚠ AND `lineNo` IS SCOPED BY IT. Each delivery numbers from 1, so lineNo is
+   * the nth line OF THIS DELIVERY and two lines on one MRN can share it. Do not
+   * use lineNo alone as a key or a position.
+   */
+  deliveryNo: string;
   lineNo: number;
   /** The raw SAP material code as pasted. NOT a catalog row id. */
   skuCode: string;

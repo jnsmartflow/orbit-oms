@@ -8,10 +8,27 @@ import { applyCatalog, resolveMrnSkus } from "@/lib/mrn/resolve-lines";
 export const dynamic = "force-dynamic";
 
 /**
- * PUT /api/mrn/[mrnId]/lines — REPLACES every line on the MRN from a pasted
- * block.
+ * PUT /api/mrn/[mrnId]/lines — REPLACES every line of ONE DELIVERY NUMBER on
+ * the MRN from a pasted block.
  *
- * Body: { block: string } — the raw paste out of the STI sheet.
+ * Body: { deliveryNo: string, block: string }   — the raw paste out of the STI
+ *       { deliveryNo: string, lines: [...] }      sheet, or a structured set
+ *
+ * 🔴 SCOPED TO ONE DELIVERY SINCE 2026-09-01, AND THAT IS THE POINT OF THE
+ * CHANGE. One STI can carry several delivery numbers, so billing pastes a block
+ * PER DELIVERY. Before this, the delete was `{ mrnId }` and a second paste
+ * destroyed the first batch outright — silently, with no warning anywhere. The
+ * delete is now `{ mrnId, deliveryNo }`.
+ *
+ * ⚠ EACH DELIVERY NUMBERS ITS LINES FROM 1 (owner ruling, 2026-09-01). Two
+ * deliveries on one truck both have a line 1, which is why the live unique
+ * index moved from (mrnId, lineNo) to (mrnId, deliveryNo, lineNo). The stored
+ * lineNo is the nth line OF ITS DELIVERY, not a position on the truck — the
+ * phone shows a running position computed across the MRN instead (step 4).
+ *
+ * ⚠ '' IS A LEGAL DELIVERY NUMBER ON EXISTING ROWS BUT CANNOT BE WRITTEN HERE.
+ * 32 backfilled lines carry it (three MRNs had no header delivery number). New
+ * pastes must name one — see the 400 below.
  *
  * 🔴 409 UNLESS status === 'open'. Same lock as the header route: Start
  * unloading is what locks billing out (design §5).
@@ -80,7 +97,14 @@ export async function PUT(
   //                single parsing authority and a client that parsed
   //                differently cannot write a different answer.
   //   { lines }  — an already-structured set, for the board's row-delete on the
-  //                open table: it sends the lines that REMAIN.
+  //                open table: it sends the lines of THIS DELIVERY that REMAIN.
+  //
+  // 🔴 BOTH SHAPES NOW CARRY `deliveryNo`, AND BOTH ARE SCOPED BY IT. The
+  // row-delete caller (components/mrn/lines-table.tsx) had to change in the same
+  // commit as this route: it used to send every line on the MRN, which against a
+  // scoped delete would have wiped the other deliveries' lines from the response
+  // set while leaving them in the table. A scoped route with an unscoped caller
+  // is a data-loss bug that nothing reports.
   //
   // ⚠ NEITHER SHAPE CARRIES cartonQty. It was briefly a typed field on the
   // `lines` path (2026-08-22, same day) and is now DERIVED from the catalog for
@@ -89,7 +113,31 @@ export async function PUT(
   //
   // Both paths converge on the SAME delete-then-create sequence below, so the
   // ordering guarantee and the linesCleared contract are identical either way.
-  const body = (await req.json().catch(() => ({}))) as { block?: unknown; lines?: unknown };
+  const body = (await req.json().catch(() => ({}))) as {
+    block?: unknown;
+    lines?: unknown;
+    deliveryNo?: unknown;
+  };
+
+  // 🔴 REQUIRED, TRIMMED, AND BLANK IS REFUSED. There is no "paste with no
+  // delivery number" any more: every line has to land in a named group, or it
+  // files itself into the unnamed ('') tab where nobody would think to look for
+  // it. The 32 existing '' lines are backfill from three MRNs that genuinely
+  // had no header delivery number — they are history, not a shape new writes
+  // may take.
+  //
+  // ⚠ This is also the guard the DB cannot make yet. mrn_lines."deliveryNo"
+  // still carries DEFAULT '' as scaffolding from the step-2 SQL; Part 4 of
+  // docs/prompts/drafts/sql-2026-09-01-mrn-delivery-split.sql drops it in step
+  // 6, after which an omission fails at the database too. Until then this check
+  // is the only thing standing between a forgetful caller and a silent ''.
+  const deliveryNo = typeof body.deliveryNo === "string" ? body.deliveryNo.trim() : "";
+  if (deliveryNo === "") {
+    return NextResponse.json(
+      { error: "A delivery number is required — these lines have to belong to one." },
+      { status: 400 },
+    );
+  }
 
   const hasBlock = typeof body.block === "string" && body.block.trim() !== "";
   const hasLines = Array.isArray(body.lines);
@@ -171,18 +219,35 @@ export async function PUT(
       out.push({ lineNo: l.lineNo, skuCode, qtySti: l.qtySti, cartonQty: null });
     }
 
-    // UNIQUE(mrnId, lineNo) would otherwise surface as a raw P2002 out of
-    // createMany — the same guard parsePastedLines applies to pasted Sr numbers.
+    // UNIQUE(mrnId, deliveryNo, lineNo) would otherwise surface as a raw P2002
+    // out of createMany — the same guard parsePastedLines applies to pasted Sr
+    // numbers.
+    //
+    // ⚠ THE SET IS PER DELIVERY, WHICH IS WHY THIS STILL READS AS A PLAIN
+    // DUPLICATE CHECK. Every row in `out` belongs to the one delivery this
+    // request is replacing, so uniqueness within the request IS uniqueness
+    // within the key. A line 1 in another delivery on the same truck is correct
+    // and must not be caught here.
     const nos = out.map((l) => l.lineNo);
     if (new Set(nos).size !== nos.length) {
       return NextResponse.json(
-        { error: "Two lines share a line number — each must be distinct." },
+        { error: "Two lines share a line number — each must be distinct within a delivery." },
         { status: 400 },
       );
     }
+    // ⚠ AN EMPTY SET IS STILL REFUSED, and deliberately so even though the
+    // scoping makes "empty" mean something narrower than it used to. It now
+    // means "remove this delivery entirely", which is a real action with real
+    // consequences (its lines, their batches and — once checking begins — their
+    // photos) and it is NOT this route's job to invent. Removing a delivery
+    // belongs with the tab UI in step 5, where it can be asked for explicitly
+    // and confirmed. Until then the answer is the same as it was: not here.
     if (out.length === 0) {
       return NextResponse.json(
-        { error: "An MRN cannot be saved with no lines. Delete the MRN instead, or paste a new block." },
+        {
+          error:
+            "A delivery cannot be saved with no lines. Paste a new block for it, or delete the whole MRN.",
+        },
         { status: 400 },
       );
     }
@@ -295,16 +360,39 @@ export async function PUT(
     };
   });
 
-  // ── 2. Clear. Batches cascade on lineId. ───────────────────────────────────
+  // ── 2. Clear THIS DELIVERY ONLY. Batches cascade on lineId. ────────────────
+  //
+  // 🔴 THE `deliveryNo` IN THIS WHERE IS THE ENTIRE POINT OF THE 2026-09-01
+  // CHANGE. It was `{ mrnId }`, which meant a second paste for a second
+  // delivery number deleted the first delivery's lines outright — no warning,
+  // no error, the operator simply watched half the truck vanish. Do not
+  // "simplify" this back.
+  //
+  // 🔴 AND THE OPEN-ONLY GATE ABOVE IS WHAT KEEPS IT SAFE. mrn_photos.lineId is
+  // ON DELETE CASCADE, so this deleteMany takes any attached photos with it —
+  // and there are 10 real photos live now, not a hypothetical. They exist only
+  // from 'checking' onward and this route 409s unless 'open', so the two
+  // windows cannot overlap. NEVER relax that gate for convenience, not even for
+  // "let billing re-paste one delivery while the supervisor checks another".
+  // The moment it relaxes, this line silently destroys evidence.
+  //
   // Sequential awaits, never prisma.$transaction (CORE §3).
-  await prisma.mrn_lines.deleteMany({ where: { mrnId } });
+  await prisma.mrn_lines.deleteMany({ where: { mrnId, deliveryNo } });
 
   // ── 3. Write the new lines. ────────────────────────────────────────────────
-  // From here until this resolves, the MRN has ZERO lines. See the header.
+  // From here until this resolves, THIS DELIVERY has zero lines. Other
+  // deliveries on the same MRN are untouched — which is a smaller blast radius
+  // than before the scoping, but the same class of gap. See the header.
   try {
     await prisma.mrn_lines.createMany({
       data: withCarton.map((r) => ({
         mrnId,
+        // Every row of this request belongs to the delivery being replaced.
+        // REQUIRED in the Prisma model on purpose — the DB's DEFAULT '' is
+        // temporary scaffolding and the schema deliberately does not mirror it,
+        // so omitting this is a compile error rather than a silent '' (step 6
+        // drops the default and makes it a DB error too).
+        deliveryNo,
         lineNo: r.lineNo,
         skuCode: r.skuCode,
         qtySti: r.qtySti,
@@ -327,16 +415,25 @@ export async function PUT(
     console.error(`[mrn/lines] createMany failed for mrn #${mrnId} after deleteMany:`, err);
     return NextResponse.json(
       {
-        error:
-          "The previous lines were cleared but the new ones could not be saved, so this MRN now has no lines. Nothing was kept — paste the block again.",
+        error: `The previous lines for delivery ${deliveryNo} were cleared but the new ones could not be saved, so that delivery now has no lines. Nothing was kept — paste the block again.`,
         linesCleared: true,
+        deliveryNo,
       },
       { status: 500 },
     );
   }
 
+  // What the operator just did, and what the truck now holds. The modal shows
+  // both: after a second paste "18 lines saved" alone would read as if the
+  // first delivery had gone.
+  const mrnLineCount = await prisma.mrn_lines.count({ where: { mrnId } });
+
   return NextResponse.json({
+    deliveryNo,
+    /** Lines saved for THIS delivery. */
     lineCount: incoming.length,
+    /** Every line now on the MRN, across all its deliveries. */
+    mrnLineCount,
     // Surfaced so the preview can explain a surprising parse without a second
     // round trip. Null on the `lines` path — nothing was parsed there.
     numbering: pasteMeta?.numbering ?? null,

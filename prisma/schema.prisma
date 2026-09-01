@@ -2356,6 +2356,29 @@ model mrn_lines {
   id          Int                @id @default(autoincrement())
   mrnId       Int
   mrn         mrn                @relation(fields: [mrnId], references: [id], onDelete: Cascade)
+
+  // The delivery number this line arrived under (v27.20, 2026-09-01). One STI
+  // can carry several, so it belongs to the LINE, not the header.
+  //
+  // 🔴 NO @default("") HERE, AND THE MISMATCH WITH THE LIVE COLUMN IS
+  // DELIBERATE AND TEMPORARY. The database currently has DEFAULT '' — pure
+  // scaffolding, added so the column could be created NOT NULL on a table with
+  // 377 rows in it, and dropped by Part 4 of
+  // docs/prompts/drafts/sql-2026-09-01-mrn-delivery-split.sql in STEP 6.
+  //
+  // Modelling that default here would defeat the column: Prisma would make the
+  // field optional on create, and any future writer could omit it and have its
+  // lines filed silently under '' — the unnamed group nobody looks in. Leaving
+  // it out makes the field REQUIRED in TypeScript, so the compiler catches the
+  // omission at the one moment it is cheap. Do not "fix" this to match the DB.
+  //
+  // ⚠ '' IS A REAL VALUE, NOT A NULL. 32 live lines carry it (MRN-2026-00001,
+  // -00003, -00013 had no header delivery number to backfill from). The column
+  // is NOT NULL precisely so the unique index below works: Postgres treats
+  // NULLs as DISTINCT from each other, so a nullable column would silently
+  // permit duplicate line numbers on exactly those rows.
+  deliveryNo  String
+
   lineNo      Int
   skuCode     String
   qtySti      Int
@@ -2384,7 +2407,23 @@ model mrn_lines {
   batches     mrn_line_batches[]
   photos      mrn_photos[]
 
-  @@unique([mrnId, lineNo])
+  // 🔴 THE KEY GAINED deliveryNo ON 2026-09-01, REPLACING @@unique([mrnId, lineNo]).
+  // Each delivery numbers its own lines from 1 (owner ruling), so two deliveries
+  // on one truck both have a line 1 and the old pair is no longer unique.
+  //
+  // ⚠ THE STORED lineNo IS THEREFORE NO LONGER "the nth line of this MRN".
+  // It is the nth line OF ITS DELIVERY. Anything that reads it as a position on
+  // the truck is now wrong — the supervisor's phone shows a RUNNING POSITION
+  // computed across the MRN instead (step 4).
+  //
+  // Both names below are Prisma's own defaults and match the live indexes
+  // exactly — mrn_lines_mrnId_deliveryNo_lineNo_key and
+  // mrn_lines_mrnId_deliveryNo_idx, verified against pg_indexes 2026-09-01 —
+  // so no `map:` is needed (same situation as orders.@@index([invoiceNo]);
+  // contrast pick_findings, which does need one).
+  @@unique([mrnId, deliveryNo, lineNo])
+  // Backs the per-delivery reads and the DISTINCT that builds billing's tabs.
+  @@index([mrnId, deliveryNo])
   @@index([skuCode])
 }
 

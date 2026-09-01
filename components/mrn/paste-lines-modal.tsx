@@ -4,7 +4,14 @@ import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { parsePastedLines, type MrnPasteResult } from "@/lib/mrn/paste";
 import type { MrnDetail } from "@/lib/mrn/types";
-import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
+import {
+  FieldLabel,
+  ModalButton,
+  ModalError,
+  ModalShell,
+  TextField,
+  describeWriteError,
+} from "./modal-shell";
 
 // P2 + P3 — the paste flow, two steps in one modal.
 //
@@ -44,6 +51,11 @@ export function PasteLinesModal({
   onClose,
   onSaved,
 }: PasteLinesModalProps): React.JSX.Element {
+  // 🔴 ONE PASTE BELONGS TO ONE DELIVERY NUMBER (2026-09-01). An STI can carry
+  // several, so billing pastes a block per delivery and each replaces only its
+  // own lines. Required — the route 400s a blank, because a line with no
+  // delivery number files itself into the unnamed group nobody looks in.
+  const [deliveryNo, setDeliveryNo] = useState("");
   const [block, setBlock] = useState("");
   const [step, setStep] = useState<"input" | "preview">("input");
   const [catalog, setCatalog] = useState<Record<string, CatalogEntry>>({});
@@ -95,8 +107,9 @@ export function PasteLinesModal({
       const res = await fetch(`/api/mrn/${detail.id}/lines`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        // The RAW BLOCK — see this file's header.
-        body: JSON.stringify({ block }),
+        // The RAW BLOCK — see this file's header — and the delivery number this
+        // paste belongs to. The route replaces ONLY that delivery's lines.
+        body: JSON.stringify({ block, deliveryNo: deliveryNo.trim() }),
       });
 
       if (!res.ok) {
@@ -134,8 +147,9 @@ export function PasteLinesModal({
         title="Paste lines from Excel"
         subtitle={
           <>
-            Select the rows in your sheet, copy, then click in the box and paste. Three
-            columns: <b>Sr no · SKU · Qty as per STI</b>.
+            One delivery number at a time. Select that delivery&rsquo;s rows in your
+            sheet, copy, then click in the box and paste. Three columns:{" "}
+            <b>Sr no · SKU · Qty as per STI</b>.
           </>
         }
         width="wide"
@@ -149,7 +163,7 @@ export function PasteLinesModal({
             <ModalButton
               tone="confirm"
               onClick={goToPreview}
-              disabled={busy || parsed.rows.length === 0}
+              disabled={busy || parsed.rows.length === 0 || deliveryNo.trim() === ""}
             >
               {parsed.rows.length === 0
                 ? "Check lines"
@@ -176,10 +190,34 @@ export function PasteLinesModal({
           </div>
         )}
 
+        {/* ── Delivery number ──────────────────────────────────────────────
+            ABOVE the box, because it scopes everything below it: this paste
+            replaces the lines of THIS delivery and leaves every other delivery
+            on the truck alone. Getting it wrong replaces the wrong batch, so it
+            is read before the paste, not after.
+
+            Required — Check is disabled until it has a value, and the route
+            400s a blank independently. */}
+        <div className="mb-3.5">
+          <FieldLabel>Delivery number</FieldLabel>
+          <TextField
+            value={deliveryNo}
+            onChange={setDeliveryNo}
+            mono
+            autoFocus
+            placeholder="e.g. 9109203426"
+          />
+          <p className="mt-1.5 text-[11.5px] leading-[1.55] text-[#98a2b3]">
+            These lines belong to this delivery number. Saving replaces{" "}
+            <b className="font-semibold text-[#667085]">only</b> the lines already under
+            it — any other delivery on this MRN is untouched. Paste each delivery
+            separately.
+          </p>
+        </div>
+
         <textarea
           value={block}
           onChange={(e) => setBlock(e.target.value)}
-          autoFocus
           spellCheck={false}
           placeholder={"1\t5575910\t32\n2\t5579816\t28\n3\t5579821\t32"}
           className="h-[186px] w-full resize-none rounded-[9px] border border-gray-200 bg-[#fcfcfd] px-3 py-[11px] font-mono text-[11.5px] leading-[1.85] text-[#475467] outline-none focus:border-gray-400"
