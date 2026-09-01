@@ -38,6 +38,7 @@
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { sortPackLabels } from "@/lib/picking/pack-sort";
 import type { CiBillLine, CiDetailLine } from "./types";
 
 // ── Litres ───────────────────────────────────────────────────────────────────
@@ -115,6 +116,83 @@ export function ciTotals(lines: readonly CiDetailLine[]): {
     lineCount: lines.length,
     totalTins: lines.reduce((s, l) => s + l.returnedQty, 0),
     totalLitres: sumLitres(lines.map((l) => l.returnedQtyLitres)),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 THE PRE-SUBMIT SUMMARY — DERIVED, NEVER ACCUMULATED (step 13)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// What the supervisor reads directly above Submit must be what the SERVER will
+// store, and the only way to guarantee that is to compute it from the SAME
+// inputs the server uses and by the same rules.
+//
+// app/api/ci/[ciId]/lines/route.ts builds its rows like this:
+//   • full → EVERY active line at its delivered quantity (`unitQty`), computed
+//     server-side and never accepted from the client
+//   • part → the {rawLineItemId, returnedQty} pairs the client sent
+//   • litres → ALWAYS litresPerTin × returnedQty, re-derived from SAP's
+//     volumeLine ÷ unitQty; a posted litres figure is ignored
+//
+// This function mirrors exactly that, off `CiBillLine.deliveryQty` (which IS
+// SAP's unitQty) and `litresPerTin` (which the bill route already derived with
+// the same guard). So the summary cannot claim a quantity, a volume or a pack
+// the submitted CI does not contain.
+//
+// ⚠ NOT A RUNNING TOTAL. Nothing increments as he taps; the whole thing is
+// recomputed from the current selection every render. A tally that is added to
+// and subtracted from drifts the first time an edit path forgets to subtract —
+// and this number is the last thing he checks before signing the return.
+export interface CiReturnSummary {
+  lineCount: number;
+  totalTins: number;
+  totalLitres: number;
+  /** Ordered SMALLEST PACK FIRST — see the note in the function body. */
+  packs: { label: string; tins: number }[];
+}
+
+/** Lines with no resolved pack. Same wording the chip strip already uses
+ *  (components/ci/line-list.tsx), so one bill never calls it two things. */
+const NO_PACK_LABEL = "No pack";
+
+export function summariseCiReturn(
+  lines: readonly CiBillLine[],
+  mode: "full" | "part",
+  /** rawLineItemId → tins. Ignored entirely on a full return, exactly as the
+   *  lines route ignores the posted body there. */
+  returned: ReadonlyMap<number, number>,
+): CiReturnSummary {
+  const chosen: { line: CiBillLine; qty: number }[] = [];
+  for (const l of lines) {
+    // 🔴 FULL IS COMPUTED, NOT READ FROM THE SELECTION. "Full bill" means every
+    // active line at its delivered quantity — the route's own rule — so a stale
+    // `returned` map left over from a Part session can never leak into it.
+    const qty = mode === "full" ? l.deliveryQty : (returned.get(l.rawLineItemId) ?? 0);
+    // ⚠ > 0. A zero-tin line is not "nothing came back on this line", it is a
+    // line that should not be on the return at all — the lines route rejects
+    // one, so the summary must not count one.
+    if (qty > 0) chosen.push({ line: l, qty });
+  }
+
+  const byPack = new Map<string, number>();
+  for (const { line, qty } of chosen) {
+    const key = line.pack ?? NO_PACK_LABEL;
+    byPack.set(key, (byPack.get(key) ?? 0) + qty);
+  }
+
+  // 🔴 SMALLEST PACK FIRST, via the SHARED sorter — never alphabetically, which
+  // puts "100ML" before "1L" ("0" < "L") and "20L" before "4L". sortPackLabels
+  // is a RULE, not a token, which is why it is imported rather than copied —
+  // components/ci/line-list.tsx imports the same function for the chip strip on
+  // the previous screen, so the two screens cannot disagree about pack order.
+  const real = sortPackLabels(Array.from(byPack.keys()).filter((k) => k !== NO_PACK_LABEL));
+  const ordered = byPack.has(NO_PACK_LABEL) ? [...real, NO_PACK_LABEL] : real;
+
+  return {
+    lineCount: chosen.length,
+    totalTins: chosen.reduce((s, c) => s + c.qty, 0),
+    totalLitres: sumLitres(chosen.map((c) => returnedLitres(c.line.litresPerTin, c.qty))),
+    packs: ordered.map((label) => ({ label, tins: byPack.get(label) ?? 0 })),
   };
 }
 

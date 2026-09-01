@@ -11,6 +11,7 @@ import { CiQtySheet } from "./qty-sheet";
 import { CiDetailsStep, CiMaterialSheet, CiReasonSheet } from "./details-step";
 import { CiResultCard } from "./result-card";
 import { CiHeaderStrip, formatCiDay } from "./spine";
+import { summariseCiReturn } from "@/lib/ci/derive";
 import type {
   CiBillLine,
   CiBillResult,
@@ -715,10 +716,15 @@ export function CiNewReturn({
             screen reads, so the two cannot drift. This is the most-read line in
             the flow and it was set at 12.5px, BELOW the facts underneath it. */}
         {step !== "success" && (
+          /* 🔴 NO `litres` HERE (step 13). That figure is the BILL's total, and
+             this whole flow is about the RETURN — on this screen it read as the
+             return: prominent, plausible and wrong. What the return comes to is
+             stated once, in the summary above Submit, derived from the actual
+             selection. The read-only detail screen still passes it, because
+             there the same slot IS the return's own total. */
           <CiHeaderStrip
             isoDate={bill ? (bill.invoiceDate ?? bill.obdDateTime) : null}
             invoiceNo={bill?.invoiceNo ?? null}
-            litres={bill?.totalLitres ?? 0}
           />
         )}
 
@@ -780,6 +786,7 @@ export function CiNewReturn({
               onOpenReasons={() => setReasonSheetOpen(true)}
               remark={remark}
               onRemark={setRemark}
+              summary={{ mode, totals: summariseCiReturn(bill?.lines ?? [], mode, returned) }}
             />
             </div>
             {/* Bottom pill — Submit. DISABLED until a reason is chosen; the

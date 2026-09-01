@@ -15,9 +15,13 @@ import {
   ROW_GLYPH_SIZE,
   SHEET_ACTION,
   SHEET_NOTE,
+  SECTION_HEAD,
+  SECTION_INSET,
   SHEET_TITLE,
+  SUMMARY_CHIP,
   formatCiDay,
 } from "./spine";
+import type { CiReturnSummary } from "@/lib/ci/derive";
 import type { CiReasonOption } from "@/lib/ci/types";
 
 // The details step and its reason sheet — frames 6 and 7 of
@@ -64,6 +68,7 @@ export function CiDetailsStep({
   onOpenReasons,
   remark,
   onRemark,
+  summary,
 }: {
   materialMoved: "moved" | "not_moved";
   /** Opens the material sheet. The step no longer sets the value itself — the
@@ -76,9 +81,15 @@ export function CiDetailsStep({
   onOpenReasons: () => void;
   remark: string;
   onRemark: (v: string) => void;
+  /**
+   * What he is about to submit. OMITTED on the read-only detail screen, which
+   * shows the same facts elsewhere and does not need a pre-submit statement.
+   */
+  summary?: { mode: "full" | "part"; totals: CiReturnSummary };
 }): React.JSX.Element {
   return (
-    <div className={CARD_SURFACE + " mt-3"}>
+    <>
+      <div className={CARD_SURFACE + " mt-3"}>
       {/* ── RECEIVED ON ────────────────────────────────────────────────────
           THE NATIVE DATE CONTROL, deliberately: a hand-rolled picker on a depot
           phone is a support call waiting to happen, and the OS one is the widget
@@ -167,7 +178,77 @@ export function CiDetailsStep({
           className={"w-full mt-1.5 resize-none " + INPUT_TEXT}
         />
       </div>
-    </div>
+      </div>
+
+      {summary !== undefined && <CiReturnSummaryBlock {...summary} />}
+      </>
+  );
+}
+
+// ── The pre-submit summary (step 13) ─────────────────────────────────────────
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE LAST THING HE READS BEFORE SUBMITTING — SO IT MUST BE TRUE.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every figure here comes from lib/ci/derive.ts's `summariseCiReturn`, which
+ * mirrors what app/api/ci/[ciId]/lines/route.ts will actually store: full means
+ * every active line at its delivered quantity, part means the chosen pairs, and
+ * litres are ALWAYS litresPerTin × tins. Nothing is accumulated as he taps.
+ * The summary cannot claim something the submitted CI does not contain.
+ *
+ * 🔴 BOTH BRANCHES GET THIS BLOCK, and FULL BILL needs it most: that branch
+ * never renders a line list, so this is the ONLY statement on the whole screen
+ * of what "full bill" actually amounts to. Submitting a whole invoice back
+ * without ever being shown the quantity is how a wrong return gets signed.
+ *
+ * The first two are the same 60px spine rows as everything above, so the block
+ * reads as a continuation of the card and not as a new kind of thing. The pack
+ * chips WRAP and come last — they are the breakdown behind the quantity above
+ * them, and they are statements, not filters: nothing here is tappable.
+ */
+function CiReturnSummaryBlock({
+  mode,
+  totals,
+}: {
+  mode: "full" | "part";
+  totals: CiReturnSummary;
+}): React.JSX.Element {
+  return (
+    <>
+      <div className={"pt-4 pb-2 " + SECTION_INSET}>
+        <span className={SECTION_HEAD}>Material received</span>
+      </div>
+      <div className={CARD_SURFACE}>
+        {/* 🔴 THE ONLY PLACE THE RETURN TYPE IS STATED on this step. The bill
+            screen behind it carries the Full bill / Part control; here it is a
+            fact being confirmed, not a choice being offered. */}
+        <CiSpineRow label="Return">
+          <CiSpineValue>{mode === "full" ? "Full bill" : "Part bill"}</CiSpineValue>
+        </CiSpineRow>
+        <CiSpineRow label="Quantity" last={totals.packs.length === 0}>
+          <CiSpineValue>
+            {totals.totalTins} tin{totals.totalTins === 1 ? "" : "s"} · {totals.totalLitres} L
+          </CiSpineValue>
+        </CiSpineRow>
+        {totals.packs.length > 0 && (
+          /* ⚠ SMALLEST PACK FIRST — the order is derive.ts's, via the shared
+             sortPackLabels, which is the SAME function the line list's chip
+             strip uses on the previous screen. The two cannot disagree.
+             ⚠ WRAPS, NEVER SCROLLS: Picking moved off an overflow-x chip strip
+             on 2026-08-20 and its source says it must not go back — chips past
+             the right edge sat behind a drag nobody had reason to believe in. */
+          <div className={CARD_PAD + " pb-3.5 flex flex-wrap gap-1.5"}>
+            {totals.packs.map((p) => (
+              <span key={p.label} className={SUMMARY_CHIP}>
+                {p.label} × {p.tins}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

@@ -71,20 +71,22 @@ export const CARD_SURFACE = "bg-white border-y border-gray-200";
 export const ROW_HAIRLINE = "border-b border-gray-100";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔴 THE HEADER STRIP — 15px, AND THE CEILING IS 16
+// 🔴 THE HEADER STRIP — 16px, WHICH IS THE CEILING, DELIBERATELY SPENT
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// "31 Aug 2026 · I536226556 · 60 L" is the most-read line on either screen and
-// was set at 12.5px, smaller than the facts underneath it. It steps up to 15px:
-// Picking's SLOT-HERO size (picking-board-mobile.tsx card title row), which is
-// exactly this role — a prominent value sitting beside a title.
+// This line was 12.5px in step 9 — smaller than the facts underneath it, on the
+// line people read most. Step 10 raised it to 15px (Picking's SLOT-HERO size)
+// and stopped one step short of Picking's 16px CARD-TITLE size, reasoning that
+// 16px/600 was already the CI number in the teal header.
 //
-// ⚠ NOT 16. That is Picking's CARD TITLE size and it is the ceiling, not the
-// target: on these screens 16px/600 is already taken by the CI number in the
-// teal header, and a strip that tied with it would leave the screen with two
-// loudest things. One step under the ceiling keeps the identity on top.
-export const STRIP_MUTED = "text-[15px] font-medium text-[#667085]";
-export const STRIP_VALUE = "text-[15px] font-semibold text-[#1d2939]";
+// ⚠ STEP 13 SPENDS THE CEILING, and that judgement is superseded rather than
+// forgotten. Two things changed: the strip DROPPED THE LITRES on the create
+// flow, so date and invoice now have the whole row to themselves; and 16px here
+// does not actually compete with the header, which is WHITE, MONO, on TEAL —
+// a different surface, family and colour, not a rival for the same eye.
+// 16 is the ceiling and it is not exceeded.
+export const STRIP_MUTED = "text-[16px] font-medium text-[#667085]";
+export const STRIP_VALUE = "text-[16px] font-semibold text-[#1d2939]";
 /** The unit after a number — always a size down and grey, never the same weight
  *  as the figure it qualifies (picking-board-mobile.tsx:3561). */
 export const UNIT_SUFFIX = "text-[11px] font-medium text-[#8a929c]";
@@ -185,23 +187,33 @@ export function CiSpineValue({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔴 THE HEADER STRIP — ONE IMPLEMENTATION, TWO SCREENS (step 12)
+// 🔴 THE HEADER STRIP — ONE IMPLEMENTATION, TWO SCREENS (steps 12-13)
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// new-return.tsx and submitted-detail.tsx each hand-rolled this band. They
-// shared the TOKENS after step 11 but not the MARKUP, and that gap is where the
-// stray separator lived: the entry step laid out
-//
-//     date  ·  invoice  ·  [ml-auto] litres
-//
+// new-return.tsx and submitted-detail.tsx each hand-rolled this band until step
+// 12. They shared the TOKENS but not the MARKUP, and that gap is where a stray
+// separator lived — the entry step laid out `date · invoice · [ml-auto] litres`,
 // so the second "·" stayed with the text on the left while the litres were
-// pushed to the right edge — leaving a separator dangling after the invoice
-// number, pointing at nothing, and the litres carrying none at all.
+// pushed right, dangling after the invoice number and pointing at nothing.
 //
-// 🔴 SEPARATORS ONLY EVER SIT BETWEEN TWO THINGS ON THE SAME SIDE. The left
-// group owns its one "·" and nothing else does; the right-hand value is a
-// separate group and takes no leading separator. Written once here so the fix
-// cannot be applied to one screen and forgotten on the other.
+// 🔴 THE TWO SCREENS NOW WANT DIFFERENT CONTENT, AND THAT IS A PROP — NOT A
+//    FORK (step 13).
+//
+// The entry step drops the litres entirely. On that screen the figure is THE
+// BILL'S total, and the screen is about the RETURN: a prominent, plausible,
+// unchallenged wrong number. What the return comes to is stated once, in the
+// summary above Submit, where it is derived from the actual selection.
+//
+// On the read-only detail screen the SAME slot is the RETURN's own total
+// (`detail.totalLitres`), so there it is correct and it stays.
+//
+// One component, one optional `litres`. Forking it would reintroduce exactly
+// the drift step 12 closed — and the divergence is real, so it belongs in the
+// signature where a reader meets it.
+//
+// LAYOUT: date hard LEFT, invoice hard RIGHT, pushed apart across the full row
+// with NO separator between them. A separator earns its place between two
+// things that sit together; across a full-width gap it is just a mark.
 export function CiHeaderStrip({
   isoDate,
   invoiceNo,
@@ -212,21 +224,24 @@ export function CiHeaderStrip({
   /** A blank invoice is NORMAL — 5% of dispatched bills have none when the CI
    *  is raised and SAP sends it later. Said in words, never an em-dash. */
   invoiceNo: string | null;
-  litres: number;
+  /**
+   * OMIT on the create flow. Present only where the figure is the RETURN's own
+   * total — see the block above. There is no default: a caller must decide.
+   */
+  litres?: number;
 }): React.JSX.Element {
   return (
-    <div className="bg-white border-b border-gray-200 shrink-0 px-4 py-3 flex items-center gap-3">
-      {/* ONE group, so its separator always has something on both sides. */}
-      <span className={STRIP_MUTED + " truncate min-w-0"}>
-        {formatCiDay(isoDate)}
-        <span className="text-[#c3c9d0]">{" · "}</span>
+    <div className="bg-white border-b border-gray-200 shrink-0 px-4 py-3 flex items-center justify-between gap-3">
+      <span className={STRIP_MUTED + " shrink-0"}>{formatCiDay(isoDate)}</span>
+      <span className={STRIP_VALUE + " truncate min-w-0 text-right"}>
         {invoiceNo ?? "No invoice yet"}
       </span>
-      {/* A SEPARATE group at the right edge — NO leading separator. */}
-      <span className={STRIP_VALUE + " tabular-nums shrink-0 ml-auto"}>
-        {litres}
-        <span className={UNIT_SUFFIX}>{" L"}</span>
-      </span>
+      {litres !== undefined && (
+        <span className={STRIP_VALUE + " tabular-nums shrink-0"}>
+          {litres}
+          <span className={UNIT_SUFFIX}>{" L"}</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -267,6 +282,15 @@ export const SHEET_NOTE = "px-4 py-6 text-[13px]";
 /** A text ACTION inside a sheet ("More") — the option row's size, in teal. */
 export const SHEET_ACTION =
   "w-full text-left px-4 py-3.5 text-[15px] font-semibold text-teal-700 active:bg-gray-50";
+
+/**
+ * A pack chip in the pre-submit summary — Picking's FamilyChip token
+ * (card-atoms.tsx:196), the same one the result card's shelf uses. These are
+ * STATEMENTS, not filters: nothing here is tappable, so they take the chip's
+ * look and none of its behaviour.
+ */
+export const SUMMARY_CHIP =
+  "shrink-0 whitespace-nowrap text-[10.5px] font-semibold rounded-[7px] py-[3px] px-[8px] text-[#667085] bg-[#eef1f5]";
 
 /** A typed value. FACT_VALUE's size and colour WITHOUT its weight: what he has
  *  typed is not yet a recorded fact, and bolding a draft overstates it. */
