@@ -680,22 +680,36 @@ function CiCard({
       // Row 2 — the dealer, with the return's size on the right.
       name={row.customerName}
       value={`${row.totalLitres} L`}
-      // Row 3 — the bill it came off, and the status pill.
-      meta={`OBD ${row.obdNumber}`}
+      // Row 3 — DATE FIRST, THEN THE INVOICE NUMBER (step 10). The OBD used to
+      // hold this slot and is GONE from the card: he matches a CI against a
+      // paper invoice, and the OBD is a number he never reads off paper. Date
+      // leads because it is how he narrows a dealer's several returns before
+      // he reads any number at all.
+      meta={[formatDay(row.invoiceDate), row.invoiceNo ?? "No invoice yet"].join(" · ")}
       // The status WORD, never a colour-only signal — it says the same thing to
-      // a reader who cannot tell amber from green. Tones are the mockup's:
-      // `.chip.amber` while billing still holds it, `.chip.green` once closed.
+      // a reader who cannot tell amber from green.
       pillLabel={done ? "Done" : "With billing"}
       pillTone={done ? "green" : "amber"}
-      // Row 4 — the shelf. Kind first, then size, because "Full bill" is the
-      // fact a wrong assumption costs most on.
-      chips={[
-        row.returnType === "full" ? "Full bill" : "Part",
-        `${row.lineCount} line${row.lineCount === 1 ? "" : "s"}`,
-        `${row.totalTins} tins`,
-      ]}
+      // Row 4 — ONE chip (step 10). The line and tin counts moved to the detail
+      // screen's "Lines" heading: on the card they were three numbers competing
+      // with the litres two rows above, and none of them is why he picks a card.
+      chips={[row.returnType === "full" ? "Full bill" : "Part"]}
     />
   );
+}
+
+/** "31 Aug" from a plain ISO date. Blank → em-dash.
+ *  ⚠ NO YEAR on the card — the window is a few weeks and the year is width,
+ *  not information. The detail screen carries the full date. */
+function formatDay(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "short",
+  });
 }
 
 /** "12:20" in IST. Blank input → em-dash; never a fabricated clock. */

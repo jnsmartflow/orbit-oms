@@ -419,6 +419,18 @@ const BOARD_SELECT = {
   returnType: true,
   submittedAt: true,
   closedAt: true,
+  // The snapshots — the FALLBACK half of the invoice rule below.
+  invoiceNo: true,
+  invoiceDate: true,
+  // 🔴 THE LIVE HALF. ci_returns.invoiceNo's own comment states the rule: any
+  // screen reads the invoice number THROUGH THE ORDER at render time and falls
+  // back to the snapshot, never the reverse, so a number SAP sends after the CI
+  // was raised simply appears. This relation is what makes the card obey it.
+  //
+  // ⚠ A JOIN, NOT A SECOND QUERY. Adding `order` to the select costs one join
+  // on an indexed FK across a board that holds a day's work; a per-row lookup
+  // would be the N+1 the batch-and-match shape everywhere else exists to avoid.
+  order: { select: { invoiceNo: true, invoiceDate: true } },
   lines: { select: { returnedQty: true, returnedQtyLitres: true } },
 } as const;
 
@@ -434,6 +446,16 @@ function toBoardRow(r: BoardRow): CiBoardRow {
     status: asCiStatus(r.status),
     customerName: r.customerName ?? "(Unmatched)",
     obdNumber: r.obdNumber,
+    // Live first, snapshot second. Never the reverse.
+    invoiceNo: r.order?.invoiceNo ?? r.invoiceNo,
+    invoiceDate: (r.order?.invoiceDate ?? r.invoiceDate)
+      // ⚠ NO IST SHIFT. `invoiceDate` is `@db.Date` — a calendar day stored at
+      // UTC midnight, not an instant — so shifting it would move some dates a
+      // day forward. getCiDetail formats the SAME column the same way (its
+      // `isoDate(...)` call takes no shift either), and the card and the detail
+      // screen must never disagree about what day a bill is from.
+      ? isoDate((r.order?.invoiceDate ?? r.invoiceDate) as Date)
+      : null,
     returnType: r.returnType as CiReturnType,
     lineCount: r.lines.length,
     totalTins: r.lines.reduce((s, l) => s + l.returnedQty, 0),

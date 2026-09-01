@@ -107,9 +107,13 @@ export function CiNewReturn({
    * Picking's board has a list to show before you search; the New tab has
    * NOTHING else on it — its entire job is "find the bill" — so landing with
    * the strip closed would be landing on a blank screen with a hidden control.
-   * The ⌕ still toggles it, and Cancel still closes it.
+   *
+   * ⚠ ONLY THE ⌕ TOGGLES THIS. Cancel does NOT close the strip any more (step
+   * 10) — it clears the text and keeps the field. See its handler for why.
    */
   const [searchOpen, setSearchOpen] = useState(true);
+  /** So Cancel can hand focus straight back — see its handler. */
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [hits, setHits] = useState<CiSearchHit[]>([]);
   const [searchedTerm, setSearchedTerm] = useState<string | null>(null);
 
@@ -946,6 +950,7 @@ export function CiNewReturn({
             <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5">
               <Search size={16} className="text-gray-400 shrink-0" />
               <input
+                ref={searchInputRef}
                 autoFocus
                 type="text"
                 value={query}
@@ -966,15 +971,31 @@ export function CiNewReturn({
                 className="flex-1 bg-transparent border-none outline-none text-[15px] text-gray-900 placeholder:text-gray-400"
               />
             </div>
+            {/* ═══════════════════════════════════════════════════════════
+                🔴 CANCEL CLEARS THE TEXT AND KEEPS THE FIELD (step 10).
+                ═══════════════════════════════════════════════════════════
+                It used to HIDE the strip, and that was a trap: with the strip
+                gone the New tab is an empty screen, and the only way back to
+                searching was to switch tabs and come back — the ⌕ was there but
+                he had just watched the field vanish, so it did not read as the
+                way to undo that.
+
+                Cancel now does what its position implies: empties the box and
+                LEAVES IT, focus retained, ready for the next number. The ⌕ in
+                the header still toggles the strip for anyone who wants it gone. */}
             <button
               type="button"
               onClick={() => {
-                setSearchOpen(false);
                 setQuery("");
                 setHits([]);
                 dispatchedRef.current = null;
                 setSearchedTerm(null);
                 setStep("search");
+                // Focus stays in the field. `autoFocus` only fires on mount and
+                // the input never unmounts here, so the keyboard would otherwise
+                // drop away the moment he cleared — which is the one moment he
+                // is certainly about to type again.
+                searchInputRef.current?.focus();
               }}
               className="text-[13px] font-semibold text-teal-700 px-1 shrink-0"
             >

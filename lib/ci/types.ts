@@ -154,6 +154,20 @@ export interface CiBoardRow {
   status: CiStatus;
   customerName: string;
   obdNumber: string;
+  /**
+   * 🔴 LIVE THROUGH `orderId`, WITH THE SNAPSHOT AS FALLBACK — never the
+   * reverse (spec §4, and the rule written on ci_returns.invoiceNo itself).
+   * 5% of dispatched bills have no invoice number when the CI is raised and SAP
+   * sends it later; reading live means it simply appears, with no back-fill job
+   * that could rewrite a closed document.
+   *
+   * Added for the card's meta row (step 10): the supervisor matches a CI to a
+   * paper invoice, and the OBD — which this replaced — is a number he never
+   * reads off paper.
+   */
+  invoiceNo: string | null;
+  /** Same live-then-snapshot rule as `invoiceNo`. "YYYY-MM-DD". */
+  invoiceDate: string | null;
   returnType: CiReturnType;
   lineCount: number;
   totalLitres: number;
