@@ -6,15 +6,14 @@ import { CiDetailsStep } from "./details-step";
 import {
   CARD_PAD,
   CARD_SURFACE,
+  CiHeaderStrip,
   CiSpineRow,
   CiSpineValue,
-  FACT_LABEL,
   SECTION_COUNT,
   SECTION_HEAD,
   SECTION_INSET,
-  STRIP_MUTED,
-  STRIP_VALUE,
   UNIT_SUFFIX,
+  formatCiDay,
 } from "./spine";
 import type { CiBillResult, CiDetail, CiReasonOption, CiBillLine } from "@/lib/ci/types";
 
@@ -95,7 +94,7 @@ export function CiSubmittedDetail({
   editable,
   raced,
   materialMoved,
-  onMaterialMoved,
+  onOpenMaterial,
   receivedOn,
   onReceivedOn,
   reason,
@@ -121,7 +120,8 @@ export function CiSubmittedDetail({
    *  would be gone before he looked up from the shelf. */
   raced: string | null;
   materialMoved: "moved" | "not_moved";
-  onMaterialMoved: (v: "moved" | "not_moved") => void;
+  /** Opens the material sheet — the board owns it, as it owns the reason one. */
+  onOpenMaterial: () => void;
   receivedOn: string;
   onReceivedOn: (v: string) => void;
   reason: CiReasonOption | null;
@@ -183,28 +183,17 @@ export function CiSubmittedDetail({
       </div>
 
       {/* ── WHITE STRIP — date · invoice number → litres, right ───────────────
+          🔴 ONE IMPLEMENTATION, SHARED WITH THE ENTRY STEP (step 12). It was
+          hand-rolled on both screens, which is where the stray separator lived —
+          see CiHeaderStrip in spine.tsx.
+
           ⚠ THE PART/FULL TAG HAS LEFT THIS STRIP (step 10). It is the "Return"
           row in the card below now, and nothing on this screen is said twice. */}
-      <div
-        className={
-          "bg-white border-b border-gray-200 shrink-0 py-3 flex items-center justify-between gap-3 " +
-          CARD_PAD
-        }
-      >
-        {/* 🔴 15px — see spine.tsx. This is the most-read line on the screen
-            and it was set BELOW the facts underneath it. */}
-        <span className={STRIP_MUTED + " truncate min-w-0"}>
-          {formatDay(detail?.invoiceDate ?? null)}
-          <span className="text-[#c3c9d0]">{" · "}</span>
-          {/* A blank invoice is NORMAL — 5% of bills have none when the CI is
-              raised and SAP sends it later. Said in words, never an error. */}
-          {detail?.invoiceNo ?? "No invoice yet"}
-        </span>
-        <span className={STRIP_VALUE + " tabular-nums shrink-0"}>
-          {detail?.totalLitres ?? 0}
-          <span className={UNIT_SUFFIX}>{" L"}</span>
-        </span>
-      </div>
+      <CiHeaderStrip
+        isoDate={detail?.invoiceDate ?? null}
+        invoiceNo={detail?.invoiceNo ?? null}
+        litres={detail?.totalLitres ?? 0}
+      />
 
       {/* ── THE RACE BAND ────────────────────────────────────────────────────
           🔴 THE ONE EXCEPTION TO "NEUTRAL", and it earns it: billing closed this
@@ -246,7 +235,7 @@ export function CiSubmittedDetail({
           {editable ? (
             <CiDetailsStep
               materialMoved={materialMoved}
-              onMaterialMoved={onMaterialMoved}
+              onOpenMaterial={onOpenMaterial}
               receivedOn={receivedOn}
               onReceivedOn={onReceivedOn}
               reason={reason}
@@ -257,7 +246,7 @@ export function CiSubmittedDetail({
           ) : (
             <div className={CARD_SURFACE + " mt-3"}>
               <CiSpineRow label="Received on">
-                <CiSpineValue>{formatDay(detail.materialReceivedDate)}</CiSpineValue>
+                <CiSpineValue>{formatCiDay(detail.materialReceivedDate)}</CiSpineValue>
               </CiSpineRow>
               {/* 🔴 THE ONLY PLACE PART/FULL IS SAID on this screen now. */}
               <CiSpineRow label="Return">
@@ -353,7 +342,7 @@ export function CiSubmittedDetail({
           {closed ? (
             <div className={CARD_SURFACE}>
               <CiSpineRow label="CI date">
-                <CiSpineValue>{formatDay(detail.ciDate)}</CiSpineValue>
+                <CiSpineValue>{formatCiDay(detail.ciDate)}</CiSpineValue>
               </CiSpineRow>
               <CiSpineRow label="CI number" last>
                 <CiSpineValue mono>{detail.sapCiNumber ?? "—"}</CiSpineValue>
@@ -469,15 +458,3 @@ function ReadOnlyLines({ detail }: { detail: CiDetail }): React.JSX.Element {
   );
 }
 
-/** "22 Aug 2026" from an ISO date. Blank → em-dash. */
-function formatDay(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso.length === 10 ? `${iso}T00:00:00Z` : iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", {
-    timeZone: "Asia/Kolkata",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}

@@ -6,13 +6,17 @@ import { CiSheet } from "./sheet";
 import {
   CARD_PAD,
   CARD_SURFACE,
-  CHIP_BASE,
-  CHIP_OFF,
-  CHIP_ON,
+  CiSheetOption,
   CiSpineRow,
   CiSpineValue,
   FACT_LABEL,
-  ROW_HAIRLINE,
+  ROW_GLYPH,
+  INPUT_TEXT,
+  ROW_GLYPH_SIZE,
+  SHEET_ACTION,
+  SHEET_NOTE,
+  SHEET_TITLE,
+  formatCiDay,
 } from "./spine";
 import type { CiReasonOption } from "@/lib/ci/types";
 
@@ -53,7 +57,7 @@ import type { CiReasonOption } from "@/lib/ci/types";
 
 export function CiDetailsStep({
   materialMoved,
-  onMaterialMoved,
+  onOpenMaterial,
   receivedOn,
   onReceivedOn,
   reason,
@@ -62,7 +66,9 @@ export function CiDetailsStep({
   onRemark,
 }: {
   materialMoved: "moved" | "not_moved";
-  onMaterialMoved: (v: "moved" | "not_moved") => void;
+  /** Opens the material sheet. The step no longer sets the value itself — the
+   *  sheet does, through the caller, exactly as Reason already worked. */
+  onOpenMaterial: () => void;
   /** "YYYY-MM-DD". Defaulted to today IST by the caller. */
   receivedOn: string;
   onReceivedOn: (v: string) => void;
@@ -87,55 +93,52 @@ export function CiDetailsStep({
 
           ⚠ `opacity-0`, NOT `hidden` or `display:none` — a hidden input cannot
           be tapped and cannot open a picker. It must stay in the layout. */}
-      <div className={CARD_PAD + " py-3 flex items-center justify-between gap-4 relative " + ROW_HAIRLINE}>
-        <span className={FACT_LABEL + " shrink-0"}>Received on</span>
-        <span className="min-w-0 flex items-center justify-end gap-2 text-right">
-          <CiSpineValue>{formatDay(receivedOn)}</CiSpineValue>
-          {/* The glyph is what says "this opens something". */}
-          <CalendarDays size={15} className="text-[#98a2b3] shrink-0" />
-        </span>
-        <input
-          type="date"
-          value={receivedOn}
-          onChange={(e) => onReceivedOn(e.target.value)}
-          aria-label="Date the material was received"
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        />
-      </div>
+      <CiSpineRow
+        label="Received on"
+        overlay={
+          <input
+            type="date"
+            value={receivedOn}
+            onChange={(e) => onReceivedOn(e.target.value)}
+            aria-label="Date the material was received"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          />
+        }
+      >
+        <CiSpineValue>{formatCiDay(receivedOn)}</CiSpineValue>
+        {/* The glyph is what says "this opens something". */}
+        <CalendarDays size={ROW_GLYPH_SIZE} className={ROW_GLYPH} />
+      </CiSpineRow>
 
       {/* ── MATERIAL ───────────────────────────────────────────────────────
-          🔴 MOVED FIRST, AND MOVED IS THE DEFAULT (owner ruling, step 11).
-          The order flipped and the pre-selected value with it. This is a UI
-          default ONLY: the column stays nullable, chk_ci_returns_complete_when_
-          not_draft still requires it on any non-draft row, and the submit
-          route's validation is untouched — it will still refuse a CI that
-          arrives without one.
+          🔴 A SPINE ROW THAT OPENS A SHEET — IDENTICAL TO REASON (step 12).
 
-          🔴 THE SELECTED SIDE IS DARK-FILLED — Picking's TypeFilterPills token
-          (see spine.tsx). The segmented control this replaces put WHITE on a
-          white pill inside a grey trough, which on a depot phone in daylight is
-          no signal at all: he could not tell which side he had picked. */}
-      <CiSpineRow label="Material">
-        <span className="flex items-center gap-1.5 shrink-0">
-          {(["moved", "not_moved"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => onMaterialMoved(v)}
-              aria-pressed={materialMoved === v}
-              className={CHIP_BASE + " " + (materialMoved === v ? CHIP_ON : CHIP_OFF)}
-            >
-              {v === "moved" ? "Moved" : "Not moved"}
-            </button>
-          ))}
-        </span>
+          It was a pair of CHIPS sitting on the right of the row. Two problems,
+          and the second is why they are gone rather than restyled:
+            • the chips set their own height and pushed this row taller than the
+              two beside it, so a card of four rows looked broken;
+            • Material and Reason are the SAME KIND OF QUESTION — pick one of a
+              short closed list — and answering them two different ways made the
+              card read as two unrelated controls.
+
+          Material and Reason are now visually indistinguishable as rows: same
+          ROW_BASE, same CiSpineValue, same ROW_GLYPH chevron, same sheet. If
+          they ever differ in a single token, one of them is wrong.
+
+          🔴 MOVED IS FIRST AND IS THE DEFAULT (owner ruling, step 11) — a UI
+          default ONLY. The column stays nullable,
+          chk_ci_returns_complete_when_not_draft still requires it on any
+          non-draft row, and the submit route's validation is untouched. */}
+      <CiSpineRow label="Material" onClick={onOpenMaterial}>
+        <CiSpineValue>{materialMoved === "moved" ? "Moved" : "Not moved"}</CiSpineValue>
+        <ChevronRight size={ROW_GLYPH_SIZE} className={ROW_GLYPH} />
       </CiSpineRow>
 
       {/* ── REASON — opens the sheet. The only required field beyond the lines.
           The whole row is the target, and the chevron says so. */}
       <CiSpineRow label="Reason" onClick={onOpenReasons} last>
         <CiSpineValue muted={reason === null}>{reason?.label ?? "Choose"}</CiSpineValue>
-        <ChevronRight size={15} className="text-[#98a2b3] shrink-0" />
+        <ChevronRight size={ROW_GLYPH_SIZE} className={ROW_GLYPH} />
       </CiSpineRow>
 
       {/* ── REMARK — THE ONE ALLOWED EXCEPTION TO THE SPINE ─────────────────
@@ -148,35 +151,24 @@ export function CiDetailsStep({
           spine above, and no hairline under it. That border is what stops the
           exception reading as a broken row.
 
-          Optional, and the placeholder says so rather than a note underneath
-          (spec §7: no helper copy). */}
+          🔴 NO PLACEHOLDER (step 12). It read "Optional", and that word was
+          doing nothing: the field IS optional, he leaves it blank, and nobody
+          has ever been stopped by an empty remark. What placeholder text
+          actually costs is a grey line that looks like a value already entered
+          — on a glance down the card, "Optional" reads as content. The label
+          and an empty box say everything. Do not put different words here. */}
       <div className={CARD_PAD + " pt-3 pb-3.5 border-t border-gray-200"}>
         <div className={FACT_LABEL}>Remark</div>
         <textarea
           value={remark}
           onChange={(e) => onRemark(e.target.value)}
-          placeholder="Optional"
           rows={2}
           aria-label="Remark"
-          className="w-full mt-1.5 text-[13px] text-[#1d2939] bg-transparent outline-none resize-none placeholder:text-[#98a2b3] placeholder:font-medium"
+          className={"w-full mt-1.5 resize-none " + INPUT_TEXT}
         />
       </div>
     </div>
   );
-}
-
-/** "31 Aug 2026" from "YYYY-MM-DD". Matches submitted-detail.tsx's formatter
- *  exactly — the two screens must never print a date differently. */
-function formatDay(iso: string): string {
-  if (!iso) return "—";
-  const d = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", {
-    timeZone: "Asia/Kolkata",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 // ── The reason sheet (frame 7) ───────────────────────────────────────────────
@@ -229,16 +221,16 @@ export function CiReasonSheet({
 
   return (
     <CiSheet label="Reason" onDismiss={onCancel}>
-      <div className="px-[14px] pb-2 text-[15px] font-semibold text-gray-900">Reason</div>
+      <div className={SHEET_TITLE}>Reason</div>
 
-      {error !== null && <p className="px-[14px] py-6 text-[13px] text-[#b42318]">{error}</p>}
+      {error !== null && <p className={SHEET_NOTE + " text-[#b42318]"}>{error}</p>}
 
       {/* Reached only if the sheet is somehow opened before the caller's fetch
           resolves — the details step prefetches, so in practice this never
           paints. `min-h` holds the panel at roughly its filled height so even
           that case does not jump. */}
       {reasons === null && error === null && (
-        <p className="px-[14px] py-6 text-[13px] text-gray-400">Loading…</p>
+        <p className={SHEET_NOTE + " text-gray-400"}>Loading…</p>
       )}
 
       {pinned.map((r) => (
@@ -248,7 +240,7 @@ export function CiReasonSheet({
       {rest.length > 0 && (
         <>
           {/* The divider IS the "three common ones first" rule, drawn. */}
-          <div className="h-px bg-gray-200 mx-[14px] my-1.5" />
+          <div className="h-px bg-gray-200 mx-4 my-1.5" />
           {showMore ? (
             rest.map((r) => (
               <ReasonRow key={r.id} reason={r} selected={r.id === selectedId} onPick={onPick} />
@@ -257,7 +249,7 @@ export function CiReasonSheet({
             <button
               type="button"
               onClick={() => setShowMore(true)}
-              className="w-full text-left px-[14px] py-3.5 text-[15px] font-semibold text-teal-700 active:bg-gray-50"
+              className={SHEET_ACTION}
             >
               More
             </button>
@@ -278,13 +270,49 @@ function ReasonRow({
   onPick: (r: CiReasonOption) => void;
 }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={() => onPick(reason)}
-      className="w-full text-left px-[14px] py-3.5 flex items-center justify-between gap-3 active:bg-gray-50"
-    >
-      <span className="text-[15px] text-gray-900 truncate min-w-0">{reason.label}</span>
-      {selected && <span className="text-teal-600 shrink-0 text-[15px]">✓</span>}
-    </button>
+    <CiSheetOption label={reason.label} selected={selected} onPick={() => onPick(reason)} />
+  );
+}
+
+// ── The material sheet (step 12) ─────────────────────────────────────────────
+
+/**
+ * 🔴 THE SAME CiSheet AS THE REASON PICKER, NOT A SECOND IMPLEMENTATION.
+ * Same shell (components/ci/sheet.tsx), same title type, same option rows
+ * (CiSheetOption in spine.tsx). The two pickers answer the same shape of
+ * question and must look and behave identically; anything either one grows
+ * later belongs in the shared pieces, not in one of them.
+ *
+ * ⚠ TWO OPTIONS AND NO "MORE" DIVIDER — the reason sheet's divider is DATA (the
+ * three pinned reasons above the rest), and there is nothing to pin in a list of
+ * two. MOVED IS FIRST, matching the row's default.
+ *
+ * ⚠ The list is HARDCODED here, and that is correct where the reason list is
+ * not: these two values are the `materialMoved` CHECK constraint itself
+ * (isCiMaterialMoved in lib/ci/types.ts), not depot-editable rows. Adding a
+ * third would be a schema change, and it would fail loudly rather than silently
+ * offering something the submit route refuses.
+ */
+export function CiMaterialSheet({
+  value,
+  onPick,
+  onCancel,
+}: {
+  value: "moved" | "not_moved";
+  onPick: (v: "moved" | "not_moved") => void;
+  onCancel: () => void;
+}): React.JSX.Element {
+  return (
+    <CiSheet label="Material" onDismiss={onCancel}>
+      <div className={SHEET_TITLE}>Material</div>
+      {(["moved", "not_moved"] as const).map((v) => (
+        <CiSheetOption
+          key={v}
+          label={v === "moved" ? "Moved" : "Not moved"}
+          selected={value === v}
+          onPick={() => onPick(v)}
+        />
+      ))}
+    </CiSheet>
   );
 }

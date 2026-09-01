@@ -8,7 +8,7 @@ import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { CiResultCard } from "./result-card";
 import { CiSubmittedDetail } from "./submitted-detail";
 import { CiQtySheet } from "./qty-sheet";
-import { CiReasonSheet } from "./details-step";
+import { CiMaterialSheet, CiReasonSheet } from "./details-step";
 import type {
   CiBillLine,
   CiBillResult,
@@ -102,6 +102,8 @@ export function CiSubmittedBoard({
   const [activePackFilter, setActivePackFilter] = useState("ALL");
   const [sheetLine, setSheetLine] = useState<CiBillLine | null>(null);
   const [reasonSheetOpen, setReasonSheetOpen] = useState(false);
+  /** Material became a sheet in step 12 — same wiring as the reason sheet. */
+  const [materialSheetOpen, setMaterialSheetOpen] = useState(false);
   const [reasons, setReasons] = useState<CiReasonOption[] | null>(null);
   const [reasonsError, setReasonsError] = useState<string | null>(null);
 
@@ -154,11 +156,17 @@ export function CiSubmittedBoard({
   //
   // ONE ENTRY FOR THE WHOLE SESSION: the two sheets close-and-RE-PUSH, so the
   // depth never desyncs and a second back does not fall out of the module.
-  const navStateRef = useRef({ ciOpen, qtyOpen: false, reasonOpen: false });
+  const navStateRef = useRef({
+    ciOpen,
+    qtyOpen: false,
+    reasonOpen: false,
+    materialOpen: false,
+  });
   navStateRef.current = {
     ciOpen,
     qtyOpen: sheetLine !== null,
     reasonOpen: reasonSheetOpen,
+    materialOpen: materialSheetOpen,
   };
 
   function pushScreen(): void {
@@ -175,6 +183,11 @@ export function CiSubmittedBoard({
       }
       if (st.reasonOpen) {
         setReasonSheetOpen(false);
+        pushScreen();
+        return;
+      }
+      if (st.materialOpen) {
+        setMaterialSheetOpen(false);
         pushScreen();
         return;
       }
@@ -542,7 +555,10 @@ export function CiSubmittedBoard({
         editable={editable}
         raced={raced}
         materialMoved={materialMoved}
-        onMaterialMoved={setMaterialMoved}
+        onOpenMaterial={() => {
+          setMaterialSheetOpen(true);
+          pushScreen();
+        }}
         receivedOn={receivedOn}
         onReceivedOn={setReceivedOn}
         reason={reason}
@@ -587,6 +603,19 @@ export function CiSubmittedBoard({
             else next.set(sheetLine.rawLineItemId, qty);
             return next;
           });
+          window.history.back();
+        }}
+      />
+    )}
+
+    {/* THE SAME SHELL AND THE SAME DISMISS PATH AS THE REASON SHEET — every
+        close goes through history.back(). */}
+    {materialSheetOpen && (
+      <CiMaterialSheet
+        value={materialMoved}
+        onCancel={() => window.history.back()}
+        onPick={(v) => {
+          setMaterialMoved(v);
           window.history.back();
         }}
       />
@@ -699,6 +728,8 @@ function CiCard({
 }
 
 /** "31 Aug" from a plain ISO date. Blank → em-dash.
+ *  ⚠ NOT spine.tsx's `formatCiDay`, deliberately: that one carries the YEAR,
+ *  which the detail screens need and a card does not (see below).
  *  ⚠ NO YEAR on the card — the window is a few weeks and the year is width,
  *  not information. The detail screen carries the full date. */
 function formatDay(iso: string | null): string {

@@ -8,9 +8,9 @@ import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { CiLineRows, CiPackChips } from "./line-list";
 import { CiQtySheet } from "./qty-sheet";
-import { CiDetailsStep, CiReasonSheet } from "./details-step";
+import { CiDetailsStep, CiMaterialSheet, CiReasonSheet } from "./details-step";
 import { CiResultCard } from "./result-card";
-import { STRIP_MUTED, STRIP_VALUE, UNIT_SUFFIX } from "./spine";
+import { CiHeaderStrip, formatCiDay } from "./spine";
 import type {
   CiBillLine,
   CiBillResult,
@@ -139,6 +139,10 @@ export function CiNewReturn({
   const [reason, setReason] = useState<CiReasonOption | null>(null);
   const [remark, setRemark] = useState("");
   const [reasonSheetOpen, setReasonSheetOpen] = useState(false);
+  /** Material became a sheet in step 12, so it joins the popstate authority
+   *  below exactly as the reason sheet does — same open, same close, same
+   *  close-and-re-push. */
+  const [materialSheetOpen, setMaterialSheetOpen] = useState(false);
   const [submitted, setSubmitted] = useState<{ ciNumber: string | null } | null>(null);
   // 🔴 THE REASONS ARE FETCHED HERE, NOT IN THE SHEET. The sheet used to fetch
   // in its own mount effect and so painted twice — a ~60px "Loading…" strip
@@ -195,6 +199,7 @@ export function CiNewReturn({
     step: "search" as Step,
     qtySheetOpen: false,
     reasonSheetOpen: false,
+    materialSheetOpen: false,
   });
   // Which success button was tapped. A hardware back from the success screen is
   // treated as "Done" — the CI is submitted either way, and landing him on
@@ -215,8 +220,9 @@ export function CiNewReturn({
       step,
       qtySheetOpen: sheetLine !== null,
       reasonSheetOpen,
+      materialSheetOpen,
     };
-  }, [billOpen, step, sheetLine, reasonSheetOpen]);
+  }, [billOpen, step, sheetLine, reasonSheetOpen, materialSheetOpen]);
 
   // Held in a ref so the once-registered handler can call the latest closure.
   const finishRef = useRef<(intent: "new" | "done") => void>(() => {});
@@ -236,6 +242,11 @@ export function CiNewReturn({
       }
       if (s.reasonSheetOpen) {
         setReasonSheetOpen(false);
+        pushScreen();
+        return;
+      }
+      if (s.materialSheetOpen) {
+        setMaterialSheetOpen(false);
         pushScreen();
         return;
       }
@@ -704,22 +715,11 @@ export function CiNewReturn({
             screen reads, so the two cannot drift. This is the most-read line in
             the flow and it was set at 12.5px, BELOW the facts underneath it. */}
         {step !== "success" && (
-        <div className="bg-white border-b border-gray-200 shrink-0 px-[14px] py-3 flex items-center gap-2">
-          <span className={STRIP_MUTED + " shrink-0"}>
-            {formatDay(bill ? (bill.invoiceDate ?? bill.obdDateTime) : null)}
-          </span>
-          <span className="text-[#c3c9d0]">·</span>
-          {/* Blank invoice is NORMAL — 5% of dispatched bills have none yet and
-              SAP sends it later. Said in words, never an error. */}
-          <span className={STRIP_MUTED + " truncate min-w-0"}>
-            {bill?.invoiceNo ?? "No invoice yet"}
-          </span>
-          <span className="text-[#c3c9d0]">·</span>
-          <span className={STRIP_VALUE + " tabular-nums shrink-0 ml-auto"}>
-            {bill?.totalLitres ?? 0}
-            <span className={UNIT_SUFFIX}>{" L"}</span>
-          </span>
-        </div>
+          <CiHeaderStrip
+            isoDate={bill ? (bill.invoiceDate ?? bill.obdDateTime) : null}
+            invoiceNo={bill?.invoiceNo ?? null}
+            litres={bill?.totalLitres ?? 0}
+          />
         )}
 
         {bill === null ? (
@@ -773,7 +773,7 @@ export function CiNewReturn({
             <div className="flex-1 min-h-0 overflow-y-auto">
             <CiDetailsStep
               materialMoved={materialMoved}
-              onMaterialMoved={setMaterialMoved}
+              onOpenMaterial={() => setMaterialSheetOpen(true)}
               receivedOn={receivedOn}
               onReceivedOn={setReceivedOn}
               reason={reason}
@@ -881,6 +881,20 @@ export function CiNewReturn({
               </button>
             </div>
           </>
+        )}
+
+        {/* THE SAME SHELL AND THE SAME DISMISS PATH AS THE REASON SHEET — every
+            close goes through history.back(), so the one popstate authority
+            stays the only thing that closes anything. */}
+        {materialSheetOpen && (
+          <CiMaterialSheet
+            value={materialMoved}
+            onCancel={() => window.history.back()}
+            onPick={(v) => {
+              setMaterialMoved(v);
+              window.history.back();
+            }}
+          />
         )}
 
         {reasonSheetOpen && (
@@ -1103,7 +1117,7 @@ export function CiNewReturn({
               key={h.orderId}
               // Row 1 — the OBD, and when the bill went out.
               identifier={h.obdNumber}
-              caption={formatDay(h.invoiceDate ?? h.obdDateTime)}
+              caption={formatCiDay(h.invoiceDate ?? h.obdDateTime)}
               // Row 2 — the dealer, with the bill's size on the right.
               name={h.customerName}
               value={`${h.totalLitres} L`}
@@ -1190,15 +1204,3 @@ function CiSuccess({
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
-/** "22 Aug 2026" from an ISO date or instant. Blank input → em-dash. */
-function formatDay(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso.length === 10 ? `${iso}T00:00:00Z` : iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", {
-    timeZone: "Asia/Kolkata",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
