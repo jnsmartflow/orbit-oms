@@ -15,10 +15,8 @@ import {
   ROW_GLYPH_SIZE,
   SHEET_ACTION,
   SHEET_NOTE,
-  SECTION_HEAD,
-  SECTION_INSET,
+  CiSectionHead,
   SHEET_TITLE,
-  SUMMARY_CHIP,
   formatCiDay,
 } from "./spine";
 import type { CiReturnSummary } from "@/lib/ci/derive";
@@ -208,7 +206,7 @@ export function CiDetailsStep({
  * chips WRAP and come last — they are the breakdown behind the quantity above
  * them, and they are statements, not filters: nothing here is tappable.
  */
-function CiReturnSummaryBlock({
+export function CiReturnSummaryBlock({
   mode,
   totals,
 }: {
@@ -217,9 +215,7 @@ function CiReturnSummaryBlock({
 }): React.JSX.Element {
   return (
     <>
-      <div className={"pt-4 pb-2 " + SECTION_INSET}>
-        <span className={SECTION_HEAD}>Material received</span>
-      </div>
+      <CiSectionHead label="Material received" />
       <div className={CARD_SURFACE}>
         {/* 🔴 THE ONLY PLACE THE RETURN TYPE IS STATED on this step. The bill
             screen behind it carries the Full bill / Part control; here it is a
@@ -233,19 +229,16 @@ function CiReturnSummaryBlock({
           </CiSpineValue>
         </CiSpineRow>
         {totals.packs.length > 0 && (
-          /* ⚠ SMALLEST PACK FIRST — the order is derive.ts's, via the shared
-             sortPackLabels, which is the SAME function the line list's chip
-             strip uses on the previous screen. The two cannot disagree.
-             ⚠ WRAPS, NEVER SCROLLS: Picking moved off an overflow-x chip strip
-             on 2026-08-20 and its source says it must not go back — chips past
-             the right edge sat behind a drag nobody had reason to believe in. */
-          <div className={CARD_PAD + " pb-3.5 flex flex-wrap gap-1.5"}>
-            {totals.packs.map((p) => (
-              <span key={p.label} className={SUMMARY_CHIP}>
-                {p.label} × {p.tins}
-              </span>
-            ))}
-          </div>
+          /* ⚠ A SPINE ROW, NOT CHIPS (step 14). The value WRAPS on the right and
+             the row grows — which is why CiSpineRow's right side has always
+             wrapped rather than truncated. Smallest pack first, from derive.ts's
+             shared packBreakdown, which sorts with the SAME sortPackLabels the
+             bill screen's pack filter uses; the screens cannot disagree. */
+          <CiSpineRow label="Packs" last>
+            <CiSpineValue>
+              {totals.packs.map((p) => `${p.label} × ${p.tins}`).join(" · ")}
+            </CiSpineValue>
+          </CiSpineRow>
         )}
       </div>
     </>

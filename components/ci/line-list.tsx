@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
-import type { CiBillLine } from "@/lib/ci/types";
+import { CARD_PAD, CARD_SURFACE, MUTED_NOTE, ROW_HAIRLINE, UNIT_SUFFIX } from "./spine";
+import type { CiBillLine, CiDetailLine } from "@/lib/ci/types";
 
 // The supervisor's line list — COPIED from picking's detail screen, not
 // approximated. Every className, padding, radius, size, weight and colour below
@@ -154,146 +155,184 @@ export function CiLineRows({
 
   if (lines.length === 0) {
     return (
-      <p className="text-[13px] text-gray-400 text-center py-10">
+      <p className={MUTED_NOTE + " text-center py-10"}>
         This bill has no active lines.
       </p>
     );
   }
   if (visible.length === 0) {
-    return <p className="text-[13px] text-gray-400 text-center py-10">No lines match.</p>;
+    return <p className={MUTED_NOTE + " text-center py-10"}>No lines match.</p>;
   }
 
   return (
-    <>
-      {visible.map((line) => (
-        <CiLineRow
-          key={line.rawLineItemId}
-          line={line}
-          mode={mode}
-          returnedQty={returned.get(line.rawLineItemId) ?? null}
-          onClick={() => onOpenLine(line)}
-        />
-      ))}
-    </>
+    <div className={CARD_SURFACE}>
+      {visible.map((line, i) => {
+        // On Full bill every line is back in full; on Part, only what he entered.
+        const qty = mode === "full" ? line.deliveryQty : (returned.get(line.rawLineItemId) ?? null);
+        return (
+          <CiLineRow
+            key={line.rawLineItemId}
+            skuCode={line.skuCode}
+            description={line.description}
+            pack={line.pack}
+            qty={qty}
+            deliveryQty={line.deliveryQty}
+            // ⚠ ON FULL BILL THE ROW IS NOT TAPPABLE — omitting onClick renders
+            // a <div>. There is nothing to decide: every line comes back at its
+            // delivered quantity and the SERVER computes that list, so a
+            // tappable row would be a control that changes nothing.
+            onClick={mode === "full" ? undefined : () => onOpenLine(line)}
+            last={i === visible.length - 1}
+          />
+        );
+      })}
+    </div>
   );
 }
 
 /**
- * ONE white rounded card — picking's card, matched:
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE ONE CI LINE ROW. THERE WAS A SECOND ONE; IT IS GONE (step 14).
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- *   [ full-height pack panel | divider ] [ mono SKU ] [ qty ]
- *                                        [ description ]
+ * Until now the same CI line rendered two different ways: this file drew a
+ * FLOATING WHITE CARD with a 56px pack gutter down its left edge, while
+ * components/ci/submitted-detail.tsx drew a full-bleed row with the pack folded
+ * into the description line. Same data, two components, and they had already
+ * drifted — the gutter version also sat inset from the screen edge while every
+ * other row on the screen ran to the 16px gutter, so the line list visibly did
+ * not line up with the card above it.
  *
- * ⚠ ON FULL BILL THE ROW IS NOT TAPPABLE and renders as a plain <div>, exactly
- * as picking's does. There is nothing to decide: every line comes back at its
- * delivered quantity, and the SERVER computes that list (the client sends no
- * pairs at all). A tappable row here would be a control that changes nothing.
+ * 🔴 THE FULL-BLEED ROW SURVIVED, and the reason is not preference. These
+ * screens are made of ROWS on a spine (spine.tsx): one card surface, hairlines
+ * between, every label on one left edge and every value ending on one right
+ * edge. A floating card with its own shadow, its own radius and its own gutter
+ * is a different KIND of object — it was picking's card, correctly copied into a
+ * screen that has since stopped being picking's board. The pack moved inline
+ * beside the description, where it reads as what it is: a qualifier on the SKU,
+ * not a column.
  *
- * ⚠ ON PART it is a <button>, and:
+ * ⚠ TAPPABLE IS A PROP, NOT A SECOND COMPONENT. `onClick` omitted renders a
+ * <div>; supplied renders a <button>. That is the ONLY structural difference
+ * between an editable line and a read one, and it is the whole of it.
  *
- * 🔴 `items-stretch` IS LOAD-BEARING, AND IT IS HERE BECAUSE THIS IS A
- * <button> WHERE PICKING USES A <div>. Tailwind's `flex` sets display only; the
- * initial `align-items: stretch` is what makes the pack panel fill the card. A
- * <div> gets that initial value — a <button> does NOT, because the UA stylesheet
- * supplies its own align-items for buttons. That is why the panel rendered short
- * with white above and below it in MRN, which hit this exact bug. CI needs the
- * button for tappability and a11y, so the alignment has to be stated.
+ * ⚠ WHAT SURVIVED FROM THE CARD, because it is behaviour and not decoration:
+ *   • the untouched dash — an unpicked Part line shows "—", never "0". Nothing
+ *     has been decided about it, and 0 claims "none came back", which is a
+ *     different statement.
+ *   • the PARTIAL treatment — red, with "of 8" underneath. Some came back and
+ *     not all is the one state a checker has to look at twice, and the "of N"
+ *     appears ONLY there, where it says something the number above does not.
+ *   • the 26px/800 quantity. Picking's, and one of the only two things in this
+ *     module that carries real weight.
  */
-function CiLineRow({
-  line,
-  mode,
-  returnedQty,
+export function CiLineRow({
+  skuCode,
+  description,
+  pack,
+  qty,
+  deliveryQty,
+  litres,
   onClick,
+  last = false,
 }: {
-  line: CiBillLine;
-  mode: "full" | "part";
-  returnedQty: number | null;
-  onClick: () => void;
+  skuCode: string;
+  /** Null is NORMAL — ~5.9% of active lines resolve in neither catalog table.
+   *  The bare code stands and the name is absent; never an error treatment. */
+  description: string | null;
+  pack: string | null;
+  /** null = UNTOUCHED (a Part line he has not picked). Renders the dash. */
+  qty: number | null;
+  /** What SAP delivered. Enables the partial treatment when qty is below it;
+   *  pass null where the comparison is meaningless. */
+  deliveryQty: number | null;
+  /** Shown under the quantity when present. The submitted screens carry it
+   *  (it is stored on the line); the bill screen has nothing to show yet. */
+  litres?: number | null;
+  /** Omitted ⇒ a <div>. Supplied ⇒ a <button>. */
+  onClick?: () => void;
+  last?: boolean;
 }): React.JSX.Element {
-  // On Full bill every line is back in full; on Part, only what he entered.
-  const qty = mode === "full" ? line.deliveryQty : returnedQty;
-  const touched = mode === "full" || returnedQty !== null;
-  // Partial return — some came back, not all. The mockup marks this red: it is
-  // the one state a checker has to look at twice.
-  const partial =
-    mode === "part" && returnedQty !== null && returnedQty < line.deliveryQty;
+  const touched = qty !== null;
+  const partial = qty !== null && deliveryQty !== null && qty < deliveryQty;
+
+  const cls =
+    CARD_PAD +
+    " py-2.5 flex items-center gap-3 w-full text-left " +
+    (last ? "" : ROW_HAIRLINE);
 
   const inner = (
     <>
-      {/* PACK PANEL — picking verbatim. Fixed 56px WIDE, FULL CARD HEIGHT via
-          items-stretch above. It carries NO height and NO vertical margin on
-          purpose — either would stop it filling. Slate when known, muted
-          em-dash when missing; never an error style. This column is what makes
-          packs align down the left edge and must not flex. */}
-      <span className="w-14 shrink-0 bg-[#f8fafa] border-r border-gray-200 flex items-center justify-center px-1 py-2.5">
-        <span
-          className="text-[13px] font-bold text-center"
-          style={{ color: line.pack !== null ? "#3d4650" : "#9ca3af" }}
-        >
-          {line.pack ?? "—"}
-        </span>
-      </span>
-
-      {/* BODY — SKU loudest, product name muted underneath. Picking's exact two
-          lines. An unmastered code (~5.9% of active lines) shows the em-dash and
-          stays fully returnable — never an error treatment. */}
-      <span
-        className={
-          "flex-1 min-w-0 px-3 py-2.5 flex flex-col justify-center transition-opacity " +
-          (mode === "part" && returnedQty === null ? "opacity-55" : "")
-        }
-      >
+      <span className={"min-w-0 flex-1 " + (touched ? "" : "opacity-55")}>
+        {/* The SKU is the loudest thing in the list — picking's mono 17/700. */}
         <span className="block font-mono text-[17px] font-bold text-gray-900 truncate">
-          {line.skuCode}
+          {skuCode}
         </span>
+        {/* PACK INLINE, ahead of the name: it is a qualifier on the code, and a
+            56px column of it was competing with the code it qualifies. */}
         <span className="block text-[12px] text-gray-500 truncate mt-0.5">
-          {line.description ?? "—"}
+          {[pack, description].filter(Boolean).join(" · ") || "—"}
         </span>
       </span>
-
-      {/* QTY — picking's column verbatim: shrink-0, px-3.5, ONE centred value.
-          Untouched Part lines show the mockup's dash rather than a 0: nothing
-          has been decided about them yet, and a 0 would read as "none came
-          back", which is a different claim. */}
-      <span className="shrink-0 flex flex-col items-center justify-center px-3.5">
+      <span className="shrink-0 flex flex-col items-end">
         <span
           className={
-            "text-[26px] font-extrabold tabular-nums " +
+            "text-[26px] font-extrabold tabular-nums leading-none " +
             (partial ? "text-[#b42318]" : touched ? "text-gray-900" : "text-[#b6bcc6]")
           }
         >
           {qty ?? "—"}
         </span>
-        {/* "of 8" only where it says something the number above does not — a
-            partial return. On a full line it would repeat the same figure. */}
-        {partial && (
-          <span className="text-[10.5px] font-medium text-[#98a2b3] tabular-nums leading-none mt-[1px]">
-            of {line.deliveryQty}
+        {partial ? (
+          <span className="text-[10.5px] font-medium text-[#98a2b3] tabular-nums leading-none mt-[3px]">
+            of {deliveryQty}
           </span>
+        ) : (
+          litres !== undefined &&
+          litres !== null && (
+            /* ZERO renders "0 L" — brushes and rollers have a real volume of
+               nothing, and blanking those would claim "unknown" about a known
+               thing. Only a NULL litresPerTin is genuinely unknown. */
+            <span className={UNIT_SUFFIX + " tabular-nums leading-none mt-[3px]"}>
+              {litres} L
+            </span>
+          )
         )}
       </span>
     </>
   );
 
-  const shared =
-    "flex items-stretch min-h-[64px] bg-white rounded-[14px] overflow-hidden mb-2 w-full text-left";
-
-  if (mode === "full") {
-    return (
-      <div className={shared} style={{ boxShadow: SOFT_CARD_SHADOW }}>
-        {inner}
-      </div>
-    );
-  }
-
+  if (onClick === undefined) return <div className={cls}>{inner}</div>;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={shared + " active:opacity-90"}
-      style={{ boxShadow: SOFT_CARD_SHADOW }}
-    >
+    <button type="button" onClick={onClick} className={cls + " active:bg-gray-50"}>
       {inner}
     </button>
+  );
+}
+
+/** The rows of a SAVED CI — its stored snapshot, not the bill behind it. */
+export function CiDetailLineRows({
+  lines,
+}: {
+  lines: readonly CiDetailLine[];
+}): React.JSX.Element {
+  return (
+    <div className={CARD_SURFACE}>
+      {lines.map((l, i) => (
+        <CiLineRow
+          key={l.id}
+          skuCode={l.skuCode}
+          description={l.skuDescription}
+          pack={l.packCode}
+          qty={l.returnedQty}
+          // ⚠ NO PARTIAL TREATMENT ON A SAVED CI. `deliveryQty` is passed as null
+          // deliberately: "3 of 8" is a decision being made, and on a submitted
+          // return the decision is finished. The litres take that slot instead.
+          deliveryQty={null}
+          litres={l.returnedQtyLitres}
+          last={i === lines.length - 1}
+        />
+      ))}
+    </div>
   );
 }

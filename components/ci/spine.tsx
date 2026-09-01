@@ -217,18 +217,12 @@ export function CiSpineValue({
 export function CiHeaderStrip({
   isoDate,
   invoiceNo,
-  litres,
 }: {
   /** A date-only string or a full instant; both are handled. */
   isoDate: string | null;
   /** A blank invoice is NORMAL — 5% of dispatched bills have none when the CI
    *  is raised and SAP sends it later. Said in words, never an em-dash. */
   invoiceNo: string | null;
-  /**
-   * OMIT on the create flow. Present only where the figure is the RETURN's own
-   * total — see the block above. There is no default: a caller must decide.
-   */
-  litres?: number;
 }): React.JSX.Element {
   return (
     <div className="bg-white border-b border-gray-200 shrink-0 px-4 py-3 flex items-center justify-between gap-3">
@@ -236,12 +230,30 @@ export function CiHeaderStrip({
       <span className={STRIP_VALUE + " truncate min-w-0 text-right"}>
         {invoiceNo ?? "No invoice yet"}
       </span>
-      {litres !== undefined && (
-        <span className={STRIP_VALUE + " tabular-nums shrink-0"}>
-          {litres}
-          <span className={UNIT_SUFFIX}>{" L"}</span>
-        </span>
-      )}
+    </div>
+  );
+}
+
+/**
+ * A section rule with an optional value opposite it — "Lines · 3 lines",
+ * "Billing · Waiting", "Material received".
+ *
+ * ⚠ ONE COMPONENT (step 14). The summary's head was a bare <span> while Lines
+ * and Billing were flex rows with a right-hand count, so the same rule was
+ * built two ways on screens that are meant to be one shape. The right side is
+ * optional; the head itself never varies.
+ */
+export function CiSectionHead({
+  label,
+  right,
+}: {
+  label: string;
+  right?: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className={"flex items-baseline justify-between gap-2 pt-4 pb-2 " + SECTION_INSET}>
+      <span className={SECTION_HEAD}>{label}</span>
+      {right !== undefined && <span className={SECTION_COUNT + " shrink-0"}>{right}</span>}
     </div>
   );
 }
@@ -276,6 +288,14 @@ export function formatCiDay(iso: string | null): string {
 // second picker would have re-typed the row padding, the 15px label and the
 // tick. These are those, once.
 export const SHEET_TITLE = "px-4 pb-2 text-[15px] font-semibold text-gray-900";
+/**
+ * A muted note — a remark, a "closed by" line, an empty state. ONE size for all
+ * of them (step 14): the billing card was carrying "Not punched yet." at 13px
+ * and "Closed by …" at 12.5px, two sizes for the same kind of sentence in the
+ * same card, and the remark used a third variant with its own leading.
+ */
+export const MUTED_NOTE = "text-[12.5px] leading-[1.5] text-[#8a929c]";
+
 /** A note inside a sheet — loading, or an error. Colour is the caller's, since
  *  "could not load" and "still loading" are different things to say. */
 export const SHEET_NOTE = "px-4 py-6 text-[13px]";
@@ -283,14 +303,15 @@ export const SHEET_NOTE = "px-4 py-6 text-[13px]";
 export const SHEET_ACTION =
   "w-full text-left px-4 py-3.5 text-[15px] font-semibold text-teal-700 active:bg-gray-50";
 
-/**
- * A pack chip in the pre-submit summary — Picking's FamilyChip token
- * (card-atoms.tsx:196), the same one the result card's shelf uses. These are
- * STATEMENTS, not filters: nothing here is tappable, so they take the chip's
- * look and none of its behaviour.
- */
-export const SUMMARY_CHIP =
-  "shrink-0 whitespace-nowrap text-[10.5px] font-semibold rounded-[7px] py-[3px] px-[8px] text-[#667085] bg-[#eef1f5]";
+// ⚠ THERE IS NO SUMMARY CHIP TOKEN, AND THERE MUST NOT BE ONE AGAIN (step 14).
+// The pack breakdown was a row of floating grey pills, which do not belong on a
+// screen made of rows: they were a THIRD kind of object beside the spine rows
+// and the section heads, on a block whose whole point is that it reads as a
+// continuation of the card above. Packs is a spine row now, like everything
+// else, with its value wrapping on the right. Do not reintroduce this "just for
+// the summary".
+// (The pack FILTER strip on the bill screen keeps its chips — those are
+// controls, not statements, and that screen is not one of these three.)
 
 /** A typed value. FACT_VALUE's size and colour WITHOUT its weight: what he has
  *  typed is not yet a recorded fact, and bolding a draft overstates it. */

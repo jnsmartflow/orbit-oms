@@ -174,26 +174,57 @@ export function summariseCiReturn(
     if (qty > 0) chosen.push({ line: l, qty });
   }
 
-  const byPack = new Map<string, number>();
-  for (const { line, qty } of chosen) {
-    const key = line.pack ?? NO_PACK_LABEL;
-    byPack.set(key, (byPack.get(key) ?? 0) + qty);
-  }
-
-  // 🔴 SMALLEST PACK FIRST, via the SHARED sorter — never alphabetically, which
-  // puts "100ML" before "1L" ("0" < "L") and "20L" before "4L". sortPackLabels
-  // is a RULE, not a token, which is why it is imported rather than copied —
-  // components/ci/line-list.tsx imports the same function for the chip strip on
-  // the previous screen, so the two screens cannot disagree about pack order.
-  const real = sortPackLabels(Array.from(byPack.keys()).filter((k) => k !== NO_PACK_LABEL));
-  const ordered = byPack.has(NO_PACK_LABEL) ? [...real, NO_PACK_LABEL] : real;
-
   return {
     lineCount: chosen.length,
     totalTins: chosen.reduce((s, c) => s + c.qty, 0),
     totalLitres: sumLitres(chosen.map((c) => returnedLitres(c.line.litresPerTin, c.qty))),
-    packs: ordered.map((label) => ({ label, tins: byPack.get(label) ?? 0 })),
+    packs: packBreakdown(chosen.map((c) => ({ pack: c.line.pack, tins: c.qty }))),
   };
+}
+
+/**
+ * The SAME summary for a CI that is already SAVED — the submitted screens.
+ *
+ * ⚠ FROM THE STORED LINES, NOT FROM THE BILL. A submitted return is a record:
+ * its snapshot quantities and litres are what billing is reading, and the bill
+ * behind it may have moved since (a re-import can change a line). Recomputing
+ * from the bill would show him a summary of something nobody agreed to.
+ *
+ * The shape is identical to summariseCiReturn's so ONE block renders both, and
+ * pack ordering goes through the same helper — the three screens cannot disagree
+ * about what order packs come in.
+ */
+export function summariseCiDetail(lines: readonly CiDetailLine[]): CiReturnSummary {
+  const totals = ciTotals(lines);
+  return {
+    lineCount: totals.lineCount,
+    totalTins: totals.totalTins,
+    totalLitres: totals.totalLitres,
+    packs: packBreakdown(lines.map((l) => ({ pack: l.packCode, tins: l.returnedQty }))),
+  };
+}
+
+/**
+ * 🔴 SMALLEST PACK FIRST, via the SHARED sorter — never alphabetically, which
+ * puts "100ML" before "1L" ("0" < "L") and "20L" before "4L". sortPackLabels is
+ * a RULE, not a token, which is why it is imported rather than copied:
+ * components/ci/line-list.tsx uses the same function for the bill screen's pack
+ * filter, so no two CI screens can disagree about pack order.
+ *
+ * Unresolved packs collapse to one "No pack" group and sort LAST — the wording
+ * the filter strip already uses, so one bill never calls it two things.
+ */
+function packBreakdown(
+  rows: readonly { pack: string | null; tins: number }[],
+): { label: string; tins: number }[] {
+  const byPack = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.pack ?? NO_PACK_LABEL;
+    byPack.set(key, (byPack.get(key) ?? 0) + r.tins);
+  }
+  const real = sortPackLabels(Array.from(byPack.keys()).filter((k) => k !== NO_PACK_LABEL));
+  const ordered = byPack.has(NO_PACK_LABEL) ? [...real, NO_PACK_LABEL] : real;
+  return ordered.map((label) => ({ label, tins: byPack.get(label) ?? 0 }));
 }
 
 /** Bill totals for the supervisor's header strip — the mockup's "212 L". */

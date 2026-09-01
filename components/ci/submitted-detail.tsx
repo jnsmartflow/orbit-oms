@@ -1,18 +1,17 @@
 "use client";
 
 import { ChevronLeft } from "lucide-react";
-import { CiLineRows, CiPackChips } from "./line-list";
-import { CiDetailsStep } from "./details-step";
+import { CiDetailLineRows, CiLineRows } from "./line-list";
+import { CiDetailsStep, CiReturnSummaryBlock } from "./details-step";
+import { summariseCiDetail, summariseCiReturn } from "@/lib/ci/derive";
 import {
   CARD_PAD,
   CARD_SURFACE,
   CiHeaderStrip,
+  CiSectionHead,
   CiSpineRow,
   CiSpineValue,
-  SECTION_COUNT,
-  SECTION_HEAD,
-  SECTION_INSET,
-  UNIT_SUFFIX,
+  MUTED_NOTE,
   formatCiDay,
 } from "./spine";
 import type { CiBillResult, CiDetail, CiReasonOption, CiBillLine } from "@/lib/ci/types";
@@ -103,8 +102,6 @@ export function CiSubmittedDetail({
   onRemark,
   returned,
   onOpenLine,
-  activePackFilter,
-  onPackFilter,
   dirty,
   saving,
   onSave,
@@ -130,8 +127,6 @@ export function CiSubmittedDetail({
   onRemark: (v: string) => void;
   returned: Map<number, number>;
   onOpenLine: (line: CiBillLine) => void;
-  activePackFilter: string;
-  onPackFilter: (k: string) => void;
   dirty: boolean;
   saving: boolean;
   onSave: () => void;
@@ -189,10 +184,18 @@ export function CiSubmittedDetail({
 
           ⚠ THE PART/FULL TAG HAS LEFT THIS STRIP (step 10). It is the "Return"
           row in the card below now, and nothing on this screen is said twice. */}
+      {/* ⚠ NO LITRES HERE ANY MORE, AND THIS SUPERSEDES STEP 13. That step
+          kept them on this screen because the figure genuinely is the RETURN's
+          total, unlike on the create flow where it was the bill's. What changed
+          is that the "Material received" block now renders on THIS screen too,
+          and states the same figure as "Quantity — N tins · N L". Two
+          statements of one number on one screen is the thing this module keeps
+          removing; the strip is the weaker of the two, because it cannot say
+          tins. The prop is gone from CiHeaderStrip entirely rather than left
+          unused — a dead parameter is an invitation. */}
       <CiHeaderStrip
         isoDate={detail?.invoiceDate ?? null}
         invoiceNo={detail?.invoiceNo ?? null}
-        litres={detail?.totalLitres ?? 0}
       />
 
       {/* ── THE RACE BAND ────────────────────────────────────────────────────
@@ -244,13 +247,14 @@ export function CiSubmittedDetail({
               onRemark={onRemark}
             />
           ) : (
+            /* ⚠ CARD A IS Received on · Material · Reason · Remark, AND NO
+               "RETURN" ROW (step 14). It used to carry one here while the
+               editable screen did not — the same fact stated in two places on
+               one screen and in one place on the other. Return now lives in the
+               "Material received" block below, on ALL THREE screens. */
             <div className={CARD_SURFACE + " mt-3"}>
               <CiSpineRow label="Received on">
                 <CiSpineValue>{formatCiDay(detail.materialReceivedDate)}</CiSpineValue>
-              </CiSpineRow>
-              {/* 🔴 THE ONLY PLACE PART/FULL IS SAID on this screen now. */}
-              <CiSpineRow label="Return">
-                <CiSpineValue>{isFull ? "Full bill" : "Part"}</CiSpineValue>
               </CiSpineRow>
               <CiSpineRow label="Material">
                 <CiSpineValue>
@@ -260,69 +264,85 @@ export function CiSubmittedDetail({
               <CiSpineRow label="Reason" last={detail.reasonRemark === null}>
                 <CiSpineValue>{detail.reasonLabel}</CiSpineValue>
               </CiSpineRow>
-              {/* The remark runs FULL WIDTH beneath, not opposite a label: it is
+              {/* 🔴 HIDDEN ENTIRELY WHEN THERE IS NO REMARK (step 14) — not an
+                  empty labelled row, which reads as a field that failed to load.
+                  The ENTRY step keeps its always-present input, because there an
+                  empty box is a control he can still type into; here it would be
+                  a blank claiming to be a value.
+
+                  It runs FULL WIDTH beneath rather than opposite a label: it is
                   a sentence, and a sentence squeezed into a value column wraps
                   into a ribbon two words wide. */}
               {detail.reasonRemark !== null && (
                 <div className={CARD_PAD + " pb-3"}>
-                  <p className="text-[12.5px] leading-[1.5] text-[#8a929c]">
-                    {detail.reasonRemark}
-                  </p>
+                  <p className={MUTED_NOTE}>{detail.reasonRemark}</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* ══ SECTION HEAD · Lines ════════════════════════════════════════
+          {/* ══ "Material received" — THE SAME BLOCK THE ENTRY STEP RENDERS ══
+              🔴 ON EVERY SCREEN, and it is the only place the return TYPE is
+              stated. Editable reads from the live selection (what Save will
+              store); read-only reads from the CI's own stored lines, because a
+              submitted return is a record and the bill behind it may have moved.
+              Both go through lib/ci/derive.ts, so no screen can show a total the
+              write would not produce. */}
+          <CiReturnSummaryBlock
+            mode={detail.returnType === "full" ? "full" : "part"}
+            totals={
+              linesEditable && bill !== null
+                ? summariseCiReturn(bill.lines, "part", returned)
+                : summariseCiDetail(detail.lines)
+            }
+          />
+
+          {/* ══ SECTION HEAD · Lines — PART ONLY ════════════════════════════
+              🔴 A FULL-BILL CI SHOWS NO LINES, AND NO HEADING EITHER (step 14).
+              "Full bill" means the whole invoice came back; a list adds nothing
+              those two words did not say, and the "Material received" block
+              above now carries the quantity — which is the thing a full return
+              was previously never shown. A heading over nothing is worse than no
+              heading.
+
+              PART shows the rows, because on a part return WHICH lines came back
+              IS the document.
+
               ⚠ `SECTION_INSET` IS `CARD_PAD` — that is the whole reason both are
               named constants. A section title and the field labels above it
               share one left edge, so the screen reads as one spine and not two
               competing margins. */}
-          <div className={"flex items-baseline justify-between gap-2 pt-4 pb-2 " + SECTION_INSET}>
-            <span className={SECTION_HEAD}>Lines</span>
-            {/* The counts that used to ride on the card's shelf. They belong
-                here, where he is about to look at the lines themselves. */}
-            <span className={SECTION_COUNT + " shrink-0"}>
-              {detail.lineCount} line{detail.lineCount === 1 ? "" : "s"} · {detail.totalTins} tins ·{" "}
-              {detail.totalLitres} L
-            </span>
-          </div>
-
-          {/* ══ THE LINES ═══════════════════════════════════════════════════
-              🔴 A FULL-BILL CI SHOWS NO LINE ROWS AT ALL. "Full bill" means the
-              whole invoice came back; listing every line tells him nothing those
-              two words did not, while burying the part of the screen he came
-              for. One card says it in a sentence instead.
-
-              PART shows the rows, because on a part return WHICH lines came back
-              IS the document. */}
-          {isFull ? (
-            <div className={CARD_SURFACE + " " + CARD_PAD + " py-3.5"}>
-              <p className="text-[13px] leading-[1.5] text-[#667085]">
-                Whole bill returned — every line on the invoice.
-              </p>
-            </div>
-          ) : linesEditable && bill !== null ? (
+          {!isFull && (
             <>
-              <CiPackChips
-                lines={bill.lines}
-                activePackFilter={activePackFilter}
-                onPackFilter={onPackFilter}
+              <CiSectionHead
+                label="Lines"
+                right={`${detail.lineCount} line${detail.lineCount === 1 ? "" : "s"}`}
               />
-              {/* THE SAME ROW COMPONENT THE NEW FLOW USES, in `part` mode, seeded
-                  from what is already on the CI. Tapping one opens the same
-                  quantity sheet. Editing a return and raising one are the same
-                  gesture and must not become two dialects. */}
-              <CiLineRows
-                lines={bill.lines}
-                activePackFilter={activePackFilter}
-                mode="part"
-                returned={returned}
-                onOpenLine={onOpenLine}
-              />
+
+              {/* 🔴 ONE LINE-ROW COMPONENT, in components/ci/line-list.tsx. The
+                  editable screen used to draw a floating card with a 56px pack
+                  gutter and the closed one a full-bleed row with the pack
+                  inline — same data, two components, already drifted. Tappable
+                  is a PROP now, not a second component. */}
+              {linesEditable && bill !== null ? (
+                <CiLineRows
+                  lines={bill.lines}
+                  // ⚠ ALWAYS "ALL" — THE PACK FILTER STRIP IS GONE FROM THIS
+                  // SCREEN (step 14). The approved sequence has no chip strip,
+                  // and the closed screen never had one: leaving it on the
+                  // editable half was the last thing making the two submitted
+                  // screens different objects. The filter stays on the BILL
+                  // screen in the create flow, where the list is a whole bill
+                  // being picked through rather than a return being corrected.
+                  activePackFilter="ALL"
+                  mode="part"
+                  returned={returned}
+                  onOpenLine={onOpenLine}
+                />
+              ) : (
+                <CiDetailLineRows lines={detail.lines} />
+              )}
             </>
-          ) : (
-            <ReadOnlyLines detail={detail} />
           )}
 
           {/* ══ CARD 3 · Billing ════════════════════════════════════════════
@@ -331,13 +351,10 @@ export function CiSubmittedDetail({
               not the floor's to read. Putting money in front of a supervisor
               invites a conversation about a number he did not enter and cannot
               change. Do not add it back "for completeness". */}
-          <div className={"flex items-baseline justify-between gap-2 pt-4 pb-2 " + SECTION_INSET}>
-            <span className={SECTION_HEAD}>Billing</span>
-            {/* ⚠ NOT A PILL. Status is stated once, in the header; this is the
-                same neutral section-count type as the Lines heading, so it reads
-                as a caption rather than as a second badge. */}
-            <span className={SECTION_COUNT + " shrink-0"}>{closed ? "Closed" : "Waiting"}</span>
-          </div>
+          {/* ⚠ THE RIGHT SIDE IS NOT A PILL. Status is stated once, in the
+              header; this is the same neutral section-count type the Lines
+              heading uses, so it reads as a caption and not a second badge. */}
+          <CiSectionHead label="Billing" right={closed ? "Closed" : "Waiting"} />
 
           {closed ? (
             <div className={CARD_SURFACE}>
@@ -350,14 +367,12 @@ export function CiSubmittedDetail({
               {/* A FOOTER LINE, not a row — it names a PERSON, and a name sitting
                   opposite a label reads as a field he might be able to edit. */}
               <div className={CARD_PAD + " pb-3"}>
-                <p className="text-[12.5px] text-[#8a929c]">
-                  Closed by {detail.billingOperatorName ?? "—"}
-                </p>
+                <p className={MUTED_NOTE}>Closed by {detail.billingOperatorName ?? "—"}</p>
               </div>
             </div>
           ) : (
             <div className={CARD_SURFACE + " " + CARD_PAD + " py-3.5"}>
-              <p className="text-[13px] text-[#8a929c]">Not punched yet.</p>
+              <p className={MUTED_NOTE}>Not punched yet.</p>
             </div>
           )}
 
@@ -410,51 +425,6 @@ function StatusChip({ status }: { status: CiDetail["status"] }): React.JSX.Eleme
     <span className="shrink-0 rounded-full bg-white/[0.18] px-2 py-[2px] text-[10.5px] font-semibold text-white whitespace-nowrap">
       {label}
     </span>
-  );
-}
-
-/** The returned lines as a record — a closed CI, or one being viewed by someone
- *  who cannot edit it. Snapshot values straight off the CI, NOT re-derived from
- *  the bill: the bill may have moved since, and the return is what was agreed. */
-function ReadOnlyLines({ detail }: { detail: CiDetail }): React.JSX.Element {
-  return (
-    <div className={CARD_SURFACE}>
-      {detail.lines.map((l, i) => (
-        <div
-          key={l.id}
-          className={
-            CARD_PAD +
-            " py-2.5 flex items-center gap-3 " +
-            (i === detail.lines.length - 1 ? "" : "border-b border-gray-100")
-          }
-        >
-          <div className="min-w-0 flex-1">
-            {/* Picking's line row verbatim: the SKU is the loudest thing in the
-                list (mono 17/700) with the product name muted underneath. */}
-            <div className="font-mono text-[17px] font-bold text-gray-900 truncate">
-              {l.skuCode}
-            </div>
-            {/* An unmastered code is NORMAL (~5.9% of active lines) — the bare
-                code stands and the name is simply absent. */}
-            <div className="text-[12px] text-gray-500 truncate mt-0.5">
-              {[l.packCode, l.skuDescription].filter(Boolean).join(" · ") || "—"}
-            </div>
-          </div>
-          {/* 🔴 THE OTHER THING THAT CARRIES WEIGHT — Picking's 26px qty. */}
-          <div className="shrink-0 flex flex-col items-end">
-            <span className="text-[26px] font-extrabold text-gray-900 tabular-nums leading-none">
-              {l.returnedQty}
-            </span>
-            {/* Null litres = genuinely unknown (unitQty null or 0). ZERO renders
-                "0 L" — brushes and rollers have a real volume of nothing, and
-                blanking those would claim "unknown" about a known thing. */}
-            <span className={UNIT_SUFFIX + " mt-1 tabular-nums"}>
-              {l.returnedQtyLitres === null ? "—" : `${l.returnedQtyLitres} L`}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 

@@ -573,8 +573,6 @@ export function CiSubmittedBoard({
           setSheetLine(line);
           pushScreen();
         }}
-        activePackFilter={activePackFilter}
-        onPackFilter={setActivePackFilter}
         dirty={dirty}
         saving={saving}
         onSave={() => void onSave()}
