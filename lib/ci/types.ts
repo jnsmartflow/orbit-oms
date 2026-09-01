@@ -203,6 +203,23 @@ export type CiBoardResult = CiSupervisorBoard | CiBillingBoard;
 export interface CiDetailLine {
   id: number;
   lineNumber: number;
+  /**
+   * `import_raw_line_items.id` — the SAME key CiBillLine carries.
+   *
+   * 🔴 ADDED FOR THE EDIT PATH (2026-09-01, step 7e). Without it the phone can
+   * show a submitted CI's lines but cannot say WHICH bill lines they are, so it
+   * cannot seed the editor or post a change back: PUT /lines speaks
+   * rawLineItemId and nothing else. `id` is the ci_return_lines PK and is no
+   * use for that — it is a row on the CI, not a line on the bill.
+   *
+   * ⚠ NULLABLE, AND NOT DEFENSIVELY. The column is a POINTER, not a foreign key
+   * — the spec says so and sql/2026-08-31-ci-module.sql:294 records the decision
+   * — so the schema allows null and this type must say so rather than assert it
+   * away. PUT /lines has written it on every row it has ever created, so null
+   * should not occur in practice; if one ever does, the edit screen drops that
+   * CI to read-only rather than posting a line it cannot identify.
+   */
+  rawLineItemId: number | null;
   skuCode: string;
   skuDescription: string | null;
   packCode: string | null;
@@ -242,6 +259,18 @@ export interface CiDetail {
   returnType: CiReturnType;
   materialMoved: CiMaterialMoved;
   materialReceivedDate: string;
+  /**
+   * The FK. Added for the edit path (2026-09-01, step 7e): PATCH /details
+   * speaks reasonId, so the screen has to seed the reason picker with the id
+   * and not just the words.
+   *
+   * 🔴 `reasonLabel` STAYS AND IS NOT DERIVED FROM THIS. It is the SNAPSHOT
+   * taken when the CI was raised (spec §3.1), so renaming a reason never
+   * rewrites the history of returns filed under the old wording. Rendering the
+   * label by looking this id up in ci_reason_master would silently undo that.
+   * The id is for writing; the label is for reading.
+   */
+  reasonId: number;
   reasonLabel: string;
   reasonRemark: string | null;
   supervisorName: string | null;

@@ -292,11 +292,30 @@ export function buildCiBillingWhere(range: { start: Date; end: Date }): Prisma.c
  * The scope lives HERE and nowhere else, so answering §11.5 the other way is
  * deleting one line.
  *
- * Date fencing mirrors MRN's supervisor board for the same reason: the
- * outstanding band spans ALL dates (work handed to billing yesterday is still
- * his to see), and only the finished band is fenced to today — a receipt, not a
- * task.
+ * Date fencing: the outstanding band spans ALL dates (work handed to billing
+ * yesterday is still his to see), and only the finished band is fenced — a
+ * receipt, not a task.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE FINISHED BAND IS SEVEN DAYS, NOT TODAY (2026-09-01, step 7e).
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It was `closedAt` within TODAY, which meant a CI he raised on Friday and
+ * billing closed on Monday was on his phone for a few hours and then vanished —
+ * and there is no other screen where a floor supervisor can find it. The
+ * supervisor face has no date stepper (billing's has one; his is a phone), so
+ * "today" was not a filter he could change, it was a cliff.
+ *
+ * Seven days INCLUSIVE OF TODAY: six IST midnights back, up to the end of the
+ * current IST day. That covers "last week some time", which is how the depot
+ * actually talks about a recent return.
+ *
+ * ⚠ THE PENDING BAND IS UNTOUCHED AND MUST STAY UNTOUCHED. It has no date at
+ * all, deliberately: work still sitting with billing is outstanding however old
+ * it is, and fencing it would hide a backlog rather than shorten it.
  */
+export const CI_SUPERVISOR_FINISHED_DAYS = 7;
+
 export function buildCiSupervisorWhere(
   band: "withBilling" | "finished",
   supervisorId: number,
@@ -306,7 +325,13 @@ export function buildCiSupervisorWhere(
   if (band === "withBilling") {
     return { ...base, status: { in: ["submitted", "returned_to_floor"] } };
   }
-  return { ...base, status: "closed", closedAt: { gte: todayRange.start, lt: todayRange.end } };
+  // Built off todayRange.start — the IST midnight the caller already resolved —
+  // so the window steps on IST day boundaries and never on UTC ones. Deriving it
+  // from `new Date()` here would put the cut 5h30m out for half of every day.
+  const windowStart = new Date(
+    todayRange.start.getTime() - (CI_SUPERVISOR_FINISHED_DAYS - 1) * 24 * 60 * 60 * 1000,
+  );
+  return { ...base, status: "closed", closedAt: { gte: windowStart, lt: todayRange.end } };
 }
 
 // ── Boards ───────────────────────────────────────────────────────────────────
@@ -457,6 +482,7 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
       returnType: true,
       materialMoved: true,
       materialReceivedDate: true,
+      reasonId: true,
       reasonLabel: true,
       reasonRemark: true,
       submittedAt: true,
@@ -470,6 +496,8 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
         select: {
           id: true,
           lineNumber: true,
+          // The bill-line key the edit path posts back — see CiDetailLine.
+          rawLineItemId: true,
           skuCode: true,
           skuDescription: true,
           packCode: true,
@@ -514,6 +542,7 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
   const lines: CiDetailLine[] = row.lines.map((l) => ({
     id: l.id,
     lineNumber: l.lineNumber,
+    rawLineItemId: l.rawLineItemId,
     skuCode: l.skuCode,
     skuDescription: l.skuDescription,
     packCode: l.packCode,
@@ -542,13 +571,18 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
   if (
     row.materialMoved === null ||
     row.materialReceivedDate === null ||
+    // `reasonId` joins this guard because CiDetail now types it non-null for the
+    // edit path. The CHECK names it alongside the other three, so a row missing
+    // it is the same integrity violation and gets the same answer.
+    row.reasonId === null ||
     row.reasonLabel === null
   ) {
     console.error(
       `[ci/detail] ci #${row.id} is ${row.status} but is missing a stage-1 answer ` +
         `(materialMoved=${row.materialMoved}, materialReceivedDate=${row.materialReceivedDate}, ` +
-        `reasonLabel=${row.reasonLabel}). chk_ci_returns_complete_when_not_draft should ` +
-        `have made this impossible — check the constraint still exists.`,
+        `reasonId=${row.reasonId}, reasonLabel=${row.reasonLabel}). ` +
+        `chk_ci_returns_complete_when_not_draft should have made this impossible — ` +
+        `check the constraint still exists.`,
     );
     return null;
   }
@@ -572,6 +606,7 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
     returnType: row.returnType as CiReturnType,
     materialMoved: row.materialMoved as CiMaterialMoved,
     materialReceivedDate: isoDate(row.materialReceivedDate),
+    reasonId: row.reasonId,
     reasonLabel: row.reasonLabel,
     reasonRemark: row.reasonRemark,
     supervisorName: row.supervisor?.name ?? null,

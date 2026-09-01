@@ -8,18 +8,30 @@ import { applyCiCatalog, resolveCiSkus } from "@/lib/ci/resolve-lines";
 export const dynamic = "force-dynamic";
 
 /**
- * PUT /api/ci/[ciId]/lines — step 2 of 3. REPLACES every line on a DRAFT CI.
+ * PUT /api/ci/[ciId]/lines — REPLACES every line on a CI.
  *
  * Body: { lines: [{ rawLineItemId, returnedQty }] }
- *       — ignored entirely when the draft's returnType is 'full'.
+ *       — ignored entirely when the CI's returnType is 'full'.
  *
- * 🔴 409 UNLESS status === 'draft'. Once a CI is submitted its lines are a
- * record, not a working set: billing is reading them and the supervisor has
- * been given a number. Editing them would silently change a document someone
- * has already acted on. A returned_to_floor CI does NOT reopen this route
- * either — that flow (spec §11.1) is not built, and when it is, whether it
- * rewinds to 'draft' or edits in place is a product decision, not something to
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 TWO WAYS IN, AND ONLY TWO (owner ruling 2026-09-01, step 7e)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ *   1. status = 'draft'      — step 2 of the create flow. UNCHANGED.
+ *   2. status = 'submitted'  — AND ONLY BY THE SUPERVISOR WHO RAISED IT.
+ *
+ * Everything else 409s, and 'closed' 409s WITH NO EXCEPTION: billing has punched
+ * it into SAP by then and the document is real. This is also the answer to the
+ * open "return to floor" question (spec §11.1) — billing does not send it back,
+ * they tell the floor and he fixes it himself. A 'returned_to_floor' CI still
+ * does NOT reopen this route; that flow is not built, and whether it rewinds to
+ * 'draft' or edits in place stays a product decision rather than something to
  * infer from a status check here.
+ *
+ * ⚠ THE DRAFT PATH IS LOAD-BEARING AND MUST NOT BE COLLAPSED INTO THE OTHER.
+ * `WHERE status = 'draft'` is what makes the create flow idempotent: the client
+ * holds ONE ciId, so a re-tap re-PUTs onto the same row instead of raising a
+ * second CI. Widening this route did not touch that.
  *
  * ── ORDER OF OPERATIONS, AND WHY IT IS THIS ORDER ───────────────────────────
  *   1. Read the draft, read the OBD's ACTIVE lines, resolve the catalog, and
@@ -29,14 +41,26 @@ export const dynamic = "force-dynamic";
  *   2. deleteMany the existing ci_return_lines.
  *   3. createMany the new ones.
  *
- * ⚠ NO TRANSACTION, AND A FAILURE BETWEEN (2) AND (3) LEAVES THE DRAFT WITH
- * ZERO LINES — stated plainly rather than papered over, exactly as MRN's lines
- * route states it. prisma.$transaction is banned (Vercel serverless + the
- * Supabase pooler time out on it — CORE §3), and here the damage is even
- * smaller than MRN's: a lineless DRAFT is invisible to every read and cannot be
- * submitted (the submit route rejects zero lines), so the worst case is that
- * the supervisor taps Save again. The error response says so in those words —
- * it must never read as a generic failure.
+ * ⚠ NO TRANSACTION, AND A FAILURE BETWEEN (2) AND (3) LEAVES THE CI WITH ZERO
+ * LINES — stated plainly rather than papered over, exactly as MRN's lines route
+ * states it. prisma.$transaction is banned (Vercel serverless + the Supabase
+ * pooler time out on it — CORE §3).
+ *
+ * 🔴 THE DAMAGE IS NOT THE SAME ON THE TWO PATHS, AND THE SECOND IS WORSE.
+ *   draft     — a lineless draft is INVISIBLE to every read (all feeds filter
+ *               `status <> 'draft'`) and cannot be submitted (the submit route
+ *               rejects zero lines). It is inert; the supervisor taps Save
+ *               again.
+ *   submitted — a lineless SUBMITTED CI is a numbered record sitting on
+ *               billing's rail with nothing on it. Nothing is lost that cannot
+ *               be re-entered, but somebody else can see it in that state, so
+ *               the error below says so explicitly and tells him to save again
+ *               rather than leaving him to discover it.
+ *
+ * A safe reorder was considered and rejected: inserting the new rows at offset
+ * lineNumbers, deleting the old, then renumbering is THREE writes whose own
+ * partial failures leave a CI with two overlapping line sets — a worse state,
+ * reached more often, to avoid a rarer one.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * 🔴 WHAT THE CLIENT MAY DECIDE, AND WHAT IT MAY NOT
@@ -89,21 +113,45 @@ export async function PUT(
   if (!ci) {
     return NextResponse.json({ error: "CI not found" }, { status: 404 });
   }
-  if (ci.status !== "draft") {
+  const viewerId = Number(session.user.id);
+  const editingSubmitted = ci.status === "submitted";
+
+  if (ci.status !== "draft" && !editingSubmitted) {
     return NextResponse.json(
       {
-        error: `This CI is already ${ci.status} — its lines can no longer be changed.`,
+        error:
+          ci.status === "closed"
+            ? "Billing has closed this CI — its lines can no longer be changed."
+            : `This CI is ${ci.status} — its lines can no longer be changed.`,
         status: ci.status,
       },
       { status: 409 },
     );
   }
 
-  // Ownership. The permission grant says "may raise returns", not "may edit
-  // anyone's in-flight return". A draft belongs to the supervisor who opened
-  // it; admin and operations keep the bypass above for support work.
-  const viewerId = Number(session.user.id);
-  if (
+  // ── Ownership ─────────────────────────────────────────────────────────────
+  // The permission grant says "may raise returns", not "may edit anyone's
+  // return".
+  //
+  // ⚠ THE TWO PATHS HAVE DIFFERENT OWNERSHIP RULES, ON PURPOSE.
+  //   draft     — admin and operations keep the support bypass they have always
+  //               had. A draft is invisible to every read and carries no number,
+  //               so a support user fixing one changes nothing anyone has seen.
+  //   submitted — NO BYPASS. The owner ruling names the rule as "only by the
+  //               supervisor who raised it", and the guard below is written that
+  //               way verbatim. A submitted CI has a number, is on billing's
+  //               rail and may already have been read off a screen; an admin
+  //               silently rewriting one is exactly the thing the ruling
+  //               refuses. If support ever needs it, that is a new decision with
+  //               its own audit trail, not a quiet `||` here.
+  if (editingSubmitted) {
+    if (ci.supervisorId !== viewerId) {
+      return NextResponse.json(
+        { error: "Only the supervisor who raised this return can change it." },
+        { status: 403 },
+      );
+    }
+  } else if (
     !roles.includes("admin") &&
     !roles.includes("operations") &&
     ci.supervisorId !== viewerId
@@ -271,6 +319,62 @@ export async function PUT(
     };
   });
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // 🔴 THE CLAIM — ONE GUARDED updateMany, AND IT IS THE RACE GUARD
+  // ═════════════════════════════════════════════════════════════════════════
+  //
+  // Everything above was a READ. Between that read and the writes below,
+  // billing can close this CI from the desk — they poll every 15s and the
+  // Close CI button is one click. Without this statement the supervisor's save
+  // would land on a closed document and nobody would ever know.
+  //
+  // So the states are re-tested AS PART OF A WRITE, which is the only way to
+  // make the test and the decision one operation:
+  //   • 'draft'      — the create flow, unchanged
+  //   • 'submitted'  — and `supervisorId` must still be the viewer
+  // A close between the read and here means this matches ZERO rows, and we stop
+  // BEFORE deleting anything.
+  //
+  // ⚠ IT MUST STAY AN updateMany WITH THE STATUS IN THE `where`, never a
+  // findFirst-then-update — the same rule the submit route's header states. A
+  // read-then-write reopens the window it is supposed to close.
+  //
+  // ⚠ THE WINDOW IS NARROWED, NOT ELIMINATED, and pretending otherwise would be
+  // worse than saying it: a close landing between this statement and the
+  // createMany below still wins on paper while these lines get rewritten.
+  // prisma.$transaction is banned (CORE §3) so that gap cannot be closed here.
+  // It is milliseconds against a human clicking a button, and the damage is a
+  // line list that disagrees with a closed CI — visible, and fixable by billing.
+  //
+  // ⚠ `updatedAt` MOVING IS THE POINT, NOT A SIDE EFFECT TO SUPPRESS. Billing's
+  // marker watches it, so their rail refreshes under them when the floor
+  // corrects something. A correction that lands visibly beats one that does not.
+  const claim = await prisma.ci_returns.updateMany({
+    where: editingSubmitted
+      ? { id: ciId, status: "submitted", supervisorId: viewerId, isVoided: false }
+      : { id: ciId, status: "draft", isVoided: false },
+    data: { updatedAt: new Date() },
+  });
+  if (claim.count === 0) {
+    // Report the CI AS IT NOW STANDS. The client uses this to refetch and flip
+    // to read-only — never to retry, and never to pretend the save worked.
+    const fresh = await prisma.ci_returns.findFirst({
+      where: { id: ciId },
+      select: { status: true },
+    });
+    return NextResponse.json(
+      {
+        error:
+          fresh?.status === "closed"
+            ? "Billing closed this CI while you had it open, so your change was not saved."
+            : "This CI changed while you had it open — nothing was saved.",
+        status: fresh?.status ?? "unknown",
+        raced: true,
+      },
+      { status: 409 },
+    );
+  }
+
   // ── 2. Clear. ──────────────────────────────────────────────────────────────
   // Sequential awaits, never prisma.$transaction (CORE §3).
   await prisma.ci_return_lines.deleteMany({ where: { ciReturnId: ciId } });
@@ -290,14 +394,19 @@ export async function PUT(
     // for the same reason the first one did.
     console.error(
       `[ci/lines] createMany failed for ci #${ciId} (obd ${ci.obdNumber}, ` +
-        `${rows.length} lines) after deleteMany — draft left with zero lines:`,
+        `status ${ci.status}, ${rows.length} lines) after deleteMany — ` +
+        "CI left with zero lines:",
       err,
     );
     return NextResponse.json(
       {
-        error:
-          "The previous lines were cleared but the new ones could not be saved, so this return " +
-          "now has no lines. Nothing was kept and nothing was submitted — choose the lines again.",
+        error: editingSubmitted
+          ? // He is editing a record billing can already see. Say that.
+            "The previous lines were cleared but the new ones could not be saved, so this " +
+            "return now shows no lines to billing. Choose the lines again and save — and tell " +
+            "billing if they are already working on it."
+          : "The previous lines were cleared but the new ones could not be saved, so this return " +
+            "now has no lines. Nothing was kept and nothing was submitted — choose the lines again.",
         linesCleared: true,
       },
       { status: 500 },

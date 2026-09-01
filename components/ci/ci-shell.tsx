@@ -71,8 +71,12 @@ export function CiShell({
   // badge for undefined — an honest blank beats a confident 0.
   const [withBillingCount, setWithBillingCount] = useState<number | undefined>(undefined);
 
-  // Stable, so CiNewReturn's effect does not re-fire on every render of this
-  // shell — an unstable callback in that dependency list would loop.
+  // Stable, so the child effects do not re-fire on every render of this shell —
+  // an unstable callback in those dependency lists would loop.
+  //
+  // ⚠ SHARED BY BOTH TABS. A bill on New and a CI on Submitted both take the
+  // whole viewport, and only one tab is mounted at a time, so one flag serves
+  // both. Switching tabs unmounts the other, which resets it.
   const handleInsideBill = useCallback((inside: boolean) => {
     setInsideBill(inside);
   }, []);
@@ -131,6 +135,9 @@ export function CiShell({
           userInitials={userInitials}
           refreshKey={refreshKey}
           onCounts={handleCounts}
+          // Same hideBar contract as a bill: opening a CI takes the viewport,
+          // so the two module tabs go with it (step 7e).
+          onInsideCi={handleInsideBill}
         />
       )}
     </RoleLayoutClient>
