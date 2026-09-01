@@ -7,7 +7,6 @@ import { isLineOpenable } from "@/lib/mrn/derive";
 import { StatusPill } from "./status-pill";
 import { LineDrawer } from "./line-drawer";
 import { LinesTable } from "./lines-table";
-import { formatDeliveryNos } from "@/lib/mrn/delivery";
 import { PhotosButton } from "./photos-button";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
 import type { MrnPerms } from "./mrn-shell";
@@ -401,16 +400,21 @@ export function DetailPane({
             {detail.stiRefNo}
           </Fact>
 
-          {/* 🔴 OFF THE LINES. `detail.deliveryNo` is the legacy header column,
-              frozen 2026-09-01 with no writer — it is NULL on every MRN raised
-              since, so reading it here would show an em-dash on a truck that
-              plainly has delivery numbers on its own lines.
-              One number renders as itself, two as "A, B", three or more as
-              "3 deliveries" — lib/mrn/delivery.ts owns that rule and every
-              other surface uses the same function. */}
-          <Fact label="Delivery no" mono>
-            {formatDeliveryNos(detail.lines)}
-          </Fact>
+          {/* ── Delivery no — REMOVED FROM THE FACTS ROW, 2026-09-01 ────────
+              🔴 A DELIBERATE EXCEPTION TO THE RULE STATED ABOVE, AND NOT A BUG
+              TO FIX. The facts-row rule is "a fact disappears only when it
+              cannot exist yet" — and it still holds for every other cell. This
+              one is gone for the OTHER reason: it MOVED. The delivery numbers
+              are now the TAB STRIP on the lines table below
+              (components/mrn/lines-table.tsx), which is a better home for them
+              than a cell, because billing does not merely read the number — it
+              selects by it, and the table's counts and TOTAL follow.
+
+              Rendering it in both places would state the same fact twice and
+              invite the two to disagree the moment one of them was changed.
+
+              ⚠ DO NOT RESTORE THIS AS A MISSING-FACT FIX. If it comes back,
+              the tab strip has to go — one owner per fact. */}
 
           <Fact label="OTR no">{detail.otrNo}</Fact>
 

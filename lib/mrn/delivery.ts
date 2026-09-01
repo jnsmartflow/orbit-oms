@@ -88,3 +88,34 @@ export function matchesDeliveryNo(
   if (q === "") return false;
   return deliveryNumbers(lines).some((d) => d.toLowerCase().includes(q));
 }
+
+// ── Tab groups ──────────────────────────────────────────────────────────────
+
+/** The label a '' delivery number renders as. */
+export const NO_DELIVERY_LABEL = "No delivery number";
+
+/**
+ * Every DISTINCT delivery number on these lines, '' INCLUDED, in line order.
+ *
+ * 🔴 THE DELIBERATE OPPOSITE OF deliveryNumbers() ABOVE, and the two must not
+ * be merged. That one answers "what delivery numbers does this MRN have" for a
+ * caption, where '' is the absence of an answer and must not be counted. This
+ * one answers "what groups do these lines fall into" for billing's tab strip,
+ * where the '' lines are real lines that still have to be looked at — hiding
+ * them would drop 32 live rows off the screen.
+ */
+export function deliveryGroups(lines: readonly { deliveryNo: string }[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const l of lines) {
+    if (seen.has(l.deliveryNo)) continue;
+    seen.add(l.deliveryNo);
+    out.push(l.deliveryNo);
+  }
+  return out;
+}
+
+/** A group's tab label. '' is a real group with no number, not a blank tab. */
+export function deliveryLabel(deliveryNo: string): string {
+  return deliveryNo === "" ? NO_DELIVERY_LABEL : deliveryNo;
+}

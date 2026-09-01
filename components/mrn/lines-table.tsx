@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, ChevronRight, Smartphone, X } from "lucide-react";
 import type { MrnDetail, MrnDetailLine } from "@/lib/mrn/types";
 import { isMrnReceivedFrom } from "@/lib/mrn/types";
-import { extraBatchCount, formatBatchNo, isLineOpenable } from "@/lib/mrn/derive";
+import { extraBatchCount, formatBatchNo, isLineOpenable, summariseMrn } from "@/lib/mrn/derive";
+import { deliveryGroups, deliveryLabel } from "@/lib/mrn/delivery";
 import { reportTotals } from "@/lib/mrn/report";
 import { formatCount } from "./format";
 import { ModalButton, ModalError, ModalShell, describeWriteError } from "./modal-shell";
@@ -122,6 +123,94 @@ const DONE_COLUMNS: Column[] = [
  */
 const TABLE_MIN_WIDTH = 720;
 
+// ── Delivery tabs ───────────────────────────────────────────────────────────
+//
+// 🔴 THE TAB SCOPES THE WHOLE TABLE, INCLUDING ITS TOTALS. One STI can carry
+// several delivery numbers (2026-09-01), and billing reads one delivery at a
+// time against one paper sheet.
+//
+// 🔴 A SINGLE-DELIVERY MRN STILL SHOWS ITS TAB. Owner ruling: the delivery
+// number REPLACES the "Line items" heading, so every MRN reads the same way and
+// there is no second layout to learn. Thirteen of the fourteen live MRNs have
+// exactly one delivery — special-casing them would make the common screen the
+// odd one out.
+//
+// ⚠ THE TABS SIT ABOVE THE STATUS MACHINERY, NOT INSIDE IT. LinesTable still
+// switches on status and each arm still chooses its own column set; all the
+// tabs do is hand that switch a NARROWER detail. The exhaustive switch and its
+// `never` default are untouched — a fifth status is still a compile error.
+
+/**
+ * The same MRN, seen through one delivery.
+ *
+ * 🔴 SCOPING THE DETAIL RATHER THAN EACH ARM IS THE WHOLE TRICK. Every count,
+ * total and filter downstream already reads off `detail` — lineCount,
+ * totalQtySti, issueLineCount, reportTotals(), the All/Issues segment — so
+ * narrowing the object makes all of them per-delivery with no change at any
+ * call site, and none of them can be forgotten.
+ *
+ * ⚠ summariseMrn() IS CALLED, NOT RE-DERIVED. The issue roll-up is derive.ts's
+ * rule and the server applies the identical function to the whole MRN; two
+ * implementations of "what counts as an issue" is exactly the drift this module
+ * avoids everywhere else.
+ */
+function scopeToDelivery(detail: MrnDetail, deliveryNo: string | null): MrnDetail {
+  if (deliveryNo === null) return detail;
+  const lines = detail.lines.filter((l) => l.deliveryNo === deliveryNo);
+  return {
+    ...detail,
+    ...summariseMrn(lines),
+    lines,
+    lineCount: lines.length,
+    checkedLineCount: lines.filter((l) => l.isChecked).length,
+    totalQtySti: lines.reduce((sum, l) => sum + l.qtySti, 0),
+    totalPhysicalQty: lines.reduce((sum, l) => sum + (l.physicalQty ?? 0), 0),
+  };
+}
+
+function DeliveryTabs({
+  groups,
+  active,
+  counts,
+  onSelect,
+}: {
+  groups: string[];
+  active: string;
+  counts: Map<string, number>;
+  onSelect: (d: string) => void;
+}): React.JSX.Element {
+  return (
+    <div className="inline-flex min-w-0 gap-0.5 overflow-x-auto rounded-[7px] bg-gray-100 p-[3px]">
+      {groups.map((g) => (
+        <button
+          key={g}
+          type="button"
+          onClick={() => onSelect(g)}
+          className={
+            "shrink-0 rounded-[5px] px-3 py-[5px] text-[12px] " +
+            (g === active
+              ? "bg-gray-900 font-semibold text-white"
+              : "font-medium text-gray-500 hover:bg-white/60")
+          }
+        >
+          {/* The delivery number IS the label — it is what billing matches
+              against the paper in front of them. Mono so a 10-digit number
+              scans digit by digit. */}
+          <span className={g === "" ? "" : "font-mono"}>{deliveryLabel(g)}</span>
+          <span
+            className={
+              "ml-1.5 text-[11px] tabular-nums " +
+              (g === active ? "text-white/70" : "text-gray-400")
+            }
+          >
+            {counts.get(g) ?? 0}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface LinesTableProps {
   detail: MrnDetail;
   /** HIDDEN without it — see detail-pane.tsx on hidden vs disabled. */
@@ -141,6 +230,37 @@ export function LinesTable({
   openLineId = null,
   onOpenLine,
 }: LinesTableProps): React.JSX.Element {
+  // 🔴 HOOKS BEFORE THE SWITCH, ALWAYS. The switch below returns from every
+  // arm, so a hook after it would run on some renders and not others.
+  //
+  // ⚠ NO RESET EFFECT IS NEEDED WHEN THE MRN CHANGES. detail-pane.tsx renders
+  // <LinesTable key={detail.id}>, so switching trucks REMOUNTS this component
+  // and the state starts fresh. If that key is ever removed, a stale
+  // `selected` would point at the previous truck's delivery number — the
+  // fallback below already survives it, but the key is the real guard.
+  const groups = useMemo(() => deliveryGroups(detail.lines), [detail.lines]);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  // Falls back to the first group whenever the selection is absent or no longer
+  // exists — which happens the moment billing re-pastes and a delivery number
+  // changes under an open pane.
+  const active = selected !== null && groups.includes(selected) ? selected : (groups[0] ?? null);
+
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of detail.lines) m.set(l.deliveryNo, (m.get(l.deliveryNo) ?? 0) + 1);
+    return m;
+  }, [detail.lines]);
+
+  const scoped = useMemo(() => scopeToDelivery(detail, active), [detail, active]);
+
+  // Rendered by TableShell in place of the old "Line items" heading. Null on an
+  // MRN with no lines at all — there is nothing to group.
+  const tabs =
+    groups.length > 0 && active !== null ? (
+      <DeliveryTabs groups={groups} active={active} counts={counts} onSelect={setSelected} />
+    ) : null;
+
   // 🔴 AN EXHAUSTIVE SWITCH, NOT AN if/else CHAIN ENDING IN OpenTable.
   //
   // This used to end `return <OpenTable …>` as a catch-all, and that shape was
@@ -159,16 +279,23 @@ export function LinesTable({
   // silent default. Do not "simplify" this back into `done || closed`.
   switch (detail.status) {
     case "open":
-      return <OpenTable detail={detail} canEdit={canEdit} onSaved={onSaved} />;
+      return <OpenTable detail={scoped} canEdit={canEdit} onSaved={onSaved} tabs={tabs} />;
     case "checking":
-      return <CheckingTable detail={detail} />;
+      return <CheckingTable detail={scoped} tabs={tabs} />;
     case "done":
     // 'closed' shows exactly what 'done' shows. Closing records the OTR number
     // and finalises the document; it takes nothing off the table. If the two
     // ever need to differ, split the arms — do not add a condition inside
     // DoneTable.
     case "closed":
-      return <DoneTable detail={detail} openLineId={openLineId} onOpenLine={onOpenLine} />;
+      return (
+        <DoneTable
+          detail={scoped}
+          openLineId={openLineId}
+          onOpenLine={onOpenLine}
+          tabs={tabs}
+        />
+      );
     default: {
       const unreachable: never = detail.status;
       throw new Error(
@@ -191,10 +318,14 @@ function OpenTable({
   detail,
   canEdit,
   onSaved,
+  tabs,
 }: {
+  /** ⚠ ALREADY SCOPED to the selected delivery by LinesTable — every count and
+   *  total below is that delivery's, not the truck's. */
   detail: MrnDetail;
   canEdit: boolean;
   onSaved?: () => void;
+  tabs?: React.ReactNode;
 }): React.JSX.Element {
   // ── NO DRAFT, NO DIRTY STATE, NO "Save lines" (2026-08-22) ────────────────
   //
@@ -292,6 +423,7 @@ function OpenTable({
 
       <TableShell
         columns={BILLING_COLUMNS}
+        tabs={tabs}
         title={
           <>
             {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
@@ -399,7 +531,14 @@ function OpenTable({
  * A future session will read this and see a screen that "should" show progress.
  * It should not. Adding it is a new product decision, not a bug fix.
  */
-function CheckingTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
+function CheckingTable({
+  detail,
+  tabs,
+}: {
+  /** ⚠ ALREADY SCOPED to the selected delivery — see OpenTable. */
+  detail: MrnDetail;
+  tabs?: React.ReactNode;
+}): React.JSX.Element {
   // ⚠ THE "Locked — the supervisor is checking this truck" BANNER IS GONE
   // (2026-08-26, v9 mockup). The status pill one line above already reads
   // "Unloading" in amber, and the table below is visibly greyed to 55% — the
@@ -411,6 +550,7 @@ function CheckingTable({ detail }: { detail: MrnDetail }): React.JSX.Element {
       <div className="opacity-55">
         <TableShell
           columns={BILLING_COLUMNS}
+          tabs={tabs}
           title={
             <>
               {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
@@ -441,10 +581,15 @@ function DoneTable({
   detail,
   openLineId,
   onOpenLine,
+  tabs,
 }: {
+  /** ⚠ ALREADY SCOPED to the selected delivery — see OpenTable. The All/Issues
+   *  segment below therefore filters WITHIN the tab, and its counts are that
+   *  delivery's. */
   detail: MrnDetail;
   openLineId: number | null;
   onOpenLine?: (lineId: number) => void;
+  tabs?: React.ReactNode;
 }): React.JSX.Element {
   // Local, read-only view filter (mockup B4's .seg). Not teal — teal on this
   // board belongs to New MRN / the pane's action row (UI §1).
@@ -497,6 +642,7 @@ function DoneTable({
 
       <TableShell
         columns={DONE_COLUMNS}
+        tabs={tabs}
         title={
           <>
             {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI ·{" "}
@@ -583,10 +729,23 @@ function DoneTable({
         })}
 
         {/* TOTAL row. Sums come from reportTotals() — the same function the XLS
-            and the A4 sheet total with, so the three cannot disagree about one
-            truck. It totals the WHOLE MRN, not the filtered view: a total that
-            changed with a view filter would be a different number wearing the
-            same label. */}
+            and the A4 sheet total with.
+
+            🔴 IT TOTALS THE SELECTED DELIVERY, AND STILL NOT THE All/Issues
+            FILTER. Those are two different kinds of narrowing and the
+            distinction is the whole rule:
+              • the DELIVERY TAB is the SUBJECT — billing is reading one paper
+                sheet, and a total spanning deliveries it cannot see would be
+                unusable. reportTotals() receives an already-scoped detail
+                (scopeToDelivery), so this follows the tab automatically.
+              • All/Issues is a VIEW of that subject. A total that moved when
+                you hid the clean rows would be a different number wearing the
+                same label — it stays put, exactly as before.
+
+            ⚠ The XLS and the A4 sheet are NOT scoped: they are the TRUCK's
+            record and list every delivery in one document. So this row and the
+            report's TOTAL legitimately differ on a multi-delivery MRN. That is
+            not drift — see lib/mrn/report.ts. */}
         {detail.lines.length > 0 && (
           <tr className="bg-[#f7f8fa] font-semibold">
             <Td center muted>{""}</Td>
@@ -636,12 +795,23 @@ function TableShell({
   columns,
   title,
   right,
+  tabs,
   extraColumn,
   children,
 }: {
   columns: Column[];
   title: React.ReactNode;
   right?: React.ReactNode;
+  /**
+   * The delivery tab strip. When present it REPLACES the "Line items" heading —
+   * owner ruling, 2026-09-01: the delivery number is what billing reads the
+   * table by, and a heading saying "Line items" above it only repeats what the
+   * table plainly is.
+   *
+   * Null only on an MRN with no lines at all, where the old heading still shows
+   * because there is nothing to group.
+   */
+  tabs?: React.ReactNode;
   extraColumn?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
@@ -651,9 +821,13 @@ function TableShell({
 
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#e6e9ec] bg-white">
-      <div className="flex items-center justify-between border-b border-[#f0f2f4] px-3.5 py-2.5">
-        <div className="text-[12px] font-semibold text-gray-900">
-          Line items <span className="ml-[7px] font-normal text-gray-400">{title}</span>
+      <div className="flex items-center justify-between gap-3 border-b border-[#f0f2f4] px-3.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {tabs ?? <span className="text-[12px] font-semibold text-gray-900">Line items</span>}
+          {/* The counts stay muted and to the right of whichever leads — they
+              describe the SELECTED delivery, because the whole detail handed to
+              this table is scoped to it (scopeToDelivery). */}
+          <span className="truncate text-[12px] font-normal text-gray-400">{title}</span>
         </div>
         {right}
       </div>
