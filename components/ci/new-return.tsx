@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, Search } from "lucide-react";
+import { ChevronLeft, ReceiptText, Search } from "lucide-react";
 import { toast } from "sonner";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
+import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { CiLineRows, CiPackChips } from "./line-list";
 import { CiQtySheet } from "./qty-sheet";
 import { CiDetailsStep, CiReasonSheet } from "./details-step";
+import { CiResultCard, CI_CARD_SHADOW } from "./result-card";
 import type {
   CiBillLine,
   CiBillResult,
@@ -44,6 +46,28 @@ import type {
 
 type Step = "search" | "results" | "bill" | "details" | "success";
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 300ms — THE APP'S EXISTING SERVER-SEARCH DEBOUNCE, NOT A NEW NUMBER.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Every debounce in this codebase that ends in a NETWORK request is 300ms, in
+// six independent places written by different hands:
+//   components/admin/customers-table.tsx:95      components/tint/challan-content.tsx:145
+//   components/admin/customers-split-view.tsx:265 components/tint/ti-report-content.tsx:392
+//   components/admin/skus-table.tsx:72            components/tint/tint-operator-content.tsx:1135
+//   app/(mail-orders)/mail-orders/resolve-line-panel.tsx:77
+//
+// ⚠ /po's big-search-bar.tsx uses 80ms and is NOT the precedent to copy: it
+// filters an already-loaded `products` array in memory, so its debounce only
+// has to outrun React, not a Mumbai round trip. CI's search is a real fetch to
+// /api/ci/search, which puts it squarely in the 300ms family.
+const CI_SEARCH_DEBOUNCE_MS = 300;
+
+// The server refuses anything shorter (app/api/ci/search/route.ts), so the
+// client simply does not ask. Mirrored here as a GATE, not a second rule — the
+// route stays the thing that enforces it.
+const CI_SEARCH_MIN_CHARS = 4;
+
 interface Props {
   /** For the module header's avatar. Passed down rather than re-derived. */
   userInitials: string;
@@ -74,7 +98,6 @@ export function CiNewReturn({
   const [searchedTerm, setSearchedTerm] = useState<string | null>(null);
 
   const [bill, setBill] = useState<CiBillResult | null>(null);
-  const [billLoading, setBillLoading] = useState(false);
   const [mode, setMode] = useState<"full" | "part">("full");
   const [activePackFilter, setActivePackFilter] = useState("ALL");
   /** rawLineItemId → tins coming back. Part only. */
@@ -243,46 +266,113 @@ export function CiNewReturn({
   }, [step, reasons, reasonsError]);
 
   // ── Search ────────────────────────────────────────────────────────────────
-  const runSearch = useCallback(async () => {
-    const q = query.trim();
-    if (q.length < 4) {
-      toast.error("Type at least 4 characters of an invoice or OBD number.");
+  //
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🔴 THERE IS NO SEARCH BUTTON. HE TYPES AND THE RESULT ARRIVES.
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // A teal "Search the bill" button used to sit under the field, and it was a
+  // MISREADING OF THE MOCKUP: in supervisor.html frame 1 that string is the
+  // EMPTY-STATE CAPTION under the ▤ glyph (`.empty > .emptyT`), not a control.
+  // It was drawn as an illustration of an empty screen and built as a submit.
+  // Being the only pressable-looking thing on the screen, it got pressed —
+  // which is how a caption became a required extra tap on every return.
+  //
+  // Picking's mobile board has no search button either; its strip filters as
+  // you type. This now matches, with the keyboard's own search key as the
+  // explicit submit for anyone who reaches for it.
+  //
+  // `dispatchedRef` holds the last term actually SENT. It is what stops the
+  // debounce effect re-firing when nothing about the query changed — see the
+  // effect below, where returning from an auto-opened bill would otherwise
+  // re-run the same search and re-open the same bill in a loop.
+  const dispatchedRef = useRef<string | null>(null);
+  // Monotonic request id. Live search means several requests can be in flight
+  // at once and they do NOT come back in order — a slow "5362" landing after a
+  // fast "536225770" would overwrite the newer result with the older one.
+  const searchSeqRef = useRef(0);
+
+  /**
+   * @param term  raw text to search; the route normalises it.
+   * @param auto  true when the debounce fired it, false when he pressed the
+   *              keyboard's search key. Only an EXPLICIT search is loud about
+   *              failure: a toast per pause while typing through "5", "53",
+   *              "536"… would be a stream of complaints about half-typed
+   *              numbers. The auto path reports "no bill" as a quiet empty
+   *              state instead, and stays silent about nothing else.
+   */
+  const runSearch = useCallback(async (term: string, auto: boolean) => {
+    const q = term.trim();
+    if (q.length < CI_SEARCH_MIN_CHARS) {
+      if (!auto) toast.error("Type at least 4 characters of an invoice or OBD number.");
       return;
     }
+    dispatchedRef.current = q;
+    const seq = ++searchSeqRef.current;
     setSearching(true);
     try {
       const res = await fetch(`/api/ci/search?q=${encodeURIComponent(q)}`);
+      // A response for a term he has already typed past is not a result, it is
+      // history. Drop it silently — including its error, which is equally stale.
+      if (seq !== searchSeqRef.current) return;
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(j.error ?? "Search failed.");
+        if (!auto) toast.error(j.error ?? "Search failed.");
         return;
       }
       const data = (await res.json()) as CiSearchResult;
+      if (seq !== searchSeqRef.current) return;
       setSearchedTerm(data.query);
       setHits(data.hits);
 
       if (data.hits.length === 0) {
-        toast.error(`No bill found for ${data.query}.`);
+        // No toast on the auto path — the screen says it (see renderList).
         setStep("search");
         return;
       }
       // ⚠ A UI SHORTCUT, NOT A QUERY SHORTCUT. The route always returns a list
       // (11 live invoice numbers map to two OBDs each); with exactly one hit
       // there is simply no list worth showing, so we skip straight to the bill.
+      //
+      // 🔴 THIS IS SAFE TO DO WHILE HE IS STILL TYPING, and only because
+      // searchCiBills matches on EQUALITY — `{ invoiceNo: query }` /
+      // `{ obdNumber: query }`, never contains/startsWith (lib/ci/queries.ts).
+      // A half-typed number therefore returns ZERO hits, never one, so "exactly
+      // one hit" can only mean he has finished typing the whole number. If that
+      // predicate is ever loosened to a prefix match, THIS AUTO-OPEN MUST GO
+      // FIRST — a prefix that happens to be unique would drag him into a bill
+      // mid-keystroke.
       if (data.hits.length === 1) {
         void openBill(data.hits[0].orderId);
         return;
       }
       setStep("results");
     } catch {
-      toast.error("Search failed — check the connection and try again.");
+      if (seq !== searchSeqRef.current) return;
+      if (!auto) toast.error("Search failed — check the connection and try again.");
     } finally {
-      setSearching(false);
+      if (seq === searchSeqRef.current) setSearching(false);
     }
     // openBill is stable enough for this handler; declaring it would need a
     // forward reference. Deliberately omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, []);
+
+  // ── The debounce ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    // Never search behind an open bill. Without this the effect re-runs the
+    // moment `billOpen` flips back to false on the way out of a bill.
+    if (billOpen) return;
+    const q = query.trim();
+    if (q.length < CI_SEARCH_MIN_CHARS) return;
+    // Already sent. Covers the back-out-of-a-bill case above belt-and-braces,
+    // and stops a re-render from costing a request.
+    if (dispatchedRef.current === q) return;
+    const t = setTimeout(() => {
+      void runSearch(q, true);
+    }, CI_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query, billOpen, runSearch]);
 
   // ── Open one bill ─────────────────────────────────────────────────────────
   //
@@ -307,7 +397,9 @@ export function CiNewReturn({
     setStep("bill");
     pushScreen();
 
-    setBillLoading(true);
+    // ⚠ No separate `billLoading` flag. It existed only to label the deleted
+    // search button "Opening…"; the skeleton 7b added keys off `bill === null`,
+    // which is the same fact read from the data instead of tracked beside it.
     try {
       const res = await fetch(`/api/ci/bill/${orderId}`);
       if (!res.ok) {
@@ -323,8 +415,6 @@ export function CiNewReturn({
     } catch {
       toast.error("Could not open that bill — check the connection.");
       window.history.back();
-    } finally {
-      setBillLoading(false);
     }
     // pushScreen is a stable function declaration, not state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -477,6 +567,9 @@ export function CiNewReturn({
     setBill(null);
     setHits([]);
     setQuery("");
+    // Forget what was last SENT too, or typing the same number again for a
+    // second return on the same bill would sit there doing nothing.
+    dispatchedRef.current = null;
     setSearchedTerm(null);
     setReturned(new Map());
     setMode("full");
@@ -793,9 +886,21 @@ export function CiNewReturn({
         showSearch={false}
       />
 
-      <div className="px-3.5 pt-3.5">
-        <div className="flex items-center gap-2 bg-white rounded-full border border-gray-200 px-4 h-12">
-          <Search size={17} className="text-gray-400 shrink-0" />
+      {/* ═══════════════════════════════════════════════════════════════════
+          THE FIELD — mockup `.searchBig`: a 58px WHITE CARD, radius 16, on the
+          app card shadow. Not the thin outlined pill this was.
+          ═══════════════════════════════════════════════════════════════════
+          The difference is not decoration. This field IS the New tab — frame
+          1 is nothing but this and the empty state — so it has to read as the
+          screen's subject, which at 48px with a hairline border it did not.
+          Picking's search is a thin strip because it sits in a header above a
+          board that is the real content; here there is no other content. */}
+      <div className="px-4 pt-3.5">
+        <div
+          className="flex items-center gap-3 bg-white rounded-[16px] px-[18px] h-[58px]"
+          style={{ boxShadow: CI_CARD_SHADOW }}
+        >
+          <Search size={19} className="text-[#8A9299] shrink-0" strokeWidth={2.25} />
           <input
             // Picking autoFocuses the moment its search strip opens; the New
             // tab IS a search box, so the keyboard should be up when he lands
@@ -804,13 +909,17 @@ export function CiNewReturn({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void runSearch();
+              // The keyboard's own search key, still an immediate submit — it
+              // bypasses BOTH the debounce and the already-dispatched guard, so
+              // pressing it always does something even on a term just searched.
+              if (e.key === "Enter") void runSearch(query, false);
             }}
             inputMode="search"
             enterKeyHint="search"
             placeholder="Invoice or OBD number"
             aria-label="Invoice or OBD number"
-            className="flex-1 min-w-0 text-[15px] outline-none bg-transparent"
+            // 18px/650 with the mockup's placeholder weight and colour.
+            className="flex-1 min-w-0 text-[18px] font-[650] tracking-[0.01em] text-[#16191D] outline-none bg-transparent placeholder:text-[#B7BFC5] placeholder:font-medium"
           />
           {query !== "" && (
             <button
@@ -818,55 +927,83 @@ export function CiNewReturn({
               onClick={() => {
                 setQuery("");
                 setHits([]);
+                dispatchedRef.current = null;
+                setSearchedTerm(null);
                 setStep("search");
               }}
               aria-label="Clear"
-              className="text-gray-400 text-[17px] leading-none shrink-0"
+              className="text-[#B7BFC5] text-[17px] leading-none shrink-0 -mr-1 p-1"
             >
               ✕
             </button>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => void runSearch()}
-          disabled={searching || billLoading}
-          className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold mt-2.5 disabled:bg-gray-100 disabled:text-gray-400 shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:shadow-none"
-        >
-          {searching ? "Searching…" : billLoading ? "Opening…" : "Search the bill"}
-        </button>
       </div>
 
-      {step === "results" && (
-        <div className="px-3 pt-4">
-          <p className="text-[12.5px] text-gray-500 px-1 pb-2">
-            {hits.length} bills for {searchedTerm}
+      {/* ═══════════════════════════════════════════════════════════════════
+          THE EMPTY STATE — mockup `.empty`. This is where "Search the bill"
+          actually belongs: a caption under a glyph, not a button.
+          ═══════════════════════════════════════════════════════════════════
+          Two of them share one geometry, because they answer the same question
+          ("why is this screen blank?") at two different moments.
+
+          Padding 130/30/0, measured from below the field, exactly as drawn.
+          ⚠ autoFocus means the keyboard is usually UP when he lands here, so on
+          a short phone the glyph may sit below the fold until he dismisses it.
+          That is the mockup's geometry and it is deliberate — the empty state is
+          reassurance, not an instruction he has to read. */}
+      {hits.length === 0 && (
+        <div className="flex flex-col items-center text-center px-[30px] pt-[130px]">
+          <ReceiptText
+            size={50}
+            strokeWidth={1.5}
+            className="text-[#DCE3E5] mb-3.5"
+            aria-hidden="true"
+          />
+          <p className="text-[16px] font-semibold text-[#8A9299]">
+            {searching
+              ? "Searching…"
+              : searchedTerm !== null
+                ? `No bill for ${searchedTerm}`
+                : "Search the bill"}
           </p>
+          {/* Only the no-match case earns a second line, and it names the two
+              things worth checking rather than apologising. A miss here is
+              nearly always a typo or a bill that is not his depot's. */}
+          {!searching && searchedTerm !== null && (
+            <p className="text-[13px] text-[#B7BFC5] mt-1.5">
+              Check the number, or try the other one — invoice or OBD.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          RESULTS — driven by `hits`, NOT by `step`.
+          ═══════════════════════════════════════════════════════════════════
+          It used to render on `step === "results"`, which is only ever set for
+          TWO OR MORE hits. So backing out of a single hit that had auto-opened
+          left `step === "search"` with one hit in hand and the list suppressed
+          — a blank screen under a field with his number still in it. Rendering
+          from the data shows him the one card he came back to. */}
+      {hits.length > 0 && (
+        <div className="px-4 pt-4" style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}>
+          {/* `.countLine` — uppercase, tracked, above the cards. */}
+          <p className="text-[12.5px] font-bold uppercase tracking-[0.06em] text-[#8A9299] px-1 pb-2.5">
+            {hits.length} bill{hits.length === 1 ? "" : "s"}
+          </p>
+          {/* One card, shared with the Submitted tab — see result-card.tsx for
+              why this one is shared where line-list.tsx is copied. */}
           {hits.map((h) => (
-            <button
+            <CiResultCard
               key={h.orderId}
-              type="button"
+              identifier={h.obdNumber}
+              chipLabel={`${h.lineCount} line${h.lineCount === 1 ? "" : "s"}`}
+              name={h.customerName}
+              leading={formatDay(h.invoiceDate ?? h.obdDateTime)}
+              litres={h.totalLitres}
               onClick={() => void openBill(h.orderId)}
-              className="w-full text-left bg-white rounded-[14px] px-3.5 py-3 mb-2 active:opacity-90"
-              style={{ boxShadow: "0 1px 2px rgba(16,25,29,0.04), 0 3px 12px rgba(16,25,29,0.05)" }}
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="font-mono text-[15px] font-bold text-gray-900 truncate">
-                  {h.obdNumber}
-                </span>
-                <span className="text-[11.5px] text-gray-400 shrink-0">
-                  {h.lineCount} line{h.lineCount === 1 ? "" : "s"}
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between gap-3 mt-1">
-                <span className="text-[13.5px] text-gray-700 truncate min-w-0">
-                  {h.customerName}
-                </span>
-                <span className="text-[11.5px] text-gray-500 shrink-0 tabular-nums">
-                  {formatDay(h.invoiceDate ?? h.obdDateTime)} · {h.totalLitres} L
-                </span>
-              </div>
-            </button>
+            />
           ))}
         </div>
       )}

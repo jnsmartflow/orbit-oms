@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
+import { CiResultCard } from "./result-card";
 import type { CiBoardRow, CiSupervisorBoard } from "@/lib/ci/types";
 
 // The supervisor's Submitted tab — frame 9 of docs/mockups/ci/supervisor.html.
@@ -84,7 +85,9 @@ export function CiSubmittedBoard({
         showSearch={false}
       />
 
-      <div className="px-3 pt-3" style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}>
+      {/* px-4 = the mockup's 16px `.body` gutter, matching the New tab. The two
+          tabs are one screen; a 4px step between them shows when he switches. */}
+      <div className="px-4 pt-3" style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}>
         {loading && board === null && (
           <p className="text-[13px] text-gray-400 text-center py-10">Loading…</p>
         )}
@@ -129,43 +132,34 @@ function SectionHeading({ children }: { children: React.ReactNode }): React.JSX.
 }
 
 /**
- * ⚠ A <div>, NOT a <button>. Read-only means no tap affordance at all — a
- * pressable card that does nothing is worse than a flat one, because it invites
- * the tap and then ignores it.
+ * Frame 9's card. The chrome, the 22px/750 dealer name and the `.rMeta` shape
+ * all come from the SHARED components/ci/result-card.tsx, which the New tab's
+ * search result uses too — the mockup draws them as one object and they had
+ * already drifted apart (this face stayed at a 13.5px name through step 7c).
+ * Only the three values differ, and they are all this function decides.
+ *
+ * ⚠ NO onClick — so it renders a <div>, not a <button>. Read-only means no tap
+ * affordance at all: a pressable card that does nothing is worse than a flat
+ * one, because it invites the tap and then ignores it. Making these open a CI
+ * is a product decision (step 7e), not a styling one.
  */
 function CiCard({ row }: { row: CiBoardRow }): React.JSX.Element {
   const done = row.status === "closed";
   return (
-    <div
-      className="bg-white rounded-[14px] px-3.5 py-3 mb-2"
-      style={{ boxShadow: "0 1px 2px rgba(16,25,29,0.04), 0 3px 12px rgba(16,25,29,0.05)" }}
-    >
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="font-mono text-[15px] font-bold text-gray-900 truncate">
-          {row.ciNumber}
-        </span>
-        {/* The status word, not a colour-only signal — "With billing" and "Done"
-            are what the mockup writes, and they say the same thing to someone
-            who cannot distinguish the two greys. */}
-        <span
-          className={
-            "text-[11px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap " +
-            (done ? "bg-[#E7F6EE] text-[#0A7C4A]" : "bg-[#f1f4f5] text-[#6b7480]")
-          }
-        >
-          {done ? "Done" : "With billing"}
-        </span>
-      </div>
-      <div className="flex items-baseline justify-between gap-3 mt-1">
-        <span className="text-[13.5px] text-gray-700 truncate min-w-0">{row.customerName}</span>
-        <span className="text-[11.5px] text-gray-500 shrink-0 tabular-nums">
-          {row.returnType === "full"
-            ? "Full bill"
-            : `Part · ${row.lineCount} line${row.lineCount === 1 ? "" : "s"}`}
-          {" · "}
-          {row.totalLitres} L
-        </span>
-      </div>
-    </div>
+    <CiResultCard
+      identifier={row.ciNumber}
+      // The status WORD, never a colour-only signal — it says the same thing to
+      // a reader who cannot tell amber from green. Tones are the mockup's:
+      // `.chip.amber` while billing still holds it, `.chip.green` once closed.
+      chipLabel={done ? "Done" : "With billing"}
+      chipTone={done ? "green" : "amber"}
+      name={row.customerName}
+      leading={
+        row.returnType === "full"
+          ? "Full bill"
+          : `Part · ${row.lineCount} line${row.lineCount === 1 ? "" : "s"}`
+      }
+      litres={row.totalLitres}
+    />
   );
 }
