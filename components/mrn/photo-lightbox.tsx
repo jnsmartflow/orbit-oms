@@ -104,8 +104,24 @@ export function PhotoLightbox({
     [index, photos.length, onIndex],
   );
 
-  // The image for the current photo. Cheap in practice — the band has already
-  // minted and cached this URL, so opening a photo is usually zero requests.
+  // The image for the current photo, plus a quiet head start on the next one.
+  //
+  // 🔴 NOTHING IS MINTED BEFORE THE VIEWER OPENS. The thumbnail band that used
+  // to pre-mint a URL per photo is gone (2026-09-01) — the pane now makes ONE
+  // list call and no signed URLs at all, so on a 10-photo MRN the cost of
+  // opening the truck went from 11 requests to 1. That saving is the reason
+  // this effect exists in this shape.
+  //
+  // ⚠ THE NEXT PHOTO IS PREFETCHED, THE PREVIOUS ONE IS NOT — and that is not
+  // an oversight. Forward is how a gallery is read; backward is almost always a
+  // return to something already opened, which is already in the cache
+  // (lib/mrn/signed-url.ts). Prefetching both directions would double the
+  // requests to save a wait that mostly cannot happen.
+  //
+  // The prefetch is fire-and-forget and its failure is swallowed on purpose: it
+  // is an optimisation, and surfacing its error would put a message on screen
+  // about a photo the operator has not asked to see. If it did fail, arrowing
+  // to that photo simply mints it then, and THAT failure is reported.
   useEffect(() => {
     if (!photo) return;
     let cancelled = false;
@@ -123,10 +139,14 @@ export function PhotoLightbox({
         if (!cancelled) setLoadError(err instanceof Error ? err.message : "Could not load this photo.");
       }
     })();
+
+    const next = photos[index + 1];
+    if (next) void getSignedUrl(next.id).catch(() => undefined);
+
     return () => {
       cancelled = true;
     };
-  }, [photo]);
+  }, [photo, photos, index]);
 
   // ── The single, branched keyboard owner — see the header ───────────────────
   useEffect(() => {

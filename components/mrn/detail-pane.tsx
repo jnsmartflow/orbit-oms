@@ -7,7 +7,7 @@ import { isLineOpenable } from "@/lib/mrn/derive";
 import { StatusPill } from "./status-pill";
 import { LineDrawer } from "./line-drawer";
 import { LinesTable } from "./lines-table";
-import { PhotoBand } from "./photo-band";
+import { PhotosButton } from "./photos-button";
 import { formatDateOnly, formatDuration, formatIstTime } from "./format";
 import type { MrnPerms } from "./mrn-shell";
 
@@ -208,6 +208,31 @@ export function DetailPane({
               and does not compete — the same way Delivery Challan's left panel
               does not. */}
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            {/* ── Photos ───────────────────────────────────────────────────
+                A PEER of the controls beside it, not a new kind of thing: same
+                h-8 box model, same border, same weight, and it sits in the same
+                right-aligned run.
+
+                🔴 IT RENDERS NOTHING AT ZERO PHOTOS — the component returns
+                null, so there is no greyed button and no "0" badge. That is the
+                one case where absence is right rather than a disabled state:
+                UI §10's "disabled means NOT YET" needs a state that will
+                eventually have something, and a truck nobody photographed
+                never will.
+
+                ⚠ IT IS DELIBERATELY NOT GATED ON canExport. The two report
+                controls are billing's alone (design §11 OQ-11), but a photo is
+                evidence anyone who can see the MRN may need to look at —
+                `operations` and `floor_supervisor` both hold canView. The
+                viewer's DELETE is the only thing inside that is permissioned,
+                on canDelete plus done/closed.
+
+                ⚠ AND NOT GATED ON STATUS. Photos exist from 'checking' onward,
+                so the control appears the moment the supervisor takes one and
+                stays for the life of the MRN — unlike the report links beside
+                it, which cannot work until the truck is finished. */}
+            <PhotosButton detail={detail} canDelete={perms.canDelete} />
+
             {detail.status === "open" && (
               <>
                 {/* 🔴 THE ONLY ENTRY POINT TO EditHeaderModal. It used to be a
@@ -405,23 +430,6 @@ export function DetailPane({
           )}
         </div>
       </div>
-
-      {/* ── The photo band ──────────────────────────────────────────────────
-          A SIBLING of the header block and the scroll box, deliberately: it is
-          pinned above the table rather than scrolling with it, so a thumbnail
-          stays reachable while billing reads down forty lines.
-
-          🔴 IT RENDERS null WHEN THE MRN HAS NO PHOTOS — no empty state, no
-          border, no reserved space. Most trucks will never carry one.
-
-          ⚠ AND IT IS NOT A FACT. A photo count in the Facts row above would
-          inherit that row's rule ("a fact disappears only when it cannot exist
-          yet") and be forced to print "0 photos" on every MRN for ever. Being a
-          band rather than a fact is what buys the right to vanish.
-
-          ⚠ NOT A SECOND HEADER either — no MRN number, no status pill, no
-          document actions. header-card.tsx was deleted for being one. */}
-      <PhotoBand detail={detail} canDelete={perms.canDelete} />
 
       {/* The table starts immediately below the header block — no tab strip.
           Keyed on the MRN id so switching trucks REMOUNTS the table rather than
