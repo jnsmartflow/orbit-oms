@@ -187,17 +187,27 @@ model users {
   // generate time. Same rule as the three PickAssignment* relations above.
   pickFindingsReported      pick_findings[]          @relation("PickFindingReportedBy")
   pickFindingsRecorded      pick_findings[]          @relation("PickFindingRecordedBy")
-  // MRN back-relations (2026-08-20, v27.16) — FOUR FKs from `mrn` to `users`
-  // plus ONE from `mrn_lines`. All five relations MUST stay explicitly named on
-  // BOTH sides or Prisma throws an ambiguity ERROR at generate time, not a
-  // warning. Same rule as the two PickFinding* above and the three
-  // PickAssignment* before them — this is the largest such cluster in the
-  // schema, so it is also the easiest one to half-edit.
+  // MRN back-relations (2026-08-20, v27.16 · extended 2026-09-01, v27.19) —
+  // FIVE FKs from `mrn` to `users`, plus ONE from `mrn_lines` and ONE from
+  // `mrn_photos`. All seven relations MUST stay explicitly named on BOTH sides
+  // or Prisma throws an ambiguity ERROR at generate time, not a warning. Same
+  // rule as the two PickFinding* above and the three PickAssignment* before
+  // them — this is the largest such cluster in the schema, so it is also the
+  // easiest one to half-edit.
+  //
+  // ⚠ The last two pairs (mrn_lines, mrn_photos) are each a SINGLE relation to
+  // `users` and would generate without a name. They are named anyway, because
+  // in this cluster the convention is: a link to an ACTOR is named, a
+  // structural parent link is not (mrn_photos.mrn / .line, mrn_lines.mrn and
+  // mrn_line_batches.line are all unnamed). Keep new ones on that side of the
+  // line — an unnamed actor relation here reads as an oversight.
   mrnsCreated               mrn[]                    @relation("MrnCreatedBy")
   mrnsUnloadingStarted      mrn[]                    @relation("MrnUnloadingStartedBy")
   mrnsUnloadingEnded        mrn[]                    @relation("MrnUnloadingEndedBy")
   mrnsRemoved               mrn[]                    @relation("MrnRemovedBy")
+  mrnsClosed                mrn[]                    @relation("MrnClosedBy")
   mrnLinesChecked           mrn_lines[]              @relation("MrnLineCheckedBy")
+  mrnPhotosCaptured         mrn_photos[]             @relation("MrnPhotoCapturedBy")
   // Mail Order back-relations
   mailOrdersPunched         mo_orders[]              @relation("MoOrderPunchedBy")
   lineStatuses              mo_line_status[]
@@ -2279,6 +2289,26 @@ model mrn {
   unloadingEndById   Int?
   unloadingEndBy     users?      @relation("MrnUnloadingEndedBy", fields: [unloadingEndById], references: [id])
 
+  // Billing's close-out (v27.19, 2026-09-01). The FOURTH status, 'closed',
+  // sits after 'done': the supervisor ends the unloading, then billing records
+  // the OTR number and closes the truck. Live CHECK is now
+  //   chk_mrn_status: status IN ('open','checking','done','closed')
+  // and lib/mrn/types.ts MrnStatus must carry all four — asMrnStatus() THROWS
+  // on an unrecognised value, deliberately, so drift is loud.
+  //
+  // Both columns are NULLABLE and were NOT backfilled: the ten MRNs that
+  // predate this are 'done' and never become 'closed'. A backfilled closedAt
+  // would be a timestamp for a closing that never happened.
+  //
+  // 🔴 closedById is ON DELETE SET NULL live, matching unloadingStartById /
+  // unloadingEndById / removedById above — Prisma's default for an OPTIONAL
+  // relation is already SetNull, so this needs no onDelete: argument, exactly
+  // like its three siblings. Do NOT "correct" it to Restrict; that is
+  // createdById's rule below and it is a different rule for a different reason.
+  closedAt           DateTime?   @db.Timestamptz(6)
+  closedById         Int?
+  closedBy           users?      @relation("MrnClosedBy", fields: [closedById], references: [id])
+
   isRemoved          Boolean     @default(false)
   removedAt          DateTime?   @db.Timestamptz(6)
   removedById        Int?
@@ -2300,6 +2330,7 @@ model mrn {
   updatedAt          DateTime    @updatedAt @db.Timestamptz(6)
 
   lines              mrn_lines[]
+  photos             mrn_photos[]
 
   @@unique([mrnDate, srNo])
   @@index([mrnDate(sort: Desc)])
@@ -2351,6 +2382,7 @@ model mrn_lines {
   updatedAt   DateTime           @updatedAt @db.Timestamptz(6)
 
   batches     mrn_line_batches[]
+  photos      mrn_photos[]
 
   @@unique([mrnId, lineNo])
   @@index([skuCode])
@@ -2426,6 +2458,88 @@ model mrn_line_batches {
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
 
   @@unique([lineId, batchNo])
+}
+
+// Photographic evidence attached to a truck or to one of its lines
+// (v27.19, 2026-09-01). Design: docs/prompts/drafts/web-update-2026-08-31-mrn-photos-otr.md §4.1.
+// DDL: docs/prompts/drafts/sql-2026-08-31-mrn-photos-otr.sql. Hand-mirrored —
+// db push AND db pull are both banned/broken here (CORE §3).
+//
+// 🔴 ONE TABLE, NOT TWO, and `lineId` is what carries the difference:
+//   NULL  = truck-level (the LR document covers the whole consignment)
+//   set   = this SKU line (a leaky/damaged tin on line 18)
+// A second table for the truck-level case would have duplicated every column
+// to express one nullable pointer.
+//
+// ⚠ NO `updatedAt`, AND THAT IS THE DESIGN. A photo is immutable — a retake is
+// delete-and-capture, never an edit — so there is no second timestamp to keep
+// honest and no @updatedAt landmine (CORE §13) to inherit.
+//
+// ⚠ NO CAPTION COLUMN IN v1. There is no free-text column anywhere in the MRN
+// tables (mrn holds identifiers and status, mrn_lines holds only skuCode,
+// mrn_line_batches holds none). Adding the first one is its own decision.
+//
+// ⚠ `storagePath` IS A PATH INSIDE THE BUCKET, NEVER A URL. A stored URL
+// expires and leaves a broken image with no way back to the object; the read
+// path mints a signed URL per view (the pattern
+// app/api/admin/attendance/photo/route.ts:44 already uses).
+model mrn_photos {
+  id           Int        @id @default(autoincrement())
+
+  mrnId        Int
+  mrn          mrn        @relation(fields: [mrnId], references: [id], onDelete: Cascade)
+
+  // 🔴 CASCADE IS SAFE ONLY BECAUSE OF A GATE ELSEWHERE. lines PUT does
+  // deleteMany + createMany on mrn_lines (app/api/mrn/[mrnId]/lines/route.ts:300),
+  // which would take attached photos with it — but that route 409s unless
+  // status === 'open' (:116-125), and photos only exist from 'checking' onward.
+  // The windows cannot overlap, and the ladder is one-way. If a reopen or
+  // un-start is ever added, change this to SetNull in the SAME commit.
+  lineId       Int?
+  line         mrn_lines? @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  // Live CHECK chk_mrn_photo_kind: kind IN ('lr','leaky','damage','other').
+  // Prisma cannot express a CHECK, so the closed vocabulary is enforced twice —
+  // here by the DB, and in TypeScript by the union in lib/mrn/types.ts. Same
+  // arrangement as mrn.status / mrn.receivedFrom. Widening it is an ALTER
+  // FIRST, then the union.
+  //
+  // A second live CHECK, chk_mrn_photo_lr_truck_level, enforces
+  //   kind <> 'lr' OR "lineId" IS NULL
+  // — an LR is a truck-level document and can never belong to one SKU line.
+  // Also invisible to Prisma; the write route must uphold it.
+  kind         String
+
+  // UNIQUE live as mrn_photos_storagePath_key — one row per storage object.
+  // Two rows pointing at one object make a delete half-work: the survivor looks
+  // intact in Postgres and 404s in the browser.
+  storagePath  String     @unique
+
+  // bytes is NOT NULL because size accounting reads it; the two dimensions are
+  // NULLABLE because they are only a thumbnail hint. A future non-camera upload
+  // path has a byte count for free but would have to decode the image to learn
+  // its dimensions. Design §4.1.
+  bytes        Int
+  widthPx      Int?
+  heightPx     Int?
+
+  // NOT NULL, and RESTRICT live — the same rule as mrn.createdById and
+  // deliberately NOT the SET NULL the other actor columns get. This row IS
+  // evidence; it must always know who produced it.
+  capturedById Int
+  capturedBy   users      @relation("MrnPhotoCapturedBy", fields: [capturedById], references: [id])
+
+  createdAt    DateTime   @default(now()) @db.Timestamptz(6)
+
+  // Prisma's default names for these three are exactly the live ones —
+  // mrn_photos_mrnId_idx, mrn_photos_mrnId_kind_idx, mrn_photos_lineId_idx —
+  // so no `map:` is needed (same situation as orders.@@index([invoiceNo])
+  // above; contrast pick_findings, which DOES need one). Verified against
+  // pg_indexes on 2026-09-01. The @unique above is likewise
+  // mrn_photos_storagePath_key by default.
+  @@index([mrnId])
+  @@index([mrnId, kind])
+  @@index([lineId])
 }
 
 // ── CI module — Goods Return Note (CI-Form), 2026-09-01 ──────────────────────
