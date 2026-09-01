@@ -1,9 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, Camera, Check, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Camera } from "lucide-react";
 import type { MrnDetail } from "@/lib/mrn/types";
-import { MrnPhotoCapture } from "./photo-capture";
+import { MAX_PHOTOS_PER_GROUP } from "@/lib/mrn/photo";
+import {
+  MrnPhotoCamera,
+  PhotoStrip,
+  partialUploadMessage,
+  stagePhoto,
+  uploadStagedPhotos,
+  type StagedPhoto,
+} from "./photo-capture";
 import { formatCount, formatIstTime } from "./format";
 
 // S10 — End unloading.
@@ -23,12 +31,17 @@ interface EndSheetProps {
   error: string | null;
   onCancel: () => void;
   /**
-   * The LR blob, or null when he skipped or never took one. The BOARD uploads
-   * it immediately before calling /end (design §5.2) — a failed upload must
-   * abort that END attempt, so the upload cannot live here, where the sheet has
-   * already handed control back.
+   * Called ONLY once every staged LR photo is on the server, or none was taken.
+   *
+   * 🔴 THE UPLOAD HAPPENS HERE, NOT IN THE BOARD, and finishing is downstream
+   * of it (design §5.2). The per-photo state belongs beside the strip that
+   * renders it, and hoisting five upload statuses into the board just to hand
+   * them back down would put the truth about each photo one component away from
+   * the thumbnail showing it. A failed upload never reaches this callback, so
+   * /end is never called and the MRN cannot land at 'done' believing it holds
+   * an LR it does not.
    */
-  onConfirm: (lrPhoto: Blob | null) => void;
+  onConfirm: () => void;
 }
 
 export function EndSheet({
@@ -54,11 +67,66 @@ export function EndSheet({
   // confirmEnd, immediately before POST /end, so a failed upload aborts the
   // whole END. An MRN must never reach 'done' believing it holds an LR it does
   // not.
-  const [lrShot, setLrShot] = useState<{ blob: Blob; dataUrl: string } | null>(null);
+  const [staged, setStaged] = useState<StagedPhoto[]>([]);
   const [capturing, setCapturing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   // Distinct from "no photo yet": he has been asked and said no. Only this
   // makes the "Skipped" copy honest rather than a guess about his intent.
   const [skipped, setSkipped] = useState(false);
+
+  // LR rows already on the server — normally none, but a PREVIOUS END ATTEMPT
+  // that partly failed leaves some, and they count against the cap. Without
+  // this the retry would offer five fresh slots on top of the two that landed.
+  const [serverLr, setServerLr] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/mrn/${detail.id}/photos`, { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { photos: { kind: string }[] };
+        if (!cancelled) setServerLr(json.photos.filter((ph) => ph.kind === "lr").length);
+      } catch {
+        // Leave it at 0 — the server cap is the real one.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id]);
+
+  const busyAll = busy || uploading;
+
+  /**
+   * Upload every staged LR photo, then finish.
+   *
+   * 🔴 PARTIAL SUCCESS IS REPORTED AS PARTIAL, AND NOTHING IS ROLLED BACK.
+   * Photos that landed are independently valid rows; deleting them because a
+   * later one failed would destroy real evidence to make a message tidy. They
+   * are also never re-sent — uploadStagedPhotos() skips 'saved' — because the
+   * route has no idempotency key and a re-post would duplicate the page.
+   */
+  async function finish(): Promise<void> {
+    setPhotoError(null);
+    if (staged.some((ph) => ph.status !== "saved")) {
+      setUploading(true);
+      const outcome = await uploadStagedPhotos(detail.id, null, "lr", staged, setStaged);
+      setUploading(false);
+      if (!outcome.ok) {
+        setPhotoError(
+          partialUploadMessage(
+            outcome.uploaded,
+            outcome.attempted,
+            outcome.attempted === 1 ? "LR photo" : "LR photos",
+            "Nothing was finished; the truck is still open.",
+          ),
+        );
+        return;
+      }
+    }
+    onConfirm();
+  }
 
   const shortfall = detail.totalQtySti - detail.totalPhysicalQty;
 
@@ -71,7 +139,7 @@ export function EndSheet({
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={busy ? undefined : onCancel} />
+      <div className="absolute inset-0 bg-black/40" onClick={busyAll ? undefined : onCancel} />
       <div
         role="dialog"
         aria-modal="true"
@@ -133,86 +201,61 @@ export function EndSheet({
           </div>
         )}
 
-        {/* ── LR photo ─────────────────────────────────────────────────────
-            Directly above the stamp line: it is the last thing he does before
-            the truck leaves. */}
+        {/* ── LR photos ────────────────────────────────────────────────────
+            Directly above the stamp line: the last thing he does before the
+            truck leaves.
+
+            🔴 OPTIONAL, AND /end GETS NO NEW GUARD. Up to
+            MAX_PHOTOS_PER_GROUP pages — a lorry receipt runs to more than one
+            sheet often enough that a single slot was the wrong shape. */}
         <div className="mt-4 rounded-[13px] border border-gray-200 p-3">
           <div className="flex items-center gap-3">
             <Camera size={18} className="shrink-0 text-[#667085]" />
             <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-semibold text-[#1d2939]">LR photo</div>
+              <div className="text-[14px] font-semibold text-[#1d2939]">LR photos</div>
               <div className="mt-0.5 text-[12px] text-[#98a2b3]">
-                {lrShot
-                  ? "Will be uploaded when you finish"
+                {staged.length + serverLr > 0
+                  ? `${staged.length + serverLr} of ${MAX_PHOTOS_PER_GROUP} · uploaded when you finish`
                   : skipped
                     ? "Skipped — billing will see this MRN has no LR"
                     : "The lorry receipt for the whole truck. Optional."}
               </div>
             </div>
-            {lrShot && (
-              <span className="flex shrink-0 items-center gap-1 rounded-[6px] bg-teal-50 px-[7px] py-[3px] text-[12px] font-bold text-teal-700">
-                <Check size={12} />
-                Ready
-              </span>
-            )}
           </div>
 
-          {lrShot ? (
-            <div className="mt-2.5 flex items-center gap-2.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={lrShot.dataUrl}
-                alt="LR photo about to be uploaded"
-                className="h-[52px] w-[52px] shrink-0 rounded-[9px] object-cover"
-              />
-              <button
-                type="button"
-                onClick={() => setCapturing(true)}
-                disabled={busy}
-                className="h-[40px] flex-1 rounded-[11px] bg-gray-100 text-[13.5px] font-semibold text-[#475467] disabled:opacity-60"
-              >
-                Retake
-              </button>
-              <button
-                type="button"
-                onClick={() => setLrShot(null)}
-                disabled={busy}
-                aria-label="Remove the LR photo"
-                className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[11px] bg-gray-100 text-[#475467] disabled:opacity-60"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ) : (
-            <div className="mt-2.5 flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setCapturing(true)}
-                disabled={busy}
-                className="flex h-[42px] flex-1 items-center justify-center gap-2 rounded-[11px] bg-gray-900 text-[13.5px] font-semibold text-white active:bg-gray-800 disabled:opacity-60"
-              >
-                <Camera size={15} />
-                Take LR photo
-              </button>
-              {/* 🔴 SKIP IS AS PROMINENT AS THE CAMERA. The LR is optional, and
-                  a buried skip would make it feel required — which is precisely
-                  the decision that was reversed on 2026-08-31. */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSkipped(true);
-                  setLrShot(null);
-                }}
-                disabled={busy}
-                className={
-                  "h-[42px] flex-1 rounded-[11px] text-[13.5px] font-semibold disabled:opacity-60 " +
-                  (skipped
-                    ? "bg-gray-200 text-[#475467]"
-                    : "bg-gray-100 text-[#475467] active:bg-gray-200")
-                }
-              >
-                {skipped ? "Skipped" : "Skip"}
-              </button>
+          <div className="mt-2.5">
+            <PhotoStrip
+              photos={staged}
+              serverCount={serverLr}
+              busy={busyAll}
+              addLabel="Take LR photo"
+              onAdd={() => setCapturing(true)}
+              onRemove={(key) => setStaged((prev) => prev.filter((x) => x.key !== key))}
+            />
+          </div>
+
+          {/* 🔴 SKIP DISAPPEARS ONCE A PHOTO IS STAGED, and comes back when the
+              last one is removed. "Skip" beside a photo he has just taken is a
+              contradiction — there is nothing left to skip. Removing them all
+              is what puts the choice back in front of him. */}
+          {staged.length === 0 && serverLr === 0 && (
+            <button
+              type="button"
+              onClick={() => setSkipped(true)}
+              disabled={busyAll}
+              className={
+                "mt-2 h-[38px] w-full rounded-[11px] text-[13px] font-semibold disabled:opacity-60 " +
+                (skipped ? "bg-gray-200 text-[#475467]" : "bg-gray-100 text-[#475467] active:bg-gray-200")
+              }
+            >
+              {skipped ? "Skipped — finish without an LR photo" : "Skip the LR photo"}
+            </button>
+          )}
+
+          {photoError && (
+            <div className="mt-2.5 flex gap-2.5 rounded-[11px] border border-red-200 bg-red-50 px-3 py-2.5 text-[13px] leading-[1.55] text-[#b42318]">
+              <AlertTriangle size={15} className="mt-px shrink-0" />
+              <div>{photoError}</div>
             </div>
           )}
         </div>
@@ -232,35 +275,30 @@ export function EndSheet({
           <button
             type="button"
             onClick={onCancel}
-            disabled={busy}
+            disabled={busyAll}
             className="h-[50px] flex-1 rounded-[13px] bg-gray-100 text-[15px] font-semibold text-[#475467] disabled:opacity-60"
           >
             Back
           </button>
           <button
             type="button"
-            onClick={() => onConfirm(lrShot?.blob ?? null)}
-            disabled={busy}
+            onClick={() => void finish()}
+            disabled={busyAll}
             className="h-[50px] flex-1 rounded-[13px] bg-green-600 text-[15px] font-bold text-white active:bg-green-700 disabled:bg-gray-100 disabled:text-gray-400"
           >
-            {busy ? "Finishing…" : "Yes, finish"}
+            {uploading ? "Uploading photos…" : busy ? "Finishing…" : "Yes, finish"}
           </button>
         </div>
       </div>
 
       {capturing && (
-        <MrnPhotoCapture
-          mrnId={detail.id}
-          // 🔴 null, ALWAYS. An LR is a TRUCK-level document: the live CHECK
-          // chk_mrn_photo_lr_truck_level refuses an 'lr' row carrying a lineId,
-          // and the upload route refuses it first, with a sentence.
-          lineId={null}
-          kind="lr"
+        <MrnPhotoCamera
           title="LR photo"
-          // Held, not uploaded — see the state block at the top of this file.
-          deferUpload
           onCaptured={(blob, dataUrl) => {
-            setLrShot({ blob, dataUrl });
+            setStaged((prev) =>
+              prev.length + serverLr >= MAX_PHOTOS_PER_GROUP ? prev : [...prev, stagePhoto(blob, dataUrl)],
+            );
+            // Taking one un-answers the skip question.
             setSkipped(false);
             setCapturing(false);
           }}

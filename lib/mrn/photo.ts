@@ -91,6 +91,28 @@ export const JPEG_QUALITY_PERCENT = JPEG_QUALITY * 100;
  */
 export const MAX_PHOTO_BYTES = 800_000;
 
+/**
+ * How many photos one GROUP may hold. A group is:
+ *   • one LINE          — every photo carrying that `lineId`
+ *   • the LR            — every `kind: 'lr'` row on the MRN (always lineId null)
+ *
+ * 🔴 DEFINED ONCE, HERE, AND READ BY BOTH THE UI AND THE ROUTE. Two copies of a
+ * limit drift, and the pair that drifts is always the client and the server —
+ * the screen offers a sixth slot the route then refuses, or the route accepts a
+ * sixth the screen never showed. components/mrn/photo-capture.tsx and
+ * app/api/mrn/[mrnId]/photo/route.ts both import this symbol; neither may
+ * hardcode a number.
+ *
+ * 🔴 THE SERVER CHECK IS THE REAL CAP. The UI disables the add control at 5,
+ * but a stale sheet, a double tap or a second phone on the same truck all walk
+ * straight past that. The route counts the group before it writes.
+ *
+ * ⚠ IT IS PER GROUP, NOT PER MRN. A 40-line truck may legitimately hold 200
+ * photos; what is being bounded is how many pictures of ONE tin or ONE lorry
+ * receipt are worth keeping.
+ */
+export const MAX_PHOTOS_PER_GROUP = 5;
+
 // ── Kind ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -108,6 +130,20 @@ export const MAX_PHOTO_BYTES = 800_000;
  * a lorry receipt covers the whole consignment, not one SKU. The upload route
  * mirrors that rule in application code so the operator gets a sentence rather
  * than a raw constraint violation.
+ *
+ * 🔴 'leaky' AND 'damage' ARE LEGAL BUT UNUSED BY THE UI SINCE 2026-09-01, AND
+ * THE CHECK MUST NOT BE NARROWED TO MATCH. The phone used to ask "what are you
+ * photographing?" before opening the camera; that question was removed on owner
+ * instruction after live testing, because the photo itself answers it and the
+ * picker only stood between him and the shutter. Every line photo now stores
+ * 'other'.
+ *
+ * A future session will run a DISTINCT over mrn_photos.kind, find only 'lr' and
+ * 'other', and be tempted to ALTER chk_mrn_photo_kind down to two values. Do
+ * not: the vocabulary is the DESIGN's, not the current UI's, and re-widening a
+ * CHECK later is a migration where leaving it alone costs nothing. If a kind
+ * picker ever comes back — on the billing side, say, where there is room for it
+ * — the values must still be there.
  */
 export type MrnPhotoKind = "lr" | "leaky" | "damage" | "other";
 

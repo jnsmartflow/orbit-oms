@@ -256,53 +256,25 @@ export function MrnSupervisorBoard(): React.JSX.Element {
   const [endError, setEndError] = useState<string | null>(null);
 
   /**
-   * END UNLOADING, optionally carrying the LR photo.
+   * END UNLOADING.
    *
-   * 🔴 THE PHOTO GOES UP FIRST, AND A FAILURE HERE ABORTS THE WHOLE END
-   * (design §5.2). The alternative — end first, upload after — would leave an
-   * MRN sitting at 'done' believing it holds an LR it does not, on a document
-   * billing hands to a supplier. There is no queue and no retry: public/sw.js
-   * has no fetch handler by hard rule, so a photo that did not upload is still
-   * only on this phone.
-   *
-   * 🔴 SKIP AND FAILURE MUST NOT READ ALIKE, and this function is where the two
-   * diverge. Skipping is a CHOICE he made and END proceeds silently. A failed
-   * upload is an ERROR he did not choose: END does not happen, the sheet stays
-   * open, and the message says both what broke and that nothing was finished.
-   * Wording them the same way would let a supervisor walk away from a truck he
-   * believes is closed.
+   * 🔴 THE LR PHOTOS ARE ALREADY ON THE SERVER BY THE TIME THIS RUNS.
+   * EndSheet uploads every staged LR photo first and only calls onConfirm when
+   * all of them landed (design §5.2) — so a failed upload never reaches here,
+   * /end is never called, and an MRN can never arrive at 'done' believing it
+   * holds an LR it does not. The per-photo upload state lives beside the strip
+   * that renders it, in components/mrn/end-sheet.tsx.
    *
    * ⚠ /api/mrn/[mrnId]/end IS UNCHANGED and must stay so. It keeps exactly its
    * two server-side checks — status === 'checking' and uncheckedCount === 0.
-   * The LR is optional; there is no third guard and none may be added.
+   * The LR is OPTIONAL: there is no third guard and none may be added.
    */
-  async function confirmEnd(lrPhoto: Blob | null): Promise<void> {
+  async function confirmEnd(): Promise<void> {
     if (!detail) return;
     setEnding(true);
     setEndError(null);
     const number = detail.mrnNumber;
     try {
-      if (lrPhoto) {
-        const form = new FormData();
-        form.append("photo", lrPhoto, "lr.jpg");
-        form.append("kind", "lr");
-        // NO lineId — an LR is truck-level, and the route 400s if one is sent.
-        const up = await fetch(`/api/mrn/${detail.id}/photo`, {
-          method: "POST",
-          body: form,
-        });
-        if (!up.ok) {
-          const json = (await up.json().catch(() => ({}))) as { error?: string };
-          // Names the photo as the thing that failed AND says the MRN is
-          // untouched. "Nothing was finished" is the half he acts on.
-          setEndError(
-            `The LR photo did not upload — ${json.error ?? "please try again"}. Nothing was finished; the truck is still open.`,
-          );
-          setEnding(false);
-          return;
-        }
-      }
-
       const res = await fetch(`/api/mrn/${detail.id}/end`, { method: "POST" });
       if (!res.ok) {
         const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -654,7 +626,7 @@ export function MrnSupervisorBoard(): React.JSX.Element {
             setEndError(null);
             window.history.back();
           }}
-          onConfirm={(lrPhoto) => void confirmEnd(lrPhoto)}
+          onConfirm={() => void confirmEnd()}
         />
       )}
 

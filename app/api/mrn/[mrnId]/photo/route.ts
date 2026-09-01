@@ -6,6 +6,10 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import {
   BUCKET,
   MAX_PHOTO_BYTES,
+  // 🔴 IMPORTED, NEVER A LOCAL LITERAL. lib/mrn/photo.ts is the single owner of
+  // this number and components/mrn/photo-capture.tsx reads the same symbol — a
+  // second copy here would drift from the screen that offers the slots.
+  MAX_PHOTOS_PER_GROUP,
   PHOTO_CONTENT_TYPE,
   buildPhotoPath,
   isMrnPhotoKind,
@@ -221,7 +225,50 @@ export async function POST(
     }
   }
 
-  // ── 6. Upload, then insert, then compensate ────────────────────────────────
+  // ── 6. 🔴 THE CAP, ENFORCED HERE AND NOT ONLY ON THE PHONE ────────────────
+  //
+  // The strip disables its add control at MAX_PHOTOS_PER_GROUP, but a cap that
+  // lives only in the UI is not a cap. All three of these walk straight past it
+  // and none is hypothetical on a depot floor:
+  //   • a sheet opened before someone else added photos to the same truck
+  //     (Checking is deliberately NOT scoped to one supervisor — §11 OQ-6)
+  //   • a double tap on a slow connection, firing two uploads from one strip
+  //   • a retry after a partial failure, against a count taken before it
+  //
+  // A GROUP is one line, or the LR. The two are counted differently because
+  // they are anchored differently: a line photo is identified by its lineId, an
+  // LR by being the MRN's 'lr' rows (its lineId is always NULL — the live CHECK
+  // chk_mrn_photo_lr_truck_level guarantees it).
+  //
+  // ⚠ COUNTED IMMEDIATELY BEFORE THE WRITE, and there is still a window: two
+  // simultaneous uploads can both read 4. That is accepted — the consequence is
+  // a sixth photo, not a corrupt row, and closing it would need a DB-level
+  // constraint no CHECK can express. Do not reach for $transaction (CORE §3);
+  // it would not help, because the race is between two requests, not two
+  // statements.
+  const groupWhere =
+    kind === "lr"
+      ? { mrnId, kind: "lr" }
+      : lineId !== null
+        ? { lineId }
+        : { mrnId, lineId: null, kind };
+
+  const existingInGroup = await prisma.mrn_photos.count({ where: groupWhere });
+  if (existingInGroup >= MAX_PHOTOS_PER_GROUP) {
+    return NextResponse.json(
+      {
+        error:
+          kind === "lr"
+            ? `This MRN already has ${MAX_PHOTOS_PER_GROUP} LR photos, which is the maximum.`
+            : `This line already has ${MAX_PHOTOS_PER_GROUP} photos, which is the maximum.`,
+        existing: existingInGroup,
+        max: MAX_PHOTOS_PER_GROUP,
+      },
+      { status: 409 },
+    );
+  }
+
+  // ── 7. Upload, then insert, then compensate ────────────────────────────────
   const storagePath = buildPhotoPath(mrnId, kind);
   const supabase = getSupabaseAdmin();
 

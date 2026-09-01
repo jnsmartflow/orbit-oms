@@ -10,8 +10,16 @@ import {
 } from "@/lib/mrn/derive";
 import type { MrnBatchInput, MrnDetailLine } from "@/lib/mrn/types";
 import { useKeyboardOpen } from "@/lib/hooks/use-keyboard-open";
-import { MRN_PHOTO_KIND_LABEL, type MrnPhotoKind } from "@/lib/mrn/photo";
-import { MrnPhotoCapture, PhotoKindSheet } from "./photo-capture";
+import { MAX_PHOTOS_PER_GROUP } from "@/lib/mrn/photo";
+import {
+  DEFAULT_LINE_PHOTO_KIND,
+  MrnPhotoCamera,
+  PhotoStrip,
+  partialUploadMessage,
+  stagePhoto,
+  uploadStagedPhotos,
+  type StagedPhoto,
+} from "./photo-capture";
 import { describeWriteError } from "./modal-shell";
 
 // The line sheet — the heart of the module.
@@ -132,6 +140,10 @@ export function LineSheet({
   });
 
   const [busy, setBusy] = useState(false);
+  // Kept apart from `error` so a failed photo does not overwrite a validation
+  // sentence about the quantities, and vice versa — they are different problems
+  // in different parts of the sheet.
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const split = batches.length > 1;
@@ -181,9 +193,12 @@ export function LineSheet({
   // photos — billing's face loads them separately (step 6) and the phone has no
   // use for the metadata, only the count. Widening the board payload for this
   // would put a join on every card render.
-  const [photoCount, setPhotoCount] = useState<number | null>(null);
-  const [kindSheet, setKindSheet] = useState(false);
-  const [capturingKind, setCapturingKind] = useState<MrnPhotoKind | null>(null);
+  // Rows ALREADY on the server for this line — from an earlier visit, or from
+  // a previous partial upload. They count against the cap and render as a
+  // "N saved" tile, because this phone never held their blobs.
+  const [serverPhotos, setServerPhotos] = useState<number>(0);
+  const [staged, setStaged] = useState<StagedPhoto[]>([]);
+  const [capturing, setCapturing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,10 +208,11 @@ export function LineSheet({
         if (!res.ok) return;
         const json = (await res.json()) as { photos: { lineId: number | null }[] };
         if (cancelled) return;
-        setPhotoCount(json.photos.filter((ph) => ph.lineId === line.id).length);
+        setServerPhotos(json.photos.filter((ph) => ph.lineId === line.id).length);
       } catch {
-        // Leave it null — "unknown" renders as no badge, which is honest. A 0
-        // here would claim there are none.
+        // Leave it at 0. The SERVER cap is the real one, so an undercount here
+        // costs at most a refused upload with a clear sentence — never a lost
+        // photo.
       }
     })();
     return () => {
@@ -266,7 +282,39 @@ export function LineSheet({
   async function confirm(): Promise<void> {
     setBusy(true);
     setError(null);
+    setPhotoError(null);
     try {
+      // 🔴 PHOTOS FIRST, AND A FAILURE STOPS THE CONFIRM. Same shape as the LR
+      // before /end: the write that follows is what makes this line final, and
+      // it must not happen while evidence he took is still only on this phone.
+      //
+      // 🔴 PHOTOS THAT LANDED STAY LANDED, AND ARE NEVER RE-SENT.
+      // uploadStagedPhotos() skips anything already 'saved'. The upload route
+      // has no idempotency key, so re-posting a successful blob would create a
+      // second row for the same picture under a second UUID path, and nothing
+      // downstream could tell the two apart.
+      if (staged.some((ph) => ph.status !== "saved")) {
+        const outcome = await uploadStagedPhotos(
+          mrnId,
+          line.id,
+          DEFAULT_LINE_PHOTO_KIND,
+          staged,
+          setStaged,
+        );
+        if (!outcome.ok) {
+          setPhotoError(
+            partialUploadMessage(
+              outcome.uploaded,
+              outcome.attempted,
+              outcome.attempted === 1 ? "photo" : "photos",
+              "The line was not confirmed; try again once you have signal.",
+            ),
+          );
+          setBusy(false);
+          return;
+        }
+      }
+
       const res = await fetch(`/api/mrn/${mrnId}/line/${line.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -645,31 +693,46 @@ export function LineSheet({
               and second MANUFACTURING group; a second meaning for that word,
               inches away, would be read as the first. It is "photo", or the
               kind's own name. */}
-          <button
-            type="button"
-            onClick={() => setKindSheet(true)}
-            className="mt-2.5 flex w-full items-center gap-3 rounded-[13px] border border-gray-200 px-3 py-3 text-left active:bg-gray-50"
-          >
-            <Camera size={18} className="shrink-0 text-[#667085]" />
-            <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-semibold text-[#1d2939]">Add a photo</div>
-              <div className="mt-0.5 text-[12px] text-[#98a2b3]">
-                {photoCount === null
-                  ? "Leaky, damaged, anything worth showing billing"
-                  : photoCount === 0
-                    ? "Leaky, damaged, anything worth showing billing"
-                    : `${photoCount} photo${photoCount === 1 ? "" : "s"} on this line`}
+          <div className="mt-2.5 rounded-[13px] border border-gray-200 p-3">
+            <div className="flex items-center gap-3">
+              <Camera size={18} className="shrink-0 text-[#667085]" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[14px] font-semibold text-[#1d2939]">Photos</div>
+                {/* ⚠ THIS SUBTITLE NOW DOES THE EXPLAINING THE KIND PICKER USED
+                    TO DO. It is the only place left that tells him what is
+                    worth photographing, so it stays even though the sheet it
+                    once introduced is gone. */}
+                <div className="mt-0.5 text-[12px] text-[#98a2b3]">
+                  Leaky, damaged, anything worth showing billing
+                </div>
               </div>
+              {/* The count on the row itself, so a photo he just staged or saved
+                  is visible without opening anything. */}
+              {serverPhotos + staged.length > 0 && (
+                <span className="shrink-0 rounded-[6px] bg-teal-50 px-[7px] py-[3px] text-[12px] font-bold text-teal-700">
+                  {serverPhotos + staged.length}
+                </span>
+              )}
             </div>
-            {/* The count rides on the row itself so a save he just made is
-                visible without opening anything. A save he cannot see is a save
-                he will make twice. */}
-            {photoCount !== null && photoCount > 0 && (
-              <span className="shrink-0 rounded-[6px] bg-teal-50 px-[7px] py-[3px] text-[12px] font-bold text-teal-700">
-                {photoCount}
-              </span>
+
+            <div className="mt-2.5">
+              <PhotoStrip
+                photos={staged}
+                serverCount={serverPhotos}
+                busy={busy}
+                addLabel="Add a photo"
+                onAdd={() => setCapturing(true)}
+                onRemove={(key) => setStaged((prev) => prev.filter((x) => x.key !== key))}
+              />
+            </div>
+
+            {photoError && (
+              <div className="mt-2.5 flex gap-2.5 rounded-[11px] border border-red-200 bg-red-50 px-3 py-2.5 text-[13px] leading-[1.55] text-[#b42318]">
+                <AlertTriangle size={15} className="mt-px shrink-0" />
+                <div>{photoError}</div>
+              </div>
             )}
-          </button>
+          </div>
 
           {showValidation && !batchCheck.ok && physicalQty > 0 && !split && (
             <div className="mt-3 flex gap-2.5 rounded-[11px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-[1.55] text-amber-900">
@@ -736,43 +799,34 @@ export function LineSheet({
           </div>
         )}
 
-      {/* ── Photo capture ─────────────────────────────────────
-          Both overlays sit INSIDE this sheet's root and above it in z-order,
-          so the line stays mounted underneath: the physical qty, the batches
-          and the counts he has already typed are still there when the camera
-          closes. Unmounting the sheet to take a photo would throw all of that
-          away.
+      {/* ── Photo capture ────────────────────────────────────────────────
+          The camera sits INSIDE this sheet's root and above it in z-order, so
+          the line stays mounted underneath: the physical qty, the batches and
+          the counts he has already typed are still there when it closes.
+          Unmounting the sheet to take a photo would throw all of that away.
 
-          ⚠ ORDER MATTERS — the kind is chosen BEFORE the camera opens, never
-          after. Asking "what was that?" once he has already taken the shot
-          invites the wrong answer, and the kind is what billing filters on. */}
-      {kindSheet && (
-        <PhotoKindSheet
-          onPick={(k) => {
-            setKindSheet(false);
-            setCapturingKind(k);
+          🔴 NO KIND PICKER (removed 2026-09-01, owner, after live testing).
+          Tapping Add opens the camera immediately. The picker gated the shutter
+          behind a question the photograph itself answers, at the one moment he
+          is holding a phone in one hand and a leaking tin in the other. Every
+          line photo now stores DEFAULT_LINE_PHOTO_KIND ('other'); 'leaky' and
+          'damage' stay LEGAL in chk_mrn_photo_kind and must not be removed from
+          it — see lib/mrn/photo.ts. */}
+      {capturing && (
+        <MrnPhotoCamera
+          title={`Photo · line ${line.lineNo}`}
+          onCaptured={(blob, dataUrl) => {
+            // Belt and braces against a double tap racing the disabled state:
+            // the strip hides Add at the cap, but the camera is already open by
+            // then. The SERVER cap is the one that actually holds.
+            setStaged((prev) =>
+              prev.length + serverPhotos >= MAX_PHOTOS_PER_GROUP
+                ? prev
+                : [...prev, stagePhoto(blob, dataUrl)],
+            );
+            setCapturing(false);
           }}
-          onCancel={() => setKindSheet(false)}
-        />
-      )}
-
-      {capturingKind && (
-        <MrnPhotoCapture
-          mrnId={mrnId}
-          lineId={line.id}
-          kind={capturingKind}
-          title={`${MRN_PHOTO_KIND_LABEL[capturingKind]} photo · line ${line.lineNo}`}
-          onUploaded={() => {
-            // Optimistic +1 rather than a refetch: the row is on the server (a
-            // 201 is what got us here), and a second round trip to learn a
-            // number we already know would leave the count stale for a beat on
-            // a slow depot connection. The null-coalesce covers the case where
-            // the initial count fetch failed — one photo he just took is a
-            // better answer than none.
-            setPhotoCount((n) => (n ?? 0) + 1);
-            setCapturingKind(null);
-          }}
-          onCancel={() => setCapturingKind(null)}
+          onCancel={() => setCapturing(false)}
         />
       )}
     </div>

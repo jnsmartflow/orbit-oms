@@ -1,81 +1,184 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Camera, Check, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, Plus, X } from "lucide-react";
 import { CameraView } from "@/components/attendance/camera-view";
 import {
   JPEG_QUALITY_PERCENT,
   MAX_PHOTO_BYTES,
+  MAX_PHOTOS_PER_GROUP,
   MAX_WIDTH,
-  MRN_PHOTO_KIND_LABEL,
   type MrnPhotoKind,
 } from "@/lib/mrn/photo";
 
-// The supervisor's photo capture — camera, review, upload. ONE component, both
-// callers: the per-line issue photo (line-sheet.tsx) and the LR at End
-// (end-sheet.tsx, via supervisor-board.tsx).
+// The supervisor's photo capture — camera, review, staging strip, upload.
+// Shared by both paths: per-line issue photos (line-sheet.tsx) and the LR at
+// End (end-sheet.tsx, driven by supervisor-board.tsx).
 //
 // 🔴 THE QUALITY CONSTANT IS THE TRAP IN THIS FILE.
 // captureFromVideo takes 0–100 (lib/attendance/photo.ts:45 divides by 100), so
 // JPEG_QUALITY_PERCENT (80) goes to CameraView and JPEG_QUALITY (0.8) must
 // never come near it. 0.8 there encodes at quality 0.008 — a near-black image
-// that compresses tiny, uploads cleanly, passes every server check and is only
-// ever caught by a human looking at it. There is no test that fails.
+// that compresses tiny, uploads cleanly, passes every server check and is
+// caught only by a human looking at it. No test fails.
+//
+// ⚠ NO KIND PICKER (removed 2026-09-01, owner, after live testing). Tapping
+// "Add a photo" opens the camera immediately and every line photo stores
+// 'other'. The picker asked a question the photograph itself answers, and it
+// stood between the supervisor and the shutter at the one moment he is holding
+// a phone in one hand and a leaking tin in the other. 'leaky' and 'damage'
+// remain LEGAL in chk_mrn_photo_kind and must stay so — see lib/mrn/photo.ts.
 //
 // ⚠ NO OFFLINE QUEUE, AND NONE CAN BE BUILT. public/sw.js handles push and
-// notificationclick only and has NO fetch handler, by hard rule — a caching
-// worker would serve stale live-sync markers. So a photo cannot be held for
-// later: if the upload fails, it failed, and this component says so rather than
-// showing a tick. Never let a photo that is not on the server look saved.
+// notificationclick only and has NO fetch handler, by hard rule. A photo cannot
+// be held for later: if the upload fails, it failed, and this file says so
+// rather than showing a tick. Never let a photo that is not on the server look
+// saved.
 //
-// ⚠ CameraView IS A LIVE ATTENDANCE COMPONENT. It is reused here through three
-// OPTIONAL props that all default to attendance's exact behaviour —
-// facingMode="user", showFaceGuide=true, locationStatus=null hides the pill.
-// MRN opts out of all three. Do not change those defaults.
+// ⚠ CameraView IS A LIVE ATTENDANCE COMPONENT and is NOT touched again here. It
+// is reused through three optional props that all default to attendance's exact
+// behaviour; MRN opts out of all three.
 
-/** What the caller gets back once the row exists on the server. */
-export interface UploadedMrnPhoto {
-  id: number;
-  kind: string;
-  lineId: number | null;
-  bytes: number;
+/** The kind every line photo is stored as, now that the picker is gone. */
+export const DEFAULT_LINE_PHOTO_KIND: MrnPhotoKind = "other";
+
+// ── Staging ─────────────────────────────────────────────────────────────────
+
+/**
+ * One photo held on the phone, with its OWN upload state.
+ *
+ * 🔴 STATE IS PER PHOTO, NOT PER BATCH, and that is what makes a partial
+ * failure honest. Three photos where two landed is not "failed" and not
+ * "saved" — it is two rows on the server and one still only on this phone, and
+ * the strip has to show exactly that or he will retry the wrong ones.
+ */
+export interface StagedPhoto {
+  /** Local identity. Never the server id — a pending photo has no server id. */
+  key: number;
+  blob: Blob;
+  dataUrl: string;
+  status: "pending" | "uploading" | "saved" | "failed";
+  /** Set once the row exists. Its presence is what stops a re-send. */
+  serverId?: number;
+  error?: string;
 }
 
-interface PhotoCaptureProps {
-  mrnId: number;
-  /** null = truck-level. Set = this line. Never set for kind 'lr'. */
-  lineId: number | null;
-  kind: MrnPhotoKind;
-  /** Sheet title — "Damage photo", "LR photo". */
+let nextKey = 1;
+
+export function stagePhoto(blob: Blob, dataUrl: string): StagedPhoto {
+  return { key: nextKey++, blob, dataUrl, status: "pending" };
+}
+
+export interface UploadOutcome {
+  ok: boolean;
+  /** Rows that now exist for this group, counting earlier successes. */
+  uploaded: number;
+  /** How many were attempted in this pass. */
+  attempted: number;
+  photos: StagedPhoto[];
+}
+
+/**
+ * Upload every photo in the strip that has not already landed.
+ *
+ * 🔴 A PHOTO THAT UPLOADED STAYS UPLOADED. Each row is independently valid
+ * evidence; there is no batch to roll back and nothing to compensate. Deleting
+ * the two that worked because the third did not would destroy real photos of a
+ * real problem to make a progress bar tidy.
+ *
+ * 🔴 AND IT IS NEVER RE-SENT. `status === "saved"` is skipped on every
+ * subsequent pass, because the upload route has no idempotency key — the same
+ * blob posted twice becomes two rows of the same page of the same lorry
+ * receipt, under two different UUID paths, and nothing downstream can tell they
+ * are duplicates.
+ *
+ * Every pending photo is attempted even after one fails: on a depot connection
+ * the usual cause is signal, but a 413 on one oversized shot must not stop the
+ * three good ones behind it.
+ */
+export async function uploadStagedPhotos(
+  mrnId: number,
+  lineId: number | null,
+  kind: MrnPhotoKind,
+  photos: StagedPhoto[],
+  onProgress: (next: StagedPhoto[]) => void,
+): Promise<UploadOutcome> {
+  let working = photos.map((p) => (p.status === "failed" ? { ...p, status: "pending" as const, error: undefined } : p));
+  onProgress(working);
+
+  const patch = (key: number, fields: Partial<StagedPhoto>) => {
+    working = working.map((p) => (p.key === key ? { ...p, ...fields } : p));
+    onProgress(working);
+  };
+
+  const todo = working.filter((p) => p.status !== "saved");
+  for (const p of todo) {
+    patch(p.key, { status: "uploading" });
+    try {
+      const form = new FormData();
+      form.append("photo", p.blob, "photo.jpg");
+      form.append("kind", kind);
+      if (lineId !== null) form.append("lineId", String(lineId));
+
+      const res = await fetch(`/api/mrn/${mrnId}/photo`, { method: "POST", body: form });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        patch(p.key, { status: "failed", error: json.error ?? "Upload failed" });
+        continue;
+      }
+      const created = (await res.json()) as { id: number };
+      patch(p.key, { status: "saved", serverId: created.id, error: undefined });
+    } catch {
+      // The no-signal case. There is no queue and no retry loop — the photo is
+      // still only on this phone, and the caller says so.
+      patch(p.key, { status: "failed", error: "No connection" });
+    }
+  }
+
+  const uploaded = working.filter((p) => p.status === "saved").length;
+  return {
+    ok: working.every((p) => p.status === "saved"),
+    uploaded,
+    attempted: working.length,
+    photos: working,
+  };
+}
+
+/**
+ * The sentence shown when some but not all of a group reached the server.
+ *
+ * ⚠ IT ALWAYS NAMES THE COUNT AND ALWAYS NAMES THE CONSEQUENCE. "Some photos
+ * failed" tells him nothing he can act on; "2 of 3 uploaded" tells him which
+ * retry is left, and the second clause tells him the thing he would otherwise
+ * assume wrongly — that the truck is still open, or the line unconfirmed.
+ * `consequence` is the caller's, because only it knows what did not happen.
+ */
+export function partialUploadMessage(
+  uploaded: number,
+  attempted: number,
+  noun: string,
+  consequence: string,
+): string {
+  return `${uploaded} of ${attempted} ${noun} uploaded. ${consequence}`;
+}
+
+// ── Camera ──────────────────────────────────────────────────────────────────
+
+interface CameraProps {
   title: string;
-  /**
-   * DEFER MODE. When true the photo is NOT uploaded here; the blob is handed
-   * back and the caller uploads it at its own moment. The LR uses this: design
-   * §5.2 requires it to upload immediately BEFORE /end, so that a failed upload
-   * stops that END attempt rather than leaving an MRN 'done' believing it holds
-   * an LR it does not.
-   */
-  deferUpload?: boolean;
-  onUploaded?: (photo: UploadedMrnPhoto) => void;
-  onCaptured?: (blob: Blob, dataUrl: string) => void;
+  onCaptured: (blob: Blob, dataUrl: string) => void;
   onCancel: () => void;
 }
 
-export function MrnPhotoCapture({
-  mrnId,
-  lineId,
-  kind,
-  title,
-  deferUpload = false,
-  onUploaded,
-  onCaptured,
-  onCancel,
-}: PhotoCaptureProps): React.JSX.Element {
+/**
+ * Camera → review → hand the blob back. It NEVER uploads: staging is the
+ * caller's, and both callers upload at their own moment (line confirm, or
+ * immediately before /end) so a failure can abort the thing that follows.
+ */
+export function MrnPhotoCamera({ title, onCaptured, onCancel }: CameraProps): React.JSX.Element {
   const [shot, setShot] = useState<{ blob: Blob; dataUrl: string } | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Camera ────────────────────────────────────────────────────────────────
   if (!shot) {
     return (
       <CameraView
@@ -92,10 +195,9 @@ export function MrnPhotoCapture({
     );
   }
 
-  async function save(): Promise<void> {
+  function use(): void {
     if (!shot) return;
-
-    // The server enforces this too (413) — checked here so he is told before
+    // The server enforces this too (413). Checked here so he is told before
     // spending a slow upload on a photo that will be refused at the far end.
     if (shot.blob.size > MAX_PHOTO_BYTES) {
       setError(
@@ -105,50 +207,17 @@ export function MrnPhotoCapture({
       );
       return;
     }
-
-    if (deferUpload) {
-      onCaptured?.(shot.blob, shot.dataUrl);
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append("photo", shot.blob, "photo.jpg");
-      form.append("kind", kind);
-      if (lineId !== null) form.append("lineId", String(lineId));
-
-      const res = await fetch(`/api/mrn/${mrnId}/photo`, { method: "POST", body: form });
-      if (!res.ok) {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        // The route's own sentence wherever it has one — it names the real
-        // reason (wrong state, wrong line, too large) far better than anything
-        // generic here could.
-        setError(json.error ?? "The photo could not be saved. Try again.");
-        setBusy(false);
-        return;
-      }
-      const created = (await res.json()) as UploadedMrnPhoto;
-      onUploaded?.(created);
-    } catch {
-      // ⚠ THE NO-SIGNAL CASE, AND IT MUST NOT LOOK LIKE ANYTHING ELSE. There is
-      // no queue and no retry — the photo is still only on this phone.
-      setError("No connection. The photo was NOT saved — try again once you have signal.");
-      setBusy(false);
-    }
+    onCaptured(shot.blob, shot.dataUrl);
   }
 
-  // ── Review ────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-[80] flex flex-col bg-black">
       <div className="flex items-center justify-between px-3 py-3">
         <button
           type="button"
           onClick={onCancel}
-          disabled={busy}
           aria-label="Cancel"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white disabled:opacity-50"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
         >
           <X className="h-5 w-5" />
         </button>
@@ -161,7 +230,7 @@ export function MrnPhotoCapture({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={shot.dataUrl}
-          alt={`${MRN_PHOTO_KIND_LABEL[kind]} photo, just captured`}
+          alt="Just captured"
           className="max-h-full max-w-full rounded-[14px] object-contain"
         />
       </div>
@@ -176,7 +245,6 @@ export function MrnPhotoCapture({
             <div>{error}</div>
           </div>
         )}
-
         <div className="flex gap-2.5">
           <button
             type="button"
@@ -184,26 +252,18 @@ export function MrnPhotoCapture({
               setShot(null);
               setError(null);
             }}
-            disabled={busy}
-            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[13px] bg-white/15 text-[15px] font-semibold text-white disabled:opacity-50"
+            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[13px] bg-white/15 text-[15px] font-semibold text-white"
           >
             <Camera className="h-4 w-4" />
             Retake
           </button>
           <button
             type="button"
-            onClick={() => void save()}
-            disabled={busy}
-            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[13px] bg-teal-600 text-[15px] font-bold text-white active:bg-teal-700 disabled:bg-white/20 disabled:text-white/50"
+            onClick={use}
+            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[13px] bg-teal-600 text-[15px] font-bold text-white active:bg-teal-700"
           >
-            {busy ? (
-              "Saving…"
-            ) : (
-              <>
-                <Check className="h-4 w-4" />
-                Use photo
-              </>
-            )}
+            <Check className="h-4 w-4" />
+            Use photo
           </button>
         </div>
       </div>
@@ -211,67 +271,127 @@ export function MrnPhotoCapture({
   );
 }
 
-// ── Kind chooser ────────────────────────────────────────────────────────────
+// ── The strip ───────────────────────────────────────────────────────────────
 
-/**
- * Which kind of issue photo — Leaky · Damage · Other.
- *
- * 🔴 'lr' IS NOT OFFERED HERE AND MUST NEVER BE. An LR is a TRUCK-level
- * document; the live CHECK chk_mrn_photo_lr_truck_level refuses an 'lr' row
- * carrying a lineId, and the upload route refuses it first with a sentence. The
- * LR is captured once, at End unloading, from end-sheet.tsx.
- *
- * ⚠ DO NOT CALL ANYTHING IN THIS FILE "Batch". line-sheet.tsx already says
- * "Batch 1 / Batch 2" for the 1st and 2nd MANUFACTURING group on the same
- * screen, and a second meaning for that word on the same sheet would be read as
- * the first one.
- */
-const ISSUE_KINDS: MrnPhotoKind[] = ["leaky", "damage", "other"];
+interface StripProps {
+  photos: StagedPhoto[];
+  /** Rows ALREADY on the server for this group, from a previous session or a
+   *  previous partial upload. They count against the cap but have no thumbnail
+   *  here — the phone never had their blobs. */
+  serverCount: number;
+  busy: boolean;
+  onAdd: () => void;
+  onRemove: (key: number) => void;
+  /** Label for the add control when the strip is empty. */
+  addLabel: string;
+}
 
-export function PhotoKindSheet({
-  onPick,
-  onCancel,
-}: {
-  onPick: (kind: MrnPhotoKind) => void;
-  onCancel: () => void;
-}): React.JSX.Element {
+export function PhotoStrip({
+  photos,
+  serverCount,
+  busy,
+  onAdd,
+  onRemove,
+  addLabel,
+}: StripProps): React.JSX.Element {
+  // 🔴 THE CAP COUNTS BOTH: what is already on the server for this group AND
+  // what is staged but not yet sent. Counting only the strip would let him
+  // stage five on top of two that already exist, and the route would then
+  // refuse the last two after he had taken them — the worst moment to find out.
+  const total = serverCount + photos.length;
+  const full = total >= MAX_PHOTOS_PER_GROUP;
+
   return (
-    <div className="fixed inset-0 z-[75] flex flex-col justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative rounded-t-[22px] bg-white px-4 pt-2.5"
-        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
-      >
-        <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-gray-200" />
-        <div className="text-[17px] font-bold text-gray-900">What are you photographing?</div>
-        <div className="mt-1 text-[13px] text-[#667085]">
-          The photo is attached to this line.
-        </div>
+    <div>
+      {(photos.length > 0 || serverCount > 0) && (
+        <div className="mb-2.5 flex flex-wrap gap-2">
+          {serverCount > 0 && (
+            // No blob to show — the row exists but this phone never held the
+            // image. Saying so beats an empty box or a broken <img>.
+            <div className="flex h-[62px] w-[62px] shrink-0 flex-col items-center justify-center rounded-[10px] border border-dashed border-gray-300 bg-gray-50 text-center">
+              <Check size={13} className="text-teal-600" />
+              <span className="mt-0.5 text-[10px] font-semibold leading-tight text-[#667085]">
+                {serverCount} saved
+              </span>
+            </div>
+          )}
 
-        <div className="mt-4 space-y-2">
-          {ISSUE_KINDS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => onPick(k)}
-              className="flex h-[52px] w-full items-center gap-3 rounded-[13px] border border-gray-200 px-3.5 text-left text-[15px] font-semibold text-[#1d2939] active:bg-gray-50"
-            >
-              <Camera className="h-[18px] w-[18px] shrink-0 text-[#667085]" />
-              {MRN_PHOTO_KIND_LABEL[k]}
-            </button>
+          {photos.map((p) => (
+            <div key={p.key} className="relative shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={p.dataUrl}
+                alt="Staged photo"
+                className={
+                  "h-[62px] w-[62px] rounded-[10px] object-cover " +
+                  (p.status === "failed"
+                    ? "ring-2 ring-red-400"
+                    : p.status === "saved"
+                      ? "ring-2 ring-teal-500"
+                      : "ring-1 ring-gray-200")
+                }
+              />
+
+              {/* Per-photo state. He must be able to point at a thumbnail and
+                  say "that one didn't go". */}
+              {p.status === "uploading" && (
+                <span className="absolute inset-0 flex items-center justify-center rounded-[10px] bg-black/45 text-[10px] font-bold text-white">
+                  …
+                </span>
+              )}
+              {p.status === "saved" && (
+                <span className="absolute bottom-0.5 left-0.5 flex h-[16px] w-[16px] items-center justify-center rounded-full bg-teal-600 text-white">
+                  <Check size={10} />
+                </span>
+              )}
+              {p.status === "failed" && (
+                <span className="absolute bottom-0.5 left-0.5 flex h-[16px] w-[16px] items-center justify-center rounded-full bg-red-600 text-white">
+                  <AlertTriangle size={9} />
+                </span>
+              )}
+
+              {/* ⚠ A SAVED PHOTO KEEPS NO ✕ HERE. Removing it from the strip
+                  would hide a row that exists on the server, and this component
+                  cannot delete rows — that is the canDelete path in
+                  DELETE /api/mrn/photo/[photoId]. Showing a control that only
+                  half-works is worse than showing none. */}
+              {p.status !== "saved" && p.status !== "uploading" && (
+                <button
+                  type="button"
+                  onClick={() => onRemove(p.key)}
+                  disabled={busy}
+                  aria-label="Remove this photo"
+                  className="absolute -right-1.5 -top-1.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-gray-900 text-white shadow disabled:opacity-50"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           ))}
         </div>
+      )}
 
-        <button
-          type="button"
-          onClick={onCancel}
-          className="mt-3 h-[50px] w-full rounded-[13px] bg-gray-100 text-[15px] font-semibold text-[#475467]"
-        >
-          Cancel
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onAdd}
+        disabled={busy || full}
+        className={
+          "flex h-[42px] w-full items-center justify-center gap-2 rounded-[11px] text-[13.5px] font-semibold disabled:opacity-60 " +
+          (full
+            ? "cursor-not-allowed bg-gray-100 text-gray-400"
+            : "bg-gray-900 text-white active:bg-gray-800")
+        }
+      >
+        {photos.length > 0 || serverCount > 0 ? <Plus size={15} /> : <Camera size={15} />}
+        {full
+          ? // 🔴 A PLAIN REASON, NOT JUST A GREY BUTTON. A disabled control with
+            // no sentence reads as broken software; UI §10 is explicit that
+            // "not yet" must say why.
+            `Maximum ${MAX_PHOTOS_PER_GROUP} photos`
+          : photos.length > 0 || serverCount > 0
+            ? "Add another photo"
+            : addLabel}
+      </button>
     </div>
   );
 }
