@@ -81,7 +81,14 @@ export async function GET(
     return NextResponse.json({ error: "MRN not found" }, { status: 404 });
   }
 
-  if (detail.status !== "done") {
+  // 🔴 done OR closed. The report is available from the moment the supervisor
+  // finishes and STAYS available after billing closes the truck — closing is
+  // what makes the document final, so refusing to serve it then would be
+  // exactly backwards. Written as an allow-LIST rather than `!== "done"` so a
+  // future fifth status has to be considered here rather than silently
+  // inheriting access. Sibling gate: app/mrn/[mrnId]/sheet/page.tsx — the two
+  // must always agree, because detail-pane.tsx renders one link to each.
+  if (detail.status !== "done" && detail.status !== "closed") {
     return NextResponse.json(
       {
         error:

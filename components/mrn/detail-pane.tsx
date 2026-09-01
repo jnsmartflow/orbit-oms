@@ -245,8 +245,16 @@ export function DetailPane({
             {/* HIDDEN without canExport — the ROLE axis. Present in all three
                 states for a role that HAS it — the STATE axis — so the corner
                 never changes shape under the operator's hand. */}
+            {/* 🔴 done OR closed, and this condition is one third of a set.
+                The other two are the routes these links point at —
+                app/api/mrn/[mrnId]/export/route.ts and
+                app/mrn/[mrnId]/sheet/page.tsx. All three carry the same rule
+                and must be changed together: widen the pane alone and billing
+                gets live links that 409; widen the routes alone and the links
+                stay grey on a document that is finished. Closing a truck must
+                never take its own report away. */}
             {perms.canExport &&
-              (detail.status === "done" ? (
+              (detail.status === "done" || detail.status === "closed" ? (
                 <>
                   {/* Plain <a>, not fetch calls. Print opens the A4 document
                       route; Download hits the export route, whose

@@ -59,7 +59,11 @@ export default async function MrnSheetPage({
     );
   }
 
-  if (detail.status !== "done") {
+  // 🔴 done OR closed — the SAME rule as app/api/mrn/[mrnId]/export/route.ts,
+  // and it must stay the same: detail-pane.tsx renders Print and Download side
+  // by side from one condition, so a gate that diverges here gives billing one
+  // working link and one dead one on a closed MRN.
+  if (detail.status !== "done" && detail.status !== "closed") {
     return (
       <SheetMessage
         title={`${detail.mrnNumber} has not been checked yet.`}
