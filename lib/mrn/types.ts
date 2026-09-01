@@ -18,12 +18,32 @@
 
 /**
  * `mrn.status`. Backed by the live CHECK `chk_mrn_status`, which Prisma cannot
- * see. A fourth state is a SQL ALTER on that constraint FIRST — never just a
+ * see. A fifth state is a SQL ALTER on that constraint FIRST — never just a
  * new literal here. Same class as chk_pick_assignments_status (CORE §7.4).
+ *
+ * The ladder is one-way and has no reopen:
+ *
+ *   open ──START──► checking ──END──► done ──OTR PUNCH──► closed
+ *    │  (supervisor)          (supervisor)      (billing)
+ *    └─ billing owns the row: header PATCH, lines PUT and delete all 409
+ *       the moment status ≠ 'open'
+ *
+ * 🔴 'closed' WAS ADDED 2026-09-01 (v27.19) AND 'done' DID NOT CHANGE MEANING.
+ * `done` still means "the supervisor has finished checking"; `closed` means
+ * "billing has recorded the OTR number and the document is finished". The ten
+ * MRNs that predate this stay `done` for ever and were deliberately not
+ * migrated — they genuinely never had an OTR number.
+ *
+ * ⚠ THIS UNION MUST BE WIDENED BEFORE ANY ROW CAN HOLD THE NEW VALUE.
+ * asMrnStatus() below THROWS on an unrecognised status, and it is called in
+ * lib/mrn/queries.ts:251 for every board row and every detail read — so a live
+ * 'closed' row with a three-value union here takes the rail, the detail pane
+ * and both phone faces down at once. Order is: SQL, then this file, then the
+ * gates (design §3.2).
  */
-export type MrnStatus = "open" | "checking" | "done";
+export type MrnStatus = "open" | "checking" | "done" | "closed";
 
-export const MRN_STATUSES: readonly MrnStatus[] = ["open", "checking", "done"];
+export const MRN_STATUSES: readonly MrnStatus[] = ["open", "checking", "done", "closed"];
 
 export function isMrnStatus(value: string): value is MrnStatus {
   return (MRN_STATUSES as readonly string[]).includes(value);
