@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Clipboard, Download, Pencil, Printer, Trash2 } from "lucide-react";
+import { Clipboard, Download, Lock, Pencil, Printer, Trash2 } from "lucide-react";
 import type { MrnDetail } from "@/lib/mrn/types";
 import { isLineOpenable } from "@/lib/mrn/derive";
 import { StatusPill } from "./status-pill";
@@ -64,6 +64,9 @@ interface DetailPaneProps {
   onPasteLines: () => void;
   onEditHeader: () => void;
   onDelete: () => void;
+  /** Opens the OTR punch. Only ever called from the control below, which is
+   *  itself gated on done + canClose. */
+  onCloseMrn: () => void;
   perms: MrnPerms;
   onLinesSaved: () => void;
 }
@@ -76,6 +79,7 @@ export function DetailPane({
   onPasteLines,
   onEditHeader,
   onDelete,
+  onCloseMrn,
   perms,
   onLinesSaved,
 }: DetailPaneProps): React.JSX.Element {
@@ -232,6 +236,32 @@ export function DetailPane({
                 stays for the life of the MRN — unlike the report links beside
                 it, which cannot work until the truck is finished. */}
             <PhotosButton detail={detail} canDelete={perms.canDelete} />
+
+            {/* ── Close MRN ────────────────────────────────────────────────
+                🔴 ABSENT, NOT GREYED, for everyone else — and on BOTH axes.
+                  role:   canClose is billing_operator or admin (a ROLE, not
+                          canEdit — floor_supervisor and operations hold
+                          canEdit and must never see this).
+                  state:  `done` only. Before that there is nothing to file;
+                          after it the truck is already filed.
+                A greyed Close on a checking truck would read as "not yet" and
+                be right; a greyed Close on a supervisor's screen would read as
+                "not yours", which UI §10 says must be absence instead. The two
+                cases cannot share one treatment, so the control simply is not
+                rendered unless it can act.
+
+                ⚠ It sits AFTER the report controls deliberately: Print and
+                Download are what billing does with a done MRN repeatedly,
+                and Close is the one-way door they walk through once. Putting
+                an irreversible action first in the row invites the mis-click. */}
+            {perms.canClose && detail.status === "done" && (
+              <PaneButton
+                icon={<Lock size={13} />}
+                label="Close MRN"
+                tone="primary"
+                onClick={onCloseMrn}
+              />
+            )}
 
             {detail.status === "open" && (
               <>

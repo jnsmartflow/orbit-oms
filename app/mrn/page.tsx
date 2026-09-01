@@ -80,6 +80,16 @@ export default async function MrnPage() {
   // canDelete FALSE, so Delete rendered, was clickable, and came back
   // "Forbidden". Correct refusal, wrong screen.
   const perms = allPerms["mrn"];
+  // 🔴 canClose is a ROLE check, not a permission read — see MrnPerms in
+  // components/mrn/mrn-shell.tsx. It must stay the same two roles as
+  // CLOSE_ROLES in app/api/mrn/[mrnId]/close/route.ts; if that list ever
+  // changes, change this with it or the screen and the server will disagree
+  // about who may close a truck.
+  //
+  // `roles` (the multi-role array) rather than primaryRole: a user whose
+  // primary role is something else but who also holds billing_operator is
+  // still a billing operator, and hasRole() on the server reads the same array.
+  const canClose = roles.includes("billing_operator") || roles.includes("admin");
   const mrnPerms = {
     // admin has no role_permissions rows at all — getAllPermissionsForRoles
     // short-circuits it to all-true, but an absent entry must still fail
@@ -87,6 +97,7 @@ export default async function MrnPage() {
     canEdit: perms?.canEdit ?? false,
     canExport: perms?.canExport ?? false,
     canDelete: perms?.canDelete ?? false,
+    canClose,
   };
 
   // session.user.id is a string (lib/auth.ts). The supervisor card compares it

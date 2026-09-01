@@ -107,6 +107,23 @@ export interface MrnPerms {
   canEdit: boolean;
   canExport: boolean;
   canDelete: boolean;
+  /**
+   * 🔴 A ROLE, NOT A PERMISSION — the odd one out in this interface, and
+   * deliberately so. Closing an MRN is billing's act: it is
+   * `billing_operator` or `admin`, resolved from session.user.roles in
+   * app/mrn/page.tsx, NOT from the `mrn` permission map like the three above.
+   *
+   * Gating it on canEdit would be wrong, because the live grants give canEdit
+   * to floor_supervisor and operations too — the supervisor needs it to Start
+   * and End an unloading. A canEdit-gated Close would put the control on his
+   * phone, where he has no OTR number to type into it.
+   *
+   * It rides in this interface rather than as a separate prop so it flows
+   * everywhere `perms` already does, with no new plumbing. Only the screen
+   * reads it; POST /api/mrn/[mrnId]/close re-checks the same two roles
+   * server-side and is the authority.
+   */
+  canClose: boolean;
 }
 
 interface MrnShellProps {

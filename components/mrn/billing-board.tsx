@@ -11,6 +11,7 @@ import { NewMrnModal } from "./new-mrn-modal";
 import { PasteLinesModal } from "./paste-lines-modal";
 import { EditHeaderModal } from "./edit-header-modal";
 import { DeleteMrnModal } from "./delete-mrn-modal";
+import { CloseMrnModal } from "./close-mrn-modal";
 import { toDateParam } from "./format";
 import type { MrnPerms } from "./mrn-shell";
 
@@ -78,7 +79,7 @@ export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element 
   const [detailError, setDetailError] = useState<string | null>(null);
 
   // Which modal is up, if any. One at a time — none of them compose.
-  const [modal, setModal] = useState<"new" | "paste" | "header" | "delete" | null>(null);
+  const [modal, setModal] = useState<"new" | "paste" | "header" | "delete" | "close" | null>(null);
 
   // Bumped after every successful write to force a re-read. A COUNTER rather
   // than calling a fetch function directly: the two effects below already own
@@ -276,6 +277,7 @@ export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element 
           onPasteLines={() => setModal("paste")}
           onEditHeader={() => setModal("header")}
           onDelete={() => setModal("delete")}
+          onCloseMrn={() => setModal("close")}
           perms={perms}
           onLinesSaved={reload}
         />
@@ -313,6 +315,20 @@ export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element 
           detail={detail}
           onClose={() => setModal(null)}
           onSaved={() => {
+            setModal(null);
+            reload();
+          }}
+        />
+      )}
+
+      {/* The OTR punch. Unlike delete, the MRN stays selected afterwards —
+          billing has just finished with it and the pane should show the result:
+          the pill reading Closed and the OTR no fact carrying the number. */}
+      {modal === "close" && detail && (
+        <CloseMrnModal
+          detail={detail}
+          onClose={() => setModal(null)}
+          onClosed={() => {
             setModal(null);
             reload();
           }}
