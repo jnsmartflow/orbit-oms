@@ -175,7 +175,14 @@ export function DetailPane({
        root is the correct default for a pane that may want an in-flow overlay
        again; nothing in this subtree is absolutely positioned today. */
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-gray-50">
-      <div className="shrink-0 border-b border-[#eceff2] bg-white px-[18px] pb-4 pt-3">
+      {/* ⚠ pb-5 pt-3.5, WIDENED 2026-09-01. The action row sat cramped against
+          the facts row beneath it; the block is deliberately a little taller now.
+          🔴 NOTHING IN THIS ANCESTRY MAY GAIN overflow-hidden. The Photos
+          button's count badge is absolutely positioned and OVERHANGS its
+          corner by 6px (components/mrn/photos-button.tsx) — a clip here would
+          take the badge off, and it would read as a missing badge rather than
+          as clipping. The extra padding gives it more room, not less. */}
+      <div className="shrink-0 border-b border-[#eceff2] bg-white px-[18px] pb-5 pt-3.5">
         {/* ── Title row ─────────────────────────────────────────────────────
             srNo · MRN number · status pill · [ml-auto] the action row. */}
         <div className="flex items-center gap-[9px]">
@@ -211,7 +218,9 @@ export function DetailPane({
               The selected rail card's teal tint is SELECTION, not an action,
               and does not compete — the same way Delivery Challan's left panel
               does not. */}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* gap-2.5 and a little left margin — the controls were touching
+              each other and the status pill. */}
+          <div className="ml-auto flex shrink-0 items-center gap-2.5 pl-3">
             {/* ── Photos ───────────────────────────────────────────────────
                 A PEER of the controls beside it, not a new kind of thing: same
                 h-8 box model, same border, same weight, and it sits in the same
@@ -373,7 +382,9 @@ export function DetailPane({
             item's automatic minimum, so no fact — however long an STI ref gets
             — can widen the row past the pane. Without BOTH, one long value
             pushes a horizontal scrollbar onto the whole board. */}
-        <div className="mt-3.5 flex">
+        {/* mt-5, up from mt-3.5 — the action row above needs air beneath it
+            before the facts begin, or the two read as one block. */}
+        <div className="mt-5 flex">
           {/* ⚠ SOURCE ONLY — the "→ Surat" suffix was dropped 2026-08-26.
               `receivingWarehouse` defaults to 'Surat', is hardcoded by the
               create route and is read-only in the edit modal, so it read the

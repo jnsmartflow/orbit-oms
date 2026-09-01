@@ -168,6 +168,34 @@ function scopeToDelivery(detail: MrnDetail, deliveryNo: string | null): MrnDetai
   };
 }
 
+/**
+ * The delivery tab strip.
+ *
+ * 🔴 THE APP'S BOARD-TAB TREATMENT, COPIED VERBATIM — underline + count chip.
+ * The chain is components/floor/floor-page.tsx `tabPill` (:812-828), copied
+ * into components/billing/billing-tab-bar.tsx `pill` (:78-106) with the note
+ * "Copies Floor's tab pill EXACTLY … Do not restyle one without the other."
+ * This is the third copy and it carries the same obligation: gray-900 bottom
+ * border + gray-900 chip when active, transparent border + gray-100 chip when
+ * not. Restyle one, restyle all three.
+ *
+ * ⚠ COPIED, NOT IMPORTED, AND HERE IS WHY. Floor's is a local function inside
+ * a 900-line page component and is not exported. Billing's IS a component but
+ * is welded to its own domain — it takes a `BillingTab` union, owns an
+ * `ordersCount` prop and subscribes to /api/billing/picking/marker through
+ * BillingMarkerProvider. Importing it here would drag a billing marker
+ * subscription onto the MRN table. Extracting a shared tab component is the
+ * right answer eventually, but it is a three-caller refactor and this change is
+ * a restyle — doing it here would put Floor and Billing v2 at risk for a
+ * cosmetic fix to MRN.
+ *
+ * 🔴 IT MUST NOT LOOK LIKE THE All/Issues SEGMENT BESIDE IT. That was the whole
+ * problem with the first version: delivery tabs rendered as a dark segmented
+ * pill, identical to the view filter sitting inches away, so two different
+ * KINDS of control read as one. A tab CHOOSES THE SUBJECT (which delivery, and
+ * the table's counts and TOTAL follow it); the segment FILTERS THE VIEW of that
+ * subject. Underline vs pill is what tells them apart at a glance.
+ */
 function DeliveryTabs({
   groups,
   active,
@@ -180,33 +208,37 @@ function DeliveryTabs({
   onSelect: (d: string) => void;
 }): React.JSX.Element {
   return (
-    <div className="inline-flex min-w-0 gap-0.5 overflow-x-auto rounded-[7px] bg-gray-100 p-[3px]">
-      {groups.map((g) => (
-        <button
-          key={g}
-          type="button"
-          onClick={() => onSelect(g)}
-          className={
-            "shrink-0 rounded-[5px] px-3 py-[5px] text-[12px] " +
-            (g === active
-              ? "bg-gray-900 font-semibold text-white"
-              : "font-medium text-gray-500 hover:bg-white/60")
-          }
-        >
-          {/* The delivery number IS the label — it is what billing matches
-              against the paper in front of them. Mono so a 10-digit number
-              scans digit by digit. */}
-          <span className={g === "" ? "" : "font-mono"}>{deliveryLabel(g)}</span>
-          <span
+    <div className="flex min-w-0 items-center gap-[18px] overflow-x-auto">
+      {groups.map((g) => {
+        const on = g === active;
+        return (
+          <button
+            key={g}
+            type="button"
+            onClick={() => onSelect(g)}
             className={
-              "ml-1.5 text-[11px] tabular-nums " +
-              (g === active ? "text-white/70" : "text-gray-400")
+              "flex shrink-0 items-center gap-1.5 border-b-2 py-2 text-[12px] " +
+              (on
+                ? "border-gray-900 font-bold text-gray-900"
+                : "border-transparent text-gray-400 hover:text-gray-600")
             }
           >
-            {counts.get(g) ?? 0}
-          </span>
-        </button>
-      ))}
+            {/* The delivery number IS the label — it is what billing matches
+                against the paper in front of them. Mono so a 10-digit number
+                scans digit by digit; the '' group's words are not a number and
+                stay in the UI face. */}
+            <span className={g === "" ? "" : "font-mono"}>{deliveryLabel(g)}</span>
+            <span
+              className={
+                "rounded px-1.5 py-px text-[10px] font-bold tabular-nums " +
+                (on ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500")
+              }
+            >
+              {counts.get(g) ?? 0}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -821,7 +853,17 @@ function TableShell({
 
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#e6e9ec] bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-[#f0f2f4] px-3.5 py-2.5">
+      {/* ⚠ THE ROW'S VERTICAL PADDING IS py-0 WHEN TABS ARE PRESENT. The tab
+          buttons carry their own py-2 and their border-b-2 must land ON this
+          strip's bottom border — padding here would float the underline above
+          it and the tab would read as detached. Without tabs the old py-2.5
+          keeps the "Line items" heading where it has always been. */}
+      <div
+        className={
+          "flex items-center justify-between gap-3 border-b border-[#f0f2f4] px-3.5 " +
+          (tabs ? "py-0" : "py-2.5")
+        }
+      >
         <div className="flex min-w-0 items-center gap-2.5">
           {tabs ?? <span className="text-[12px] font-semibold text-gray-900">Line items</span>}
           {/* The counts stay muted and to the right of whichever leads — they
