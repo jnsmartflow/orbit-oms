@@ -440,7 +440,16 @@ export function MrnSupervisorBoard(): React.JSX.Element {
             Flush under the teal header, no top margin, no rounding, one bottom
             border — picking’s arrangement exactly. It used to float on the grey
             page with margins and rounded corners, which is what this fixes. */}
-        {detail && (detail.status === "checking" || detail.status === "done") && (
+        {/* 🔴 THE BAND AND THE ROWS BELOW (the `done || closed` arm) ARE ONE
+            PAIR AND MOVE TOGETHER. Widen one alone and a closed truck shows a
+            band over an empty body, or rows with no progress strip above them.
+            'closed' is included because the Done tab keeps showing a truck
+            after billing closes it (lib/mrn/queries.ts buildMrnSupervisorWhere)
+            — so he can still open it, and what he opens must render. */}
+        {detail &&
+          (detail.status === "checking" ||
+            detail.status === "done" ||
+            detail.status === "closed") && (
           <MrnLineBand
             detail={detail}
             activePackFilter={activePackFilter}
@@ -497,8 +506,11 @@ export function MrnSupervisorBoard(): React.JSX.Element {
               )}
 
               {/* A finished truck is read-only. He can still open it from Done
-                  to check what he recorded; the route 409s any change. */}
-              {detail.status === "done" && (
+                  to check what he recorded; the route 409s any change.
+                  'closed' renders identically — billing filing the OTR number
+                  changes nothing about what he counted. Paired with the band
+                  condition above; change neither alone. */}
+              {(detail.status === "done" || detail.status === "closed") && (
                 <MrnLineRows
                   detail={detail}
                   activePackFilter={activePackFilter}

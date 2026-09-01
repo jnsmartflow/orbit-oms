@@ -145,7 +145,7 @@ export function buildMrnBillingWhere(dateOnly: Date): Prisma.mrnWhereInput {
  *              floor and need to see what the others have open. This is a real
  *              divergence from the picker face, which IS scoped by pickerId —
  *              do not "align" the two.
- *   done     — status 'done', fenced on `unloadingEndAt` within TODAY IST, and
+ *   done     — status 'done' OR 'closed', fenced on `unloadingEndAt` within TODAY IST, and
  *              🔴 never on `mrnDate`. "Done" is the date the WORK FINISHED, the
  *              same convention already implemented three times (Floor §6c, the
  *              Billing Picking tab, the Picking supervisor board). Fencing on
@@ -165,9 +165,17 @@ export function buildMrnSupervisorWhere(
     case "checking":
       return { isRemoved: false, status: "checking" };
     case "done":
+      // 🔴 done OR closed — WIDENED 2026-09-01 ON OWNER RULING. Do not narrow
+      // this back to status: 'done' on the reasoning that "closed is billing's
+      // state". It is billing's state, and that is exactly why it must not
+      // control what the supervisor sees: this tab is fenced on
+      // `unloadingEndAt` within today IST, so it means "what I got through
+      // today". Billing closing a truck at 11:00 must not erase the one he
+      // finished at 10:00 — his own day's receipt would silently lose a row
+      // while he was looking at it.
       return {
         isRemoved: false,
-        status: "done",
+        status: { in: ["done", "closed"] },
         unloadingEndAt: { gte: todayRange.start, lt: todayRange.end },
       };
   }
