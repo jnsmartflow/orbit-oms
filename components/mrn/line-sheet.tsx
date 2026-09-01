@@ -303,11 +303,22 @@ export function LineSheet({
         );
         if (!outcome.ok) {
           setPhotoError(
+            // ⚠ THE MESSAGE NAMES THE WAY OUT, and on this path it has to.
+            // A failed photo blocks Confirm line, and the escape hatch — remove
+            // it with its ✕ and confirm without it — is a small control he has
+            // no reason to connect to the error. He is standing at a truck with
+            // bad signal, and "try again" alone can be advice that never works.
+            //
+            // The LR message deliberately does NOT say this: there, Skip is the
+            // documented way out and it is already visible on screen. Two
+            // different escapes, each named where it exists.
             partialUploadMessage(
               outcome.uploaded,
               outcome.attempted,
               outcome.attempted === 1 ? "photo" : "photos",
-              "The line was not confirmed; try again once you have signal.",
+              outcome.attempted - outcome.uploaded === 1
+                ? "The line was not confirmed — try again, or remove the photo that failed and confirm without it."
+                : "The line was not confirmed — try again, or remove the photos that failed and confirm without them.",
             ),
           );
           setBusy(false);
