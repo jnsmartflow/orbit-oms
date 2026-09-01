@@ -90,7 +90,7 @@ export async function POST(
         error:
           existing.status === "checking"
             ? "The supervisor is checking this truck — it can no longer be removed."
-            : "This MRN is done — it can no longer be removed.",
+            : "This MRN is finished — it can no longer be removed.",
       },
       { status: 409 },
     );

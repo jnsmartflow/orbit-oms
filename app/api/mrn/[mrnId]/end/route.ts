@@ -84,7 +84,9 @@ export async function POST(
         error:
           existing.status === "open"
             ? "Tap Start unloading before finishing this truck."
-            : "This MRN is already done.",
+            : existing.status === "closed"
+              ? "This MRN has already been closed by billing."
+              : "This MRN is already done.",
       },
       { status: 409 },
     );

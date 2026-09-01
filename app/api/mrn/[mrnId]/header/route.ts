@@ -149,7 +149,7 @@ export async function PATCH(
         error:
           existing.status === "checking"
             ? "The supervisor is checking this truck — the header is locked."
-            : "This MRN is done — the header can no longer be edited.",
+            : "This MRN is finished — the header can no longer be edited.",
       },
       { status: 409 },
     );

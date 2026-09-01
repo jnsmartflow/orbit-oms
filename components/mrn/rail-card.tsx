@@ -23,8 +23,15 @@ import { StatusPill } from "./status-pill";
 // NO pill on done, because "a rail where three of four cards wear a pill is a
 // rail where the pill means nothing". That held while the card carried a chip
 // AND a caption AND a pill — three signals fighting. With the other two gone the
-// pill is the only status signal left, so it covers all four states. See
-// components/mrn/status-pill.tsx, which owns every one of them.
+// pill is the only status signal left, so it must cover EVERY status. See
+// components/mrn/status-pill.tsx, which owns all four: Waiting (open),
+// Unloading (checking), Done (done, green or red by issue count) and Closed
+// (closed, neutral).
+//
+// ⚠ This sentence used to read "it covers all four states", counting the four
+// PILL VARIANTS at a time when there were three statuses. A fourth status
+// landed on 2026-09-01 and the old wording then read as if that work were
+// already finished. Count statuses here, not variants.
 //
 // 🔴 THE ORDER OF THE CARDS IS THE SERVER'S — `srNo` ASC since 2026-08-26, truck
 // 1 at the top (lib/mrn/queries.ts). This component never re-sorts: two sort

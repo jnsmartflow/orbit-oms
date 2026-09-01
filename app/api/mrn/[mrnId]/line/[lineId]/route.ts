@@ -257,7 +257,7 @@ export async function PUT(
         error:
           mrn.status === "open"
             ? "Tap Start unloading before confirming lines."
-            : "This MRN is done — its lines can no longer be changed.",
+            : "This MRN is finished — its lines can no longer be changed.",
       },
       { status: 409 },
     );

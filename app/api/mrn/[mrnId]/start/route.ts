@@ -99,7 +99,7 @@ export async function POST(
         error:
           existing.status === "checking"
             ? `${who} started unloading this truck${at ? ` at ${at}` : ""} — it cannot be started again.`
-            : `This MRN is already done${who !== "Another supervisor" ? ` — ${who} unloaded it` : ""}.`,
+            : `This MRN is already ${existing.status === "closed" ? "closed" : "done"}${who !== "Another supervisor" ? ` — ${who} unloaded it` : ""}.`,
         startedByName: existing.unloadingStartBy?.name ?? null,
         startedAt: existing.unloadingStartAt,
       },

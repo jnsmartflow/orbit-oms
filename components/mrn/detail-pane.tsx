@@ -367,7 +367,12 @@ export function DetailPane({
           {detail.unloadingStartAt && (
             <>
               <Fact label="Unloading">
-                {detail.status === "done" ? (
+                {/* done OR closed — an unloading that ENDED shows its window
+                    and duration. Gated on 'done' alone, a closed MRN read
+                    "10:12 → running" for ever, which is the one fact on this
+                    row that cannot be true: the truck cannot still be
+                    unloading after billing has filed the document. */}
+                {detail.status === "done" || detail.status === "closed" ? (
                   <>
                     {formatIstTime(detail.unloadingStartAt)} →{" "}
                     {formatIstTime(detail.unloadingEndAt)}

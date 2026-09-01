@@ -119,7 +119,7 @@ export async function PUT(
         error:
           existing.status === "checking"
             ? "The supervisor is checking this truck — the lines are locked."
-            : "This MRN is done — the lines can no longer be replaced.",
+            : "This MRN is finished — the lines can no longer be replaced.",
       },
       { status: 409 },
     );
