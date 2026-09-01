@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
+import { CiSheet } from "./sheet";
 import type { CiBillLine } from "@/lib/ci/types";
 
 // The quantity sheet — frame 5 of docs/mockups/ci/supervisor.html.
@@ -11,12 +11,10 @@ import type { CiBillLine } from "@/lib/ci/types";
 // volumeLine ÷ unitQty and shown back to him read-only, so the number on the
 // return is never one a phone invented.
 //
-// ⚠ Z-INDEX AND BOTTOM OFFSET COME FROM THE SHARED CONSTANTS, not from local
-// literals. MOBILE_NAV_CLEARANCE has been missed as a hand-copied "76px +
-// safe-area" four separate times (CLAUDE_PICKING.md §7); it has exactly one
-// source, in the file that renders the nav. The z-numbers clear mobile-shell's
-// OWN stack (nav z-40 → scrim z-50 → menu/you z-[60] → sign-out z-[70]), not
-// just the nav.
+// ⚠ THE SCRIM, PANEL, Z-VALUES, RADIUS AND GRAB HANDLE ALL COME FROM ./sheet.tsx
+// — no hand-rolled z-index here. That file records why the z-numbers are what
+// they are and why CI's bottom offset is 0 where Picking's is
+// MOBILE_NAV_CLEARANCE.
 //
 // ⚠ The sheet is only ever opened from a PART bill, so `deliveryQty` is always
 // the real ceiling. Full bill never opens it — the server computes those lines.
@@ -56,18 +54,8 @@ export function CiQtySheet({
   const litres = line.litresPerTin === null ? null : line.litresPerTin * qty;
 
   return (
-    <>
-      <div
-        className="fixed inset-0 bg-black/40 z-[65]"
-        onClick={onCancel}
-        aria-hidden="true"
-      />
-      <div
-        className="fixed left-0 right-0 bg-white rounded-t-[18px] z-[75] px-4 pt-4 shadow-[0_-8px_30px_rgba(16,25,29,0.18)]"
-        style={{ bottom: 0, paddingBottom: `max(env(safe-area-inset-bottom, 0px), 16px)` }}
-        role="dialog"
-        aria-label={`Returned quantity for ${line.skuCode}`}
-      >
+    <CiSheet label={`Returned quantity for ${line.skuCode}`} onDismiss={onCancel}>
+      <div className="px-4">
         <div className="font-mono text-[17px] font-bold text-gray-900 truncate">
           {line.skuCode}
         </div>
@@ -145,10 +133,7 @@ export function CiQtySheet({
             Save
           </button>
         </div>
-        {/* Clearance so the sheet never sits under the shell's bottom bar on a
-            screen where it is still mounted. */}
-        <div style={{ height: 0, marginBottom: `calc(${MOBILE_NAV_CLEARANCE} * 0)` }} />
       </div>
-    </>
+    </CiSheet>
   );
 }

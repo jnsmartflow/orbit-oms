@@ -93,6 +93,14 @@ export function CiNewReturn({
   const [remark, setRemark] = useState("");
   const [reasonSheetOpen, setReasonSheetOpen] = useState(false);
   const [submitted, setSubmitted] = useState<{ ciNumber: string | null } | null>(null);
+  // 🔴 THE REASONS ARE FETCHED HERE, NOT IN THE SHEET. The sheet used to fetch
+  // in its own mount effect and so painted twice — a ~60px "Loading…" strip
+  // that jumped to full height when the rows landed, which is what "hangs while
+  // coming up" actually was. Prefetching when the details step opens means the
+  // sheet mounts with its content already in memory and paints ONCE, the way
+  // Picking's FilterBottomSheet and MRN's LineSheet do.
+  const [reasons, setReasons] = useState<CiReasonOption[] | null>(null);
+  const [reasonsError, setReasonsError] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   // 🔴 ONE ciId PER BILL, HELD FOR THE WHOLE FLOW. Going Back and changing the
@@ -104,9 +112,135 @@ export function CiNewReturn({
   // The shell hides its two tabs while a bill is open (mockup: "Tab bar
   // disappears inside a bill"). Reported UP rather than owned here, because
   // RoleLayoutClient's hideBar slot lives above this component.
+  const billOpen = step === "bill" || step === "details" || step === "success";
   useEffect(() => {
-    onInsideBill?.(step === "bill" || step === "details" || step === "success");
-  }, [step, onInsideBill]);
+    onInsideBill?.(billOpen);
+  }, [billOpen, onInsideBill]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🔴 THE ONE POPSTATE AUTHORITY
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Copies the model components/picking/picking-board-mobile.tsx uses (which
+  // itself scales down /po's). Before this, Android's hardware back and the iOS
+  // edge-swipe left /ci ENTIRELY from the middle of the flow and the draft went
+  // with them — a bug, not a polish item.
+  //
+  // The rule: opening the bill pushes exactly ONE entry, and EVERY close routes
+  // through history.back(). No handler below is ever called directly by a
+  // button, so the header chevron, the hardware back and the edge-swipe all run
+  // the identical code path and cannot drift.
+  //
+  // ⚠ ONE ENTRY FOR THE WHOLE SESSION. Stepping bill → details does NOT push;
+  // instead a back from `details` steps to `bill` and RE-PUSHES, the same
+  // close-and-re-push treatment Picking gives its nested sheets. Without the
+  // re-push the depth desyncs and one more back leaves /ci.
+  //
+  // ⚠ CORE §3: there is NO router.refresh() anywhere near this. A pop discards
+  // a pending refresh silently, and the fix is not timing — two attempts to
+  // re-order shipped green and stayed broken on production. Every data change in
+  // this file is a client fetch + setState.
+  const depthRef = useRef(0);
+  // Mirrors live state for the handler, which registers ONCE and must never read
+  // a stale closure (the reason Picking keeps navStateRef too).
+  const navStateRef = useRef({
+    billOpen: false,
+    step: "search" as Step,
+    qtySheetOpen: false,
+    reasonSheetOpen: false,
+  });
+  // Which success button was tapped. A hardware back from the success screen is
+  // treated as "Done" — the CI is submitted either way, and landing him on
+  // Submitted is the more useful of the two.
+  const exitIntentRef = useRef<"new" | "done" | null>(null);
+
+  function pushScreen(): void {
+    if (typeof window === "undefined") return;
+    // pushState with no url navigates nowhere — a "back" from it is purely an
+    // in-app state change, never a real page transition.
+    window.history.pushState({ ciScreen: "bill" }, "");
+    depthRef.current += 1;
+  }
+
+  useEffect(() => {
+    navStateRef.current = {
+      billOpen,
+      step,
+      qtySheetOpen: sheetLine !== null,
+      reasonSheetOpen,
+    };
+  }, [billOpen, step, sheetLine, reasonSheetOpen]);
+
+  // Held in a ref so the once-registered handler can call the latest closure.
+  const finishRef = useRef<(intent: "new" | "done") => void>(() => {});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onPop(): void {
+      depthRef.current = Math.max(0, depthRef.current - 1);
+      const s = navStateRef.current;
+
+      // Topmost layers first — a sheet closes and re-pushes, so the single
+      // "bill" entry survives for the NEXT back to act on the screen beneath.
+      if (s.qtySheetOpen) {
+        setSheetLine(null);
+        pushScreen();
+        return;
+      }
+      if (s.reasonSheetOpen) {
+        setReasonSheetOpen(false);
+        pushScreen();
+        return;
+      }
+      // The success screen has no "back" — the CI is submitted. Back means Done.
+      if (s.step === "success") {
+        const intent = exitIntentRef.current ?? "done";
+        exitIntentRef.current = null;
+        finishRef.current(intent);
+        return;
+      }
+      // details → bill is an in-overlay step, so it re-pushes like a sheet.
+      if (s.step === "details") {
+        setStep("bill");
+        pushScreen();
+        return;
+      }
+      if (s.billOpen) {
+        setStep(hitsRef.current.length > 1 ? "results" : "search");
+        return;
+      }
+      // Nothing tracked open — let the pop fall through to the real previous
+      // entry, whatever that is.
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Live mirror of `hits` for the popstate handler, which registers once.
+  const hitsRef = useRef<CiSearchHit[]>([]);
+  hitsRef.current = hits;
+
+  // ── Reasons prefetch (see the state declaration above) ────────────────────
+  // Fires on the details step's rising edge, and only once per mount: the
+  // vocabulary is eight rows that change perhaps twice a year, so refetching it
+  // per bill would be a request nobody is waiting on. A client fetch +
+  // setState — never router.refresh (CORE §3).
+  useEffect(() => {
+    if (step !== "details" || reasons !== null || reasonsError !== null) return;
+    let alive = true;
+    fetch("/api/ci/reasons")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
+      .then((j: { reasons: CiReasonOption[] }) => {
+        if (alive) setReasons(j.reasons);
+      })
+      .catch(() => {
+        if (alive) setReasonsError("Could not load the reasons — check the connection.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [step, reasons, reasonsError]);
 
   // ── Search ────────────────────────────────────────────────────────────────
   const runSearch = useCallback(async () => {
@@ -151,29 +285,49 @@ export function CiNewReturn({
   }, [query]);
 
   // ── Open one bill ─────────────────────────────────────────────────────────
+  //
+  // ⚠ THE SCREEN OPENS FIRST, THEN THE DATA ARRIVES. It used to await the fetch
+  // and only then switch step, so a tap on a depot connection did NOTHING
+  // visible for a second or more and the operator tapped again. The overlay now
+  // slides in immediately with a skeleton, exactly as Picking's sheets paint a
+  // loading state rather than withholding themselves.
   const openBill = useCallback(async (orderId: number) => {
+    // A fresh bill is a fresh decision — never inherit the previous one's mode,
+    // ticks or pack filter. Cleared BEFORE the slide so the old bill never
+    // flashes inside the new frame.
+    setBill(null);
+    setMode("full");
+    setReturned(new Map());
+    setActivePackFilter("ALL");
+    setReason(null);
+    setRemark("");
+    setSubmitted(null);
+    ciIdRef.current = null;
+
+    setStep("bill");
+    pushScreen();
+
     setBillLoading(true);
     try {
       const res = await fetch(`/api/ci/bill/${orderId}`);
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
         toast.error(j.error ?? "Could not open that bill.");
+        // Unwind the entry we just pushed — never setStep directly, or the
+        // history depth desyncs and one more back leaves /ci. See the popstate
+        // authority below.
+        window.history.back();
         return;
       }
-      const data = (await res.json()) as CiBillResult;
-      setBill(data);
-      // A fresh bill is a fresh decision — never inherit the previous one's
-      // mode, ticks or pack filter.
-      setMode("full");
-      setReturned(new Map());
-      setActivePackFilter("ALL");
-      ciIdRef.current = null;
-      setStep("bill");
+      setBill((await res.json()) as CiBillResult);
     } catch {
       toast.error("Could not open that bill — check the connection.");
+      window.history.back();
     } finally {
       setBillLoading(false);
     }
+    // pushScreen is a stable function declaration, not state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Next — the part that writes ───────────────────────────────────────────
@@ -334,20 +488,53 @@ export function CiNewReturn({
     setStep("search");
   }, []);
 
-  /** "Done" — clear the flow and hand the viewport back to the tab bar. The
-   *  shell switches to Submitted, so he lands on the CI he just raised sitting
-   *  with billing rather than on an empty search box. */
-  const onDone = useCallback(() => {
+  /**
+   * The end of a submitted flow. Called ONLY from the popstate handler — the
+   * two success pills set an intent and call history.back(), so the entry the
+   * bill pushed is properly consumed instead of stranded.
+   *
+   * "new"  → back to the search box.
+   * "done" → same, plus the shell switches to Submitted, so he lands on the CI
+   *          he just raised sitting with billing rather than on an empty box.
+   */
+  finishRef.current = (intent: "new" | "done") => {
     resetAll();
-    onFinished?.();
-  }, [resetAll, onFinished]);
+    if (intent === "done") onFinished?.();
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  //
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🔴 ONE TREE. THE LIST IS ALWAYS MOUNTED; THE BILL SLIDES OVER IT.
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // This used to be an early `return` that swapped one screen for the other, so
+  // the bill APPEARED — no transition — and the list UNMOUNTED, losing its
+  // scroll position every time. Picking's detail screen is always mounted and
+  // slides on `translate-x` (picking-board-mobile.tsx:3270-3277); this is the
+  // same structure and the same tokens.
+  //
+  // Two things fall out of it, both of which were bugs before:
+  //   • the slide itself — the single biggest "not our app" tell;
+  //   • SCROLL RESTORATION. The results list keeps its DOM, so closing a bill
+  //     returns him exactly where he was instead of at the top.
+  return (
+    <>
+      {renderList()}
 
-  if (step === "bill" || step === "details" || step === "success") {
-    if (bill === null) return <div className="p-6 text-[13px] text-gray-400">Loading…</div>;
-    return (
-      <div className="fixed inset-0 z-30 bg-[#F4F6F7] flex flex-col">
+      {/* Always mounted. `translate-x-full` parks it off-screen; nothing inside
+          renders expensive work while closed because `bill` is null until an
+          open begins. */}
+      <div
+        className={
+          "fixed inset-0 z-30 bg-[#F4F6F7] flex flex-col transition-transform duration-200 ease-out " +
+          (billOpen ? "translate-x-0" : "translate-x-full")
+        }
+        // Hidden from the reader and the tab order while parked — a
+        // translate-x'd panel is still in the accessibility tree otherwise.
+        aria-hidden={!billOpen}
+        {...(billOpen ? {} : { inert: "" as unknown as boolean })}
+      >
         {/* TEAL HEADER — picking's exact geometry: bg-teal-600, pl-3.5 pr-1.5
             pb-3.5, safe-area top padding, 38px rounded-[10px] back square on
             white/[0.16]. Customer name at 18px/600 with the OBD beneath.
@@ -363,19 +550,13 @@ export function CiNewReturn({
             {step !== "success" && (
             <button
               type="button"
-              onClick={() => {
-                // From the details step, Back returns to the LINES — on the
-                // SAME ciId. He can change what came back and tap Next again;
-                // PUT /lines replaces, and /draft is never called twice.
-                if (step === "details") {
-                  setStep("bill");
-                  return;
-                }
-                // From the bill, straight back to the list it came from. No
-                // history pop: this screen was never pushed onto history, so
-                // popping would leave /ci entirely.
-                setStep(hits.length > 1 ? "results" : "search");
-              }}
+              // 🔴 history.back(), NEVER setStep. This chevron, Android's
+              // hardware back and the iOS edge-swipe must all run the SAME
+              // close logic, and the popstate handler above is where that
+              // logic lives — details → bill, bill → the list it came from.
+              // A direct setStep here would leave the pushed entry stranded and
+              // the next back would leave /ci.
+              onClick={() => window.history.back()}
               aria-label="Back"
               className="w-[38px] h-[38px] rounded-[10px] bg-white/[0.16] flex items-center justify-center text-white shrink-0"
             >
@@ -384,9 +565,9 @@ export function CiNewReturn({
             )}
             <div className="min-w-0 flex-1">
               <div className="text-[18px] font-semibold text-white truncate min-w-0">
-                {bill.customerName}
+                {bill?.customerName ?? "2026"}
               </div>
-              <div className="text-[11.5px] text-white/70 truncate">{bill.obdNumber}</div>
+              <div className="text-[11.5px] text-white/70 truncate">{bill?.obdNumber ?? ""}</div>
             </div>
           </div>
         </div>
@@ -399,26 +580,57 @@ export function CiNewReturn({
             rounding, one bottom border — picking's stat-band material. */}
         {step !== "success" && (
         <div className="bg-white border-b border-gray-200 shrink-0 px-[14px] py-3 flex items-center gap-2 text-[12.5px]">
-          <span className="text-gray-600 shrink-0">{formatDay(bill.invoiceDate ?? bill.obdDateTime)}</span>
+          <span className="text-gray-600 shrink-0">{formatDay(bill ? (bill.invoiceDate ?? bill.obdDateTime) : null)}</span>
           <span className="text-[#d8dce1]">·</span>
           {/* Blank invoice is NORMAL — 5% of dispatched bills have none yet and
               SAP sends it later. An em-dash, never an error. */}
-          <span className="text-gray-600 truncate min-w-0">{bill.invoiceNo ?? "—"}</span>
+          <span className="text-gray-600 truncate min-w-0">{bill?.invoiceNo ?? "—"}</span>
           <span className="text-[#d8dce1]">·</span>
           <span className="font-semibold tabular-nums text-gray-700 shrink-0">
-            {bill.totalLitres} L
+            {bill?.totalLitres ?? 0} L
           </span>
         </div>
         )}
 
-        {step === "success" ? (
+        {bill === null ? (
+          /* 🔴 THE SKELETON. Opening a bill used to show NOTHING until the fetch
+             resolved — on depot wifi that is a dead tap, and the operator taps
+             again. The frame now slides in immediately and fills. Same stance
+             as Picking, whose sheets paint a loading state rather than
+             withholding themselves. */
+          <div className="flex-1 px-3 pt-3" aria-busy="true">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="flex items-stretch min-h-[64px] bg-white rounded-[14px] overflow-hidden mb-2 animate-pulse"
+                style={{ boxShadow: "0 1px 2px rgba(16,25,29,0.04), 0 3px 12px rgba(16,25,29,0.05)" }}
+              >
+                <div className="w-14 shrink-0 bg-[#f1f4f5] border-r border-gray-200" />
+                <div className="flex-1 min-w-0 px-3 py-3 flex flex-col justify-center gap-2">
+                  <div className="h-3.5 w-28 rounded bg-gray-200" />
+                  <div className="h-2.5 w-40 rounded bg-gray-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : step === "success" ? (
           <CiSuccess
             ciNumber={submitted?.ciNumber ?? null}
-            customerName={bill.customerName}
+            customerName={bill?.customerName ?? ""}
             lineCount={lineCount}
             litres={submittedLitres}
-            onNewCi={resetAll}
-            onDone={onDone}
+            // 🔴 BOTH SET AN INTENT AND POP. The popstate handler is the only
+            // thing that closes the overlay, so the entry the bill pushed is
+            // consumed rather than stranded. A hardware back here is treated
+            // as Done (exitIntentRef defaults).
+            onNewCi={() => {
+              exitIntentRef.current = "new";
+              window.history.back();
+            }}
+            onDone={() => {
+              exitIntentRef.current = "done";
+              window.history.back();
+            }}
           />
         ) : step === "details" ? (
           <>
@@ -529,11 +741,15 @@ export function CiNewReturn({
 
         {reasonSheetOpen && (
           <CiReasonSheet
+            // Already in memory — the sheet paints once. See its header.
+            reasons={reasons}
+            error={reasonsError}
             selectedId={reason?.id ?? null}
-            onCancel={() => setReasonSheetOpen(false)}
+            // Every dismiss pops; the handler closes the sheet and re-pushes.
+            onCancel={() => window.history.back()}
             onPick={(r) => {
               setReason(r);
-              setReasonSheetOpen(false);
+              window.history.back();
             }}
           />
         )}
@@ -542,7 +758,7 @@ export function CiNewReturn({
           <CiQtySheet
             line={sheetLine}
             initialQty={returned.get(sheetLine.rawLineItemId) ?? null}
-            onCancel={() => setSheetLine(null)}
+            onCancel={() => window.history.back()}
             onSave={(qty) => {
               setReturned((prev) => {
                 const next = new Map(prev);
@@ -553,16 +769,19 @@ export function CiNewReturn({
                 else next.set(sheetLine.rawLineItemId, qty);
                 return next;
               });
-              setSheetLine(null);
+              window.history.back();
             }}
           />
         )}
       </div>
-    );
-  }
+    </>
+  );
 
-  // ── Search / results ──────────────────────────────────────────────────────
-  return (
+  // ── The list: search + results (frames 1-2) ──────────────────────────────
+  // A function, not an early return: it is rendered as a SIBLING of the bill
+  // overlay above so it stays mounted and keeps its scroll position.
+  function renderList(): React.JSX.Element {
+    return (
     <div className="min-h-full bg-[#F4F6F7]">
       <ModuleMobileHeader
         title="CI"
@@ -578,6 +797,10 @@ export function CiNewReturn({
         <div className="flex items-center gap-2 bg-white rounded-full border border-gray-200 px-4 h-12">
           <Search size={17} className="text-gray-400 shrink-0" />
           <input
+            // Picking autoFocuses the moment its search strip opens; the New
+            // tab IS a search box, so the keyboard should be up when he lands
+            // on it. Saves a tap on every single return.
+            autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -647,8 +870,9 @@ export function CiNewReturn({
           ))}
         </div>
       )}
-    </div>
-  );
+      </div>
+    );
+  }
 }
 
 // ── Success (frame 8) ────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { CiSheet } from "./sheet";
 import type { CiReasonOption } from "@/lib/ci/types";
 
 // The details step and its reason sheet — frames 6 and 7 of
@@ -126,88 +127,84 @@ export function CiDetailsStep({
  * copy in this file would go stale the first time a row is edited, and the phone
  * would offer a reason the submit route then refuses.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE FETCH IS THE CALLER'S. THIS SHEET TAKES `reasons` AS A PROP AND PAINTS
+ *    ONCE — DO NOT MOVE THE FETCH BACK INSIDE IT.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It used to fetch in its own mount effect, and that is what made the sheet
+ * "hang while coming up" (reported 2026-09-01). The panel is bottom-anchored
+ * with content-driven height, so it painted first as a ~60px "Loading…" strip
+ * and then JUMPED to full height when the eight rows landed — a two-stage
+ * layout change under the operator's thumb, on depot wifi.
+ *
+ * ⚠ IT WAS NEVER A MISSING ANIMATION. Adding a transition would have made the
+ * jump smoother and just as wrong. Picking's FilterBottomSheet and MRN's
+ * LineSheet both take their content as props already in memory and paint once
+ * at final height; this now does the same. `CiNewReturn` fetches when the
+ * details step opens, so by the time this mounts the rows are already there.
+ *
  * The divider is DATA too: three `isPinned` rows above it, the rest under
  * "More". This component does not decide how many are pinned — it renders which
  * ones are, ordered by `sortOrder` within each group (the route already sorts).
  */
 export function CiReasonSheet({
+  reasons,
+  error,
   selectedId,
   onPick,
   onCancel,
 }: {
+  /** null = still loading (the caller's fetch has not resolved). */
+  reasons: CiReasonOption[] | null;
+  error: string | null;
   selectedId: number | null;
   onPick: (reason: CiReasonOption) => void;
   onCancel: () => void;
 }): React.JSX.Element {
-  const [reasons, setReasons] = useState<CiReasonOption[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    // A client fetch + setState. NEVER router.refresh() (CORE §3) — a history
-    // pop discards it silently and the sheet would show a stale list.
-    fetch("/api/ci/reasons")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
-      .then((j: { reasons: CiReasonOption[] }) => {
-        if (alive) setReasons(j.reasons);
-      })
-      .catch(() => {
-        if (alive) setError("Could not load the reasons — check the connection.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   const pinned = (reasons ?? []).filter((r) => r.isPinned);
   const rest = (reasons ?? []).filter((r) => !r.isPinned);
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-[65]" onClick={onCancel} aria-hidden="true" />
-      <div
-        className="fixed left-0 right-0 bottom-0 bg-white rounded-t-[18px] z-[75] max-h-[70vh] overflow-y-auto shadow-[0_-8px_30px_rgba(16,25,29,0.18)]"
-        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
-        role="dialog"
-        aria-label="Reason"
-      >
-        <div className="px-[14px] pt-4 pb-2 text-[15px] font-semibold text-gray-900">
-          Reason
-        </div>
+    <CiSheet label="Reason" onDismiss={onCancel}>
+      <div className="px-[14px] pb-2 text-[15px] font-semibold text-gray-900">Reason</div>
 
-        {error !== null && (
-          <p className="px-[14px] py-6 text-[13px] text-[#b42318]">{error}</p>
-        )}
-        {reasons === null && error === null && (
-          <p className="px-[14px] py-6 text-[13px] text-gray-400">Loading…</p>
-        )}
+      {error !== null && <p className="px-[14px] py-6 text-[13px] text-[#b42318]">{error}</p>}
 
-        {pinned.map((r) => (
-          <ReasonRow key={r.id} reason={r} selected={r.id === selectedId} onPick={onPick} />
-        ))}
+      {/* Reached only if the sheet is somehow opened before the caller's fetch
+          resolves — the details step prefetches, so in practice this never
+          paints. `min-h` holds the panel at roughly its filled height so even
+          that case does not jump. */}
+      {reasons === null && error === null && (
+        <p className="px-[14px] py-6 text-[13px] text-gray-400">Loading…</p>
+      )}
 
-        {rest.length > 0 && (
-          <>
-            {/* The divider IS the "three common ones first" rule, drawn. */}
-            <div className="h-px bg-gray-200 mx-[14px] my-1.5" />
-            {showMore ? (
-              rest.map((r) => (
-                <ReasonRow key={r.id} reason={r} selected={r.id === selectedId} onPick={onPick} />
-              ))
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowMore(true)}
-                className="w-full text-left px-[14px] py-3.5 text-[15px] font-semibold text-teal-700 active:bg-gray-50"
-              >
-                More
-              </button>
-            )}
-          </>
-        )}
-      </div>
-    </>
+      {pinned.map((r) => (
+        <ReasonRow key={r.id} reason={r} selected={r.id === selectedId} onPick={onPick} />
+      ))}
+
+      {rest.length > 0 && (
+        <>
+          {/* The divider IS the "three common ones first" rule, drawn. */}
+          <div className="h-px bg-gray-200 mx-[14px] my-1.5" />
+          {showMore ? (
+            rest.map((r) => (
+              <ReasonRow key={r.id} reason={r} selected={r.id === selectedId} onPick={onPick} />
+            ))
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowMore(true)}
+              className="w-full text-left px-[14px] py-3.5 text-[15px] font-semibold text-teal-700 active:bg-gray-50"
+            >
+              More
+            </button>
+          )}
+        </>
+      )}
+    </CiSheet>
   );
 }
 

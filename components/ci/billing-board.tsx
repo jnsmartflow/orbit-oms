@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { UniversalHeader } from "@/components/universal-header";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { CiRail } from "./ci-rail";
@@ -84,11 +85,21 @@ export function CiBillingBoardScreen(): React.JSX.Element {
     setBoardLoading(true);
     try {
       const res = await fetch(`/api/ci/board?face=billing&date=${dateParam}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        toast.error("Could not load the CI list — it may be out of date.");
+        return;
+      }
       setBoard((await res.json()) as CiBillingBoard);
     } catch {
-      // Silent: the marker will try again in 15s, and a toast on every dropped
-      // poll on depot wifi would be noise the operator cannot act on.
+      // ⚠ THIS USED TO BE SILENT, and that was wrong in the one direction that
+      // matters: a dead rail and an empty rail look identical, so a billing
+      // operator whose connection had dropped would read "nothing pending" off
+      // a screen that had simply failed to load, and stop working.
+      //
+      // Worded as "may be out of date" rather than "failed" because the marker
+      // retries every 15s and the next poll usually fixes it — what he needs to
+      // know is not to trust what is on screen, not that something is broken.
+      toast.error("Could not reach the server — this list may be out of date.");
     } finally {
       setBoardLoading(false);
     }
