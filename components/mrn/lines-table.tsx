@@ -141,11 +141,41 @@ export function LinesTable({
   openLineId = null,
   onOpenLine,
 }: LinesTableProps): React.JSX.Element {
-  if (detail.status === "checking") return <CheckingTable detail={detail} />;
-  if (detail.status === "done") {
-    return <DoneTable detail={detail} openLineId={openLineId} onOpenLine={onOpenLine} />;
+  // 🔴 AN EXHAUSTIVE SWITCH, NOT AN if/else CHAIN ENDING IN OpenTable.
+  //
+  // This used to end `return <OpenTable …>` as a catch-all, and that shape was
+  // a live bug the moment a fourth status existed: 'closed' fell through to
+  // OpenTable — which is the EDITABLE table, rendering a per-row delete that
+  // PUTs /api/mrn/[mrnId]/lines. Billing would have watched Physical, Mfg Date
+  // and Batch No vanish off a signed document AND been offered a delete button
+  // on it. (The server would have refused — that route 409s unless status is
+  // 'open' — so nothing could actually be destroyed. An offered-then-refused
+  // action on a finished receipt is still the wrong screen.)
+  //
+  // A switch with a `never` default makes the next status a BUILD failure here
+  // instead. Same discipline as formatBatchNo()'s receivedFrom switch in
+  // lib/mrn/derive.ts and asMrnStatus() in lib/mrn/types.ts: a widened
+  // vocabulary must break loudly at every site that has to choose, not pick a
+  // silent default. Do not "simplify" this back into `done || closed`.
+  switch (detail.status) {
+    case "open":
+      return <OpenTable detail={detail} canEdit={canEdit} onSaved={onSaved} />;
+    case "checking":
+      return <CheckingTable detail={detail} />;
+    case "done":
+    // 'closed' shows exactly what 'done' shows. Closing records the OTR number
+    // and finalises the document; it takes nothing off the table. If the two
+    // ever need to differ, split the arms — do not add a condition inside
+    // DoneTable.
+    case "closed":
+      return <DoneTable detail={detail} openLineId={openLineId} onOpenLine={onOpenLine} />;
+    default: {
+      const unreachable: never = detail.status;
+      throw new Error(
+        `Unknown mrn.status "${String(unreachable)}" — chk_mrn_status was widened without updating LinesTable`,
+      );
+    }
   }
-  return <OpenTable detail={detail} canEdit={canEdit} onSaved={onSaved} />;
 }
 
 // ── open ────────────────────────────────────────────────────────────────────

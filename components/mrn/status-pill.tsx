@@ -59,6 +59,39 @@ export function StatusPill({ row }: { row: MrnStatusLike }): React.JSX.Element {
     );
   }
 
+  // closed — billing has recorded the OTR number and filed the document.
+  //
+  // 🔴 THIS ARM EXISTS TO STOP 'closed' INHERITING DONE'S GREEN. Before it,
+  // `closed` reached the fallthrough below and silently wore a green "Done"
+  // pill — the one state where the pill would have been lying.
+  //
+  // NEUTRAL, NOT GREEN AND NOT AN ALARM. Closed is FILED, not a fresh result:
+  // the green already fired when the supervisor finished, and repeating it for
+  // a second event teaches the reader nothing. Token is CLAUDE_UI.md's neutral
+  // pill, `bg-gray-100 text-gray-700 border-gray-200` (§ kanban column header
+  // pills), with the border rendered as `ring-1` to match the `checking` arm's
+  // idiom in this same file.
+  //
+  // ⚠ IT MUST NOT BE MISTAKEN FOR `Waiting`, which is also grey. They are
+  // opposite ends of the ladder, so they are separated by WEIGHT: Waiting is
+  // text-gray-500 on a gray-400 dot with no ring; Closed is text-gray-700 on a
+  // gray-600 dot with a ring. Light and empty reads as not-started; darker and
+  // outlined reads as settled. Do not flatten the two to the same greys.
+  //
+  // The issue count rides along exactly as it does on done — a closed MRN with
+  // four issues still reads "Closed · 4 issues". Filing a document does not
+  // resolve what was wrong with the truck, and the count is the only place
+  // that fact is visible on the rail.
+  if (row.status === "closed") {
+    return (
+      <Pill dot="bg-gray-600" className="bg-gray-100 text-gray-700 ring-1 ring-gray-200">
+        {row.issueLineCount > 0
+          ? `Closed · ${row.issueLineCount} issue${row.issueLineCount === 1 ? "" : "s"}`
+          : "Closed"}
+      </Pill>
+    );
+  }
+
   // done — green when the truck matched the STI, red when it did not. Red is
   // the only alarm colour on this rail; nothing else competes with it.
   return row.issueLineCount > 0 ? (
