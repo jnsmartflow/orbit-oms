@@ -171,13 +171,25 @@ function scopeToDelivery(detail: MrnDetail, deliveryNo: string | null): MrnDetai
 /**
  * The delivery tab strip.
  *
- * 🔴 THE APP'S BOARD-TAB TREATMENT, COPIED VERBATIM — underline + count chip.
+ * 🔴 THE APP'S BOARD-TAB TREATMENT, COPIED VERBATIM — the underline.
  * The chain is components/floor/floor-page.tsx `tabPill` (:812-828), copied
  * into components/billing/billing-tab-bar.tsx `pill` (:78-106) with the note
  * "Copies Floor's tab pill EXACTLY … Do not restyle one without the other."
  * This is the third copy and it carries the same obligation: gray-900 bottom
- * border + gray-900 chip when active, transparent border + gray-100 chip when
- * not. Restyle one, restyle all three.
+ * border when active, transparent border and grey text when not, same 12px
+ * type and same weights. Restyle one, restyle all three.
+ *
+ * 🔴 BUT THIS COPY HAS NO COUNT CHIP, AND THAT IS NOT DRIFT. Removed
+ * 2026-09-01 on owner instruction: the tab shows the delivery number alone.
+ * Floor's and Billing's tabs KEEP their counts and must go on keeping them.
+ *
+ * The obligation between the three copies is on STYLE, not on CONTENT — and a
+ * count is content. Floor and Billing are counting WORK OUTSTANDING across
+ * boards ("13 orders still to punch"), which is the number that decides where
+ * the operator goes next. A delivery tab is naming WHICH PAPER SHEET is on
+ * screen; how many lines are on it is not a decision, and the number was
+ * competing with the delivery number for the eye. Do NOT "restore" the chip to
+ * match the siblings.
  *
  * ⚠ COPIED, NOT IMPORTED, AND HERE IS WHY. Floor's is a local function inside
  * a 900-line page component and is not exported. Billing's IS a component but
@@ -199,12 +211,10 @@ function scopeToDelivery(detail: MrnDetail, deliveryNo: string | null): MrnDetai
 function DeliveryTabs({
   groups,
   active,
-  counts,
   onSelect,
 }: {
   groups: string[];
   active: string;
-  counts: Map<string, number>;
   onSelect: (d: string) => void;
 }): React.JSX.Element {
   return (
@@ -223,19 +233,11 @@ function DeliveryTabs({
                 : "border-transparent text-gray-400 hover:text-gray-600")
             }
           >
-            {/* The delivery number IS the label — it is what billing matches
-                against the paper in front of them. Mono so a 10-digit number
-                scans digit by digit; the '' group's words are not a number and
-                stay in the UI face. */}
+            {/* The delivery number IS the label, and now it is the WHOLE label
+                — it is what billing matches against the paper in front of them.
+                Mono so a 10-digit number scans digit by digit; the '' group's
+                words are not a number and stay in the UI face. */}
             <span className={g === "" ? "" : "font-mono"}>{deliveryLabel(g)}</span>
-            <span
-              className={
-                "rounded px-1.5 py-px text-[10px] font-bold tabular-nums " +
-                (on ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500")
-              }
-            >
-              {counts.get(g) ?? 0}
-            </span>
           </button>
         );
       })}
@@ -278,19 +280,13 @@ export function LinesTable({
   // changes under an open pane.
   const active = selected !== null && groups.includes(selected) ? selected : (groups[0] ?? null);
 
-  const counts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const l of detail.lines) m.set(l.deliveryNo, (m.get(l.deliveryNo) ?? 0) + 1);
-    return m;
-  }, [detail.lines]);
-
   const scoped = useMemo(() => scopeToDelivery(detail, active), [detail, active]);
 
   // Rendered by TableShell in place of the old "Line items" heading. Null on an
   // MRN with no lines at all — there is nothing to group.
   const tabs =
     groups.length > 0 && active !== null ? (
-      <DeliveryTabs groups={groups} active={active} counts={counts} onSelect={setSelected} />
+      <DeliveryTabs groups={groups} active={active} onSelect={setSelected} />
     ) : null;
 
   // 🔴 AN EXHAUSTIVE SWITCH, NOT AN if/else CHAIN ENDING IN OpenTable.
@@ -375,7 +371,11 @@ function OpenTable({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const unmatched = detail.lines.filter((l) => !l.isCatalogued).length;
+  // ⚠ The "N SKUs not in catalog" ROLL-UP went with the summary line
+  // (2026-09-01). The PER-ROW signal is untouched: every uncatalogued line
+  // still renders the "Not in catalog · UNKNOWN SKU" tag from <Description>
+  // below, which names WHICH code is missing — strictly more useful than a
+  // count of them. Nothing has to be re-derived to bring the tally back.
 
   async function removeLine(line: MrnDetailLine) {
     setBusy(true);
@@ -456,12 +456,6 @@ function OpenTable({
       <TableShell
         columns={BILLING_COLUMNS}
         tabs={tabs}
-        title={
-          <>
-            {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
-            {unmatched > 0 && ` · ${unmatched} SKU${unmatched === 1 ? "" : "s"} not in catalog`}
-          </>
-        }
         /* The row-delete column. HIDDEN entirely without canEdit — an action the
            role can never perform is not rendered (see detail-pane.tsx on hidden
            vs disabled). It is an ACTION, not data, so it lives outside the
@@ -583,11 +577,6 @@ function CheckingTable({
         <TableShell
           columns={BILLING_COLUMNS}
           tabs={tabs}
-          title={
-            <>
-              {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI
-            </>
-          }
         >
           {detail.lines.map((line) => (
             <tr key={line.id}>
@@ -675,12 +664,6 @@ function DoneTable({
       <TableShell
         columns={DONE_COLUMNS}
         tabs={tabs}
-        title={
-          <>
-            {detail.lineCount} lines · {formatCount(detail.totalQtySti)} nos as per STI ·{" "}
-            {formatCount(detail.totalPhysicalQty)} received
-          </>
-        }
         /* The strip keeps ONLY the view segment. Activity was removed from this
            module entirely on 2026-08-26 — do not add a button here. */
         right={
@@ -825,14 +808,12 @@ function physicalTone(l: MrnDetailLine): CellTone {
  */
 function TableShell({
   columns,
-  title,
   right,
   tabs,
   extraColumn,
   children,
 }: {
   columns: Column[];
-  title: React.ReactNode;
   right?: React.ReactNode;
   /**
    * The delivery tab strip. When present it REPLACES the "Line items" heading —
@@ -864,12 +845,16 @@ function TableShell({
           (tabs ? "py-0" : "py-2.5")
         }
       >
-        <div className="flex min-w-0 items-center gap-2.5">
+        {/* 🔴 THE SUMMARY LINE IS GONE (2026-09-01, owner). It read
+            "25 lines · 1,900 nos as per STI · 1,900 received" and sat between
+            the tabs and the All/Issues segment. Every number in it was already
+            on screen — the line count in the segment beside it, the STI and
+            received totals in the table's own TOTAL row a few inches below —
+            so it was a third telling of facts the table states better itself.
+            The strip is now the tabs and the filter, and nothing between them.
+            Do not reinstate it. */}
+        <div className="flex min-w-0 items-center">
           {tabs ?? <span className="text-[12px] font-semibold text-gray-900">Line items</span>}
-          {/* The counts stay muted and to the right of whichever leads — they
-              describe the SELECTED delivery, because the whole detail handed to
-              this table is scoped to it (scopeToDelivery). */}
-          <span className="truncate text-[12px] font-normal text-gray-400">{title}</span>
         </div>
         {right}
       </div>
