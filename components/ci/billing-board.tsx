@@ -18,14 +18,27 @@ import type { CiBillingBoard, CiDetail } from "@/lib/ci/types";
 // segmented control would normally sit, with the date stepper on its right.
 //
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔴 THE COUNTS SIT IN `leftExtra`, NOT IN `segments`.
+// 🔴 THE COUNTS SIT IN ROW-1 `stats`. NOT IN `segments`, AND NO LONGER IN
+//    `leftExtra`.
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// `segments` would render a SEGMENTED CONTROL — i.e. Pending/Closed tabs — and
-// tabs are exactly what this screen removed. Both sections live in one rail so
-// that closing a CI moves its card down the list IN FRONT OF the operator; a tab
-// would make it vanish instead. `leftExtra` puts the same two numbers in the
-// same place as plain text, with nothing to click.
+// NOT `segments`: that renders a SEGMENTED CONTROL — i.e. Pending/Closed tabs —
+// and tabs are exactly what this screen removed. Both sections live in one rail
+// so that closing a CI moves its card down the list IN FRONT OF the operator; a
+// tab would make it vanish instead.
+//
+// NOT `leftExtra` either, which is where they shipped and which was wrong.
+// `stats` is the app's count idiom and every other board uses it — MRN
+// (billing-board.tsx:202), Sampling Library, Challan, Shade Master, TI Report,
+// the attendance dashboard. It renders them beside the title in Row 1, which is
+// where an operator glancing at any other screen in this product already looks.
+// `leftExtra` is Row 2's LEFT slot, next to the date stepper — and putting a
+// count there implies the count is scoped to the date, which THE PENDING ONE IS
+// NOT. Same misreading the rail's empty-state copy had to be fixed for.
+//
+// ⚠ Row 2 still renders — it carries the date stepper — so `suppressFilterBar`
+// must stay unset (UniversalHeader's own warning: suppressing Row 2 hides
+// `rightExtra` and `leftExtra` with it).
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔴 THE DATE STEPPER DRIVES THE CLOSED SECTION ONLY. PENDING IS THE WHOLE
@@ -186,29 +199,50 @@ export function CiBillingBoardScreen(): React.JSX.Element {
         searchPlaceholder="Search CI, dealer, invoice"
         searchValue={search}
         onSearchChange={setSearch}
-        // Row 2 left — the counts, as PLAIN TEXT. Deliberately not `segments`:
-        // see this file's header. Unfiltered totals, so narrowing the search
-        // never makes the backlog look smaller than it is.
-        leftExtra={
-          <div className="flex items-baseline gap-1.5 text-[12.5px]">
-            <span className="font-bold tabular-nums text-gray-900">
-              {board?.pendingCount ?? 0}
-            </span>
-            <span className="text-gray-500">pending</span>
-            <span className="text-gray-300">·</span>
-            <span className="font-bold tabular-nums text-gray-900">
-              {board?.closedCount ?? 0}
-            </span>
-            <span className="text-gray-500">closed</span>
-          </div>
-        }
+        // Row 1 — the counts, beside the title. See this file's header for why
+        // here and not `leftExtra` or `segments`. UNFILTERED totals, straight
+        // off the payload, so narrowing the search never makes the backlog look
+        // smaller than it is and a guessed increment can never drift them.
+        stats={[
+          { label: "pending", value: board?.pendingCount ?? 0 },
+          { label: "closed", value: board?.closedCount ?? 0 },
+        ]}
         // Row 2 right — the date stepper. CLOSED ONLY (see header).
         currentDate={date}
         onDateChange={setDate}
         showDatePicker
       />
 
-      <div className="flex flex-1 min-h-0">
+      {/* Body — a 344px rail + the working pane, the same two-track grid MRN
+          and /floor use. Only the geometry is borrowed; the header above is
+          UniversalHeader, not floor's hand-rolled one.
+
+          ═══════════════════════════════════════════════════════════════════
+          🔴 `minmax(0, 1fr)`, NEVER PLAIN `1fr`.
+          ═══════════════════════════════════════════════════════════════════
+          Plain `1fr` is shorthand for `minmax(auto, 1fr)`, and that `auto`
+          floor resolves to the grid ITEM's automatic minimum — its
+          content-based minimum. In MRN the lines table carries a 1440px
+          min-width, so the track inflated to ~1440 and the pane was laid out
+          at 1438px inside a window half that wide, then clipped by the
+          overflow-hidden on this very element (commit c16e59df). Clipping does
+          not shrink layout geometry, which is why the symptom read as content
+          cut off at the right edge rather than as a scrollbar — nothing looked
+          broken, things were just missing.
+
+          `min-w-0` on CiDetailPane's root is THE OTHER HALF. There are TWO
+          floors here — the track's min sizing function and the item's own
+          `min-width: auto` — and removing either one alone leaves the other in
+          force. Do not "simplify" this back to `1fr`.
+
+          ⚠ CI's lines table is percentage-width (UI §27) and so has no pixel
+          floor to propagate TODAY. That is not a reason to drop either guard:
+          the floors cost nothing, and the day a wide cell or a min-width lands
+          in this pane the failure is silent. */}
+      <div
+        className="grid min-h-0 flex-1 overflow-hidden"
+        style={{ gridTemplateColumns: "344px minmax(0, 1fr)" }}
+      >
         <CiRail
           pending={pending}
           closed={closed}
