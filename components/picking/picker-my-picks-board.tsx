@@ -163,6 +163,19 @@ function formatLitres(n: number): string {
 // quota, and notes are never worth breaking the screen for. Failure is silent
 // and the ticks simply behave as empty.
 const TICKS_STORAGE_KEY = "orbit.picking.picker-line-ticks.v1";
+// ⚠ A SECOND KEY, THE SAME STORE MACHINERY — NOT a second store design
+// (2026-09-02). The hardener ticks (§A below / CLAUDE_PICKING.md §5.4.1's
+// contract, extended) are a note about goods that are NOT on the bill, so they
+// cannot be keyed by an import_raw_line_items.id like every id in the line-tick
+// store — they are keyed by their PARENT ROW's id, and the same number in the
+// two sets means two different things. Mixing them would corrupt every counter
+// on this screen. They therefore live under their own key, read and written by
+// the very same helpers below via an OPTIONAL storageKey argument that DEFAULTS
+// to TICKS_STORAGE_KEY: every pre-existing call site is unchanged and behaves
+// exactly as it did, the stored shape is identical, and no existing data is
+// migrated, rewritten or read differently. Same 7-day / 50-bill pruning, same
+// silent-failure discipline, same "empty set deletes the entry" rule.
+const HARDENER_TICKS_STORAGE_KEY = "orbit.picking.picker-hardener-ticks.v1";
 const TICKS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const TICKS_MAX_BILLS = 50;
 
@@ -173,10 +186,10 @@ interface TickEntry {
 }
 type TickStore = Record<string, TickEntry>;
 
-function readTickStore(): TickStore {
+function readTickStore(storageKey: string = TICKS_STORAGE_KEY): TickStore {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(TICKS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (raw === null) return {};
     const parsed = JSON.parse(raw) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -205,30 +218,30 @@ function pruneTickStore(store: TickStore, nowMs: number): TickStore {
   return out;
 }
 
-function writeTickStore(store: TickStore): void {
+function writeTickStore(store: TickStore, storageKey: string = TICKS_STORAGE_KEY): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(TICKS_STORAGE_KEY, JSON.stringify(pruneTickStore(store, Date.now())));
+    window.localStorage.setItem(storageKey, JSON.stringify(pruneTickStore(store, Date.now())));
   } catch {
     // Silent — a note that could not be saved must never interrupt picking.
   }
 }
 
-function readTicks(orderId: number): Set<number> {
-  return new Set(readTickStore()[String(orderId)]?.ids ?? []);
+function readTicks(orderId: number, storageKey: string = TICKS_STORAGE_KEY): Set<number> {
+  return new Set(readTickStore(storageKey)[String(orderId)]?.ids ?? []);
 }
 
 /** Persist this bill's ticks. An empty set REMOVES the entry — unticking
  *  everything leaves no residue to prune later. */
-function writeTicks(orderId: number, ids: Set<number>): void {
-  const store = readTickStore();
+function writeTicks(orderId: number, ids: Set<number>, storageKey: string = TICKS_STORAGE_KEY): void {
+  const store = readTickStore(storageKey);
   if (ids.size === 0) delete store[String(orderId)];
   else store[String(orderId)] = { t: Date.now(), ids: Array.from(ids) };
-  writeTickStore(store);
+  writeTickStore(store, storageKey);
 }
 
-function clearTicks(orderId: number): void {
-  writeTicks(orderId, new Set());
+function clearTicks(orderId: number, storageKey: string = TICKS_STORAGE_KEY): void {
+  writeTicks(orderId, new Set(), storageKey);
 }
 
 // ── Multi-bill tick access (Combined view, 2026-08-07) ─────────────────────
@@ -290,11 +303,11 @@ function writeManyTicks(updates: readonly TickUpdate[]): void {
 /** Drop several bills' notes at once — the Mark-all-done counterpart of
  *  clearTicks(). Same "the bill is finished, the notes served their purpose"
  *  rule, applied only to bills the server actually accepted. */
-function clearTicksForOrders(orderIds: readonly number[]): void {
+function clearTicksForOrders(orderIds: readonly number[], storageKey: string = TICKS_STORAGE_KEY): void {
   if (orderIds.length === 0) return;
-  const store = readTickStore();
+  const store = readTickStore(storageKey);
   for (const orderId of orderIds) delete store[String(orderId)];
-  writeTickStore(store);
+  writeTickStore(store, storageKey);
 }
 
 // The local TopBarTab copy that used to live here (a self-declared third
@@ -370,6 +383,17 @@ export function PickerMyPicksBoard({
   // ⚠ Nothing below reads this to decide anything. It feeds the tick circles
   // and the counter, and nothing else. Mark done does not look at it.
   const [tickedLineIds, setTickedLineIds] = useState<Set<number>>(new Set());
+  // ⚠ THE HARDENER TICKS ARE A SEPARATE SET AND MUST STAY ONE (2026-09-02).
+  // Keyed by the PARENT ROW's `li.id` — the hardener is a FIELD on that row
+  // (lib/picking/types.ts), not a line of its own, so it has no raw line id and
+  // there is deliberately no fake one to invent. The same number therefore
+  // means "line N is fetched" in tickedLineIds and "line N's hardener is
+  // fetched" here: merging the two sets would double-count in the counter, make
+  // one tap tick two things, and put a non-existent line id into a store whose
+  // every other id is a real import_raw_line_items PK. Two sets, two storage
+  // keys, one screen. Same everything else — same persistence, same pruning,
+  // same "gates nothing" contract (CLAUDE_PICKING.md §5.4.1).
+  const [hardenerTickedIds, setHardenerTickedIds] = useState<Set<number>>(new Set());
   // In-flight guard — disables the CTA so a double-tap can't fire two
   // overlapping POSTs (the server's own PICK_ASSIGNED guard would 409 the
   // second one anyway, but this avoids firing it at all).
@@ -658,6 +682,12 @@ export function PickerMyPicksBoard({
     setDetailOpen(true);
     setActivePackFilter("ALL");
     setTickedLineIds(readTicks(orderId));
+    // Reseeded HERE, synchronously, for the same reason the line ticks are and
+    // in the same breath: a swipe to a neighbour bill must never render the
+    // previous bill's hardener ticks, not even for one frame. Leaving this to
+    // an effect keyed on detailOrderId is exactly the bug this call site
+    // exists to prevent.
+    setHardenerTickedIds(readTicks(orderId, HARDENER_TICKS_STORAGE_KEY));
     // The popup belongs to ONE line of ONE bill — paging away must close it,
     // or it would sit over the next bill still holding the previous bill's
     // line. `recordMode` deliberately does NOT reset here: it is a screen-level
@@ -696,6 +726,35 @@ export function PickerMyPicksBoard({
     // as it always was: this screen holds every line of this one bill. (The
     // Combined view uses writeManyTicks for exactly the opposite reason.)
     writeTicks(orderId, next);
+  }
+
+  /**
+   * Tick/untick ONE line's HARDENER — a different note from the line's own
+   * tick, on a different set, in a different store.
+   *
+   * ⚠ TAKES THE PARENT ROW'S `li.id`, and only ever that. A hardener has no
+   * `lineIds` of its own because it is not a line: it is a field on the row
+   * (lib/picking/hardener-skus.ts explains why it is not on the bill at all).
+   * One row means one hardener regardless of how many raw lines SAP split that
+   * SKU across — the qty already carries the merged total — so this is one id,
+   * never an array.
+   *
+   * Write-through on every tap, exactly like toggleLineTick: the phone can
+   * sleep mid-bill and the note must survive it. Same shape, same helper, same
+   * pruning; only the storage key differs.
+   */
+  function toggleHardenerTick(lineId: number): void {
+    const orderId = detailOrderId;
+    if (orderId === null) return;
+    const next = new Set(hardenerTickedIds);
+    if (next.has(lineId)) next.delete(lineId);
+    else next.add(lineId);
+    setHardenerTickedIds(next);
+    // Takes this bill's WHOLE hardener set and overwrites it — correct for the
+    // same reason it is correct for the line ticks: this screen holds every row
+    // of this one bill. (The Combined view has no hardener rows, so nothing
+    // here needs writeManyTicks' merge behaviour.)
+    writeTicks(orderId, next, HARDENER_TICKS_STORAGE_KEY);
   }
 
   function openDetail(orderId: number, listKey: DetailListKey): void {
@@ -925,6 +984,11 @@ export function PickerMyPicksBoard({
       // identically had he ticked every line or none.
       clearTicks(detailRow.orderId);
       setTickedLineIds(new Set());
+      // The hardener notes served the same purpose and are dropped in the same
+      // breath — same store machinery, other key. Also AFTER a successful
+      // write, and reading nothing to decide anything.
+      clearTicks(detailRow.orderId, HARDENER_TICKS_STORAGE_KEY);
+      setHardenerTickedIds(new Set());
       // Closes through history so the pushed entry is consumed and the ONE
       // popstate authority does the closing — never setDetailOpen directly.
       // Unconditional, like the supervisor's Approve (picking-board-mobile.tsx
@@ -997,6 +1061,11 @@ export function PickerMyPicksBoard({
       // and wiping notes on work that did not complete is the one thing this
       // store must never do.
       clearTicksForOrders(doneIds);
+      // Same rule, other key — a bill finished through Mark all done must not
+      // leave hardener notes behind any more than it leaves line notes behind.
+      // Combined renders no hardener rows itself, so there is no on-screen
+      // state to clear here; this is the storage half only.
+      clearTicksForOrders(doneIds, HARDENER_TICKS_STORAGE_KEY);
       if (doneIds.length > 0) {
         setCombinedTicked((prev) => {
           const cleared = new Set(prev);
@@ -1087,6 +1156,38 @@ export function PickerMyPicksBoard({
       ),
     [lineItems, tickedLineIds],
   );
+
+  // ── Hardeners in the counter (2026-09-02) ────────────────────────────────
+  // A hardener is a thing he has to physically fetch, so it is a thing the
+  // progress line has to count — on BOTH sides, or the counter would read
+  // "5 of 5 ticked" while a hardener still sat on the shelf.
+  //
+  // Counted in ROWS, not raw lines: one row carries one hardener however many
+  // raw lines SAP split that SKU across, because the qty on the row is already
+  // the merged total (lib/picking/group-lines.ts sets the field AFTER the
+  // merge). That is why these two run over rows while tickedCount /
+  // totalRawLineCount above run over lineIds — the two units are different on
+  // purpose and adding them is still correct: each addend counts tickable
+  // THINGS, and a hardener is exactly one of them.
+  //
+  // ⚠ Against the FULL lineItems, never filteredLineItems — the pack chips are
+  // a view filter and his progress through the bill does not change when he
+  // narrows the view. Same rule as tickedCount, kept holding.
+  //
+  // Intersected with the rows actually present, so a stored hardener tick for a
+  // row that is no longer on the bill cannot inflate the number.
+  const hardenerRowCount = useMemo(
+    () => (lineItems ?? []).filter((li) => li.hardener !== null).length,
+    [lineItems],
+  );
+  const hardenerTickedCount = useMemo(
+    () => (lineItems ?? []).filter((li) => li.hardener !== null && hardenerTickedIds.has(li.id)).length,
+    [lineItems, hardenerTickedIds],
+  );
+  // What the "N of M ticked" line renders. Named separately so the JSX below
+  // stays one expression and the two additions are visible in one place.
+  const tickedTotal = tickedCount + hardenerTickedCount;
+  const tickableTotal = totalRawLineCount + hardenerRowCount;
 
   // ── Family groups (2026-08-10) ───────────────────────────────────────────
   // Built from filteredLineItems, NOT lineItems — that is what makes a pack chip
@@ -1778,10 +1879,14 @@ export function PickerMyPicksBoard({
                 would be read as one thing. Nothing branches on this number. */}
             {/* Denominator is RAW LINES, not rows on screen — see
                 totalRawLineCount. A bill whose SKUs SAP split by batch shows
-                fewer rows than the M here counts. */}
+                fewer rows than the M here counts.
+                ⚠ PLUS ONE PER HARDENER ROW (2026-09-02) on both sides — a
+                hardener is a thing he fetches, so it is a thing this counts.
+                See hardenerRowCount for why hardeners count in rows while
+                lines count in raw lines. */}
             {lineItems !== null && totalRawLineCount > 0 && (
               <div className="text-[11.5px] text-gray-400 tabular-nums mt-0.5">
-                {tickedCount} of {totalRawLineCount} ticked
+                {tickedTotal} of {tickableTotal} ticked
               </div>
             )}
           </div>
@@ -1952,9 +2057,27 @@ export function PickerMyPicksBoard({
                 // that already HAS a finding is never merged (the route splits
                 // it back out), so nothing recorded is hidden by this.
                 const rowTappable = !isMerged && (recorder.recordMode || state !== "none");
+                // The hardener's OWN tick — its own set, keyed by this row's
+                // id. Never read off tickedLineIds (see hardenerTickedIds).
+                const isHardenerTicked = hardenerTickedIds.has(li.id);
                 return (
+                /* ⚠ THE CARD IS NOW A WRAPPER, AND THE onClick MOVED INWARD
+                   (2026-09-02). It used to be one div: card chrome, flex row
+                   and the findings tap target all on the same element. A
+                   hardener row has to live INSIDE the same card as its parent
+                   — attached, not a floating sibling separated by the card
+                   gap — and if the tap handler had stayed on the outer element
+                   the hardener row would have inherited it and opened the
+                   findings popup for the parent line. A hardener has no raw
+                   line of its own and pick_findings.rawLineItemId is a real
+                   UNIQUE FK, so that tap must not exist. Chrome outside, tap
+                   target inside: the line row behaves exactly as it did. */
                 <div
                   key={li.id}
+                  className="rounded-[14px] overflow-hidden mb-2 bg-white"
+                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                >
+                <div
                   onClick={rowTappable ? () => recorder.openFor(li) : undefined}
                   // ⚠ NO STATUS FILL OR BORDER (changed 2026-08-08 after live
                   // testing). The row used to take a full amber/red background
@@ -1962,11 +2085,7 @@ export function PickerMyPicksBoard({
                   // read as alarming end to end and buried the ordinary rows.
                   // The row stays white like every other row; status lives in
                   // the badge and the note only. Do not re-add a fill.
-                  className={
-                    "flex rounded-[14px] overflow-hidden mb-2 bg-white " +
-                    (rowTappable ? "cursor-pointer active:opacity-90" : "")
-                  }
-                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                  className={"flex " + (rowTappable ? "cursor-pointer active:opacity-90" : "")}
                 >
                   {/* PACK TILE — SLATE #3d4650, matching the supervisor's own
                       tile. It was teal-700 here until 2026-07-30, which broke
@@ -2049,6 +2168,102 @@ export function PickerMyPicksBoard({
                       </span>
                     </button>
                   )}
+                </div>
+                {/* ── HARDENER SUB-ROW (2026-09-02) ────────────────────────
+                    Rendered from li.hardener — a FIELD on this row, never an
+                    extra element of the lines array. Nothing here has a line
+                    id of its own, contributes to distinctPackKeys, or is
+                    counted by the family strip; it follows its parent, so a
+                    pack chip that hides the parent hides this with it.
+
+                    ⚠ NOT TAPPABLE FOR FINDINGS, and structurally cannot be:
+                    the findings onClick sits on the sibling row above, not on
+                    this card. Same precedent as a merged row — no entry point
+                    rather than a write to an arbitrary raw line.
+
+                    ⚠ THE CIRCLE IS AMBER, NOT THE SLATE OF A LINE TICK, AND
+                    THAT IS THE SIGNAL. Every other tick on this screen marks
+                    something printed on the bill; this one marks the single
+                    item that is NOT on it. The colour is what tells him, at a
+                    glance down a 20-line bill, which ticks were his reading of
+                    the paper and which were his memory of the rule. Teal is
+                    still reserved for Mark done (CLAUDE_UI §1) and slate still
+                    means "a line". Do not unify these three. */}
+                {li.hardener !== null && (
+                  <div className="flex items-stretch bg-[#fffbeb] border-t border-[#fde68a] min-h-[44px]">
+                    {/* GUTTER — the elbow column. Same right border as the
+                        pack panel above it so the label starts exactly where
+                        the SKU code does; the elbow itself (vertical stub then
+                        a short arm) is the whole "belongs to the line above"
+                        statement, which is why there is no caption saying so. */}
+                    <div className="w-[54px] shrink-0 border-r border-[#fde68a] relative">
+                      <div className="absolute left-[26px] top-0 w-[1.5px] h-[23px] bg-[#fcd34d]" />
+                      <div className="absolute left-[26px] top-[21.5px] h-[1.5px] w-[14px] bg-[#fcd34d]" />
+                    </div>
+                    {/* LABEL — the word and nothing else. No SKU code (it has
+                        none), no pack (unknown and never guessed), no
+                        explanatory caption. The row's job is to be impossible
+                        to miss and impossible to misread. */}
+                    <div className="flex-1 min-w-0 px-3 flex items-center">
+                      <span
+                        className="text-[13px] font-bold tracking-[0.03em] transition-colors"
+                        style={{ color: isHardenerTicked ? "#d0b48a" : "#b45309" }}
+                      >
+                        HARDENER
+                      </span>
+                    </div>
+                    {/* QTY — li.hardener.qty VERBATIM, never recomputed here.
+                        The server already mirrored the parent's MERGED qty
+                        (lib/picking/group-lines.ts), so a SKU SAP split across
+                        four batch lines asks for the full count once. Same
+                        column classes as the parent's qty cell above, copied
+                        rather than restyled, so the two numbers cannot drift
+                        apart as that cell changes. */}
+                    <div className="shrink-0 flex items-center justify-center px-3.5">
+                      <span
+                        className="text-[17px] font-semibold tabular-nums text-right transition-colors"
+                        style={{ color: isHardenerTicked ? "#d0b48a" : "#b45309" }}
+                      >
+                        {li.hardener.qty}
+                      </span>
+                    </div>
+                    {/* TICK — same 44px tap column as the line tick, so the two
+                        circles sit on one vertical line under the thumb. Gates
+                        nothing: Mark done stays enabled with every hardener on
+                        the bill unticked (CLAUDE_PICKING.md §5.4.1). */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleHardenerTick(li.id);
+                      }}
+                      aria-label={isHardenerTicked ? "Remove tick from hardener" : "Tick hardener"}
+                      aria-pressed={isHardenerTicked}
+                      className="w-11 shrink-0 flex items-center justify-center"
+                    >
+                      <span
+                        className="w-[22px] h-[22px] rounded-full flex items-center justify-center"
+                        style={
+                          isHardenerTicked
+                            ? { backgroundColor: "#b45309", border: "1.5px solid #b45309" }
+                            : { backgroundColor: "transparent", border: "1.5px solid #fcd34d" }
+                        }
+                      >
+                        {isHardenerTicked && (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M5 13l4 4L19 7"
+                              stroke="white"
+                              strokeWidth={3.5}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </span>
+                    </button>
+                  </div>
+                )}
                 </div>
                 );
               })}
