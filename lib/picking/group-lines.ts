@@ -1,4 +1,5 @@
 import type { CatalogEntry } from "@/lib/picking/resolve-lines";
+import { needsHardener } from "@/lib/picking/hardener-skus";
 import type { PickingDetailLine, PickingLineFinding } from "@/lib/picking/types";
 
 // ── Split-SKU grouping for the picking detail screen (2026-08-10) ───────────
@@ -113,6 +114,10 @@ export function groupPickingDetailLines(
     for (const rows of emit) {
       const head = rows[0];
       const cat = catalogByCode.get(head.skuCodeRaw);
+      // Hoisted out of the object literal below because the hardener mirrors
+      // it: the two numbers must be the same number, not two sums that could
+      // drift.
+      const qty = rows.reduce((sum, l) => sum + l.unitQty, 0);
       lines.push({
         // The FIRST contributing line's id — kept so every existing consumer
         // (React keys, the findings popup, applyFinding's id match) behaves
@@ -134,7 +139,7 @@ export function groupPickingDetailLines(
         name: cat?.name ?? head.skuDescriptionRaw ?? null,
         sku: head.skuCodeRaw,
         pack: cat?.pack ?? null,
-        qty: rows.reduce((sum, l) => sum + l.unitQty, 0),
+        qty,
         litres: sumOrNull(rows.map((l) => l.volumeLine)),
         netWeight: sumOrNull(rows.map((l) => l.netWeight)),
         totalWeight: sumOrNull(rows.map((l) => l.totalWeight)),
@@ -157,6 +162,24 @@ export function groupPickingDetailLines(
         // recorded, so a consumer can test `finding !== null` and be done. A
         // merged row is always null here by construction (see the guard above).
         finding: findingByLineId.get(head.id) ?? null,
+        // ── Hardener (2026-09-02) ────────────────────────────────────────
+        // A FIELD ON THIS ROW, never a row of its own — see the field's own
+        // comment in types.ts for why a synthetic line is the one thing this
+        // must not be.
+        //
+        // Set AFTER the merge, on purpose: `qty` above is the MERGED
+        // quantity, so a SKU that SAP split across four batch lines yields
+        // ONE row asking for the full number of hardeners rather than four
+        // rows each asking for a share. One hardener per one unit is the only
+        // rule (lib/picking/hardener-skus.ts owns it).
+        //
+        // Matched on `head.skuCodeRaw` — the SAP code the group is keyed on,
+        // so it is identical across every contributing line by construction,
+        // exactly like `family` above. Nothing here touches the merge key, the
+        // finding split-out, or the unmastered-code fallback: an uncatalogued
+        // 2K PU line still gets its hardener, because the flag never asked the
+        // catalog anything.
+        hardener: needsHardener(head.skuCodeRaw) ? { qty } : null,
       });
     }
   }

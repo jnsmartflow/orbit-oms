@@ -323,6 +323,38 @@ export interface PickingDetailLine {
    */
   family: string | null;
   finding: PickingLineFinding | null;
+  /**
+   * The hardener this line's product ships with, or null when it ships with
+   * none — which is almost every line.
+   *
+   * ⚠ A FIELD ON THE PARENT LINE, NEVER A ROW OF ITS OWN. The hardener is not
+   * on the bill (lib/picking/hardener-skus.ts explains why) and it must not
+   * become an extra element of the `lines` array: `totalRawLineCount`,
+   * `tickedCount`, `resolvedLineCount`, the picker's family-group counts and
+   * `distinctPackKeys` all iterate that array, and a synthetic row would need a
+   * fake numeric id sharing a key space with `pick_findings.rawLineItemId` — a
+   * real UNIQUE FK. A field can collide with nothing. Both boards render the
+   * HARDENER sub-row from HERE, inside the parent row.
+   *
+   * NULL on every merged row's parent? No — the opposite: `qty` is the MERGED
+   * quantity, because the field is set after the merge. See group-lines.ts.
+   */
+  hardener: PickingLineHardener | null;
+}
+
+/**
+ * The hardener a 2K PU line ships with.
+ *
+ * An OBJECT rather than a bare boolean deliberately: `qty` is already a
+ * computed number the boards render without arithmetic of their own, and a
+ * future per-SKU ratio or a hardener pack label lands here as one more field
+ * instead of rippling a type change through both board components.
+ *
+ * `qty` today is a straight mirror of the parent line's own qty — one hardener
+ * per one unit, the only rule (lib/picking/hardener-skus.ts).
+ */
+export interface PickingLineHardener {
+  qty: number;
 }
 
 // ── Combined view (picker "My Picks" third tab, 2026-08-07) ─────────────────
