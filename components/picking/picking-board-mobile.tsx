@@ -1273,6 +1273,26 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Reset in openDetail() and again in the detailOrderId-keyed fetch effect
   // so ticks never bleed from one bill into the next.
   const [checkedLineIds, setCheckedLineIds] = useState<Set<number>>(new Set());
+  // ── Hardener ticks (2026-09-02) — A SEPARATE SET, AND EPHEMERAL LIKE ITS
+  // NEIGHBOUR ─────────────────────────────────────────────────────────────
+  // Keyed by the PARENT ROW's `li.id`, because a hardener is a FIELD on that
+  // row (lib/picking/types.ts) and has no raw line of its own — there is no id
+  // to reuse and deliberately no fake one to invent. The same number therefore
+  // means "line N is checked" in checkedLineIds and "line N's hardener is
+  // checked" here; merging them would double-count in the Approve gate and let
+  // one tap resolve two different questions.
+  //
+  // ⚠ NOTHING PERSISTS THIS, and nothing may. The supervisor's ticks are a
+  // forcing function, not an audit trail (CLAUDE_PICKING.md §6) — a phone-lock
+  // mid-check costs him re-scanning a 2-3 line bill, which is the whole reason
+  // that decision was made. The hardener tick follows it exactly and must NOT
+  // borrow the picker's localStorage store: his ticks are device-local private
+  // notes about himself (§5.4.1), these gate a write. Same skin, different
+  // features, separate plumbing — do not unify them.
+  //
+  // Cleared in BOTH places checkedLineIds is: switchDetailTo() and the
+  // detailOrderId-keyed fetch effect.
+  const [hardenerCheckedIds, setHardenerCheckedIds] = useState<Set<number>>(new Set());
   const [approving, setApproving] = useState(false);
 
   // ── Shortfall recording (2026-08-08) ─────────────────────────────────────
@@ -1432,6 +1452,9 @@ export function PickingBoardMobile(): React.JSX.Element {
     setLineItemsError(null);
     setLineItems(null);
     setCheckedLineIds(new Set());
+    // Clear site 1 of 2 — the hardener ticks are per-bill state exactly like
+    // the line ticks, so they die with the bill here too.
+    setHardenerCheckedIds(new Set());
     async function load() {
       try {
         const res = await fetch(`/api/picking/order/${detailOrderId}`);
@@ -1930,6 +1953,10 @@ export function PickingBoardMobile(): React.JSX.Element {
     setDetailQuery("");
     setActivePackFilter("ALL");
     setCheckedLineIds(new Set());
+    // Clear site 2 of 2 — without this a swipe to a neighbour bill would show
+    // the previous bill's hardener ticks, and (worse) count them toward THIS
+    // bill's Approve gate.
+    setHardenerCheckedIds(new Set());
     // The popup belongs to ONE line of ONE bill — paging away must close it.
     // `recordMode` deliberately does NOT reset here (screen-level mode); it
     // resets on a fresh open, in openDetail.
@@ -2094,6 +2121,25 @@ export function PickingBoardMobile(): React.JSX.Element {
     });
   }
 
+  /**
+   * Tick/untick ONE line's HARDENER — a different question from the line's own
+   * tick, on its own set.
+   *
+   * ⚠ TAKES THE PARENT ROW'S `li.id`, never a `lineIds` array. A hardener has
+   * no raw line of its own, and one row means one hardener however many raw
+   * lines SAP split that SKU across — the qty on the row is already the merged
+   * total (lib/picking/group-lines.ts sets the field after the merge). One id,
+   * one circle, one answer.
+   */
+  function toggleHardenerChecked(lineId: number): void {
+    setHardenerCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+  }
+
   // Approve gate — checks the FULL line set, never filteredLineItems, so an
   // active pack-chip filter hiding some lines can never let a partially-
   // resolved bill through (task brief: "Approve must still require ALL lines
@@ -2119,8 +2165,24 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Keeping the gate in raw lines means the merge cannot change what Approve
   // demands — before and after, it is "every underlying line of this bill".
   // Rows and lines are equal on a bill with no split SKUs, which is most of them.
+  //
+  // ⚠ HARDENERS JOIN BOTH SIDES (2026-09-02). A hardener is a physical thing
+  // the supervisor has to see on the trolley, and it is the one thing NOT
+  // printed on the bill — so it is exactly the item a tick screen exists to
+  // catch. It counts as ONE per row carrying the field, on both the numerator
+  // and the denominator, which is what makes the "4 / 5 resolved" label read
+  // correctly beside a still-grey button.
+  //
+  // Hardeners count in ROWS while lines count in RAW LINES. The two units are
+  // different on purpose and adding them is still right: each addend counts
+  // resolvable THINGS, and one row's hardener is exactly one of them however
+  // many raw lines SAP split that SKU across.
   const totalRawLineCount = useMemo(
     () => (lineItems ?? []).reduce((sum, li) => sum + li.lineIds.length, 0),
+    [lineItems],
+  );
+  const hardenerRowCount = useMemo(
+    () => (lineItems ?? []).filter((li) => li.hardener !== null).length,
     [lineItems],
   );
   const resolvedLineCount = useMemo(
@@ -2135,8 +2197,29 @@ export function PickingBoardMobile(): React.JSX.Element {
       }, 0),
     [lineItems, checkedLineIds],
   );
+  const hardenerResolvedCount = useMemo(
+    () =>
+      (lineItems ?? []).filter((li) => li.hardener !== null && hardenerCheckedIds.has(li.id)).length,
+    [lineItems, hardenerCheckedIds],
+  );
+  // ⚠ A HARDENER IS RESOLVED BY ITS OWN TICK, AND BY NOTHING ELSE — note that
+  // this reduce has no `confirmed` branch, unlike the one above it.
+  //
+  // A confirmed finding resolves the LINE without a tick, because the
+  // supervisor recorded that line's real quantity and asking him to tick it too
+  // would be the same question twice. That reasoning does not reach the
+  // hardener: "found 22 of 31 tins" is a statement about the paint and says
+  // NOTHING about whether the hardener was fetched — the two are different
+  // physical objects that happen to share a row. A short-shipped line still has
+  // a hardener to collect, and a supervisor who confirmed the shortage has not
+  // thereby looked at it. Do not add a finding branch here.
+  const totalResolvable = totalRawLineCount + hardenerRowCount;
+  const totalResolved = resolvedLineCount + hardenerResolvedCount;
+  // Still two derived integers compared for equality — deliberately NOT
+  // rewritten as a Set-size check. The counter under the packs row renders the
+  // same two numbers, so the label and the button can never disagree.
   const allLinesResolved =
-    lineItems !== null && totalRawLineCount > 0 && resolvedLineCount === totalRawLineCount;
+    lineItems !== null && totalResolvable > 0 && totalResolved === totalResolvable;
 
   // Distinct packs present on this bill, for the pack-filter chip row.
   // Sorted SMALLEST FIRST by real pack size, with "No pack" trailing last (an
@@ -3569,9 +3652,14 @@ export function PickingBoardMobile(): React.JSX.Element {
                     number the Approve gate uses, so the counter can never read
                     "8 / 8 resolved" beside a disabled button. See
                     totalRawLineCount. */}
+                {/* ⚠ PLUS ONE PER HARDENER ROW (2026-09-02), both sides — the
+                    same two integers the Approve gate compares, so a grey
+                    button beside "5 / 5 resolved" is not representable. This
+                    counter IS the message: no copy was added under the button
+                    saying what is left. */}
                 {detailRow?.isDone && lineItems !== null && (
                   <div className="text-[11.5px] text-gray-400 tabular-nums mt-0.5">
-                    {resolvedLineCount} / {totalRawLineCount} resolved
+                    {totalResolved} / {totalResolvable} resolved
                   </div>
                 )}
               </div>
@@ -3706,19 +3794,35 @@ export function PickingBoardMobile(): React.JSX.Element {
                   detailRow?.isDone === true &&
                   !isMerged &&
                   (recorder.recordMode || state !== "none");
+                // The hardener's OWN tick — its own set, keyed by this row's id.
+                // Gated on isDone like the line ticks: a `pick_checked` bill on
+                // the Checked band is fully read-only and this must be inert
+                // there like everything else.
+                const isHardenerChecked =
+                  detailRow?.isDone === true && hardenerCheckedIds.has(li.id);
                 return (
+                /* ⚠ THE CARD IS NOW A WRAPPER, AND THE onClick MOVED INWARD
+                   (2026-09-02) — the same split the picker board made on the
+                   same day, for the same reason. A hardener row has to sit
+                   INSIDE its parent's card (attached, not a sibling separated
+                   by the mb-2 gap), and had the findings tap handler stayed on
+                   the outer element the hardener row would have inherited it
+                   and opened the popup for the parent line. A hardener has no
+                   raw line and pick_findings.rawLineItemId is a real UNIQUE FK,
+                   so that tap must not exist. Chrome outside, tap target
+                   inside: the line row behaves exactly as it did. */
                 <div
                   key={li.id}
+                  className="rounded-[14px] overflow-hidden mb-2 bg-white"
+                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                >
+                <div
                   onClick={rowTappable ? () => recorder.openFor(li) : undefined}
                   // ⚠ NO status fill or border — the row stays white like every
                   // other row and the status lives in the badge + note only.
                   // (The picker board briefly tinted whole rows; live testing
                   // said it read as alarming end to end. Same rule both faces.)
-                  className={
-                    "flex bg-white rounded-[14px] overflow-hidden mb-2 " +
-                    (rowTappable ? "cursor-pointer active:opacity-90" : "")
-                  }
-                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                  className={"flex " + (rowTappable ? "cursor-pointer active:opacity-90" : "")}
                 >
                   {/* PACK TILE — fixed 56px, full card height (flex stretch),
                       SLATE when known (was teal — recoloured 2026-07-21 so the
@@ -3802,6 +3906,108 @@ export function PickingBoardMobile(): React.JSX.Element {
                       </span>
                     </button>
                   )}
+                </div>
+                {/* ── HARDENER SUB-ROW (2026-09-02) ────────────────────────
+                    Rendered from li.hardener — a FIELD on this row, never an
+                    extra element of the lines array. It has no line id of its
+                    own, adds nothing to distinctPackKeys, and follows its
+                    parent: a pack chip that hides the parent hides this too.
+
+                    ⚠ THE MARKUP IS A DELIBERATE COPY of the picker board's
+                    twin (picker-my-picks-board.tsx, same date) — NOT an
+                    extracted shared component. The two boards keep their own
+                    card and row language on purpose (CLAUDE_PICKING.md §5.4:
+                    the CARD is deliberately not shared), and a shared row here
+                    would be the first thing to break the day one face changes.
+                    If you edit one, look at the other and decide; do not
+                    assume they must match.
+
+                    ⚠ NOT TAPPABLE FOR FINDINGS, and structurally cannot be —
+                    the findings onClick sits on the sibling row above, not on
+                    this card. Same precedent as a merged row.
+
+                    ⚠ THE TICK GATES APPROVE, unlike the picker's identical-
+                    looking one, which gates nothing (§5.4.1). Amber rather
+                    than the line tick's teal because this is the one item not
+                    printed on the bill — the colour is what tells a supervisor
+                    which ticks came off the paper and which came off the rule.
+                    Rendered on every tab's detail screen as a reminder; the
+                    circle only appears, and only toggles, on a Done-tab bill
+                    (isDone), exactly like the line ticks beside it. */}
+                {li.hardener !== null && (
+                  <div className="flex items-stretch bg-[#fffbeb] border-t border-[#fde68a] min-h-[44px]">
+                    {/* GUTTER — w-14, matching the pack tile above it so the
+                        two right borders sit on one line and HARDENER starts
+                        exactly where the SKU code does. The elbow (vertical
+                        stub, short arm) is the whole "belongs to the line
+                        above" statement, which is why no caption says so. */}
+                    <div className="w-14 shrink-0 border-r border-[#fde68a] relative">
+                      <div className="absolute left-[26px] top-0 w-[1.5px] h-[23px] bg-[#fcd34d]" />
+                      <div className="absolute left-[26px] top-[21.5px] h-[1.5px] w-[14px] bg-[#fcd34d]" />
+                    </div>
+                    {/* LABEL — the word and nothing else. No SKU code (it has
+                        none), no pack (unknown, never guessed), no caption. */}
+                    <div className="flex-1 min-w-0 px-3 flex items-center">
+                      <span
+                        className="text-[13px] font-bold tracking-[0.03em] transition-colors"
+                        style={{ color: isHardenerChecked ? "#d0b48a" : "#b45309" }}
+                      >
+                        HARDENER
+                      </span>
+                    </div>
+                    {/* QTY — li.hardener.qty VERBATIM, never recomputed. The
+                        server already mirrored the parent's MERGED qty, so a
+                        SKU SAP split across batch lines asks for the full
+                        count once. Same column classes as the parent's qty
+                        cell, copied rather than restyled, so the two numbers
+                        cannot drift apart. */}
+                    <div className="shrink-0 flex items-center justify-center px-3.5">
+                      <span
+                        className="text-[17px] font-semibold tabular-nums text-right transition-colors"
+                        style={{ color: isHardenerChecked ? "#d0b48a" : "#b45309" }}
+                      >
+                        {li.hardener.qty}
+                      </span>
+                    </div>
+                    {/* TICK — Done tab only, same isDone guard and same 44px
+                        tap column as the line tick, so the two circles sit on
+                        one vertical line under the thumb. On the Checked band
+                        the whole row is inert, like every other control there. */}
+                    {detailRow?.isDone && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleHardenerChecked(li.id);
+                        }}
+                        aria-label={isHardenerChecked ? "Mark hardener unchecked" : "Mark hardener checked"}
+                        aria-pressed={isHardenerChecked}
+                        className="w-11 shrink-0 flex items-center justify-center"
+                      >
+                        <span
+                          className="w-[22px] h-[22px] rounded-full flex items-center justify-center"
+                          style={
+                            isHardenerChecked
+                              ? { backgroundColor: "#b45309", border: "1.5px solid #b45309" }
+                              : { backgroundColor: "transparent", border: "1.5px solid #fcd34d" }
+                          }
+                        >
+                          {isHardenerChecked && (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M5 13l4 4L19 7"
+                                stroke="white"
+                                strokeWidth={3.5}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
                 </div>
                 );
               })

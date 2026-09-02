@@ -2196,7 +2196,15 @@ export function PickerMyPicksBoard({
                         the SKU code does; the elbow itself (vertical stub then
                         a short arm) is the whole "belongs to the line above"
                         statement, which is why there is no caption saying so. */}
-                    <div className="w-[54px] shrink-0 border-r border-[#fde68a] relative">
+                    {/* w-14 — the SAME width as the pack tile above it, so the
+                        two right borders sit on one line and the label starts
+                        exactly where the SKU code does. Was a literal 54px
+                        (the mockup's own figure, where its pack cell is also
+                        54px); this board's pack tile is w-14 = 56px, so the
+                        borders were 2px apart. Match the tile, never a
+                        hardcoded number — if the tile ever changes width, this
+                        follows it. */}
+                    <div className="w-14 shrink-0 border-r border-[#fde68a] relative">
                       <div className="absolute left-[26px] top-0 w-[1.5px] h-[23px] bg-[#fcd34d]" />
                       <div className="absolute left-[26px] top-[21.5px] h-[1.5px] w-[14px] bg-[#fcd34d]" />
                     </div>
