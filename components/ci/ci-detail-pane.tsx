@@ -128,6 +128,7 @@ export function CiDetailPane({
 
   const isFull = detail.returnType === "full";
   const closed = detail.status === "closed";
+  const isAuto = detail.source === "auto_finding";
 
   return (
     /* 🔴 `min-w-0` IS LOAD-BEARING — THIS ELEMENT IS THE GRID ITEM, and a grid
@@ -173,32 +174,41 @@ export function CiDetailPane({
             <div className="font-mono text-[13px] font-bold text-gray-900">
               {detail.ciNumber ?? "—"}
             </div>
-            <div className="text-[11px] text-gray-400 mt-0.5">
-              Raised by {detail.supervisorName ?? "—"}
-              {detail.submittedAt !== null && ` · ${formatIstDateTime(detail.submittedAt)}`}
-            </div>
-            {/* ══ THE AUTO LINE — auto CIs ONLY ═══════════════════════════════
-                "Auto · Harish Padvi · Adajan" = raised automatically, checked by
-                that supervisor, going out on that route. It tells billing in one
-                line that the document was assembled by the system rather than
-                stated by a person, and who to ask.
+            {/* ══ PROVENANCE — ONE LINE, AND ONLY EVER ONE ══════════════════
+                "Auto · Raised by Harish Padvi · 2 Sept 17:51 · Adajan" — raised
+                automatically, checked by that supervisor, at that moment, going
+                out on that route.
 
-                ⚠ NOTHING CHANGES ON A MANUAL CI. The whole element is absent —
-                no empty line, no reserved height — so a manual CI's header is
-                byte-identical to what it was before this existed.
+                🔴 THE AUTO BADGE IS A PREFIX ON THIS LINE, NOT A LINE OF ITS OWN.
+                Step 15 shipped it as a SECOND line reading "Auto · {supervisor}
+                · {route}", directly under a line that already said "Raised by
+                {supervisor}" — so the header printed the supervisor's name twice,
+                one under the other, and the eye had to work out that the two
+                lines were about the same person. Whoever adds a fourth fact here
+                appends a segment; they do not add a line.
+
+                ⚠ NOTHING CHANGES ON A MANUAL CI. No "Auto", and NO ROUTE — not
+                even when one resolves, which it does for every live row. The
+                route is context for a document nobody typed; on a CI a
+                supervisor walked himself it is a fact he did not state and did
+                not ask for. The rendered line is exactly what it was before the
+                auto path existed.
 
                 🔴 A NULL ROUTE DROPS THE SEGMENT ENTIRELY. Never a dash, never a
                 stranded separator: an unmastered dealer has no area and so no
                 route, which is a normal state and not a missing value. The parts
-                are joined, so the separator can only ever sit between two things
-                that are actually there. */}
-            {detail.source === "auto_finding" && (
-              <div className="text-[11px] font-medium text-[#6b7480] mt-0.5">
-                {["Auto", detail.supervisorName, detail.routeName]
-                  .filter((p): p is string => Boolean(p))
-                  .join(" · ")}
-              </div>
-            )}
+                are filtered THEN joined, so a separator can only ever sit
+                between two things that are actually there. */}
+            <div className="text-[11px] text-gray-400 mt-0.5">
+              {[
+                isAuto ? "Auto" : null,
+                `Raised by ${detail.supervisorName ?? "—"}`,
+                detail.submittedAt !== null ? formatIstDateTime(detail.submittedAt) : null,
+                isAuto ? detail.routeName : null,
+              ]
+                .filter((part): part is string => Boolean(part))
+                .join(" · ")}
+            </div>
           </div>
         </div>
       </div>
