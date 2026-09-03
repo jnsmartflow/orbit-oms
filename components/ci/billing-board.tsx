@@ -6,6 +6,7 @@ import { UniversalHeader } from "@/components/universal-header";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { CiRail } from "./ci-rail";
 import { CiDetailPane } from "./ci-detail-pane";
+import { CiRegisterExport } from "./register-export";
 import type { CiBillingBoard, CiDetail } from "@/lib/ci/types";
 
 // Billing's desk board — composition root for /ci's billing face.
@@ -207,6 +208,20 @@ export function CiBillingBoardScreen(): React.JSX.Element {
           { label: "pending", value: board?.pendingCount ?? 0 },
           { label: "closed", value: board?.closedCount ?? 0 },
         ]}
+        // Row 2 LEFT — the register download (components/ci/register-export.tsx).
+        //
+        // ⚠ `leftExtra`, WHICH WAS THE ONE EMPTY SLOT ON THIS HEADER, and the
+        // choice is deliberate. Row 2's RIGHT holds the date stepper below, and
+        // an export that asks for its own date range must not sit beside the
+        // control that drives the rail — the filter and a divider keep the two
+        // apart. 🔴 THE STEPPER DOES NOT DRIVE THE EXPORT and is untouched by
+        // it: a rail is read by DAY, a register is asked for by MONTH.
+        //
+        // ⚠ AND `showDownload` STAYS UNWIRED. Row 1's teal Download button
+        // fires instantly everywhere it exists (TI Report, its only other
+        // caller); making it open a popover here would give one familiar
+        // control two meanings. One entry point, and it is the trigger below.
+        leftExtra={<CiRegisterExport />}
         // Row 2 right — the date stepper. CLOSED ONLY (see header).
         currentDate={date}
         onDateChange={setDate}

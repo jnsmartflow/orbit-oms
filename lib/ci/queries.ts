@@ -29,8 +29,15 @@ import { getISTDayRange } from "@/lib/dates";
 // Third caller of the same rule (lib/picking/queue.ts, lib/floor/queries.ts:779).
 import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 import { applyCiCatalog, resolveCiSkus } from "./resolve-lines";
-import { billTotals, ciTotals, litresPerTin, resolveCiDealer, round3 } from "./derive";
+import { billTotals, ciTotals, litresPerTin, resolveCiDealer, round3, sumLitres } from "./derive";
 import { asCiStatus } from "./types";
+// 🔴 `import type`, AND THAT KEYWORD IS LOAD-BEARING — do not drop it.
+// lib/ci/workbook.ts imports `xlsx`, a ~900KB CommonJS bundle. A type-only
+// import is erased at compile time (tsconfig sets isolatedModules), so the
+// spreadsheet library never enters this module's graph; a plain `import` would
+// put it in the graph of every CI route that imports this file, none of which
+// writes a workbook except the export one.
+import type { CiRegisterRow } from "./workbook";
 import type {
   CiBillLine,
   CiBillResult,
@@ -757,6 +764,132 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
     ...totals,
     billLineCount,
   };
+}
+
+// ── The register export (billing's hand-kept .xlsm, produced) ────────────────
+
+/**
+ * Every CLOSED CI whose `ciDate` falls in [from, to], inclusive both ends, in
+ * the order billing's register keeps them: CI date ascending, then CI number.
+ *
+ * 🔴 CLOSED ONLY. A CI billing has not punched has no SAP CI number and no
+ * value, which is two of the seventeen columns empty on a row whose whole
+ * purpose is to carry them. It is not yet a line in a register.
+ *
+ * 🔴 NO VALUE FILTER, DESPITE THE SHEET NAME ("CI DATA BELOW 10000RS") — owner
+ * ruling, 2026-09-03. Every closed CI in the range goes in, whatever it is
+ * worth. Whether a SECOND register exists for larger CIs is an open question;
+ * if it turns out one does, the answer is one more clause in this `where`, not
+ * a threshold guessed in advance. Do not invent one.
+ *
+ * ⚠ THE RANGE IS UTC-MIDNIGHT BOUNDED, AND THAT IS NOT AN IST BUG.
+ * `ciDate` is `@db.Date` — a calendar day stored at UTC midnight, not an
+ * instant — so a day HAS no timezone to shift and getISTDayRange() (which is
+ * for `timestamptz` columns like submittedAt/closedAt) would be the wrong tool:
+ * its 18:30Z boundaries would drop the to-date's own rows. `lte` against the
+ * to-date's UTC midnight is therefore genuinely inclusive. Where IST DOES
+ * matter is what "this month" means at 00:30 IST on the 1st, and that is
+ * decided on the client, in components/ci/register-export.tsx.
+ *
+ * ⚠ An empty range returns `[]`, and the caller turns that into a valid
+ * workbook with the header row and no data rows. Never an error, never a 404.
+ */
+export async function getCiRegisterRows(
+  fromStr: string,
+  toStr: string,
+): Promise<CiRegisterRow[]> {
+  const from = assertCiDate(fromStr);
+  const to = assertCiDate(toStr);
+  if (from > to) {
+    // String comparison is safe on YYYY-MM-DD and both are already validated.
+    throw new Error(`Invalid range — "${from}" is after "${to}"`);
+  }
+
+  const rows = await prisma.ci_returns.findMany({
+    where: {
+      status: "closed",
+      isVoided: false,
+      ciDate: { gte: utcMidnight(from), lte: utcMidnight(to) },
+    },
+    select: {
+      ciNumber: true,
+      // 🔴 THE CI'S OWN SNAPSHOTS for the dealer (owner ruling, 2026-09-03) —
+      // never delivery_point_master. A register records what was FILED; the
+      // snapshot honours the ship-to override (goods come back from where they
+      // were delivered) and it is the only source that survives an unmastered
+      // dealer, where the master has no row at all.
+      customerCode: true,
+      customerName: true,
+      // The FALLBACK half of the invoice rule — the live half rides on `order`.
+      invoiceNo: true,
+      invoiceDate: true,
+      sapCiNumber: true,
+      ciDate: true,
+      ciValue: true,
+      reasonLabel: true,
+      returnType: true,
+      materialMoved: true,
+      // ⚠ ONE JOIN, NOT A SECOND QUERY — the same shape BOARD_SELECT uses. It
+      // carries BOTH the live invoice pair and `smu`, from which the division
+      // number is derived below.
+      order: { select: { invoiceNo: true, invoiceDate: true, smu: true } },
+      lines: { select: { returnedQtyLitres: true } },
+    },
+    // Their register's own order. `ciNumber` is the tiebreak within a day and
+    // sorts correctly as a string: CI-YYYY-NNNNN is fixed-width and zero-padded.
+    orderBy: [{ ciDate: "asc" }, { ciNumber: "asc" }],
+  });
+
+  return rows.map((r) => ({
+    // Non-null by construction — every closed CI left draft, and the number is
+    // allocated at that moment. The `?? ""` narrows the type, it is not a value
+    // anyone should ever see, and it never reaches the sheet (no column holds
+    // OrbitOMS's own reference; it is the sort tiebreak only).
+    ciNumber: r.ciNumber ?? "",
+    dealerCode: r.customerCode,
+    dealerName: r.customerName,
+    // Live first, snapshot second. NEVER the reverse — the rule written on
+    // ci_returns.invoiceNo itself, and the same one toBoardRow and getCiDetail
+    // apply. A number SAP sends after the CI was raised simply appears.
+    invoiceNo: r.order?.invoiceNo ?? r.invoiceNo,
+    invoiceDate: r.order?.invoiceDate ?? r.invoiceDate,
+    sapCiNumber: r.sapCiNumber,
+    ciDate: r.ciDate,
+    // 🔴 THE SAME sumLitres() BOTH DETAIL PANES TOTAL WITH (via ciTotals), so
+    // the register can never disagree with the screen about one return. Litres,
+    // not tins.
+    totalLitres: sumLitres(
+      r.lines.map((l) => (l.returnedQtyLitres === null ? null : Number(l.returnedQtyLitres))),
+    ),
+    // Decimal → string here, exactly as getCiDetail does, so no scale is lost on
+    // the way out of Prisma. The workbook decides the CELL type.
+    ciValue: r.ciValue === null ? null : r.ciValue.toFixed(2),
+    reasonLabel: r.reasonLabel,
+    // NOT NULL in the live table, so this narrows rather than defaults.
+    returnType: r.returnType === "full" ? "full" : "part",
+    // ⚠ NULLABLE IN THE COLUMN, and narrowed to null rather than guessed. It is
+    // non-null on anything that is not a draft (chk_ci_returns_complete_when_
+    // not_draft) and this query only returns closed rows, so null is
+    // unreachable — but if the CHECK is ever dropped, an EMPTY cell is the only
+    // safe failure on a register. "NM" invented here would be a fact nobody
+    // stated, printed on a document that goes upward.
+    materialMoved:
+      r.materialMoved === "moved" ? "moved" : r.materialMoved === "not_moved" ? "not_moved" : null,
+    // The division NUMBER, derived from the name in memory — the same one line
+    // getCiDetail runs (and lib/floor/queries.ts:779 before it). No join to
+    // import_raw_summary.
+    division: r.order?.smu != null ? (SMU_CODE_BY_NAME[r.order.smu] ?? null) : null,
+  }));
+}
+
+/** A `YYYY-MM-DD` as the UTC midnight instant a `@db.Date` column stores it at.
+ *  ⚠ NEVER `new Date("2026-09-01")` without the time part in some other shape —
+ *  a date-ONLY string is parsed as UTC per spec, but the moment someone
+ *  "improves" it to include a time it becomes LOCAL and the range silently
+ *  shifts by 5.5 hours on a depot machine (CORE §3). The `Z` is explicit here
+ *  so that cannot happen. */
+function utcMidnight(iso: string): Date {
+  return new Date(`${iso}T00:00:00.000Z`);
 }
 
 /** A @db.Date comes back UTC-midnight anchored, so slicing the ISO string
