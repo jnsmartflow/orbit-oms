@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.15 · Schema v27.15 · August 2026 · updated 2026-08-19
+# v1.16 · Schema v27.15 · September 2026 · updated 2026-09-03
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -1240,6 +1240,36 @@ here. What matters on this board:
 - `pick_findings_confirmed_idx` is **partial** (`WHERE "recordedById" IS NOT NULL`) and NOT
   expressible in Prisma; `pick_findings_order_idx` IS modelled, with an explicit `map:`.
 
+### 11.7 A confirm can also raise a CI [2026-09-01, `618f67fc`]
+
+**Confirming a finding on a bill SAP has already invoiced raises a Goods Return Note as a SIDE
+EFFECT.** The goods cannot simply be un-picked once an invoice exists, so what is not going out has
+to come back on a document. `app/api/picking/findings/confirm/route.ts` calls
+`reconcileAutoCi()` (`lib/ci/auto.ts`) after the confirm is written.
+
+**→ `docs/CLAUDE_CI.md §9` owns that behaviour in full** — the fire rule, which lines are due, the
+reconcile, and what happens once billing has closed the CI. It is not restated here. Four things
+belong on THIS board, because they are facts about findings rather than about the return:
+
+- 🔴 **Hooked on CONFIRM ONLY, never on `findings/report`.** The trigger is the SUPERVISOR's
+  sign-off — a human action. A picker's unconfirmed claim must never raise a document, and the
+  filter that guarantees it is `recordedById IS NOT NULL`, which §11.1's two-step table is the
+  reason for: the picker's route leaves that column NULL and the supervisor's always stamps it.
+  Measured live 2026-09-01: 92 of 95 findings are recorded, 3 are picker-only, and those 3 are
+  exactly what the filter excludes.
+- 🔴 **The findings board is the primary job. A CI failure must never affect it.** The call is
+  awaited (a floating promise on a serverless function can be killed the moment the response
+  returns) and then logged and swallowed — it cannot roll back the confirm, cannot turn a successful
+  confirm into an error the supervisor sees, and cannot leave him tapping Confirm again on a line
+  that is already recorded.
+- **Both `reason` values feed it, and they feed it differently.** `short_quantity` contributes its
+  shortfall; **`old_mfg` contributes the WHOLE line even at a full count** — nothing is short, but
+  the stock is held, so it comes back. ⚠ That arm is an owner ruling **under review** (2026-09-03),
+  deliberately with no feature flag. Before it, 21 of 95 findings raised nothing at all.
+- **The order row `confirm/route.ts` fetches was widened for this** (invoice, customer snapshot, SO
+  number) rather than a second `findFirst` being added. If you narrow that select, the auto-CI loses
+  its inputs silently.
+
 ---
 
 ## Change log — v1.12 (2026-08-04 reconciliation pass, method v1.1)
@@ -1304,4 +1334,4 @@ Evidence: all nine commits confirmed present on `main` by `git log` before anyth
 
 ---
 
-*CLAUDE_PICKING.md v1.15 · Schema v27.15 · Picking Module · August 2026 · updated 2026-08-19 — SMU badge (74/77 only, derived code, no new column); §5.2's stale `articleTag` where-row claim corrected*
+*CLAUDE_PICKING.md v1.16 · Schema v27.15 · Picking Module · September 2026 · updated 2026-09-03 — §11.7 added: confirming a finding on an invoiced bill also raises a CI (`618f67fc`), a behaviour owned in full by `CLAUDE_CI.md §9`; four facts about FINDINGS kept here. ⚠ The Schema stamp stays **v27.15 on purpose** — it records the version this file was last RECONCILED against, and v27.16-v27.21 (MRN, audit log, CI) touch no picking table. Prior, v1.15 (2026-08-19): SMU badge (74/77 only, derived code, no new column); §5.2's stale `articleTag` where-row claim corrected*
