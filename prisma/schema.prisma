@@ -2628,7 +2628,7 @@ model ci_reason_master {
   ciReturns ci_returns[] @relation("CiReturnReason")
 }
 
-// The CI header. 31 columns.
+// The CI header. 32 columns.
 //
 // 🔴 THREE LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA (CORE §7.4), so
 // they are invisible in this file and are recorded here by hand:
