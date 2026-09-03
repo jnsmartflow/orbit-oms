@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CI — Billing mockup</title>
+<style>
+  :root{
+    --teal:#0F9184;
+    --teal-dk:#0B7A6F;
+    --teal-soft:#E7F4F2;
+    --ink:#16191D;
+    --ink-2:#5C666E;
+    --ink-3:#8A9299;
+    --ink-4:#B7BFC5;
+    --ground:#F4F6F7;
+    --pack:#F7F9FA;
+    --line:#E7EBEC;
+    --line-2:#EFF2F3;
+    --amber:#A8620A;
+    --amber-soft:#FDF4E3;
+    --green:#0A7C4A;
+    --green-soft:#E7F6EE;
+    --violet:#6941C6;
+    --violet-soft:#F5F1FE;
+    --sh:0 1px 2px rgba(16,25,29,.05),0 6px 16px rgba(16,25,29,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#E8ECEE;color:var(--ink);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .page{max-width:1500px;margin:0 auto;padding:30px 22px 70px}
+  .masthead{margin:0 0 6px;font-size:21px;font-weight:700;letter-spacing:-.015em}
+  .sub{margin:0;color:var(--ink-2);font-size:13.5px;max-width:900px;line-height:1.55}
+  .sub code{background:#fff;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px}
+  .cap{margin:12px 3px 34px;font-size:12.5px;color:var(--ink-2);line-height:1.55;max-width:1100px}
+  .cap b{color:var(--ink);font-weight:650}
+  .stepno{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;
+    border-radius:50%;background:var(--ink);color:#fff;font-size:11px;font-weight:700;margin-right:7px;vertical-align:1px}
+  .stepno.alt{background:var(--teal)}
+
+  /* ================= desktop frame ================= */
+  .desk{width:1400px;height:840px;background:var(--ground);border-radius:12px;overflow:hidden;
+    display:flex;box-shadow:0 2px 6px rgba(16,25,29,.08),0 16px 36px rgba(16,25,29,.12);margin-top:22px}
+
+  .side{width:72px;flex:0 0 72px;background:#fff;border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px}
+  .sideLogo{width:38px;height:38px;border-radius:11px;background:var(--teal);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;margin-bottom:10px}
+  .sideIc{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    font-size:17px;color:var(--ink-3)}
+  .sideIc.on{background:var(--teal-soft);color:var(--teal-dk)}
+  .sideSpacer{flex:1}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+
+  .uh1{height:52px;flex:0 0 52px;background:#fff;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:14px;padding:0 18px}
+  .uhTitle{font-size:16px;font-weight:750;letter-spacing:-.01em}
+  .uhStat{font-size:11.5px;color:var(--ink-4)}
+  .uhRight{margin-left:auto;display:flex;align-items:center;gap:12px}
+  .uhIc{font-size:15px;color:var(--ink-3)}
+  .uhSearch{width:240px;height:32px;border-radius:9px;background:var(--ground);border:1px solid var(--line);
+    display:flex;align-items:center;gap:8px;padding:0 11px;font-size:13px;color:var(--ink-4)}
+
+  .uh2{height:40px;flex:0 0 40px;background:#fff;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;padding:0 18px}
+  .uh2K{font-size:12.5px;font-weight:650;color:var(--ink-3)}
+  .uh2K b{color:var(--ink);font-weight:750}
+  .dotSep{color:var(--ink-4)}
+  .uh2Right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .ctl{border:1px solid var(--line);border-radius:8px;padding:5px 11px;font-size:12.5px;
+    color:var(--ink-2);font-weight:600;background:#fff}
+
+  .work{flex:1;min-height:0;display:flex}
+
+  /* ---------- one rail, two sections ---------- */
+  .rail{width:348px;flex:0 0 348px;background:#fff;border-right:1px solid var(--line);
+    display:flex;flex-direction:column}
+  .railHead{height:44px;flex:0 0 44px;border-bottom:1px solid var(--line-2);
+    display:flex;align-items:center;gap:8px;padding:0 16px}
+  .railTitle{font-size:13px;font-weight:750}
+  .railCount{margin-left:auto;font-size:12px;color:var(--ink-3);font-weight:600}
+  .railBody{flex:1;overflow:hidden;padding:10px}
+  .secHead{display:flex;align-items:center;gap:8px;padding:8px 4px 9px}
+  .secHead:first-child{padding-top:2px}
+  .secT{font-size:10.5px;font-weight:750;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-4)}
+  .secN{font-size:10.5px;font-weight:750;color:var(--ink-4)}
+  .secRule{flex:1;height:1px;background:var(--line-2)}
+
+  .rcard{border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:9px;background:#fff}
+  .rcard.on{border-color:var(--teal);background:var(--teal-soft);box-shadow:0 0 0 1px var(--teal)}
+  .rcard.done{background:var(--pack);border-color:var(--line-2)}
+  .rcard.done .rName{color:var(--ink-2)}
+  .rTop{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .rNo{font-size:12.5px;font-weight:750;color:var(--ink-2)}
+  .rcard.on .rNo{color:var(--teal-dk)}
+  .rTime{font-size:11.5px;color:var(--ink-4)}
+  .rName{font-size:15.5px;font-weight:700;letter-spacing:-.01em;margin-top:5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rcard.done .rName{font-size:14.5px}
+  .rMeta{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:12.5px;color:var(--ink-3)}
+  .rMeta b{color:var(--ink);font-weight:700}
+  .tag{border-radius:999px;padding:3px 9px;font-size:11px;font-weight:700;background:#EDF1F2;color:var(--ink-2)}
+  .tag.amber{background:var(--amber-soft);color:var(--amber)}
+  .tag.green{background:var(--green-soft);color:var(--green)}
+  .tag.teal{background:var(--teal-soft);color:var(--teal-dk)}
+  .tag.violet{background:var(--violet-soft);color:var(--violet)}
+  .tag.full{background:var(--teal);color:#fff;letter-spacing:.05em}
+  .tag.part{background:#E7EBEC;color:var(--ink-2);letter-spacing:.05em}
+
+  /* ---------- right pane ---------- */
+  .pane{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--ground)}
+  .paneScroll{flex:1;overflow:hidden;padding:16px 20px}
+
+  .paneHead{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px}
+  .phTop{display:flex;align-items:flex-start;gap:14px}
+  .phNameRow{display:flex;align-items:center;gap:11px}
+  .phName{font-size:22px;font-weight:750;letter-spacing:-.02em;line-height:1.15}
+  .phSub{font-size:13px;color:var(--ink-3);margin-top:5px}
+  .phRight{margin-left:auto;text-align:right}
+  .phCiNo{font-size:16px;font-weight:750;color:var(--teal-dk)}
+  .phRaised{font-size:12px;color:var(--ink-3);margin-top:4px}
+  .phFacts{display:flex;margin-top:14px;border-top:1px solid var(--line-2);padding-top:13px}
+  .fact{padding-right:26px;margin-right:26px;border-right:1px solid var(--line-2)}
+  .fact:last-child{border-right:none;margin-right:0;padding-right:0}
+  .fact.hero .factV{color:var(--teal-dk);font-size:17px}
+  .factK{font-size:10.5px;font-weight:750;color:var(--ink-4);letter-spacing:.09em;text-transform:uppercase}
+  .factV{font-size:15px;font-weight:700;margin-top:4px;letter-spacing:-.01em}
+  .factV .lt{color:var(--ink-3);font-weight:600}
+
+  .tblWrap{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:14px}
+  .tblHead{display:flex;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line-2);gap:9px}
+  .tblTitle{font-size:13px;font-weight:750}
+  table{width:100%;border-collapse:collapse}
+  th{font-size:10.5px;font-weight:750;color:var(--ink-4);letter-spacing:.09em;text-transform:uppercase;
+    text-align:left;padding:9px 16px;border-bottom:1px solid var(--line-2);background:var(--pack)}
+  th.num,td.num{text-align:right}
+  td{font-size:13.5px;padding:11px 16px;border-bottom:1px solid var(--line-2)}
+  tr:last-child td{border-bottom:none}
+  .tSku{font-weight:750;font-size:14px;letter-spacing:-.01em}
+  .tDesc{color:var(--ink-3);font-size:12.5px;margin-top:2px}
+  .tPack{font-weight:700;color:var(--ink-2)}
+  .tQty{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums}
+  .tLt{font-variant-numeric:tabular-nums;color:var(--ink-2);font-weight:650}
+  tfoot td{background:var(--pack);font-weight:750;border-top:1px solid var(--line);font-size:14px}
+
+  .sap{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .sapHead{padding:13px 18px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:10px}
+  .sapTitle{font-size:13.5px;font-weight:750}
+  .sapNote{font-size:12px;color:var(--ink-4);font-weight:500}
+  .sapBody{padding:16px 18px;display:flex;gap:14px;align-items:flex-end}
+  .fld{flex:1}
+  .fldK{font-size:10.5px;font-weight:750;color:var(--ink-4);letter-spacing:.09em;text-transform:uppercase;margin-bottom:6px}
+  .fldI{height:42px;border:1px solid var(--line);border-radius:10px;background:#fff;
+    display:flex;align-items:center;padding:0 13px;font-size:15px;font-weight:650}
+  .fldI.ph{color:var(--ink-4);font-weight:500}
+  .fldI.focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,145,132,.13)}
+  .fldI .rs{color:var(--ink-3);margin-right:6px;font-weight:600}
+  .btn{height:42px;border-radius:10px;padding:0 22px;font-size:14.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;white-space:nowrap;border:1px solid transparent}
+  .btn.primary{background:var(--teal);color:#fff;box-shadow:0 4px 12px rgba(15,145,132,.24)}
+  .btn.off{background:#E7EBEC;color:#A7B0B6}
+
+  .banner{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:12px;
+    font-size:13.5px;font-weight:650;margin-bottom:14px}
+  .banner.violet{background:var(--violet-soft);color:var(--violet);border:1px solid #E1D6FB}
+  .banner.green{background:var(--green-soft);color:var(--green);border:1px solid #C6E7D5}
+
+  .caught{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center}
+  .caughtIc{width:64px;height:64px;border-radius:50%;background:var(--green-soft);color:var(--green);
+    display:flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:14px}
+  .caughtT{font-size:17px;font-weight:750}
+  .caughtS{font-size:13.5px;color:var(--ink-3);margin-top:6px}
+
+  .notes{margin-top:16px;background:#fff;border-radius:18px;padding:24px 28px;max-width:1100px;box-shadow:var(--sh)}
+  .notes h2{margin:0 0 14px;font-size:16px;font-weight:750}
+  .notes h3{margin:22px 0 9px;font-size:13px;font-weight:750;color:var(--ink-3);letter-spacing:.05em;text-transform:uppercase}
+  .notes ul{margin:0;padding-left:20px}
+  .notes li{margin-bottom:9px;font-size:13.5px;color:var(--ink-2);line-height:1.6}
+  .notes li b{color:var(--ink)}
+  .notes code{background:var(--ground);border-radius:5px;padding:1px 6px;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 class="masthead">CI — Goods Return Note · billing face</h1>
+  <p class="sub">
+    One panel, like Mail Orders: pending and closed live in the same rail, closed underneath.
+    Rail cards show CI number and customer name, nothing else. Lines show returned quantity only.
+    Header facts run in bill order — date, invoice, then the return.
+    Save to <code>docs/mockups/ci/billing.html</code>.
+  </p>
+
+  <!-- ============ 1 · PART ============ -->
+  <div class="desk">
+    <div class="side">
+      <div class="sideLogo">O</div>
+      <div class="sideIc">✉</div><div class="sideIc">▤</div><div class="sideIc on">↩</div>
+      <div class="sideIc">▦</div><div class="sideIc">◫</div>
+      <div class="sideSpacer"></div><div class="sideIc">◍</div>
+    </div>
+
+    <div class="main">
+      <div class="uh1">
+        <span class="uhTitle">CI</span>
+        <div class="uhRight">
+          <span class="uhIc">⌨</span><span class="uhIc">⭳</span>
+          <div class="uhSearch"><span>⌕</span><span>Search CI, dealer, invoice</span></div>
+        </div>
+      </div>
+      <div class="uh2">
+        <span class="uh2K"><b>4</b> pending</span>
+        <span class="dotSep">·</span>
+        <span class="uh2K"><b>13</b> closed</span>
+        <div class="uh2Right"><span class="ctl">Filter ▾</span><span class="ctl">‹ 31 Aug 2026 ›</span></div>
+      </div>
+
+      <div class="work">
+        <div class="rail">
+          <div class="railHead"><span class="railTitle">Today</span><span class="railCount">17 CIs</span></div>
+          <div class="railBody">
+
+            <div class="secHead"><span class="secT">Pending</span><span class="secN">4</span><span class="secRule"></span></div>
+
+            <div class="rcard on">
+              <div class="rTop"><span class="rNo">CI-2026-00042</span><span class="rTime">12:20</span></div>
+              <div class="rName">Maruti Paints</div>
+            </div>
+            <div class="rcard">
+              <div class="rTop"><span class="rNo">CI-2026-00041</span><span class="rTime">11:48</span></div>
+              <div class="rName">Shree Rang Bhandar</div>
+            </div>
+            <div class="rcard">
+              <div class="rTop"><span class="rNo">CI-2026-00040</span><span class="rTime">10:05</span></div>
+              <div class="rName">Aura Colours Studio</div>
+            </div>
+
+            <div class="secHead"><span class="secT">Closed</span><span class="secN">13</span><span class="secRule"></span></div>
+
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00039</span><span class="rTime">09:41</span></div>
+              <div class="rName">New Bharat Traders</div>
+            </div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00038</span><span class="rTime">09:12</span></div>
+              <div class="rName">Krishna Paint House</div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="paneScroll">
+            <div class="paneHead">
+              <div class="phTop">
+                <div>
+                  <div class="phNameRow">
+                    <span class="phName">Maruti Paints</span>
+                    <span class="tag part">PART</span>
+                  </div>
+                  <div class="phSub">102492 · OBD 9109145575 · Ghod Dod</div>
+                </div>
+                <div class="phRight">
+                  <div class="phCiNo">CI-2026-00042</div>
+                  <div class="phRaised">Raised by Harish Padvi · today 12:20</div>
+                </div>
+              </div>
+              <div class="phFacts">
+                <div class="fact"><div class="factK">Invoice date</div><div class="factV">22 Aug 2026</div></div>
+                <div class="fact"><div class="factK">Invoice no</div><div class="factV">I536225770</div></div>
+                <div class="fact"><div class="factK">Received on</div><div class="factV">24 Aug 2026</div></div>
+                <div class="fact"><div class="factK">Material</div><div class="factV">Not moved</div></div>
+                <div class="fact hero"><div class="factK">Returned</div><div class="factV">10 tins · 120 <span class="lt">L</span></div></div>
+              </div>
+            </div>
+
+            <div class="banner violet">
+              <span>◆</span>
+              <span>Wrong Order by S.O. — <span style="font-weight:500">cancelled by Dilipbhai, material never left the bay</span></span>
+            </div>
+
+            <div class="tblWrap">
+              <div class="tblHead">
+                <span class="tblTitle">Returned lines</span>
+                <span class="tag">3 of 12 on the bill</span>
+                <span style="margin-left:auto" class="tag teal">120 L</span>
+              </div>
+              <table>
+                <thead>
+                  <tr><th style="width:80px">Pack</th><th>Material</th>
+                    <th class="num" style="width:110px">Qty</th><th class="num" style="width:110px">Litres</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="tPack">20L</td>
+                    <td><div class="tSku">5948788</div><div class="tDesc">DN PROMISE ENAMEL CLASSIC WHITE 20L</div></td>
+                    <td class="num tQty">2</td><td class="num tLt">40</td></tr>
+                  <tr><td class="tPack">10L</td>
+                    <td><div class="tSku">5948787</div><div class="tDesc">DN PROMISE ENAMEL CLASSIC WHITE 10L</div></td>
+                    <td class="num tQty">8</td><td class="num tLt">80</td></tr>
+                </tbody>
+                <tfoot><tr><td colspan="2"></td><td class="num">10 tins</td><td class="num">120 L</td></tr></tfoot>
+              </table>
+            </div>
+
+            <div class="sap">
+              <div class="sapHead">
+                <span class="sapTitle">CI details</span>
+                <span style="margin-left:auto" class="tag amber">Waiting</span>
+              </div>
+              <div class="sapBody">
+                <div class="fld"><div class="fldK">CI date</div><div class="fldI ph">dd / mm / yyyy</div></div>
+                <div class="fld"><div class="fldK">CI number</div><div class="fldI ph">85832091</div></div>
+                <div class="fld"><div class="fldK">Value</div><div class="fldI ph"><span class="rs">₹</span>0.00</div></div>
+                <div class="btn off">Close CI</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="cap"><span class="stepno">1</span><b>One panel.</b> Pending on top, closed underneath in
+  the same rail — no second tab to switch to. Cards carry the CI number and the customer name only;
+  closed ones sit on a grey ground. Header facts run in bill order: <b>invoice date → invoice no →
+  received on → material → returned</b>.</p>
+
+  <!-- ============ 2 · FULL BILL ============ -->
+  <div class="desk">
+    <div class="side">
+      <div class="sideLogo">O</div>
+      <div class="sideIc">✉</div><div class="sideIc">▤</div><div class="sideIc on">↩</div>
+      <div class="sideIc">▦</div><div class="sideIc">◫</div>
+      <div class="sideSpacer"></div><div class="sideIc">◍</div>
+    </div>
+
+    <div class="main">
+      <div class="uh1">
+        <span class="uhTitle">CI</span>
+        <div class="uhRight">
+          <span class="uhIc">⌨</span><span class="uhIc">⭳</span>
+          <div class="uhSearch"><span>⌕</span><span>Search CI, dealer, invoice</span></div>
+        </div>
+      </div>
+      <div class="uh2">
+        <span class="uh2K"><b>4</b> pending</span><span class="dotSep">·</span><span class="uh2K"><b>13</b> closed</span>
+        <div class="uh2Right"><span class="ctl">Filter ▾</span><span class="ctl">‹ 31 Aug 2026 ›</span></div>
+      </div>
+
+      <div class="work">
+        <div class="rail">
+          <div class="railHead"><span class="railTitle">Today</span><span class="railCount">17 CIs</span></div>
+          <div class="railBody">
+            <div class="secHead"><span class="secT">Pending</span><span class="secN">4</span><span class="secRule"></span></div>
+            <div class="rcard">
+              <div class="rTop"><span class="rNo">CI-2026-00042</span><span class="rTime">12:20</span></div>
+              <div class="rName">Maruti Paints</div>
+            </div>
+            <div class="rcard">
+              <div class="rTop"><span class="rNo">CI-2026-00041</span><span class="rTime">11:48</span></div>
+              <div class="rName">Shree Rang Bhandar</div>
+            </div>
+            <div class="rcard on">
+              <div class="rTop"><span class="rNo">CI-2026-00040</span><span class="rTime">10:05</span></div>
+              <div class="rName">Aura Colours Studio</div>
+            </div>
+            <div class="secHead"><span class="secT">Closed</span><span class="secN">13</span><span class="secRule"></span></div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00039</span><span class="rTime">09:41</span></div>
+              <div class="rName">New Bharat Traders</div>
+            </div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00038</span><span class="rTime">09:12</span></div>
+              <div class="rName">Krishna Paint House</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="paneScroll">
+            <div class="paneHead">
+              <div class="phTop">
+                <div>
+                  <div class="phNameRow">
+                    <span class="phName">Aura Colours Studio</span>
+                    <span class="tag full">FULL BILL</span>
+                  </div>
+                  <div class="phSub">104871 · OBD 9109145576 · Katargam</div>
+                </div>
+                <div class="phRight">
+                  <div class="phCiNo">CI-2026-00040</div>
+                  <div class="phRaised">Raised by Harish Padvi · today 10:05</div>
+                </div>
+              </div>
+              <div class="phFacts">
+                <div class="fact"><div class="factK">Invoice date</div><div class="factV">22 Aug 2026</div></div>
+                <div class="fact"><div class="factK">Invoice no</div><div class="factV">I536225771</div></div>
+                <div class="fact"><div class="factK">Received on</div><div class="factV">24 Aug 2026</div></div>
+                <div class="fact"><div class="factK">Material</div><div class="factV">Moved</div></div>
+                <div class="fact hero"><div class="factK">Returned</div><div class="factV">17 tins · 84 <span class="lt">L</span></div></div>
+              </div>
+            </div>
+
+            <div class="banner violet"><span>◆</span><span>Order Cancel by Dealer</span></div>
+
+            <div class="tblWrap">
+              <div class="tblHead">
+                <span class="tblTitle">Returned lines</span>
+                <span class="tag full">WHOLE BILL · all 5 lines</span>
+                <span style="margin-left:auto" class="tag teal">84 L</span>
+              </div>
+              <table>
+                <thead>
+                  <tr><th style="width:80px">Pack</th><th>Material</th>
+                    <th class="num" style="width:110px">Qty</th><th class="num" style="width:110px">Litres</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="tPack">20L</td>
+                    <td><div class="tSku">5948788</div><div class="tDesc">DN PROMISE ENAMEL CLASSIC WHITE 20L</div></td>
+                    <td class="num tQty">2</td><td class="num tLt">40</td></tr>
+                  <tr><td class="tPack">10L</td>
+                    <td><div class="tSku">5948787</div><div class="tDesc">DN PROMISE ENAMEL CLASSIC WHITE 10L</div></td>
+                    <td class="num tQty">2</td><td class="num tLt">20</td></tr>
+                  <tr><td class="tPack">4L</td>
+                    <td><div class="tSku">5948786</div><div class="tDesc">DN PROMISE ENAMEL CLASSIC WHITE 4L</div></td>
+                    <td class="num tQty">4</td><td class="num tLt">16</td></tr>
+                  <tr><td class="tPack">1L</td>
+                    <td><div class="tSku">IN28916271</div><div class="tDesc">DULUX VELVET TOUCH PLATINUM 1L</div></td>
+                    <td class="num tQty">5</td><td class="num tLt">5</td></tr>
+                  <tr><td class="tPack">500ML</td>
+                    <td><div class="tSku">5955808</div><div class="tDesc">UNIVERSAL STAINER YELLOW OXIDE 500ML</div></td>
+                    <td class="num tQty">4</td><td class="num tLt">2</td></tr>
+                </tbody>
+                <tfoot><tr><td colspan="2"></td><td class="num">17 tins</td><td class="num">84 L</td></tr></tfoot>
+              </table>
+            </div>
+
+            <div class="sap">
+              <div class="sapHead">
+                <span class="sapTitle">CI details</span>
+                <span style="margin-left:auto" class="tag amber">Waiting</span>
+              </div>
+              <div class="sapBody">
+                <div class="fld"><div class="fldK">CI date</div><div class="fldI ph">dd / mm / yyyy</div></div>
+                <div class="fld"><div class="fldK">CI number</div><div class="fldI ph">85832091</div></div>
+                <div class="fld"><div class="fldK">Value</div><div class="fldI ph"><span class="rs">₹</span>0.00</div></div>
+                <div class="btn off">Close CI</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="cap"><span class="stepno alt">2</span><b>Full bill.</b> Said three times — the teal
+  <b>FULL BILL</b> tag on the rail card, the same tag beside the customer name, and <b>WHOLE BILL ·
+  all 5 lines</b> in the table header.</p>
+
+  <!-- ============ 3 · READY TO CLOSE ============ -->
+  <div class="desk">
+    <div class="side">
+      <div class="sideLogo">O</div>
+      <div class="sideIc">✉</div><div class="sideIc">▤</div><div class="sideIc on">↩</div>
+      <div class="sideIc">▦</div><div class="sideIc">◫</div>
+      <div class="sideSpacer"></div><div class="sideIc">◍</div>
+    </div>
+
+    <div class="main">
+      <div class="uh1">
+        <span class="uhTitle">CI</span>
+        <div class="uhRight">
+          <span class="uhIc">⌨</span><span class="uhIc">⭳</span>
+          <div class="uhSearch"><span>⌕</span><span>Search CI, dealer, invoice</span></div>
+        </div>
+      </div>
+      <div class="uh2">
+        <span class="uh2K"><b>4</b> pending</span><span class="dotSep">·</span><span class="uh2K"><b>13</b> closed</span>
+        <div class="uh2Right"><span class="ctl">Filter ▾</span><span class="ctl">‹ 31 Aug 2026 ›</span></div>
+      </div>
+
+      <div class="work">
+        <div class="rail">
+          <div class="railHead"><span class="railTitle">Today</span><span class="railCount">17 CIs</span></div>
+          <div class="railBody">
+            <div class="secHead"><span class="secT">Pending</span><span class="secN">4</span><span class="secRule"></span></div>
+            <div class="rcard on">
+              <div class="rTop"><span class="rNo">CI-2026-00042</span><span class="rTime">12:20</span></div>
+              <div class="rName">Maruti Paints</div>
+            </div>
+            <div class="rcard">
+              <div class="rTop"><span class="rNo">CI-2026-00041</span><span class="rTime">11:48</span></div>
+              <div class="rName">Shree Rang Bhandar</div>
+            </div>
+            <div class="rcard">
+              <div class="rTop"><span class="rNo">CI-2026-00040</span><span class="rTime">10:05</span></div>
+              <div class="rName">Aura Colours Studio</div>
+            </div>
+            <div class="secHead"><span class="secT">Closed</span><span class="secN">13</span><span class="secRule"></span></div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00039</span><span class="rTime">09:41</span></div>
+              <div class="rName">New Bharat Traders</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="paneScroll">
+            <div class="paneHead">
+              <div class="phTop">
+                <div>
+                  <div class="phNameRow"><span class="phName">Maruti Paints</span><span class="tag part">PART</span></div>
+                  <div class="phSub">102492 · OBD 9109145575 · Ghod Dod</div>
+                </div>
+                <div class="phRight">
+                  <div class="phCiNo">CI-2026-00042</div>
+                  <div class="phRaised">Raised by Harish Padvi · today 12:20</div>
+                </div>
+              </div>
+              <div class="phFacts">
+                <div class="fact"><div class="factK">Invoice date</div><div class="factV">22 Aug 2026</div></div>
+                <div class="fact"><div class="factK">Invoice no</div><div class="factV">I536225770</div></div>
+                <div class="fact"><div class="factK">Received on</div><div class="factV">24 Aug 2026</div></div>
+                <div class="fact"><div class="factK">Material</div><div class="factV">Not moved</div></div>
+                <div class="fact hero"><div class="factK">Returned</div><div class="factV">10 tins · 120 <span class="lt">L</span></div></div>
+              </div>
+            </div>
+
+            <div class="banner violet">
+              <span>◆</span>
+              <span>Wrong Order by S.O. — <span style="font-weight:500">cancelled by Dilipbhai, material never left the bay</span></span>
+            </div>
+
+            <div class="tblWrap">
+              <div class="tblHead">
+                <span class="tblTitle">Returned lines</span>
+                <span class="tag">3 of 12 on the bill</span>
+                <span style="margin-left:auto" class="tag teal">120 L</span>
+              </div>
+              <table>
+                <thead>
+                  <tr><th style="width:80px">Pack</th><th>Material</th>
+                    <th class="num" style="width:110px">Qty</th><th class="num" style="width:110px">Litres</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="tPack">20L</td>
+                    <td><div class="tSku">5948788</div><div class="tDesc">DN PROMISE ENAMEL CLASSIC WHITE 20L</div></td>
+                    <td class="num tQty">2</td><td class="num tLt">40</td></tr>
+                  <tr><td class="tPack">10L</td>
+                    <td><div class="tSku">5948787</div><div class="tDesc">DN PROMISE ENAMEL CLASSIC WHITE 10L</div></td>
+                    <td class="num tQty">8</td><td class="num tLt">80</td></tr>
+                </tbody>
+                <tfoot><tr><td colspan="2"></td><td class="num">10 tins</td><td class="num">120 L</td></tr></tfoot>
+              </table>
+            </div>
+
+            <div class="sap">
+              <div class="sapHead">
+                <span class="sapTitle">CI details</span>
+                <span style="margin-left:auto" class="tag teal">Ready</span>
+              </div>
+              <div class="sapBody">
+                <div class="fld"><div class="fldK">CI date</div><div class="fldI">24 / 08 / 2026</div></div>
+                <div class="fld"><div class="fldK">CI number</div><div class="fldI">85832091</div></div>
+                <div class="fld"><div class="fldK">Value</div><div class="fldI focus"><span class="rs">₹</span>57,915.00</div></div>
+                <div class="btn primary">Close CI</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="cap"><span class="stepno">3</span><b>Ready to close.</b> Fields run in the order they
+  come off the SAP screen — date, number, value. <b>Close CI</b> is the only write on the page; the
+  card moves from Pending down to Closed in the same rail, so he can see it land.</p>
+
+  <!-- ============ 4 · ALL CAUGHT UP ============ -->
+  <div class="desk">
+    <div class="side">
+      <div class="sideLogo">O</div>
+      <div class="sideIc">✉</div><div class="sideIc">▤</div><div class="sideIc on">↩</div>
+      <div class="sideIc">▦</div><div class="sideIc">◫</div>
+      <div class="sideSpacer"></div><div class="sideIc">◍</div>
+    </div>
+
+    <div class="main">
+      <div class="uh1">
+        <span class="uhTitle">CI</span>
+        <div class="uhRight">
+          <span class="uhIc">⌨</span><span class="uhIc">⭳</span>
+          <div class="uhSearch"><span>⌕</span><span>Search CI, dealer, invoice</span></div>
+        </div>
+      </div>
+      <div class="uh2">
+        <span class="uh2K"><b>0</b> pending</span><span class="dotSep">·</span><span class="uh2K"><b>17</b> closed</span>
+        <div class="uh2Right"><span class="ctl">Filter ▾</span><span class="ctl">‹ 31 Aug 2026 ›</span></div>
+      </div>
+
+      <div class="work">
+        <div class="rail">
+          <div class="railHead"><span class="railTitle">Today</span><span class="railCount">17 CIs</span></div>
+          <div class="railBody">
+            <div class="secHead"><span class="secT">Closed</span><span class="secN">17</span><span class="secRule"></span></div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00042</span><span class="rTime">12:34</span></div>
+              <div class="rName">Maruti Paints</div>
+            </div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00041</span><span class="rTime">12:02</span></div>
+              <div class="rName">Shree Rang Bhandar</div>
+            </div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00040</span><span class="rTime">10:31</span></div>
+              <div class="rName">Aura Colours Studio</div>
+            </div>
+            <div class="rcard done">
+              <div class="rTop"><span class="rNo">CI-2026-00039</span><span class="rTime">09:41</span></div>
+              <div class="rName">New Bharat Traders</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="paneScroll">
+            <div class="caught">
+              <div class="caughtIc">✓</div>
+              <div class="caughtT">All caught up</div>
+              <div class="caughtS">Every CI the floor sent today is closed.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="cap"><span class="stepno">4</span><b>Nothing pending.</b> The Pending heading disappears
+  rather than showing an empty section, and the closed list stays where it was.</p>
+
+  <!-- ============ NOTES ============ -->
+  <div class="notes">
+    <h2>This pass</h2>
+    <ul>
+      <li><b>One panel.</b> The Pending / Closed tabs are gone — both live in the same rail under
+        their own headings, the way Mail Orders keeps pending and done together. Closing a CI moves
+        the card down the list in front of him instead of making it vanish into another tab.</li>
+      <li><b>Rail cards carry two things only</b> — the CI number and the customer name. No return
+        type, no litres, no value, in either section. The rail is for finding the CI; everything
+        about it lives in the pane.</li>
+      <li><b>Closed cards are told apart by weight, not by data</b> — grey ground and a lighter
+        name, under their own heading.</li>
+      <li><b>The block is now "CI details"</b>, and its middle field is just <b>CI number</b>.</li>
+      <li><b>Header facts resequenced</b> — invoice date → invoice no → received on → material →
+        returned. Bill first, then the return, then the total.</li>
+      <li><b>CI details fields sequenced to match</b> — CI date → CI number → value.</li>
+      <li>Row 2 of the header now carries the counts (<b>4 pending · 13 closed</b>) where the tabs
+        used to be, with Filter and the date stepper on the right.</li>
+    </ul>
+
+    <h3>🔴 Two numbers still, even though only one is labelled</h3>
+    <ul>
+      <li>The field is now called plain <b>CI number</b> — that is <code>85832091</code>, the one
+        SAP gives back after punching.</li>
+      <li><code>CI-2026-00042</code> is a separate thing: OrbitOMS's own reference, given the moment
+        the supervisor submits, shown top-right of the pane and on every rail card. It has to exist
+        because a CI is real and needs referring to for hours before SAP ever sees it.</li>
+      <li>Your paper form carries both — <b>73989</b> at the top is the book serial, <b>CI Order No
+        85832091</b> is SAP's. <b>They stay two database columns</b>, whatever the screen calls
+        them; merging them would leave every pending CI unidentifiable.</li>
+    </ul>
+
+    <h3>New since the spec</h3>
+    <ul>
+      <li><b>Value (₹)</b> — the <b>57,915/-</b> circled at the bottom of your form. Needs a new
+        decimal column.</li>
+    </ul>
+
+    <h3>Questions</h3>
+    <ul>
+      <li>If billing spots a mistake, nothing here lets them send it back. Should there be a
+        <b>Return to floor</b> action?</li>
+      <li>Your paper form also has <b>CI Punch by</b>, <b>Delivery No.</b> and a separate <b>Final CI
+        No.</b> — dead, or should Delivery No. be kept?</li>
+      <li>Does a closed CI need an <b>A4 print sheet</b> to replace the paper form?</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

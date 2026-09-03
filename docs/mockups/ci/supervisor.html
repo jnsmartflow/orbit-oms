@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CI — Supervisor mockup</title>
+<style>
+  :root{
+    --teal:#0F9184;
+    --teal-lt:rgba(255,255,255,.16);
+    --teal-sub:rgba(255,255,255,.80);
+    --ink:#16191D;
+    --ink-2:#5C666E;
+    --ink-3:#8A9299;
+    --ink-4:#B7BFC5;
+    --dark:#212B33;
+    --ground:#F4F6F7;
+    --pack:#F7F9FA;
+    --line:#ECEFF0;
+    --amber:#A8620A;
+    --amber-soft:#FDF4E3;
+    --red:#D92D20;
+    --green:#0A7C4A;
+    --green-soft:#E7F6EE;
+    --teal-soft:#E7F4F2;
+    --card-sh:0 1px 2px rgba(16,25,29,.05), 0 6px 16px rgba(16,25,29,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#E8ECEE;color:var(--ink);
+    font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .page{max-width:1780px;margin:0 auto;padding:30px 22px 70px}
+  .masthead{margin:0 0 6px;font-size:21px;font-weight:700;letter-spacing:-.015em}
+  .sub{margin:0;color:var(--ink-2);font-size:13.5px;max-width:860px;line-height:1.55}
+  .sub code{background:#fff;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px}
+  .flowbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:16px 0 0;font-size:13px}
+  .flowbar b{background:#fff;border-radius:8px;padding:5px 11px;font-weight:650;box-shadow:var(--card-sh)}
+  .flowbar .arrow{color:var(--ink-4)}
+
+  .rail{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-top:26px}
+  .fw{width:390px;flex:0 0 390px}
+  .cap{margin:12px 3px 0;font-size:12.5px;color:var(--ink-2);line-height:1.55}
+  .cap b{color:var(--ink);font-weight:650}
+  .stepno{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;
+    border-radius:50%;background:var(--ink);color:#fff;font-size:11px;font-weight:700;margin-right:7px;vertical-align:1px}
+  .stepno.alt{background:var(--teal)}
+
+  /* ================= phone ================= */
+  .phone{width:390px;height:844px;background:var(--ground);border-radius:26px;overflow:hidden;
+    display:flex;flex-direction:column;
+    box-shadow:0 2px 6px rgba(16,25,29,.08),0 18px 40px rgba(16,25,29,.12)}
+  .status{height:46px;background:var(--teal);color:#fff;display:flex;align-items:center;
+    justify-content:space-between;padding:0 22px;font-size:15px;font-weight:650;flex:0 0 auto}
+  .status .right{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.95}
+  .batt{border:1.4px solid rgba(255,255,255,.9);border-radius:4px;padding:1px 3px;font-size:9.5px;font-weight:700}
+
+  .nav{background:var(--teal);color:#fff;flex:0 0 auto;display:flex;align-items:center;
+    gap:12px;padding:2px 16px 14px}
+  .avatar{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.2);
+    display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex:0 0 auto}
+  .navTitle{flex:1;text-align:center;font-size:21px;font-weight:700;letter-spacing:-.01em}
+  .navIcons{display:flex;align-items:center;gap:18px;font-size:19px;flex:0 0 auto}
+
+  /* customer header */
+  .navBill{background:var(--teal);color:#fff;flex:0 0 auto;display:flex;align-items:center;
+    gap:13px;padding:2px 16px 14px}
+  .backSq{width:44px;height:44px;flex:0 0 44px;border-radius:14px;background:var(--teal-lt);
+    display:flex;align-items:center;justify-content:center;font-size:24px;line-height:1}
+  .navBillMain{flex:1;min-width:0}
+  .navBillName{font-size:22px;font-weight:700;letter-spacing:-.02em;line-height:1.15;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .navBillSub{font-size:14px;color:var(--teal-sub);margin-top:3px}
+  .navBillIcons{display:flex;align-items:center;gap:18px;font-size:19px;flex:0 0 auto}
+
+  /* ================= sub header (one strip) ================= */
+  .strip{background:#fff;border-bottom:1px solid var(--line);padding:15px 18px}
+  .stripLine{font-size:17px;font-weight:500;color:var(--ink-2);display:flex;align-items:center;gap:9px}
+  .stripLine b{font-weight:750;color:var(--ink)}
+  .stripLine .lt{color:var(--ink-3);font-weight:650}
+  .sep{color:var(--ink-4)}
+
+  .segStrip{background:#fff;border-bottom:1px solid var(--line);padding:11px 18px}
+  .seg{display:flex;background:#EDF1F2;border-radius:14px;padding:4px;gap:4px}
+  .seg div{flex:1;text-align:center;font-size:15px;font-weight:650;color:var(--ink-2);padding:10px 0;border-radius:11px}
+  .seg div.on{background:var(--teal);color:#fff;box-shadow:0 2px 7px rgba(15,145,132,.3)}
+  .seg.plain div.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(16,25,29,.13)}
+
+  .chipRow{background:#fff;border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:11px;overflow:hidden}
+  .pchip{border-radius:999px;padding:10px 20px;font-size:15px;font-weight:650;
+    border:1.5px solid var(--line);color:var(--ink-3);background:#fff;white-space:nowrap}
+  .pchip.on{background:var(--dark);border-color:var(--dark);color:#fff}
+
+  /* ================= body ================= */
+  .body{flex:1 1 auto;overflow:hidden;position:relative;padding:14px 16px 0}
+  .body.pad0{padding:0}
+  .list{padding:14px 16px 0}
+  .fade{position:absolute;left:0;right:0;bottom:0;height:36px;
+    background:linear-gradient(to bottom,rgba(244,246,247,0),var(--ground));pointer-events:none}
+
+  /* ================= line card ================= */
+  .lcard{background:#fff;border-radius:17px;box-shadow:var(--card-sh);
+    display:flex;align-items:stretch;margin-bottom:12px;overflow:hidden}
+  .lpack{width:54px;flex:0 0 54px;background:var(--pack);border-right:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;font-weight:700;letter-spacing:-.02em}
+  .lmid{flex:1;min-width:0;padding:15px 8px 15px 16px}
+  .lsku{font-size:24px;font-weight:750;letter-spacing:-.025em;line-height:1.1}
+  .ldesc{font-size:14px;color:var(--ink-3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lright{flex:0 0 auto;padding:0 18px;display:flex;flex-direction:column;
+    align-items:flex-end;justify-content:center;gap:1px}
+  .lqty{font-size:29px;font-weight:800;letter-spacing:-.035em;line-height:1;font-variant-numeric:tabular-nums}
+  .lqty.none{color:var(--ink-4);font-weight:650}
+  .lqty.part{color:var(--red)}
+  .lof{font-size:12px;color:var(--ink-4);font-weight:600}
+  .lcard.dim .lmid,.lcard.dim .lright{opacity:.55}
+  .lcard.dim .lpack{opacity:.65}
+
+  /* ================= bottom ================= */
+  .tabbar{flex:0 0 auto;background:#fff;border-top:1px solid var(--line);padding:9px 0 0}
+  .tabs{display:flex}
+  .tabItem{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;padding-bottom:6px}
+  .tabIcon{position:relative;font-size:23px;line-height:1;color:var(--ink-3)}
+  .tabItem.on .tabIcon,.tabItem.on .tabLbl{color:var(--teal)}
+  .tabLbl{font-size:13px;font-weight:600;color:var(--ink-3)}
+  .badge{position:absolute;top:-7px;right:-13px;min-width:20px;height:20px;border-radius:10px;
+    background:#fff;border:1.5px solid var(--line);color:var(--ink-2);font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;padding:0 5px}
+  .tabItem.on .badge{border-color:var(--teal);color:var(--teal)}
+  .underline{width:38px;height:3px;border-radius:2px;background:var(--teal);margin-top:2px}
+  .homebar{width:140px;height:5px;border-radius:3px;background:#0d1214;opacity:.85;margin:9px auto 9px}
+
+  .actionbar{flex:0 0 auto;padding:10px 16px 0}
+  .pill{display:block;width:100%;text-align:center;border-radius:999px;padding:16px;
+    font-size:17px;font-weight:700;border:1.5px solid var(--line);background:#fff;color:var(--ink)}
+  .pill.primary{background:var(--teal);border-color:var(--teal);color:#fff;
+    box-shadow:0 6px 16px rgba(15,145,132,.24)}
+  .pill.off{background:#E7EBEC;border-color:#E7EBEC;color:#A7B0B6;box-shadow:none}
+
+  /* ================= search ================= */
+  .searchBig{background:#fff;border-radius:16px;box-shadow:var(--card-sh);
+    display:flex;align-items:center;gap:12px;padding:0 18px;height:58px}
+  .searchBig .mag{font-size:19px;color:var(--ink-3)}
+  .searchBig .val{flex:1;font-size:18px;font-weight:650;letter-spacing:.01em}
+  .searchBig .ph{color:var(--ink-4);font-weight:500}
+  .searchBig .clear{font-size:17px;color:var(--ink-4)}
+  .empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:130px 30px 0}
+  .emptyIc{font-size:50px;color:#DCE3E5;margin-bottom:14px;line-height:1}
+  .emptyT{font-size:16px;color:var(--ink-3);font-weight:600}
+  .countLine{font-size:12.5px;font-weight:700;color:var(--ink-3);letter-spacing:.06em;
+    text-transform:uppercase;margin:18px 4px 10px}
+
+  .rcard{background:#fff;border-radius:18px;box-shadow:var(--card-sh);padding:15px 18px;margin-bottom:12px}
+  .rTop{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .rObd{font-size:14.5px;color:var(--ink-3);font-weight:500}
+  .rName{font-size:22px;font-weight:750;letter-spacing:-.02em;margin-top:7px;line-height:1.15}
+  .rMeta{display:flex;align-items:center;gap:9px;margin-top:9px;font-size:15px;color:var(--ink-2)}
+  .rMeta b{font-weight:750;color:var(--ink)}
+  .rMeta .lt{color:var(--ink-3);font-weight:650}
+  .chip{background:#EDF1F2;color:var(--ink-2);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:650}
+  .chip.amber{background:var(--amber-soft);color:var(--amber)}
+  .chip.green{background:var(--green-soft);color:var(--green)}
+
+  /* ================= form ================= */
+  .frow{background:#fff;border-radius:17px;box-shadow:var(--card-sh);padding:15px 18px;margin-bottom:12px}
+  .fk{font-size:11.5px;font-weight:700;color:var(--ink-3);letter-spacing:.1em;text-transform:uppercase}
+  .fv{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+  .fvT{font-size:18px;font-weight:700;letter-spacing:-.01em}
+  .fvT.ph{color:var(--ink-4);font-weight:500}
+  .caret{color:var(--ink-4);font-size:15px}
+
+  /* ================= sheet ================= */
+  .scrim{position:absolute;inset:0;background:rgba(12,18,20,.42)}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:24px 24px 0 0;
+    padding:14px 18px 20px;box-shadow:0 -8px 30px rgba(12,18,20,.2)}
+  .grab{width:40px;height:5px;border-radius:99px;background:#DFE5E7;margin:0 auto 16px}
+  .shTitle{font-size:24px;font-weight:750;letter-spacing:-.025em}
+  .shSub{font-size:14px;color:var(--ink-3);margin-top:4px}
+  .stepper{display:flex;align-items:center;gap:12px;margin-top:20px}
+  .sBtn{width:62px;height:62px;border-radius:18px;background:#F1F4F5;
+    display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--ink-2)}
+  .sVal{flex:1;height:62px;border-radius:18px;border:2px solid var(--teal);background:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;
+    font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+  .calc{display:flex;align-items:center;justify-content:space-between;margin-top:14px;
+    padding:13px 16px;background:#F4F6F7;border-radius:13px}
+  .calc .k{font-size:14.5px;color:var(--ink-2);font-weight:600}
+  .calc .v{font-size:18px;font-weight:750;font-variant-numeric:tabular-nums}
+  .shBtns{display:flex;gap:10px;margin-top:16px}
+  .shBtns .pill{flex:1;padding:15px;font-size:16px}
+  .optRow{display:flex;align-items:center;justify-content:space-between;padding:15px 2px;border-bottom:1px solid var(--line)}
+  .optRow:last-child{border-bottom:none}
+  .optT{font-size:17px;font-weight:600}
+  .optRow.on .optT{font-weight:750;color:#0B7A6F}
+  .tick{color:var(--teal);font-size:19px}
+  .divLbl{font-size:11.5px;font-weight:700;color:var(--ink-4);letter-spacing:.1em;
+    text-transform:uppercase;padding:14px 2px 3px;border-top:1px solid var(--line);margin-top:3px}
+
+  /* ================= success ================= */
+  .okWrap{display:flex;flex-direction:column;align-items:center;text-align:center;padding:110px 30px 0}
+  .okCirc{width:86px;height:86px;border-radius:50%;background:var(--teal-soft);color:var(--teal);
+    display:flex;align-items:center;justify-content:center;font-size:42px;margin-bottom:20px}
+  .okNo{font-size:26px;font-weight:800;letter-spacing:-.025em}
+  .okS{font-size:16px;color:var(--ink-3);margin-top:9px;line-height:1.6}
+
+  /* ================= notes ================= */
+  .notes{margin-top:40px;background:#fff;border-radius:20px;padding:24px 28px;max-width:980px;box-shadow:var(--card-sh)}
+  .notes h2{margin:0 0 14px;font-size:16px;font-weight:750}
+  .notes h3{margin:22px 0 9px;font-size:13px;font-weight:750;color:var(--ink-3);letter-spacing:.05em;text-transform:uppercase}
+  .notes ul{margin:0;padding-left:20px}
+  .notes li{margin-bottom:9px;font-size:13.5px;color:var(--ink-2);line-height:1.6}
+  .notes li b{color:var(--ink)}
+  .notes code{background:var(--ground);border-radius:5px;padding:1px 6px;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 class="masthead">CI — Goods Return Note · supervisor face</h1>
+  <p class="sub">
+    Header is customer name + OBD, nothing else. One sub-header strip: <b>date · invoice no · litres</b>.
+    Pack chips appear in <b>Part</b> only. Tab bar disappears inside a bill.
+    Save to <code>docs/mockups/ci/supervisor.html</code>.
+  </p>
+
+  <div class="flowbar">
+    <b>Search</b><span class="arrow">→</span><b>Bill + lines</b><span class="arrow">→</span>
+    <b>Next</b><span class="arrow">→</span><b>Details</b><span class="arrow">→</span><b>Submit</b>
+  </div>
+
+  <div class="rail">
+
+    <!-- ============ 1 · NEW ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:24</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="nav">
+          <div class="avatar">TS</div><div class="navTitle">CI</div>
+          <div class="navIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+        <div class="body">
+          <div class="searchBig"><span class="mag">⌕</span><span class="val ph">Invoice or OBD number</span></div>
+          <div class="empty"><div class="emptyIc">▤</div><div class="emptyT">Search the bill</div></div>
+        </div>
+        <div class="tabbar">
+          <div class="tabs">
+            <div class="tabItem on"><div class="tabIcon">＋</div><div class="tabLbl">New</div><div class="underline"></div></div>
+            <div class="tabItem"><div class="tabIcon">▤<span class="badge">2</span></div><div class="tabLbl">Submitted</div></div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+      <p class="cap"><span class="stepno">1</span><b>New.</b> The tab is the search box.</p>
+    </div>
+
+    <!-- ============ 2 · TWO BILLS ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:24</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="nav">
+          <div class="avatar">TS</div><div class="navTitle">CI</div>
+          <div class="navIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+        <div class="body">
+          <div class="searchBig"><span class="mag">⌕</span><span class="val">536225770</span><span class="clear">✕</span></div>
+          <div class="countLine">2 bills</div>
+
+          <div class="rcard">
+            <div class="rTop"><span class="rObd">9109145575</span><span class="chip">12 lines</span></div>
+            <div class="rName">Maruti Paints</div>
+            <div class="rMeta"><span>22 Aug</span><span class="sep">·</span><span><b>212</b> <span class="lt">L</span></span></div>
+          </div>
+
+          <div class="rcard">
+            <div class="rTop"><span class="rObd">9109145576</span><span class="chip">5 lines</span></div>
+            <div class="rName">Maruti Paints</div>
+            <div class="rMeta"><span>22 Aug</span><span class="sep">·</span><span><b>84</b> <span class="lt">L</span></span></div>
+          </div>
+          <div class="fade"></div>
+        </div>
+        <div class="tabbar">
+          <div class="tabs">
+            <div class="tabItem on"><div class="tabIcon">＋</div><div class="tabLbl">New</div><div class="underline"></div></div>
+            <div class="tabItem"><div class="tabIcon">▤<span class="badge">2</span></div><div class="tabLbl">Submitted</div></div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+      <p class="cap"><span class="stepno">2</span><b>Only when the invoice covers two bills.</b>
+      A single match opens frame 3 directly.</p>
+    </div>
+
+    <!-- ============ 3 · FULL BILL ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:25</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="navBill">
+          <div class="backSq">‹</div>
+          <div class="navBillMain">
+            <div class="navBillName">Maruti Paints</div>
+            <div class="navBillSub">9109145575</div>
+          </div>
+          <div class="navBillIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+
+        <div class="strip">
+          <div class="stripLine">
+            <span>22 Aug 2026</span><span class="sep">·</span>
+            <span>I536225770</span><span class="sep">·</span>
+            <span><b>212</b> <span class="lt">L</span></span>
+          </div>
+        </div>
+
+        <div class="segStrip">
+          <div class="seg"><div class="on">Full bill</div><div>Part</div></div>
+        </div>
+
+        <div class="body pad0">
+          <div class="list">
+            <div class="lcard dim">
+              <div class="lpack">20L</div>
+              <div class="lmid"><div class="lsku">5948788</div><div class="ldesc">DN PROMISE ENAMEL CLASSIC WHITE 2…</div></div>
+              <div class="lright"><div class="lqty">5</div></div>
+            </div>
+            <div class="lcard dim">
+              <div class="lpack">10L</div>
+              <div class="lmid"><div class="lsku">5948787</div><div class="ldesc">DN PROMISE ENAMEL CLASSIC WHITE 10L</div></div>
+              <div class="lright"><div class="lqty">8</div></div>
+            </div>
+            <div class="lcard dim">
+              <div class="lpack">4L</div>
+              <div class="lmid"><div class="lsku">5948786</div><div class="ldesc">DN PROMISE ENAMEL CLASSIC WHITE 4L</div></div>
+              <div class="lright"><div class="lqty">8</div></div>
+            </div>
+          </div>
+          <div class="fade"></div>
+        </div>
+
+        <div class="actionbar"><a class="pill primary">Next</a><div class="homebar"></div></div>
+      </div>
+      <p class="cap"><span class="stepno alt">3</span><b>Full bill.</b> Header is name + OBD. One
+      strip underneath — date, invoice, litres. No chips: nothing to filter when nothing is tapped.</p>
+    </div>
+
+    <!-- ============ 4 · PART ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:26</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="navBill">
+          <div class="backSq">‹</div>
+          <div class="navBillMain">
+            <div class="navBillName">Maruti Paints</div>
+            <div class="navBillSub">9109145575</div>
+          </div>
+          <div class="navBillIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+
+        <div class="strip">
+          <div class="stripLine">
+            <span>22 Aug 2026</span><span class="sep">·</span>
+            <span>I536225770</span><span class="sep">·</span>
+            <span><b>212</b> <span class="lt">L</span></span>
+          </div>
+        </div>
+
+        <div class="segStrip">
+          <div class="seg"><div>Full bill</div><div class="on">Part</div></div>
+        </div>
+
+        <div class="chipRow">
+          <span class="pchip on">All</span><span class="pchip">4L</span>
+          <span class="pchip">10L</span><span class="pchip">20L</span>
+        </div>
+
+        <div class="body pad0">
+          <div class="list">
+            <div class="lcard">
+              <div class="lpack">20L</div>
+              <div class="lmid"><div class="lsku">5948788</div><div class="ldesc">DN PROMISE ENAMEL CLASSIC WHITE 2…</div></div>
+              <div class="lright"><div class="lqty part">2</div><div class="lof">of 5</div></div>
+            </div>
+            <div class="lcard">
+              <div class="lpack">10L</div>
+              <div class="lmid"><div class="lsku">5948787</div><div class="ldesc">DN PROMISE ENAMEL CLASSIC WHITE 10L</div></div>
+              <div class="lright"><div class="lqty">8</div><div class="lof">of 8</div></div>
+            </div>
+            <div class="lcard">
+              <div class="lpack">4L</div>
+              <div class="lmid"><div class="lsku">5948786</div><div class="ldesc">DN PROMISE ENAMEL CLASSIC WHITE 4L</div></div>
+              <div class="lright"><div class="lqty none">—</div></div>
+            </div>
+          </div>
+          <div class="fade"></div>
+        </div>
+
+        <div class="actionbar"><a class="pill primary">Next</a><div class="homebar"></div></div>
+      </div>
+      <p class="cap"><span class="stepno">4</span><b>Part.</b> Chips appear here only. Dash =
+      untouched, black = whole line back, <span style="color:var(--red)">red</span> = only some.</p>
+    </div>
+
+    <!-- ============ 5 · QTY SHEET ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:26</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="navBill">
+          <div class="backSq">‹</div>
+          <div class="navBillMain">
+            <div class="navBillName">Maruti Paints</div>
+            <div class="navBillSub">9109145575</div>
+          </div>
+          <div class="navBillIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+
+        <div class="strip">
+          <div class="stripLine">
+            <span>22 Aug 2026</span><span class="sep">·</span>
+            <span>I536225770</span><span class="sep">·</span>
+            <span><b>212</b> <span class="lt">L</span></span>
+          </div>
+        </div>
+
+        <div class="body pad0">
+          <div class="list" style="opacity:.45">
+            <div class="lcard">
+              <div class="lpack">4L</div>
+              <div class="lmid"><div class="lsku">5948786</div><div class="ldesc">DN PROMISE ENAMEL CLASSIC WHITE 4L</div></div>
+              <div class="lright"><div class="lqty none">—</div></div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="shTitle">5948786</div>
+            <div class="shSub">4L · DN PROMISE ENAMEL CLASSIC WHITE 4L · 8 sent</div>
+            <div class="stepper">
+              <div class="sBtn">−</div><div class="sVal">3</div><div class="sBtn">+</div>
+            </div>
+            <div class="calc"><span class="k">Litres</span><span class="v">12 L</span></div>
+            <div class="shBtns">
+              <a class="pill">All 8</a><a class="pill primary">Save</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="actionbar"><a class="pill off">Next</a><div class="homebar"></div></div>
+      </div>
+      <p class="cap"><span class="stepno">5</span><b>Tins only.</b> Stepper, or tap the box for the
+      number pad. <b>All 8</b> when the whole line is back.</p>
+    </div>
+
+    <!-- ============ 6 · DETAILS ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:27</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="navBill">
+          <div class="backSq">‹</div>
+          <div class="navBillMain">
+            <div class="navBillName">Maruti Paints</div>
+            <div class="navBillSub">9109145575</div>
+          </div>
+          <div class="navBillIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+
+        <div class="strip">
+          <div class="stripLine">
+            <span>22 Aug 2026</span><span class="sep">·</span>
+            <span>I536225770</span><span class="sep">·</span>
+            <span><b>212</b> <span class="lt">L</span></span>
+          </div>
+        </div>
+
+        <div class="body">
+          <div class="frow">
+            <div class="fk">MATERIAL</div>
+            <div style="margin-top:9px"><div class="seg plain"><div class="on">Not moved</div><div>Moved</div></div></div>
+          </div>
+          <div class="frow">
+            <div class="fk">RECEIVED ON</div>
+            <div class="fv"><span class="fvT">24 Aug 2026</span><span class="caret">▾</span></div>
+          </div>
+          <div class="frow">
+            <div class="fk">REASON</div>
+            <div class="fv"><span class="fvT ph">Choose</span><span class="caret">▾</span></div>
+          </div>
+          <div class="frow">
+            <div class="fk">REMARK</div>
+            <div class="fv"><span class="fvT ph">Optional</span></div>
+          </div>
+          <div class="fade"></div>
+        </div>
+
+        <div class="actionbar"><a class="pill off">Submit</a><div class="homebar"></div></div>
+      </div>
+      <p class="cap"><span class="stepno alt">6</span><b>Details.</b> Same header, same strip — he
+      never loses the bill. Submit stays off until a reason is picked.</p>
+    </div>
+
+    <!-- ============ 7 · REASON ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:27</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="navBill">
+          <div class="backSq">‹</div>
+          <div class="navBillMain">
+            <div class="navBillName">Maruti Paints</div>
+            <div class="navBillSub">9109145575</div>
+          </div>
+          <div class="navBillIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+
+        <div class="strip" style="opacity:.5">
+          <div class="stripLine">
+            <span>22 Aug 2026</span><span class="sep">·</span>
+            <span>I536225770</span><span class="sep">·</span>
+            <span><b>212</b> <span class="lt">L</span></span>
+          </div>
+        </div>
+
+        <div class="body pad0">
+          <div class="scrim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="shTitle" style="font-size:21px;margin-bottom:6px">Reason</div>
+            <div class="optRow on"><span class="optT">Wrong Order by S.O.</span><span class="tick">✓</span></div>
+            <div class="optRow"><span class="optT">Physically Cross</span></div>
+            <div class="optRow"><span class="optT">Return by Dealer</span></div>
+            <div class="divLbl">More</div>
+            <div class="optRow"><span class="optT">Order Cancel by Dealer</span></div>
+            <div class="optRow"><span class="optT">Double Order</span></div>
+            <div class="optRow"><span class="optT">Wrong Punching</span></div>
+            <div class="optRow"><span class="optT">Re Bill</span></div>
+            <div class="optRow"><span class="optT">Complaint Material</span></div>
+          </div>
+        </div>
+
+        <div class="actionbar"><a class="pill off">Submit</a><div class="homebar"></div></div>
+      </div>
+      <p class="cap"><span class="stepno">7</span><b>Reason.</b> Three common ones first, other five
+      under <i>More</i>.</p>
+    </div>
+
+    <!-- ============ 8 · SUBMITTED ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:28</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="nav">
+          <div style="width:44px"></div><div class="navTitle">CI</div><div style="width:44px"></div>
+        </div>
+        <div class="body">
+          <div class="okWrap">
+            <div class="okCirc">✓</div>
+            <div class="okNo">CI-2026-00042</div>
+            <div class="okS">Maruti Paints<br>3 lines · 120 L</div>
+          </div>
+          <div style="position:absolute;left:16px;right:16px;bottom:16px">
+            <a class="pill primary" style="margin-bottom:10px">New CI</a>
+            <a class="pill">Done</a>
+          </div>
+        </div>
+        <div class="actionbar" style="padding-top:0"><div class="homebar"></div></div>
+      </div>
+      <p class="cap"><span class="stepno">8</span><b>Submitted.</b> The number appears here, not
+      before.</p>
+    </div>
+
+    <!-- ============ 9 · SUBMITTED TAB ============ -->
+    <div class="fw">
+      <div class="phone">
+        <div class="status"><span>2:29</span><span class="right">▪▪▮ ᯤ <span class="batt">40</span></span></div>
+        <div class="nav">
+          <div class="avatar">TS</div><div class="navTitle">CI</div>
+          <div class="navIcons"><span>⋮</span><span>⌕</span></div>
+        </div>
+        <div class="body">
+          <div class="countLine" style="margin-top:2px">With billing</div>
+
+          <div class="rcard">
+            <div class="rTop"><span class="rObd">CI-2026-00042</span><span class="chip amber">With billing</span></div>
+            <div class="rName">Maruti Paints</div>
+            <div class="rMeta"><span>Part · 3 lines</span><span class="sep">·</span><span><b>120</b> <span class="lt">L</span></span></div>
+          </div>
+
+          <div class="rcard">
+            <div class="rTop"><span class="rObd">CI-2026-00041</span><span class="chip amber">With billing</span></div>
+            <div class="rName">Shree Rang Bhandar</div>
+            <div class="rMeta"><span>Part · 2 lines</span><span class="sep">·</span><span><b>36</b> <span class="lt">L</span></span></div>
+          </div>
+
+          <div class="countLine">Finished</div>
+          <div class="rcard">
+            <div class="rTop"><span class="rObd">CI-2026-00039</span><span class="chip green">Done</span></div>
+            <div class="rName">New Bharat Traders</div>
+            <div class="rMeta"><span>Full bill</span><span class="sep">·</span><span><b>20</b> <span class="lt">L</span></span></div>
+          </div>
+          <div class="fade"></div>
+        </div>
+        <div class="tabbar">
+          <div class="tabs">
+            <div class="tabItem"><div class="tabIcon">＋</div><div class="tabLbl">New</div></div>
+            <div class="tabItem on"><div class="tabIcon">▤<span class="badge">3</span></div><div class="tabLbl">Submitted</div><div class="underline"></div></div>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+      <p class="cap"><span class="stepno">9</span><b>Submitted.</b> What billing still has, and what
+      it has finished.</p>
+    </div>
+
+  </div>
+
+  <!-- ============ NOTES ============ -->
+  <div class="notes">
+    <h2>This pass</h2>
+    <ul>
+      <li><b>Header</b> — customer name and OBD number only. No time, no window, no chips.</li>
+      <li><b>One sub-header strip</b> — <code>22 Aug 2026 · I536225770 · 212 L</code>. The bay/route
+        block and the lines-and-packs row are both gone.</li>
+      <li><b>Pack chips in Part only.</b> Full bill has nothing to filter, so the row is not drawn
+        at all — the screen gets shorter rather than showing a dead control.</li>
+      <li><b>Full bill line cards carry no "of n"</b> — the number is the whole line by definition.
+        It appears only in Part, where the two figures actually differ.</li>
+      <li><b>The strip never changes</b> across frames 3 to 7, so the bill identity is fixed while
+        everything below it moves.</li>
+    </ul>
+
+    <h3>One thing I left out — tell me if it's wrong</h3>
+    <ul>
+      <li>There is now <b>no running "coming back" total</b> anywhere before Submit. The line cards
+        carry the numbers and the confirmation shows the total. If you want him to see the return
+        litres before he submits, the natural place is the litres figure in the strip switching to
+        the return total once he is in Part.</li>
+    </ul>
+
+    <h3>Still open</h3>
+    <ul>
+      <li>Does <b>Submitted</b> show other supervisors' CIs, or only his own? Drawn as his own.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
