@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · Prior: 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -932,6 +932,151 @@ three did not. Evidence for all three: `docs/prompts/drafts/code-discovery-2026-
   `productProfiles` — `CONTEXT_v56.md:113-116` says by name *"Do NOT use it for re-enrichment"*, and
   live enrichment is v3. Both still carry `TEMPORARY`/one-time labels. `re-enrich` is the maintained
   tool and **stays** — it has no UI by design. Retire the two per the playbook.
+
+---
+
+## CI — Goods Return Note (opened 2026-09-03, from the module inventory)
+
+Canon: **`docs/CLAUDE_CI.md` v1.0**. The module went from first table to register
+export in four days and nineteen commits (`e8695f40` 2026-08-31 → `3b0d04b7`
+2026-09-03). Everything below is what it deliberately does NOT do yet.
+
+### Shipped 2026-08-31 → 2026-09-03
+- Three tables + five CHECK constraints + the 8-row depot-editable reason master.
+- Supervisor's phone face (New + Submitted), billing's desk rail + pane, twelve API routes.
+- Auto-CI from a confirmed picking finding on an invoiced bill (`618f67fc`).
+- The division number on both detail screens, every bill (`bf3e59bf`).
+- The 17-column register export as .xlsx (`3b0d04b7`).
+
+### P1 — `/ci` into `PAGE_NAV_MAP`
+The module is reachable **by URL only**. `ci` is in the `PageKey` union and
+`ALL_PAGE_KEYS` but not in the nav map, and adding the row is not the whole fix:
+`MobileShell`'s phone Home target is `navItems[0]?.href`, so an entry at index ≤ 2
+steals `floor_supervisor`'s Home button from `/picking`. A correct fix must (a)
+land at an index that leaves `navItems[0]` as `/picking` for that role **after**
+`buildNavItems` has filtered by permission — the map index is not the built-list
+index; (b) be verified on a real phone for `floor_supervisor`, not only for admin,
+whose nav is longer and orders differently; (c) still surface for the desk roles.
+Detail: `CLAUDE_CI.md §13 CI-16`.
+
+### P1 — Abandoned-draft sweep
+**17 drafts against 14 real CIs** (live, 2026-09-03) — more abandoned drafts than
+returns. Harmless today: every feed filters `status <> 'draft'`, and a draft with
+zero lines can never be submitted. But it grows, and nothing prunes it. Needs an
+owner ruling on the age cut before anything is written, and it must never touch a
+draft that has lines and a live editor on it.
+
+### P1 — The old-MFG arm of the auto rule is PROVISIONAL
+Owner ruling 2026-09-03: a confirmed `old_mfg` finding raises a CI for the whole
+line even at a full count (nothing is short, but the stock is held, so it comes
+back). **Raise now, review after testing.** ⚠ There is deliberately NO feature
+flag — a switch built for a decision nobody has made is a second code path
+forever. This item is the review, not a toggle. `CLAUDE_CI.md §9`.
+
+### P1 — SAP reason codes (register column J)
+Billing's Excel carries a 32-item SAP reason dropdown OrbitOMS does not hold. It
+is a **separate field** from `ci_reason_master`, whose 8 plain-English labels
+populate column K (REMARK); column J exports blank. If implemented it is a second
+master table (`ci_sap_reason_master`) plus one column on `ci_returns` — **never** a
+widening of `ci_reason_master`, which the depot edits and which feeds the other
+column.
+
+🔴 **The strings below are SAP's, copied verbatim. "cusomer", "Trasfer",
+"Spornsorship" and "Eevent" are how the dropdown reads, and the inconsistent
+spacing and casing around the hyphens is theirs too. A corrected spelling will not
+match SAP.**
+
+```
+101-FI Master Data
+102-FI Pricing
+103-FI Incorrect Fees
+201-QA Product
+202-QA Pack
+203-QA Label
+204-QA Re call
+205-QA Mixing/Tinting
+301-LO Product/Qty error
+302-LO Delivery fail
+303-LO Damaged goods
+304-LO Docs/Labels error
+305-LO Shelf life error
+401-EX Wrong order entry
+402-EX Wrong advice
+403-Ex Mkt & oth Service
+404 - Ex PreDel No skt Now
+501 - Co Right of Return
+502 - Co Dry Docking
+503 - Co Pos Material
+504 - Co sample
+505 - Co Promotions
+506 - Co Customer SLOBS
+507 - Co cusomer Error
+508 - Co Exp Product
+509 - Co Asmt Chg - Restyle
+510 - Co Customer Terminate
+511 - Co Trasfer Stock
+512 - Co Donations
+513 -  Co Spornsorship
+514 - Co Eevent Trainning
+515 - Co Service Provided
+```
+
+Count: **32**.
+
+### P2 — The four register columns with no source
+`L Mtrl in Depo Y/N`, `M MATERIAL STATUS`, `Q remark2` have no source in this
+schema at all and would need new columns and new form fields. `J REASON` is the
+SAP list above.
+
+⚠ **`I NON TINTED` is NOT on that list. It is blank by RULING, not by absence** —
+it is a one-line rollup over `import_raw_line_items.isTinting`, and the owner ruled
+it stays blank in v1 (2026-09-03). Whoever "discovers" `isTinting` has not found a
+gap.
+
+### P2 — A4 print sheet for a CI
+MRN has one (`app/mrn/[mrnId]/sheet/page.tsx`); CI does not. The route comments
+already anticipate it ("the eventual print sheet"), and `lib/ci/derive.ts` exists
+partly so a sheet and the screens cannot disagree about totals.
+
+### P2 — `returned_to_floor` has no UI
+In `chk_ci_returns_status` and in the `CiStatus` union since day one, **written by
+nothing**. The question it stands in for was answered the other way (billing tells
+the floor; he fixes it himself). Keeping the value costs nothing; ALTERing a live
+CHECK later does not.
+
+### P2 — The void path has never run in production
+Zero voided rows. The columns, the allocator's deliberate `isVoided` exception
+(`CLAUDE_CI.md §13 CI-3`) and the read filters all exist; no UI writes them. First
+real void will exercise code nothing has exercised.
+
+### P2 — A frozen auto-CI is reconciled by hand only
+When billing has already closed an auto CI and a later confirm changes the due
+lines, `lib/ci/auto.ts` refuses to touch it and logs `console.error`. That log **is
+the entire alerting mechanism** — someone must read a Vercel log to know. No
+surface shows it.
+
+### P2 — A second register for CIs above ₹10,000?
+The sheet is named `CI DATA BELOW 10000RS` and the export applies **no value
+filter** (owner ruling: every closed CI in the range, whatever it is worth).
+Whether a second register exists upstream is unanswered. If it does, the answer is
+one clause in `getCiRegisterRows` — do not guess a threshold and do not build a
+split.
+
+### P2 — Register cell types G / H / P
+`CI Qty` (litres), `CI Order value ` and `DIV` are written as **numbers**; the
+original spec named only dealer code and CI Order no as numeric. Revisit if
+billing's macro turns out to want text. One line in `buildCiRegisterWorkbook`.
+
+### P2 — `ci_return_lines` has zero CHECK constraints
+Nothing at the database level enforces `returnedQty >= 1`; the rule lives in
+application code in two places (`PUT /lines` 400s, `lib/ci/auto.ts` skips). Fine
+today — worth a CHECK if a third writer ever appears.
+
+### P2 — Only 4 of the 8 reasons have ever been used
+Live: Physically Cross 7 · Wrong Order by S.O. 3 · Return by Dealer 3 · Order
+Cancel by Dealer 1. Double Order, Wrong Punching, Re Bill and Complaint Material
+have never been chosen. Worth asking the depot whether they earn their place
+before the SAP list lands beside them.
 
 ---
 
