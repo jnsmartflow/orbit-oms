@@ -230,6 +230,36 @@ export function CiSubmittedDetail({
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
+          {/* ══ THE BILL'S DIVISION ═════════════════════════════════════════
+              The same fact billing's pane carries in its facts row, in this
+              screen's own grammar: one spine row, label left, value right.
+
+              🔴 DIRECTLY UNDER THE STRIP, WHICH IS WHERE THE INVOICE NUMBER IS.
+              On the desk it sits immediately after the "Invoice no" cell; here
+              the strip IS those two bill facts, so the row beneath it is the
+              same position. It is a fact about the BILL and belongs above the
+              card that answers for the RETURN.
+
+              ⚠ NOT A THIRD SEGMENT IN CiHeaderStrip. That component is shared
+              with the create flow (new-return.tsx), whose bill payload carries
+              no SMU at all, and the strip is a two-pole band with NO LABELS —
+              a bare "70" out there says nothing, where "Division 70" does.
+
+              ⚠ NOT A ROW INSIDE CARD 1 EITHER. That card is the four ANSWERS,
+              and it is swapped for CiDetailsStep the moment the CI is editable
+              — a bill fact parked inside it would vanish while he edits. This
+              renders in BOTH states, exactly as the strip above it does.
+
+              ⚠ SHOWN ON EVERY CI, "70" INCLUDED, matching the desk pane cell
+              for cell — the two screens must not disagree about a bill. Null
+              (no `smu` on the order, or a name the map does not carry) takes
+              the em-dash every other read value on this screen uses. */}
+          <div className={CARD_SURFACE + " mt-3"}>
+            <CiSpineRow label="Division" last>
+              <CiSpineValue>{detail.division ?? "—"}</CiSpineValue>
+            </CiSpineRow>
+          </div>
+
           {/* ══ CARD 1 · the four answers, FIRST ════════════════════════════
               Label left, value right, hairline between. When it is editable the
               New flow's own details step takes over — the same four controls he

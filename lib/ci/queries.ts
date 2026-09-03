@@ -23,6 +23,11 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
+// The division number, derived from `orders.smu`'s NAME. ONE map, kept beside
+// its inverse in lib/import-upsert/types.ts — never re-typed locally, and never
+// resolved by joining import_raw_summary, which CI has no other use for.
+// Third caller of the same rule (lib/picking/queue.ts, lib/floor/queries.ts:779).
+import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 import { applyCiCatalog, resolveCiSkus } from "./resolve-lines";
 import { billTotals, ciTotals, litresPerTin, resolveCiDealer, round3 } from "./derive";
 import { asCiStatus } from "./types";
@@ -623,7 +628,7 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
   });
   if (!row) return null;
 
-  // ⚠ THE LIVE ORDER, for two fields the CI deliberately does NOT snapshot.
+  // ⚠ THE LIVE ORDER, for three fields the CI deliberately does NOT snapshot.
   //
   //   invoiceNo — 5% of bills have none when the CI is raised and SAP sends it
   //   later (spec §4). The live value is the fresher one, so it WINS and the
@@ -634,11 +639,18 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
   //   "102492 · OBD 9109145575 · Ghod Dod" reads it through
   //   customerId → delivery_point_master.area, live. Blank for an unmastered
   //   dealer (customerId null), which is a normal state and not an error.
+  //
+  //   smu — THE DIVISION, and it is a WIDER COLUMN LIST ON THIS SAME QUERY, not
+  //   a new one. No second lookup, no join to import_raw_summary (which holds
+  //   the numeric `smuCode` but is not otherwise reachable from a CI and would
+  //   cost a query for a fact the name already determines). The code itself is
+  //   derived below through SMU_CODE_BY_NAME.
   const order = await prisma.orders.findFirst({
     where: { id: row.orderId },
     select: {
       invoiceNo: true,
       invoiceDate: true,
+      smu: true,
       customer: { select: { area: { select: { name: true } } } },
     },
   });
@@ -713,6 +725,12 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
     customerCode: row.customerCode,
     customerName: row.customerName,
     area: order?.customer?.area?.name ?? null,
+    // The division NUMBER, derived from the name in memory — one line, the same
+    // one lib/floor/queries.ts:779 runs. `?? null` covers a name the map does
+    // not carry (only the five live ones are in it): a null renders as the
+    // neighbouring cells' own empty treatment, which is the honest answer.
+    // 🔴 NEVER fall back to `order.smu` itself — see CiDetail.division.
+    division: order?.smu != null ? (SMU_CODE_BY_NAME[order.smu] ?? null) : null,
 
     returnType: row.returnType as CiReturnType,
     materialMoved: row.materialMoved as CiMaterialMoved,

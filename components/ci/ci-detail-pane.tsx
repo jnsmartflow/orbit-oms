@@ -214,15 +214,28 @@ export function CiDetailPane({
       </div>
 
       {/* ── Header facts, IN BILL ORDER ─────────────────────────────────────
-          invoice date → invoice no → received on → material → returned.
-          Bill first, then the return, then the total. The sequence is the
-          mockup's and is deliberate: he reads down it against the paper form. */}
+          invoice date → invoice no → division → received on → material →
+          returned. Bill first, then the return, then the total. The sequence is
+          the mockup's and is deliberate: he reads down it against the paper
+          form — and DIVISION sits with the two invoice cells because it is the
+          third thing he copies off the bill while punching SAP, not something
+          about the return. */}
       {/* ⚠ A LIGHT rule ABOVE, none below — mockup `.phFacts`. Band 1's own
           bottom border already closes the band; a second heavy line here would
           cut the identity off from the reason that explains it. */}
-      <div className="px-5 py-3 border-t border-[#EFF2F3] grid grid-cols-5 gap-4">
+      <div className="px-5 py-3 border-t border-[#EFF2F3] grid grid-cols-6 gap-4">
         <Fact label="Invoice date" value={formatDay(detail.invoiceDate)} />
         <Fact label="Invoice no" value={detail.invoiceNo ?? "—"} />
+        {/* ⚠ ON EVERY CI, "70" INCLUDED — and that is deliberately NOT
+            Picking's rule, which badges 74/77 and stays silent on the rest
+            because 82% of a board is Deco Retail. This is a labelled cell in a
+            fixed row, not a badge competing for attention on a card: billing
+            copies the division into SAP on every punch, and a cell that is
+            blank four times out of five is worse than one that always answers.
+            ⚠ THE SAME EM-DASH "Invoice no" USES, for the same reason — the 132
+            bills with no `smu` get the row's own empty treatment, never a second
+            style and never the SMU NAME in the number's place. */}
+        <Fact label="Division" value={detail.division ?? "—"} />
         <Fact label="Received on" value={formatDay(detail.materialReceivedDate)} />
         <Fact label="Material" value={detail.materialMoved === "moved" ? "Moved" : "Not moved"} />
         {/* BOTH UNITS. Tins is what he counts, litres is what the form carries. */}

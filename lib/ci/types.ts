@@ -279,6 +279,29 @@ export interface CiDetail {
    * The mockup's "102492 · OBD 9109145575 · Ghod Dod".
    */
   area: string | null;
+  /**
+   * The SAP division as a NUMBER — "70", "74", "76", "77", "10".
+   *
+   * ⚠ NOT A COLUMN EITHER, on ci_returns OR on orders. `orders.smu` holds the
+   * NAME ("Deco Retail") and nothing else; the numeric code stops at
+   * `import_raw_summary.smuCode`, which CI does not join and must not start
+   * joining for this — it would cost a query for a fact already derivable.
+   * Resolved in memory through SMU_CODE_BY_NAME (lib/import-upsert/types.ts),
+   * exactly as lib/floor/queries.ts:779 and lib/picking/queue.ts do it. The
+   * name↔code relationship is a verified bijection (12,952 live rows, six
+   * distinct pairs, zero disagreements).
+   *
+   * 🔴 SHOWN ON EVERY CI, INCLUDING "70" — and that is deliberately NOT
+   * Picking's rule. SmuBadge hides 70/76/10 because a badge on 82% of a board
+   * is noise; billing reads this cell while punching SAP, where a value that is
+   * blank 82% of the time is worse than one that always answers.
+   *
+   * Null when `orders.smu` is null (132 of 12,952 bills) or carries a name the
+   * map does not know. 🔴 THAT IS CORRECT BEHAVIOUR, NOT A GAP TO PLUG. Never
+   * fall back to printing the NAME: a division cell reading "Deco Retail" where
+   * every other CI reads "70" is worse than one reading nothing.
+   */
+  division: string | null;
 
   // stage 1
   returnType: CiReturnType;
