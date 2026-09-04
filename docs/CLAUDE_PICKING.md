@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.16 · Schema v27.15 · September 2026 · updated 2026-09-03
+# v1.17 · Schema v27.15 · September 2026 · updated 2026-09-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -163,6 +163,67 @@ Upcountry/Cross/IGT for whenever those are live on this board.
 
 **No weight, no truck-ready logic, no "serve from the top" guard anywhere in this spine** — see §7 for
 what was tried and removed.
+
+### 3.1 Pack-label ordering — `lib/picking/pack-sort.ts` [LIVE, 2026-08-10]
+
+**This module OWNS the rule; three modules use it.** The spine above ranks BILLS. This ranks
+**pack labels** — the pack-filter chip strip on the detail screen (§5.3) and every pack breakdown
+built from one. It lives under `lib/picking/` because Picking wrote it, and it is **imported,
+never copied** (a second copy is a second ordering the moment either is touched):
+
+| Caller | File |
+|---|---|
+| **Picking** — supervisor detail chips | `components/picking/picking-board-mobile.tsx` |
+| **Picking** — picker detail chips | `components/picking/picker-my-picks-board.tsx` |
+| **CI** — line-list chips | `components/ci/line-list.tsx` |
+| **CI** — the pack breakdown behind the details step | `lib/ci/derive.ts` → `components/ci/details-step.tsx` |
+| **MRN** — line-list chips | `components/mrn/line-list.tsx` |
+| smoke script | `scripts/_smoke-pack-chip-order.ts` — prints old vs new on live payloads |
+
+`sortPackLabels(labels)` is the non-mutating list form every caller above uses;
+`comparePackLabels()` is the one place that reads the key pair; `packLabelSortKey()` exposes it.
+Callers go through `sortPackLabels` — do not re-implement the comparison at a call site.
+
+**The order is (tier, size), then the label text as a stable tie-break:**
+
+- **Tier 0 — volume.** `ML` as-is; `L` / `LT` / `LTR` ×1000 into millilitres.
+- **Tier 1 — weight.** `GM` as-is; `KG` ×1000 into grams.
+- **Tier 2 — pieces.** `PC` (tools). No magnitude worth comparing.
+- **Tier 3 — unrecognised.** Always last. **Never throws.**
+
+🔴 **WEIGHTS RANK IN THEIR OWN TIER, AND THAT IS THE DESIGN — NOT AN OVERSIGHT TO FOLD AWAY.**
+5KG is not 5L. Putting a putty bag on the paint scale would rank it between two tins, which is a
+confident claim about a size relationship nobody measured. Same KG-anchored-last instinct
+`lib/place-order/pack.ts` `sortPacks()` already follows for the ordering `/po` shows.
+
+⚠ **It takes the RENDERED label, not `packCode` + `unit`.** The picking wire format carries `pack`
+already formatted — `formatPack()` runs server-side in `lib/picking/resolve-lines.ts` — so by the
+time any board sees a line, `"500"` + `"ML"` is already `"500ML"` and the pair is gone. Parsing the
+label back is the only option that does not mean widening the API payload for a cosmetic sort. The
+vocabulary is CLOSED: five shapes, including the spray-can `"400 ml"` with its lower case and its
+SPACE (both normalised away).
+
+⚠ **Unrecognised sorts last; it must never drop a chip and never guess a size.** The `"__no_pack__"`
+sentinel, an unmastered SAP string `formatPack()` passed through untouched, a unit nobody has added
+here yet — all land in tier 3. A chip that cannot be placed must still be REACHABLE: dropping it
+hides lines from the picker, and guessing a size files them under the wrong chip.
+
+⚠ **The no-pack group is pinned last BY THE CALLER, not by the sorter — and all five call sites do
+it identically:** filter the sentinel out, `sortPackLabels()` the rest, append it back —
+`keys.includes(NO_PACK_KEY) ? [...real, NO_PACK_KEY] : real`. The sentinel is `NO_PACK_KEY =
+"__no_pack__"` in the four component call sites (each declares its own copy — a token, not a rule)
+and the display label `NO_PACK_LABEL = "No pack"` in `lib/ci/derive.ts`, which emits labels rather
+than filter keys. Both halves stay: pinning without the tier-3 fallback mis-files an unparseable
+REAL label, and the fallback without the pinning leaves the no-pack group ordered against the
+label text of everything else.
+
+🔴 **THE BUG THIS REPLACED, 2026-08-10 — and the two "simplifications" that bring it back.** Both
+boards sorted the chip strip with `a.localeCompare(b)`, alphabetical on the label text. A bill
+carrying 100ML / 1L / 20L / 4L / 500ML rendered in exactly that order: **`100ML` before `1L`**
+because `"0"` < `"L"`, and **`20L` before `4L`** because `"2"` < `"4"`. A picker reading the strip
+had no way to find the size in his hand except by scanning every chip. Sorting on the numeric
+`packCode` alone is the other tempting fix and is also wrong — it puts 1 (as in 1L) before 500 (as
+in 500ML). Recorded here because a rule stripped of its bug is a rule the next pass "tidies" back.
 
 ---
 
@@ -511,7 +572,8 @@ or Mark done, and must not learn.
 - **⚠️ `NO_BILL_SWIPE_ATTR` — the opt-out, and the bug that bought it** [2026-07-30]. The handlers
   sit on the detail screen's **root**, so they claim every horizontal drag in the body. That is right
   for the line list and wrong for a strip that owns its own horizontal scroll: the **pack-filter
-  chips** overflow the screen on an ordinary multi-pack bill, and reaching the chips past the right
+  chips** (their ORDER is §3.1) overflow the screen on an ordinary multi-pack bill, and reaching the
+  chips past the right
   edge means scrolling that strip — which the pager was stealing, so a long drag paged to the next
   bill and every off-screen chip became unreachable. Field-reported as "the pack filter is missing";
   the chips had never stopped rendering. A touch **starting** inside an element carrying the
@@ -997,6 +1059,7 @@ panel (§11.5).
 | `app/api/picking/order/[orderId]/route.ts` | GET — on-demand line items for the mobile detail screen; no FK, matches on `obdNumber`. Each line also carries its `finding` (or null) since 2026-08-07 — additive, so a consumer that doesn't know about findings is unaffected (§11) |
 | `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot`; WHERE includes `pick_checked`, select includes `checkedAt`/`checkedBy`. Takes an optional `pickerId` that narrows to one picker's bills **in the query** (2026-07-29, §5.4). Returns `{ date, rows }` — the four aggregate counters were removed 2026-07-28 (§7) |
 | `lib/picking/sort.ts` | `PICKING_SPINE` + `sortPickingQueue()` — the flat sort spine, §3 — untouched |
+| `lib/picking/pack-sort.ts` | `sortPackLabels()` / `comparePackLabels()` / `packLabelSortKey()` — the (tier, size) PACK-LABEL ordering, §3.1. Picking-owned but **cross-module**: CI (`components/ci/line-list.tsx`, `lib/ci/derive.ts`) and MRN (`components/mrn/line-list.tsx`) import it. Pure, no imports of its own — safe from a client component and a route handler alike. ⚠ Changing a tier or a unit changes three modules; there is no per-module override and there must not be one |
 | `lib/picking/types.ts` | `PickingQueueRow`, `SortRule` shapes — `isChecked`/`checkedAt`/`checkedByName` added 2026-07-18. Also the shapes BOTH boards share: `PickingDetailLine` + `PickingLineFinding` (2026-08-07, declared once because a silent drift between two private copies is what the nested `finding` object made possible) and the Combined wire types `CombinedSkuRow`/`CombinedContribution`/`CombinedBill`/`CombinedPickResult` |
 | `lib/picking/validate-assign.ts` | DORMANT — the no-jump guard, unused, kept on disk (§7) |
 | `lib/workflow-stages.ts` | Central stage-ladder registry — `STAGE_LADDER`, `SUPPORT_DONE_OUTPUT`, `PICK_ASSIGNED`, `PICK_DONE`, `PICK_CHECKED`, `stageRank()`, `supportMayEdit()`, `isSupportDone()` (§2) |
@@ -1334,4 +1397,4 @@ Evidence: all nine commits confirmed present on `main` by `git log` before anyth
 
 ---
 
-*CLAUDE_PICKING.md v1.16 · Schema v27.15 · Picking Module · September 2026 · updated 2026-09-03 — §11.7 added: confirming a finding on an invoiced bill also raises a CI (`618f67fc`), a behaviour owned in full by `CLAUDE_CI.md §9`; four facts about FINDINGS kept here. ⚠ The Schema stamp stays **v27.15 on purpose** — it records the version this file was last RECONCILED against, and v27.16-v27.21 (MRN, audit log, CI) touch no picking table. Prior, v1.15 (2026-08-19): SMU badge (74/77 only, derived code, no new column); §5.2's stale `articleTag` where-row claim corrected*
+*CLAUDE_PICKING.md v1.17 · Schema v27.15 · Picking Module · September 2026 · updated 2026-09-04 — §3.1 added: `lib/picking/pack-sort.ts`, the (tier, size) PACK-LABEL ordering, WRITTEN DOWN HERE FOR THE FIRST TIME. It shipped 2026-08-10 and until now existed in canon only in `CLAUDE_CI.md §13 CI-7` — a rule governing three modules documented in the file of a module that borrows it. Picking owns the file, so Picking owns the rule: tiers, the weight-ranks-apart reasoning, the caller-side no-pack pinning, all five call sites (Picking ×2, CI ×2, MRN) and the localeCompare bug it replaced. CI-7 reduced to a cross-reference in the same pass; `lib/picking/pack-sort.ts` added to §8. ⚠ The Schema stamp stays **v27.15 on purpose** — it records the version this file was last RECONCILED against, and v27.16-v27.21 (MRN, audit log, CI) touch no picking table. Prior, v1.16 (2026-09-03): §11.7, confirming a finding on an invoiced bill also raises a CI (`618f67fc`), owned in full by `CLAUDE_CI.md §9`. Prior, v1.15 (2026-08-19): SMU badge (74/77 only, derived code, no new column); §5.2's stale `articleTag` where-row claim corrected*

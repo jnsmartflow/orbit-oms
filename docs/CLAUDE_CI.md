@@ -1,5 +1,5 @@
 # CLAUDE_CI.md — CI, Goods Return Note (CI Form)
-# v1.0 · Schema v27.21 · September 2026 · updated 2026-09-03
+# v1.1 · Schema v27.21 · September 2026 · updated 2026-09-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -48,7 +48,7 @@ that will disagree with itself inside a cycle.
 
 | CI uses | Owner | CI's position |
 |---|---|---|
-| Pack ordering (`sortPackLabels`) | `CLAUDE_PICKING.md` — `lib/picking/pack-sort.ts` | imported, not copied. See §13 CI-7 |
+| Pack ordering (`sortPackLabels`) | `CLAUDE_PICKING.md §3.1` — `lib/picking/pack-sort.ts` | imported, not copied. See §13 CI-7 |
 | The effective-dealer rule | `CLAUDE_PICKING.md` — `lib/picking/queue.ts` | **mirrored**, because Picking does not export it. §13 CI-6 |
 | `SMU_CODE_BY_NAME`, the division name↔code map | `CLAUDE_IMPORT.md` | imported. CI **diverges** on display — §5 |
 | The 74/77 SMU badge rule | `CLAUDE_PICKING.md §5.2` | CI deliberately does **not** follow it — §5 |
@@ -609,15 +609,21 @@ will show a name billing's old sheet does not — expect that question, and do n
 resolves through a batched id→row Map for its own N+1 reasons). If Picking's rule
 changes, this changes with it. They must not drift.
 
-**CI-7 · Pack order is `sortPackLabels`, and it is NOT alphabetical.**
-`lib/picking/pack-sort.ts` parses the rendered label into `(tier, size)`: volume
-(ML, L×1000), weight (GM, KG×1000) in its **own** tier because 5KG is not 5L,
-pieces, then unrecognised — which **always sorts last and never throws**.
-`"No pack"` collapses to one group, last. 🔴 What this replaced on 2026-08-10 was
-`localeCompare`, which put `100ML` before `1L` (because "0" < "L") and `20L`
-before `4L`. Sorting on the numeric packCode alone does not fix it either: that
-puts 1 (as in 1L) before 500 (as in 500ML). It is a RULE, not a token, which is
-why it is imported rather than copied.
+**CI-7 · Pack order is `sortPackLabels`, it is NOT alphabetical, and CI does not
+own it.** 🔴 **The rule lives in `CLAUDE_PICKING.md §3.1`** — the tiers, why weight
+ranks apart from volume, why it takes the rendered label, and the 2026-08-10
+`localeCompare` bug it replaced. Read it there; do not restate it here, and do
+not let a future pass re-expand this entry. CI's position is only this: it
+**imports** `lib/picking/pack-sort.ts` at `components/ci/line-list.tsx` and
+`lib/ci/derive.ts`, and **must never copy it** — a RULE is imported, a token is
+copied with a citation (§14). CI's own two lines on top of the shared rule: the
+`"No pack"` group is filtered out, the rest sorted, then appended LAST (the
+caller-side pinning §3.1 describes), and `derive.ts` pins on the display label
+`"No pack"` where the components pin on the `"__no_pack__"` key, because it emits
+labels rather than filter keys. If pack order ever needs to change, it changes in
+Picking and CI inherits it — a CI-local fix would silently split the ordering
+between CI's bill screen (the filter strip) and its details step (the pack
+breakdown), which today agree only because both go through the shared sorter.
 
 **CI-8 · Guard the division on `unitQty` ONLY — NEVER on `volumeLine`.**
 `volumeLine = 0` is a real, correct value: **346 active lines** are brushes,
@@ -813,6 +819,12 @@ Four days from first table to register export: 19 CI commits, `e8695f40`
 
 ---
 
-*CLAUDE_CI.md v1.0 · Schema v27.21 · CI / Goods Return Note · September 2026 ·
-updated 2026-09-03 — first canonical file for the module. Written from the code,
-the live schema and read-only SELECTs; the 2026-08-31 design draft is history.*
+*CLAUDE_CI.md v1.1 · Schema v27.21 · CI / Goods Return Note · September 2026 ·
+updated 2026-09-04 — §13 CI-7 REDUCED to a cross-reference: the pack-ordering
+rule now lives where the code does, `CLAUDE_PICKING.md §3.1` (v1.17). CI-7 had
+been the only place in canon the rule was written down, which put a three-module
+rule in the file of a module that borrows it. CI keeps what is CI-specific — that
+it imports and must never copy, plus its own no-pack pinning. §1 borrow table
+points at §3.1. No other change; nothing about CI behaviour moved. Prior, v1.0
+(2026-09-03) — first canonical file for the module. Written from the code, the
+live schema and read-only SELECTs; the 2026-08-31 design draft is history.*
