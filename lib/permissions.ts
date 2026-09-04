@@ -246,6 +246,130 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "settings_hide",
 ];
 
+// ── Which actions the code actually ASKS about, per page ──────────────────────
+//
+// 🔴 WHAT THIS IS FOR, AND WHAT IT MUST NEVER DO.
+// The /admin/access screen greys a cell to a DASH where the app has no such
+// check for that page — so an admin cannot switch on a flag that gates nothing.
+// That already happened without it: eight canExport grants are true in the
+// database right now and not one of them does anything.
+//
+// ⚠ THIS MAP IS ADVISORY AND COSMETIC. Every user_page_access row still stores
+// all five booleans, and every read and write handles all five. The map only
+// decides whether a cell renders as a checkbox or a dash. A stale entry here
+// must therefore degrade to "the screen showed a dash it should not have" —
+// never to a value being dropped, skipped or overwritten. NEVER use it to
+// filter what is read, saved, compared, or seeded.
+//
+// SOURCE: docs/prompts/drafts/code-discovery-2026-08-30-permission-actions.md
+// §2 (per-flag call-site census) and §5 (Export and Delete, settled). Verified
+// by call site, not by intent: canExport and canDelete are each read in exactly
+// ONE module (MRN), and canImport in two helper call sites plus the CSV buttons
+// on the four master-data screens.
+//
+// 🔴 UPDATE THIS WHENEVER A NEW ACTION CHECK IS ADDED ANYWHERE. If you write a
+// new `checkPermission(..., "<key>", "<action>")` or `checkAnyPermission(...)`,
+// or start reading a flag off a PagePermissions object to gate a control, and
+// the (key, action) pair is not listed below, ADD IT — otherwise /admin/access
+// shows a dash for a switch that now does something, and nobody can turn it on.
+// The reverse is just as true: if a check is deleted, remove its entry.
+
+/** Actions that are NOT asked on every page, and the pages that do ask them. */
+const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = {
+  // 38 live call sites — every write route on Floor / MRN / Picking /
+  // Sampling / Tint / master data (§2.2).
+  canEdit: [
+    "mrn", "picking", "tint_manager", "tint_operator", "mail_orders", "floor",
+    "sampling_library", "routes_areas", "customers", "skus", "vehicles",
+  ],
+  // Two helper call sites — import/obd:3796 and sampling-library:253 — plus the
+  // CSV import buttons on the four master-data screens, which read canImport
+  // off PagePermissions to show or hide themselves (§2.1 direct field reads).
+  canImport: [
+    "import_obd", "sampling_library",
+    "customers", "skus", "routes_areas", "vehicles",
+  ],
+  // MRN ONLY: api/mrn/[mrnId]/export:58 and mrn/[mrnId]/sheet/page:41.
+  // ⚠ The attendance CSV export does NOT read canExport — it is a hardcoded
+  // admin role check (§5), so attendance_admin gets a dash here even though
+  // ops_admin holds canExport = true live. The dash is telling the truth.
+  canExport: ["mrn"],
+  // MRN ONLY: api/mrn/[mrnId]/delete:53. Every other delete path uses a role
+  // check instead (§5).
+  canDelete: ["mrn"],
+};
+
+const ACTION_PAGE_SETS = {
+  canEdit:   new Set<string>(ACTION_PAGES.canEdit),
+  canImport: new Set<string>(ACTION_PAGES.canImport),
+  canExport: new Set<string>(ACTION_PAGES.canExport),
+  canDelete: new Set<string>(ACTION_PAGES.canDelete),
+} as const;
+
+/**
+ * Does the app ask this question for this page? `canView` is asked on every
+ * page (75 call sites); the other four only where ACTION_PAGES lists them.
+ * Advisory only — see the block above.
+ */
+export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
+  if (action === "canView") return true;
+  return ACTION_PAGE_SETS[action].has(pageKey);
+}
+
+// ── Display metadata for the /admin/access screen ─────────────────────────────
+//
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. FIVE of
+// the 27 ALL_PAGE_KEYS are not in it and are labelled here instead:
+// dashboard, users, system_config, permissions, settings_hide.
+// (`attendance` IS in PAGE_NAV_MAP — but it and `attendance_admin` both carry
+// the label "Attendance" there, which is fine in a sidebar where only one is
+// ever shown and useless in a list where both appear, so both are overridden.)
+
+const PAGE_LABEL_OVERRIDES: Record<string, string> = {
+  dashboard:        "Dashboard",
+  users:            "Users",
+  system_config:    "System Config",
+  permissions:      "Permissions (role grid)",
+  settings_hide:    "Hide Rules",
+  attendance:       "Attendance — their own",
+  attendance_admin: "Attendance — everyone",
+};
+
+/** Friendly name for a page key: PAGE_NAV_MAP first, override, then the key. */
+export function pageLabel(pageKey: string): string {
+  const override = PAGE_LABEL_OVERRIDES[pageKey];
+  if (override) return override;
+  return PAGE_NAV_MAP.find((i) => i.pageKey === pageKey)?.label ?? pageKey;
+}
+
+/**
+ * The 27 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
+ * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
+ * hiding a row.
+ */
+export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
+  { label: "Operations", keys: [
+    "picking", "floor", "mrn", "ci", "mail_orders", "place_order",
+    "trip_report", "import_obd",
+  ] },
+  { label: "Tinting", keys: [
+    "tint_manager", "tint_operator", "operations_tinting",
+    "operations_tint_operator", "delivery_challans", "shade_master",
+    "sampling_library", "ti_report",
+  ] },
+  { label: "Master data", keys: ["customers", "skus", "routes_areas", "vehicles"] },
+  { label: "Admin panel", keys: [
+    "dashboard", "users", "system_config", "permissions", "settings_hide",
+  ] },
+  { label: "Attendance", keys: ["attendance", "attendance_admin"] },
+];
+
+/** Every key in ALL_PAGE_KEYS, for callers that need the flat list. */
+export function allPageKeys(): PageKey[] {
+  return [...ALL_PAGE_KEYS];
+}
+
 // ── Functions ─────────────────────────────────────────────────────────────────
 
 export async function checkPermission(

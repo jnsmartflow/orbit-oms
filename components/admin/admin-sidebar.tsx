@@ -61,6 +61,10 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "People",
     items: [
+      // Per-user page access (2026-09-04, step 3 of the role→user conversion).
+      // Admin-only by construction: no pageKey, so visibleItems() shows it to
+      // admin alone — the same gate every other keyless item here uses.
+      { label: "Access",         href: "/admin/access", icon: ShieldCheck },
       { label: "Sales Officers", href: "/admin/sales-officers" },
       { label: "SO Groups",      href: "/admin/so-groups" },
       { label: "Contact Roles",  href: "/admin/contact-roles" },

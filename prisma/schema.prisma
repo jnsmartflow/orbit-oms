@@ -255,6 +255,54 @@ model users {
   ciReturnsAsSupervisor        ci_returns[]          @relation("CiReturnSupervisor")
   ciReturnsAsBillingOperator   ci_returns[]          @relation("CiReturnBillingOperator")
   ciReturnsVoided              ci_returns[]          @relation("CiReturnVoidedBy")
+  // Per-user page access (2026-09-04). One FK to `users`, so the relation is
+  // deliberately UNNAMED — same call as pushSubscriptions and adminAuditLogs
+  // above, and the opposite of the Mrn*/PickFinding*/CiReturn* clusters, which
+  // have several FKs each and MUST stay named on both sides (CORE §7.3).
+  pageAccess                   user_page_access[]
+}
+
+// Per-user page permissions — the table the role→user access conversion is
+// built on. Created and filled by sql/2026-09-04-user-page-access.sql (step 2),
+// which verified all 1,053 rows byte-for-byte against what role_permissions
+// grants today: 39 users x 27 ALL_PAGE_KEYS, PARITY OK, 0 diffs.
+//
+// 🔴 NOTHING READS THIS FOR ACCESS YET. Every gate and every menu still resolves
+// through role_permissions (lib/permissions.ts). /admin/access reads and writes
+// this table, and editing it changes what NOBODY can do until step 4 repoints
+// the resolvers. Do not wire a gate to it early — a half-flipped source is how
+// people lose access silently.
+//
+// Hand-mirrored from live, as CORE §3 requires: db push and db pull are banned,
+// and db pull additionally fails on this machine with P1001.
+model user_page_access {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pageKey   String
+  canView   Boolean  @default(false)
+  canImport Boolean  @default(false)
+  canExport Boolean  @default(false)
+  canEdit   Boolean  @default(false)
+  canDelete Boolean  @default(false)
+  // ⚠ BOTH need @db.Timestamptz(6) or Prisma emits plain `timestamp` and
+  // mismatches the live columns, which are `timestamp with time zone`.
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  // @updatedAt as well as the default: the live column is NOT NULL DEFAULT
+  // now() (which covers inserts), and @updatedAt makes Prisma advance it on
+  // every edit. This table is EDITED, unlike push_subscriptions, whose plain
+  // @default(now()) CORE §7.12 records — the difference is deliberate.
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Explicit map: on both — the live names are hand-made by the step-2 SQL and
+  // are not what Prisma would generate. Same reason admin_audit_log's three
+  // indexes carry one (CORE §7.13).
+  //
+  // The UNIQUE is a real constraint, not just an index: it is the ON CONFLICT
+  // target for the save route's upserts, and with userId LEADING its index also
+  // serves "every page for one person" — which is every read this screen does.
+  @@unique([userId, pageKey], map: "user_page_access_user_page_key")
+  @@index([pageKey], map: "user_page_access_page_idx")
 }
 
 // Web Push device subscriptions. Table created by hand in Supabase (11 cols,
