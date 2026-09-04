@@ -2630,7 +2630,7 @@ model ci_reason_master {
 
 // The CI header. 32 columns.
 //
-// 🔴 THREE LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA (CORE §7.4), so
+// 🔴 FIVE LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA (CORE §7.4), so
 // they are invisible in this file and are recorded here by hand:
 //   chk_ci_returns_status         CHECK (status IN ('draft','submitted','closed','returned_to_floor'))
 //   chk_ci_returns_return_type    CHECK ("returnType" IN ('full','part'))
@@ -2641,7 +2641,7 @@ model ci_reason_master {
 //            AND "materialReceivedDate" IS NOT NULL
 //            AND "reasonId" IS NOT NULL AND "reasonLabel" IS NOT NULL))
 //
-// 🔴 THE FOURTH ONE IS LOAD-BEARING: IT IS WHAT STOPS AN INCOMPLETE CI BEING
+// 🔴 THE FIFTH ONE IS LOAD-BEARING: IT IS WHAT STOPS AN INCOMPLETE CI BEING
 // SUBMITTED. Those four columns are NULLABLE precisely so a draft can exist
 // before the supervisor has answered the details step (owner ruling
 // 2026-09-01 — a draft carries NULL, never a placeholder). This CHECK is what
