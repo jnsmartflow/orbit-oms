@@ -2660,12 +2660,17 @@ model ci_reason_master {
 // `NULL = ANY(ARRAY[...])` is NULL, and a CHECK passes on anything that is not
 // FALSE. The two constraints therefore compose correctly and neither needed
 // changing when the columns went nullable.
-// A FOURTH status value needs a SQL ALTER on chk_ci_returns_status in the
-// Supabase SQL Editor FIRST — never just a new string in application code. This
-// is the same trap chk_pick_assignments_status documents, and it is why
-// 'returned_to_floor' is already in the list from day one (spec §11.1) even
-// though no UI writes it yet: allowing an unused value costs nothing, ALTERing a
-// live CHECK later does not.
+// A FIFTH status value needs a SQL ALTER on chk_ci_returns_status in the
+// Supabase SQL Editor FIRST — never just a new string in application code. THE
+// COUNT IS OVER WHAT THE CHECK PERMITS, NOT OVER WHAT ANY CODE WRITES: the
+// CHECK permits FOUR and the ladder writes THREE, because 'returned_to_floor'
+// is in the list from day one (spec §11.1) and is written by nothing. So the
+// fourth value needs no ALTER — it is already allowed — and the next NEW one is
+// the fifth. (CLAUDE_CI.md §2 already words it this way: "A FIFTH value needs
+// a SQL ALTER on chk_ci_returns_status FIRST".)
+// This is the same trap chk_pick_assignments_status documents, and it is why
+// 'returned_to_floor' was allowed up front: an unused value costs nothing,
+// ALTERing a live CHECK later does not.
 //
 // 🔴 THREE FKs TO `users` — supervisorId / billingOperatorId / voidedById. All
 // three carry an explicitly NAMED @relation on BOTH sides (back-relations on the
