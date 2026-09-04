@@ -2,16 +2,18 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Search, Info, ShieldAlert } from "lucide-react";
+import { Search, Info, ShieldAlert, ShieldCheck } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/access — per-user page access, by person.
 //
-// 🔴 THIS SCREEN DOES NOT CHANGE WHAT ANYONE CAN DO. Every gate and every menu
-// in the app still resolves through role_permissions. This reads and edits
-// user_page_access, which nothing consults until step 4 repoints the resolvers.
-// The notice at the top of the right pane says so to the admin, and it must
-// stay until step 4 lands.
+// 🔴 WHETHER THIS SCREEN CHANGES WHAT ANYONE CAN DO DEPENDS ON A SWITCH.
+// ACCESS_SOURCE (system_config, read via lib/access/source.ts) decides whether
+// the app resolves permissions from role_permissions ("role", the default) or
+// from the user_page_access rows this screen edits ("user"). The banner at the
+// top states which is live, driven by the SAME cached value the resolvers read
+// so the two cannot disagree. Being wrong in either direction is dangerous, so
+// do not soften either wording into a single hedged sentence.
 //
 // All display metadata (labels, sections, which actions exist per page) is
 // computed on the SERVER and passed in as plain props — lib/permissions.ts
@@ -56,6 +58,10 @@ interface Props {
   people: AccessPerson[];
   sections: AccessSection[];
   flags: FlagKey[];
+  /** Where the app is reading permissions from RIGHT NOW — the live ACCESS_SOURCE. */
+  accessSource: "role" | "user";
+  /** How long a flip of that switch takes to reach every server, in seconds. */
+  switchTtlSeconds: number;
   keyCountWarning: string | null;
 }
 
@@ -72,7 +78,11 @@ type Pending = Record<string, boolean>;
 
 function pendKey(pageKey: string, flag: FlagKey) { return `${pageKey}::${flag}`; }
 
-export function AccessManager({ people: initialPeople, sections, flags, keyCountWarning }: Props) {
+export function AccessManager({
+  people: initialPeople, sections, flags,
+  accessSource, switchTtlSeconds, keyCountWarning,
+}: Props) {
+  const live = accessSource === "user";
   const [search, setSearch]         = useState("");
   const [people, setPeople]         = useState(initialPeople);
   const [selectedId, setSelectedId] = useState<number | null>(initialPeople[0]?.id ?? null);
@@ -186,6 +196,56 @@ export function AccessManager({ people: initialPeople, sections, flags, keyCount
       <p className="text-[11px] text-gray-400 mt-0.5">
         Who can see what — one person at a time
       </p>
+
+      {/* ── WHICH SOURCE IS LIVE ─────────────────────────────────────────────
+          Driven by the same cached ACCESS_SOURCE value every resolver reads,
+          so this cannot disagree with what the app is actually enforcing.
+          Being wrong in EITHER direction is dangerous — believing ticks are
+          live when they are not, or the reverse — so both states are stated
+          positively and neither is the quiet default. */}
+      <div
+        className={cn(
+          "mt-3 flex items-start gap-2.5 rounded-[9px] border px-3.5 py-3 text-[11.5px] leading-relaxed",
+          live
+            ? "border-teal-200 bg-teal-50 text-teal-800"
+            : "border-amber-200 bg-amber-50 text-amber-800",
+        )}
+      >
+        {live
+          ? <ShieldCheck className="h-4 w-4 shrink-0 mt-px" />
+          : <ShieldAlert className="h-4 w-4 shrink-0 mt-px" />}
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-white",
+                live ? "bg-teal-600" : "bg-amber-600",
+              )}
+            >
+              {live ? "Live — per-person ticks" : "Not live — job titles"}
+            </span>
+            <span className="font-mono text-[10px] opacity-70">
+              ACCESS_SOURCE = {accessSource}
+            </span>
+          </div>
+          {live ? (
+            <p className="mt-1.5">
+              <b>The app is reading the ticks on this screen.</b> What you change here is what
+              people can and cannot do — it takes effect within about {switchTtlSeconds} seconds,
+              with no deploy. Job titles are now only a label and a starting point.
+            </p>
+          ) : (
+            <p className="mt-1.5">
+              <b>The app is still reading job titles.</b> Every menu and permission comes from the
+              role table, so a tick on this screen changes nothing yet — it is set-up for the
+              switch, and the amber dots are the preview of what flipping it will do. Set{" "}
+              <span className="font-mono">ACCESS_SOURCE</span> to{" "}
+              <span className="font-mono">user</span> in System Config to go live; it lands within
+              about {switchTtlSeconds} seconds.
+            </p>
+          )}
+        </div>
+      </div>
 
       {keyCountWarning && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
@@ -323,14 +383,20 @@ export function AccessManager({ people: initialPeople, sections, flags, keyCount
                       <b>{selected.differs.length} page{selected.differs.length === 1 ? "" : "s"} differ</b> from what{" "}
                       {selected.roleLabel} grants right now:{" "}
                       {selected.differs.map((k) => labelByKey.get(k) ?? k).join(", ")}.
-                      {" "}When step 4 switches the app over, this is what changes for {selected.name}.
+                      {" "}
+                      {live
+                        ? `These are live right now for ${selected.name} — the app is reading these ticks, not the role.`
+                        : `When the switch is flipped to user, this is what changes for ${selected.name}.`}
                     </span>
                   </div>
                 ) : (
                   <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-teal-100 bg-teal-50 px-3 py-2 text-[11.5px] text-teal-700">
                     <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
                     <span>
-                      Matches their role exactly — nothing here changes for {selected.name} at step 4.
+                      Matches their role exactly
+                      {live
+                        ? " — so switching source made no difference to them."
+                        : " — nothing here changes for them when the switch is flipped."}{" "}
                       Their role sets the starting point; anything you change applies to{" "}
                       <b>them only</b>.
                     </span>
@@ -459,14 +525,6 @@ export function AccessManager({ people: initialPeople, sections, flags, keyCount
         grants are switched on in the database right now and none of them does anything.
       </div>
 
-      <div className="mt-2.5 rounded-[9px] border border-amber-200 bg-amber-50 px-3.5 py-3 text-[11.5px] leading-relaxed text-amber-800">
-        <b className="font-bold">Nothing on this screen is live yet.</b>
-        <br />
-        The app still decides every menu and every permission from the <b>role</b> table. This
-        screen reads and writes the new per-person table, which nothing consults yet — so a tick
-        here changes what somebody can do only once step 4 switches the app over. Until then this
-        is where you set up what that switch will do, and the amber dots are the preview of it.
-      </div>
     </div>
   );
 }

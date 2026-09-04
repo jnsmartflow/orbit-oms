@@ -13,6 +13,7 @@ import {
   roleBaselineByUser,
   FLAGS,
 } from "@/lib/access/role-baseline";
+import { getAccessSource, ACCESS_SOURCE_TTL_MS } from "@/lib/access/source";
 import { AccessManager } from "@/components/admin/access-manager";
 import type { PagePermissions } from "@/lib/permissions";
 
@@ -45,6 +46,11 @@ export default async function AccessPage() {
   const sectioned = ACCESS_SECTIONS.flatMap((s) => s.keys);
   const missing   = pageKeys.filter((k) => !sectioned.includes(k));
   const extra     = sectioned.filter((k) => !pageKeys.includes(k));
+
+  // The SAME cached value every resolver reads — not a second query with its
+  // own opinion. If this says "user", the ticks below are what the app is
+  // enforcing right now.
+  const accessSource = await getAccessSource();
 
   const users = await prisma.users.findMany({
     select: {
@@ -134,6 +140,8 @@ export default async function AccessPage() {
       people={people}
       sections={sections}
       flags={[...FLAGS]}
+      accessSource={accessSource}
+      switchTtlSeconds={Math.round(ACCESS_SOURCE_TTL_MS / 1000)}
       keyCountWarning={
         missing.length > 0 || extra.length > 0
           ? `Section map out of step with ALL_PAGE_KEYS — missing: ${
