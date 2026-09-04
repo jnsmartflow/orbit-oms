@@ -1,5 +1,5 @@
 # CLAUDE_MRN.md — MRN, Material Receipt Note
-# v1.0 · Schema v27.20 · September 2026 · updated 2026-09-01
+# v1.1 · Schema v27.20 · September 2026 · updated 2026-09-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -592,6 +592,19 @@ canEdit but canDelete FALSE, and once saw a Delete button that returned
   `@media print`, and the print isolation uses `visibility`, never
   `display: none` (CORE §3, UI §32).
 
+- ⚠ **PACK-CHIP ORDER IS `sortPackLabels`, AND MRN DOES NOT OWN IT.** The rule —
+  the tiers, why weight ranks apart from volume, the bug it replaced — lives in
+  **`CLAUDE_PICKING.md §3.1`**, with `lib/picking/pack-sort.ts`. Read it there;
+  do not restate it here. MRN's position is only this: `components/mrn/line-list.tsx`
+  **imports** it and **must never copy it** — the styling in that file is copied
+  from picking (tokens, with a citation), the ORDERING is imported (a rule), and
+  the file's own header draws that line. MRN's one addition is the caller-side
+  no-pack pinning every call site shares: filter `NO_PACK_KEY` (`"__no_pack__"`)
+  out, sort the rest, append it LAST. 🔴 **It orders the CHIPS, never the ROWS** —
+  the line order is the STI's, which is the order the pallets come off the truck,
+  and a confirmed row is never sorted to the bottom (`line-list.tsx`'s own header
+  states this; it binds the sorter too).
+
 ---
 
 ## 11. Key files index
@@ -606,7 +619,7 @@ canEdit but canDelete FALSE, and once saw a Delete button that returned
 | `components/mrn/lines-table.tsx` | Three column sets, the exhaustive status switch, delivery tabs, TOTAL row |
 | `components/mrn/line-drawer.tsx` | Billing's per-line panel — condition counts, batches |
 | `components/mrn/supervisor-board.tsx` | Phone face: three tabs, START/END, the line band |
-| `components/mrn/line-list.tsx` / `line-sheet.tsx` | The supervisor's list and the sheet he counts on |
+| `components/mrn/line-list.tsx` / `line-sheet.tsx` | The supervisor's list and the sheet he counts on. `line-list.tsx` imports `sortPackLabels` from `lib/picking/pack-sort.ts` for its pack chips — Picking's rule, not MRN's (§10) |
 | `components/mrn/photo-capture.tsx` | Camera, review, staging strip, per-photo upload |
 | `components/mrn/photos-button.tsx` / `photo-lightbox.tsx` | Billing's entry point and full-screen viewer |
 | `components/mrn/print-sheet.tsx` | The A4 document (17 columns, widths sum to 100) |
@@ -655,4 +668,4 @@ up. Treat any claim about how they behave at scale as untested.
 
 ---
 
-*MRN v1.0 · Schema v27.20 · OrbitOMS · updated 2026-09-01 — first canonical record; supersedes the 2026-08-20 design draft wherever the code disagrees*
+*MRN v1.1 · Schema v27.20 · OrbitOMS · updated 2026-09-04 — §10 gains a one-bullet cross-reference: MRN imports `sortPackLabels` at `components/mrn/line-list.tsx` and does NOT own it; the rule lives in `CLAUDE_PICKING.md §3.1` (v1.17). Records MRN's caller-side no-pack pinning and the chips-not-rows boundary, and nothing else — the tiers and the 2026-08-10 bug stay in Picking. §11 line-list row cites the import. ⚠ Schema stamp stays **v27.20** — it records the version this file was last RECONCILED against (router §4), and v27.21 (CI) touches no MRN table. Prior, v1.0 (2026-09-01): first canonical record; supersedes the 2026-08-20 design draft wherever the code disagrees*
