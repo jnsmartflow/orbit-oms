@@ -1,9 +1,85 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
 Items grouped by module. Within each module: SHIPPED → P0 (blocking) → P1 (next up) → P2+ (later).
+
+---
+
+## User-based access
+
+Shipped 2026-09-04 in eight commits (`c3cf726b` → `b915c88e`). Access now comes from
+`user_page_access`; a job title is a label and a starting template. Record:
+`docs/prompts/drafts/code-update-2026-09-04-user-based-access.md`. Model: `CLAUDE_CORE.md §5`.
+
+**All counts below were derived from the tree on 2026-09-04, not carried over from the plan.**
+
+### P1 — Step 6: the rest of the role checks
+
+- [ ] **58 `requireRole` calls whose array names roles beyond ADMIN**, in 12 distinct shapes — the
+      biggest being 18× `[TINT_MANAGER, ADMIN, OPERATIONS, OPERATION_MANAGER]` and 13×
+      `[ADMIN, DISPATCHER, SUPPORT, TINT_MANAGER, TINT_OPERATOR, FLOOR_SUPERVISOR]`. Each is a
+      PERMISSION question — "may this person" — which is what a tick already answers. 48 of the 58
+      include ADMIN alongside others; 10 name no admin at all.
+- [ ] **22 inline `session.user.role !== "admin"` BYPASS sites** (shape:
+      `if (role !== "admin") { checkPermission(...) }`). ⚠ A superuser who is not ALSO role-admin
+      falls through into the permission check. No live impact today — the one superuser holds both.
+      `CLAUDE_CORE.md §13`.
+- [ ] **12 inline role checks under `app/api/tint/`**, deliberately out of scope on 2026-09-04
+      because tint was not re-tested that night.
+- [ ] **1 `requireRole([ADMIN])` left in `app/api/mail-orders/backfill-enrich`** — skipped only
+      because mail-orders was an excluded path.
+
+### P1 — Audit trail: the 13 write routes still recording no actor
+
+Verified still unwired 2026-09-04; 44 `logAdminAction` call sites exist today. Deferred BY DECISION
+into each module's own conversion so the same files are not edited twice — an unwired route here
+looks identical whether it was missed or parked, and these were parked (`CLAUDE_CORE.md §13`).
+
+- [ ] Sampling Library 3 · MRN 2 · Tint 5 · Billing 1 · backfill 2.
+
+### P2 — Step 7: landing page per user
+
+- [ ] Give each person a landing route of their own. **`ROLE_REDIRECTS` retires with it** — it is
+      currently the last thing keyed on the primary job title that decides where somebody goes.
+- [ ] ⚠ `MobileShell`'s Home button is `navItems[0].href`, now derived per PERSON rather than per
+      role. Re-derive it for all 39 people, not 13 roles, before moving any `PAGE_NAV_MAP` entry
+      (`CLAUDE_CORE.md §11`).
+
+### P2 — Step 8: retire the old model
+
+🔴 **Order matters. `role_permissions` is the rollback path** while `ACCESS_SOURCE` can still be
+flipped back — dropping it first turns a 30-second `UPDATE` into an outage (`CLAUDE_CORE.md §13`).
+Remove the switch first, then the tables.
+
+- [ ] Retire `role_permissions` (118 rows, 13 slugs), `user_roles` (29 rows, 20 users) and the
+      `floor_access` role (**4 grants** — a role invented to hand Floor Control to four named
+      people; under ticks it becomes four ticks and stops existing).
+- [ ] Remove the `ACCESS_SOURCE` switch and the dual-source branches in the five resolvers.
+- [ ] Decide on **dropping the role arm of the superuser check** — deliberately, with a tested
+      recovery path. One account administers OrbitOMS; this is the one change that cannot be undone
+      from inside the app (`CLAUDE_CORE.md §13`).
+- [ ] Starter sets (apply a job title's template to a person), copy-access-from-person, and a
+      page-first view ("who can reach Floor Control?" — the `user_page_access_page_idx` index
+      already backs it).
+
+### P2 — The old permissions screen
+
+- [ ] Retire `/admin/permissions` and `components/admin/permissions-manager.tsx`. It writes
+      `role_permissions`, which no longer grants anything, and it re-posts all ~78 rows on every
+      save — the habit that resurrects retired page keys.
+- [ ] ⚠ It carries `NA_IMPORT` / `NA_DELETE` / `isNA()` at `:52-64` — an **older, wrong duplicate**
+      of `ACTION_PAGES` in `lib/permissions.ts`. It covers only import and delete, marks
+      `tint_manager` import-NA against the verified census, and still lists the **retired**
+      `dispatcher` and `warehouse` page keys. Delete it with the screen; do not sync it.
+
+### P2 — Loose end found during the audit work
+
+- [ ] **`app/api/mail-orders/backfill-customers` has no `maxDuration`.** It loops over every
+      unmatched order with an `await` per row, so it inherits the default and will **time out
+      mid-loop on a large backlog — silently, with rows already written**. Its sibling
+      `re-enrich` sets `maxDuration = 300`; this one sets nothing.
 
 ---
 

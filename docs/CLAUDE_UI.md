@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.18 · August 2026 · updated 2026-08-05 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.19 · September 2026 · updated 2026-09-04 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1482,6 +1482,63 @@ an obligation to bump a number this file never depends on. The decision is recor
 AND here so no future inventory reads the absence as drift. `CLAUDE.md §4`'s check-against-CORE step
 simply does not apply to this file. *(This replaces the ⚠ OPEN block that sat here 2026-07-30 →
 2026-08-04.)*
+
+---
+
+## 63. Access — per-user page permissions (`/admin/access`)
+
+Superuser-only. **The screen that decides what everybody can do** since 2026-09-04 (`CLAUDE_CORE.md §5`). Two panes inside one rounded, bordered container, 520px min height.
+
+### Left rail — people (212px, `bg-[#fcfcfd]`)
+
+- Search box at the top (name / email / job title), then every user, active first then by name.
+- Each row: 26px circular avatar with initials, name at 12.5px semibold, job title at 10px `text-gray-400` beneath, `· +N` when they hold secondary roles, `· inactive` when they do not.
+- Selected row: `bg-teal-50`, `border-l-2 border-teal-600`, teal avatar, teal name.
+- **Inactive people are shown, muted to `opacity-55`** — never hidden. A deactivated person keeps their ticks so reactivating restores what they had, and a row you cannot see is a permission nobody can audit.
+- **The amber dot** (`h-1.5 w-1.5 rounded-full bg-amber-500`, right-aligned) marks a person whose stored ticks differ from what their job title would grant. Above the list, a one-line count: *"N people differ from their role access"*.
+
+### Right pane — the selected person
+
+Header block: name at 16px bold, an `Inactive` chip when relevant, then a meta row — **Role**, **lands on `<route>` at login** (from `ROLE_REDIRECTS`, keyed on the PRIMARY role), and **N pages set differently from their role**. Beneath it one banner, teal when the person matches their role exactly and amber when they do not, naming every differing page.
+
+### The table — `§27` fixed standard
+
+```
+colgroup: 40% | 12% | 12% | 12% | 12% | 12%
+columns:  Page | View | Edit | Import | Export | Delete
+rows:     all 27 ALL_PAGE_KEYS, in five sections
+          Operations · Tinting · Master data · Admin panel · Attendance
+```
+
+Header row 32px, data rows 36px, section rows 28px on `bg-[#fbfbfc]`. The Page cell is two lines: friendly label at 12.5px semibold over the raw page key in 10px mono `text-gray-400` — the key is always shown, so no label choice can mislead.
+
+A checkbox is a 17px `rounded-[5px]` box, teal filled when on, `border-gray-300` when off, with an amber ring when the value differs from the role baseline and a stronger amber ring while the change is unsaved. Rows with unsaved changes tint `bg-amber-50/60`.
+
+### 🔴 The dash rule
+
+A cell renders as a **dash (`–`, `text-gray-200`) instead of a checkbox where the app has no such check for that page.** Export and Delete are asked on MRN and nowhere else; Import on Import OBDs, Sampling Library and the four master-data CSV buttons; Edit on eleven pages; View everywhere.
+
+Source of truth: **`ACTION_PAGES` in `lib/permissions.ts`**, exposed as `isActionAvailable(pageKey, action)`. Its header cites the call-site census it was derived from and instructs any session adding or removing a permission check to update it.
+
+**⚠ ADVISORY AND COSMETIC ONLY.** The row still stores all five booleans; the read, the save and the differs comparison all handle five. **A stale entry must never filter what is read, saved, compared or seeded** — it must degrade to "the screen drew a dash it should not have", never to a value being dropped. The save route deliberately does not validate against it, and `differingPageKeys()` deliberately ignores it.
+
+Why it exists at all: without it an admin can switch on flags that gate nothing, which had already happened — eight `canExport` grants were true in the database and inert.
+
+### 🔴 The live-source banner
+
+Directly under the page title, and **it must never be softened into one hedged sentence** — being wrong in either direction is dangerous:
+
+- **Live** (`ACCESS_SOURCE = user`): teal, `ShieldCheck`, chip *"Live — per-person ticks"* — *"The app is reading the ticks on this screen."*
+- **Not live** (`role`): amber, `ShieldAlert`, chip *"Not live — job titles"* — *"a tick on this screen changes nothing yet"*, plus how to go live.
+
+Both carry the raw value in mono and say a flip lands in ~30 seconds. It is driven by the **same cached value the resolvers read** (`lib/access/source.ts`), never a second query with its own opinion.
+
+### Save bar
+
+Sticky at the pane foot, shown only when there are pending changes: *Discard changes* on the left, *N changes* in amber and a teal **Save changes** on the right. **Only the flags that actually moved are sent**; a toggle-and-toggle-back removes its own pending entry and never reaches the API. Switching person with unsaved edits asks first. After a save the server returns the recomputed `stored` and `differs`, and the banner updates from that answer rather than a client estimate.
+
+### Legend
+On · Off · *"The app has no such action on that page — nothing to switch"* · *"Set differently from their role"*.
 
 ---
 
