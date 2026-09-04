@@ -404,31 +404,46 @@ export function allPageKeys(): PageKey[] {
 // a script — user mode falls back to the ROLE path for that call. Same
 // direction as every other failure here: back to what production already does.
 
-/** The logged-in user's id, or null if there is no usable session. */
-async function currentUserId(): Promise<number | null> {
+/**
+ * The two things every resolver needs off the session, read in ONE auth() call.
+ * Kept together deliberately: the superuser short-circuit and the user-mode id
+ * both come from the same session, and fetching them separately would double
+ * the auth() cost of every permission check.
+ *
+ * Never throws — an unavailable session yields "no id, not a superuser", which
+ * sends the caller down the role path. Same failure direction as everything
+ * else in this file.
+ */
+interface SessionAccess { userId: number | null; isSuperuser: boolean }
+
+async function sessionAccess(): Promise<SessionAccess> {
   try {
     const session = await auth();
     const raw = session?.user?.id;
-    if (!raw) return null;
-    const id = parseInt(raw, 10);
-    return Number.isFinite(id) ? id : null;
+    const id = raw ? parseInt(raw, 10) : NaN;
+    return {
+      userId: Number.isFinite(id) ? id : null,
+      // ⚠ Only the flag arm here. The ROLE arm of the safety rule is the
+      // pre-existing `roleSlug === "admin"` test each resolver already does
+      // BEFORE calling this, which is why that test is still there and must
+      // stay — see lib/rbac.ts for the rule in full.
+      isSuperuser: session?.user?.isSuperuser === true,
+    };
   } catch {
-    return null;
+    return { userId: null, isSuperuser: false };
   }
 }
 
 /**
- * Should this call read user_page_access? Returns the user id if so, else null
- * (meaning: take the role path). Collapses the two conditions — switch is on,
- * AND we can identify the user — into the one question every resolver asks.
+ * Should this call read user_page_access? The id if so, else null (take the
+ * role path). Takes the already-fetched session so no second auth() happens.
  */
-async function userModeId(): Promise<number | null> {
+async function userModeId(access: SessionAccess): Promise<number | null> {
   if ((await getAccessSource()) !== "user") return null;
-  const id = await currentUserId();
-  if (id === null) {
+  if (access.userId === null) {
     console.error("[access] user mode is on but no session user id is available; using role mode for this call");
   }
-  return id;
+  return access.userId;
 }
 
 /** One user's stored ticks for one page. Absent row ≡ all false. */
@@ -535,9 +550,14 @@ export async function checkPermission(
   pageKey: PageKey,
   action: ActionKey,
 ): Promise<boolean> {
+  // SAFETY RULE (lib/rbac.ts): flag OR role. The ROLE arm is first because it
+  // is free — no session read — and short-circuits before auth() is touched.
   if (roleSlug === "admin") return true;
 
-  const userId = await userModeId();
+  const access = await sessionAccess();
+  if (access.isSuperuser) return true;   // flag arm
+
+  const userId = await userModeId(access);
   if (userId !== null) {
     return (await userPagePerms(userId, pageKey))[action];
   }
@@ -555,10 +575,14 @@ export async function checkAnyPermission(
   pageKey: PageKey,
   action: ActionKey,
 ): Promise<boolean> {
+  // SAFETY RULE (lib/rbac.ts): flag OR role. Role arm first — see above.
   if (roleSlugs.includes("admin")) return true;
   if (roleSlugs.length === 0) return false;
 
-  const userId = await userModeId();
+  const access = await sessionAccess();
+  if (access.isSuperuser) return true;   // flag arm
+
+  const userId = await userModeId(access);
   if (userId !== null) {
     // No merge in user mode — one person, one row. The OR across roles that
     // this function exists to do has already happened, once, when the ticks
@@ -578,9 +602,13 @@ export async function getPagePermissions(
   roleSlug: string,
   pageKey: PageKey,
 ): Promise<PagePermissions> {
+  // SAFETY RULE (lib/rbac.ts): flag OR role. Role arm first — see above.
   if (roleSlug === "admin") return ALL_TRUE;
 
-  const userId = await userModeId();
+  const access = await sessionAccess();
+  if (access.isSuperuser) return ALL_TRUE;   // flag arm
+
+  const userId = await userModeId(access);
   if (userId !== null) {
     return userPagePerms(userId, pageKey);
   }
@@ -603,11 +631,17 @@ export async function getPagePermissions(
 export async function getAllPermissionsForRole(
   roleSlug: string,
 ): Promise<Record<string, PagePermissions>> {
+  // SAFETY RULE (lib/rbac.ts): flag OR role. Role arm first — see above.
   if (roleSlug === "admin") {
     return Object.fromEntries(ALL_PAGE_KEYS.map((key) => [key, ALL_TRUE]));
   }
 
-  const userId = await userModeId();
+  const access = await sessionAccess();
+  if (access.isSuperuser) {   // flag arm
+    return Object.fromEntries(ALL_PAGE_KEYS.map((key) => [key, ALL_TRUE]));
+  }
+
+  const userId = await userModeId(access);
   if (userId !== null) {
     return userAllPerms(userId);
   }
@@ -640,11 +674,17 @@ export async function getAllPermissionsForRoles(
   roleSlugs: string[],
 ): Promise<Record<string, PagePermissions>> {
   if (roleSlugs.length === 0) return {};
+  // SAFETY RULE (lib/rbac.ts): flag OR role. Role arm first — see above.
   if (roleSlugs.includes("admin")) {
     return getAllPermissionsForRole("admin");
   }
 
-  const userId = await userModeId();
+  const access = await sessionAccess();
+  if (access.isSuperuser) {   // flag arm
+    return getAllPermissionsForRole("admin");
+  }
+
+  const userId = await userModeId(access);
   if (userId !== null) {
     return userAllPerms(userId);
   }

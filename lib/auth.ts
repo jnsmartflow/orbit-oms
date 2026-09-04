@@ -24,6 +24,11 @@ interface UserAttendanceFlags {
   attendanceTestUser: boolean;
   attendanceExempt: boolean;
   attendanceConsentVersion: string | null;
+  // Not an attendance flag — it rides along because this function is already
+  // the once-per-stale-window re-read of the user row, so carrying it costs no
+  // extra query and means granting or revoking superuser lands within STALE_MS
+  // instead of requiring the person to sign out and back in.
+  isSuperuser: boolean;
 }
 
 async function fetchUserAttendanceFlags(userId: number): Promise<UserAttendanceFlags> {
@@ -34,6 +39,7 @@ async function fetchUserAttendanceFlags(userId: number): Promise<UserAttendanceF
       attendanceTestUser: true,
       attendanceExempt: true,
       attendanceConsentVersion: true,
+      isSuperuser: true,
     },
   });
   const settingsRow = await prisma.attendance_settings.findFirst({
@@ -45,6 +51,8 @@ async function fetchUserAttendanceFlags(userId: number): Promise<UserAttendanceF
     attendanceTestUser: userRow?.attendanceTestUser ?? false,
     attendanceExempt: userRow?.attendanceExempt ?? false,
     attendanceConsentVersion: userRow?.attendanceConsentVersion ?? null,
+    // ?? false, never ?? true — a missing row must not mint a superuser.
+    isSuperuser: userRow?.isSuperuser ?? false,
   };
 }
 
@@ -124,6 +132,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.attendanceTestUser = flags.attendanceTestUser;
         token.attendanceExempt = flags.attendanceExempt;
         token.attendanceConsentVersion = flags.attendanceConsentVersion;
+        token.isSuperuser = flags.isSuperuser;
         token.rolloutStageStaleAt = Date.now() + STALE_MS;
 
         if (gateAppliesTo(user.role, flags)) {
@@ -151,6 +160,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       token.attendanceTestUser = flags.attendanceTestUser;
       token.attendanceExempt = flags.attendanceExempt;
       token.attendanceConsentVersion = flags.attendanceConsentVersion;
+      // 🔴 Re-read on the SAME 5-minute stale window as the attendance claims,
+      // so granting or revoking superuser lands WITHOUT a sign-out. This is the
+      // reason the answer to "does a flag change need a re-login?" is no.
+      token.isSuperuser = flags.isSuperuser;
       token.rolloutStageStaleAt = now + STALE_MS;
 
       const role = token.role as string | undefined;
@@ -213,6 +226,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: user.name,
           role: primaryRole,
           roles,
+          isSuperuser: user.isSuperuser,
         };
       },
     }),

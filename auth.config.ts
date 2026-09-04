@@ -10,6 +10,12 @@ declare module "next-auth" {
       id: string;
       role: string;
       roles: string[];
+      // Superuser flag (2026-09-04, step 5). OPTIONAL on purpose: a token
+      // issued before this deploy carries no such claim, and `undefined` must
+      // read as "not a superuser" rather than crash. That is safe precisely
+      // because every gate ORs this with the `admin` role — an old token still
+      // admits the owner on the role arm. See lib/rbac.ts.
+      isSuperuser?: boolean;
       // Attendance gate claims (v27.1) — optional so absent token shape stays safe.
       attendanceTestUser?: boolean;
       attendanceExempt?: boolean;
@@ -22,11 +28,16 @@ declare module "next-auth" {
   interface User {
     role: string;
     roles: string[];
+    isSuperuser: boolean;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
+    // Superuser flag — set on sign-in AND refreshed by the Node jwt callback in
+    // lib/auth.ts on the same 5-minute stale window as the attendance claims,
+    // so granting or revoking it lands without a re-login.
+    isSuperuser?: boolean;
     // Attendance gate claims (v27.1) — set by Node jwt callback in lib/auth.ts.
     attendanceTestUser?: boolean;
     attendanceExempt?: boolean;
@@ -63,6 +74,11 @@ export const authConfig: NextAuthConfig = {
         session.user.id = (token.id as string | undefined) ?? "";
         session.user.role = (token.role as string | undefined) ?? "";
         session.user.roles = (token.roles as string[] | undefined) ?? [];
+        // Absent on a pre-2026-09-04 token → undefined → falsy → the role arm
+        // of every superuser gate carries it. Never default this to `true`.
+        // `=== true` is the coercion, not a tidy-up: an absent claim must
+        // become the boolean false, never undefined leaking onward.
+        session.user.isSuperuser = token.isSuperuser === true;
         // Attendance gate claims (v27.1) — set by Node jwt callback in
         // lib/auth.ts. Pass through directly; absent on legacy tokens,
         // which the gate treats as default-off.

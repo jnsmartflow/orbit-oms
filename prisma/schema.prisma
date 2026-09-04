@@ -117,6 +117,17 @@ model users {
   roleId                    Int
   role                      role_master              @relation(fields: [roleId], references: [id])
   isActive                  Boolean                  @default(true)
+  // Superuser — the "may administer OrbitOMS" flag (2026-09-04, step 5 of the
+  // role→user access conversion). Live column is boolean NOT NULL DEFAULT
+  // false; hand-mirrored here, as CORE §3 requires (db push/pull are banned and
+  // db pull additionally fails on this machine with P1001).
+  //
+  // 🔴 EVERY GATE THAT READS THIS ALSO ACCEPTS THE `admin` ROLE. See
+  // isSuperuser()/requireSuperuser() in lib/rbac.ts. There is exactly ONE
+  // superuser account and it is the only one that can reach the panic switch,
+  // so the old role check is kept as a second arm until the flag is proven.
+  // Do not drop the role arm here or anywhere else without a deliberate pass.
+  isSuperuser               Boolean                  @default(false)
   createdAt                 DateTime                 @default(now())
   updatedAt                 DateTime                 @updatedAt
   // Attendance fields (v27.0 + v27.1 rollout flag)
