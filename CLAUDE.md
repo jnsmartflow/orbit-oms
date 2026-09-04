@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.11 · Entry point · Read this first · September 2026 · updated 2026-09-03 · Lives in: repo root (auto-loaded by Claude Code)
+# v1.12 · Entry point · Read this first · September 2026 · updated 2026-09-04 · Lives in: repo root (auto-loaded by Claude Code)
 
 **OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.**
 
@@ -98,11 +98,34 @@ canonical file.
 2. Respond with "Files read: CLAUDE.md, docs/CLAUDE_CORE.md, docs/CLAUDE_UI.md, [others]." before any other output.
 3. **State the versions you actually READ — do not quote them from this router.** Every canonical
    file carries its own version in its header (line 2) and repeats it in its footer. `CLAUDE_CORE.md`'s
-   header is the authority for the current **schema** version; the domain files carry the same stamp,
-   plus their own file version (and parser/enrichment versions in `CLAUDE_MAIL_ORDERS.md`, UI version
-   in `CLAUDE_UI.md`). A number hardcoded here goes stale every cycle — read it live, every session.
-4. If any referenced file is missing, or its header disagrees with `CLAUDE_CORE.md`'s schema stamp,
-   stop and ask.
+   header is the authority for the current **schema** version; each domain file carries a schema
+   stamp **of its own** (read item 4 before comparing them), plus its own file version (and
+   parser/enrichment versions in `CLAUDE_MAIL_ORDERS.md`, UI version in `CLAUDE_UI.md`). A number
+   hardcoded here goes stale every cycle — read it live, every session.
+4. **A domain file's schema stamp means "last RECONCILED against `CLAUDE_CORE.md` vX". It is not a
+   claim about the live schema, and lagging CORE is NORMAL — not a reason to stop.** A schema
+   version that touches no table a module owns gives that module's file nothing to reconcile; its
+   stamp correctly stays where it is. `CLAUDE_PICKING.md`'s footer has said this in so many words
+   since v1.16.
+   - **Stop and ask** if: a referenced file is **missing**; a domain file claims a schema version
+     **NEWER than CORE's** (canon cannot be ahead of its own authority — one of the two is wrong);
+     or the file's **content plainly contradicts the live schema** (a column, table or constraint it
+     describes is not what a read-only SELECT or `prisma/schema.prisma` shows). That last one is the
+     real check, and a stamp comparison is no substitute for it.
+   - **Do NOT bump a lagging stamp** to make it match. The stamp is only worth reading because it
+     records that somebody actually read the file against the schema at that version. Bumping it
+     without doing that turns it into a lie, which is the exact failure this rule exists to prevent.
+     A bump is the OUTPUT of a reconciliation pass (`docs/runbooks/reconciliation-method.md`), never
+     a tidy-up.
+   > **Why this changed, 2026-09-04.** The old wording told you to stop whenever a domain file's
+   > header disagreed with CORE's schema stamp. On the tree the day it was rewritten, **eleven of
+   > the twelve domain files disagreed** — CORE was at Schema v27.21 and only `CLAUDE_CI.md` matched;
+   > `CLAUDE_MRN.md` sat at v27.20, `CLAUDE_PICKING.md`/`CLAUDE_IMPORT.md`/`CLAUDE_MAIL_ORDERS.md` at
+   > v27.15, and the remaining seven at v27.13. Not one was a defect. A rule that fires falsely
+   > eleven times before the first instruction is not a safety net; it teaches every session to
+   > scroll past it, and it takes the two checks that DO matter down with it. (`CLAUDE_UI.md` has no
+   > schema stamp at all, by a 2026-08-04 decision — it tracks components, not tables. That is not a
+   > twelfth lag.)
 5. Wait for the task instruction before generating any code.
 
 ---
@@ -123,4 +146,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.11 · Orbit OMS · September 2026 · updated 2026-09-03 — the `/ci` row now points at **`docs/CLAUDE_CI.md` (v1.0)**, the module's first canonical file; its "no CLAUDE_CI.md exists yet / a §7 block in CORE is still owed" clause is retired, the second half by CORE v98's ruling that CI's tables are documented in their own file exactly as MRN's are. Prior, v1.10 (2026-08-05): added the Billing pilot row (→ MAIL_ORDERS §23); all other rows re-verified against the 2026-08-04/05 reconciliation cycle (method: `docs/runbooks/reconciliation-method.md`)*
+*Router v1.12 · Orbit OMS · September 2026 · updated 2026-09-04 — **§4 rewritten.** The old item 4 said to STOP and ask whenever a domain file's header disagreed with `CLAUDE_CORE.md`'s schema stamp; on the day this was written eleven of the twelve domain files disagreed and not one was a defect. The stamp records the version a file was last RECONCILED against, never a claim about the live schema, so lagging CORE is normal. Stopping is now reserved for what actually indicates a fault — a missing file, a domain file claiming a schema version NEWER than CORE's, or content that contradicts the live schema — and item 4 states explicitly that a lagging stamp must NOT be bumped to silence it, because a bump nobody earned by reading the file is the failure, not the cure. Item 3's "the domain files carry the same stamp" corrected in the same pass. Prior, v1.11 (2026-09-03): the `/ci` row now points at **`docs/CLAUDE_CI.md` (v1.0)**, the module's first canonical file; its "no CLAUDE_CI.md exists yet / a §7 block in CORE is still owed" clause is retired, the second half by CORE v98's ruling that CI's tables are documented in their own file exactly as MRN's are. Prior, v1.10 (2026-08-05): added the Billing pilot row (→ MAIL_ORDERS §23); all other rows re-verified against the 2026-08-04/05 reconciliation cycle (method: `docs/runbooks/reconciliation-method.md`)*
