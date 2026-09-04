@@ -1,19 +1,27 @@
-import { getAllPermissionsForRoles, allPageKeys } from "@/lib/permissions";
+import { getRolePermissionsForRoles, allPageKeys } from "@/lib/permissions";
 import type { PagePermissions } from "@/lib/permissions";
 
 /**
  * What the ROLE system grants a person right now — the baseline /admin/access
  * compares stored per-user ticks against.
  *
- * 🔴 THIS IS A READER, NOT A REPLACEMENT. It calls getAllPermissionsForRoles(),
- * the live resolver, exactly as the sidebar and every API gate do. It does not
- * reimplement the merge, and it must never start to: the whole value of the
- * "differs" banner is that it reports what the app ACTUALLY grants today, so a
- * second local copy of the merge rule would make it confidently wrong the first
- * time the two drifted.
+ * 🔴 THIS IS A READER, NOT A REPLACEMENT. It shares the role-table merge with
+ * the live resolvers rather than reimplementing it — the whole value of the
+ * "differs" banner is that it reports what the ROLE system actually grants, so
+ * a second local copy of the merge rule would make it confidently wrong the
+ * first time the two drifted.
  *
- * Nothing here changes access. Step 4 repoints the resolvers; until then this
- * file only ever reads.
+ * ⚠ IT CALLS getRolePermissionsForRoles(), NOT getAllPermissionsForRoles(),
+ * AND THAT IS DELIBERATE (changed in step 4, when ACCESS_SOURCE landed). The
+ * five switch-aware resolvers answer about the LOGGED-IN user, because that is
+ * the only user whose id they can obtain. This file asks about 39 OTHER people,
+ * so in user mode those resolvers would hand back the viewing admin's own
+ * permissions 39 times and the screen would report every person as differing.
+ * getRolePermissionsForRoles() is pinned to role_permissions and ignores the
+ * switch, which is exactly what a "what would their job title give them"
+ * baseline means.
+ *
+ * Nothing here changes access — this file only ever reads.
  */
 
 /** A user row shaped for slug derivation. */
@@ -78,7 +86,7 @@ export async function roleBaselineByUser(
 
     let merged = cache.get(key);
     if (!merged) {
-      const raw = await getAllPermissionsForRoles(slugs);
+      const raw = await getRolePermissionsForRoles(slugs);
       // Densify: absent key ≡ all false, everywhere in the app.
       const dense: Record<string, PagePermissions> = {};
       for (const pageKey of allPageKeys()) {

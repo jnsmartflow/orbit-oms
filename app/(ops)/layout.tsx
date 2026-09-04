@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import {
-  getAllPermissionsForRole,
   getAllPermissionsForRoles,
   buildNavItems,
 } from "@/lib/permissions";
@@ -36,7 +35,16 @@ export default async function OpsLayout({
   // sidebar / header at /admin/attendance is identical to every other /admin/*
   // route. Mirrors app/(admin)/admin/layout.tsx.
   if (roles.includes("admin")) {
-    const allPerms = await getAllPermissionsForRole(primaryRole);
+    // MERGED, matching the ops_admin branch below and every other layout. This
+    // used to call the SINGULAR getAllPermissionsForRole(primaryRole) — and the
+    // branch is entered on `roles.includes("admin")`, so a user with admin as a
+    // SECONDARY role would have been admitted here and then had their non-admin
+    // primary looked up, losing the admin short-circuit. Verified read-only
+    // 2026-09-04 that nobody is in that state: exactly one user has admin
+    // anywhere (u1), whose primary IS admin, and the only other people who
+    // reach this layout (u27, u28) are single-role ops_admin and take the
+    // branch below. No behaviour changes; the trap does.
+    const allPerms = await getAllPermissionsForRoles(roles);
     const userName = session.user.name ?? "Admin";
     return (
       <SidebarProvider>

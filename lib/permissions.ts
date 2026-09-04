@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { getAccessSource } from "@/lib/access/source";
 import type { RolloutStage } from "@/auth.config";
 
 // ── Nav config ─────────────────────────────────────────────────────────────────
@@ -370,6 +372,162 @@ export function allPageKeys(): PageKey[] {
   return [...ALL_PAGE_KEYS];
 }
 
+// ── WHERE PERMISSIONS COME FROM — the ACCESS_SOURCE switch ────────────────────
+//
+// Step 4 of the role → user access conversion. The five resolvers below are the
+// ONLY things that changed: each now asks getAccessSource() where to read from.
+//
+//   "role" (the default, and what ships)  → role_permissions, by role slug
+//   "user"                                → user_page_access, by user id
+//
+// Everything else is untouched by design: signatures, return shapes, the admin
+// short-circuits, ROLE_HREF_OVERRIDES, buildNavItems' attendance special case,
+// every requireRole/hasRole gate, and role_permissions itself, which the old
+// screen still writes and role mode still reads.
+//
+// 🔴 HOW THE userId REACHES A RESOLVER THAT TAKES ROLE SLUGS.
+// It does not arrive as an argument — the signatures had to stay as they are,
+// and threading a new parameter through 139 call sites would be a far larger
+// change than the one being made. Instead user mode calls auth() and reads
+// session.user.id, which is already on the JWT and is already what every one of
+// those call sites derived its role slugs from. Same request, same session, so
+// the id and the slugs always describe the same person.
+//
+// ⚠ THE ONE PLACE THAT ASSUMPTION DOES NOT HOLD is a caller asking about
+// SOMEBODY ELSE — /admin/access computing what each of 39 people is granted.
+// Such a caller must use getRolePermissionsForRoles() below, which is pinned to
+// the role table and never consults the switch. If a future caller needs
+// another person's EFFECTIVE permissions, it needs a by-id resolver; do not
+// reach for these five, because they will answer about the logged-in admin.
+//
+// If auth() yields no usable id — no session, or a non-request context such as
+// a script — user mode falls back to the ROLE path for that call. Same
+// direction as every other failure here: back to what production already does.
+
+/** The logged-in user's id, or null if there is no usable session. */
+async function currentUserId(): Promise<number | null> {
+  try {
+    const session = await auth();
+    const raw = session?.user?.id;
+    if (!raw) return null;
+    const id = parseInt(raw, 10);
+    return Number.isFinite(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Should this call read user_page_access? Returns the user id if so, else null
+ * (meaning: take the role path). Collapses the two conditions — switch is on,
+ * AND we can identify the user — into the one question every resolver asks.
+ */
+async function userModeId(): Promise<number | null> {
+  if ((await getAccessSource()) !== "user") return null;
+  const id = await currentUserId();
+  if (id === null) {
+    console.error("[access] user mode is on but no session user id is available; using role mode for this call");
+  }
+  return id;
+}
+
+/** One user's stored ticks for one page. Absent row ≡ all false. */
+async function userPagePerms(userId: number, pageKey: PageKey): Promise<PagePermissions> {
+  const row = await prisma.user_page_access.findUnique({
+    where:  { userId_pageKey: { userId, pageKey } },
+    select: { canView: true, canImport: true, canExport: true, canEdit: true, canDelete: true },
+  });
+  if (!row) return ALL_FALSE;
+  return {
+    canView:   row.canView,
+    canImport: row.canImport,
+    canExport: row.canExport,
+    canEdit:   row.canEdit,
+    canDelete: row.canDelete,
+  };
+}
+
+/** All of one user's stored ticks, as the same map shape the role path returns. */
+async function userAllPerms(userId: number): Promise<Record<string, PagePermissions>> {
+  const rows = await prisma.user_page_access.findMany({
+    where:  { userId },
+    select: {
+      pageKey: true,
+      canView: true, canImport: true, canExport: true, canEdit: true, canDelete: true,
+    },
+  });
+  const result: Record<string, PagePermissions> = {};
+  for (const row of rows) {
+    result[row.pageKey] = {
+      canView:   row.canView,
+      canImport: row.canImport,
+      canExport: row.canExport,
+      canEdit:   row.canEdit,
+      canDelete: row.canDelete,
+    };
+  }
+  // Deliberately NOT densified to all 27 keys. The role path omits keys no role
+  // grants, and every consumer reads an absent key as false
+  // (`allPerms[key]?.canView === true`). Leaving the shapes as close as they are
+  // keeps the two modes indistinguishable to callers.
+  return result;
+}
+
+/**
+ * The OR-merge across roles, straight from role_permissions — the role path,
+ * factored out so both getAllPermissionsForRoles() and the switch-independent
+ * getRolePermissionsForRoles() share one body rather than two copies that can
+ * drift.
+ */
+async function mergeRolePerms(roleSlugs: string[]): Promise<Record<string, PagePermissions>> {
+  const rows = await prisma.role_permissions.findMany({
+    where: { roleSlug: { in: roleSlugs } },
+  });
+
+  const merged: Record<string, PagePermissions> = {};
+  for (const row of rows) {
+    const existing = merged[row.pageKey];
+    if (!existing) {
+      merged[row.pageKey] = {
+        canView:   row.canView,
+        canImport: row.canImport,
+        canExport: row.canExport,
+        canEdit:   row.canEdit,
+        canDelete: row.canDelete,
+      };
+    } else {
+      merged[row.pageKey] = {
+        canView:   existing.canView   || row.canView,
+        canImport: existing.canImport || row.canImport,
+        canExport: existing.canExport || row.canExport,
+        canEdit:   existing.canEdit   || row.canEdit,
+        canDelete: existing.canDelete || row.canDelete,
+      };
+    }
+  }
+  return merged;
+}
+
+/**
+ * What the ROLE system grants these slugs — ALWAYS, whatever ACCESS_SOURCE
+ * says. This is not a permission check and must never be used as one.
+ *
+ * It exists for /admin/access, which shows each person's stored ticks against
+ * what their job title would give them. That comparison is meaningless if it
+ * follows the switch, and actively wrong in user mode: the five resolvers
+ * answer about the LOGGED-IN user, so a screen asking about 39 other people
+ * would get the admin's own permissions 39 times.
+ */
+export async function getRolePermissionsForRoles(
+  roleSlugs: string[],
+): Promise<Record<string, PagePermissions>> {
+  if (roleSlugs.length === 0) return {};
+  if (roleSlugs.includes("admin")) {
+    return Object.fromEntries(ALL_PAGE_KEYS.map((key) => [key, ALL_TRUE]));
+  }
+  return mergeRolePerms(roleSlugs);
+}
+
 // ── Functions ─────────────────────────────────────────────────────────────────
 
 export async function checkPermission(
@@ -378,6 +536,11 @@ export async function checkPermission(
   action: ActionKey,
 ): Promise<boolean> {
   if (roleSlug === "admin") return true;
+
+  const userId = await userModeId();
+  if (userId !== null) {
+    return (await userPagePerms(userId, pageKey))[action];
+  }
 
   const perm = await prisma.role_permissions.findUnique({
     where: { roleSlug_pageKey: { roleSlug, pageKey } },
@@ -395,6 +558,14 @@ export async function checkAnyPermission(
   if (roleSlugs.includes("admin")) return true;
   if (roleSlugs.length === 0) return false;
 
+  const userId = await userModeId();
+  if (userId !== null) {
+    // No merge in user mode — one person, one row. The OR across roles that
+    // this function exists to do has already happened, once, when the ticks
+    // were written.
+    return (await userPagePerms(userId, pageKey))[action];
+  }
+
   const rows = await prisma.role_permissions.findMany({
     where:  { roleSlug: { in: roleSlugs }, pageKey },
     select: { canView: true, canEdit: true, canImport: true, canExport: true, canDelete: true },
@@ -408,6 +579,11 @@ export async function getPagePermissions(
   pageKey: PageKey,
 ): Promise<PagePermissions> {
   if (roleSlug === "admin") return ALL_TRUE;
+
+  const userId = await userModeId();
+  if (userId !== null) {
+    return userPagePerms(userId, pageKey);
+  }
 
   const perm = await prisma.role_permissions.findUnique({
     where: { roleSlug_pageKey: { roleSlug, pageKey } },
@@ -429,6 +605,11 @@ export async function getAllPermissionsForRole(
 ): Promise<Record<string, PagePermissions>> {
   if (roleSlug === "admin") {
     return Object.fromEntries(ALL_PAGE_KEYS.map((key) => [key, ALL_TRUE]));
+  }
+
+  const userId = await userModeId();
+  if (userId !== null) {
+    return userAllPerms(userId);
   }
 
   const rows = await prisma.role_permissions.findMany({
@@ -463,30 +644,10 @@ export async function getAllPermissionsForRoles(
     return getAllPermissionsForRole("admin");
   }
 
-  const rows = await prisma.role_permissions.findMany({
-    where: { roleSlug: { in: roleSlugs } },
-  });
-
-  const merged: Record<string, PagePermissions> = {};
-  for (const row of rows) {
-    const existing = merged[row.pageKey];
-    if (!existing) {
-      merged[row.pageKey] = {
-        canView:   row.canView,
-        canImport: row.canImport,
-        canExport: row.canExport,
-        canEdit:   row.canEdit,
-        canDelete: row.canDelete,
-      };
-    } else {
-      merged[row.pageKey] = {
-        canView:   existing.canView   || row.canView,
-        canImport: existing.canImport || row.canImport,
-        canExport: existing.canExport || row.canExport,
-        canEdit:   existing.canEdit   || row.canEdit,
-        canDelete: existing.canDelete || row.canDelete,
-      };
-    }
+  const userId = await userModeId();
+  if (userId !== null) {
+    return userAllPerms(userId);
   }
-  return merged;
+
+  return mergeRolePerms(roleSlugs);
 }
