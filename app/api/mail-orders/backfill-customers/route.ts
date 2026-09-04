@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { extractCustomerFromSubject, matchCustomer } from "@/lib/mail-orders/customer-match";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,28 @@ export async function POST(): Promise<NextResponse> {
       errors++;
     }
   }
+
+  // ONE line for the whole run, same shape as the CSV importers in e757ba78.
+  // Every unmatched order in the table is rewritten from one click; a row each
+  // would bury the log. entityId is null because the action has no one subject.
+  await logAdminAction({
+    userId: parseInt(session.user.id, 10),
+    entity: "mail_orders",
+    entityId: null,
+    action: "backfill",
+    summary:
+      `backfill customers: ${orders.length} unmatched order(s) re-matched — ` +
+      `${exact} exact, ${multiple} multiple, ${unmatched} still unmatched, ${errors} error(s)`,
+    after: {
+      tool:            "backfill-customers",
+      scope:           "orders with customerMatchStatus null or 'unmatched'",
+      ordersProcessed: orders.length,
+      exact,
+      multiple,
+      unmatched,
+      errors,
+    },
+  });
 
   return NextResponse.json({
     total: orders.length,

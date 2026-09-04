@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -151,6 +152,36 @@ export async function DELETE(
   }
 
   await prisma.obd_visibility_rules.delete({ where: { id: ruleId } });
+
+  // AFTER the delete succeeds (audit RULE 2). 🔴 This is the ONE route in the
+  // module where the audit row is not a convenience — it is the ONLY surviving
+  // record. The PATCH arm above stamps `updatedById` on the row, but a DELETE
+  // takes the row and its actor with it, so the rule's full contents are
+  // captured into `before` here. Without this line, "which rule was hiding
+  // those OBDs, and who removed it" is unanswerable. The image comes from the
+  // `existing` row this route ALREADY read for its 404 — no second query.
+  await logAdminAction({
+    userId: parseInt(session.user.id, 10),
+    entity: "obd_visibility_rules",
+    entityId: String(ruleId),
+    action: "delete",
+    summary:
+      `hide rule "${existing.ruleName}" deleted — ` +
+      (existing.conditionType === "tag"
+        ? `tag ${existing.conditionTag}`
+        : `daysOld > ${existing.conditionDaysGt}`) +
+      `, was ${existing.isActive ? "active" : "inactive"}`,
+    before: {
+      ruleName:        existing.ruleName,
+      conditionType:   existing.conditionType,
+      conditionTag:    existing.conditionTag,
+      conditionDaysGt: existing.conditionDaysGt,
+      isActive:        existing.isActive,
+      createdById:     existing.createdById,
+      updatedById:     existing.updatedById,
+      createdAt:       existing.createdAt.toISOString(),
+    },
+  });
 
   return NextResponse.json({ ok: true });
 }

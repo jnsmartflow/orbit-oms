@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,34 @@ export async function PATCH(
       for (const s of siblings) propagatedOrderIds.push(s.id);
     }
   }
+
+  // AFTER every write in the request has returned (audit RULE 2). The before
+  // image is the `order` this route ALREADY read for its 404 — no second query.
+  // The propagation count is in the summary because reassigning a customer on
+  // one split sibling silently rewrites the others, which the log would
+  // otherwise not show.
+  await logAdminAction({
+    userId: parseInt(session.user.id, 10),
+    entity: "mail_orders",
+    entityId: String(id),
+    action: "update",
+    summary:
+      `customer set to ${customerCode} — ${customerName}` +
+      ` (was ${order.customerCode ?? "—"}/${order.customerMatchStatus ?? "—"})` +
+      (propagatedOrderIds.length > 0 ? `; propagated to ${propagatedOrderIds.length} split sibling(s)` : "") +
+      (body.saveKeyword && body.keyword?.trim() ? `; learned keyword "${body.keyword.trim().toUpperCase()}"` : ""),
+    before: {
+      customerCode:        order.customerCode,
+      customerName:        order.customerName,
+      customerMatchStatus: order.customerMatchStatus,
+    },
+    after: {
+      customerCode,
+      customerName,
+      customerMatchStatus: "exact",
+      propagatedOrderIds:  propagatedOrderIds.join("|"),
+    },
+  });
 
   return NextResponse.json({
     customerCode,

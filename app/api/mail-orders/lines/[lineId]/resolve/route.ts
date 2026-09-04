@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +141,38 @@ export async function POST(
   await prisma.mo_orders.update({
     where: { id: line.moOrderId },
     data: { matchedLines: matchedCount },
+  });
+
+  // AFTER every write in the request has returned (audit RULE 2). Logged
+  // against the parent ORDER, not the line: `entity` is mail_orders throughout
+  // this module, and an operator asking "who put this SKU on this bill" starts
+  // from the order. The line id is in the data. The before image is the `line`
+  // this route ALREADY read for its 404 — no second query.
+  await logAdminAction({
+    userId: parseInt(session.user.id, 10),
+    entity: "mail_orders",
+    entityId: String(line.moOrderId),
+    action: "update",
+    summary:
+      `line ${lineId} ("${line.rawText}") resolved to ${sku.material} — ${sku.description}` +
+      (propagated > 0 ? `; propagated to ${propagated} sibling line(s)` : "") +
+      (body.keyword ? `; learned ${body.keyword.type} keyword "${body.keyword.keyword.toUpperCase()}"` : "") +
+      `; order now ${matchedCount}/${totalCount} matched`,
+    before: {
+      lineId,
+      skuCode:     line.skuCode,
+      productName: line.productName,
+      baseColour:  line.baseColour,
+      matchStatus: line.matchStatus,
+    },
+    after: {
+      lineId,
+      skuCode:     sku.material,
+      productName: sku.product,
+      baseColour:  sku.baseColour,
+      matchStatus: "matched",
+      propagated,
+    },
   });
 
   return NextResponse.json({

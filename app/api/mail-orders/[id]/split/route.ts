@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 
 export const dynamic = "force-dynamic";
 
@@ -142,6 +143,32 @@ export async function POST(
       data: { lineNumber: i + 1 },
     });
   }
+
+  // AFTER every write in the request has returned (audit RULE 2). ONE line for
+  // the whole split — it is a single operator action, not the five writes it
+  // decomposes into. Logged against the ORIGINAL order, which is the row the
+  // operator acted on and the one a later reader will look up; the new order's
+  // id is in the data. The before image is the `order` this route ALREADY read
+  // for its 404 and its line validation — no second query.
+  await logAdminAction({
+    userId: parseInt(session.user.id, 10),
+    entity: "mail_orders",
+    entityId: String(order.id),
+    action: "split",
+    summary:
+      `mail order ${order.id} (${order.customerName ?? "—"}) split into ` +
+      `A: ${groupALines.length} line(s) and B: ${groupBLines.length} line(s) → new order ${orderB.id}`,
+    before: { totalLines: order.totalLines, matchedLines: order.matchedLines, splitLabel: order.splitLabel },
+    after: {
+      orderAId:      order.id,
+      orderALines:   groupALines.length,
+      orderAMatched: groupAMatched,
+      orderBId:      orderB.id,
+      orderBLines:   groupBLines.length,
+      orderBMatched: groupBMatched,
+      orderBEmailEntryId: orderB.emailEntryId,
+    },
+  });
 
   return NextResponse.json({
     status: "split",

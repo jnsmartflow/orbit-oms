@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import {
   enrichLine,
   buildSkuMaps,
@@ -179,6 +180,28 @@ export async function POST(): Promise<NextResponse> {
       },
     });
   }
+
+  // ONE line for the whole run, same shape as the CSV importers in e757ba78.
+  // This tool can rewrite hundreds of lines across dozens of orders from a
+  // single click; a row per line would bury the log. entityId is null because
+  // the action has no one subject.
+  await logAdminAction({
+    userId: parseInt(session.user.id, 10),
+    entity: "mail_orders",
+    entityId: null,
+    action: "backfill",
+    summary:
+      `re-enrich (last 2 days): ${lines.length} line(s) scanned, ${updated} rewritten, ` +
+      `${unchanged} unchanged, ${affectedOrderIds.size} order(s) recounted`,
+    after: {
+      tool:               "re-enrich",
+      scope:              "lines on orders received in the last 2 days",
+      linesScanned:       lines.length,
+      linesUpdated:       updated,
+      linesUnchanged:     unchanged,
+      ordersRecalculated: affectedOrderIds.size,
+    },
+  });
 
   return NextResponse.json({
     total: lines.length,
