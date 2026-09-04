@@ -67,9 +67,21 @@ const FLAG_LABEL: Record<FlagKey, string> = {
   canDelete: "Delete",
 };
 
-export function AccessManager({ people, sections, flags, keyCountWarning }: Props) {
+/** A pending toggle, keyed "<pageKey>::<flag>". */
+type Pending = Record<string, boolean>;
+
+function pendKey(pageKey: string, flag: FlagKey) { return `${pageKey}::${flag}`; }
+
+export function AccessManager({ people: initialPeople, sections, flags, keyCountWarning }: Props) {
   const [search, setSearch]         = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(people[0]?.id ?? null);
+  const [people, setPeople]         = useState(initialPeople);
+  const [selectedId, setSelectedId] = useState<number | null>(initialPeople[0]?.id ?? null);
+
+  // Pending edits for the CURRENTLY selected person only. Switching person with
+  // unsaved changes is blocked below rather than silently dropping them.
+  const [pending, setPending] = useState<Pending>({});
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -84,6 +96,83 @@ export function AccessManager({ people, sections, flags, keyCountWarning }: Prop
 
   const selected   = people.find((p) => p.id === selectedId) ?? null;
   const differsAll = people.filter((p) => p.differs.length > 0).length;
+  const pendingCount = Object.keys(pending).length;
+
+  /** Stored value with any pending toggle applied — what the box should show. */
+  function shown(person: AccessPerson, pageKey: string, flag: FlagKey): boolean {
+    const p = pending[pendKey(pageKey, flag)];
+    if (p !== undefined) return p;
+    return person.stored[pageKey]?.[flag] ?? false;
+  }
+
+  function toggle(person: AccessPerson, pageKey: string, flag: FlagKey) {
+    const stored = person.stored[pageKey]?.[flag] ?? false;
+    const next   = !shown(person, pageKey, flag);
+    const k      = pendKey(pageKey, flag);
+    setError(null);
+    setPending((prev) => {
+      const copy = { ...prev };
+      // Toggling back to the stored value REMOVES the pending entry, so the
+      // save bar counts real changes and a there-and-back never reaches the API.
+      if (next === stored) delete copy[k];
+      else copy[k] = next;
+      return copy;
+    });
+  }
+
+  function selectPerson(id: number) {
+    if (pendingCount > 0 && id !== selectedId) {
+      const ok = window.confirm(
+        `You have ${pendingCount} unsaved change${pendingCount === 1 ? "" : "s"}. Discard them and switch person?`,
+      );
+      if (!ok) return;
+    }
+    setPending({});
+    setError(null);
+    setSelectedId(id);
+  }
+
+  async function save() {
+    if (!selected || pendingCount === 0 || saving) return;
+    setSaving(true);
+    setError(null);
+
+    // Send ONLY the flags that moved, grouped by page key. Never a full grid.
+    const changes: Record<string, Partial<Record<FlagKey, boolean>>> = {};
+    for (const [k, value] of Object.entries(pending)) {
+      const [pageKey, flag] = k.split("::") as [string, FlagKey];
+      (changes[pageKey] ??= {})[flag] = value;
+    }
+
+    try {
+      const res = await fetch(`/api/admin/access/${selected.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(typeof data?.error === "string" ? data.error : "Save failed.");
+        return;
+      }
+      // The server recomputes `stored` and `differs` and hands them back — the
+      // banner must never be a client-side estimate, since it is the owner's
+      // preview of exactly what step 4 will change. A plain fetch + setState is
+      // also the pattern CORE §3 mandates over router.refresh() here.
+      setPeople((prev) =>
+        prev.map((p) =>
+          p.id === selected.id
+            ? { ...p, stored: data.stored, differs: data.differs, missingRows: 0 }
+            : p,
+        ),
+      );
+      setPending({});
+    } catch {
+      setError("Save failed — check your connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const labelByKey = useMemo(() => {
     const m = new Map<string, string>();
@@ -136,7 +225,7 @@ export function AccessManager({ people, sections, flags, keyCountWarning }: Prop
               <button
                 key={p.id}
                 type="button"
-                onClick={() => setSelectedId(p.id)}
+                onClick={() => selectPerson(p.id)}
                 className={cn(
                   "flex w-full items-center gap-2.5 border-l-2 px-3 py-2 text-left transition-colors",
                   on
@@ -295,11 +384,45 @@ export function AccessManager({ people, sections, flags, keyCountWarning }: Prop
                         section={section}
                         flags={flags}
                         person={selected}
+                        shown={shown}
+                        onToggle={toggle}
+                        pending={pending}
                       />
                     ))}
                   </tbody>
                 </table>
               </div>
+
+              {/* ── Sticky save bar ──────────────────────────────────────── */}
+              {(pendingCount > 0 || error) && (
+                <div className="sticky bottom-0 z-10 flex items-center gap-3 border-t border-gray-200 bg-white px-4 py-2.5">
+                  {error ? (
+                    <span className="text-[11.5px] font-medium text-red-600">{error}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setPending({}); setError(null); }}
+                      disabled={saving}
+                      className="text-[11.5px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50"
+                    >
+                      Discard changes
+                    </button>
+                  )}
+                  <div className="ml-auto flex items-center gap-3">
+                    <span className="text-[11.5px] font-semibold text-amber-600">
+                      {pendingCount} change{pendingCount === 1 ? "" : "s"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={save}
+                      disabled={saving || pendingCount === 0}
+                      className="h-[34px] rounded-lg bg-teal-600 px-4 text-[12.5px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+                    >
+                      {saving ? "Saving…" : "Save changes"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* ── Legend ───────────────────────────────────────────────── */}
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-gray-100 bg-[#fcfcfd] px-[18px] py-2.5 text-[10.5px] text-gray-500">
@@ -351,11 +474,14 @@ export function AccessManager({ people, sections, flags, keyCountWarning }: Prop
 // ── One section of rows ───────────────────────────────────────────────────────
 
 function FragmentSection({
-  section, flags, person,
+  section, flags, person, shown, onToggle, pending,
 }: {
   section: AccessSection;
   flags: FlagKey[];
   person: AccessPerson;
+  shown: (p: AccessPerson, pageKey: string, flag: FlagKey) => boolean;
+  onToggle: (p: AccessPerson, pageKey: string, flag: FlagKey) => void;
+  pending: Record<string, boolean>;
 }) {
   return (
     <>
@@ -369,12 +495,18 @@ function FragmentSection({
       </tr>
 
       {section.rows.map((row) => {
-        const stored   = person.stored[row.key];
         const baseline = person.baseline[row.key];
         const rowDiffers = person.differs.includes(row.key);
+        const rowPending = flags.some((f) => pending[`${row.key}::${f}`] !== undefined);
 
         return (
-          <tr key={row.key} className="h-9 border-b border-[#f0f0f0]">
+          <tr
+            key={row.key}
+            className={cn(
+              "h-9 border-b border-[#f0f0f0]",
+              rowPending && "bg-amber-50/60",
+            )}
+          >
             <td className="overflow-hidden pl-[14px] pr-2">
               <div className="flex items-center gap-1.5">
                 {rowDiffers && (
@@ -400,33 +532,41 @@ function FragmentSection({
                   </td>
                 );
               }
-              const on   = stored?.[flag] ?? false;
-              const base = baseline?.[flag] ?? false;
+              const on     = shown(person, row.key, flag);
+              const base   = baseline?.[flag] ?? false;
+              const isPend = pending[`${row.key}::${flag}`] !== undefined;
               return (
                 <td key={flag} className="text-center align-middle">
-                  <span
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={on}
+                    aria-label={`${FLAG_LABEL[flag]} on ${row.label}`}
+                    onClick={() => onToggle(person, row.key, flag)}
                     title={
                       on === base
-                        ? `${FLAG_LABEL[flag]} — same as role`
-                        : `${FLAG_LABEL[flag]} — role says ${base ? "on" : "off"}`
+                        ? `${FLAG_LABEL[flag]} — same as their role`
+                        : `${FLAG_LABEL[flag]} — their role says ${base ? "on" : "off"}`
                     }
                     className={cn(
-                      "relative inline-block h-[17px] w-[17px] rounded-[5px] border-[1.6px] align-middle",
+                      "relative inline-block h-[17px] w-[17px] rounded-[5px] border-[1.6px] align-middle transition-colors",
                       on ? "border-teal-600 bg-teal-600" : "border-gray-300 bg-white",
+                      !on && "hover:border-teal-500",
                       on !== base && "ring-2 ring-amber-300",
+                      isPend && "ring-2 ring-amber-500",
                     )}
                   >
                     {on && (
                       <span
                         className="absolute block border-white"
                         style={{
-                          left: 5, top: 1.5, width: 4.5, height: 8.5,
+                          left: 4, top: 1, width: 4.5, height: 8.5,
                           borderWidth: "0 2px 2px 0",
                           transform: "rotate(42deg)",
                         }}
                       />
                     )}
-                  </span>
+                  </button>
                 </td>
               );
             })}
