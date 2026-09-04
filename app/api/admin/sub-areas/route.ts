@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import { checkPermission } from "@/lib/permissions";
 
@@ -48,6 +49,16 @@ export async function POST(req: Request) {
   const subArea = await prisma.sub_area_master.create({
     data: parsed.data,
     include: { area: { select: { id: true, name: true } } },
+  });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "sub_areas",
+    entityId: String(subArea.id),
+    action: "create",
+    summary: `sub-area "${subArea.name}" created under area "${subArea.area.name}"`,
+    after: { name: subArea.name, areaId: subArea.areaId, isActive: subArea.isActive },
   });
 
   return NextResponse.json(subArea, { status: 201 });

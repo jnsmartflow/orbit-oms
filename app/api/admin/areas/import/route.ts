@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,18 @@ export async function POST(req: Request) {
 
   const imported = result.count;
   const skipped  = data.length - imported;
+
+  // ONE line for the whole upload (audit RULE 6).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "areas",
+    entityId: null,
+    action: "import",
+    summary:
+      `imported ${imported} area(s) (${skipped} skipped, ${errors.length} rejected) ` +
+      `from ${rows.length} row(s)`,
+    after: { rows: rows.length, imported, skipped, rejected: errors.length },
+  });
 
   return NextResponse.json({ imported, skipped, failed: errors.length, errors });
 }

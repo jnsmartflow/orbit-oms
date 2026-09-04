@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import { checkPermission } from "@/lib/permissions";
 
@@ -57,6 +58,16 @@ export async function POST(req: Request) {
   const route = await prisma.route_master.create({
     data: { name: parsed.data.name, description: parsed.data.description ?? null },
     include: { _count: { select: { areaRoutes: true } } },
+  });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "routes",
+    entityId: String(route.id),
+    action: "create",
+    summary: `route "${route.name}" created`,
+    after: { name: route.name, description: route.description, isActive: route.isActive },
   });
 
   return NextResponse.json({ ...route, areaCount: route._count.areaRoutes, _count: undefined }, { status: 201 });

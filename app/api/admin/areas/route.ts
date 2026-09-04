@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import { checkPermission } from "@/lib/permissions";
 
@@ -86,6 +87,26 @@ export async function POST(req: Request) {
       primaryRoute:  { select: { id: true, name: true } },
       areaRoutes:    { include: { route: { select: { id: true, name: true } } } },
       _count:        { select: { subAreas: true } },
+    },
+  });
+
+  // AFTER the create returns (audit RULE 2). The route names, not the ids, go
+  // in the summary — the ids are already in `after`, and a reader skimming the
+  // log cannot resolve "route 7" from memory.
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "areas",
+    entityId: String(area.id),
+    action: "create",
+    summary:
+      `area "${area.name}" created — ${area.deliveryType.name}` +
+      (area.primaryRoute ? `, primary route ${area.primaryRoute.name}` : "") +
+      `, ${area.areaRoutes.length} route(s) mapped`,
+    after: {
+      name:           area.name,
+      deliveryTypeId,
+      primaryRouteId: primaryRouteId ?? null,
+      routeIds:       routeIds.join("|"),
     },
   });
 

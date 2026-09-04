@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 
 export const dynamic = 'force-dynamic';
 
@@ -199,6 +200,26 @@ export async function POST(req: Request) {
       failed.push({ row: rowNum, reason: `Database error: ${(err as Error).message}` });
     }
   }
+
+  // ONE line for the whole upload (audit RULE 6). This loop can touch hundreds
+  // of customers plus their contacts; a row per record would bury the log for a
+  // single click. entityId is null because the action has no one subject.
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "customers",
+    entityId: null,
+    action: "import",
+    summary:
+      `${file.name}: ${rows.length} row(s) — ` +
+      `${created_count} created, ${updated} updated, ${failed.length} failed`,
+    after: {
+      fileName: file.name,
+      rows:     rows.length,
+      created:  created_count,
+      updated,
+      failed:   failed.length,
+    },
+  });
 
   return NextResponse.json({ created: created_count, updated, failed });
 }

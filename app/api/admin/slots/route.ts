@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -37,5 +38,24 @@ export async function POST(req: Request) {
   }
 
   const slot = await prisma.slot_master.create({ data: parsed.data });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "slots",
+    entityId: String(slot.id),
+    action: "create",
+    summary:
+      `slot "${slot.name}" created — ${slot.slotTime}` +
+      (slot.isNextDay ? " next day" : "") + `, sort ${slot.sortOrder}`,
+    after: {
+      name:      slot.name,
+      slotTime:  slot.slotTime,
+      isNextDay: slot.isNextDay,
+      sortOrder: slot.sortOrder,
+      isActive:  slot.isActive,
+    },
+  });
+
   return NextResponse.json(slot, { status: 201 });
 }

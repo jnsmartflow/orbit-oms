@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import { checkPermission } from "@/lib/permissions";
 
@@ -57,6 +58,25 @@ export async function POST(req: Request) {
   const vehicle = await prisma.vehicle_master.create({
     data: { ...parsed.data, vehicleNo },
     include: { transporter: { select: { id: true, name: true } } },
+  });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "vehicles",
+    entityId: String(vehicle.id),
+    action: "create",
+    summary: `vehicle ${vehicle.vehicleNo} created — ${vehicle.transporter.name}, ${vehicle.capacityKg}kg`,
+    after: {
+      vehicleNo:           vehicle.vehicleNo,
+      category:            vehicle.category,
+      capacityKg:          vehicle.capacityKg,
+      maxCustomers:        vehicle.maxCustomers,
+      deliveryTypeAllowed: vehicle.deliveryTypeAllowed,
+      transporterId:       vehicle.transporterId,
+      driverName:          vehicle.driverName,
+      driverPhone:         vehicle.driverPhone,
+    },
   });
 
   return NextResponse.json(vehicle, { status: 201 });

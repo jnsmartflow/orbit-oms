@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { checkPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import {
   validateIncomingSalesOfficers,
@@ -107,6 +108,20 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   }
 }
 
+// The scalar columns a PATCH can move, and the only ones the audit diff looks
+// at. Relations (contacts, SO links) are counted in the summary instead — a
+// field-level diff of a nested list is not what a reader of the log wants.
+const AUDIT_FIELDS = {
+  customerCode: true, customerName: true, address: true, areaId: true, subAreaId: true,
+  salesOfficerId: true, primaryRouteId: true, dispatchDeliveryTypeId: true,
+  reportingDeliveryTypeId: true, customerTypeId: true, premisesTypeId: true,
+  salesOfficerGroupId: true, customerRating: true, latitude: true, longitude: true,
+  isKeyCustomer: true, isKeySite: true, acceptsPartialDelivery: true, isActive: true,
+  workingHoursStart: true, workingHoursEnd: true, noDeliveryDays: true,
+} as const;
+
+type AuditKey = keyof typeof AUDIT_FIELDS;
+
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR, ROLES.OPERATION_MANAGER]);
@@ -149,6 +164,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         return NextResponse.json({ error: "Customer code already exists." }, { status: 409 });
       }
     }
+
+    // Snapshot BEFORE the write so the audit line can name what actually moved.
+    // ⚠ This SELECT is NEW. The route's only pre-existing read is the
+    // customerCode conflict check, which runs on some requests and returns a
+    // different row; there was nothing here to reuse. Master-data edits are
+    // rare, so the extra query is not worth avoiding.
+    const auditBefore = await prisma.delivery_point_master.findUnique({
+      where: { id },
+      select: AUDIT_FIELDS,
+    });
 
     // Stage A — existing customer + contacts save (unchanged).
     await prisma.delivery_point_master.update({
@@ -201,11 +226,52 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       include: fullInclude,
     });
 
+    let backfilled = 0;
     if (fetched?.customerCode) {
-      await prisma.orders.updateMany({
+      const backfill = await prisma.orders.updateMany({
         where: { shipToCustomerId: fetched.customerCode, customerId: null },
         data:  { customerMissing: false, customerId: fetched.id },
       });
+      backfilled = backfill.count;
+    }
+
+    // AFTER every write in the request has returned (audit RULE 2). Only fields
+    // that actually moved are recorded — the form PATCHes the whole customer on
+    // every save, so a diff is the only way to tell a real edit from a re-save.
+    if (auditBefore && fetched) {
+      const changed: string[] = [];
+      const beforeData: Record<string, unknown> = {};
+      const afterData:  Record<string, unknown> = {};
+      for (const k of Object.keys(AUDIT_FIELDS) as AuditKey[]) {
+        const from = auditBefore[k];
+        const to   = fetched[k];
+        // noDeliveryDays is a String[]; `!==` compares array identity, which is
+        // always false here because the two came from different reads.
+        const same = Array.isArray(from) && Array.isArray(to)
+          ? from.join("|") === to.join("|")
+          : from === to;
+        if (same) continue;
+        changed.push(k);
+        beforeData[k] = Array.isArray(from) ? from.join("|") : from;
+        afterData[k]  = Array.isArray(to)   ? to.join("|")   : to;
+      }
+      // Contacts and SO links are synced by helpers that report no diff, so
+      // they are recorded as "this request touched them", not field by field.
+      if (contacts !== undefined)      changed.push(`contacts (${contacts.length})`);
+      if (salesOfficers !== undefined) changed.push(`sales officers (${salesOfficers.length})`);
+      if (backfilled > 0)              changed.push(`linked ${backfilled} orphan order(s)`);
+
+      if (changed.length > 0) {
+        await logAdminAction({
+          userId: parseInt(session!.user.id, 10),
+          entity: "customers",
+          entityId: String(id),
+          action: "update",
+          summary: `${fetched.customerCode} — ${fetched.customerName}: ${changed.join(", ")}`,
+          before: beforeData,
+          after:  afterData,
+        });
+      }
     }
 
     return NextResponse.json(fetched);

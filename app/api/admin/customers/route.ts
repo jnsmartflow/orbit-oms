@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import { checkPermission } from "@/lib/permissions";
 import {
@@ -200,8 +201,11 @@ export async function POST(req: Request) {
   await syncSalesOfficerContacts(customer.id, prisma);
   await enforcePrimaryContactRule(customer.id, prisma);
 
-  // customerMissing backfill (Finding 2 — preserved untouched).
-  await prisma.orders.updateMany({
+  // customerMissing backfill (Finding 2 — preserved untouched). The only change
+  // is that the result is now KEPT: creating a customer silently re-parents
+  // every orphan order carrying this code, and that is the part of the request
+  // a reader of the log would otherwise never see.
+  const backfill = await prisma.orders.updateMany({
     where: { shipToCustomerId: customerCode, customerId: null },
     data:  { customerMissing: false, customerId: customer.id },
   });
@@ -210,6 +214,29 @@ export async function POST(req: Request) {
   const finalCustomer = await prisma.delivery_point_master.findUnique({
     where: { id: customer.id },
     include: fullInclude,
+  });
+
+  // AFTER every write in the request has returned (audit RULE 2). One line for
+  // the whole create — the customer, its nested contacts, its SO links, and the
+  // orphan-order backfill are one user action, not four.
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "customers",
+    entityId: String(customer.id),
+    action: "create",
+    summary:
+      `${customerCode} — ${customer.customerName}` +
+      (backfill.count > 0 ? `; linked ${backfill.count} orphan order(s)` : ""),
+    after: {
+      customerCode,
+      customerName: customer.customerName,
+      areaId:       customer.areaId,
+      subAreaId:    customer.subAreaId,
+      isActive:     customer.isActive,
+      contacts:     contactsForCreate.length,
+      salesOfficers: salesOfficers.length,
+      ordersBackfilled: backfill.count,
+    },
   });
 
   return NextResponse.json(finalCustomer, { status: 201 });

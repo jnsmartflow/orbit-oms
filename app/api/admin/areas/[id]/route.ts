@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const { routeIds, ...scalarData } = parsed.data;
 
+  // ⚠ NEW read, and deliberately OUTSIDE the $transaction below — a read added
+  // inside it would change that transaction's shape (CORE §3). The route map is
+  // included because a remap is the half of this PATCH that a rename hides.
+  const before = await prisma.area_master.findUnique({
+    where: { id },
+    select: {
+      name: true, deliveryTypeId: true, primaryRouteId: true, isActive: true,
+      areaRoutes: { select: { routeId: true } },
+    },
+  });
+
   const area = await prisma.$transaction(async (tx) => {
     if (routeIds !== undefined) {
       await tx.area_route_map.deleteMany({ where: { areaId: id } });
@@ -49,6 +61,40 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       },
     });
   });
+
+  // AFTER the write returns (audit RULE 2) — changed fields only.
+  const changed: string[] = [];
+  const beforeData: Record<string, unknown> = {};
+  const afterData:  Record<string, unknown> = {};
+  if (before) {
+    for (const k of ["name", "deliveryTypeId", "primaryRouteId", "isActive"] as const) {
+      if (before[k] !== area[k]) {
+        changed.push(k);
+        beforeData[k] = before[k];
+        afterData[k]  = area[k];
+      }
+    }
+    // The route map is a set, not a scalar: sort both sides before comparing so
+    // a reordered POST of the same routes does not read as a remap.
+    const fromRoutes = before.areaRoutes.map((ar) => ar.routeId).sort((a, b) => a - b).join("|");
+    const toRoutes   = area.areaRoutes.map((ar) => ar.routeId).sort((a, b) => a - b).join("|");
+    if (routeIds !== undefined && fromRoutes !== toRoutes) {
+      changed.push("routes");
+      beforeData.routeIds = fromRoutes;
+      afterData.routeIds  = toRoutes;
+    }
+  }
+  if (changed.length > 0) {
+    await logAdminAction({
+      userId: parseInt(session!.user.id, 10),
+      entity: "areas",
+      entityId: String(id),
+      action: "update",
+      summary: `area "${area.name}" — ${changed.join(", ")}`,
+      before: beforeData,
+      after:  afterData,
+    });
+  }
 
   return NextResponse.json({
     id:           area.id,
