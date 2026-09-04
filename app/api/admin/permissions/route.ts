@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const rows = await prisma.role_permissions.findMany({
     orderBy: [{ roleSlug: "asc" }, { pageKey: "asc" }],
@@ -34,7 +34,7 @@ const updateSchema = z.object({
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);

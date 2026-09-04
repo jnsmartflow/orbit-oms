@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const body = await req.json() as { rows: Record<string, string>[] };
   const rows = body.rows ?? [];

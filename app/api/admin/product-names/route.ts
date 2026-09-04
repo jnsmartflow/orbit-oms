@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const { searchParams } = new URL(req.url);
   const categoryIdParam = searchParams.get("categoryId");
@@ -33,7 +33,7 @@ const createSchema = z.object({
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) {

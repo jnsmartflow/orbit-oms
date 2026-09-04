@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import type { Prisma } from "@prisma/client";
@@ -23,7 +24,7 @@ export async function PATCH(
   if (!session?.user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "admin") {
+  if (!isSuperuser(session)) {
     return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 
@@ -137,7 +138,7 @@ export async function DELETE(
   if (!session?.user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "admin") {
+  if (!isSuperuser(session)) {
     return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 

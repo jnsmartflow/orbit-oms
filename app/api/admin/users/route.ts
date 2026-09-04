@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import bcrypt from "bcryptjs";
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const users = await prisma.users.findMany({
     select: {
@@ -36,7 +36,7 @@ const createSchema = z.object({
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const body = await req.json();
   const parsed = createSchema.safeParse(body);

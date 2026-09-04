@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 
@@ -59,7 +59,7 @@ function parseContacts(
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;

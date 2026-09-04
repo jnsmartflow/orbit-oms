@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireRole, requireSuperuser, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
@@ -35,7 +35,7 @@ const createSchema = z.object({
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
   if (session!.user.role !== "admin") {
     const allowed = await checkPermission(session!.user.role, "routes_areas", "canEdit");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });

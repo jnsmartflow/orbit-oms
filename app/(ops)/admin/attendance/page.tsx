@@ -24,7 +24,7 @@ interface PageProps {
 
 export default async function AdminAttendancePage({ searchParams }: PageProps) {
   // Admin gating already enforced by app/(admin)/admin/layout.tsx via
-  // requireRole(session, [ROLES.ADMIN]).
+  // requireSuperuser(session).
 
   const dateRaw = searchParams?.date;
   const dateParam = Array.isArray(dateRaw) ? dateRaw[0] : dateRaw;

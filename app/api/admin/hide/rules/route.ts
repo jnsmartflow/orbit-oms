@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(): Promise<NextResponse> {
   if (!session?.user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "admin") {
+  if (!isSuperuser(session)) {
     return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 
@@ -37,7 +38,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!session?.user) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "admin") {
+  if (!isSuperuser(session)) {
     return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 

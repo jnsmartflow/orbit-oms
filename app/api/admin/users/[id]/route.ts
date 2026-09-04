@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import bcrypt from "bcryptjs";
@@ -21,7 +21,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const targetId = parseInt(params.id, 10);
   if (isNaN(targetId)) {

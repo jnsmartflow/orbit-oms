@@ -19,9 +19,9 @@ import type { PagePermissions } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
-// Admin-only by inheritance: app/(admin)/admin/layout.tsx calls
-// requireRole(session, [ROLES.ADMIN]) for everything under /admin. No second
-// gate here — a duplicate would be one more place to forget.
+// Superuser-only by inheritance: app/(admin)/admin/layout.tsx calls
+// requireSuperuser(session) for everything under /admin. No second gate here —
+// a duplicate would be one more place to forget.
 
 const ALL_FALSE: PagePermissions = {
   canView: false, canImport: false, canExport: false, canEdit: false, canDelete: false,

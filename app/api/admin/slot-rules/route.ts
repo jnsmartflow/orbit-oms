@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
@@ -14,7 +14,7 @@ const include = {
 
 export async function GET() {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const rules = await prisma.delivery_type_slot_config.findMany({
     orderBy: [{ deliveryType: { name: "asc" } }, { sortOrder: "asc" }],
@@ -37,7 +37,7 @@ const createSchema = z.object({
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireSuperuser(session);
 
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) {
