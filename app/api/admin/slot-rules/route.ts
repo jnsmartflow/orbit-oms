@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,11 @@ export async function POST(req: Request) {
   }
 
   const { forceDefault, ...data } = parsed.data;
+
+  // A forced default silently DEMOTES the rule that held the default before it.
+  // That write is invisible in the response, so it is remembered here and named
+  // in the audit summary below.
+  let demotedDefaultSlot: string | null = null;
 
   // Enforce windowStart/windowEnd for time_based
   if (data.slotRuleType === "time_based") {
@@ -91,9 +97,36 @@ export async function POST(req: Request) {
         where: { id: existingDefault.id },
         data:  { isDefault: false },
       });
+      demotedDefaultSlot = existingDefault.slot.name;
     }
   }
 
   const rule = await prisma.delivery_type_slot_config.create({ data, include });
+
+  // AFTER the create returns (audit RULE 2). One line for the whole request,
+  // including the demotion it may have caused on the way.
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "slot_rules",
+    entityId: String(rule.id),
+    action: "create",
+    summary:
+      `slot rule created — ${rule.deliveryType.name} → "${rule.slot.name}" (${rule.slotRuleType}` +
+      (rule.windowStart ? ` ${rule.windowStart}-${rule.windowEnd}` : "") + ")" +
+      (rule.isDefault ? ", default" : "") +
+      (demotedDefaultSlot ? `; replaced default "${demotedDefaultSlot}"` : ""),
+    after: {
+      deliveryTypeId: rule.deliveryTypeId,
+      slotId:         rule.slotId,
+      slotRuleType:   rule.slotRuleType,
+      windowStart:    rule.windowStart,
+      windowEnd:      rule.windowEnd,
+      isDefault:      rule.isDefault,
+      sortOrder:      rule.sortOrder,
+      isActive:       rule.isActive,
+      demotedDefaultSlot,
+    },
+  });
+
   return NextResponse.json(rule, { status: 201 });
 }

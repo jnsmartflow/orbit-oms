@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -61,5 +62,31 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     data:    parsed.data,
     include,
   });
+
+  // AFTER the update returns (audit RULE 2) — changed fields only, diffed
+  // against the `existing` row this route ALREADY read for its 404 and its
+  // deactivation guard. No second query.
+  const changed: string[] = [];
+  const beforeData: Record<string, unknown> = {};
+  const afterData:  Record<string, unknown> = {};
+  for (const k of ["name", "salesOfficerId", "isActive"] as const) {
+    if (existing[k] !== row[k]) {
+      changed.push(k);
+      beforeData[k] = existing[k];
+      afterData[k]  = row[k];
+    }
+  }
+  if (changed.length > 0) {
+    await logAdminAction({
+      userId: parseInt(session!.user.id, 10),
+      entity: "so_groups",
+      entityId: String(id),
+      action: "update",
+      summary: `SO group "${row.name}" — ${changed.join(", ")}`,
+      before: beforeData,
+      after:  afterData,
+    });
+  }
+
   return NextResponse.json(row);
 }

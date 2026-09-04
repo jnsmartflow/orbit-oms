@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,16 @@ export async function POST(req: Request) {
       email,
       phone:        parsed.data.phone?.trim() || null,
     },
+  });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "sales_officers",
+    entityId: String(officer.id),
+    action: "create",
+    summary: `sales officer "${officer.name}" created${officer.email ? ` <${officer.email}>` : ""}`,
+    after: { name: officer.name, email: officer.email, phone: officer.phone },
   });
 
   return NextResponse.json(officer, { status: 201 });

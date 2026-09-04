@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -33,5 +34,16 @@ export async function POST(req: Request) {
   }
 
   const row = await prisma.contact_role_master.create({ data: parsed.data });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "contact_roles",
+    entityId: String(row.id),
+    action: "create",
+    summary: `contact role "${row.name}" created`,
+    after: { name: row.name, isActive: row.isActive },
+  });
+
   return NextResponse.json(row, { status: 201 });
 }

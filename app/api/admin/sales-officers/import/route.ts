@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,19 @@ export async function POST(req: Request) {
 
   const imported = result.count;
   const skipped  = data.length - imported;
+
+  // ONE line for the whole upload (audit RULE 6). `rejected` is rows dropped by
+  // the name+email filter, which the response itself never reports.
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "sales_officers",
+    entityId: null,
+    action: "import",
+    summary:
+      `imported ${imported} sales officer(s) (${skipped} skipped, ` +
+      `${rows.length - data.length} rejected) from ${rows.length} row(s)`,
+    after: { rows: rows.length, imported, skipped, rejected: rows.length - data.length },
+  });
 
   return NextResponse.json({ imported, skipped, failed: 0, errors: [] });
 }

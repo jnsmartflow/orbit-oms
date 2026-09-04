@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -45,5 +46,16 @@ export async function POST(req: Request) {
   }
 
   const row = await prisma.sales_officer_group.create({ data: parsed.data, include });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "so_groups",
+    entityId: String(row.id),
+    action: "create",
+    summary: `SO group "${row.name}" created under ${row.salesOfficer.name}`,
+    after: { name: row.name, salesOfficerId: row.salesOfficerId, isActive: row.isActive },
+  });
+
   return NextResponse.json(row, { status: 201 });
 }

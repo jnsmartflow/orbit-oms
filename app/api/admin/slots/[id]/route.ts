@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -57,5 +58,35 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const { force: _force, ...updateData } = parsed.data;
   const slot = await prisma.slot_master.update({ where: { id }, data: updateData });
+
+  // AFTER the update returns (audit RULE 2) — changed fields only, diffed
+  // against the `existing` row this route ALREADY read for its 404 and its
+  // deactivation guard. No second query.
+  const changed: string[] = [];
+  const beforeData: Record<string, unknown> = {};
+  const afterData:  Record<string, unknown> = {};
+  for (const k of ["name", "slotTime", "isNextDay", "sortOrder", "isActive"] as const) {
+    if (existing[k] !== slot[k]) {
+      changed.push(k);
+      beforeData[k] = existing[k];
+      afterData[k]  = slot[k];
+    }
+  }
+  // `force` is not a column — it is the admin overriding the "this slot is
+  // still referenced by N active rules" warning, which is worth recording.
+  if (changed.length > 0) {
+    await logAdminAction({
+      userId: parseInt(session!.user.id, 10),
+      entity: "slots",
+      entityId: String(id),
+      action: "update",
+      summary:
+        `slot "${slot.name}" — ${changed.join(", ")}` +
+        (parsed.data.force ? " (deactivation warning overridden)" : ""),
+      before: beforeData,
+      after:  afterData,
+    });
+  }
+
   return NextResponse.json(slot);
 }

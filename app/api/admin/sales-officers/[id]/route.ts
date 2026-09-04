@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = 'force-dynamic';
@@ -42,10 +43,41 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     updateData.email = email;
   }
 
+  // ⚠ NEW read. The email conflict check above looks at a DIFFERENT row
+  // (`NOT: {id}`) and only runs when the email is sent, so there was nothing
+  // here to reuse.
+  const before = await prisma.sales_officer_master.findUnique({
+    where: { id },
+    select: { name: true, email: true, phone: true, isActive: true },
+  });
+
   const officer = await prisma.sales_officer_master.update({
     where: { id },
     data: updateData,
   });
+
+  // AFTER the update returns (audit RULE 2) — changed fields only.
+  const changed: string[] = [];
+  const beforeData: Record<string, unknown> = {};
+  const afterData:  Record<string, unknown> = {};
+  for (const k of ["name", "email", "phone", "isActive"] as const) {
+    if (before && before[k] !== officer[k]) {
+      changed.push(k);
+      beforeData[k] = before[k];
+      afterData[k]  = officer[k];
+    }
+  }
+  if (changed.length > 0) {
+    await logAdminAction({
+      userId: parseInt(session!.user.id, 10),
+      entity: "sales_officers",
+      entityId: String(id),
+      action: "update",
+      summary: `sales officer "${officer.name}" — ${changed.join(", ")}`,
+      before: beforeData,
+      after:  afterData,
+    });
+  }
 
   return NextResponse.json(officer);
 }

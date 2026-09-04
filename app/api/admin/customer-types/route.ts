@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -40,5 +41,16 @@ export async function POST(req: Request) {
   }
 
   const row = await prisma.customer_type_master.create({ data: { name } });
+
+  // AFTER the create returns (audit RULE 2).
+  await logAdminAction({
+    userId: parseInt(session!.user.id, 10),
+    entity: "customer_types",
+    entityId: String(row.id),
+    action: "create",
+    summary: `customer type "${row.name}" created`,
+    after: { name: row.name },
+  });
+
   return NextResponse.json(row, { status: 201 });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!existing) return NextResponse.json({ error: "Rule not found." }, { status: 404 });
 
   const { forceDefault, ...updateData } = parsed.data;
+
+  // A forced default silently DEMOTES the rule that held it before. Invisible
+  // in the response, so it is remembered here and named in the audit summary.
+  let demotedDefaultSlot: string | null = null;
 
   // Resolve effective ruleType (updated or existing)
   const effectiveRuleType = updateData.slotRuleType ?? existing.slotRuleType;
@@ -81,9 +86,40 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         where: { id: existingDefault.id },
         data:  { isDefault: false },
       });
+      demotedDefaultSlot = existingDefault.slot.name;
     }
   }
 
   const rule = await prisma.delivery_type_slot_config.update({ where: { id }, data: updateData, include });
+
+  // AFTER the update returns (audit RULE 2) — changed fields only, diffed
+  // against the `existing` row this route ALREADY read for its 404 and its
+  // rule-type resolution. No second query.
+  const changed: string[] = [];
+  const beforeData: Record<string, unknown> = {};
+  const afterData:  Record<string, unknown> = {};
+  for (const k of [
+    "slotRuleType", "windowStart", "windowEnd", "isDefault", "sortOrder", "isActive",
+  ] as const) {
+    if (existing[k] !== rule[k]) {
+      changed.push(k);
+      beforeData[k] = existing[k];
+      afterData[k]  = rule[k];
+    }
+  }
+  if (demotedDefaultSlot) changed.push(`replaced default "${demotedDefaultSlot}"`);
+
+  if (changed.length > 0) {
+    await logAdminAction({
+      userId: parseInt(session!.user.id, 10),
+      entity: "slot_rules",
+      entityId: String(id),
+      action: "update",
+      summary: `slot rule ${rule.deliveryType.name} → "${rule.slot.name}" — ${changed.join(", ")}`,
+      before: beforeData,
+      after:  afterData,
+    });
+  }
+
   return NextResponse.json(rule);
 }
