@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
+import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,26 @@ export async function POST(req: Request): Promise<NextResponse> {
         throw new Error("Order is not in assigned stage");
       }
 
-      // 2a. Cancel active tint_assignments (status != 'done')
+      // 2a. Cancel the operator's LIVE claim on this OBD.
+      //
+      // ⚠ This read `status: { not: "done" }` until 2026-09-05 — the FOURTH and
+      // most damaging copy of a predicate that matches every row ever written.
+      // "done" is not a value this system produces (lib/tint/assignment-status.ts:
+      // the finished value is "tinting_done"), and unlike the three read-side
+      // copies fixed in a0f9378b this one drives a WRITE. It swept up every DEAD
+      // row on the order and overwrote it: a `skipped` row became `cancelled`,
+      // silently destroying the assignment-side record of the skip (the
+      // tint_skip_events row survives, but tint_assignments.status +
+      // skipEventId — the link SkipHistoryModal and the board's "Skipped N×"
+      // pill read through — did not).
+      //
+      // Narrowed to the live statuses, which is what "cancel the assignment"
+      // ever meant. Verified read-only 2026-09-05: no order currently mixes a
+      // live row with a dead one, so this is behaviour-identical on today's
+      // data — the defect was latent, waiting for the first cancel of an OBD
+      // that had been skipped and re-assigned.
       await tx.tint_assignments.updateMany({
-        where:  { orderId, status: { not: "done" } },
+        where:  { orderId, status: { in: [...TINT_ASSIGNMENT_ACTIVE_STATUSES] } },
         data:   { status: "cancelled", updatedAt: new Date() },
       });
 

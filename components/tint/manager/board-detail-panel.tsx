@@ -12,8 +12,8 @@
 // Everything it renders comes from data the board already holds. No fetch of its
 // own except OrderAuditHistory's, which owns its own loading.
 
-import { useState } from "react";
-import { AlertCircle, History, Loader2, Pause, Scissors, SkipForward, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertCircle, History, Loader2, Pause, Scissors, SkipForward, Trash2, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
 import { OrderAuditHistory } from "@/components/shared/order-audit-history";
@@ -30,7 +30,7 @@ type Tab = "items" | "details" | "activity";
 export function BoardDetailPanel({
   target, operators, position, busy, error,
   onClose, onPrev, onNext,
-  onAssign, onReassignOrder, onReassignSplit,
+  onAssign, onReassignOrder, onReassignSplit, onSendBack,
   onRemove, onResolveMissing, onOpenPauseHistory, onOpenSkipHistory,
   canRemove,
 }: {
@@ -47,6 +47,10 @@ export function BoardDetailPanel({
   onAssign:            (order: TintOrder, operatorId: number) => void;
   onReassignOrder:     (row: BoardRow, operatorId: number) => void;
   onReassignSplit:     (row: BoardRow, operatorId: number) => void;
+  /** Cancel the assignment and return the bill to the rail. Whole orders go to
+   *  /api/tint/manager/cancel-assignment, splits to /splits/cancel — the parent
+   *  branches on row.type. */
+  onSendBack:          (row: BoardRow) => void;
   onRemove:            (order: TintOrder) => void;
   onResolveMissing:    (order: TintOrder) => void;
   onOpenPauseHistory:  (orderId: number, obdNumber: string, siteName: string) => void;
@@ -55,6 +59,24 @@ export function BoardDetailPanel({
 }) {
   const [tab, setTab] = useState<Tab>("items");
   const [menuOpen, setMenuOpen] = useState(false);
+  // Two-stage confirm for Send back to Pending. The old Kanban fired this on a
+  // single click of a red "Cancel" menu item with no confirmation at all AND
+  // without reading the response, so a rejected cancel looked like success. One
+  // step is added here rather than a modal: it matches CLAUDE_UI §13's two-stage
+  // confirm (the shape Mark Done and Remove OBD already use) without inventing a
+  // new pattern for a reversible action — the bill goes back to the rail, it is
+  // not destroyed.
+  const [confirmSendBack, setConfirmSendBack] = useState(false);
+
+  // Prev/Next swaps the `target` prop while this component stays mounted, so
+  // transient UI has to be reset explicitly or it rides along to the next job —
+  // an armed "Yes, send back" arriving pre-armed on someone else's bill is the
+  // one that actually matters.
+  const targetKey = target.kind === "pending" ? `pending-${target.order.id}` : target.row.key;
+  useEffect(() => {
+    setConfirmSendBack(false);
+    setMenuOpen(false);
+  }, [targetKey]);
 
   const isPending = target.kind === "pending";
   const order     = isPending ? target.order : target.row.order;
@@ -125,8 +147,42 @@ export function BoardDetailPanel({
     if (!row) return null;
 
     if (row.status === "assigned") {
+      // Stage two of the send-back confirm replaces the whole action row, so
+      // there is never an armed destructive button sitting beside a live one.
+      if (confirmSendBack) {
+        return (
+          <div>
+            <p className="text-[11.5px] text-gray-700 mb-2">
+              Send {row.type === "split" ? `split #${row.splitNumber}` : "this bill"} back to the rail?
+              {" "}
+              <span className="text-gray-500">
+                {row.operatorName.split(" ")[0]} loses it from their queue and it becomes unassigned again.
+                {row.type === "split" && " The split's line allocation is released."}
+              </span>
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmSendBack(false)}
+                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-[7px] text-[11.5px] font-semibold px-3 py-2"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { setConfirmSendBack(false); onSendBack(row); }}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
+              >
+                {busy && <Loader2 size={12} className="animate-spin" />}
+                Yes, send back
+              </button>
+            </div>
+          </div>
+        );
+      }
       return (
-        <div className="relative">
+        <div className="flex gap-2 relative">
           <button
             type="button"
             disabled={busy}
@@ -135,6 +191,21 @@ export function BoardDetailPanel({
           >
             {busy && <Loader2 size={12} className="animate-spin" />}
             Re-assign operator
+          </button>
+          {/* Same gate as Re-assign, and it is the ROUTES' real rule, not a
+              guess: cancel-assignment/route.ts requires workflowStage
+              "tint_assigned" (else 400 "Order is not in assigned stage"), and
+              splits/cancel/route.ts rejects tinting_in_progress and
+              tinting_done (409). Neither allows anything Re-assign does not. */}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { setMenuOpen(false); setConfirmSendBack(true); }}
+            className="bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60 text-gray-700 rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
+            title="Cancel this assignment and put the bill back on the rail"
+          >
+            <Undo2 size={12} className="text-gray-400" />
+            Send back to Pending
           </button>
           {menuOpen && (
             <OperatorMenu

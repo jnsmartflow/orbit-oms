@@ -445,6 +445,62 @@ export function TintManagerContent() {
   }, [operators, fetchBoard]);
 
   /**
+   * Send back to Pending — cancel the assignment, return the bill to the rail.
+   *
+   * Branches by row type onto the two endpoints that already existed for this
+   * and had been left with no caller by the board rebuild:
+   *   whole order → POST /api/tint/manager/cancel-assignment { orderId }
+   *   split       → POST /api/tint/manager/splits/cancel      { splitId }
+   *
+   * Offered on `assigned` rows only, which is the ROUTES' own rule rather than a
+   * UI preference: cancel-assignment requires `workflowStage === "tint_assigned"`
+   * (400 otherwise) and splits/cancel rejects `tinting_in_progress` /
+   * `tinting_done` (409). Neither admits anything Re-assign does not.
+   *
+   * ⚠ The response IS read. The old Kanban's equivalent fired the POST and never
+   * looked at the answer — a rejected cancel logged to console and looked like
+   * success, the same swallow FLOOR §6(b) documents. A failure here surfaces in
+   * the panel and as a toast.
+   */
+  const handleSendBack = useCallback(async (row: BoardRow) => {
+    setWriteBusy(true);
+    setPanelError(null);
+    try {
+      const isSplit = row.type === "split";
+      const res = await fetch(
+        isSplit ? "/api/tint/manager/splits/cancel" : "/api/tint/manager/cancel-assignment",
+        {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(isSplit ? { splitId: row.id } : { orderId: row.orderId }),
+        },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+        const msg = typeof body.error === "string"
+          ? body.error
+          : `Could not send back (HTTP ${res.status})`;
+        setPanelError(msg);
+        toast.error(msg);
+        return;
+      }
+      toast.success(
+        isSplit
+          ? `Split #${row.splitNumber} cancelled — ${row.obdNumber} is back on the rail`
+          : `${row.obdNumber} sent back to Pending`,
+      );
+      // The row leaves the table for the rail, so its key changes (order-N →
+      // pending-N) and the panel's target is gone. Close, matching what Assign
+      // and Remove OBD already do — there is no "next item" to step to when the
+      // thing you acted on moved to the other side of the screen.
+      setPanelKey(null);
+      await fetchBoard();
+    } finally {
+      setWriteBusy(false);
+    }
+  }, [fetchBoard]);
+
+  /**
    * Bulk re-assign — N SEQUENTIAL awaits over the single-assign route.
    *
    * There is no bulk endpoint, and there deliberately is no Promise.all and no
@@ -727,6 +783,7 @@ export function TintManagerContent() {
           onAssign={(o, opId) => { void handleAssign(o, opId); }}
           onReassignOrder={(r, opId) => { void handleReassignOrder(r, opId); }}
           onReassignSplit={(r, opId) => { void handleReassignSplit(r, opId); }}
+          onSendBack={(r) => { void handleSendBack(r); }}
           onRemove={(o) => setRemoveModalOrder(o)}
           onResolveMissing={(o) => {
             sheetResolvedRef.current = false;
