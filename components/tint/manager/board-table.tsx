@@ -133,11 +133,11 @@ function GroupSection({
   return (
     <>
       <tr className="group/hdr">
+        {/* Name only. The job count that used to trail it was noise: the rows
+            it counted are directly underneath, and the table header already
+            carries the board total. */}
         <td colSpan={9} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
           {group.operatorName}
-          <span className="font-normal text-gray-400 ml-1">
-            · {group.rows.length} {group.rows.length === 1 ? "job" : "jobs"} on the floor
-          </span>
         </td>
       </tr>
       {group.rows.map((r) => (
@@ -190,15 +190,25 @@ function Row({
         )}
       </td>
 
-      {/* # — the queue rank */}
+      {/* # — the queue rank.
+          ⚠ THE WRAPPER IS THE SAME ON EVERY ROW, and that is the whole point.
+          The cell is text-center (TD_NARROW), and a ranked row's content is
+          [number][5px gap][14px arrows] centred AS ONE BLOCK — which puts the
+          NUMBER about 9.5px left of the cell's true centre. A bare dash centres
+          on that true centre, so the two never sat in the same place. Both
+          branches now render the identical inline-flex, and the arrows slot
+          keeps its w-3.5 whether or not it holds buttons, so the glyph lands in
+          exactly one position down the whole column. */}
       <td className={cn(TD_NARROW, "text-[10.5px] tabular-nums")} onClick={(e) => e.stopPropagation()}>
-        {row.status !== "assigned" || row.seqRank === null ? (
-          <span className="text-[#9ca3af]">—</span>
-        ) : (
-          <span className="inline-flex items-center gap-[5px]">
+        <span className="inline-flex items-center gap-[5px]">
+          {row.status !== "assigned" || row.seqRank === null ? (
+            <span className="text-[#9ca3af]">—</span>
+          ) : (
             <span className="font-semibold text-[#4b5563]">{row.seqRank}</span>
+          )}
+          {row.status === "assigned" && row.seqRank !== null ? (
             <span className={cn(
-              "flex flex-col transition-opacity",
+              "flex w-3.5 flex-col transition-opacity",
               busy ? "opacity-30" : "opacity-0 group-hover:opacity-100",
             )}>
               <button
@@ -230,8 +240,12 @@ function Row({
                 ▼
               </button>
             </span>
-          </span>
-        )}
+          ) : (
+            // The arrows' footprint, reserved but empty — this is what keeps the
+            // dash under the numbers.
+            <span className="w-3.5" aria-hidden="true" />
+          )}
+        </span>
       </td>
 
       {/* OBD (+ split tag) — Floor's OBD treatment: mono 11.5 medium #111827 */}
@@ -254,7 +268,14 @@ function Row({
           a different party from the ship-to site in the next column. It differs
           from ship-to on 873 of 926 live tint OBDs, which is why both are here. */}
       <td className={TD} title={row.billToName ?? undefined}>
-        {row.billToName ?? "—"}
+        {/* Same treatment as Ship To below, deliberately. These are two parties
+            to the same bill, not a field and its footnote — the dealer who
+            ordered and the site it goes to — so neither outranks the other
+            visually. Inheriting TD's 11px/#4b5563 made this read as a secondary
+            field beside Ship To's 11.5px/#111827. */}
+        <span className="text-[11.5px] font-medium text-[#111827]">
+          {row.billToName ?? "—"}
+        </span>
       </td>
 
       {/* Ship To — the site. Floor's dealer-name treatment, ★/⚡ inline-styled
