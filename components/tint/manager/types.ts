@@ -263,6 +263,9 @@ export interface BoardRow {
   orderId:        number;
   obdNumber:      string;
   soNumber:       string | null;
+  /** import_raw_summary.smu — already on the payload, three live values:
+   *  "Decorative Projects", "Retail Offtake", "Deco Retail". */
+  smu:            string | null;
   /** Ordering dealer — its own column on the board, beside the ship-to site. */
   billToName:     string | null;
   /** The ship-to SITE. Rendered as the "Ship To" column. */

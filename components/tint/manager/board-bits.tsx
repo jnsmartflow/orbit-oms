@@ -47,6 +47,25 @@ export function ageDays(iso: string | null | undefined): number | null {
   return diff > 0 ? diff : null;
 }
 
+/**
+ * SMU, shortened to fit a table column.
+ *
+ * Only three values exist on live tint OBDs (verified 2026-09-05): "Decorative
+ * Projects" 688, "Retail Offtake" 230, "Deco Retail" 8. Just the first is too
+ * long for the column, and the abbreviation is NOT invented here — it is the
+ * one already used by the missing-customer popover in tint-manager-content.tsx
+ * ("Decorative Projects" → "Deco Projects"), so the two surfaces spell the same
+ * SMU the same way. ⚠ That popover still carries its own copy of this ternary;
+ * if a third spelling is ever needed, collapse both onto this helper rather than
+ * adding one.
+ *
+ * The full value always rides along in the cell's `title`, so nothing is lost.
+ */
+export function formatSmu(smu: string | null | undefined): string | null {
+  if (!smu) return null;
+  return smu === "Decorative Projects" ? "Deco Projects" : smu;
+}
+
 // ── Status pill ──────────────────────────────────────────────────────────────
 
 /**

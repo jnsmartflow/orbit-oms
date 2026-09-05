@@ -17,23 +17,28 @@ import { ObdCode } from "@/components/shared/obd-code";
 // 2026-09-05 as redundant — the group header already names the person, and every
 // row in a section belongs to them. The avatar still ships in board-bits for the
 // rail and the detail panel.
-import { StatusPill } from "./board-bits";
+import { StatusPill, formatSmu } from "./board-bits";
 import type { BoardGroup, BoardRow } from "./types";
 
 // ── Column widths ────────────────────────────────────────────────────────────
-// ☐ 4 · # 4 · OBD 13 · Bill To 18 · Ship To 20 · Route 9 · Vol 6 · Art. 10 ·
-// Status 16  = 100.
+// ☐ 4 · # 4 · OBD 13 · SMU 10 · Bill To 15 · Ship To 17 · Route 9 · Vol 6 ·
+// Art. 9 · Status 13  = 100.
 //
-// Derived from Floor's live table (components/floor/floor-table.tsx, the
-// interactive+showInvoice arm: 4,4,13,10,20,9,6,10,8,16) rather than re-guessed,
-// so the two boards line up column for column where they share one. Every
-// shared column keeps its EXACT Floor width — ☐, #, OBD, Ship To, Route, Vol,
-// Article, Status — and Bill To takes precisely the 18 freed by dropping
-// Invoice (10) and Picker (8), which this board does not have.
+// The 9-column set was derived from Floor's live table (the
+// interactive+showInvoice arm: 4,4,13,10,20,9,6,10,8,16) so the two boards line
+// up where they share a column. SMU (added 2026-09-05, immediately after OBD —
+// the position the retired Kanban table gave it, also at 10%) takes its 10 from
+// the four WIDEST columns rather than a flat shave off everything:
+//   Bill To 18 → 15 (−3) · Ship To 20 → 17 (−3) · Art. 10 → 9 (−1) ·
+//   Status 16 → 13 (−3)
+// Bill To and Ship To are the two widest and both ellipsise with a title
+// tooltip; Status only ever holds a pill ("In Progress · 09:14" ≈ 110px, which
+// 13% clears at any realistic table width); Art. holds "25 Drum". ☐, #, OBD,
+// Route and Vol are untouched — they are already at their minimum useful size.
 //
 // ⚠ WIDTHS MAP POSITIONALLY. Moving a column means moving its <col>, its <th>
 // and its <td> together; any one left behind shunts every column to its right.
-const COLS = ["4%", "4%", "13%", "18%", "20%", "9%", "6%", "10%", "16%"] as const;
+const COLS = ["4%", "4%", "13%", "10%", "15%", "17%", "9%", "6%", "9%", "13%"] as const;
 
 // ── Typography, copied from Floor's floor-table.tsx ──────────────────────────
 // Floor's four class strings verbatim, so header, cells and pills read
@@ -86,6 +91,7 @@ export function BoardTable({
               <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")} />
               <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")}>#</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>OBD</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>SMU</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Route</th>
@@ -97,7 +103,7 @@ export function BoardTable({
           <tbody>
             {total === 0 && (
               <tr>
-                <td colSpan={9} className="text-center text-[11.5px] text-gray-400 py-10">
+                <td colSpan={10} className="text-center text-[11.5px] text-gray-400 py-10">
                   Nothing on the floor. Assign an OBD from the rail to get started.
                 </td>
               </tr>
@@ -136,7 +142,7 @@ function GroupSection({
         {/* Name only. The job count that used to trail it was noise: the rows
             it counted are directly underneath, and the table header already
             carries the board total. */}
-        <td colSpan={9} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
+        <td colSpan={10} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
           {group.operatorName}
         </td>
       </tr>
@@ -262,6 +268,15 @@ function Row({
             </span>
           )}
         </span>
+      </td>
+
+      {/* SMU — import_raw_summary.smu, already on the payload. Only three values
+          occur on live tint OBDs: "Decorative Projects" (688), "Retail Offtake"
+          (230) and "Deco Retail" (8). formatSmu shortens the first to fit the
+          column; the full string stays in the title. Secondary weight, as on the
+          retired Kanban table, because it groups rather than identifies. */}
+      <td className={TD} title={row.smu ?? undefined}>
+        {formatSmu(row.smu) ?? "—"}
       </td>
 
       {/* Bill To — the ORDERING DEALER (import_raw_summary.billToCustomerName),
