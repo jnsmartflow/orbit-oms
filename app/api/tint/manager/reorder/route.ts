@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 
 export const dynamic = "force-dynamic";
 
@@ -28,16 +29,27 @@ export async function PATCH(req: Request): Promise<NextResponse> {
 
   try {
     if (type === "order") {
-      // Find the target order's operator
+      // Find the target order's CURRENT operator.
+      //
+      // `status: { not: "done" }` here matched every row ever written — "done"
+      // is not a value this system produces (lib/tint/assignment-status.ts).
+      // An OBD that was assigned, skipped, then re-assigned carries TWO rows,
+      // and an unordered findFirst over "everything" could hand back the
+      // skipped one — reordering inside the wrong operator's queue.
+      // Narrowed to the live statuses, and ordered newest-first so the result
+      // is deterministic even if a stale live row ever coexists.
       const targetAssignment = await prisma.tint_assignments.findFirst({
-        where:  { orderId: id, status: { not: "done" } },
-        select: { assignedToId: true },
+        where:   { orderId: id, status: { in: [...TINT_ASSIGNMENT_ACTIVE_STATUSES] } },
+        orderBy: { createdAt: "desc" },
+        select:  { assignedToId: true },
       });
       if (!targetAssignment) {
         return NextResponse.json({ error: "No active assignment for this order" }, { status: 404 });
       }
 
-      // Fetch only orders assigned to the same operator
+      // Fetch only orders assigned to the same operator. Same predicate fix as
+      // above: a dead `skipped` row pointing at operator A used to drag that
+      // OBD into A's queue list long after B had taken it over.
       const list = await prisma.orders.findMany({
         where: {
           workflowStage: "tint_assigned",
@@ -45,7 +57,7 @@ export async function PATCH(req: Request): Promise<NextResponse> {
           tintAssignments: {
             some: {
               assignedToId: targetAssignment.assignedToId,
-              status: { not: "done" },
+              status: { in: [...TINT_ASSIGNMENT_ACTIVE_STATUSES] },
             },
           },
         },
@@ -72,10 +84,18 @@ export async function PATCH(req: Request): Promise<NextResponse> {
       const newSeqA = seqA === seqB ? (direction === "up" ? seqB - 1 : seqB + 1) : seqB;
       const newSeqB = seqA === seqB ? seqA : seqA;
 
-      await prisma.$transaction([
-        prisma.orders.update({ where: { id: itemA.id }, data: { sequenceOrder: newSeqA } }),
-        prisma.orders.update({ where: { id: itemB.id }, data: { sequenceOrder: newSeqB } }),
-      ]);
+      // Sequential awaits — never prisma.$transaction (CORE §3: Vercel
+      // serverless + the Supabase pooler time out on interactive transactions).
+      // Values are computed BEFORE either write, so the pair is order-independent
+      // and there is no read-between-writes to race.
+      //
+      // Partial-failure shape: if the second update throws, A holds B's slot and
+      // B is unchanged, so two rows can share a sequenceOrder. That is the same
+      // state a freshly-assigned queue is already in (the column defaults to 0),
+      // the list query's `orderBy: [sequenceOrder, createdAt]` still sorts it,
+      // and the tie-break above resolves it on the next move. No repair needed.
+      await prisma.orders.update({ where: { id: itemA.id }, data: { sequenceOrder: newSeqA } });
+      await prisma.orders.update({ where: { id: itemB.id }, data: { sequenceOrder: newSeqB } });
 
     } else {
       // Find the target split's operator
@@ -115,10 +135,9 @@ export async function PATCH(req: Request): Promise<NextResponse> {
       const newSeqA = seqA === seqB ? (direction === "up" ? seqB - 1 : seqB + 1) : seqB;
       const newSeqB = seqA === seqB ? seqA : seqA;
 
-      await prisma.$transaction([
-        prisma.order_splits.update({ where: { id: itemA.id }, data: { sequenceOrder: newSeqA } }),
-        prisma.order_splits.update({ where: { id: itemB.id }, data: { sequenceOrder: newSeqB } }),
-      ]);
+      // Sequential awaits, same reasoning as the order branch above (CORE §3).
+      await prisma.order_splits.update({ where: { id: itemA.id }, data: { sequenceOrder: newSeqA } });
+      await prisma.order_splits.update({ where: { id: itemB.id }, data: { sequenceOrder: newSeqB } });
     }
 
     return NextResponse.json({ success: true });

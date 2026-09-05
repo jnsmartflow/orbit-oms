@@ -528,7 +528,27 @@ tint_assignments           Per whole-OBD tint assignment.
                                           accumulatedMinutes INT (canonical "total tinting time"
                                           on done — pause route increments per pause; done route
                                           folds final delta).
-                           Status enum: assigned | tinting_in_progress | paused | skipped | done.
+                           Status values — ⚠ CORRECTED 2026-09-05, verified live by
+                           read-only SELECT (§3). It is a plain String column with a
+                           Prisma default of "assigned" and NO database CHECK, so a
+                           wrong literal is never rejected — it silently matches nothing.
+                             assigned | tinting_in_progress | paused | skipped
+                             | tinting_done | cancelled
+                           Live counts at the time of the check:
+                             tinting_done 907 · cancelled 64 · skipped 10 · assigned 6
+                           (`paused` and `tinting_in_progress` are real — written by
+                           /api/tint/operator/pause|start|resume — and simply had no rows
+                           at that moment.)
+                           🔴 There is NO `done` value and there never has been: that
+                           literal returned ZERO rows. This line listed `done` and omitted
+                           `cancelled` until 2026-09-05, and three live routes had been
+                           filtering on `status: { not: "done" }` — a predicate that
+                           matched every row ever written. Fixed the same day in
+                           reorder / orders / assign; the vocabulary now has ONE owner,
+                           `lib/tint/assignment-status.ts`, which names each value's write
+                           site. Import from there rather than retyping a literal.
+                           `order_splits.status` shares the same finished/cancelled values
+                           (live: cancelled 5 · tinting_done 4) plus `tint_assigned`.
 
 tint_skip_events           v27.3. id BIGSERIAL. orderId, assignmentId (FK),
                            skippedById, skippedAt, reason TEXT,
@@ -536,9 +556,20 @@ tint_skip_events           v27.3. id BIGSERIAL. orderId, assignmentId (FK),
                            remark TEXT?, createdAt.
 
 tint_pause_events          v27.3. id BIGSERIAL. orderId, assignmentId,
-                           pausedById, pausedAt, pauseReason TEXT,
-                           progressAtPause JSONB, elapsedMinutesAtPause INT,
-                           pauseRemark TEXT?, resumedAt, resumedById, resumeRemark.
+                           operatorId, pausedAt, pauseReason TEXT,
+                           tinterType TEXT?, outOfStockColours TEXT[],
+                           progressSnapshot JSONB, elapsedMinutesAtPause INT,
+                           pauseRemark TEXT?, resumedAt, resumedById, resumeRemark,
+                           createdAt.
+                           ⚠ CORRECTED 2026-09-05 against prisma/schema.prisma: the JSONB
+                           column is `progressSnapshot`, NOT `progressAtPause`, and the
+                           actor column is `operatorId`, NOT `pausedById` (relation
+                           `PauseOperator`). Both wrong names were carried here since
+                           v27.3 while the live readers used the right ones —
+                           app/api/tint/manager/orders/route.ts selects
+                           `progressSnapshot`, and CLAUDE_TINT.md §5's pause-history DTO
+                           note describes the same mapping. `tinterType`,
+                           `outOfStockColours` and `createdAt` were simply missing.
 
 tint_logs, order_status_logs   INSERT-ONLY. order_status_logs gets OBD_REMOVED,
                                OPERATOR_SKIP, OPERATOR_PAUSE, OPERATOR_RESUME events.

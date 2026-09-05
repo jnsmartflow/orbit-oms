@@ -4,6 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkPermission } from "@/lib/permissions";
+import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 
 export const dynamic = "force-dynamic";
 
@@ -66,13 +67,46 @@ export async function POST(req: Request): Promise<NextResponse> {
       validationError("Customer master data is missing for this order. Resolve in the Missing Customers sheet before assigning.");
     }
 
+    // ── Stage guard: assign/re-assign only while the job is still WAITING ─────
+    // Same shape as the customer-missing backstop above — a 400 with a message
+    // the frontend can surface verbatim.
+    //
+    // WHY THIS IS A HARD REJECT, not a warning. Step 3 below upserts on
+    // `where: { orderId, status: "assigned" }`. A job that is being tinted or is
+    // paused has its row at `tinting_in_progress` / `paused`, so that lookup
+    // MISSES and the branch falls through to `create` — minting a SECOND
+    // tint_assignments row for the same OBD while `workflowStage` is reset to
+    // `tint_assigned`. The original row is then orphaned, taking `startedAt`,
+    // `accumulatedMinutes`, `pauseCount`, `lastPausedAt` and `currentProgress`
+    // with it: the elapsed timer restarts from zero, the 3-pause cap resets, and
+    // the per-SKU progress snapshot the operator built is unreachable. None of
+    // that is recoverable from the UI.
+    //
+    // It also enforces a rule the module already relies on but never asserted:
+    // a paused job belongs to its operator until resume or done
+    // (CLAUDE_TINT.md §5). Until now that was UI-only — the Kanban simply never
+    // rendered a Re-assign item outside `tint_assigned` — so a direct API call,
+    // or any new screen with its own selection model, could walk straight past
+    // it. The new Tint Manager board reassigns waiting work only.
+    //
+    // `tinting_in_progress` was accepted by the stage ladder below before this
+    // guard landed (2026-09-05); nothing in the live UI ever reached it.
+    if (
+      order.workflowStage !== "pending_tint_assignment" &&
+      order.workflowStage !== "tint_assigned"
+    ) {
+      validationError(
+        `This job can no longer be re-assigned — it is already at "${order.workflowStage}". Only a job still waiting to be tinted can be moved to another operator.`,
+      );
+    }
+
     if (order.workflowStage === "pending_tint_assignment") {
       // Case 1 — fresh order, no splits ever created → always allow
       // Case 2 — all splits were cancelled, stage reset to pending → always allow
-    } else if (
-      order.workflowStage === "tint_assigned" ||
-      order.workflowStage === "tinting_in_progress"
-    ) {
+    } else if (order.workflowStage === "tint_assigned") {
+      // `|| order.workflowStage === "tinting_in_progress"` removed 2026-09-05 —
+      // the guard above now rejects that stage outright, so keeping it here
+      // would describe a branch that can never be entered.
       const activeSplits = await prisma.order_splits.findMany({
         where:   { orderId, status: { not: "cancelled" } },
         include: { lineItems: { where: { lineStatus: "active" }, select: { rawLineItemId: true, assignedQty: true } } },
@@ -167,6 +201,15 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // 4. Update order workflow stage + set sequenceOrder to end of operator's queue
   try {
+    // Tail of THIS operator's queue. The predicate must describe orders he
+    // actually holds — see the note on the third instance of the dead
+    // `status: { not: "done" }` filter (lib/tint/assignment-status.ts). Left
+    // unfixed, an OBD he had once been assigned and then SKIPPED still matched
+    // via its dead `skipped` row, inflating the max and pushing every new job
+    // to an inflated sequenceOrder. Harmless to ordering (the values only need
+    // to be increasing) but wrong, and it shares its shape with the two real
+    // bugs fixed in reorder/route.ts, so it is corrected here rather than left
+    // as the last copy of a predicate that matches everything.
     const maxSeq = await prisma.orders.aggregate({
       where: {
         workflowStage: "tint_assigned",
@@ -174,7 +217,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         tintAssignments: {
           some: {
             assignedToId,
-            status: { not: "done" },
+            status: { in: [...TINT_ASSIGNMENT_ACTIVE_STATUSES] },
           },
         },
       },

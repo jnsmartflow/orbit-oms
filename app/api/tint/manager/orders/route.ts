@@ -6,6 +6,8 @@ import { checkPermission } from "@/lib/permissions";
 import { resolveFiniMap } from "@/lib/fini-resolver";
 import { buildSkuDisplay } from "@/types/sku-display";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { aggregateArticleTags } from "@/lib/article-tag-parse";
+import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +127,7 @@ export async function GET(): Promise<NextResponse> {
           slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
           customer: {
             include: {
-              area: { select: { name: true, deliveryType: { select: { name: true } } } },
+              area: { select: { name: true, primaryRoute: { select: { name: true } }, deliveryType: { select: { name: true } } } },
               salesOfficerGroup: {
                 include: {
                   salesOfficer: { select: { name: true } },
@@ -145,8 +147,17 @@ export async function GET(): Promise<NextResponse> {
           querySnapshot: {
             select: { totalVolume: true, totalArticle: true, articleTag: true, hasTinting: true, totalLines: true },
           },
+          // The order's CURRENT assignment — who owns it right now.
+          //
+          // This filtered `where` used to read `status: { not: "done" }`, which
+          // excluded nothing: "done" is not a value this system writes (the
+          // finished value is "tinting_done" — lib/tint/assignment-status.ts).
+          // Narrowed to the live statuses so a dead `skipped` or `cancelled`
+          // row can no longer be served as the current operator on a re-assigned
+          // OBD. Set A only holds pending/assigned/in-progress stages, so no
+          // `tinting_done` row is reachable here either way.
           tintAssignments: {
-            where:   { status: { not: "done" } },
+            where:   { status: { in: [...TINT_ASSIGNMENT_ACTIVE_STATUSES] } },
             include: { assignedTo: { select: { id: true, name: true } } },
             orderBy: { createdAt: "desc" },
             take:    1,
@@ -234,7 +245,7 @@ export async function GET(): Promise<NextResponse> {
           slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
           customer: {
             include: {
-              area: { select: { name: true, deliveryType: { select: { name: true } } } },
+              area: { select: { name: true, primaryRoute: { select: { name: true } }, deliveryType: { select: { name: true } } } },
               salesOfficerGroup: {
                 include: {
                   salesOfficer: { select: { name: true } },
@@ -307,7 +318,7 @@ export async function GET(): Promise<NextResponse> {
               slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
               customer: {
                 include: {
-                  area: { select: { name: true, deliveryType: { select: { name: true } } } },
+                  area: { select: { name: true, primaryRoute: { select: { name: true } }, deliveryType: { select: { name: true } } } },
                   salesOfficerGroup: {
                     include: {
                       salesOfficer: { select: { name: true } },
@@ -356,7 +367,7 @@ export async function GET(): Promise<NextResponse> {
               slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
               customer: {
                 include: {
-                  area: { select: { name: true, deliveryType: { select: { name: true } } } },
+                  area: { select: { name: true, primaryRoute: { select: { name: true } }, deliveryType: { select: { name: true } } } },
                   salesOfficerGroup: {
                     include: {
                       salesOfficer: { select: { name: true } },
@@ -406,7 +417,7 @@ export async function GET(): Promise<NextResponse> {
               slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
               customer: {
                 include: {
-                  area:              { select: { name: true, deliveryType: { select: { name: true } } } },
+                  area:              { select: { name: true, primaryRoute: { select: { name: true } }, deliveryType: { select: { name: true } } } },
                   salesOfficerGroup: {
                     include: { salesOfficer: { select: { name: true } } },
                   },
@@ -544,10 +555,20 @@ export async function GET(): Promise<NextResponse> {
       // This would incorrectly place them in the Pending column instead of Assigned.
       // Fix: if there is an active tint_assignment (not cancelled, not done), the whole
       // OBD is assigned to one operator — treat effectiveRemainingQty as 0.
+      //
+      // ⚠ `&& a.status !== "done"` was dropped here (2026-09-05) as a pure
+      // no-op: no row has ever carried "done", so the clause could never
+      // subtract anything and this is byte-for-byte the same predicate.
+      // It is NOT re-pointed at "tinting_done", deliberately — Set B
+      // (completedTodayOrders) feeds this loop with its OWN tinting_done rows,
+      // and a completed whole-OBD assignment must still count as "this OBD's
+      // work is accounted for", or every bill finished today would report its
+      // full remainingQty and start counting into the header's Unassigned pill.
+      // "Not cancelled" is the real intent at this site.
       type AnyAssignment = { status: string };
       const assignmentList = ((o as { tintAssignments?: AnyAssignment[] }).tintAssignments) ?? [];
       const hasActiveWholeOBDAssignment = assignmentList.some(
-        (a) => a.status !== "cancelled" && a.status !== "done",
+        (a) => a.status !== "cancelled",
       );
       const effectiveRemainingQty = hasActiveWholeOBDAssignment ? 0 : remainingQty;
 
@@ -624,6 +645,39 @@ export async function GET(): Promise<NextResponse> {
         originalSlotId:   o.originalSlotId ?? null,
         originalSlotName: o.originalSlotId ? (slotNameMap.get(o.originalSlotId) ?? null) : null,
         deliveryTypeName: (o as any).customer?.area?.deliveryType?.name ?? null,
+
+        // ── Board columns (2026-09-05) ────────────────────────────────────────
+        // Flat, explicitly-named fields, in the same style as deliveryTypeName
+        // above, so every consumer reads one key instead of walking a relation
+        // that may or may not be included on a given payload array.
+        //
+        // soNumber is ALREADY a scalar on `o` (this query uses `include`, which
+        // returns every column) and is therefore already spread by `...o` —
+        // restated here so it is part of the declared contract rather than an
+        // accident of Prisma's include semantics that a later `select` would
+        // silently delete. 920/920 live tint orders carry one.
+        soNumber:         o.soNumber ?? null,
+
+        // Route comes from the effective dealer's AREA, matching
+        // FLOOR_DEALER_SELECT in lib/floor/queries.ts. NOT
+        // delivery_point_master.primaryRoute: verified live 2026-09-05, the
+        // area path resolves for 920/920 tint orders and the customer's own
+        // primaryRoute for 21/920 (2%).
+        route:            (o as any).customer?.area?.primaryRoute?.name ?? null,
+
+        // Order-level typed article tag, rolled up from the ACTIVE line tags
+        // (e.g. "2 Drum, 3 Tin"). Floor's convention: the payload carries the
+        // typed STRING and the component abbreviates it for display via
+        // formatArticleBreakdown() ("2 D · 3 T") — presentation stays out of
+        // the API, and lib/article-tag-parse.ts is the dependency-free module,
+        // so this does not make Tint a caller of Floor-owned code.
+        // NULL is "unknown", never "0": only 366/920 live tint OBDs carry any
+        // article tag at all (untagged = loose tins), so the consumer must
+        // render an em dash rather than a zero.
+        articleTag:       aggregateArticleTags(lines.map((l) => l.articleTag)),
+
+        isKeyCustomer:    (o as any).customer?.isKeyCustomer ?? false,
+
         // Phase 3e/4e — strip raw include fields, emit the mapped summaries.
         // JSON.stringify drops undefined fields.
         skipEvents:       undefined,
@@ -654,6 +708,13 @@ export async function GET(): Promise<NextResponse> {
       originalSlotId:   s.order.originalSlotId ?? null,
       originalSlotName: s.order.originalSlotId ? (slotNameMap.get(s.order.originalSlotId) ?? null) : null,
       deliveryTypeName: (s.order as any).customer?.area?.deliveryType?.name ?? null,
+      // Board columns (2026-09-05) — same three as the orders payload, read off
+      // the parent order. `articleTag` is NOT restated: order_splits carries its
+      // own scalar of that name and `...s` already spreads it, which is the
+      // right value for a split row (the split's goods, not the whole bill's).
+      soNumber:         s.order.soNumber ?? null,
+      route:            (s.order as any).customer?.area?.primaryRoute?.name ?? null,
+      isKeyCustomer:    (s.order as any).customer?.isKeyCustomer ?? false,
     }));
     const completedSplitsWithSmu = completedSplits.map((s) => ({
       ...s,
@@ -675,6 +736,10 @@ export async function GET(): Promise<NextResponse> {
       originalSlotId:   s.order.originalSlotId ?? null,
       originalSlotName: s.order.originalSlotId ? (slotNameMap.get(s.order.originalSlotId) ?? null) : null,
       deliveryTypeName: (s.order as any).customer?.area?.deliveryType?.name ?? null,
+      // Board columns (2026-09-05) — see activeSplitsWithSmu above.
+      soNumber:         s.order.soNumber ?? null,
+      route:            (s.order as any).customer?.area?.primaryRoute?.name ?? null,
+      isKeyCustomer:    (s.order as any).customer?.isKeyCustomer ?? false,
     }));
 
     // 3e bug fix — destructure skipEventId (BigInt) off each tint_assignments
@@ -692,6 +757,16 @@ export async function GET(): Promise<NextResponse> {
       originalSlotId:   a.order.originalSlotId ?? null,
       originalSlotName: a.order.originalSlotId ? (slotNameMap.get(a.order.originalSlotId) ?? null) : null,
       deliveryTypeName: (a.order as any).customer?.area?.deliveryType?.name ?? null,
+      // Board columns (2026-09-05). articleTag comes from the OBD-level
+      // querySnapshot here rather than a line roll-up: this set is keyed on
+      // tint_assignments, and its orders are not all present in `linesByObd`
+      // (Set B only picks up completions that landed at `pending_support`, so a
+      // bill that auto-flipped to `pending_picking` on a pre-set slot is in this
+      // set and not that one). Same typed-string shape either way.
+      soNumber:         a.order.soNumber ?? null,
+      route:            (a.order as any).customer?.area?.primaryRoute?.name ?? null,
+      articleTag:       (a.order as any).querySnapshot?.articleTag ?? null,
+      isKeyCustomer:    (a.order as any).customer?.isKeyCustomer ?? false,
     }));
 
     return NextResponse.json({
