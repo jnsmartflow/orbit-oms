@@ -1,1895 +1,87 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type RefObject } from "react";
-import { createPortal } from "react-dom";
-import {
-  Loader2,
-  AlertCircle, Layers,
-  Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
-  Truck, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
-  RotateCcw, Trash2, History, SkipForward, Pause, EyeOff, FileBarChart,
-} from "lucide-react";
+// Tint Manager — the board. Rebuilt 2026-09-05 to the locked mockup
+// docs/mockups/tint-manager/tint-manager-FINAL_2.html.
+//
+// WHAT REPLACED WHAT
+//   was: a 4-column Kanban (Pending / Assigned / In Progress / Completed) with a
+//        card-vs-table view toggle, plus a per-column split card.
+//   now: a 344px "Needs assignment" rail + ONE flat table grouped one section
+//        per operator, so every job of a person's — running, queued, paused,
+//        finished today — sits under their own name.
+//
+// STRUCTURE, borrowed from Floor (components/floor/): a composition root that
+// owns state and every write, with dumb children under components/tint/manager/.
+// The shaping rule (grouping, per-type Seq ranks) lives in ./manager/rows.ts as
+// pure functions, so it can be reasoned about without mounting anything.
+//
+// ⚠ THE HEADER STAYS <UniversalHeader />. Floor is the ONE named exception to
+// CORE §3's "no custom headers" rule (CLAUDE_UI §6), and this screen deliberately
+// does not become a second one. The only prop removed is the operator-workload
+// segment group — the table's per-operator sections now do that job, and better,
+// because they show the work instead of counting it.
+//
+// RETIRED, NOT DELETED (CORE §3 — never delete a file):
+//   components/tint/tint-table-view.tsx      — the old Kanban table
+//   components/shared/order-detail-panel.tsx — the old panel; this was its only
+//                                              live importer
+//   components/tint/split-builder-modal.tsx  — Create Split is out of scope for
+//                                              this screen by decision
+// All three keep compiling; they simply lose their import. tint-table-view.tsx
+// still imports TintOrder / SplitCard / CompletedAssignment FROM THIS FILE, so
+// the three types are re-exported below even though this file no longer declares
+// them.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
+import { toast } from "sonner";
+import { AlertCircle, FileBarChart, Plus, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { ObdCode } from "@/components/shared/obd-code";
-import { SplitBuilderModal } from "@/components/tint/split-builder-modal";
-import type { SplitBuilderModalProps } from "@/components/tint/split-builder-modal";
-import { ManualTintEntryModal } from "@/components/tint/manual-tint-entry-modal";
-import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-modal";
+
+import { UniversalHeader } from "@/components/universal-header";
+import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { RemoveObdModal } from "@/components/tint/RemoveObdModal";
 import { HideObdModal } from "@/components/tint/HideObdModal";
 import { SkipHistoryModal } from "@/components/tint/SkipHistoryModal";
 import { PauseHistoryModal } from "@/components/tint/PauseHistoryModal";
-import { humaniseReason } from "@/lib/tint/pause-reasons";
-import { TintTableView } from "@/components/tint/tint-table-view";
-import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
-import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
-import { UniversalHeader } from "@/components/universal-header";
-import { useSession } from "next-auth/react";
-import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
-import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface TintAssignmentInfo {
-  id:          number;
-  status:      string;
-  assignedTo:  { id: number; name: string | null };
-  startedAt:   string | null;
-  completedAt: string | null;
-  updatedAt:   string;
-  // Phase 4-smoke-2 — needed by the table's ElapsedBadge so paused +
-  // resumed cycles fold prior run deltas into the displayed total.
-  // Already pulled by /api/tint/manager/orders via implicit include.
-  accumulatedMinutes: number;
-}
-
-export interface TintOrder {
-  id:                 number;
-  obdNumber:          string;
-  workflowStage:      string;
-  dispatchSlot:       string | null;
-  dispatchStatus:     string | null;
-  priorityLevel:      number;
-  sequenceOrder:      number | null;
-  createdAt:          string;
-  shipToCustomerName: string | null;
-  shipToCustomerId:   string | null;
-  customerMissing:    boolean;
-  manualTintEntry:    boolean;
-  smu:                string | null;
-  obdEmailDate:       string | null;
-  obdEmailTime:       string | null;
-  orderDateTime:      string | null;
-  slotId:             number | null;
-  slotName:           string | null;
-  slotTime:           string | null;
-  slotIsNextDay:      boolean;
-  originalSlotId:     number | null;
-  originalSlotName:   string | null;
-  deliveryTypeName:   string | null;
-  customer: {
-    customerName:       string;
-    area:               { name: string };
-    salesOfficerGroup:  {
-      salesOfficer: { name: string };
-    } | null;
-    // Phase 5 — Primary SO link (0-or-1 element array from server include).
-    salesOfficerLinks?: Array<{
-      salesOfficer: { id: number; name: string; phone: string | null };
-    }>;
-  } | null;
-  querySnapshot: {
-    totalVolume: number;
-    totalLines:  number;
-    articleTag:  string | null;
-  } | null;
-  tintAssignments: TintAssignmentInfo[];
-  lineItems: {
-    id:                number;
-    lineId:            number;
-    skuCodeRaw:        string;
-    skuDescriptionRaw: string | null;
-    unitQty:           number;
-    volumeLine:        number | null;
-    isTinting:         boolean;
-    article:           number | null;
-    articleTag:        string | null;
-    skuDisplay:        SkuDisplay;
-  }[];
-  remainingQty?: number;
-  existingSplits?: {
-    rawLineItemId: number;
-    assignedQty:   number;
-  }[];
-  splits?: {
-    id:             number;
-    splitNumber:    number;
-    totalQty:       number;
-    status:         string;
-    articleTag:     string | null;
-    dispatchStatus: string | null;
-    createdAt:      string;
-    assignedTo:     { name: string };
-    lineItems: {
-      rawLineItemId: number;
-      assignedQty:   number;
-      rawLineItem: {
-        skuCodeRaw:        string;
-        skuDescriptionRaw: string | null;
-        skuDisplay:        SkuDisplay;
-      };
-    }[];
-  }[];
-  // Linked delivery challan (Phase 2d.1) — null when no challan exists.
-  // Drives the Remove OBD modal's challan-void pre-warning.
-  challan?: { challanNumber: string; isVoided: boolean } | null;
-  // Phase 3d — skip summary. Present when the order has been skipped >=1 time.
-  // Wired by Phase 3e payload. Until then, this is undefined / null and the
-  // returned-card UI degrades cleanly to a normal Pending card.
-  skipSummary?: {
-    count:          number;
-    lastSkippedAt:  string;
-    lastSkippedBy:  string;
-    lastReason:     string;
-    lastTinterType: string | null;
-    lastColours:    string[];
-  } | null;
-  // Phase 4e — pause summary. Mirrors skipSummary. Non-null when the order
-  // has been paused >=1 time (currentlyPaused may still be false if the
-  // operator has since resumed every event).
-  pauseSummary?: {
-    count:                number;
-    currentlyPaused:      boolean;
-    lastPausedAt:         string;
-    lastPausedBy:         string;
-    lastReason:           string;
-    lastProgressSnapshot: { items?: Array<{ skuId: number; doneQty: number }> } | null;
-  } | null;
-}
-
-export interface SplitCard {
-  id:             number;
-  splitNumber:    number;
-  status:         string;
-  dispatchStatus: string | null;
-  priorityLevel:  number | null;
-  sequenceOrder:  number | null;
-  totalQty:       number;
-  totalVolume:    number | null;
-  articleTag:     string | null;
-  createdAt:      string;
-  startedAt:      string | null;
-  completedAt:    string | null;
-  smu:              string | null;
-  obdEmailDate:     string | null;
-  obdEmailTime:     string | null;
-  orderDateTime:    string | null;
-  slotId:           number | null;
-  slotName:         string | null;
-  slotTime:         string | null;
-  slotIsNextDay:    boolean;
-  originalSlotId:   number | null;
-  originalSlotName: string | null;
-  deliveryTypeName: string | null;
-  assignedTo:     { id: number; name: string | null };
-  lineItems: {
-    rawLineItemId: number;
-    assignedQty:   number;
-    rawLineItem: {
-      skuCodeRaw:        string;
-      skuDescriptionRaw: string | null;
-      volumeLine:        number | null;
-      isTinting:         boolean;
-      skuDisplay:        SkuDisplay;
-    };
-  }[];
-  order: {
-    id:       number;
-    obdNumber: string;
-    customer: {
-      customerName:       string;
-      salesOfficerGroup:  {
-        salesOfficer: { name: string };
-      } | null;
-      // Phase 5 — Primary SO link.
-      salesOfficerLinks?: Array<{
-        salesOfficer: { id: number; name: string; phone: string | null };
-      }>;
-    } | null;
-  };
-}
-
-export interface CompletedAssignment {
-  id:               number;
-  completedAt:      string | null;
-  smu:              string | null;
-  obdEmailDate:     string | null;
-  obdEmailTime:     string | null;
-  orderDateTime:    string | null;
-  slotId:           number | null;
-  slotName:         string | null;
-  slotTime:         string | null;
-  slotIsNextDay:    boolean;
-  originalSlotId:   number | null;
-  originalSlotName: string | null;
-  deliveryTypeName: string | null;
-  assignedTo:  { id: number; name: string | null };
-  order: {
-    id:                 number;
-    obdNumber:          string;
-    shipToCustomerName: string | null;
-    customer: {
-      customerName:      string;
-      area:              { name: string };
-      salesOfficerGroup: { salesOfficer: { name: string } } | null;
-      // Phase 5 — Primary SO link.
-      salesOfficerLinks?: Array<{
-        salesOfficer: { id: number; name: string; phone: string | null };
-      }>;
-    } | null;
-    querySnapshot: {
-      totalVolume:  number;
-      totalLines:   number;
-      articleTag:   string | null;
-    } | null;
-  };
-}
-
-interface Operator {
-  id:   number;
-  name: string | null;
-}
-
-// Phase 5 — DRY cascade read used by every TM card.
-// 1. Primary SO link (customer_sales_officers, filtered to PRIMARY +
-//    non-dismissed by the server include).
-// 2. salesOfficerGroup.salesOfficer (legacy fallback).
-// 3. "—" sentinel.
-function getDisplaySalesOfficerName(
-  customer:
-    | {
-        salesOfficerLinks?: Array<{ salesOfficer: { name: string } }>;
-        salesOfficerGroup?: { salesOfficer: { name: string } } | null;
-      }
-    | null
-    | undefined,
-): string {
-  return (
-    customer?.salesOfficerLinks?.[0]?.salesOfficer?.name ??
-    customer?.salesOfficerGroup?.salesOfficer?.name ??
-    "—"
-  );
-}
-
-interface SlotSummaryItem {
-  id:               number;
-  name:             string;
-  slotTime:         string;
-  isNextDay:        boolean;
-  sortOrder:        number;
-  tintPendingCount: number;
-}
-
-type ColItem =
-  | { type: "order"; data: TintOrder }
-  | { type: "split"; data: SplitCard };
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function initials(name: string | null | undefined): string {
-  if (!name) return "?";
-  return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
-}
-
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  let h = d.getHours();
-  const m = d.getMinutes();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
-}
-
-function formatObdDateTime(date: string | null, time: string | null): string {
-  if (!date) return "";
-  const d = new Date(date);
-  const dateStr = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  return time ? `${dateStr} ${time}` : dateStr;
-}
-
-function formatOrderDateTime(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const dateStr = d.toLocaleDateString("en-GB", {
-    day: "numeric", month: "short", timeZone: "Asia/Kolkata"
-  });
-  const timeStr = d.toLocaleTimeString("en-GB", {
-    hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata"
-  });
-  return `${dateStr} ${timeStr}`;
-}
-
-function getAgeBadge(orderDateTime: string | null, obdEmailDate: string | null): { text: string; className: string } | null {
-  const dateStr = orderDateTime ?? obdEmailDate;
-  if (!dateStr) return null;
-  const orderDate = new Date(dateStr);
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const istNow = new Date(now.getTime() + istOffset);
-  const istOrder = new Date(orderDate.getTime() + istOffset);
-  const nowDay = new Date(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate());
-  const orderDay = new Date(istOrder.getUTCFullYear(), istOrder.getUTCMonth(), istOrder.getUTCDate());
-  const diffDays = Math.floor((nowDay.getTime() - orderDay.getTime()) / 86400000);
-  if (diffDays <= 0) return null;
-  if (diffDays === 1) return { text: "1d", className: "bg-amber-50 text-amber-700 border-amber-200" };
-  return { text: `${diffDays}d`, className: "bg-red-50 text-red-700 border-red-200" };
-}
-
-function buildTs(date: string | null, time: string | null): number {
-  const dateStr = date ?? "1970-01-01";
-  const parts = (time ?? "00:00").split(":");
-  const h = Number(parts[0]) || 0;
-  const m = Number(parts[1]) || 0;
-  const ts = new Date(dateStr);
-  ts.setHours(h, m, 0, 0);
-  return ts.getTime();
-}
-
-
-
-// ── Dispatch / Priority badge helpers ─────────────────────────────────────────
-
-function DispatchStatusBadge({ status }: { status: string | null }) {
-  if (!status) return null;
-  const map: Record<string, { label: string; className: string }> = {
-    dispatch:                   { label: "Dispatch",  className: "bg-green-50 border-green-200 text-green-700" },
-    hold:                       { label: "Hold",      className: "bg-red-50 border-red-200 text-red-700" },
-    waiting_for_confirmation:   { label: "Waiting",   className: "bg-amber-50 border-amber-200 text-amber-700" },
-  };
-  const cfg = map[status];
-  if (!cfg) return null;
-  return (
-    <span className={cn(
-      "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border",
-      cfg.className,
-    )}>
-      <Truck size={9} />
-      {cfg.label}
-    </span>
-  );
-}
-
-
-// ── Status Popover (portal — fixed position, no overflow clipping) ────────────
-
-interface StatusPopoverProps {
-  position:        { top: number; right: number };
-  anchorRef:       RefObject<HTMLButtonElement>;
-  currentDispatch: string | null;
-  currentPriority: "normal" | "urgent";
-  onSave:          (dispatch: string | null, priority: "normal" | "urgent") => Promise<void>;
-  onClose:         () => void;
-  isSaving:        boolean;
-}
-
-function StatusPopover({
-  position,
-  anchorRef,
-  currentDispatch,
-  currentPriority,
-  onSave,
-  onClose,
-  isSaving,
-}: StatusPopoverProps) {
-  const [dispatch, setDispatch] = useState<string | null>(currentDispatch);
-  const [priority, setPriority] = useState<"normal" | "urgent">(currentPriority);
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  // Close on outside click — excludes both the popover itself and the anchor button
-  useEffect(() => {
-    function handleOutside(e: MouseEvent) {
-      if (
-        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
-        anchorRef.current  && !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    }
-    // Small delay so the button click that opened this doesn't immediately close it
-    const timer = setTimeout(() => {
-      document.addEventListener("mousedown", handleOutside);
-    }, 50);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousedown", handleOutside);
-    };
-  }, [onClose, anchorRef]);
-
-  const hasChanges = dispatch !== currentDispatch || priority !== currentPriority;
-
-  const content = (
-    <div
-      ref={popoverRef}
-      style={{ position: "fixed", top: position.top, right: position.right, zIndex: 9999 }}
-      className="bg-white border border-gray-200 rounded-xl shadow-lg p-3.5 w-[210px]"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {/* Header */}
-      <p className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-3">
-        Set Status
-      </p>
-
-      {/* Priority */}
-      <p className="text-[10px] font-bold uppercase tracking-[.4px] text-gray-400 mb-1.5">
-        Priority
-      </p>
-      <div className="flex gap-1.5 mb-3">
-        {(["normal", "urgent"] as const).map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setPriority(p)}
-            className={cn(
-              "flex-1 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors",
-              priority === p
-                ? p === "urgent"
-                  ? "bg-red-50 border-red-300 text-red-700"
-                  : "bg-gray-50 border-gray-300 text-gray-700"
-                : "bg-white border-gray-300 text-gray-400 hover:bg-gray-50",
-            )}
-          >
-            {p === "urgent" ? "🚨 Urgent" : "Normal"}
-          </button>
-        ))}
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-gray-100 mb-3" />
-
-      {/* Dispatch status — compact horizontal toggle */}
-      <p className="text-[10px] font-bold uppercase tracking-[.4px] text-gray-400 mb-1.5">
-        Dispatch Status
-      </p>
-      <div className="flex gap-1 p-0.5 bg-gray-50 border border-gray-200 rounded-lg mb-3">
-        {([
-          { value: "dispatch",                 label: "Dispatch", activeClass: "bg-green-50 border border-green-200 text-green-700" },
-          { value: "hold",                     label: "Hold",     activeClass: "bg-red-50 border border-red-200 text-red-700" },
-          { value: "waiting_for_confirmation", label: "Waiting",  activeClass: "bg-amber-50 border border-amber-200 text-amber-700" },
-        ] as const).map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => setDispatch(dispatch === opt.value ? null : opt.value)}
-            className={cn(
-              "flex-1 py-1.5 rounded-md text-[10.5px] font-semibold transition-colors",
-              dispatch === opt.value
-                ? opt.activeClass
-                : "text-gray-400 hover:text-gray-600",
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Save button */}
-      <button
-        type="button"
-        disabled={!hasChanges || isSaving}
-        onClick={() => { void onSave(dispatch, priority); }}
-        className={cn(
-          "w-full py-1.5 rounded-lg text-[11.5px] font-semibold transition-colors flex items-center justify-center gap-1.5",
-          hasChanges && !isSaving
-            ? "bg-teal-600 text-white hover:bg-teal-700"
-            : "bg-gray-100 text-gray-400 cursor-not-allowed",
-        )}
-      >
-        {isSaving ? <Loader2 size={12} className="animate-spin" /> : null}
-        {isSaving ? "Saving…" : "Save"}
-      </button>
-    </div>
-  );
-
-  return typeof document !== "undefined" ? createPortal(content, document.body) : null;
-}
-
-// ── Column config ─────────────────────────────────────────────────────────────
-
-const COLUMNS = [
-  {
-    stage:     "pending_tint_assignment",
-    label:     "Pending Assignment",
-    dot:       "bg-teal-500",
-    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
-  },
-  {
-    stage:     "tint_assigned",
-    label:     "Assigned",
-    dot:       "bg-amber-400",
-    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
-  },
-  {
-    stage:     "tinting_in_progress",
-    label:     "In Progress",
-    dot:       "bg-blue-400",
-    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
-  },
-  {
-    stage:     "completed",
-    label:     "Completed",
-    dot:       "bg-green-400",
-    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
-  },
-] as const;
-
-type ColStage = typeof COLUMNS[number]["stage"];
-
-const CARDS_PER_PAGE = 5;
-
-// ── Kanban card ───────────────────────────────────────────────────────────────
-
-interface KanbanCardProps {
-  order:              TintOrder;
-  stage:              ColStage;
-  onAssign:           () => void;
-  onCreateSplit:      () => void;
-  onRefresh:          () => void;
-  onMoveUp:           () => void;
-  onMoveDown:         () => void;
-  onViewDetail:       () => void;
-  onCustomerMissing?: () => void;
-  onRequestRevert:    () => void;
-  /** When true, render "Remove OBD…" in the pending-stage 3-dot menu. */
-  canRemove:          boolean;
-  /** Fires when the user clicks "Remove OBD…" — parent opens the modal. */
-  onRequestRemove:    () => void;
-  /** When true (admin only), render "Hide OBD…" in the pending-stage menu. */
-  canHide:            boolean;
-  /** Fires when the user clicks "Hide OBD…" — parent opens the hide modal. */
-  onRequestHide:      () => void;
-  /** Phase 3d — fires when the user opens skip history (pill / link / menu). */
-  onOpenSkipHistory:  () => void;
-  /** Phase 4e — fires when the user opens pause history (pill / link / menu). */
-  onOpenPauseHistory: () => void;
-}
-
-function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing, onRequestRevert, canRemove, onRequestRemove, canHide, onRequestHide, onOpenSkipHistory, onOpenPauseHistory }: KanbanCardProps) {
-  const [menuOpen,     setMenuOpen]     = useState(false);
-  const [popoverOpen,  setPopoverOpen]  = useState(false);
-  const [popoverPos,   setPopoverPos]   = useState<{ top: number; right: number } | null>(null);
-  const [isSaving,     setIsSaving]     = useState(false);
-  const menuRef        = useRef<HTMLDivElement>(null);
-  const plusButtonRef  = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const assignment       = order.tintAssignments[0] ?? null;
-  const customerName    = order.customer?.customerName ?? order.shipToCustomerName ?? "—";
-  const areaName        = order.customer?.area.name ?? "—";
-  const isUrgent        = order.priorityLevel <= 2;
-  const isDone          = stage === "completed";
-  const isPending       = stage === "pending_tint_assignment";
-  const isAssigned      = stage === "tint_assigned";
-  const isInProgress    = stage === "tinting_in_progress";
-  const volume          = order.querySnapshot?.totalVolume
-    ? `${order.querySnapshot.totalVolume} L`
-    : "—";
-  const smu             = order.smu ?? "—";
-  const salesOfficerName = getDisplaySalesOfficerName(order.customer);
-  const operatorName    = assignment?.assignedTo.name ?? "—";
-  const operatorInitials = operatorName === "—"
-    ? "?"
-    : operatorName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-
-  const activeSplits  = (order.splits ?? []).filter((s) =>
-    ["tint_assigned", "tinting_in_progress"].includes(s.status)
-  );
-  const assignedQty   = (order.splits ?? []).reduce((sum, s) => sum + s.totalQty, 0);
-  const totalQty      = (order.lineItems ?? []).reduce((sum, l) => sum + l.unitQty, 0);
-  const remainingQty  = order.remainingQty ?? (totalQty - assignedQty);
-  const hasSplits     = (order.splits ?? []).length > 0 ||
-                        (order.existingSplits ?? []).length > 0;
-
-  async function handleCancelAssignment() {
-    try {
-      await fetch("/api/tint/manager/cancel-assignment", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ orderId: order.id }),
-      });
-      onRefresh();
-    } catch (err) {
-      console.error("Cancel assignment failed:", err);
-    }
-  }
-
-  // ── Status popover save ───────────────────────────────────────────────────
-
-  async function handleStatusSave(
-    newDispatch: string | null,
-    newPriority: "normal" | "urgent",
-  ) {
-    setIsSaving(true);
-    try {
-      const body: Record<string, string | null> = {};
-      if (newDispatch !== order.dispatchStatus)            body.dispatchStatus = newDispatch;
-      if ((newPriority === "urgent") !== isUrgent)         body.priority       = newPriority;
-      if (Object.keys(body).length === 0) { setPopoverOpen(false); return; }
-
-      const res = await fetch(`/api/tint/manager/orders/${order.id}/status`, {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      setPopoverOpen(false);
-      onRefresh();
-    } catch (err) {
-      console.error("Status save failed:", err);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  // Phase 3d — returned-state styling when the order has been skipped.
-  // skipSummary is wired by Phase 3e payload; until then it's null/undefined
-  // and the card renders normally.
-  const isReturned = !!(order.skipSummary && order.skipSummary.count >= 1);
-  // Phase 4e — paused-state styling. Independent of isReturned; the two
-  // layers coexist on a card that was skipped 1× then later paused. Left
-  // border stays a single 3px amber rule (same colour both layers use).
-  const isPausedCard  = !!(order.pauseSummary && order.pauseSummary.currentlyPaused);
-  const hasPauseAudit = !!(order.pauseSummary && order.pauseSummary.count >= 1);
-
-  return (
-    <>
-    <div
-      className={cn(
-        "bg-white border border-gray-200 rounded-lg overflow-hidden cursor-pointer",
-        "hover:border-gray-300 transition-all duration-150",
-        (isReturned || isPausedCard) && "border-l-[3px] border-l-amber-500",
-      )}
-    >
-      <div className="px-3.5 pt-3 pb-3">
-        {/* 1. Icons + badges */}
-        <div className="mb-2">
-          {/* Icon row */}
-          <div className="flex items-center justify-between h-[24px]">
-            {/* Left: split indicator */}
-            <div className="flex items-center">
-              {activeSplits.length > 0 && (
-                <span className="text-[10px] font-semibold text-amber-600">
-                  ✂ {activeSplits.length} · {remainingQty > 0 ? `${remainingQty} left` : "fully assigned"}
-                </span>
-              )}
-            </div>
-            {/* Right: action icons */}
-            <div className="flex items-center gap-1">
-            {/* Eye icon */}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onViewDetail(); }}
-              className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
-              title="View order details"
-            >
-              <Eye size={14} />
-            </button>
-
-            {/* + button — opens status popover */}
-            <div className="relative">
-              <button
-                ref={plusButtonRef}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuOpen(false);
-                  if (!popoverOpen && plusButtonRef.current) {
-                    const rect = plusButtonRef.current.getBoundingClientRect();
-                    setPopoverPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-                  }
-                  setPopoverOpen((v) => !v);
-                }}
-                className={cn(
-                  "w-[26px] h-[26px] rounded-lg flex items-center justify-center transition-colors",
-                  popoverOpen
-                    ? "bg-teal-600 text-white"
-                    : "text-gray-400 hover:bg-gray-100",
-                )}
-                title="Set priority / dispatch status"
-              >
-                <Plus size={14} />
-              </button>
-
-              {popoverOpen && popoverPos && (
-                <StatusPopover
-                  position={popoverPos}
-                  anchorRef={plusButtonRef}
-                  currentDispatch={order.dispatchStatus ?? null}
-                  currentPriority={isUrgent ? "urgent" : "normal"}
-                  onSave={handleStatusSave}
-                  onClose={() => setPopoverOpen(false)}
-                  isSaving={isSaving}
-                />
-              )}
-            </div>
-
-            {/* ... button + dropdown */}
-            <div className="relative" ref={menuRef}>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setPopoverOpen(false); setMenuOpen(!menuOpen); }}
-                className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors"
-              >
-                <MoreHorizontal size={14} />
-              </button>
-
-              {menuOpen && (
-                <div
-                  className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Phase 3d — View skip history. Stage-agnostic; gated on
-                      skipSummary present. Renders at top of menu with a
-                      divider below it when more items follow. */}
-                  {order.skipSummary && order.skipSummary.count >= 1 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onOpenSkipHistory(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <History size={12} className="text-gray-400 flex-shrink-0" />
-                        View skip history
-                      </button>
-                      <div className="mx-3 border-t border-gray-100" />
-                    </>
-                  )}
-
-                  {/* Phase 4e — View pause history. Same conditions as skip:
-                      stage-agnostic, gated on pauseSummary present (count >= 1).
-                      Historical pauses still deserve a view path even after
-                      every event was resumed (currentlyPaused === false). */}
-                  {hasPauseAudit && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onOpenPauseHistory(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <History size={12} className="text-gray-400 flex-shrink-0" />
-                        View pause history
-                      </button>
-                      <div className="mx-3 border-t border-gray-100" />
-                    </>
-                  )}
-
-                  {order.workflowStage === "pending_tint_assignment" && (
-                    <>
-                      {!hasSplits && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => { setMenuOpen(false); onAssign(); }}
-                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                          >
-                            <UserPlus size={12} className="text-gray-400 flex-shrink-0" />
-                            Assign
-                          </button>
-                          <div className="mx-3 border-t border-gray-100" />
-                        </>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onCreateSplit(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <Scissors size={12} className="text-gray-400 flex-shrink-0" />
-                        Create Split
-                      </button>
-                      {order.manualTintEntry && (order.tintAssignments ?? []).length === 0 && !hasSplits && (
-                        <>
-                          <div className="mx-3 border-t border-gray-100" />
-                          <button
-                            type="button"
-                            onClick={() => { setMenuOpen(false); onRequestRevert(); }}
-                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
-                          >
-                            <RotateCcw size={12} className="text-red-400 flex-shrink-0" />
-                            Remove from Tint
-                          </button>
-                        </>
-                      )}
-                      {canRemove && (
-                        <>
-                          <div className="mx-3 border-t border-gray-100" />
-                          <button
-                            type="button"
-                            onClick={() => { setMenuOpen(false); onRequestRemove(); }}
-                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
-                          >
-                            <Trash2 size={12} className="text-red-400 flex-shrink-0" />
-                            Remove OBD…
-                          </button>
-                        </>
-                      )}
-                      {canHide && (
-                        <>
-                          <div className="mx-3 border-t border-gray-100" />
-                          <button
-                            type="button"
-                            onClick={() => { setMenuOpen(false); onRequestHide(); }}
-                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                          >
-                            <EyeOff size={12} className="text-gray-400 flex-shrink-0" />
-                            Hide OBD…
-                          </button>
-                        </>
-                      )}
-                    </>
-                  )}
-
-                  {order.workflowStage === "tint_assigned" && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onMoveUp(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <ChevronUp size={12} className="text-gray-400 flex-shrink-0" />
-                        Move Up
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onMoveDown(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
-                        Move Down
-                      </button>
-                      <div className="mx-3 border-t border-gray-100" />
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onAssign(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <RefreshCw size={12} className="text-gray-400 flex-shrink-0" />
-                        Re-assign
-                      </button>
-                      <div className="mx-3 border-t border-gray-100" />
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); void handleCancelAssignment(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
-                      >
-                        <X size={12} className="text-red-400 flex-shrink-0" />
-                        Cancel
-                      </button>
-                    </>
-                  )}
-
-                  {(order.workflowStage === "tinting_in_progress" ||
-                    order.workflowStage === "pending_support") && (
-                    <div className="px-3.5 py-2.5 text-[11.5px] text-gray-400 italic">
-                      No actions available
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            </div>{/* end right icons */}
-          </div>
-          {/* Badge row */}
-          <div className="flex items-center gap-1.5 flex-wrap min-h-[22px]">
-            {isDone ? (
-              <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                ✓ Done
-              </span>
-            ) : isUrgent ? (
-              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-red-50 border-red-200 text-red-600">
-                🚨 Urgent
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-gray-50 border-gray-200 text-gray-500">
-                ● Normal
-              </span>
-            )}
-            <DispatchStatusBadge status={order.dispatchStatus ?? null} />
-          </div>
-        </div>
-
-        {/* Phase 3d/4e — Status pill row. Renders Skipped + PAUSED pills
-            inline. A card that was skipped 1× then paused shows both. */}
-        {(isReturned || isPausedCard) && (
-          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-            {isReturned && order.skipSummary && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenSkipHistory(); }}
-                className="inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded cursor-pointer hover:bg-amber-100"
-                title="View skip history"
-              >
-                Skipped {order.skipSummary.count}×
-              </button>
-            )}
-            {isPausedCard && order.pauseSummary && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenPauseHistory(); }}
-                className="inline-flex items-center gap-1 bg-amber-700 text-white text-[10px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded cursor-pointer hover:bg-amber-800"
-                title="View pause history"
-              >
-                <Pause size={9} fill="currentColor" />
-                Paused{order.pauseSummary.count > 1 ? ` ${order.pauseSummary.count}×` : ""}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* 2. Customer name */}
-        <div className="flex items-center gap-1.5 mb-1">
-          <p className="text-[13.5px] font-bold text-gray-900 leading-snug truncate">{customerName}</p>
-          {order.customerMissing && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); if (onCustomerMissing) onCustomerMissing(); }}
-              className="text-amber-500 hover:bg-amber-50 rounded p-0.5 flex-shrink-0 transition-colors"
-              title="Customer Missing — click to resolve"
-            >
-              <AlertCircle size={14} />
-            </button>
-          )}
-        </div>
-
-        {/* 3. OBD + area */}
-        <div className="flex items-center gap-1 text-[11px] text-gray-400 mb-2.5">
-          {order.deliveryTypeName && (
-            <span
-              className={cn(
-                "w-[5px] h-[5px] rounded-full flex-shrink-0",
-                order.deliveryTypeName === "Local"       ? "bg-blue-600"
-                : order.deliveryTypeName === "Upcountry" ? "bg-orange-600"
-                : order.deliveryTypeName === "IGT"       ? "bg-teal-600"
-                : order.deliveryTypeName === "Cross Depot" ? "bg-rose-600"
-                : "bg-gray-300",
-              )}
-              title={order.deliveryTypeName}
-            />
-          )}
-          <ObdCode code={order.obdNumber} />
-          <span>·</span>
-          <span>{areaName}</span>
-          {formatOrderDateTime(order.orderDateTime) && (
-            <>
-              <span>·</span>
-              <span>{formatOrderDateTime(order.orderDateTime)}</span>
-            </>
-          )}
-          {(() => { const ab = getAgeBadge(order.orderDateTime, order.obdEmailDate); return ab ? <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ab.className}`}>{ab.text}</span> : null; })()}
-          {order.manualTintEntry && (
-            <span
-              className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200"
-              title="Manually pulled into tint"
-            >
-              Manual
-            </span>
-          )}
-        </div>
-
-        {/* 4. Info grid */}
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
-          {([
-            { label: "SMU",           value: smu },
-            { label: "SALES OFFICER", value: salesOfficerName },
-            { label: "ARTICLES",      value: order.querySnapshot?.articleTag ?? "—" },
-            { label: "VOLUME",        value: volume },
-          ] as const).map((cell) => (
-            <div key={cell.label}>
-              <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
-                {cell.label}
-              </div>
-              <div className="text-[12px] font-semibold text-gray-600">{cell.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Phase 3d — Last skip summary + View full history link, only when returned. */}
-        {isReturned && order.skipSummary && (() => {
-          const s = order.skipSummary;
-          const reasonHuman =
-            s.lastReason === "TINTER_FINISHED"   ? "Tinter finished"   :
-            s.lastReason === "MACHINE_BREAKDOWN" ? "Machine breakdown" :
-            s.lastReason === "MATERIAL_SHORTAGE" ? "Material shortage" :
-            s.lastReason === "OTHER"             ? "Other"             :
-            s.lastReason;
-          const shortDate = (() => {
-            const d = new Date(s.lastSkippedAt);
-            if (isNaN(d.getTime())) return "—";
-            return d.toLocaleDateString("en-GB", {
-              day: "2-digit", month: "short", timeZone: "Asia/Kolkata",
-            }) + ", " + d.toLocaleTimeString("en-GB", {
-              hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata",
-            });
-          })();
-          // Belt-and-braces: colour-chip line only renders when BOTH tinterType
-          // is non-null AND colours array non-empty.
-          const showColours = s.lastTinterType !== null && s.lastColours.length > 0;
-          return (
-            <>
-              <div className="bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mt-2">
-                <div className="text-[10.5px] font-semibold text-amber-800">
-                  Last skip · {shortDate}
-                </div>
-                <div className="text-[10.5px] text-amber-700">
-                  {s.lastSkippedBy} · {reasonHuman}
-                  {s.lastTinterType ? ` · ${s.lastTinterType}` : ""}
-                  {showColours ? ` · ${s.lastColours.join(", ")}` : ""}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenSkipHistory(); }}
-                className="text-[10.5px] text-amber-700 underline hover:text-amber-900 mt-1 inline-block cursor-pointer"
-              >
-                View full history →
-              </button>
-            </>
-          );
-        })()}
-
-        {/* Phase 4e — Pause summary block. Coexists with the skip block above
-            (independent visual layer). Only renders for currently-paused
-            cards; historical-only audit is visible via kebab/PAUSED pill. */}
-        {isPausedCard && order.pauseSummary && (() => {
-          const p = order.pauseSummary;
-          const shortDate = (() => {
-            const d = new Date(p.lastPausedAt);
-            if (isNaN(d.getTime())) return "—";
-            return d.toLocaleDateString("en-GB", {
-              day: "2-digit", month: "short", timeZone: "Asia/Kolkata",
-            }) + ", " + d.toLocaleTimeString("en-GB", {
-              hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata",
-            });
-          })();
-          // Total assigned = sum of unitQty across tinting lines (whole-OBD jobs).
-          const totalAssigned = (order.lineItems ?? [])
-            .filter((l) => l.isTinting)
-            .reduce((s, l) => s + l.unitQty, 0);
-          const totalDone = (p.lastProgressSnapshot?.items ?? [])
-            .reduce((s, i) => s + i.doneQty, 0);
-          const hasProgress = !!p.lastProgressSnapshot && totalAssigned > 0;
-          return (
-            <>
-              <div className="bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mt-2">
-                <div className="text-[10.5px] font-semibold text-amber-800">
-                  Last paused: {shortDate} by {p.lastPausedBy}
-                </div>
-                <div className="text-[10.5px] text-amber-700">
-                  Reason: {humaniseReason(p.lastReason)}
-                </div>
-                {hasProgress && (
-                  <div className="text-[10.5px] text-amber-700">
-                    Progress: {totalDone} of {totalAssigned} tins done
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenPauseHistory(); }}
-                className="text-[10.5px] text-amber-700 underline hover:text-amber-900 mt-1 inline-block cursor-pointer"
-              >
-                View full pause history →
-              </button>
-            </>
-          );
-        })()}
-
-        {/* 5. Bottom section — per stage */}
-        {isPending && (
-          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
-            {hasSplits ? (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onCreateSplit(); }}
-                className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 rounded-lg py-3 text-[12px] font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors"
-              >
-                <Scissors size={13} />
-                Create Split
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onAssign(); }}
-                className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 rounded-lg py-3 text-[12px] font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors"
-              >
-                <UserPlus size={13} />
-                Assign
-              </button>
-            )}
-          </div>
-        )}
-
-        {isAssigned && (
-          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
-            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-teal-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                {operatorInitials}
-              </div>
-              <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
-                {operatorName}
-              </span>
-              <span className="text-[11px] text-gray-400 flex-shrink-0">
-                {formatTime(assignment?.updatedAt)}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {isInProgress && (
-          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
-            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-teal-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                {operatorInitials}
-              </div>
-              <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
-                {operatorName}
-              </span>
-              <span className="text-[11px] text-gray-400 flex-shrink-0">
-                {formatTime(assignment?.startedAt)}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {isDone && (
-          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
-            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-                {operatorInitials}
-              </div>
-              <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
-                {operatorName}
-              </span>
-              <span className="text-[11px] text-gray-400 flex-shrink-0">
-                {formatTime(assignment?.completedAt)}
-              </span>
-            </div>
-            <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2">
-              <span className="flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                ✓ Tinting Done
-              </span>
-              <span className="text-gray-300 text-[13px]">›</span>
-              {order.dispatchStatus === "dispatch" && (
-                <span className="bg-[#eaf3de] border border-[#97c459] text-[#27500a] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                  🚚 Dispatch
-                </span>
-              )}
-              {order.dispatchStatus === "hold" && (
-                <span className="bg-[#fcebeb] border border-[#f09595] text-[#791f1f] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                  Hold
-                </span>
-              )}
-              {order.dispatchStatus === "waiting_for_confirmation" && (
-                <span className="bg-[#faeeda] border border-[#fac775] text-[#633806] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                  Waiting
-                </span>
-              )}
-              {!order.dispatchStatus && (
-                <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                  Pending Support
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-
-    </>
-  );
-}
-
-// ── Split Detail Sheet ────────────────────────────────────────────────────────
-
-interface SplitDetailLine {
-  rawLineItemId: number;
-  assignedQty:   number;
-  rawLineItem: {
-    skuCodeRaw:        string;
-    skuDescriptionRaw: string | null;
-    volumeLine:        number | null;
-    isTinting:         boolean;
-    skuDisplay:        SkuDisplay;
-  };
-}
-
-interface SplitDetailItem {
-  id:             number;
-  splitNumber:    number;
-  status:         string;
-  dispatchStatus: string | null;
-  priorityLevel:  number | null;
-  totalQty:       number;
-  totalVolume:    number | null;
-  articleTag:     string | null;
-  createdAt:      string;
-  startedAt:      string | null;
-  completedAt:    string | null;
-  assignedTo:     { name: string | null };
-  lineItems:      SplitDetailLine[];
-}
-
-interface SplitDetailOrder {
-  id:        number;
-  obdNumber: string;
-  customer:  { customerName: string } | null;
-  splits:    SplitDetailItem[];
-}
-
-function SplitDetailSheet({
-  open, onClose, splitId, orderId, colStage, onReassign, onCancel,
-}: {
-  open:       boolean;
-  onClose:    () => void;
-  splitId:    number;
-  orderId:    number;
-  colStage:   ColStage;
-  onReassign: () => void;
-  onCancel:   () => void;
-}) {
-  const { mode: skuDisplayMode } = useSkuDisplayMode();
-
-  const [orderData, setOrderData] = useState<SplitDetailOrder | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setIsLoading(true);
-    fetch(`/api/tint/manager/orders/${orderId}/splits`)
-      .then((r) => r.json())
-      .then((data) => setOrderData(data.order))
-      .finally(() => setIsLoading(false));
-  }, [open, orderId]);
-
-  const currentSplit     = orderData?.splits.find((s) => s.id === splitId) ?? null;
-  const customerName     = orderData?.customer?.customerName ?? "—";
-  const isAssigned       = colStage === "tint_assigned";
-  const isDone           = colStage === "completed";
-  const operatorName     = currentSplit?.assignedTo.name ?? "—";
-  const operatorInitials = operatorName === "—"
-    ? "?"
-    : operatorName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-  const timeDisplay = isDone
-    ? formatTime(currentSplit?.completedAt)
-    : colStage === "tinting_in_progress"
-    ? formatTime(currentSplit?.startedAt)
-    : formatTime(currentSplit?.createdAt);
-
-  if (!open || typeof document === "undefined") return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-end">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-      />
-      <div className="relative bg-white h-full w-[420px] flex flex-col border-l border-gray-200 shadow-xl overflow-hidden">
-
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-gray-200 flex-shrink-0">
-          <p className="text-[10px] font-bold uppercase tracking-[.6px] text-gray-400 mb-1">
-            {currentSplit ? `SPLIT #${currentSplit.splitNumber} · ` : ""}{orderData?.obdNumber ?? "—"}
-          </p>
-          <h2 className="text-[15px] font-bold text-gray-900">{customerName}</h2>
-        </div>
-
-        {/* Body — scrollable */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
-          {isLoading || !currentSplit ? (
-            <>
-              <div className="bg-gray-100 rounded-xl h-20 animate-pulse" />
-              <div className="bg-gray-100 rounded-xl h-20 animate-pulse" />
-            </>
-          ) : (
-            <>
-              {/* — ASSIGNED OPERATOR — */}
-              <div>
-                <p className="text-[9.5px] font-bold uppercase tracking-[.6px] text-gray-400 mb-2">
-                  ASSIGNED OPERATOR
-                </p>
-                <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                  <div className={cn(
-                    "w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0",
-                    isDone ? "bg-green-600" : colStage === "tinting_in_progress" ? "bg-teal-600" : "bg-teal-600",
-                  )}>
-                    {operatorInitials}
-                  </div>
-                  <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">{operatorName}</span>
-                  <span className="text-[11px] text-gray-400 flex-shrink-0">{timeDisplay}</span>
-                </div>
-                {isAssigned && (
-                  <button
-                    type="button"
-                    onClick={() => onReassign()}
-                    className="mt-2 w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 rounded-lg py-2 text-[12px] font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                  >
-                    <RefreshCw size={12} />
-                    Re-assign
-                  </button>
-                )}
-              </div>
-
-              {/* — SKU LINES — */}
-              <div>
-                <p className="text-[9.5px] font-bold uppercase tracking-[.6px] text-gray-400 mb-2">
-                  SKU LINES
-                </p>
-                <div className="flex flex-col gap-1.5">
-                  {currentSplit.lineItems.map((li) => (
-                    <div
-                      key={li.rawLineItemId}
-                      className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-[11px]"
-                    >
-                      {(() => {
-                        const d = pickSkuDisplay(li.rawLineItem.skuDisplay, skuDisplayMode);
-                        return (
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-violet-600 flex-shrink-0">{d.code}</span>
-                            <span className="flex-1 px-2 truncate text-gray-500">{d.description ?? "—"}</span>
-                          </div>
-                        );
-                      })()}
-                      <div className="flex gap-4 text-[11px] mt-1.5">
-                        <div>
-                          <p className="text-gray-400 mb-0.5">QTY</p>
-                          <p className="font-semibold">{li.assignedQty}</p>
-                        </div>
-                        {li.rawLineItem.volumeLine && (
-                          <div>
-                            <p className="text-gray-400 mb-0.5">VOLUME</p>
-                            <p className="font-semibold">{li.rawLineItem.volumeLine} L</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* — STATUS — */}
-              <div>
-                <p className="text-[9.5px] font-bold uppercase tracking-[.6px] text-gray-400 mb-2">
-                  STATUS
-                </p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={cn(
-                    "text-[11px] font-semibold px-2.5 py-1 rounded-full border",
-                    currentSplit.status === "tinting_done" || currentSplit.status === "pending_support"
-                      ? "bg-green-50 text-green-700 border-green-200"
-                      : currentSplit.status === "tinting_in_progress"
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : currentSplit.status === "cancelled"
-                      ? "bg-gray-100 text-gray-500 border-gray-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200",
-                  )}>
-                    {currentSplit.status.replace(/_/g, " ")}
-                  </span>
-                  {isDone && (
-                    <>
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="text-gray-300 flex-shrink-0">
-                        <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      {currentSplit.dispatchStatus === "dispatch" && (
-                        <span className="bg-[#eaf3de] border border-[#97c459] text-[#27500a] text-[11px] font-semibold px-2.5 py-1 rounded-full">🚚 Dispatch</span>
-                      )}
-                      {currentSplit.dispatchStatus === "hold" && (
-                        <span className="bg-[#fcebeb] border border-[#f09595] text-[#791f1f] text-[11px] font-semibold px-2.5 py-1 rounded-full">Hold</span>
-                      )}
-                      {currentSplit.dispatchStatus === "waiting_for_confirmation" && (
-                        <span className="bg-[#faeeda] border border-[#fac775] text-[#633806] text-[11px] font-semibold px-2.5 py-1 rounded-full">Waiting</span>
-                      )}
-                      {!currentSplit.dispatchStatus && (
-                        <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold px-2.5 py-1 rounded-full">Pending Support</span>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200" />
-
-              {/* — ALL SPLITS FOR THIS OBD — */}
-              <div>
-                <p className="text-[9.5px] font-bold uppercase tracking-[.6px] text-gray-400 mb-2">
-                  ALL SPLITS FOR THIS OBD
-                </p>
-                <div className="flex flex-col gap-2.5">
-                  {(orderData?.splits ?? []).filter((s) => s.status !== "cancelled").map((s) => {
-                    const isCurrent  = s.id === splitId;
-                    const opName     = s.assignedTo.name ?? "—";
-                    const opInitials = opName === "—" ? "?" : opName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-                    return (
-                      <div
-                        key={s.id}
-                        className={cn(
-                          "rounded-xl px-4 py-3 border",
-                          isCurrent ? "border-gray-900 bg-gray-50" : "bg-gray-50 border-gray-200",
-                        )}
-                      >
-                        {/* Header row */}
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[12px] font-bold text-gray-800">Split #{s.splitNumber}</span>
-                            {isCurrent && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-teal-600 text-white">current</span>
-                            )}
-                            <span className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                              s.status === "tinting_done" || s.status === "pending_support"
-                                ? "bg-green-50 text-green-700 border-green-200"
-                                : s.status === "tinting_in_progress"
-                                ? "bg-blue-50 text-blue-700 border-blue-200"
-                                : s.status === "cancelled"
-                                ? "bg-gray-100 text-gray-500 border-gray-200"
-                                : s.status === "dispatch_confirmation" || s.status === "dispatched"
-                                ? "bg-teal-50 text-teal-700 border-teal-200"
-                                : "bg-amber-50 text-amber-700 border-amber-200",
-                            )}>
-                              {s.status.replace(/_/g, " ")}
-                            </span>
-                            {s.dispatchStatus && (
-                              <span className={cn(
-                                "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                                s.dispatchStatus === "dispatch"
-                                  ? "bg-green-50 text-green-700 border-green-200"
-                                  : s.dispatchStatus === "hold"
-                                  ? "bg-red-50 text-red-700 border-red-200"
-                                  : "bg-amber-50 text-amber-700 border-amber-200",
-                              )}>
-                                {s.dispatchStatus === "waiting_for_confirmation" ? "Waiting" : s.dispatchStatus.charAt(0).toUpperCase() + s.dispatchStatus.slice(1)}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10.5px] text-gray-400 font-mono ml-2 flex-shrink-0">
-                            {new Date(s.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                          </span>
-                        </div>
-                        {/* Operator row */}
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
-                              {opInitials}
-                            </div>
-                            <span className="text-[11.5px] font-medium text-gray-700">{opName}</span>
-                          </div>
-                          <span className="text-[11.5px] font-semibold text-gray-700">
-                            {s.articleTag ?? `${s.totalQty} units`}
-                          </span>
-                        </div>
-                        {/* Line items */}
-                        <div className="flex flex-col gap-1">
-                          {s.lineItems.map((item) => {
-                            const d = pickSkuDisplay(item.rawLineItem.skuDisplay, skuDisplayMode);
-                            return (
-                              <div key={item.rawLineItemId} className="flex items-center justify-between text-[11px] text-gray-500">
-                                <span className="font-mono text-violet-600 flex-shrink-0">{d.code}</span>
-                                <span className="flex-1 px-2 truncate">{d.description ?? "—"}</span>
-                                <span className="font-semibold text-gray-700 flex-shrink-0">{item.assignedQty} units</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-end gap-2 bg-white flex-shrink-0">
-          {isAssigned && (
-            <button
-              type="button"
-              onClick={() => { onCancel(); onClose(); }}
-              className="px-4 py-2 text-[12px] font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
-            >
-              Cancel Split
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-[12px] font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Close
-          </button>
-        </div>
-
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// ── Split Kanban card ─────────────────────────────────────────────────────────
-
-function SplitKanbanCard({
-  split, colStage, onReassign, onCancel, onRefresh, onMoveUp, onMoveDown, onViewDetail,
-}: {
-  split:        SplitCard;
-  colStage:     ColStage;
-  onReassign:   () => void;
-  onCancel:     () => void;
-  onRefresh:    () => void;
-  onMoveUp:     () => void;
-  onMoveDown:   () => void;
-  onViewDetail: () => void;
-}) {
-  const [menuOpen,       setMenuOpen]       = useState(false);
-  const [popoverOpen,    setPopoverOpen]    = useState(false);
-  const [popoverPos,     setPopoverPos]     = useState<{ top: number; right: number } | null>(null);
-  const [isSaving,       setIsSaving]       = useState(false);
-  const [splitSheetOpen, setSplitSheetOpen] = useState(false);
-  const menuRef       = useRef<HTMLDivElement>(null);
-  const plusButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const customerName     = split.order.customer?.customerName ?? "—";
-  const salesOfficerName = getDisplaySalesOfficerName(split.order.customer);
-  const volume           = split.totalVolume != null ? `${split.totalVolume.toFixed(1)} L` : "—";
-  const smu              = split.smu ?? "—";
-  const operatorName     = split.assignedTo.name ?? "—";
-  const operatorInitials = operatorName === "—"
-    ? "?"
-    : operatorName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-  const splitPriorityLevel = split.priorityLevel ?? 5;
-  const isUrgent         = splitPriorityLevel <= 2;
-
-  const isAssigned   = colStage === "tint_assigned";
-  const isInProgress = colStage === "tinting_in_progress";
-  const isDone       = colStage === "completed";
-
-  const timeDisplay = isDone       ? formatTime(split.completedAt)
-                    : isInProgress ? formatTime(split.startedAt)
-                    : formatTime(split.createdAt);
-
-  // ── Status popover save ───────────────────────────────────────────────────
-
-  async function handleStatusSave(
-    newDispatch: string | null,
-    newPriority: "normal" | "urgent",
-  ) {
-    setIsSaving(true);
-    try {
-      const body: Record<string, string | null> = {};
-      if (newDispatch !== split.dispatchStatus)       body.dispatchStatus = newDispatch;
-      if ((newPriority === "urgent") !== isUrgent)    body.priority       = newPriority;
-      if (Object.keys(body).length === 0) { setPopoverOpen(false); return; }
-
-      const res = await fetch(`/api/tint/manager/splits/${split.id}/status`, {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      setPopoverOpen(false);
-      onRefresh();
-    } catch (err) {
-      console.error("Split status save failed:", err);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  return (
-    <>
-    <div
-      className={cn(
-        "bg-white border border-gray-200 rounded-lg overflow-hidden",
-        "hover:border-gray-300 transition-all duration-150",
-      )}
-    >
-      <div className="px-3.5 pt-3 pb-3">
-        {/* Icons + badges */}
-        <div className="mb-2">
-          {/* Icon row */}
-          <div className="flex items-center justify-end gap-1 h-[24px]">
-            {/* ⊞ button — opens Split Detail sheet */}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); console.log('Layers clicked, splitId:', split.id, 'orderId:', split.order.id); setSplitSheetOpen(true); }}
-              className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-              title="View split details"
-            >
-              <Layers size={14} />
-            </button>
-
-            {/* 👁 button — opens order detail panel */}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onViewDetail(); }}
-              className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
-              title="View order details"
-            >
-              <Eye size={14} />
-            </button>
-
-            {/* + button — opens status popover */}
-            <div className="relative">
-              <button
-                ref={plusButtonRef}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuOpen(false);
-                  if (!popoverOpen && plusButtonRef.current) {
-                    const rect = plusButtonRef.current.getBoundingClientRect();
-                    setPopoverPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-                  }
-                  setPopoverOpen((v) => !v);
-                }}
-                className={cn(
-                  "w-[26px] h-[26px] rounded-lg flex items-center justify-center transition-colors",
-                  popoverOpen
-                    ? "bg-teal-600 text-white"
-                    : "text-gray-400 hover:bg-gray-100",
-                )}
-                title="Set priority / dispatch status"
-              >
-                <Plus size={14} />
-              </button>
-
-              {popoverOpen && popoverPos && (
-                <StatusPopover
-                  position={popoverPos}
-                  anchorRef={plusButtonRef}
-                  currentDispatch={split.dispatchStatus}
-                  currentPriority={isUrgent ? "urgent" : "normal"}
-                  onSave={handleStatusSave}
-                  onClose={() => setPopoverOpen(false)}
-                  isSaving={isSaving}
-                />
-              )}
-            </div>
-
-            {/* ... button + dropdown */}
-            <div className="relative" ref={menuRef}>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setPopoverOpen(false); setMenuOpen(!menuOpen); }}
-                className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors"
-              >
-                <MoreHorizontal size={14} />
-              </button>
-
-              {menuOpen && (
-                <div
-                  className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {split.status === "tint_assigned" ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onMoveUp(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <ChevronUp size={12} className="text-gray-400 flex-shrink-0" />
-                        Move Up
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onMoveDown(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
-                        Move Down
-                      </button>
-                      <div className="mx-3 border-t border-gray-100" />
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onReassign(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
-                      >
-                        <RefreshCw size={12} className="text-gray-400 flex-shrink-0" />
-                        Re-assign
-                      </button>
-                      <div className="mx-3 border-t border-gray-100" />
-                      <button
-                        type="button"
-                        onClick={() => { setMenuOpen(false); onCancel(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
-                      >
-                        <X size={12} className="text-red-400 flex-shrink-0" />
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <div className="px-3.5 py-2.5 text-[11.5px] text-gray-400 italic">
-                      No actions available
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          {/* Badge row */}
-          <div className="flex items-center gap-1.5 flex-wrap min-h-[22px]">
-            <span className={cn(
-              "inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border",
-              isDone       ? "bg-green-50 text-green-700 border-green-200"
-              : isInProgress ? "bg-blue-50 text-blue-700 border-blue-200"
-              : "bg-violet-50 text-violet-700 border-violet-200",
-            )}>
-              <Scissors size={10} />
-              Split #{split.splitNumber}
-            </span>
-            {isUrgent ? (
-              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-red-50 border-red-200 text-red-600">
-                🚨 Urgent
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-gray-50 border-gray-200 text-gray-500">
-                ● Normal
-              </span>
-            )}
-            <DispatchStatusBadge status={split.dispatchStatus} />
-            {isDone && (
-              <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                ✓ Done
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Customer name */}
-        <p className="text-[13.5px] font-bold text-gray-900 leading-snug mb-1">{customerName}</p>
-
-        {/* OBD row */}
-        <div className="flex items-center gap-1 text-[11px] text-gray-400 mb-2.5">
-          {split.deliveryTypeName && (
-            <span
-              className={cn(
-                "w-[5px] h-[5px] rounded-full flex-shrink-0",
-                split.deliveryTypeName === "Local"         ? "bg-blue-600"
-                : split.deliveryTypeName === "Upcountry"   ? "bg-orange-600"
-                : split.deliveryTypeName === "IGT"         ? "bg-teal-600"
-                : split.deliveryTypeName === "Cross Depot" ? "bg-rose-600"
-                : "bg-gray-300",
-              )}
-              title={split.deliveryTypeName}
-            />
-          )}
-          <ObdCode code={split.order.obdNumber} />
-          {formatOrderDateTime(split.orderDateTime) && (
-            <>
-              <span>·</span>
-              <span>{formatOrderDateTime(split.orderDateTime)}</span>
-            </>
-          )}
-          {(() => { const ab = getAgeBadge(split.orderDateTime, split.obdEmailDate); return ab ? <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ab.className}`}>{ab.text}</span> : null; })()}
-        </div>
-
-        {/* Info grid */}
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
-          {([
-            { label: "SMU",           value: smu },
-            { label: "SALES OFFICER", value: salesOfficerName },
-            { label: "ARTICLES",      value: split.articleTag ?? "—" },
-            { label: "VOLUME",        value: volume },
-          ] as const).map((cell) => (
-            <div key={cell.label}>
-              <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
-                {cell.label}
-              </div>
-              <div className="text-[12px] font-semibold text-gray-600">{cell.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Operator row */}
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-            <div className={cn(
-              "w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0",
-              isDone       ? "bg-green-600"
-              : isInProgress ? "bg-teal-600"
-              : "bg-teal-600",
-            )}>
-              {operatorInitials}
-            </div>
-            <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
-              {operatorName}
-            </span>
-            <span className="text-[11px] text-gray-400 flex-shrink-0">
-              {timeDisplay}
-            </span>
-          </div>
-        </div>
-
-        {/* Two-badge status trail — Completed column only */}
-        {isDone && (
-          <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2">
-            <span className="flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path d="M2 5l2 2 4-4" stroke="currentColor" strokeWidth="1.5"
-                  strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Tinting Done
-            </span>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
-              className="text-gray-300 flex-shrink-0">
-              <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5"
-                strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            {split.dispatchStatus === "dispatch" && (
-              <span className="bg-[#eaf3de] border border-[#97c459] text-[#27500a] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                🚚 Dispatch
-              </span>
-            )}
-            {split.dispatchStatus === "hold" && (
-              <span className="bg-[#fcebeb] border border-[#f09595] text-[#791f1f] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                Hold
-              </span>
-            )}
-            {split.dispatchStatus === "waiting_for_confirmation" && (
-              <span className="bg-[#faeeda] border border-[#fac775] text-[#633806] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                Waiting
-              </span>
-            )}
-            {!split.dispatchStatus && (
-              <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
-                Pending Support
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-
-    <SplitDetailSheet
-      open={splitSheetOpen}
-      onClose={() => setSplitSheetOpen(false)}
-      splitId={split.id}
-      orderId={split.order.id}
-      colStage={colStage}
-      onReassign={() => { setSplitSheetOpen(false); onReassign(); }}
-      onCancel={() => { setSplitSheetOpen(false); onCancel(); }}
-    />
-    </>
-  );
-}
-
-// ── Page Content ──────────────────────────────────────────────────────────────
+import { ManualTintEntryModal } from "@/components/tint/manual-tint-entry-modal";
+import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-modal";
+
+import { BoardRail } from "@/components/tint/manager/board-rail";
+import { BoardTable } from "@/components/tint/manager/board-table";
+import { BoardAssignBar } from "@/components/tint/manager/board-assign-bar";
+import { BoardDetailPanel, type PanelTarget } from "@/components/tint/manager/board-detail-panel";
+import { ConnectionStrip } from "@/components/tint/manager/board-bits";
+import { useTintManagerSync } from "@/components/tint/manager/use-tint-manager-sync";
+import { buildGroups, buildRail, panelSequence, queueSignature } from "@/components/tint/manager/rows";
+import type {
+  BoardRow,
+  Operator,
+  TintBoardPayload,
+  TintOrder,
+} from "@/components/tint/manager/types";
+
+// Re-exported for components/tint/tint-table-view.tsx, which is retired but
+// still type-checked and still imports these three from this module.
+export type {
+  TintOrder,
+  SplitCard,
+  CompletedAssignment,
+} from "@/components/tint/manager/types";
+
+const EMPTY_PAYLOAD: TintBoardPayload = {
+  orders: [], activeSplits: [], completedSplits: [], completedAssignments: [],
+};
 
 export function TintManagerContent() {
   const { data: session } = useSession();
+
   const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
     .includes(session?.user?.role ?? "");
 
-  // Role-based gate for the "Remove OBD…" menu item (server enforces canDelete
-  // via /api/tint/manager/orders/[id]/remove for the precise check).
+  // Remove OBD — TM or admin. The server does the precise check
+  // (/api/tint/manager/orders/[id]/remove), including the 409 outside
+  // pending_tint_assignment.
   const canRemoveObd = (() => {
     const primary = session?.user?.role ?? "";
     const all     = session?.user?.roles ?? (primary ? [primary] : []);
@@ -1897,113 +89,41 @@ export function TintManagerContent() {
     return all.includes("tint_manager");
   })();
 
-  // Hide OBD is ADMIN ONLY (narrower than Remove). Server re-enforces via
-  // /api/admin/hide/orders/[id]/hide.
+  // Hide OBD is ADMIN ONLY — narrower than Remove. Server re-enforces.
   const canHideObd = (() => {
     const primary = session?.user?.role ?? "";
     const all     = session?.user?.roles ?? (primary ? [primary] : []);
     return primary === "admin" || all.includes("admin");
   })();
 
-  // State for the Remove OBD modal — single instance mounted at end of return.
-  // Hoisted here so both Kanban cards and the Table view trigger the same modal.
-  const [removeModalOrder, setRemoveModalOrder] = useState<TintOrder | null>(null);
-
-  // Hide OBD modal — single instance, hoisted like Remove. Both Kanban cards
-  // and Table rows feed the same state.
-  const [hideModalOrder, setHideModalOrder] = useState<TintOrder | null>(null);
-
-  // Phase 3d — Skip History modal. Single instance; all 5 entry points
-  // (Kanban pill, Kanban "View full history" link, Kanban kebab item,
-  // Table OBD badge, Table kebab item) feed the same state.
-  const [skipHistoryFor, setSkipHistoryFor] = useState<{
-    orderId:      number;
-    obdNumber:    string;
-    customerName: string | null;
-  } | null>(null);
-
-  // Phase 4e — Pause History modal. Mirror of skipHistoryFor; same 5 entry
-  // points (Kanban PAUSED pill, "View full pause history" link, kebab item,
-  // Table OBD-cell badge, Table kebab item) feed this single state.
-  const [pauseHistoryFor, setPauseHistoryFor] = useState<{
-    orderId:      number;
-    obdNumber:    string;
-    customerName: string | null;
-  } | null>(null);
-
-  const { mode: skuDisplayMode } = useSkuDisplayMode();
-
-  const [orders,               setOrders]               = useState<TintOrder[]>([]);
-  const [activeSplits,         setActiveSplits]         = useState<SplitCard[]>([]);
-  const [completedSplits,      setCompletedSplits]      = useState<SplitCard[]>([]);
-  const [completedAssignments, setCompletedAssignments] = useState<CompletedAssignment[]>([]);
+  // ── Data ──────────────────────────────────────────────────────────────────
+  const [payload, setPayload]     = useState<TintBoardPayload>(EMPTY_PAYLOAD);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [connected, setConnected] = useState(true);
 
-  const [priorityFilter,     setPriorityFilter]     = useState<"all" | "urgent" | "normal">("all");
-  const [delTypeFilter,      setDelTypeFilter]      = useState<Set<string>>(new Set());
-  const [typeFilter,         setTypeFilter]         = useState<"all" | "split" | "whole">("all");
-  const [searchQuery,        setSearchQuery]        = useState("");
-  const [headerFilters,      setHeaderFilters]      = useState<Record<string, string[]>>({ deliveryType: [], priority: [], type: [] });
-  const [activeOperatorSegment, setActiveOperatorSegment] = useState<string | number | null>(null);
-
-  const [selectedOrder,   setSelectedOrder]   = useState<TintOrder | null>(null);
-  const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [assignedToId,    setAssignedToId]    = useState<string>("");
-  const [note,            setNote]            = useState("");
-  const [isAssigning,     setIsAssigning]     = useState(false);
-  const [assignError,     setAssignError]     = useState<string | null>(null);
-
-  const [pages, setPages] = useState<Record<string, number>>({});
-
-  const [splitBuilderOpen,  setSplitBuilderOpen]  = useState(false);
-  const [splitBuilderOrder, setSplitBuilderOrder] = useState<SplitBuilderModalProps["order"] | null>(null);
-
-  const [selectedSplitForReassign, setSelectedSplitForReassign] = useState<SplitCard | null>(null);
-  const [splitReassignOpen,        setSplitReassignOpen]        = useState(false);
-  const [splitReassignedToId,      setSplitReassignedToId]      = useState<string>("");
-  const [isSplitReassigning,       setIsSplitReassigning]       = useState(false);
-  const [splitReassignError,       setSplitReassignError]       = useState<string | null>(null);
-
-  const [viewMode, setViewMode] = useState<"card" | "table">(() => {
-    if (typeof window !== "undefined") {
-      return (sessionStorage.getItem("tm_view_mode") as "card" | "table") ?? "card";
-    }
-    return "card";
+  // ── Header filters + search ───────────────────────────────────────────────
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({
+    deliveryType: [], priority: [], type: [],
   });
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const tableAnchorRef = useRef<HTMLButtonElement | null>(null);
+  // ── Selection / panel / modals ────────────────────────────────────────────
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [panelKey, setPanelKey]   = useState<string | null>(null);
+  const [panelError, setPanelError] = useState<string | null>(null);
+  const [writeBusy, setWriteBusy] = useState(false);
+  const [reorderBusy, setReorderBusy] = useState<Set<string>>(new Set());
 
-  const [tablePopover, setTablePopover] = useState<{
-    id:              number;
-    type:            "order" | "split";
-    position:        { top: number; right: number };
-    currentDispatch: string | null;
-    currentPriority: "normal" | "urgent";
-  } | null>(null);
-  const [tablePopoverSaving, setTablePopoverSaving] = useState(false);
+  const [removeModalOrder, setRemoveModalOrder] = useState<TintOrder | null>(null);
+  const [hideModalOrder,   setHideModalOrder]   = useState<TintOrder | null>(null);
+  const [skipHistoryFor,   setSkipHistoryFor]   = useState<{ orderId: number; obdNumber: string; customerName: string | null } | null>(null);
+  const [pauseHistoryFor,  setPauseHistoryFor]  = useState<{ orderId: number; obdNumber: string; customerName: string | null } | null>(null);
+  const [pullModalOpen,    setPullModalOpen]    = useState(false);
+  const [revertOrder,      setRevertOrder]      = useState<{ id: number; obdNumber: string } | null>(null);
 
-  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
-
-  const [missingSheetOpen,  setMissingSheetOpen]  = useState(false);
-  const [missingSheetOrder, setMissingSheetOrder] = useState<TintOrder | null>(null);
-  // Phase 4 (step 13d) — when TM clicks Assign on a missing-customer order,
-  // we redirect to CustomerMissingSheet first and remember the intent so we
-  // can chain to Assign automatically once the customer is resolved. Ref
-  // disambiguates close-via-onResolved (success) vs close-via-Cancel.
-  const [pendingAssignOrderId, setPendingAssignOrderId] = useState<number | null>(null);
-  const sheetResolvedRef = useRef(false);
-  // Phase 4 (step 13e) — amber warning strip text shown inside the sheet.
-  // Set only when the sheet was opened via the Assign-click interceptor;
-  // direct row-icon and badge-popover entry points leave it undefined.
-  const [missingSheetWarning, setMissingSheetWarning] = useState<string | undefined>(undefined);
-
-  const [pullModalOpen, setPullModalOpen] = useState(false);
-
-  const [revertOrderId,   setRevertOrderId]   = useState<number | null>(null);
-  const [revertObdNumber, setRevertObdNumber] = useState<string | null>(null);
-  const revertOpen = revertOrderId !== null;
-
+  // ── Missing-customer sheet + the Assign interceptor ───────────────────────
   const [missingCustomers, setMissingCustomers] = useState<{
     orderId: number; obdNumber: string; shipToCustomerId: string | null;
     shipToCustomerName: string | null; smu: string | null; orderType: string;
@@ -2011,54 +131,38 @@ export function TintManagerContent() {
   }[]>([]);
   const [missingBadgeOpen, setMissingBadgeOpen] = useState(false);
   const missingBadgeRef = useRef<HTMLButtonElement>(null);
+  const [missingSheetOpen,    setMissingSheetOpen]    = useState(false);
+  const [missingSheetOrder,   setMissingSheetOrder]   = useState<TintOrder | null>(null);
+  const [missingSheetWarning, setMissingSheetWarning] = useState<string | undefined>(undefined);
+  // The Assign that was interrupted, remembered so it can be re-fired the moment
+  // the customer resolves. Carries the OPERATOR too, which the old Kanban did not
+  // — it only remembered the order and re-opened a modal for the manager to pick
+  // again. Here the operator was already chosen in the rail popover, so replaying
+  // it is what "resume where you left off" actually means.
+  const [pendingAssign, setPendingAssign] = useState<{ orderId: number; operatorId: number } | null>(null);
+  const sheetResolvedRef = useRef(false);
 
-  const [tableSplitData, setTableSplitData] = useState<{
-    splitId:  number;
-    orderId:  number;
-    colStage: ColStage;
-  } | null>(null);
-  const [tableSplitOpen, setTableSplitOpen] = useState(false);
+  // ── Fetching ──────────────────────────────────────────────────────────────
 
-  // Sync headerFilters → existing filter states
-  useEffect(() => {
-    const dt = headerFilters.deliveryType ?? [];
-    setDelTypeFilter(new Set(dt));
-    const pr = headerFilters.priority ?? [];
-    setPriorityFilter(pr.length === 1 ? (pr[0] as "urgent" | "normal") : "all");
-    const tp = headerFilters.type ?? [];
-    setTypeFilter(tp.length === 1 ? (tp[0] as "split" | "whole") : "all");
-  }, [headerFilters]);
-
-  // Close missing-customer popover on outside click
-  useEffect(() => {
-    if (!missingBadgeOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (missingBadgeRef.current &&
-          !missingBadgeRef.current.parentElement?.contains(e.target as Node)) {
-        setMissingBadgeOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [missingBadgeOpen]);
-
-  // M shortcut → open Pull OBD modal (ignored while typing in form fields)
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) {
-        return;
-      }
-      if (e.key === "m" || e.key === "M") {
-        e.preventDefault();
-        setPullModalOpen(true);
-      }
+  /** Returns the payload it just stored, so a caller can diff before/after. */
+  const fetchBoard = useCallback(async (): Promise<TintBoardPayload | null> => {
+    try {
+      const res = await fetch("/api/tint/manager/orders");
+      if (!res.ok) return null;
+      const data = (await res.json()) as TintBoardPayload;
+      const next: TintBoardPayload = {
+        orders:               data.orders ?? [],
+        activeSplits:         data.activeSplits ?? [],
+        completedSplits:      data.completedSplits ?? [],
+        completedAssignments: data.completedAssignments ?? [],
+      };
+      setPayload(next);
+      setLastSyncedAt(new Date());
+      return next;
+    } catch {
+      return null; // leave the board on its last good data
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  // ── Data fetching ─────────────────────────────────────────────────────────
 
   const fetchMissingCustomers = useCallback(async () => {
     try {
@@ -2066,480 +170,424 @@ export function TintManagerContent() {
       if (!res.ok) return;
       const data = await res.json() as { orders: typeof missingCustomers };
       setMissingCustomers(data.orders ?? []);
-    } catch { /* silent */ }
-  }, []);
-
-  const fetchOrders = useCallback(async () => {
-    try {
-      const res  = await fetch("/api/tint/manager/orders");
-      const data = (await res.json()) as {
-        orders:               TintOrder[];
-        activeSplits:         SplitCard[];
-        completedSplits:      SplitCard[];
-        completedAssignments: CompletedAssignment[];
-      };
-      setOrders(data.orders ?? []);
-      setActiveSplits(data.activeSplits ?? []);
-      setCompletedSplits(data.completedSplits ?? []);
-      setCompletedAssignments(data.completedAssignments ?? []);
-    } catch {
-      // leave stale
-    }
+    } catch { /* silent — the badge just stays as it was */ }
   }, []);
 
   useEffect(() => {
     async function init() {
       setIsLoading(true);
       try {
-        const [ordersRes, opsRes] = await Promise.all([
+        const [boardRes, opsRes] = await Promise.all([
           fetch("/api/tint/manager/orders"),
           fetch("/api/tint/manager/operators"),
         ]);
-        const ordersData = (await ordersRes.json()) as {
-          orders:               TintOrder[];
-          activeSplits:         SplitCard[];
-          completedSplits:      SplitCard[];
-          completedAssignments: CompletedAssignment[];
-        };
-        const opsData    = (await opsRes.json())    as { operators: Operator[] };
-        setOrders(ordersData.orders ?? []);
-        setActiveSplits(ordersData.activeSplits ?? []);
-        setCompletedSplits(ordersData.completedSplits ?? []);
-        setCompletedAssignments(ordersData.completedAssignments ?? []);
-        setOperators(opsData.operators ?? []);
+        const board = (await boardRes.json()) as TintBoardPayload;
+        const ops   = (await opsRes.json()) as { operators: Operator[] };
+        setPayload({
+          orders:               board.orders ?? [],
+          activeSplits:         board.activeSplits ?? [],
+          completedSplits:      board.completedSplits ?? [],
+          completedAssignments: board.completedAssignments ?? [],
+        });
+        setOperators(ops.operators ?? []);
+        setLastSyncedAt(new Date());
       } finally {
         setIsLoading(false);
       }
     }
     void init();
     void fetchMissingCustomers();
-  }, [fetchOrders, fetchMissingCustomers]);
+  }, [fetchMissingCustomers]);
 
-  // ── Client-side filtering ─────────────────────────────────────────────────
+  // ── Live sync ─────────────────────────────────────────────────────────────
+  // Paused while the panel is open or a selection is up: never move the ground
+  // under a hand (FLOOR §5).
+  useTintManagerSync({
+    paused:   panelKey !== null || selection.size > 0,
+    onProbe:  setConnected,
+    onChange: () => { void fetchBoard(); void fetchMissingCustomers(); },
+  });
 
-  const filteredOrders = (orders ?? []).filter((o) => {
-    if (delTypeFilter.size > 0 && !delTypeFilter.has(o.deliveryTypeName ?? "")) return false;
-    if (priorityFilter === "urgent" && !(o.priorityLevel <= 2)) return false;
-    if (priorityFilter === "normal" && !(o.priorityLevel > 2)) return false;
-    if (typeFilter === "whole") {
-      const hasSplits = (o.splits ?? []).some((s) =>
-        ["tint_assigned", "tinting_in_progress"].includes(s.status)
+  // ── Derived board ─────────────────────────────────────────────────────────
+
+  const delTypes  = useMemo(() => new Set(headerFilters.deliveryType ?? []), [headerFilters]);
+  const priority  = (headerFilters.priority ?? [])[0] ?? null;
+  const rowType   = (headerFilters.type ?? [])[0] ?? null;
+  const q         = searchQuery.trim().toLowerCase();
+
+  const rail = useMemo(() => {
+    return buildRail(payload).filter((o) => {
+      if (delTypes.size > 0 && !delTypes.has(o.deliveryTypeName ?? "")) return false;
+      if (priority === "urgent" && !(o.priorityLevel <= 2)) return false;
+      if (priority === "normal" && !(o.priorityLevel > 2)) return false;
+      // A pending order is always a whole order — the "split" filter cannot match
+      // anything on the rail, so it empties it rather than silently ignoring.
+      if (rowType === "split") return false;
+      if (!q) return true;
+      return (
+        o.obdNumber.toLowerCase().includes(q) ||
+        (o.customer?.customerName ?? "").toLowerCase().includes(q) ||
+        (o.soNumber ?? "").toLowerCase().includes(q) ||
+        (o.route ?? "").toLowerCase().includes(q)
       );
-      if (hasSplits) return false;
-    }
-    if (typeFilter === "split") {
-      const hasSplits = (o.splits ?? []).some((s) =>
-        ["tint_assigned", "tinting_in_progress"].includes(s.status)
-      );
-      if (!hasSplits) return false;
-    }
-    if (activeOperatorSegment === "unassigned") {
-      if (o.workflowStage !== "pending_tint_assignment" && !(o.remainingQty && o.remainingQty > 0)) return false;
-    } else if (activeOperatorSegment !== null) {
-      const opId = o.tintAssignments[0]?.assignedTo.id;
-      if (opId !== activeOperatorSegment) return false;
-    }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const matchObd      = o.obdNumber.toLowerCase().includes(q);
-      const matchCustomer = (o.customer?.customerName ?? "").toLowerCase().includes(q);
-      const matchSO       = (o.customer?.salesOfficerGroup?.salesOfficer?.name ?? "").toLowerCase().includes(q);
-      const matchSku      = o.lineItems.some((l) => pickSkuDisplay(l.skuDisplay, skuDisplayMode).code.toLowerCase().includes(q));
-      if (!matchObd && !matchCustomer && !matchSO && !matchSku) return false;
-    }
-    return true;
-  });
-
-  const filteredActiveSplits = activeSplits.filter((s) => {
-    if (delTypeFilter.size > 0 && !delTypeFilter.has(s.deliveryTypeName ?? "")) return false;
-    const pl = s.priorityLevel ?? 5;
-    if (priorityFilter === "urgent" && !(pl <= 2)) return false;
-    if (priorityFilter === "normal" && !(pl > 2)) return false;
-    if (typeFilter === "whole") return false;
-    if (activeOperatorSegment === "unassigned") return false;
-    if (typeof activeOperatorSegment === "number" && s.assignedTo.id !== activeOperatorSegment) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const matchObd      = s.order.obdNumber.toLowerCase().includes(q);
-      const matchCustomer = (s.order.customer?.customerName ?? "").toLowerCase().includes(q);
-      const matchSO       = (s.order.customer?.salesOfficerGroup?.salesOfficer?.name ?? "").toLowerCase().includes(q);
-      if (!matchObd && !matchCustomer && !matchSO) return false;
-    }
-    return true;
-  });
-
-  const filteredCompletedSplits = completedSplits.filter((s) => {
-    if (delTypeFilter.size > 0 && !delTypeFilter.has(s.deliveryTypeName ?? "")) return false;
-    const pl = s.priorityLevel ?? 5;
-    if (priorityFilter === "urgent" && !(pl <= 2)) return false;
-    if (priorityFilter === "normal" && !(pl > 2)) return false;
-    if (typeFilter === "whole") return false;
-    if (activeOperatorSegment === "unassigned") return false;
-    if (typeof activeOperatorSegment === "number" && s.assignedTo.id !== activeOperatorSegment) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const matchObd      = s.order.obdNumber.toLowerCase().includes(q);
-      const matchCustomer = (s.order.customer?.customerName ?? "").toLowerCase().includes(q);
-      const matchSO       = (s.order.customer?.salesOfficerGroup?.salesOfficer?.name ?? "").toLowerCase().includes(q);
-      if (!matchObd && !matchCustomer && !matchSO) return false;
-    }
-    return true;
-  });
-
-  // ── Derived stats ─────────────────────────────────────────────────────────
-
-  const pendingCount    = orders.filter(o => o.workflowStage === "pending_tint_assignment").length;
-  const assignedCount   = orders.filter(o => o.workflowStage === "tint_assigned").length
-                        + activeSplits.filter(s => s.status === "tint_assigned").length;
-  const inProgressCount = orders.filter(o => o.workflowStage === "tinting_in_progress").length
-                        + activeSplits.filter(s => s.status === "tinting_in_progress").length;
-  const doneCount       = completedSplits.length
-                        + orders.filter(o => o.workflowStage === "pending_support").length;
-
-  const pendingVolume    = orders
-    .filter(o => o.workflowStage === "pending_tint_assignment")
-    .reduce((s, o) => s + (o.querySnapshot?.totalVolume ?? 0), 0);
-
-  const assignedVolume   =
-    activeSplits.filter(s => s.status === "tint_assigned")
-      .reduce((s, sp) => s + (sp.totalVolume ?? 0), 0)
-    + orders.filter(o => o.workflowStage === "tint_assigned")
-      .reduce((s, o) => s + (o.querySnapshot?.totalVolume ?? 0), 0);
-
-  const inProgressVolume =
-    activeSplits.filter(s => s.status === "tinting_in_progress")
-      .reduce((s, sp) => s + (sp.totalVolume ?? 0), 0)
-    + orders.filter(o => o.workflowStage === "tinting_in_progress")
-      .reduce((s, o) => s + (o.querySnapshot?.totalVolume ?? 0), 0);
-
-  const doneVolume       =
-    completedSplits.reduce((s, sp) => s + (sp.totalVolume ?? 0), 0)
-    + orders.filter(o => o.workflowStage === "pending_support")
-      .reduce((s, o) => s + (o.querySnapshot?.totalVolume ?? 0), 0);
-
-  function handleTableStatusPopover(
-    id: number,
-    type: "order" | "split",
-    buttonEl: HTMLButtonElement,
-  ) {
-    tableAnchorRef.current = buttonEl;
-    const rect = buttonEl.getBoundingClientRect();
-    const position = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
-
-    if (type === "order") {
-      const order = filteredOrders.find((o) => o.id === id);
-      if (!order) return;
-      setTablePopover({
-        id, type, position,
-        currentDispatch: order.dispatchStatus,
-        currentPriority: order.priorityLevel <= 2 ? "urgent" : "normal",
-      });
-    } else {
-      const split = filteredActiveSplits.find((s) => s.id === id)
-        ?? filteredCompletedSplits.find((s) => s.id === id);
-      if (!split) return;
-      setTablePopover({
-        id, type, position,
-        currentDispatch: split.dispatchStatus,
-        currentPriority: (split.priorityLevel ?? 5) <= 2 ? "urgent" : "normal",
-      });
-    }
-  }
-
-  async function handleTableStatusSave(
-    dispatch: string | null,
-    priority: "normal" | "urgent",
-  ) {
-    if (!tablePopover) return;
-    setTablePopoverSaving(true);
-    try {
-      const body: Record<string, string | null> = {};
-      if (dispatch !== tablePopover.currentDispatch) body.dispatchStatus = dispatch;
-      if (priority !== tablePopover.currentPriority) body.priority = priority;
-      if (Object.keys(body).length === 0) { setTablePopover(null); return; }
-
-      const url = tablePopover.type === "order"
-        ? `/api/tint/manager/orders/${tablePopover.id}/status`
-        : `/api/tint/manager/splits/${tablePopover.id}/status`;
-
-      const res = await fetch(url, {
-        method:  "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      setTablePopover(null);
-      void fetchOrders();
-    } catch (err) {
-      console.error("Table status save failed:", err);
-    } finally {
-      setTablePopoverSaving(false);
-    }
-  }
-
-  function clearAllFilters() {
-    setPriorityFilter("all");
-    setDelTypeFilter(new Set());
-    setTypeFilter("all");
-    setSearchQuery("");
-    setActiveOperatorSegment(null);
-  }
-
-  function closeAssignModal() {
-    setAssignModalOpen(false);
-  }
-
-  function openSplitBuilder(order: TintOrder) {
-    const customerName = order.customer?.customerName ?? order.shipToCustomerName ?? "—";
-    setSplitBuilderOrder({
-      id:             order.id,
-      obdNumber:      order.obdNumber,
-      customerName,
-      lineItems:      order.lineItems,
-      existingSplits: order.existingSplits ?? [],
-      previousSplits: order.splits ?? [],
     });
-    setSplitBuilderOpen(true);
-  }
+  }, [payload, delTypes, priority, rowType, q]);
 
-  function openAssignModal(order: TintOrder) {
-    // Phase 4 (step 13d) interceptor: missing-customer orders must resolve
-    // their master-data row before they can be assigned. Redirect to the
-    // CustomerMissingSheet and remember the intent — a useEffect watches the
-    // orders state and re-fires openAssignModal once the flag flips false.
+  const groups = useMemo(() => {
+    const all = buildGroups(payload);
+    if (delTypes.size === 0 && !priority && !rowType && !q) return all;
+    return all
+      .map((g) => ({
+        ...g,
+        rows: g.rows.filter((r) => {
+          const dt = r.order?.deliveryTypeName ?? r.split?.deliveryTypeName ?? r.completed?.deliveryTypeName ?? "";
+          if (delTypes.size > 0 && !delTypes.has(dt)) return false;
+          if (priority === "urgent" && !r.isUrgent) return false;
+          if (priority === "normal" && r.isUrgent) return false;
+          if (rowType === "split" && r.type !== "split") return false;
+          if (rowType === "whole" && r.type !== "order") return false;
+          if (!q) return true;
+          return (
+            r.obdNumber.toLowerCase().includes(q) ||
+            r.siteName.toLowerCase().includes(q) ||
+            (r.soNumber ?? "").toLowerCase().includes(q) ||
+            (r.route ?? "").toLowerCase().includes(q) ||
+            r.operatorName.toLowerCase().includes(q)
+          );
+        }),
+      }))
+      .filter((g) => g.rows.length > 0);
+  }, [payload, delTypes, priority, rowType, q]);
+
+  const rowsByKey = useMemo(() => {
+    const m = new Map<string, BoardRow>();
+    for (const g of groups) for (const r of g.rows) m.set(r.key, r);
+    return m;
+  }, [groups]);
+
+  // Selection is a Set of row KEYS, so it survives a re-sort by construction
+  // (it keys on identity, not position) — same reasoning as lib/floor/selection.ts.
+  // Rows that vanish from the board (assigned away, finished) drop out here.
+  const selectedRows = useMemo(
+    () => Array.from(selection).map((k) => rowsByKey.get(k)).filter((r): r is BoardRow => !!r && r.selectable),
+    [selection, rowsByKey],
+  );
+
+  useEffect(() => {
+    if (selection.size === 0) return;
+    const live = Array.from(selection).filter((k) => rowsByKey.get(k)?.selectable);
+    if (live.length !== selection.size) setSelection(new Set(live));
+  }, [rowsByKey, selection]);
+
+  // ── Panel walk ────────────────────────────────────────────────────────────
+
+  const walk = useMemo(() => panelSequence(rail, groups), [rail, groups]);
+  const panelIndex = panelKey === null ? -1 : walk.findIndex((w) => w.key === panelKey);
+
+  const panelTarget: PanelTarget | null = useMemo(() => {
+    if (panelKey === null) return null;
+    if (panelKey.startsWith("pending-")) {
+      const id = Number(panelKey.slice("pending-".length));
+      const o = rail.find((x) => x.id === id);
+      return o ? { kind: "pending", order: o } : null;
+    }
+    const r = rowsByKey.get(panelKey);
+    return r ? { kind: "row", row: r } : null;
+  }, [panelKey, rail, rowsByKey]);
+
+  // The panel's target vanished under it (finished, reassigned away, filtered
+  // out). Close rather than showing a stale ghost.
+  useEffect(() => {
+    if (panelKey !== null && panelTarget === null) setPanelKey(null);
+  }, [panelKey, panelTarget]);
+
+  useEffect(() => { setPanelError(null); }, [panelKey]);
+
+  // ── THE single window-level Esc owner for this screen ──────────────────────
+  // One listener, one branch per keypress. Never add a second under
+  // components/tint/manager/ — two window-level listeners race in registration
+  // order, which is the bug FLOOR §4.6 exists to prevent.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      if (e.key === "Escape") {
+        if (typing) return;
+        if (panelKey !== null) { setPanelKey(null); return; }
+        if (selection.size > 0) { setSelection(new Set()); return; }
+        return;
+      }
+      // M — Add OBD to Tint. Ignored while typing, and while the panel is open
+      // (the panel is a focus context of its own).
+      if ((e.key === "m" || e.key === "M") && !typing && panelKey === null) {
+        e.preventDefault();
+        setPullModalOpen(true);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panelKey, selection]);
+
+  // Close the missing-customer popover on outside click
+  useEffect(() => {
+    if (!missingBadgeOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (missingBadgeRef.current && !missingBadgeRef.current.parentElement?.contains(e.target as Node)) {
+        setMissingBadgeOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [missingBadgeOpen]);
+
+  // ── Writes ────────────────────────────────────────────────────────────────
+
+  /** POST one assign. Returns null on success, else the server's own message. */
+  const postAssign = useCallback(async (orderId: number, operatorId: number): Promise<string | null> => {
+    try {
+      const res = await fetch("/api/tint/manager/assign", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ orderId, assignedToId: operatorId }),
+      });
+      if (res.ok) return null;
+      // The route's 400s carry a message written to be shown verbatim (the
+      // customer-missing backstop and the new stage guard both do).
+      const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+      return typeof body.error === "string" ? body.error : `Assign failed (HTTP ${res.status})`;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Assign failed";
+    }
+  }, []);
+
+  /**
+   * Assign from the rail, WITH the customer-missing interceptor.
+   *
+   * Behaviour preserved from the old Kanban (tint-manager-content.tsx ~2305-2338):
+   * a customerMissing order never reaches the assign call — it opens
+   * CustomerMissingSheet with an amber warning instead, and the intent is
+   * remembered so the assign re-fires by itself once the flag flips false. The
+   * server refuses it too (a 400 from assign/route.ts), so this is the
+   * affordance, not the rule.
+   */
+  const handleAssign = useCallback(async (order: TintOrder, operatorId: number) => {
     if (order.customerMissing) {
-      setPendingAssignOrderId(order.id);
+      setPendingAssign({ orderId: order.id, operatorId });
       sheetResolvedRef.current = false;
       setMissingSheetWarning("Resolve customer details first before assigning.");
       setMissingSheetOrder(order);
       setMissingSheetOpen(true);
       return;
     }
-    const currentOpId = order.tintAssignments[0]?.assignedTo.id;
-    setSelectedOrder(order);
-    setAssignedToId(currentOpId ? String(currentOpId) : "");
-    setNote("");
-    setAssignError(null);
-    setAssignModalOpen(true);
-  }
+    setWriteBusy(true);
+    setPanelError(null);
+    const err = await postAssign(order.id, operatorId);
+    setWriteBusy(false);
+    if (err) {
+      setPanelError(err);
+      toast.error(err);
+      return;
+    }
+    const opName = operators.find((o) => o.id === operatorId)?.name ?? "operator";
+    toast.success(`${order.obdNumber} assigned to ${opName}`);
+    setPanelKey(null);
+    await fetchBoard();
+    void fetchMissingCustomers();
+  }, [postAssign, operators, fetchBoard, fetchMissingCustomers]);
 
-  // Phase 4 (step 13d): chain interceptor → Assign modal after the missing
-  // customer is resolved. Fires when orders list refreshes (which happens via
-  // the sheet's onResolved callback) and the pending order's customerMissing
-  // flag has flipped to false. If the order is gone from the list (rare),
-  // silently clear the pending id.
+  // The chain: once the sheet resolves and the refreshed order is no longer
+  // customerMissing, replay the interrupted assign.
   useEffect(() => {
-    if (pendingAssignOrderId == null) return;
-    const fresh = orders.find((o) => o.id === pendingAssignOrderId);
-    if (!fresh) { setPendingAssignOrderId(null); return; }
-    if (fresh.customerMissing) return;     // still missing — wait
-    setPendingAssignOrderId(null);
-    openAssignModal(fresh);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orders, pendingAssignOrderId]);
+    if (!pendingAssign) return;
+    const fresh = payload.orders.find((o) => o.id === pendingAssign.orderId);
+    if (!fresh) { setPendingAssign(null); return; }  // gone from the board
+    if (fresh.customerMissing) return;                // still missing — keep waiting
+    const { operatorId } = pendingAssign;
+    setPendingAssign(null);
+    void handleAssign(fresh, operatorId);
+  }, [payload, pendingAssign, handleAssign]);
 
-  function openSplitReassign(split: SplitCard) {
-    setSelectedSplitForReassign(split);
-    setSplitReassignedToId(split.assignedTo.id ? String(split.assignedTo.id) : "");
-    setSplitReassignError(null);
-    setSplitReassignOpen(true);
-  }
+  /** Single re-assign of a whole order, from the panel. Waiting rows only. */
+  const handleReassignOrder = useCallback(async (row: BoardRow, operatorId: number) => {
+    setWriteBusy(true);
+    setPanelError(null);
+    const err = await postAssign(row.orderId, operatorId);
+    setWriteBusy(false);
+    if (err) { setPanelError(err); toast.error(err); return; }
+    const opName = operators.find((o) => o.id === operatorId)?.name ?? "operator";
+    toast.success(`${row.obdNumber} moved to ${opName}`);
+    await fetchBoard();
+  }, [postAssign, operators, fetchBoard]);
 
-  async function handleSplitReassign() {
-    if (!selectedSplitForReassign || !splitReassignedToId) return;
-    setIsSplitReassigning(true);
-    setSplitReassignError(null);
+  /** Splits re-assign through their OWN endpoint, never the whole-order one. */
+  const handleReassignSplit = useCallback(async (row: BoardRow, operatorId: number) => {
+    setWriteBusy(true);
+    setPanelError(null);
     try {
       const res = await fetch("/api/tint/manager/splits/reassign", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          splitId:      selectedSplitForReassign.id,
-          assignedToId: Number(splitReassignedToId),
-        }),
+        body:    JSON.stringify({ splitId: row.id, assignedToId: operatorId }),
       });
       if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
-        throw new Error(typeof err.error === "string" ? err.error : "Re-assign failed");
+        const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+        const msg = typeof body.error === "string" ? body.error : `Re-assign failed (HTTP ${res.status})`;
+        setPanelError(msg);
+        toast.error(msg);
+        return;
       }
-      setSplitReassignOpen(false);
-      setSelectedSplitForReassign(null);
-      void fetchOrders();
-    } catch (err) {
-      setSplitReassignError(err instanceof Error ? err.message : "Re-assign failed");
+      const opName = operators.find((o) => o.id === operatorId)?.name ?? "operator";
+      toast.success(`Split #${row.splitNumber} moved to ${opName}`);
+      await fetchBoard();
     } finally {
-      setIsSplitReassigning(false);
+      setWriteBusy(false);
     }
-  }
+  }, [operators, fetchBoard]);
 
-  async function handleReorder(
-    type: "order" | "split",
-    id: number,
-    direction: "up" | "down",
-  ) {
+  /**
+   * Bulk re-assign — N SEQUENTIAL awaits over the single-assign route.
+   *
+   * There is no bulk endpoint, and there deliberately is no Promise.all and no
+   * $transaction: Vercel serverless against the Supabase pooler is the reason
+   * (CORE §3).
+   *
+   * Partial-failure contract copied from Floor (CLAUDE_FLOOR §4.1/§4.2): collect
+   * `failed[]`, treat "nothing was written" as the 422 case with a hard error,
+   * and NAME the ones that failed when some succeeded. A write that skipped
+   * silently must never look like success — that is the exact bug FLOOR §6(b)
+   * documents.
+   *
+   * A customerMissing row goes into failed[] with a clear reason. It is not
+   * silently skipped, and it does not abort the batch: the other rows are still
+   * the manager's to move.
+   */
+  const handleBulkReassign = useCallback(async (operatorId: number) => {
+    const rows = selectedRows;
+    if (rows.length === 0) return;
+    setWriteBusy(true);
+
+    const failed: Array<{ obd: string; reason: string }> = [];
+    let ok = 0;
+
+    for (const row of rows) {
+      if (row.order?.customerMissing) {
+        failed.push({ obd: row.obdNumber, reason: "customer master data missing — resolve it first" });
+        continue;
+      }
+      if (row.operatorId === operatorId) {
+        failed.push({ obd: row.obdNumber, reason: "already with that operator" });
+        continue;
+      }
+      const err = await postAssign(row.orderId, operatorId);
+      if (err) failed.push({ obd: row.obdNumber, reason: err });
+      else ok++;
+    }
+
+    setWriteBusy(false);
+    const opName = operators.find((o) => o.id === operatorId)?.name ?? "operator";
+
+    if (ok === 0) {
+      // The 422 case: nothing was written.
+      toast.error(`Nothing was re-assigned — all ${failed.length} failed`, {
+        description: failed.map((f) => `${f.obd}: ${f.reason}`).join("\n"),
+        duration: 10000,
+      });
+    } else if (failed.length > 0) {
+      toast.warning(`${ok} moved to ${opName} · ${failed.length} failed`, {
+        description: failed.map((f) => `${f.obd}: ${f.reason}`).join("\n"),
+        duration: 10000,
+      });
+    } else {
+      toast.success(`${ok} ${ok === 1 ? "job" : "jobs"} moved to ${opName}`);
+    }
+
+    setSelection(new Set());
+    await fetchBoard();
+    void fetchMissingCustomers();
+  }, [selectedRows, postAssign, operators, fetchBoard, fetchMissingCustomers]);
+
+  /**
+   * Re-sequence one step inside one operator's queue.
+   *
+   * ⚠ THE ROUTE'S BOUNDARY NO-OP. PATCH /api/tint/manager/reorder answers
+   * `200 { success: true }` and writes NOTHING when the row is already first or
+   * last — so a 2xx alone does NOT mean anything moved. The queue signature is
+   * captured before the call and compared against the refetched board after it;
+   * only a real change is announced. The arrows are also disabled at the
+   * boundaries, so hitting this path means the client's view was already stale.
+   */
+  const handleReorder = useCallback(async (row: BoardRow, direction: "up" | "down") => {
+    if (reorderBusy.has(row.key)) return;
+    setReorderBusy((s) => new Set(s).add(row.key));
+
+    const before = queueSignature(groups, row.operatorId, row.type);
     try {
-      await fetch("/api/tint/manager/reorder", {
+      const res = await fetch("/api/tint/manager/reorder", {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ type, id, direction }),
-      });
-      void fetchOrders();
-    } catch (err) {
-      console.error("Reorder failed:", err);
-    }
-  }
-
-  async function handleCancelAssignment(order: TintOrder) {
-    try {
-      await fetch("/api/tint/manager/cancel-assignment", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ orderId: order.id }),
-      });
-      void fetchOrders();
-    } catch (err) {
-      console.error("Cancel assignment failed:", err);
-    }
-  }
-
-  async function handleCancelSplit(splitId: number) {
-    try {
-      const res = await fetch("/api/tint/manager/splits/cancel", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ splitId }),
+        body:    JSON.stringify({ type: row.type, id: row.id, direction }),
       });
       if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
-        throw new Error(err.error ?? "Failed to cancel split");
+        const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+        toast.error(typeof body.error === "string" ? body.error : `Re-sequence failed (HTTP ${res.status})`);
+        return;
       }
-      void fetchOrders();
-    } catch (err) {
-      console.error("Cancel split failed:", err);
-    }
-  }
-
-  async function handleAssign() {
-    if (!selectedOrder || !assignedToId) return;
-    setIsAssigning(true);
-    setAssignError(null);
-    try {
-      const res = await fetch("/api/tint/manager/assign", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          orderId:      selectedOrder.id,
-          assignedToId: Number(assignedToId),
-          note:         note || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
-        throw new Error(typeof err.error === "string" ? err.error : "Assignment failed");
+      const fresh = await fetchBoard();
+      if (!fresh) { toast.error("Re-sequenced, but the board could not be refreshed"); return; }
+      const after = queueSignature(buildGroups(fresh), row.operatorId, row.type);
+      if (after === before) {
+        // A silent no-op. Say nothing rather than claim a move that did not
+        // happen — the row is already at the end it was pushed towards.
+        return;
       }
-      closeAssignModal();
-      setSelectedOrder(null);
-      void fetchOrders();
-    } catch (err) {
-      setAssignError(err instanceof Error ? err.message : "Assignment failed");
+      toast.success(`Re-sequenced ${row.operatorName.split(" ")[0]}'s queue`);
     } finally {
-      setIsAssigning(false);
+      setReorderBusy((s) => { const n = new Set(s); n.delete(row.key); return n; });
     }
-  }
+  }, [groups, reorderBusy, fetchBoard]);
 
-  // ── Pre-render computations ────────────────────────────────────────────────
+  // ── Header pieces ─────────────────────────────────────────────────────────
 
-  // Operator segments for UniversalHeader
-  const operatorSegments = (() => {
-    // Unassigned count: orders in Pending column
-    const unassignedCount = orders.filter(
-      (o) => o.workflowStage === "pending_tint_assignment" || (o.remainingQty && o.remainingQty > 0),
-    ).length;
-
-    // Count active workload (assigned + in progress) per operator ID
-    const opCounts = new Map<number, number>();
-    for (const o of orders) {
-      const ta = o.tintAssignments[0];
-      if (!ta) continue;
-      if (o.workflowStage === "tint_assigned" || o.workflowStage === "tinting_in_progress") {
-        opCounts.set(ta.assignedTo.id, (opCounts.get(ta.assignedTo.id) ?? 0) + 1);
-      }
-    }
-    for (const s of activeSplits) {
-      if (s.status === "tint_assigned" || s.status === "tinting_in_progress") {
-        opCounts.set(s.assignedTo.id, (opCounts.get(s.assignedTo.id) ?? 0) + 1);
-      }
-    }
-
-    const segs: { id: string | number; label: string; count: number }[] = [
-      { id: "unassigned", label: "Unassigned", count: unassignedCount },
+  const stats = useMemo(() => {
+    const flat = groups.flatMap((g) => g.rows);
+    return [
+      { label: "pending",     value: rail.length },
+      { label: "assigned",    value: flat.filter((r) => r.status === "assigned").length },
+      { label: "in progress", value: flat.filter((r) => r.status === "tinting_in_progress").length },
+      { label: "paused",      value: flat.filter((r) => r.status === "paused").length },
+      { label: "done today",  value: flat.filter((r) => r.status === "tinting_done").length },
     ];
-    for (const op of operators.filter((o) => o.name).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
-      segs.push({
-        id: op.id,
-        label: (op.name ?? "").split(" ")[0],
-        count: opCounts.get(op.id) ?? 0,
-      });
-    }
-    return segs;
-  })();
-
-
-  // ── Loading state ─────────────────────────────────────────────────────────
+  }, [rail, groups]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white">
         <div className="h-[52px] bg-white border-b border-gray-200" />
-        <div className="px-6 pb-6 mt-4">
-          <div className="grid grid-cols-4 gap-4">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="bg-gray-50 border border-gray-200 rounded-[14px] overflow-hidden">
-                <div className="bg-white border-b border-gray-200 px-4 py-3">
-                  <div className="h-4 bg-gray-100 rounded animate-pulse w-24" />
-                </div>
-                <div className="p-3 flex flex-col gap-2">
-                  {[0, 1, 2].map((j) => (
-                    <div key={j} className="bg-gray-100 rounded-xl h-32 animate-pulse" />
-                  ))}
-                </div>
-              </div>
-            ))}
+        <div className="h-[40px] bg-white border-b border-gray-200" />
+        <div className="flex" style={{ height: "calc(100vh - 92px)" }}>
+          <div className="w-[344px] border-r border-gray-200 p-2 flex flex-col gap-2">
+            {[0, 1, 2].map((i) => <div key={i} className="h-[130px] bg-gray-100 rounded-[10px] animate-pulse" />)}
+          </div>
+          <div className="flex-1 p-3 flex flex-col gap-1.5">
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />)}
           </div>
         </div>
       </div>
     );
   }
 
-  const assignCustomerName = selectedOrder
-    ? (selectedOrder.customer?.customerName ?? selectedOrder.shipToCustomerName ?? "—")
-    : "";
-
-  // True only when the order is genuinely being RE-assigned (currently assigned with no remaining qty
-  // and at least one active split). Orders showing in Pending due to remainingQty > 0 or all-splits-
-  // cancelled are always a fresh Assign, not a Re-assign.
-  const isReassign = !!selectedOrder &&
-    selectedOrder.workflowStage === "tint_assigned" &&
-    (selectedOrder.remainingQty ?? 0) === 0 &&
-    (selectedOrder.splits ?? []).filter((s) => s.status !== "cancelled").length > 0;
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
   return (
-    <div className="min-h-screen bg-white">
+    <div className="h-screen flex flex-col bg-white overflow-hidden">
 
       <UniversalHeader
         title="Tint Manager"
         showImport={canImportOBDs}
-        stats={[
-          { label: "pending", value: pendingCount },
-          { label: "assigned", value: assignedCount },
-          { label: "in progress", value: inProgressCount },
-          { label: "done", value: doneCount },
-        ]}
-        segments={operatorSegments}
-        activeSegment={activeOperatorSegment}
-        onSegmentChange={(id) => setActiveOperatorSegment(id === activeOperatorSegment ? null : id)}
+        stats={stats}
+        /* ⚠ NO `segments` / `activeSegment` / `onSegmentChange`. The operator
+           workload pills are gone on purpose: the table's per-operator sections
+           replace them, and they show the actual jobs rather than a count. This
+           is the ONLY prop change vs the Kanban header — everything else below is
+           wired exactly as it was. */
         filterGroups={[
           { label: "Delivery Type", key: "deliveryType", options: [{ value: "Local", label: "Local" }, { value: "Upcountry", label: "UPC" }, { value: "IGT", label: "IGT" }, { value: "Cross Depot", label: "Cross" }] },
           { label: "Priority", key: "priority", options: [{ value: "urgent", label: "Urgent" }, { value: "normal", label: "Normal" }] },
@@ -2548,12 +596,11 @@ export function TintManagerContent() {
         activeFilters={headerFilters}
         onFilterChange={setHeaderFilters}
         showDatePicker={false}
-        searchPlaceholder="Search OBD, customer..."
+        searchPlaceholder="Search OBD, SO, site, route…"
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
         rightExtra={
           <div className="flex items-center gap-1">
-            {/* Missing customer badge */}
             {missingCustomers.length > 0 && (
               <div className="relative">
                 <button
@@ -2586,7 +633,7 @@ export function TintManagerContent() {
                             "text-[9px] font-medium px-1.5 py-0.5 rounded border",
                             mc.orderType === "tint"
                               ? "bg-purple-50 text-purple-600 border-purple-200"
-                              : "bg-gray-50 text-gray-500 border-gray-200"
+                              : "bg-gray-50 text-gray-500 border-gray-200",
                           )}>
                             {mc.orderType === "tint" ? "Tint" : "Non-Tint"}
                           </span>
@@ -2602,7 +649,7 @@ export function TintManagerContent() {
             <a
               href="/reports?r=tint-summary"
               className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-              title="Open Reports — Tint Summary"
+              title="Open Reports — Tint Summary (the full completion history; this board shows today only)"
             >
               <FileBarChart size={12} />
               Reports
@@ -2616,573 +663,138 @@ export function TintManagerContent() {
               <Plus size={12} />
               Add to Tint
             </button>
-            <div className="w-px h-4 bg-gray-200 mx-0.5" />
-            <button
-              onClick={() => { setViewMode("card"); if (typeof window !== "undefined") sessionStorage.setItem("tm_view_mode", "card"); }}
-              className={`p-1 rounded ${viewMode === "card" ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
-              title="Card view"
-            >
-              <LayoutGrid size={14} />
-            </button>
-            <button
-              onClick={() => { setViewMode("table"); if (typeof window !== "undefined") sessionStorage.setItem("tm_view_mode", "table"); }}
-              className={`p-1 rounded ${viewMode === "table" ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
-              title="Table view"
-            >
-              <TableIcon size={14} />
-            </button>
           </div>
         }
         shortcuts={[
-          { key: "\u2191\u2193", label: "Navigate rows" },
-          { key: "\u21B5", label: "Order details" },
-          { key: "M", label: "Add OBD to Tint" },
+          { key: "M",   label: "Add OBD to Tint" },
+          { key: "Esc", label: "Close panel / clear selection" },
+          { key: "▲▼",  label: "Re-sequence (hover an Assigned row)" },
         ]}
       />
 
-      {/* OLD HEADER REMOVED */}
+      <ConnectionStrip connected={connected} lastSyncedAt={lastSyncedAt} />
 
-      {/* ── Kanban board ─────────────────────────────────────────────────── */}
-      {viewMode === "card" && (
-      <div className="px-3 pb-6">
-        <div className="grid grid-cols-4 gap-2 mt-2">
-          {COLUMNS.map((col) => {
-            const volumeByStage: Record<string, number> = {
-              pending_tint_assignment: pendingVolume,
-              tint_assigned:           assignedVolume,
-              tinting_in_progress:     inProgressVolume,
-              completed:               doneVolume,
-            };
-            const colVolume = volumeByStage[col.stage] ?? 0;
-            const isPendingCol = col.stage === "pending_tint_assignment";
-
-            const colOrderItems: TintOrder[] = col.stage === "pending_tint_assignment"
-              ? filteredOrders
-                  .filter((o) =>
-                    o.workflowStage === "pending_tint_assignment" ||
-                    ((o.workflowStage === "tint_assigned" || o.workflowStage === "tinting_in_progress") &&
-                     (o.remainingQty ?? 0) > 0)
-                  )
-                  .sort((a, b) => {
-                    const tsA = a.orderDateTime ? new Date(a.orderDateTime).getTime() : buildTs(a.obdEmailDate, a.obdEmailTime);
-                    const tsB = b.orderDateTime ? new Date(b.orderDateTime).getTime() : buildTs(b.obdEmailDate, b.obdEmailTime);
-                    return tsA - tsB;
-                  })
-              : col.stage === "tint_assigned"
-              ? filteredOrders.filter((o) => o.workflowStage === "tint_assigned" && (o.remainingQty ?? 0) === 0)
-                  .sort((a, b) => {
-                    const seqDiff = (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0)
-                    if (seqDiff !== 0) return seqDiff
-                    const priDiff = (a.priorityLevel ?? 5) - (b.priorityLevel ?? 5)
-                    if (priDiff !== 0) return priDiff
-                    const tsA = a.orderDateTime ? new Date(a.orderDateTime).getTime() : buildTs(a.obdEmailDate, a.obdEmailTime);
-                    const tsB = b.orderDateTime ? new Date(b.orderDateTime).getTime() : buildTs(b.obdEmailDate, b.obdEmailTime);
-                    return tsA - tsB;
-                  })
-              : col.stage === "tinting_in_progress"
-              ? filteredOrders.filter((o) => o.workflowStage === "tinting_in_progress" && (o.remainingQty ?? 0) === 0)
-              : filteredOrders.filter((o) => o.workflowStage === "pending_support");
-
-            const colSplitItems: SplitCard[] = isPendingCol
-              ? []
-              : col.stage === "tint_assigned"
-              ? filteredActiveSplits.filter((s) => s.status === "tint_assigned")
-                  .sort((a, b) => {
-                    const seqDiff = (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0)
-                    if (seqDiff !== 0) return seqDiff
-                    const priDiff = (a.priorityLevel ?? 5) - (b.priorityLevel ?? 5)
-                    if (priDiff !== 0) return priDiff
-                    const tsA = a.orderDateTime ? new Date(a.orderDateTime).getTime() : buildTs(a.obdEmailDate, a.obdEmailTime);
-                    const tsB = b.orderDateTime ? new Date(b.orderDateTime).getTime() : buildTs(b.obdEmailDate, b.obdEmailTime);
-                    return tsA - tsB;
-                  })
-              : col.stage === "tinting_in_progress"
-              ? filteredActiveSplits.filter((s) => s.status === "tinting_in_progress")
-              : filteredCompletedSplits;
-
-            // For the Completed column, also include whole-OBD assignments shaped as TintOrder
-            const colAssignmentItems: TintOrder[] = col.stage === "completed"
-              ? (() => {
-                  const existingOrderIds = new Set(colOrderItems.map((o) => o.id));
-                  return completedAssignments
-                    .filter((a) => !existingOrderIds.has(a.order.id))
-                    .filter((a) => {
-                      if (activeOperatorSegment === "unassigned") return false;
-                      if (typeof activeOperatorSegment === "number" && a.assignedTo.id !== activeOperatorSegment) return false;
-                      return true;
-                    })
-                    .map((a): TintOrder => ({
-                      id:                 a.order.id,
-                      obdNumber:          a.order.obdNumber,
-                      workflowStage:      "pending_support",
-                      dispatchSlot:       null,
-                      dispatchStatus:     null,
-                      priorityLevel:      5,
-                      sequenceOrder:      null,
-                      createdAt:          a.completedAt ?? "",
-                      shipToCustomerName: a.order.shipToCustomerName,
-                      shipToCustomerId:   null,
-                      customerMissing:    false,
-                      manualTintEntry:    false,
-                      smu:                a.smu,
-                      obdEmailDate:       a.obdEmailDate,
-                      obdEmailTime:       a.obdEmailTime,
-                      orderDateTime:      a.orderDateTime,
-                      slotId:             a.slotId,
-                      slotName:           a.slotName,
-                      slotTime:           a.slotTime,
-                      slotIsNextDay:      a.slotIsNextDay,
-                      originalSlotId:     a.originalSlotId,
-                      originalSlotName:   a.originalSlotName,
-                      deliveryTypeName:   a.deliveryTypeName,
-                      customer:           a.order.customer ?? null,
-                      querySnapshot:      a.order.querySnapshot ?? null,
-                      tintAssignments: [{
-                        id:                 a.id,
-                        status:             "tinting_done",
-                        assignedTo:         a.assignedTo,
-                        startedAt:          null,
-                        completedAt:        a.completedAt,
-                        updatedAt:          a.completedAt ?? "",
-                        accumulatedMinutes: 0,
-                      }],
-                      lineItems:      [],
-                      existingSplits: [],
-                      splits:         [],
-                      remainingQty:   0,
-                    }));
-                })()
-              : [];
-
-            const allColItems: ColItem[] = [
-              ...colOrderItems.map((o) => ({ type: "order" as const, data: o })),
-              ...colAssignmentItems.map((o) => ({ type: "order" as const, data: o })),
-              ...colSplitItems.map((s) => ({ type: "split" as const, data: s })),
-            ];
-
-            const itemCount  = allColItems.length;
-            const page       = pages[col.stage] ?? 0;
-            const totalPages = Math.ceil(itemCount / CARDS_PER_PAGE);
-            const pageItems  = allColItems.slice(page * CARDS_PER_PAGE, (page + 1) * CARDS_PER_PAGE);
-
-            return (
-              <div
-                key={col.stage}
-                className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden"
-              >
-                {/* Column header */}
-                <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-2">
-                  <div className={cn("w-2 h-2 rounded-full flex-shrink-0", col.dot)} />
-                  <span className="text-[13px] font-bold text-gray-900 flex-1">{col.label}</span>
-                  <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full", col.pillClass)}>
-                    {itemCount}
-                  </span>
-                  <span className="text-[11px] text-gray-400 font-medium">
-                    {colVolume > 0 ? `${Math.round(colVolume).toLocaleString()} L` : "—"}
-                  </span>
-                </div>
-
-                {/* Card list */}
-                <div className="p-2 flex flex-col gap-2">
-                  {itemCount === 0 ? (
-                    <p className="text-[12px] text-gray-400 italic text-center py-8">No orders</p>
-                  ) : (
-                    pageItems.map((item) =>
-                      item.type === "order" ? (
-                        <KanbanCard
-                          key={`o-${item.data.id}`}
-                          order={item.data}
-                          stage={col.stage}
-                          onAssign={() => openAssignModal(item.data)}
-                          onCreateSplit={() => openSplitBuilder(item.data)}
-                          onRefresh={() => { void fetchOrders(); }}
-                          onMoveUp={() => handleReorder("order", item.data.id, "up")}
-                          onMoveDown={() => handleReorder("order", item.data.id, "down")}
-                          onViewDetail={() => setDetailOrderId(item.data.id)}
-                          onCustomerMissing={() => { setMissingSheetOrder(item.data); setMissingSheetOpen(true); }}
-                          onRequestRevert={() => {
-                            setRevertOrderId(item.data.id);
-                            setRevertObdNumber(item.data.obdNumber);
-                          }}
-                          canRemove={canRemoveObd}
-                          onRequestRemove={() => setRemoveModalOrder(item.data)}
-                          canHide={canHideObd}
-                          onRequestHide={() => setHideModalOrder(item.data)}
-                          onOpenSkipHistory={() => setSkipHistoryFor({
-                            orderId:      item.data.id,
-                            obdNumber:    item.data.obdNumber,
-                            customerName: item.data.customer?.customerName
-                                            ?? item.data.shipToCustomerName,
-                          })}
-                          onOpenPauseHistory={() => setPauseHistoryFor({
-                            orderId:      item.data.id,
-                            obdNumber:    item.data.obdNumber,
-                            customerName: item.data.customer?.customerName
-                                            ?? item.data.shipToCustomerName,
-                          })}
-                        />
-                      ) : (
-                        <SplitKanbanCard
-                          key={`s-${item.data.id}`}
-                          split={item.data}
-                          colStage={col.stage}
-                          onReassign={() => openSplitReassign(item.data)}
-                          onCancel={() => { void handleCancelSplit(item.data.id); }}
-                          onRefresh={() => { void fetchOrders(); }}
-                          onMoveUp={() => handleReorder("split", item.data.id, "up")}
-                          onMoveDown={() => handleReorder("split", item.data.id, "down")}
-                          onViewDetail={() => setDetailOrderId(item.data.order.id)}
-                        />
-                      )
-                    )
-                  )}
-                </div>
-
-                {/* Per-column pagination */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-3 pb-3 pt-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPages((p) => ({ ...p, [col.stage]: Math.max(0, page - 1) }))
-                      }
-                      disabled={page === 0}
-                      className="text-[11px] text-gray-400 hover:text-gray-700 disabled:opacity-30 px-2 py-1"
-                    >
-                      ←
-                    </button>
-                    <span className="text-[11px] text-gray-500 font-medium">
-                      {page + 1} / {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPages((p) => ({
-                          ...p,
-                          [col.stage]: Math.min(totalPages - 1, page + 1),
-                        }))
-                      }
-                      disabled={page >= totalPages - 1}
-                      className="text-[11px] text-gray-400 hover:text-gray-700 disabled:opacity-30 px-2 py-1"
-                    >
-                      →
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      )}
-
-      {/* ── Table view ───────────────────────────────────────────────────── */}
-      {viewMode === "table" && (
-        <TintTableView
-          filteredOrders={filteredOrders}
-          filteredActiveSplits={filteredActiveSplits}
-          filteredCompletedSplits={filteredCompletedSplits}
-          completedAssignments={
-            activeOperatorSegment === "unassigned" ? [] :
-            typeof activeOperatorSegment === "number"
-              ? completedAssignments.filter((a) => a.assignedTo.id === activeOperatorSegment)
-              : completedAssignments
-          }
-          onOrderClick={(order) => setDetailOrderId(order.id)}
-          onSplitClick={(split) => {
-            const colStage: ColStage = split.status === "tint_assigned"
-              ? "tint_assigned"
-              : split.status === "tinting_in_progress"
-              ? "tinting_in_progress"
-              : "completed";
-            setTableSplitData({ splitId: split.id, orderId: split.order.id, colStage });
-            setTableSplitOpen(true);
-          }}
-          onStatusPopover={handleTableStatusPopover}
-          onAssign={(order) => openAssignModal(order)}
-          onCreateSplit={(order) => openSplitBuilder(order)}
-          onMoveUp={(id, type) => { void handleReorder(type, id, "up"); }}
-          onMoveDown={(id, type) => { void handleReorder(type, id, "down"); }}
-          onCancelAssignment={(order) => { void handleCancelAssignment(order); }}
-          onReassignSplit={(split) => openSplitReassign(split)}
-          onCancelSplit={(split) => { void handleCancelSplit(split.id); }}
-          onCustomerMissing={(order) => { setMissingSheetOrder(order); setMissingSheetOpen(true); }}
+      {/* ── Body shell: 344px rail + one flat table ──────────────────────── */}
+      <div className="flex-1 flex overflow-hidden">
+        <BoardRail
+          rail={rail}
+          operators={operators}
           canRemove={canRemoveObd}
-          onRequestRemove={(order) => setRemoveModalOrder(order)}
-          canHide={canHideObd}
-          onRequestHide={(order) => setHideModalOrder(order)}
-          onOpenSkipHistory={(orderId, obdNumber, customerName) =>
-            setSkipHistoryFor({ orderId, obdNumber, customerName })
-          }
-          onOpenPauseHistory={(orderId, obdNumber, customerName) =>
-            setPauseHistoryFor({ orderId, obdNumber, customerName })
-          }
+          onAssign={(o, opId) => { void handleAssign(o, opId); }}
+          onRemove={(o) => setRemoveModalOrder(o)}
+          onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
+          onResolveMissing={(o) => {
+            sheetResolvedRef.current = false;
+            setMissingSheetWarning(undefined);
+            setMissingSheetOrder(o);
+            setMissingSheetOpen(true);
+          }}
+        />
+
+        <BoardTable
+          groups={groups}
+          selection={selection}
+          busyKeys={reorderBusy}
+          onToggleRow={(r) => setSelection((s) => {
+            const n = new Set(s);
+            if (n.has(r.key)) n.delete(r.key); else n.add(r.key);
+            return n;
+          })}
+          onOpenRow={(r) => setPanelKey(r.key)}
+          onReorder={(r, d) => { void handleReorder(r, d); }}
+        />
+      </div>
+
+      <BoardAssignBar
+        selectedRows={selectedRows}
+        operators={operators}
+        busy={writeBusy}
+        onReassign={(opId) => { void handleBulkReassign(opId); }}
+        onClear={() => setSelection(new Set())}
+      />
+
+      {panelTarget && (
+        <BoardDetailPanel
+          target={panelTarget}
+          operators={operators}
+          position={{ index: panelIndex, total: walk.length }}
+          busy={writeBusy}
+          error={panelError}
+          canRemove={canRemoveObd}
+          onClose={() => setPanelKey(null)}
+          onPrev={() => { if (panelIndex > 0) setPanelKey(walk[panelIndex - 1].key); }}
+          onNext={() => { if (panelIndex < walk.length - 1) setPanelKey(walk[panelIndex + 1].key); }}
+          onAssign={(o, opId) => { void handleAssign(o, opId); }}
+          onReassignOrder={(r, opId) => { void handleReassignOrder(r, opId); }}
+          onReassignSplit={(r, opId) => { void handleReassignSplit(r, opId); }}
+          onRemove={(o) => setRemoveModalOrder(o)}
+          onResolveMissing={(o) => {
+            sheetResolvedRef.current = false;
+            setMissingSheetWarning(undefined);
+            setMissingSheetOrder(o);
+            setMissingSheetOpen(true);
+          }}
+          onOpenPauseHistory={(orderId, obdNumber, siteName) => setPauseHistoryFor({ orderId, obdNumber, customerName: siteName })}
+          onOpenSkipHistory={(orderId, obdNumber, siteName) => setSkipHistoryFor({ orderId, obdNumber, customerName: siteName })}
         />
       )}
 
-      {/* ── Split Builder modal ──────────────────────────────────────────── */}
-      {splitBuilderOrder && (
-        <SplitBuilderModal
-          open={splitBuilderOpen}
-          onClose={() => { setSplitBuilderOpen(false); setSplitBuilderOrder(null); }}
-          order={splitBuilderOrder}
-          operators={operators.filter((op): op is { id: number; name: string } => op.name !== null)}
-          onSuccess={() => { void fetchOrders(); }}
-        />
-      )}
-
-      {/* ── Split Re-assign modal ────────────────────────────────────────── */}
-      {splitReassignOpen && selectedSplitForReassign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setSplitReassignOpen(false)}
-          />
-          <div className="relative bg-white rounded-[14px] shadow-xl w-[400px] overflow-hidden border border-gray-200">
-            <div className="px-5 pt-5 pb-4 border-b border-gray-200">
-              <p className="text-[15px] font-bold text-gray-900">Re-assign Split</p>
-              <p className="text-[12px] text-gray-400 mt-1">
-                <ObdCode code={selectedSplitForReassign.order.obdNumber} />
-                {" · Split #"}
-                {selectedSplitForReassign.splitNumber}
-              </p>
-            </div>
-
-            <div className="px-5 pt-4 pb-2 max-h-[260px] overflow-y-auto">
-              {operators.length === 0 ? (
-                <p className="text-[12px] text-gray-400 py-4 text-center">No operators available</p>
-              ) : (
-                operators.map((op) => {
-                  const isSelected = splitReassignedToId === String(op.id);
-                  return (
-                    <div
-                      key={op.id}
-                      onClick={() => setSplitReassignedToId(String(op.id))}
-                      className={cn(
-                        "flex items-center gap-3 p-3.5 border-[1.5px] rounded-xl mb-2 cursor-pointer transition-all",
-                        isSelected
-                          ? "border-gray-900 bg-gray-50"
-                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
-                      )}
-                    >
-                      <div className="w-9 h-9 rounded-full bg-teal-600 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
-                        {initials(op.name)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-semibold text-gray-900">
-                          {op.name ?? `Operator ${op.id}`}
-                        </p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">Available</p>
-                      </div>
-                      <div
-                        className={cn(
-                          "w-5 h-5 rounded-full bg-teal-600 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
-                          isSelected ? "opacity-100" : "opacity-0",
-                        )}
-                      >
-                        ✓
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {splitReassignError && (
-              <div className="flex items-center gap-2.5 mx-5 mb-3 p-3.5 bg-red-50 border border-red-200 rounded-xl text-[12.5px]">
-                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                <span className="text-red-700 font-medium">{splitReassignError}</span>
-                <button className="ml-auto text-[12px] text-red-600 underline" onClick={handleSplitReassign}>
-                  Retry
-                </button>
-              </div>
-            )}
-
-            <div className="px-5 pb-5 pt-3 border-t border-gray-200 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setSplitReassignOpen(false)}
-                className="text-[12.5px] font-semibold text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSplitReassign}
-                disabled={!splitReassignedToId || isSplitReassigning}
-                className="text-[12.5px] font-semibold text-white bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSplitReassigning && <Loader2 className="animate-spin" size={14} />}
-                Confirm Re-assign
-              </button>
-            </div>
-          </div>
+      {/* ── Secondary actions kept reachable ─────────────────────────────────
+          Hide OBD (admin) and Revert-from-tint act on a PENDING bill, so they
+          live on the rail's context strip below the list rather than in a row
+          menu the flat table does not have. Nothing became unreachable. */}
+      {(canHideObd || rail.some((o) => o.manualTintEntry)) && rail.length > 0 && (
+        <div className="border-t border-gray-200 bg-gray-50 px-3.5 py-2 flex items-center gap-3 text-[11px] text-gray-500">
+          <span className="font-semibold text-gray-600">Pending bill actions:</span>
+          {canHideObd && (
+            <select
+              className="border border-gray-200 rounded-md px-2 py-1 text-[11px] bg-white"
+              value=""
+              onChange={(e) => {
+                const o = rail.find((x) => String(x.id) === e.target.value);
+                if (o) setHideModalOrder(o);
+                e.currentTarget.value = "";
+              }}
+            >
+              <option value="">Hide an OBD…</option>
+              {rail.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.obdNumber} · {o.customer?.customerName ?? o.shipToCustomerName ?? "—"}
+                </option>
+              ))}
+            </select>
+          )}
+          {rail.some((o) => o.manualTintEntry) && (
+            <select
+              className="border border-gray-200 rounded-md px-2 py-1 text-[11px] bg-white"
+              value=""
+              onChange={(e) => {
+                const o = rail.find((x) => String(x.id) === e.target.value);
+                if (o) setRevertOrder({ id: o.id, obdNumber: o.obdNumber });
+                e.currentTarget.value = "";
+              }}
+            >
+              <option value="">Revert a manual tint entry…</option>
+              {rail.filter((o) => o.manualTintEntry).map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.obdNumber} · {o.customer?.customerName ?? o.shipToCustomerName ?? "—"}
+                </option>
+              ))}
+            </select>
+          )}
+          <RotateCcw size={11} className="text-gray-300" />
         </div>
       )}
 
-      {/* ── Assignment modal ─────────────────────────────────────────────── */}
-      {assignModalOpen && selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={closeAssignModal} />
-          <div className="relative bg-white rounded-[14px] shadow-xl w-[400px] overflow-hidden border border-gray-200">
-            <div className="px-5 pt-5 pb-4 border-b border-gray-200">
-              <p className="text-[15px] font-bold text-gray-900">
-                {isReassign ? "Re-assign Operator" : "Assign Operator"}
-              </p>
-              <p className="text-[12px] text-gray-400 mt-1">
-                <ObdCode code={selectedOrder.obdNumber} />
-                {" · "}
-                {assignCustomerName}
-              </p>
-            </div>
+      {/* ── Modals, all single-instance ──────────────────────────────────── */}
 
-            {(selectedOrder.workflowStage === "pending_tint_assignment" ||
-              selectedOrder.workflowStage === "tint_assigned") && (
-              <>
-                <div className="px-5 pt-4 pb-2 max-h-[260px] overflow-y-auto">
-                  {operators.length === 0 ? (
-                    <p className="text-[12px] text-gray-400 py-4 text-center">No operators available</p>
-                  ) : (
-                    operators.map((op) => {
-                      const isSelected = assignedToId === String(op.id);
-                      return (
-                        <div
-                          key={op.id}
-                          onClick={() => setAssignedToId(String(op.id))}
-                          className={cn(
-                            "flex items-center gap-3 p-3.5 border-[1.5px] rounded-xl mb-2 cursor-pointer transition-all",
-                            isSelected
-                              ? "border-gray-900 bg-gray-50"
-                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
-                          )}
-                        >
-                          <div className="w-9 h-9 rounded-full bg-teal-600 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
-                            {initials(op.name)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-semibold text-gray-900">
-                              {op.name ?? `Operator ${op.id}`}
-                            </p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Available</p>
-                          </div>
-                          <div
-                            className={cn(
-                              "w-5 h-5 rounded-full bg-teal-600 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
-                              isSelected ? "opacity-100" : "opacity-0",
-                            )}
-                          >
-                            ✓
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="px-5 pb-3">
-                  <label className="text-[11.5px] font-semibold text-gray-600 block mb-1.5">
-                    Note (optional)
-                  </label>
-                  <textarea
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Any tinting instructions…"
-                    rows={2}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[12.5px] text-gray-800 placeholder:text-gray-400 focus:border-gray-700 focus:outline-none resize-none"
-                  />
-                </div>
-
-                {assignError && (
-                  <div className="flex items-center gap-2.5 mx-5 mb-3 p-3.5 bg-red-50 border border-red-200 rounded-xl text-[12.5px]">
-                    <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                    <span className="text-red-700 font-medium">{assignError}</span>
-                    <button className="ml-auto text-[12px] text-red-600 underline" onClick={handleAssign}>
-                      Retry
-                    </button>
-                  </div>
-                )}
-
-                <div className="px-5 pb-5 pt-3 border-t border-gray-200 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={closeAssignModal}
-                    className="text-[12.5px] font-semibold text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAssign}
-                    disabled={!assignedToId || isAssigning}
-                    className="text-[12.5px] font-semibold text-white bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isAssigning && <Loader2 className="animate-spin" size={14} />}
-                    {isReassign ? "Confirm Re-assign" : "Assign Operator"}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {(selectedOrder.workflowStage === "tinting_in_progress" ||
-              selectedOrder.workflowStage === "pending_support") && (
-              <div className="px-5 pt-5 pb-5">
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-[12.5px] text-amber-700 font-medium">
-                  {selectedOrder.workflowStage === "tinting_in_progress"
-                    ? "Tinting is in progress — assignment cannot be changed."
-                    : "Tinting is complete — assignment cannot be changed."}
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={closeAssignModal}
-                    className="text-[12.5px] font-semibold text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Table view: Split detail sheet ────────────────────────────────── */}
-      {tableSplitData && (
-        <SplitDetailSheet
-          open={tableSplitOpen}
-          onClose={() => setTableSplitOpen(false)}
-          splitId={tableSplitData.splitId}
-          orderId={tableSplitData.orderId}
-          colStage={tableSplitData.colStage}
-          onReassign={() => setTableSplitOpen(false)}
-          onCancel={() => { setTableSplitOpen(false); void fetchOrders(); }}
-        />
-      )}
-
-      {/* ── Table view: Status popover ─────────────────────────────────────── */}
-      {tablePopover && (
-        <StatusPopover
-          position={tablePopover.position}
-          anchorRef={tableAnchorRef as RefObject<HTMLButtonElement>}
-          currentDispatch={tablePopover.currentDispatch}
-          currentPriority={tablePopover.currentPriority}
-          onSave={handleTableStatusSave}
-          onClose={() => setTablePopover(null)}
-          isSaving={tablePopoverSaving}
-        />
-      )}
-
-      {/* ── Customer Missing Sheet ─────────────────────────────────────────── */}
       <CustomerMissingSheet
         open={missingSheetOpen}
         warningMessage={missingSheetWarning}
         onOpenChange={(next) => {
-          // Step 13e: cancel detection just clears Assign-chain intent — the
-          // amber strip inside the sheet already conveyed the message, and
-          // the orange ⓘ icon on the row is the persistent reminder.
-          if (!next && !sheetResolvedRef.current && pendingAssignOrderId != null) {
-            setPendingAssignOrderId(null);
-          }
+          // Cancel just drops the Assign intent — the amber strip already said
+          // why, and the ⓘ on the rail card is the persistent reminder.
+          if (!next && !sheetResolvedRef.current && pendingAssign) setPendingAssign(null);
           if (!next) setMissingSheetWarning(undefined);
           setMissingSheetOpen(next);
         }}
@@ -3192,91 +804,61 @@ export function TintManagerContent() {
           sheetResolvedRef.current = true;
           setMissingSheetWarning(undefined);
           setMissingSheetOpen(false);
-          void fetchOrders();
+          void fetchBoard();
           void fetchMissingCustomers();
         }}
       />
 
-      {/* ── Order Detail Panel ────────────────────────────────────────────── */}
-      <OrderDetailPanel
-        orderId={detailOrderId}
-        onClose={() => setDetailOrderId(null)}
-      />
-
-      {/* ── Manual Tint Entry Modal ──────────────────────────────────────── */}
       <ManualTintEntryModal
         open={pullModalOpen}
         onClose={() => setPullModalOpen(false)}
-        onSuccess={(obdNumber) => {
-          console.log(`[tint-manager] OBD ${obdNumber} pulled in — refreshing`);
-          void fetchOrders();
-        }}
+        onSuccess={() => { void fetchBoard(); }}
       />
 
-      {/* ── Manual Tint Revert Modal ─────────────────────────────────────── */}
       <ManualTintRevertModal
-        open={revertOpen}
-        onClose={() => {
-          setRevertOrderId(null);
-          setRevertObdNumber(null);
-        }}
-        orderId={revertOrderId}
-        obdNumber={revertObdNumber}
-        onSuccess={(obdNumber) => {
-          console.log(`[tint-manager] OBD ${obdNumber} reverted from tint — refreshing`);
-          void fetchOrders();
-        }}
+        open={revertOrder !== null}
+        onClose={() => setRevertOrder(null)}
+        orderId={revertOrder?.id ?? null}
+        obdNumber={revertOrder?.obdNumber ?? null}
+        onSuccess={() => { setRevertOrder(null); void fetchBoard(); }}
       />
 
-      {/* ── Remove OBD Modal (Phase 2d) ──────────────────────────────────── */}
-      {/* Single instance — both Kanban cards and Table rows set removeModalOrder.
-          challan is plumbed through from the orders payload (Phase 2d.1) so the
-          modal's challan-void pre-warning renders correctly for OBDs with a
-          linked active challan. */}
       {removeModalOrder && (
         <RemoveObdModal
-          open={true}
+          open
           onClose={() => setRemoveModalOrder(null)}
           onRemoved={() => {
             setRemoveModalOrder(null);
-            void fetchOrders();
+            setPanelKey(null);
+            void fetchBoard();
+            void fetchMissingCustomers();
           }}
           order={{
             id:                 removeModalOrder.id,
             obdNumber:          removeModalOrder.obdNumber,
             orderDateTime:      removeModalOrder.orderDateTime,
-            shipToCustomerName: removeModalOrder.customer?.customerName
-                                  ?? removeModalOrder.shipToCustomerName,
+            shipToCustomerName: removeModalOrder.customer?.customerName ?? removeModalOrder.shipToCustomerName,
             smu:                removeModalOrder.smu,
-            articleTag:         removeModalOrder.querySnapshot?.articleTag ?? null,
+            articleTag:         removeModalOrder.articleTag ?? removeModalOrder.querySnapshot?.articleTag ?? null,
             totalVolume:        removeModalOrder.querySnapshot?.totalVolume ?? null,
             challan:            removeModalOrder.challan ?? null,
           }}
         />
       )}
 
-      {/* ── Hide OBD Modal (admin-only) ──────────────────────────────────── */}
-      {/* Single instance — both Kanban cards and Table rows set hideModalOrder. */}
       {hideModalOrder && (
         <HideObdModal
-          open={true}
+          open
           onClose={() => setHideModalOrder(null)}
-          onHidden={() => {
-            setHideModalOrder(null);
-            void fetchOrders();
-          }}
+          onHidden={() => { setHideModalOrder(null); void fetchBoard(); }}
           order={{
             id:        hideModalOrder.id,
             obdNumber: hideModalOrder.obdNumber,
-            siteName:  hideModalOrder.customer?.customerName
-                         ?? hideModalOrder.shipToCustomerName,
+            siteName:  hideModalOrder.customer?.customerName ?? hideModalOrder.shipToCustomerName,
           }}
         />
       )}
 
-      {/* ── Skip History Modal (Phase 3d) ────────────────────────────────── */}
-      {/* Single instance fed by all 5 entry points: Kanban pill, Kanban link,
-          Kanban kebab item, Table OBD-cell badge, Table kebab item. */}
       {skipHistoryFor && (
         <SkipHistoryModal
           open
@@ -3287,10 +869,6 @@ export function TintManagerContent() {
         />
       )}
 
-      {/* ── Pause History Modal (Phase 4e) ───────────────────────────────── */}
-      {/* Single instance fed by all 5 entry points: Kanban PAUSED pill,
-          "View full pause history" link, Kanban kebab item, Table OBD-cell
-          badge, Table kebab item. */}
       {pauseHistoryFor && (
         <PauseHistoryModal
           open
@@ -3300,7 +878,6 @@ export function TintManagerContent() {
           onClose={() => setPauseHistoryFor(null)}
         />
       )}
-
     </div>
   );
 }

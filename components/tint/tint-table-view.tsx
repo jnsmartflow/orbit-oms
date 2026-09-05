@@ -416,6 +416,14 @@ export function TintTableView({
       slotId: a.slotId, slotName: a.slotName, slotTime: a.slotTime,
       slotIsNextDay: a.slotIsNextDay, originalSlotId: a.originalSlotId,
       originalSlotName: a.originalSlotName, deliveryTypeName: a.deliveryTypeName,
+      // Board columns added to the payload 2026-09-05. This file is RETIRED —
+      // the Tint Manager rebuild dropped its import, and CORE §3 forbids
+      // deleting it — but it is still type-checked, so the synthetic order it
+      // builds has to carry the new fields. Read straight off the completed
+      // assignment, which now carries all four.
+      soNumber: a.soNumber ?? null, route: a.route ?? null,
+      articleTag: a.articleTag ?? a.order.querySnapshot?.articleTag ?? null,
+      isKeyCustomer: a.isKeyCustomer ?? false,
       customer: a.order.customer ?? null, querySnapshot: a.order.querySnapshot ?? null,
       tintAssignments: [{ id: a.id, status: "tinting_done", assignedTo: a.assignedTo, startedAt: null, completedAt: a.completedAt, updatedAt: a.completedAt ?? "", accumulatedMinutes: 0 }],
       lineItems: [] as TintOrder["lineItems"], existingSplits: [], splits: [], remainingQty: 0,
