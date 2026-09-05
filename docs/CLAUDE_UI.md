@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.19 · September 2026 · updated 2026-09-04 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.20 · September 2026 · updated 2026-09-06 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -158,6 +158,8 @@ Desk boards use `<UniversalHeader />` from `components/universal-header.tsx`. Ne
 
 **Neutral props added for the Billing v2 face (2026-08-01, commits `d08f3870`/`15e87e2b`/`f76b4c86`):** `searchLayout?: "compact" | "wide" | "wide-right"` (default compact, the 180→260px grow), `showShortcutsButton?: boolean` (default true — billing hides it in the header and renders the extracted **`components/header-shortcuts.tsx`** on its own control row), `importVariant?: "default" | "primary"` (primary = teal Import). The component imports nothing from `components/billing/` and never calls `useBillingV2()` — callers opt in; every non-billing board is byte-identical by default.
 
+⚠ **Tint Manager stayed a consumer through its 2026-09-06 board rebuild — it did NOT become a second exception.** The Kanban became a rail + one grouped table, and the only header prop dropped was the operator-workload segment group (`segments`/`activeSegment`/`onSegmentChange`); Import, the three filter groups, the shortcuts panel and `rightExtra` are wired exactly as before. Screen itself: `CLAUDE_TINT.md §1`.
+
 **Named exception — `/floor` (Floor Control) is hand-rolled, deliberately.** `app/(floor)/floor/page.tsx` → `components/floor/floor-page.tsx` renders its OWN two-row header (Row 1: "Floor Control" title + IST date/time; Row 2: delivery-type scope chips + one search box + one filter) — no `<UniversalHeader />` anywhere in the floor tree. Reason: an approved divergence hand-rolled to the locked mockup `docs/mockups/floor-control/01-board.html` (scope chips + search/filter, a different shape from UniversalHeader's segmented control). This is ONE named exception, not a loosening of the rule — every other board still uses `<UniversalHeader />`. The screen itself is documented in `CLAUDE_FLOOR.md`; do not restate its layout here. Do not "fix" `/floor` back to `<UniversalHeader />`.
 
 ### Row 1 (52px sticky top-0, z-30)
@@ -198,7 +200,7 @@ Per-board wiring summary:
 
 | Board | Segments | Filters | Date | Extras |
 |---|---|---|---|---|
-| Tint Manager | Operator pills | Del Type, Priority, Type | None | View toggle, missing-customer badge |
+| Tint Manager | **None** — segments removed 2026-09-06 | Del Type, Priority, Type | None | Missing-customer badge · Add to Tint · Reports link. **No view toggle** — one board now |
 | Mail Orders | Slots (5) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle. ⚠ The flag-gated Billing v2 face rewires this header (`searchLayout="wide-right"`, teal Import, shortcuts moved to the control row) — spec belongs to the MAIL_ORDERS session, not here |
 | Tint Operator | Job pill (teal, dropdown) | — | None | Progress bar (rightExtra) |
 | TI Report | Date presets | Tinter Type, Operator | None | Date range, Download |
@@ -1560,4 +1562,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.18 · OrbitOMS · updated 2026-08-05 · No Schema stamp by design (see above)*
+*UI v5.20 · OrbitOMS · updated 2026-09-06 · No Schema stamp by design (see above) — **§6: the Tint Manager wiring row corrected for the 2026-09-06 board rebuild** (the operator segment pills and the card/table view toggle are both gone; `rightExtra` re-listed), plus an explicit note above the named exception that Tint Manager REMAINED a `<UniversalHeader />` consumer through that rebuild — `/floor` is still the only exception, and the count of live consumers is unchanged at 8. §57 re-pointed: the admin Hide OBD entry point is now the rail's pending-bill context strip, not a row menu. ⚠ **This footer had drifted two versions behind its own header** — footer v5.18 against header v5.19, the v5.19 pass having bumped only the header — so both now read v5.20. That is exactly the drift the "check the header AND the footer" rule exists to catch. Prior, v5.18 (final-pass 12b 2026-08-05): §55 line-number references replaced with file+symbol anchors.*

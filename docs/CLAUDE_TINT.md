@@ -1,9 +1,9 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.9 · Schema v27.13 · August 2026 · updated 2026-08-04
+# v2.0 · Schema v27.13 · September 2026 · updated 2026-09-06
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Covers Tint Manager, Tint Operator (incl. skip, pause/resume, partial done, sampling reuse + pack scaling), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Tint Summary report, Remove OBD.
+Covers Tint Manager (BOARD REBUILT 2026-09-05/06 — §1), Tint Operator (incl. skip, pause/resume, partial done, sampling reuse + pack scaling), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Tint Summary report, Remove OBD.
 
 Users: Chandresh Kolgha (tint_manager), Deepak Vasava + Chandrasing Valvi (tint_operator). Prakash (operation_manager, id 32) also LANDS on `/tint/manager` at login (`lib/rbac.ts`; role confirmed real 2026-08-04 — `CLAUDE_CORE.md §5`).
 
@@ -15,90 +15,249 @@ Sampling Library is a SEPARATE module — see `CLAUDE_SAMPLING_LIBRARY.md`.
 
 Primary user: Chandresh.
 
+**REBUILT 2026-09-05/06** (seven commits, `a0f9378b` → `082eb92e`, all pushed). The four-column
+Kanban and its card/table view toggle are **gone**. What replaced them is below; `§1.11` records
+what went with them.
+
 **Key files:**
-- `components/tint/tint-manager-content.tsx`
-- `components/tint/tint-table-view.tsx`
-- `components/tint/PauseHistoryModal.tsx`
-- `components/tint/SkipHistoryModal.tsx`
-- `components/tint/RemoveObdModal.tsx`
-- `app/api/tint/manager/orders/route.ts`
-- `app/api/tint/manager/missing-customers/route.ts`
-- `app/api/tint/manager/reorder/route.ts`
-- `app/api/tint/manager/assign/route.ts`
-- `app/api/tint/manager/orders/[id]/remove/route.ts`
-- `app/api/tint/manager/orders/[id]/pause-history/route.ts`
-- `app/api/tint/manager/orders/[id]/skip-history/route.ts`
+- `components/tint/tint-manager-content.tsx` — composition root: state, every write, the ONE
+  window-level Esc owner
+- `components/tint/manager/` — `types.ts` · `rows.ts` (pure shaping) · `board-rail.tsx` ·
+  `board-table.tsx` · `board-detail-panel.tsx` · `board-assign-bar.tsx` · `board-bits.tsx` ·
+  `use-tint-manager-sync.ts`
+- `lib/tint/assignment-status.ts` — **the status vocabulary owner (§1.4)**
+- `app/api/tint/manager/`: `orders/` · `assign/` · `reorder/` · **`marker/` (new)** ·
+  `cancel-assignment/` · `splits/reassign/` · `splits/cancel/` · `missing-customers/` ·
+  `operators/` · `orders/[id]/{remove,pause-history,skip-history}`
 
-### 1.1 Header (UniversalHeader, two-row)
+**RETIRED, NOT DELETED** (CORE §3 forbids deleting): `components/tint/tint-table-view.tsx`,
+`components/shared/order-detail-panel.tsx` (this screen was its only live importer), and
+`components/tint/split-builder-modal.tsx`. All three still type-check; they lost their import
+only. ⚠ `tint-table-view.tsx` still imports `TintOrder`/`SplitCard`/`CompletedAssignment` from
+`tint-manager-content.tsx`, which re-exports them from `manager/types.ts` — **do not remove those
+re-exports**, and any new field on those payload types must also be added to that file's synthetic
+`assignmentAsOrder()` object or `tsc` breaks.
 
-**Row 1:** Title "Tint Manager" · stats · clock · shortcuts · search.
+### 1.1 Header — still `<UniversalHeader />`
 
-**Row 2:** Operator workload pills (leftExtra) · missing-customer badge (rightExtra) · View toggle · Filter dropdown.
+**This screen did NOT become a second header exception.** `/floor` remains the only one
+(`CLAUDE_UI.md §6`), and the wiring table there OWNS the header composition — not restated here.
 
-**No slot segments, no date stepper.** Always live view.
+The only prop dropped in the rebuild: the **operator-workload segment pills**
+(`segments` / `activeSegment` / `onSegmentChange`). The table's per-operator sections replace them
+and show the work instead of counting it. Everything else is wired as before — Import modal +
+`showImport`, the three filter groups (Delivery Type / Priority / Type), "Add to Tint" (`M`), the
+Reports link, the shortcuts panel, and the missing-customer badge in `rightExtra`.
 
-### 1.2 Operator workload pills
+### 1.2 The shell — rail + one grouped table
 
-- "Unassigned · N" pill: count of orders in Pending column
-- One pill per operator from `/api/tint/manager/operators`: count = assigned + in-progress combined
-- Tap to filter all 4 columns; tap again to deselect
+Same **structural pattern** as Floor Control (a composition root owning state and every write,
+dumb children, pure shaping in a separate module) — but a different header and no shared
+components.
 
-### 1.3 Missing customer badge (rightExtra)
+- **Left rail, 344px — "Needs assignment".** Cards, one per bill, **oldest first**. Strictly
+  `workflowStage === "pending_tint_assignment"`. Assign happens here, and it is the ONLY place
+  Remove OBD is offered — matching the server rule that removal is blocked once assigned (`§8`,
+  409 outside that stage).
+- **Right pane — ONE flat table.** No tabs, no operator filter chip.
+- **Detail panel, 480px** — Items / Details / Activity tabs, Prev/Next walking rail cards first
+  then table rows without closing. Supersedes both old panels (see the retired list above).
 
-Amber pill "N missing" when count > 0. Both tint and non-tint orders for SMU = "Retail Offtake" / "Decorative Projects".
+### 1.3 Table — grouping, columns, sequence
 
-Click opens `CustomerMissingSheet`. Re-fetches on resolve.
+**Grouped one section per operator**, header = the operator's name and nothing else. Within a
+section rows are ordered:
 
-Endpoint: `GET /api/tint/manager/missing-customers`.
+> **In Progress → their Assigned queue → Paused → completed today**
 
-### 1.4 Delivery type filter
+Paused sits *after* the queue deliberately: a paused job is not "next" — only its own operator can
+resume it — so it must not head the list the manager reads to decide what to hand out. The
+grouping is a **sort, not a filter**; nothing is hidden by it.
 
-Values must match DB exact casing: `Local`, `Upcountry`, `IGT`, `Cross Depot`.
+**Done is TODAY ONLY.** A finished job leaves the tint stages entirely (`done/route.ts` writes
+`pending_support`, or `pending_picking` on a pre-set slot), so Completed rows come from
+`tint_assignments.completedAt >= start of today`, not from a stage. The full history is the Tint
+Summary report (`§12`) — the board says so in a subtitle and a tooltip.
 
-### 1.5 Kanban 4 columns
+**Columns, in order** (fixed table per `CLAUDE_UI.md §27`; widths
+`4 · 4 · 13 · 5 · 17 · 20 · 9 · 6 · 9 · 13` = 100):
 
-Pending | Assigned | In Progress | Completed.
+| # | Column | Source | Note |
+|---|---|---|---|
+| 1 | ☐ | — | Blank on non-selectable rows. No lock icon — it read "forbidden" on 3 of the 4 statuses. |
+| 2 | **#** | computed | See the rank rule below. |
+| 3 | OBD | `obdNumber` | Split rows carry a violet "Split" tag. |
+| 4 | **SMU** | `import_raw_summary.smuCode` | The SHORT code, full name on hover. 926/926 live coverage: **74** Decorative Projects · **77** Retail Offtake · **70** Deco Retail. ⚠ `smuNumber` on the same table is NOT it — 0/926, always null. |
+| 5 | **Bill To** | `import_raw_summary.billToCustomerName` | The ORDERING DEALER. Same source Floor uses (`billToByObd`). Differs from Ship To on **873 of 926** live tint OBDs, which is why both columns exist. |
+| 6 | **Ship To** | `orders.customer.customerName` | The SITE. Carries ★ key-customer and ⚡ urgent. |
+| 7 | Route | `customer.area.primaryRoute.name` | ⚠ The **AREA** path, matching `FLOOR_DEALER_SELECT`. Never `delivery_point_master.primaryRoute` — that resolves for 21/926 (2%). |
+| 8 | Vol | `querySnapshot.totalVolume` | Right-aligned, tabular-nums. |
+| 9 | Art. | rolled up from active line tags | NULL means UNKNOWN, never zero — only 366/926 OBDs carry any tag at all. Render an em dash. |
+| 10 | Status | derived | `§1.4`. |
 
-Column pills: all neutral `bg-gray-100`. No semantic colours on column headers.
+**SO No. and Operator were removed** — SO by owner decision, Operator because the group header
+already names them.
 
-### 1.6 Card / row content
+**🔴 THE `#` IS A COMPUTED RANK, NOT `sequenceOrder`.** The stored column is a sparse `MAX+1` value
+(`assign/route.ts`) and is frequently still at its `0` default — it orders correctly but does not
+count. `rows.ts` ranks 1..N per operator using the same `[sequenceOrder, createdAt]` sort the
+reorder route's list query uses, so the rank shown and the index the server swaps on cannot
+disagree. Only `assigned` rows get a number; everything else shows a dash.
 
-Every card:
-- OBD (mono) · orderDateTime
-- Age badge when 1+ days old
-- Customer / Site name
-- SMU, Priority, Articles, Volume
-- Operator avatar (22×22px)
-- Re-assign action (Assigned rows)
-- Dispatch status badge inline next to site name
-- **Paused pill (stage-agnostic):** amber `⏸ Paused (N/3)`
-- **Skipped pill (pending stage):** gray `↩ Skipped {N}×`
+**🔴 ORDERS AND SPLITS ARE TWO SEPARATE SEQUENCES.** This surprised the build and is worth stating
+plainly: `reorder/route.ts`'s order branch queries `prisma.orders`, its split branch queries
+`prisma.order_splits` — two tables, two `sequenceOrder` columns, two disjoint swap domains. **An
+order can never swap with a split.** So the `#` is ranked per operator **AND per row type**:
+someone holding 2 orders and 1 split sees the orders as 1–2 and the split as its own 1, not a
+merged 1–3. A merged rank would draw arrows that cannot do what they promise.
 
-Card sort: `sequenceOrder ASC → priorityLevel ASC → date ASC`.
+**Typography and status-pill colours are Floor's**, copied hex-for-hex from
+`components/floor/floor-table.tsx` and `components/floor/status-pill.tsx`. ⚠ Floor OWNS those
+values (`CLAUDE_FLOOR.md §1`) and they are not exported as tokens, so this is a deliberate copy
+with the source named in `board-bits.tsx`. **If Floor's four washes change, these must be
+re-copied** — nothing enforces it.
 
-### 1.7 Table view
+### 1.4 Status vocabulary — ONE owner
 
-`<table>` with `table-layout: fixed` per `CLAUDE_UI.md §33`. 9 columns, widths 4/13/10/18/7/9/6/15/10/8%.
+**`lib/tint/assignment-status.ts` is canon for which literal to write in code.** Import from it;
+never retype a status string.
 
-First column `#`: 1-based serial counter per section. "Customer" renamed to "Site Name". Slot column removed. Re-assign action in Assigned rows. Roomy spacing (10px vertical, 14px horizontal padding).
+```
+TINT_ASSIGNMENT_ACTIVE_STATUSES = assigned | tinting_in_progress | paused
+TINT_ASSIGNMENT_DEAD_STATUSES   = tinting_done | cancelled | skipped
+TINT_STATUS_DONE = "tinting_done"      TINT_STATUS_CANCELLED = "cancelled"
+```
 
-Pause + Skip pills + kebab items same as kanban cards.
+`CORE §7.3` remains the authority on what the **column** may hold (a schema fact); this file names
+the **code constant to import** (an engineering rule). Different facts, one owner each.
 
-### 1.8 Sequence order — single source
+`skipped` is DEAD, not active: a skip clears the operator FK, nulls `sequenceOrder` and resets the
+stage, and the next Assign creates a brand-new row rather than reviving it. A skipped row still
+carries `assignedToId` for someone who no longer owns the job.
 
-Operator reads `sequenceOrder` (NOT `operatorSequence`).
+🔴 **`"done"` has never existed.** Four live routes filtered on `status: { not: "done" }` — a
+predicate matching every row ever written. Fixed 2026-09-05/06 in `reorder` (×2), `orders`,
+`assign` and `cancel-assignment`. Of the 48 orders carrying more than one assignment row, the old
+predicate resolved to a DEAD row on **all 48** — which is how one OBD could sit in two operators'
+reorder queues at once. The `cancel-assignment` copy was the worst: it drove an `updateMany` that
+overwrote `skipped` rows to `cancelled`, destroying the assignment-side record of the skip.
 
-**Per-operator reorder:** Move up/down only swaps within same operator. API: `/api/tint/manager/reorder` finds target order's operator, filters list, swaps.
+**Board statuses map onto Floor's four washes** so a colour means the same on both boards:
+`assigned` → grey (waiting) · `tinting_in_progress` → violet (with picker) · `paused` → amber
+(needs check) · `tinting_done` → green (done).
 
-**New assignments** get `sequenceOrder = MAX + 1` (FIFO).
+### 1.5 Assign — and the customer-missing interceptor
 
-### 1.9 Customer missing flow
+Single-operator only, from the rail card's popover or the panel.
 
-`customerMissing` boolean on `orders`. Badge in header Row 2 rightExtra for SMU = "Retail Offtake" / "Decorative Projects". Click opens `CustomerMissingSheet`.
+**The interceptor is preserved and must stay.** A `customerMissing` order never reaches the assign
+call: it opens `CustomerMissingSheet` with an amber warning, and the intent is remembered so the
+assign **re-fires by itself** once the flag flips false. It now remembers the OPERATOR too, so the
+interrupted assign completes rather than re-opening a picker. `assign/route.ts` refuses it
+server-side as well (400), so the UI is the affordance, not the rule.
 
-### 1.10 API data
+The rail's Assign menu and the panel's operator picker are **portalled to `document.body`** with
+fixed positioning measured from the trigger, preferring to open downward
+(`pickMenuDirection()` in `board-bits.tsx`). ⚠ The earlier in-card `absolute` + `z-index` version
+was clipped by the rail's `overflow-hidden` / `overflow-y-auto`: **z-index does not escape an
+overflow clip.** Do not move it back inside the scroller.
 
-`GET /api/tint/manager/orders` returns slot/deliveryType, slotSummary, orderDateTime on all payloads. Also: `pauseCount`, `lastPausedAt`, `currentProgress` (from `tint_assignments`).
+### 1.6 Re-assign — `assigned` ONLY, server-enforced
+
+**Both single and bulk re-assign are restricted to `status === "assigned"`.** This is NOT merely
+hidden in the UI: `assign/route.ts` **rejects anything outside `pending_tint_assignment` /
+`tint_assigned` with a 400** carrying a message written to be shown verbatim.
+
+Why a hard reject: the route's upsert keys on `status: "assigned"`, so a tinting or paused job
+MISSES that lookup and falls through to `create()` — minting a SECOND `tint_assignments` row while
+`workflowStage` resets to `tint_assigned`, orphaning the original's `startedAt`,
+`accumulatedMinutes`, `pauseCount`, `lastPausedAt` and `currentProgress`. None of that is
+recoverable from the UI. It also makes `§5`'s rule — a paused job belongs to its operator until
+resume or done — a **server** rule for the first time.
+
+**Splits re-assign through their own endpoint**, `POST /api/tint/manager/splits/reassign`, never
+the whole-order one.
+
+**Bulk re-assign** = N **sequential awaits** over the single-assign route (no bulk API exists; no
+`Promise.all`, no `$transaction` — CORE §3, the pooler). Partial-failure contract copied from
+Floor (`CLAUDE_FLOOR.md §4.1/§4.2`): a `failed[]` list, the 422 case when nothing was written,
+named failures when some were. A `customerMissing` row lands in `failed[]` with a reason rather
+than silently skipping or killing the batch.
+
+### 1.7 Re-sequence — and the route's silent no-op
+
+`PATCH /api/tint/manager/reorder`, body `{ type: "order" | "split", id, direction: "up" | "down" }`.
+Same-operator confinement is structural (§1.3). Hover an `assigned` row for the ▲▼.
+
+✅ **The `$transaction` landmine is FIXED here** (2026-09-05, `a0f9378b`). Both branches use
+sequential awaits now; the swap arithmetic and the tied-`sequenceOrder` tie-break are
+byte-identical. Partial failure leaves two rows sharing a `sequenceOrder` — the same state a fresh
+queue is already in, since the column defaults to 0 — and the next move resolves it. No repair
+path needed.
+
+⚠ **A boundary move returns `200 { success: true }` having written NOTHING.** A 2xx alone does not
+mean anything moved. The client captures the queue signature before the call and compares after
+the refetch, announcing only a real change (`queueSignature()` in `rows.ts`).
+
+### 1.8 Send back to Pending [NEW]
+
+Panel action on `assigned` rows: cancel the assignment, return the bill to the rail.
+
+| Row type | Endpoint | Body |
+|---|---|---|
+| whole order | `POST /api/tint/manager/cancel-assignment` | `{ orderId }` |
+| split | `POST /api/tint/manager/splits/cancel` | `{ splitId }` |
+
+`assigned`-only is the **routes'** rule, not a UI preference: cancel-assignment requires
+`workflowStage === "tint_assigned"` (400 otherwise); splits/cancel rejects `tinting_in_progress` /
+`tinting_done` (409).
+
+Two-stage inline confirm (`CLAUDE_UI.md §13`'s pattern, as Mark Done and Remove OBD use) — the old
+Kanban's equivalent had **no** confirmation and never read the response, so a rejected cancel
+logged to console and looked like success. The response is now read.
+
+⚠ **Both cancel routes still run on `prisma.$transaction`** — deliberately deferred per `§14`'s
+"pre-existing `$transaction` is a separate task" rule. ROADMAP.
+
+### 1.9 Live sync [NEW]
+
+`GET /api/tint/manager/marker` → `{ count, latest }` over `MAX(orders.updatedAt)`, mirroring
+`/api/floor/marker` exactly in shape. Polled every **15s** by `use-tint-manager-sync.ts` through
+`use-picking-marker`'s `url` param, plus a 60s fallback refetch. Paused while the detail panel is
+open or a selection is up (never move the ground under a hand). **READ-ONLY — never add a write**;
+every board's live-sync keys on `MAX(orders.updatedAt)`.
+
+**ONE mechanism where Floor has two.** Floor splits rail (30s refetch) from board (15s marker)
+because those are two independent sources; here the rail and the table both render from the SAME
+`/api/tint/manager/orders` response, so one refetch updates both, and the marker's first arm covers
+`pending_tint_assignment` so a new import still appears on its own.
+
+⚠ **The marker is a UNION APPROXIMATION of the board's six feeds**, because unlike Floor there is
+no single shared `orders` WHERE to lend — the board renders six separate queries. Its three arms:
+the open stages · whole-OBD completions today · split completions today. **If any feed gains or
+loses a stage this predicate must move with it**, or the board stops refreshing on a change it
+displays. `startOfToday` is copied from the board's expression verbatim (server-local, not IST —
+pre-existing; fix both together or neither).
+
+### 1.10 Payload
+
+`GET /api/tint/manager/orders` returns four arrays — `orders`, `activeSplits`, `completedSplits`,
+`completedAssignments` — plus `slotSummary` (⚠ still returned, still read by nothing). All four
+carry the board columns as flat fields: `soNumber`, `billToName`, `route`, `articleTag`,
+`isKeyCustomer`, `smu`, `smuCode`, alongside `pauseSummary` / `skipSummary`.
+
+### 1.11 Dropped in the rebuild — do NOT re-discover these as bugs
+
+The **Create Split UI is dropped from this screen by scope decision** — no fallback link, and
+`split-builder-modal.tsx` is retired (not deleted). Consequence to own: `POST
+/api/tint/manager/splits/create` now has **no caller anywhere**, so new splits cannot be created.
+Existing splits are unaffected — they still display, still re-assign via their own endpoint, and
+are still reorderable within their own per-type sequence (§1.3).
+
+Eight further Kanban capabilities have no home in the new design. They are **open questions, not
+settled decisions** — see ROADMAP § "Tint Manager board rebuild". The significant one is the
+per-row **StatusPopover** (set priority Urgent/Normal and dispatch status), whose removal leaves
+`/api/tint/manager/orders/[id]/status` and `/splits/[id]/status` with no caller.
 
 ---
 
@@ -690,9 +849,25 @@ Layout uses `buildNavItems()` only.
 - **Split/done parent auto-advance — RESOLVED 2026-06-25.** `app/api/tint/operator/split/done` previously never advanced the parent OBD after all splits finished — it marked the split done and walked away. Fixed: bubble block added (after the split update, outside any transaction, sequential awaits). Live OBD id=6478 (Pramukh Yogiwood · Silvassa) was the only stuck instance; repaired manually via SQL. **Distinct from the usage-log gap below.**
 - **Split-done sampling-usage-log gap — STILL OPEN.** `split/done` does not write a `sampling_usage_log` row. Split-completed tints remain absent from Sampling Library usage history and same-site suggestions. ROADMAP item (also in CORE §13).
 - **Schema confirmations from 06-25 session:** `order_status_logs` uses `fromStage`/`toStage` columns (NOT `previousStage`/`newStage`). `order_splits` has `totalQty` (not `skuCode`). `orders` has no `isTinting` column — tinting is determined by `orderType`.
-- **TM reorder API** (~line 429) uses `prisma.$transaction` — violates CORE §3, left as-is for simple two-update swap.
+- **~~TM reorder API uses `prisma.$transaction`~~ — ✅ FIXED 2026-09-05** (`a0f9378b`). Both
+  branches are sequential awaits; arithmetic and tie-break unchanged. Detail: `§1.7`.
+- **⚠ STILL OPEN, and this is where the `$transaction` debt moved:**
+  `app/api/tint/manager/cancel-assignment/route.ts` and `app/api/tint/manager/splits/cancel/route.ts`
+  both wrap their whole sequence in an interactive `prisma.$transaction`. Deferred on purpose —
+  converting trades a pooler-timeout risk for a partial-state one (a bill reverted to Pending with
+  its assignment still live, or reverted with no audit line), which is an owner decision, not a
+  drive-by. Same rule as the challan PATCH entry below. ROADMAP.
 - **`operatorSequence` field** on `tint_assignments`/`order_splits` — unused. Sort by `sequenceOrder` only.
-- **`SlotSummaryItem` interface** in `tint-manager-content.tsx` — defined but unused.
+  ⚠ And `sequenceOrder` is a sparse `MAX+1` value, NOT a 1..N rank — the board computes the rank it
+  displays (`§1.3`).
+- **~~`SlotSummaryItem` interface — defined but unused~~ — superseded 2026-09-05.** The interface
+  went with the Kanban rewrite, but the underlying gap grew: `slotSummary` is still BUILT and
+  RETURNED by `/api/tint/manager/orders` and is now read by nothing at all (`§1.10`). A payload
+  field with no reader is the `orders.mailMatched` shape CORE §7.3 flags.
+- **Four routes filtered on the non-existent status `"done"`** — fixed 2026-09-05/06. Full account
+  in `§1.4`; the vocabulary now has one owner, `lib/tint/assignment-status.ts`. ⚠ The lesson
+  generalises: these are plain `String` columns with no CHECK, so a wrong literal is never
+  rejected — it silently matches nothing.
 - **CustomerMissingSheet** styling doesn't match admin customer split-view (cosmetic).
 - **Shade Master `isActive` filter** — unverified in production.
 - **~~Challan lazy creation~~ — VERIFIED 2026-08-04: the `[orderId]` detail API does NOT auto-create** (no `create` call in the route; it reads the existing challan). Creation happens at import only (§9.1).
@@ -730,4 +905,4 @@ Evidence: done/split routes + challan routes + globals.css read at the call site
 
 ---
 
-*Tint v1.9 · Schema v27.13 · OrbitOMS · updated 2026-08-04*
+*Tint v2.0 · Schema v27.13 · OrbitOMS · updated 2026-09-06 — **§1 rewritten end to end for the board rebuild** (`a0f9378b` → `082eb92e`, all pushed): the 4-column Kanban and its card/table view toggle are gone, replaced by a 344px pending-only rail + ONE operator-grouped table + a 480px detail panel. New subsections cover the 10 columns (SMU short code, Bill To vs Ship To as two real parties), the computed `#` rank and the fact that ORDERS AND SPLITS CARRY SEPARATE SEQUENCES, `lib/tint/assignment-status.ts` as the status-vocabulary owner, the `assigned`-only re-assign rule now enforced server-side with a 400, Send back to Pending, and the new 15s marker. §1.1 states plainly that this screen did NOT become a second UniversalHeader exception — only the operator segment pills were dropped — and points at `CLAUDE_UI.md §6` rather than restating the wiring. §14: the reorder `` landmine is CLOSED, and the two cancel routes are recorded as where that debt now sits; the `SlotSummaryItem` entry is superseded by a larger gap (`slotSummary` is returned and read by nothing). Schema stamp UNCHANGED at v27.13 — the rebuild minted no schema version, and every new payload field reads a column that already existed. Prior, v1.9 (2026-08-04 reconciliation pass, method v1.1) — change log below.*

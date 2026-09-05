@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-09-06 (Tint Manager board rebuild — new `## Tint Manager board rebuild` section: a P0 QA block for the five flows that shipped without ever being click-tested, the 8 old-Kanban capabilities with no home in the new design (the per-row StatusPopover is the significant one, and Create Split's removal means new splits cannot be created anywhere), the two cancel routes still on `prisma.$transaction`, and the Floor-vs-UI§27 row-height disagreement between two canon files) · Prior: 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -268,6 +268,84 @@ Useful for inventory planning, not blocking.
 - Shade Master `isActive` filter — production verification (deferring; table is retiring)
 - ~~Challan lazy creation removal~~ — **✅ VERIFIED CLOSED 2026-08-04**: the `[orderId]` detail API has no create call; creation is import-time only (`CLAUDE_TINT.md §14`)
 - Challan print CSS audit — old class names `ch-header`, `tint-yes` may persist
+
+---
+
+## Tint Manager board rebuild — open items (opened 2026-09-06)
+
+The board shipped 2026-09-05/06 in seven commits (`a0f9378b` → `082eb92e`, pushed). Screen is
+documented in `CLAUDE_TINT.md §1`. **Everything below is OPEN — none of it is done.**
+
+### P0 — QA: nothing in the rebuild has been exercised through the UI
+
+Verified by `tsc`, `next build`, read-only production SELECTs and pure-logic harnesses. **No part
+was click-tested**, because the session had no login and the dev server points at the production
+database. These are QA passes, not code changes — each needs a human on the live screen.
+
+- [ ] **Reorder ▲▼** — the highest risk. It WRITES `sequenceOrder`, and the `$transaction` →
+      sequential-awaits refactor has never run. Check: a card moves one place, stays inside its own
+      operator's queue, and a boundary press (already first/last) changes nothing and says nothing.
+- [ ] **Bulk re-assign, including a genuinely `customerMissing` row.** The partial-failure path —
+      `failed[]`, the 422 "nothing was re-assigned" case, named failures on a partial — is entirely
+      untested. The customer-missing branch cannot be faked without writing to production.
+- [ ] **Send back to Pending, for BOTH a whole order and a split.** Two different endpoints; only
+      the request shapes have been checked, against the routes' validators.
+- [ ] **The Assign menu on the FIRST rail card** — the case the pre-portal version broke on. The
+      direction decision is unit-checked (`pickMenuDirection`), the rendering is not.
+- [ ] **Live-sync actually firing.** Confirm the 15s `/api/tint/manager/marker` poll appears in the
+      network tab, that the board refreshes on a real change, and that it PAUSES while the detail
+      panel is open or rows are selected.
+
+### P1 — The eight Kanban capabilities with no home in the new design
+
+Each was reachable on the old board and is not reachable now. **These are open questions for the
+owner, not settled removals.** Full list in `CLAUDE_TINT.md §1.11`.
+
+- [ ] 🔴 **The per-row StatusPopover — the significant gap.** Set priority (Urgent/Normal) and
+      dispatch status (Dispatch/Hold/Waiting) from any card or row via the ⊕ button. Its removal
+      leaves `PATCH /api/tint/manager/orders/[id]/status` and `/splits/[id]/status` **with no caller
+      at all**. Urgent and Key now render read-only (⚡/★). **Needs an owner decision: does Chandresh
+      still set priority here, and if so where — the detail panel's action row is the natural home.**
+- [ ] **Create Split.** Dropped by scope decision, so this one is a recorded consequence rather than
+      an oversight — but the consequence is real: `POST /api/tint/manager/splits/create` now has no
+      caller, so **new splits cannot be created anywhere in the app.** Existing splits still display,
+      re-assign and reorder.
+- [ ] **Cancel assignment / cancel split** — ✅ partly closed: both are back as "Send back to
+      Pending" (`CLAUDE_TINT.md §1.8`). Listed here only so the original eight stay accounted for.
+- [ ] **Part-assigned orders** (`remainingQty > 0` at a later stage). The Kanban showed these in
+      Pending AND Assigned at once; a flat table has no dual-presence affordance, and the remainder
+      flow ran through Create Split. An order with unassigned remainder now has **no assign entry
+      point**.
+- [ ] **The Sales Officer cascade** (`getDisplaySalesOfficerName`, the multi-SO Primary → group →
+      fallback read) — gone from this screen entirely.
+- [ ] **The dispatch-status trail** — the "✓ Tinting Done › Dispatch / Hold / Waiting / Pending
+      Support" two-badge row on completed cards.
+- [ ] **Fini/Generic SKU naming.** The new panel shows a split's line items with raw `skuCodeRaw`,
+      so `useSkuDisplayMode` is **no longer honoured** on this screen.
+- [ ] **The card/table view toggle and its `sessionStorage` key** (`tm_view_mode`). Intentionally
+      gone — noted only because the key will linger in browsers that used the old board.
+
+### P1 — `$transaction` in the two cancel routes
+
+- [ ] `app/api/tint/manager/cancel-assignment/route.ts` and
+      `app/api/tint/manager/splits/cancel/route.ts` both wrap their whole sequence in an interactive
+      `prisma.$transaction`, violating CORE §3. **Deliberately deferred** during the 2026-09-06
+      Send-back work, per `CLAUDE_TINT.md §14`'s standing rule that a pre-existing `$transaction` is
+      its own task. ⚠ **There is a real trade-off, which is why this is not a mechanical refactor:**
+      sequential awaits would swap a pooler-timeout risk for a partial-state one — a bill reverted
+      to Pending with its assignment still live, or reverted with no audit line. Needs a deliberate
+      decision on the failure mode, then one session.
+
+### P2 — Canon disagreement: table row height, Floor vs UI §27
+
+- [ ] `CLAUDE_UI.md §27` states a **32px header row and a 36px data row**. Floor's live table
+      (`components/floor/floor-table.tsx`) uses **`h-[31px]` and `py-2`** (≈33px at 11px text), and
+      the Tint Manager board was deliberately matched to FLOOR rather than to §27 during the
+      2026-09-06 typography pass. **This is a documentation inconsistency between two canon files,
+      not a bug** — nothing renders wrongly, and both boards now agree with each other. Decide which
+      is authoritative: either §27's numbers are updated to what the boards actually do, or Floor and
+      Tint are moved onto §27 and §27 is enforced. Until then a third board has two defensible
+      answers to copy.
 
 ---
 
