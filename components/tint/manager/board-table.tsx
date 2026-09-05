@@ -13,10 +13,39 @@
 import { Scissors } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
-import { OperatorAvatar, StatusPill } from "./board-bits";
+// OperatorAvatar is no longer imported here: the Operator column was removed
+// 2026-09-05 as redundant — the group header already names the person, and every
+// row in a section belongs to them. The avatar still ships in board-bits for the
+// rail and the detail panel.
+import { StatusPill } from "./board-bits";
 import type { BoardGroup, BoardRow } from "./types";
 
-const COLS = ["3%", "6%", "9%", "9%", "18%", "10%", "6%", "6%", "15%", "18%"] as const;
+// ── Column widths ────────────────────────────────────────────────────────────
+// ☐ 4 · # 4 · OBD 13 · Bill To 18 · Ship To 20 · Route 9 · Vol 6 · Art. 10 ·
+// Status 16  = 100.
+//
+// Derived from Floor's live table (components/floor/floor-table.tsx, the
+// interactive+showInvoice arm: 4,4,13,10,20,9,6,10,8,16) rather than re-guessed,
+// so the two boards line up column for column where they share one. Every
+// shared column keeps its EXACT Floor width — ☐, #, OBD, Ship To, Route, Vol,
+// Article, Status — and Bill To takes precisely the 18 freed by dropping
+// Invoice (10) and Picker (8), which this board does not have.
+//
+// ⚠ WIDTHS MAP POSITIONALLY. Moving a column means moving its <col>, its <th>
+// and its <td> together; any one left behind shunts every column to its right.
+const COLS = ["4%", "4%", "13%", "18%", "20%", "9%", "6%", "10%", "16%"] as const;
+
+// ── Typography, copied from Floor's floor-table.tsx ──────────────────────────
+// Floor's four class strings verbatim, so header, cells and pills read
+// identically on both boards. Note Floor itself sits a hair off CLAUDE_UI §27's
+// stated row sizing — §27 says a 32px header and a 36px data row; Floor uses
+// h-[31px] and py-2 (≈33px at 11px text). Floor's actual CSS wins here, because
+// matching Floor is the point of this pass; §27's other rules (table-layout
+// fixed, colgroup percentages, nowrap/ellipsis) are unchanged and still hold.
+const HEAD_TH        = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
+const HEAD_TH_NARROW = "h-[31px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
+const TD             = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
+const TD_NARROW      = "px-1 py-2 text-center text-[11px] border-b border-[#f0f0f0] text-[#4b5563]";
 
 export function BoardTable({
   groups, selection, onToggleRow, onOpenRow, onReorder, busyKeys,
@@ -54,20 +83,21 @@ export function BoardTable({
           </colgroup>
           <thead>
             <tr>
-              {["", "Seq", "OBD", "SO No.", "Site Name", "Route", "Vol", "Art.", "Operator", "Status"].map((h, i) => (
-                <th
-                  key={i}
-                  className="sticky top-0 bg-white text-left text-[10px] font-medium uppercase tracking-[.05em] text-gray-400 h-8 px-2.5 border-b border-[#ebebeb]"
-                >
-                  {h}
-                </th>
-              ))}
+              <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")} />
+              <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")}>#</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>OBD</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Route</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Art.</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Status</th>
             </tr>
           </thead>
           <tbody>
             {total === 0 && (
               <tr>
-                <td colSpan={10} className="text-center text-[11.5px] text-gray-400 py-10">
+                <td colSpan={9} className="text-center text-[11.5px] text-gray-400 py-10">
                   Nothing on the floor. Assign an OBD from the rail to get started.
                 </td>
               </tr>
@@ -103,7 +133,7 @@ function GroupSection({
   return (
     <>
       <tr className="group/hdr">
-        <td colSpan={10} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
+        <td colSpan={9} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
           {group.operatorName}
           <span className="font-normal text-gray-400 ml-1">
             · {group.rows.length} {group.rows.length === 1 ? "job" : "jobs"} on the floor
@@ -135,25 +165,21 @@ function Row({
   onReorder: (row: BoardRow, direction: "up" | "down") => void;
   busy:      boolean;
 }) {
-  const cell = "text-[11px] text-gray-700 px-2.5 h-10 border-b border-[#f0f0f0] whitespace-nowrap overflow-hidden text-ellipsis";
-
-  const lockTitle =
-    row.status === "paused"      ? "Locked while paused — the job belongs to its operator until they resume or finish it"
-    : row.status === "tinting_done" ? "Already done"
-    : row.type === "split"       ? "Splits re-assign one at a time, from the detail panel"
-    : "In progress — cannot be moved to another operator";
-
   return (
     <tr className="group cursor-pointer hover:bg-gray-50" onClick={onOpen}>
-      {/* checkbox / lock */}
-      <td className={cell} onClick={(e) => e.stopPropagation()}>
-        {row.selectable ? (
+      {/* Checkbox. A row that cannot be bulk-selected renders NOTHING here —
+          the padlock that used to sit in this cell said "forbidden" on three of
+          the four statuses, which is most of a busy board, and the reason is
+          already on the row (its Status pill) and in the panel's disabled
+          action. An empty cell is the honest affordance: no checkbox, no claim. */}
+      <td className={TD_NARROW} onClick={(e) => e.stopPropagation()}>
+        {row.selectable && (
           <button
             type="button"
             onClick={onToggle}
             aria-label={selected ? "Deselect row" : "Select row"}
             className={cn(
-              "w-3.5 h-3.5 border-[1.5px] rounded-[4px] flex items-center justify-center text-[9px] transition-opacity",
+              "w-3.5 h-3.5 border-[1.5px] rounded-[4px] inline-flex items-center justify-center text-[9px] align-middle transition-opacity",
               selected
                 ? "bg-teal-600 border-teal-600 text-white opacity-100"
                 : "bg-white border-gray-300 text-transparent opacity-0 group-hover:opacity-100",
@@ -161,18 +187,16 @@ function Row({
           >
             ✓
           </button>
-        ) : (
-          <span className="text-[11px] text-gray-300 opacity-50" title={lockTitle}>🔒</span>
         )}
       </td>
 
-      {/* Seq */}
-      <td className={cell} onClick={(e) => e.stopPropagation()}>
+      {/* # — the queue rank */}
+      <td className={cn(TD_NARROW, "text-[10.5px] tabular-nums")} onClick={(e) => e.stopPropagation()}>
         {row.status !== "assigned" || row.seqRank === null ? (
-          <span className="text-gray-300 text-[11px]">—</span>
+          <span className="text-[#9ca3af]">—</span>
         ) : (
-          <span className="flex items-center gap-[5px]">
-            <span className="text-[11.5px] font-bold text-gray-700">{row.seqRank}</span>
+          <span className="inline-flex items-center gap-[5px]">
+            <span className="font-semibold text-[#4b5563]">{row.seqRank}</span>
             <span className={cn(
               "flex flex-col transition-opacity",
               busy ? "opacity-30" : "opacity-0 group-hover:opacity-100",
@@ -210,13 +234,13 @@ function Row({
         )}
       </td>
 
-      {/* OBD (+ split tag) */}
-      <td className={cn(cell, "text-gray-600")}>
+      {/* OBD (+ split tag) — Floor's OBD treatment: mono 11.5 medium #111827 */}
+      <td className={TD}>
         <span className="inline-flex items-center gap-1">
           <ObdCode code={row.obdNumber} />
           {row.type === "split" && (
             <span
-              className="inline-flex items-center gap-[2px] text-[9px] font-semibold px-1 py-[1px] rounded border bg-violet-50 text-violet-700 border-violet-200"
+              className="inline-flex items-center gap-[2px] rounded-[3px] px-[5px] py-px text-[9.5px] font-bold bg-[#ede9fe] text-[#6d28d9]"
               title={`Split #${row.splitNumber} of this OBD`}
             >
               <Scissors size={8} />
@@ -226,33 +250,38 @@ function Row({
         </span>
       </td>
 
-      <td className={cn(cell, "font-mono text-gray-400")}>{row.soNumber ?? "—"}</td>
+      {/* Bill To — the ORDERING DEALER (import_raw_summary.billToCustomerName),
+          a different party from the ship-to site in the next column. It differs
+          from ship-to on 873 of 926 live tint OBDs, which is why both are here. */}
+      <td className={TD} title={row.billToName ?? undefined}>
+        {row.billToName ?? "—"}
+      </td>
 
-      <td className={cn(cell, "font-semibold text-gray-900")}>
-        {row.siteName}
-        {row.isUrgent && <span className="text-[10px] ml-1.5" title="Urgent">⚡</span>}
-        {row.isKeyCustomer && <span className="text-[10px] ml-1" title="Key customer">★</span>}
+      {/* Ship To — the site. Floor's dealer-name treatment, ★/⚡ inline-styled
+          to Floor's exact amber/red. */}
+      <td className={TD} title={row.siteName}>
+        <span className="text-[11.5px] font-medium text-[#111827]">{row.siteName}</span>
+        {row.isKeyCustomer && <span className="ml-1.5" style={{ color: "#f59e0b" }} title="Key customer">★</span>}
+        {row.isUrgent && <span className="ml-1" style={{ color: "#ef4444" }} title="Urgent">⚡</span>}
         {row.skipCount > 0 && (
-          <span className="text-[9px] ml-1.5 font-medium px-1 py-[1px] rounded border bg-gray-50 text-gray-500 border-gray-200" title={`Skipped ${row.skipCount}×`}>
+          <span
+            className="ml-1.5 rounded-[3px] px-[5px] py-px text-[9.5px] font-bold bg-[#f3f4f6] text-[#6b7280]"
+            title={`Skipped ${row.skipCount}×`}
+          >
             ↩{row.skipCount}
           </span>
         )}
       </td>
 
-      <td className={cell}>{row.route ?? "—"}</td>
-      <td className={cell}>{row.volumeLitres != null ? `${row.volumeLitres} L` : "—"}</td>
+      <td className={TD}>{row.route ?? "—"}</td>
+      <td className={cn(TD, "text-right tabular-nums")}>{row.volumeLitres ?? 0}</td>
       {/* NULL articleTag means UNKNOWN, never zero — only ~40% of live tint OBDs
           carry one at all, so an em dash is the honest render. */}
-      <td className={cell} title={row.articleTag ?? undefined}>{row.articleTag ?? "—"}</td>
-
-      <td className={cell}>
-        <span className="inline-flex items-center gap-1.5">
-          <OperatorAvatar name={row.operatorName} done={row.status === "tinting_done"} />
-          {row.operatorName.split(" ")[0]}
-        </span>
+      <td className={cn(TD, "text-[10.5px]")} title={row.articleTag ?? undefined}>
+        <span className="text-[#6b7280]">{row.articleTag ?? "—"}</span>
       </td>
 
-      <td className={cell}>
+      <td className={TD}>
         <StatusPill status={row.status} at={row.statusAt} pauseCount={row.pauseCount} />
       </td>
     </tr>

@@ -47,6 +47,11 @@ export interface TintOrder {
   // ── Board columns, added to the payload 2026-09-05 (commit a0f9378b) ───────
   /** orders.soNumber. 920/920 live tint orders carry one. */
   soNumber:           string | null;
+  /** The ORDERING DEALER (import_raw_summary.billToCustomerName) — a different
+   *  party from the ship-to site below. Differs from ship-to on 873 of 926 live
+   *  tint OBDs, so the board shows both. Same source Floor uses for
+   *  FloorPartyFields.billToName. */
+  billToName:         string | null;
   /** customer.area.primaryRoute.name — the AREA path, matching Floor's
    *  FLOOR_DEALER_SELECT. Never delivery_point_master.primaryRoute (2% cover). */
   route:              string | null;
@@ -152,6 +157,7 @@ export interface SplitCard {
   // Board columns (2026-09-05). `articleTag` above is the SPLIT's own scalar —
   // the split's goods, not the whole bill's — so it is not restated here.
   soNumber:         string | null;
+  billToName:       string | null;
   route:            string | null;
   isKeyCustomer:    boolean;
   assignedTo:     { id: number; name: string | null };
@@ -195,6 +201,7 @@ export interface CompletedAssignment {
   deliveryTypeName: string | null;
   // Board columns (2026-09-05).
   soNumber:         string | null;
+  billToName:       string | null;
   route:            string | null;
   articleTag:       string | null;
   isKeyCustomer:    boolean;
@@ -256,6 +263,9 @@ export interface BoardRow {
   orderId:        number;
   obdNumber:      string;
   soNumber:       string | null;
+  /** Ordering dealer — its own column on the board, beside the ship-to site. */
+  billToName:     string | null;
+  /** The ship-to SITE. Rendered as the "Ship To" column. */
   siteName:       string;
   route:          string | null;
   volumeLitres:   number | null;

@@ -49,18 +49,32 @@ export function ageDays(iso: string | null | undefined): number | null {
 
 // ── Status pill ──────────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<BoardRowStatus, string> = {
-  assigned:            "Assigned",
-  tinting_in_progress: "In Progress",
-  paused:              "Paused",
-  tinting_done:        "Done",
-};
-
-const STATUS_CLASS: Record<BoardRowStatus, string> = {
-  assigned:            "bg-teal-50 text-teal-700 border-teal-200",
-  tinting_in_progress: "bg-amber-50 text-amber-700 border-amber-200",
-  paused:              "bg-amber-50 text-amber-800 border-amber-300",
-  tinting_done:        "bg-green-50 text-green-700 border-green-200",
+/**
+ * The four pills, styled to match Floor Control exactly.
+ *
+ * ⚠ COLOURS ARE COPIED FROM components/floor/status-pill.tsx's `META`, hex for
+ * hex — the four washes there are Floor's locked set (design §7.6) and are not
+ * exported as tokens, so there is nothing to import. Floor owns them
+ * (CLAUDE_FLOOR §1); this is a deliberate copy with the source named, NOT a new
+ * palette. If Floor's four ever change, these must be re-copied — they cannot
+ * drift silently, but nothing enforces it either.
+ *
+ * Importing Floor's <StatusPill/> itself was rejected: its `FloorStatus` union
+ * is picking's ladder and its labels are "Waiting / With picker / Needs check /
+ * Done", which are the wrong words for a tint job.
+ *
+ * The MAPPING onto Floor's four, so the same colour means the same thing on
+ * both boards:
+ *   assigned            → Floor "waiting"    grey   — in a queue, nobody working it yet
+ *   tinting_in_progress → Floor "withPicker" violet — a named person is on it right now
+ *   paused              → Floor "needsCheck" amber  — stalled, wants a human's attention
+ *   tinting_done        → Floor "done"       green  — finished
+ */
+const STATUS_META: Record<BoardRowStatus, { label: string; cls: string }> = {
+  assigned:            { label: "Assigned",    cls: "bg-[#f3f4f6] text-[#6b7280]" },
+  tinting_in_progress: { label: "In Progress", cls: "bg-[#ede9fe] text-[#6d28d9]" },
+  paused:              { label: "Paused",      cls: "bg-[#fef3c7] text-[#b45309]" },
+  tinting_done:        { label: "Done",        cls: "bg-[#dcfce7] text-[#15803d]" },
 };
 
 export function StatusPill({
@@ -70,12 +84,19 @@ export function StatusPill({
   at:          string | null;
   pauseCount:  number;
 }) {
-  const label = STATUS_LABEL[status];
+  const m = STATUS_META[status];
+  // Trailing detail rides inside the pill after a faded dot, exactly as Floor's
+  // elapsed time does (§7.7): 9.5px, tabular-nums, 70% opacity. On a paused row
+  // the pause COUNT is more use than a clock — the 3-pause cap is the thing the
+  // manager is watching — so that is what takes the slot.
+  const detail = status === "paused" && pauseCount > 0 ? `${pauseCount}/3` : hhmm(at);
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-[3px] rounded-full border whitespace-nowrap",
-        STATUS_CLASS[status],
+        // Radius 4px — a pill, not a capsule (Floor design §7.6). No border:
+        // Floor's four are flat washes.
+        "inline-flex items-center rounded-[4px] px-2 py-[2px] text-[10px] font-semibold",
+        m.cls,
       )}
       title={
         status === "tinting_done"
@@ -83,10 +104,14 @@ export function StatusPill({
           : undefined
       }
     >
-      {status === "paused" && <Pause size={9} fill="currentColor" />}
-      {status === "paused" && pauseCount > 0
-        ? `${label} ${pauseCount}/3`
-        : `${label} · ${hhmm(at)}`}
+      {status === "paused" && <Pause size={9} fill="currentColor" className="mr-1" />}
+      {m.label}
+      {detail ? (
+        <>
+          <span className="mx-1 font-normal opacity-40">·</span>
+          <span className="text-[9.5px] font-semibold tabular-nums opacity-70">{detail}</span>
+        </>
+      ) : null}
     </span>
   );
 }

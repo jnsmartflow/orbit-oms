@@ -421,7 +421,7 @@ export function TintTableView({
       // deleting it — but it is still type-checked, so the synthetic order it
       // builds has to carry the new fields. Read straight off the completed
       // assignment, which now carries all four.
-      soNumber: a.soNumber ?? null, route: a.route ?? null,
+      soNumber: a.soNumber ?? null, billToName: a.billToName ?? null, route: a.route ?? null,
       articleTag: a.articleTag ?? a.order.querySnapshot?.articleTag ?? null,
       isKeyCustomer: a.isKeyCustomer ?? false,
       customer: a.order.customer ?? null, querySnapshot: a.order.querySnapshot ?? null,

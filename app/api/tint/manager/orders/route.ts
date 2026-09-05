@@ -479,11 +479,27 @@ export async function GET(): Promise<NextResponse> {
     const rawSummaries = allObdNumbers.length > 0
       ? await prisma.import_raw_summary.findMany({
           where:  { obdNumber: { in: allObdNumbers } },
-          select: { obdNumber: true, smu: true, obdEmailDate: true, obdEmailTime: true },
+          select: {
+            obdNumber: true, smu: true, obdEmailDate: true, obdEmailTime: true,
+            // The ORDERING DEALER, added 2026-09-05 for the board's Bill To
+            // column. Same source Floor uses (billToByObd() in
+            // lib/floor/queries.ts → FloorPartyFields.billToName): the ship-to
+            // SITE lives on orders.customerId → delivery_point_master, and the
+            // bill-to DEALER exists only on the import summary — there is no
+            // billTo relation on `orders` to read instead.
+            //
+            // Floor's helper sorts createdAt desc and keeps the first row per
+            // OBD ("latest wins"). That guard is unnecessary here and the plain
+            // Map below is exact: import_raw_summary holds at most ONE row per
+            // obdNumber (verified live 2026-09-05 — max 1 across 13,167 OBDs),
+            // so there is no second row for either rule to choose between.
+            billToCustomerName: true,
+          },
         })
       : [];
     const smuMap     = new Map(rawSummaries.map((s) => [s.obdNumber, s.smu]));
     const obdDateMap = new Map(rawSummaries.map((s) => [s.obdNumber, { date: s.obdEmailDate, time: s.obdEmailTime }]));
+    const billToMap  = new Map(rawSummaries.map((s) => [s.obdNumber, s.billToCustomerName]));
 
     // ── Line items for orders (split builder modal needs these) ───────────────
     const orderObdNumbers = orders.map((o) => o.obdNumber);
@@ -632,6 +648,7 @@ export async function GET(): Promise<NextResponse> {
         tintAssignments:  o.tintAssignments.map(({ skipEventId: _skipEventId, ...t }) => t),
         splits:           enrichedSplits,
         smu:              smuMap.get(o.obdNumber) ?? null,
+        billToName:       billToMap.get(o.obdNumber) ?? null,
         obdEmailDate:     obdDateMap.get(o.obdNumber)?.date ?? null,
         obdEmailTime:     obdDateMap.get(o.obdNumber)?.time ?? null,
         orderDateTime:    o.orderDateTime?.toISOString() ?? null,
@@ -698,6 +715,7 @@ export async function GET(): Promise<NextResponse> {
         },
       })),
       smu:              smuMap.get(s.order.obdNumber) ?? null,
+      billToName:       billToMap.get(s.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
       orderDateTime:    s.order.orderDateTime?.toISOString() ?? null,
@@ -726,6 +744,7 @@ export async function GET(): Promise<NextResponse> {
         },
       })),
       smu:              smuMap.get(s.order.obdNumber) ?? null,
+      billToName:       billToMap.get(s.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
       orderDateTime:    s.order.orderDateTime?.toISOString() ?? null,
@@ -747,6 +766,7 @@ export async function GET(): Promise<NextResponse> {
     const completedAssignmentsWithSmu = completedAssignments.map(({ skipEventId: _skipEventId, ...a }) => ({
       ...a,
       smu:              smuMap.get(a.order.obdNumber) ?? null,
+      billToName:       billToMap.get(a.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(a.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(a.order.obdNumber)?.time ?? null,
       orderDateTime:    a.order.orderDateTime?.toISOString() ?? null,
