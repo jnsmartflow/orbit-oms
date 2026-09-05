@@ -26,7 +26,10 @@ export function BoardRail({
   onResolveMissing: (order: TintOrder) => void;
   canRemove:        boolean;
 }) {
-  const [menuFor, setMenuFor] = useState<number | null>(null);
+  // The open menu carries its TRIGGER ELEMENT, not just an id: OperatorMenu is
+  // portalled to document.body and measures its position from that element, so
+  // the anchor has to travel with the open-state.
+  const [menu, setMenu] = useState<{ orderId: number; anchor: HTMLElement } | null>(null);
 
   return (
     <div className="w-[344px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
@@ -123,10 +126,16 @@ export function BoardRail({
                   )}
                 </div>
 
-                <div className="flex gap-1.5 relative">
+                {/* No `relative` here any more: the menu is portalled to
+                    document.body, so it needs no positioned ancestor — and a
+                    positioned ancestor could not have helped anyway, since the
+                    rail's overflow is what was clipping it. */}
+                <div className="flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setMenuFor(menuFor === o.id ? null : o.id)}
+                    onClick={(e) =>
+                      setMenu(menu?.orderId === o.id ? null : { orderId: o.id, anchor: e.currentTarget })
+                    }
                     className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-[7px] text-[11px] font-bold py-2 transition-colors"
                   >
                     Assign ▾
@@ -140,12 +149,12 @@ export function BoardRail({
                     <Eye size={13} />
                   </button>
 
-                  {menuFor === o.id && (
+                  {menu?.orderId === o.id && (
                     <OperatorMenu
-                      className="bottom-[calc(100%+6px)] left-0"
+                      anchor={menu.anchor}
                       operators={operators}
-                      onClose={() => setMenuFor(null)}
-                      onPick={(opId) => { setMenuFor(null); onAssign(o, opId); }}
+                      onClose={() => setMenu(null)}
+                      onPick={(opId) => { setMenu(null); onAssign(o, opId); }}
                     />
                   )}
                 </div>

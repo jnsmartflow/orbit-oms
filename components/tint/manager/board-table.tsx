@@ -21,24 +21,24 @@ import { StatusPill, formatSmu } from "./board-bits";
 import type { BoardGroup, BoardRow } from "./types";
 
 // ── Column widths ────────────────────────────────────────────────────────────
-// ☐ 4 · # 4 · OBD 13 · SMU 10 · Bill To 15 · Ship To 17 · Route 9 · Vol 6 ·
+// ☐ 4 · # 4 · OBD 13 · SMU 5 · Bill To 17 · Ship To 20 · Route 9 · Vol 6 ·
 // Art. 9 · Status 13  = 100.
 //
-// The 9-column set was derived from Floor's live table (the
-// interactive+showInvoice arm: 4,4,13,10,20,9,6,10,8,16) so the two boards line
-// up where they share a column. SMU (added 2026-09-05, immediately after OBD —
-// the position the retired Kanban table gave it, also at 10%) takes its 10 from
-// the four WIDEST columns rather than a flat shave off everything:
-//   Bill To 18 → 15 (−3) · Ship To 20 → 17 (−3) · Art. 10 → 9 (−1) ·
-//   Status 16 → 13 (−3)
-// Bill To and Ship To are the two widest and both ellipsise with a title
-// tooltip; Status only ever holds a pill ("In Progress · 09:14" ≈ 110px, which
-// 13% clears at any realistic table width); Art. holds "25 Drum". ☐, #, OBD,
-// Route and Vol are untouched — they are already at their minimum useful size.
+// Derived from Floor's live table (the interactive+showInvoice arm:
+// 4,4,13,10,20,9,6,10,8,16) so the two boards line up where they share a column.
+//
+// SMU dropped 10 → 5 on 2026-09-05 once the column started showing the short
+// ERP code ("74") instead of the descriptive name ("Deco Projects"): two digits
+// need nothing like 10%. The 5 freed goes straight back to the two columns that
+// paid for SMU in the first place —
+//   Bill To 15 → 17 (+2) · Ship To 17 → 20 (+3)
+// which restores Ship To to Floor's EXACT 20 and leaves Bill To one point under
+// its pre-SMU 18. Both hold long dealer/site names and both ellipsise, so they
+// are the right place for the width.
 //
 // ⚠ WIDTHS MAP POSITIONALLY. Moving a column means moving its <col>, its <th>
 // and its <td> together; any one left behind shunts every column to its right.
-const COLS = ["4%", "4%", "13%", "10%", "15%", "17%", "9%", "6%", "9%", "13%"] as const;
+const COLS = ["4%", "4%", "13%", "5%", "17%", "20%", "9%", "6%", "9%", "13%"] as const;
 
 // ── Typography, copied from Floor's floor-table.tsx ──────────────────────────
 // Floor's four class strings verbatim, so header, cells and pills read
@@ -270,13 +270,15 @@ function Row({
         </span>
       </td>
 
-      {/* SMU — import_raw_summary.smu, already on the payload. Only three values
-          occur on live tint OBDs: "Decorative Projects" (688), "Retail Offtake"
-          (230) and "Deco Retail" (8). formatSmu shortens the first to fit the
-          column; the full string stays in the title. Secondary weight, as on the
-          retired Kanban table, because it groups rather than identifies. */}
-      <td className={TD} title={row.smu ?? undefined}>
-        {formatSmu(row.smu) ?? "—"}
+      {/* SMU — the SHORT ERP CODE (import_raw_summary.smuCode), with the full
+          descriptive name on hover, the same way Bill To's truncation works.
+          Live map, 926/926 covered: 74 Decorative Projects · 77 Retail Offtake ·
+          70 Deco Retail.
+          Falls back to the abbreviated NAME if a row ever arrives without a
+          code, so the column degrades to something readable rather than an em
+          dash. Tabular-nums keeps the two digits aligned down the column. */}
+      <td className={cn(TD, "tabular-nums")} title={row.smu ?? undefined}>
+        {row.smuCode ?? formatSmu(row.smu) ?? "—"}
       </td>
 
       {/* Bill To — the ORDERING DEALER (import_raw_summary.billToCustomerName),

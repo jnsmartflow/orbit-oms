@@ -33,6 +33,9 @@ export interface TintOrder {
   customerMissing:    boolean;
   manualTintEntry:    boolean;
   smu:                string | null;
+  /** Short ERP SMU code — 74 Decorative Projects, 77 Retail Offtake,
+   *  70 Deco Retail. 926/926 live coverage. */
+  smuCode:            string | null;
   obdEmailDate:       string | null;
   obdEmailTime:       string | null;
   orderDateTime:      string | null;
@@ -144,6 +147,7 @@ export interface SplitCard {
   startedAt:      string | null;
   completedAt:    string | null;
   smu:              string | null;
+  smuCode:          string | null;
   obdEmailDate:     string | null;
   obdEmailTime:     string | null;
   orderDateTime:    string | null;
@@ -189,6 +193,7 @@ export interface CompletedAssignment {
   id:               number;
   completedAt:      string | null;
   smu:              string | null;
+  smuCode:          string | null;
   obdEmailDate:     string | null;
   obdEmailTime:     string | null;
   orderDateTime:    string | null;
@@ -266,6 +271,8 @@ export interface BoardRow {
   /** import_raw_summary.smu — already on the payload, three live values:
    *  "Decorative Projects", "Retail Offtake", "Deco Retail". */
   smu:            string | null;
+  /** The short ERP code for the same value — what the table actually shows. */
+  smuCode:        string | null;
   /** Ordering dealer — its own column on the board, beside the ship-to site. */
   billToName:     string | null;
   /** The ship-to SITE. Rendered as the "Ship To" column. */

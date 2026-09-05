@@ -58,7 +58,9 @@ export function BoardDetailPanel({
   canRemove: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("items");
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Carries the trigger element, not a boolean: OperatorMenu is portalled and
+  // measures from its anchor.
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   // Two-stage confirm for Send back to Pending. The old Kanban fired this on a
   // single click of a red "Cancel" menu item with no confirmation at all AND
   // without reading the response, so a rejected cancel looked like success. One
@@ -75,7 +77,7 @@ export function BoardDetailPanel({
   const targetKey = target.kind === "pending" ? `pending-${target.order.id}` : target.row.key;
   useEffect(() => {
     setConfirmSendBack(false);
-    setMenuOpen(false);
+    setMenuAnchor(null);
   }, [targetKey]);
 
   const isPending = target.kind === "pending";
@@ -116,7 +118,7 @@ export function BoardDetailPanel({
           <button
             type="button"
             disabled={busy}
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={(e) => setMenuAnchor((a) => (a ? null : e.currentTarget))}
             className="bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
           >
             {busy && <Loader2 size={12} className="animate-spin" />}
@@ -132,12 +134,12 @@ export function BoardDetailPanel({
               Remove OBD
             </button>
           )}
-          {menuOpen && (
+          {menuAnchor && (
             <OperatorMenu
-              className="top-[calc(100%+4px)] left-0"
+              anchor={menuAnchor}
               operators={operators}
-              onClose={() => setMenuOpen(false)}
-              onPick={(opId) => { setMenuOpen(false); onAssign(target.order, opId); }}
+              onClose={() => setMenuAnchor(null)}
+              onPick={(opId) => { setMenuAnchor(null); onAssign(target.order, opId); }}
             />
           )}
         </div>
@@ -186,7 +188,7 @@ export function BoardDetailPanel({
           <button
             type="button"
             disabled={busy}
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={(e) => setMenuAnchor((a) => (a ? null : e.currentTarget))}
             className="bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
           >
             {busy && <Loader2 size={12} className="animate-spin" />}
@@ -200,22 +202,22 @@ export function BoardDetailPanel({
           <button
             type="button"
             disabled={busy}
-            onClick={() => { setMenuOpen(false); setConfirmSendBack(true); }}
+            onClick={() => { setMenuAnchor(null); setConfirmSendBack(true); }}
             className="bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60 text-gray-700 rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
             title="Cancel this assignment and put the bill back on the rail"
           >
             <Undo2 size={12} className="text-gray-400" />
             Send back to Pending
           </button>
-          {menuOpen && (
+          {menuAnchor && (
             <OperatorMenu
-              className="top-[calc(100%+4px)] left-0"
+              anchor={menuAnchor}
               label="Move to"
               operators={operators}
               currentId={row.operatorId}
-              onClose={() => setMenuOpen(false)}
+              onClose={() => setMenuAnchor(null)}
               onPick={(opId) => {
-                setMenuOpen(false);
+                setMenuAnchor(null);
                 if (row.type === "split") onReassignSplit(row, opId);
                 else onReassignOrder(row, opId);
               }}

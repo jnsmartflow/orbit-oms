@@ -5,7 +5,8 @@
 // strip. Kept together because none is big enough to own a file and all four are
 // used by both the rail and the table.
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BoardRowStatus, Operator } from "./types";
@@ -155,42 +156,141 @@ export function OperatorAvatar({ name, done = false, size = 20 }: { name: string
 
 /**
  * The "which operator?" list, used by the rail's Assign button and the detail
- * panel's Re-assign button. Closes on outside click and on Esc.
+ * panel's Assign / Re-assign buttons.
  *
- * ⚠ Esc here is a LOCAL keydown on this popover, deliberately not a window-level
- * listener. Floor learned that the hard way (FLOOR §4.6: two window-level Esc
- * listeners race in registration order); this screen keeps exactly one
- * window-level Esc owner, in tint-manager-content.tsx.
+ * ── WHY THIS IS PORTALLED (fixed 2026-09-05) ─────────────────────────────────
+ * It used to be an `absolute` div with `z-[60]`, rendered INSIDE the rail card
+ * and pinned upward with `bottom-[calc(100%+6px)]`. That fails two ways at once,
+ * and z-index cannot save it:
+ *
+ *   1. CLIPPING. The rail is `overflow-hidden` and its list is
+ *      `overflow-y-auto`, so both are clipping contexts. An absolutely
+ *      positioned DESCENDANT that extends past them is clipped — and z-index
+ *      does NOT escape an overflow clip, it only orders what is already
+ *      painted. (`overflow-y: auto` also makes the x-axis clip, per spec: when
+ *      one axis is not `visible`, a `visible` other axis computes to `auto`.)
+ *      So the menu was cut off horizontally too.
+ *   2. THE HARD-CODED DIRECTION. `bottom-[calc(100%+6px)]` always opened
+ *      UPWARD. For the FIRST card in the rail there is nothing above it but the
+ *      "Needs assignment" header, so the menu was drawn straight over that
+ *      header — and then clipped by (1). That is exactly the case that broke.
+ *
+ * THE FIX, copied from Floor's dispatch-slot-picker (FLOOR §4.6): render into
+ * `document.body` and position `fixed` from the trigger's own
+ * getBoundingClientRect(). Being no descendant of either scroller, NOTHING can
+ * clip it — clipping only applies to descendants — and `fixed` means the rail's
+ * scroll offset cannot shift it either.
+ *
+ * DIRECTION IS A PREFERENCE, NOT A COMMAND: prefer BELOW the button; flip above
+ * only if it does not fit below; if neither fits, take the roomier side and cap
+ * the height with internal scroll. For the first card that resolves to "below"
+ * — there is a whole rail's worth of room under it — so the menu opens away
+ * from the header rather than across it.
+ *
+ * Position is measured in a LAYOUT effect, after the portal has rendered, so
+ * `scrollHeight` is the real height rather than a guess; the menu paints hidden
+ * for that one frame so it never flashes at the wrong spot. It re-measures on
+ * scroll (capture:true, so scrolling the RAIL counts, not just the window) and
+ * on resize, which keeps it glued to its card.
+ *
+ * ⚠ Esc here is a LOCAL keydown, deliberately not a window-level listener. Floor
+ * learned that the hard way (FLOOR §4.6: two window-level Esc listeners race in
+ * registration order); this screen keeps exactly one window-level Esc owner, in
+ * tint-manager-content.tsx.
  */
+const MENU_WIDTH = 200;
+
+/**
+ * Which way the menu opens. Extracted as a pure function so the decision can be
+ * checked directly instead of only by eye — the first-card case (nothing above
+ * the trigger but the rail header) is precisely the one that broke before.
+ *
+ * Preference is BELOW. Flip above only if it does not fit below; if it fits
+ * neither way take the roomier side, and the caller caps that side's height with
+ * internal scroll so the menu is never cut off.
+ */
+export function pickMenuDirection(roomBelow: number, roomAbove: number, height: number): "down" | "up" {
+  if (height <= roomBelow) return "down";
+  if (height <= roomAbove) return "up";
+  return roomBelow >= roomAbove ? "down" : "up";
+}
+
 export function OperatorMenu({
-  operators, currentId, onPick, onClose, label = "Assign to", className,
+  anchor, operators, currentId, onPick, onClose, label = "Assign to",
 }: {
+  /** The trigger element. Position is measured from this, every time. */
+  anchor:    HTMLElement | null;
   operators: Operator[];
   currentId?: number | null;
   onPick:    (id: number) => void;
   onClose:   () => void;
   label?:    string;
-  className?: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [style, setStyle] = useState<React.CSSProperties>({
+    position: "fixed", top: 0, left: 0, visibility: "hidden",
+  });
+
+  const update = useCallback(() => {
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const OFFSET = 6; // gap between trigger and menu
+    const EDGE = 8;   // min gap from the viewport edge
+
+    // Real height — the portal has rendered by the time this runs.
+    const h = popRef.current?.scrollHeight ?? 160;
+
+    const s: React.CSSProperties = { position: "fixed", zIndex: 60, width: MENU_WIDTH };
+    const roomBelow = vh - r.bottom - OFFSET - EDGE;
+    const roomAbove = r.top - OFFSET - EDGE;
+
+    // Prefer BELOW. This is what keeps the first card's menu off the header.
+    const openUp = pickMenuDirection(roomBelow, roomAbove, h) === "up";
+
+    if (openUp) {
+      s.bottom = vh - r.top + OFFSET;
+      if (h > roomAbove) { s.maxHeight = Math.max(0, roomAbove); s.overflowY = "auto"; }
+    } else {
+      s.top = r.bottom + OFFSET;
+      if (h > roomBelow) { s.maxHeight = Math.max(0, roomBelow); s.overflowY = "auto"; }
+    }
+    // Left-aligned to the trigger, then clamped so it can never cross an edge.
+    s.left = Math.min(Math.max(EDGE, r.left), vw - MENU_WIDTH - EDGE);
+    setStyle(s);
+  }, [anchor]);
+
+  // LAYOUT effect: measure and place before the browser paints, so the menu is
+  // never seen at its placeholder position.
+  useLayoutEffect(() => { update(); }, [update]);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const t = e.target as Node;
+      if (anchor?.contains(t) || popRef.current?.contains(t)) return;
+      onClose();
     }
-    // Deferred so the click that OPENED this does not immediately close it.
-    const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);
-    return () => { clearTimeout(t); document.removeEventListener("mousedown", onDown); };
-  }, [onClose]);
+    document.addEventListener("mousedown", onDown);
+    // capture:true — scrolling ANY ancestor scroller (the rail, the panel body)
+    // must reposition it, not just the window.
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [anchor, onClose, update]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      ref={ref}
+      ref={popRef}
+      style={style}
       onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}
-      className={cn(
-        "absolute z-[60] w-[200px] bg-white border border-gray-200 rounded-[9px] shadow-lg overflow-hidden",
-        className,
-      )}
+      className="bg-white border border-gray-200 rounded-[9px] shadow-lg overflow-hidden"
     >
       <p className="text-[9.5px] uppercase tracking-[.05em] text-gray-400 px-2.5 pt-2 pb-1">{label}</p>
       {operators.length === 0 && (
@@ -215,7 +315,8 @@ export function OperatorMenu({
           {op.id === currentId && <span className="ml-auto text-[10px]">current</span>}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

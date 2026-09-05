@@ -481,6 +481,11 @@ export async function GET(): Promise<NextResponse> {
           where:  { obdNumber: { in: allObdNumbers } },
           select: {
             obdNumber: true, smu: true, obdEmailDate: true, obdEmailTime: true,
+            // The SHORT SMU code the ERP carries beside the descriptive name.
+            // Verified live 2026-09-05: 926/926 tint OBDs have one, a clean 1:1
+            // map — 74 Decorative Projects, 77 Retail Offtake, 70 Deco Retail.
+            // (`smuNumber` on the same table is NOT it: 0/926, always null.)
+            smuCode: true,
             // The ORDERING DEALER, added 2026-09-05 for the board's Bill To
             // column. Same source Floor uses (billToByObd() in
             // lib/floor/queries.ts → FloorPartyFields.billToName): the ship-to
@@ -498,6 +503,7 @@ export async function GET(): Promise<NextResponse> {
         })
       : [];
     const smuMap     = new Map(rawSummaries.map((s) => [s.obdNumber, s.smu]));
+    const smuCodeMap = new Map(rawSummaries.map((s) => [s.obdNumber, s.smuCode]));
     const obdDateMap = new Map(rawSummaries.map((s) => [s.obdNumber, { date: s.obdEmailDate, time: s.obdEmailTime }]));
     const billToMap  = new Map(rawSummaries.map((s) => [s.obdNumber, s.billToCustomerName]));
 
@@ -648,6 +654,7 @@ export async function GET(): Promise<NextResponse> {
         tintAssignments:  o.tintAssignments.map(({ skipEventId: _skipEventId, ...t }) => t),
         splits:           enrichedSplits,
         smu:              smuMap.get(o.obdNumber) ?? null,
+        smuCode:          smuCodeMap.get(o.obdNumber) ?? null,
         billToName:       billToMap.get(o.obdNumber) ?? null,
         obdEmailDate:     obdDateMap.get(o.obdNumber)?.date ?? null,
         obdEmailTime:     obdDateMap.get(o.obdNumber)?.time ?? null,
@@ -715,6 +722,7 @@ export async function GET(): Promise<NextResponse> {
         },
       })),
       smu:              smuMap.get(s.order.obdNumber) ?? null,
+      smuCode:          smuCodeMap.get(s.order.obdNumber) ?? null,
       billToName:       billToMap.get(s.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
@@ -744,6 +752,7 @@ export async function GET(): Promise<NextResponse> {
         },
       })),
       smu:              smuMap.get(s.order.obdNumber) ?? null,
+      smuCode:          smuCodeMap.get(s.order.obdNumber) ?? null,
       billToName:       billToMap.get(s.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
@@ -766,6 +775,7 @@ export async function GET(): Promise<NextResponse> {
     const completedAssignmentsWithSmu = completedAssignments.map(({ skipEventId: _skipEventId, ...a }) => ({
       ...a,
       smu:              smuMap.get(a.order.obdNumber) ?? null,
+      smuCode:          smuCodeMap.get(a.order.obdNumber) ?? null,
       billToName:       billToMap.get(a.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(a.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(a.order.obdNumber)?.time ?? null,
