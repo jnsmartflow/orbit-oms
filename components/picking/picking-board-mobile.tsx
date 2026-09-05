@@ -11,6 +11,11 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreVertical,
+  // The WhatsApp share glyph (2026-09-05). ⚠ A GENERIC CHAT BUBBLE, and it
+  // must stay one — the approved mockup is explicit: "Generic chat-bubble
+  // glyph, WhatsApp green — not the WhatsApp logo." Do not swap it for a
+  // brand mark, and do not hand-draw one as an inline <svg>.
+  MessageCircle,
   // ⚠ TWO DIFFERENT GLYPHS, DO NOT SWAP THEM. `XCircle` is the filled mark
   // inside the ⋯ menu's "Cancel bill" row — it kills a BILL. `X` is the bare
   // cross that closes a SHEET and changes nothing (added 2026-08-22). The app's
@@ -75,6 +80,10 @@ import {
   findingState,
   useFindingRecorder,
 } from "./finding-recorder";
+// Plain-text WhatsApp share (2026-09-05) — the builder AND the share call live
+// there, not here: this file owns no message formatting and no feature
+// detection. Pure + client-safe (no prisma, no react-dom, no html-to-image).
+import { buildFindingsMessage, shareFindingsText } from "@/lib/picking/share-findings-text";
 import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
@@ -2221,6 +2230,63 @@ export function PickingBoardMobile(): React.JSX.Element {
   const allLinesResolved =
     lineItems !== null && totalResolvable > 0 && totalResolved === totalResolvable;
 
+  // ── WhatsApp share — the CONFIRMED-ONLY list (2026-09-05) ────────────────
+  // Drives both the header icon's visibility and the message's contents, from
+  // ONE memo — so the icon can never offer a share that comes out empty.
+  //
+  // 🔴 THE PREDICATE IS findingState(), NOT A RE-TEST OF recordedById. That
+  // function (finding-recorder.tsx) is the single owner of the
+  // none/pending/confirmed decision and every render site on both boards
+  // already asks it; a second copy of `recordedById !== null` here is how the
+  // two drift apart while sitting in the same workflow.
+  //
+  // 🔴 AND NOT `lineItems.some((li) => li.finding !== null)`. That lights up on
+  // a PICKER-ONLY report — amber, unconfirmed — and would put a claim nobody
+  // has signed off into a message sent outside the app. Same rule Billing
+  // already follows on both its surfaces (CLAUDE_PICKING.md §11.5: "a picker's
+  // unconfirmed report is a claim, not a fact"), and the same
+  // `recordedById IS NOT NULL` filter the auto-CI trigger uses (§11.7). Pending
+  // lines stay on screen in amber; the share simply skips them.
+  const confirmedFindings = useMemo(
+    () => (lineItems ?? []).filter((li) => findingState(li.finding) === "confirmed"),
+    [lineItems],
+  );
+
+  // Build and share, SYNCHRONOUSLY from the tap. Nothing is awaited before
+  // shareFindingsText — transient user activation expires and Chrome throws
+  // NotAllowedError (the helper's own doc carries the full reasoning). Every
+  // field comes from state already in memory: no fetch, no loading state.
+  //
+  // ⚠ IT TOUCHES NO HISTORY. It pushes no entry, opens no overlay, and never
+  // calls closeDetail() or history.back() — so the single-history-entry rule
+  // (pushScreen only from openDetail) and the ONE-close-path rule (only onPop
+  // closes) are untouched, and onPop gains NO branch. That is the whole reason
+  // this sits in the header rather than after Approve: handleApprove's
+  // unconditional history.back() closes the screen, so a control placed after
+  // it would have nowhere to live.
+  const handleShareFindings = useCallback(
+    (row: PickingQueueRow, lines: LineItem[]) => {
+      const message = buildFindingsMessage({
+        obdNumber: row.obdNumber,
+        dealerName: row.dealerName,
+        // Already on the row — lib/picking/queue.ts fills it in the SAME
+        // mapper both scopes run through (it is byFifo's sort key). No query
+        // change, no extra fetch.
+        obdDateTime: row.obdDateTime,
+        lines,
+      });
+      void shareFindingsText(message).then((outcome) => {
+        // Silence on "shared" / "cancelled" / "opened" — in all three he is
+        // looking at WhatsApp (or he closed the sheet himself, which is not an
+        // error and must never produce one). Only the clipboard fallback needs
+        // saying out loud, because nothing else on screen would tell him.
+        if (outcome === "copied") toast("Copied — paste in WhatsApp");
+        else if (outcome === "unavailable") toast.error("Couldn't share on this device");
+      });
+    },
+    [],
+  );
+
   // Distinct packs present on this bill, for the pack-filter chip row.
   // Sorted SMALLEST FIRST by real pack size, with "No pack" trailing last (an
   // exception category, not a real pack value).
@@ -3467,6 +3533,49 @@ export function PickingBoardMobile(): React.JSX.Element {
               triangle is NOT here any more: it moved to the band (bill-band.tsx
               `trailing`), which is why this is a clean pair. */}
           <div className="flex items-center shrink-0">
+            {/* WhatsApp share (2026-09-05) — mockup
+                docs/mockups/picking/picking-whatsapp-share.html §1.
+
+                ⚠ IT IS IN THE HEADER BUTTON ROW, and the mockup's "immediately
+                left of the ⚠" is a PRE-2026-08-22 drawing. The finding triangle
+                left this header on that date and lives on the BillBand below
+                (`trailing`), which that move's own comment says it "never
+                returns" from. The band is white, so a frosted-white pill could
+                not read there anyway. What the mockup actually specifies —
+                teal header, frosted-white 30×30 pill, same geometry as the
+                existing header buttons — is satisfied here, at the LEFT end of
+                the icon cluster, which is where it sat relative to everything
+                else on that drawing.
+
+                ⚠ AND THERE IS NO FLAG ROW TO GUARD. The five-disjunct header
+                guard (isKeyCustomer || priorityLevel === 1 || isTint ||
+                isSmuBadged) went with the chip row on 2026-08-22 — see the
+                🔴 note at the top of this header. Nothing suppresses this
+                button but its own condition.
+
+                Gated on `confirmedFindings.length > 0` ONLY — deliberately NOT
+                on `isDone`. A bill on the Checked band is read-only for ticks,
+                Approve and Undo, and rightly so; SHARING is a read, changes
+                nothing, and a supervisor asked "what was short on that one?"
+                an hour after approving needs it more than he did before.
+
+                30×30 SOLID white pill (`.frost.wa{background:#fff}` in the
+                mockup — the white is what makes a green glyph legible on
+                teal), inside a 44px tap target so it matches its neighbours
+                and CLAUDE_UI.md §60's 44-48px minimum. The 17px glyph and the
+                #128C4A stroke are the mockup's own numbers. */}
+            {detailRow !== null && confirmedFindings.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleShareFindings(detailRow, confirmedFindings)}
+                aria-label="Share findings on WhatsApp"
+                className="w-11 h-11 flex items-center justify-center shrink-0"
+              >
+                <span className="w-[30px] h-[30px] rounded-[9px] bg-white flex items-center justify-center">
+                  <MessageCircle size={17} strokeWidth={2.2} color="#128C4A" />
+                </span>
+              </button>
+            )}
             {/* ⋯ — cancel the whole bill (3b).
 
                 ⚠ RENDERED ONLY when the bill's stage is cancellable. A
