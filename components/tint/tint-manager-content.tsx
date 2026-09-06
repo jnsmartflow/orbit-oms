@@ -160,6 +160,7 @@ export function TintManagerContent() {
   const [basePending, setBasePending] = useState<BasePendingOrder[]>([]);
   const [baseDrill,   setBaseDrill]   = useState<BasePendingOrder | null>(null);
   const [baseLine,    setBaseLine]    = useState<BasePendingLine | null>(null);
+  const [baseUndoBusyId, setBaseUndoBusyId] = useState<number | null>(null);
 
   // ── Fetching ──────────────────────────────────────────────────────────────
 
@@ -405,6 +406,49 @@ export function TintManagerContent() {
     setBaseLine(next);
     if (next) toast.success("Saved — next line");
   }, [fetchBasePending, baseDrill]);
+
+  /**
+   * Undo a bypass — put the bill back on the tint rail.
+   *
+   * The button is always offered; the SERVER decides whether it is allowed. Its
+   * four refusals (not a bypass / paperwork started / already picked / moved on
+   * Floor) each carry a message written to be read by the manager, so they are
+   * surfaced verbatim rather than replaced with a generic failure — "can't
+   * undo" without a reason is what makes someone retry, then call.
+   */
+  const handleBaseUndo = useCallback(async (order: BasePendingOrder) => {
+    setBaseUndoBusyId(order.orderId);
+    try {
+      const res = await fetch("/api/tint/manager/base-bypass/undo", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ orderId: order.orderId }),
+      });
+      if (!res.ok) {
+        // The route answers { ok:false, errorCode, message }; `error` is the
+        // shape the 401/403 arms use. Read both so no refusal renders blank.
+        const b = (await res.json().catch(() => ({}))) as { message?: unknown; error?: unknown };
+        const msg = typeof b.message === "string" ? b.message
+                  : typeof b.error === "string"   ? b.error
+                  : `Undo failed (HTTP ${res.status})`;
+        toast.error(msg);
+        return;
+      }
+      toast.success(`${order.obdNumber} back on the tint rail`);
+      // Close the drilldown if it was showing the bill that just went away.
+      if (baseDrill?.orderId === order.orderId) {
+        setBaseDrill(null);
+        setBaseLine(null);
+      }
+      // Both lists move: the bill leaves base-pending and rejoins the rail.
+      await fetchBasePending();
+      await fetchBoard();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Undo failed");
+    } finally {
+      setBaseUndoBusyId(null);
+    }
+  }, [baseDrill, fetchBasePending, fetchBoard]);
 
   // ── Writes ────────────────────────────────────────────────────────────────
 
@@ -888,6 +932,8 @@ export function TintManagerContent() {
           }}
           onBackFromBase={() => { setBaseDrill(null); setBaseLine(null); }}
           onPickBaseLine={(l) => setBaseLine(l)}
+          onUndoBase={(o) => { void handleBaseUndo(o); }}
+          baseUndoBusyId={baseUndoBusyId}
           onRemove={(o) => setRemoveModalOrder(o)}
           onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
           onResolveMissing={(o) => {

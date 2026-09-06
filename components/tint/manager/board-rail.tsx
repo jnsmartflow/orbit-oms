@@ -9,7 +9,7 @@
 // pending_tint_assignment).
 
 import { useState } from "react";
-import { AlertCircle, ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Eye, Loader2, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
 import { OperatorMenu, ageDays, istDateTime } from "./board-bits";
@@ -18,6 +18,7 @@ import type { BasePendingLine, BasePendingOrder, Operator, TintOrder } from "./t
 export function BoardRail({
   rail, operators, onAssign, onBaseBypass, onRemove, onOpenPanel, onResolveMissing, canRemove,
   basePending, baseDrill, baseLineId, onOpenBase, onBackFromBase, onPickBaseLine,
+  onUndoBase, baseUndoBusyId,
 }: {
   rail:             TintOrder[];
   operators:        Operator[];
@@ -43,6 +44,11 @@ export function BoardRail({
   onOpenBase:       (order: BasePendingOrder) => void;
   onBackFromBase:   () => void;
   onPickBaseLine:   (line: BasePendingLine) => void;
+  /** Put a bypassed bill back on the tint rail. Server-guarded — the button is
+   *  always offered and the route explains any refusal. */
+  onUndoBase:       (order: BasePendingOrder) => void;
+  /** orderId with an undo in flight, so its button goes inert. */
+  baseUndoBusyId:   number | null;
 }) {
   // The open menu carries its TRIGGER ELEMENT, not just an id: OperatorMenu is
   // portalled to document.body and measures its position from that element, so
@@ -261,32 +267,57 @@ export function BoardRail({
               </p>
             </div>
             {basePending.map((o) => (
-              <button
+              // ⚠ The card is a DIV, not a button. Undo sits inside it, and a
+              // <button> cannot legally nest inside another <button> — the
+              // browser un-nests it and the inner click stops working. The
+              // identity block carries the open action instead.
+              //
+              // Same card shell as the pending cards above — border, radius,
+              // padding and hover are copied, not re-invented. The amber left
+              // accent is the one difference, marking an outstanding debt.
+              <div
                 key={o.tintAssignmentId}
-                type="button"
-                onClick={() => onOpenBase(o)}
-                // Same card shell as the pending cards above — border, radius,
-                // padding and hover are copied, not re-invented. The amber left
-                // accent is the one difference, marking an outstanding debt.
-                className="w-full text-left border border-gray-200 border-l-[3px] border-l-amber-500 rounded-[10px] px-[11px] py-2.5 bg-white hover:border-gray-300 transition-colors"
+                className="border border-gray-200 border-l-[3px] border-l-amber-500 rounded-[10px] px-[11px] py-2.5 bg-white hover:border-gray-300 transition-colors"
               >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <span className="text-[12.5px] font-bold text-gray-900 leading-snug truncate">
-                    {o.siteName}
-                  </span>
-                  <ChevronRight size={13} className="text-gray-300 flex-shrink-0 mt-0.5" />
-                </div>
-                <div className="text-[10.5px] text-gray-500 flex items-center gap-1 flex-wrap">
-                  <ObdCode code={o.obdNumber} />
-                  <span>·</span>
-                  <span>{istDateTime(o.bypassedAt)}</span>
-                </div>
-                <div className="mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => onOpenBase(o)}
+                  className="w-full text-left"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <span className="text-[12.5px] font-bold text-gray-900 leading-snug truncate">
+                      {o.siteName}
+                    </span>
+                    <ChevronRight size={13} className="text-gray-300 flex-shrink-0 mt-0.5" />
+                  </div>
+                  <div className="text-[10.5px] text-gray-500 flex items-center gap-1 flex-wrap">
+                    <ObdCode code={o.obdNumber} />
+                    <span>·</span>
+                    <span>{istDateTime(o.bypassedAt)}</span>
+                  </div>
+                </button>
+                <div className="mt-1.5 flex items-center gap-2">
                   <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
                     TI {o.coveredLines}/{o.totalTintingLines}
                   </span>
+                  {/* Undo is a quiet ghost, never a primary: the expected action
+                      on this card is to RECORD the TI, not to unwind the bill.
+                      Disabled buttons are grey, never faded primary
+                      (CLAUDE_UI.md §10). */}
+                  <button
+                    type="button"
+                    disabled={baseUndoBusyId === o.orderId}
+                    onClick={() => onUndoBase(o)}
+                    title="Put this bill back on the tint rail. Only possible while no TI has been recorded and nobody has picked it."
+                    className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent transition-colors"
+                  >
+                    {baseUndoBusyId === o.orderId
+                      ? <Loader2 size={10} className="animate-spin" />
+                      : <Undo2 size={10} />}
+                    Undo
+                  </button>
                 </div>
-              </button>
+              </div>
             ))}
           </>
         )}
