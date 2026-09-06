@@ -4,34 +4,36 @@ import { useEffect, useState } from "react";
 import { Minus, Plus, Search, X } from "lucide-react";
 import {
   ALL_BASES, INK, RULE, SCRIM, SEARCH_BG, VIOLET, VIOLET_BG,
-  stepFor, unitsIn,
-  type V2Base, type V2Pack, type V2Product,
+  formatPack, stepForLabel, unitsIn,
+  type ApiProduct, type V2Option, type V2Resolved,
 } from "./v2-data";
 
 // Hidden v2 product drawer — the bottom sheet a board tile opens.
 //
-// 🔴 CONTAINMENT — lives entirely inside app/po-v2-8f4kd2/, imports only from
-// ./v2-data and node_modules. Nothing from lib/ or app/po/ (step 5 does that),
-// no localStorage, no fetch. Every colour is an inline style, so globals.css
-// and tailwind.config.ts stay untouched and v2 deletes in one command.
+// 🔴 CONTAINMENT — imports only ./v2-data and node_modules. Nothing from lib/
+// or app/po/, no localStorage, no fetch. Every colour is an inline style.
 //
-// State is intentionally LOCAL and unmounted with the sheet: the page renders
-// this component with `key={tile.sap}`, so opening a different tile gives a
-// fresh drawer rather than leaking the previous product's selections.
+// State is LOCAL and unmounted with the sheet: the page renders this with
+// `key={tile.sap}`, so opening a different tile gives a fresh drawer rather
+// than leaking the previous product's selections.
+//
+// EVERY OPTION IS A baseColour. Bases, shades and variants are the same kind
+// of thing in the catalog — one `mo_order_form_index_v2` row each, identified
+// by its `baseColour` string. They are three lists only because they are
+// presented differently. So the selection is ONE value, and the packs shown
+// are exactly that row's packs.
 //
 // NO HORIZONTAL SCROLL: every chip row is `flex-wrap`, never a scroller.
 
-// The slide-up + fade, plus the sheet's height cap. A scoped <style> tag
-// rather than an entry in globals.css — same containment rule as the colours.
-// Class names are v2-prefixed so they cannot collide with anything else in
-// the app. prefers-reduced-motion disables both animations outright.
+// Slide-up + fade, and the sheet's height cap. A scoped <style> tag rather
+// than an entry in globals.css — same containment rule as the colours. Class
+// names are v2-prefixed so they cannot collide. prefers-reduced-motion
+// disables both animations outright.
 //
-// The sheet's height is AUTO, capped at 88% of the viewport: a short product
-// (Cement SB — no variants, no bases, four packs) opens as a short sheet
-// instead of a tall mostly-empty one. `dvh` is the correct unit on a phone
-// because `vh` measures the viewport with the browser toolbar COLLAPSED, so a
-// vh-sized sheet is taller than what you can actually see. It is applied
-// through @supports so older engines keep the vh value rather than nothing.
+// Height is AUTO, capped at 88% of the viewport, so a product with no options
+// and four packs opens as a short sheet. `dvh` is the correct unit on a phone
+// because `vh` measures the viewport with the toolbar COLLAPSED; @supports
+// keeps the vh value on engines that lack it.
 const SHEET_CSS = `
 @keyframes v2SheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes v2ScrimIn { from { opacity: 0; } to { opacity: 1; } }
@@ -45,14 +47,13 @@ const SHEET_CSS = `
 
 type Tab = "base" | "shade";
 
-/** Shared chip shell — variants, bases and shades all use this exact border,
- *  radius and fill. Selected is an OUTLINE + tint, never a solid violet fill. */
+/** Shared chip shell. Selected is an OUTLINE + tint, never a solid violet fill. */
 function chipStyle(selected: boolean, dashed = false): React.CSSProperties {
   return {
-    border:      `1.5px ${dashed ? "dashed" : "solid"} ${selected ? VIOLET : RULE}`,
+    border:       `1.5px ${dashed ? "dashed" : "solid"} ${selected ? VIOLET : RULE}`,
     borderRadius: 11,
-    background:  selected ? VIOLET_BG : "#fff",
-    color:       INK,
+    background:   selected ? VIOLET_BG : "#fff",
+    color:        INK,
   };
 }
 
@@ -61,45 +62,41 @@ export default function ProductDrawer({
   onClose,
   onAdd,
 }: {
-  product: V2Product;
+  product: V2Resolved;
   onClose: () => void;
-  onAdd: (line: {
-    variant: string | null;
-    base:    string | null;
-    shade:   string | null;
-    qtys:    Record<string, number>;
-  }) => void;
+  onAdd: (line: { option: string | null; row: ApiProduct; qtys: Record<string, number> }) => void;
 }): React.JSX.Element {
-  // Tabs exist only when the product carries BOTH bases and shades (Gloss).
-  const hasTabs = product.bases.length > 0 && product.shades.length > 0;
+  const hasBases    = product.bases.length > 0;
+  const hasShades   = product.shades.length > 0;
+  const hasVariants = product.variants.length > 0;
+  // A tab appears only if its list is non-empty; neither list -> no tabs.
+  const showTabs = hasBases || hasShades;
 
-  const [tab,     setTab]     = useState<Tab>("base");
-  const [variant, setVariant] = useState<string | null>(null);
-  // "Pre-select the FIRST base" — applied on mount, and re-applied whenever the
-  // base row becomes visible again (tab switch back, non-Primer variant).
-  const [base,    setBase]    = useState<string | null>(product.bases[0]?.code ?? null);
-  const [shade,   setShade]   = useState<string | null>(null);
-  const [qtys,    setQtys]    = useState<Record<string, number>>({});
+  const [tab, setTab] = useState<Tab>(hasBases ? "base" : "shade");
+  // ONE selection, whichever row it came from. Top base pre-selected; shade
+  // and variant never are — so a shade-only or variant product opens with no
+  // pack rows until the salesman commits to one, which is correct: the packs
+  // are that row's packs, and there is no row yet.
+  const [selected, setSelected] = useState<string | null>(
+    hasBases ? (product.bases[0]?.value ?? null) : null,
+  );
+  const [qtys, setQtys]         = useState<Record<string, number>>({});
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // Lock the board behind the scrim, and put the salesman back exactly where
-  // he was on close. Local to this component by design — no global provider.
+  // Lock the board behind the scrim; put the salesman back where he was on
+  // close. Local to this component by design — no global provider.
   //
   // `position: fixed` on <body>, not `overflow: hidden`: iOS Safari ignores
   // overflow-hidden on body and keeps scrolling the page under the sheet.
   // Fixing the body collapses its scroll to zero, so the offset is stashed in
-  // `top` and handed back to window.scrollTo on cleanup. Every property that
-  // is touched is read first and restored, rather than reset to "", so this
-  // cannot clobber a style someone else set.
+  // `top` and handed back to window.scrollTo on cleanup. Each property is read
+  // first and restored individually, so this cannot clobber another style.
   useEffect(() => {
     const body = document.body;
     const y = window.scrollY;
     const prev = {
-      position: body.style.position,
-      top:      body.style.top,
-      left:     body.style.left,
-      right:    body.style.right,
-      width:    body.style.width,
+      position: body.style.position, top: body.style.top,
+      left: body.style.left, right: body.style.right, width: body.style.width,
     };
     body.style.position = "fixed";
     body.style.top      = `-${y}px`;
@@ -116,66 +113,64 @@ export default function ProductDrawer({
     };
   }, []);
 
-  // A primer takes no base, so the whole base row disappears for those
-  // variants. The stored base is CLEARED too, not just hidden — leaving it set
-  // would let the header sub-line advertise a base the line does not carry.
-  const variantIsPrimer = !!variant && variant.toLowerCase().includes("primer");
-  const showBaseRow = tab === "base" && product.bases.length > 0 && !variantIsPrimer;
-  const showShadeRow = tab === "shade" && product.shades.length > 0;
+  // Which options are on show right now, and which row that resolves to.
+  const activeList: V2Option[] = hasVariants
+    ? product.variants
+    : tab === "base" ? product.bases : product.shades;
 
-  function selectVariant(next: string): void {
-    const isPrimer = next.toLowerCase().includes("primer");
-    setVariant(next);
-    if (isPrimer) setBase(null);
-    else if (base === null) setBase(product.bases[0]?.code ?? null);
-  }
+  const selectedRow: ApiProduct | null =
+    product.noOptionRow ?? activeList.find((o) => o.value === selected)?.row ?? null;
 
-  // Switching tabs clears the current selection and every quantity.
+  const packLabels = selectedRow
+    ? selectedRow.packs.map((p) => formatPack(p.packCode, p.unit))
+    : [];
+
+  // Switching tabs clears the selection and every quantity. Coming back to
+  // Base re-applies the top-base pre-select, keeping that rule true whenever
+  // the base row is on screen.
   function switchTab(next: Tab): void {
     if (next === tab) return;
     setTab(next);
-    setShade(null);
-    setBase(next === "base" ? (product.bases[0]?.code ?? null) : null);
+    setSelected(next === "base" ? (product.bases[0]?.value ?? null) : null);
     setQtys({});
     setMoreOpen(false);
   }
 
-  // One tap moves a WHOLE BOX. The value shown stays in units, so 1L reads
-  // 0 -> 6 -> 12 and 20L (a drum, step 1) reads 0 -> 1 -> 2. Floors at 0.
-  function step(pack: V2Pack, direction: 1 | -1): void {
-    const delta = stepFor(pack) * direction;
-    setQtys((prev) => ({
-      ...prev,
-      [pack.size]: Math.max(0, (prev[pack.size] ?? 0) + delta),
-    }));
+  function selectOption(value: string): void {
+    if (value === selected) return;
+    setSelected(value);
+    // Packs belong to the ROW, and a different option is a different row with
+    // a possibly different pack table. Carrying quantities across would keep a
+    // "20L x 2" that the new row may not even sell.
+    setQtys({});
+  }
+
+  // One tap moves a WHOLE BOX; the value shown stays in UNITS. So 1L reads
+  // 0 -> 6 -> 12, and 20L (a drum, step 1) reads 0 -> 1 -> 2. Floors at 0.
+  function step(label: string, direction: 1 | -1): void {
+    const delta = stepForLabel(label) * direction;
+    setQtys((prev) => ({ ...prev, [label]: Math.max(0, (prev[label] ?? 0) + delta) }));
   }
 
   // ── Footer gating ────────────────────────────────────────────────────────
   const units = unitsIn(qtys);
-  const needsVariant = product.variants.length > 0 && variant === null;
-  const needsShade   = tab === "shade" && shade === null;
-  const canAdd = units > 0 && !needsVariant && !needsShade;
+  const needsVariant = hasVariants && selected === null;
+  const needsShade   = !hasVariants && tab === "shade" && selected === null;
+  const canAdd = units > 0 && selectedRow !== null && !needsVariant && !needsShade;
 
-  // Units only — no box figure anywhere in v2. See unitsIn()'s note.
   let addLabel: string;
   if (needsVariant)    addLabel = "Interior or exterior?";
   else if (needsShade) addLabel = "Pick a shade";
   else if (!canAdd)    addLabel = "Add to order";
   else                 addLabel = `Add · ${units} units`;
 
-  // Header sub-line: whichever of the selections are set, joined by " · ".
-  // The second slot is the SHADE on the Shade tab and the BASE otherwise —
-  // they are alternatives, never both, because the base row is hidden on the
-  // Shade tab. Empty string falls back to the grey category.
-  const selectionLine = [variant, tab === "shade" ? shade : base]
-    .filter(Boolean)
-    .join(" · ");
+  // Sub-line: the chosen option, else the grey board family.
+  const selectionLine = product.noOptionRow ? null : selected;
 
   return (
     <div className="fixed inset-0 z-50">
       <style>{SHEET_CSS}</style>
 
-      {/* Scrim — tapping anywhere outside the sheet closes it. */}
       <button
         type="button"
         aria-label="Close"
@@ -184,50 +179,34 @@ export default function ProductDrawer({
         style={{ background: SCRIM }}
       />
 
-      {/* Sheet */}
-      {/* Height is AUTO — no `top`. The cap lives in .v2-sheet (88dvh/88vh),
-          so a short product opens as a short sheet and only a tall one grows
-          to the cap and scrolls internally. */}
       <section
         className="v2-sheet absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white"
         style={{
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
+          borderTopLeftRadius: 20, borderTopRightRadius: 20,
           boxShadow: "0 -8px 32px rgba(18,14,26,.16)",
         }}
       >
-        {/* Grab bar */}
         <div className="flex shrink-0 justify-center pt-2.5 pb-1">
-          <span
-            className="block rounded-full"
-            style={{ width: 38, height: 4.5, background: "#DEDCE3" }}
-          />
+          <span className="block rounded-full" style={{ width: 38, height: 4.5, background: "#DEDCE3" }} />
         </div>
 
         {/* ── HEADER ────────────────────────────────────────────────────── */}
         <div className="flex shrink-0 items-start gap-3 px-4 pt-1.5 pb-3">
           <div className="min-w-0 flex-1">
-            <h2
-              className="truncate text-[18px] font-extrabold"
-              style={{ color: INK, letterSpacing: "-0.025em" }}
-            >
-              {product.name}
+            <h2 className="truncate text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+              {product.label}
             </h2>
             {selectionLine ? (
-              <p
-                className="truncate text-[11.5px] font-extrabold uppercase"
-                style={{ color: VIOLET, letterSpacing: ".06em" }}
-              >
+              <p className="truncate text-[11.5px] font-extrabold uppercase"
+                 style={{ color: VIOLET, letterSpacing: ".06em" }}>
                 {selectionLine}
               </p>
             ) : (
-              <p className="truncate text-[11.5px] text-neutral-400">{product.category}</p>
+              <p className="truncate text-[11.5px] text-neutral-400">{product.family}</p>
             )}
           </div>
           <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
+            type="button" aria-label="Close" onClick={onClose}
             className="flex shrink-0 items-center justify-center rounded-full"
             style={{ width: 30, height: 30, background: "#F1F0F4" }}
           >
@@ -235,62 +214,39 @@ export default function ProductDrawer({
           </button>
         </div>
 
-        {/* ── TABS (Gloss only — needs both bases and shades) ───────────── */}
-        {hasTabs && (
+        {/* ── TABS — Base first, then Shade; each only if its list exists ── */}
+        {showTabs && !hasVariants && (
           <div className="flex shrink-0 gap-5 px-4">
-            {(["base", "shade"] as const).map((t) => {
-              const active = tab === t;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => switchTab(t)}
-                  className="pb-2 text-[15px] font-extrabold capitalize"
-                  style={{
-                    color: active ? INK : "#9A96A6",
-                    borderBottom: `2.5px solid ${active ? VIOLET : "transparent"}`,
-                  }}
-                >
-                  {t}
-                </button>
-              );
-            })}
+            {hasBases && <TabButton label="Base" active={tab === "base"} onClick={() => switchTab("base")} />}
+            {hasShades && <TabButton label="Shade" active={tab === "shade"} onClick={() => switchTab("shade")} />}
           </div>
         )}
 
         {moreOpen ? (
-          // ── "+ MORE" STATE — replaces control block AND body in place ──
+          // ── "+ MORE" — replaces control block AND body in place. Static
+          //    this step; search lands in step 7.
           <div className="min-h-0 overflow-y-auto">
             <div className="px-4 pt-3">
-              {/* Static by spec — a div, not an <input>. Nothing is focusable. */}
-              <div
-                className="flex items-center gap-2 rounded-[12px] px-3 py-2.5"
-                style={{ background: SEARCH_BG }}
-              >
+              <div className="flex items-center gap-2 rounded-[12px] px-3 py-2.5" style={{ background: SEARCH_BG }}>
                 <Search className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2.5} />
                 <span className="truncate text-[14px] text-neutral-400">
                   {tab === "base" ? "Search base" : "Type a shade name"}
                 </span>
               </div>
             </div>
-
             {tab === "base" ? (
               <div className="grid grid-cols-3 gap-2 px-4 pt-3 pb-4">
                 {ALL_BASES.map((b) => (
-                  <BaseChip
-                    key={b.code}
-                    base={b}
-                    selected={base === b.code}
-                    onSelect={() => {
-                      setBase(b.code);
-                      setMoreOpen(false);
-                    }}
-                  />
+                  <button key={b.code} type="button" className="min-w-0 px-3 py-1.5 text-center"
+                          style={chipStyle(false)}>
+                    <span className="block text-[15px] font-extrabold leading-tight">{b.code}</span>
+                    <span className="block text-[8.5px] font-extrabold leading-tight text-neutral-400"
+                          style={{ letterSpacing: ".08em" }}>{b.word}</span>
+                  </button>
                 ))}
               </div>
             ) : (
-              // Shade "+ More" is deliberately EMPTY — no palette, by spec.
-              <p className="px-6 pt-8 text-center text-[13px] leading-relaxed text-neutral-400">
+              <p className="px-6 pt-8 pb-8 text-center text-[13px] leading-relaxed text-neutral-400">
                 Type any shade name — golden, black, ivory.
               </p>
             )}
@@ -298,82 +254,53 @@ export default function ProductDrawer({
         ) : (
           <>
             {/* ── CONTROL BLOCK ─────────────────────────────────────────── */}
-            <div
-              className="shrink-0 px-4 pt-3 pb-3"
-              style={{ borderBottom: `1px solid ${RULE}` }}
-            >
-              {/* a) VARIANTS — full words, nothing pre-selected. */}
-              {product.variants.length > 0 && (
+            {(hasVariants || activeList.length > 0) && (
+              <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
                 <div className="flex flex-wrap gap-2">
-                  {product.variants.map((v) => (
+                  {activeList.map((opt) => (
                     <button
-                      key={v}
+                      key={opt.value}
                       type="button"
-                      onClick={() => selectVariant(v)}
-                      className="px-3 py-2 text-[13px] font-semibold"
-                      style={chipStyle(variant === v)}
+                      onClick={() => selectOption(opt.value)}
+                      className="px-3 py-2 text-left text-[13px] font-semibold"
+                      style={chipStyle(selected === opt.value)}
                     >
-                      {v}
+                      {opt.value}
                     </button>
                   ))}
+                  {/* + More only where the catalog has more to give — never on
+                      a variant row, which is already the complete set. */}
+                  {!hasVariants && (
+                    <button
+                      type="button"
+                      onClick={() => setMoreOpen(true)}
+                      className="px-3 py-2 text-[10.5px] font-extrabold"
+                      style={chipStyle(false, true)}
+                    >
+                      + More
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* b) BASES — hidden entirely for a Primer variant. */}
-              {showBaseRow && (
-                <div
-                  className={`flex flex-wrap gap-2 ${product.variants.length > 0 ? "mt-2" : ""}`}
-                >
-                  {product.bases.map((b) => (
-                    <BaseChip
-                      key={b.code}
-                      base={b}
-                      selected={base === b.code}
-                      onSelect={() => setBase(b.code)}
-                    />
-                  ))}
-                  <MoreChip onClick={() => setMoreOpen(true)} />
-                </div>
-              )}
-
-              {/* c) SHADES — colour blocks, no text, nothing pre-selected. */}
-              {showShadeRow && (
-                <div className="flex flex-wrap gap-2">
-                  {product.shades.map((s) => {
-                    const selected = shade === s.name;
-                    return (
-                      <button
-                        key={s.name}
-                        type="button"
-                        aria-label={s.name}
-                        title={s.name}
-                        onClick={() => setShade(s.name)}
-                        style={{
-                          width: 52,
-                          height: 42,
-                          borderRadius: 11,
-                          background: s.hex,
-                          border: `1.5px solid ${selected ? VIOLET : RULE}`,
-                          boxShadow: selected ? `0 0 0 2.5px ${VIOLET_BG}, 0 0 0 4px ${VIOLET}` : undefined,
-                        }}
-                      />
-                    );
-                  })}
-                  <MoreChip onClick={() => setMoreOpen(true)} tall />
-                </div>
-              )}
-            </div>
-
-            {/* ── BODY — one row per pack ───────────────────────────────── */}
+            {/* ── BODY — the SELECTED ROW's packs, straight from the payload ── */}
             <div className="min-h-0 overflow-y-auto px-4 py-1">
-              {product.packs.map((pack) => (
-                <PackRow
-                  key={pack.size}
-                  pack={pack}
-                  qty={qtys[pack.size] ?? 0}
-                  onStep={(dir) => step(pack, dir)}
-                />
-              ))}
+              {selectedRow ? (
+                packLabels.map((label) => (
+                  <PackRow
+                    key={label}
+                    label={label}
+                    step={stepForLabel(label)}
+                    qty={qtys[label] ?? 0}
+                    onStep={(dir) => step(label, dir)}
+                  />
+                ))
+              ) : (
+                <p className="px-2 py-8 text-center text-[13px] text-neutral-400">
+                  {hasVariants ? "Pick an option to see pack sizes." : "Pick a shade to see pack sizes."}
+                </p>
+              )}
             </div>
           </>
         )}
@@ -381,15 +308,11 @@ export default function ProductDrawer({
         {/* ── FOOTER ────────────────────────────────────────────────────── */}
         <div
           className="flex shrink-0 gap-2 px-4 pt-3"
-          style={{
-            borderTop: `1px solid ${RULE}`,
-            paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
-          }}
+          style={{ borderTop: `1px solid ${RULE}`, paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
         >
           {moreOpen ? (
             <button
-              type="button"
-              onClick={() => setMoreOpen(false)}
+              type="button" onClick={() => setMoreOpen(false)}
               className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
               style={{ border: `1.5px solid ${RULE}`, color: INK }}
             >
@@ -398,8 +321,7 @@ export default function ProductDrawer({
           ) : (
             <>
               <button
-                type="button"
-                onClick={onClose}
+                type="button" onClick={onClose}
                 className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
                 style={{ border: `1.5px solid ${RULE}`, color: INK }}
               >
@@ -408,7 +330,7 @@ export default function ProductDrawer({
               <button
                 type="button"
                 disabled={!canAdd}
-                onClick={() => canAdd && onAdd({ variant, base, shade, qtys })}
+                onClick={() => canAdd && selectedRow && onAdd({ option: selected, row: selectedRow, qtys })}
                 className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
                 style={{ background: canAdd ? VIOLET : "#C9C6D2" }}
               >
@@ -424,66 +346,40 @@ export default function ProductDrawer({
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
 
-/** Base chip: code above, word below. Same shell as every other chip. */
-function BaseChip({
-  base, selected, onSelect,
-}: { base: V2Base; selected: boolean; onSelect: () => void }): React.JSX.Element {
+function TabButton({ label, active, onClick }: {
+  label: string; active: boolean; onClick: () => void;
+}): React.JSX.Element {
   return (
     <button
-      type="button"
-      onClick={onSelect}
-      className="min-w-0 px-3 py-1.5 text-center"
-      style={chipStyle(selected)}
+      type="button" onClick={onClick}
+      className="pb-2 text-[15px] font-extrabold"
+      style={{ color: active ? INK : "#9A96A6", borderBottom: `2.5px solid ${active ? VIOLET : "transparent"}` }}
     >
-      <span className="block text-[15px] font-extrabold leading-tight">{base.code}</span>
-      <span
-        className="block text-[8.5px] font-extrabold leading-tight text-neutral-400"
-        style={{ letterSpacing: ".08em" }}
-      >
-        {base.word}
-      </span>
+      {label}
     </button>
   );
 }
 
-/** The dashed "+ More" chip. `tall` matches the 42px shade blocks. */
-function MoreChip({ onClick, tall = false }: { onClick: () => void; tall?: boolean }): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="px-3 text-[10.5px] font-extrabold"
-      style={{ ...chipStyle(false, true), height: tall ? 42 : undefined, paddingTop: tall ? 0 : 6, paddingBottom: tall ? 0 : 6 }}
-    >
-      + More
-    </button>
-  );
-}
-
-/** One pack row: size + "per N" on the left, a stepper pill on the right. */
-function PackRow({
-  pack, qty, onStep,
-}: { pack: V2Pack; qty: number; onStep: (direction: 1 | -1) => void }): React.JSX.Element {
+/**
+ * One pack row. The "per N" sub-label comes from the copied depot step table,
+ * and is HIDDEN when the step is 1 — a drum has no box, so "per 1" would be
+ * noise dressed as information.
+ */
+function PackRow({ label, step, qty, onStep }: {
+  label: string; step: number; qty: number; onStep: (direction: 1 | -1) => void;
+}): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-3 py-2.5">
       <div className="min-w-0">
-        <p className="text-[16px] font-extrabold leading-tight" style={{ color: INK }}>
-          {pack.size}
-        </p>
-        {pack.per !== null && (
-          <p className="font-mono text-[11px] leading-tight text-neutral-400">per {pack.per}</p>
+        <p className="text-[16px] font-extrabold leading-tight" style={{ color: INK }}>{label}</p>
+        {step > 1 && (
+          <p className="font-mono text-[11px] leading-tight text-neutral-400">per {step}</p>
         )}
       </div>
-
-      <div
-        className="flex shrink-0 items-center rounded-full"
-        style={{ border: `1px solid ${RULE}` }}
-      >
+      <div className="flex shrink-0 items-center rounded-full" style={{ border: `1px solid ${RULE}` }}>
         <button
-          type="button"
-          aria-label={`Remove one ${pack.size}`}
-          disabled={qty === 0}
-          onClick={() => onStep(-1)}
+          type="button" aria-label={`Remove one box of ${label}`}
+          disabled={qty === 0} onClick={() => onStep(-1)}
           className="flex h-9 w-9 items-center justify-center rounded-full disabled:opacity-30"
         >
           <Minus className="h-4 w-4" strokeWidth={3} style={{ color: INK }} />
@@ -495,9 +391,7 @@ function PackRow({
           {qty}
         </span>
         <button
-          type="button"
-          aria-label={`Add one ${pack.size}`}
-          onClick={() => onStep(1)}
+          type="button" aria-label={`Add one box of ${label}`} onClick={() => onStep(1)}
           className="flex h-9 w-9 items-center justify-center rounded-full"
         >
           <Plus className="h-4 w-4" strokeWidth={3} style={{ color: INK }} />
