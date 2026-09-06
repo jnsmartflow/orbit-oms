@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCircle2, ChevronRight, Eraser, FileText, Home, MapPin, Send, Users, X } from "lucide-react";
+import { Check, CheckCircle2, ChevronRight, Eraser, FileText, Grid2x2, MapPin, Search, Send, Users, X } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
@@ -12,16 +12,17 @@ import { DraftsScreen, SentScreen } from "./drafts-sent";
 import {
   addSentOrder, clearLiveDraft, labelFor, loadLiveDraft, loadSavedDrafts,
   loadSentOrders, newDraftId, newSentId, removeSavedDraft, formatSavedAt, formatTime,
-  loadFavs, toggleFav, type V2Fav,
+  addMyDealer, loadMyDealers, removeMyDealer, type V2Dealer,
   saveLiveDraft, snapshotOf, upsertSavedDraft,
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
-  DIVIDER, FAMILIES, INK, MONO_BG, RULE, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, addRecent, buildCatalog, drawerMode, formatPack, loadRecents, monogram,
+  BRAND, BRAND_GRADIENT, DIVIDER, FAINT, FAMILIES, FILL, INK, MUTED, RULE,
+  SURFACE, VIOLET, VIOLET_BG,
+  EMPTY_ORDER, buildCatalog, drawerMode, formatPack,
   mixToWhite, optionPools, packRows, resolveGroup, tileImage, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
-  type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
+  type V2CartLine, type V2Order, type V2Resolved, type V2Tile,
 } from "./v2-data";
 
 // Hidden v2 salesman order page — the whole app, on one route.
@@ -31,9 +32,15 @@ import {
 // Nothing outside app/po-v2-8f4kd2/ is modified. Every colour is an inline
 // style, so globals.css and tailwind.config.ts stay untouched.
 //
-// SIX SCREENS, ONE URL: dealer list, board, review, sent-confirmation, saved
-// drafts, sent-today. All switched by state, not routing, so the fetched
-// catalog and the order survive every switch with no store and no reload.
+// THE BOARD IS THE LANDING. It used to open on a dealer list, which meant every
+// order began by scrolling seven hundred names before seeing a single product.
+// Now the products are the first thing on screen and the dealer is a STATE the
+// board carries, not a screen in front of it — chosen from a sheet, changed
+// from the same sheet, and never a page you have to get past.
+//
+// FIVE SCREENS, ONE URL: board, review, sent-confirmation, saved drafts,
+// sent-today. All switched by state, not routing, so the fetched catalog and
+// the order survive every switch with no store and no reload.
 //
 // PERSISTENCE lives in ./v2-storage under po2_* keys ONLY. v2 never touches a
 // po_* or orbitoms_* key — sharing a slot with /po would mean two independent
@@ -71,20 +78,34 @@ const TILE_TEXT_STYLE: React.CSSProperties = {
   hyphens:         "none",
 };
 
+/**
+ * The bottom nav's height including the safe area, as a CSS expression.
+ *
+ * The cart bar STACKS ABOVE the nav rather than replacing it: both are visible
+ * at once, cart on top. Hiding the nav behind the cart is what made drafts and
+ * sent orders unreachable the moment an order had a line in it, and merging
+ * them into one bar puts a destructive "Review" beside two harmless tabs.
+ */
+const NAV_H = "calc(54px + max(env(safe-area-inset-bottom), 8px))";
+
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
 
-type Screen = "customers" | "order" | "review" | "sent" | "drafts" | "sentList";
-type Sheet  = null | "switch" | "cancel" | "shipto" | "replace" | "summary";
+type Screen = "order" | "review" | "sent" | "drafts" | "sentList";
+type Sheet  = null | "dealer" | "cancel" | "shipto" | "replace" | "summary";
 
 export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
-  const [screen, setScreen]   = useState<Screen>("customers");
+  const [screen, setScreen]   = useState<Screen>("order");
   const [dealer, setDealer]   = useState<ApiCustomer | null>(null);
-  const [recents, setRecents] = useState<V2Recent[]>([]);
-  const [favs, setFavs]       = useState<V2Fav[]>([]);
+  const [mine, setMine]       = useState<V2Dealer[]>([]);
+  // 🔴 THE TILE HE TAPPED BEFORE THERE WAS A DEALER. Held across the dealer
+  // sheet so the tap is never wasted: pick a dealer and the drawer he was
+  // reaching for opens by itself. Losing it would teach him to choose the
+  // dealer first, which is the habit this landing exists to remove.
+  const [pendingTile, setPendingTile] = useState<V2Tile | null>(null);
   const [query, setQuery]     = useState("");
   const [sheet, setSheet]     = useState<Sheet>(null);
   const [prodQuery, setProdQuery] = useState("");
@@ -153,8 +174,7 @@ export default function PoV2Page(): React.JSX.Element {
   useEffect(() => { void fetchData(); }, [fetchData]);
   // Client-only reads, so the server render and the first client render agree.
   useEffect(() => {
-    setRecents(loadRecents());
-    setFavs(loadFavs());
+    setMine(loadMyDealers());
     setSavedDrafts(loadSavedDrafts());
     setSentOrders(loadSentOrders());   // prunes to today+yesterday IST on read
   }, []);
@@ -217,6 +237,20 @@ export default function PoV2Page(): React.JSX.Element {
     setScreen("order");
   }
 
+  /** Open the dealer sheet. One entry point, so the query is always cleared. */
+  function openDealerSheet(): void { setQuery(""); setSheet("dealer"); }
+
+  /**
+   * "Put me in front of a dealer picker" — which is now a STATE, not a screen:
+   * the board stays where it is, the dealer clears, and the sheet opens over it.
+   */
+  function chooseAnotherDealer(): void {
+    setDealer(null);
+    setProdQuery("");
+    setScreen("order");
+    openDealerSheet();
+  }
+
   /** Load a saved draft, remembering its id so re-saving upserts in place. */
   function openDraft(d: V2SavedDraft): void {
     openDraftIdRef.current = d.id;
@@ -231,16 +265,19 @@ export default function PoV2Page(): React.JSX.Element {
     openDraftIdRef.current = id;
     setSavedDrafts(upsertSavedDraft({ id, label: labelFor(snapshot), savedAt: Date.now(), snapshot }));
     setToast("Draft saved");
-    setScreen("customers");
+    // Stays on the board. There is nowhere else to go now, and bouncing him to
+    // a list after saving would lose the products he can see.
   }
 
-  /** Picking a dealer — from the landing list OR the switch sheet. */
+  /** Picking a dealer. One path, whether the sheet was opened by the search
+   *  bar, by the dealer line, or by tapping a product with no dealer yet. */
   function pickDealer(c: ApiCustomer): void {
     setDealer(c);
-    setRecents(addRecent(c));
     setQuery("");
     setSheet(null);
     setScreen("order");
+    // The deferred tap, spent now. See pendingTile.
+    if (pendingTile) { setOpenTile(pendingTile); setPendingTile(null); }
     // 🔴 THE CART IS NOT TOUCHED. Lines are keyed on products, not on the
     // dealer, so swapping who the order is for keeps every line intact — that
     // is the whole point of the switch sheet.
@@ -334,6 +371,9 @@ export default function PoV2Page(): React.JSX.Element {
       id: newSentId(), label: labelFor(snapshot), sentAt: Date.now(), snapshot,
     }));
     openDraftIdRef.current = null;
+    // 🔴 THE LIST BUILDS ITSELF HERE, and only here. Sending is the signal that
+    // this is a dealer he actually serves; merely opening one is not.
+    setMine(addMyDealer(dealer));
 
     setSent({ dealer, lines: lines.length, units: orderUnits });
     setLines([]);
@@ -341,11 +381,6 @@ export default function PoV2Page(): React.JSX.Element {
     setShipTo(null);
     setProdQuery("");
     setScreen("sent");
-  }
-
-  /** Toggle a dealer's favourite star. Never opens the dealer. */
-  function onToggleFav(c: ApiCustomer): void {
-    setFavs(toggleFav({ name: c.name, code: c.code, area: c.area }));
   }
 
   const ready       = load.kind === "ready";
@@ -373,58 +408,55 @@ export default function PoV2Page(): React.JSX.Element {
   const groupPools = openGroup ? optionPools(openGroup.rows) : undefined;
   const groupMode  = openGroup ? drawerMode(openGroup.rows) : undefined;
 
+  /**
+   * 🔴 MOUNTED ON EVERY SCREEN, NOT INSIDE ONE. The toast used to live in the
+   * dealer-list screen's JSX. Saving a draft set the text and then navigated,
+   * so the confirmation rendered on a screen the salesman had already left —
+   * and when that screen went away, "Draft saved" would have gone silent
+   * altogether. It is one element, added to every return below.
+   */
+  const toastHost = toast ? (
+    <div className="pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4"
+         style={{ bottom: `calc(${NAV_H} + 16px)` }}>
+      <span className="rounded-full px-4 py-2 text-[13px] font-bold text-white"
+            style={{ background: INK }}>{toast}</span>
+    </div>
+  ) : null;
+
+  // ── First paint — the brand, not an empty white page ─────────────────────
+  //
+  // 🔴 THIS IS ALSO THE FIX FOR THE HOME-SCREEN SPLASH. iOS has no launch image
+  // for this app (no apple-touch-startup-image is declared, deliberately — the
+  // per-device sizes go stale with every new phone), so it paints a SCREENSHOT
+  // of the last render while the app boots. Once the board carried product
+  // photographs that screenshot became a wall of paint tins. Rendering the
+  // brand while the catalog loads makes the screenshot the brand instead, and
+  // it stays right from then on without a single static asset to maintain.
+  if (load.kind === "loading") {
+    return (
+      <main className="flex min-h-screen w-full items-center justify-center"
+            style={{ background: BRAND_GRADIENT }}>
+        {/* Nothing else. No tagline, no spinner, no depot name. */}
+        <img src="/brand/orbit-wordmark-white.svg" alt="Orbit"
+             width={2216} height={771}
+             style={{ width: "52%", maxWidth: 260, height: "auto" }} />
+      </main>
+    );
+  }
+
   // ── Failure — a plain message and Retry, never a silent empty screen ─────
   if (load.kind === "error") {
     return (
       <main className="flex min-h-screen w-full flex-col items-center justify-center gap-3 bg-white px-8 text-center">
         <p className="text-[15px] font-bold" style={{ color: INK }}>Could not load</p>
-        <p className="text-[13px] leading-relaxed text-neutral-400">{load.message}</p>
+        <p className="text-[13px] leading-relaxed" style={{ color: MUTED }}>{load.message}</p>
         <button
           type="button" onClick={() => void fetchData()}
           className="mt-1 rounded-[13px] px-6 py-3 text-[15px] font-extrabold text-white"
-          style={{ background: VIOLET }}
+          style={{ background: BRAND }}
         >
           Retry
         </button>
-      </main>
-    );
-  }
-
-  // ══ SCREEN 1 — THE DEALER LIST ═══════════════════════════════════════════
-  if (screen === "customers") {
-    return (
-      <main className="min-h-screen w-full bg-white" style={{ paddingBottom: 76 }}>
-        <header
-          className="sticky top-0 z-10 flex items-center gap-2 bg-white px-4 py-3"
-          style={{ borderBottom: `1px solid ${RULE}` }}
-        >
-          <OrbitMark />
-          <span className="text-[19px] font-extrabold" style={{ color: VIOLET, letterSpacing: "-0.03em" }}>
-            Orbit
-          </span>
-          <span className="ml-auto shrink-0 font-mono text-[11px] text-neutral-400">SURAT DEPOT</span>
-        </header>
-
-        <div className="px-4 pt-3 pb-2">
-          <CustomerSearchInput value={query} onChange={setQuery} />
-        </div>
-
-        {ready ? (
-          <CustomerListBody
-            customers={customers} recents={recents} favs={favs} query={query}
-            onPick={pickDealer} onToggleFav={onToggleFav}
-          />
-        ) : (
-          <p className="px-4 py-10 text-center text-[13px] text-neutral-400">Loading dealers…</p>
-        )}
-
-        <BottomNav active="home" onNavigate={(s2) => setScreen(s2)} />
-        {toast && (
-          <div className="fixed inset-x-0 z-30 flex justify-center px-4" style={{ bottom: 88 }}>
-            <span className="rounded-full px-4 py-2 text-[13px] font-bold text-white"
-                  style={{ background: INK }}>{toast}</span>
-          </div>
-        )}
       </main>
     );
   }
@@ -435,7 +467,7 @@ export default function PoV2Page(): React.JSX.Element {
       <>
         <DraftsScreen
           drafts={savedDrafts}
-          onBack={() => setScreen("customers")}
+          onBack={() => setScreen("order")}
           onRemove={(id) => setSavedDrafts(removeSavedDraft(id))}
           onOpen={(d) => {
             // 🔴 NEVER SILENTLY DISCARD WORK. A draft replaces the whole order,
@@ -445,6 +477,7 @@ export default function PoV2Page(): React.JSX.Element {
             else openDraft(d);
           }}
         />
+        {toastHost}
         {sheet === "replace" && pendingDraft && (
           <V2Sheet
             onClose={() => { setSheet(null); setPendingDraft(null); }}
@@ -463,7 +496,7 @@ export default function PoV2Page(): React.JSX.Element {
               <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
                 Replace this order?
               </h2>
-              <p className="text-[11.5px] text-neutral-400">
+              <p className="text-[11.5px]" style={{ color: MUTED }}>
                 {lines.length} {lines.length === 1 ? "line" : "lines"} on screen will be replaced by this draft
               </p>
             </div>
@@ -475,14 +508,14 @@ export default function PoV2Page(): React.JSX.Element {
                 style={{ border: `1.5px solid ${RULE}` }}
               >
                 <span className="flex shrink-0 items-center justify-center rounded-[9px]"
-                      style={{ width: 32, height: 32, background: "#F2F1F5" }}>
+                      style={{ width: 32, height: 32, background: FILL }}>
                   <FileText className="h-4 w-4" strokeWidth={2.5} style={{ color: INK }} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14.5px] font-bold" style={{ color: INK }}>
                     Load {pendingDraft.label}
                   </span>
-                  <span className="block truncate text-[11.5px] text-neutral-400">
+                  <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>
                     Saved {formatSavedAt(pendingDraft.savedAt)}
                   </span>
                 </span>
@@ -500,9 +533,10 @@ export default function PoV2Page(): React.JSX.Element {
       <>
         <SentScreen
           orders={sentOrders}
-          onBack={() => setScreen("customers")}
+          onBack={() => setScreen("order")}
           onOpen={(o) => { setOpenSent(o); setSheet("summary"); }}
         />
+        {toastHost}
         {sheet === "summary" && openSent && (
           <V2Sheet
             onClose={() => { setSheet(null); setOpenSent(null); }}
@@ -529,7 +563,7 @@ export default function PoV2Page(): React.JSX.Element {
               <h2 className="truncate text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
                 {openSent.snapshot.customer.name}
               </h2>
-              <p className="font-mono text-[11.5px] text-neutral-400">
+              <p className="font-mono text-[11.5px]" style={{ color: MUTED }}>
                 Sent {formatTime(openSent.sentAt)}
               </p>
             </div>
@@ -552,7 +586,7 @@ export default function PoV2Page(): React.JSX.Element {
                         {label} ×{qty}
                       </p>
                     ))}
-                    <p className="text-[11px] text-neutral-400">{unitsIn(line.qtys)} units</p>
+                    <p className="text-[11px]" style={{ color: MUTED }}>{unitsIn(line.qtys)} units</p>
                   </div>
                 </div>
               ))}
@@ -576,7 +610,7 @@ export default function PoV2Page(): React.JSX.Element {
         <p className="max-w-[280px] truncate text-[15px] font-bold" style={{ color: INK }}>
           {sent.dealer.name}
         </p>
-        <p className="font-mono text-[12.5px] text-neutral-400">
+        <p className="font-mono text-[12.5px]" style={{ color: MUTED }}>
           {sent.lines} {sent.lines === 1 ? "line" : "lines"} · {sent.units} units
         </p>
 
@@ -585,14 +619,14 @@ export default function PoV2Page(): React.JSX.Element {
             type="button"
             onClick={() => { setSent(null); setScreen("order"); }}
             className="w-full truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-            style={{ background: VIOLET }}
+            style={{ background: BRAND }}
           >
             Another order for {firstWord(sent.dealer.name)}
           </button>
           <button
             type="button"
             onClick={() => {
-              setSent(null); setDealer(null); setQuery(""); setScreen("customers");
+              setSent(null); chooseAnotherDealer();
             }}
             className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
             style={{ border: `1.5px solid ${RULE}`, color: INK }}
@@ -600,6 +634,7 @@ export default function PoV2Page(): React.JSX.Element {
             Different customer
           </button>
         </div>
+        {toastHost}
       </main>
     );
   }
@@ -622,13 +657,14 @@ export default function PoV2Page(): React.JSX.Element {
           onSaveDraft={saveDraft}
           onOpenShipTo={() => { setQuery(""); setSheet("shipto"); }}
         />
+        {toastHost}
         {sheet === "shipto" && (
           <V2Sheet onClose={() => setSheet(null)}>
             <div className="shrink-0 px-4 pt-1.5 pb-3">
               <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
                 Ship to
               </h2>
-              <p className="text-[11.5px] text-neutral-400">
+              <p className="text-[11.5px]" style={{ color: MUTED }}>
                 Where the goods go — the bill still goes to {dealer.name}
               </p>
             </div>
@@ -650,7 +686,7 @@ export default function PoV2Page(): React.JSX.Element {
                   }}
                 >
                   <MapPin className="h-4 w-4 shrink-0" strokeWidth={2.5}
-                          style={{ color: shipTo === null ? VIOLET : "#A3A3A3" }} />
+                          style={{ color: shipTo === null ? VIOLET : FAINT }} />
                   <span className="min-w-0 flex-1 truncate text-[14.5px] font-bold" style={{ color: INK }}>
                     Same as billing
                   </span>
@@ -659,9 +695,16 @@ export default function PoV2Page(): React.JSX.Element {
                   )}
                 </button>
               )}
+              {/* 🔴 SHIP-TO REACHES EVERY DEALER IN THE MASTER, by typing. The
+                  landing has no all-dealers list by design, but ship-to names a
+                  third party the salesman has routinely never ordered FOR —
+                  LAKHANI PAINTS shipping against MOHAN COLOUR CO is a real
+                  order. Restricting this to his own list would break cross
+                  billing, so the fall-through in CustomerListBody is
+                  load-bearing here and not a convenience. */}
               <CustomerListBody
-                customers={customers} recents={recents} favs={favs} query={query}
-                currentCode={shipTo?.code ?? null} onToggleFav={onToggleFav}
+                customers={customers} mine={mine} query={query}
+                currentCode={shipTo?.code ?? null}
                 onPick={(c) => { setShipTo(c); setSheet(null); setQuery(""); }}
               />
             </div>
@@ -674,70 +717,93 @@ export default function PoV2Page(): React.JSX.Element {
   // ══ SCREEN 2 — THE BOARD ═════════════════════════════════════════════════
   return (
     <>
-      <main className="min-h-screen w-full bg-white" style={{ paddingBottom: cartOpen ? 108 : 24 }}>
-        {/* ── DEALER BAR — scrolls AWAY. The search row below takes over. ── */}
-        <header
-          className="flex items-center gap-3 bg-white px-4 py-2.5"
-          style={{ borderBottom: `1px solid ${RULE}` }}
-        >
-          <button
-            type="button"
-            onClick={() => { setQuery(""); setSheet("switch"); }}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          >
-            <span className="min-w-0">
-              <span className="block truncate text-[16px] font-extrabold tracking-tight" style={{ color: VIOLET }}>
-                {dealer ? dealer.name.toUpperCase() : "—"}
-              </span>
-              <span className="block truncate font-mono text-[11px] text-neutral-400">
-                {dealer ? `${dealer.code}${dealer.area ? ` · ${dealer.area}` : ""}` : ""}
-              </span>
-            </span>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-300" strokeWidth={2.5} />
-          </button>
-          {/* Opens the cancel sheet. It clears NOTHING on its own. */}
-          <button
-            type="button" aria-label="Start a new order"
-            onClick={() => setSheet("cancel")}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-            style={{ border: `1px solid ${RULE}` }}
-          >
-            <X className="h-4 w-4 text-neutral-400" strokeWidth={2.5} />
-          </button>
-        </header>
+      <main
+        className="min-h-screen w-full"
+        style={{
+          background: SURFACE,
+          // The nav is always there; the cart bar stacks on top of it when the
+          // order has lines. The board has to clear both.
+          paddingBottom: `calc(${NAV_H} + ${cartOpen ? 84 : 16}px)`,
+        }}
+      >
+        {/* ── IDENTITY + SEARCH ────────────────────────────────────────────
+            ONE sticky block, and one pattern for both states. The board used to
+            carry two: a dealer bar that scrolled away, and a sticky row with an
+            initials square in it whose only job was to keep "change dealer"
+            reachable once the bar had gone. Initials are banned now, and the
+            dealer's own NAME does that job better — so the bar and the row are
+            the same thing, and it stays put.
 
-        {/* ── PRODUCT SEARCH — PINS to the top once the dealer bar scrolls ──
-            Plain `position: sticky` inside the page's own scroll: no scroll
-            listener, no measured offset, nothing to drift out of sync. The
-            white background and bottom border are ALWAYS on rather than
-            applied at the moment of pinning — detecting "pinned" needs either
-            a scroll listener or a sentinel + IntersectionObserver, and a
-            hairline under the search box reads fine unpinned too.
+            With no dealer the identity line is the WORDMARK and the search bar
+            is a dealer search. With one, the wordmark collapses to his name and
+            the same bar becomes product search. Nothing below moves: the board
+            is already rendered and is not remounted by either. */}
+        <div className="sticky top-0 z-20" style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}>
+          <div className="flex items-center gap-3 px-4 pt-3 pb-2">
+            {dealer ? (
+              <>
+                <button
+                  type="button"
+                  onClick={openDealerSheet}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[17px] font-extrabold"
+                          style={{ color: VIOLET, letterSpacing: "-0.02em" }}>
+                      {dealer.name}
+                    </span>
+                    <span className="block truncate font-mono text-[11.5px]" style={{ color: MUTED }}>
+                      {dealer.code}{dealer.area ? ` · ${dealer.area}` : ""}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
+                </button>
+                {/* Opens the cancel sheet. It clears NOTHING on its own. */}
+                <button
+                  type="button" aria-label="Start a new order"
+                  onClick={() => setSheet("cancel")}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                  style={{ border: `1px solid ${RULE}` }}
+                >
+                  <X className="h-4 w-4" strokeWidth={2.5} style={{ color: FAINT }} />
+                </button>
+              </>
+            ) : (
+              /* The word IS the logo — never a symbol beside it. Outlined
+                 paths, so it is the same shape on every device. */
+              <img
+                src="/brand/orbit-wordmark.svg" alt="Orbit"
+                width={2216} height={771}
+                style={{ height: 26, width: "auto" }}
+              />
+            )}
+          </div>
 
-            The monogram is why the dealer bar is allowed to leave: it keeps
-            Change customer one tap away when the name is off screen. */}
-        <div
-          className="sticky top-0 z-20 flex items-center gap-2.5 bg-white px-4 pb-2.5 pt-2.5"
-          style={{ borderBottom: `1px solid ${RULE}` }}
-        >
-          <button
-            type="button"
-            aria-label="Change customer"
-            onClick={() => { setQuery(""); setSheet("switch"); }}
-            className="flex shrink-0 items-center justify-center rounded-[10px] text-[12px] font-extrabold text-neutral-600"
-            style={{ width: 34, height: 34, background: MONO_BG }}
-          >
-            {dealer ? monogram(dealer.name) : "—"}
-          </button>
-          <div className="min-w-0 flex-1">
-            <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
+          <div className="px-4 pb-2.5">
+            {dealer ? (
+              <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
+            ) : (
+              /* Looks exactly like the input it will become, but opens the
+                 sheet — the only thing on the first screen there is to tap. */
+              <button
+                type="button"
+                onClick={openDealerSheet}
+                className="flex w-full items-center gap-2 rounded-[12px] px-3 py-3 text-left"
+                style={{ background: FILL }}
+              >
+                <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
+                <span className="min-w-0 flex-1 truncate text-[16px]" style={{ color: FAINT }}>
+                  Search dealer or code
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Under 2 characters the board stands; at 2 the board is REPLACED by
             results. The dealer bar above and the cart bar below both stay, so
             searching never loses the salesman his context. */}
-        {searching ? (
+        {dealer && searching ? (
           <div>
             <ProductResults
               products={products}
@@ -763,7 +829,7 @@ export default function PoV2Page(): React.JSX.Element {
           <section key={family.name} className="px-4" style={{ paddingTop: 18 }}>
             <div className="mb-2 flex items-center gap-2">
               <h2 className="shrink-0 text-[11px] font-bold uppercase"
-                  style={{ letterSpacing: ".08em", color: "#8B8794" }}>
+                  style={{ letterSpacing: ".08em", color: FAINT }}>
                 {family.name}
               </h2>
               <span className="h-px flex-1" style={{ background: RULE }} />
@@ -782,7 +848,13 @@ export default function PoV2Page(): React.JSX.Element {
                     key={tile.sap}
                     type="button"
                     disabled={!ready}
-                    onClick={() => setOpenTile(tile)}
+                    onClick={() => {
+                      // 🔴 THE TAP IS NEVER WASTED. With no dealer yet, the
+                      // dealer sheet comes first and this tile is remembered;
+                      // pickDealer spends it and the drawer opens by itself.
+                      if (!dealer) { setPendingTile(tile); openDealerSheet(); return; }
+                      setOpenTile(tile);
+                    }}
                     className="flex min-w-0 flex-col gap-1.5 text-left"
                     style={{ opacity: ready ? 1 : 0.45 }}
                   >
@@ -845,44 +917,74 @@ export default function PoV2Page(): React.JSX.Element {
       {/* ── BOTTOM BAR ─────────────────────────────────────────────────── */}
       {cartOpen && (
         <div
-          className="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 bg-white px-4 pt-3"
-          style={{ borderTop: `1px solid ${RULE}`, paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+          className="fixed inset-x-0 z-20 flex items-center gap-3 px-4 py-3"
+          style={{
+            bottom: NAV_H,
+            background: SURFACE,
+            borderTop: `1px solid ${RULE}`,
+          }}
         >
           <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-bold" style={{ color: INK }}>
               {lines.length} {lines.length === 1 ? "line" : "lines"}
             </p>
-            <p className="truncate font-mono text-[11px] text-neutral-400">{orderUnits} units</p>
+            <p className="truncate font-mono text-[11px]" style={{ color: MUTED }}>{orderUnits} units</p>
           </div>
           <button
             type="button"
             onClick={() => setScreen("review")}
             className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold text-white"
-            style={{ background: VIOLET }}
+            style={{ background: BRAND }}
           >
             Review order
           </button>
         </div>
       )}
 
-      {/* ── CHANGE-CUSTOMER SHEET ──────────────────────────────────────── */}
-      {sheet === "switch" && (
-        <V2Sheet onClose={() => setSheet(null)}>
-          <div className="shrink-0 px-4 pt-1.5 pb-3">
+      {/* The nav lives on the BOARD only — never inside a drawer, the review
+          screen or the dealer sheet, all of which are their own context. */}
+      <BottomNav onNavigate={(next) => setScreen(next)} />
+      {toastHost}
+
+      {/* ── DEALER SHEET ───────────────────────────────────────────────────
+          One sheet for all three doors: the search bar with no dealer chosen,
+          the dealer line once one is, and a product tapped before either. Full
+          height with the input focused, so it is a screen in practice without
+          being one in the state machine — the board is still mounted behind it
+          and comes back exactly as it was left. */}
+      {sheet === "dealer" && (
+        <V2Sheet
+          onClose={() => { setSheet(null); setPendingTile(null); }}
+          fixedHeight
+        >
+          <div className="flex shrink-0 items-baseline gap-2 px-4 pt-1.5 pb-3">
             <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
-              Change customer
+              {dealer ? "Change dealer" : "Choose a dealer"}
             </h2>
-            <p className="text-[11.5px] text-neutral-400">
+            <span className="ml-auto shrink-0 font-mono text-[10.5px] uppercase"
+                  style={{ color: FAINT, letterSpacing: ".08em" }}>
+              Surat depot
+            </span>
+          </div>
+          {pendingTile && (
+            <p className="shrink-0 px-4 pb-2 text-[12px]" style={{ color: MUTED }}>
+              Then {pendingTile.label} opens.
+            </p>
+          )}
+          {dealer && lines.length > 0 && (
+            <p className="shrink-0 px-4 pb-2 text-[12px]" style={{ color: MUTED }}>
               {lines.length} {lines.length === 1 ? "line" : "lines"} already in this order — they stay
             </p>
-          </div>
+          )}
           <div className="shrink-0 px-4 pb-2">
-            <CustomerSearchInput value={query} onChange={setQuery} />
+            <CustomerSearchInput value={query} onChange={setQuery} autoFocus />
           </div>
-          <div className="min-h-0 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <CustomerListBody
-              customers={customers} recents={recents} favs={favs} query={query}
-              currentCode={dealer?.code ?? null} onPick={pickDealer} onToggleFav={onToggleFav}
+              customers={customers} mine={mine} query={query}
+              currentCode={dealer?.code ?? null}
+              onPick={pickDealer}
+              onRemove={(code) => setMine(removeMyDealer(code))}
             />
           </div>
         </V2Sheet>
@@ -897,7 +999,7 @@ export default function PoV2Page(): React.JSX.Element {
             <button
               type="button" onClick={() => setSheet(null)}
               className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-              style={{ background: VIOLET }}
+              style={{ background: BRAND }}
             >
               Keep editing
             </button>
@@ -907,7 +1009,7 @@ export default function PoV2Page(): React.JSX.Element {
             <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
               Start a new order?
             </h2>
-            <p className="text-[11.5px] text-neutral-400">
+            <p className="text-[11.5px]" style={{ color: MUTED }}>
               {lines.length} {lines.length === 1 ? "line" : "lines"} will be cleared
             </p>
           </div>
@@ -930,7 +1032,7 @@ export default function PoV2Page(): React.JSX.Element {
                 setOrder(EMPTY_ORDER);
                 setShipTo(null);
                 setSheet(null);
-                setScreen("customers");
+                chooseAnotherDealer();
               }}
             />
           </div>
@@ -976,18 +1078,6 @@ function firstWord(name: string | undefined): string {
   return word && word.length > 0 ? word : "dealer";
 }
 
-/** The Orbit ring: a violet circle with a filled dot inside it. */
-function OrbitMark(): React.JSX.Element {
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-full"
-      style={{ width: 20, height: 20, border: `2.4px solid ${VIOLET}` }}
-    >
-      <span className="block rounded-full" style={{ width: 6, height: 6, background: VIOLET }} />
-    </span>
-  );
-}
-
 /** One option row in the cancel sheet: icon square, bold label, grey sub-line. */
 function DestructiveRow({ icon, label, sub, onClick }: {
   icon: React.ReactNode; label: string; sub: string; onClick: () => void;
@@ -1000,43 +1090,52 @@ function DestructiveRow({ icon, label, sub, onClick }: {
     >
       <span
         className="flex shrink-0 items-center justify-center rounded-[9px]"
-        style={{ width: 32, height: 32, background: "#F2F1F5" }}
+        style={{ width: 32, height: 32, background: FILL }}
       >
         {icon}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14.5px] font-bold" style={{ color: INK }}>{label}</span>
-        <span className="block truncate text-[11.5px] text-neutral-400">{sub}</span>
+        <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{sub}</span>
       </span>
     </button>
   );
 }
 
-/** Home / Drafts / Sent. Home is where it renders; the other two navigate. */
-function BottomNav({ active, onNavigate }: {
-  active: "home";
+/**
+ * Board / Drafts / Sent. It renders on the board, so Board is always the
+ * active item and there is no prop to pass wrong.
+ *
+ * 🔴 IT COSTS ABOUT 50px OF BOARD AND IS WORTH IT. Without it there is no way
+ * at all to reach a saved draft or today's sent orders — po2_saved_drafts and
+ * po2_sent_orders would keep being written and could never be read back. That
+ * was the regression the old dealer-list screen had been quietly covering.
+ */
+function BottomNav({ onNavigate }: {
   onNavigate: (screen: "drafts" | "sentList") => void;
 }): React.JSX.Element {
-  const items: { label: string; icon: typeof Home; active: boolean; go?: "drafts" | "sentList" }[] = [
-    { label: "Home",   icon: Home,     active: active === "home" },
-    { label: "Drafts", icon: FileText, active: false, go: "drafts" },
-    { label: "Sent",   icon: Send,     active: false, go: "sentList" },
+  const items: { label: string; icon: typeof Grid2x2; on: boolean; go?: "drafts" | "sentList" }[] = [
+    { label: "Board",  icon: Grid2x2,  on: true },
+    { label: "Drafts", icon: FileText, on: false, go: "drafts" },
+    { label: "Sent",   icon: Send,     on: false, go: "sentList" },
   ];
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-20 flex bg-white pt-2"
-      style={{ borderTop: `1px solid ${RULE}`, paddingBottom: "max(env(safe-area-inset-bottom), 8px)" }}
+      className="fixed inset-x-0 bottom-0 z-20 flex pt-2"
+      style={{
+        background: SURFACE,
+        borderTop: `1px solid ${RULE}`,
+        paddingBottom: "max(env(safe-area-inset-bottom), 8px)",
+      }}
     >
-      {items.map(({ label, icon: Icon, active: isOn, go }) => (
+      {items.map(({ label, icon: Icon, on, go }) => (
         <button
           key={label} type="button"
           onClick={() => go && onNavigate(go)}
           className="flex flex-1 flex-col items-center gap-0.5"
         >
-          <Icon className="h-[18px] w-[18px]" strokeWidth={2.5}
-                style={{ color: isOn ? VIOLET : "#A3A3A3" }} />
-          <span className="text-[10px] font-extrabold"
-                style={{ color: isOn ? VIOLET : "#A3A3A3" }}>
+          <Icon className="h-[18px] w-[18px]" strokeWidth={2.5} style={{ color: on ? VIOLET : FAINT }} />
+          <span className="text-[10px] font-extrabold" style={{ color: on ? VIOLET : FAINT }}>
             {label}
           </span>
         </button>

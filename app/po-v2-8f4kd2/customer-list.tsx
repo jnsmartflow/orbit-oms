@@ -2,16 +2,16 @@
 
 import { ChevronRight, Check, Search, X } from "lucide-react";
 import {
-  CHEVRON, DIVIDER, INK, MONO_BG, SEARCH_BG, STAR, VIOLET, VIOLET_BG,
-  monogram, searchCustomers,
-  type ApiCustomer, type V2Recent,
+  DIVIDER, FAINT, FILL, INK, MUTED, VIOLET, VIOLET_BG,
+  searchCustomers,
+  type ApiCustomer,
 } from "./v2-data";
+import type { V2Dealer } from "./v2-storage";
 
-// The dealer picker, shared by the landing screen, the change-customer sheet
-// and the ship-to sheet so all three can never drift apart. One component,
-// three places.
+// The dealer picker, shared by the dealer sheet on the board and the ship-to
+// sheet on review, so the two can never drift apart. One component, two places.
 //
-// 🔴 CONTAINMENT — imports ./v2-data and node_modules only.
+// 🔴 CONTAINMENT — imports ./v2-data, ./v2-storage and node_modules only.
 
 /**
  * The search field. A REAL <input>, so it takes focus and a keyboard.
@@ -30,8 +30,8 @@ export function CustomerSearchInput({
   autoFocus?: boolean;
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-2 rounded-[12px] px-3" style={{ background: SEARCH_BG }}>
-      <Search className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2.5} />
+    <div className="flex items-center gap-2 rounded-[12px] px-3" style={{ background: FILL }}>
+      <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
       <input
         type="text"
         inputMode="search"
@@ -40,8 +40,8 @@ export function CustomerSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search dealer or code"
-        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none placeholder:text-neutral-400"
-        style={{ color: INK }}
+        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none"
+        style={{ color: INK, ["--tw-placeholder-opacity" as string]: 1 }}
       />
       {value.length > 0 && (
         <button
@@ -49,7 +49,7 @@ export function CustomerSearchInput({
           aria-label="Clear search"
           onClick={() => onChange("")}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-          style={{ background: "#DEDCE3" }}
+          style={{ background: FAINT }}
         >
           <X className="h-3 w-3 text-white" strokeWidth={3} />
         </button>
@@ -58,36 +58,27 @@ export function CustomerSearchInput({
   );
 }
 
-/** A star, outline or filled. 18px glyph; the tap target around it is 44px. */
-function StarGlyph({ filled, size = 18 }: { filled: boolean; size?: number }): React.JSX.Element {
-  const d = "M12 2.5l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.33l-5.8 3.05 1.11-6.46-4.7-4.58 6.49-.95L12 2.5z";
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden
-         fill={filled ? STAR : "none"} stroke={filled ? STAR : "#C7C3CE"} strokeWidth={filled ? 0 : 1.8}
-         strokeLinejoin="round">
-      <path d={d} />
-    </svg>
-  );
-}
-
 /**
- * One flat dealer row. No card — a list divider is the only separator.
+ * One flat dealer row: the name, then code and area beneath, then a chevron.
  *
- * 🔴 THE ROW IS A <div>, NOT A <button>. It has to hold a second, independent
- * button for the star, and a <button> inside a <button> is invalid HTML that
- * React will not render predictably. The pick target is the inner button that
- * fills the row; the star sits beside it with its own 44px target, because a
- * thumb does not reliably hit an 18px glyph.
+ * 🔴 NO INITIALS SQUARE. A monogram used to sit at the head of this row and it
+ * has been removed everywhere — "AP" tells a salesman nothing his own dealer's
+ * name does not tell him better, and thirty of them down a list is thirty
+ * identical grey squares competing with the only thing that identifies a row.
+ *
+ * The row is a <div> holding buttons rather than a <button>, because a remove
+ * control has to sit beside the pick target and a button inside a button is
+ * invalid HTML that React will not render predictably.
  */
 export function CustomerRow({
-  name, code, area, current = false, isFav, onPick, onToggleFav,
+  name, code, area, current = false, onPick, onRemove,
 }: {
   name: string; code: string; area: string | null;
   /** Marks the dealer already on the order: tinted, with a tick not a chevron. */
   current?: boolean;
-  isFav: boolean;
   onPick: () => void;
-  onToggleFav: () => void;
+  /** Only on the salesman's own list. Absent everywhere else. */
+  onRemove?: () => void;
 }): React.JSX.Element {
   return (
     <div
@@ -96,53 +87,44 @@ export function CustomerRow({
     >
       <button
         type="button" onClick={onPick}
-        className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 text-left"
+        className="flex min-w-0 flex-1 items-center py-2.5 pl-4 text-left"
       >
-        <span
-          className="flex shrink-0 items-center justify-center rounded-[10px] text-[12px] font-extrabold text-neutral-600"
-          style={{ width: 34, height: 34, background: current ? "#fff" : MONO_BG }}
-        >
-          {monogram(name)}
-        </span>
         {/* min-w-0 is what lets the two lines truncate — a flex child defaults
             to min-width:auto and would otherwise push the row past the viewport. */}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14.5px] font-bold" style={{ color: INK }}>{name}</span>
-          <span className="block truncate font-mono text-[11px] text-neutral-400">
+          <span className="block truncate text-[15px] font-bold" style={{ color: INK }}>{name}</span>
+          <span className="block truncate font-mono text-[11.5px]" style={{ color: MUTED }}>
             {code}{area ? ` · ${area}` : ""}
           </span>
         </span>
       </button>
 
-      {/* Its own button, so the tap CANNOT fall through and open the dealer.
-          A separate element rather than a stopPropagation() hack: the two are
-          genuinely different actions and the DOM should say so. */}
-      <button
-        type="button"
-        aria-label={isFav ? `Remove ${name} from favourites` : `Add ${name} to favourites`}
-        aria-pressed={isFav}
-        onClick={onToggleFav}
-        className="flex shrink-0 items-center justify-center"
-        style={{ width: 44, height: 44 }}
-      >
-        <StarGlyph filled={isFav} />
-      </button>
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={`Remove ${name} from my dealers`}
+          onClick={onRemove}
+          className="flex shrink-0 items-center justify-center"
+          style={{ width: 44, height: 44 }}
+        >
+          <X className="h-4 w-4" strokeWidth={2.5} style={{ color: FAINT }} />
+        </button>
+      )}
 
       <span className="flex shrink-0 items-center pr-4">
         {current
           ? <Check className="h-4 w-4" strokeWidth={3} style={{ color: VIOLET }} />
-          : <ChevronRight className="h-4 w-4" strokeWidth={2.5} style={{ color: CHEVRON }} />}
+          : <ChevronRight className="h-4 w-4" strokeWidth={2.5} style={{ color: FAINT }} />}
       </span>
     </div>
   );
 }
 
-/** Small grey uppercase section label. The favourites heading is the star alone. */
+/** Small uppercase section label. */
 function SectionLabel({ text }: { text: string }): React.JSX.Element {
   return (
     <div className="px-4 pt-4 pb-1.5">
-      <span className="text-[10px] font-extrabold uppercase text-neutral-400"
-            style={{ letterSpacing: "0.1em" }}>
+      <span className="text-[10px] font-extrabold uppercase" style={{ letterSpacing: "0.1em", color: FAINT }}>
         {text}
       </span>
     </div>
@@ -152,80 +134,86 @@ function SectionLabel({ text }: { text: string }): React.JSX.Element {
 /**
  * The list body.
  *
- * Empty query: FAVOURITES (star heading alone) → RECENT → ALL DEALERS. A
- * favourite is not repeated under Recent — it is already one tap away at the
- * top, and a duplicate row two sections down just costs scroll. It DOES stay
- * under All Dealers, which is the complete list and would be lying otherwise.
+ * EMPTY QUERY: the salesman's OWN dealers, and nothing else.
  *
- * With a query: matches only, no headings. Stars stay tappable throughout.
+ * 🔴 THERE IS NO ALL-DEALERS LIST AND NO BROWSE BUTTON, DELIBERATELY. Seven
+ * hundred alphabetical rows is not a list anyone reads; it is a wall you scroll
+ * past on the way to the search box you were going to use anyway. A dealer who
+ * is not on his list is reached by TYPING, which is faster than finding him in
+ * an index and always was. Do not add a browse affordance back in.
  *
- * The full alphabetical list renders unvirtualised. That is a deliberate
- * choice for ~698 plain rows — no images, no per-row effects — and it is the
- * reason nothing heavier was put in a row. If it stutters on a real phone,
- * paging is the fix, not a card redesign.
+ * WITH A QUERY: his own list is filtered first and shown under "My dealers",
+ * then every other dealer in the master falls through underneath. That
+ * fall-through is what makes the missing browse list unnecessary — and it is
+ * load-bearing for ship-to, which routinely names a third party the salesman
+ * has never ordered FOR. Cross-billing depends on it.
  */
 export function CustomerListBody({
-  customers, recents, favs, query, currentCode, onPick, onToggleFav,
+  customers, mine, query, currentCode, onPick, onRemove,
 }: {
   customers: ApiCustomer[];
-  recents: V2Recent[];
-  favs: { name: string; code: string; area: string | null }[];
+  mine: V2Dealer[];
   query: string;
   currentCode?: string | null;
   onPick: (c: ApiCustomer) => void;
-  onToggleFav: (c: ApiCustomer) => void;
+  /** Given only where removing from the list makes sense. */
+  onRemove?: (code: string) => void;
 }): React.JSX.Element {
   const trimmed = query.trim();
-  const favCodes = new Set(favs.map((f) => f.code));
+  const mineCodes = new Set(mine.map((m) => m.code));
 
-  const row = (c: ApiCustomer, keyPrefix: string): React.JSX.Element => (
+  const row = (c: ApiCustomer, keyPrefix: string, removable: boolean): React.JSX.Element => (
     <CustomerRow
       key={`${keyPrefix}-${c.code}`}
       name={c.name} code={c.code} area={c.area}
       current={currentCode === c.code}
-      isFav={favCodes.has(c.code)}
       onPick={() => onPick(c)}
-      onToggleFav={() => onToggleFav(c)}
+      onRemove={removable && onRemove ? () => onRemove(c.code) : undefined}
     />
   );
 
   if (trimmed.length > 0) {
-    const matches = searchCustomers(customers, trimmed);
-    if (matches.length === 0) {
+    const hits = searchCustomers(customers, trimmed);
+    const mineHits = hits.filter((c) => mineCodes.has(c.code));
+    const rest = hits.filter((c) => !mineCodes.has(c.code));
+    if (hits.length === 0) {
       return (
-        <p className="px-4 py-10 text-center text-[13px] text-neutral-400">
+        <p className="px-4 py-10 text-center text-[13px]" style={{ color: FAINT }}>
           No dealer matches {trimmed}
         </p>
       );
     }
-    return <div>{matches.map((c) => row(c, "hit"))}</div>;
+    return (
+      <div>
+        {mineHits.length > 0 && (
+          <>
+            <SectionLabel text="My dealers" />
+            {mineHits.map((c) => row(c, "mine-hit", false))}
+          </>
+        )}
+        {rest.length > 0 && (
+          <>
+            {mineHits.length > 0 && <SectionLabel text="All dealers" />}
+            {rest.map((c) => row(c, "hit", false))}
+          </>
+        )}
+      </div>
+    );
   }
 
-  // A favourite is pinned to the top, so it does not need a Recent row too.
-  const recentRows = recents.filter((r) => !favCodes.has(r.code));
-  const byName = [...customers].sort((a, b) => a.name.localeCompare(b.name));
+  if (mine.length === 0) {
+    return (
+      <p className="px-4 py-10 text-center text-[13px] leading-relaxed" style={{ color: FAINT }}>
+        Type a dealer name or code.
+        <br />
+        Whoever you send an order to lands here.
+      </p>
+    );
+  }
 
   return (
     <div>
-      {favs.length > 0 && (
-        <>
-          {/* The star IS the heading — no word, by spec. */}
-          <div className="px-4 pt-3 pb-1.5">
-            <StarGlyph filled size={18} />
-          </div>
-          {favs.map((f) => row({ name: f.name, code: f.code, area: f.area }, "fav"))}
-        </>
-      )}
-
-      {recentRows.length > 0 && (
-        <>
-          <SectionLabel text="Recent" />
-          {recentRows.map((r) => row({ name: r.name, code: r.code, area: r.area }, "recent"))}
-        </>
-      )}
-
-      <SectionLabel text="All dealers" />
-      {byName.map((c) => row(c, "all"))}
+      {mine.map((m) => row({ name: m.name, code: m.code, area: m.area }, "mine", true))}
     </div>
   );
 }

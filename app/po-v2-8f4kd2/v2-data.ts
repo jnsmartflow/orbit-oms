@@ -7,17 +7,39 @@
 // source named, so deleting this one folder removes v2 whole.
 
 // ── Design tokens ──────────────────────────────────────────────────────────
-export const RULE      = "#E9E7ED";             // hairline borders + rules
-export const INK       = "#16151A";             // near-black text
-export const VIOLET    = "#6D28D9";             // violet-700, the v2 accent
-export const VIOLET_BG = "#F5F1FE";             // selected-chip / active-tile fill
-export const SEARCH_BG = "#F4F3F7";
-export const SCRIM     = "rgba(18,14,26,.42)";
+//
+// 🔴 THE NEUTRALS CARRY A VIOLET TINT ON PURPOSE. #74718A is not #737373 with a
+// rounding error — every grey here is pulled a few points toward the brand hue
+// so that a border beside a violet button reads as part of the same object
+// rather than as a stray from a different design. Substituting plain greys is
+// the one change that would quietly undo the whole palette, so do not.
+//
+// Three violets, and they do different jobs. Mixing them up is how a screen
+// ends up with two things that look equally like the primary action.
+export const BRAND      = "#7C3AED";  // brand.600 — THE ONE commit button per
+                                      // screen, the theme colour, the focus ring
+export const VIOLET     = "#6D28D9";  // brand.700 — every tappable TEXT
+export const BRAND_DEEP = "#5B21B6";  // brand.800 — the wordmark on white
 
-export const STAR      = "#F0A020";             // the recents star
-export const DIVIDER   = "#F3F2F6";             // list-row dividers
-export const MONO_BG   = "#F2F1F5";             // monogram square fill
-export const CHEVRON   = "#C7C3CE";
+export const SURFACE    = "#FFFFFF";  // cards, sheets, bars
+export const PAGE       = "#FAFAFC";  // the page behind them
+export const FILL       = "#F4F3F8";  // inputs, inert squares
+export const RULE       = "#E9E7F0";  // EVERY border, without exception
+export const FAINT      = "#9C99AC";  // placeholders, disabled, chevrons
+export const MUTED      = "#74718A";  // second lines, captions
+export const BODY       = "#3A3748";  // ordinary text
+export const INK        = "#1B1826";  // headings and anything that must land
+
+export const VIOLET_BG  = "#F5F1FE";  // selected-chip / in-cart tile wash
+export const SCRIM      = "rgba(18,14,26,.42)";
+export const SEARCH_BG  = FILL;
+/** One border colour means one token. Kept as a name because rows read better
+ *  saying DIVIDER, but it is RULE and must stay RULE. */
+export const DIVIDER    = RULE;
+
+/** The brand gradient. Screen only — it never goes on paper. */
+export const BRAND_GRADIENT =
+  "radial-gradient(125% 125% at 26% 20%, #A78BFA 0%, #7C3AED 44%, #581C87 100%)";
 
 // ── The payload from GET /api/order/data ───────────────────────────────────
 // Field names and nesting mirror app/api/order/data/route.ts exactly. `packs`
@@ -1119,62 +1141,3 @@ export function searchCustomers(customers: ApiCustomer[], rawQuery: string): Api
   return [...codePrefix, ...nameHits, ...codeSub].slice(0, SEARCH_CAP);
 }
 
-/** First letters of the first two words — "Ambika Paints" -> "AP". */
-export function monogram(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
-}
-
-// ── Recent dealers (localStorage) ──────────────────────────────────────────
-// 🔴 v2's OWN key. It never reads or writes any `po_*` key — /po's recents
-// (`po_recent_customers`, cap 6), favourites, drafts and sent list all stay
-// untouched, so running both apps on one phone cannot cross-contaminate.
-
-const RECENTS_KEY = "po2_recent_customers";
-const RECENTS_CAP = 8;
-
-export type V2Recent = { name: string; code: string; area: string | null; ts: number };
-type RecentStore = { version: 1; list: V2Recent[] };
-
-/**
- * Every read and write is wrapped: private mode throws on ACCESS, not just on
- * write, and a full quota throws on set. Recents are a convenience — losing
- * them must never take the page down with them.
- */
-export function loadRecents(): V2Recent[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(RECENTS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as Partial<RecentStore> | null;
-    if (!parsed || !Array.isArray(parsed.list)) return [];
-    return parsed.list
-      .filter((e): e is V2Recent =>
-        !!e && typeof e.name === "string" && typeof e.code === "string")
-      .map((e) => ({
-        name: e.name,
-        code: e.code,
-        area: typeof e.area === "string" ? e.area : null,
-        ts:   typeof e.ts === "number" ? e.ts : 0,
-      }))
-      .slice(0, RECENTS_CAP);
-  } catch {
-    return [];
-  }
-}
-
-/** Move this dealer to the top (deduped by code), persist, return the new list. */
-export function addRecent(c: ApiCustomer): V2Recent[] {
-  const entry: V2Recent = { name: c.name, code: c.code, area: c.area ?? null, ts: Date.now() };
-  const next = [entry, ...loadRecents().filter((e) => e.code !== entry.code)].slice(0, RECENTS_CAP);
-  if (typeof window !== "undefined") {
-    try {
-      const store: RecentStore = { version: 1, list: next };
-      window.localStorage.setItem(RECENTS_KEY, JSON.stringify(store));
-    } catch {
-      // Quota / private mode — best-effort, and the returned list still
-      // updates the current session even though it will not survive a reload.
-    }
-  }
-  return next;
-}

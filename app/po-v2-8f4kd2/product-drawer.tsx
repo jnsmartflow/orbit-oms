@@ -6,7 +6,7 @@ import { Minus, Plus, Search, X } from "lucide-react";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
-  INK, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
+  BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
   baseChipLabel, chipLimit, chipStyle, formatPack, isLightHex, packsOf, shadeHex,
   shadeRowMode, snapToBox,
   stepForLabel, unitsIn,
@@ -321,7 +321,7 @@ export default function ProductDrawer({
           else if (selectedRow) onAdd([{ option: selected, row: selectedRow, qtys }]);
         }}
         className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-        style={{ background: canAdd ? VIOLET : "#C9C6D2" }}
+        style={{ background: canAdd ? BRAND : FAINT }}
       >
         {addLabel}
       </button>
@@ -342,15 +342,15 @@ export default function ProductDrawer({
                 {selectionLine}
               </p>
             ) : (
-              <p className="truncate text-[11.5px] text-neutral-400">{product.family}</p>
+              <p className="truncate text-[11.5px]" style={{ color: MUTED }}>{product.family}</p>
             )}
           </div>
           <button
             type="button" aria-label="Close" onClick={onClose}
             className="flex shrink-0 items-center justify-center rounded-full"
-            style={{ width: 30, height: 30, background: "#F1F0F4" }}
+            style={{ width: 30, height: 30, background: FILL }}
           >
-            <X className="h-4 w-4 text-neutral-500" strokeWidth={2.5} />
+            <X className="h-4 w-4" strokeWidth={2.5} style={{ color: MUTED }} />
           </button>
         </div>
 
@@ -372,13 +372,13 @@ export default function ProductDrawer({
             {shadeSearchOpen ? (
               <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
                 <div className="flex items-center gap-2 rounded-[12px] px-3" style={{ background: SEARCH_BG }}>
-                  <Search className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2.5} />
+                  <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
                   <input
                     type="text" inputMode="search" autoComplete="off" autoFocus
                     value={shadeQuery}
                     onChange={(e) => setShadeQuery(e.target.value)}
                     placeholder="Type a shade name"
-                    className="min-w-0 flex-1 bg-transparent py-2.5 text-[16px] outline-none placeholder:text-neutral-400"
+                    className="min-w-0 flex-1 bg-transparent py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
                     style={{ color: INK }}
                   />
                   <button
@@ -444,7 +444,7 @@ export default function ProductDrawer({
             {shadeSearchOpen ? (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {shadeMatches.length === 0 ? (
-                  <p className="px-4 py-10 text-center text-[13px] text-neutral-400">
+                  <p className="px-4 py-10 text-center text-[13px]" style={{ color: FAINT }}>
                     No shade matches {shadeQuery.trim()}
                   </p>
                 ) : shadeMatches.map((opt) => {
@@ -502,7 +502,7 @@ function TabButton({ label, active, onClick }: {
     <button
       type="button" onClick={onClick}
       className="pb-2 text-[15px] font-extrabold"
-      style={{ color: active ? INK : "#9A96A6", borderBottom: `2.5px solid ${active ? VIOLET : "transparent"}` }}
+      style={{ color: active ? INK : MUTED, borderBottom: `2.5px solid ${active ? VIOLET : "transparent"}` }}
     >
       {label}
     </button>
@@ -524,7 +524,7 @@ function PackRow({ label, step, qty, onStep, onType }: {
       <div className="min-w-0">
         <p className="text-[16px] font-extrabold leading-tight" style={{ color: INK }}>{label}</p>
         {step > 1 && (
-          <p className="font-mono text-[11px] leading-tight text-neutral-400">per {step}</p>
+          <p className="font-mono text-[11px] leading-tight" style={{ color: MUTED }}>per {step}</p>
         )}
       </div>
       <div className="flex shrink-0 items-center rounded-full" style={{ border: `1px solid ${RULE}` }}>
@@ -595,7 +595,7 @@ function QtyField({ qty, step, label, onCommit }: {
         aria-label={`Quantity for ${label}, ${qty} units. Tap to type.`}
         onClick={() => { setDraft(qty === 0 ? "" : String(qty)); committed.current = false; setEditing(true); }}
         className="w-11 text-center font-mono text-[16px] font-extrabold tabular-nums"
-        style={{ color: qty === 0 ? "#C9C6D2" : INK }}
+        style={{ color: qty === 0 ? FAINT : INK }}
       >
         {qty}
       </button>

@@ -6,7 +6,7 @@ import { Search, X } from "lucide-react";
 // modified, and its whole import graph (keyword-family-map,
 // sub-product-descriptors) is lib-only — verified by grep for `app/`.
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
-import { INK, RULE, SEARCH_BG, VIOLET, type ApiProduct } from "./v2-data";
+import { FAINT, INK, MUTED, RULE, SEARCH_BG, VIOLET, type ApiProduct } from "./v2-data";
 
 // The board's product search. ONE ROW PER PRODUCT — searching "pearl glo"
 // returns "Pearl Glo" once, not eleven rows one per base. Tapping it opens the
@@ -30,7 +30,7 @@ export function ProductSearchInput({
 }): React.JSX.Element {
   return (
     <div className="flex items-center gap-2 rounded-[12px] px-3" style={{ background: SEARCH_BG }}>
-      <Search className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2.5} />
+      <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
       <input
         type="text"
         inputMode="search"
@@ -39,7 +39,7 @@ export function ProductSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search product"
-        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none placeholder:text-neutral-400"
+        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none placeholder:text-[#9C99AC]"
         style={{ color: INK }}
       />
       {value.length > 0 && (
@@ -48,7 +48,7 @@ export function ProductSearchInput({
           aria-label="Clear search"
           onClick={() => onChange("")}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-          style={{ background: "#DEDCE3" }}
+          style={{ background: FAINT }}
         >
           <X className="h-3 w-3 text-white" strokeWidth={3} />
         </button>
@@ -129,7 +129,7 @@ export function ProductResults({
   if (groups.length === 0) {
     // No suggestions, no fallback list — an empty result is an answer.
     return (
-      <p className="px-4 py-12 text-center text-[13px] text-neutral-400">
+      <p className="px-4 py-12 text-center text-[13px]" style={{ color: FAINT }}>
         No product matches {query.trim()}
       </p>
     );
@@ -150,7 +150,7 @@ export function ProductResults({
               {groupDisplayName(g, labelFor(g.key))}
             </span>
             {/* Family only. The base is INSIDE the drawer now. */}
-            <span className="block truncate text-[12px] text-neutral-400">{g.best.family}</span>
+            <span className="block truncate text-[12px]" style={{ color: MUTED }}>{g.best.family}</span>
           </span>
           <span
             className="shrink-0 rounded-[10px] bg-white px-3 py-1.5 text-[13px] font-extrabold"

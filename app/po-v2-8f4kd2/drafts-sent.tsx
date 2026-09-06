@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, X } from "lucide-react";
-import { DIVIDER, INK, RULE } from "./v2-data";
+import { DIVIDER, FAINT, INK, MUTED, RULE } from "./v2-data";
 import {
   formatSavedAt, formatTime, summaryLine, unitsOf,
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
@@ -39,7 +39,7 @@ function ListShell({ title, onBack, children }: {
 
 /** Empty state: one grey line, nothing else. No illustration, no call to action. */
 function Empty({ text }: { text: string }): React.JSX.Element {
-  return <p className="px-4 py-12 text-center text-[13px] text-neutral-400">{text}</p>;
+  return <p className="px-4 py-12 text-center text-[13px]" style={{ color: FAINT }}>{text}</p>;
 }
 
 export function DraftsScreen({ drafts, onBack, onOpen, onRemove }: {
@@ -70,7 +70,7 @@ export function DraftsScreen({ drafts, onBack, onOpen, onRemove }: {
               onClick={() => onRemove(d.id)}
               className="flex h-5 w-5 shrink-0 items-center justify-center"
             >
-              <X className="h-4 w-4 text-neutral-300" strokeWidth={2.5} />
+              <X className="h-4 w-4" strokeWidth={2.5} style={{ color: FAINT }} />
             </button>
           </div>
         ))
@@ -121,15 +121,15 @@ function OrderSummary({ snapshot, stamp }: {
         <span className="block truncate text-[14.5px] font-semibold" style={{ color: INK }}>
           {snapshot.customer.name}
         </span>
-        <span className="block truncate text-[12px] text-neutral-400">
+        <span className="block truncate text-[12px]" style={{ color: MUTED }}>
           {summaryLine(snapshot)}
         </span>
       </span>
       <span className="shrink-0 text-right">
-        <span className="block whitespace-nowrap font-mono text-[11px] text-neutral-400">
+        <span className="block whitespace-nowrap font-mono text-[11px]" style={{ color: MUTED }}>
           {stamp}
         </span>
-        <span className="block whitespace-nowrap font-mono text-[11px] text-neutral-400">
+        <span className="block whitespace-nowrap font-mono text-[11px]" style={{ color: MUTED }}>
           {unitsOf(snapshot)} units
         </span>
       </span>

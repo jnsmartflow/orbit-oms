@@ -21,39 +21,44 @@ import { NextResponse } from "next/server";
 // waved through even if the matcher did run. Both permit it; only the matcher
 // is actually operative. Nothing in middleware.ts was edited.
 //
-// Icons REFERENCE the existing files public/po.webmanifest already points at
-// (/icon-192.png, /icon-512.png). Nothing was copied, moved or added.
+// Icons are v2's OWN, in public/brand/. They used to reference /icon-192.png
+// and /icon-512.png, which are the teal Orbit ring — the main app's mark on a
+// violet app, which was wrong on every home screen it ever landed on.
 
 export const dynamic = "force-dynamic";
 
-// Mirrors public/po.webmanifest. Divergences are the six identity fields the
-// v2 install needs, PLUS the two colours; description, display_override,
-// orientation and icons are carried across verbatim.
+// 🎨 background_color and theme_color are the FLAT brand.600, #7C3AED — never
+// the gradient. A manifest colour is a single value by definition, and Android
+// paints it behind the app while it starts; the gradient belongs on a rendered
+// surface where it can actually be a gradient.
 //
-// 🎨 background_color / theme_color are #FFFFFF, NOT po.webmanifest's #0d9488.
-// The teal is /po's brand. v2 is white with violet accents, so a teal splash
-// screen and a teal Android status bar would both be wrong on this app.
+// 🔴 EVERY ICON IS "any maskable", and the PNGs behind them are FULL-BLEED with
+// no baked corner radius. Both platforms apply their own mask — iOS a squircle,
+// Android whatever the launcher uses, and "maskable" is an explicit promise
+// that cropping to a circle is safe. A radius baked into the file shows up as a
+// rounded square inside the platform's mask with its corners cut twice. The
+// word sits at 62% of the tile, whose corners need a circle of 65.6% against
+// the 80% the maskable contract guarantees.
 //
 // NOTE: `id` is an ADDITION, not a change — public/po.webmanifest has no `id`
 // key at all. Without one a browser derives the app id from start_url, which
 // would still be distinct here; it is stated explicitly so the v2 install can
 // never be folded into the /po install on a device that has both.
 const MANIFEST = {
-  name: "Orbit v2",
-  short_name: "Orbit v2",
+  name: "Orbit",
+  short_name: "Orbit",
   description: "Place a depot order — JSW Dulux Surat Depot",
   id: "/po-v2-8f4kd2",
   start_url: "/po-v2-8f4kd2",
   scope: "/po-v2-8f4kd2",
   display: "standalone",
   display_override: ["standalone"],
-  background_color: "#FFFFFF",
-  theme_color: "#FFFFFF",
+  background_color: "#7C3AED",
+  theme_color: "#7C3AED",
   orientation: "portrait",
   icons: [
-    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    { src: "/brand/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+    { src: "/brand/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
   ],
 } as const;
 

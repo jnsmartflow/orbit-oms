@@ -21,7 +21,8 @@ import type {
 const LIVE_KEY   = "po2_draft";
 const DRAFTS_KEY = "po2_saved_drafts";
 const SENT_KEY   = "po2_sent_orders";
-const FAVS_KEY   = "po2_fav_customers";
+const FAVS_KEY   = "po2_fav_customers";   // read once, for the seed below
+const MINE_KEY   = "po2_my_dealers";
 
 const MAX_FAVS     = 12;
 const MAX_DRAFTS   = 20;
@@ -258,21 +259,68 @@ export function loadFavs(): V2Fav[] {
     .slice(0, MAX_FAVS);
 }
 
+// ── My dealers ─────────────────────────────────────────────────────────────
+//
+// The list BUILDS ITSELF: sending an order puts that dealer on it. Nothing to
+// star, nothing to curate, and no all-dealers list behind it — a dealer who is
+// not on it is reached by typing his name. A salesman covers the same forty
+// shops; a list he had to maintain would be a list he stopped maintaining.
+
+/** Newest first. `at` is the last time an order went out to them. */
+export type V2Dealer = { name: string; code: string; area: string | null; at: number };
+type MineStore = { version: 1; dealers: V2Dealer[] };
+
+const MAX_MINE = 60;
+
 /**
- * Toggle, and return the new list.
+ * 🔴 SEEDED ONCE FROM THE OLD FAVOURITES, THEN NEVER AGAIN.
  *
- * A 13th add pushes the OLDEST off the end rather than refusing. /po's
- * favourites block the 9th with a "full" message; here the star is on every
- * row and a salesman starring one more should not have to go hunting for
- * something to unstar first. The cap protects the list's usefulness, not the
- * storage.
+ * Starring is gone, but somebody has twelve dealers pinned on their phone right
+ * now and they must not quietly vanish on the next deploy. So the FIRST read
+ * after this ships — recognised by po2_my_dealers being absent, not by a flag
+ * that could itself fail to write — folds po2_fav_customers in and saves the
+ * result, after which the seed can never run twice.
+ *
+ * po2_fav_customers is LEFT IN PLACE. It costs nothing and it is the only copy
+ * if this merge turns out to be wrong.
  */
-export function toggleFav(c: V2Fav): V2Fav[] {
-  const current = loadFavs();
-  const next = current.some((f) => f.code === c.code)
-    ? current.filter((f) => f.code !== c.code)
-    : [{ name: c.name, code: c.code, area: c.area ?? null }, ...current].slice(0, MAX_FAVS);
-  writeRaw(FAVS_KEY, { version: 1, favs: next } satisfies FavStore);
+export function loadMyDealers(): V2Dealer[] {
+  const parsed = readRaw(MINE_KEY) as Partial<MineStore> | null;
+  if (parsed && Array.isArray(parsed.dealers)) return clean(parsed.dealers);
+
+  const seeded = loadFavs().map((f, i) => ({
+    name: f.name, code: f.code, area: f.area,
+    // Ordered behind anything sent later, but keeping the order they were
+    // starred in. 1 not 0, so a seeded dealer is never mistaken for unset.
+    at: 1 + (MAX_MINE - i),
+  }));
+  writeRaw(MINE_KEY, { version: 1, dealers: seeded } satisfies MineStore);
+  return seeded;
+}
+
+function clean(rows: V2Dealer[]): V2Dealer[] {
+  return rows
+    .filter((r): r is V2Dealer => !!r && typeof r.name === "string" && typeof r.code === "string")
+    .map((r) => ({
+      name: r.name, code: r.code,
+      area: typeof r.area === "string" ? r.area : null,
+      at: typeof r.at === "number" ? r.at : 1,
+    }))
+    .sort((x, y) => y.at - x.at)
+    .slice(0, MAX_MINE);
+}
+
+/** Called when an order is SENT — not when a dealer is merely opened. */
+export function addMyDealer(c: { name: string; code: string; area: string | null }): V2Dealer[] {
+  const rest = loadMyDealers().filter((d) => d.code !== c.code);
+  const next = clean([{ name: c.name, code: c.code, area: c.area ?? null, at: Date.now() }, ...rest]);
+  writeRaw(MINE_KEY, { version: 1, dealers: next } satisfies MineStore);
+  return next;
+}
+
+export function removeMyDealer(code: string): V2Dealer[] {
+  const next = loadMyDealers().filter((d) => d.code !== code);
+  writeRaw(MINE_KEY, { version: 1, dealers: next } satisfies MineStore);
   return next;
 }
 

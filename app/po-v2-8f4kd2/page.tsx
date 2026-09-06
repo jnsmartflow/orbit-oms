@@ -35,29 +35,35 @@ export const dynamic = "force-dynamic";
 // underneath and overlapping the top bar. app/layout.tsx stays
 // "black-translucent" for every other route.
 //
-// No `icons` key here, deliberately. Next merges metadata PER FIELD, and
-// app/layout.tsx:40 already declares
-// `icons.apple = { url: "/apple-touch-icon.png", sizes: "180x180" }`. Because
-// this object does not set `icons`, that global value is inherited unchanged —
-// so the iOS home-screen icon still resolves without v2 restating it or
-// referencing any new asset.
+// 🔴 iOS IGNORES THE MANIFEST FOR HOME-SCREEN ICONS. It reads the
+// apple-touch-icon <link> and nothing else, so declaring icons in the manifest
+// above does not reach an iPhone at all. This route used to set no `icons` key
+// and inherited app/layout.tsx:40's `/apple-touch-icon.png` — the teal OrbitOMS
+// ring, on a violet app. Setting it HERE overrides that for this route only;
+// Next merges metadata per FIELD, so app/layout.tsx is untouched and every
+// other route keeps the teal.
 export const metadata: Metadata = {
-  title: "Orbit v2",
+  title: "Orbit",
   manifest: "/po-v2-8f4kd2/manifest.webmanifest",
+  icons: {
+    apple: { url: "/brand/apple-touch-icon.png", sizes: "180x180" },
+  },
   appleWebApp: {
     capable: true,
-    title: "Orbit v2",
+    title: "Orbit",
     statusBarStyle: "default",
   },
 };
 
-// ⚠ themeColor lives on the VIEWPORT export, not on `metadata`.
+// ⚠ themeColor lives on the VIEWPORT export, not on `metadata`. It is the FLAT
+// brand.600 — a status bar takes one colour, and the gradient is a rendered
+// surface, never a token.
 //
 // The task said to add it to the Metadata export. In Next 14 that field is
 // DEPRECATED there: `metadata.themeColor` logs "Unsupported metadata
 // themeColor is configured in metadata export. Please move it to viewport
 // export instead." and is not honoured. Putting it here is the same one-line
-// intent, in the one place that actually paints the status bar white.
+// intent, in the one place that actually paints the status bar.
 //
 // The teal comes from app/layout.tsx:45 — `export const viewport: Viewport =
 // { themeColor: "#0d9488", ... }`. That file is NOT edited (reported, per the
@@ -67,7 +73,7 @@ export const metadata: Metadata = {
 // maximumScale / userScalable / interactiveWidget untouched. Every other
 // route keeps the teal.
 export const viewport: Viewport = {
-  themeColor: "#FFFFFF",
+  themeColor: "#7C3AED",
 };
 
 export default function Page() {

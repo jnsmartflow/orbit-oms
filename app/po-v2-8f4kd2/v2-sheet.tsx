@@ -120,7 +120,7 @@ export default function V2Sheet({
         }}
       >
         <div className="flex shrink-0 justify-center pt-2.5 pb-1">
-          <span className="block rounded-full" style={{ width: 38, height: 4.5, background: "#DEDCE3" }} />
+          <span className="block rounded-full" style={{ width: 38, height: 4.5, background: RULE }} />
         </div>
 
         {children}
