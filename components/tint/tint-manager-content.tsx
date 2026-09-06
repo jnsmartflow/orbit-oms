@@ -140,6 +140,14 @@ export function TintManagerContent() {
   // again. Here the operator was already chosen in the rail popover, so replaying
   // it is what "resume where you left off" actually means.
   const [pendingAssign, setPendingAssign] = useState<{ orderId: number; operatorId: number } | null>(null);
+  /**
+   * The same remembered-intent slot as `pendingAssign` above, for the Base —
+   * No Tint bypass. Kept as a SEPARATE state rather than widened into
+   * `pendingAssign` so the Assign chain — its effect, its cancel clause and its
+   * replay — stays byte-identical; the two intents are mutually exclusive in
+   * practice (one sheet, one order) but nothing here depends on that.
+   */
+  const [pendingBypass, setPendingBypass] = useState<{ orderId: number } | null>(null);
   const sheetResolvedRef = useRef(false);
 
   // ── Fetching ──────────────────────────────────────────────────────────────
@@ -398,14 +406,30 @@ export function TintManagerContent() {
   /**
    * "Base — No Tint" — close a pending bill that needs no tinting at all.
    *
-   * Same write/toast/refresh shape as handleAssign above, minus the
-   * customer-missing interceptor: /api/tint/manager/base-bypass does not refuse
-   * a customerMissing bill (assign/route.ts does), so intercepting here would
-   * be the UI inventing a rule the server does not enforce. The bypass is
-   * offered only from the two PENDING surfaces (rail card + detail panel's
-   * pending branch); the route 400s on anything past pending_tint_assignment.
+   * Same write/toast/refresh shape as handleAssign above, and the SAME
+   * customer-missing interceptor: a customerMissing bill never reaches the
+   * bypass call — it opens CustomerMissingSheet with an amber warning instead,
+   * and the intent is remembered so the bypass re-fires by itself once the flag
+   * flips false. The server refuses it too (a 400 from base-bypass/route.ts),
+   * so this is the affordance, not the rule.
+   *
+   * ⚠ The check is on the ORDER we already hold, before the fetch — exactly as
+   * handleAssign does it. Neither path reads the server's rejection to decide
+   * whether to open the sheet; the 400 is the backstop for a direct API call.
+   *
+   * The bypass is offered only from the two PENDING surfaces (rail card +
+   * detail panel's pending branch); the route 400s on anything past
+   * pending_tint_assignment.
    */
   const handleBaseBypass = useCallback(async (order: TintOrder) => {
+    if (order.customerMissing) {
+      setPendingBypass({ orderId: order.id });
+      sheetResolvedRef.current = false;
+      setMissingSheetWarning("Resolve customer details first before marking it Base — No Tint.");
+      setMissingSheetOrder(order);
+      setMissingSheetOpen(true);
+      return;
+    }
     setWriteBusy(true);
     setPanelError(null);
     let err: string | null = null;
@@ -449,6 +473,19 @@ export function TintManagerContent() {
     setPendingAssign(null);
     void handleAssign(fresh, operatorId);
   }, [payload, pendingAssign, handleAssign]);
+
+  // The same chain for Base — No Tint: once the sheet resolves and the
+  // refreshed order is no longer customerMissing, replay the interrupted
+  // BYPASS — never handleAssign, which would silently hand the bill to an
+  // operator the manager never chose.
+  useEffect(() => {
+    if (!pendingBypass) return;
+    const fresh = payload.orders.find((o) => o.id === pendingBypass.orderId);
+    if (!fresh) { setPendingBypass(null); return; }  // gone from the board
+    if (fresh.customerMissing) return;                // still missing — keep waiting
+    setPendingBypass(null);
+    void handleBaseBypass(fresh);
+  }, [payload, pendingBypass, handleBaseBypass]);
 
   /** Single re-assign of a whole order, from the panel. Waiting rows only. */
   const handleReassignOrder = useCallback(async (row: BoardRow, operatorId: number) => {
@@ -897,6 +934,9 @@ export function TintManagerContent() {
           // Cancel just drops the Assign intent — the amber strip already said
           // why, and the ⓘ on the rail card is the persistent reminder.
           if (!next && !sheetResolvedRef.current && pendingAssign) setPendingAssign(null);
+          // Same for a cancelled Base — No Tint, on its own state so the Assign
+          // clause above is untouched.
+          if (!next && !sheetResolvedRef.current && pendingBypass) setPendingBypass(null);
           if (!next) setMissingSheetWarning(undefined);
           setMissingSheetOpen(next);
         }}
