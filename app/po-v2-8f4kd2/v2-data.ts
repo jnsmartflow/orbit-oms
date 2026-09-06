@@ -247,18 +247,10 @@ export const CURATION: Record<string, V2Curation> = {
   "MULTI PURPOSE THINNER":    { bases: NONE, shades: NONE, variants: NONE },
 };
 
-/** The nine bases offered behind "+ More" on the Base tab. Step 7 makes it live. */
-export const ALL_BASES: readonly { code: string; word: string }[] = [
-  { code: "BW",  word: "WHITE" },
-  { code: "90",  word: "BASE" },
-  { code: "91",  word: "BASE" },
-  { code: "92",  word: "BASE" },
-  { code: "93",  word: "BASE" },
-  { code: "94",  word: "BASE" },
-  { code: "P1",  word: "PASTEL" },
-  { code: "D1",  word: "DEEP" },
-  { code: "CLR", word: "CLEAR" },
-];
+// (The nine hard-coded "+ More" bases are GONE. "+ More" is no longer a second
+// mechanism with its own invented list — it now runs the real product search,
+// pre-filled with the product's name, so it returns that product's actual
+// other options from the catalog. See ProductDrawer's `onMore`.)
 
 // ── The join ───────────────────────────────────────────────────────────────
 
@@ -417,6 +409,62 @@ export function buildCatalog(products: ApiProduct[]): {
   return { byTile, report };
 }
 
+/**
+ * Turn ONE searched menu row into something the drawer can open on, with that
+ * row's option already selected.
+ *
+ * Three cases, and the middle one is the reason this exists:
+ *
+ *  - The product is a TILE and the row's option is already curated -> hand back
+ *    the curated resolution untouched. The salesman sees the same short chip
+ *    row he sees from the board, with his hit selected.
+ *  - The product is a TILE but the option is NOT curated (he searched "Gloss
+ *    Cascade Green", one of the 34 shades the curated six do not cover) ->
+ *    APPEND that option to the row. It must be visible and selected; showing
+ *    the curated six with none of them selected would silently discard what he
+ *    actually searched for.
+ *  - The product is NOT a tile at all (most of the 143 catalog products) ->
+ *    synthesise a one-option resolution from the row itself.
+ */
+export function resolveForSearch(
+  row: ApiProduct,
+  byTile: Map<string, V2Resolved>,
+): { product: V2Resolved; initialOption: string | null } {
+  const key    = row.product ?? row.subProduct;   // RULE 1, again
+  const tile   = byTile.get(key);
+  const option = row.baseColour;
+
+  if (!tile) {
+    return {
+      product: {
+        sap: key, label: row.displayName, family: row.family,
+        bases:    option === null ? [] : [{ value: option, row }],
+        shades:   [], variants: [],
+        noOptionRow: option === null ? row : null,
+      },
+      initialOption: option,
+    };
+  }
+
+  if (option === null) return { product: tile, initialOption: null };
+
+  const known =
+    tile.bases.some((o) => o.value === option) ||
+    tile.shades.some((o) => o.value === option) ||
+    tile.variants.some((o) => o.value === option);
+  if (known) return { product: tile, initialOption: option };
+
+  // Append to whichever list the drawer will actually be showing.
+  const extra: V2Option = { value: option, row };
+  if (tile.variants.length > 0) {
+    return { product: { ...tile, variants: [...tile.variants, extra] }, initialOption: option };
+  }
+  if (tile.bases.length === 0 && tile.shades.length > 0) {
+    return { product: { ...tile, shades: [...tile.shades, extra] }, initialOption: option };
+  }
+  return { product: { ...tile, bases: [...tile.bases, extra] }, initialOption: option };
+}
+
 // ── Cart ───────────────────────────────────────────────────────────────────
 
 export type V2CartLine = {
@@ -457,32 +505,35 @@ export function unitsIn(qtys: Record<string, number>): number {
 const SEARCH_CAP = 30;
 
 /**
- * Match on NAME-contains OR CODE-starts-with, case-insensitive.
+ * THREE TIERS, in this order: code-PREFIX, then NAME-contains, then
+ * code-SUBSTRING. Case-insensitive, each tier alphabetical by name, the whole
+ * list capped at 30.
  *
- * The code test is a PREFIX, not a substring, on purpose. /po uses
- * `c.code.includes(q)`, which means typing "24" surfaces every dealer with a
- * 24 anywhere in a 6-digit code — dozens of them, in no useful order. A
- * salesman types a code from the front. Prefix keeps that list short and
- * ranked the way he is thinking.
- *
- * Code-prefix hits sort ABOVE name hits: if the query looks like a code, the
- * dealer whose code starts with it is what was meant. Each group is
- * alphabetical by name so the order is stable and predictable.
+ * The third tier is what restores parity with /po's `code.includes(q)`
+ * (po-page.tsx:1143) — a dealer whose code merely CONTAINS the digits is still
+ * findable. Keeping it in its own tier below the other two is the point: as a
+ * flat rule it floods the top, because typing "24" matches every 6-digit code
+ * with a 24 anywhere in it. Tiered, the dealer whose code STARTS with what was
+ * typed still wins, and the loose matches wait underneath.
  */
 export function searchCustomers(customers: ApiCustomer[], rawQuery: string): ApiCustomer[] {
   const q = rawQuery.trim().toLowerCase();
   if (q.length < 1) return [];
 
-  const codeHits: ApiCustomer[] = [];
-  const nameHits: ApiCustomer[] = [];
+  const codePrefix: ApiCustomer[] = [];
+  const nameHits:   ApiCustomer[] = [];
+  const codeSub:    ApiCustomer[] = [];
   for (const c of customers) {
-    if (c.code.toLowerCase().startsWith(q)) codeHits.push(c);
+    const code = c.code.toLowerCase();
+    if (code.startsWith(q))                    codePrefix.push(c);
     else if (c.name.toLowerCase().includes(q)) nameHits.push(c);
+    else if (code.includes(q))                 codeSub.push(c);
   }
   const byName = (a: ApiCustomer, b: ApiCustomer): number => a.name.localeCompare(b.name);
-  codeHits.sort(byName);
+  codePrefix.sort(byName);
   nameHits.sort(byName);
-  return [...codeHits, ...nameHits].slice(0, SEARCH_CAP);
+  codeSub.sort(byName);
+  return [...codePrefix, ...nameHits, ...codeSub].slice(0, SEARCH_CAP);
 }
 
 /** First letters of the first two words — "Ambika Paints" -> "AP". */

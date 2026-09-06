@@ -16,11 +16,11 @@ import {
 /**
  * The search field. A REAL <input>, so it takes focus and a keyboard.
  *
- * ⚠ 15px is below iOS Safari's 16px zoom threshold, so focusing this field
- * zooms the page on an iPhone. That is the size the design asks for and it is
- * kept; `CLAUDE_UI.md §55` records the same trap on /po, where the qty input
- * was pushed to 16px specifically to stop it. If the zoom is unacceptable on
- * device, 16px here is the whole fix.
+ * 🔴 16px IS LOAD-BEARING, NOT A STYLE CHOICE. iOS Safari zooms the whole page
+ * when a focused input's font-size is below 16px, and it does not zoom back
+ * out. `CLAUDE_UI.md §55` records the same trap on /po, where the qty input
+ * was pushed to 16px for exactly this reason. Every <input> in v2 is 16px.
+ * Do not "tidy" this down to match the 15px text around it.
  */
 export function CustomerSearchInput({
   value, onChange, autoFocus = false,
@@ -40,7 +40,7 @@ export function CustomerSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search dealer or code"
-        className="min-w-0 flex-1 bg-transparent py-3 text-[15px] outline-none placeholder:text-neutral-400"
+        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none placeholder:text-neutral-400"
         style={{ color: INK }}
       />
       {value.length > 0 && (

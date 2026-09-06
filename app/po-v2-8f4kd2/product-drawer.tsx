@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Minus, Plus, Search, X } from "lucide-react";
+import { Minus, Plus, X } from "lucide-react";
 import V2Sheet from "./v2-sheet";
 import {
-  ALL_BASES, INK, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
+  INK, RULE, VIOLET, VIOLET_BG,
   formatPack, stepForLabel, unitsIn,
   type ApiProduct, type V2Option, type V2Resolved,
 } from "./v2-data";
@@ -40,12 +40,18 @@ function chipStyle(selected: boolean, dashed = false): React.CSSProperties {
 
 export default function ProductDrawer({
   product,
+  initialOption = null,
   onClose,
   onAdd,
+  onMore,
 }: {
   product: V2Resolved;
+  /** Opened from a search hit: this exact option starts selected. */
+  initialOption?: string | null;
   onClose: () => void;
   onAdd: (line: { option: string | null; row: ApiProduct; qtys: Record<string, number> }) => void;
+  /** "+ More" hands the product's name back to the page's product search. */
+  onMore: (query: string) => void;
 }): React.JSX.Element {
   const hasBases    = product.bases.length > 0;
   const hasShades   = product.shades.length > 0;
@@ -53,16 +59,20 @@ export default function ProductDrawer({
   // A tab appears only if its list is non-empty; neither list -> no tabs.
   const showTabs = hasBases || hasShades;
 
-  const [tab, setTab] = useState<Tab>(hasBases ? "base" : "shade");
-  // ONE selection, whichever row it came from. Top base pre-selected; shade
-  // and variant never are — so a shade-only or variant product opens with no
-  // pack rows until the salesman commits to one, which is correct: the packs
-  // are that row's packs, and there is no row yet.
+  // Open on the tab that actually holds the searched option, so the chip the
+  // salesman searched for is on screen rather than one tab away.
+  const [tab, setTab] = useState<Tab>(() => {
+    if (initialOption && product.shades.some((o) => o.value === initialOption)) return "shade";
+    return hasBases ? "base" : "shade";
+  });
+  // ONE selection, whichever row it came from. From the board: top base
+  // pre-selected, shade and variant never. From a search hit: that exact
+  // option, whichever list it lives in — see resolveForSearch, which also
+  // guarantees the option is present in one of the lists.
   const [selected, setSelected] = useState<string | null>(
-    hasBases ? (product.bases[0]?.value ?? null) : null,
+    initialOption ?? (hasBases ? (product.bases[0]?.value ?? null) : null),
   );
-  const [qtys, setQtys]         = useState<Record<string, number>>({});
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [qtys, setQtys] = useState<Record<string, number>>({});
 
   // Which options are on show right now, and which row that resolves to.
   const activeList: V2Option[] = hasVariants
@@ -84,7 +94,6 @@ export default function ProductDrawer({
     setTab(next);
     setSelected(next === "base" ? (product.bases[0]?.value ?? null) : null);
     setQtys({});
-    setMoreOpen(false);
   }
 
   function selectOption(value: string): void {
@@ -118,15 +127,7 @@ export default function ProductDrawer({
   // Sub-line: the chosen option, else the grey board family.
   const selectionLine = product.noOptionRow ? null : selected;
 
-  const footer = moreOpen ? (
-    <button
-      type="button" onClick={() => setMoreOpen(false)}
-      className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
-      style={{ border: `1.5px solid ${RULE}`, color: INK }}
-    >
-      Back
-    </button>
-  ) : (
+  const footer = (
     <>
       <button
         type="button" onClick={onClose}
@@ -181,37 +182,6 @@ export default function ProductDrawer({
           </div>
         )}
 
-        {moreOpen ? (
-          // ── "+ MORE" — replaces control block AND body in place. Static
-          //    this step; search lands in step 7.
-          <div className="min-h-0 overflow-y-auto">
-            <div className="px-4 pt-3">
-              <div className="flex items-center gap-2 rounded-[12px] px-3 py-2.5" style={{ background: SEARCH_BG }}>
-                <Search className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2.5} />
-                <span className="truncate text-[14px] text-neutral-400">
-                  {tab === "base" ? "Search base" : "Type a shade name"}
-                </span>
-              </div>
-            </div>
-            {tab === "base" ? (
-              <div className="grid grid-cols-3 gap-2 px-4 pt-3 pb-4">
-                {ALL_BASES.map((b) => (
-                  <button key={b.code} type="button" className="min-w-0 px-3 py-1.5 text-center"
-                          style={chipStyle(false)}>
-                    <span className="block text-[15px] font-extrabold leading-tight">{b.code}</span>
-                    <span className="block text-[8.5px] font-extrabold leading-tight text-neutral-400"
-                          style={{ letterSpacing: ".08em" }}>{b.word}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="px-6 pt-8 pb-8 text-center text-[13px] leading-relaxed text-neutral-400">
-                Type any shade name — golden, black, ivory.
-              </p>
-            )}
-          </div>
-        ) : (
-          <>
             {/* ── CONTROL BLOCK ─────────────────────────────────────────── */}
             {(hasVariants || activeList.length > 0) && (
               <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
@@ -232,7 +202,7 @@ export default function ProductDrawer({
                   {!hasVariants && (
                     <button
                       type="button"
-                      onClick={() => setMoreOpen(true)}
+                      onClick={() => onMore(product.label)}
                       className="px-3 py-2 text-[10.5px] font-extrabold"
                       style={chipStyle(false, true)}
                     >
@@ -261,9 +231,6 @@ export default function ProductDrawer({
                 </p>
               )}
             </div>
-          </>
-        )}
-
     </V2Sheet>
   );
 }

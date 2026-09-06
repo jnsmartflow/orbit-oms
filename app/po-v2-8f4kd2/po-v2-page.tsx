@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Eraser, FileText, Home, Search, Send, Users, X } from "lucide-react";
+import { ChevronRight, Eraser, FileText, Home, Send, Users, X } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
+import { MIN_QUERY, ProductResults, ProductSearchInput } from "./product-search";
 import {
-  FAMILIES, INK, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
-  addRecent, buildCatalog, loadRecents, unitsIn,
+  FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
+  addRecent, buildCatalog, loadRecents, resolveForSearch, unitsIn,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2CartLine, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
@@ -44,7 +45,7 @@ const TILE_TEXT_STYLE: React.CSSProperties = {
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; customers: ApiCustomer[]; byTile: Map<string, V2Resolved> };
+  | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
 
 type Screen = "customers" | "order";
 type Sheet  = null | "switch" | "cancel";
@@ -56,7 +57,9 @@ export default function PoV2Page(): React.JSX.Element {
   const [recents, setRecents] = useState<V2Recent[]>([]);
   const [query, setQuery]     = useState("");
   const [sheet, setSheet]     = useState<Sheet>(null);
+  const [prodQuery, setProdQuery] = useState("");
   const [openTile, setOpenTile] = useState<V2Tile | null>(null);
+  const [openRow, setOpenRow]     = useState<ApiProduct | null>(null);
   const [lines, setLines]     = useState<V2CartLine[]>([]);
 
   const fetchData = useCallback(async () => {
@@ -81,7 +84,7 @@ export default function PoV2Page(): React.JSX.Element {
       ) {
         console.warn("[po-v2] catalog gate", report);
       }
-      setLoad({ kind: "ready", customers: data.customers ?? [], byTile });
+      setLoad({ kind: "ready", customers: data.customers ?? [], products: data.products, byTile });
     } catch (err) {
       setLoad({ kind: "error", message: err instanceof Error ? err.message : "Could not load the catalog" });
     }
@@ -130,10 +133,44 @@ export default function PoV2Page(): React.JSX.Element {
     setOpenTile(null);
   }
 
+  /** A line added from a search hit rather than a tile. */
+  function addLineFromRow(
+    product: V2Resolved,
+    picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
+  ): void {
+    const qtys: Record<string, number> = {};
+    for (const [label, qty] of Object.entries(picked.qtys)) {
+      if (qty > 0) qtys[label] = qty;
+    }
+    setLines((prev) => [
+      ...prev,
+      // tileSap is the resolved product's sap, so a searched line lights up
+      // its board tile exactly like one added from the board — the badge does
+      // not care which door the salesman came through.
+      { id: `${product.sap}-${Date.now()}-${prev.length}`, tileSap: product.sap,
+        label: product.label, option: picked.option, rowId: picked.row.id, qtys },
+    ]);
+    setOpenRow(null);
+  }
+
+  /**
+   * "+ More" inside the drawer. Not a second mechanism: it closes the drawer
+   * and runs the REAL product search, pre-filled with this product's name, so
+   * the results are that product's other catalog options.
+   */
+  function openMore(query: string): void {
+    setOpenTile(null);
+    setOpenRow(null);
+    setProdQuery(query);
+  }
+
   const ready       = load.kind === "ready";
   const customers   = ready ? load.customers : [];
+  const products    = ready ? load.products : [];
+  const searching   = prodQuery.trim().length >= MIN_QUERY;
   const cartOpen    = lines.length > 0;
   const openProduct = ready && openTile ? load.byTile.get(openTile.sap) ?? null : null;
+  const searchResolved = ready && openRow ? resolveForSearch(openRow, load.byTile) : null;
 
   // ── Failure — a plain message and Retry, never a silent empty screen ─────
   if (load.kind === "error") {
@@ -219,14 +256,24 @@ export default function PoV2Page(): React.JSX.Element {
           </button>
         </header>
 
-        {/* ── PRODUCT SEARCH — static; step 7 makes it live ────────────── */}
+        {/* ── PRODUCT SEARCH ──────────────────────────────────────────── */}
         <div className="px-4 pt-3">
-          <div className="flex items-center gap-2 rounded-[12px] px-3 py-3" style={{ background: SEARCH_BG }}>
-            <Search className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2.5} />
-            <span className="truncate text-[15px] text-neutral-400">Search product</span>
-          </div>
+          <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
         </div>
 
+        {/* Under 2 characters the board stands; at 2 the board is REPLACED by
+            results. The dealer bar above and the cart bar below both stay, so
+            searching never loses the salesman his context. */}
+        {searching ? (
+          <div className="pt-2">
+            <ProductResults
+              products={products}
+              query={prodQuery}
+              onPick={(row) => setOpenRow(row)}
+            />
+          </div>
+        ) : (
+        <>
         {/* ── FAMILY BLOCKS ────────────────────────────────────────────── */}
         {FAMILIES.map((family) => (
           <section key={family.name} className="px-4 pt-4">
@@ -271,6 +318,8 @@ export default function PoV2Page(): React.JSX.Element {
             </div>
           </section>
         ))}
+        </>
+        )}
       </main>
 
       {/* ── BOTTOM BAR ─────────────────────────────────────────────────── */}
@@ -356,6 +405,7 @@ export default function PoV2Page(): React.JSX.Element {
                 setLines([]);
                 setDealer(null);
                 setQuery("");
+                setProdQuery("");
                 setSheet(null);
                 setScreen("customers");
               }}
@@ -364,13 +414,30 @@ export default function PoV2Page(): React.JSX.Element {
         </V2Sheet>
       )}
 
-      {/* ── PRODUCT DRAWER — `key` forces a fresh mount per tile ────────── */}
+      {/* ── PRODUCT DRAWER, from the BOARD ─────────────────────────────── */}
+      {/* `key` forces a fresh mount per tile, so selections never leak. */}
       {openTile && openProduct && (
         <ProductDrawer
           key={openTile.sap}
           product={openProduct}
           onClose={() => setOpenTile(null)}
           onAdd={(picked) => addLine(openTile, picked)}
+          onMore={openMore}
+        />
+      )}
+
+      {/* ── PRODUCT DRAWER, from a SEARCH HIT ──────────────────────────── */}
+      {/* Opens on that exact menu row with its option already selected —
+          resolveForSearch appends the option to the chip row when the curated
+          list does not carry it, so what was searched for is never invisible. */}
+      {openRow && searchResolved && (
+        <ProductDrawer
+          key={`row-${openRow.id}`}
+          product={searchResolved.product}
+          initialOption={searchResolved.initialOption}
+          onClose={() => setOpenRow(null)}
+          onAdd={(picked) => addLineFromRow(searchResolved.product, picked)}
+          onMore={openMore}
         />
       )}
     </>
