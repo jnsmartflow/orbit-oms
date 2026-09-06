@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, Eraser, FileText, Home, MapPin, Send, Users, X } from "lucide-react";
+import { Check, CheckCircle2, ChevronRight, Eraser, FileText, Home, MapPin, Send, Users, X } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
 import { MIN_QUERY, ProductResults, ProductSearchInput } from "./product-search";
 import ReviewScreen from "./review-screen";
+import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import {
   DIVIDER, FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
   EMPTY_ORDER, addRecent, buildCatalog, formatPack, loadRecents, resolveForSearch, unitsIn,
@@ -50,7 +51,7 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
 
-type Screen = "customers" | "order" | "review";
+type Screen = "customers" | "order" | "review" | "sent";
 type Sheet  = null | "switch" | "cancel" | "shipto";
 
 export default function PoV2Page(): React.JSX.Element {
@@ -67,6 +68,9 @@ export default function PoV2Page(): React.JSX.Element {
   const [order, setOrder]     = useState<V2Order>(EMPTY_ORDER);
   // NULL = "same as billing", the state email.ts omits the Ship To line for.
   const [shipTo, setShipTo]   = useState<ApiCustomer | null>(null);
+  // Snapshot of what was SENT. The cart is cleared after the mailto, so the
+  // Sent screen cannot read its counts back off live state.
+  const [sent, setSent]       = useState<{ dealer: ApiCustomer; lines: number; units: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoad({ kind: "loading" });
@@ -147,6 +151,11 @@ export default function PoV2Page(): React.JSX.Element {
         id: `${sap}-${Date.now()}-${prev.length}`,
         tileSap: sap, label, option: picked.option, rowId: picked.row.id, qtys,
         packOrder: picked.row.packs.map((p) => formatPack(p.packCode, p.unit)),
+        // The WIRE name is built from these three by emailLineLabel — never
+        // from `label` above, which is the curated board word.
+        product:    picked.row.product,
+        baseColour: picked.row.baseColour,
+        subProduct: picked.row.subProduct,
       },
     ]);
   }
@@ -183,6 +192,34 @@ export default function PoV2Page(): React.JSX.Element {
     const next = lines.filter((l) => l.id !== id);
     setLines(next);
     if (next.length === 0) setScreen("order");
+  }
+
+  /**
+   * Send. Mirrors po-page.tsx:1953-1996.
+   *
+   * 🔴 ORDER OF OPERATIONS IS THE WHOLE THING. The mailto fires FIRST, inside
+   * the tap gesture, before any state is touched — /po's comment at :1986 says
+   * a synchronous navigation in the same tick cancels the pending external
+   * handoff before the mail app opens. Everything after it is plain setState,
+   * which never enters that queue.
+   *
+   * And the cart is cleared only AFTER the handoff. Clearing first would mean
+   * a salesman who backs out of the mail app without sending returns to an
+   * empty order with nothing to recover.
+   */
+  function handleSend(): void {
+    if (!dealer) return;
+    const { subject, body, valid } = buildV2Email({ dealer, shipTo, lines, order });
+    if (!valid) return;
+
+    window.location.href = buildV2MailtoUrl(subject, body);
+
+    setSent({ dealer, lines: lines.length, units: orderUnits });
+    setLines([]);
+    setOrder(EMPTY_ORDER);
+    setShipTo(null);
+    setProdQuery("");
+    setScreen("sent");
   }
 
   /**
@@ -253,6 +290,47 @@ export default function PoV2Page(): React.JSX.Element {
     );
   }
 
+  // ══ SCREEN 4 — SENT ══════════════════════════════════════════════════════
+  // Reached only after the mailto handoff. "Sent" means handed to the mail
+  // app — it cannot know the mail actually left, and does not claim to.
+  if (screen === "sent" && sent) {
+    return (
+      <main className="flex min-h-screen w-full flex-col items-center justify-center gap-2 bg-white px-8 text-center">
+        <CheckCircle2 className="h-12 w-12" strokeWidth={2} style={{ color: "#16A34A" }} />
+        <p className="mt-1 text-[19px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
+          Order sent
+        </p>
+        <p className="max-w-[280px] truncate text-[15px] font-bold" style={{ color: INK }}>
+          {sent.dealer.name}
+        </p>
+        <p className="font-mono text-[12.5px] text-neutral-400">
+          {sent.lines} {sent.lines === 1 ? "line" : "lines"} · {sent.units} units
+        </p>
+
+        <div className="mt-6 w-full max-w-[340px] space-y-2">
+          <button
+            type="button"
+            onClick={() => { setSent(null); setScreen("order"); }}
+            className="w-full truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+            style={{ background: VIOLET }}
+          >
+            Another order for {firstWord(sent.dealer.name)}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSent(null); setDealer(null); setQuery(""); setScreen("customers");
+            }}
+            className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
+            style={{ border: `1.5px solid ${RULE}`, color: INK }}
+          >
+            Different customer
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   // ══ SCREEN 3 — REVIEW ════════════════════════════════════════════════════
   // The ship-to sheet renders alongside it, so "Change" works from here.
   if (screen === "review" && dealer) {
@@ -267,6 +345,7 @@ export default function PoV2Page(): React.JSX.Element {
           onEdit={() => setScreen("order")}
           onRemoveLine={removeLine}
           onOrderChange={setOrder}
+          onSend={handleSend}
           onOpenShipTo={() => { setQuery(""); setSheet("shipto"); }}
         />
         {sheet === "shipto" && (

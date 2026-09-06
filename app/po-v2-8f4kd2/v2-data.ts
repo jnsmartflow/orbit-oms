@@ -474,8 +474,19 @@ export type V2CartLine = {
   label:   string;
   /** The chosen baseColour, or null for a no-options product. */
   option:  string | null;
-  /** The resolved menu row's id — the catalog anchor for the step-9 email. */
+  /** The resolved menu row's id — the catalog anchor. */
   rowId:   number;
+  /**
+   * 🔴 THE THREE FIELDS emailLineLabel() READS, snapshotted from the menu row.
+   *
+   * The wire name is NOT our tile label. `label` above is the curated board
+   * word ("Smart Choice", "M900") and must never reach an email — /po sends
+   * emailLineLabel(product, baseColour, subProduct) for that same row, and v2
+   * has to send the identical string or the parser sees a different product.
+   */
+  product:    string | null;
+  baseColour: string | null;
+  subProduct: string;
   /** Rendered pack label -> quantity in UNITS. Only non-zero entries kept. */
   qtys:    Record<string, number>;
   /**

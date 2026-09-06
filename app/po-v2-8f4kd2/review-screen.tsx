@@ -59,7 +59,7 @@ const MARKER_CHOICES: { label: string; value: V2Marker }[] = [
 
 export default function ReviewScreen({
   dealer, shipTo, lines, order,
-  onBack, onEdit, onRemoveLine, onOrderChange, onOpenShipTo,
+  onBack, onEdit, onRemoveLine, onOrderChange, onOpenShipTo, onSend,
 }: {
   dealer: ApiCustomer;
   /** NULL means "same as billing" — the state email.ts omits the Ship To line for. */
@@ -71,6 +71,7 @@ export default function ReviewScreen({
   onRemoveLine: (id: string) => void;
   onOrderChange: (next: V2Order) => void;
   onOpenShipTo: () => void;
+  onSend: () => void;
 }): React.JSX.Element {
   const totalUnits = lines.reduce((sum, l) => sum + unitsIn(l.qtys), 0);
   const shipElsewhere = shipTo !== null && shipTo.code !== dealer.code;
@@ -262,9 +263,9 @@ export default function ReviewScreen({
         </button>
 
         <div className="px-4 pt-2.5">
-          {/* INERT this step — step 9 wires the mailto. */}
           <button
             type="button"
+            onClick={onSend}
             className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
             style={{ background: VIOLET }}
           >
