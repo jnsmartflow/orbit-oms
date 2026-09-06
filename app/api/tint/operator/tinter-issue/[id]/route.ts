@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { PackCode } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -194,6 +195,45 @@ export async function PATCH(
       ...pigments,
     },
   });
+
+  // AFTER the write returns (audit RULE 2). Until now a TI edit recorded nobody:
+  // `submittedById` is stamped at CREATE and never moves, so a later correction
+  // to a formula was attributable to whoever first raised the entry, not to
+  // whoever changed it. Changed fields only — a typical edit moves one or two of
+  // these 19 columns and logging all of them would bury the change.
+  //
+  // userId is the one already in scope for the ownership comparison above; do not
+  // re-derive it. Values are stringified because the pigment columns are Prisma
+  // Decimals, which are not JSON-safe on the way into admin_audit_log.
+  const TRACKED = [
+    "baseSku", "tinQty", "packCode", "rawLineItemId", "samplingNo", "shadeName",
+    "YOX", "LFY", "GRN", "TBL", "WHT", "MAG", "FFR", "BLK", "OXR", "HEY", "HER",
+    "COB", "COG",
+  ] as const;
+  const str = (v: unknown) => (v === null || v === undefined ? null : String(v));
+  const changed: string[] = [];
+  const beforeData: Record<string, unknown> = {};
+  const afterData:  Record<string, unknown> = {};
+  for (const k of TRACKED) {
+    const b = str(entry[k]);
+    const a = str(updated[k]);
+    if (b !== a) {
+      changed.push(k);
+      beforeData[k] = b;
+      afterData[k]  = a;
+    }
+  }
+  if (changed.length > 0) {
+    await logAdminAction({
+      userId,
+      entity:   "tinter_issue_entries",
+      entityId: String(entryId),
+      action:   "update",
+      summary:  `TI entry ${entryId} (order ${entry.orderId}) — ${changed.join(", ")}`,
+      before:   beforeData,
+      after:    afterData,
+    });
+  }
 
   return NextResponse.json(updated);
 }

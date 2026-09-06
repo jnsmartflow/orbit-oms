@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { resolveFiniMap } from "@/lib/fini-resolver";
 import { buildSkuDisplay } from "@/types/sku-display";
 
@@ -465,9 +466,15 @@ export async function PATCH(
     // ── 1. Confirm the challan row exists + check void state ──────────────────
     // Voided challans are read-only (UI shows banner). Reject write attempts
     // with 409 — caller must restore the order first to un-void the challan.
+    // The four scalar columns are NEW in this select (2026-09-06) and exist only
+    // to give the audit call at the end a before-image. Widening the read this
+    // route already does beats adding a second one.
     const challan = await prisma.delivery_challans.findUnique({
       where:  { orderId },
-      select: { id: true, orderId: true, isVoided: true },
+      select: {
+        id: true, orderId: true, isVoided: true, challanNumber: true,
+        transporter: true, vehicleNo: true, printedAt: true, printedBy: true,
+      },
     });
 
     if (!challan) {
@@ -572,6 +579,48 @@ export async function PATCH(
 
       return updatedChallan;
     });
+
+    // ── 4c. Audit ─────────────────────────────────────────────────────────────
+    // AFTER the write returns and deliberately OUTSIDE the $transaction above —
+    // adding the call inside would change that transaction's shape, and CORE §13
+    // records it as pre-existing and not to be extended. Audit RULE 1 means a
+    // failed log cannot roll the challan save back; RULE 2 means it runs only
+    // once the save has actually succeeded.
+    //
+    // Formula upserts are counted, not enumerated: a challan can carry a dozen
+    // tinting lines, the live formula is always readable on the challan itself,
+    // and the audit-worthy fact is that the manager overrode N of them by hand.
+    const changed: string[] = [];
+    const beforeData: Record<string, unknown> = {};
+    const afterData:  Record<string, unknown> = {};
+    for (const k of ["transporter", "vehicleNo", "printedBy"] as const) {
+      if (challan[k] !== updated[k]) {
+        changed.push(k);
+        beforeData[k] = challan[k];
+        afterData[k]  = updated[k];
+      }
+    }
+    const printedBefore = challan.printedAt?.toISOString() ?? null;
+    const printedAfter  = updated.printedAt?.toISOString() ?? null;
+    if (printedBefore !== printedAfter) {
+      changed.push("printedAt");
+      beforeData.printedAt = printedBefore;
+      afterData.printedAt  = printedAfter;
+    }
+    const formulaCount = formulas?.length ?? 0;
+    if (formulaCount > 0) changed.push(`${formulaCount} formula(s)`);
+
+    if (changed.length > 0) {
+      await logAdminAction({
+        userId:   parseInt(session!.user.id, 10),
+        entity:   "delivery_challans",
+        entityId: String(challan.id),
+        action:   "update",
+        summary:  `challan ${updated.challanNumber} (OBD order ${orderId}) — ${changed.join(", ")}`,
+        before:   beforeData,
+        after:    afterData,
+      });
+    }
 
     // ── 5. Return updated challan row ─────────────────────────────────────────
     return NextResponse.json({

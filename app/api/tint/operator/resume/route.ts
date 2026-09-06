@@ -25,10 +25,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "Invalid session user" }, { status: 401 });
   }
 
-  // Permission gate: tint_operator canView. Admin short-circuits.
+  // Permission gate: tint_operator canEdit. Admin short-circuits.
+  //
+  // ⚠ CORRECTED 2026-09-06 — was canView. Resume writes three rows and is the
+  // other half of pause; see the fuller note there. canView and canEdit are
+  // separate per-person ticks since 2026-09-04 (CORE §5).
   const roles = session.user.roles ?? [session.user.role];
   if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "tint_operator", "canView");
+    const allowed = await checkAnyPermission(roles, "tint_operator", "canEdit");
     if (!allowed) {
       return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
     }

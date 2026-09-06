@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { PackCode } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -195,6 +196,45 @@ export async function PATCH(
       ...pigments,
     },
   });
+
+  // AFTER the write returns (audit RULE 2). Same gap and same fix as the A-side
+  // route next door: `submittedById` is stamped at CREATE and never moves, so a
+  // later correction was attributable to whoever first raised the entry rather
+  // than to whoever changed it. Changed fields only.
+  //
+  // userId is the one already in scope for the ownership comparison above; do not
+  // re-derive it. Values are stringified because the pigment columns are Prisma
+  // Decimals, which are not JSON-safe on the way into admin_audit_log. The B
+  // tinter has its OWN 14 pigment names — this list is not the A list.
+  const TRACKED = [
+    "baseSku", "tinQty", "packCode", "rawLineItemId", "samplingNo", "shadeName",
+    "YE2", "YE1", "XY1", "XR1", "WH1", "RE2", "RE1", "OR1", "NO2", "NO1",
+    "MA1", "GR1", "BU2", "BU1",
+  ] as const;
+  const str = (v: unknown) => (v === null || v === undefined ? null : String(v));
+  const changed: string[] = [];
+  const beforeData: Record<string, unknown> = {};
+  const afterData:  Record<string, unknown> = {};
+  for (const k of TRACKED) {
+    const b = str(entry[k]);
+    const a = str(updated[k]);
+    if (b !== a) {
+      changed.push(k);
+      beforeData[k] = b;
+      afterData[k]  = a;
+    }
+  }
+  if (changed.length > 0) {
+    await logAdminAction({
+      userId,
+      entity:   "tinter_issue_entries_b",
+      entityId: String(entryId),
+      action:   "update",
+      summary:  `TI-B entry ${entryId} (order ${entry.orderId}) — ${changed.join(", ")}`,
+      before:   beforeData,
+      after:    afterData,
+    });
+  }
 
   return NextResponse.json(updated);
 }

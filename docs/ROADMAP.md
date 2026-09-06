@@ -26,8 +26,26 @@ Shipped 2026-09-04 in eight commits (`c3cf726b` → `b915c88e`). Access now come
       `if (role !== "admin") { checkPermission(...) }`). ⚠ A superuser who is not ALSO role-admin
       falls through into the permission check. No live impact today — the one superuser holds both.
       `CLAUDE_CORE.md §13`.
-- [ ] **12 inline role checks under `app/api/tint/`**, deliberately out of scope on 2026-09-04
-      because tint was not re-tested that night.
+- [x] ~~**12 inline role checks under `app/api/tint/`**, deliberately out of scope on 2026-09-04
+      because tint was not re-tested that night.~~ **DONE 2026-09-06.** The tint block converted in
+      three commits, gated by `code-discovery-2026-09-06-tint-conversion-gate.md`: 19 write handlers
+      + 2 reads moved to `tint_manager`/`tint_operator` ticks, and the three `canView`-on-a-write
+      routes moved to `canEdit`. Operations User lost tint write access (intended — he holds no tint
+      tick and both tint layouts already redirected him); Prakash gained manual-entry; the superuser
+      gained the four operator writes `requireRole` had been redirecting him out of.
+- [ ] 🔴 **STILL OPEN in tint — `operator/shades` POST and `operator/shades/[id]` PUT.** Held out of
+      the 2026-09-06 conversion by owner decision: both write **`shade_master`, deprecated since
+      2026-05-25** with a standing "do not write to it" (`CORE §13`, `CLAUDE_TINT.md §14`), so they
+      are retirement candidates, not conversion ones. **Decide retire-or-convert before converting.**
+      If converted, the key choice is not cosmetic: `shade_master`/`canEdit` is held by Harsh and
+      Chandresh only, so it would revoke shade writes from **Deepak Vasava and Chandrasing Valvi**,
+      the two active operators whose screen it is; `tint_operator`/`canEdit` would keep them. Prior
+      question nobody has answered: **does anything still call these two routes?**
+- [ ] **Every tint GET still gates on a job title.** Reads were out of scope on 2026-09-06, so nine
+      manager GETs plus the GET halves of `challans/[orderId]`, `tinter-issue/[id]` and
+      `tinter-issue-b/[id]` keep `requireRole`/`hasRole` — which is why those three files still
+      import `@/lib/rbac`. The odd shape this leaves: on those three, the GET admits `operations`
+      and the PATCH next to it does not. Coherent as read-vs-write, but not deliberate.
 - [ ] **1 `requireRole([ADMIN])` left in `app/api/mail-orders/backfill-enrich`** — skipped only
       because mail-orders was an excluded path.
 
@@ -37,7 +55,18 @@ Verified still unwired 2026-09-04; 44 `logAdminAction` call sites exist today. D
 into each module's own conversion so the same files are not edited twice — an unwired route here
 looks identical whether it was missed or parked, and these were parked (`CLAUDE_CORE.md §13`).
 
-- [ ] Sampling Library 3 · MRN 2 · Tint 5 · Billing 1 · backfill 2.
+- [ ] Sampling Library 3 · ~~Tint 5~~ **Tint 1** · MRN 2 · Billing 1 · backfill 2.
+
+**Tint: 4 of its 5 wired on 2026-09-06**, inside the conversion commit so those files were not
+opened twice — `manager/reorder`, `manager/challans/[orderId]` PATCH, `operator/tinter-issue/[id]`
+PATCH and `operator/tinter-issue-b/[id]` PATCH. The two TI routes are the ones that mattered most:
+`submittedById` is stamped at CREATE and never moves, so every later correction to a formula was
+attributable to whoever first raised the entry rather than to whoever changed it.
+
+- [ ] 🔴 **The 5th is `operator/shades/[id]` PUT, and it is deliberately still unwired.** It rides
+      with the shades retire-or-convert decision above, not with the audit sweep — wiring an audit
+      call into a route that writes a deprecated table is work thrown away if the answer is
+      "retire". Do not close it on its own; close it when shades is decided.
 
 ### P2 — Step 7: landing page per user
 

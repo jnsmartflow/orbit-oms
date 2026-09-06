@@ -45,11 +45,16 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "Invalid session user" }, { status: 401 });
   }
 
-  // Permission gate: tint_operator canView (locked OrbitOMS model — page
-  // access = full action authority on that page). Admin short-circuits.
+  // Permission gate: tint_operator canEdit. Admin short-circuits.
+  //
+  // ⚠ CORRECTED 2026-09-06 — was canView, justified by "locked OrbitOMS model —
+  // page access = full action authority on that page". That model was retired on
+  // 2026-09-04: canView and canEdit are now separate per-person ticks (CORE §5),
+  // so viewing the operator screen no longer implies the right to pause a live
+  // tint job. Pause writes three rows. Same correction on resume, next door.
   const roles = session.user.roles ?? [session.user.role];
   if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "tint_operator", "canView");
+    const allowed = await checkAnyPermission(roles, "tint_operator", "canEdit");
     if (!allowed) {
       return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
     }

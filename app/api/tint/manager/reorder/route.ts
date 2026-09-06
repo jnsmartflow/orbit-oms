@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 
@@ -33,6 +34,13 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   }
 
   const { type, id, direction } = parsed.data;
+
+  // Set by whichever branch actually swaps. Stays null on a boundary no-op, so
+  // the audit line below is written only when something really moved — a log
+  // entry for a change that did not happen is worse than none (audit RULE 2).
+  let moved: {
+    entity: string; movedId: number; swappedWith: number; from: number; to: number;
+  } | null = null;
 
   try {
     if (type === "order") {
@@ -104,6 +112,8 @@ export async function PATCH(req: Request): Promise<NextResponse> {
       await prisma.orders.update({ where: { id: itemA.id }, data: { sequenceOrder: newSeqA } });
       await prisma.orders.update({ where: { id: itemB.id }, data: { sequenceOrder: newSeqB } });
 
+      moved = { entity: "orders", movedId: itemA.id, swappedWith: itemB.id, from: seqA, to: newSeqA };
+
     } else {
       // Find the target split's operator
       const targetSplit = await prisma.order_splits.findUnique({
@@ -145,6 +155,22 @@ export async function PATCH(req: Request): Promise<NextResponse> {
       // Sequential awaits, same reasoning as the order branch above (CORE §3).
       await prisma.order_splits.update({ where: { id: itemA.id }, data: { sequenceOrder: newSeqA } });
       await prisma.order_splits.update({ where: { id: itemB.id }, data: { sequenceOrder: newSeqB } });
+
+      moved = { entity: "order_splits", movedId: itemA.id, swappedWith: itemB.id, from: seqA, to: newSeqA };
+    }
+
+    // AFTER the writes return (audit RULE 2). Re-sequencing decides which OBD an
+    // operator tints next, and until now it recorded nobody.
+    if (moved) {
+      await logAdminAction({
+        userId:   parseInt(session.user.id, 10),
+        entity:   moved.entity,
+        entityId: String(moved.movedId),
+        action:   "reorder",
+        summary:  `${type} ${moved.movedId} moved ${direction}, swapped with ${moved.swappedWith}`,
+        before:   { sequenceOrder: moved.from },
+        after:    { sequenceOrder: moved.to },
+      });
     }
 
     return NextResponse.json({ success: true });

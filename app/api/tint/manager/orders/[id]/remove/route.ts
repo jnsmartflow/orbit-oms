@@ -22,14 +22,23 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  // Permission gate: Admin OR canView on the tint_manager page.
-  // Page access = full action authority on that page (OrbitOMS locked model).
-  // Excludes any role without TM page access (operations, tint_operator, etc.
-  // unless they have been granted canView on tint_manager).
+  // Permission gate: Admin OR canEdit on the tint_manager page.
+  //
+  // ⚠ CORRECTED 2026-09-06. This comment used to read "Page access = full action
+  // authority on that page (OrbitOMS locked model)" and the check below asked for
+  // canView. THAT MODEL WAS RETIRED ON 2026-09-04: access is now one row per
+  // (person, page) in user_page_access, and canView and canEdit are separate
+  // ticks an admin sets independently on /admin/access (CORE §5).
+  //
+  // Under the old model the claim was self-consistent — a role either had the
+  // page or it did not. Under per-user ticks it is false, and it was load-bearing:
+  // this route soft-removes an OBD from the board and voids its challan, so a
+  // single view-only tick would have handed that to a bystander. The two holder
+  // sets happened to be identical on 2026-09-06, so no live grant was affected.
   const isAdmin = session.user.role === "admin";
   if (!isAdmin) {
     const roles = session.user.roles ?? [session.user.role];
-    const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+    const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
     if (!allowed) {
       return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
     }
