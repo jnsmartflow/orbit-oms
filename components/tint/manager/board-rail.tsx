@@ -9,14 +9,15 @@
 // pending_tint_assignment).
 
 import { useState } from "react";
-import { AlertCircle, Eye, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
 import { OperatorMenu, ageDays, istDateTime } from "./board-bits";
-import type { Operator, TintOrder } from "./types";
+import type { BasePendingLine, BasePendingOrder, Operator, TintOrder } from "./types";
 
 export function BoardRail({
   rail, operators, onAssign, onBaseBypass, onRemove, onOpenPanel, onResolveMissing, canRemove,
+  basePending, baseDrill, baseLineId, onOpenBase, onBackFromBase, onPickBaseLine,
 }: {
   rail:             TintOrder[];
   operators:        Operator[];
@@ -32,11 +33,81 @@ export function BoardRail({
   onOpenPanel:      (order: TintOrder) => void;
   onResolveMissing: (order: TintOrder) => void;
   canRemove:        boolean;
+  // ── Base — No Tint · Tinter Issue pending ────────────────────────────────
+  /** Bypassed bills whose TI is still owed. Empty → the section is not drawn. */
+  basePending:      BasePendingOrder[];
+  /** The bill drilled into. Non-null REPLACES the whole rail with its lines. */
+  baseDrill:        BasePendingOrder | null;
+  /** The line whose TI form is open on the right, so the rail can mark it. */
+  baseLineId:       number | null;
+  onOpenBase:       (order: BasePendingOrder) => void;
+  onBackFromBase:   () => void;
+  onPickBaseLine:   (line: BasePendingLine) => void;
 }) {
   // The open menu carries its TRIGGER ELEMENT, not just an id: OperatorMenu is
   // portalled to document.body and measures its position from that element, so
   // the anchor has to travel with the open-state.
   const [menu, setMenu] = useState<{ orderId: number; anchor: HTMLElement } | null>(null);
+
+  // ── Drilldown: one bypassed bill's tinting lines ──────────────────────────
+  // REPLACES the whole rail rather than expanding inside it. The manager is
+  // doing one job now — paying off one bill's TI — and leaving the assignment
+  // queue visible underneath would invite an assign click mid-task.
+  if (baseDrill) {
+    return (
+      <div className="w-[344px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+        <div className="px-3.5 py-3 border-b border-gray-100">
+          <button
+            type="button"
+            onClick={onBackFromBase}
+            className="text-[10.5px] text-gray-500 hover:text-gray-900 inline-flex items-center gap-0.5 mb-1.5"
+          >
+            <ChevronLeft size={12} /> Back to queue
+          </button>
+          <p className="text-[12px] font-bold text-gray-900 truncate">{baseDrill.siteName}</p>
+          <p className="text-[10.5px] text-gray-400 mt-0.5 flex items-center gap-1 flex-wrap">
+            <ObdCode code={baseDrill.obdNumber} />
+            <span>·</span>
+            <span>{baseDrill.coveredLines} of {baseDrill.totalTintingLines} done</span>
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {baseDrill.lines.map((l) => {
+            const isOpen = l.rawLineItemId === baseLineId;
+            return (
+              <button
+                key={l.rawLineItemId}
+                type="button"
+                onClick={() => onPickBaseLine(l)}
+                className={cn(
+                  "w-full text-left px-3 py-2.5 border-b border-gray-100 transition-colors",
+                  // Selected treatment copied from the operator screen's line
+                  // cards (CLAUDE_UI.md §34) so the two read the same.
+                  isOpen ? "bg-gray-100 border-l-[3px] border-l-gray-900" : "bg-white hover:bg-gray-50",
+                )}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="font-mono text-[11px] text-gray-500 truncate">{l.skuCodeRaw}</span>
+                  {l.hasTiEntry ? (
+                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 border border-green-200 text-green-700 flex-shrink-0">✓</span>
+                  ) : (
+                    <span className="text-[9px] font-semibold text-amber-700 flex-shrink-0">Pending</span>
+                  )}
+                </div>
+                <div className="text-[12px] font-semibold text-gray-900 truncate mt-0.5">
+                  {l.skuDescriptionRaw ?? "—"}
+                </div>
+                <div className="text-[11px] text-gray-400 mt-0.5">
+                  {l.unitQty} qty{l.packCode ? ` · ${l.packCode}` : ""}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-[344px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
@@ -173,6 +244,51 @@ export function BoardRail({
               </div>
             );
           })
+        )}
+
+        {/* ── Tinter Issue pending ────────────────────────────────────────────
+            Bills a Base — No Tint bypass sent out with their TI still owed.
+            Sits BELOW the assignment queue on purpose: assigning today's work
+            is the live job, paying off paperwork is the catch-up one, and the
+            top of this rail is what the manager reads first. Hidden entirely
+            when nothing is owed — an empty section is noise. */}
+        {basePending.length > 0 && (
+          <>
+            <div className="px-1 pt-3 pb-1 mt-1 border-t border-gray-200">
+              <p className="text-[12px] font-bold text-gray-900">Tinter Issue pending</p>
+              <p className="text-[10.5px] text-gray-400 mt-0.5">
+                {basePending.length} {basePending.length === 1 ? "bill" : "bills"} · sent without tinting
+              </p>
+            </div>
+            {basePending.map((o) => (
+              <button
+                key={o.tintAssignmentId}
+                type="button"
+                onClick={() => onOpenBase(o)}
+                // Same card shell as the pending cards above — border, radius,
+                // padding and hover are copied, not re-invented. The amber left
+                // accent is the one difference, marking an outstanding debt.
+                className="w-full text-left border border-gray-200 border-l-[3px] border-l-amber-500 rounded-[10px] px-[11px] py-2.5 bg-white hover:border-gray-300 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <span className="text-[12.5px] font-bold text-gray-900 leading-snug truncate">
+                    {o.siteName}
+                  </span>
+                  <ChevronRight size={13} className="text-gray-300 flex-shrink-0 mt-0.5" />
+                </div>
+                <div className="text-[10.5px] text-gray-500 flex items-center gap-1 flex-wrap">
+                  <ObdCode code={o.obdNumber} />
+                  <span>·</span>
+                  <span>{istDateTime(o.bypassedAt)}</span>
+                </div>
+                <div className="mt-1.5">
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                    TI {o.coveredLines}/{o.totalTintingLines}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </>
         )}
       </div>
     </div>

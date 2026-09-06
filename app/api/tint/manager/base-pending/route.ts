@@ -48,6 +48,13 @@ interface PendingOrder {
   orderId:            number;
   obdNumber:          string;
   siteName:           string;
+  /**
+   * orders.customerId — the numeric delivery_point_master FK. Required by
+   * /api/sampling-library/suggest, which does not accept the SAP-code
+   * shipToCustomerId string. Null when the customer never resolved; the TI
+   * panel then skips the this-site suggestion fetch and falls back to search.
+   */
+  siteId:             number | null;
   billToName:         string | null;
   tintAssignmentId:   number;
   /** When the bypass closed the bill — tint_assignments.completedAt. */
@@ -109,6 +116,7 @@ export async function GET(): Promise<NextResponse> {
           id:                 true,
           obdNumber:          true,
           shipToCustomerName: true,
+          customerId:         true,
           customer:           { select: { customerName: true } },
         },
       },
@@ -188,6 +196,7 @@ export async function GET(): Promise<NextResponse> {
       orderId:           a.order.id,
       obdNumber:         a.order.obdNumber,
       siteName:          a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—",
+      siteId:            a.order.customerId,
       billToName:        null, // filled below, one query for the whole page
       tintAssignmentId:  a.id,
       bypassedAt:        a.completedAt ? a.completedAt.toISOString() : null,

@@ -311,3 +311,34 @@ export interface BoardGroup {
   operatorName: string;
   rows:         BoardRow[];
 }
+
+// ── Base — No Tint · Tinter Issue pending ────────────────────────────────────
+// Wire shapes for GET /api/tint/manager/base-pending. Mirror that route's
+// PendingLine / PendingOrder exactly; if either side gains a field, both move.
+
+export interface BasePendingLine {
+  rawLineItemId:     number;
+  skuCodeRaw:        string;
+  skuDescriptionRaw: string | null;
+  unitQty:           number;
+  volumeLine:        number | null;
+  /** Human label ("20 L"), NOT the PackCode enum. The TI panel derives the
+   *  enum itself from volumeLine/unitQty — do not send this to the API. */
+  packCode:          string | null;
+  /** A TI row exists against THIS assignment for this line. */
+  hasTiEntry:        boolean;
+}
+
+export interface BasePendingOrder {
+  orderId:           number;
+  obdNumber:         string;
+  siteName:          string;
+  /** orders.customerId — the numeric site FK the suggest endpoint needs. */
+  siteId:            number | null;
+  billToName:        string | null;
+  tintAssignmentId:  number;
+  bypassedAt:        string | null;
+  totalTintingLines: number;
+  coveredLines:      number;
+  lines:             BasePendingLine[];
+}

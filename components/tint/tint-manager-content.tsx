@@ -48,6 +48,7 @@ import { ManualTintEntryModal } from "@/components/tint/manual-tint-entry-modal"
 import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-modal";
 
 import { BoardRail } from "@/components/tint/manager/board-rail";
+import { BaseTiPanel } from "@/components/tint/manager/base-ti-panel";
 import { BoardTable } from "@/components/tint/manager/board-table";
 import { BoardAssignBar } from "@/components/tint/manager/board-assign-bar";
 import { BoardDetailPanel, type PanelTarget } from "@/components/tint/manager/board-detail-panel";
@@ -55,6 +56,8 @@ import { ConnectionStrip } from "@/components/tint/manager/board-bits";
 import { useTintManagerSync } from "@/components/tint/manager/use-tint-manager-sync";
 import { buildGroups, buildRail, panelSequence, queueSignature } from "@/components/tint/manager/rows";
 import type {
+  BasePendingLine,
+  BasePendingOrder,
   BoardRow,
   Operator,
   TintBoardPayload,
@@ -149,6 +152,14 @@ export function TintManagerContent() {
    */
   const [pendingBypass, setPendingBypass] = useState<{ orderId: number } | null>(null);
   const sheetResolvedRef = useRef(false);
+
+  // ── Base — No Tint · Tinter Issue pending ─────────────────────────────────
+  // Bills a bypass sent out with their TI still owed, plus the drilldown state.
+  // `baseDrill` non-null replaces the rail with that bill's lines; `baseLine`
+  // non-null replaces the board table with the TI form for that line.
+  const [basePending, setBasePending] = useState<BasePendingOrder[]>([]);
+  const [baseDrill,   setBaseDrill]   = useState<BasePendingOrder | null>(null);
+  const [baseLine,    setBaseLine]    = useState<BasePendingLine | null>(null);
 
   // ── Fetching ──────────────────────────────────────────────────────────────
 
@@ -347,6 +358,53 @@ export function TintManagerContent() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [missingBadgeOpen]);
+
+  /**
+   * Refetch the TI-pending list, and keep any open drilldown in step with it.
+   *
+   * Returns the fresh list so a caller that must decide "was that the last
+   * line?" can read the answer directly instead of racing its own state.
+   */
+  const fetchBasePending = useCallback(async (): Promise<BasePendingOrder[]> => {
+    try {
+      const res = await fetch("/api/tint/manager/base-pending");
+      if (!res.ok) return [];
+      const body = (await res.json()) as { orders?: BasePendingOrder[] };
+      const list = body.orders ?? [];
+      setBasePending(list);
+      return list;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  useEffect(() => { void fetchBasePending(); }, [fetchBasePending]);
+
+  /**
+   * A line's TI just saved. Advance to the next line still owing one on this
+   * bill; when none is left the bill has dropped out of base-pending entirely,
+   * so close the drilldown and return the rail to normal.
+   *
+   * The decision is made from the SERVER's fresh list, never from local state —
+   * the route is the thing that decides what is still owed (coverage keyed on
+   * tintAssignmentId), and a client guess could strand a line or close early.
+   */
+  const handleBaseLineSaved = useCallback(async () => {
+    const list = await fetchBasePending();
+    const stillOwed = baseDrill
+      ? list.find((o) => o.tintAssignmentId === baseDrill.tintAssignmentId) ?? null
+      : null;
+    if (!stillOwed) {
+      setBaseLine(null);
+      setBaseDrill(null);
+      toast.success("Tinter Issue complete — bill closed");
+      return;
+    }
+    setBaseDrill(stillOwed);
+    const next = stillOwed.lines.find((l) => !l.hasTiEntry) ?? null;
+    setBaseLine(next);
+    if (next) toast.success("Saved — next line");
+  }, [fetchBasePending, baseDrill]);
 
   // ── Writes ────────────────────────────────────────────────────────────────
 
@@ -818,6 +876,18 @@ export function TintManagerContent() {
           canRemove={canRemoveObd}
           onAssign={(o, opId) => { void handleAssign(o, opId); }}
           onBaseBypass={(o) => { void handleBaseBypass(o); }}
+          basePending={basePending}
+          baseDrill={baseDrill}
+          baseLineId={baseLine?.rawLineItemId ?? null}
+          onOpenBase={(o) => {
+            setPanelKey(null);
+            setBaseDrill(o);
+            // Open the first line still owing a TI, so the common case (one
+            // pending line) is a single click rather than two.
+            setBaseLine(o.lines.find((l) => !l.hasTiEntry) ?? null);
+          }}
+          onBackFromBase={() => { setBaseDrill(null); setBaseLine(null); }}
+          onPickBaseLine={(l) => setBaseLine(l)}
           onRemove={(o) => setRemoveModalOrder(o)}
           onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
           onResolveMissing={(o) => {
@@ -828,6 +898,25 @@ export function TintManagerContent() {
           }}
         />
 
+        {/* The right pane is the board table, EXCEPT while a TI-pending line is
+            open — then it is that line's Tinter Issue form. One pane, one job:
+            the manager is either reading the floor or paying off one bill's
+            paperwork, never both. */}
+        {baseDrill && baseLine ? (
+          <BaseTiPanel
+            key={`${baseDrill.tintAssignmentId}-${baseLine.rawLineItemId}`}
+            tintAssignmentId={baseDrill.tintAssignmentId}
+            siteId={baseDrill.siteId}
+            obdNumber={baseDrill.obdNumber}
+            siteName={baseDrill.siteName}
+            line={baseLine}
+            onSaved={() => { void handleBaseLineSaved(); }}
+          />
+        ) : baseDrill ? (
+          <div className="flex-1 flex items-center justify-center text-[11.5px] text-gray-400">
+            Pick a line to record its Tinter Issue.
+          </div>
+        ) : (
         <BoardTable
           groups={groups}
           selection={selection}
@@ -840,6 +929,7 @@ export function TintManagerContent() {
           onOpenRow={(r) => setPanelKey(r.key)}
           onReorder={(r, d) => { void handleReorder(r, d); }}
         />
+        )}
       </div>
 
       <BoardAssignBar
