@@ -26,9 +26,13 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-// Mirrors public/po.webmanifest. Divergences are ONLY the six identity fields
-// the v2 install needs; description, display_override, background_color,
-// theme_color, orientation and icons are carried across verbatim.
+// Mirrors public/po.webmanifest. Divergences are the six identity fields the
+// v2 install needs, PLUS the two colours; description, display_override,
+// orientation and icons are carried across verbatim.
+//
+// 🎨 background_color / theme_color are #FFFFFF, NOT po.webmanifest's #0d9488.
+// The teal is /po's brand. v2 is white with violet accents, so a teal splash
+// screen and a teal Android status bar would both be wrong on this app.
 //
 // NOTE: `id` is an ADDITION, not a change — public/po.webmanifest has no `id`
 // key at all. Without one a browser derives the app id from start_url, which
@@ -43,8 +47,8 @@ const MANIFEST = {
   scope: "/po-v2-8f4kd2",
   display: "standalone",
   display_override: ["standalone"],
-  background_color: "#0d9488",
-  theme_color: "#0d9488",
+  background_color: "#FFFFFF",
+  theme_color: "#FFFFFF",
   orientation: "portrait",
   icons: [
     { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
