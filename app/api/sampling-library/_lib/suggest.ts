@@ -58,6 +58,27 @@ export interface SuggestOtherSite {
   lastUsed: string; // ISO
 }
 
+/**
+ * One OTHER pack/SKU variant of the same shade — view-only.
+ *
+ * ⚠ DELIBERATELY CARRIES NO PIGMENTS. This array exists so the operator can
+ * SEE that a shade also lives in other packs and when each was last tinted; it
+ * is not applyable. Adding pigments here would both bloat an uncapped list and
+ * invite a second "Use" path that bypasses applySuggestionToEntry's pack
+ * scaling. If a variant ever needs to be applyable, make it the representative
+ * — do not grow this type.
+ *
+ * `lastUsedAt` is the recipe row's OWN sampling_recipes.lastUsedAt column,
+ * never derived from sampling_usage_log — see the note in buildSuggestPayload.
+ */
+export interface SuggestVariant {
+  recipeId:   number;
+  skuCode:    string;
+  packCode:   PackCode | null;
+  lastUsedAt: string | null;
+  usageCount: number;
+}
+
 export interface SuggestFlatRow {
   samplingNo:           string;
   shadeName:            string;
@@ -75,6 +96,13 @@ export interface SuggestFlatRow {
   isExactMatch:         boolean;
   primarySiteName:      string;
   otherSites:           SuggestOtherSite[];
+  /**
+   * Every OTHER variant of this shade, excluding the representative already
+   * described by this row's own recipeId/skuCode/packCode. Optional: absent
+   * (not `[]`) from any producer that hasn't populated it, so the client must
+   * read it as `row.otherVariants ?? []`.
+   */
+  otherVariants?:       SuggestVariant[];
 }
 
 export interface SuggestResponse {
@@ -160,6 +188,60 @@ export async function groupOtherSitesBySampling(
   return out;
 }
 
+/**
+ * Map raw sampling_recipes rows to SuggestVariant, keyed by samplingNo.
+ *
+ * Takes the minimum shape both producers can supply, so operator-search can
+ * pass its already-fetched full rows without re-querying.
+ */
+export function groupVariantsBySampling(
+  rows: Array<{
+    id:         number;
+    samplingNo: string;
+    skuCode:    string;
+    packCode:   PackCode | null;
+    lastUsedAt: Date | null;
+    usageCount: number;
+  }>,
+): Map<string, SuggestVariant[]> {
+  const out = new Map<string, SuggestVariant[]>();
+  for (const r of rows) {
+    const list = out.get(r.samplingNo) ?? [];
+    list.push({
+      recipeId:   r.id,
+      skuCode:    r.skuCode,
+      packCode:   r.packCode,
+      // The recipe's OWN column — NOT a usage_log max. See buildSuggestPayload.
+      lastUsedAt: r.lastUsedAt ? r.lastUsedAt.toISOString() : null,
+      usageCount: r.usageCount,
+    });
+    out.set(r.samplingNo, list);
+  }
+  return out;
+}
+
+/**
+ * Drop the representative variant and order the rest most-recent-first.
+ *
+ * Shared by both producers so the disclosure list can never be ordered one way
+ * in browse mode and another in search mode. ISO strings sort lexicographically,
+ * and a null date coerces to "" so undated variants sink to the bottom.
+ */
+export function buildOtherVariants(
+  all: SuggestVariant[] | undefined,
+  representativeRecipeId: number,
+): SuggestVariant[] {
+  if (!all || all.length === 0) return [];
+  return all
+    .filter((v) => v.recipeId !== representativeRecipeId)
+    .sort((a, b) => {
+      const at = a.lastUsedAt ?? "";
+      const bt = b.lastUsedAt ?? "";
+      if (at !== bt) return bt.localeCompare(at);
+      return b.usageCount - a.usageCount;
+    });
+}
+
 /** Assemble a SuggestFlatRow from a recipe pigment row + scalar fields. */
 export function assembleFlatRow(input: {
   samplingNo:           string;
@@ -176,6 +258,7 @@ export function assembleFlatRow(input: {
   isExactMatch:         boolean;
   primarySiteName:      string;
   otherSites:           SuggestOtherSite[];
+  otherVariants?:       SuggestVariant[];
 }): SuggestFlatRow {
   const { pigments, activePigments } = buildPigmentsAndActive(input.pigmentRow);
   return {
@@ -194,6 +277,7 @@ export function assembleFlatRow(input: {
     isExactMatch:         input.isExactMatch,
     primarySiteName:      input.primarySiteName,
     otherSites:           input.otherSites,
+    otherVariants:        input.otherVariants,
   };
 }
 
@@ -410,6 +494,30 @@ export async function buildSuggestPayload(
   const samplingNos = Array.from(bySamplingNo.keys());
   const otherSitesBySampling = await groupOtherSitesBySampling(samplingNos, siteId);
 
+  // 6b2) EVERY pack/SKU variant of every sampling on this page.
+  //
+  // ⚠ THIS CANNOT COME FROM `acc.variants`. That map is built from step 1's
+  // sampling_usage_log rows filtered to THIS site, so it only ever holds
+  // variants the depot has already tinted here — a shade that exists in 20 L
+  // and 4 L but has only been used here in 20 L would report "no other packs",
+  // which is exactly the thing the operator needs to know. This is one extra
+  // query for the WHOLE page (not per row), sequential per CORE §3.
+  //
+  // ⚠ lastUsedAt is read from the recipe's OWN column, deliberately. Deriving
+  // it from usage_log the way the representative row's date is derived would
+  // reintroduce the stale-date bug: a variant last tinted at ANOTHER site would
+  // show blank or wrong here, because these logs are site-filtered.
+  const allRecipeRows = samplingNos.length > 0
+    ? await prisma.sampling_recipes.findMany({
+        where:  { samplingNo: { in: samplingNos } },
+        select: {
+          id: true, samplingNo: true, skuCode: true, packCode: true,
+          lastUsedAt: true, usageCount: true,
+        },
+      })
+    : [];
+  const variantsBySampling = groupVariantsBySampling(allRecipeRows);
+
   // 6c) Build one flat row per sampling. Prefer the exact (skuCode + packCode)
   //     variant as the representative + flag it; otherwise the most-used /
   //     most-recent variant (same rep logic as the reference list).
@@ -442,6 +550,9 @@ export async function buildSuggestPayload(
       isExactMatch:         exactVariant !== undefined,
       primarySiteName,
       otherSites:           otherSitesBySampling.get(acc.samplingNo) ?? [],
+      // Representative unchanged — `rep` is still chosen exactly as before.
+      // This only lists the ones it isn't.
+      otherVariants:        buildOtherVariants(variantsBySampling.get(acc.samplingNo), rep.recipeId),
     }));
   }
 

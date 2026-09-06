@@ -1,4 +1,5 @@
 # Reconciliation method — locked 2026-08-04 — amended v1.1 2026-08-04 (autonomous mode + direct read-only DB access)
+Proven across 12 sessions, 2026-08-04/05. Reuse per-file whenever a module ships major changes.
 Read this file fully before reconciling any canonical file. One canonical file (or one approved pair) per session.
 
 ## Ground rules
