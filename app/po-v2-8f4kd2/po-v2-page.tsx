@@ -5,7 +5,7 @@ import { Search, X } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import {
   FAMILIES, INK, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
-  productForTile, tally,
+  productForTile, unitsIn,
   type V2CartLine, type V2Tile,
 } from "./v2-data";
 
@@ -51,13 +51,13 @@ export default function PoV2Page(): React.JSX.Element {
     return counts;
   }, [lines]);
 
-  // Order-wide box total for the bottom bar. Each line is tallied against ITS
-  // OWN packs, then summed — pack tables differ per product, so a single flat
-  // sum over sizes would be wrong.
-  const orderBoxes = useMemo(() => {
-    const total = lines.reduce((sum, line) => sum + tally(line.qtys, line.packs).boxes, 0);
-    return Math.round(total * 10) / 10;
-  }, [lines]);
+  // Order-wide UNIT total for the bottom bar. Units are whole and additive
+  // across products, so this is a plain sum — no per-product pack table
+  // needed, and no figure that can come out fractional.
+  const orderUnits = useMemo(
+    () => lines.reduce((sum, line) => sum + unitsIn(line.qtys), 0),
+    [lines],
+  );
 
   function addLine(
     tile: V2Tile,
@@ -204,7 +204,7 @@ export default function PoV2Page(): React.JSX.Element {
               {lines.length} {lines.length === 1 ? "line" : "lines"}
             </p>
             <p className="truncate font-mono text-[11px] text-neutral-400">
-              {orderBoxes} boxes
+              {orderUnits} units
             </p>
           </div>
           {/* Inert by spec — step 5 builds the review screen. */}

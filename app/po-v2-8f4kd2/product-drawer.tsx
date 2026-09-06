@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Minus, Plus, Search, X } from "lucide-react";
 import {
   ALL_BASES, INK, RULE, SCRIM, SEARCH_BG, VIOLET, VIOLET_BG,
-  tally,
+  stepFor, unitsIn,
   type V2Base, type V2Pack, type V2Product,
 } from "./v2-data";
 
@@ -21,15 +21,23 @@ import {
 //
 // NO HORIZONTAL SCROLL: every chip row is `flex-wrap`, never a scroller.
 
-// The slide-up + fade. A scoped <style> tag rather than an entry in
-// globals.css — same containment rule as the colours. Class names are
-// v2-prefixed so they cannot collide with anything else in the app.
-// prefers-reduced-motion disables both animations outright.
+// The slide-up + fade, plus the sheet's height cap. A scoped <style> tag
+// rather than an entry in globals.css — same containment rule as the colours.
+// Class names are v2-prefixed so they cannot collide with anything else in
+// the app. prefers-reduced-motion disables both animations outright.
+//
+// The sheet's height is AUTO, capped at 88% of the viewport: a short product
+// (Cement SB — no variants, no bases, four packs) opens as a short sheet
+// instead of a tall mostly-empty one. `dvh` is the correct unit on a phone
+// because `vh` measures the viewport with the browser toolbar COLLAPSED, so a
+// vh-sized sheet is taller than what you can actually see. It is applied
+// through @supports so older engines keep the vh value rather than nothing.
 const SHEET_CSS = `
 @keyframes v2SheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes v2ScrimIn { from { opacity: 0; } to { opacity: 1; } }
-.v2-sheet { animation: v2SheetUp .26s cubic-bezier(.32,.72,0,1) both; }
+.v2-sheet { animation: v2SheetUp .26s cubic-bezier(.32,.72,0,1) both; max-height: 88vh; }
 .v2-scrim { animation: v2ScrimIn .2s ease-out both; }
+@supports (max-height: 88dvh) { .v2-sheet { max-height: 88dvh; } }
 @media (prefers-reduced-motion: reduce) {
   .v2-sheet, .v2-scrim { animation: none; }
 }
@@ -74,6 +82,40 @@ export default function ProductDrawer({
   const [qtys,    setQtys]    = useState<Record<string, number>>({});
   const [moreOpen, setMoreOpen] = useState(false);
 
+  // Lock the board behind the scrim, and put the salesman back exactly where
+  // he was on close. Local to this component by design — no global provider.
+  //
+  // `position: fixed` on <body>, not `overflow: hidden`: iOS Safari ignores
+  // overflow-hidden on body and keeps scrolling the page under the sheet.
+  // Fixing the body collapses its scroll to zero, so the offset is stashed in
+  // `top` and handed back to window.scrollTo on cleanup. Every property that
+  // is touched is read first and restored, rather than reset to "", so this
+  // cannot clobber a style someone else set.
+  useEffect(() => {
+    const body = document.body;
+    const y = window.scrollY;
+    const prev = {
+      position: body.style.position,
+      top:      body.style.top,
+      left:     body.style.left,
+      right:    body.style.right,
+      width:    body.style.width,
+    };
+    body.style.position = "fixed";
+    body.style.top      = `-${y}px`;
+    body.style.left     = "0";
+    body.style.right    = "0";
+    body.style.width    = "100%";
+    return () => {
+      body.style.position = prev.position;
+      body.style.top      = prev.top;
+      body.style.left     = prev.left;
+      body.style.right    = prev.right;
+      body.style.width    = prev.width;
+      window.scrollTo(0, y);
+    };
+  }, []);
+
   // A primer takes no base, so the whole base row disappears for those
   // variants. The stored base is CLEARED too, not just hidden — leaving it set
   // would let the header sub-line advertise a base the line does not carry.
@@ -98,37 +140,36 @@ export default function ProductDrawer({
     setMoreOpen(false);
   }
 
-  function step(size: string, delta: number): void {
-    setQtys((prev) => {
-      const next = Math.max(0, (prev[size] ?? 0) + delta);
-      return { ...prev, [size]: next };
-    });
+  // One tap moves a WHOLE BOX. The value shown stays in units, so 1L reads
+  // 0 -> 6 -> 12 and 20L (a drum, step 1) reads 0 -> 1 -> 2. Floors at 0.
+  function step(pack: V2Pack, direction: 1 | -1): void {
+    const delta = stepFor(pack) * direction;
+    setQtys((prev) => ({
+      ...prev,
+      [pack.size]: Math.max(0, (prev[pack.size] ?? 0) + delta),
+    }));
   }
 
   // ── Footer gating ────────────────────────────────────────────────────────
-  const { boxes, loose, units } = tally(qtys, product.packs);
+  const units = unitsIn(qtys);
   const needsVariant = product.variants.length > 0 && variant === null;
   const needsShade   = tab === "shade" && shade === null;
   const canAdd = units > 0 && !needsVariant && !needsShade;
 
+  // Units only — no box figure anywhere in v2. See unitsIn()'s note.
   let addLabel: string;
-  if (needsVariant)      addLabel = "Interior or exterior?";
-  else if (needsShade)   addLabel = "Pick a shade";
-  else if (!canAdd)      addLabel = "Add to order";
-  else {
-    // Boxes and loose are reported side by side, never summed. A zero side is
-    // omitted rather than printed as "0 boxes" — `units > 0` guarantees at
-    // least one side survives.
-    const parts: string[] = [];
-    if (boxes > 0) parts.push(`${boxes} boxes`);
-    if (loose > 0) parts.push(`${loose} loose`);
-    addLabel = `Add · ${parts.join(" · ")}`;
-  }
+  if (needsVariant)    addLabel = "Interior or exterior?";
+  else if (needsShade) addLabel = "Pick a shade";
+  else if (!canAdd)    addLabel = "Add to order";
+  else                 addLabel = `Add · ${units} units`;
 
-  // Header sub-line: the joined selection, else the category. Built from
-  // variant + base; when neither is set the string is empty and the category
-  // takes over, which is what keeps the "nothing selected yet" state readable.
-  const selectionLine = [variant, base].filter(Boolean).join(" · ");
+  // Header sub-line: whichever of the selections are set, joined by " · ".
+  // The second slot is the SHADE on the Shade tab and the BASE otherwise —
+  // they are alternatives, never both, because the base row is hidden on the
+  // Shade tab. Empty string falls back to the grey category.
+  const selectionLine = [variant, tab === "shade" ? shade : base]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="fixed inset-0 z-50">
@@ -144,10 +185,12 @@ export default function ProductDrawer({
       />
 
       {/* Sheet */}
+      {/* Height is AUTO — no `top`. The cap lives in .v2-sheet (88dvh/88vh),
+          so a short product opens as a short sheet and only a tall one grows
+          to the cap and scrolls internally. */}
       <section
         className="v2-sheet absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white"
         style={{
-          top: 40,
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           boxShadow: "0 -8px 32px rgba(18,14,26,.16)",
@@ -217,7 +260,7 @@ export default function ProductDrawer({
 
         {moreOpen ? (
           // ── "+ MORE" STATE — replaces control block AND body in place ──
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 overflow-y-auto">
             <div className="px-4 pt-3">
               {/* Static by spec — a div, not an <input>. Nothing is focusable. */}
               <div
@@ -322,13 +365,13 @@ export default function ProductDrawer({
             </div>
 
             {/* ── BODY — one row per pack ───────────────────────────────── */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1">
+            <div className="min-h-0 overflow-y-auto px-4 py-1">
               {product.packs.map((pack) => (
                 <PackRow
                   key={pack.size}
                   pack={pack}
                   qty={qtys[pack.size] ?? 0}
-                  onStep={(d) => step(pack.size, d)}
+                  onStep={(dir) => step(pack, dir)}
                 />
               ))}
             </div>
@@ -420,7 +463,7 @@ function MoreChip({ onClick, tall = false }: { onClick: () => void; tall?: boole
 /** One pack row: size + "per N" on the left, a stepper pill on the right. */
 function PackRow({
   pack, qty, onStep,
-}: { pack: V2Pack; qty: number; onStep: (delta: number) => void }): React.JSX.Element {
+}: { pack: V2Pack; qty: number; onStep: (direction: 1 | -1) => void }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-3 py-2.5">
       <div className="min-w-0">

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import PoV2Page from "./po-v2-page";
 
 // Hidden v2 salesman order page — placeholder shell.
@@ -49,6 +49,25 @@ export const metadata: Metadata = {
     title: "Orbit v2",
     statusBarStyle: "default",
   },
+};
+
+// ⚠ themeColor lives on the VIEWPORT export, not on `metadata`.
+//
+// The task said to add it to the Metadata export. In Next 14 that field is
+// DEPRECATED there: `metadata.themeColor` logs "Unsupported metadata
+// themeColor is configured in metadata export. Please move it to viewport
+// export instead." and is not honoured. Putting it here is the same one-line
+// intent, in the one place that actually paints the status bar white.
+//
+// The teal comes from app/layout.tsx:45 — `export const viewport: Viewport =
+// { themeColor: "#0d9488", ... }`. That file is NOT edited (reported, per the
+// task, for a separate decision). Next shallow-merges viewport per FIELD, the
+// same way it merges metadata, so this overrides themeColor for THIS ROUTE
+// ONLY and inherits the layout's viewportFit / width / initialScale /
+// maximumScale / userScalable / interactiveWidget untouched. Every other
+// route keeps the teal.
+export const viewport: Viewport = {
+  themeColor: "#FFFFFF",
 };
 
 export default function Page() {

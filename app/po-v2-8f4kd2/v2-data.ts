@@ -127,6 +127,51 @@ export type V2Shade = { name: string; hex: string };
 /** `per` = units in one box. NULL means the pack ships loose (drums). */
 export type V2Pack  = { size: string; per: number | null };
 
+/**
+ * COPIED VERBATIM from lib/place-order/pack.ts (its `PACK_STEP_MAP`, read
+ * 2026-09-06). Copied rather than imported so v2 stays self-contained and
+ * deletable in one command — the containment rule. It is a SNAPSHOT: if the
+ * depot re-sizes a carton, the original moves and this does not.
+ *
+ * ⚠ WHERE IT DISAGREES WITH OUR `per` VALUES — reported, not silently merged:
+ *   500ML  their 12  ·  our per 12   agree
+ *   1L     their  6  ·  our per  6   agree
+ *   4L     their  4  ·  our per  4   agree
+ *   10L    their  1  ·  our per NULL  ← different SPELLING, same meaning
+ *   20L    their  1  ·  our per NULL  ← different SPELLING, same meaning
+ * Their table states an explicit step of 1 for the drums ("10L is a drum at
+ * this depot, no box"); ours says "no box" by writing `per: null`. Both mean
+ * "step by one unit", so `stepFor` below produces the same number either way.
+ */
+const PACK_STEP_MAP: Record<string, number> = {
+  "50ML":  12,
+  "100ML": 24,
+  "200ML": 12,
+  "500ML": 12,
+  "1L":    6,
+  "4L":    4,
+  "10L":   1,
+  "20L":   1,
+  "30L":   1,
+  "40KG":  1,
+  "25KG":  1,
+  "30KG":  1,
+  "5KG":   1,
+  "1 pc":  1,
+};
+
+/**
+ * How many UNITS one tap of +/- moves: a whole box.
+ *
+ * `per` wins because it is this product's own carton size; the copied depot
+ * table is the fallback that answers for the drums (10L/20L -> 1), and 1 is
+ * the last resort for a pack neither knows. So 1L steps 0 -> 6 -> 12, 4L
+ * steps 0 -> 4 -> 8, and 20L steps 0 -> 1 -> 2.
+ */
+export function stepFor(pack: V2Pack): number {
+  return pack.per ?? PACK_STEP_MAP[pack.size] ?? 1;
+}
+
 export type V2Product = {
   key:      string;
   name:     string;
@@ -239,30 +284,28 @@ export type V2CartLine = {
   shade:      string | null;
   /** pack size -> quantity in UNITS. Only non-zero entries are kept. */
   qtys:       Record<string, number>;
+  /**
+   * The product's pack table, snapshotted onto the line. Nothing reads it for
+   * a COUNT — `unitsIn` does not need it. It is kept so a review screen can
+   * render this line's rows in catalog order: `qtys` is a Record, and its key
+   * order follows the order the salesman tapped, not the pack table.
+   */
   packs:      readonly V2Pack[];
 };
 
 /**
- * Boxes and loose units for one set of quantities.
+ * Total UNITS in one set of quantities — a plain sum, nothing else.
  *
- * A pack with a `per` value converts to boxes (qty / per); a pack without one
- * is a drum and counts as a LOOSE unit — the two are never added together,
- * because half a drum is not half a box and summing them would print a number
- * that means nothing on the floor. Boxes round to one decimal.
+ * 🔴 THERE IS DELIBERATELY NO BOX COUNT ANYWHERE IN v2. An earlier cut
+ * divided qty by `per` and reported boxes to one decimal; "2.5 boxes" is not
+ * a thing anyone can pick, load or check on a depot floor. Units are always
+ * whole, so every number this app shows is a number a person can act on.
+ * Do not reintroduce a boxes figure without a reason that survives that test.
  */
-export function tally(
-  qtys: Record<string, number>,
-  packs: readonly V2Pack[],
-): { boxes: number; loose: number; units: number } {
-  let boxes = 0;
-  let loose = 0;
+export function unitsIn(qtys: Record<string, number>): number {
   let units = 0;
-  for (const pack of packs) {
-    const qty = qtys[pack.size] ?? 0;
-    if (qty <= 0) continue;
-    units += qty;
-    if (pack.per && pack.per > 0) boxes += qty / pack.per;
-    else loose += qty;
+  for (const qty of Object.values(qtys)) {
+    if (qty > 0) units += qty;
   }
-  return { boxes: Math.round(boxes * 10) / 10, loose, units };
+  return units;
 }
