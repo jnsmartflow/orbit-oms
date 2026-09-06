@@ -54,11 +54,9 @@ export async function GET(
   // The SAME gate as app/api/billing/picking/list/route.ts — admin bypass, else
   // mail_orders/canView. NOT floor/canView; see the block comment above.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const orderId = Number(params.orderId);

@@ -15,11 +15,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // by URL and returns real depot data. Same check + admin bypass shape as
   // app/picking/page.tsx (mirrors app/trips/page.tsx's pattern).
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "picking", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Same param-reading convention as app/api/support/orders/route.ts:

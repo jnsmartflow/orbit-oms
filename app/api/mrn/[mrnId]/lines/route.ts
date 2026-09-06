@@ -74,11 +74,9 @@ export async function PUT(
 
   // 🔴 canEdit, NOT canView — see app/api/mrn/create/route.ts.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Identical path-segment validation to app/api/mrn/[mrnId]/route.ts.

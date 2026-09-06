@@ -9,10 +9,8 @@ export const dynamic = 'force-dynamic';
 export default async function CustomersPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "admin") {
-    const allowed = await checkPermission(session.user.role, "customers", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkPermission(session.user.role, "customers", "canView");
+  if (!allowed) redirect("/unauthorized");
   const perms = await getPagePermissions(session.user.role, "customers");
 
   const [customers, total, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles, customerTypes, premisesTypes] =

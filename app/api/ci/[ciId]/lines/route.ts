@@ -87,11 +87,9 @@ export async function PUT(
 
   // 🔴 canEdit, NOT canView — see app/api/ci/draft/route.ts.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "ci", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "ci", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const rawId = params.ciId?.trim() ?? "";

@@ -81,11 +81,9 @@ export async function PATCH(
   // and Picking write routes gate on canView, making a view-only grant a UI
   // illusion. CI does not inherit it.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "ci", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "ci", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   // ⚠ `hasRole`, NOT `requireRole`. requireRole calls redirect("/unauthorized"),
   // which is right for a PAGE and wrong here: a fetch() would receive a 307 to

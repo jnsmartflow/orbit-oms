@@ -73,11 +73,9 @@ export async function PATCH(
   // 🔴 canEdit, NOT canView — see app/api/mrn/create/route.ts for why MRN does
   // not become the third module with that landmine.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Digits only, matching app/api/mrn/[mrnId]/route.ts exactly so the read and

@@ -19,10 +19,8 @@ export default async function TripsPage() {
   const roles       = session.user.roles ?? [session.user.role];
   const primaryRole = session.user.role;
 
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "trip_report", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "trip_report", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const allPerms = await getAllPermissionsForRoles(roles);
   const navItems = buildNavItems(allPerms, primaryRole, {

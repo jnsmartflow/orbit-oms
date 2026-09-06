@@ -9,10 +9,8 @@ export const dynamic = "force-dynamic";
 export default async function VehiclesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "admin") {
-    const allowed = await checkPermission(session.user.role, "vehicles", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkPermission(session.user.role, "vehicles", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const [vehicles, transporters] = await Promise.all([
     prisma.vehicle_master.findMany({

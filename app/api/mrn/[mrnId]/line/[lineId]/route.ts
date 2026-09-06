@@ -85,11 +85,9 @@ export async function PUT(
   // canEdit — floor_supervisor holds it true, which is the whole point of the
   // three supervisor routes. Same gate + admin bypass shape as step 5.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // session.user.id is a string (lib/auth.ts). Number("") is 0 and finite, so

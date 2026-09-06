@@ -45,11 +45,9 @@ export async function POST(
   // canEdit — floor_supervisor holds it true, which is the whole point of this
   // route. Same gate + admin bypass shape as the step-5 billing write routes.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // session.user.id is a string (lib/auth.ts). Number("") is 0 and finite, so

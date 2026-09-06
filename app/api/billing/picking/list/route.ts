@@ -82,11 +82,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // real gating. The operations-only pilot is enforced by the UI feature flag,
   // not here; this route stays on mail_orders/canView.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // ── The day this request is about ───────────────────────────────────────

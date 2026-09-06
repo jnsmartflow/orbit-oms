@@ -54,10 +54,8 @@ export default async function CiPage() {
   // directly by URL. Neither substitutes for the other — and the write routes
   // gate on canEdit, not canView, so a view-only holder sees this page and is
   // refused by the server the moment Next is tapped.
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "ci", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "ci", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const allPerms = await getAllPermissionsForRoles(roles);
   const navItems = buildNavItems(allPerms, primaryRole, {

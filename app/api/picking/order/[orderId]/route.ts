@@ -89,11 +89,9 @@ export async function GET(
   // Same gate as the other picking routes (queue/assign/unassign) — admin
   // bypass, else canView on 'picking'.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "picking", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const orderId = Number(params.orderId);

@@ -46,11 +46,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // Same gate + admin bypass as app/api/picking/queue/route.ts — this route is
   // reachable directly by URL and reflects real depot data.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "picking", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Param reading + validation mirror the queue route EXACTLY, so the marker

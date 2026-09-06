@@ -22,10 +22,12 @@ Shipped 2026-09-04 in eight commits (`c3cf726b` → `b915c88e`). Access now come
       `[ADMIN, DISPATCHER, SUPPORT, TINT_MANAGER, TINT_OPERATOR, FLOOR_SUPERVISOR]`. Each is a
       PERMISSION question — "may this person" — which is what a tick already answers. 48 of the 58
       include ADMIN alongside others; 10 name no admin at all.
-- [ ] **22 inline `session.user.role !== "admin"` BYPASS sites** (shape:
-      `if (role !== "admin") { checkPermission(...) }`). ⚠ A superuser who is not ALSO role-admin
-      falls through into the permission check. No live impact today — the one superuser holds both.
-      `CLAUDE_CORE.md §13`.
+- [x] ~~**22 inline `session.user.role !== "admin"` BYPASS sites**~~ **DONE 2026-09-06 — and there
+      were 57, not 22.** All one-clause wrappers removed; the check they wrapped now runs
+      unconditionally. Provably behaviour-neutral: the resolvers test the same value on their own
+      first line. ⚠ The old note here ("a superuser who is not ALSO role-admin falls through") was
+      false when written — the `isSuperuser` arm admits them two lines later. `CLAUDE_CORE.md §13`.
+      One sibling remains in expression form: `api/mrn/photo/[photoId]:169`.
 - [x] ~~**12 inline role checks under `app/api/tint/`**, deliberately out of scope on 2026-09-04
       because tint was not re-tested that night.~~ **DONE 2026-09-06.** The tint block converted in
       three commits, gated by `code-discovery-2026-09-06-tint-conversion-gate.md`: 19 write handlers

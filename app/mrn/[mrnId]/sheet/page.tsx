@@ -37,10 +37,8 @@ export default async function MrnSheetPage({
   if (!session?.user) redirect("/login");
 
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canExport");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "mrn", "canExport");
+  if (!allowed) redirect("/unauthorized");
 
   // Validate, never coerce — the same digits-only check the API routes use.
   const raw = params.mrnId?.trim() ?? "";

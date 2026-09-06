@@ -35,10 +35,8 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
   const roles       = session.user.roles ?? [session.user.role];
   const primaryRole = session.user.role;
 
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "picking", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   // Gates the temporary push-test link (scaffolding, removed after the push
   // rollout). admin OR operations — operations already has picking.canView and

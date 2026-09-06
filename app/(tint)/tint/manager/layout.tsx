@@ -22,10 +22,8 @@ export default async function TintManagerLayout({
   const roles       = session.user.roles ?? [session.user.role];
   const primaryRole = session.user.role;
 
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const allPerms = await getAllPermissionsForRoles(roles);
   const navItems = buildNavItems(allPerms, primaryRole, {

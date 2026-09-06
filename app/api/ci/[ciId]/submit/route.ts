@@ -75,11 +75,9 @@ export async function POST(
   // and Picking write routes gate on canView, making a view-only grant a UI
   // illusion. CI does not inherit it.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "ci", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "ci", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   // ...and WHICH SIDE of the workflow this is. Submitting is the floor's step;
   // billing holds `ci` canEdit too (it needs it to close), so the permission

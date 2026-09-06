@@ -65,11 +65,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // illusion: the button is hidden but the route still writes. CI is a NEW
   // module and does not inherit that. Every write route here gates on canEdit.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "ci", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "ci", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // session.user.id is a string (lib/auth.ts: `id: user.id.toString()`).

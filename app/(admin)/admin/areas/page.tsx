@@ -9,10 +9,8 @@ export const dynamic = 'force-dynamic';
 export default async function AreasPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "admin") {
-    const allowed = await checkPermission(session.user.role, "routes_areas", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkPermission(session.user.role, "routes_areas", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const [areas, deliveryTypes, routes] = await Promise.all([
     prisma.area_master.findMany({

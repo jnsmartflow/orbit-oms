@@ -9,10 +9,8 @@ export const dynamic = 'force-dynamic';
 export default async function RoutesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "admin") {
-    const allowed = await checkPermission(session.user.role, "routes_areas", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkPermission(session.user.role, "routes_areas", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const routes = await prisma.route_master.findMany({
     orderBy: { name: "asc" },

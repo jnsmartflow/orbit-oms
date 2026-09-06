@@ -84,11 +84,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // already holds this grant: the page layout gates on exactly this check, so
   // this is strictly tighter with no reachable regression.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // A malformed day is a 400, never a silent fallback to today — the same

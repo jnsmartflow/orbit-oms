@@ -81,11 +81,9 @@ export async function POST(
   // ── 2. Permission: canEdit (design §7). floor_supervisor holds it, which is
   // the whole point of this route; same gate + admin bypass as start/end.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mrn", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // This id IS the record of who took the photo — mrn_photos.capturedById is

@@ -38,10 +38,8 @@ export default async function MrnPage() {
   // routes. The page gate and the route gates are separate on purpose: this
   // one stops the SCREEN rendering, and app/api/mrn/* stop the DATA, which is
   // reachable directly by URL.
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "mrn", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const allPerms = await getAllPermissionsForRoles(roles);
   const navItems = buildNavItems(allPerms, primaryRole, {

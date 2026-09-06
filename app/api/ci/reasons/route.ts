@@ -37,11 +37,9 @@ export async function GET(): Promise<NextResponse> {
   // canView, not canEdit: reading the vocabulary is not writing a return, and
   // billing's screen may want to render a reason filter later.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "ci", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "ci", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const reasons = await prisma.ci_reason_master.findMany({

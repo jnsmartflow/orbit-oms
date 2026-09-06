@@ -42,11 +42,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // URL and returns real depot data. Same check + admin bypass shape as the
   // picking routes.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mrn", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Trim, empty string treated as absent — the convention the picking and

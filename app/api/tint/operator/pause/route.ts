@@ -53,11 +53,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // so viewing the operator screen no longer implies the right to pause a live
   // tint job. Pause writes three rows. Same correction on resume, next door.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "tint_operator", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "tint_operator", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 
   // ── Validate body ──────────────────────────────────────────────────────────

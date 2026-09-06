@@ -63,11 +63,9 @@ export async function POST(
   // 🔴 canEdit, NOT canView — CORE's standing bug on the Mail Orders and
   // Picking write routes is not inherited here.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "ci", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "ci", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   // ...and WHICH SIDE. Closing is billing's step; floor_supervisor holds `ci`
   // canEdit (it needs it to raise a return), so the permission alone would let

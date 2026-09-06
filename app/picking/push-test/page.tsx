@@ -15,10 +15,8 @@ export default async function PushTestPage() {
   if (!session?.user) redirect("/login");
 
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "picking", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null;
 

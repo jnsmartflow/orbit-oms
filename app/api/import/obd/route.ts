@@ -3792,10 +3792,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     ROLES.OPERATION_MANAGER,
     ROLES.OPERATIONS,
   ]);
-  if (session!.user.role !== "admin") {
-    const allowed = await checkPermission(session!.user.role, "import_obd", "canImport");
-    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-  }
+  const allowed = await checkPermission(session!.user.role, "import_obd", "canImport");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   if (action === "preview") return handlePreview(req, session!);
   if (action === "confirm") return handleConfirm(req, session!);

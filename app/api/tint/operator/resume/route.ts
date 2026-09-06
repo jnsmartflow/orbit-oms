@@ -31,11 +31,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // other half of pause; see the fuller note there. canView and canEdit are
   // separate per-person ticks since 2026-09-04 (CORE §5).
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "tint_operator", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "tint_operator", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 
   // ── Validate body ──────────────────────────────────────────────────────────

@@ -37,11 +37,9 @@ export async function GET(
   // Same gate + admin bypass as app/api/mrn/board/route.ts and the picking
   // routes — reachable directly by URL, returns real depot data.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mrn", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mrn", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Validate, never coerce. Digits only — stricter than the picking routes'

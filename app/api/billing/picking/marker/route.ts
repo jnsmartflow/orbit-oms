@@ -59,11 +59,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // Same gate as the list route — this endpoint is reachable directly by URL
   // and reflects real depot data.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Same shape gate as the list route — a malformed day is a 400, never a
