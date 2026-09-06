@@ -582,7 +582,7 @@ const SHADE_HEX: Record<string, string> = {
   "PHIROZA BLUE":          "#1B8A9E",
   "PO RED":                "#9C1A13",
   "BROWN":                 "#6B4423",
-  "RICH BROWN":            "#52301C",
+  "RICH BROWN":            "#4A2C1A",
   "TERACOTTA":             "#A5502F",
   "SIGNAL RED":            "#C0271E",
   "BUS GREEN":             "#1F5E3A",
@@ -620,8 +620,8 @@ const SHADE_HEX: Record<string, string> = {
   // sit next to TEAK and GOLDEN BROWN as near-identical browns and a wrong
   // pick is a wrong order. That objection was right and has not gone away —
   // it is answered by the CHIP, not by the hex: a row this crowded now renders
-  // as swatch + NAME. See chipStyleFor() below, which decides that from the
-  // colours themselves. RICH BROWN was also re-valued here, #4A2C1A -> #52301C.
+  // as swatch + NAME. See shadeRowMode() below, which decides that from the
+  // colours themselves. RICH BROWN keeps its original #4A2C1A.
   "SPECIAL TEAK":          "#A56B2E",
   "TIMBER GOLDEN BROWN":   "#BC8A3C",
 
