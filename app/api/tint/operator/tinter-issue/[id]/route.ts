@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import { PackCode } from "@prisma/client";
@@ -13,8 +12,15 @@ export async function GET(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN, ROLES.OPERATIONS])) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Per-user tick, not a job title (2026-09-06). The PATCH below already gates
+  // on tint_operator/canEdit; this read was held back when the writes converted.
+  const roles = session.user.roles ?? [session.user.role];
+  if (!(await checkAnyPermission(roles, "tint_operator", "canView"))) {
+    return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
   // Step 1 — Parse params

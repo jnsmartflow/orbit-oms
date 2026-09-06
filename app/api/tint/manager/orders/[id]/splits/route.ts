@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,14 @@ export async function GET(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.OPERATION_MANAGER]);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). Reads were held back when the
+  // tint WRITES converted; this closes the split. Operations User loses these —
+  // he holds no tint_manager tick and both tint layouts already redirect him.
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const orderId = parseInt(params.id, 10);
   if (isNaN(orderId)) {

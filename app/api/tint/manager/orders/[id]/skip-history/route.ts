@@ -17,13 +17,10 @@ export async function GET(
 
   // Permission gate (locked OrbitOMS model): Admin OR canView on the
   // tint_manager page key. Same gate as Remove OBD.
-  const isAdmin = session.user.role === "admin";
-  if (!isAdmin) {
-    const roles = session.user.roles ?? [session.user.role];
-    const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
-    if (!allowed) {
-      return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
-    }
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  if (!allowed) {
+    return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 
   // ── Validate id ────────────────────────────────────────────────────────────

@@ -35,13 +35,10 @@ export async function POST(
   // this route soft-removes an OBD from the board and voids its challan, so a
   // single view-only tick would have handed that to a bystander. The two holder
   // sets happened to be identical on 2026-09-06, so no live grant was affected.
-  const isAdmin = session.user.role === "admin";
-  if (!isAdmin) {
-    const roles = session.user.roles ?? [session.user.role];
-    const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
-    if (!allowed) {
-      return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
-    }
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
 
   // ── Validate params + body ──────────────────────────────────────────────────
