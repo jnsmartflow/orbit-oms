@@ -19,7 +19,7 @@ import {
 import {
   DIVIDER, FAMILIES, INK, MONO_BG, RULE, VIOLET, VIOLET_BG,
   EMPTY_ORDER, addRecent, buildCatalog, drawerMode, formatPack, loadRecents, monogram,
-  optionPools, packRows, resolveGroup, unitsIn,
+  mixToWhite, optionPools, packRows, resolveGroup, tileImage, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
@@ -44,15 +44,31 @@ import {
 // default to `min-width:auto`, which is what actually causes runaway rows),
 // and truncating text.
 
+// The product name UNDER the tile, Blinkit-style: outside the square, left
+// aligned, two lines at most.
+//
+// 🔴 NO MID-WORD BREAKS. `overflowWrap: break-word` used to be here, and at a
+// 83px track it is what turns "Powerflexx" into "Powerfl / exx" and
+// "Supercover" into "Supercov / er" — a product name broken across a line at a
+// meaningless point is harder to scan than one that is clipped. Both are now
+// `normal`, so the only break point is a space.
+//
+// The clip is the structural guarantee, not a nicety: with wrapping refused, a
+// word wider than its track would otherwise push the grid out and put the whole
+// board into horizontal scroll. `overflow: hidden` makes an over-long word
+// cut off inside its own cell instead, so the board's no-sideways-scroll rule
+// cannot be broken by a future product name.
 const TILE_TEXT_STYLE: React.CSSProperties = {
   color:           INK,
   letterSpacing:   "-0.01em",
+  lineHeight:      1.25,
   display:         "-webkit-box",
   WebkitBoxOrient: "vertical",
   WebkitLineClamp: 2,
   overflow:        "hidden",
-  overflowWrap:    "break-word",
+  overflowWrap:    "normal",
   wordBreak:       "normal",
+  hyphens:         "none",
 };
 
 type LoadState =
@@ -733,7 +749,17 @@ export default function PoV2Page(): React.JSX.Element {
         ) : (
         <>
         {/* ── FAMILY BLOCKS ────────────────────────────────────────────── */}
-        {FAMILIES.map((family) => (
+        {FAMILIES.map((family, familyIndex) => {
+          // 🔴 THE FIRST TWO FAMILIES LOAD EAGERLY, EVERYTHING BELOW IS LAZY.
+          // Eight tiles are what fits above the fold on a 390px phone, and they
+          // are the eight a salesman opens most. Marking all 32 eager would put
+          // 577 KB on the wire before the first tap on a depot 5G signal that
+          // is 5G on the sign and not in the shed; marking all 32 lazy would
+          // leave the first screen visibly empty on arrival, which reads as a
+          // broken page rather than a loading one.
+          const eager = familyIndex < 2;
+          const wash  = mixToWhite(family.tint, TILE_WASH);
+          return (
           <section key={family.name} className="px-4" style={{ paddingTop: 18 }}>
             <div className="mb-2 flex items-center gap-2">
               <h2 className="shrink-0 text-[11px] font-bold uppercase"
@@ -746,43 +772,72 @@ export default function PoV2Page(): React.JSX.Element {
               {family.tiles.map((tile) => {
                 const count   = countsByTile[tile.sap] ?? 0;
                 const inOrder = count > 0;
+                // Null for the eight products with no art. An empty tinted
+                // square is the whole treatment — no initials, no dash, no
+                // placeholder glyph. A tile that says nothing reads as art that
+                // has not arrived; a tile with "CS" in it reads as a decision.
+                const src = tileImage(tile.slug);
                 return (
                   <button
                     key={tile.sap}
                     type="button"
                     disabled={!ready}
                     onClick={() => setOpenTile(tile)}
-                    className="relative flex min-w-0 flex-col items-center justify-center rounded-[16px] px-[3px]"
-                    style={{
-                      height:     84,
-                      background: inOrder ? VIOLET_BG : family.tint,
-                      // Transparent, not absent: an in-cart tile grows a violet
-                      // border and must not change size when it does.
-                      border:     inOrder ? `1.5px solid ${VIOLET}` : "1.5px solid transparent",
-                      opacity:    ready ? 1 : 0.45,
-                    }}
+                    className="flex min-w-0 flex-col gap-1.5 text-left"
+                    style={{ opacity: ready ? 1 : 0.45 }}
                   >
-                    {/* A product IMAGE goes here later, above the name — this is
-                        already a centred column so it slots in without a
-                        rewrite. No empty placeholder box now: 32 grey squares
-                        would read as broken, not as pending. */}
-                    <span className="text-center text-[13.5px] font-semibold" style={TILE_TEXT_STYLE}>
+                    {/* THE SQUARE. No border by design — the art carries the
+                        tile and a hairline around 32 of them is a grid of
+                        boxes. aspect-ratio holds the space before the image
+                        lands, so nothing on the board jumps as they arrive. */}
+                    <span
+                      className="relative block w-full overflow-hidden rounded-[14px]"
+                      style={{ aspectRatio: "1 / 1", background: inOrder ? VIOLET_BG : wash }}
+                    >
+                      {src && (
+                        <img
+                          src={src}
+                          alt={tile.label}
+                          width={600}
+                          height={600}
+                          decoding="async"
+                          loading={eager ? "eager" : "lazy"}
+                          className="block h-full w-full"
+                          style={{
+                            objectFit: "contain",
+                            // 🔴 MULTIPLY, NOT A PLAIN PAINT. Every file is an
+                            // OPAQUE WHITE square — that is how the converter
+                            // pads the tin to a uniform 84% share. Painted
+                            // normally it would cover the family wash entirely
+                            // and every tile would be a white box. Multiply
+                            // leaves the backdrop untouched wherever the file
+                            // is white and shows the tin everywhere else, so
+                            // the tint survives and the tin sits ON it.
+                            mixBlendMode: "multiply",
+                          }}
+                        />
+                      )}
+                      {inOrder && (
+                        <span
+                          className="absolute flex items-center justify-center rounded-full text-[10px] font-extrabold text-white"
+                          style={{ top: 4, right: 4, minWidth: 18, height: 18, padding: "0 5px", background: VIOLET }}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </span>
+
+                    {/* THE NAME, outside the square. */}
+                    <span className="block w-full text-[12px] font-semibold" style={TILE_TEXT_STYLE}>
                       {tile.label}
                     </span>
-                    {inOrder && (
-                      <span
-                        className="absolute flex items-center justify-center rounded-full text-[10px] font-extrabold text-white"
-                        style={{ top: -7, right: -7, minWidth: 18, height: 18, padding: "0 5px", background: VIOLET }}
-                      >
-                        {count}
-                      </span>
-                    )}
                   </button>
                 );
               })}
             </div>
           </section>
-        ))}
+          );
+        })}
         </>
         )}
       </main>

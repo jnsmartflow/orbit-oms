@@ -52,7 +52,26 @@ export type ApiPayload  = { customers: ApiCustomer[]; products: ApiProduct[] };
 // for that product's menu rows — see joinKey() below for why that COALESCE is
 // not optional.
 
-export type V2Tile   = { label: string; sap: string };
+export type V2Tile   = {
+  label: string;
+  /** Catalog join key — COALESCE(product, subProduct) for this product's rows. */
+  sap: string;
+  /**
+   * 🔴 THE IMAGE KEY, AND IT IS NEVER DERIVED FROM `label`.
+   *
+   * It would be one line to slugify the label instead, and that line would
+   * break the board silently the next time a tile is renamed — which is not
+   * hypothetical: "Dustproof" became "Protect Dustproof" and M900 was replaced
+   * by PU Enamel, both in a single step, and neither touched a filename. A
+   * derived slug would have turned both renames into a broken-image icon on a
+   * salesman's phone with nothing failing anywhere a developer would look.
+   *
+   * So the slug is written down, matches the committed filename in
+   * public/category-images/ exactly, and changes only when the FILE is renamed.
+   * Labels are free to change; this is not.
+   */
+  slug: string;
+};
 export type V2Family = { name: string; tint: string; tiles: readonly V2Tile[] };
 
 export const FAMILIES: readonly V2Family[] = [
@@ -60,34 +79,34 @@ export const FAMILIES: readonly V2Family[] = [
     name: "Enamel",
     tint: "#F8F0E0",
     tiles: [
-      { label: "Gloss",          sap: "GLOSS" },
-      { label: "Promise Enamel", sap: "PROMISE ENAMEL" },
-      { label: "Super Satin",    sap: "SUPER SATIN" },
+      { label: "Gloss",          sap: "GLOSS", slug: "gloss" },
+      { label: "Promise Enamel", sap: "PROMISE ENAMEL", slug: "promise-enamel" },
+      { label: "Super Satin",    sap: "SUPER SATIN", slug: "super-satin" },
       // M900 left the board 2026-09-07 and is now reachable by SEARCH ONLY -
       // a low-volume line was holding a permanent tile. PU Enamel took the
       // slot; "PU ENAMEL" is its real string, quoted from the live payload,
       // where menu.product and menu.subProduct are both exactly that.
-      { label: "PU Enamel",      sap: "PU ENAMEL" },
+      { label: "PU Enamel",      sap: "PU ENAMEL", slug: "pu-enamel" },
     ],
   },
   {
     name: "Interior",
     tint: "#E8EFFA",
     tiles: [
-      { label: "Stay Bright",  sap: "SATIN STAY BRIGHT" },
-      { label: "Supercover",   sap: "SUPERCOVER" },
-      { label: "Pearl Glo",    sap: "VT PEARL GLO" },
-      { label: "Platinum Glo", sap: "VT PLATINUM GLO" },
+      { label: "Stay Bright",  sap: "SATIN STAY BRIGHT", slug: "stay-bright" },
+      { label: "Supercover",   sap: "SUPERCOVER", slug: "supercover" },
+      { label: "Pearl Glo",    sap: "VT PEARL GLO", slug: "pearl-glo" },
+      { label: "Platinum Glo", sap: "VT PLATINUM GLO", slug: "platinum-glo" },
     ],
   },
   {
     name: "Promise",
     tint: "#FBECEF",
     tiles: [
-      { label: "Smart Choice",   sap: "PROMISE SMARTCHOICE" },
-      { label: "Promise Primer", sap: "PROMISE PRIMER" },
-      { label: "Promise Int",    sap: "PROMISE INTERIOR" },
-      { label: "Promise Ext",    sap: "PROMISE EXTERIOR" },
+      { label: "Smart Choice",   sap: "PROMISE SMARTCHOICE", slug: "smart-choice" },
+      { label: "Promise Primer", sap: "PROMISE PRIMER", slug: "promise-primer" },
+      { label: "Promise Int",    sap: "PROMISE INTERIOR", slug: "promise-int" },
+      { label: "Promise Ext",    sap: "PROMISE EXTERIOR", slug: "promise-ext" },
     ],
   },
   {
@@ -100,53 +119,121 @@ export const FAMILIES: readonly V2Family[] = [
       // tile rename therefore cannot reach the wire, and it must not: the
       // PowerShell intake parser reads that product string, and a changed one
       // would break order intake silently.
-      { label: "Protect Dustproof", sap: "WS PROTECT DUSTPROOF" },
-      { label: "Protect Hi-Sheen",  sap: "WS PROTECT HI-SHEEN" },
-      { label: "Max",        sap: "WS MAX" },
-      { label: "Powerflexx", sap: "WS POWERFLEXX" },
+      { label: "Protect Dustproof", sap: "WS PROTECT DUSTPROOF", slug: "protect-dustproof" },
+      { label: "Protect Hi-Sheen",  sap: "WS PROTECT HI-SHEEN", slug: "protect-hi-sheen" },
+      { label: "Max",        sap: "WS MAX", slug: "max" },
+      { label: "Powerflexx", sap: "WS POWERFLEXX", slug: "powerflexx" },
     ],
   },
   {
     name: "Primer",
     tint: "#E3F1F8",
     tiles: [
-      { label: "Cement SB",   sap: "CEMENT PRIMER SB" },
-      { label: "Zinc Yellow", sap: "ZINC YELLOW METAL PRIMER" },
-      { label: "Red Oxide",   sap: "RED OXIDE METAL PRIMER" },
-      { label: "Ext Acrylic", sap: "EXTERIOR ACRYLIC PRIMER" },
+      { label: "Cement SB",   sap: "CEMENT PRIMER SB", slug: "cement-sb" },
+      { label: "Zinc Yellow", sap: "ZINC YELLOW METAL PRIMER", slug: "zinc-yellow" },
+      { label: "Red Oxide",   sap: "RED OXIDE METAL PRIMER", slug: "red-oxide" },
+      { label: "Ext Acrylic", sap: "EXTERIOR ACRYLIC PRIMER", slug: "ext-acrylic" },
     ],
   },
   {
     name: "Stainer",
     tint: "#F6E8C8",
     tiles: [
-      { label: "Acotone",        sap: "ACOTONE" },
-      { label: "Uni Stainer",    sap: "UNIVERSAL STAINER" },
-      { label: "Machine Tinter", sap: "MACHINE TINTER" },
-      { label: "GVA",            sap: "GVA" },
+      { label: "Acotone",        sap: "ACOTONE", slug: "acotone" },
+      { label: "Uni Stainer",    sap: "UNIVERSAL STAINER", slug: "uni-stainer" },
+      { label: "Machine Tinter", sap: "MACHINE TINTER", slug: "machine-tinter" },
+      { label: "GVA",            sap: "GVA", slug: "gva" },
     ],
   },
   {
     name: "Aquatech",
     tint: "#E0F1EA",
     tiles: [
-      { label: "Damp 2in1", sap: "DAMP PROTECT 2IN1" },
-      { label: "Roof Coat", sap: "ROOF COAT WHITE" },
-      { label: "Crack 5mm", sap: "CRACKFILLER 5MM" },
-      { label: "Damp Base", sap: "DAMP PROTECT BASECOAT" },
+      { label: "Damp 2in1", sap: "DAMP PROTECT 2IN1", slug: "damp-2in1" },
+      { label: "Roof Coat", sap: "ROOF COAT WHITE", slug: "roof-coat" },
+      { label: "Crack 5mm", sap: "CRACKFILLER 5MM", slug: "crack-5mm" },
+      { label: "Damp Base", sap: "DAMP PROTECT BASECOAT", slug: "damp-base" },
     ],
   },
   {
     name: "Wood",
     tint: "#EFE6DA",
     tiles: [
-      { label: "2K Matt",      sap: "2K PU MATT" },
-      { label: "Prime Matt",   sap: "PU PRIME MATT" },
-      { label: "Prime Sealer", sap: "PU PRIME SEALER" },
-      { label: "Thinner",      sap: "MULTI PURPOSE THINNER" },
+      { label: "2K Matt",      sap: "2K PU MATT", slug: "2k-matt" },
+      { label: "Prime Matt",   sap: "PU PRIME MATT", slug: "prime-matt" },
+      { label: "Prime Sealer", sap: "PU PRIME SEALER", slug: "prime-sealer" },
+      { label: "Thinner",      sap: "MULTI PURPOSE THINNER", slug: "thinner" },
     ],
   },
 ];
+
+// ── Tile art ───────────────────────────────────────────────────────────────
+
+/**
+ * 🔴 THE SLUGS THAT ACTUALLY HAVE A FILE. An explicit list, checked before any
+ * <img> is rendered — never "render it and hope".
+ *
+ * A missing file does not fail quietly. The browser paints a broken-image glyph
+ * in the tile and the salesman is the one who sees it; the 404 lands in a
+ * console nobody on a warehouse floor is reading. So the board asks this set
+ * first and renders an empty tinted square when the answer is no.
+ *
+ * GENERATED by listing public/category-images/ (2026-09-07). Eight of the 32
+ * tiles have no art yet — cement-sb, ext-acrylic, acotone, uni-stainer,
+ * machine-tinter, gva, prime-sealer, thinner. When art arrives, run
+ * scripts/convert-tile-images.mjs and add the slug here; nothing else changes.
+ */
+export const TILE_IMAGES: ReadonlySet<string> = new Set([
+  "2k-matt",
+  "crack-5mm",
+  "damp-2in1",
+  "damp-base",
+  "gloss",
+  "max",
+  "pearl-glo",
+  "platinum-glo",
+  "powerflexx",
+  "prime-matt",
+  "promise-enamel",
+  "promise-ext",
+  "promise-int",
+  "promise-primer",
+  "protect-dustproof",
+  "protect-hi-sheen",
+  "pu-enamel",
+  "red-oxide",
+  "roof-coat",
+  "smart-choice",
+  "stay-bright",
+  "super-satin",
+  "supercover",
+  "zinc-yellow",
+]);
+
+/** The tile's image URL, or null when there is no file for that slug. */
+export function tileImage(slug: string): string | null {
+  return TILE_IMAGES.has(slug) ? `/category-images/${slug}.webp` : null;
+}
+
+/**
+ * Mix a hex colour toward white. `amount` is how far: 0 keeps it, 1 is white.
+ *
+ * The family tints were picked to fill an 84px block. Behind a product photo
+ * they are far too strong — the tin ends up competing with its own background —
+ * so the board washes them out to about half strength. The point of keeping ANY
+ * colour is that the eye still bands four tiles into a family down the page;
+ * the point of taking most of it away is that a tile should read as a product,
+ * not as a coloured square with a product on it.
+ */
+export function mixToWhite(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    .map((c) => Math.round(c + (255 - c) * amount).toString(16).padStart(2, "0"));
+  return "#" + ch.join("").toUpperCase();
+}
+
+/** How far the family tint is washed out behind the tile art. */
+export const TILE_WASH = 0.55;
 
 // ── Pack formatting ────────────────────────────────────────────────────────
 
