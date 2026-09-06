@@ -501,12 +501,39 @@ export type V2CartLine = {
   packOrder: string[];
 };
 
-/** "4L ×4, 1L ×6" — pack labels in catalog order, zero quantities dropped. */
-export function packString(line: V2CartLine): string {
+/**
+ * The ordered packs of one line, smallest first, zero quantities dropped.
+ *
+ * `packOrder` is already ascending by size with KG last — the payload sorts it
+ * that way (route.ts:21-28) — so this is a filter, not a re-sort.
+ *
+ * Returned as ROWS rather than a joined string: a review line is what somebody
+ * checks a physical load against, and "100ML ×24, 200ML ×12, 500ML ×12, 1L ×6"
+ * wrapping across two lines is not checkable. One pack per row, right-aligned
+ * and tabular, is.
+ */
+export function packRows(line: V2CartLine): { label: string; qty: number }[] {
   return line.packOrder
     .filter((label) => (line.qtys[label] ?? 0) > 0)
-    .map((label) => `${label} ×${line.qtys[label]}`)
-    .join(", ");
+    .map((label) => ({ label, qty: line.qtys[label] }));
+}
+
+/**
+ * DISPLAY-ONLY chip text for a BASE.
+ *
+ * 🔴 THE WIRE VALUE IS UNTOUCHED. This is called in JSX and nowhere else: the
+ * selection state, the cart line and the email all carry the raw `baseColour`
+ * ("90 BASE", "BRILLIANT WHITE") straight off the menu row. Changing what the
+ * chip says must never change what the depot is asked for.
+ *
+ * Scoped to bases on purpose — "BRILLIANT WHITE" is also a SHADE on GVA and
+ * Promise Enamel, and shortening it to "BW" there would rename a colour.
+ */
+export function baseChipLabel(value: string): string {
+  const v = value.trim();
+  if (/^brilliant\s+white$/i.test(v)) return "BW";
+  const m = v.match(/^(.+?)\s+base$/i);   // "90 BASE" and Sadolin's "90 Base"
+  return m ? m[1] : v;
 }
 
 // ── Order-level fields ─────────────────────────────────────────────────────

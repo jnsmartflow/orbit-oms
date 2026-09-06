@@ -5,7 +5,7 @@ import { Minus, Plus, X } from "lucide-react";
 import V2Sheet from "./v2-sheet";
 import {
   INK, RULE, VIOLET,
-  chipStyle, formatPack, stepForLabel, unitsIn,
+  baseChipLabel, chipStyle, formatPack, stepForLabel, unitsIn,
   type ApiProduct, type V2Option, type V2Resolved,
 } from "./v2-data";
 
@@ -51,9 +51,16 @@ export default function ProductDrawer({
 
   // Open on the tab that actually holds the searched option, so the chip the
   // salesman searched for is on screen rather than one tab away.
+  //
+  // 🔴 THE FINAL FALLBACK IS "base", NOT "shade". It used to be
+  // `hasBases ? "base" : "shade"`, which handed a product with NEITHER list a
+  // phantom shade tab — see the needsShade note in the footer gating below,
+  // which is where that turned into a blocking bug.
   const [tab, setTab] = useState<Tab>(() => {
     if (initialOption && product.shades.some((o) => o.value === initialOption)) return "shade";
-    return hasBases ? "base" : "shade";
+    if (hasBases)  return "base";
+    if (hasShades) return "shade";
+    return "base";
   });
   // ONE selection, whichever row it came from. From the board: top base
   // pre-selected, shade and variant never. From a search hit: that exact
@@ -63,6 +70,11 @@ export default function ProductDrawer({
     initialOption ?? (hasBases ? (product.bases[0]?.value ?? null) : null),
   );
   const [qtys, setQtys] = useState<Record<string, number>>({});
+
+  // True when the chip row currently shows BASES — the only list whose labels
+  // are shortened. "BRILLIANT WHITE" is also a SHADE on GVA and Promise
+  // Enamel, and abbreviating it there would rename a colour.
+  const showingBases = !hasVariants && tab === "base";
 
   // Which options are on show right now, and which row that resolves to.
   const activeList: V2Option[] = hasVariants
@@ -103,9 +115,23 @@ export default function ProductDrawer({
   }
 
   // ── Footer gating ────────────────────────────────────────────────────────
+  //
+  // 🔴 THE BUG THIS FIXES. `needsShade` used to read
+  //     !hasVariants && tab === "shade" && selected === null
+  // with no test that the product HAS any shades. A product with no bases, no
+  // shades and no variants — Cement SB, Zinc Yellow, Red Oxide, Ext Acrylic,
+  // Damp 2in1, Roof Coat, Crack 5mm, Damp Base, Thinner, nine live sellers —
+  // fell to `tab = "shade"` in the initialiser above, had `selected === null`
+  // because there was nothing to pre-select, and so demanded a shade from a
+  // chip row that is never rendered for it (showTabs is false). Add stayed
+  // dead on "Pick a shade" with no way out. Every one of those products was
+  // unorderable.
+  //
+  // A demand for a selection is only meaningful when there is something to
+  // select, so each guard now tests its own list first.
   const units = unitsIn(qtys);
   const needsVariant = hasVariants && selected === null;
-  const needsShade   = !hasVariants && tab === "shade" && selected === null;
+  const needsShade   = hasShades && !hasVariants && tab === "shade" && selected === null;
   const canAdd = units > 0 && selectedRow !== null && !needsVariant && !needsShade;
 
   let addLabel: string;
@@ -139,7 +165,7 @@ export default function ProductDrawer({
   );
 
   return (
-    <V2Sheet onClose={onClose} footer={footer}>
+    <V2Sheet onClose={onClose} footer={footer} fixedHeight>
         {/* ── HEADER ────────────────────────────────────────────────────── */}
         <div className="flex shrink-0 items-start gap-3 px-4 pt-1.5 pb-3">
           <div className="min-w-0 flex-1">
@@ -184,7 +210,7 @@ export default function ProductDrawer({
                       className="px-3 py-2 text-left text-[13px] font-semibold"
                       style={chipStyle(selected === opt.value)}
                     >
-                      {opt.value}
+                      {showingBases ? baseChipLabel(opt.value) : opt.value}
                     </button>
                   ))}
                   {/* + More only where the catalog has more to give — never on
@@ -204,7 +230,7 @@ export default function ProductDrawer({
             )}
 
             {/* ── BODY — the SELECTED ROW's packs, straight from the payload ── */}
-            <div className="min-h-0 overflow-y-auto px-4 py-1">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1">
               {selectedRow ? (
                 packLabels.map((label) => (
                   <PackRow

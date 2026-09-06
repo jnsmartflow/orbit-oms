@@ -25,6 +25,9 @@ const SHEET_CSS = `
 .v2-sheet { animation: v2SheetUp .26s cubic-bezier(.32,.72,0,1) both; max-height: 88vh; }
 .v2-scrim { animation: v2ScrimIn .2s ease-out both; }
 @supports (max-height: 88dvh) { .v2-sheet { max-height: 88dvh; } }
+/* Fixed geometry — see the fixedHeight prop. */
+.v2-sheet-fixed { height: 78vh; max-height: 78vh; }
+@supports (height: 78dvh) { .v2-sheet-fixed { height: 78dvh; max-height: 78dvh; } }
 @media (prefers-reduced-motion: reduce) {
   .v2-sheet, .v2-scrim { animation: none; }
 }
@@ -68,11 +71,23 @@ function useBodyScrollLock(): void {
 export default function V2Sheet({
   onClose,
   footer,
+  fixedHeight = false,
   children,
 }: {
   onClose: () => void;
   /** Pinned below the scroll area, with its own border and safe-area inset. */
   footer?: React.ReactNode;
+  /**
+   * ALWAYS 78% of the viewport, whatever the content.
+   *
+   * The product drawer sets this. Content-sizing made Cement SB open as a neat
+   * short sheet and Gloss as a tall one, which meant Cancel and Add moved under
+   * the thumb from product to product. A salesman adding forty lines builds
+   * muscle memory for where Add is; a tidy short sheet is not worth costing him
+   * that. Every other sheet stays content-sized, where the height IS the
+   * information.
+   */
+  fixedHeight?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   useBodyScrollLock();
@@ -91,7 +106,7 @@ export default function V2Sheet({
       />
 
       <section
-        className="v2-sheet absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white"
+        className={`v2-sheet${fixedHeight ? " v2-sheet-fixed" : ""} absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white`}
         style={{
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
           boxShadow: "0 -8px 32px rgba(18,14,26,.16)",

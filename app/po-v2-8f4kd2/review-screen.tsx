@@ -3,7 +3,7 @@
 import { ChevronLeft, MapPin, X } from "lucide-react";
 import {
   DIVIDER, INK, RULE, VIOLET,
-  chipStyle, packString, unitsIn,
+  chipStyle, packRows, unitsIn,
   type ApiCustomer, type V2CartLine, type V2Marker, type V2Order,
 } from "./v2-data";
 
@@ -142,8 +142,22 @@ export default function ReviewScreen({
                 </p>
               )}
             </div>
-            <div className="shrink-0 text-right">
-              <p className="font-mono text-[12.5px]" style={{ color: INK }}>{packString(line)}</p>
+            {/* 🔴 THE SIDEWAYS-SCROLL CULPRIT WAS THIS COLUMN. It carried
+                `shrink-0` and its child was ONE comma-joined pack string, so a
+                seven-pack line ("100ML ×24, 200ML ×12, 500ML ×12, 1L ×6, …")
+                set an intrinsic width of ~400px that the column was forbidden
+                to shrink below. The row then overflowed <main>, and with
+                nothing clipping it the whole page dragged sideways.
+                `min-w-0` lets it shrink again; stacking the packs (below) means
+                the widest child is now one short row, so it never needs to. */}
+            <div className="min-w-0 text-right">
+              {packRows(line).map(({ label, qty }) => (
+                <p key={label}
+                   className="whitespace-nowrap font-mono text-[13px] tabular-nums"
+                   style={{ color: INK }}>
+                  {label} ×{qty}
+                </p>
+              ))}
               <p className="text-[11px] text-neutral-400">{unitsIn(line.qtys)} units</p>
             </div>
             <button

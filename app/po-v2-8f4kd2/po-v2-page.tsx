@@ -17,7 +17,7 @@ import {
 } from "./v2-storage";
 import {
   DIVIDER, FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, addRecent, buildCatalog, formatPack, loadRecents, packString, resolveForSearch, unitsIn,
+  EMPTY_ORDER, addRecent, buildCatalog, formatPack, loadRecents, packRows, resolveForSearch, unitsIn,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
@@ -519,8 +519,13 @@ export default function PoV2Page(): React.JSX.Element {
                          style={{ color: VIOLET, letterSpacing: ".06em" }}>{line.option}</p>
                     )}
                   </div>
-                  <div className="shrink-0 text-right">
-                    <p className="font-mono text-[12.5px]" style={{ color: INK }}>{packString(line)}</p>
+                  {/* min-w-0, stacked — same fix as the review row. */}
+                  <div className="min-w-0 text-right">
+                    {packRows(line).map(({ label, qty }) => (
+                      <p key={label} className="whitespace-nowrap font-mono text-[13px] tabular-nums" style={{ color: INK }}>
+                        {label} ×{qty}
+                      </p>
+                    ))}
                     <p className="text-[11px] text-neutral-400">{unitsIn(line.qtys)} units</p>
                   </div>
                 </div>
