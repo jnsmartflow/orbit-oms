@@ -11,7 +11,7 @@ import {
   Tag, Palette, Package,
   Building2, UserCheck, ContactRound, Store,
   Upload, ClipboardCheck, CalendarCheck, Paintbrush, Briefcase,
-  EyeOff,
+  EyeOff, Trash2,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
 import type { PagePermissions } from "@/lib/permissions";
@@ -30,6 +30,38 @@ interface NavSection {
   items: NavItem[];
 }
 
+// 🔴 REBUILT 2026-09-06 — 20 items in 5 groups, from 28 in 6.
+// Design: docs/mockups/admin/admin-redesign_2.html Screen 1, agreed 2026-08-28
+// (docs/prompts/drafts/web-update-2026-08-28-admin-redesign.md §3). The rule the
+// grouping follows: ADMIN IS FOR USER CREATION, MASTER DATA, WHO-SEES-WHAT AND
+// SETTINGS. Operational boards do not belong here.
+//
+// 🔴 NOTHING WAS DELETED. Eight items left THIS ARRAY and nothing else — no
+// page.tsx, no route.ts, no API handler, no permission row, no page key. Every
+// one of the eight screens is still live and still reachable by typing its
+// address; the build route table was checked after the edit. Retirement is a
+// separate job with its own gate (archive/RETIREMENT-PLAYBOOK.md) and is NOT
+// what this was.
+//
+//   Permissions          /admin/permissions   ⚠ URL-only now, and it is the
+//                        ACCESS_SOURCE='role' ROLLBACK EDITOR — the only UI
+//                        that writes role_permissions (CLAUDE_CORE.md §5/§13).
+//                        Its requireSuperuser gate is untouched. Do not
+//                        "finish the job" by deleting it.
+//   SKUs                 /admin/skus          ⚠ carried pageKey 'skus'. The KEY
+//                        is untouched and still gates the screen and its API.
+//   Product Categories   /admin/product-categories  ┐ the dead sku_master
+//   Product Names        /admin/product-names       ├ family (CORE §7.1.c);
+//   Base Colours         /admin/base-colours        ┘ they retire with it.
+//   Import Orders        /admin/import        ┐ operational. Canonical
+//   Tint Manager         /admin/tint-manager  ├ addresses are /import,
+//   Shade Master         /tint/shades         ┘ /tint/manager, /tint/shades.
+//
+// ⚠ An admin now has NO LINK OUT of the admin frame. The app switcher that
+// closes that gap is step 6 and is deliberately not built here.
+//
+// Arithmetic, checked against the brief: 28 − 8 removed + 1 added
+// (Removed Orders) − 1 moved to the footer (My Attendance) = 20.
 const NAV_SECTIONS: NavSection[] = [
   {
     label: "Overview",
@@ -38,95 +70,126 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "Master Data",
+    label: "People & Access",
     items: [
-      { label: "System Config",       href: "/admin/system-config" },
-      { label: "Users",               href: "/admin/users" },
-      { label: "Permissions",         href: "/admin/permissions" },
-      { label: "Roles",               href: "/admin/roles" },
-      { label: "Delivery Types",      href: "/admin/delivery-types" },
-      { label: "Slot Master",         href: "/admin/slots" },
-      { label: "Slot Rules",          href: "/admin/slot-rules" },
-      { label: "Routes",              href: "/admin/routes",    pageKey: "routes_areas" },
-      { label: "Areas",               href: "/admin/areas",     pageKey: "routes_areas" },
-      { label: "Sub-areas",           href: "/admin/sub-areas" },
-      { label: "Product Categories",  href: "/admin/product-categories" },
-      { label: "Product Names",       href: "/admin/product-names" },
-      { label: "Base Colours",        href: "/admin/base-colours" },
-      { label: "SKUs",                href: "/admin/skus",      pageKey: "skus" },
-      { label: "Transporters",        href: "/admin/transporters" },
-      { label: "Vehicles",            href: "/admin/vehicles",  pageKey: "vehicles" },
+      { label: "Users",       href: "/admin/users" },
+      // Per-user page access (2026-09-04, step 3 of the role→user conversion).
+      // Keyless by construction: visibleItems() shows it to a superuser alone —
+      // the same gate every other keyless item here uses.
+      { label: "Access",      href: "/admin/access", icon: ShieldCheck },
+      // Relabelled from "Roles" 2026-09-06. SAME href, same read-only
+      // role_master screen. ⚠ ICONS is keyed on the LABEL, so the map key was
+      // renamed in the same edit — see the note above ICONS.
+      { label: "Job Titles",  href: "/admin/roles" },
+      // CalendarCheck distinguishes the admin all-users view from the personal
+      // "My Attendance" footer link (which uses ClipboardCheck).
+      { label: "Attendance",  href: "/admin/attendance", icon: CalendarCheck },
     ],
   },
   {
-    label: "People",
+    label: "Customers",
     items: [
-      // Per-user page access (2026-09-04, step 3 of the role→user conversion).
-      // Admin-only by construction: no pageKey, so visibleItems() shows it to
-      // admin alone — the same gate every other keyless item here uses.
-      { label: "Access",         href: "/admin/access", icon: ShieldCheck },
+      { label: "Customers",      href: "/admin/customers",      pageKey: "customers" },
       { label: "Sales Officers", href: "/admin/sales-officers" },
       { label: "SO Groups",      href: "/admin/so-groups" },
       { label: "Contact Roles",  href: "/admin/contact-roles" },
-      { label: "Customers",      href: "/admin/customers",     pageKey: "customers" },
     ],
   },
   {
-    label: "Operations",
+    label: "Depot Master",
     items: [
-      { label: "Import Orders", href: "/admin/import" },
-      { label: "Tint Manager",  href: "/admin/tint-manager" },
-      { label: "Shade Master",  href: "/tint/shades" },
-      // CalendarCheck icon distinguishes the admin all-users view from
-      // the personal "My Attendance" entry below (which uses ClipboardCheck).
-      { label: "Attendance",    href: "/admin/attendance", icon: CalendarCheck },
-    ],
-  },
-  {
-    label: "Personal",
-    items: [
-      { label: "Attendance", href: "/attendance" },
+      { label: "Routes",         href: "/admin/routes",    pageKey: "routes_areas" },
+      { label: "Areas",          href: "/admin/areas",     pageKey: "routes_areas" },
+      { label: "Sub-areas",      href: "/admin/sub-areas" },
+      { label: "Delivery Types", href: "/admin/delivery-types" },
+      { label: "Slot Master",    href: "/admin/slots" },
+      { label: "Slot Rules",     href: "/admin/slot-rules" },
+      { label: "Transporters",   href: "/admin/transporters" },
+      { label: "Vehicles",       href: "/admin/vehicles",  pageKey: "vehicles" },
     ],
   },
   {
     label: "Settings",
     items: [
-      // pageKey "settings_hide" → admin sees it (ALL_TRUE), gated for everyone else.
-      { label: "Hide", href: "/admin/settings/hide", pageKey: "settings_hide" },
+      { label: "System Config",  href: "/admin/system-config" },
+      // pageKey "settings_hide" → a superuser sees it (ALL_TRUE), gated for
+      // everyone else.
+      { label: "Hide",           href: "/admin/settings/hide", pageKey: "settings_hide" },
+      // NEW TO THE MENU 2026-09-06. The page has been live since v27.x and
+      // NOTHING linked to it — its own comment said "Direct URL only". 47 live
+      // removed orders at the time of the edit.
+      { label: "Removed Orders", href: "/admin/removed-orders" },
     ],
   },
 ];
+
+// ── Footer link ──────────────────────────────────────────────────────────────
+//
+// My Attendance is the one row here that is NOT admin surface — it is the
+// admin's own attendance page. It left the old "Personal" group 2026-09-06 so
+// that all five groups are admin subject matter, and it renders BELOW the
+// name/avatar block instead. It is NOT in NAV_SECTIONS and must not be added
+// back to it — one row, one place.
+//
+// It is still gated exactly as it was: keyless, so superuser-only, applied by
+// hand below because it does not pass through visibleItems().
+const FOOTER_LINK: NavItem = {
+  label: "My Attendance",
+  href:  "/attendance",
+  icon:  ClipboardCheck,
+};
 
 // ── Icon map ─────────────────────────────────────────────────────────────────
 
 type NavIcon = React.ComponentType<{ className?: string }>;
 
+// 🔴 THIS MAP IS KEYED ON THE LABEL STRING, NOT THE PAGE KEY.
+// So RELABELLING AN ITEM SILENTLY ORPHANS ITS ICON — the lookup at the two
+// render sites is `item.icon ?? ICONS[item.label] ?? LayoutDashboard`, and the
+// third arm is a generic fallback that looks deliberate on screen. Rename the
+// key in the SAME edit as the label, or add an explicit `icon:` on the item.
+//
+// 2026-09-06: "Roles" → "Job Titles" was renamed here for exactly that reason.
+// Its glyph also changed, ShieldCheck → Tag, because "Access" directly above it
+// carries an explicit ShieldCheck and two identical glyphs one row apart are
+// indistinguishable in the collapsed rail — the same rule role-sidebar.tsx
+// applies to MRN vs CI. Tag is apt on its own terms: CORE §5 calls a job title
+// "a LABEL and a starting template", and Tag was freed when Product Categories
+// left the menu.
+//
+// The eight items that left the menu KEPT their entries below. They are inert —
+// nothing renders them — and they are cheap to leave, so step 6 can put any of
+// them back without re-deriving a glyph.
 const ICONS: Record<string, NavIcon> = {
   "Dashboard":           LayoutDashboard,
   "System Config":       Settings2,
   "Users":               Users,
-  "Permissions":         Shield,
-  "Roles":               ShieldCheck,
+  "Permissions":         Shield,          // orphaned 2026-09-06 (left the menu)
+  "Job Titles":          Tag,             // was "Roles": ShieldCheck — see above
+  "Removed Orders":      Trash2,          // new to the menu 2026-09-06
   "Delivery Types":      Truck,
   "Slot Master":         Clock,
   "Slot Rules":          CalendarClock,
   "Routes":              MapPin,
   "Areas":               Map,
   "Sub-areas":           Layers,
-  "Product Categories":  Tag,
-  "Product Names":       Layers,
-  "Base Colours":        Palette,
-  "SKUs":                Package,
+  "Product Categories":  Tag,             // orphaned 2026-09-06 (left the menu)
+  "Product Names":       Layers,          // orphaned 2026-09-06 (left the menu)
+  "Base Colours":        Palette,         // orphaned 2026-09-06 (left the menu)
+  "SKUs":                Package,         // orphaned 2026-09-06 (left the menu)
   "Transporters":        Building2,
   "Vehicles":            Truck,
   "SO Groups":           Briefcase,
   "Sales Officers":      UserCheck,
   "Contact Roles":       ContactRound,
   "Customers":           Store,
-  "Import Orders":       Upload,
-  "Tint Manager":        Palette,
-  "Shade Master":        Palette,
-  "My Tint Jobs":        Paintbrush,
+  "Import Orders":       Upload,          // orphaned 2026-09-06 (left the menu)
+  "Tint Manager":        Palette,         // orphaned 2026-09-06 (left the menu)
+  "Shade Master":        Palette,         // orphaned 2026-09-06 (left the menu)
+  "My Tint Jobs":        Paintbrush,      // orphaned long before this — no such item
+  // The admin Attendance row carries an explicit CalendarCheck and the footer
+  // link carries an explicit ClipboardCheck, so this entry is consulted by
+  // neither. Kept for the same reason as the eight above.
   "Attendance":          ClipboardCheck,
   "Hide":                EyeOff,
 };
@@ -277,6 +340,65 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: Admi
     </nav>
   );
 
+  // ── Footer link (My Attendance) ─────────────────────────────────────────────
+  //
+  // Rendered BELOW the name/avatar block, outside NAV_SECTIONS. Same two faces
+  // as the nav above it — full row when expanded, icon + tooltip when collapsed
+  // — so it does not read as a different kind of control.
+  //
+  // Gated by hand on `isSuperuser`, which is exactly what visibleItems() would
+  // do with it: it is keyless, and it was keyless in the old "Personal" group
+  // too, so who sees it has not changed.
+  const footerNav = (collapsed: boolean) => {
+    if (!isSuperuser) return null;
+    const Icon   = FOOTER_LINK.icon ?? ICONS[FOOTER_LINK.label] ?? LayoutDashboard;
+    const active = isActive(FOOTER_LINK.href);
+    if (collapsed) {
+      return (
+        <div className="shrink-0 border-t border-gray-200 flex justify-center py-2">
+          <div className="relative group flex justify-center">
+            <Link
+              href={FOOTER_LINK.href}
+              onClick={() => setMobileOpen(false)}
+              className={cn(
+                "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
+                active
+                  ? "bg-teal-50 text-teal-600"
+                  : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+              )}
+              title={FOOTER_LINK.label}
+            >
+              <Icon className="h-[17px] w-[17px]" />
+            </Link>
+            {/* Tooltip */}
+            <div className="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2 z-[200] hidden group-hover:block">
+              <div className="bg-gray-900 text-white text-[11px] px-2.5 py-1 rounded-md whitespace-nowrap shadow-lg">
+                {FOOTER_LINK.label}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="shrink-0 border-t border-gray-200 py-1.5">
+        <Link
+          href={FOOTER_LINK.href}
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
+            active
+              ? "bg-teal-50 text-teal-700 font-semibold pl-[10px] border-l-2 border-teal-600"
+              : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
+          )}
+        >
+          <Icon className="h-[15px] w-[15px] shrink-0" />
+          {FOOTER_LINK.label}
+        </Link>
+      </div>
+    );
+  };
+
   // ── Shared sidebar shell ────────────────────────────────────────────────────
 
   const sidebarContent = (collapsed: boolean) => (
@@ -326,6 +448,9 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: Admi
           </div>
         )}
       </div>
+
+      {/* Footer link — below the identity block, per the Screen 1 design */}
+      {footerNav(collapsed)}
     </>
   );
 
@@ -375,6 +500,11 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: Admi
             style={{ paddingTop: "52px", borderLeft: "3px solid #0d9488", borderRight: "1px solid #e5e7eb" }}
           >
             {expandedNav}
+            {/* ⚠ The drawer renders expandedNav ONLY — it has no identity block.
+                My Attendance used to reach a phone through NAV_SECTIONS; since
+                it moved to the footer 2026-09-06 it has to be rendered here by
+                hand, or the drawer would silently lose the row. */}
+            {footerNav(false)}
           </aside>
           <div className="flex-1 bg-black/40" onClick={() => setMobileOpen(false)} />
         </div>
