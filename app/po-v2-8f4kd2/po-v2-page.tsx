@@ -17,9 +17,9 @@ import {
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
-  DIVIDER, FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, addRecent, allOptionsFor, buildCatalog, formatPack, loadRecents, packRows,
-  resolveGroup, unitsIn,
+  DIVIDER, FAMILIES, INK, MONO_BG, RULE, VIOLET, VIOLET_BG,
+  EMPTY_ORDER, addRecent, allOptionsFor, buildCatalog, formatPack, loadRecents, monogram,
+  packRows, resolveGroup, unitsIn,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
@@ -46,7 +46,7 @@ import {
 
 const TILE_TEXT_STYLE: React.CSSProperties = {
   color:           INK,
-  letterSpacing:   "-0.02em",
+  letterSpacing:   "-0.01em",
   display:         "-webkit-box",
   WebkitBoxOrient: "vertical",
   WebkitLineClamp: 2,
@@ -660,9 +660,9 @@ export default function PoV2Page(): React.JSX.Element {
   return (
     <>
       <main className="min-h-screen w-full bg-white" style={{ paddingBottom: cartOpen ? 108 : 24 }}>
-        {/* ── TOP BAR — the whole left side opens the switch sheet ──────── */}
+        {/* ── DEALER BAR — scrolls AWAY. The search row below takes over. ── */}
         <header
-          className="sticky top-0 z-10 flex items-center gap-3 bg-white px-4 py-2.5"
+          className="flex items-center gap-3 bg-white px-4 py-2.5"
           style={{ borderBottom: `1px solid ${RULE}` }}
         >
           <button
@@ -671,7 +671,7 @@ export default function PoV2Page(): React.JSX.Element {
             className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           >
             <span className="min-w-0">
-              <span className="block truncate text-[15px] font-extrabold tracking-tight" style={{ color: VIOLET }}>
+              <span className="block truncate text-[16px] font-extrabold tracking-tight" style={{ color: VIOLET }}>
                 {dealer ? dealer.name.toUpperCase() : "—"}
               </span>
               <span className="block truncate font-mono text-[11px] text-neutral-400">
@@ -691,16 +691,39 @@ export default function PoV2Page(): React.JSX.Element {
           </button>
         </header>
 
-        {/* ── PRODUCT SEARCH ──────────────────────────────────────────── */}
-        <div className="px-4 pt-3">
-          <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
+        {/* ── PRODUCT SEARCH — PINS to the top once the dealer bar scrolls ──
+            Plain `position: sticky` inside the page's own scroll: no scroll
+            listener, no measured offset, nothing to drift out of sync. The
+            white background and bottom border are ALWAYS on rather than
+            applied at the moment of pinning — detecting "pinned" needs either
+            a scroll listener or a sentinel + IntersectionObserver, and a
+            hairline under the search box reads fine unpinned too.
+
+            The monogram is why the dealer bar is allowed to leave: it keeps
+            Change customer one tap away when the name is off screen. */}
+        <div
+          className="sticky top-0 z-20 flex items-center gap-2.5 bg-white px-4 pb-2.5 pt-2.5"
+          style={{ borderBottom: `1px solid ${RULE}` }}
+        >
+          <button
+            type="button"
+            aria-label="Change customer"
+            onClick={() => { setQuery(""); setSheet("switch"); }}
+            className="flex shrink-0 items-center justify-center rounded-[10px] text-[12px] font-extrabold text-neutral-600"
+            style={{ width: 34, height: 34, background: MONO_BG }}
+          >
+            {dealer ? monogram(dealer.name) : "—"}
+          </button>
+          <div className="min-w-0 flex-1">
+            <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
+          </div>
         </div>
 
         {/* Under 2 characters the board stands; at 2 the board is REPLACED by
             results. The dealer bar above and the cart bar below both stay, so
             searching never loses the salesman his context. */}
         {searching ? (
-          <div className="pt-2">
+          <div>
             <ProductResults
               products={products}
               query={prodQuery}
@@ -712,15 +735,15 @@ export default function PoV2Page(): React.JSX.Element {
         <>
         {/* ── FAMILY BLOCKS ────────────────────────────────────────────── */}
         {FAMILIES.map((family) => (
-          <section key={family.name} className="px-4 pt-4">
+          <section key={family.name} className="px-4" style={{ paddingTop: 18 }}>
             <div className="mb-2 flex items-center gap-2">
-              <h2 className="shrink-0 text-[10px] font-extrabold uppercase text-neutral-400"
-                  style={{ letterSpacing: "0.1em" }}>
+              <h2 className="shrink-0 text-[11px] font-bold uppercase"
+                  style={{ letterSpacing: ".08em", color: "#8B8794" }}>
                 {family.name}
               </h2>
               <span className="h-px flex-1" style={{ background: RULE }} />
             </div>
-            <div className="grid grid-cols-4" style={{ gap: 7 }}>
+            <div className="grid grid-cols-4" style={{ gap: 8 }}>
               {family.tiles.map((tile) => {
                 const count   = countsByTile[tile.sap] ?? 0;
                 const inOrder = count > 0;
@@ -730,14 +753,21 @@ export default function PoV2Page(): React.JSX.Element {
                     type="button"
                     disabled={!ready}
                     onClick={() => setOpenTile(tile)}
-                    className="relative flex h-16 min-w-0 items-center justify-center rounded-[13px] px-[2px]"
+                    className="relative flex min-w-0 flex-col items-center justify-center rounded-[16px] px-[3px]"
                     style={{
+                      height:     84,
                       background: inOrder ? VIOLET_BG : family.tint,
+                      // Transparent, not absent: an in-cart tile grows a violet
+                      // border and must not change size when it does.
                       border:     inOrder ? `1.5px solid ${VIOLET}` : "1.5px solid transparent",
                       opacity:    ready ? 1 : 0.45,
                     }}
                   >
-                    <span className="text-center text-[13px] font-bold" style={TILE_TEXT_STYLE}>
+                    {/* A product IMAGE goes here later, above the name — this is
+                        already a centred column so it slots in without a
+                        rewrite. No empty placeholder box now: 32 grey squares
+                        would read as broken, not as pending. */}
+                    <span className="text-center text-[13.5px] font-semibold" style={TILE_TEXT_STYLE}>
                       {tile.label}
                     </span>
                     {inOrder && (

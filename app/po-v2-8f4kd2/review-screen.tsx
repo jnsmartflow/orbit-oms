@@ -23,7 +23,7 @@ import {
 
 /** Sections are separated by a 9px band, never by a border or a card. */
 function Band(): React.JSX.Element {
-  return <div className="h-[9px] w-full" style={{ background: DIVIDER }} />;
+  return <div className="h-[10px] w-full" style={{ background: DIVIDER }} />;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -117,7 +117,7 @@ export default function ReviewScreen({
 
       {/* ── ITEMS ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
-        <h2 className="text-[15px] font-extrabold" style={{ color: INK }}>Items</h2>
+        <h2 className="text-[16px] font-bold" style={{ color: INK }}>Items</h2>
         <button type="button" onClick={onEdit}
                 className="text-[13px] font-extrabold" style={{ color: VIOLET }}>
           Edit
@@ -128,11 +128,11 @@ export default function ReviewScreen({
         {lines.map((line) => (
           <div
             key={line.id}
-            className="flex items-start gap-3 px-4 py-2.5"
-            style={{ borderTop: `1px solid ${DIVIDER}` }}
+            className="flex items-start gap-3 px-4"
+            style={{ borderTop: `1px solid ${DIVIDER}`, paddingTop: 14, paddingBottom: 14 }}
           >
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[14.5px] font-semibold" style={{ color: INK }}>
+              <p className="truncate text-[15px] font-semibold" style={{ color: INK }}>
                 {line.label}
               </p>
               {line.option && (
@@ -154,7 +154,7 @@ export default function ReviewScreen({
               {packRows(line).map(({ label, qty }) => (
                 <p key={label}
                    className="whitespace-nowrap font-mono text-[13px] tabular-nums"
-                   style={{ color: INK }}>
+                   style={{ color: INK, marginTop: 3 }}>
                   {label} ×{qty}
                 </p>
               ))}
@@ -172,8 +172,8 @@ export default function ReviewScreen({
 
         <div className="flex items-center justify-between px-4 py-2.5"
              style={{ borderTop: `1px solid ${DIVIDER}` }}>
-          <span className="text-[14.5px] font-bold" style={{ color: INK }}>Total</span>
-          <span className="font-mono text-[14.5px] font-bold" style={{ color: INK }}>
+          <span className="text-[15px] font-bold" style={{ color: INK }}>Total</span>
+          <span className="font-mono text-[15px] font-bold" style={{ color: INK }}>
             {totalUnits} units
           </span>
         </div>
@@ -305,7 +305,7 @@ function Section({ title, children }: {
 }): React.JSX.Element {
   return (
     <div className="px-4 pt-3 pb-3">
-      <h2 className="mb-2 text-[15px] font-extrabold" style={{ color: INK }}>{title}</h2>
+      <h2 className="mb-2 text-[16px] font-bold" style={{ color: INK }}>{title}</h2>
       {children}
     </div>
   );

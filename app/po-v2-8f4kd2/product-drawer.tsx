@@ -4,8 +4,9 @@ import { useState } from "react";
 import { Minus, Plus, X } from "lucide-react";
 import V2Sheet from "./v2-sheet";
 import {
-  INK, RULE, VIOLET,
-  baseChipLabel, chipStyle, formatPack, stepForLabel, unitsIn,
+  INK, RULE, VIOLET, VIOLET_BG,
+  baseChipLabel, chipStyle, formatPack, isLightHex, shadeHex, shadeRowMode,
+  stepForLabel, unitsIn,
   type ApiProduct, type V2Option, type V2Resolved,
 } from "./v2-data";
 
@@ -85,6 +86,12 @@ export default function ProductDrawer({
   // are shortened. "BRILLIANT WHITE" is also a SHADE on GVA and Promise
   // Enamel, and abbreviating it there would rename a colour.
   const showingBases = !hasVariants && tab === "base";
+  // Colour swatches only on the SHADE row, and only when every shade on it has
+  // one — never a half-colour, half-code row. Bases and variants are always
+  // text: "90" and "Int Primer" are not colours.
+  const showingShades = !hasVariants && tab === "shade";
+  const colourRow = showingShades && !expanded
+    && shadeRowMode(product.shades.map((o) => o.value)) === "colour";
 
   // Which options are on show right now, and which row that resolves to.
   const curatedList: V2Option[] = hasVariants
@@ -219,15 +226,23 @@ export default function ProductDrawer({
               <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
                 <div className="flex flex-wrap gap-2">
                   {activeList.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => selectOption(opt.value)}
-                      className="px-3 py-2 text-left text-[13px] font-semibold"
-                      style={chipStyle(selected === opt.value)}
-                    >
-                      {showingBases ? baseChipLabel(opt.value) : opt.value}
-                    </button>
+                    colourRow
+                      ? <ShadeSwatch
+                          key={opt.value}
+                          name={opt.value}
+                          hex={shadeHex(opt.value) as string}
+                          selected={selected === opt.value}
+                          onSelect={() => selectOption(opt.value)}
+                        />
+                      : <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => selectOption(opt.value)}
+                          className="px-3 py-2 text-left text-[13px] font-semibold"
+                          style={chipStyle(selected === opt.value)}
+                        >
+                          {showingBases ? baseChipLabel(opt.value) : opt.value}
+                        </button>
                   ))}
                   {/* + More only where the catalog has more to give — never on
                       a variant row, which is already the complete set. */}
@@ -321,5 +336,36 @@ function PackRow({ label, step, qty, onStep }: {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * A shade as a 54x44 block of the colour itself, no text inside.
+ *
+ * The NAME is not lost — it lands in the drawer's header sub-line the moment
+ * this is selected, which is where the confirmation belongs. A caption under
+ * every swatch would just rebuild the text row the colour is replacing.
+ *
+ * A near-white fill gets a faint inner border, or a white chip on a white
+ * sheet is simply not there. `title`/`aria-label` carry the name for anyone
+ * who cannot use the colour at all.
+ */
+function ShadeSwatch({ name, hex, selected, onSelect }: {
+  name: string; hex: string; selected: boolean; onSelect: () => void;
+}): React.JSX.Element {
+  const light = isLightHex(hex);
+  return (
+    <button
+      type="button"
+      aria-label={name}
+      aria-pressed={selected}
+      title={name}
+      onClick={onSelect}
+      style={{
+        width: 54, height: 44, borderRadius: 11, background: hex,
+        border: light ? "1px solid rgba(0,0,0,.15)" : "none",
+        boxShadow: selected ? `0 0 0 5px ${VIOLET_BG}, 0 0 0 7.5px ${VIOLET}` : undefined,
+      }}
+    />
   );
 }

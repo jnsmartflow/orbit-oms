@@ -409,6 +409,93 @@ export function buildCatalog(products: ApiProduct[]): {
   return { byTile, report };
 }
 
+// ── Shade colours ──────────────────────────────────────────────────────────
+
+/**
+ * Shade name -> swatch hex. Hand-authored, keyed by the EXACT `baseColour`
+ * string, uppercased.
+ *
+ * 🔴 A NAME THAT IS NOT HERE GETS NO COLOUR. Not a guess, not a nearest match,
+ * not a hash of the string — a text chip. A wrong colour on a paint order is
+ * worse than no colour: the salesman reads the swatch, not the code, and a
+ * plausible-but-wrong brown ships the wrong tin. Adding a shade means adding
+ * a real value here, deliberately.
+ */
+const SHADE_HEX: Record<string, string> = {
+  "BLACK":                 "#1A1A1A",
+  "DARK BROWN":            "#4E3524",
+  "GOLDEN BROWN":          "#A9762F",
+  "SMOKE GREY":            "#8B8A90",
+  "DA GREY":               "#6E7175",
+  "GOLDEN YELLOW":         "#E8A413",
+  "CLASSIC WHITE":         "#F4F1E6",
+  "BRILLIANT WHITE":       "#FAF8F2",
+  "PHIROZA BLUE":          "#1B8A9E",
+  "PO RED":                "#9C1A13",
+  "BROWN":                 "#6B4423",
+  "RICH BROWN":            "#4A2C1A",
+  "TERACOTTA":             "#A5502F",
+  "SIGNAL RED":            "#C0271E",
+  "BUS GREEN":             "#1F5E3A",
+  "WALNUT":                "#5C4033",
+  "WHITE":                 "#FFFFFF",
+  "OPAQUE WHITE":          "#FAFAF7",
+  "RED OXIDE":             "#8C3A26",
+  "YELLOW OXIDE":          "#C8981F",
+  "BURNT SIENNA":          "#8A4B2A",
+  "FAST VIOLET":           "#6B3FA0",
+  "FAST RED":              "#CC2222",
+  "FAST BLUE":             "#1F4FA8",
+  "FAST GREEN":            "#1F7A4A",
+  "FAST ORANGE":           "#E2701E",
+  "FAST YELLOW":           "#EFC223",
+  "FASTYELLOWGREEN":       "#9BB82E",
+  "ORGANIC ORANGE":        "#E86A16",
+  "ORGANIC VIOLET":        "#6B3FA0",
+  "ORGANIC LEMON YELLOW":  "#EFD73B",
+  "ORGANIC MIDDLE YELLOW": "#F0B71C",
+  "BLUE":                  "#1F4FA8",
+};
+
+/** The swatch for a shade name, or undefined when it has none. Case-insensitive
+ *  because Sadolin stores title case ("Opaque White") and everyone else caps. */
+export function shadeHex(value: string): string | undefined {
+  return SHADE_HEX[value.trim().toUpperCase()];
+}
+
+/**
+ * WCAG relative luminance. Above 0.85 the swatch is near-white and needs an
+ * inner border, or a white chip on a white sheet simply is not there.
+ */
+export function isLightHex(hex: string): boolean {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const chan = (c: number): number => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const r = chan((n >> 16) & 255), g = chan((n >> 8) & 255), b = chan(n & 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.85;
+}
+
+/**
+ * Does this product's shade row render as COLOUR or as TEXT?
+ *
+ * 🔴 MIXED ROWS ARE BANNED, and that ban is what actually decides this: a row
+ * is colour only when EVERY shade on it has a swatch. The brief's threshold
+ * was "fewer than half unmapped -> text", but at exactly half those two rules
+ * contradict each other — 1-of-2 mapped is "not fewer than half", yet the one
+ * unmapped shade would have to render as text INSIDE a colour row, which is
+ * the mixed row the ban exists to prevent. All-or-nothing satisfies both.
+ *
+ * On the live curation the two rules agree everywhere except PU Prime Sealer
+ * and Prime Matt (White mapped, Clear not), which go text — the only outcome
+ * that is not visibly broken.
+ */
+export function shadeRowMode(values: readonly string[]): "colour" | "text" {
+  if (values.length === 0) return "text";
+  return values.every((v) => shadeHex(v) !== undefined) ? "colour" : "text";
+}
+
 /** How many option chips a non-tile product shows before "+ More". */
 export const OPTION_CHIP_CAP = 8;
 
