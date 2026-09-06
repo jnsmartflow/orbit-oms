@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getHideExclusion } from "@/lib/hide/visibility";
@@ -109,13 +108,13 @@ export interface HistoryJob {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_OPERATOR, ROLES.OPERATIONS]);
-  const userRoles = session!.user.roles ?? [session!.user.role];
-  const isAdminOrOps = userRoles.includes("admin") || userRoles.includes(ROLES.OPERATIONS);
-  if (!isAdminOrOps) {
-    const allowed = await checkAnyPermission(userRoles, "tint_operator", "canView");
-    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). This is the ALLOW/DENY gate and
+  // nothing else. Both superuser arms live inside checkAnyPermission.
+  const userRoles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(userRoles, "tint_operator", "canView");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const userId = parseInt(session!.user.id, 10);
 

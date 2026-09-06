@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { checkAnyPermission } from "@/lib/permissions";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { resolveFiniMap } from "@/lib/fini-resolver";
@@ -434,7 +435,17 @@ export async function PATCH(
   { params }: { params: { orderId: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.OPERATION_MANAGER]);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). tint_manager/canEdit rather than
+  // delivery_challans/canEdit: both keys resolve to the same three people today
+  // (SELECT 2026-09-06), and tint_manager is what every other converted tint write
+  // route uses, so the module stays on one key. If challan authority is ever meant
+  // to diverge from board authority, this is the line that changes first.
+  // The GET above deliberately still uses requireRole — reads were out of scope.
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const orderId = parseInt(params.orderId, 10);
   if (isNaN(orderId)) {

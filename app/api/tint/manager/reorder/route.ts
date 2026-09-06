@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
@@ -15,7 +15,14 @@ const reorderSchema = z.object({
 
 export async function PATCH(req: Request): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.OPERATION_MANAGER]);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). This route checked NO permission
+  // flag before — the role array was the whole gate. Resolves against the caller's
+  // own user_page_access row; both superuser arms live inside checkAnyPermission.
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const parsed = reorderSchema.safeParse(await req.json());
   if (!parsed.success) {

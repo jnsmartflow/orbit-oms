@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
 import { resolveFiniMap } from "@/lib/fini-resolver";
@@ -11,13 +10,16 @@ export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_OPERATOR, ROLES.OPERATIONS]);
-  const userRoles = session!.user.roles ?? [session!.user.role];
-  const isAdminOrOps = userRoles.includes("admin") || userRoles.includes(ROLES.OPERATIONS);
-  if (!isAdminOrOps) {
-    const allowed = await checkAnyPermission(userRoles, "tint_operator", "canView");
-    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). This is the ALLOW/DENY gate and
+  // nothing else — the ownership scope is canSeeAllOperatorRows further down, a
+  // FACE branch deciding WHOSE ROWS this may touch. Do not fold it into this
+  // check: every tint_operator/canEdit holder would then reach every operator's
+  // jobs, not just their own. Gate report section 6a.
+  const userRoles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(userRoles, "tint_operator", "canView");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const userId = parseInt(session!.user.id, 10);
   const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");

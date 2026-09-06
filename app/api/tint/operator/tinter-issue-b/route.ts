@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { hasRole, ROLES } from "@/lib/rbac";
+import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { PackCode, Prisma } from "@prisma/client";
 import {
@@ -25,8 +25,15 @@ interface EntryResult {
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
-  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN, ROLES.OPERATIONS])) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Per-user tick, not a job title (2026-09-06). Allow/deny only — the ownership
+  // scope is canSeeAllOperatorRows further down, a FACE branch. Gate report 6a.
+  const roles = session.user.roles ?? [session.user.role];
+  if (!(await checkAnyPermission(roles, "tint_operator", "canEdit"))) {
+    return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
   let body: unknown;

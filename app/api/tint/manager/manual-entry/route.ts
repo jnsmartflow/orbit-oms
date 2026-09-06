@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,16 @@ function isPositiveInt(n: unknown): n is number {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN]);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). The old gate was the NARROW
+  // [TINT_MANAGER, ADMIN] — every other manager route also named OPERATIONS and
+  // OPERATION_MANAGER. Converting deliberately widens this to everyone holding
+  // tint_manager/canEdit, which adds Prakash (operation_manager). Owner decision,
+  // taken on gate report section 3 — do not re-narrow it.
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   let body: unknown;
   try {
