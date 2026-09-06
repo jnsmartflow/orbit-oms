@@ -3,7 +3,7 @@
 import { AdminSidebar } from "./admin-sidebar";
 import { AdminHeader } from "./admin-header";
 import { useSidebar } from "./sidebar-provider";
-import type { PagePermissions } from "@/lib/permissions";
+import type { NavItemConfig, PagePermissions } from "@/lib/permissions";
 
 interface AdminLayoutClientProps {
   userName: string;
@@ -15,15 +15,22 @@ interface AdminLayoutClientProps {
    */
   isSuperuser: boolean;
   allPerms: Record<string, PagePermissions>;
+  /**
+   * The nine app-switcher destinations, resolved from PAGE_NAV_MAP in the
+   * server layout — that module is server-only, so the list cannot be built
+   * here. `{ pageKey, label, href }` only; the icon is looked up client-side
+   * from ICON_MAP, because a React component cannot cross the prop boundary.
+   */
+  switcherItems: NavItemConfig[];
   children: React.ReactNode;
 }
 
-export function AdminLayoutClient({ userName, userRole, isSuperuser, allPerms, children }: AdminLayoutClientProps) {
+export function AdminLayoutClient({ userName, userRole, isSuperuser, allPerms, switcherItems, children }: AdminLayoutClientProps) {
   const { isCollapsed } = useSidebar();
 
   return (
     <div style={{ background: "var(--bg)" }}>
-      <AdminSidebar userName={userName} userRole={userRole} isSuperuser={isSuperuser} allPerms={allPerms} />
+      <AdminSidebar userName={userName} userRole={userRole} isSuperuser={isSuperuser} allPerms={allPerms} switcherItems={switcherItems} />
       <div
         className="h-screen flex flex-col overflow-hidden transition-all duration-200"
         style={{ marginLeft: isCollapsed ? "72px" : "240px" }}

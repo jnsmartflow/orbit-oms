@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { isSuperuser, requireSuperuser } from "@/lib/rbac";
 import { getAllPermissionsForRoles } from "@/lib/permissions";
+import { appSwitcherItems } from "@/lib/admin/app-switcher";
 import { SidebarProvider } from "@/components/admin/sidebar-provider";
 import { AdminLayoutClient } from "@/components/admin/admin-layout-client";
 
@@ -33,9 +34,14 @@ export default async function AdminLayout({
   // down as a prop (2026-09-06). Local name avoids shadowing the import.
   const superuser = isSuperuser(session);
 
+  // The nine switcher destinations, resolved from PAGE_NAV_MAP here because
+  // that module is server-only (it imports prisma and auth). Deliberately NOT
+  // filtered through allPerms — see lib/admin/app-switcher.ts for why.
+  const switcherItems = appSwitcherItems();
+
   return (
     <SidebarProvider>
-      <AdminLayoutClient userName={userName} userRole={userRole} isSuperuser={superuser} allPerms={allPerms}>
+      <AdminLayoutClient userName={userName} userRole={userRole} isSuperuser={superuser} allPerms={allPerms} switcherItems={switcherItems}>
         {children}
       </AdminLayoutClient>
     </SidebarProvider>

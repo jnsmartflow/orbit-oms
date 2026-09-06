@@ -7,6 +7,7 @@ import {
 import { SidebarProvider } from "@/components/admin/sidebar-provider";
 import { AdminLayoutClient } from "@/components/admin/admin-layout-client";
 import { isSuperuser } from "@/lib/rbac";
+import { appSwitcherItems } from "@/lib/admin/app-switcher";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -53,9 +54,12 @@ export default async function OpsLayout({
     // every gate around it (2026-09-06). ⚠ This is the ADMIN branch only — the
     // ops_admin path below renders RoleSidebar and never reaches AdminSidebar.
     const superuser = isSuperuser(session);
+    // Same nine destinations as every other /admin/* route — this branch exists
+    // precisely so /admin/attendance's shell is identical to theirs.
+    const switcherItems = appSwitcherItems();
     return (
       <SidebarProvider>
-        <AdminLayoutClient userName={userName} userRole={primaryRole} isSuperuser={superuser} allPerms={allPerms}>
+        <AdminLayoutClient userName={userName} userRole={primaryRole} isSuperuser={superuser} allPerms={allPerms} switcherItems={switcherItems}>
           {children}
         </AdminLayoutClient>
       </SidebarProvider>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -11,10 +11,14 @@ import {
   Tag, Palette, Package,
   Building2, UserCheck, ContactRound, Store,
   Upload, ClipboardCheck, CalendarCheck, Paintbrush, Briefcase,
-  EyeOff, Trash2,
+  EyeOff, Trash2, Grid3x3, ChevronRight,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
-import type { PagePermissions } from "@/lib/permissions";
+// ICON_MAP is keyed by PAGE KEY and is the shared map the operational sidebar
+// and the mobile Menu sheet already read. The switcher uses it rather than the
+// label-keyed ICONS below, so the app does not grow a FOURTH icon map.
+import { ICON_MAP, DEFAULT_ICON } from "@/components/shared/role-sidebar";
+import type { NavItemConfig, PagePermissions } from "@/lib/permissions";
 
 // ── Navigation structure ─────────────────────────────────────────────────────
 
@@ -218,14 +222,47 @@ interface AdminSidebarProps {
    */
   isSuperuser: boolean;
   allPerms: Record<string, PagePermissions>;
+  /**
+   * The nine app-switcher destinations, resolved from PAGE_NAV_MAP in the
+   * server layout (lib/admin/app-switcher.ts). Labels and hrefs come from the
+   * map so the app calls a place one name everywhere; the list is curated by
+   * page key and is deliberately NOT permission-filtered.
+   */
+  switcherItems: NavItemConfig[];
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: AdminSidebarProps) {
+export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switcherItems }: AdminSidebarProps) {
   const pathname                    = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherRef                 = useRef<HTMLDivElement | null>(null);
   const { isCollapsed, toggle }     = useSidebar();
+
+  // Close the switcher on an outside click or Escape. Bound only while it is
+  // open, so the sidebar adds no global listeners in its resting state.
+  useEffect(() => {
+    if (!switcherOpen) return;
+    function onDown(e: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setSwitcherOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSwitcherOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [switcherOpen]);
+
+  // Any navigation closes it — the popover outlives the click that follows a
+  // link, because the sidebar itself does not unmount on a route change.
+  useEffect(() => { setSwitcherOpen(false); }, [pathname]);
 
   function isActive(href: string) {
     if (href === "/admin") return pathname === "/admin";
@@ -399,6 +436,79 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: Admi
     );
   };
 
+  // ── App switcher ────────────────────────────────────────────────────────────
+  //
+  // The way OUT of the admin frame. Before 0fc145bb the operational items sat in
+  // the menu itself; once they left, an admin had nothing but the browser back
+  // button. Nine curated destinations — see lib/admin/app-switcher.ts for the
+  // list and for why it is NOT permission-filtered.
+  //
+  // Opens UPWARD, because it sits at the very bottom of the sidebar. Collapsed,
+  // it becomes a single icon button and the panel opens to the RIGHT of the
+  // rail, matching how the collapsed nav's tooltips already behave.
+  const appSwitcher = (collapsed: boolean) => {
+    if (!isSuperuser || switcherItems.length === 0) return null;
+    return (
+      <div ref={switcherRef} className="shrink-0 relative border-t border-gray-200 py-2">
+        <button
+          type="button"
+          onClick={() => setSwitcherOpen((o) => !o)}
+          aria-expanded={switcherOpen}
+          aria-haspopup="menu"
+          title={collapsed ? "Open OrbitOMS" : undefined}
+          className={cn(
+            "flex items-center rounded-lg border transition-colors",
+            collapsed
+              ? "mx-auto h-9 w-9 justify-center"
+              : "mx-3 gap-2 px-2.5 py-2 w-[calc(100%-24px)] text-[12px] font-semibold",
+            switcherOpen
+              ? "bg-gray-50 border-gray-300 text-gray-900"
+              : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
+          )}
+        >
+          <Grid3x3 className={cn("shrink-0 text-teal-600", collapsed ? "h-[17px] w-[17px]" : "h-[15px] w-[15px]")} />
+          {!collapsed && (
+            <>
+              Open OrbitOMS
+              <ChevronRight className="ml-auto h-3.5 w-3.5 text-gray-400 shrink-0" />
+            </>
+          )}
+        </button>
+
+        {switcherOpen && (
+          <div
+            role="menu"
+            className={cn(
+              "absolute z-[220] rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden",
+              // Upward in both faces. Expanded: aligned to the rail. Collapsed:
+              // pushed clear of the 72px rail so it does not sit under it.
+              collapsed
+                ? "bottom-2 left-full ml-2 w-52"
+                : "bottom-full mb-1 left-3 right-3"
+            )}
+          >
+            {switcherItems.map((item) => {
+              // Keyed by PAGE KEY against the shared map — not by label.
+              const Icon = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
+              return (
+                <Link
+                  key={item.pageKey}
+                  href={item.href}
+                  role="menuitem"
+                  onClick={() => { setSwitcherOpen(false); setMobileOpen(false); }}
+                  className="flex items-center gap-2.5 px-3 py-[7px] text-[12px] text-gray-600 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                >
+                  <Icon className="h-[14px] w-[14px] shrink-0 text-gray-400" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ── Shared sidebar shell ────────────────────────────────────────────────────
 
   const sidebarContent = (collapsed: boolean) => (
@@ -449,8 +559,9 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: Admi
         )}
       </div>
 
-      {/* Footer link — below the identity block, per the Screen 1 design */}
+      {/* Footer link, then the way out — per the Screen 1 design */}
       {footerNav(collapsed)}
+      {appSwitcher(collapsed)}
     </>
   );
 
@@ -503,8 +614,13 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: Admi
             {/* ⚠ The drawer renders expandedNav ONLY — it has no identity block.
                 My Attendance used to reach a phone through NAV_SECTIONS; since
                 it moved to the footer 2026-09-06 it has to be rendered here by
-                hand, or the drawer would silently lose the row. */}
+                hand, or the drawer would silently lose the row. The switcher is
+                here for the same reason, and a phone needs the way out more
+                than a desktop does. ⚠ The aside is overflow-hidden, so the
+                upward popover is clipped if it is ever taller than the drawer;
+                nine rows at ~29px fit inside any phone viewport today. */}
             {footerNav(false)}
+            {appSwitcher(false)}
           </aside>
           <div className="flex-1 bg-black/40" onClick={() => setMobileOpen(false)} />
         </div>

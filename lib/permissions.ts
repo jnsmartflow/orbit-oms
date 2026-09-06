@@ -16,7 +16,13 @@ export interface NavUserFlags {
   rolloutStage?:       RolloutStage;
 }
 
-const PAGE_NAV_MAP: NavItemConfig[] = [
+// Exported 2026-09-06 so the admin app switcher can read a label and an href
+// off it instead of hardcoding either (lib/admin/app-switcher.ts). EXPORT ONLY —
+// no row, no order and no comment below has changed. ⚠ This module imports
+// prisma and auth, so it is SERVER-ONLY: resolve nav rows in a layout and pass
+// them down as props, exactly as buildNavItems already is. Never import it from
+// a "use client" file.
+export const PAGE_NAV_MAP: NavItemConfig[] = [
   // 2026-07-27 — Support retired (steps 3-5/8), replaced by Floor Control (/floor).
   // Both of its page keys, "support_queue" (→ /support) and "operations_support"
   // (→ /operations/support), are gone from this file entirely: the nav entries

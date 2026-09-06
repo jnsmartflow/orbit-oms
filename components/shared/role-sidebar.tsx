@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
   Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard, Mail,
-  FlaskConical, Route, PackageCheck, Container, Undo2,
+  FlaskConical, Route, PackageCheck, Container, Undo2, LayoutGrid,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -40,6 +40,14 @@ export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }
   operations_tinting:       Layers,
   operations_tint_operator: Zap,
   picking:             PackageCheck,
+  // Floor Control (added 2026-09-06 for the admin app switcher). `floor` had NO
+  // entry here and fell through to DEFAULT_ICON — the generic `User` glyph — in
+  // this sidebar and in the mobile Menu sheet, wherever somebody holds the
+  // `floor` tick. Adding a key cannot change what any other row renders: all
+  // three read sites are `ICON_MAP[item.pageKey] ?? DEFAULT_ICON`, so this only
+  // replaces a fallback. LayoutGrid is the board metaphor — Floor Control is a
+  // rail + panes desk screen — and collides with nothing already in this map.
+  floor:               LayoutGrid,
   import_obd:          Upload,
   tint_manager:        Layers,
   tint_operator:       Zap,
