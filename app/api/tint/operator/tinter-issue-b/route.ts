@@ -76,20 +76,20 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const userId = parseInt(session!.user.id, 10);
-  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
+  const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
 
   try {
     // Step 1 — resolve orderId from split or assignment (ownership-gated)
     let orderId: number;
     if (hasSplit) {
       const split = await prisma.order_splits.findFirst({
-        where: { id: Number(splitId), ...(isOpsOrAdmin ? {} : { assignedToId: userId }) },
+        where: { id: Number(splitId), ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }) },
       });
       if (!split) return NextResponse.json({ error: "Split not found or not assigned to you" }, { status: 404 });
       orderId = split.orderId;
     } else {
       const assignment = await prisma.tint_assignments.findFirst({
-        where: { id: Number(tintAssignmentId), ...(isOpsOrAdmin ? {} : { assignedToId: userId }) },
+        where: { id: Number(tintAssignmentId), ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }) },
       });
       if (!assignment) return NextResponse.json({ error: "Assignment not found or not assigned to you" }, { status: 404 });
       orderId = assignment.orderId;

@@ -29,13 +29,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const { orderId } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
-  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
+  const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
 
   // Guard 1 — TI gate: operator must have submitted the Tinter Issue form first
   const assignment = await prisma.tint_assignments.findFirst({
     where: {
       orderId,
-      ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+      ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }),
       status: { in: ["assigned", "tinting_in_progress", "paused"] },
     },
     select: { tiSubmitted: true },
@@ -53,7 +53,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // Guard 2 — One-job rule: operator may not have two jobs in progress simultaneously
-  if (!isOpsOrAdmin) {
+  if (!canSeeAllOperatorRows) {
     const activeJob = await prisma.$queryRaw`
       SELECT "operatorId" FROM operator_active_job
       WHERE "operatorId" = ${Number(session!.user.id)}
@@ -82,7 +82,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const activeAssignment = await prisma.tint_assignments.findFirst({
       where: {
         orderId,
-        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+        ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }),
         status: { in: ["assigned", "tinting_in_progress", "paused"] },
       },
     })

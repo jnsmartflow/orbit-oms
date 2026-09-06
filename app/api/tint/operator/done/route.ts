@@ -43,7 +43,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const { orderId, progress } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
-  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
+  const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
 
   try {
     // 1. Load order — verify stage
@@ -59,7 +59,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const activeAssignment = await prisma.tint_assignments.findFirst({
       where: {
         orderId,
-        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+        ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }),
         status:       "tinting_in_progress",
       },
     })

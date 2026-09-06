@@ -35,13 +35,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const { splitId } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
-  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
+  const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
 
   // Guard 1 — TI gate: operator must have submitted the Tinter Issue form first
   const split = await prisma.order_splits.findFirst({
     where: {
       id: Number(splitId),
-      ...(isOpsOrAdmin ? {} : { assignedToId: Number(session!.user.id) }),
+      ...(canSeeAllOperatorRows ? {} : { assignedToId: Number(session!.user.id) }),
       status: { in: ["tint_assigned", "tinting_in_progress"] },
     },
     select: { tiSubmitted: true },
@@ -62,7 +62,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // Guard 2 — One-job rule: operator may not have two jobs in progress simultaneously
-  if (!isOpsOrAdmin) {
+  if (!canSeeAllOperatorRows) {
     const activeJob = await prisma.$queryRaw`
       SELECT "operatorId" FROM operator_active_job
       WHERE "operatorId" = ${Number(session!.user.id)}
@@ -85,7 +85,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (!splitRow) {
       return NextResponse.json({ error: "Split not found" }, { status: 404 });
     }
-    if (!isOpsOrAdmin && splitRow.assignedToId !== userId) {
+    if (!canSeeAllOperatorRows && splitRow.assignedToId !== userId) {
       return NextResponse.json({ error: "Not assigned to you" }, { status: 403 });
     }
     if (splitRow.status !== "tint_assigned") {

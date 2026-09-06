@@ -20,7 +20,7 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const userId = parseInt(session!.user.id, 10);
-  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
+  const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
 
   const startOfToday = new Date();
   startOfToday.setUTCHours(0, 0, 0, 0);
@@ -38,7 +38,7 @@ export async function GET(): Promise<NextResponse> {
             isRemoved:     false,
             tintAssignments: {
               some: {
-                ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+                ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }),
                 // Phase 3e — exclude skipped assignments. Skipped rows are kept
                 // for audit but must not surface as live work in the operator queue.
                 status: { notIn: ["done", "skipped"] },
@@ -55,7 +55,7 @@ export async function GET(): Promise<NextResponse> {
           },
         },
         tintAssignments: {
-          where:   isOpsOrAdmin
+          where:   canSeeAllOperatorRows
             ? { status: { notIn: ["done", "skipped"] } }
             : { assignedToId: userId, status: { notIn: ["done", "skipped"] } },
           select:  {
@@ -104,7 +104,7 @@ export async function GET(): Promise<NextResponse> {
     // Query 2: Splits assigned to this operator
     prisma.order_splits.findMany({
       where: {
-        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+        ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }),
         status: { in: ["tint_assigned", "tinting_in_progress"] },
         order:  { AND: [{ isRemoved: false }, hideExclusion] },
       },
@@ -139,7 +139,7 @@ export async function GET(): Promise<NextResponse> {
     // Query 4a: tint_assignments completed today (whole-OBD flow)
     prisma.tint_assignments.findMany({
       where: {
-        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+        ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }),
         status:       "tinting_done",
         completedAt:  { gte: startOfToday },
         order:        { AND: [{ isRemoved: false }, hideExclusion] },
@@ -157,7 +157,7 @@ export async function GET(): Promise<NextResponse> {
     // Query 4b: order_splits completed today
     prisma.order_splits.findMany({
       where: {
-        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+        ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }),
         status:       { in: ["tinting_done", "pending_support", "dispatch_confirmation", "dispatched"] },
         completedAt:  { gte: startOfToday },
         order:        { AND: [{ isRemoved: false }, hideExclusion] },

@@ -43,7 +43,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const { splitId } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
-  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
+  const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
 
   let parentOrderId: number | null = null;
 
@@ -57,7 +57,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         },
       });
       if (!split) throw new Error("Split not found");
-      if (!isOpsOrAdmin && split.assignedToId !== userId) throw new NotAssignedError();
+      if (!canSeeAllOperatorRows && split.assignedToId !== userId) throw new NotAssignedError();
       if (split.status !== "tinting_in_progress") throw new WrongStageError();
 
       parentOrderId = split.orderId;
