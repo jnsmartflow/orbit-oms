@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { checkPermission } from "@/lib/permissions";
+import { checkAnyPermission } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +28,15 @@ const include = {
 
 export async function GET(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
-  if (session!.user.role !== "admin") {
-    const allowed = await checkPermission(session!.user.role, "skus", "canView");
-    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). The role array only narrowed
+  // ahead of a flag that already decided, so deleting it changes nobody: on this
+  // key every role it named either holds the tick or was refused by the flag.
+  // Both superuser arms live inside checkAnyPermission.
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "skus", "canView");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const page    = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
@@ -74,11 +77,15 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
-  if (session!.user.role !== "admin") {
-    const allowed = await checkPermission(session!.user.role, "skus", "canEdit");
-    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06). The role array only narrowed
+  // ahead of a flag that already decided, so deleting it changes nobody: on this
+  // key every role it named either holds the tick or was refused by the flag.
+  // Both superuser arms live inside checkAnyPermission.
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "skus", "canEdit");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) {
