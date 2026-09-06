@@ -278,7 +278,7 @@ function joinKey(row: ApiProduct): string {
  * would work in JS; a sentinel makes the intent unmissable and survives the
  * key being serialised.
  */
-export const NULL_OPTION = " NULL";
+export const NULL_OPTION = " NULL";
 
 function optionKey(baseColour: string | null): string {
   return baseColour === null || baseColour === undefined ? NULL_OPTION : baseColour;
@@ -474,11 +474,66 @@ export type V2CartLine = {
   label:   string;
   /** The chosen baseColour, or null for a no-options product. */
   option:  string | null;
-  /** The resolved menu row's id — the catalog anchor for the step-6 email. */
+  /** The resolved menu row's id — the catalog anchor for the step-9 email. */
   rowId:   number;
   /** Rendered pack label -> quantity in UNITS. Only non-zero entries kept. */
   qtys:    Record<string, number>;
+  /**
+   * The row's pack labels in CATALOG order, snapshotted at add time.
+   *
+   * `qtys` is a Record, so its key order is the order the salesman TAPPED —
+   * fine for a total, wrong for a printed pack string. The payload sorts packs
+   * ascending by millilitres with KG last (route.ts:21-28), and step 9's email
+   * has to match /po byte for byte, so the order has to come from the catalog
+   * rather than from the order of his thumbs.
+   */
+  packOrder: string[];
 };
+
+/** "4L ×4, 1L ×6" — pack labels in catalog order, zero quantities dropped. */
+export function packString(line: V2CartLine): string {
+  return line.packOrder
+    .filter((label) => (line.qtys[label] ?? 0) > 0)
+    .map((label) => `${label} ×${line.qtys[label]}`)
+    .join(", ");
+}
+
+// ── Order-level fields ─────────────────────────────────────────────────────
+// 🔴 THESE MIRROR lib/place-order/email.ts's TYPES EXACTLY (EmailDispatch,
+// EmailCallTarget, EmailMarker — read 2026-09-06). Mirrored, not imported:
+// step 9 does the importing. If they drift, the email silently stops matching
+// what /po sends and the parser's app-format path stops recognising it.
+//
+// Dispatch is TWO fields, not one. "Call" is not a complete state — email.ts
+// emits "Call to " + (callTarget ?? "SO"), so a Call with no target silently
+// becomes a Call to SO. The UI surfaces both rather than hiding that default.
+
+export type V2Dispatch   = "Normal" | "Urgent" | "Call";
+export type V2CallTarget = "SO" | "Dealer";
+export type V2Marker     = "Truck" | "Cross Delivery" | "Bounce" | "DTS" | null;
+
+export type V2Order = {
+  dispatch:   V2Dispatch;
+  callTarget: V2CallTarget;
+  marker:     V2Marker;
+  crossDepot: string;
+  notes:      string;
+};
+
+/** Defaults = the state email.ts OMITS from the body: no Dispatch, no Remark. */
+export const EMPTY_ORDER: V2Order = {
+  dispatch: "Normal", callTarget: "SO", marker: null, crossDepot: "", notes: "",
+};
+
+/** Shared chip shell. Selected is an OUTLINE + tint, never a solid violet fill. */
+export function chipStyle(selected: boolean, dashed = false): React.CSSProperties {
+  return {
+    border:       `1.5px ${dashed ? "dashed" : "solid"} ${selected ? VIOLET : RULE}`,
+    borderRadius: 11,
+    background:   selected ? VIOLET_BG : "#fff",
+    color:        INK,
+  };
+}
 
 /**
  * Total UNITS in one set of quantities — a plain sum, nothing else.

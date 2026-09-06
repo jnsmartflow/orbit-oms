@@ -1,27 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Eraser, FileText, Home, Send, Users, X } from "lucide-react";
+import { Check, ChevronRight, Eraser, FileText, Home, MapPin, Send, Users, X } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
 import { MIN_QUERY, ProductResults, ProductSearchInput } from "./product-search";
+import ReviewScreen from "./review-screen";
 import {
-  FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
-  addRecent, buildCatalog, loadRecents, resolveForSearch, unitsIn,
+  DIVIDER, FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
+  EMPTY_ORDER, addRecent, buildCatalog, formatPack, loadRecents, resolveForSearch, unitsIn,
   type ApiCustomer, type ApiPayload, type ApiProduct,
-  type V2CartLine, type V2Recent, type V2Resolved, type V2Tile,
+  type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
 
-// Hidden v2 salesman order page — LANDING + BOARD, two screens in one route.
+// Hidden v2 salesman order page — LANDING + BOARD + REVIEW, three screens in
+// one route.
 //
 // 🔴 CONTAINMENT — imports its own siblings and node_modules only. Nothing
 // from lib/ or app/po/. Every colour is an inline style, so globals.css and
 // tailwind.config.ts stay untouched.
 //
-// TWO SCREENS, ONE URL. The dealer list and the board are switched by state,
-// not by routing: /po-v2-8f4kd2 is the whole app. That keeps the fetched
-// catalog and the cart alive across the switch with no store and no reload.
+// THREE SCREENS, ONE URL. Dealer list, board and review are switched by
+// state, not by routing: /po-v2-8f4kd2 is the whole app. That keeps the
+// fetched catalog, the cart and the order fields alive across every switch
+// with no store and no reload.
 //
 // Cart is REACT STATE ONLY — no localStorage (recents are the one exception,
 // under v2's own key), no email.
@@ -47,8 +50,8 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
 
-type Screen = "customers" | "order";
-type Sheet  = null | "switch" | "cancel";
+type Screen = "customers" | "order" | "review";
+type Sheet  = null | "switch" | "cancel" | "shipto";
 
 export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
@@ -61,6 +64,9 @@ export default function PoV2Page(): React.JSX.Element {
   const [openTile, setOpenTile] = useState<V2Tile | null>(null);
   const [openRow, setOpenRow]     = useState<ApiProduct | null>(null);
   const [lines, setLines]     = useState<V2CartLine[]>([]);
+  const [order, setOrder]     = useState<V2Order>(EMPTY_ORDER);
+  // NULL = "same as billing", the state email.ts omits the Ship To line for.
+  const [shipTo, setShipTo]   = useState<ApiCustomer | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoad({ kind: "loading" });
@@ -117,40 +123,66 @@ export default function PoV2Page(): React.JSX.Element {
     // is the whole point of the switch sheet.
   }
 
+  /**
+   * One place that builds a cart line, whichever door it came through.
+   *
+   * `packOrder` is snapshotted here from the ROW's pack array, which the
+   * payload has already sorted into catalog order (route.ts:21-28). `qtys` is
+   * a Record whose key order is the order the salesman tapped — fine for a
+   * total, wrong for the printed pack string, and step 9's email has to match
+   * /po byte for byte.
+   */
+  function commitLine(
+    sap: string,
+    label: string,
+    picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
+  ): void {
+    const qtys: Record<string, number> = {};
+    for (const [packLabel, qty] of Object.entries(picked.qtys)) {
+      if (qty > 0) qtys[packLabel] = qty;
+    }
+    setLines((prev) => [
+      ...prev,
+      {
+        id: `${sap}-${Date.now()}-${prev.length}`,
+        tileSap: sap, label, option: picked.option, rowId: picked.row.id, qtys,
+        packOrder: picked.row.packs.map((p) => formatPack(p.packCode, p.unit)),
+      },
+    ]);
+  }
+
   function addLine(
     tile: V2Tile,
     picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
   ): void {
-    const qtys: Record<string, number> = {};
-    for (const [label, qty] of Object.entries(picked.qtys)) {
-      if (qty > 0) qtys[label] = qty;
-    }
-    setLines((prev) => [
-      ...prev,
-      { id: `${tile.sap}-${Date.now()}-${prev.length}`, tileSap: tile.sap,
-        label: tile.label, option: picked.option, rowId: picked.row.id, qtys },
-    ]);
+    commitLine(tile.sap, tile.label, picked);
     setOpenTile(null);
   }
 
-  /** A line added from a search hit rather than a tile. */
+  /** A line added from a search hit rather than a tile. tileSap is the
+   *  resolved product's sap, so a searched line lights up its board tile
+   *  exactly like one added from the board — the badge does not care which
+   *  door the salesman came through. */
   function addLineFromRow(
     product: V2Resolved,
     picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
   ): void {
-    const qtys: Record<string, number> = {};
-    for (const [label, qty] of Object.entries(picked.qtys)) {
-      if (qty > 0) qtys[label] = qty;
-    }
-    setLines((prev) => [
-      ...prev,
-      // tileSap is the resolved product's sap, so a searched line lights up
-      // its board tile exactly like one added from the board — the badge does
-      // not care which door the salesman came through.
-      { id: `${product.sap}-${Date.now()}-${prev.length}`, tileSap: product.sap,
-        label: product.label, option: picked.option, rowId: picked.row.id, qtys },
-    ]);
+    commitLine(product.sap, product.label, picked);
     setOpenRow(null);
+  }
+
+  /**
+   * Removing the last line returns to the board — never an empty review.
+   *
+   * The filter runs on `lines` directly rather than inside a setLines updater:
+   * an updater must be PURE, and React invokes it twice under StrictMode, so a
+   * setScreen inside one fires twice. Same result, no side effect in a place
+   * that promises not to have any.
+   */
+  function removeLine(id: string): void {
+    const next = lines.filter((l) => l.id !== id);
+    setLines(next);
+    if (next.length === 0) setScreen("order");
   }
 
   /**
@@ -218,6 +250,71 @@ export default function PoV2Page(): React.JSX.Element {
 
         <BottomNav />
       </main>
+    );
+  }
+
+  // ══ SCREEN 3 — REVIEW ════════════════════════════════════════════════════
+  // The ship-to sheet renders alongside it, so "Change" works from here.
+  if (screen === "review" && dealer) {
+    return (
+      <>
+        <ReviewScreen
+          dealer={dealer}
+          shipTo={shipTo}
+          lines={lines}
+          order={order}
+          onBack={() => setScreen("order")}
+          onEdit={() => setScreen("order")}
+          onRemoveLine={removeLine}
+          onOrderChange={setOrder}
+          onOpenShipTo={() => { setQuery(""); setSheet("shipto"); }}
+        />
+        {sheet === "shipto" && (
+          <V2Sheet onClose={() => setSheet(null)}>
+            <div className="shrink-0 px-4 pt-1.5 pb-3">
+              <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+                Ship to
+              </h2>
+              <p className="text-[11.5px] text-neutral-400">
+                Where the goods go — the bill still goes to {dealer.name}
+              </p>
+            </div>
+            <div className="shrink-0 px-4 pb-2">
+              <CustomerSearchInput value={query} onChange={setQuery} />
+            </div>
+            <div className="min-h-0 overflow-y-auto">
+              {/* A FIXED first row for the default, so "same as billing" is a
+                  thing you can pick your way back to, not just the absence of
+                  a choice. Hidden while searching — it is not a search hit. */}
+              {query.trim().length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setShipTo(null); setSheet(null); }}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                  style={{
+                    borderBottom: `1px solid ${DIVIDER}`,
+                    background: shipTo === null ? VIOLET_BG : undefined,
+                  }}
+                >
+                  <MapPin className="h-4 w-4 shrink-0" strokeWidth={2.5}
+                          style={{ color: shipTo === null ? VIOLET : "#A3A3A3" }} />
+                  <span className="min-w-0 flex-1 truncate text-[14.5px] font-bold" style={{ color: INK }}>
+                    Same as billing
+                  </span>
+                  {shipTo === null && (
+                    <Check className="h-4 w-4 shrink-0" strokeWidth={3} style={{ color: VIOLET }} />
+                  )}
+                </button>
+              )}
+              <CustomerListBody
+                customers={customers} recents={recents} query={query}
+                currentCode={shipTo?.code ?? null}
+                onPick={(c) => { setShipTo(c); setSheet(null); setQuery(""); }}
+              />
+            </div>
+          </V2Sheet>
+        )}
+      </>
     );
   }
 
@@ -336,6 +433,7 @@ export default function PoV2Page(): React.JSX.Element {
           </div>
           <button
             type="button"
+            onClick={() => setScreen("review")}
             className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold text-white"
             style={{ background: VIOLET }}
           >
@@ -395,7 +493,7 @@ export default function PoV2Page(): React.JSX.Element {
               icon={<Eraser className="h-4 w-4" strokeWidth={2.5} style={{ color: INK }} />}
               label={`Clear items, keep ${firstWord(dealer?.name)}`}
               sub="Empty basket, same dealer on screen"
-              onClick={() => { setLines([]); setSheet(null); }}
+              onClick={() => { setLines([]); setOrder(EMPTY_ORDER); setShipTo(null); setSheet(null); }}
             />
             <DestructiveRow
               icon={<Users className="h-4 w-4" strokeWidth={2.5} style={{ color: INK }} />}
@@ -406,6 +504,8 @@ export default function PoV2Page(): React.JSX.Element {
                 setDealer(null);
                 setQuery("");
                 setProdQuery("");
+                setOrder(EMPTY_ORDER);
+                setShipTo(null);
                 setSheet(null);
                 setScreen("customers");
               }}

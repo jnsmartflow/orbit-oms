@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Minus, Plus, X } from "lucide-react";
 import V2Sheet from "./v2-sheet";
 import {
-  INK, RULE, VIOLET, VIOLET_BG,
-  formatPack, stepForLabel, unitsIn,
+  INK, RULE, VIOLET,
+  chipStyle, formatPack, stepForLabel, unitsIn,
   type ApiProduct, type V2Option, type V2Resolved,
 } from "./v2-data";
 
@@ -27,16 +27,6 @@ import {
 // NO HORIZONTAL SCROLL: every chip row is `flex-wrap`, never a scroller.
 
 type Tab = "base" | "shade";
-
-/** Shared chip shell. Selected is an OUTLINE + tint, never a solid violet fill. */
-function chipStyle(selected: boolean, dashed = false): React.CSSProperties {
-  return {
-    border:       `1.5px ${dashed ? "dashed" : "solid"} ${selected ? VIOLET : RULE}`,
-    borderRadius: 11,
-    background:   selected ? VIOLET_BG : "#fff",
-    color:        INK,
-  };
-}
 
 export default function ProductDrawer({
   product,
