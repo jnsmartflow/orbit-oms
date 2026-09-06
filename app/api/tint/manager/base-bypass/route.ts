@@ -106,6 +106,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       obdNumber:          true,
       orderType:          true,
       workflowStage:      true,
+      customerMissing:    true,
       dispatchWindowId:   true,
       dispatchTargetDate: true,
     },
@@ -118,6 +119,21 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (order.orderType !== "tint") {
       validationError("This bill is not a tint order — there is nothing to bypass.");
     }
+
+    // Block the bypass until customer master data exists — the same backstop
+    // assign/route.ts:67-69 carries, in the same position among its guards and
+    // with the same 400 shape. It matters MORE here, not less: a bypass sends
+    // the bill straight on to the Floor rail (or to Picking on a pre-set slot),
+    // so an unresolved ship-to would leave the depot holding a bill it cannot
+    // deliver, with the tint step already closed behind it.
+    //
+    // ⚠ Unlike Assign, there is NO frontend interceptor chaining into
+    // CustomerMissingSheet for this action, so this guard is the only thing
+    // stopping it — not defence-in-depth, the actual gate.
+    if (order.customerMissing) {
+      validationError("Customer master data is missing for this order. Resolve in the Missing Customers sheet before marking it Base — No Tint.");
+    }
+
     // The bypass writes a COMPLETED assignment out of thin air, so it is only
     // ever legitimate on a bill nobody holds yet. Once a real operator has been
     // assigned, the honest path is theirs: Send back to Pending first, then
