@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { getBaseOperatorId } from "@/lib/tint/base-operator";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared data-gathering for the daily "Tint Summary" report.
@@ -109,6 +110,25 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
 
   const hideExclusion = await getHideExclusion();
 
+  // ── The "Base — No Tint" placeholder ──────────────────────────────────────
+  // A bypass writes a real `tinting_done` assignment attributed to this row, so
+  // without this every site-wide total on the report would count a bill nobody
+  // tinted as tinting output: litres that were never mixed, a jobs-cleared
+  // percentage flattered by paperwork, and a completion pace curve stepping up
+  // at a moment no work happened.
+  //
+  // 🔴 IT IS EXCLUDED FROM TOTALS, NOT FROM THE REPORT. The per-operator cards
+  // and the completed register still show "Base / No Tint" as its own named
+  // line — that is wanted, because a manager reading the register needs to see
+  // which bills went out untinted. What must never happen is those rows being
+  // folded into a REAL operator's numbers or into a site-wide KPI. Every use
+  // below is tagged accordingly; see `realCompletedObds`.
+  //
+  // Sequential await alongside the hide-exclusion, never $transaction (CORE §3).
+  // A missing placeholder (null) degrades to excluding nothing — the report
+  // over-reports rather than hiding real completions.
+  const baseOperatorId = await getBaseOperatorId();
+
   // Shared customer include — resolves the site name + area→deliveryType chain.
   const customerInclude = {
     select: {
@@ -159,7 +179,17 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
         querySnapshot: { select: { totalVolume: true } },
         customer: customerInclude,
         tintAssignments: {
-          where: { status: { notIn: ["done", "cancelled"] } },
+          // ⚠ FIXED 2026-09-06 — was `notIn: ["done", "cancelled"]`. `"done"` is
+          // not a value this system has ever written; the finished value is
+          // `"tinting_done"` (lib/tint/assignment-status.ts). This is the FIFTH
+          // copy of that dead literal, unrelated to the Base work — the other
+          // four were fixed in reorder ×2, orders, assign and cancel-assignment
+          // on 2026-09-05/06 (CLAUDE_TINT.md §1.4) and this one was missed
+          // because it lives under lib/reports/, not app/api/tint/.
+          // Consequence while it was wrong: finished and skipped assignment rows
+          // were admitted here, so the open register could show a pending bill's
+          // status/operator derived from a DEAD row.
+          where: { status: { notIn: ["tinting_done", "cancelled"] } },
           select: { status: true, assignedTo: { select: { id: true, name: true } } },
           orderBy: { createdAt: "desc" },
         },
@@ -223,11 +253,15 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     }),
 
     // Trend — completed assignments by IST day (distinct order per day)
+    // Base bypasses excluded AT THE QUERY: this set feeds only the per-day
+    // completed counts, which are a site-wide KPI, so unlike Set 3 there is no
+    // named breakdown here that would want the rows back.
     prisma.tint_assignments.findMany({
       where: {
         status: "tinting_done",
         completedAt: { gte: trendStart, lt: end },
         order: { is: { AND: [{ isRemoved: false }, hideExclusion] } },
+        ...(baseOperatorId !== null ? { assignedToId: { not: baseOperatorId } } : {}),
       },
       select: { orderId: true, completedAt: true },
     }),
@@ -348,6 +382,9 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     completedAt: Date; operator: string | null; operatorId: number | null;
     smu: string | null; area: string; isHold: boolean;
     customerId: number | null; dealer: string | null;
+    /** Closed by a "Base — No Tint" bypass: real paperwork, but NOT tinting
+     *  output. Kept in the register, excluded from every site-wide total. */
+    isBase: boolean;
   };
   const completedByOrder = new Map<number, CompletedObd>();
   // Per-job rows feed the operators[] breakdown (a split OBD is many jobs).
@@ -367,6 +404,7 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
       operator: a.assignedTo?.name ?? null, operatorId: a.assignedTo?.id ?? null,
       smu, area, isHold,
       customerId: o.customerId, dealer: dealerMap.get(o.obdNumber) ?? null,
+      isBase: baseOperatorId !== null && a.assignedTo?.id === baseOperatorId,
     });
     jobs.push({ operatorId: a.assignedTo?.id ?? null, operator: a.assignedTo?.name ?? null, litres, smu, area, isHold });
   }
@@ -389,9 +427,17 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
         operator: s.assignedTo?.name ?? null, operatorId: s.assignedTo?.id ?? null,
         smu, area, isHold,
         customerId: o.customerId, dealer: dealerMap.get(o.obdNumber) ?? null,
+        // A split is never a bypass: the bypass writes whole-OBD assignments
+        // only, and splits/create has had no caller since the board rebuild.
+        isBase: false,
       });
     } else {
       existing.litres += splitLitres;
+      // Real split work landing on the same OBD as a bypass would mean the bill
+      // WAS tinted, so it stops being base. Structurally unreachable today (the
+      // bypass requires pending_tint_assignment, which an order with completed
+      // splits is past) — written so the flag cannot go stale if that changes.
+      existing.isBase = false;
       if (s.completedAt! > existing.completedAt) {
         existing.completedAt = s.completedAt!;
         existing.operator = s.assignedTo?.name ?? null;
@@ -400,10 +446,20 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     }
   }
 
+  // EVERY completion today, base bypasses included. Only the completed REGISTER
+  // reads this set — it is the named, per-bill list where a manager needs to see
+  // that a bill went out untinted.
   const completedObds = Array.from(completedByOrder.values())
     .filter((c) => passOrder(c.smu, c.area, c.isHold));
-  const completedCount = completedObds.length;
-  const completedLitres = r2(completedObds.reduce((s, c) => s + c.litres, 0));
+
+  // 🔴 THE SET EVERY SITE-WIDE TOTAL READS. Base bypasses removed: they are
+  // bills that left without being tinted, so counting them as tinting output
+  // would overstate litres, jobs cleared, the pace curve and the SMU/Area
+  // completed-fill. Anything below that answers "how much did the depot tint
+  // today?" must use THIS, never `completedObds`.
+  const realCompletedObds = completedObds.filter((c) => !c.isBase);
+  const completedCount = realCompletedObds.length;
+  const completedLitres = r2(realCompletedObds.reduce((s, c) => s + c.litres, 0));
 
   // ── SUMMARY + MOVEMENT ───────────────────────────────────────────────────
   const workTotal = completedCount + closingCount;
@@ -432,7 +488,9 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
 
   // ── PACE — cumulative litres by IST hour (span covers 9..18 + any outliers) ─
   const litresByHour = new Map<number, number>();
-  for (const c of completedObds) {
+  // Pace answers "how fast is the depot tinting?" — realCompletedObds, so the
+  // curve never steps up at a moment when nothing was mixed.
+  for (const c of realCompletedObds) {
     const h = istHour(c.completedAt);
     litresByHour.set(h, (litresByHour.get(h) ?? 0) + c.litres);
   }
@@ -508,7 +566,7 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
   // SMU + Area + Top customers all derive from THIS pool, with the completed
   // subset tracked for the green done-fill. SMU null → import_raw_summary.smu;
   // missing-customer area → "Unknown".
-  const completedForBoard = completedObds.filter((c) => !opFilter || (c.operatorId != null && opFilter.has(c.operatorId)));
+  const completedForBoard = realCompletedObds.filter((c) => !opFilter || (c.operatorId != null && opFilter.has(c.operatorId)));
   type BoardRow = {
     orderId: number; smu: string | null; area: string; litres: number;
     customerId: number | null; site: string; dealer: string | null; done: boolean;
@@ -575,6 +633,13 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     .sort((a, b) => b.ageDays - a.ageDays);
 
   // ── COMPLETED REGISTER — one row per completed OBD (operator filter applies) ─
+  //
+  // Reads `completedObds`, the FULL set — base bypasses INCLUDED, on purpose.
+  // This is the named per-bill list, and its Operator column will read
+  // "Base / No Tint" on those rows, which is exactly the disclosure a manager
+  // needs: these bills left the depot without being tinted. The totals above
+  // read `realCompletedObds` instead, so a register line and a KPI can differ
+  // by design here. Do NOT "make them agree" by switching this to the real set.
   const completedRegister = completedObds
     .filter((c) => !opFilter || (c.operatorId != null && opFilter.has(c.operatorId)))
     .map((c) => ({
