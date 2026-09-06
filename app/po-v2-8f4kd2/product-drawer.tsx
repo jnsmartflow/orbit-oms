@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Minus, Plus, Search, X } from "lucide-react";
+import V2Sheet from "./v2-sheet";
 import {
-  ALL_BASES, INK, RULE, SCRIM, SEARCH_BG, VIOLET, VIOLET_BG,
+  ALL_BASES, INK, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
   formatPack, stepForLabel, unitsIn,
   type ApiProduct, type V2Option, type V2Resolved,
 } from "./v2-data";
@@ -24,26 +25,6 @@ import {
 // are exactly that row's packs.
 //
 // NO HORIZONTAL SCROLL: every chip row is `flex-wrap`, never a scroller.
-
-// Slide-up + fade, and the sheet's height cap. A scoped <style> tag rather
-// than an entry in globals.css — same containment rule as the colours. Class
-// names are v2-prefixed so they cannot collide. prefers-reduced-motion
-// disables both animations outright.
-//
-// Height is AUTO, capped at 88% of the viewport, so a product with no options
-// and four packs opens as a short sheet. `dvh` is the correct unit on a phone
-// because `vh` measures the viewport with the toolbar COLLAPSED; @supports
-// keeps the vh value on engines that lack it.
-const SHEET_CSS = `
-@keyframes v2SheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes v2ScrimIn { from { opacity: 0; } to { opacity: 1; } }
-.v2-sheet { animation: v2SheetUp .26s cubic-bezier(.32,.72,0,1) both; max-height: 88vh; }
-.v2-scrim { animation: v2ScrimIn .2s ease-out both; }
-@supports (max-height: 88dvh) { .v2-sheet { max-height: 88dvh; } }
-@media (prefers-reduced-motion: reduce) {
-  .v2-sheet, .v2-scrim { animation: none; }
-}
-`;
 
 type Tab = "base" | "shade";
 
@@ -82,36 +63,6 @@ export default function ProductDrawer({
   );
   const [qtys, setQtys]         = useState<Record<string, number>>({});
   const [moreOpen, setMoreOpen] = useState(false);
-
-  // Lock the board behind the scrim; put the salesman back where he was on
-  // close. Local to this component by design — no global provider.
-  //
-  // `position: fixed` on <body>, not `overflow: hidden`: iOS Safari ignores
-  // overflow-hidden on body and keeps scrolling the page under the sheet.
-  // Fixing the body collapses its scroll to zero, so the offset is stashed in
-  // `top` and handed back to window.scrollTo on cleanup. Each property is read
-  // first and restored individually, so this cannot clobber another style.
-  useEffect(() => {
-    const body = document.body;
-    const y = window.scrollY;
-    const prev = {
-      position: body.style.position, top: body.style.top,
-      left: body.style.left, right: body.style.right, width: body.style.width,
-    };
-    body.style.position = "fixed";
-    body.style.top      = `-${y}px`;
-    body.style.left     = "0";
-    body.style.right    = "0";
-    body.style.width    = "100%";
-    return () => {
-      body.style.position = prev.position;
-      body.style.top      = prev.top;
-      body.style.left     = prev.left;
-      body.style.right    = prev.right;
-      body.style.width    = prev.width;
-      window.scrollTo(0, y);
-    };
-  }, []);
 
   // Which options are on show right now, and which row that resolves to.
   const activeList: V2Option[] = hasVariants
@@ -167,29 +118,37 @@ export default function ProductDrawer({
   // Sub-line: the chosen option, else the grey board family.
   const selectionLine = product.noOptionRow ? null : selected;
 
-  return (
-    <div className="fixed inset-0 z-50">
-      <style>{SHEET_CSS}</style>
-
+  const footer = moreOpen ? (
+    <button
+      type="button" onClick={() => setMoreOpen(false)}
+      className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
+      style={{ border: `1.5px solid ${RULE}`, color: INK }}
+    >
+      Back
+    </button>
+  ) : (
+    <>
+      <button
+        type="button" onClick={onClose}
+        className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
+        style={{ border: `1.5px solid ${RULE}`, color: INK }}
+      >
+        Cancel
+      </button>
       <button
         type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="v2-scrim absolute inset-0 h-full w-full cursor-default"
-        style={{ background: SCRIM }}
-      />
-
-      <section
-        className="v2-sheet absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white"
-        style={{
-          borderTopLeftRadius: 20, borderTopRightRadius: 20,
-          boxShadow: "0 -8px 32px rgba(18,14,26,.16)",
-        }}
+        disabled={!canAdd}
+        onClick={() => canAdd && selectedRow && onAdd({ option: selected, row: selectedRow, qtys })}
+        className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+        style={{ background: canAdd ? VIOLET : "#C9C6D2" }}
       >
-        <div className="flex shrink-0 justify-center pt-2.5 pb-1">
-          <span className="block rounded-full" style={{ width: 38, height: 4.5, background: "#DEDCE3" }} />
-        </div>
+        {addLabel}
+      </button>
+    </>
+  );
 
+  return (
+    <V2Sheet onClose={onClose} footer={footer}>
         {/* ── HEADER ────────────────────────────────────────────────────── */}
         <div className="flex shrink-0 items-start gap-3 px-4 pt-1.5 pb-3">
           <div className="min-w-0 flex-1">
@@ -305,42 +264,7 @@ export default function ProductDrawer({
           </>
         )}
 
-        {/* ── FOOTER ────────────────────────────────────────────────────── */}
-        <div
-          className="flex shrink-0 gap-2 px-4 pt-3"
-          style={{ borderTop: `1px solid ${RULE}`, paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
-        >
-          {moreOpen ? (
-            <button
-              type="button" onClick={() => setMoreOpen(false)}
-              className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
-              style={{ border: `1.5px solid ${RULE}`, color: INK }}
-            >
-              Back
-            </button>
-          ) : (
-            <>
-              <button
-                type="button" onClick={onClose}
-                className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
-                style={{ border: `1.5px solid ${RULE}`, color: INK }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!canAdd}
-                onClick={() => canAdd && selectedRow && onAdd({ option: selected, row: selectedRow, qtys })}
-                className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-                style={{ background: canAdd ? VIOLET : "#C9C6D2" }}
-              >
-                {addLabel}
-              </button>
-            </>
-          )}
-        </div>
-      </section>
-    </div>
+    </V2Sheet>
   );
 }
 

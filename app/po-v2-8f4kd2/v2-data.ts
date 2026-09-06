@@ -14,8 +14,10 @@ export const VIOLET_BG = "#F5F1FE";             // selected-chip / active-tile f
 export const SEARCH_BG = "#F4F3F7";
 export const SCRIM     = "rgba(18,14,26,.42)";
 
-/** The one dealer this step is wired to. The dealer list is step 6. */
-export const DEALER_CODE = "102492";
+export const STAR      = "#F0A020";             // the recents star
+export const DIVIDER   = "#F3F2F6";             // list-row dividers
+export const MONO_BG   = "#F2F1F5";             // monogram square fill
+export const CHEVRON   = "#C7C3CE";
 
 // ── The payload from GET /api/order/data ───────────────────────────────────
 // Field names and nesting mirror app/api/order/data/route.ts exactly. `packs`
@@ -444,4 +446,101 @@ export function unitsIn(qtys: Record<string, number>): number {
     if (qty > 0) units += qty;
   }
   return units;
+}
+
+// ── Customer search ────────────────────────────────────────────────────────
+// No shared helper exists for this anywhere in the app: /po filters inline at
+// po-page.tsx:1139-1145 and the desktop page has its own copy at
+// customer-search.tsx:57-62. Neither is exported, so this is written here
+// rather than imported — and it is deliberately stricter than either.
+
+const SEARCH_CAP = 30;
+
+/**
+ * Match on NAME-contains OR CODE-starts-with, case-insensitive.
+ *
+ * The code test is a PREFIX, not a substring, on purpose. /po uses
+ * `c.code.includes(q)`, which means typing "24" surfaces every dealer with a
+ * 24 anywhere in a 6-digit code — dozens of them, in no useful order. A
+ * salesman types a code from the front. Prefix keeps that list short and
+ * ranked the way he is thinking.
+ *
+ * Code-prefix hits sort ABOVE name hits: if the query looks like a code, the
+ * dealer whose code starts with it is what was meant. Each group is
+ * alphabetical by name so the order is stable and predictable.
+ */
+export function searchCustomers(customers: ApiCustomer[], rawQuery: string): ApiCustomer[] {
+  const q = rawQuery.trim().toLowerCase();
+  if (q.length < 1) return [];
+
+  const codeHits: ApiCustomer[] = [];
+  const nameHits: ApiCustomer[] = [];
+  for (const c of customers) {
+    if (c.code.toLowerCase().startsWith(q)) codeHits.push(c);
+    else if (c.name.toLowerCase().includes(q)) nameHits.push(c);
+  }
+  const byName = (a: ApiCustomer, b: ApiCustomer): number => a.name.localeCompare(b.name);
+  codeHits.sort(byName);
+  nameHits.sort(byName);
+  return [...codeHits, ...nameHits].slice(0, SEARCH_CAP);
+}
+
+/** First letters of the first two words — "Ambika Paints" -> "AP". */
+export function monogram(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
+}
+
+// ── Recent dealers (localStorage) ──────────────────────────────────────────
+// 🔴 v2's OWN key. It never reads or writes any `po_*` key — /po's recents
+// (`po_recent_customers`, cap 6), favourites, drafts and sent list all stay
+// untouched, so running both apps on one phone cannot cross-contaminate.
+
+const RECENTS_KEY = "po2_recent_customers";
+const RECENTS_CAP = 8;
+
+export type V2Recent = { name: string; code: string; area: string | null; ts: number };
+type RecentStore = { version: 1; list: V2Recent[] };
+
+/**
+ * Every read and write is wrapped: private mode throws on ACCESS, not just on
+ * write, and a full quota throws on set. Recents are a convenience — losing
+ * them must never take the page down with them.
+ */
+export function loadRecents(): V2Recent[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Partial<RecentStore> | null;
+    if (!parsed || !Array.isArray(parsed.list)) return [];
+    return parsed.list
+      .filter((e): e is V2Recent =>
+        !!e && typeof e.name === "string" && typeof e.code === "string")
+      .map((e) => ({
+        name: e.name,
+        code: e.code,
+        area: typeof e.area === "string" ? e.area : null,
+        ts:   typeof e.ts === "number" ? e.ts : 0,
+      }))
+      .slice(0, RECENTS_CAP);
+  } catch {
+    return [];
+  }
+}
+
+/** Move this dealer to the top (deduped by code), persist, return the new list. */
+export function addRecent(c: ApiCustomer): V2Recent[] {
+  const entry: V2Recent = { name: c.name, code: c.code, area: c.area ?? null, ts: Date.now() };
+  const next = [entry, ...loadRecents().filter((e) => e.code !== entry.code)].slice(0, RECENTS_CAP);
+  if (typeof window !== "undefined") {
+    try {
+      const store: RecentStore = { version: 1, list: next };
+      window.localStorage.setItem(RECENTS_KEY, JSON.stringify(store));
+    } catch {
+      // Quota / private mode — best-effort, and the returned list still
+      // updates the current session even though it will not survive a reload.
+    }
+  }
+  return next;
 }
