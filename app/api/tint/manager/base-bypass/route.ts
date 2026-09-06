@@ -5,6 +5,7 @@ import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
+import { BASE_OPERATOR_EMAIL, getBaseOperatorId } from "@/lib/tint/base-operator";
 
 export const dynamic = "force-dynamic";
 
@@ -42,28 +43,10 @@ export const dynamic = "force-dynamic";
 // telling the operator what did and did not land.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * The placeholder worker's email — the STABLE key. Its numeric id is never
- * hardcoded anywhere: a reseed or a restore would renumber the row, and an
- * id-keyed lookup would then silently attribute bypasses to whoever inherited
- * that id. Email is UNIQUE on `users` (users_email_key), so findUnique is exact.
- *
- * The live row (verified read-only 2026-09-06) is deliberately inert:
- *   isActive=false  → kept out of the Assign dropdown, the Reports operator
- *                     chips, all three picker rosters, the attendance roster,
- *                     the attendance export and the nightly rollover cron, and
- *                     refused at sign-in by lib/auth.ts:210
- *   no user_roles   → invisible to /api/tint/manager/operators even if the
- *                     isActive filter ever changed (that query keys on the
- *                     junction table, not users.roleId)
- *   non-bcrypt pw   → bcrypt.compare can never return true for it
- *
- * 🔴 `isActive: false` is NOT checked below, and that is the point: assign/
- * route.ts:155-161 does not check it either, so an inactive user is a perfectly
- * valid `assignedToId`. That asymmetry is what makes this row usable as an
- * attribution target while staying invisible everywhere a person is listed.
- */
-const PLACEHOLDER_EMAIL = "base-notint@system.invalid";
+// The placeholder worker's identity — email, lookup and the full reasoning for
+// why it is safe to attribute work to it — lives in lib/tint/base-operator.ts.
+// This route used to declare the email itself; it is now imported so the string
+// exists in exactly one place in the codebase.
 
 const bodySchema = z.object({
   orderId: z.number().int().positive(),
@@ -157,13 +140,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   // fall back to the acting manager: a bypass silently attributed to Chandresh
   // is indistinguishable from a job he actually tinted, which is the exact
   // confusion this whole feature exists to prevent.
-  const placeholder = await prisma.users.findUnique({
-    where:  { email: PLACEHOLDER_EMAIL },
-    select: { id: true },
-  });
-  if (!placeholder) {
+  const placeholderId = await getBaseOperatorId();
+  if (placeholderId === null) {
     console.error("[tint/manager/base-bypass] placeholder worker missing", {
-      orderId, email: PLACEHOLDER_EMAIL,
+      orderId, email: BASE_OPERATOR_EMAIL,
     });
     return NextResponse.json(
       { error: "placeholder worker missing — contact admin" },
@@ -207,7 +187,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const created = await prisma.tint_assignments.create({
       data: {
         orderId,
-        assignedToId: placeholder.id,
+        assignedToId: placeholderId,
         assignedById: managerId,
         status:       TINT_STATUS_DONE,
         startedAt:    now,

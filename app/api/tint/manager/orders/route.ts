@@ -7,6 +7,7 @@ import { buildSkuDisplay } from "@/types/sku-display";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { aggregateArticleTags } from "@/lib/article-tag-parse";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
+import { getBaseOperatorId } from "@/lib/tint/base-operator";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +109,10 @@ export async function GET(): Promise<NextResponse> {
     // Hide-feature exclusion — AND-merged into the display queries below so
     // manually-hidden + rule-matched OBDs drop out of the Tint Manager board.
     const hideExclusion = await getHideExclusion();
+
+    // The "Base — No Tint" placeholder, excluded from Set E below. Sequential
+    // await alongside the hide-exclusion, never $transaction (CORE §3).
+    const baseOperatorId = await getBaseOperatorId();
 
     // ── All six queries in parallel ──────────────────────────────────────────
     const [activeOrders, completedTodayOrders, activeSplits, completedSplits, completedAssignments, allSlots] = await Promise.all([
@@ -407,11 +412,28 @@ export async function GET(): Promise<NextResponse> {
       }),
 
       // Set E — completed tint_assignments today (whole-OBD Completed column)
+      //
+      // ⚠ THE ONLY FEED THAT SURFACES A "Base — No Tint" BYPASS on this board.
+      // A bypass writes a real `tinting_done` assignment attributed to the
+      // placeholder worker (lib/tint/base-operator.ts), which this query would
+      // otherwise pick up and rows.ts would render as its own operator section
+      // headed "Base / No Tint" — a group named after a person who does not
+      // exist, sitting beside three who do. Excluded here, at the single point
+      // that feeds it, rather than filtered in the client shaping.
+      //
+      // `baseOperatorId === null` (the row is missing) degrades to excluding
+      // NOTHING, deliberately: showing a placeholder section is a cosmetic
+      // problem, hiding real completed work would be a real one.
+      //
+      // Set B above also matches a bypassed order but never reaches the table —
+      // rows.ts's orderStatus() returns null for anything not at tint_assigned /
+      // tinting_in_progress, and buildRail takes only pending_tint_assignment.
       prisma.tint_assignments.findMany({
         where: {
           status:      "tinting_done",
           completedAt: { gte: startOfToday },
           order:       { AND: [{ isRemoved: false }, hideExclusion] },
+          ...(baseOperatorId !== null ? { assignedToId: { not: baseOperatorId } } : {}),
         },
         include: {
           order: {

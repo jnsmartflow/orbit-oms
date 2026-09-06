@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { PackCode, Prisma } from "@prisma/client";
 import {
   getIstYearPrefix,
@@ -85,6 +86,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   const userId = parseInt(session!.user.id, 10);
   const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
 
+  // Resolved once per request. Sequential await, never $transaction (CORE §3).
+  const baseOperatorId = await getBaseOperatorId();
+
   try {
     // Step 1 — resolve orderId from split or assignment (ownership-gated)
     let orderId: number;
@@ -95,8 +99,23 @@ export async function POST(req: Request): Promise<NextResponse> {
       if (!split) return NextResponse.json({ error: "Split not found or not assigned to you" }, { status: 404 });
       orderId = split.orderId;
     } else {
+      // Ownership scope, widened 2026-09-06 by ONE narrow exception — the same
+      // change, for the same reason, as the TINTER route next door. Full
+      // reasoning lives there; the short version is that a "Base — No Tint"
+      // bypass attributes its assignment to the placeholder worker, so a
+      // manager typing the missing TI is neither its owner nor covered by the
+      // FACE branch (which reads the SINGULAR primary role).
+      //
+      // 🔴 An exception for ONE row, never a widening of canSeeAllOperatorRows
+      // (CLAUDE_TINT.md §13.4). `baseOperatorId === null` fails CLOSED, back to
+      // the narrow arm.
+      const ownershipScope = canSeeAllOperatorRows
+        ? {}
+        : baseOperatorId !== null
+          ? { assignedToId: { in: [userId, baseOperatorId] } }
+          : { assignedToId: userId };
       const assignment = await prisma.tint_assignments.findFirst({
-        where: { id: Number(tintAssignmentId), ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }) },
+        where: { id: Number(tintAssignmentId), ...ownershipScope },
       });
       if (!assignment) return NextResponse.json({ error: "Assignment not found or not assigned to you" }, { status: 404 });
       orderId = assignment.orderId;

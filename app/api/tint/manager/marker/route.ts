@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
+import { getBaseOperatorId } from "@/lib/tint/base-operator";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,12 @@ export async function GET(): Promise<NextResponse> {
   // cannot move a marker for a row nobody can see.
   const hideExclusion = await getHideExclusion();
 
+  // The "Base — No Tint" placeholder. Excluded from both completion arms below
+  // so the marker stays a faithful approximation of the board's six feeds —
+  // CLAUDE_TINT.md §1.9's rule is that if a feed gains or loses a stage this
+  // predicate must move with it, and Set E just did.
+  const baseOperatorId = await getBaseOperatorId();
+
   const agg = await prisma.orders.aggregate({
     where: {
       AND: [
@@ -90,13 +97,32 @@ export async function GET(): Promise<NextResponse> {
               },
             },
             {
+              // Arm 2 — whole-OBD completions. Mirrors Set E in
+              // manager/orders/route.ts, INCLUDING its placeholder exclusion:
+              // a "Base — No Tint" bypass no longer shows on the board, so it
+              // must not move the marker either or the board would refetch on a
+              // change it does not display.
               tintAssignments: {
-                some: { status: TINT_STATUS_DONE, completedAt: { gte: startOfToday } },
+                some: {
+                  status:      TINT_STATUS_DONE,
+                  completedAt: { gte: startOfToday },
+                  ...(baseOperatorId !== null ? { assignedToId: { not: baseOperatorId } } : {}),
+                },
               },
             },
             {
+              // Arm 3 — split completions. The same exclusion is applied for
+              // symmetry, but note it can never match anything today: the
+              // bypass writes whole-OBD `tint_assignments` rows only, and
+              // POST /api/tint/manager/splits/create has had no caller since
+              // the 2026-09-05/06 board rebuild (CLAUDE_TINT.md §1.11), so no
+              // split can be raised against the placeholder at all.
               splits: {
-                some: { status: TINT_STATUS_DONE, completedAt: { gte: startOfToday } },
+                some: {
+                  status:      TINT_STATUS_DONE,
+                  completedAt: { gte: startOfToday },
+                  ...(baseOperatorId !== null ? { assignedToId: { not: baseOperatorId } } : {}),
+                },
               },
             },
           ],
