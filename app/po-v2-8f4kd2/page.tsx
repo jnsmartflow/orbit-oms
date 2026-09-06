@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import PoV2Page from "./po-v2-page";
 
 // Hidden v2 salesman order page — placeholder shell.
@@ -16,12 +17,39 @@ import PoV2Page from "./po-v2-page";
 // If v2 needs a shared helper changed, COPY it in here rather than editing the
 // original, so the whole experiment stays deletable in one command. app/po/ is
 // off limits: no imports from it, no edits to it.
-//
-// No PWA manifest / appleWebApp metadata yet — deliberately omitted, so this
-// route inherits app/layout.tsx's global manifest and does NOT claim an
-// installable identity of its own the way /po does.
 
 export const dynamic = "force-dynamic";
+
+// Per-route PWA metadata — installable as its OWN home-screen app ("Orbit v2"),
+// exactly the way /po is (app/po/page.tsx). Next resolves metadata per route and
+// a child segment overrides the parent layout for the SAME fields, so this route
+// links its own manifest and reads "Orbit v2" while every other route keeps the
+// global /manifest.json + "OrbitOMS" apple title from app/layout.tsx (NOT edited).
+//
+// The manifest is served by a ROUTE HANDLER inside this folder
+// (./manifest.webmanifest/route.ts), not a file in public/ — containment: v2
+// adds nothing outside app/po-v2-8f4kd2/.
+//
+// `statusBarStyle: "default"` matches app/po/page.tsx: iOS then RESERVES the
+// status bar in standalone so content sits BELOW it instead of drawing
+// underneath and overlapping the top bar. app/layout.tsx stays
+// "black-translucent" for every other route.
+//
+// No `icons` key here, deliberately. Next merges metadata PER FIELD, and
+// app/layout.tsx:40 already declares
+// `icons.apple = { url: "/apple-touch-icon.png", sizes: "180x180" }`. Because
+// this object does not set `icons`, that global value is inherited unchanged —
+// so the iOS home-screen icon still resolves without v2 restating it or
+// referencing any new asset.
+export const metadata: Metadata = {
+  title: "Orbit v2",
+  manifest: "/po-v2-8f4kd2/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Orbit v2",
+    statusBarStyle: "default",
+  },
+};
 
 export default function Page() {
   return <PoV2Page />;
