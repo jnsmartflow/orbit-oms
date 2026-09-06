@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-09-06 (Tint Manager board rebuild — new `## Tint Manager board rebuild` section: a P0 QA block for the five flows that shipped without ever being click-tested, the 8 old-Kanban capabilities with no home in the new design (the per-row StatusPopover is the significant one, and Create Split's removal means new splits cannot be created anywhere), the two cancel routes still on `prisma.$transaction`, and the Floor-vs-UI§27 row-height disagreement between two canon files) · Prior: 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-09-06 (tint + master-data access conversion — `## User-based access` gains six new items and closes one that was stale within hours: the "every tint GET still gates on a job title" bullet was overtaken by `fbbe30bd` the same day. New: 🔴 P0 `prisma/seed.ts` has never heard of `user_page_access`, so a wipe-and-reseed leaves live access EMPTY and looks like it succeeded; 🔴 P1 the SILENT-403 pattern as ONE systemic issue — `fetchAll` returns `[]` on any failure and `requireRole` fails with a 307 into an HTML page that arrives 200, which produced three separate silent failures in one week; 🔴 P1 `requireRole` has no admin arm, and the fix is NOT to add one; P1 the two unswept bypasses, which are not the same kind — `mrn/photo:167-168` is harmless, `reports/tint-summary:33` is a multi-clause GRANT that still admits Operations User to a report every other tint endpoint refuses him; P2 retire the four `/dispatcher/*` screens, reachable by nobody including all three holders of the `dispatcher` role, which also collapses `ROLE_HREF_OVERRIDES` for master data; P2 `sub-areas` CREATE now looser than its own EDIT, a parked decision whose fix is to bring PATCH and import forward; P3 the router has no `/admin/access` row; and `operator/skip`, ownership-scoped by design, recorded so nobody "fixes" it into a tick. The board-rebuild P0 QA block gains manual tint entry, whose button is **"Add to Tint"** — the rebuild renamed it, which is why the flow went untested. Record: `code-update-2026-09-06-tint-and-master-data.md`) · Prior: 2026-09-06 (Tint Manager board rebuild — new `## Tint Manager board rebuild` section: a P0 QA block for the five flows that shipped without ever being click-tested, the 8 old-Kanban capabilities with no home in the new design (the per-row StatusPopover is the significant one, and Create Split's removal means new splits cannot be created anywhere), the two cancel routes still on `prisma.$transaction`, and the Floor-vs-UI§27 row-height disagreement between two canon files) · Prior: 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -13,7 +13,28 @@ Shipped 2026-09-04 in eight commits (`c3cf726b` → `b915c88e`). Access now come
 `user_page_access`; a job title is a label and a starting template. Record:
 `docs/prompts/drafts/code-update-2026-09-04-user-based-access.md`. Model: `CLAUDE_CORE.md §5`.
 
-**All counts below were derived from the tree on 2026-09-04, not carried over from the plan.**
+**Step 6 continued 2026-09-06 in seven commits** (`cd0ed055` → `fbbe30bd`, all pushed): Tint
+converted (37 of its 41 handlers now gate on a tick), the master-data routes converted, and the 57
+redundant admin bypasses removed. Record:
+`docs/prompts/drafts/code-update-2026-09-06-tint-and-master-data.md`. Gates:
+`code-discovery-2026-09-06-tint-conversion-gate.md` ·
+`code-discovery-2026-09-06-master-data-gate.md`. Canon: `CLAUDE_TINT.md §13`, `CLAUDE_CORE.md §5`/`§13`.
+
+**All counts below were derived from the tree, not carried over from a plan or a brief** — on
+2026-09-04 for the items that predate it, and re-derived 2026-09-06 for everything the seven commits
+touched. Where a bullet was already stale by the time it was read, it says so rather than being
+quietly rewritten.
+
+### P0 — 🔴 `prisma/seed.ts` has never heard of `user_page_access`
+
+- [ ] **A wipe-and-reseed would rebuild the fallback and leave LIVE ACCESS EMPTY.** Verified by grep
+      2026-09-06: **zero hits** for `user_page_access` or `isSuperuser` in `prisma/seed.ts`. It
+      still seeds `role_permissions` — the table nothing reads — and nothing else. Under
+      `ACCESS_SOURCE = 'user'` that means every non-superuser resolves all-false: the app comes back
+      up with nobody able to do anything, **and the seed will look like it succeeded.** Same
+      seed-is-not-live trap as the `dispatcher`/`support` drift (`CLAUDE_CORE.md §5`), one layer
+      more dangerous because the *authoritative* table is the one seed has never heard of. Either
+      teach seed the new table or make it fail loudly.
 
 ### P1 — Step 6: the rest of the role checks
 
@@ -43,13 +64,63 @@ Shipped 2026-09-04 in eight commits (`c3cf726b` → `b915c88e`). Access now come
       Chandresh only, so it would revoke shade writes from **Deepak Vasava and Chandrasing Valvi**,
       the two active operators whose screen it is; `tint_operator`/`canEdit` would keep them. Prior
       question nobody has answered: **does anything still call these two routes?**
-- [ ] **Every tint GET still gates on a job title.** Reads were out of scope on 2026-09-06, so nine
-      manager GETs plus the GET halves of `challans/[orderId]`, `tinter-issue/[id]` and
-      `tinter-issue-b/[id]` keep `requireRole`/`hasRole` — which is why those three files still
-      import `@/lib/rbac`. The odd shape this leaves: on those three, the GET admits `operations`
-      and the PATCH next to it does not. Coherent as read-vs-write, but not deliberate.
+- [x] ~~**Every tint GET still gates on a job title.** Reads were out of scope on 2026-09-06, so
+      nine manager GETs plus the GET halves of `challans/[orderId]`, `tinter-issue/[id]` and
+      `tinter-issue-b/[id]` keep `requireRole`/`hasRole`.~~ **DONE the same day — this bullet was
+      stale within hours of being written.** `fbbe30bd` moved 13 handlers: the 10 remaining tint
+      GETs to `tint_manager`/`tint_operator` `canView`, plus 3 redundant bypasses in the variable
+      form `65fd0e10`'s sweep could not match (`pause-history`, `skip-history`, `remove`). **Loses
+      Operations User on 10 of 10, gains nobody** — until then he could still read eight manager
+      endpoints and two tinter-issue endpoints by direct HTTP call while holding no tick and being
+      redirected by both tint layouts. The read/write split it closed was never a decision: it was
+      the residue of two conversion dates, and it landed inconsistently — `pause-history` and
+      `skip-history` were already tick-gated, so he could read a challan but not a pause history on
+      the same board. **Derived state today: `app/api/tint/**` has 37 route files and 41 handlers;
+      37 gate on a tick** (`tint_manager` 11 canView + 12 canEdit; `tint_operator` 4 + 10). The
+      four that do not are the three `operator/shades` handlers below and `operator/skip`.
+      `CLAUDE_TINT.md §13.2`.
 - [ ] **1 `requireRole([ADMIN])` left in `app/api/mail-orders/backfill-enrich`** — skipped only
       because mail-orders was an excluded path.
+- [ ] **`operator/skip` has no permission check at all** — session, then
+      `asg.assignedToId !== userId → 403 "Not your job"`. **Ownership-scoped by design, not a gap**,
+      and listed here only so a session that finds no `requireRole` in it does not "fix" it into a
+      tick. It is already the shape the other operator routes would need if their FACE branch were
+      ever rewritten. `CLAUDE_TINT.md §13.2`.
+- [ ] 🔴 **`requireRole` has no admin arm** (`lib/rbac.ts`) — it is a plain set-intersection with no
+      superuser short-circuit, unlike both resolvers. **An admin-only account is excluded from every
+      gate whose array does not spell `admin`**, and 10 of the 58 above name none. It was
+      redirecting the owner off the four tint operator writes until `64f897a9` converted them.
+      ⚠ **Do not "fix" this by adding an arm to `requireRole`** — that silently widens ~58 gates in
+      one commit. Convert the call sites instead; the hole closes as they go. `CLAUDE_CORE.md §13`.
+
+### P1 — Two bypasses `65fd0e10` did not sweep, and they are not the same kind
+
+- [ ] `app/api/mrn/photo/[photoId]/route.ts:**167-168**` — `const isAdmin = …; const canDelete =
+      isAdmin || (await checkAnyPermission(…))`. The same redundancy in **expression** form, so the
+      wrapper sweep did not match it. **Harmless**, for the same reason as the 57. *(CORE §13 said
+      `:169-170` until 2026-09-06 — read the lines, do not trust the anchor.)*
+- [ ] 🔴 `app/api/reports/tint-summary/route.ts:33` — **not harmless, and not a bypass.** It is a
+      **MULTI-clause** condition, `role !== "admin" && role !== OPERATIONS`, in front of
+      `checkPermission(role, "tint_manager", "canView")` and behind a four-role `requireRole`. That
+      is a permission **grant written as a role name**: it is the last of the 9 multi-clause
+      survivors still standing after `d3211766` converted three and `fbbe30bd` five, and it **still
+      admits Operations User to the Tint Summary report** while every other tint endpoint now
+      refuses him. It survived only because `/api/reports/` is not `/api/tint/`.
+
+### P1 — 🔴 THE SILENT-403 PATTERN: one systemic issue, not three bugs
+
+- [ ] **Fix it at the helper, not at the call sites.** `fetchAll`
+      (`components/shared/customer-missing-sheet.tsx:118-130`) returns **`[]`** on `!res.ok` and
+      `[]` again from a bare `catch`, so **"you are forbidden" and "there is genuinely nothing
+      here" are the same value.** `requireRole` makes it worse: it fails by calling `redirect()`, a
+      **307 that `fetch` follows into `/unauthorized`**, so the response arrives **200 with HTML**,
+      `res.ok` is true, and the failure only surfaces when `res.json()` throws inside somebody's
+      catch. **This produced THREE silent failures in one week**, each diagnosed separately before
+      the shape was recognised: the **manual-entry modal** (`2b25a48f`), the **missing-customer
+      sheet's dropdowns** (`d3211766` — which is why that key choice had to be checked against the
+      caller rather than the name), and the **old `/admin/permissions` grid** recreating 12 retired
+      page keys on save, caught only because `admin_audit_log` had just been wired. Patching three
+      call sites leaves the fourth to be found the same way. `CLAUDE_CORE.md §13`.
 
 ### P1 — Audit trail: the 13 write routes still recording no actor
 
@@ -69,6 +140,34 @@ attributable to whoever first raised the entry rather than to whoever changed it
       with the shades retire-or-convert decision above, not with the audit sweep — wiring an audit
       call into a route that writes a deprecated table is work thrown away if the answer is
       "retire". Do not close it on its own; close it when shades is decided.
+
+### P2 — The four `/dispatcher/*` master-data screens: retire them
+
+- [ ] **Reachable through the UI by NOBODY** — settled by the 2026-09-06 master-data gate, and by
+      SELECT. `app/(dispatcher)/layout.tsx` is five lines with no session read; no sidebar generates
+      those hrefs because **no holder of the `dispatcher` role holds any of the four ticks** (three
+      users carry the role — Ajay Vansiya and Dhanraj Shah active, `Test Dispatcher` inactive — and
+      all three hold zero). The three people who *do* hold a tick are sent to `/admin/*` or
+      `/tint/manager/*` by their own primary role. By URL, `/dispatcher/customers` admits Harsh,
+      Chandresh and Prakash; the other three admit **Harsh alone**. **The route group is named for a
+      role that cannot open it.** ⚠ Not a contradiction of `CLAUDE_CORE.md §12`'s "these four are
+      LIVE" — live and reachable are different claims.
+- [ ] **Retiring them collapses `ROLE_HREF_OVERRIDES` to nothing for master data.** 11 of the 12
+      master-data pages render the **same component** (`/tint/manager/customers` uses
+      `CustomersSplitView` exactly as `/admin/customers` does); `/dispatcher/customers`'s
+      `CustomersTable` is the override list's only real variation. Method:
+      `archive/RETIREMENT-PLAYBOOK.md`. ⚠ Fix the stale comment at `lib/permissions.ts:117` in the
+      same pass — *"/admin/customers uses the richer split view, the other three the same tables"*
+      describes the **retired Support** copies and reads forward as a claim about the live tree.
+
+### P2 — `sub-areas` CREATE is looser than `sub-areas` EDIT
+
+- [ ] **A parked owner decision, not drift.** `admin/sub-areas` POST moved from `requireSuperuser`
+      to `routes_areas`/`canEdit` on 2026-09-06 to match its `areas` and `routes` siblings; its own
+      `[id]` PATCH and `import` are still `requireSuperuser`. Same person either way today (Harsh is
+      the sole superuser and holds every `routes_areas` flag), a different rule tomorrow. **The
+      owner's decision is to bring PATCH and import FORWARD, not to revert POST.** The block is
+      commented so reverting that one handler is a two-line change if that flips.
 
 ### P2 — Step 7: landing page per user
 
@@ -111,6 +210,12 @@ Remove the switch first, then the tables.
       unmatched order with an `await` per row, so it inherits the default and will **time out
       mid-loop on a large backlog — silently, with rows already written**. Its sibling
       `re-enrich` sets `maxDuration = 300`; this one sets nothing.
+
+### P3 — `CLAUDE.md` (the router) has no row for `/admin/access`
+
+- [ ] The screen that decides what everybody can do is not in the router's §3 decision table. A
+      session sent to work on it falls through to the *"/admin (other) → Core only"* row and loads
+      neither `CLAUDE_CORE.md §7.14/§7.15` nor `CLAUDE_UI.md §63` deliberately. One row.
 
 ---
 
@@ -326,6 +431,15 @@ database. These are QA passes, not code changes — each needs a human on the li
 - [ ] **Live-sync actually firing.** Confirm the 15s `/api/tint/manager/marker` poll appears in the
       network tab, that the board refreshes on a real change, and that it PAUSES while the detail
       panel is open or rows are selected.
+- [ ] 🔴 **Manual tint entry, end to end — the one flow the 2026-09-06 access testing could not
+      reach.** The owner went looking for a "Manual Entry" button and there is not one: the rebuild
+      renamed it. It is the **"Add to Tint"** pill (`tint-manager-content.tsx:715`, `+` icon,
+      `title="Add OBD to Tint (M)"`) and the **`M`** shortcut (`:322-324`), both setting
+      `pullModalOpen`. ⚠ The API routes kept the old name (`manager/manual-entry`, `/lookup`,
+      `/revert`), so a grep for either name finds only half the flow. **Test it as Chandresh AND
+      separately as Prakash** — Prakash's access to it is new as of `64f897a9`, and the companion
+      lookup behind it shipped broken for him that morning (`2b25a48f`). Knowing where the button is
+      is not the same as knowing the flow works. `CLAUDE_TINT.md §7`.
 
 ### P1 — The eight Kanban capabilities with no home in the new design
 
