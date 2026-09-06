@@ -72,12 +72,31 @@ export type V2Tile   = {
    */
   slug: string;
 };
-export type V2Family = { name: string; tint: string; tiles: readonly V2Tile[] };
+export type V2Family = {
+  name: string;
+  tint: string;
+  /**
+   * 🔴 FAMILY-WIDE OPENING TAB, AND IT BEATS THE PER-PRODUCT RANKING.
+   *
+   * The general rule opens each product on whichever tab holds its single
+   * most-ordered option. For ENAMEL that gets Super Satin wrong: its top base
+   * (BRILLIANT WHITE, 431) outsells its top shade (BLACK, 197), so the ranking
+   * says Base while the counter says Shade — an enamel customer is buying a
+   * colour, and the base is what you reach for when he is not.
+   *
+   * Written HERE, on the family, and not as an if-statement over four product
+   * names. Add a fifth enamel tomorrow and it inherits this; the four names
+   * would not have.
+   */
+  openTab?: "base" | "shade";
+  tiles: readonly V2Tile[];
+};
 
 export const FAMILIES: readonly V2Family[] = [
   {
     name: "Enamel",
     tint: "#F8F0E0",
+    openTab: "shade",
     tiles: [
       { label: "Gloss",          sap: "GLOSS", slug: "gloss" },
       { label: "Promise Enamel", sap: "PROMISE ENAMEL", slug: "promise-enamel" },
@@ -529,7 +548,8 @@ export function buildCatalog(products: ApiProduct[]): {
         shades:   resolve(curation.shades),
         variants: resolve(curation.variants),
         noOptionRow,
-        defaultTab: curation.defaultTab ?? "base",
+        // The family override wins over the per-product ranking. See openTab.
+        defaultTab: family.openTab ?? curation.defaultTab ?? "base",
         curated: true,
       });
     }
@@ -562,7 +582,7 @@ const SHADE_HEX: Record<string, string> = {
   "PHIROZA BLUE":          "#1B8A9E",
   "PO RED":                "#9C1A13",
   "BROWN":                 "#6B4423",
-  "RICH BROWN":            "#4A2C1A",
+  "RICH BROWN":            "#52301C",
   "TERACOTTA":             "#A5502F",
   "SIGNAL RED":            "#C0271E",
   "BUS GREEN":             "#1F5E3A",
@@ -595,14 +615,24 @@ const SHADE_HEX: Record<string, string> = {
   "ELECTRIC BLUE PLUS":    "#1560BD",
   "ORGANIC RED VIOLET":    "#9B3B7A",
 
+  // Added 2026-09-07 for Super Satin's brown row. SPECIAL TEAK and TIMBER
+  // GOLDEN BROWN were REFUSED once, on the grounds that as bare squares they
+  // sit next to TEAK and GOLDEN BROWN as near-identical browns and a wrong
+  // pick is a wrong order. That objection was right and has not gone away —
+  // it is answered by the CHIP, not by the hex: a row this crowded now renders
+  // as swatch + NAME. See chipStyleFor() below, which decides that from the
+  // colours themselves. RICH BROWN was also re-valued here, #4A2C1A -> #52301C.
+  "SPECIAL TEAK":          "#A56B2E",
+  "TIMBER GOLDEN BROWN":   "#BC8A3C",
+
   // 🔴 CLEAR / INT CLEAR / EXT CLEAR ARE PERMANENTLY ABSENT - DO NOT "FIX" THIS.
   // They are TRANSPARENT products. There is no colour to show, so a swatch
   // would be a lie; 2K Matt, Prime Matt and Prime Sealer stay text chips.
   //
   // Also refused, for the same reason a wrong square is worse than a word:
-  // SUNRISE, SPECIAL TEAK, TIMBER GOLDEN BROWN, RARE PEARL COPPER and RARE
-  // PEARL GREEN (metallics a flat fill misrepresents), plus every Acotone
-  // (NO1, XY1...) and Machine Tinter (YOX, TBL...) colorant CODE.
+  // SUNRISE, RARE PEARL COPPER and RARE PEARL GREEN (metallics a flat fill
+  // misrepresents), plus every Acotone (NO1, XY1...) and Machine Tinter
+  // (YOX, TBL...) colorant CODE.
 };
 
 /** The swatch for a shade name, or undefined when it has none. Case-insensitive
@@ -639,9 +669,115 @@ export function isLightHex(hex: string): boolean {
  * and Prime Matt (White mapped, Clear not), which go text — the only outcome
  * that is not visibly broken.
  */
-export function shadeRowMode(values: readonly string[]): "colour" | "text" {
+/** CIE L*a*b*, D65. The step ΔE2000 needs before it can compare two colours. */
+function labOf(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  const lin = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  const X = (lin[0] * 0.4124 + lin[1] * 0.3576 + lin[2] * 0.1805) / 0.95047;
+  const Y = (lin[0] * 0.2126 + lin[1] * 0.7152 + lin[2] * 0.0722);
+  const Z = (lin[0] * 0.0193 + lin[1] * 0.1192 + lin[2] * 0.9505) / 1.08883;
+  const f = (t: number): number => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const [fx, fy, fz] = [f(X), f(Y), f(Z)];
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+/**
+ * ΔE2000 — how different two colours look to a person, not to a computer.
+ *
+ * Plain RGB distance is useless here: #6B4423 and #52301C are 40 apart in RGB
+ * and all but indistinguishable as two 54x44 squares on a phone, while
+ * #1A1A1A and #1B8A9E are a similar RGB distance and could not be confused by
+ * anyone. Super Satin is five browns; the only honest way to say "these are
+ * too close to sell as bare squares" is a perceptual metric.
+ */
+export function deltaE2000(hex1: string, hex2: string): number {
+  const [L1, a1, b1] = labOf(hex1), [L2, a2, b2] = labOf(hex2);
+  const RAD = Math.PI / 180, DEG = 180 / Math.PI;
+  const Cb = (Math.hypot(a1, b1) + Math.hypot(a2, b2)) / 2;
+  const G = 0.5 * (1 - Math.sqrt(Math.pow(Cb, 7) / (Math.pow(Cb, 7) + Math.pow(25, 7))));
+  const ap1 = (1 + G) * a1, ap2 = (1 + G) * a2;
+  const Cp1 = Math.hypot(ap1, b1), Cp2 = Math.hypot(ap2, b2);
+  const hue = (b: number, ap: number): number => {
+    if (b === 0 && ap === 0) return 0;
+    const h = Math.atan2(b, ap) * DEG;
+    return h < 0 ? h + 360 : h;
+  };
+  const hp1 = hue(b1, ap1), hp2 = hue(b2, ap2);
+  const dLp = L2 - L1, dCp = Cp2 - Cp1;
+  let dhp = 0;
+  if (Cp1 * Cp2 !== 0) {
+    dhp = hp2 - hp1;
+    if (dhp > 180) dhp -= 360;
+    else if (dhp < -180) dhp += 360;
+  }
+  const dHp = 2 * Math.sqrt(Cp1 * Cp2) * Math.sin((dhp / 2) * RAD);
+  const Lbp = (L1 + L2) / 2, Cbp = (Cp1 + Cp2) / 2;
+  let hbp = hp1 + hp2;
+  if (Cp1 * Cp2 !== 0) hbp = Math.abs(hp1 - hp2) > 180 ? (hbp + 360) / 2 : hbp / 2;
+  const T = 1 - 0.17 * Math.cos((hbp - 30) * RAD) + 0.24 * Math.cos(2 * hbp * RAD)
+    + 0.32 * Math.cos((3 * hbp + 6) * RAD) - 0.20 * Math.cos((4 * hbp - 63) * RAD);
+  const Sl = 1 + (0.015 * Math.pow(Lbp - 50, 2)) / Math.sqrt(20 + Math.pow(Lbp - 50, 2));
+  const Sc = 1 + 0.045 * Cbp, Sh = 1 + 0.015 * Cbp * T;
+  const Rt = -2 * Math.sqrt(Math.pow(Cbp, 7) / (Math.pow(Cbp, 7) + Math.pow(25, 7)))
+    * Math.sin(60 * Math.exp(-Math.pow((hbp - 275) / 25, 2)) * RAD);
+  return Math.sqrt(Math.pow(dLp / Sl, 2) + Math.pow(dCp / Sc, 2) + Math.pow(dHp / Sh, 2)
+    + Rt * (dCp / Sc) * (dHp / Sh));
+}
+
+/** Two shades a salesman could plausibly mix up as bare squares. */
+const CLOSE_DE = 12;
+/** Two shades nobody could tell apart — one such pair is enough on its own. */
+const TWINS_DE = 6;
+
+export type V2ChipStyle = "colour" | "swatch" | "text";
+
+/**
+ * How this product's shade row renders. THREE styles, decided from the hexes.
+ *
+ *   text    any shade has no hex. Unchanged, and still all-or-nothing: a row
+ *           that is half colour and half word is worse than either.
+ *   swatch  every shade mapped, but the row is CROWDED — a small square with
+ *           the name beside it, so the colour helps and the word decides.
+ *   colour  every shade mapped and all of them clearly distinct — bare squares.
+ *
+ * 🔴 "CROWDED" IS MEASURED, NOT LISTED. Two or more pairs within ΔE 12, or any
+ * single pair within ΔE 6. On the live curation that is:
+ *
+ *     Super Satin     6 close pairs of 21, closest 7.9   -> swatch
+ *     Gloss           1 close pair  of 36, closest 10.4  -> colour
+ *     Uni Stainer     1 close pair  of 45, closest 11.9  -> colour
+ *     Promise Enamel  0 close pairs of 36, closest 17.3  -> colour
+ *     PU Enamel       0 close pairs of 10, closest 17.3  -> colour
+ *     Stay Bright     0 close pairs of 1,  closest 19.8  -> colour
+ *
+ * COUNTING pairs rather than taking the minimum is the point. One ambiguous
+ * pair among nine well-separated colours is survivable — Gloss's two greys sit
+ * beside a red, a turquoise and a yellow, so the row still reads. A row that is
+ * five browns is not, and no single-minimum threshold separates those two cases
+ * without landing in the 2.5-point gap between 7.9 and 10.4, where one new hex
+ * would flip the wrong product. The TWINS arm fires on nothing today; it is
+ * there so a genuinely indistinguishable pair can never reach a bare square.
+ */
+export function shadeRowMode(values: readonly string[]): V2ChipStyle {
   if (values.length === 0) return "text";
-  return values.every((v) => shadeHex(v) !== undefined) ? "colour" : "text";
+  const hexes: string[] = [];
+  for (const v of values) {
+    const hex = shadeHex(v);
+    if (hex === undefined) return "text";
+    hexes.push(hex);
+  }
+  let close = 0;
+  for (let i = 0; i < hexes.length; i++) {
+    for (let j = i + 1; j < hexes.length; j++) {
+      const e = deltaE2000(hexes[i], hexes[j]);
+      if (e < TWINS_DE) return "swatch";
+      if (e < CLOSE_DE) close++;
+    }
+  }
+  return close >= 2 ? "swatch" : "colour";
 }
 
 // ── Drawer shape ───────────────────────────────────────────────────────────
@@ -917,6 +1053,24 @@ export function chipStyle(selected: boolean, dashed = false): React.CSSPropertie
  * a thing anyone can pick, load or check on a depot floor. Units are always
  * whole, so every number this app shows is a number a person can act on.
  */
+/**
+ * A TYPED unit figure, snapped to the nearest whole box.
+ *
+ * The stepper moves by a box and always has; typing is the same rule reached a
+ * different way, so 5 typed on a six-per-box pack is 6 and the field says 6
+ * before the salesman looks away. Silently keeping 5 would put a number on the
+ * order that the depot cannot pick.
+ *
+ * 🔴 A POSITIVE ASK NEVER SNAPS TO NOTHING. Nearest-multiple alone sends 1 to 0
+ * on a six-per, which reads as the app ignoring him rather than correcting him,
+ * and he has no way to tell the two apart. One box is the floor.
+ */
+export function snapToBox(units: number, step: number): number {
+  if (!Number.isFinite(units) || units <= 0) return 0;
+  if (step <= 1) return Math.round(units);
+  return Math.max(step, Math.round(units / step) * step);
+}
+
 export function unitsIn(qtys: Record<string, number>): number {
   let units = 0;
   for (const qty of Object.values(qtys)) {

@@ -788,7 +788,7 @@ export default function PoV2Page(): React.JSX.Element {
                   >
                     {/* THE SQUARE. No border by design — the art carries the
                         tile and a hairline around 32 of them is a grid of
-                        boxes. aspect-ratio holds the space before the image
+                        outlines. aspect-ratio holds the space before the image
                         lands, so nothing on the board jumps as they arrive. */}
                     <span
                       className="relative block w-full overflow-hidden rounded-[14px]"

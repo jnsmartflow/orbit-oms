@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Minus, Plus, Search, X } from "lucide-react";
 // Documented containment exception — the tested matcher /po uses, read-only.
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -8,9 +8,9 @@ import V2Sheet from "./v2-sheet";
 import {
   INK, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
   baseChipLabel, chipLimit, chipStyle, formatPack, isLightHex, packsOf, shadeHex,
-  shadeRowMode,
+  shadeRowMode, snapToBox,
   stepForLabel, unitsIn,
-  type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
+  type ApiProduct, type V2ChipStyle, type V2DrawerMode, type V2Option, type V2Resolved,
 } from "./v2-data";
 
 // Hidden v2 product drawer — the bottom sheet a board tile opens.
@@ -72,8 +72,8 @@ export default function ProductDrawer({
   //
   // 🔴 THE FINAL FALLBACK IS "base", NOT "shade". It used to be
   // `hasBases ? "base" : "shade"`, which handed a product with NEITHER list a
-  // phantom shade tab — see the needsShade note in the footer gating below,
-  // which is where that turned into a blocking bug.
+  // phantom shade tab — see the footer-gating note below, which is where that
+  // once turned into a blocking bug.
   const [tab, setTab] = useState<Tab>(() => {
     if (initialOption && product.shades.some((o) => o.value === initialOption)) return "shade";
     // 🔴 OPEN ON THE TAB HOLDING THE MOST-ORDERED OPTION, not always Base.
@@ -86,20 +86,28 @@ export default function ProductDrawer({
     if (hasShades) return "shade";
     return "base";
   });
-  // ONE selection, whichever list it came from. Top base pre-selected; shade
-  // and variant never are, so a shade-only or variant product opens with no
-  // pack rows until the salesman commits to one — correct, because the packs
-  // belong to the ROW and there is no row yet.
-  // A tab holding exactly ONE option selects it on arrival — a chip that is
-  // the only possible answer should not also cost a tap. That is what makes
-  // Promise Enamel's and GVA's single-chip Base tab free rather than a chore.
-  const soleOf = (list: V2Option[]): string | null =>
-    list.length === 1 ? list[0].value : null;
+  // ONE selection, whichever list it came from.
+  //
+  // 🔴 EVERY DRAWER OPENS WITH SOMETHING SELECTED, AND ITS PACKS ON SCREEN.
+  // Shade and variant rows used to open empty on the reasoning that guessing a
+  // colour for him is worse than asking — which sounds right and was wrong. It
+  // bought a dead screen — no pack sizes, a nag where the quantity belongs, and
+  // a grey Add button — on Gloss, Promise Enamel, Smart Choice and Promise
+  // Primer, and made every one of them cost two taps for the thing he came to
+  // order. The lists are RANKED by 90 days of real orders, so [0] is not a
+  // guess: it is the option this product actually sells, and one tap overrides
+  // it.
+  //
+  // The pre-selection is only safe because it is VISIBLE — the chip carries the
+  // same violet selected state a tapped chip gets and the header sub-line names
+  // it. A default nobody can see would ship BLACK to a man who thinks he chose
+  // it, which is worse than the two taps this replaces.
+  const topOf = (list: V2Option[]): string | null => list[0]?.value ?? null;
   const [selected, setSelected] = useState<string | null>(() => {
     if (initialOption) return initialOption;
-    if (hasVariants) return soleOf(product.variants);
+    if (hasVariants) return topOf(product.variants);
     const opening = product.defaultTab === "shade" && hasShades ? product.shades : product.bases;
-    return soleOf(opening) ?? (opening === product.bases ? (product.bases[0]?.value ?? null) : null);
+    return topOf(opening);
   });
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [expanded, setExpanded] = useState(false);
@@ -161,7 +169,7 @@ export default function ProductDrawer({
   // It used to be looked up in the list on screen, which collapses back to the
   // curated nine the moment the search closes — so a shade picked out of "+
   // More" (BUS GREEN, say) was no longer findable, selectedRow fell to null,
-  // the body kept saying "Pick a shade" and Add stayed dead while the header
+  // the body kept demanding a shade and Add stayed dead while the header
   // cheerfully showed BUS GREEN. What is selected and what is listed are two
   // different questions.
   const optionPool: V2Option[] = pools?.all ?? shownList;
@@ -185,8 +193,9 @@ export default function ProductDrawer({
   // dozen have no hex, so pooling would drop the top nine back to text even
   // though all nine are mapped. It also guarantees the pinned selection above
   // has a hex before ShadeSwatch is handed one.
-  const colourRow = showingShades && !expanded
-    && shadeRowMode(activeList.map((o) => o.value)) === "colour";
+  const chipRowStyle: V2ChipStyle = showingShades && !expanded
+    ? shadeRowMode(activeList.map((o) => o.value))
+    : "text";
 
   const selectedRow: ApiProduct | null =
     product.noOptionRow ?? selectedOption?.row ?? null;
@@ -195,17 +204,14 @@ export default function ProductDrawer({
     ? selectedRow.packs.map((p) => formatPack(p.packCode, p.unit))
     : [];
 
-  // Switching tabs clears the selection and every quantity. Coming back to
-  // Base re-applies the top-base pre-select, keeping that rule true whenever
-  // the base row is on screen.
+  // Switching tabs clears every quantity and re-applies the same rule the
+  // drawer opened with: the top-ranked option of the tab being switched TO is
+  // selected, so a tab is never a dead screen either.
   function switchTab(next: Tab): void {
     if (next === tab) return;
     const list = next === "base" ? product.bases : product.shades;
     setTab(next);
-    // Same two rules as on open: a sole option selects itself, and the base
-    // tab keeps its top-ranked pre-select. A shade tab with a real choice in
-    // it starts empty, because guessing a colour for him would be worse.
-    setSelected(soleOf(list) ?? (next === "base" ? (product.bases[0]?.value ?? null) : null));
+    setSelected(topOf(list));
     setQtys({});
     setExpanded(false);
     setShadeQuery("");
@@ -227,6 +233,11 @@ export default function ProductDrawer({
     setQtys((prev) => ({ ...prev, [label]: Math.max(0, (prev[label] ?? 0) + delta) }));
   }
 
+  /** A TYPED figure, already snapped to a whole box by the field itself. */
+  function setQty(label: string, units: number): void {
+    setQtys((prev) => ({ ...prev, [label]: Math.max(0, units) }));
+  }
+
   const matrixMode = mode === "flat";
   const options = pools?.all ?? [];
   // FLAT is one pack for the whole product, so the label is stated once in the
@@ -240,6 +251,10 @@ export default function ProductDrawer({
       row[pack] = Math.max(0, (row[pack] ?? 0) + delta);
       return { ...prev, [option]: row };
     });
+  }
+
+  function typeCell(option: string, pack: string, units: number): void {
+    setMatrix((prev) => ({ ...prev, [option]: { ...(prev[option] ?? {}), [pack]: Math.max(0, units) } }));
   }
 
   // One cart line per OPTION that has any quantity — a single visit to a flat
@@ -259,32 +274,28 @@ export default function ProductDrawer({
 
   // ── Footer gating ────────────────────────────────────────────────────────
   //
-  // 🔴 THE BUG THIS FIXES. `needsShade` used to read
-  //     !hasVariants && tab === "shade" && selected === null
-  // with no test that the product HAS any shades. A product with no bases, no
-  // shades and no variants — Cement SB, Zinc Yellow, Red Oxide, Ext Acrylic,
-  // Damp 2in1, Roof Coat, Crack 5mm, Damp Base, Thinner, nine live sellers —
-  // fell to `tab = "shade"` in the initialiser above, had `selected === null`
-  // because there was nothing to pre-select, and so demanded a shade from a
-  // chip row that is never rendered for it (showTabs is false). Add stayed
-  // dead on "Pick a shade" with no way out. Every one of those products was
-  // unorderable.
+  // 🔴 THE ONLY THING LEFT TO GATE ON IS A QUANTITY. There used to be two more
+  // guards here, `needsVariant` and `needsShade`, which held Add closed until
+  // an option was picked, and put a nag on the button instead of a quantity.
+  // Both are gone because neither can fire any more: every drawer
+  // now opens with the top-ranked option of its opening tab selected, and
+  // switchTab re-applies that, so `selected` is null only for a product that
+  // has no options at all — and that product has a noOptionRow, which resolves
+  // selectedRow on its own.
   //
-  // A demand for a selection is only meaningful when there is something to
-  // select, so each guard now tests its own list first.
+  // (`needsShade` was also once a live BUG worth remembering: it did not test
+  // that the product HAS shades, so the nine no-option sellers — Cement SB,
+  // Zinc Yellow, Red Oxide, Ext Acrylic, Damp 2in1, Roof Coat, Crack 5mm,
+  // Damp Base, Thinner — demanded a shade from a chip row never rendered for
+  // them, and were unorderable. Deleting the guard retires that class of bug
+  // rather than fixing it a second time.)
   const units = unitsIn(qtys);
-  const needsVariant = hasVariants && selected === null;
-  const needsShade   = hasShades && !hasVariants && tab === "shade" && selected === null;
-  const canAdd = matrixMode
-    ? matrixUnits > 0
-    : units > 0 && selectedRow !== null && !needsVariant && !needsShade;
+  const canAdd = matrixMode ? matrixUnits > 0 : units > 0 && selectedRow !== null;
 
   let addLabel: string;
-  if (matrixMode)      addLabel = canAdd ? `Add · ${matrixUnits} units` : "Add to order";
-  else if (needsVariant) addLabel = "Interior or exterior?";
-  else if (needsShade) addLabel = "Pick a shade";
-  else if (!canAdd)    addLabel = "Add to order";
-  else                 addLabel = `Add · ${units} units`;
+  if (matrixMode)   addLabel = canAdd ? `Add · ${matrixUnits} units` : "Add to order";
+  else if (!canAdd) addLabel = "Add to order";
+  else              addLabel = `Add · ${units} units`;
 
   // Sub-line: in FLAT the pack size, stated once so it is never ambiguous;
   // in GRID the packs are their own column headers; otherwise the selection.
@@ -345,7 +356,8 @@ export default function ProductDrawer({
 
         {matrixMode ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <FlatBody options={options} pack={flatPack} matrix={matrix} onStep={stepCell} />
+            <FlatBody options={options} pack={flatPack} matrix={matrix}
+                      onStep={stepCell} onType={typeCell} />
           </div>
         ) : (
         <>
@@ -381,25 +393,38 @@ export default function ProductDrawer({
             ) : (hasVariants || activeList.length > 0) && (
               <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
                 <div className="flex flex-wrap gap-2">
-                  {activeList.map((opt) => (
-                    colourRow
-                      ? <ShadeSwatch
-                          key={opt.value}
-                          name={opt.value}
+                  {activeList.map((opt) => {
+                    const on = selected === opt.value;
+                    if (chipRowStyle === "colour") {
+                      return (
+                        <ShadeSwatch
+                          key={opt.value} name={opt.value}
                           hex={shadeHex(opt.value) as string}
-                          selected={selected === opt.value}
-                          onSelect={() => selectOption(opt.value)}
+                          selected={on} onSelect={() => selectOption(opt.value)}
                         />
-                      : <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => selectOption(opt.value)}
-                          className="px-3 py-2 text-left text-[13px] font-semibold"
-                          style={chipStyle(selected === opt.value)}
-                        >
-                          {showingBases ? baseChipLabel(opt.value) : opt.value}
-                        </button>
-                  ))}
+                      );
+                    }
+                    if (chipRowStyle === "swatch") {
+                      return (
+                        <SwatchChip
+                          key={opt.value} name={opt.value}
+                          hex={shadeHex(opt.value) as string}
+                          selected={on} onSelect={() => selectOption(opt.value)}
+                        />
+                      );
+                    }
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => selectOption(opt.value)}
+                        className="px-3 py-2 text-left text-[13px] font-semibold"
+                        style={chipStyle(on)}
+                      >
+                        {showingBases ? baseChipLabel(opt.value) : opt.value}
+                      </button>
+                    );
+                  })}
                   {/* + More only where the catalog has more to give — never on
                       a variant row, which is already the complete set. */}
                   {hasMore && (
@@ -446,21 +471,20 @@ export default function ProductDrawer({
               </div>
             ) : (
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1">
-              {selectedRow ? (
-                packLabels.map((label) => (
-                  <PackRow
-                    key={label}
-                    label={label}
-                    step={stepForLabel(label)}
-                    qty={qtys[label] ?? 0}
-                    onStep={(dir) => step(label, dir)}
-                  />
-                ))
-              ) : (
-                <p className="px-2 py-8 text-center text-[13px] text-neutral-400">
-                  {hasVariants ? "Pick an option to see pack sizes." : "Pick a shade to see pack sizes."}
-                </p>
-              )}
+              {/* No empty state. selectedRow is resolved on the first frame for
+                  every one of the 32 products — by the pre-selection above, or
+                  by noOptionRow for the nine that have no options — so the pack
+                  rows are on screen before the sheet finishes sliding up. */}
+              {packLabels.map((label) => (
+                <PackRow
+                  key={label}
+                  label={label}
+                  step={stepForLabel(label)}
+                  qty={qtys[label] ?? 0}
+                  onStep={(dir) => step(label, dir)}
+                  onType={(next) => setQty(label, next)}
+                />
+              ))}
             </div>
             )}
         </>
@@ -490,8 +514,10 @@ function TabButton({ label, active, onClick }: {
  * and is HIDDEN when the step is 1 — a drum has no box, so "per 1" would be
  * noise dressed as information.
  */
-function PackRow({ label, step, qty, onStep }: {
-  label: string; step: number; qty: number; onStep: (direction: 1 | -1) => void;
+function PackRow({ label, step, qty, onStep, onType }: {
+  label: string; step: number; qty: number;
+  onStep: (direction: 1 | -1) => void;
+  onType: (units: number) => void;
 }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-3 py-2.5">
@@ -509,12 +535,7 @@ function PackRow({ label, step, qty, onStep }: {
         >
           <Minus className="h-4 w-4" strokeWidth={3} style={{ color: INK }} />
         </button>
-        <span
-          className="w-8 text-center font-mono text-[16px] font-extrabold tabular-nums"
-          style={{ color: qty === 0 ? "#C9C6D2" : INK }}
-        >
-          {qty}
-        </span>
+        <QtyField qty={qty} step={step} label={label} onCommit={onType} />
         <button
           type="button" aria-label={`Add one box of ${label}`} onClick={() => onStep(1)}
           className="flex h-9 w-9 items-center justify-center rounded-full"
@@ -523,6 +544,112 @@ function PackRow({ label, step, qty, onStep }: {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The figure between − and +, which is also an INPUT. Tap it and type.
+ *
+ * Forty lines built two at a time is forty taps of +; a man ordering ten of
+ * something should be able to say ten. Tapping the number swaps it for a field,
+ * and the field is the same size and in the same place, so nothing moves.
+ *
+ * 🔴 inputMode="numeric" + pattern="[0-9]*" ON A type="text" FIELD. Not
+ * a numeric input TYPE: on mobile that brings spinners nobody can hit, a locale
+ * decimal separator this app has no use for, and a keypad that still offers
+ * "e" and "-". The two attributes above are what actually gets iOS to show the
+ * plain digit pad, and text keeps the value a string we control.
+ *
+ * 16px, because Safari zooms the whole page on focus for anything smaller and
+ * the salesman then has to pinch back out mid-order.
+ *
+ * ON BLUR the value SNAPS to a whole box and the field shows the snapped
+ * number — type 5 on a six-per pack and it reads 6 before he looks away.
+ * Empty, or anything that is not a number, reverts to what was there: a line
+ * must never be left at NaN.
+ */
+function QtyField({ qty, step, label, onCommit }: {
+  qty: number; step: number; label: string; onCommit: (units: number) => void;
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  // Blur fires after Enter's own blur() call too; this stops the commit running
+  // twice and re-snapping an already-snapped number.
+  const committed = useRef(false);
+
+  function commit(): void {
+    if (committed.current) return;
+    committed.current = true;
+    const clean = draft.trim();
+    setEditing(false);
+    // Nothing typed, or nothing numeric: keep what was there. Never NaN.
+    if (clean === "" || !/^\d+$/.test(clean)) return;
+    const snapped = snapToBox(Number(clean), step);
+    if (snapped !== qty) onCommit(snapped);
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        aria-label={`Quantity for ${label}, ${qty} units. Tap to type.`}
+        onClick={() => { setDraft(qty === 0 ? "" : String(qty)); committed.current = false; setEditing(true); }}
+        className="w-11 text-center font-mono text-[16px] font-extrabold tabular-nums"
+        style={{ color: qty === 0 ? "#C9C6D2" : INK }}
+      >
+        {qty}
+      </button>
+    );
+  }
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      autoComplete="off"
+      autoFocus
+      aria-label={`Quantity for ${label}, in units`}
+      value={draft}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+      className="w-11 bg-transparent text-center font-mono text-[16px] font-extrabold tabular-nums outline-none"
+      style={{ color: INK }}
+    />
+  );
+}
+
+/**
+ * A swatch WITH its name, for a shade row too crowded to sell as bare squares.
+ *
+ * Super Satin is BLACK and five browns. As colour-only chips, SPECIAL TEAK and
+ * TEAK are 7.9 ΔE apart and BROWN and RICH BROWN are 8.0 — close enough that
+ * picking by eye is a coin toss, and the wrong pick is the wrong tin on a
+ * lorry. The square still does the work of finding roughly the right region of
+ * the row; the word is what settles it. shadeRowMode() decides which rows get
+ * this, from the hexes.
+ */
+function SwatchChip({ name, hex, selected, onSelect }: {
+  name: string; hex: string; selected: boolean; onSelect: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onSelect}
+      className="flex items-center gap-2 py-2 pl-2 pr-3 text-left text-[13px] font-semibold"
+      style={chipStyle(selected)}
+    >
+      <span
+        className="block shrink-0"
+        style={{
+          width: 18, height: 18, borderRadius: 5, background: hex,
+          border: isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none",
+        }}
+      />
+      {name}
+    </button>
   );
 }
 
@@ -577,11 +704,12 @@ function ShadeSwatch({ name, hex, selected, onSelect }: {
  * The pack size is not repeated per row — it is stated once in the header,
  * because repeating "1L" fourteen times is noise, not information.
  */
-function FlatBody({ options, pack, matrix, onStep }: {
+function FlatBody({ options, pack, matrix, onStep, onType }: {
   options: V2Option[];
   pack: string;
   matrix: Record<string, Record<string, number>>;
   onStep: (option: string, pack: string, direction: 1 | -1) => void;
+  onType: (option: string, pack: string, units: number) => void;
 }): React.JSX.Element {
   return (
     <div className="px-4 py-1">
@@ -602,7 +730,13 @@ function FlatBody({ options, pack, matrix, onStep }: {
                 {opt.value}
               </span>
             </div>
-            <Stepper qty={qty} onStep={(d) => onStep(opt.value, pack, d)} label={`${opt.value} ${pack}`} />
+            <Stepper
+              qty={qty}
+              step={stepForLabel(pack)}
+              onStep={(d) => onStep(opt.value, pack, d)}
+              onType={(units) => onType(opt.value, pack, units)}
+              label={`${opt.value} ${pack}`}
+            />
           </div>
         );
       })}
@@ -610,9 +744,12 @@ function FlatBody({ options, pack, matrix, onStep }: {
   );
 }
 
-/** The full-row stepper, used by FLAT mode. */
-function Stepper({ qty, onStep, label }: {
-  qty: number; onStep: (direction: 1 | -1) => void; label: string;
+/** The full-row stepper, used by FLAT mode. Same typed field as PackRow. */
+function Stepper({ qty, step, onStep, onType, label }: {
+  qty: number; step: number;
+  onStep: (direction: 1 | -1) => void;
+  onType: (units: number) => void;
+  label: string;
 }): React.JSX.Element {
   const btn = "h-11 w-11";
   const icon = "h-4 w-4";
@@ -625,12 +762,7 @@ function Stepper({ qty, onStep, label }: {
       >
         <Minus className={icon} strokeWidth={3} style={{ color: INK }} />
       </button>
-      <span
-        className="w-8 text-center font-mono text-[16px] font-extrabold tabular-nums"
-        style={{ color: qty === 0 ? "#C9C6D2" : INK }}
-      >
-        {qty}
-      </span>
+      <QtyField qty={qty} step={step} label={label} onCommit={onType} />
       <button
         type="button" aria-label={`Add one box of ${label}`} onClick={() => onStep(1)}
         className={`flex ${btn} items-center justify-center rounded-full`}
