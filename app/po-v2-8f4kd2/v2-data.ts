@@ -193,11 +193,23 @@ export function stepForLabel(label: string): number {
 }
 
 // ── Curated option lists ───────────────────────────────────────────────────
-// 🔴 THIS IS NOT THE CATALOGUE. These are the options actually ordered over
-// 90 days — the short list a salesman reaches for. Everything else in the
-// catalogue is behind "+ More". Values are EXACT `baseColour` strings and are
-// matched literally, including case: Sadolin stores "90 Base" while every
-// other family stores "90 BASE", and that difference is real, not a typo.
+// 🔴 THIS IS NOT THE CATALOGUE. It is the TOP NINE per tab, ranked by what was
+// actually ordered in the 90 days to 2026-09-07 — mail-order line frequency
+// first (what the salesman ASKED for), SAP dispatch frequency breaking ties,
+// catalog sortOrder last for anything never ordered. Everything else in the
+// catalogue is behind "+ More".
+//
+// GENERATED from a read-only query, then frozen here BY DESIGN: the lists stay
+// hand-editable in this exact shape so a list can be overridden by name without
+// re-running anything. Re-rank deliberately, not on every deploy — the board
+// should not reshuffle under a salesman who has learned where things are.
+//
+// Values are EXACT `baseColour` strings, matched literally including case:
+// Sadolin stores "90 Base" while every other family stores "90 BASE", and that
+// difference is real, not a typo.
+//
+// A tab with fewer than nine options lists them all and shows no "+ More"
+// (the drawer's hasMore compares the pool against what is displayed).
 //
 // `variants` is not a different KIND of thing — Smart Choice and Promise
 // Primer store their variants in `baseColour` too. It is a separate field only
@@ -207,44 +219,54 @@ export type V2Curation = {
   bases:    readonly string[];
   shades:   readonly string[];
   variants: readonly string[];
+  /**
+   * Which tab the drawer OPENS on — the one holding this product's single
+   * most-ordered option, not always Base.
+   *
+   * GENERATED from the same 90-day ranking as the arrays, never hand-written.
+   * Promise Enamel opens on SHADE because CLASSIC WHITE (797 mail orders) far
+   * outsells its only base, BRILLIANT WHITE (241); opening on a one-chip Base
+   * tab would put the thing he actually wants one tap away, every time.
+   * Absent (or on a product with only one tab) means Base.
+   */
+  defaultTab?: "base" | "shade";
 };
 
 const NONE: readonly string[] = [];
 
 export const CURATION: Record<string, V2Curation> = {
-  "GLOSS":                    { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE"], shades: ["BLACK", "DARK BROWN", "GOLDEN BROWN", "SMOKE GREY", "DA GREY", "GOLDEN YELLOW"], variants: NONE },
-  "PROMISE ENAMEL":           { bases: NONE, shades: ["CLASSIC WHITE", "BRILLIANT WHITE", "BLACK", "SMOKE GREY", "PHIROZA BLUE", "PO RED"], variants: NONE },
-  "SUPER SATIN":              { bases: ["BRILLIANT WHITE", "90 BASE", "93 BASE", "92 BASE", "94 BASE"], shades: ["BLACK", "BROWN", "RICH BROWN"], variants: NONE },
-  "M900 GLOSS":               { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "94 BASE"], shades: ["BLACK", "GOLDEN YELLOW", "GOLDEN BROWN", "DARK BROWN"], variants: NONE },
-  "SATIN STAY BRIGHT":        { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE"], shades: NONE, variants: NONE },
-  "SUPERCOVER":               { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE"], shades: NONE, variants: NONE },
-  "VT PEARL GLO":             { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE"], shades: NONE, variants: NONE },
-  "VT PLATINUM GLO":          { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE"], shades: NONE, variants: NONE },
-  "PROMISE INTERIOR":         { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE"], shades: NONE, variants: NONE },
-  "PROMISE EXTERIOR":         { bases: ["93 BASE", "BRILLIANT WHITE", "92 BASE", "90 BASE", "94 BASE"], shades: NONE, variants: NONE },
-  "WS PROTECT DUSTPROOF":     { bases: ["BRILLIANT WHITE", "92 BASE", "93 BASE", "90 BASE", "94 BASE"], shades: ["TERACOTTA", "SIGNAL RED"], variants: NONE },
-  "WS PROTECT HI-SHEEN":      { bases: ["93 BASE", "BRILLIANT WHITE", "90 BASE", "92 BASE"], shades: NONE, variants: NONE },
-  "WS MAX":                   { bases: ["90 BASE", "92 BASE", "BRILLIANT WHITE", "93 BASE", "94 BASE"], shades: NONE, variants: NONE },
-  "WS POWERFLEXX":            { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE"], shades: NONE, variants: NONE },
-  "ACOTONE":                  { bases: NONE, shades: ["NO1", "XY1", "YE1", "WH1", "XR1", "RE1"], variants: NONE },
-  "UNIVERSAL STAINER":        { bases: NONE, shades: ["FAST VIOLET", "BLACK", "YELLOW OXIDE", "BURNT SIENNA", "FAST RED", "FAST BLUE"], variants: NONE },
-  "MACHINE TINTER":           { bases: NONE, shades: ["WHITE", "YOX", "OXR", "TBL", "LFY", "FFR"], variants: NONE },
-  "GVA":                      { bases: NONE, shades: ["BRILLIANT WHITE", "BLACK", "YELLOW OXIDE", "ORGANIC ORANGE", "BLUE", "ORGANIC LEMON YELLOW"], variants: NONE },
-  "2K PU MATT":               { bases: ["90 Base", "93 Base"], shades: ["Int Clear", "Opaque White", "Ext Clear"], variants: NONE },
-  "PU PRIME MATT":            { bases: ["90 Base", "93 Base"], shades: ["Clear", "White"], variants: NONE },
-  "PU PRIME SEALER":          { bases: NONE, shades: ["White", "Clear"], variants: NONE },
-  "PROMISE SMARTCHOICE":      { bases: NONE, shades: NONE, variants: ["Interior", "Acrylic Distemper", "Exterior", "Int Primer", "Ext Primer"] },
-  "PROMISE PRIMER":           { bases: NONE, shades: NONE, variants: ["Freedom 2in1 Primer", "2in1 Primer", "Promise Primer"] },
-  // No options at all — one menu row each, baseColour NULL, straight to packs.
-  "CEMENT PRIMER SB":         { bases: NONE, shades: NONE, variants: NONE },
-  "ZINC YELLOW METAL PRIMER": { bases: NONE, shades: NONE, variants: NONE },
-  "RED OXIDE METAL PRIMER":   { bases: NONE, shades: NONE, variants: NONE },
-  "EXTERIOR ACRYLIC PRIMER":  { bases: NONE, shades: NONE, variants: NONE },
-  "DAMP PROTECT 2IN1":        { bases: NONE, shades: NONE, variants: NONE },
-  "ROOF COAT WHITE":          { bases: NONE, shades: NONE, variants: NONE },
-  "CRACKFILLER 5MM":          { bases: NONE, shades: NONE, variants: NONE },
-  "DAMP PROTECT BASECOAT":    { bases: NONE, shades: NONE, variants: NONE },
-  "MULTI PURPOSE THINNER":    { bases: NONE, shades: NONE, variants: NONE },
+  "GLOSS":                     { bases: ["90 BASE", "BRILLIANT WHITE", "92 BASE", "93 BASE", "94 BASE", "GREEN BASE"], shades: ["BLACK", "DARK BROWN", "GOLDEN BROWN", "SMOKE GREY", "DA GREY", "GOLDEN YELLOW", "PO RED", "PHIROZA", "DEEP ORANGE"], variants: NONE, defaultTab: "shade" },
+  "PROMISE ENAMEL":            { bases: ["BRILLIANT WHITE"], shades: ["CLASSIC WHITE", "BLACK", "SMOKE GREY", "PHIROZA BLUE", "PO RED", "GOLDEN YELLOW", "GOLDEN BROWN", "DARK BROWN", "BUS GREEN"], variants: NONE, defaultTab: "shade" },
+  "SUPER SATIN":               { bases: ["BRILLIANT WHITE", "90 BASE", "93 BASE", "92 BASE", "94 BASE", "96 BASE", "97 BASE"], shades: ["BLACK", "BROWN", "RICH BROWN", "MAHOGANY", "SPECIAL TEAK", "TEAK", "TIMBER GOLDEN BROWN"], variants: NONE, defaultTab: "base" },
+  "M900 GLOSS":                { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "94 BASE"], shades: ["SMOKE GREY", "BLACK", "GOLDEN YELLOW", "PHIROZA BLUE", "DARK BROWN", "PO RED", "GOLDEN BROWN", "BUS GREEN"], variants: NONE },
+  "SATIN STAY BRIGHT":         { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE"], shades: ["WALNUT", "BLACK"], variants: NONE, defaultTab: "base" },
+  "SUPERCOVER":                { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "96 BASE", "95 BASE", "97 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
+  "VT PEARL GLO":              { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE", "PASTEL BASE"], shades: ["RARE PEARL COPPER", "RARE PEARL GREEN"], variants: NONE, defaultTab: "base" },
+  "VT PLATINUM GLO":           { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
+  "PROMISE SMARTCHOICE":       { bases: NONE, shades: NONE, variants: ["Interior", "Acrylic Distemper", "Exterior", "Int Primer", "Ext Primer"] },
+  "PROMISE PRIMER":            { bases: NONE, shades: NONE, variants: ["Freedom 2in1 Primer", "2in1 Primer", "Promise Primer"] },
+  "PROMISE INTERIOR":          { bases: ["BRILLIANT WHITE", "90 BASE", "93 BASE", "92 BASE", "94 BASE", "97 BASE", "96 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
+  "PROMISE EXTERIOR":          { bases: ["BRILLIANT WHITE", "93 BASE", "90 BASE", "92 BASE", "94 BASE", "96 BASE", "98 BASE", "95 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
+  "WS PROTECT DUSTPROOF":      { bases: ["BRILLIANT WHITE", "92 BASE", "93 BASE", "90 BASE", "94 BASE", "97 BASE", "96 BASE", "95 BASE", "98 BASE"], shades: ["TERACOTTA", "SIGNAL RED", "PO RED", "SUNRISE", "ELECTRIC BLUE PLUS"], variants: NONE, defaultTab: "base" },
+  "WS PROTECT HI-SHEEN":       { bases: ["93 BASE", "BRILLIANT WHITE", "92 BASE", "90 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
+  "WS MAX":                    { bases: ["92 BASE", "90 BASE", "93 BASE", "BRILLIANT WHITE", "94 BASE", "97 BASE", "96 BASE", "95 BASE", "98 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
+  "WS POWERFLEXX":             { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE", "98 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
+  "CEMENT PRIMER SB":          { bases: NONE, shades: NONE, variants: NONE },
+  "ZINC YELLOW METAL PRIMER":  { bases: NONE, shades: NONE, variants: NONE },
+  "RED OXIDE METAL PRIMER":    { bases: NONE, shades: NONE, variants: NONE },
+  "EXTERIOR ACRYLIC PRIMER":   { bases: NONE, shades: NONE, variants: NONE },
+  "ACOTONE":                   { bases: NONE, shades: ["NO1", "XY1", "WH1", "YE1", "XR1", "RE1", "OR1", "MA1", "BU1"], variants: NONE },
+  "UNIVERSAL STAINER":         { bases: NONE, shades: ["FAST VIOLET", "BLACK", "YELLOW OXIDE", "FAST RED", "BURNT SIENNA", "FAST BLUE", "FAST YELLOW", "FAST ORANGE", "FAST GREEN"], variants: NONE, defaultTab: "shade" },
+  "MACHINE TINTER":            { bases: NONE, shades: ["WHITE", "YOX", "OXR", "TBL", "LFY", "FFR", "BLACK", "MAG", "GRN"], variants: NONE },
+  "GVA":                       { bases: ["BRILLIANT WHITE"], shades: ["BLACK", "YELLOW OXIDE", "ORGANIC ORANGE", "ORGANIC LEMON YELLOW", "BLUE", "RED OXIDE", "ORGANIC MIDDLE YELLOW", "ORGANIC VIOLET", "ORGANIC RED VIOLET"], variants: NONE },
+  "DAMP PROTECT 2IN1":         { bases: NONE, shades: NONE, variants: NONE },
+  "ROOF COAT WHITE":           { bases: NONE, shades: NONE, variants: NONE },
+  "CRACKFILLER 5MM":           { bases: NONE, shades: NONE, variants: NONE },
+  "DAMP PROTECT BASECOAT":     { bases: NONE, shades: NONE, variants: NONE },
+  "2K PU MATT":                { bases: ["90 Base", "93 Base"], shades: ["Int Clear", "Opaque White", "Ext Clear"], variants: NONE, defaultTab: "base" },
+  "PU PRIME MATT":             { bases: ["90 Base", "93 Base"], shades: ["Clear", "White"], variants: NONE, defaultTab: "base" },
+  "PU PRIME SEALER":           { bases: NONE, shades: ["White", "Clear"], variants: NONE, defaultTab: "shade" },
+  "MULTI PURPOSE THINNER":     { bases: NONE, shades: NONE, variants: NONE },
 };
 
 // (The nine hard-coded "+ More" bases are GONE, and so is the search round-trip
@@ -300,6 +322,8 @@ export type V2Resolved = {
   variants: V2Option[];
   /** The single NULL-baseColour row, for tiles with no options at all. */
   noOptionRow: ApiProduct | null;
+  /** Which tab to open on — from CURATION, generated off the 90-day ranking. */
+  defaultTab: "base" | "shade";
 };
 
 /** What the Task-5 gate found. Reported, never papered over. */
@@ -339,7 +363,7 @@ export function buildCatalog(products: ApiProduct[]): {
         report.zeroRowTiles.push(tile.label);
         byTile.set(tile.sap, {
           sap: tile.sap, label: tile.label, family: family.name,
-          bases: [], shades: [], variants: [], noOptionRow: null,
+          bases: [], shades: [], variants: [], noOptionRow: null, defaultTab: "base",
         });
         continue;
       }
@@ -402,6 +426,7 @@ export function buildCatalog(products: ApiProduct[]): {
         shades:   resolve(curation.shades),
         variants: resolve(curation.variants),
         noOptionRow,
+        defaultTab: curation.defaultTab ?? "base",
       });
     }
   }
@@ -498,7 +523,7 @@ export function shadeRowMode(values: readonly string[]): "colour" | "text" {
 
 // ── Drawer shape ───────────────────────────────────────────────────────────
 
-export type V2DrawerMode = "single" | "flat" | "grid" | "standard";
+export type V2DrawerMode = "single" | "flat" | "standard";
 
 /** Every distinct RENDERED pack label a product sells, across all its options. */
 export function packsOf(rows: ApiProduct[]): string[] {
@@ -513,62 +538,66 @@ export function packsOf(rows: ApiProduct[]): string[] {
  * 🔴 THE ONE PLACE THE DRAWER'S SHAPE IS DECIDED. Option count first, then
  * pack count. Nothing else in v2 may re-derive this.
  *
- *   1 option          -> single   : no chips, straight to packs, ANY pack count
- *   2+ options, 1 pack  -> flat   : every option listed, a stepper on each
- *   2+ options, 2-3     -> grid   : options down, packs across, stepper per cell
- *   2+ options, 4+      -> standard: pick an option, then its packs
+ *   1 option           -> single  : no chips, straight to packs, ANY pack count
+ *   2+ options, 1 pack  -> flat    : every option listed, a stepper on each
+ *   2+ options, 2+ packs-> standard: pick an option, then its packs
+ *
+ * GRID (options down, packs across) WAS a fourth outcome and is deleted: the
+ * bare "+" cell read as inert and the minus was invisible until you had
+ * already tapped. Uni Stainer, 2K Matt, Prime Matt and Prime Sealer return to
+ * standard, the pattern that already works.
  *
  * ⚠ `single` IS NOT A NEW CODE PATH. The nine one-option products already open
  * straight to their packs: their curated lists are all empty, so the drawer's
  * control block never renders (its gate is `hasVariants || activeList.length`)
  * and `selectedRow` falls through to `noOptionRow`. This mode NAMES that
  * existing behaviour so the census can report it; it does not re-implement it.
- * Measured live 2026-09-07: 9 single, 4 flat, 4 grid, 15 standard.
+ * Measured live 2026-09-07: 9 single, 4 flat, 19 standard.
  */
 export function drawerMode(rows: ApiProduct[]): V2DrawerMode {
   if (rows.length <= 1) return "single";
   const packs = packsOf(rows).length;
   if (packs <= 1) return "flat";
-  if (packs <= 3) return "grid";
   return "standard";
 }
 
 /**
- * The base and shade pools behind "+ More", split by the payload's OWN
- * `productType` rather than by any pattern in the name.
+ * Is this option a BASE — something a machine tints into — or a finished
+ * shade a dealer buys off the shelf?
  *
- * 🔴 WHY productType AND NOT A NAME RULE. The expansion used to hand the Base
- * tab every option a product had, shades included — open Gloss on Base, tap
- * "+ More", and BLACK / MINT GREEN / WILD PURPLE appeared among the bases.
- * `productType` is populated on all 471 payload rows (BASE_VARIANT 204,
- * COLOUR 194, PLAIN 73, zero nulls) and splits Gloss cleanly 9/29. A case rule
- * cannot: Sadolin stores "90 Base" in title case.
+ * 🔴 A NAME RULE, DELIBERATELY, AND IT REPLACES A productType RULE THAT WAS
+ * WRONG. The payload types some ready-made colours as BASE_VARIANT: on Gloss
+ * that put BLAZING WHITE, CLASSIC WHITE and OFF WHITE on the Base tab, where a
+ * dealer would never look for them. They are finished paint, not tinting bases.
  *
- * 🔴 EACH POOL IS UNIONED WITH ITS CURATED LIST, and that union is load-
- * bearing. Three curated SHADES carry productType BASE_VARIANT — Promise
- * Enamel's CLASSIC WHITE and BRILLIANT WHITE, and GVA's BRILLIANT WHITE. A
- * bare `productType === "COLOUR"` filter would drop all three from the shade
- * pool even though the curation deliberately put them there. The union keeps
- * the payload honest about structure and the curation honest about intent.
+ * The rule is exactly two clauses, and it is case-insensitive because Sadolin
+ * stores "90 Base" in title case while everyone else stores "90 BASE":
+ *   - the name contains "BASE"  (90 BASE, 94 BASE, GREEN BASE, PASTEL BASE)
+ *   - or the name IS Brilliant White (or its "BW" short form)
+ * Everything else is a shade, whatever productType says.
+ *
+ * DISPLAY ONLY. `productType` is not rewritten and the payload is not touched;
+ * this decides which tab an option appears under and nothing else.
+ */
+export function isBaseOption(value: string): boolean {
+  const v = value.trim().toUpperCase();
+  return v.includes("BASE") || v === "BRILLIANT WHITE" || v === "BW";
+}
+
+/**
+ * The base and shade pools behind "+ More", split by isBaseOption().
+ *
+ * Both pools are drawn from EVERY option the product has, so nothing in the
+ * catalog is unreachable: whatever is not a base is a shade, and the two are
+ * exhaustive and disjoint.
  */
 export function optionPools(
   rows: ApiProduct[],
-  curated: { bases: readonly V2Option[]; shades: readonly V2Option[] },
 ): { all: V2Option[]; bases: V2Option[]; shades: V2Option[] } {
   const all = allOptionsFor(rows);
-  const curatedBase  = new Set(curated.bases.map((o) => o.value));
-  const curatedShade = new Set(curated.shades.map((o) => o.value));
-
   const bases: V2Option[]  = [];
   const shades: V2Option[] = [];
-  for (const opt of all) {
-    const type = opt.row.productType;
-    if (type === "BASE_VARIANT" || curatedBase.has(opt.value)) bases.push(opt);
-    // A value curated as a shade goes to shades even when typed BASE_VARIANT,
-    // so it can appear in BOTH pools. That is correct: on Promise Enamel
-    // BRILLIANT WHITE genuinely is the shade you order.
-    if (type === "COLOUR" || curatedShade.has(opt.value)) shades.push(opt);
-  }
+  for (const opt of all) (isBaseOption(opt.value) ? bases : shades).push(opt);
   return { all, bases, shades };
 }
 
@@ -610,6 +639,7 @@ export function resolveGroup(
     shades: [],
     variants: [],
     noOptionRow: single ? ordered[0] : null,
+    defaultTab: "base",
   };
 }
 

@@ -75,6 +75,12 @@ export default function ProductDrawer({
   // which is where that turned into a blocking bug.
   const [tab, setTab] = useState<Tab>(() => {
     if (initialOption && product.shades.some((o) => o.value === initialOption)) return "shade";
+    // 🔴 OPEN ON THE TAB HOLDING THE MOST-ORDERED OPTION, not always Base.
+    // Promise Enamel's only base is BRILLIANT WHITE (241 orders) while its top
+    // shade CLASSIC WHITE takes 797 — opening on that one-chip Base tab would
+    // put what he actually wants one tap away, every single time.
+    // defaultTab is generated from the same 90-day ranking as the chip lists.
+    if (product.defaultTab === "shade" && hasShades) return "shade";
     if (hasBases)  return "base";
     if (hasShades) return "shade";
     return "base";
@@ -83,9 +89,17 @@ export default function ProductDrawer({
   // and variant never are, so a shade-only or variant product opens with no
   // pack rows until the salesman commits to one — correct, because the packs
   // belong to the ROW and there is no row yet.
-  const [selected, setSelected] = useState<string | null>(
-    initialOption ?? (hasBases ? (product.bases[0]?.value ?? null) : null),
-  );
+  // A tab holding exactly ONE option selects it on arrival — a chip that is
+  // the only possible answer should not also cost a tap. That is what makes
+  // Promise Enamel's and GVA's single-chip Base tab free rather than a chore.
+  const soleOf = (list: V2Option[]): string | null =>
+    list.length === 1 ? list[0].value : null;
+  const [selected, setSelected] = useState<string | null>(() => {
+    if (initialOption) return initialOption;
+    if (hasVariants) return soleOf(product.variants);
+    const opening = product.defaultTab === "shade" && hasShades ? product.shades : product.bases;
+    return soleOf(opening) ?? (opening === product.bases ? (product.bases[0]?.value ?? null) : null);
+  });
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [expanded, setExpanded] = useState(false);
   // FLAT and GRID keep their own state: option -> pack label -> units. The
@@ -130,12 +144,31 @@ export default function ProductDrawer({
     return ranked.map((r) => byId.get(r.id)).filter((o): o is V2Option => !!o);
   }, [shadeSearchOpen, shadeQuery, expansionPool]);
 
-  const activeList: V2Option[] = expanded ? expansionPool : curatedList;
+  const shownList: V2Option[] = expanded ? expansionPool : curatedList;
   // "+ More" earns its place only when there is genuinely more to show.
   const hasMore = !hasVariants && !expanded && expansionPool.length > curatedList.length;
 
+  // 🔴 THE SELECTION IS RESOLVED AGAINST THE WHOLE POOL, NOT THE VISIBLE LIST.
+  // It used to be looked up in the list on screen, which collapses back to the
+  // curated nine the moment the search closes — so a shade picked out of "+
+  // More" (BUS GREEN, say) was no longer findable, selectedRow fell to null,
+  // the body kept saying "Pick a shade" and Add stayed dead while the header
+  // cheerfully showed BUS GREEN. What is selected and what is listed are two
+  // different questions.
+  const optionPool: V2Option[] = pools?.all ?? shownList;
+  const selectedOption = selected === null
+    ? undefined
+    : optionPool.find((o) => o.value === selected) ?? shownList.find((o) => o.value === selected);
+
+  // ...and a selection that is not in the visible list is PINNED to the front
+  // of it, so the chip row can never show nothing selected while the header
+  // says otherwise.
+  const activeList: V2Option[] = selectedOption && !shownList.some((o) => o.value === selected)
+    ? [selectedOption, ...shownList]
+    : shownList;
+
   const selectedRow: ApiProduct | null =
-    product.noOptionRow ?? activeList.find((o) => o.value === selected)?.row ?? null;
+    product.noOptionRow ?? selectedOption?.row ?? null;
 
   const packLabels = selectedRow
     ? selectedRow.packs.map((p) => formatPack(p.packCode, p.unit))
@@ -146,8 +179,12 @@ export default function ProductDrawer({
   // the base row is on screen.
   function switchTab(next: Tab): void {
     if (next === tab) return;
+    const list = next === "base" ? product.bases : product.shades;
     setTab(next);
-    setSelected(next === "base" ? (product.bases[0]?.value ?? null) : null);
+    // Same two rules as on open: a sole option selects itself, and the base
+    // tab keeps its top-ranked pre-select. A shade tab with a real choice in
+    // it starts empty, because guessing a colour for him would be worse.
+    setSelected(soleOf(list) ?? (next === "base" ? (product.bases[0]?.value ?? null) : null));
     setQtys({});
     setExpanded(false);
     setShadeQuery("");
@@ -169,13 +206,11 @@ export default function ProductDrawer({
     setQtys((prev) => ({ ...prev, [label]: Math.max(0, (prev[label] ?? 0) + delta) }));
   }
 
-  const matrixMode = mode === "flat" || mode === "grid";
+  const matrixMode = mode === "flat";
   const options = pools?.all ?? [];
   // FLAT is one pack for the whole product, so the label is stated once in the
   // header instead of on every row.
   const flatPack = mode === "flat" ? (packsOf(options.map((o) => o.row))[0] ?? "") : "";
-  // GRID columns: the product's distinct packs, in catalog order.
-  const gridPacks = mode === "grid" ? packsOf(options.map((o) => o.row)) : [];
 
   function stepCell(option: string, pack: string, direction: 1 | -1): void {
     const delta = stepForLabel(pack) * direction;
@@ -262,7 +297,7 @@ export default function ProductDrawer({
   );
 
   return (
-    <V2Sheet onClose={onClose} footer={footer} fixedHeight>
+    <V2Sheet onClose={onClose} footer={footer}>
         {/* ── HEADER ────────────────────────────────────────────────────── */}
         <div className="flex shrink-0 items-start gap-3 px-4 pt-1.5 pb-3">
           <div className="min-w-0 flex-1">
@@ -289,9 +324,7 @@ export default function ProductDrawer({
 
         {matrixMode ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {mode === "flat"
-              ? <FlatBody options={options} pack={flatPack} matrix={matrix} onStep={stepCell} />
-              : <GridBody options={options} packs={gridPacks} matrix={matrix} onStep={stepCell} />}
+            <FlatBody options={options} pack={flatPack} matrix={matrix} onStep={stepCell} />
           </div>
         ) : (
         <>
@@ -548,143 +581,7 @@ function FlatBody({ options, pack, matrix, onStep }: {
   );
 }
 
-// ── GRID MODE ──────────────────────────────────────────────────────────────
-/**
- * 2+ options, 2-3 packs. Options down the left, packs across the top.
- *
- * 🔴 THE CELL IS ONE TAP TARGET, NOT A THREE-PART STEPPER, AND THE MATHS
- * FORCED IT. A 390px screen gives 358px inside the page padding. Three cells
- * plus three 6px gaps leaves 340px; a -/value/+ stepper at the 44px minimum
- * needs 44+28+44 = 116px a cell, so 348px for three — MORE than the whole row,
- * before the option label gets a single pixel. Even 40px targets leave 28px
- * for "YELLOW OXIDE". Three cramped targets was the old 22px cell, which is
- * what this replaces.
- *
- * So: the whole cell adds one box. The count appears inside once it is above
- * zero, and only then does a minus appear, taking the left 28px of the cell.
- * Both are a full 44px TALL — the height is what a thumb actually misses on,
- * and the row height carries it.
- *
- * The minus is a SIBLING button overlaying the left edge, never nested inside
- * the add button: a button inside a button is invalid HTML that React will not
- * render predictably (the same trap the dealer-row star hit).
- *
- * NO HORIZONTAL SCROLL: pack columns are fixed and the label column is
- * `min-w-0 flex-1 truncate`, so the label gives way first and nothing ever
- * pushes the row wider than the screen.
- */
-function GridBody({ options, packs, matrix, onStep }: {
-  options: V2Option[];
-  packs: string[];
-  matrix: Record<string, Record<string, number>>;
-  onStep: (option: string, pack: string, direction: 1 | -1) => void;
-}): React.JSX.Element {
-  // 3 packs: 3*80 + 3*6 = 258, leaving ~100px of label on a 390px screen.
-  // 2 packs: 2*104 + 2*6 = 220, leaving ~138px.
-  const cell = packs.length >= 3 ? 80 : 104;
-  return (
-    <div className="px-4 py-1">
-      <div className="flex items-end gap-1.5 pb-1">
-        <span className="min-w-0 flex-1" />
-        {packs.map((p) => (
-          <span key={p} className="shrink-0 text-center font-mono text-[11px] text-neutral-400"
-                style={{ width: cell }}>
-            {p}
-          </span>
-        ))}
-      </div>
-      {options.map((opt) => {
-        const hex = shadeHex(opt.value);
-        return (
-          <div key={opt.value} className="flex items-center gap-1.5 py-1.5"
-               style={{ borderTop: `1px solid ${RULE}` }}>
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              {hex && (
-                <span className="shrink-0" style={{
-                  width: 18, height: 18, borderRadius: 5, background: hex,
-                  border: isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none",
-                }} />
-              )}
-              <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: INK }}>
-                {opt.value}
-              </span>
-            </div>
-            {packs.map((p) => {
-              // A pack this option does not sell gets a dash, never a live
-              // target — otherwise the grid invites an impossible order.
-              const sells = opt.row.packs.some((x) => formatPack(x.packCode, x.unit) === p);
-              const qty = matrix[opt.value]?.[p] ?? 0;
-              return (
-                <span key={p} className="shrink-0" style={{ width: cell }}>
-                  {sells ? (
-                    <GridCell
-                      qty={qty} width={cell} label={`${opt.value} ${p}`}
-                      onAdd={() => onStep(opt.value, p, 1)}
-                      onRemove={() => onStep(opt.value, p, -1)}
-                    />
-                  ) : (
-                    <span className="flex items-center justify-center text-[13px] text-neutral-300"
-                          style={{ height: GRID_CELL_H }}>
-                      —
-                    </span>
-                  )}
-                </span>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** 44px is the minimum a thumb reliably hits, and it is the HEIGHT that matters. */
-const GRID_CELL_H = 44;
-
-function GridCell({ qty, width, label, onAdd, onRemove }: {
-  qty: number; width: number; label: string; onAdd: () => void; onRemove: () => void;
-}): React.JSX.Element {
-  const on = qty > 0;
-  return (
-    <span className="relative block" style={{ width, height: GRID_CELL_H }}>
-      {/* The WHOLE cell adds one box. One tap, one box, in units. */}
-      <button
-        type="button"
-        aria-label={`Add one box of ${label}`}
-        onClick={onAdd}
-        className="absolute inset-0 flex items-center justify-center rounded-[10px]"
-        style={{
-          border: `1px solid ${on ? VIOLET : RULE}`,
-          background: on ? VIOLET_BG : "#fff",
-        }}
-      >
-        {on ? (
-          <span className="pl-6 font-mono text-[15px] font-extrabold tabular-nums" style={{ color: INK }}>
-            {qty}
-          </span>
-        ) : (
-          <Plus className="h-4 w-4" strokeWidth={2.5} style={{ color: "#C9C6D2" }} />
-        )}
-      </button>
-      {/* Sibling, not nested — and it only exists once there is something to
-          take away, so an untouched cell is one clean target. */}
-      {on && (
-        <button
-          type="button"
-          aria-label={`Remove one box of ${label}`}
-          onClick={onRemove}
-          className="absolute left-0 top-0 flex items-center justify-center rounded-l-[10px]"
-          style={{ width: 28, height: GRID_CELL_H }}
-        >
-          <Minus className="h-3.5 w-3.5" strokeWidth={3} style={{ color: VIOLET }} />
-        </button>
-      )}
-    </span>
-  );
-}
-
-/** The full-row stepper, used by FLAT mode. GRID has its own cell (above):
- *  three of these cannot fit a 390px row at a 44px target. */
+/** The full-row stepper, used by FLAT mode. */
 function Stepper({ qty, onStep, label }: {
   qty: number; onStep: (direction: 1 | -1) => void; label: string;
 }): React.JSX.Element {

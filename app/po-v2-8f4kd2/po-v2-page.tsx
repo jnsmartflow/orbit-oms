@@ -352,9 +352,9 @@ export default function PoV2Page(): React.JSX.Element {
     ? load.products.filter((p) => (p.product ?? p.subProduct) === openTile.sap)
     : [];
   const tileProduct = ready && openTile ? load.byTile.get(openTile.sap) : undefined;
-  const tilePools = tileProduct ? optionPools(openTileRows, tileProduct) : undefined;
+  const tilePools = tileProduct ? optionPools(openTileRows) : undefined;
   const tileMode  = openTile ? drawerMode(openTileRows) : undefined;
-  const groupPools = openGroup && groupResolved ? optionPools(openGroup.rows, groupResolved) : undefined;
+  const groupPools = openGroup ? optionPools(openGroup.rows) : undefined;
   const groupMode  = openGroup ? drawerMode(openGroup.rows) : undefined;
 
   // ── Failure — a plain message and Retry, never a silent empty screen ─────
