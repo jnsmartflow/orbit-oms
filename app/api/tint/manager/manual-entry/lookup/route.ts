@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,23 @@ function err(code: ErrorCode, message: string, status: number): NextResponse {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN]);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Per-user tick, not a job title (2026-09-06).
+  //
+  // 🔴 THIS GATE MUST NOT BE NARROWER THAN THE POST IT FEEDS. The manual-entry
+  // modal calls THIS route first (manual-tint-entry-modal.tsx:150) and only then
+  // POSTs to ../manual-entry (:188). When 64f897a9 widened the POST to
+  // tint_manager/canEdit it left this GET on requireRole([TINT_MANAGER, ADMIN]),
+  // so Prakash (operation_manager) held the write and was refused the read —
+  // and the failure was invisible: requireRole redirects 307, fetch follows it
+  // to an HTML page, res.json() throws, and the modal's own catch at :168
+  // swallowed it into an empty box. canView rather than canEdit because this
+  // route only reads; the holder sets are identical today and the POST beside it
+  // is the thing that decides whether an entry may actually be made.
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const obdRaw = req.nextUrl.searchParams.get("obd");
   const obd = (obdRaw ?? "").trim();
