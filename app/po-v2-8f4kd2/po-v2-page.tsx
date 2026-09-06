@@ -5,19 +5,21 @@ import { Check, CheckCircle2, ChevronRight, Eraser, FileText, Home, MapPin, Send
 import ProductDrawer from "./product-drawer";
 import V2Sheet from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
-import { MIN_QUERY, ProductResults, ProductSearchInput } from "./product-search";
+import { MIN_QUERY, ProductResults, ProductSearchInput, type V2ProductGroup } from "./product-search";
 import ReviewScreen from "./review-screen";
 import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import { DraftsScreen, SentScreen } from "./drafts-sent";
 import {
   addSentOrder, clearLiveDraft, labelFor, loadLiveDraft, loadSavedDrafts,
   loadSentOrders, newDraftId, newSentId, removeSavedDraft, formatSavedAt, formatTime,
+  loadFavs, toggleFav, type V2Fav,
   saveLiveDraft, snapshotOf, upsertSavedDraft,
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
   DIVIDER, FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, addRecent, buildCatalog, formatPack, loadRecents, packRows, resolveForSearch, unitsIn,
+  EMPTY_ORDER, addRecent, allOptionsFor, buildCatalog, formatPack, loadRecents, packRows,
+  resolveGroup, unitsIn,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
@@ -66,11 +68,12 @@ export default function PoV2Page(): React.JSX.Element {
   const [screen, setScreen]   = useState<Screen>("customers");
   const [dealer, setDealer]   = useState<ApiCustomer | null>(null);
   const [recents, setRecents] = useState<V2Recent[]>([]);
+  const [favs, setFavs]       = useState<V2Fav[]>([]);
   const [query, setQuery]     = useState("");
   const [sheet, setSheet]     = useState<Sheet>(null);
   const [prodQuery, setProdQuery] = useState("");
   const [openTile, setOpenTile] = useState<V2Tile | null>(null);
-  const [openRow, setOpenRow]     = useState<ApiProduct | null>(null);
+  const [openGroup, setOpenGroup] = useState<V2ProductGroup | null>(null);
   const [lines, setLines]     = useState<V2CartLine[]>([]);
   const [order, setOrder]     = useState<V2Order>(EMPTY_ORDER);
   // NULL = "same as billing", the state email.ts omits the Ship To line for.
@@ -135,6 +138,7 @@ export default function PoV2Page(): React.JSX.Element {
   // Client-only reads, so the server render and the first client render agree.
   useEffect(() => {
     setRecents(loadRecents());
+    setFavs(loadFavs());
     setSavedDrafts(loadSavedDrafts());
     setSentOrders(loadSentOrders());   // prunes to today+yesterday IST on read
   }, []);
@@ -276,7 +280,7 @@ export default function PoV2Page(): React.JSX.Element {
     picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
   ): void {
     commitLine(product.sap, product.label, picked);
-    setOpenRow(null);
+    setOpenGroup(null);
   }
 
   /**
@@ -329,15 +333,9 @@ export default function PoV2Page(): React.JSX.Element {
     setScreen("sent");
   }
 
-  /**
-   * "+ More" inside the drawer. Not a second mechanism: it closes the drawer
-   * and runs the REAL product search, pre-filled with this product's name, so
-   * the results are that product's other catalog options.
-   */
-  function openMore(query: string): void {
-    setOpenTile(null);
-    setOpenRow(null);
-    setProdQuery(query);
+  /** Toggle a dealer's favourite star. Never opens the dealer. */
+  function onToggleFav(c: ApiCustomer): void {
+    setFavs(toggleFav({ name: c.name, code: c.code, area: c.area }));
   }
 
   const ready       = load.kind === "ready";
@@ -346,7 +344,19 @@ export default function PoV2Page(): React.JSX.Element {
   const searching   = prodQuery.trim().length >= MIN_QUERY;
   const cartOpen    = lines.length > 0;
   const openProduct = ready && openTile ? load.byTile.get(openTile.sap) ?? null : null;
-  const searchResolved = ready && openRow ? resolveForSearch(openRow, load.byTile) : null;
+  // A searched PRODUCT resolves to its curated chips when it is one of the 32,
+  // and to its own payload options (sortOrder, capped) when it is not.
+  const tileLabelFor = (key: string): string | undefined =>
+    ready ? load.byTile.get(key)?.label : undefined;
+  const groupResolved = ready && openGroup
+    ? resolveGroup(openGroup.key, openGroup.rows,
+                   tileLabelFor(openGroup.key) ?? openGroup.best.displayName, load.byTile)
+    : null;
+  // "+ More" expands to these rather than bouncing back through search.
+  const groupAllOptions = openGroup ? allOptionsFor(openGroup.rows) : undefined;
+  const tileAllOptions = ready && openTile
+    ? allOptionsFor(load.products.filter((p) => (p.product ?? p.subProduct) === openTile.sap))
+    : undefined;
 
   // ── Failure — a plain message and Retry, never a silent empty screen ─────
   if (load.kind === "error") {
@@ -386,7 +396,8 @@ export default function PoV2Page(): React.JSX.Element {
 
         {ready ? (
           <CustomerListBody
-            customers={customers} recents={recents} query={query} onPick={pickDealer}
+            customers={customers} recents={recents} favs={favs} query={query}
+            onPick={pickDealer} onToggleFav={onToggleFav}
           />
         ) : (
           <p className="px-4 py-10 text-center text-[13px] text-neutral-400">Loading dealers…</p>
@@ -634,8 +645,8 @@ export default function PoV2Page(): React.JSX.Element {
                 </button>
               )}
               <CustomerListBody
-                customers={customers} recents={recents} query={query}
-                currentCode={shipTo?.code ?? null}
+                customers={customers} recents={recents} favs={favs} query={query}
+                currentCode={shipTo?.code ?? null} onToggleFav={onToggleFav}
                 onPick={(c) => { setShipTo(c); setSheet(null); setQuery(""); }}
               />
             </div>
@@ -693,7 +704,8 @@ export default function PoV2Page(): React.JSX.Element {
             <ProductResults
               products={products}
               query={prodQuery}
-              onPick={(row) => setOpenRow(row)}
+              labelFor={tileLabelFor}
+              onPick={(group) => setOpenGroup(group)}
             />
           </div>
         ) : (
@@ -785,8 +797,8 @@ export default function PoV2Page(): React.JSX.Element {
           </div>
           <div className="min-h-0 overflow-y-auto">
             <CustomerListBody
-              customers={customers} recents={recents} query={query}
-              currentCode={dealer?.code ?? null} onPick={pickDealer}
+              customers={customers} recents={recents} favs={favs} query={query}
+              currentCode={dealer?.code ?? null} onPick={pickDealer} onToggleFav={onToggleFav}
             />
           </div>
         </V2Sheet>
@@ -849,22 +861,21 @@ export default function PoV2Page(): React.JSX.Element {
           product={openProduct}
           onClose={() => setOpenTile(null)}
           onAdd={(picked) => addLine(openTile, picked)}
-          onMore={openMore}
+          allOptions={tileAllOptions}
         />
       )}
 
       {/* ── PRODUCT DRAWER, from a SEARCH HIT ──────────────────────────── */}
-      {/* Opens on that exact menu row with its option already selected —
-          resolveForSearch appends the option to the chip row when the curated
-          list does not carry it, so what was searched for is never invisible. */}
-      {openRow && searchResolved && (
+      {/* A searched result is now a PRODUCT, so this opens the same drawer its
+          tile would — curated chips for one of the 32, or its own payload
+          options (sortOrder, capped) for anything else. */}
+      {openGroup && groupResolved && (
         <ProductDrawer
-          key={`row-${openRow.id}`}
-          product={searchResolved.product}
-          initialOption={searchResolved.initialOption}
-          onClose={() => setOpenRow(null)}
-          onAdd={(picked) => addLineFromRow(searchResolved.product, picked)}
-          onMore={openMore}
+          key={`group-${openGroup.key}`}
+          product={groupResolved}
+          onClose={() => setOpenGroup(null)}
+          onAdd={(picked) => addLineFromRow(groupResolved, picked)}
+          allOptions={groupAllOptions}
         />
       )}
     </>

@@ -21,7 +21,9 @@ import type {
 const LIVE_KEY   = "po2_draft";
 const DRAFTS_KEY = "po2_saved_drafts";
 const SENT_KEY   = "po2_sent_orders";
+const FAVS_KEY   = "po2_fav_customers";
 
+const MAX_FAVS     = 12;
 const MAX_DRAFTS   = 20;
 const LIVE_TTL_MS  = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -239,4 +241,65 @@ export function formatSavedAt(ts: number): string {
 
 export function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+}
+
+// ── Favourite dealers ──────────────────────────────────────────────────────
+
+/** No timestamp — favourites are a set, not a history. Order is recency of add. */
+export type V2Fav = { name: string; code: string; area: string | null };
+type FavStore = { version: 1; favs: V2Fav[] };
+
+export function loadFavs(): V2Fav[] {
+  const parsed = readRaw(FAVS_KEY) as Partial<FavStore> | null;
+  if (!parsed || !Array.isArray(parsed.favs)) return [];
+  return parsed.favs
+    .filter((f): f is V2Fav => !!f && typeof f.name === "string" && typeof f.code === "string")
+    .map((f) => ({ name: f.name, code: f.code, area: typeof f.area === "string" ? f.area : null }))
+    .slice(0, MAX_FAVS);
+}
+
+/**
+ * Toggle, and return the new list.
+ *
+ * A 13th add pushes the OLDEST off the end rather than refusing. /po's
+ * favourites block the 9th with a "full" message; here the star is on every
+ * row and a salesman starring one more should not have to go hunting for
+ * something to unstar first. The cap protects the list's usefulness, not the
+ * storage.
+ */
+export function toggleFav(c: V2Fav): V2Fav[] {
+  const current = loadFavs();
+  const next = current.some((f) => f.code === c.code)
+    ? current.filter((f) => f.code !== c.code)
+    : [{ name: c.name, code: c.code, area: c.area ?? null }, ...current].slice(0, MAX_FAVS);
+  writeRaw(FAVS_KEY, { version: 1, favs: next } satisfies FavStore);
+  return next;
+}
+
+// ── List-row summaries ─────────────────────────────────────────────────────
+
+/**
+ * "Gloss, Cement SB, Damp 2in1 +2 more" — what is actually IN a stored order.
+ *
+ * Names are DEDUPED first: three Gloss lines in different bases are one
+ * product to someone scanning a list, and "Gloss, Gloss, Gloss" would burn the
+ * whole line saying nothing. The "+N" counts distinct products left over.
+ */
+export function summaryLine(snapshot: V2Snapshot): string {
+  const names: string[] = [];
+  for (const line of snapshot.lines) {
+    if (!names.includes(line.label)) names.push(line.label);
+  }
+  const shown = names.slice(0, 3).join(", ");
+  const rest  = names.length - 3;
+  return rest > 0 ? `${shown} +${rest} more` : shown;
+}
+
+/** Total units in a stored order — the right-hand figure on a list row. */
+export function unitsOf(snapshot: V2Snapshot): number {
+  let units = 0;
+  for (const line of snapshot.lines) {
+    for (const qty of Object.values(line.qtys)) if (qty > 0) units += qty;
+  }
+  return units;
 }

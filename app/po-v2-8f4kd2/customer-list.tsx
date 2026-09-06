@@ -7,9 +7,9 @@ import {
   type ApiCustomer, type V2Recent,
 } from "./v2-data";
 
-// The dealer picker, shared by the landing screen and the change-customer
-// sheet so the two can never drift apart. Both render the SAME input and the
-// SAME rows; the only difference is that the sheet marks the current dealer.
+// The dealer picker, shared by the landing screen, the change-customer sheet
+// and the ship-to sheet so all three can never drift apart. One component,
+// three places.
 //
 // 🔴 CONTAINMENT — imports ./v2-data and node_modules only.
 
@@ -58,62 +58,136 @@ export function CustomerSearchInput({
   );
 }
 
-/** One flat dealer row. No card — a list divider is the only separator. */
-export function CustomerRow({
-  name, code, area, current = false, onPick,
-}: {
-  name: string; code: string; area: string | null;
-  /** Marks the dealer already on the order: tinted, with a tick not a chevron. */
-  current?: boolean;
-  onPick: () => void;
-}): React.JSX.Element {
+/** A star, outline or filled. 18px glyph; the tap target around it is 44px. */
+function StarGlyph({ filled, size = 18 }: { filled: boolean; size?: number }): React.JSX.Element {
+  const d = "M12 2.5l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.33l-5.8 3.05 1.11-6.46-4.7-4.58 6.49-.95L12 2.5z";
   return (
-    <button
-      type="button"
-      onClick={onPick}
-      className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
-      style={{ borderBottom: `1px solid ${DIVIDER}`, background: current ? VIOLET_BG : undefined }}
-    >
-      <span
-        className="flex shrink-0 items-center justify-center rounded-[10px] text-[12px] font-extrabold text-neutral-600"
-        style={{ width: 34, height: 34, background: current ? "#fff" : MONO_BG }}
-      >
-        {monogram(name)}
-      </span>
-      {/* min-w-0 is what lets the two lines truncate — a flex child defaults to
-          min-width:auto and would otherwise push the row past the viewport. */}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14.5px] font-bold" style={{ color: INK }}>{name}</span>
-        <span className="block truncate font-mono text-[11px] text-neutral-400">
-          {code}{area ? ` · ${area}` : ""}
-        </span>
-      </span>
-      {current
-        ? <Check className="h-4 w-4 shrink-0" strokeWidth={3} style={{ color: VIOLET }} />
-        : <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: CHEVRON }} />}
-    </button>
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden
+         fill={filled ? STAR : "none"} stroke={filled ? STAR : "#C7C3CE"} strokeWidth={filled ? 0 : 1.8}
+         strokeLinejoin="round">
+      <path d={d} />
+    </svg>
   );
 }
 
 /**
- * The list body: recents + everyone when the query is empty, matches when it
- * is not.
+ * One flat dealer row. No card — a list divider is the only separator.
  *
- * The full alphabetical list renders unvirtualised. That is a deliberate,
- * measured choice for ~698 plain rows — no images, no per-row effects — and
- * it is the reason nothing heavier was put in a row. If it stutters on a real
- * phone, paging is the fix, not a card redesign.
+ * 🔴 THE ROW IS A <div>, NOT A <button>. It has to hold a second, independent
+ * button for the star, and a <button> inside a <button> is invalid HTML that
+ * React will not render predictably. The pick target is the inner button that
+ * fills the row; the star sits beside it with its own 44px target, because a
+ * thumb does not reliably hit an 18px glyph.
+ */
+export function CustomerRow({
+  name, code, area, current = false, isFav, onPick, onToggleFav,
+}: {
+  name: string; code: string; area: string | null;
+  /** Marks the dealer already on the order: tinted, with a tick not a chevron. */
+  current?: boolean;
+  isFav: boolean;
+  onPick: () => void;
+  onToggleFav: () => void;
+}): React.JSX.Element {
+  return (
+    <div
+      className="flex items-center"
+      style={{ borderBottom: `1px solid ${DIVIDER}`, background: current ? VIOLET_BG : undefined }}
+    >
+      <button
+        type="button" onClick={onPick}
+        className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 text-left"
+      >
+        <span
+          className="flex shrink-0 items-center justify-center rounded-[10px] text-[12px] font-extrabold text-neutral-600"
+          style={{ width: 34, height: 34, background: current ? "#fff" : MONO_BG }}
+        >
+          {monogram(name)}
+        </span>
+        {/* min-w-0 is what lets the two lines truncate — a flex child defaults
+            to min-width:auto and would otherwise push the row past the viewport. */}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14.5px] font-bold" style={{ color: INK }}>{name}</span>
+          <span className="block truncate font-mono text-[11px] text-neutral-400">
+            {code}{area ? ` · ${area}` : ""}
+          </span>
+        </span>
+      </button>
+
+      {/* Its own button, so the tap CANNOT fall through and open the dealer.
+          A separate element rather than a stopPropagation() hack: the two are
+          genuinely different actions and the DOM should say so. */}
+      <button
+        type="button"
+        aria-label={isFav ? `Remove ${name} from favourites` : `Add ${name} to favourites`}
+        aria-pressed={isFav}
+        onClick={onToggleFav}
+        className="flex shrink-0 items-center justify-center"
+        style={{ width: 44, height: 44 }}
+      >
+        <StarGlyph filled={isFav} />
+      </button>
+
+      <span className="flex shrink-0 items-center pr-4">
+        {current
+          ? <Check className="h-4 w-4" strokeWidth={3} style={{ color: VIOLET }} />
+          : <ChevronRight className="h-4 w-4" strokeWidth={2.5} style={{ color: CHEVRON }} />}
+      </span>
+    </div>
+  );
+}
+
+/** Small grey uppercase section label. The favourites heading is the star alone. */
+function SectionLabel({ text }: { text: string }): React.JSX.Element {
+  return (
+    <div className="px-4 pt-4 pb-1.5">
+      <span className="text-[10px] font-extrabold uppercase text-neutral-400"
+            style={{ letterSpacing: "0.1em" }}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The list body.
+ *
+ * Empty query: FAVOURITES (star heading alone) → RECENT → ALL DEALERS. A
+ * favourite is not repeated under Recent — it is already one tap away at the
+ * top, and a duplicate row two sections down just costs scroll. It DOES stay
+ * under All Dealers, which is the complete list and would be lying otherwise.
+ *
+ * With a query: matches only, no headings. Stars stay tappable throughout.
+ *
+ * The full alphabetical list renders unvirtualised. That is a deliberate
+ * choice for ~698 plain rows — no images, no per-row effects — and it is the
+ * reason nothing heavier was put in a row. If it stutters on a real phone,
+ * paging is the fix, not a card redesign.
  */
 export function CustomerListBody({
-  customers, recents, query, currentCode, onPick,
+  customers, recents, favs, query, currentCode, onPick, onToggleFav,
 }: {
   customers: ApiCustomer[];
   recents: V2Recent[];
+  favs: { name: string; code: string; area: string | null }[];
   query: string;
   currentCode?: string | null;
   onPick: (c: ApiCustomer) => void;
+  onToggleFav: (c: ApiCustomer) => void;
 }): React.JSX.Element {
   const trimmed = query.trim();
+  const favCodes = new Set(favs.map((f) => f.code));
+
+  const row = (c: ApiCustomer, keyPrefix: string): React.JSX.Element => (
+    <CustomerRow
+      key={`${keyPrefix}-${c.code}`}
+      name={c.name} code={c.code} area={c.area}
+      current={currentCode === c.code}
+      isFav={favCodes.has(c.code)}
+      onPick={() => onPick(c)}
+      onToggleFav={() => onToggleFav(c)}
+    />
+  );
 
   if (trimmed.length > 0) {
     const matches = searchCustomers(customers, trimmed);
@@ -124,53 +198,34 @@ export function CustomerListBody({
         </p>
       );
     }
-    // Matches only — no headings, by spec.
-    return (
-      <div>
-        {matches.map((c) => (
-          <CustomerRow
-            key={c.code} name={c.name} code={c.code} area={c.area}
-            current={currentCode === c.code} onPick={() => onPick(c)}
-          />
-        ))}
-      </div>
-    );
+    return <div>{matches.map((c) => row(c, "hit"))}</div>;
   }
 
-  // Empty query: recents (if any) under a bare star, then everyone by name.
+  // A favourite is pinned to the top, so it does not need a Recent row too.
+  const recentRows = recents.filter((r) => !favCodes.has(r.code));
   const byName = [...customers].sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div>
-      {recents.length > 0 && (
+      {favs.length > 0 && (
         <>
           {/* The star IS the heading — no word, by spec. */}
           <div className="px-4 pt-3 pb-1.5">
-            <StarGlyph />
+            <StarGlyph filled size={18} />
           </div>
-          {recents.map((r) => (
-            <CustomerRow
-              key={`recent-${r.code}`} name={r.name} code={r.code} area={r.area}
-              current={currentCode === r.code}
-              onPick={() => onPick({ name: r.name, code: r.code, area: r.area })}
-            />
-          ))}
-          <div className="h-3" />
+          {favs.map((f) => row({ name: f.name, code: f.code, area: f.area }, "fav"))}
         </>
       )}
-      {byName.map((c) => (
-        <CustomerRow
-          key={c.code} name={c.name} code={c.code} area={c.area}
-          current={currentCode === c.code} onPick={() => onPick(c)}
-        />
-      ))}
-    </div>
-  );
-}
 
-function StarGlyph(): React.JSX.Element {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill={STAR} aria-label="Recent dealers">
-      <path d="M12 2.5l2.9 5.88 6.49.95-4.7 4.58 1.11 6.46L12 17.33l-5.8 3.05 1.11-6.46-4.7-4.58 6.49-.95L12 2.5z" />
-    </svg>
+      {recentRows.length > 0 && (
+        <>
+          <SectionLabel text="Recent" />
+          {recentRows.map((r) => row({ name: r.name, code: r.code, area: r.area }, "recent"))}
+        </>
+      )}
+
+      <SectionLabel text="All dealers" />
+      {byName.map((c) => row(c, "all"))}
+    </div>
   );
 }

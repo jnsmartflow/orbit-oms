@@ -247,10 +247,10 @@ export const CURATION: Record<string, V2Curation> = {
   "MULTI PURPOSE THINNER":    { bases: NONE, shades: NONE, variants: NONE },
 };
 
-// (The nine hard-coded "+ More" bases are GONE. "+ More" is no longer a second
-// mechanism with its own invented list — it now runs the real product search,
-// pre-filled with the product's name, so it returns that product's actual
-// other options from the catalog. See ProductDrawer's `onMore`.)
+// (The nine hard-coded "+ More" bases are GONE, and so is the search round-trip
+// that briefly replaced them. "+ More" now expands the chip row in place from
+// `allOptionsFor` — see the drawer's `allOptions` prop for why the round-trip
+// had to go.)
 
 // ── The join ───────────────────────────────────────────────────────────────
 
@@ -409,60 +409,59 @@ export function buildCatalog(products: ApiProduct[]): {
   return { byTile, report };
 }
 
+/** How many option chips a non-tile product shows before "+ More". */
+export const OPTION_CHIP_CAP = 8;
+
 /**
- * Turn ONE searched menu row into something the drawer can open on, with that
- * row's option already selected.
+ * Turn a whole searched PRODUCT into something the drawer can open on.
  *
- * Three cases, and the middle one is the reason this exists:
+ * A tile hands back its curated resolution untouched — searching "gloss" and
+ * tapping its tile must land on the same six shades and four bases, or the
+ * board and the search would teach two different products.
  *
- *  - The product is a TILE and the row's option is already curated -> hand back
- *    the curated resolution untouched. The salesman sees the same short chip
- *    row he sees from the board, with his hit selected.
- *  - The product is a TILE but the option is NOT curated (he searched "Gloss
- *    Cascade Green", one of the 34 shades the curated six do not cover) ->
- *    APPEND that option to the row. It must be visible and selected; showing
- *    the curated six with none of them selected would silently discard what he
- *    actually searched for.
- *  - The product is NOT a tile at all (most of the 143 catalog products) ->
- *    synthesise a one-option resolution from the row itself.
+ * A non-tile (most of the 143 catalog products) gets its options straight from
+ * the payload, ordered by sortOrder — the depot's own order — and capped at
+ * OPTION_CHIP_CAP. The rest are reachable through "+ More", which expands the
+ * row in place using `allOptionsFor` below.
  */
-export function resolveForSearch(
-  row: ApiProduct,
+export function resolveGroup(
+  key: string,
+  rows: ApiProduct[],
+  label: string,
   byTile: Map<string, V2Resolved>,
-): { product: V2Resolved; initialOption: string | null } {
-  const key    = row.product ?? row.subProduct;   // RULE 1, again
-  const tile   = byTile.get(key);
-  const option = row.baseColour;
+): V2Resolved {
+  const tile = byTile.get(key);
+  if (tile) return tile;
 
-  if (!tile) {
-    return {
-      product: {
-        sap: key, label: row.displayName, family: row.family,
-        bases:    option === null ? [] : [{ value: option, row }],
-        shades:   [], variants: [],
-        noOptionRow: option === null ? row : null,
-      },
-      initialOption: option,
-    };
-  }
+  const ordered = [...rows].sort((a, b) => a.sortOrder - b.sortOrder);
+  const single = ordered.length === 1 && ordered[0].baseColour === null;
 
-  if (option === null) return { product: tile, initialOption: null };
+  return {
+    sap: key,
+    label,
+    family: ordered[0]?.family ?? "",
+    bases: single ? [] : ordered
+      .filter((r) => r.baseColour !== null)
+      .slice(0, OPTION_CHIP_CAP)
+      .map((r) => ({ value: r.baseColour as string, row: r })),
+    shades: [],
+    variants: [],
+    noOptionRow: single ? ordered[0] : null,
+  };
+}
 
-  const known =
-    tile.bases.some((o) => o.value === option) ||
-    tile.shades.some((o) => o.value === option) ||
-    tile.variants.some((o) => o.value === option);
-  if (known) return { product: tile, initialOption: option };
-
-  // Append to whichever list the drawer will actually be showing.
-  const extra: V2Option = { value: option, row };
-  if (tile.variants.length > 0) {
-    return { product: { ...tile, variants: [...tile.variants, extra] }, initialOption: option };
-  }
-  if (tile.bases.length === 0 && tile.shades.length > 0) {
-    return { product: { ...tile, shades: [...tile.shades, extra] }, initialOption: option };
-  }
-  return { product: { ...tile, bases: [...tile.bases, extra] }, initialOption: option };
+/**
+ * EVERY option a product has, in catalog order — what "+ More" reveals.
+ *
+ * Passed to the drawer alongside the curated/capped set so the expansion is a
+ * local swap rather than a trip back through search. See the drawer's own note
+ * on why the search round-trip had to go.
+ */
+export function allOptionsFor(rows: ApiProduct[]): V2Option[] {
+  return [...rows]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .filter((r) => r.baseColour !== null)
+    .map((r) => ({ value: r.baseColour as string, row: r }));
 }
 
 // ── Cart ───────────────────────────────────────────────────────────────────

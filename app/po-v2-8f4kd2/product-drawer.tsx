@@ -33,15 +33,24 @@ export default function ProductDrawer({
   initialOption = null,
   onClose,
   onAdd,
-  onMore,
+  allOptions,
 }: {
   product: V2Resolved;
   /** Opened from a search hit: this exact option starts selected. */
   initialOption?: string | null;
   onClose: () => void;
   onAdd: (line: { option: string | null; row: ApiProduct; qtys: Record<string, number> }) => void;
-  /** "+ More" hands the product's name back to the page's product search. */
-  onMore: (query: string) => void;
+  /**
+   * EVERY option this product has, in catalog order. "+ More" swaps the chip
+   * row to this list.
+   *
+   * 🔴 "+ More" USED TO RE-RUN THE SEARCH, PRE-FILLED WITH THE PRODUCT NAME.
+   * That became a DEAD END the moment search started returning one row per
+   * product: the single result was this product, tapping it reopened this
+   * drawer with the same capped chips, and options 9+ were unreachable. It is
+   * now a local expansion — no round trip, no loop.
+   */
+  allOptions?: V2Option[];
 }): React.JSX.Element {
   const hasBases    = product.bases.length > 0;
   const hasShades   = product.shades.length > 0;
@@ -62,14 +71,15 @@ export default function ProductDrawer({
     if (hasShades) return "shade";
     return "base";
   });
-  // ONE selection, whichever row it came from. From the board: top base
-  // pre-selected, shade and variant never. From a search hit: that exact
-  // option, whichever list it lives in — see resolveForSearch, which also
-  // guarantees the option is present in one of the lists.
+  // ONE selection, whichever list it came from. Top base pre-selected; shade
+  // and variant never are, so a shade-only or variant product opens with no
+  // pack rows until the salesman commits to one — correct, because the packs
+  // belong to the ROW and there is no row yet.
   const [selected, setSelected] = useState<string | null>(
     initialOption ?? (hasBases ? (product.bases[0]?.value ?? null) : null),
   );
   const [qtys, setQtys] = useState<Record<string, number>>({});
+  const [expanded, setExpanded] = useState(false);
 
   // True when the chip row currently shows BASES — the only list whose labels
   // are shortened. "BRILLIANT WHITE" is also a SHADE on GVA and Promise
@@ -77,9 +87,14 @@ export default function ProductDrawer({
   const showingBases = !hasVariants && tab === "base";
 
   // Which options are on show right now, and which row that resolves to.
-  const activeList: V2Option[] = hasVariants
+  const curatedList: V2Option[] = hasVariants
     ? product.variants
     : tab === "base" ? product.bases : product.shades;
+  // Expanding replaces the chip row with the product's full option set.
+  const activeList: V2Option[] = expanded && allOptions ? allOptions : curatedList;
+  // "+ More" earns its place only when there is genuinely more to show.
+  const hasMore = !hasVariants && !expanded
+    && !!allOptions && allOptions.length > curatedList.length;
 
   const selectedRow: ApiProduct | null =
     product.noOptionRow ?? activeList.find((o) => o.value === selected)?.row ?? null;
@@ -96,6 +111,7 @@ export default function ProductDrawer({
     setTab(next);
     setSelected(next === "base" ? (product.bases[0]?.value ?? null) : null);
     setQtys({});
+    setExpanded(false);
   }
 
   function selectOption(value: string): void {
@@ -215,10 +231,10 @@ export default function ProductDrawer({
                   ))}
                   {/* + More only where the catalog has more to give — never on
                       a variant row, which is already the complete set. */}
-                  {!hasVariants && (
+                  {hasMore && (
                     <button
                       type="button"
-                      onClick={() => onMore(product.label)}
+                      onClick={() => setExpanded(true)}
                       className="px-3 py-2 text-[10.5px] font-extrabold"
                       style={chipStyle(false, true)}
                     >

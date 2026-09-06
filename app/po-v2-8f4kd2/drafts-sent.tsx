@@ -2,7 +2,10 @@
 
 import { ChevronLeft, X } from "lucide-react";
 import { DIVIDER, INK, RULE } from "./v2-data";
-import { formatSavedAt, formatTime, type V2SavedDraft, type V2SentOrder } from "./v2-storage";
+import {
+  formatSavedAt, formatTime, summaryLine, unitsOf,
+  type V2SavedDraft, type V2SentOrder, type V2Snapshot,
+} from "./v2-storage";
 
 // The two list screens behind the landing screen's bottom nav. Presentational
 // only — every decision (confirm before replacing work, reload as a fresh
@@ -55,14 +58,9 @@ export function DraftsScreen({ drafts, onBack, onOpen, onRemove }: {
                style={{ borderBottom: `1px solid ${DIVIDER}` }}>
             <button
               type="button" onClick={() => onOpen(d)}
-              className="min-w-0 flex-1 py-3 text-left"
+              className="flex min-w-0 flex-1 items-start gap-3 py-3 text-left"
             >
-              <span className="block truncate text-[14.5px] font-semibold" style={{ color: INK }}>
-                {d.label}
-              </span>
-              <span className="block truncate font-mono text-[11px] text-neutral-400">
-                {formatSavedAt(d.savedAt)}
-              </span>
+              <OrderSummary snapshot={d.snapshot} stamp={formatSavedAt(d.savedAt)} />
             </button>
             {/* No confirm on delete, by spec — a draft is cheap to lose and the
                 row is the only thing being removed. Replacing LIVE work is the
@@ -94,20 +92,47 @@ export function SentScreen({ orders, onBack, onOpen }: {
         orders.map((o) => (
           <button
             key={o.id} type="button" onClick={() => onOpen(o)}
-            className="flex w-full items-center gap-3 px-4 py-3 text-left"
+            className="flex w-full items-start gap-3 px-4 py-3 text-left"
             style={{ borderBottom: `1px solid ${DIVIDER}` }}
           >
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14.5px] font-semibold" style={{ color: INK }}>
-                {o.label}
-              </span>
-              <span className="block truncate font-mono text-[11px] text-neutral-400">
-                {formatTime(o.sentAt)}
-              </span>
-            </span>
+            <OrderSummary snapshot={o.snapshot} stamp={formatTime(o.sentAt)} />
           </button>
         ))
       )}
     </ListShell>
+  );
+}
+
+/**
+ * The shared two-line row body for a stored order.
+ *
+ * The old row said only "{dealer} · N lines", which tells a salesman nothing
+ * about which order it is — every row looked alike after a busy morning. What
+ * he recognises an order by is what is IN it, so the second line is the
+ * products themselves.
+ */
+function OrderSummary({ snapshot, stamp }: {
+  snapshot: V2Snapshot; stamp: string;
+}): React.JSX.Element {
+  return (
+    <>
+      {/* min-w-0 lets both lines truncate instead of widening the row. */}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14.5px] font-semibold" style={{ color: INK }}>
+          {snapshot.customer.name}
+        </span>
+        <span className="block truncate text-[12px] text-neutral-400">
+          {summaryLine(snapshot)}
+        </span>
+      </span>
+      <span className="shrink-0 text-right">
+        <span className="block whitespace-nowrap font-mono text-[11px] text-neutral-400">
+          {stamp}
+        </span>
+        <span className="block whitespace-nowrap font-mono text-[11px] text-neutral-400">
+          {unitsOf(snapshot)} units
+        </span>
+      </span>
+    </>
   );
 }
