@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v2.0 · Schema v27.13 · September 2026 · updated 2026-09-06
+# v2.1 · Schema v27.13 · September 2026 · updated 2026-09-06
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -561,6 +561,23 @@ Chandresh's manual override when auto-classification misses a tint requirement.
 
 **UI:** Modal on Tint Manager. Operator types OBD number, picks lines, submits with reason.
 
+🔴 **THERE IS NO BUTTON LABELLED "MANUAL ENTRY", AND THERE HAS NOT BEEN ONE SINCE THE BOARD REBUILD.**
+The modal is `components/tint/manual-tint-entry-modal.tsx`, opened from
+`tint-manager-content.tsx` in **two** places, neither of which says "Manual Entry":
+
+| Entry point | Where | Reads |
+|---|---|---|
+| The **"Add to Tint"** pill, a `+` icon in the board header | `tint-manager-content.tsx:715` | `title="Add OBD to Tint (M)"` |
+| The **`M`** keyboard shortcut | `tint-manager-content.tsx:322-324` | listed in the header's `shortcuts` strip as *"Add OBD to Tint"* |
+
+Both set the same `pullModalOpen` state (`:123`, `:869-873`). **Looking for "Manual Entry" on the
+screen and concluding the modal is unreachable is the expected mistake** — the owner made it on
+2026-09-06 and the flow went unverified for that reason. Derived from the tree 2026-09-06; the
+naming is the rebuild's, not this section's, and §7's own prose is the only place the words "Manual
+Tint Entry" still appear to a reader. Note the API routes keep the old name (`manager/manual-entry`,
+`manager/manual-entry/lookup`, `manager/manual-entry/revert`), so a grep for either name finds only
+half the flow.
+
 **Schema:**
 ```
 manual_tint_entries
@@ -821,17 +838,166 @@ Read-only daily MIS report (no DB writes). Data source-of-truth: `lib/reports/ti
 
 ## 13. Permissions
 
+> ## 🔴 THE MODEL CHANGED ON 2026-09-04, AND TINT CONVERTED ON 2026-09-06
+>
+> **Access comes from `user_page_access`, one row per (user, page key)** — not from a job title and
+> not from `role_permissions`. `CLAUDE_CORE.md §5` owns the model and the `ACCESS_SOURCE` panic
+> switch; §7.14/§7.15 own the schema. **Live value: `user`** (SELECT-verified again 2026-09-06,
+> 1,053 rows).
+>
+> The `role_permissions` INSERT further down is **the FALLBACK, not the access model.** It is what a
+> job title *would* grant, it is what `/admin/access` compares a person against, and it is what the
+> app reads if `ACCESS_SOURCE` is flipped back to `role`. It is reproduced here because a rollback
+> still reads it — **do not delete it, and do not read it as "who can do what today".** To answer
+> that, read the person's `user_page_access` rows or open `/admin/access`.
+
+### 13.1 Page keys
+
 Three TM page keys in `lib/permissions.ts`:
 - `delivery_challans`
 - `shade_master`
 - `ti_report`
 
-`sampling_library` page key is shared with operators — see `CLAUDE_SAMPLING_LIBRARY.md`.
+`sampling_library` is shared with operators — see `CLAUDE_SAMPLING_LIBRARY.md`.
+`removed_orders` is superuser-only.
 
-`removed_orders` page key is admin-only.
+⚠ **The two keys the API routes actually gate on are `tint_manager` and `tint_operator`** (§13.2),
+neither of which is in the list above — that list is the three keys this module *owns*, not the keys
+that decide its access. `delivery_challans` and `ti_report` gate their *screens*; the challan and
+TI-report **APIs** gate on `tint_manager`. Live holders, SELECT-verified 2026-09-06:
 
-`role_permissions` SQL:
+| Key | `canView` | `canEdit` |
+|---|---|---|
+| `tint_manager` | Harsh · Chandresh Kolgha · Prakash | the same three |
+| `tint_operator` | Harsh · Chandresh Kolgha · Deepak Vasava · Chandrasing Valvi | the same four |
+| `delivery_challans` | Harsh · Chandresh Kolgha · Prakash | the same three |
+| `shade_master` | Harsh · Chandresh Kolgha | the same two |
+| `ti_report` | Harsh · Chandresh Kolgha · Prakash | Harsh |
+
+🔴 **`canView` and `canEdit` are the same set on both tint keys — by accident of how the ticks were
+seeded, not by rule.** Since 2026-09-04 an admin sets the two independently, per person, from a
+screen. Every "harmless today" claim about a `canView`-gated write in this module rested on that
+coincidence, which is why the three that existed were closed on 2026-09-06 (§13.3).
+
+### 13.2 The API gates — derived from the tree 2026-09-06, not quoted
+
+`app/api/tint/**` holds **37 route files and 41 exported handlers.** **37 of the 41 now gate on a
+per-user tick**, across 35 files:
+
+| Key | canView | canEdit | Total |
+|---|---|---|---|
+| `tint_manager` | 11 | 12 | **23** |
+| `tint_operator` | 4 | 10 | **14** |
+| **All** | **15** | **22** | **37** |
+
+**The four that do not, and why:**
+
+| Handler | Gate today | Why it is not a tick |
+|---|---|---|
+| `operator/shades` **GET** | `hasRole([TINT_OPERATOR, TINT_MANAGER, ADMIN])` | ⛔ **Deliberately excluded** — see below |
+| `operator/shades` **POST** | same | ⛔ **Deliberately excluded** |
+| `operator/shades/[id]` **PUT** | same | ⛔ **Deliberately excluded** |
+| `operator/skip` **POST** | none — session, then `asg.assignedToId !== userId → 403 "Not your job"` | **Ownership, not permission.** Nothing to convert. Listed so a session that finds no `requireRole` here does not conclude it was missed. |
+
+⛔ **The two shades WRITES were excluded on purpose, and they are retirement candidates rather than
+conversion candidates.** Both write **`shade_master`, deprecated since 2026-05-25** with a standing
+"do not write to it" (§14, `CLAUDE_CORE.md §13`). Wiring a modern tick — or the audit call the fifth
+tint route in the audit gap still needs — into a route that writes a table scheduled for deletion is
+work thrown away if the answer is "retire".
+⚠ If they are ever converted, **the key choice is not cosmetic**: `shade_master`/`canEdit` is held
+by Harsh and Chandresh only, so it would revoke shade writes from **Deepak Vasava and Chandrasing
+Valvi — the two active operators whose screen it is**; `tint_operator`/`canEdit` keeps them. The
+prior question nobody has answered: **does anything still call these two routes?** ROADMAP owns the
+decision. Their siblings `/api/admin/shades` GET and `/api/admin/shades/[id]` PATCH sit on the same
+`requireRole([ADMIN, TINT_MANAGER, TINT_OPERATOR])` array and belong to the same decision.
+
+**What moved on 2026-09-06.** Before that day **24 mutating handlers** here decided access from a
+job title — a `requireRole`/`hasRole` array, or an inline `role === "admin"` bypass standing in
+front of the flag. **22 converted** (the two shades writes are the exception above), in `64f897a9`
+(19) and `74c51869` (3). Reads followed the same day: **13 GET handlers** moved to ticks across
+`64f897a9` (2), `2b25a48f` (1) and `fbbe30bd` (10). There is now **no job-title gate left anywhere
+under `app/api/tint/`** except the two shades files.
+
+**Who that moved — verified against live rows, not inferred:**
+
+- 🔴 **LOST: Operations User**, on 15 of the 22 writes and 10 of the 13 reads. He holds **no tick on
+  either tint key**, and no `role_permissions` row has ever granted him one — he was admitted purely
+  by the spelling of `operations` inside a role array. **Both tint layouts already redirected him**
+  at `/tint/manager` and `/tint/operator`, so this closed a gap that was open rather than opening
+  one; what he lost was reachable only by calling the endpoints directly. Intended.
+- **GAINED: Prakash** (`operation_manager`), on `manual-entry` and `manual-entry/revert`. Those two
+  carried the narrow `[TINT_MANAGER, ADMIN]` where every other manager route also named
+  `OPERATION_MANAGER`. Owner-approved.
+- **GAINED: Harsh** (the superuser), on `start` / `done` / `split/start` / `split/done`.
+  🔴 **`requireRole` has no admin arm** (`lib/rbac.ts`), so those four were redirecting the owner to
+  `/unauthorized`; `checkAnyPermission` carries both superuser arms and admits him. That gap is not
+  tint-specific — an admin-only account is excluded from **any** gate whose array does not spell
+  `admin` (`CLAUDE_CORE.md §13`).
+
+⚠ **The lookup that shipped broken, and the shape of the failure.** `64f897a9` widened
+`manual-entry` POST and did not touch `manual-entry/lookup` GET, which kept the narrow two-role
+array. The modal calls the lookup first (`manual-tint-entry-modal.tsx:150`, then `:188`), so Prakash
+held the write and was refused the read — **manual tint entry was broken for him for part of that
+day**, fixed in `2b25a48f`. It failed **invisibly**: `requireRole` calls `redirect()`, a 307 that
+`fetch` follows to `/unauthorized`; the HTML comes back 200 so `res.ok` is true, `res.json()` then
+throws, and the modal's own catch swallows it into a `console.error` and an empty box. **A companion
+GET must never be narrower than the write it feeds** — the route now says so in a comment. The
+general form of this failure is the silent-403 pattern in `CLAUDE_CORE.md §13`.
+
+### 13.3 `canView` is not write authority — corrected 2026-09-06
+
+`operator/pause`, `operator/resume` and `manager/orders/[id]/remove` gated on **`canView`** while
+writing three rows each. All three now gate on **`canEdit`** (`74c51869`). They changed **nobody** on
+the day — the two holder sets are identical (§13.1) — and that is exactly why they were worth
+closing: one view-only tick would otherwise have handed a bystander the ability to pause a live tint
+job, or to remove an OBD from the board and void its challan.
+
+🔴 **Two code comments asserted the retired model in so many words**, and were corrected in place
+rather than deleted: `remove:26-27` — *"Page access = full action authority on that page (OrbitOMS
+locked model)"* — and the same claim shorter at `pause:48-49`. **That model is retired.** A tick
+answers one action on one page, never a page.
+
+### 13.4 🔴 `canSeeAllOperatorRows` is a FACE branch. It must NEVER become a tick.
+
+```ts
+const canSeeAllOperatorRows = ["operations", "admin"].includes(session!.user.role ?? "");
+...
+where: { orderId, ...(canSeeAllOperatorRows ? {} : { assignedToId: userId }), ... }
+```
+
+It does **not** decide whether the caller may act — the tick above it already did that. It decides
+**whose rows the query is allowed to touch**: an operator is scoped to his own assignments, a
+supervisor sees everyone's. **Nine handlers:** `operator/start` · `done` · `split/start` ·
+`split/done` · `tinter-issue` POST · `tinter-issue/[id]` PATCH · `tinter-issue-b` POST ·
+`tinter-issue-b/[id]` PATCH · `operator/my-orders` GET.
+
+**What breaks if it is converted.** Replace it with `tint_operator`/`canEdit` and every holder of
+that tick — today Chandresh, Deepak and Chandrasing — takes the wide arm and can **start, finish or
+edit any other operator's job.** The one-job-at-a-time rule and the "Assignment not found or not
+assigned to you" 404s all hang off this branch. **It fails OPEN**, not closed — the opposite of how a
+permission mistake usually presents, and the reason it would never surface as a denial anyone
+reports.
+
+🔴 **THE NEAR-MISS THIS IS NAMED AFTER.** It was called **`isOpsOrAdmin`** until `cd0ed055`, and it
+sat in the same eight functions as **`isAdminOrOps`** — *one letter apart, opposite meanings*:
+
+| Variable | Reads | Decides | Convert? |
+|---|---|---|---|
+| `canSeeAllOperatorRows` *(was `isOpsOrAdmin`)* | the **singular** `session.user.role` | **whose rows** the query may touch | 🔴 **NEVER** |
+| `isAdminOrOps` | the **merged** role set | only whether to run the permission check | ✅ a plain bypass — converted 2026-09-06 |
+
+The rename got **its own commit, ahead of the conversion, precisely so the distinction would survive
+the edit** — the conversion changes the lines immediately above and below the FACE one in eight
+files. Do not undo the name for being long. ⚠ It still reads the *singular* primary role while the
+gate above it reads the merged set; that is a separate latent inconsistency, recorded and not fixed.
+
+### 13.5 `role_permissions` SQL — THE FALLBACK, kept for rollback only
+
+Read the red block at the top of §13 before using this. Live access is `user_page_access`.
+
 ```sql
+-- FALLBACK ONLY. This is what a job title WOULD grant if ACCESS_SOURCE were
+-- flipped back to 'role'. It is NOT what the app enforces (live value: 'user').
 INSERT INTO role_permissions ("roleSlug", "pageKey", "canView", "canImport", "canExport", "canEdit", "canDelete")
 VALUES
   ('tint_manager', 'delivery_challans', true, false, false, true, false),
@@ -839,6 +1005,16 @@ VALUES
   ('tint_manager', 'ti_report',         true, false, true,  false, false)
 ON CONFLICT ("roleSlug", "pageKey") DO NOTHING;
 ```
+
+🔴 **Neither tint key has ever had an `operations` row** — not in `role_permissions`, not in the
+ticks. The role that 15 of the 24 converted handlers named by hand was never granted tint access by
+either access system; only the role arrays granted it. That is the whole of why the 2026-09-06
+conversion moved exactly one person.
+
+⚠ **`tint_manager` holds no `tint_operator` grant in the fallback, yet Chandresh Kolgha holds
+`tint_operator` ticks.** Not a fill error — he carries `tint_operator` as a **secondary role** in
+`user_roles`, and the 2026-09-04 fill reproduced the OR-merge across all of a person's roles. A
+reader comparing the two tables column by column will think they disagree. They do not.
 
 Layout uses `buildNavItems()` only.
 
@@ -879,7 +1055,8 @@ Layout uses `buildNavItems()` only.
 - **Pause kebab on Table is pending-stage only.** In Progress and Completed Today sections have no kebab columns. Pause **badge** works everywhere; kebab entry is pending-only. Four other entry points cover the gap.
 - **Static `title=` tooltip on Resume (mobile).** `components/ui/tooltip.tsx` uses hover events. Touch devices won't fire (non-issue today — depot is desktop). If mobile app ever built, touch fallback needed.
 - **Partial-qty done not surfaced anywhere.** `currentProgress` is stored on done but no TM screen reads it. "Short by N tins" badge not built. Decision: deferred. Open question: does challan auto-fill from assigned qty? If yes, partial-done could print wrong qty. Needs verification before partial-done is considered production-safe.
-- **`shade_master` deprecated 2026-05-25.** Sampling Library Phase 4 shipped. Operator screen no longer reads `shade_master`. Table still exists with historical data, scheduled for deletion after retention window. Do not write to it.
+- **`shade_master` deprecated 2026-05-25.** Sampling Library Phase 4 shipped. Operator screen no longer reads `shade_master`. Table still exists with historical data, scheduled for deletion after retention window. Do not write to it. ⚠ **Two routes still write it** — `operator/shades` POST and `operator/shades/[id]` PUT — and they are the *only* job-title gates left under `app/api/tint/**` after the 2026-09-06 conversion. Held out deliberately: retire-or-convert is an owner decision, and the key choice is not cosmetic. `§13.2`.
+- 🔴 **`canSeeAllOperatorRows` is a FACE branch and must never become a tick — `§13.4`.** It was `isOpsOrAdmin` until `cd0ed055`, one letter from `isAdminOrOps`, which means the opposite and *did* convert. Converting the FACE one lets any `tint_operator`/`canEdit` holder finish another operator's job, and it **fails open**, so nobody would report it.
 - **Challan PATCH `prisma.$transaction` landmine** — `app/api/tint/manager/challans/[orderId]/route.ts:527`. The formula-save path is wrapped in `$transaction`. Do not extend this block — add new logic outside it or refactor to sequential awaits as a separate task. Pre-existing.
 - **Challan cell-clear UX bug** — `components/tint/challan-content.tsx:211-213` filters empty strings out of PATCH body. Server has no delete branch. Clearing a cell in the UI does NOT clear the DB row, so a TM can't "unlock" a manually-overridden formula by clearing it. Mitigation if unlock is ever needed: build a proper "Reset to auto" button. (CORE §13 also lists this.)
 - **Tint sampling siteId bug — FIXED 2026-06-01** (commit `df7e61e9`). Mark-Done was writing `sampling_usage_log.siteId = null` since Phase 4 ship. Fixed by passing `orders.customerId` (= ship-to FK) into the writer. Backfill applied via OBD→order link (preferred over name match). Lesson: `orders.customerId` IS the resolved ship-to site FK, NOT the bill-to dealer. The suggestion engine matches on `usage_log.siteId` STRICTLY — null rows are invisible to same-site suggestions.
@@ -905,4 +1082,4 @@ Evidence: done/split routes + challan routes + globals.css read at the call site
 
 ---
 
-*Tint v2.0 · Schema v27.13 · OrbitOMS · updated 2026-09-06 — **§1 rewritten end to end for the board rebuild** (`a0f9378b` → `082eb92e`, all pushed): the 4-column Kanban and its card/table view toggle are gone, replaced by a 344px pending-only rail + ONE operator-grouped table + a 480px detail panel. New subsections cover the 10 columns (SMU short code, Bill To vs Ship To as two real parties), the computed `#` rank and the fact that ORDERS AND SPLITS CARRY SEPARATE SEQUENCES, `lib/tint/assignment-status.ts` as the status-vocabulary owner, the `assigned`-only re-assign rule now enforced server-side with a 400, Send back to Pending, and the new 15s marker. §1.1 states plainly that this screen did NOT become a second UniversalHeader exception — only the operator segment pills were dropped — and points at `CLAUDE_UI.md §6` rather than restating the wiring. §14: the reorder `` landmine is CLOSED, and the two cancel routes are recorded as where that debt now sits; the `SlotSummaryItem` entry is superseded by a larger gap (`slotSummary` is returned and read by nothing). Schema stamp UNCHANGED at v27.13 — the rebuild minted no schema version, and every new payload field reads a column that already existed. Prior, v1.9 (2026-08-04 reconciliation pass, method v1.1) — change log below.*
+*Tint v2.1 · Schema v27.13 · OrbitOMS · updated 2026-09-06 — **§13 rewritten end to end for the user-based access conversion** (`cd0ed055` → `fbbe30bd`, all pushed). The old §13 was nine lines that listed three page keys and reproduced a `role_permissions` INSERT **as if it were the access model**; under `ACCESS_SOURCE = 'user'` (live since 2026-09-04) that table is the FALLBACK a rollback reads, and it is now framed as one and kept, not deleted. What replaced it is derived from the tree rather than quoted: `app/api/tint/**` holds **37 route files and 41 handlers**, and **37 of the 41 gate on a `tint_manager`/`tint_operator` tick** — 23 manager (11 canView + 12 canEdit) and 14 operator (4 + 10). The four that do not are the **three `operator/shades` handlers**, excluded by owner decision because they write the deprecated `shade_master` and are retirement candidates, and **`operator/skip`**, which is ownership-scoped and has nothing to convert. §13.2 names who moved — Operations User lost 15 writes and 10 reads and held no tint tick under either access system; Prakash gained manual-entry; the superuser gained the four operator writes `requireRole`'s missing admin arm had been redirecting him out of — and records the lookup that shipped broken for half a day and **failed silently**, because a 307 into an HTML page is a 200 that `res.json()` throws on. §13.3 records the three `canView`-on-a-write routes moved to `canEdit`, and that **two code comments asserting "page access = full action authority" were corrected in place**. 🔴 §13.4 is new and is the one to read before touching an operator route: **`canSeeAllOperatorRows` is a FACE branch that must NEVER become a tick** — it decides whose rows may be touched, not whether the caller may act, and it fails **open**; it was `isOpsOrAdmin` until `cd0ed055` renamed it, one letter from `isAdminOrOps`, which means the opposite and did convert. §7 gains the answer to the question that left manual tint entry unverified: **there is no button labelled "Manual Entry"** — it is the **"Add to Tint"** pill at `tint-manager-content.tsx:715` and the **`M`** shortcut at `:322`. §14 gains two cross-references. Schema stamp UNCHANGED at v27.13 — the access conversion minted no schema version and touched no column. Prior, v2.0 (2026-09-06): **§1 rewritten end to end for the board rebuild** (`a0f9378b` → `082eb92e`, all pushed): the 4-column Kanban and its card/table view toggle are gone, replaced by a 344px pending-only rail + ONE operator-grouped table + a 480px detail panel. New subsections cover the 10 columns (SMU short code, Bill To vs Ship To as two real parties), the computed `#` rank and the fact that ORDERS AND SPLITS CARRY SEPARATE SEQUENCES, `lib/tint/assignment-status.ts` as the status-vocabulary owner, the `assigned`-only re-assign rule now enforced server-side with a 400, Send back to Pending, and the new 15s marker. §1.1 states plainly that this screen did NOT become a second UniversalHeader exception — only the operator segment pills were dropped — and points at `CLAUDE_UI.md §6` rather than restating the wiring. §14: the reorder `` landmine is CLOSED, and the two cancel routes are recorded as where that debt now sits; the `SlotSummaryItem` entry is superseded by a larger gap (`slotSummary` is returned and read by nothing). Schema stamp UNCHANGED at v27.13 — the rebuild minted no schema version, and every new payload field reads a column that already existed. Prior, v1.9 (2026-08-04 reconciliation pass, method v1.1) — change log below.*
