@@ -8,16 +8,22 @@ import type { PagePermissions } from "@/lib/permissions";
 interface AdminLayoutClientProps {
   userName: string;
   userRole: string;
+  /**
+   * `isSuperuser(session)` from `lib/rbac.ts`, resolved in the server layout.
+   * Passed straight through to AdminSidebar, which uses it to decide menu
+   * visibility — the same question `requireSuperuser` asks at the door.
+   */
+  isSuperuser: boolean;
   allPerms: Record<string, PagePermissions>;
   children: React.ReactNode;
 }
 
-export function AdminLayoutClient({ userName, userRole, allPerms, children }: AdminLayoutClientProps) {
+export function AdminLayoutClient({ userName, userRole, isSuperuser, allPerms, children }: AdminLayoutClientProps) {
   const { isCollapsed } = useSidebar();
 
   return (
     <div style={{ background: "var(--bg)" }}>
-      <AdminSidebar userName={userName} userRole={userRole} allPerms={allPerms} />
+      <AdminSidebar userName={userName} userRole={userRole} isSuperuser={isSuperuser} allPerms={allPerms} />
       <div
         className="h-screen flex flex-col overflow-hidden transition-all duration-200"
         style={{ marginLeft: isCollapsed ? "72px" : "240px" }}

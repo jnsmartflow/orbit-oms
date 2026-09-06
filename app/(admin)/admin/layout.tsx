@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { requireSuperuser } from "@/lib/rbac";
+import { isSuperuser, requireSuperuser } from "@/lib/rbac";
 import { getAllPermissionsForRoles } from "@/lib/permissions";
 import { SidebarProvider } from "@/components/admin/sidebar-provider";
 import { AdminLayoutClient } from "@/components/admin/admin-layout-client";
@@ -26,9 +26,16 @@ export default async function AdminLayout({
   const userName = session!.user.name ?? "Admin";
   const userRole = session!.user.role;
 
+  // The SAME predicate the guard on line 15 just ran. The sidebar's menu filter
+  // used to test `userRole === "admin"` — the singular primary job title — which
+  // is not the question this door asks, so a flag-only superuser was admitted
+  // here and then shown 6 of 28 items. Resolved once, server-side, and threaded
+  // down as a prop (2026-09-06). Local name avoids shadowing the import.
+  const superuser = isSuperuser(session);
+
   return (
     <SidebarProvider>
-      <AdminLayoutClient userName={userName} userRole={userRole} allPerms={allPerms}>
+      <AdminLayoutClient userName={userName} userRole={userRole} isSuperuser={superuser} allPerms={allPerms}>
         {children}
       </AdminLayoutClient>
     </SidebarProvider>

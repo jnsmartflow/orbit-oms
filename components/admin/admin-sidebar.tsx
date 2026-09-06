@@ -147,12 +147,19 @@ function getInitials(name: string): string {
 interface AdminSidebarProps {
   userName: string;
   userRole: string;
+  /**
+   * Resolved by `isSuperuser(session)` in the SERVER layout that mounts this
+   * component — `lib/rbac.ts`, the same helper `requireSuperuser` calls. Passed
+   * as a prop rather than read here: this is a client component with no
+   * session, and a prop keeps it pure with nothing to go stale.
+   */
+  isSuperuser: boolean;
   allPerms: Record<string, PagePermissions>;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function AdminSidebar({ userName, userRole, allPerms }: AdminSidebarProps) {
+export function AdminSidebar({ userName, userRole, isSuperuser, allPerms }: AdminSidebarProps) {
   const pathname                    = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isCollapsed, toggle }     = useSidebar();
@@ -162,12 +169,28 @@ export function AdminSidebar({ userName, userRole, allPerms }: AdminSidebarProps
     return pathname === href || pathname.startsWith(href + "/");
   }
 
+  // THE MENU NOW ASKS THE SAME QUESTION AS THE DOOR (2026-09-06).
+  // Both tests below used to read `userRole === "admin"` — the SINGULAR primary
+  // job title — while the door that admits anyone to /admin has asked
+  // `requireSuperuser(session)` since 2026-09-04. Two different questions about
+  // the same person: a superuser who did not ALSO hold `admin` as their primary
+  // role passed the door and then saw 6 of 28 items, because the 22 keyless
+  // ones hung off a check the door no longer makes.
+  //
+  // `isSuperuser` here is the prop, resolved by `isSuperuser(session)` in the
+  // server layout — `lib/rbac.ts`, the exact function `requireSuperuser` wraps
+  // (flag OR the MERGED role set, never the primary alone). Same function, same
+  // session, so the set of people this menu admits now equals the set the door
+  // admits, by construction rather than by coincidence.
+  //
+  // The `||` branch is UNCHANGED — a keyed item is still shown to anyone
+  // holding that page's canView tick, superuser or not.
   function visibleItems(items: NavItem[]) {
     return items.filter((item) => {
       if (item.pageKey) {
-        return userRole === "admin" || allPerms[item.pageKey]?.canView === true;
+        return isSuperuser || allPerms[item.pageKey]?.canView === true;
       }
-      return userRole === "admin";
+      return isSuperuser;
     });
   }
 

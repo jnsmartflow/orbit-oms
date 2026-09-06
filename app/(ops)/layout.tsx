@@ -6,6 +6,7 @@ import {
 } from "@/lib/permissions";
 import { SidebarProvider } from "@/components/admin/sidebar-provider";
 import { AdminLayoutClient } from "@/components/admin/admin-layout-client";
+import { isSuperuser } from "@/lib/rbac";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -46,9 +47,15 @@ export default async function OpsLayout({
     // branch below. No behaviour changes; the trap does.
     const allPerms = await getAllPermissionsForRoles(roles);
     const userName = session.user.name ?? "Admin";
+    // Menu visibility, resolved by the same helper the /admin door uses
+    // (`lib/rbac.ts` isSuperuser — flag OR the MERGED role set). The sidebar
+    // filter used to test the singular primary job title, which disagreed with
+    // every gate around it (2026-09-06). ⚠ This is the ADMIN branch only — the
+    // ops_admin path below renders RoleSidebar and never reaches AdminSidebar.
+    const superuser = isSuperuser(session);
     return (
       <SidebarProvider>
-        <AdminLayoutClient userName={userName} userRole={primaryRole} allPerms={allPerms}>
+        <AdminLayoutClient userName={userName} userRole={primaryRole} isSuperuser={superuser} allPerms={allPerms}>
           {children}
         </AdminLayoutClient>
       </SidebarProvider>
