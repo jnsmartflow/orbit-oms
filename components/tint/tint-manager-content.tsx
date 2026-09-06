@@ -395,6 +395,49 @@ export function TintManagerContent() {
     void fetchMissingCustomers();
   }, [postAssign, operators, fetchBoard, fetchMissingCustomers]);
 
+  /**
+   * "Base — No Tint" — close a pending bill that needs no tinting at all.
+   *
+   * Same write/toast/refresh shape as handleAssign above, minus the
+   * customer-missing interceptor: /api/tint/manager/base-bypass does not refuse
+   * a customerMissing bill (assign/route.ts does), so intercepting here would
+   * be the UI inventing a rule the server does not enforce. The bypass is
+   * offered only from the two PENDING surfaces (rail card + detail panel's
+   * pending branch); the route 400s on anything past pending_tint_assignment.
+   */
+  const handleBaseBypass = useCallback(async (order: TintOrder) => {
+    setWriteBusy(true);
+    setPanelError(null);
+    let err: string | null = null;
+    try {
+      const res = await fetch("/api/tint/manager/base-bypass", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ orderId: order.id }),
+      });
+      if (!res.ok) {
+        // The route's 400s and its "placeholder worker missing" 500 all carry a
+        // message written to be shown verbatim.
+        const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+        err = typeof body.error === "string"
+          ? body.error
+          : `Base — No Tint failed (HTTP ${res.status})`;
+      }
+    } catch (e) {
+      err = e instanceof Error ? e.message : "Base — No Tint failed";
+    }
+    setWriteBusy(false);
+    if (err) {
+      setPanelError(err);
+      toast.error(err);
+      return;
+    }
+    toast.success(`${order.obdNumber} closed as Base — No Tint`);
+    setPanelKey(null);
+    await fetchBoard();
+    void fetchMissingCustomers();
+  }, [fetchBoard, fetchMissingCustomers]);
+
   // The chain: once the sheet resolves and the refreshed order is no longer
   // customerMissing, replay the interrupted assign.
   useEffect(() => {
@@ -737,6 +780,7 @@ export function TintManagerContent() {
           operators={operators}
           canRemove={canRemoveObd}
           onAssign={(o, opId) => { void handleAssign(o, opId); }}
+          onBaseBypass={(o) => { void handleBaseBypass(o); }}
           onRemove={(o) => setRemoveModalOrder(o)}
           onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
           onResolveMissing={(o) => {
@@ -781,6 +825,7 @@ export function TintManagerContent() {
           onPrev={() => { if (panelIndex > 0) setPanelKey(walk[panelIndex - 1].key); }}
           onNext={() => { if (panelIndex < walk.length - 1) setPanelKey(walk[panelIndex + 1].key); }}
           onAssign={(o, opId) => { void handleAssign(o, opId); }}
+          onBaseBypass={(o) => { void handleBaseBypass(o); }}
           onReassignOrder={(r, opId) => { void handleReassignOrder(r, opId); }}
           onReassignSplit={(r, opId) => { void handleReassignSplit(r, opId); }}
           onSendBack={(r) => { void handleSendBack(r); }}

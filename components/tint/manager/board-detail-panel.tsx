@@ -30,7 +30,7 @@ type Tab = "items" | "details" | "activity";
 export function BoardDetailPanel({
   target, operators, position, busy, error,
   onClose, onPrev, onNext,
-  onAssign, onReassignOrder, onReassignSplit, onSendBack,
+  onAssign, onBaseBypass, onReassignOrder, onReassignSplit, onSendBack,
   onRemove, onResolveMissing, onOpenPauseHistory, onOpenSkipHistory,
   canRemove,
 }: {
@@ -45,6 +45,10 @@ export function BoardDetailPanel({
   onPrev:    () => void;
   onNext:    () => void;
   onAssign:            (order: TintOrder, operatorId: number) => void;
+  /** "Base — No Tint": close a PENDING bill with no operator and no TI. Wired
+   *  into the isPending action row only — a bill someone already holds gets
+   *  Re-assign / Send back instead, and the server refuses it there anyway. */
+  onBaseBypass:        (order: TintOrder) => void;
   onReassignOrder:     (row: BoardRow, operatorId: number) => void;
   onReassignSplit:     (row: BoardRow, operatorId: number) => void;
   /** Cancel the assignment and return the bill to the rail. Whole orders go to
@@ -140,6 +144,14 @@ export function BoardDetailPanel({
               operators={operators}
               onClose={() => setMenuAnchor(null)}
               onPick={(opId) => { setMenuAnchor(null); onAssign(target.order, opId); }}
+              /* Offered on the PENDING branch only. The "Move to" menu further
+                 down (a bill an operator already holds) deliberately does not
+                 pass this — see the prop's own note in board-bits.tsx. */
+              extraAction={{
+                label: "Base — No Tint",
+                hint:  "No tinting needed — close this bill without an operator",
+                onPick: () => { setMenuAnchor(null); onBaseBypass(target.order); },
+              }}
             />
           )}
         </div>

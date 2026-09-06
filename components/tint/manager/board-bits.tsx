@@ -216,7 +216,7 @@ export function pickMenuDirection(roomBelow: number, roomAbove: number, height: 
 }
 
 export function OperatorMenu({
-  anchor, operators, currentId, onPick, onClose, label = "Assign to",
+  anchor, operators, currentId, onPick, onClose, label = "Assign to", extraAction,
 }: {
   /** The trigger element. Position is measured from this, every time. */
   anchor:    HTMLElement | null;
@@ -225,6 +225,25 @@ export function OperatorMenu({
   onPick:    (id: number) => void;
   onClose:   () => void;
   label?:    string;
+  /**
+   * An optional non-operator choice pinned BELOW the operator list, behind a
+   * divider — today only "Base — No Tint".
+   *
+   * ⚠ OPT-IN, AND THAT IS THE WHOLE POINT. This component is shared by three
+   * surfaces and only the PENDING ones may offer a bypass:
+   *   board-rail.tsx            — a bill nobody holds        → passes it
+   *   board-detail-panel.tsx    — the isPending branch        → passes it
+   *   board-detail-panel.tsx    — the "Move to" re-assign menu → does NOT
+   *   board-assign-bar.tsx      — bulk re-assign of held rows  → does NOT
+   * The server agrees: /api/tint/manager/base-bypass 400s on anything outside
+   * `pending_tint_assignment`, so this is the affordance, not the rule. Do not
+   * make it unconditional to "simplify" the prop list.
+   */
+  extraAction?: {
+    label: string;
+    hint?: string;
+    onPick: () => void;
+  };
 }) {
   const popRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<React.CSSProperties>({
@@ -315,6 +334,22 @@ export function OperatorMenu({
           {op.id === currentId && <span className="ml-auto text-[10px]">current</span>}
         </button>
       ))}
+      {extraAction && (
+        <>
+          <div className="border-t border-gray-100" />
+          <button
+            type="button"
+            onClick={extraAction.onPick}
+            title={extraAction.hint}
+            className="w-full flex flex-col items-start gap-0.5 px-2.5 py-2 text-left text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-900"
+          >
+            <span className="text-[12px] font-semibold">{extraAction.label}</span>
+            {extraAction.hint && (
+              <span className="text-[10px] leading-snug text-gray-400">{extraAction.hint}</span>
+            )}
+          </button>
+        </>
+      )}
     </div>,
     document.body,
   );

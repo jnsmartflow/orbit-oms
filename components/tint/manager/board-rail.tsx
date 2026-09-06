@@ -16,11 +16,18 @@ import { OperatorMenu, ageDays, istDateTime } from "./board-bits";
 import type { Operator, TintOrder } from "./types";
 
 export function BoardRail({
-  rail, operators, onAssign, onRemove, onOpenPanel, onResolveMissing, canRemove,
+  rail, operators, onAssign, onBaseBypass, onRemove, onOpenPanel, onResolveMissing, canRemove,
 }: {
   rail:             TintOrder[];
   operators:        Operator[];
   onAssign:         (order: TintOrder, operatorId: number) => void;
+  /**
+   * "Base — No Tint": close the bill with no operator and no TI. Offered HERE
+   * because every card in this rail is by definition still at
+   * `pending_tint_assignment`, which is the only stage the server accepts
+   * (/api/tint/manager/base-bypass 400s outside it).
+   */
+  onBaseBypass:     (order: TintOrder) => void;
   onRemove:         (order: TintOrder) => void;
   onOpenPanel:      (order: TintOrder) => void;
   onResolveMissing: (order: TintOrder) => void;
@@ -155,6 +162,11 @@ export function BoardRail({
                       operators={operators}
                       onClose={() => setMenu(null)}
                       onPick={(opId) => { setMenu(null); onAssign(o, opId); }}
+                      extraAction={{
+                        label: "Base — No Tint",
+                        hint:  "No tinting needed — close this bill without an operator",
+                        onPick: () => { setMenu(null); onBaseBypass(o); },
+                      }}
                     />
                   )}
                 </div>
