@@ -496,6 +496,82 @@ export function shadeRowMode(values: readonly string[]): "colour" | "text" {
   return values.every((v) => shadeHex(v) !== undefined) ? "colour" : "text";
 }
 
+// ── Drawer shape ───────────────────────────────────────────────────────────
+
+export type V2DrawerMode = "single" | "flat" | "grid" | "standard";
+
+/** Every distinct RENDERED pack label a product sells, across all its options. */
+export function packsOf(rows: ApiProduct[]): string[] {
+  const seen = new Set<string>();
+  for (const r of rows) for (const p of r.packs) seen.add(formatPack(p.packCode, p.unit));
+  // Array.from, not spread — the tsconfig target is below ES2015 and a Set
+  // spread does not downlevel (CLAUDE.md §1).
+  return Array.from(seen);
+}
+
+/**
+ * 🔴 THE ONE PLACE THE DRAWER'S SHAPE IS DECIDED. Option count first, then
+ * pack count. Nothing else in v2 may re-derive this.
+ *
+ *   1 option          -> single   : no chips, straight to packs, ANY pack count
+ *   2+ options, 1 pack  -> flat   : every option listed, a stepper on each
+ *   2+ options, 2-3     -> grid   : options down, packs across, stepper per cell
+ *   2+ options, 4+      -> standard: pick an option, then its packs
+ *
+ * ⚠ `single` IS NOT A NEW CODE PATH. The nine one-option products already open
+ * straight to their packs: their curated lists are all empty, so the drawer's
+ * control block never renders (its gate is `hasVariants || activeList.length`)
+ * and `selectedRow` falls through to `noOptionRow`. This mode NAMES that
+ * existing behaviour so the census can report it; it does not re-implement it.
+ * Measured live 2026-09-07: 9 single, 4 flat, 4 grid, 15 standard.
+ */
+export function drawerMode(rows: ApiProduct[]): V2DrawerMode {
+  if (rows.length <= 1) return "single";
+  const packs = packsOf(rows).length;
+  if (packs <= 1) return "flat";
+  if (packs <= 3) return "grid";
+  return "standard";
+}
+
+/**
+ * The base and shade pools behind "+ More", split by the payload's OWN
+ * `productType` rather than by any pattern in the name.
+ *
+ * 🔴 WHY productType AND NOT A NAME RULE. The expansion used to hand the Base
+ * tab every option a product had, shades included — open Gloss on Base, tap
+ * "+ More", and BLACK / MINT GREEN / WILD PURPLE appeared among the bases.
+ * `productType` is populated on all 471 payload rows (BASE_VARIANT 204,
+ * COLOUR 194, PLAIN 73, zero nulls) and splits Gloss cleanly 9/29. A case rule
+ * cannot: Sadolin stores "90 Base" in title case.
+ *
+ * 🔴 EACH POOL IS UNIONED WITH ITS CURATED LIST, and that union is load-
+ * bearing. Three curated SHADES carry productType BASE_VARIANT — Promise
+ * Enamel's CLASSIC WHITE and BRILLIANT WHITE, and GVA's BRILLIANT WHITE. A
+ * bare `productType === "COLOUR"` filter would drop all three from the shade
+ * pool even though the curation deliberately put them there. The union keeps
+ * the payload honest about structure and the curation honest about intent.
+ */
+export function optionPools(
+  rows: ApiProduct[],
+  curated: { bases: readonly V2Option[]; shades: readonly V2Option[] },
+): { all: V2Option[]; bases: V2Option[]; shades: V2Option[] } {
+  const all = allOptionsFor(rows);
+  const curatedBase  = new Set(curated.bases.map((o) => o.value));
+  const curatedShade = new Set(curated.shades.map((o) => o.value));
+
+  const bases: V2Option[]  = [];
+  const shades: V2Option[] = [];
+  for (const opt of all) {
+    const type = opt.row.productType;
+    if (type === "BASE_VARIANT" || curatedBase.has(opt.value)) bases.push(opt);
+    // A value curated as a shade goes to shades even when typed BASE_VARIANT,
+    // so it can appear in BOTH pools. That is correct: on Promise Enamel
+    // BRILLIANT WHITE genuinely is the shade you order.
+    if (type === "COLOUR" || curatedShade.has(opt.value)) shades.push(opt);
+  }
+  return { all, bases, shades };
+}
+
 /** How many option chips a non-tile product shows before "+ More". */
 export const OPTION_CHIP_CAP = 8;
 

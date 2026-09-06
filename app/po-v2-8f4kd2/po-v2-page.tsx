@@ -18,8 +18,8 @@ import {
 } from "./v2-storage";
 import {
   DIVIDER, FAMILIES, INK, MONO_BG, RULE, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, addRecent, allOptionsFor, buildCatalog, formatPack, loadRecents, monogram,
-  packRows, resolveGroup, unitsIn,
+  EMPTY_ORDER, addRecent, buildCatalog, drawerMode, formatPack, loadRecents, monogram,
+  optionPools, packRows, resolveGroup, unitsIn,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
@@ -263,23 +263,17 @@ export default function PoV2Page(): React.JSX.Element {
     ]);
   }
 
-  function addLine(
-    tile: V2Tile,
-    picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
+  /**
+   * Commit every pick from one drawer visit. Flat and grid can return several
+   * — one cart line per option that carries a quantity.
+   */
+  function addLines(
+    sap: string,
+    label: string,
+    picks: { option: string | null; row: ApiProduct; qtys: Record<string, number> }[],
   ): void {
-    commitLine(tile.sap, tile.label, picked);
+    for (const p of picks) commitLine(sap, label, p);
     setOpenTile(null);
-  }
-
-  /** A line added from a search hit rather than a tile. tileSap is the
-   *  resolved product's sap, so a searched line lights up its board tile
-   *  exactly like one added from the board — the badge does not care which
-   *  door the salesman came through. */
-  function addLineFromRow(
-    product: V2Resolved,
-    picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
-  ): void {
-    commitLine(product.sap, product.label, picked);
     setOpenGroup(null);
   }
 
@@ -352,11 +346,16 @@ export default function PoV2Page(): React.JSX.Element {
     ? resolveGroup(openGroup.key, openGroup.rows,
                    tileLabelFor(openGroup.key) ?? openGroup.best.displayName, load.byTile)
     : null;
-  // "+ More" expands to these rather than bouncing back through search.
-  const groupAllOptions = openGroup ? allOptionsFor(openGroup.rows) : undefined;
-  const tileAllOptions = ready && openTile
-    ? allOptionsFor(load.products.filter((p) => (p.product ?? p.subProduct) === openTile.sap))
-    : undefined;
+  // The catalog rows behind whatever is open, and the shape they imply.
+  // drawerMode() in v2-data is the ONE place that decision lives.
+  const openTileRows = ready && openTile
+    ? load.products.filter((p) => (p.product ?? p.subProduct) === openTile.sap)
+    : [];
+  const tileProduct = ready && openTile ? load.byTile.get(openTile.sap) : undefined;
+  const tilePools = tileProduct ? optionPools(openTileRows, tileProduct) : undefined;
+  const tileMode  = openTile ? drawerMode(openTileRows) : undefined;
+  const groupPools = openGroup && groupResolved ? optionPools(openGroup.rows, groupResolved) : undefined;
+  const groupMode  = openGroup ? drawerMode(openGroup.rows) : undefined;
 
   // ── Failure — a plain message and Retry, never a silent empty screen ─────
   if (load.kind === "error") {
@@ -890,8 +889,9 @@ export default function PoV2Page(): React.JSX.Element {
           key={openTile.sap}
           product={openProduct}
           onClose={() => setOpenTile(null)}
-          onAdd={(picked) => addLine(openTile, picked)}
-          allOptions={tileAllOptions}
+          onAdd={(picks) => addLines(openTile.sap, openTile.label, picks)}
+          pools={tilePools}
+          mode={tileMode}
         />
       )}
 
@@ -904,8 +904,9 @@ export default function PoV2Page(): React.JSX.Element {
           key={`group-${openGroup.key}`}
           product={groupResolved}
           onClose={() => setOpenGroup(null)}
-          onAdd={(picked) => addLineFromRow(groupResolved, picked)}
-          allOptions={groupAllOptions}
+          onAdd={(picks) => addLines(groupResolved.sap, groupResolved.label, picks)}
+          pools={groupPools}
+          mode={groupMode}
         />
       )}
     </>
