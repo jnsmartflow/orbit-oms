@@ -63,7 +63,11 @@ export const FAMILIES: readonly V2Family[] = [
       { label: "Gloss",          sap: "GLOSS" },
       { label: "Promise Enamel", sap: "PROMISE ENAMEL" },
       { label: "Super Satin",    sap: "SUPER SATIN" },
-      { label: "M900",           sap: "M900 GLOSS" },
+      // M900 left the board 2026-09-07 and is now reachable by SEARCH ONLY -
+      // a low-volume line was holding a permanent tile. PU Enamel took the
+      // slot; "PU ENAMEL" is its real string, quoted from the live payload,
+      // where menu.product and menu.subProduct are both exactly that.
+      { label: "PU Enamel",      sap: "PU ENAMEL" },
     ],
   },
   {
@@ -90,8 +94,14 @@ export const FAMILIES: readonly V2Family[] = [
     name: "Exterior",
     tint: "#EAF4E8",
     tiles: [
-      { label: "Dustproof",  sap: "WS PROTECT DUSTPROOF" },
-      { label: "Hi-Sheen",   sap: "WS PROTECT HI-SHEEN" },
+      // 🔴 THESE TWO LABELS ARE DISPLAY ONLY. `sap` is the catalog join key and
+      // is untouched, and the email line is built by emailLineLabel() off the
+      // menu ROW (product / baseColour / subProduct) - never off `label`. A
+      // tile rename therefore cannot reach the wire, and it must not: the
+      // PowerShell intake parser reads that product string, and a changed one
+      // would break order intake silently.
+      { label: "Protect Dustproof", sap: "WS PROTECT DUSTPROOF" },
+      { label: "Protect Hi-Sheen",  sap: "WS PROTECT HI-SHEEN" },
       { label: "Max",        sap: "WS MAX" },
       { label: "Powerflexx", sap: "WS POWERFLEXX" },
     ],
@@ -193,7 +203,7 @@ export function stepForLabel(label: string): number {
 }
 
 // ── Curated option lists ───────────────────────────────────────────────────
-// 🔴 THIS IS NOT THE CATALOGUE. It is the TOP NINE per tab, ranked by what was
+// 🔴 THIS IS NOT THE CATALOGUE. It is EVERY option a tile has, IN RANK ORDER, ranked by what was
 // actually ordered in the 90 days to 2026-09-07 — mail-order line frequency
 // first (what the salesman ASKED for), SAP dispatch frequency breaking ties,
 // catalog sortOrder last for anything never ordered. Everything else in the
@@ -235,38 +245,38 @@ export type V2Curation = {
 const NONE: readonly string[] = [];
 
 export const CURATION: Record<string, V2Curation> = {
-  "GLOSS":                     { bases: ["90 BASE", "BRILLIANT WHITE", "92 BASE", "93 BASE", "94 BASE", "GREEN BASE"], shades: ["BLACK", "DARK BROWN", "GOLDEN BROWN", "SMOKE GREY", "DA GREY", "GOLDEN YELLOW", "PO RED", "PHIROZA", "DEEP ORANGE"], variants: NONE, defaultTab: "shade" },
+  "GLOSS":                     { bases: ["90 BASE", "BRILLIANT WHITE", "92 BASE", "93 BASE", "94 BASE", "GREEN BASE"], shades: ["BLACK", "DARK BROWN", "GOLDEN BROWN", "SMOKE GREY", "DA GREY", "GOLDEN YELLOW", "PO RED", "PHIROZA", "DEEP ORANGE", "BUS GREEN", "SIGNAL RED", "OXFORD BLUE", "SAND STONE", "ROYAL IVORY", "LEAF BROWN", "SKY BLUE", "LIGHT GREY", "CHERRY", "DAWN", "MINT GREEN", "CLASSIC WHITE", "MIDDLE BUFF", "DEEP GREEN", "BLAZING WHITE", "TRUCK BROWN", "WILD PURPLE", "AQUAMARINE", "MAHOGANY", "OFF WHITE", "PALE CREAM", "CASCADE GREEN", "OPALINE GREEN"], variants: NONE, defaultTab: "shade" },
   "PROMISE ENAMEL":            { bases: ["BRILLIANT WHITE"], shades: ["CLASSIC WHITE", "BLACK", "SMOKE GREY", "PHIROZA BLUE", "PO RED", "GOLDEN YELLOW", "GOLDEN BROWN", "DARK BROWN", "BUS GREEN"], variants: NONE, defaultTab: "shade" },
   "SUPER SATIN":               { bases: ["BRILLIANT WHITE", "90 BASE", "93 BASE", "92 BASE", "94 BASE", "96 BASE", "97 BASE"], shades: ["BLACK", "BROWN", "RICH BROWN", "MAHOGANY", "SPECIAL TEAK", "TEAK", "TIMBER GOLDEN BROWN"], variants: NONE, defaultTab: "base" },
-  "M900 GLOSS":                { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "94 BASE"], shades: ["SMOKE GREY", "BLACK", "GOLDEN YELLOW", "PHIROZA BLUE", "DARK BROWN", "PO RED", "GOLDEN BROWN", "BUS GREEN"], variants: NONE },
+  "PU ENAMEL":                 { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "94 BASE"], shades: ["BLACK", "SMOKE GREY", "DARK BROWN", "GOLDEN BROWN", "PHIROZA"], variants: NONE, defaultTab: "shade" },
   "SATIN STAY BRIGHT":         { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE"], shades: ["WALNUT", "BLACK"], variants: NONE, defaultTab: "base" },
   "SUPERCOVER":                { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "96 BASE", "95 BASE", "97 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
   "VT PEARL GLO":              { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE", "PASTEL BASE"], shades: ["RARE PEARL COPPER", "RARE PEARL GREEN"], variants: NONE, defaultTab: "base" },
   "VT PLATINUM GLO":           { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
-  "PROMISE SMARTCHOICE":       { bases: NONE, shades: NONE, variants: ["Interior", "Acrylic Distemper", "Exterior", "Int Primer", "Ext Primer"] },
-  "PROMISE PRIMER":            { bases: NONE, shades: NONE, variants: ["Freedom 2in1 Primer", "2in1 Primer", "Promise Primer"] },
+  "PROMISE SMARTCHOICE":       { bases: NONE, shades: NONE, variants: ["Interior", "Acrylic Distemper", "Exterior", "Int Primer", "Ext Primer"], defaultTab: "base" },
+  "PROMISE PRIMER":            { bases: NONE, shades: NONE, variants: ["Freedom 2in1 Primer", "2in1 Primer", "Promise Primer"], defaultTab: "base" },
   "PROMISE INTERIOR":          { bases: ["BRILLIANT WHITE", "90 BASE", "93 BASE", "92 BASE", "94 BASE", "97 BASE", "96 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
   "PROMISE EXTERIOR":          { bases: ["BRILLIANT WHITE", "93 BASE", "90 BASE", "92 BASE", "94 BASE", "96 BASE", "98 BASE", "95 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
-  "WS PROTECT DUSTPROOF":      { bases: ["BRILLIANT WHITE", "92 BASE", "93 BASE", "90 BASE", "94 BASE", "97 BASE", "96 BASE", "95 BASE", "98 BASE"], shades: ["TERACOTTA", "SIGNAL RED", "PO RED", "SUNRISE", "ELECTRIC BLUE PLUS"], variants: NONE, defaultTab: "base" },
+  "WS PROTECT DUSTPROOF":      { bases: ["BRILLIANT WHITE", "92 BASE", "93 BASE", "90 BASE", "94 BASE", "97 BASE", "96 BASE", "95 BASE", "98 BASE", "99 BASE"], shades: ["TERACOTTA", "SIGNAL RED", "PO RED", "SUNRISE", "ELECTRIC BLUE PLUS"], variants: NONE, defaultTab: "base" },
   "WS PROTECT HI-SHEEN":       { bases: ["93 BASE", "BRILLIANT WHITE", "92 BASE", "90 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
   "WS MAX":                    { bases: ["92 BASE", "90 BASE", "93 BASE", "BRILLIANT WHITE", "94 BASE", "97 BASE", "96 BASE", "95 BASE", "98 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
   "WS POWERFLEXX":             { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE", "98 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
-  "CEMENT PRIMER SB":          { bases: NONE, shades: NONE, variants: NONE },
-  "ZINC YELLOW METAL PRIMER":  { bases: NONE, shades: NONE, variants: NONE },
-  "RED OXIDE METAL PRIMER":    { bases: NONE, shades: NONE, variants: NONE },
-  "EXTERIOR ACRYLIC PRIMER":   { bases: NONE, shades: NONE, variants: NONE },
-  "ACOTONE":                   { bases: NONE, shades: ["NO1", "XY1", "WH1", "YE1", "XR1", "RE1", "OR1", "MA1", "BU1"], variants: NONE },
-  "UNIVERSAL STAINER":         { bases: NONE, shades: ["FAST VIOLET", "BLACK", "YELLOW OXIDE", "FAST RED", "BURNT SIENNA", "FAST BLUE", "FAST YELLOW", "FAST ORANGE", "FAST GREEN"], variants: NONE, defaultTab: "shade" },
-  "MACHINE TINTER":            { bases: NONE, shades: ["WHITE", "YOX", "OXR", "TBL", "LFY", "FFR", "BLACK", "MAG", "GRN"], variants: NONE },
-  "GVA":                       { bases: ["BRILLIANT WHITE"], shades: ["BLACK", "YELLOW OXIDE", "ORGANIC ORANGE", "ORGANIC LEMON YELLOW", "BLUE", "RED OXIDE", "ORGANIC MIDDLE YELLOW", "ORGANIC VIOLET", "ORGANIC RED VIOLET"], variants: NONE },
-  "DAMP PROTECT 2IN1":         { bases: NONE, shades: NONE, variants: NONE },
-  "ROOF COAT WHITE":           { bases: NONE, shades: NONE, variants: NONE },
-  "CRACKFILLER 5MM":           { bases: NONE, shades: NONE, variants: NONE },
-  "DAMP PROTECT BASECOAT":     { bases: NONE, shades: NONE, variants: NONE },
+  "CEMENT PRIMER SB":          { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
+  "ZINC YELLOW METAL PRIMER":  { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
+  "RED OXIDE METAL PRIMER":    { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
+  "EXTERIOR ACRYLIC PRIMER":   { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
+  "ACOTONE":                   { bases: NONE, shades: ["NO1", "XY1", "WH1", "YE1", "XR1", "RE1", "OR1", "MA1", "BU1", "GR1", "BU2", "YE2", "NO2", "RE2"], variants: NONE, defaultTab: "shade" },
+  "UNIVERSAL STAINER":         { bases: NONE, shades: ["FAST VIOLET", "BLACK", "YELLOW OXIDE", "FAST RED", "BURNT SIENNA", "FAST BLUE", "FAST YELLOW", "FAST ORANGE", "FAST GREEN", "FASTYELLOWGREEN"], variants: NONE, defaultTab: "shade" },
+  "MACHINE TINTER":            { bases: NONE, shades: ["WHITE", "YOX", "OXR", "TBL", "LFY", "FFR", "BLACK", "MAG", "GRN"], variants: NONE, defaultTab: "shade" },
+  "GVA":                       { bases: ["BRILLIANT WHITE"], shades: ["BLACK", "YELLOW OXIDE", "ORGANIC ORANGE", "ORGANIC LEMON YELLOW", "BLUE", "RED OXIDE", "ORGANIC MIDDLE YELLOW", "ORGANIC VIOLET", "ORGANIC RED VIOLET", "FAST RED", "GREEN"], variants: NONE, defaultTab: "base" },
+  "DAMP PROTECT 2IN1":         { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
+  "ROOF COAT WHITE":           { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
+  "CRACKFILLER 5MM":           { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
+  "DAMP PROTECT BASECOAT":     { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
   "2K PU MATT":                { bases: ["90 Base", "93 Base"], shades: ["Int Clear", "Opaque White", "Ext Clear"], variants: NONE, defaultTab: "base" },
   "PU PRIME MATT":             { bases: ["90 Base", "93 Base"], shades: ["Clear", "White"], variants: NONE, defaultTab: "base" },
   "PU PRIME SEALER":           { bases: NONE, shades: ["White", "Clear"], variants: NONE, defaultTab: "shade" },
-  "MULTI PURPOSE THINNER":     { bases: NONE, shades: NONE, variants: NONE },
+  "MULTI PURPOSE THINNER":     { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
 };
 
 // (The nine hard-coded "+ More" bases are GONE, and so is the search round-trip
@@ -324,6 +334,12 @@ export type V2Resolved = {
   noOptionRow: ApiProduct | null;
   /** Which tab to open on — from CURATION, generated off the 90-day ranking. */
   defaultTab: "base" | "shade";
+  /**
+   * True for the 32 board tiles, whose lists are RANKED and split base/shade.
+   * False for a searched non-tile, whose single list is raw catalog order and
+   * is neither — chipLimit() reads this to know which cut applies.
+   */
+  curated: boolean;
 };
 
 /** What the Task-5 gate found. Reported, never papered over. */
@@ -363,7 +379,7 @@ export function buildCatalog(products: ApiProduct[]): {
         report.zeroRowTiles.push(tile.label);
         byTile.set(tile.sap, {
           sap: tile.sap, label: tile.label, family: family.name,
-          bases: [], shades: [], variants: [], noOptionRow: null, defaultTab: "base",
+          bases: [], shades: [], variants: [], noOptionRow: null, defaultTab: "base", curated: true,
         });
         continue;
       }
@@ -427,6 +443,7 @@ export function buildCatalog(products: ApiProduct[]): {
         variants: resolve(curation.variants),
         noOptionRow,
         defaultTab: curation.defaultTab ?? "base",
+        curated: true,
       });
     }
   }
@@ -480,6 +497,25 @@ const SHADE_HEX: Record<string, string> = {
   "ORGANIC LEMON YELLOW":  "#EFD73B",
   "ORGANIC MIDDLE YELLOW": "#F0B71C",
   "BLUE":                  "#1F4FA8",
+
+  // Added 2026-09-07, each one approved by name before it was written. PHIROZA
+  // reuses PHIROZA BLUE's exact value rather than a near-miss: firoza IS
+  // turquoise, and two hexes a shade apart on the same colour read as a bug.
+  "PHIROZA":               "#1B8A9E",
+  "DEEP ORANGE":           "#D2540B",
+  "MAHOGANY":              "#6E2C1F",
+  "TEAK":                  "#8B5A2B",
+  "ELECTRIC BLUE PLUS":    "#1560BD",
+  "ORGANIC RED VIOLET":    "#9B3B7A",
+
+  // 🔴 CLEAR / INT CLEAR / EXT CLEAR ARE PERMANENTLY ABSENT - DO NOT "FIX" THIS.
+  // They are TRANSPARENT products. There is no colour to show, so a swatch
+  // would be a lie; 2K Matt, Prime Matt and Prime Sealer stay text chips.
+  //
+  // Also refused, for the same reason a wrong square is worse than a word:
+  // SUNRISE, SPECIAL TEAK, TIMBER GOLDEN BROWN, RARE PEARL COPPER and RARE
+  // PEARL GREEN (metallics a flat fill misrepresents), plus every Acotone
+  // (NO1, XY1...) and Machine Tinter (YOX, TBL...) colorant CODE.
 };
 
 /** The swatch for a shade name, or undefined when it has none. Case-insensitive
@@ -601,8 +637,29 @@ export function optionPools(
   return { all, bases, shades };
 }
 
-/** How many option chips a non-tile product shows before "+ More". */
-export const OPTION_CHIP_CAP = 8;
+/**
+ * 🔴 HOW MANY CHIPS A ROW SHOWS BEFORE "+ More" - THE ONLY PLACE THIS IS DECIDED.
+ * Deliberately a function in the data file and not a .slice() in the JSX, so
+ * the rule can be read, argued with and changed in one place.
+ *
+ *   base           5 or fewer -> all;  otherwise the top 4
+ *   shade/variant  10 or fewer -> all; otherwise the top 9
+ *   mixed          a non-tile product's single undifferentiated list; as shade
+ *
+ * The "or fewer" arms exist for one reason: A SINGLE OPTION MUST NEVER HIDE
+ * BEHIND "+ More". Cutting a 5-long base list to 4 buys nothing and costs a tap
+ * to reach the fifth, and it is why Uni Stainer's ten shades render flat with
+ * no expander at all. Bases are cut harder than shades because base names are
+ * interchangeable ("92", "93", "94") - the fifth one down is not what he came
+ * for, whereas the ninth shade might be.
+ *
+ * The list handed in is already RANKED by 90-day order frequency (see CURATION),
+ * so "the top N" is literally the first N.
+ */
+export function chipLimit(kind: "base" | "shade" | "variant" | "mixed", total: number): number {
+  if (kind === "base") return total <= 5 ? total : 4;
+  return total <= 10 ? total : 9;
+}
 
 /**
  * Turn a whole searched PRODUCT into something the drawer can open on.
@@ -612,9 +669,9 @@ export const OPTION_CHIP_CAP = 8;
  * board and the search would teach two different products.
  *
  * A non-tile (most of the 143 catalog products) gets its options straight from
- * the payload, ordered by sortOrder — the depot's own order — and capped at
- * OPTION_CHIP_CAP. The rest are reachable through "+ More", which expands the
- * row in place using `allOptionsFor` below.
+ * the payload, ordered by sortOrder — the depot's own order — IN FULL. It is not cut here:
+ * chipLimit() decides how many show, so there is one cut and not two that can
+ * disagree. "+ More" expands the row in place using `allOptionsFor` below.
  */
 export function resolveGroup(
   key: string,
@@ -634,12 +691,12 @@ export function resolveGroup(
     family: ordered[0]?.family ?? "",
     bases: single ? [] : ordered
       .filter((r) => r.baseColour !== null)
-      .slice(0, OPTION_CHIP_CAP)
       .map((r) => ({ value: r.baseColour as string, row: r })),
     shades: [],
     variants: [],
     noOptionRow: single ? ordered[0] : null,
     defaultTab: "base",
+    curated: false,
   };
 }
 

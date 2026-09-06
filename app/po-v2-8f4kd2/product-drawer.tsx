@@ -7,7 +7,8 @@ import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
   INK, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
-  baseChipLabel, chipStyle, formatPack, isLightHex, packsOf, shadeHex, shadeRowMode,
+  baseChipLabel, chipLimit, chipStyle, formatPack, isLightHex, packsOf, shadeHex,
+  shadeRowMode,
   stepForLabel, unitsIn,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
 } from "./v2-data";
@@ -117,13 +118,21 @@ export default function ProductDrawer({
   // one — never a half-colour, half-code row. Bases and variants are always
   // text: "90" and "Int Primer" are not colours.
   const showingShades = !hasVariants && tab === "shade";
-  const colourRow = showingShades && !expanded
-    && shadeRowMode(product.shades.map((o) => o.value)) === "colour";
 
   // Which options are on show right now, and which row that resolves to.
-  const curatedList: V2Option[] = hasVariants
+  //
+  // 🔴 THE LIST IS RANKED AND WHOLE; chipLimit() DECIDES HOW MUCH OF IT SHOWS.
+  // CURATION used to hold a frozen top nine and the drawer showed all of it,
+  // which meant the cut lived in the data and could not tell 10 options from
+  // 11 - so Uni Stainer hid its tenth shade behind an expander that revealed
+  // exactly one chip. The arrays now carry every option in rank order and the
+  // single cut happens here, in one helper that both tabs and the searched
+  // non-tile path share.
+  const fullList: V2Option[] = hasVariants
     ? product.variants
     : tab === "base" ? product.bases : product.shades;
+  const chipKind = hasVariants ? "variant" : product.curated ? tab : "mixed";
+  const curatedList: V2Option[] = fullList.slice(0, chipLimit(chipKind, fullList.length));
   // 🔴 THE EXPANSION IS FILTERED BY TAB. It used to swap in every option the
   // product had, so expanding Gloss on the BASE tab showed BLACK, MINT GREEN
   // and WILD PURPLE among the bases. Each tab now expands into its own pool.
@@ -166,6 +175,18 @@ export default function ProductDrawer({
   const activeList: V2Option[] = selectedOption && !shownList.some((o) => o.value === selected)
     ? [selectedOption, ...shownList]
     : shownList;
+
+  // Colour swatches only on the SHADE row, and only when EVERY chip on it has
+  // a hex - never a half-colour, half-code row. Bases and variants are always
+  // text: "90" and "Int Primer" are not colours.
+  //
+  // Judged over activeList, the chips actually rendered, and not over the
+  // product's whole shade pool: Gloss's full list runs to 29 names of which a
+  // dozen have no hex, so pooling would drop the top nine back to text even
+  // though all nine are mapped. It also guarantees the pinned selection above
+  // has a hex before ShadeSwatch is handed one.
+  const colourRow = showingShades && !expanded
+    && shadeRowMode(activeList.map((o) => o.value)) === "colour";
 
   const selectedRow: ApiProduct | null =
     product.noOptionRow ?? selectedOption?.row ?? null;
@@ -297,7 +318,7 @@ export default function ProductDrawer({
   );
 
   return (
-    <V2Sheet onClose={onClose} footer={footer}>
+    <V2Sheet onClose={onClose} footer={footer} fixedHeight>
         {/* ── HEADER ────────────────────────────────────────────────────── */}
         <div className="flex shrink-0 items-start gap-3 px-4 pt-1.5 pb-3">
           <div className="min-w-0 flex-1">
@@ -541,9 +562,17 @@ function ShadeSwatch({ name, hex, selected, onSelect }: {
  * 2+ options, ONE pack. Every option on screen at once with its own stepper —
  * no option-selection step, no pack step, one screen.
  *
- * Applies to M900 (20L), Acotone, Machine Tinter and GVA (1L each). M900's 12
- * rows overflow the 88dvh cap and scroll VERTICALLY inside the sheet, which is
- * expected: only horizontal scroll is banned.
+ * Applies to the three flat TILES — Acotone (14 rows), Machine Tinter (9) and
+ * GVA (12), 1L each — and to M900 (20L, 12 rows), which lost its tile on
+ * 2026-09-07 and now reaches this same body through SEARCH. Fourteen rows
+ * overflow the sheet and scroll VERTICALLY inside it, which is expected: only
+ * horizontal scroll is banned.
+ *
+ * The swatch here is PER ROW, not the all-or-nothing rule the chip row uses —
+ * a name with a hex gets one and a name without gets none. That is why Acotone
+ * shows fourteen clean text rows (no code decodes) while Machine Tinter shows
+ * two swatches among nine (WHITE and BLACK decode, the seven colorant codes do
+ * not). See the SHADE_HEX note in v2-data for why the codes stay unmapped.
  *
  * The pack size is not repeated per row — it is stated once in the header,
  * because repeating "1L" fourteen times is noise, not information.
