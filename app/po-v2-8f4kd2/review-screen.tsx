@@ -59,7 +59,7 @@ const MARKER_CHOICES: { label: string; value: V2Marker }[] = [
 
 export default function ReviewScreen({
   dealer, shipTo, lines, order,
-  onBack, onEdit, onRemoveLine, onOrderChange, onOpenShipTo, onSend,
+  onBack, onEdit, onRemoveLine, onOrderChange, onOpenShipTo, onSend, onSaveDraft,
 }: {
   dealer: ApiCustomer;
   /** NULL means "same as billing" — the state email.ts omits the Ship To line for. */
@@ -72,6 +72,7 @@ export default function ReviewScreen({
   onOrderChange: (next: V2Order) => void;
   onOpenShipTo: () => void;
   onSend: () => void;
+  onSaveDraft: () => void;
 }): React.JSX.Element {
   const totalUnits = lines.reduce((sum, l) => sum + unitsIn(l.qtys), 0);
   const shipElsewhere = shipTo !== null && shipTo.code !== dealer.code;
@@ -89,9 +90,17 @@ export default function ReviewScreen({
         >
           <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
         </button>
-        <h1 className="text-[17px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
+        <h1 className="min-w-0 flex-1 truncate text-[17px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
           Review order
         </h1>
+        {/* A generated label, never typed — the salesman is mid-order, not
+            mid-filing. */}
+        <button
+          type="button" onClick={onSaveDraft}
+          className="shrink-0 pr-3 text-[13.5px] font-extrabold" style={{ color: VIOLET }}
+        >
+          Save draft
+        </button>
       </header>
 
       {/* ── DEALER ───────────────────────────────────────────────────────── */}

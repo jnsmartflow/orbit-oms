@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckCircle2, ChevronRight, Eraser, FileText, Home, MapPin, Send, Users, X } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet from "./v2-sheet";
@@ -8,27 +8,34 @@ import { CustomerListBody, CustomerSearchInput } from "./customer-list";
 import { MIN_QUERY, ProductResults, ProductSearchInput } from "./product-search";
 import ReviewScreen from "./review-screen";
 import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
+import { DraftsScreen, SentScreen } from "./drafts-sent";
+import {
+  addSentOrder, clearLiveDraft, labelFor, loadLiveDraft, loadSavedDrafts,
+  loadSentOrders, newDraftId, newSentId, removeSavedDraft, formatSavedAt, formatTime,
+  saveLiveDraft, snapshotOf, upsertSavedDraft,
+  type V2SavedDraft, type V2SentOrder, type V2Snapshot,
+} from "./v2-storage";
 import {
   DIVIDER, FAMILIES, INK, RULE, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, addRecent, buildCatalog, formatPack, loadRecents, resolveForSearch, unitsIn,
+  EMPTY_ORDER, addRecent, buildCatalog, formatPack, loadRecents, packString, resolveForSearch, unitsIn,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2CartLine, type V2Order, type V2Recent, type V2Resolved, type V2Tile,
 } from "./v2-data";
 
-// Hidden v2 salesman order page — LANDING + BOARD + REVIEW, three screens in
-// one route.
+// Hidden v2 salesman order page — the whole app, on one route.
 //
-// 🔴 CONTAINMENT — imports its own siblings and node_modules only. Nothing
-// from lib/ or app/po/. Every colour is an inline style, so globals.css and
-// tailwind.config.ts stay untouched.
+// 🔴 CONTAINMENT — imports its own siblings, node_modules, and (the one
+// documented exception) lib/place-order's email + ranking helpers, read-only.
+// Nothing outside app/po-v2-8f4kd2/ is modified. Every colour is an inline
+// style, so globals.css and tailwind.config.ts stay untouched.
 //
-// THREE SCREENS, ONE URL. Dealer list, board and review are switched by
-// state, not by routing: /po-v2-8f4kd2 is the whole app. That keeps the
-// fetched catalog, the cart and the order fields alive across every switch
-// with no store and no reload.
+// SIX SCREENS, ONE URL: dealer list, board, review, sent-confirmation, saved
+// drafts, sent-today. All switched by state, not routing, so the fetched
+// catalog and the order survive every switch with no store and no reload.
 //
-// Cart is REACT STATE ONLY — no localStorage (recents are the one exception,
-// under v2's own key), no email.
+// PERSISTENCE lives in ./v2-storage under po2_* keys ONLY. v2 never touches a
+// po_* or orbitoms_* key — sharing a slot with /po would mean two independent
+// order books silently eating each other's drafts.
 //
 // NO HORIZONTAL SCROLL, met structurally rather than with an overflow-x
 // crutch: four equal `1fr` tracks, `min-w-0` on grid/flex children (they
@@ -51,8 +58,8 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
 
-type Screen = "customers" | "order" | "review" | "sent";
-type Sheet  = null | "switch" | "cancel" | "shipto";
+type Screen = "customers" | "order" | "review" | "sent" | "drafts" | "sentList";
+type Sheet  = null | "switch" | "cancel" | "shipto" | "replace" | "summary";
 
 export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
@@ -71,6 +78,19 @@ export default function PoV2Page(): React.JSX.Element {
   // Snapshot of what was SENT. The cart is cleared after the mailto, so the
   // Sent screen cannot read its counts back off live state.
   const [sent, setSent]       = useState<{ dealer: ApiCustomer; lines: number; units: number } | null>(null);
+  const [savedDrafts, setSavedDrafts] = useState<V2SavedDraft[]>([]);
+  const [sentOrders, setSentOrders]   = useState<V2SentOrder[]>([]);
+  // The draft a confirm sheet is about to replace live work with.
+  const [pendingDraft, setPendingDraft] = useState<V2SavedDraft | null>(null);
+  // The sent order whose read-only summary is open.
+  const [openSent, setOpenSent]         = useState<V2SentOrder | null>(null);
+  // Set once the live draft has been read, so the debounced writer below
+  // cannot fire (and clear the key) before the restore has had its chance.
+  const [hydrated, setHydrated] = useState(false);
+  const restoredRef = useRef(false);
+  // The id a reopened draft was saved under, so re-saving upserts in place.
+  const openDraftIdRef = useRef<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoad({ kind: "loading" });
@@ -95,14 +115,59 @@ export default function PoV2Page(): React.JSX.Element {
         console.warn("[po-v2] catalog gate", report);
       }
       setLoad({ kind: "ready", customers: data.customers ?? [], products: data.products, byTile });
+
+      // Restore the live draft ONCE, and only after the payload lands — the
+      // stored shipToCode has to be re-resolved against the fresh dealer list
+      // rather than trusting a stale copy. Guarded by a ref so a Retry does
+      // not clobber whatever the salesman has typed since.
+      if (!restoredRef.current) {
+        restoredRef.current = true;
+        const draft = loadLiveDraft();
+        if (draft) applySnapshot(draft, data.customers ?? []);
+        setHydrated(true);
+      }
     } catch (err) {
       setLoad({ kind: "error", message: err instanceof Error ? err.message : "Could not load the catalog" });
     }
   }, []);
 
   useEffect(() => { void fetchData(); }, [fetchData]);
-  // Client-only read, so the server render and the first client render agree.
-  useEffect(() => { setRecents(loadRecents()); }, []);
+  // Client-only reads, so the server render and the first client render agree.
+  useEffect(() => {
+    setRecents(loadRecents());
+    setSavedDrafts(loadSavedDrafts());
+    setSentOrders(loadSentOrders());   // prunes to today+yesterday IST on read
+  }, []);
+
+  // Brief confirmation, self-dismissing. Cleared on unmount so a pending
+  // timer cannot fire into a torn-down tree.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 1800);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  /**
+   * The live draft, written on a DEBOUNCE.
+   *
+   * 400ms, because this effect depends on `order` and the notes field is a
+   * textarea — an undebounced write would hit localStorage on every keystroke,
+   * which is a synchronous main-thread write on a phone.
+   *
+   * An order with no lines CLEARS the key rather than storing an empty shell:
+   * there is nothing to restore, and a stored dealer with no items would
+   * resurrect an order the salesman had already walked away from. That also
+   * makes Send / Clear items / Start over clear the key for free, since all
+   * three empty `lines`.
+   */
+  useEffect(() => {
+    if (!hydrated) return;
+    const t = setTimeout(() => {
+      if (dealer && lines.length > 0) saveLiveDraft(snapshotOf(dealer, lines, shipTo, order));
+      else clearLiveDraft();
+    }, 400);
+    return () => clearTimeout(t);
+  }, [hydrated, dealer, lines, shipTo, order]);
 
   const countsByTile = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -114,6 +179,40 @@ export default function PoV2Page(): React.JSX.Element {
     () => lines.reduce((sum, line) => sum + unitsIn(line.qtys), 0),
     [lines],
   );
+
+  /**
+   * Load a stored order onto the board. Shared by the live-draft restore, the
+   * Drafts screen and "Send again" — one path, so all three behave alike.
+   * `shipToCode` is re-resolved here against the CURRENT dealer list.
+   */
+  function applySnapshot(snap: V2Snapshot, pool: ApiCustomer[]): void {
+    setDealer(snap.customer);
+    setLines(snap.lines);
+    setShipTo(snap.shipToCode ? (pool.find((c) => c.code === snap.shipToCode) ?? null) : null);
+    setOrder({
+      dispatch: snap.dispatch, callTarget: snap.callTarget,
+      marker: snap.marker, crossDepot: snap.crossDepot, notes: snap.notes,
+    });
+    setProdQuery("");
+    setScreen("order");
+  }
+
+  /** Load a saved draft, remembering its id so re-saving upserts in place. */
+  function openDraft(d: V2SavedDraft): void {
+    openDraftIdRef.current = d.id;
+    applySnapshot(d.snapshot, customers);
+  }
+
+  /** Save the current order as a named draft and step back to the landing. */
+  function saveDraft(): void {
+    if (!dealer || lines.length === 0) return;
+    const snapshot = snapshotOf(dealer, lines, shipTo, order);
+    const id = openDraftIdRef.current ?? newDraftId();
+    openDraftIdRef.current = id;
+    setSavedDrafts(upsertSavedDraft({ id, label: labelFor(snapshot), savedAt: Date.now(), snapshot }));
+    setToast("Draft saved");
+    setScreen("customers");
+  }
 
   /** Picking a dealer — from the landing list OR the switch sheet. */
   function pickDealer(c: ApiCustomer): void {
@@ -214,6 +313,14 @@ export default function PoV2Page(): React.JSX.Element {
 
     window.location.href = buildV2MailtoUrl(subject, body);
 
+    // Logged immediately AFTER the handoff — a plain localStorage write, which
+    // never enters the navigation queue that the mailto is waiting on.
+    const snapshot = snapshotOf(dealer, lines, shipTo, order);
+    setSentOrders(addSentOrder({
+      id: newSentId(), label: labelFor(snapshot), sentAt: Date.now(), snapshot,
+    }));
+    openDraftIdRef.current = null;
+
     setSent({ dealer, lines: lines.length, units: orderUnits });
     setLines([]);
     setOrder(EMPTY_ORDER);
@@ -285,8 +392,143 @@ export default function PoV2Page(): React.JSX.Element {
           <p className="px-4 py-10 text-center text-[13px] text-neutral-400">Loading dealers…</p>
         )}
 
-        <BottomNav />
+        <BottomNav active="home" onNavigate={(s2) => setScreen(s2)} />
+        {toast && (
+          <div className="fixed inset-x-0 z-30 flex justify-center px-4" style={{ bottom: 88 }}>
+            <span className="rounded-full px-4 py-2 text-[13px] font-bold text-white"
+                  style={{ background: INK }}>{toast}</span>
+          </div>
+        )}
       </main>
+    );
+  }
+
+  // ══ SCREEN 5 — SAVED DRAFTS ══════════════════════════════════════════════
+  if (screen === "drafts") {
+    return (
+      <>
+        <DraftsScreen
+          drafts={savedDrafts}
+          onBack={() => setScreen("customers")}
+          onRemove={(id) => setSavedDrafts(removeSavedDraft(id))}
+          onOpen={(d) => {
+            // 🔴 NEVER SILENTLY DISCARD WORK. A draft replaces the whole order,
+            // so live lines get a confirm first; an empty order does not need
+            // one, because there is nothing to lose.
+            if (lines.length > 0) { setPendingDraft(d); setSheet("replace"); }
+            else openDraft(d);
+          }}
+        />
+        {sheet === "replace" && pendingDraft && (
+          <V2Sheet
+            onClose={() => { setSheet(null); setPendingDraft(null); }}
+            footer={
+              <button
+                type="button"
+                onClick={() => { setSheet(null); setPendingDraft(null); }}
+                className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                style={{ background: VIOLET }}
+              >
+                Keep what I have
+              </button>
+            }
+          >
+            <div className="shrink-0 px-4 pt-1.5 pb-3">
+              <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+                Replace this order?
+              </h2>
+              <p className="text-[11.5px] text-neutral-400">
+                {lines.length} {lines.length === 1 ? "line" : "lines"} on screen will be replaced by this draft
+              </p>
+            </div>
+            <div className="shrink-0 px-4 pb-3">
+              <button
+                type="button"
+                onClick={() => { const d = pendingDraft; setSheet(null); setPendingDraft(null); openDraft(d); }}
+                className="flex w-full items-center gap-3 rounded-[13px] px-3 py-3 text-left"
+                style={{ border: `1.5px solid ${RULE}` }}
+              >
+                <span className="flex shrink-0 items-center justify-center rounded-[9px]"
+                      style={{ width: 32, height: 32, background: "#F2F1F5" }}>
+                  <FileText className="h-4 w-4" strokeWidth={2.5} style={{ color: INK }} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14.5px] font-bold" style={{ color: INK }}>
+                    Load {pendingDraft.label}
+                  </span>
+                  <span className="block truncate text-[11.5px] text-neutral-400">
+                    Saved {formatSavedAt(pendingDraft.savedAt)}
+                  </span>
+                </span>
+              </button>
+            </div>
+          </V2Sheet>
+        )}
+      </>
+    );
+  }
+
+  // ══ SCREEN 6 — SENT TODAY ════════════════════════════════════════════════
+  if (screen === "sentList") {
+    return (
+      <>
+        <SentScreen
+          orders={sentOrders}
+          onBack={() => setScreen("customers")}
+          onOpen={(o) => { setOpenSent(o); setSheet("summary"); }}
+        />
+        {sheet === "summary" && openSent && (
+          <V2Sheet
+            onClose={() => { setSheet(null); setOpenSent(null); }}
+            footer={
+              <button
+                type="button"
+                onClick={() => {
+                  const snap = openSent.snapshot;
+                  setSheet(null); setOpenSent(null);
+                  // 🔴 A FRESH ORDER, not a re-send. This loads the lines onto
+                  // the board and stops — it never re-fires the mailto, so the
+                  // salesman sees and confirms what goes out a second time.
+                  openDraftIdRef.current = null;
+                  applySnapshot(snap, customers);
+                }}
+                className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                style={{ background: VIOLET }}
+              >
+                Send again
+              </button>
+            }
+          >
+            <div className="shrink-0 px-4 pt-1.5 pb-3">
+              <h2 className="truncate text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+                {openSent.snapshot.customer.name}
+              </h2>
+              <p className="font-mono text-[11.5px] text-neutral-400">
+                Sent {formatTime(openSent.sentAt)}
+              </p>
+            </div>
+            {/* Read-only. No steppers, no remove — a sent order is history. */}
+            <div className="min-h-0 overflow-y-auto">
+              {openSent.snapshot.lines.map((line) => (
+                <div key={line.id} className="flex items-start gap-3 px-4 py-2.5"
+                     style={{ borderTop: `1px solid ${DIVIDER}` }}>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14.5px] font-semibold" style={{ color: INK }}>{line.label}</p>
+                    {line.option && (
+                      <p className="truncate text-[11.5px] font-extrabold uppercase"
+                         style={{ color: VIOLET, letterSpacing: ".06em" }}>{line.option}</p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-mono text-[12.5px]" style={{ color: INK }}>{packString(line)}</p>
+                    <p className="text-[11px] text-neutral-400">{unitsIn(line.qtys)} units</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </V2Sheet>
+        )}
+      </>
     );
   }
 
@@ -346,6 +588,7 @@ export default function PoV2Page(): React.JSX.Element {
           onRemoveLine={removeLine}
           onOrderChange={setOrder}
           onSend={handleSend}
+          onSaveDraft={saveDraft}
           onOpenShipTo={() => { setQuery(""); setSheet("shipto"); }}
         />
         {sheet === "shipto" && (
@@ -667,27 +910,34 @@ function DestructiveRow({ icon, label, sub, onClick }: {
   );
 }
 
-/** Home / Drafts / Sent. Only Home is active; the other two are inert. */
-function BottomNav(): React.JSX.Element {
-  const items = [
-    { label: "Home",   icon: Home,     active: true },
-    { label: "Drafts", icon: FileText, active: false },
-    { label: "Sent",   icon: Send,     active: false },
+/** Home / Drafts / Sent. Home is where it renders; the other two navigate. */
+function BottomNav({ active, onNavigate }: {
+  active: "home";
+  onNavigate: (screen: "drafts" | "sentList") => void;
+}): React.JSX.Element {
+  const items: { label: string; icon: typeof Home; active: boolean; go?: "drafts" | "sentList" }[] = [
+    { label: "Home",   icon: Home,     active: active === "home" },
+    { label: "Drafts", icon: FileText, active: false, go: "drafts" },
+    { label: "Sent",   icon: Send,     active: false, go: "sentList" },
   ];
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-20 flex bg-white pt-2"
       style={{ borderTop: `1px solid ${RULE}`, paddingBottom: "max(env(safe-area-inset-bottom), 8px)" }}
     >
-      {items.map(({ label, icon: Icon, active }) => (
-        <span key={label} className="flex flex-1 flex-col items-center gap-0.5">
+      {items.map(({ label, icon: Icon, active: isOn, go }) => (
+        <button
+          key={label} type="button"
+          onClick={() => go && onNavigate(go)}
+          className="flex flex-1 flex-col items-center gap-0.5"
+        >
           <Icon className="h-[18px] w-[18px]" strokeWidth={2.5}
-                style={{ color: active ? VIOLET : "#A3A3A3" }} />
+                style={{ color: isOn ? VIOLET : "#A3A3A3" }} />
           <span className="text-[10px] font-extrabold"
-                style={{ color: active ? VIOLET : "#A3A3A3" }}>
+                style={{ color: isOn ? VIOLET : "#A3A3A3" }}>
             {label}
           </span>
-        </span>
+        </button>
       ))}
     </nav>
   );
