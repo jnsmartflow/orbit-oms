@@ -560,7 +560,7 @@ function joinKey(row: ApiProduct): string {
 }
 
 /**
- * 🔴 RULE 2 — baseColour is matched NULL-SAFELY.
+ * 🔴 RULE 2 — baseColour is matched NULL-SAFELY, AND BLANK COUNTS AS NULL.
  *
  * 36 payload rows carry `baseColour: null` — the nine no-option tiles among
  * them. NULL is a real, selectable identity here ("this product has exactly
@@ -568,11 +568,41 @@ function joinKey(row: ApiProduct): string {
  * than left to fall through a lookup as `undefined`. A Map keyed on `null`
  * would work in JS; a sentinel makes the intent unmissable and survives the
  * key being serialised.
+ *
+ * 🔴 AND 37 MORE ROWS CARRY AN EMPTY STRING, WHICH IS THE SAME FACT WRITTEN A
+ * SECOND WAY. `mo_order_form_index_v2.baseColour` is nullable, and the depot's
+ * data has both spellings of "this product has no options": 36 NULL and 37
+ * "". Measured 2026-09-07 — 398 rows carry a real value, 36 NULL, 37 blank.
+ *
+ * Until this rule existed, "" fell through every null test in the file and
+ * became a SELECTABLE OPTION WHOSE VALUE WAS THE EMPTY STRING, and that made
+ * all 37 products IMPOSSIBLE TO ORDER. The screen looked perfectly normal:
+ * resolveGroup saw a row that was not null, so it built `bases: [{ value: "" }]`
+ * and left `noOptionRow` null; the drawer selected that option, rendered a
+ * blank 44px rail tile and the right pack rows, and took a quantity into
+ * `matrix[""]`. Then the drawer's rowFor() short-circuits on `key === ""` —
+ * the key it uses for a product with NO options — and returned the null
+ * noOptionRow, so the pick was filtered out and Add never lit. Nineteen of the
+ * 37 were ordered by mail in the 90 days to 2026-09-07, 136 lines across 123
+ * orders, Acrylic Putty the largest at 44.
+ *
+ * ⚠ THE FIX BELONGS HERE AND NOWHERE ELSE. Teaching the drawer about "" would
+ * have left the empty string a legal option value and simply moved the bug to
+ * whatever reads it next — the cart, the email, the parser. A blank baseColour
+ * is not a colour; it is the absence of one, and this is the line that says so.
  */
 export const NULL_OPTION = " NULL";
 
+/**
+ * Does this row actually carry an option, or is it a product with exactly one
+ * row? The ONE test. Every place that used to ask `!== null` asks this.
+ */
+export function hasOption(baseColour: string | null | undefined): boolean {
+  return baseColour !== null && baseColour !== undefined && baseColour.trim() !== "";
+}
+
 function optionKey(baseColour: string | null): string {
-  return baseColour === null || baseColour === undefined ? NULL_OPTION : baseColour;
+  return hasOption(baseColour) ? (baseColour as string) : NULL_OPTION;
 }
 
 /** One curated chip that resolved to a real menu row. */
@@ -1088,14 +1118,17 @@ export function resolveGroup(
   if (tile) return tile;
 
   const ordered = [...rows].sort((a, b) => a.sortOrder - b.sortOrder);
-  const single = ordered.length === 1 && ordered[0].baseColour === null;
+  // hasOption(), not `!== null` — a blank baseColour is a product with no
+  // options, exactly like a NULL one. See RULE 2; this test is where the
+  // empty string used to slip through and become an unorderable option.
+  const single = ordered.length === 1 && !hasOption(ordered[0].baseColour);
 
   return {
     sap: key,
     label,
     family: ordered[0]?.family ?? "",
     bases: single ? [] : ordered
-      .filter((r) => r.baseColour !== null)
+      .filter((r) => hasOption(r.baseColour))
       .map((r) => ({ value: r.baseColour as string, row: r })),
     shades: [],
     variants: [],
@@ -1115,7 +1148,11 @@ export function resolveGroup(
 export function allOptionsFor(rows: ApiProduct[]): V2Option[] {
   return [...rows]
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .filter((r) => r.baseColour !== null)
+    // 🔴 THE THIRD PLACE "" COULD BECOME AN OPTION, and the one that would
+    // have survived fixing the other two: optionPools() is built from this,
+    // the drawer's rail is built from optionPools(), so a blank row left here
+    // would still have drawn a nameless 44px tile the salesman could tap.
+    .filter((r) => hasOption(r.baseColour))
     .map((r) => ({ value: r.baseColour as string, row: r }));
 }
 
