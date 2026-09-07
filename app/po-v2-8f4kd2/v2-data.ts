@@ -57,6 +57,22 @@ export const URGENT     = "#DC2626";
  * favourites look like a list of things already picked.
  */
 export const STAR       = "#F59E0B";
+
+/**
+ * 🔴 THE ONLY VIOLET GROUND IN THE APP — the brand row, and nothing else.
+ * Every other surface is SURFACE white or PAGE #FAFAFC. A second tinted ground
+ * anywhere else and this stops reading as "the masthead" and starts reading as
+ * decoration applied at random.
+ */
+export const BRAND_WASH = "#F5F3FF";
+
+/**
+ * A family card lifted off the page. Two layers on purpose: the hairline
+ * shadow gives it an edge at rest, the wide soft one gives it height. One
+ * layer alone reads either as a border or as a smudge.
+ */
+export const CARD_SHADOW =
+  "0 1px 2px rgba(27,24,38,.04), 0 6px 16px -8px rgba(27,24,38,.10)";
 export const SCRIM      = "rgba(18,14,26,.42)";
 export const SEARCH_BG  = FILL;
 /** One border colour means one token. Kept as a name because rows read better

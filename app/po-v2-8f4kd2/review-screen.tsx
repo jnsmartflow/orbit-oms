@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
-  BRAND, DIVIDER, FAINT, INK, MUTED, RULE, VIOLET,
+  BRAND, DIVIDER, FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
   chipStyle, packRows, tileArtFor, unitsIn,
   type ApiCustomer, type V2CartLine, type V2Marker, type V2Order,
 } from "./v2-data";
@@ -29,14 +29,6 @@ import {
 /** Sections are separated by a 9px band, never by a border or a card. */
 function Band(): React.JSX.Element {
   return <div className="h-[10px] w-full" style={{ background: DIVIDER }} />;
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "06 Sep" — the order's own date, shown so a screenshot is self-dating. */
-function today(): string {
-  const d = new Date();
-  return `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]}`;
 }
 
 // Dispatch is (dispatch, callTarget) collapsed into one row of four choices,
@@ -91,84 +83,79 @@ export default function ReviewScreen({
 
   return (
     <main className="min-h-screen w-full bg-white" style={{ paddingBottom: 148 }}>
-      {/* ── HEADER ───────────────────────────────────────────────────────── */}
+      {/* ── HEADER ───────────────────────────────────────────────────────
+          🔴 THE DEALER NAME IS THE TITLE *AND* THE CHANGE CONTROL. It used to
+          be "Review order" with the dealer repeated in a block underneath and a
+          "Change dealer" word beside two others — three ways of saying the same
+          thing on one screen. Tapping the name is what a salesman tries first;
+          the chevron is what tells him it will work, because an affordance
+          nobody can see is one nobody discovers.
+
+          THE DATE IS GONE. It was the order's own date on a screen he is
+          looking at today. */}
       <header
-        className="sticky top-0 z-10 flex items-center gap-2 bg-white px-2 py-3"
-        style={{ borderBottom: `1px solid ${RULE}` }}
+        className="sticky top-0 z-10 px-2 pt-2 pb-2"
+        style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
       >
-        <button
-          type="button" aria-label="Back to products" onClick={onBack}
-          className="flex h-8 w-8 shrink-0 items-center justify-center"
-        >
-          <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
-        </button>
-        <h1 className="min-w-0 flex-1 truncate text-[17px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
-          Review order
-        </h1>
-        {/* ── CLEAR ORDER — the only way to empty the cart ─────────────────
-            🔴 QUIET TEXT, AND MUTED RATHER THAN RED. Two things follow from the
-            colour system: destructive is an outline trigger, and solid urgent
-            belongs inside the confirm — never loose on a screen where a thumb
-            can reach it by accident. Red here would also put a second accent
-            beside Save draft's violet and make the header argue with itself.
-            The weight lands on the confirm's button instead.
+        <div className="flex items-start gap-1">
+          <button
+            type="button" aria-label="Back to products" onClick={onBack}
+            className="flex h-9 w-9 shrink-0 items-center justify-center"
+          >
+            <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
+          </button>
 
-            It sits LEFT of Save draft on purpose: the right edge is where a
-            right-handed thumb rests, so the harmless action gets that spot. */}
-        <button
-          type="button" onClick={onClearOrder}
-          className="shrink-0 text-[13.5px] font-extrabold" style={{ color: MUTED }}
-        >
-          Clear order
-        </button>
-        {/* A generated label, never typed — the salesman is mid-order, not
-            mid-filing. */}
-        <button
-          type="button" onClick={onSaveDraft}
-          className="shrink-0 pr-3 text-[13.5px] font-extrabold" style={{ color: VIOLET }}
-        >
-          Save draft
-        </button>
+          <button
+            type="button" onClick={onOpenDealer}
+            className="flex min-w-0 flex-1 items-start gap-1.5 py-0.5 text-left"
+          >
+            <span className="min-w-0 flex-1">
+              {/* Two lines, then an ellipsis. A dealer name is the one thing on
+                  this screen that must be recognisable at a glance, so it gets
+                  the room; "AAI SHREE KHODIYAR COLOUR ZONE" wraps rather than
+                  being cut after two words. */}
+              <span
+                className="block text-[16px] font-bold"
+                style={{
+                  color: dealer ? INK : VIOLET,
+                  letterSpacing: "-0.01em",
+                  lineHeight: 1.25,
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 2,
+                  overflow: "hidden",
+                }}
+              >
+                {dealer ? dealer.name : "Choose dealer"}
+              </span>
+              {dealer && (
+                <span className="mt-0.5 block truncate font-mono text-[11.5px]" style={{ color: MUTED }}>
+                  {dealer.code}{dealer.area ? ` · ${dealer.area}` : ""}
+                </span>
+              )}
+            </span>
+            <ChevronRight className="mt-1 h-4 w-4 shrink-0" strokeWidth={2.5}
+                          style={{ color: dealer ? FAINT : VIOLET }} />
+          </button>
+        </div>
+
+        {/* Two words, on their own row, right aligned. Their own row is what
+            keeps a two-line dealer name from pushing them anywhere. */}
+        <div className="flex items-center justify-end pr-2" style={{ gap: 16, marginTop: 6 }}>
+          <button
+            type="button" onClick={onSaveDraft}
+            className="text-[12.5px] font-extrabold" style={{ color: MUTED }}
+          >
+            Save draft
+          </button>
+          <button
+            type="button" onClick={onClearOrder}
+            className="text-[12.5px] font-extrabold" style={{ color: MUTED }}
+          >
+            Clear order
+          </button>
+        </div>
       </header>
-
-      {/* ── DEALER — the one question this screen exists to ask ───────────
-          Empty, it is the ONLY violet thing above the Send button, so on a
-          screen full of chips and totals the eye lands on the thing that is
-          actually missing. */}
-      <button
-        type="button" onClick={onOpenDealer}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left"
-      >
-        {dealer ? (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[17px] font-extrabold"
-                    style={{ color: INK, letterSpacing: "-0.02em" }}>
-                {dealer.name}
-              </span>
-              <span className="block truncate text-[12.5px]" style={{ color: MUTED }}>
-                {[dealer.code, dealer.area, today()].filter(Boolean).join(" · ")}
-              </span>
-            </span>
-            <span className="shrink-0 text-[12.5px] font-extrabold" style={{ color: VIOLET }}>
-              Change
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[17px] font-extrabold"
-                    style={{ color: VIOLET, letterSpacing: "-0.02em" }}>
-                Choose dealer
-              </span>
-              <span className="block truncate text-[12.5px]" style={{ color: MUTED }}>
-                {today()}
-              </span>
-            </span>
-            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: VIOLET }} />
-          </>
-        )}
-      </button>
 
       <Band />
 
@@ -238,7 +225,12 @@ export default function ReviewScreen({
                 nothing clipping it the whole page dragged sideways.
                 `min-w-0` lets it shrink again; stacking the packs (below) means
                 the widest child is now one short row, so it never needs to. */}
-            <div className="min-w-0 text-right">
+            {/* 🔴 A FIXED 96px COLUMN, so a one-pack line and a four-pack line
+                start at the same x and the figures read straight down the page.
+                It used to be min-w-0 and shrink to its content, which put every
+                line's numbers at a different left edge. shrink-0 because a
+                fixed width that is allowed to shrink is not a fixed width. */}
+            <div className="shrink-0 text-right" style={{ width: 96 }}>
               {/* Pack figures unchanged. The per-line "N units" subtotal that
                   used to sit under them is GONE: it was a number nobody acts
                   on — he orders packs, the depot picks packs, and the only

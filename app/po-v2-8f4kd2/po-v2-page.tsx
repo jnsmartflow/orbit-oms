@@ -17,8 +17,8 @@ import {
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
-  BRAND, BRAND_GRADIENT, DIVIDER, FAINT, FAMILIES, FILL, INK, MUTED, RULE,
-  SURFACE, URGENT, VIOLET, VIOLET_BG,
+  BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT, FAMILIES,
+  FILL, INK, MUTED, PAGE, RULE, SURFACE, URGENT, VIOLET, VIOLET_BG,
   EMPTY_ORDER, buildCatalog, drawerMode, formatPack,
   mixToWhite, optionPools, packRows, resolveGroup, tileImage, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
@@ -138,8 +138,20 @@ export default function PoV2Page(): React.JSX.Element {
   const [toast, setToast] = useState<string | null>(null);
 
   /**
-   * Writes the VISUAL viewport height into --vvh, which v2-sheet's container
-   * consumes as its height.
+   * Writes the visual viewport's HEIGHT into --vvh and its OFFSET into --vvo.
+   * v2-sheet's overlay consumes both.
+   *
+   * 🔴 THE OFFSET IS THE HALF THAT WAS MISSING, and it is what broke the
+   * product drawer when the number keypad opened. `position: fixed` lays out
+   * against the LAYOUT viewport. When the keypad opens for an input near the
+   * BOTTOM of the screen, iOS scrolls the VISUAL viewport down inside the
+   * layout viewport to lift that input clear of the keys — visualViewport
+   * .offsetTop. Nothing read it, so the overlay stayed pinned to a layout-top
+   * that was now off screen and its bottom edge landed offsetTop pixels above
+   * the real bottom, showing the board through the gap.
+   *
+   * The dealer sheet looked fixed by height alone only because its search box
+   * is at the TOP of the sheet, so iOS never had to scroll for it.
    *
    * 🔴 THIS IS CLAUDE_UI.md §55's MECHANISM, NOT A SECOND ONE. /po has carried
    * it since /order was retired; the SSR fallback `html { --vvh: 100vh }` lives
@@ -165,11 +177,17 @@ export default function PoV2Page(): React.JSX.Element {
     if (typeof window === "undefined") return;
     const vv = window.visualViewport;
     let lastH = -1;
+    let lastT = -1;
     const update = (): void => {
       const h = vv ? vv.height : window.innerHeight;
-      if (h === lastH) return;
-      lastH = h;
-      document.documentElement.style.setProperty("--vvh", `${h}px`);
+      const t = vv ? vv.offsetTop : 0;
+      // The guard matters: a plain scroll reports both unchanged, and rewriting
+      // on every scroll tick churns the overlay's geometry under his thumb.
+      if (h === lastH && t === lastT) return;
+      lastH = h; lastT = t;
+      const root = document.documentElement.style;
+      root.setProperty("--vvh", `${h}px`);
+      root.setProperty("--vvo", `${t}px`);
     };
     update();
     if (vv) {
@@ -188,6 +206,7 @@ export default function PoV2Page(): React.JSX.Element {
       // Hand the property back to globals.css's 100vh rather than leaving a
       // stale pixel height behind for whatever renders next.
       document.documentElement.style.removeProperty("--vvh");
+      document.documentElement.style.removeProperty("--vvo");
     };
   }, []);
 
@@ -400,50 +419,49 @@ export default function PoV2Page(): React.JSX.Element {
   }
 
   /**
-   * One place that builds a cart line, whichever door it came through.
+   * Commit a whole drawer visit: one cart line per option carrying a quantity.
    *
    * `packOrder` is snapshotted here from the ROW's pack array, which the
-   * payload has already sorted into catalog order (route.ts:21-28). `qtys` is
-   * a Record whose key order is the order the salesman tapped — fine for a
-   * total, wrong for the printed pack string, and step 9's email has to match
-   * /po byte for byte.
-   */
-  function commitLine(
-    sap: string,
-    label: string,
-    picked: { option: string | null; row: ApiProduct; qtys: Record<string, number> },
-  ): void {
-    const qtys: Record<string, number> = {};
-    for (const [packLabel, qty] of Object.entries(picked.qtys)) {
-      if (qty > 0) qtys[packLabel] = qty;
-    }
-    setLines((prev) => [
-      ...prev,
-      {
-        id: `${sap}-${Date.now()}-${prev.length}`,
-        tileSap: sap, label, option: picked.option, rowId: picked.row.id, qtys,
-        packOrder: picked.row.packs.map((p) => formatPack(p.packCode, p.unit)),
-        // The WIRE name is built from these three by emailLineLabel — never
-        // from `label` above, which is the curated board word.
-        product:    picked.row.product,
-        baseColour: picked.row.baseColour,
-        subProduct: picked.row.subProduct,
-      },
-    ]);
-  }
-
-  /**
-   * Commit every pick from one drawer visit. Flat and grid can return several
-   * — one cart line per option that carries a quantity.
+   * payload has already sorted into catalog order (route.ts:21-28). The qtys
+   * Record's key order is the order the salesman tapped — fine for a total,
+   * wrong for the printed pack string, and the email has to match /po byte for
+   * byte. The WIRE name is built by emailLineLabel from product / baseColour /
+   * subProduct, never from `label`, which is the curated board word.
    */
   function addLines(
     sap: string,
     label: string,
     picks: { option: string | null; row: ApiProduct; qtys: Record<string, number> }[],
   ): void {
-    for (const p of picks) commitLine(sap, label, p);
+    // 🔴 REPLACE, NOT APPEND. The drawer opens SEEDED from whatever this
+    // product already has in the cart, so what comes back is the complete,
+    // edited set for it — every option he still wants, at the quantity he now
+    // wants. Appending would double every line he merely looked at.
+    //
+    // Dropping an option in the drawer therefore deletes its line, which is the
+    // only behaviour that makes the seeding honest: what he sees is what he
+    // gets, including what he took away.
+    setLines((prev) => {
+      const kept = prev.filter((l) => l.tileSap !== sap);
+      const built: V2CartLine[] = picks.map((p, i) => {
+        const qtys: Record<string, number> = {};
+        for (const [packLabel, qty] of Object.entries(p.qtys)) if (qty > 0) qtys[packLabel] = qty;
+        return {
+          id: `${sap}-${Date.now()}-${i}`,
+          tileSap: sap, label, option: p.option, rowId: p.row.id, qtys,
+          packOrder: p.row.packs.map((pk) => formatPack(pk.packCode, pk.unit)),
+          product: p.row.product, baseColour: p.row.baseColour, subProduct: p.row.subProduct,
+        };
+      });
+      return [...kept, ...built];
+    });
     setOpenTile(null);
     setOpenGroup(null);
+  }
+
+  /** What this product already has in the cart, for the drawer to open on. */
+  function existingFor(sap: string): { option: string | null; qtys: Record<string, number> }[] {
+    return lines.filter((l) => l.tileSap === sap).map((l) => ({ option: l.option, qtys: l.qtys }));
   }
 
   /**
@@ -903,7 +921,13 @@ export default function PoV2Page(): React.JSX.Element {
       <main
         className="min-h-screen w-full"
         style={{
-          background: SURFACE,
+          // 🔴 THE BOARD IS A GROUND, NOT A SURFACE. The app has been one flat
+          // white plane since it was built; depth is what a surface sitting
+          // ABOVE a ground gives you, and it is why every quick-commerce app
+          // reads as finished rather than as a wireframe. #FAFAFC is barely a
+          // colour — it only has to be different enough for a white card to
+          // have an edge without needing a border.
+          background: PAGE,
           // The nav is always there; the cart bar stacks on top of it when the
           // order has lines. The board has to clear both.
           paddingBottom: `calc(${NAV_H} + ${cartOpen ? 84 : 16}px)`,
@@ -920,15 +944,18 @@ export default function PoV2Page(): React.JSX.Element {
             decoration: it is the one thing on the board that says which depot
             these prices and this catalog belong to. */}
         <div className="flex items-baseline justify-between px-4"
-             style={{ background: SURFACE, paddingTop: 16, paddingBottom: 11 }}>
-          <Wordmark size={26} colour={BRAND} />
+             style={{ background: BRAND_WASH, paddingTop: 16, paddingBottom: 14 }}>
+          <Wordmark size={31} colour={BRAND} />
           <span className="shrink-0 font-mono text-[10px] uppercase"
                 style={{ color: FAINT, letterSpacing: ".14em" }}>
             Surat depot
           </span>
         </div>
 
-        {/* ── SEARCH — STICKY. Once the brand row has gone it IS the header,
+        {/* ── SEARCH — STICKY. On WHITE, not the wash: the violet belongs to
+            the masthead, and once the brand row has scrolled away this bar is
+            the header — a violet strip pinned to the top of a tinted board
+            would read as a second brand, not as a control. Once the brand row has gone it IS the header,
             which is what the bottom hairline is for: alone at the top of the
             viewport a borderless bar reads as a box floating over the tiles,
             and with the rule under it it reads as a header.
@@ -974,15 +1001,33 @@ export default function PoV2Page(): React.JSX.Element {
           const eager = familyIndex < 2;
           const wash  = mixToWhite(family.tint, TILE_WASH);
           return (
-          <section key={family.name} className="px-4" style={{ paddingTop: 18 }}>
-            <div className="mb-2 flex items-center gap-2">
-              <h2 className="shrink-0 text-[11px] font-bold uppercase"
-                  style={{ letterSpacing: ".08em", color: FAINT }}>
+          <section
+            className="mx-4"
+            style={{
+              marginTop: 11,
+              background: SURFACE,
+              borderRadius: 16,
+              padding: "12px 11px 13px",
+              boxShadow: CARD_SHADOW,
+            }}
+          >
+            {/* The name lives INSIDE the card now, in sentence case and at
+                reading size. The uppercase 11px label with a hairline running
+                off to the right was a section divider on a flat page; on a card
+                the card IS the division, so the label can go back to being a
+                name. The rule is deleted, not hidden. */}
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <h2 className="min-w-0 truncate text-[14px] font-bold" style={{ color: INK }}>
                 {family.name}
               </h2>
-              <span className="h-px flex-1" style={{ background: RULE }} />
+              <span
+                className="shrink-0 rounded-full font-mono text-[10px]"
+                style={{ color: FAINT, background: FILL, padding: "2px 7px" }}
+              >
+                {family.tiles.length}
+              </span>
             </div>
-            <div className="grid grid-cols-4" style={{ gap: 8 }}>
+            <div className="grid grid-cols-4" style={{ gap: 7 }}>
               {family.tiles.map((tile) => {
                 const count   = countsByTile[tile.sap] ?? 0;
                 const inOrder = count > 0;
@@ -1124,6 +1169,7 @@ export default function PoV2Page(): React.JSX.Element {
           product={openProduct}
           onClose={() => setOpenTile(null)}
           onAdd={(picks) => addLines(openTile.sap, openTile.label, picks)}
+          existing={existingFor(openTile.sap)}
           pools={tilePools}
           mode={tileMode}
         />
@@ -1139,6 +1185,7 @@ export default function PoV2Page(): React.JSX.Element {
           product={groupResolved}
           onClose={() => setOpenGroup(null)}
           onAdd={(picks) => addLines(groupResolved.sap, groupResolved.label, picks)}
+          existing={existingFor(groupResolved.sap)}
           pools={groupPools}
           mode={groupMode}
         />

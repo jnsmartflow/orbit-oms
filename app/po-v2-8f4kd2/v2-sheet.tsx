@@ -134,20 +134,35 @@ export default function V2Sheet({
   useBodyScrollLock();
 
   return (
-    /* 🔴 SIZED TO THE VISUAL VIEWPORT, NOT `inset-0`.
-       This is the fix for "Change dealer opens on a blank screen". `inset-0`
-       spans the LAYOUT viewport, which the soft keyboard does not shrink — so a
-       sheet anchored to its bottom had its bottom edge underneath the keyboard
-       and pushed its own title, search box and list off the top of what the
-       salesman could see. He had to scroll a sheet that had only just opened.
+    /* 🔴 PINNED TO THE VISUAL VIEWPORT — BOTH ITS SIZE AND ITS POSITION.
+       Those are two separate axes and only the first was fixed before.
 
-       --vvh carries window.visualViewport.height, written by the effect in
-       po-v2-page (CLAUDE_UI.md §55 — the same mechanism /po already uses, not a
-       second invention of it). app/globals.css declares `html { --vvh: 100vh }`
-       as the SSR fallback and app/layout.tsx's viewport export already sets
-       `interactiveWidget: "resizes-content"`, which is what makes Chromium
-       shrink rather than overlay; both are app-wide and neither is edited. */
-    <div className="fixed inset-x-0 top-0 z-50" style={{ height: "var(--vvh, 100vh)" }}>
+       HEIGHT (--vvh) was added when the dealer sheet opened blank: `inset-0`
+       spans the LAYOUT viewport, which the soft keyboard does not shrink, so a
+       sheet anchored to its bottom had its bottom edge underneath the keyboard.
+
+       OFFSET (--vvo) is the half that was missing, and it is why the product
+       drawer still broke when the number keypad opened. `position: fixed` lays
+       out against the LAYOUT viewport. When the keypad opens for an input near
+       the BOTTOM of the screen, iOS scrolls the VISUAL viewport down inside the
+       layout viewport to lift that input clear of the keys, and reports it as
+       visualViewport.offsetTop. Nothing read it — not here and not /po — so the
+       overlay stayed pinned to a layout-top that was now scrolled off screen,
+       and its bottom edge landed offsetTop pixels ABOVE the real bottom. The
+       board showed through the strip: "cut in half".
+
+       That is also why the dealer sheet looked fixed by height alone. Its
+       search box sits at the TOP of the sheet, so iOS never needed to scroll.
+       The quantity field sits at the bottom, so it always does.
+
+       Written by the effect in po-v2-page (CLAUDE_UI.md §55's mechanism).
+       app/globals.css declares `html { --vvh: 100vh }` as the SSR fallback and
+       app/layout.tsx's viewport export sets `interactiveWidget:
+       "resizes-content"`; both are app-wide and neither is edited. */
+    <div
+      className="fixed inset-x-0 z-50"
+      style={{ top: "var(--vvo, 0px)", height: "var(--vvh, 100vh)" }}
+    >
       <style>{SHEET_CSS}</style>
 
       {/* Scrim — tapping anywhere outside the sheet closes it. */}

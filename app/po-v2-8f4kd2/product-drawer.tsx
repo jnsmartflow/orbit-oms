@@ -37,6 +37,7 @@ export default function ProductDrawer({
   initialOption = null,
   onClose,
   onAdd,
+  existing,
   pools,
   mode = "standard",
 }: {
@@ -47,6 +48,12 @@ export default function ProductDrawer({
   /** MANY lines: flat and grid let one visit set quantities on several
    *  options, and each option is its own cart line. Standard sends one. */
   onAdd: (picks: { option: string | null; row: ApiProduct; qtys: Record<string, number> }[]) => void;
+  /**
+   * The cart lines this product ALREADY has. The drawer opens seeded from them,
+   * and onAdd REPLACES them — so reopening a product to change one base is an
+   * edit, not a second helping of the same order.
+   */
+  existing?: { option: string | null; qtys: Record<string, number> }[];
   /**
    * EVERY option this product has, in catalog order. "+ More" swaps the chip
    * row to this list.
@@ -109,12 +116,36 @@ export default function ProductDrawer({
     const opening = product.defaultTab === "shade" && hasShades ? product.shades : product.bases;
     return topOf(opening);
   });
-  const [qtys, setQtys] = useState<Record<string, number>>({});
   const [expanded, setExpanded] = useState(false);
-  // FLAT and GRID keep their own state: option -> pack label -> units. The
-  // standard path above is untouched by it, and a drawer is in exactly one
-  // mode for its whole life, so the two never coexist.
-  const [matrix, setMatrix] = useState<Record<string, Record<string, number>>>({});
+
+  /**
+   * 🔴 ONE QUANTITY STATE FOR THE WHOLE VISIT: option -> pack label -> units.
+   *
+   * There used to be TWO. `qtys` held the packs of whichever option was
+   * selected right now and was WIPED on every chip tap; `matrix` held all of
+   * them and only flat mode used it. So on a standard product a salesman could
+   * set BLACK 1L x6, tap 90 BASE to add a second base, and silently lose the
+   * first — the drawer could only ever send one line per visit, and the loss
+   * was invisible until the order arrived.
+   *
+   * Now everything writes here. Flat mode is not a special case any more, it is
+   * simply the mode that shows every option's row at once.
+   *
+   * A product with NO options at all (Cement SB, Thinner…) keys on "" — it has
+   * exactly one row, so one key is the honest shape rather than a second code
+   * path.
+   */
+  const [matrix, setMatrix] = useState<Record<string, Record<string, number>>>(() => {
+    // (b) SEEDED FROM THE CART. Opening a product already in the order shows
+    // what is in it, on the right options, so Add can replace rather than
+    // duplicate — and so he can SEE what he already ordered before changing it.
+    const seed: Record<string, Record<string, number>> = {};
+    for (const line of existing ?? []) {
+      const key = line.option ?? "";
+      seed[key] = { ...(seed[key] ?? {}), ...line.qtys };
+    }
+    return seed;
+  });
   // B2: the Shade tab expands into a text FILTER, not more chips.
   const [shadeQuery, setShadeQuery] = useState("");
 
@@ -212,30 +243,21 @@ export default function ProductDrawer({
     const list = next === "base" ? product.bases : product.shades;
     setTab(next);
     setSelected(topOf(list));
-    setQtys({});
     setExpanded(false);
     setShadeQuery("");
   }
 
+  /**
+   * 🔴 SWITCHING OPTIONS NO LONGER CLEARS ANYTHING. It used to wipe the
+   * quantities, on the reasoning that packs belong to the ROW and carrying a
+   * "20L x 2" to a row that may not sell 20L would be wrong. True — but the fix
+   * for that is keying quantities BY OPTION, which is what happens now, not
+   * throwing away what he just typed. Each option keeps its own packs and only
+   * ever shows its own.
+   */
   function selectOption(value: string): void {
     if (value === selected) return;
     setSelected(value);
-    // Packs belong to the ROW, and a different option is a different row with
-    // a possibly different pack table. Carrying quantities across would keep a
-    // "20L x 2" that the new row may not even sell.
-    setQtys({});
-  }
-
-  // One tap moves a WHOLE BOX; the value shown stays in UNITS. So 1L reads
-  // 0 -> 6 -> 12, and 20L (a drum, step 1) reads 0 -> 1 -> 2. Floors at 0.
-  function step(label: string, direction: 1 | -1): void {
-    const delta = stepForLabel(label) * direction;
-    setQtys((prev) => ({ ...prev, [label]: Math.max(0, (prev[label] ?? 0) + delta) }));
-  }
-
-  /** A TYPED figure, already snapped to a whole box by the field itself. */
-  function setQty(label: string, units: number): void {
-    setQtys((prev) => ({ ...prev, [label]: Math.max(0, units) }));
   }
 
   const matrixMode = mode === "flat";
@@ -244,6 +266,12 @@ export default function ProductDrawer({
   // header instead of on every row.
   const flatPack = mode === "flat" ? (packsOf(options.map((o) => o.row))[0] ?? "") : "";
 
+  /** The key the currently-selected option writes under. "" = no options. */
+  const optionKey = selected ?? "";
+  const qtys = matrix[optionKey] ?? {};
+
+  // One tap moves a WHOLE BOX; the value shown stays in UNITS. So 1L reads
+  // 0 -> 6 -> 12, and 20L (a drum, step 1) reads 0 -> 1 -> 2. Floors at 0.
   function stepCell(option: string, pack: string, direction: 1 | -1): void {
     const delta = stepForLabel(pack) * direction;
     setMatrix((prev) => {
@@ -253,24 +281,40 @@ export default function ProductDrawer({
     });
   }
 
+  /** A TYPED figure, already snapped to a whole box by the field itself. */
   function typeCell(option: string, pack: string, units: number): void {
     setMatrix((prev) => ({ ...prev, [option]: { ...(prev[option] ?? {}), [pack]: Math.max(0, units) } }));
   }
 
-  // One cart line per OPTION that has any quantity — a single visit to a flat
-  // or grid product can legitimately order six shades at once.
-  const matrixPicks = matrixMode
-    ? options
-        .map((opt) => ({
-          option: opt.value,
-          row: opt.row,
-          qtys: Object.fromEntries(
-            Object.entries(matrix[opt.value] ?? {}).filter(([, q]) => q > 0),
-          ),
-        }))
-        .filter((p) => Object.keys(p.qtys).length > 0)
-    : [];
-  const matrixUnits = matrixPicks.reduce((sum, p) => sum + unitsIn(p.qtys), 0);
+  /** Units on ONE option, for the little count on its chip. */
+  function unitsOn(option: string): number {
+    return unitsIn(matrix[option] ?? {});
+  }
+
+  /**
+   * 🔴 EVERY OPTION CARRYING A QUANTITY, AS ITS OWN CART LINE — in every mode.
+   *
+   * Resolved against the whole pool rather than the visible chips, so an option
+   * set and then scrolled past, filtered out, or reached through "+ More" still
+   * commits. Falls back to the tile's own lists for a product whose pools were
+   * not passed, and to noOptionRow for the nine that have no options at all.
+   */
+  const rowFor = (key: string): ApiProduct | null => {
+    if (key === "") return product.noOptionRow;
+    const inPool = options.find((o) => o.value === key);
+    if (inPool) return inPool.row;
+    const all = [...product.bases, ...product.shades, ...product.variants];
+    return all.find((o) => o.value === key)?.row ?? null;
+  };
+  const picks = Object.entries(matrix)
+    .map(([key, packs]) => ({
+      option: key === "" ? null : key,
+      row: rowFor(key),
+      qtys: Object.fromEntries(Object.entries(packs).filter(([, q]) => q > 0)),
+    }))
+    .filter((p): p is { option: string | null; row: ApiProduct; qtys: Record<string, number> } =>
+      p.row !== null && Object.keys(p.qtys).length > 0);
+  const visitUnits = picks.reduce((sum, p) => sum + unitsIn(p.qtys), 0);
 
   // ── Footer gating ────────────────────────────────────────────────────────
   //
@@ -289,13 +333,13 @@ export default function ProductDrawer({
   // Damp Base, Thinner — demanded a shade from a chip row never rendered for
   // them, and were unorderable. Deleting the guard retires that class of bug
   // rather than fixing it a second time.)
-  const units = unitsIn(qtys);
-  const canAdd = matrixMode ? matrixUnits > 0 : units > 0 && selectedRow !== null;
-
-  let addLabel: string;
-  if (matrixMode)   addLabel = canAdd ? `Add · ${matrixUnits} units` : "Add to order";
-  else if (!canAdd) addLabel = "Add to order";
-  else              addLabel = `Add · ${units} units`;
+  // 🔴 THE BUTTON TOTALS THE WHOLE VISIT, not the option on screen. Two bases
+  // of Stay Bright reads "Add · 18 units", not the 12 of whichever chip happens
+  // to be selected — otherwise the total contradicts what is about to be sent.
+  const canAdd = picks.length > 0;
+  const addLabel = canAdd
+    ? `${existing && existing.length > 0 ? "Update" : "Add"} · ${visitUnits} units`
+    : "Add to order";
 
   // Sub-line: in FLAT the pack size, stated once so it is never ambiguous;
   // in GRID the packs are their own column headers; otherwise the selection.
@@ -315,11 +359,8 @@ export default function ProductDrawer({
       <button
         type="button"
         disabled={!canAdd}
-        onClick={() => {
-          if (!canAdd) return;
-          if (matrixMode) onAdd(matrixPicks);
-          else if (selectedRow) onAdd([{ option: selected, row: selectedRow, qtys }]);
-        }}
+        // Every mode sends the same shape: one pick per option with a quantity.
+        onClick={() => { if (canAdd) onAdd(picks); }}
         className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
         style={{ background: canAdd ? BRAND : FAINT }}
       >
@@ -393,14 +434,22 @@ export default function ProductDrawer({
             ) : (hasVariants || activeList.length > 0) && (
               <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
                 <div className="flex flex-wrap gap-2">
+                  {/* 🔴 THE COUNT ON A CHIP IS NOT DECORATION — it is the only
+                      proof that quantities survive a chip tap. Set BLACK, tap
+                      90 BASE, and BLACK's badge is still showing its units:
+                      without it a salesman has no way to know the first option
+                      is still in the visit, and he will not trust it enough to
+                      use it. Violet, because it is a count of HIS work. */}
                   {activeList.map((opt) => {
                     const on = selected === opt.value;
+                    const carrying = unitsOn(opt.value);
                     if (chipRowStyle === "colour") {
                       return (
                         <ShadeSwatch
                           key={opt.value} name={opt.value}
                           hex={shadeHex(opt.value) as string}
-                          selected={on} onSelect={() => selectOption(opt.value)}
+                          selected={on} carrying={carrying}
+                          onSelect={() => selectOption(opt.value)}
                         />
                       );
                     }
@@ -409,7 +458,8 @@ export default function ProductDrawer({
                         <SwatchChip
                           key={opt.value} name={opt.value}
                           hex={shadeHex(opt.value) as string}
-                          selected={on} onSelect={() => selectOption(opt.value)}
+                          selected={on} carrying={carrying}
+                          onSelect={() => selectOption(opt.value)}
                         />
                       );
                     }
@@ -418,10 +468,11 @@ export default function ProductDrawer({
                         key={opt.value}
                         type="button"
                         onClick={() => selectOption(opt.value)}
-                        className="px-3 py-2 text-left text-[13px] font-semibold"
+                        className="flex items-center gap-1.5 px-3 py-2 text-left text-[13px] font-semibold"
                         style={chipStyle(on)}
                       >
                         {showingBases ? baseChipLabel(opt.value) : opt.value}
+                        {carrying > 0 && <ChipCount units={carrying} />}
                       </button>
                     );
                   })}
@@ -481,8 +532,8 @@ export default function ProductDrawer({
                   label={label}
                   step={stepForLabel(label)}
                   qty={qtys[label] ?? 0}
-                  onStep={(dir) => step(label, dir)}
-                  onType={(next) => setQty(label, next)}
+                  onStep={(dir) => stepCell(optionKey, label, dir)}
+                  onType={(next) => typeCell(optionKey, label, next)}
                 />
               ))}
             </div>
@@ -630,8 +681,23 @@ function QtyField({ qty, step, label, onCommit }: {
  * the row; the word is what settles it. shadeRowMode() decides which rows get
  * this, from the hexes.
  */
-function SwatchChip({ name, hex, selected, onSelect }: {
-  name: string; hex: string; selected: boolean; onSelect: () => void;
+/**
+ * The units a chip is holding. Small, violet, and only ever present when the
+ * number is real — a "0" badge on every chip would be noise on 29 of them.
+ */
+function ChipCount({ units }: { units: number }): React.JSX.Element {
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white"
+      style={{ minWidth: 17, height: 17, padding: "0 5px", background: VIOLET }}
+    >
+      {units}
+    </span>
+  );
+}
+
+function SwatchChip({ name, hex, selected, carrying, onSelect }: {
+  name: string; hex: string; selected: boolean; carrying: number; onSelect: () => void;
 }): React.JSX.Element {
   return (
     <button
@@ -649,6 +715,7 @@ function SwatchChip({ name, hex, selected, onSelect }: {
         }}
       />
       {name}
+      {carrying > 0 && <ChipCount units={carrying} />}
     </button>
   );
 }
@@ -664,23 +731,34 @@ function SwatchChip({ name, hex, selected, onSelect }: {
  * sheet is simply not there. `title`/`aria-label` carry the name for anyone
  * who cannot use the colour at all.
  */
-function ShadeSwatch({ name, hex, selected, onSelect }: {
-  name: string; hex: string; selected: boolean; onSelect: () => void;
+function ShadeSwatch({ name, hex, selected, carrying, onSelect }: {
+  name: string; hex: string; selected: boolean; carrying: number; onSelect: () => void;
 }): React.JSX.Element {
   const light = isLightHex(hex);
   return (
-    <button
-      type="button"
-      aria-label={name}
-      aria-pressed={selected}
-      title={name}
-      onClick={onSelect}
-      style={{
-        width: 54, height: 44, borderRadius: 11, background: hex,
-        border: light ? "1px solid rgba(0,0,0,.15)" : "none",
-        boxShadow: selected ? `0 0 0 5px ${VIOLET_BG}, 0 0 0 7.5px ${VIOLET}` : undefined,
-      }}
-    />
+    // A bare swatch has no room for a badge INSIDE it without covering the
+    // colour, which is the one thing it exists to show. The count rides the
+    // top-right corner instead, on the wrapper.
+    <span className="relative block">
+      <button
+        type="button"
+        aria-label={carrying > 0 ? `${name}, ${carrying} units` : name}
+        aria-pressed={selected}
+        title={name}
+        onClick={onSelect}
+        className="block"
+        style={{
+          width: 54, height: 44, borderRadius: 11, background: hex,
+          border: light ? "1px solid rgba(0,0,0,.15)" : "none",
+          boxShadow: selected ? `0 0 0 5px ${VIOLET_BG}, 0 0 0 7.5px ${VIOLET}` : undefined,
+        }}
+      />
+      {carrying > 0 && (
+        <span className="pointer-events-none absolute" style={{ top: -7, right: -7 }}>
+          <ChipCount units={carrying} />
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -694,6 +772,10 @@ function ShadeSwatch({ name, hex, selected, onSelect }: {
  * 2026-09-07 and now reaches this same body through SEARCH. Fourteen rows
  * overflow the sheet and scroll VERTICALLY inside it, which is expected: only
  * horizontal scroll is banned.
+ *
+ * Flat mode is NOT a second state shape. It writes into the same option -> pack
+ * matrix every other mode does; it is simply the mode that renders every
+ * option's row at once instead of one chip row plus one option's packs.
  *
  * The swatch here is PER ROW, not the all-or-nothing rule the chip row uses —
  * a name with a hex gets one and a name without gets none. That is why Acotone
