@@ -126,6 +126,12 @@ function validSnapshot(v: Partial<V2Snapshot> | null | undefined): v is V2Snapsh
 // longer recognises is KEPT while the edit writes a second one beside it: two
 // lines, same product, both sent, and nothing on screen says so.
 //
+// 🔴 AND THE MIRROR IMAGE OF THAT, ADDED 2026-09-07: a line parked under a key
+// that IS still live but whose product has since LEFT that tile. The first
+// version of this migration left it alone — its rule was "a sap on no tile
+// keeps its stored key" — and the next edit of that tile deleted it. Three
+// cases now, not two. See migrateLine.
+//
 // ⚠ ON READ, NEVER ON WRITE. localStorage can hold data written by an older
 // build at any moment — a phone that has not reloaded, a tab left open since
 // yesterday, a draft restored after a rollback. Migrating on write would fix
@@ -154,20 +160,64 @@ function validSnapshot(v: Partial<V2Snapshot> | null | undefined): v is V2Snapsh
  * member. A list of three would be right for exactly one ranking, and the bug
  * would come back silently on the next one.
  *
- * A sap that is on NO tile is returned untouched. That is correct, not a gap:
- * a product that left the board still renders, still sends, and simply has no
- * tile to badge.
+ * 🔴 THREE CASES, NOT TWO. "On no tile, so leave it alone" was right for a
+ * product whose stored key is DEAD and wrong for one whose stored key is still
+ * ALIVE but belongs to a tile the product is not in — see case 3.
  */
 function migrateLine(line: V2CartLine): V2CartLine {
   const sap = line.product ?? line.subProduct;
   const key = tileKeyForMember(sap);
-  if (key === null) return line;
-  const label = boardTile(key)?.members.find((m) => m.sap === sap)?.label ?? line.label;
-  if (line.tileSap === key && line.label === label) return line;
-  // Spread, so product / baseColour / subProduct / qtys / packOrder / rowId /
-  // option / id pass through byte for byte. Only the two board-facing fields
-  // are rewritten, and neither reaches the email.
-  return { ...line, tileSap: key, label };
+
+  // ── 1. The product IS a member of some tile ─────────────────────────────
+  if (key !== null) {
+    const label = boardTile(key)?.members.find((m) => m.sap === sap)?.label ?? line.label;
+    if (line.tileSap === key && line.label === label) return line;
+    // Spread, so product / baseColour / subProduct / qtys / packOrder / rowId /
+    // option / id pass through byte for byte. Only the two board-facing fields
+    // are rewritten, and neither reaches the email.
+    return { ...line, tileSap: key, label };
+  }
+
+  // ── 2. On no tile, and its stored key is dead too ───────────────────────
+  //
+  // Leave it exactly as it is. It renders, it sends, it does not badge, and
+  // nothing can delete it because no tile replaces by a key that no longer
+  // exists. That is the correct end state for a product that left the board.
+  if (boardTile(line.tileSap) === null) return line;
+
+  // ── 3. 🔴 ON NO TILE, BUT PARKED UNDER A KEY THAT IS STILL ALIVE ────────
+  //
+  // This is the one that ate an order. VT Diamond Glo and VAF were members of
+  // the VT Specialty tile until 2026-09-07; a line saved then carries
+  // tileSap "VELVETINO", and VELVETINO is still that tile's key. Case 2 read
+  // it as "already correct" and left it — and then po-v2-page's addLines,
+  // which replaces every line whose tileSap matches the tile being edited,
+  // DELETED it the next time anybody touched VT Specialty. The drawer could
+  // not save it either: it seeds a member the tile no longer has, rowFor()
+  // returns null for it, and the pick is filtered out before Add.
+  //
+  // 🔴 THE FIX IS TO FILE IT UNDER ITS OWN PRODUCT KEY, which is exactly where
+  // a line added by SEARCHING for that product is filed (po-v2-page's group
+  // path writes tileSap = the resolved product's sap). So the line stops being
+  // a stranger on somebody else's tile and becomes an ordinary search-only
+  // line — the thing it now is.
+  //
+  // Every reader of tileSap lands right by construction:
+  //   addLines      no tile has this key, so the replace filter never sees it
+  //   existingFor   never seeded into a drawer that would drop it
+  //   countsByTile  no badge, which is correct — it is not on the board
+  //   tileArtFor    the neutral fill, as any off-board product already gets
+  //
+  // AND IT IS IDEMPOTENT BY CONSTRUCTION. A tile's key IS its top member's
+  // sap, so if `sap` were itself a live tile key the product would be a member
+  // of that tile and we would have returned at case 1. It therefore cannot be
+  // one here, which means the second pass takes case 2 and changes nothing.
+  //
+  // DERIVED, NOT A LIST. Nothing here names a product. The next membership
+  // change makes new orphans and this already handles them — proved by
+  // removing an arbitrary member from a scratch copy of the board and running
+  // this same code against it.
+  return { ...line, tileSap: sap };
 }
 
 /** The same, for a whole order. Identity-stable when nothing moved. */
