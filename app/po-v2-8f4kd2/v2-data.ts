@@ -658,6 +658,19 @@ export function buildCatalog(products: ApiProduct[]): {
  * Shade name -> swatch hex. Hand-authored, keyed by the EXACT `baseColour`
  * string, uppercased.
  *
+ * ── WHERE THE VALUES COME FROM ───────────────────────────────────────────
+ *
+ * 🔴 dulux.in's OWN PER-SHADE PAGES — the colour is read off the shade page's
+ * markup, e.g. /en/colour-palettes/gloss-oxford-blue-1975129. That source
+ * replaced eleven earlier values on 2026-09-07 and supplied six new ones.
+ *
+ * NOT the shade-card PDF: its yellow plate is missing, so every value taken
+ * from it ran cold. If a value here is ever questioned, the per-shade page is
+ * the thing to check it against, and nothing else is.
+ *
+ * A shade Dulux does not publish a page for is NOT in this table. See the
+ * still-unmapped list at the foot of it.
+ *
  * 🔴 A NAME THAT IS NOT HERE GETS NO COLOUR. Not a guess, not a nearest match,
  * not a hash of the string — a text chip. A wrong colour on a paint order is
  * worse than no colour: the salesman reads the swatch, not the code, and a
@@ -665,21 +678,21 @@ export function buildCatalog(products: ApiProduct[]): {
  * a real value here, deliberately.
  */
 const SHADE_HEX: Record<string, string> = {
-  "BLACK":                 "#1A1A1A",
-  "DARK BROWN":            "#4E3524",
-  "GOLDEN BROWN":          "#A9762F",
-  "SMOKE GREY":            "#8B8A90",
+  "BLACK":                 "#1D1E1F",
+  "DARK BROWN":            "#4B2D25",
+  "GOLDEN BROWN":          "#834A1E",
+  "SMOKE GREY":            "#5E7D8C",
   "DA GREY":               "#6E7175",
-  "GOLDEN YELLOW":         "#E8A413",
+  "GOLDEN YELLOW":         "#F3A000",
   "CLASSIC WHITE":         "#F4F1E6",
   "BRILLIANT WHITE":       "#FAF8F2",
   "PHIROZA BLUE":          "#1B8A9E",
-  "PO RED":                "#9C1A13",
-  "BROWN":                 "#6B4423",
-  "RICH BROWN":            "#4A2C1A",
+  "PO RED":                "#8D2023",
+  "BROWN":                 "#59352F",
+  "RICH BROWN":            "#48332F",
   "TERACOTTA":             "#A5502F",
-  "SIGNAL RED":            "#C0271E",
-  "BUS GREEN":             "#1F5E3A",
+  "SIGNAL RED":            "#B3312C",
+  "BUS GREEN":             "#005C3A",
   "WALNUT":                "#5C4033",
   "WHITE":                 "#FFFFFF",
   "OPAQUE WHITE":          "#FAFAF7",
@@ -702,10 +715,10 @@ const SHADE_HEX: Record<string, string> = {
   // Added 2026-09-07, each one approved by name before it was written. PHIROZA
   // reuses PHIROZA BLUE's exact value rather than a near-miss: firoza IS
   // turquoise, and two hexes a shade apart on the same colour read as a bug.
-  "PHIROZA":               "#1B8A9E",
+  "PHIROZA":               "#0081B0",
   "DEEP ORANGE":           "#D2540B",
   "MAHOGANY":              "#6E2C1F",
-  "TEAK":                  "#8B5A2B",
+  "TEAK":                  "#63483D",
   "ELECTRIC BLUE PLUS":    "#1560BD",
   "ORGANIC RED VIOLET":    "#9B3B7A",
 
@@ -716,18 +729,56 @@ const SHADE_HEX: Record<string, string> = {
   // it is answered by the drawer, not by the hex. It was a swatch + NAME chip,
   // decided by a ΔE close-pair rule; it is now a bare rail tile whose name is
   // spelled out at 15px in the pane the instant it is tapped. See the retired-
-  // rule note below. RICH BROWN keeps its original #4A2C1A.
+  // rule note below.
+  //
+  // ⚠ AND THE ROW GOT CLOSER, NOT FURTHER APART, when the dulux.in values
+  // landed: BROWN #59352F and RICH BROWN #48332F are now a few ΔE apart and
+  // TEAK #63483D sits with them. As bare 44px squares those three are a coin
+  // toss. That is a known cost of using the published values rather than
+  // separated ones, and the mitigation is the name bar and the rail search,
+  // not a nudged hex — a hex nudged to look different is a wrong colour.
   "SPECIAL TEAK":          "#A56B2E",
   "TIMBER GOLDEN BROWN":   "#BC8A3C",
 
+  // Added 2026-09-07 from the SAME dulux.in source as the replacements above.
+  // MIDDLE BUFF and SAND STONE are keyed on the payload's spelling, not the
+  // shade page's — Dulux writes "Midbuff" and "Sandstone", the menu row says
+  // "MIDDLE BUFF" and "SAND STONE", and the KEY has to be the menu row or the
+  // lookup silently misses. ROSEWOOD is the only one of the six that is not on
+  // a board tile: it belongs to Wood Stain, which is reached through search.
+  "OXFORD BLUE":           "#1C2A40",
+  "CHERRY":                "#5C2428",
+  "LEAF BROWN":            "#794830",
+  "MIDDLE BUFF":           "#C48A42",
+  "SAND STONE":            "#9A7C62",
+  "ROSEWOOD":              "#824640",
+
   // 🔴 CLEAR / INT CLEAR / EXT CLEAR ARE PERMANENTLY ABSENT - DO NOT "FIX" THIS.
   // They are TRANSPARENT products. There is no colour to show, so a swatch
-  // would be a lie; 2K Matt, Prime Matt and Prime Sealer stay text chips.
+  // would be a lie; 2K Matt, Prime Matt and Prime Sealer stay text tiles.
   //
-  // Also refused, for the same reason a wrong square is worse than a word:
-  // SUNRISE, RARE PEARL COPPER and RARE PEARL GREEN (metallics a flat fill
-  // misrepresents), plus every Acotone (NO1, XY1...) and Machine Tinter
-  // (YOX, TBL...) colorant CODE.
+  // ── STILL UNMAPPED, ON PURPOSE — 2026-09-07 ─────────────────────────────
+  //
+  // Dulux publishes no per-shade page for these, so there is no authoritative
+  // value and none is invented. They render as TEXT TILES in the rail, which
+  // is the correct outcome: a wrong swatch ships a wrong order, a word does
+  // not. Do not fill these from a screenshot, a PDF plate or a nearest match.
+  //
+  //   SKY BLUE · MINT GREEN · DEEP GREEN · AQUAMARINE · OFF WHITE
+  //   PALE CREAM · ROYAL IVORY · CASCADE GREEN · OPALINE GREEN
+  //   LIGHT GREY · DAWN · TRUCK BROWN · WILD PURPLE · SPECIAL TEAK
+  //   TIMBER GOLDEN BROWN · MAHOGANY · SUNRISE · TERACOTTA
+  //   ELECTRIC BLUE PLUS · RARE PEARL COPPER · RARE PEARL GREEN
+  //
+  // ⚠ FOUR OF THOSE ARE ALREADY IN THE TABLE ABOVE and were NOT removed:
+  // SPECIAL TEAK, TIMBER GOLDEN BROWN, MAHOGANY, TERACOTTA and ELECTRIC BLUE
+  // PLUS were each approved by name in an earlier pass and are still rendering.
+  // The instruction was "do not invent values for these", which they are not —
+  // they are values that already exist. Removing them would take colour OFF
+  // five tiles that have it, which nobody asked for. Say the word and they go.
+  //
+  // Also unmapped and never to be mapped: every Acotone (NO1, XY1...) and
+  // Machine Tinter (YOX, TBL...) colorant CODE.
 };
 
 /** The swatch for a shade name, or undefined when it has none. Case-insensitive
