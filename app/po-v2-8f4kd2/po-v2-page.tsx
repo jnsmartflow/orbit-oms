@@ -17,12 +17,14 @@ import {
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
-  BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT, FAMILIES,
+  BOARD, BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT,
   FILL, INK, MUTED, PAGE, RULE, SURFACE, URGENT, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, buildCatalog, drawerMode, formatPack,
-  mixToWhite, optionPools, packRows, resolveGroup, tileImage, unitsIn, TILE_WASH,
+  EMPTY_ORDER, boardTile, buildBoard, buildCatalog, drawerMode, formatPack,
+  mixToWhite, optionPools, packRows, resolveGroup, tileImage, tileKeyForMember,
+  unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
-  type V2CartLine, type V2Order, type V2Resolved, type V2Tile,
+  type V2BoardTile, type V2CartLine, type V2Order, type V2Resolved,
+  type V2ResolvedMember, type V2ResolvedTile,
 } from "./v2-data";
 
 // Hidden v2 salesman order page — the whole app, on one route.
@@ -101,7 +103,10 @@ const NAV_H = "calc(54px + max(env(safe-area-inset-bottom), 8px))";
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
+  | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[];
+      byTile: Map<string, V2Resolved>;
+      /** The 9x4 board, EVERY MEMBER RESOLVED ON ITS OWN ROWS (buildBoard). */
+      board: Map<string, V2ResolvedTile> };
 
 type Screen = "order" | "review" | "dealer" | "shipto" | "sent" | "drafts" | "sentList";
 type Sheet  = null | "clear" | "replace" | "summary";
@@ -114,7 +119,17 @@ export default function PoV2Page(): React.JSX.Element {
   const [query, setQuery]     = useState("");
   const [sheet, setSheet]     = useState<Sheet>(null);
   const [prodQuery, setProdQuery] = useState("");
-  const [openTile, setOpenTile] = useState<V2Tile | null>(null);
+  /**
+   * 🔴 A TILE PLUS WHICH MEMBER TO OPEN ON. A merged tile has no single
+   * product, so "which tile" is no longer enough to open a drawer.
+   *
+   * A board tap sets `initialMember` to members[0] — the top seller, which is
+   * why members are ranked. A SEARCH sets it to the product actually searched
+   * for, so typing "wood primer" lands on Wood Primer and not on whichever
+   * member happens to lead the Primers tile.
+   */
+  const [openTile, setOpenTile] =
+    useState<{ tile: V2BoardTile; initialMember: string } | null>(null);
   const [openGroup, setOpenGroup] = useState<V2ProductGroup | null>(null);
   const [lines, setLines]     = useState<V2CartLine[]>([]);
   const [order, setOrder]     = useState<V2Order>(EMPTY_ORDER);
@@ -240,6 +255,11 @@ export default function PoV2Page(): React.JSX.Element {
         throw new Error("Catalog came back empty");
       }
       const { byTile, report } = buildCatalog(data.products);
+      // 🔴 EVERY MEMBER RESOLVED SEPARATELY. buildBoard calls drawerMode,
+      // optionPools and resolveGroup once per member on that member's own
+      // rows — never on the union of a tile's members, which returns the
+      // wrong mode for 12 of the 17 merged tiles.
+      const board = buildBoard(data.products);
       // The catalog gate, kept live: the curated option lists are a snapshot
       // of 90 days of orders and the catalog moves underneath them, so a
       // reseed can invalidate a chip at any time.
@@ -249,7 +269,13 @@ export default function PoV2Page(): React.JSX.Element {
       ) {
         console.warn("[po-v2] catalog gate", report);
       }
-      setLoad({ kind: "ready", customers: data.customers ?? [], products: data.products, byTile });
+      if (board.report.missingMembers.length || board.report.emptyMembers.length) {
+        console.warn("[po-v2] board gate", board.report);
+      }
+      setLoad({
+        kind: "ready", customers: data.customers ?? [], products: data.products,
+        byTile, board: board.byKey,
+      });
 
       // Restore the live draft ONCE, and only after the payload lands — the
       // stored shipToCode has to be re-resolved against the fresh dealer list
@@ -429,9 +455,26 @@ export default function PoV2Page(): React.JSX.Element {
    * subProduct, never from `label`, which is the curated board word.
    */
   function addLines(
-    sap: string,
-    label: string,
+    tileKey: string,
+    labelOf: (row: ApiProduct) => string,
     picks: { option: string | null; row: ApiProduct; qtys: Record<string, number> }[],
+    /**
+     * ⚠ INTERIM SCOPE — the member whose picks these are, or null for the
+     * search path that has no tile.
+     *
+     * REPLACE-BY-TILE IS THE DESTINATION, NOT TODAY'S BEHAVIOUR. The drawer
+     * returns the complete edited set for whatever it was showing, and today
+     * it shows ONE member. Replacing every line on the tile would therefore
+     * delete the siblings the drawer never showed him — edit PU Prime Matt
+     * and PU Prime Gloss silently vanishes from the order. So the replace is
+     * scoped to the member, using the row identity already on the line.
+     *
+     * The seed (existingFor) uses the IDENTICAL predicate, so a line is never
+     * written under one key and looked up under another and a duplicate
+     * cannot appear. Step 4 widens both to the whole tile in one edit, when
+     * the drawer starts returning every member's picks.
+     */
+    memberSap: string | null,
   ): void {
     // 🔴 REPLACE, NOT APPEND. The drawer opens SEEDED from whatever this
     // product already has in the cart, so what comes back is the complete,
@@ -442,13 +485,25 @@ export default function PoV2Page(): React.JSX.Element {
     // only behaviour that makes the seeding honest: what he sees is what he
     // gets, including what he took away.
     setLines((prev) => {
-      const kept = prev.filter((l) => l.tileSap !== sap);
+      const kept = prev.filter((l) => !(
+        l.tileSap === tileKey &&
+        (memberSap === null || (l.product ?? l.subProduct) === memberSap)));
       const built: V2CartLine[] = picks.map((p, i) => {
         const qtys: Record<string, number> = {};
         for (const [packLabel, qty] of Object.entries(p.qtys)) if (qty > 0) qtys[packLabel] = qty;
         return {
-          id: `${sap}-${Date.now()}-${i}`,
-          tileSap: sap, label, option: p.option, rowId: p.row.id, qtys,
+          id: `${tileKey}-${Date.now()}-${i}`,
+          // 🔴 tileSap IS THE TILE KEY; label IS THE MEMBER'S OWN NAME.
+          // The review screen renders `label` as the product name, so a
+          // merged tile must not print "Primers" where he needs "Wood
+          // Primer". The label is derived from the ROW, not from what the
+          // drawer was told, so it stays right when Step 4 lets one visit
+          // touch several members.
+          //
+          // product / baseColour / subProduct are untouched: they are
+          // snapshotted from the member's own menu row and they are the
+          // three fields emailLineLabel reads. Nothing here reaches the wire.
+          tileSap: tileKey, label: labelOf(p.row), option: p.option, rowId: p.row.id, qtys,
           packOrder: p.row.packs.map((pk) => formatPack(pk.packCode, pk.unit)),
           product: p.row.product, baseColour: p.row.baseColour, subProduct: p.row.subProduct,
         };
@@ -459,9 +514,44 @@ export default function PoV2Page(): React.JSX.Element {
     setOpenGroup(null);
   }
 
-  /** What this product already has in the cart, for the drawer to open on. */
-  function existingFor(sap: string): { option: string | null; qtys: Record<string, number> }[] {
-    return lines.filter((l) => l.tileSap === sap).map((l) => ({ option: l.option, qtys: l.qtys }));
+  /**
+   * What the drawer opens SEEDED from — and it must be the same set addLines
+   * will replace, or the two disagree and a duplicate appears that nobody can
+   * see. The predicate is copied from addLines deliberately; when Step 4
+   * widens one it widens both.
+   */
+  function existingFor(
+    tileKey: string, memberSap: string | null,
+  ): { option: string | null; qtys: Record<string, number> }[] {
+    return lines
+      .filter((l) => l.tileSap === tileKey &&
+        (memberSap === null || (l.product ?? l.subProduct) === memberSap))
+      .map((l) => ({ option: l.option, qtys: l.qtys }));
+  }
+
+  /** A row -> the label of the member it belongs to, for the cart line. */
+  function memberLabelIn(tile: V2BoardTile): (row: ApiProduct) => string {
+    return (row) => {
+      const sap = row.product ?? row.subProduct;
+      return tile.members.find((m) => m.sap === sap)?.label ?? tile.label;
+    };
+  }
+
+  /**
+   * A search hit opens its TILE when it has one, positioned on the product he
+   * actually searched for.
+   *
+   * 🔴 THE LOOKUP IS DERIVED (tileKeyForMember), never a hand-written map.
+   * Under Scheme A a tile's key IS its top member's sap, so the key moves the
+   * day sales reorder the members — and a hard-coded table would be right for
+   * exactly one ranking. A product on NO tile keeps today's behaviour to the
+   * letter: its own resolution, its own drawer.
+   */
+  function openSearchHit(group: V2ProductGroup): void {
+    const key = tileKeyForMember(group.key);
+    const tile = key === null ? null : boardTile(key);
+    if (tile) setOpenTile({ tile, initialMember: group.key });
+    else setOpenGroup(group);
   }
 
   /**
@@ -523,7 +613,21 @@ export default function PoV2Page(): React.JSX.Element {
   const products    = ready ? load.products : [];
   const searching   = prodQuery.trim().length >= MIN_QUERY;
   const cartOpen    = lines.length > 0;
-  const openProduct = ready && openTile ? load.byTile.get(openTile.sap) ?? null : null;
+  /**
+   * The tile that is open, and the ONE member the drawer is showing.
+   *
+   * ⚠ INTERIM — product-drawer.tsx still knows exactly one product, and it is
+   * Step 4's file. So a merged tile hands it ONE member and reaches only that
+   * one: members[0] from a board tap, or the searched member from a search
+   * hit. Step 4 gives the drawer its member column and this collapses to
+   * handing it the whole tile. Do not read the single-member hand-off as the
+   * design — it is scaffolding with a date on it.
+   */
+  const openResolved = ready && openTile ? load.board.get(openTile.tile.key) ?? null : null;
+  const openMember: V2ResolvedMember | null = openResolved
+    ? (openResolved.members.find((m) => m.sap === openTile?.initialMember)
+       ?? openResolved.members[0] ?? null)
+    : null;
   // A searched PRODUCT resolves to its curated chips when it is one of the 32,
   // and to its own payload options (sortOrder, capped) when it is not.
   const tileLabelFor = (key: string): string | undefined =>
@@ -532,14 +636,10 @@ export default function PoV2Page(): React.JSX.Element {
     ? resolveGroup(openGroup.key, openGroup.rows,
                    tileLabelFor(openGroup.key) ?? openGroup.best.displayName, load.byTile)
     : null;
-  // The catalog rows behind whatever is open, and the shape they imply.
-  // drawerMode() in v2-data is the ONE place that decision lives.
-  const openTileRows = ready && openTile
-    ? load.products.filter((p) => (p.product ?? p.subProduct) === openTile.sap)
-    : [];
-  const tileProduct = ready && openTile ? load.byTile.get(openTile.sap) : undefined;
-  const tilePools = tileProduct ? optionPools(openTileRows) : undefined;
-  const tileMode  = openTile ? drawerMode(openTileRows) : undefined;
+  // 🔴 THE OPEN MEMBER'S OWN mode AND pools, CARRIED FROM buildBoard.
+  // Nothing here recomputes them, and nothing here may: the only shape a
+  // caller with a tile in hand can reach for is the union, and the union is
+  // wrong. V2ResolvedMember exists so that temptation has no target.
   const groupPools = openGroup ? optionPools(openGroup.rows) : undefined;
   const groupMode  = openGroup ? drawerMode(openGroup.rows) : undefined;
 
@@ -988,18 +1088,18 @@ export default function PoV2Page(): React.JSX.Element {
               products={products}
               query={prodQuery}
               labelFor={tileLabelFor}
-              onPick={(group) => setOpenGroup(group)}
+              onPick={openSearchHit}
             />
           </div>
         ) : (
         <>
         {/* ── FAMILY BLOCKS ────────────────────────────────────────────── */}
-        {FAMILIES.map((family, familyIndex) => {
+        {BOARD.map((family, familyIndex) => {
           // 🔴 THE FIRST TWO FAMILIES LOAD EAGERLY, EVERYTHING BELOW IS LAZY.
           // Eight tiles are what fits above the fold on a 390px phone, and they
-          // are the eight a salesman opens most. Marking all 32 eager would put
-          // 577 KB on the wire before the first tap on a depot 5G signal that
-          // is 5G on the sign and not in the shed; marking all 32 lazy would
+          // are the eight a salesman opens most. Marking all 36 eager would put
+          // 560 KB on the wire before the first tap on a depot 5G signal that
+          // is 5G on the sign and not in the shed; marking all 36 lazy would
           // leave the first screen visibly empty on arrival, which reads as a
           // broken page rather than a loading one.
           const eager = familyIndex < 2;
@@ -1033,7 +1133,7 @@ export default function PoV2Page(): React.JSX.Element {
             </div>
             <div className="grid grid-cols-4" style={{ gap: 7 }}>
               {family.tiles.map((tile) => {
-                const count   = countsByTile[tile.sap] ?? 0;
+                const count   = countsByTile[tile.key] ?? 0;
                 const inOrder = count > 0;
                 // Null for the eight products with no art. An empty tinted
                 // square is the whole treatment — no initials, no dash, no
@@ -1042,11 +1142,17 @@ export default function PoV2Page(): React.JSX.Element {
                 const src = tileImage(tile.slug);
                 return (
                   <button
-                    key={tile.sap}
+                    // 🔴 key ON THE TILE KEY, NOT A MEMBER SAP. Two merged
+                    // tiles could share a leading member after a re-rank, and
+                    // a stale React key leaks one drawer's state into the
+                    // next.
+                    key={tile.key}
                     type="button"
                     disabled={!ready}
                     // Nothing is asked first. This is the whole interaction.
-                    onClick={() => setOpenTile(tile)}
+                    // A board tap opens on members[0] — the top seller, which
+                    // is the whole reason members are ranked.
+                    onClick={() => setOpenTile({ tile, initialMember: tile.members[0].sap })}
                     className="flex min-w-0 flex-col gap-1.5 text-left"
                     style={{ opacity: ready ? 1 : 0.45 }}
                   >
@@ -1166,16 +1272,26 @@ export default function PoV2Page(): React.JSX.Element {
       {toastHost}
 
       {/* ── PRODUCT DRAWER, from the BOARD ─────────────────────────────── */}
-      {/* `key` forces a fresh mount per tile, so selections never leak. */}
-      {openTile && openProduct && (
+      {/* ⚠ INTERIM, AND STEP 4 REPLACES IT. product-drawer.tsx knows exactly
+          one product and is not this step's file, so a merged tile hands it
+          ONE member — members[0] from a board tap, the searched product from
+          a search hit — and the tile's other members are unreachable from the
+          board until the drawer grows its member column. That is scaffolding,
+          not the design.
+
+          `key` carries the member too: switching member inside one tile must
+          give a fresh drawer, or the previous member's quantities leak into
+          the next one's packs. */}
+      {openTile && openMember && (
         <ProductDrawer
-          key={openTile.sap}
-          product={openProduct}
+          key={`${openTile.tile.key}::${openMember.sap}`}
+          product={openMember}
           onClose={() => setOpenTile(null)}
-          onAdd={(picks) => addLines(openTile.sap, openTile.label, picks)}
-          existing={existingFor(openTile.sap)}
-          pools={tilePools}
-          mode={tileMode}
+          onAdd={(picks) => addLines(
+            openTile.tile.key, memberLabelIn(openTile.tile), picks, openMember.sap)}
+          existing={existingFor(openTile.tile.key, openMember.sap)}
+          pools={openMember.pools}
+          mode={openMember.mode}
         />
       )}
 
@@ -1188,8 +1304,9 @@ export default function PoV2Page(): React.JSX.Element {
           key={`group-${openGroup.key}`}
           product={groupResolved}
           onClose={() => setOpenGroup(null)}
-          onAdd={(picks) => addLines(groupResolved.sap, groupResolved.label, picks)}
-          existing={existingFor(groupResolved.sap)}
+          onAdd={(picks) => addLines(
+            groupResolved.sap, () => groupResolved.label, picks, null)}
+          existing={existingFor(groupResolved.sap, null)}
           pools={groupPools}
           mode={groupMode}
         />
