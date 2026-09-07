@@ -118,8 +118,11 @@ function OrderSummary({ snapshot, stamp }: {
     <>
       {/* min-w-0 lets both lines truncate instead of widening the row. */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14.5px] font-semibold" style={{ color: INK }}>
-          {snapshot.customer.name}
+        {/* A DRAFT MAY HAVE NO DEALER — that is why it is a draft. The row
+            says so plainly rather than showing a blank line where a name goes. */}
+        <span className="block truncate text-[14.5px] font-semibold"
+              style={{ color: snapshot.customer ? INK : MUTED }}>
+          {snapshot.customer?.name ?? "No dealer yet"}
         </span>
         <span className="block truncate text-[12px]" style={{ color: MUTED }}>
           {summaryLine(snapshot)}

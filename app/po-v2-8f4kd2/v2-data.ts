@@ -37,9 +37,19 @@ export const SEARCH_BG  = FILL;
  *  saying DIVIDER, but it is RULE and must stay RULE. */
 export const DIVIDER    = RULE;
 
-/** The brand gradient. Screen only — it never goes on paper. */
+/**
+ * The brand gradient, for the SPLASH. Screen only — it never goes on paper.
+ *
+ * 🔴 TWO STOPS, NOT THREE. It used to fall to #581C87 at the far corner, which
+ * read as a bruise on a full screen rather than as a brand. The radial geometry
+ * is unchanged; only the dark stop is gone.
+ *
+ * ⚠ THE APP ICON STILL USES THE THREE-STOP VERSION and is not regenerated here.
+ * A 512px tile can carry a depth a whole phone screen cannot, and that tile is
+ * already approved — it is a separate decision, so public/brand/ is untouched.
+ */
 export const BRAND_GRADIENT =
-  "radial-gradient(125% 125% at 26% 20%, #A78BFA 0%, #7C3AED 44%, #581C87 100%)";
+  "radial-gradient(125% 125% at 26% 20%, #A78BFA 0%, #7C3AED 100%)";
 
 // ── The payload from GET /api/order/data ───────────────────────────────────
 // Field names and nesting mirror app/api/order/data/route.ts exactly. `packs`

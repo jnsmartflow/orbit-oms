@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronLeft, MapPin, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
-  DIVIDER, INK, RULE, VIOLET,
+  BRAND, DIVIDER, FAINT, INK, MUTED, RULE, VIOLET,
   chipStyle, packRows, unitsIn,
   type ApiCustomer, type V2CartLine, type V2Marker, type V2Order,
 } from "./v2-data";
@@ -13,6 +13,11 @@ import {
 //
 // SINGLE BILL. No "Bill 1", no Add bill, no multi. /po's multi-bill machinery
 // is not carried over.
+//
+// 🔴 THIS SCREEN ASKS FOR THE DEALER, and it is the only screen that does. The
+// board used to demand one before a single product could be tapped, which had
+// it exactly backwards: a salesman standing in a shop wants to start adding,
+// not answer a question. The dealer is a field on the way OUT.
 //
 // 🔴 EVERY CONTROL HERE EXISTS BECAUSE lib/place-order/email.ts READS IT.
 // The Dispatch options produce its three literal `Dispatch:` values plus the
@@ -59,9 +64,10 @@ const MARKER_CHOICES: { label: string; value: V2Marker }[] = [
 
 export default function ReviewScreen({
   dealer, shipTo, lines, order,
-  onBack, onEdit, onRemoveLine, onOrderChange, onOpenShipTo, onSend, onSaveDraft,
+  onBack, onEdit, onRemoveLine, onOrderChange, onOpenDealer, onOpenShipTo, onSend, onSaveDraft,
 }: {
-  dealer: ApiCustomer;
+  /** NULL until he picks one — which he may leave until the last moment. */
+  dealer: ApiCustomer | null;
   /** NULL means "same as billing" — the state email.ts omits the Ship To line for. */
   shipTo: ApiCustomer | null;
   lines: V2CartLine[];
@@ -70,12 +76,15 @@ export default function ReviewScreen({
   onEdit: () => void;
   onRemoveLine: (id: string) => void;
   onOrderChange: (next: V2Order) => void;
+  onOpenDealer: () => void;
   onOpenShipTo: () => void;
+  /** Fires only with a dealer set. With none it opens the dealer sheet. */
   onSend: () => void;
   onSaveDraft: () => void;
 }): React.JSX.Element {
   const totalUnits = lines.reduce((sum, l) => sum + unitsIn(l.qtys), 0);
-  const shipElsewhere = shipTo !== null && shipTo.code !== dealer.code;
+  const shipElsewhere = shipTo !== null && shipTo.code !== dealer?.code;
+  const canSend = dealer !== null;
 
   return (
     <main className="min-h-screen w-full bg-white" style={{ paddingBottom: 148 }}>
@@ -103,15 +112,44 @@ export default function ReviewScreen({
         </button>
       </header>
 
-      {/* ── DEALER ───────────────────────────────────────────────────────── */}
-      <div className="px-4 py-3">
-        <p className="truncate text-[17px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
-          {dealer.name}
-        </p>
-        <p className="truncate text-[12.5px] text-neutral-400">
-          {[dealer.code, dealer.area, today()].filter(Boolean).join(" · ")}
-        </p>
-      </div>
+      {/* ── DEALER — the one question this screen exists to ask ───────────
+          Empty, it is the ONLY violet thing above the Send button, so on a
+          screen full of chips and totals the eye lands on the thing that is
+          actually missing. */}
+      <button
+        type="button" onClick={onOpenDealer}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left"
+      >
+        {dealer ? (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[17px] font-extrabold"
+                    style={{ color: INK, letterSpacing: "-0.02em" }}>
+                {dealer.name}
+              </span>
+              <span className="block truncate text-[12.5px]" style={{ color: MUTED }}>
+                {[dealer.code, dealer.area, today()].filter(Boolean).join(" · ")}
+              </span>
+            </span>
+            <span className="shrink-0 text-[12.5px] font-extrabold" style={{ color: VIOLET }}>
+              Change
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[17px] font-extrabold"
+                    style={{ color: VIOLET, letterSpacing: "-0.02em" }}>
+                Choose dealer
+              </span>
+              <span className="block truncate text-[12.5px]" style={{ color: MUTED }}>
+                {today()}
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: VIOLET }} />
+          </>
+        )}
+      </button>
 
       <Band />
 
@@ -158,14 +196,14 @@ export default function ReviewScreen({
                   {label} ×{qty}
                 </p>
               ))}
-              <p className="text-[11px] text-neutral-400">{unitsIn(line.qtys)} units</p>
+              <p className="text-[11px]" style={{ color: MUTED }}>{unitsIn(line.qtys)} units</p>
             </div>
             <button
               type="button" aria-label={`Remove ${line.label}`}
               onClick={() => onRemoveLine(line.id)}
               className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center"
             >
-              <X className="h-4 w-4 text-neutral-300" strokeWidth={2.5} />
+              <X className="h-4 w-4" strokeWidth={2.5} style={{ color: FAINT }} />
             </button>
           </div>
         ))}
@@ -236,7 +274,7 @@ export default function ReviewScreen({
             value={order.crossDepot}
             onChange={(e) => onOrderChange({ ...order, crossDepot: e.target.value })}
             placeholder="Cross billing from which depot?"
-            className="mt-2 w-full rounded-[12px] px-3 py-2.5 text-[16px] outline-none placeholder:text-neutral-400"
+            className="mt-2 w-full rounded-[12px] px-3 py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
             style={{ border: `1.5px solid ${RULE}`, color: INK }}
           />
         )}
@@ -251,7 +289,7 @@ export default function ReviewScreen({
           onChange={(e) => onOrderChange({ ...order, notes: e.target.value })}
           placeholder="Notes · optional"
           rows={3}
-          className="w-full resize-none rounded-[12px] px-3 py-2.5 text-[16px] outline-none placeholder:text-neutral-400"
+          className="w-full resize-none rounded-[12px] px-3 py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
           style={{ border: `1.5px solid ${RULE}`, color: INK }}
         />
       </Section>
@@ -270,14 +308,14 @@ export default function ReviewScreen({
           style={{ borderBottom: `1px solid ${DIVIDER}` }}
         >
           <MapPin className="h-4 w-4 shrink-0" strokeWidth={2.5}
-                  style={{ color: shipElsewhere ? VIOLET : "#A3A3A3" }} />
+                  style={{ color: shipElsewhere ? VIOLET : FAINT }} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13.5px] font-bold"
                   style={{ color: shipElsewhere ? VIOLET : INK }}>
               {shipElsewhere ? `Ship to · ${shipTo.name}` : "Ship to · same as billing"}
             </span>
-            <span className="block truncate text-[12px] text-neutral-400">
-              {shipElsewhere ? (shipTo.area ?? shipTo.code) : (dealer.area ?? dealer.code)}
+            <span className="block truncate text-[12px]" style={{ color: MUTED }}>
+              {shipElsewhere ? (shipTo.area ?? shipTo.code) : (dealer?.area ?? dealer?.code ?? "—")}
             </span>
           </span>
           <span className="shrink-0 text-[12.5px] font-extrabold" style={{ color: VIOLET }}>
@@ -286,13 +324,21 @@ export default function ReviewScreen({
         </button>
 
         <div className="px-4 pt-2.5">
+          {/* 🔴 NOT `disabled`. A dead button tells a salesman nothing about why
+              it is dead, and this one has exactly one reason. Tapping it with no
+              dealer OPENS THE DEALER SHEET and then comes back here — it never
+              sends on his behalf. An order that leaves on its own is the single
+              mistake this screen exists to prevent, so picking a dealer returns
+              him to a finished order with a live button and he presses it
+              himself, looking at what goes out. */}
           <button
             type="button"
             onClick={onSend}
+            aria-disabled={!canSend}
             className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-            style={{ background: VIOLET }}
+            style={{ background: canSend ? BRAND : FAINT }}
           >
-            Send order
+            {canSend ? "Send order" : "Choose dealer to send"}
           </button>
         </div>
       </div>

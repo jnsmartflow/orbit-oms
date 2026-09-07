@@ -27,10 +27,15 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-// 🎨 background_color and theme_color are the FLAT brand.600, #7C3AED — never
-// the gradient. A manifest colour is a single value by definition, and Android
-// paints it behind the app while it starts; the gradient belongs on a rendered
-// surface where it can actually be a gradient.
+// 🎨 THE TWO COLOURS DO DIFFERENT JOBS AND ARE DELIBERATELY NOT THE SAME.
+//
+// background_color is the LAUNCH background — Android paints it behind the app
+// while it starts, so it is brand.600 and matches the splash the page renders a
+// moment later.
+//
+// theme_color is the toolbar/status bar of the app IN USE, and that is WHITE.
+// The violet belongs to the home screen: the icon, the splash, the login. Every
+// inner screen is white, and the board is an inner screen.
 //
 // 🔴 EVERY ICON IS "any maskable", and the PNGs behind them are FULL-BLEED with
 // no baked corner radius. Both platforms apply their own mask — iOS a squircle,
@@ -54,7 +59,7 @@ const MANIFEST = {
   display: "standalone",
   display_override: ["standalone"],
   background_color: "#7C3AED",
-  theme_color: "#7C3AED",
+  theme_color: "#FFFFFF",
   orientation: "portrait",
   icons: [
     { src: "/brand/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },

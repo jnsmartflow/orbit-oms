@@ -36,9 +36,17 @@ const DAY_MS        = 24 * 60 * 60 * 1000;
  * `shipToCode` is a CODE, not a customer object: the dealer list is refetched
  * every load, and a stored copy would go stale the moment an area or a name
  * changes. The code is re-resolved against the live payload on restore.
+ *
+ * 🔴 `customer` IS NULLABLE, and that is the whole point of a draft. A salesman
+ * standing in a shop builds the order first and often does not know yet whose
+ * account it goes on — a draft that refused to save without a dealer would make
+ * him answer a question he came here to defer. The dealer is asked for on
+ * review, on the way out.
+ *
+ * A SENT order always has one, because Send will not fire without it.
  */
 export type V2Snapshot = {
-  customer:   ApiCustomer;
+  customer:   ApiCustomer | null;
   lines:      V2CartLine[];
   shipToCode: string | null;
   dispatch:   V2Dispatch;
@@ -85,26 +93,39 @@ function removeRaw(key: string): void {
   }
 }
 
-/** A stored snapshot is only usable if it still has a dealer and some lines. */
+/**
+ * A stored snapshot is usable if it still has LINES. The dealer is optional.
+ *
+ * 🔴 THIS USED TO DEMAND `customer.code`, which would have silently discarded
+ * every dealer-less draft on read — saved fine, gone on reopen, nothing logged.
+ * Old snapshots all carry a customer object and still pass unchanged.
+ */
 function validSnapshot(v: Partial<V2Snapshot> | null | undefined): v is V2Snapshot {
-  return !!v && !!v.customer && typeof v.customer.code === "string" && Array.isArray(v.lines);
+  if (!v || !Array.isArray(v.lines)) return false;
+  return v.customer === null || v.customer === undefined || typeof v.customer.code === "string";
 }
 
 export function snapshotOf(
-  customer: ApiCustomer, lines: V2CartLine[], shipTo: ApiCustomer | null, order: V2Order,
+  customer: ApiCustomer | null, lines: V2CartLine[], shipTo: ApiCustomer | null, order: V2Order,
 ): V2Snapshot {
   return {
     customer, lines,
-    shipToCode: shipTo && shipTo.code !== customer.code ? shipTo.code : null,
+    shipToCode: shipTo && shipTo.code !== customer?.code ? shipTo.code : null,
     dispatch: order.dispatch, callTarget: order.callTarget,
     marker: order.marker, crossDepot: order.crossDepot, notes: order.notes,
   };
 }
 
-/** Generated, never typed — "AMBIKA PAINTS · 3 lines". */
+/**
+ * Generated, never typed — "AMBIKA PAINTS · 3 lines".
+ *
+ * A dealer-less draft is labelled by its contents instead, so the row still
+ * says something useful: "No dealer yet · 3 lines".
+ */
 export function labelFor(snapshot: V2Snapshot): string {
   const n = snapshot.lines.length;
-  return `${snapshot.customer.name} · ${n} ${n === 1 ? "line" : "lines"}`;
+  const who = snapshot.customer?.name ?? "No dealer yet";
+  return `${who} · ${n} ${n === 1 ? "line" : "lines"}`;
 }
 
 // ── 1. The live draft — one object, overwritten as the order changes ───────
@@ -133,7 +154,7 @@ export function loadLiveDraft(): V2Snapshot | null {
     return null;
   }
   return {
-    customer: parsed.customer, lines: parsed.lines,
+    customer: parsed.customer ?? null, lines: parsed.lines,
     shipToCode: typeof parsed.shipToCode === "string" ? parsed.shipToCode : null,
     dispatch:   parsed.dispatch   ?? "Normal",
     callTarget: parsed.callTarget ?? "SO",

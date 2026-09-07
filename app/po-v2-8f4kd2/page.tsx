@@ -55,9 +55,12 @@ export const metadata: Metadata = {
   },
 };
 
-// ⚠ themeColor lives on the VIEWPORT export, not on `metadata`. It is the FLAT
-// brand.600 — a status bar takes one colour, and the gradient is a rendered
-// surface, never a token.
+// ⚠ themeColor lives on the VIEWPORT export, not on `metadata`.
+//
+// 🔴 WHITE, NOT THE BRAND VIOLET. brand.600 belongs to the home screen — the
+// icon, the splash, the login. Every INNER screen is white, and the board is an
+// inner screen: a violet slab above a white page was the most visible thing on
+// the phone and it was the one thing that had no reason to be there.
 //
 // The task said to add it to the Metadata export. In Next 14 that field is
 // DEPRECATED there: `metadata.themeColor` logs "Unsupported metadata
@@ -73,7 +76,7 @@ export const metadata: Metadata = {
 // maximumScale / userScalable / interactiveWidget untouched. Every other
 // route keeps the teal.
 export const viewport: Viewport = {
-  themeColor: "#7C3AED",
+  themeColor: "#FFFFFF",
 };
 
 export default function Page() {

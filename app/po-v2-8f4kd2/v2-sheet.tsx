@@ -37,39 +37,72 @@ const SHEET_CSS = `
 }
 `;
 
+// ── The body-scroll lock, REF-COUNTED ──────────────────────────────────────
+//
+// 🔴 THIS USED TO BE PER-SHEET, AND IT LOST THE SCROLL POSITION.
+//
+// Each sheet locked and unlocked the body on its own. That is fine for one
+// sheet and wrong the moment two overlap, which the board does routinely: the
+// dealer sheet closing and the product drawer opening happen in the SAME React
+// commit, and React runs every cleanup before any setup. So the body went
+// fixed -> static -> fixed inside one frame. Restoring `position` collapses and
+// re-expands the document, `window.scrollTo` writes against whatever the
+// scrollable extent is at that instant, and before layout has settled that
+// extent is one viewport — so the restore CLAMPED TO ZERO and the salesman was
+// thrown back to the top of the board.
+//
+// A timer would have hidden it. Instead the lock is shared and counted: the
+// body is touched only on the 0 -> 1 and 1 -> 0 transitions, so overlapping
+// consumers never toggle it at all. The count and the saved offset are
+// module-level because there is exactly one <body> to own.
+//
+// ⚠ Counting alone does not close the gap: in a handoff commit the count still
+// dips 1 -> 0 -> 1, because the outgoing cleanup runs before the incoming
+// setup. The page therefore holds a lock of its own for as long as ANY overlay
+// is open (see useBodyScrollLock(overlayOpen) in po-v2-page), which keeps the
+// count at 1 across the swap. That is what actually makes the handoff silent.
+
+let lockCount = 0;
+let lockedY = 0;
+let lockedPrev: Record<string, string> = {};
+
 /**
- * Locks the page behind the scrim and restores both the styles and the scroll
- * position on close.
- *
- * `position: fixed` on <body>, NOT `overflow: hidden`: iOS Safari ignores
- * overflow-hidden on body and keeps scrolling the page under the sheet. Fixing
- * the body collapses its scroll to zero, so the offset is stashed in `top` and
- * handed back to window.scrollTo on cleanup. Each property is read first and
- * restored individually rather than reset to "", so this cannot clobber a
- * style something else set.
+ * @param active pass false to hold the hook without taking the lock. Lets a
+ *   caller own the lock for a whole span (any-overlay-open) rather than for
+ *   one component's lifetime.
  */
-function useBodyScrollLock(): void {
+export function useBodyScrollLock(active = true): void {
   useEffect(() => {
+    if (!active) return;
     const body = document.body;
-    const y = window.scrollY;
-    const prev = {
-      position: body.style.position, top: body.style.top,
-      left: body.style.left, right: body.style.right, width: body.style.width,
-    };
-    body.style.position = "fixed";
-    body.style.top      = `-${y}px`;
-    body.style.left     = "0";
-    body.style.right    = "0";
-    body.style.width    = "100%";
+    if (lockCount === 0) {
+      lockedY = window.scrollY;
+      // Read first and restored individually rather than reset to "", so this
+      // cannot clobber a style something else set.
+      lockedPrev = {
+        position: body.style.position, top: body.style.top,
+        left: body.style.left, right: body.style.right, width: body.style.width,
+      };
+      // `position: fixed`, NOT `overflow: hidden`: iOS Safari ignores
+      // overflow-hidden on body and keeps scrolling the page under the sheet.
+      body.style.position = "fixed";
+      body.style.top      = `-${lockedY}px`;
+      body.style.left     = "0";
+      body.style.right    = "0";
+      body.style.width    = "100%";
+    }
+    lockCount += 1;
     return () => {
-      body.style.position = prev.position;
-      body.style.top      = prev.top;
-      body.style.left     = prev.left;
-      body.style.right    = prev.right;
-      body.style.width    = prev.width;
-      window.scrollTo(0, y);
+      lockCount -= 1;
+      if (lockCount > 0) return;      // somebody else still has it
+      body.style.position = lockedPrev.position;
+      body.style.top      = lockedPrev.top;
+      body.style.left     = lockedPrev.left;
+      body.style.right    = lockedPrev.right;
+      body.style.width    = lockedPrev.width;
+      window.scrollTo(0, lockedY);
     };
-  }, []);
+  }, [active]);
 }
 
 export default function V2Sheet({
