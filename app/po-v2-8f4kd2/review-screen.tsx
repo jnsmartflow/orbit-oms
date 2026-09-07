@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, Save, Trash2, X } from "lucide-react";
 import {
   BRAND, DIVIDER, FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
   chipStyle, packRows, tileArtFor, unitsIn,
@@ -139,22 +139,31 @@ export default function ReviewScreen({
           </button>
         </div>
 
-        {/* Two words, on their own row, right aligned. Their own row is what
-            keeps a two-line dealer name from pushing them anywhere. */}
-        <div className="flex items-center justify-end pr-2" style={{ gap: 16, marginTop: 6 }}>
-          <button
-            type="button" onClick={onSaveDraft}
-            className="text-[12.5px] font-extrabold" style={{ color: MUTED }}
-          >
-            Save draft
-          </button>
-          <button
-            type="button" onClick={onClearOrder}
-            className="text-[12.5px] font-extrabold" style={{ color: MUTED }}
-          >
-            Clear order
-          </button>
-        </div>
+        {/* 🔴 ICONS, AND ONLY ONCE THERE IS A DEALER.
+            The two words took a whole row to say what a disk and a bin say in
+            56px, on a screen whose job is to show him the order.
+
+            They are absent entirely with no dealer — not greyed, not disabled.
+            There is nothing to file and nothing to clear that he cannot do by
+            walking back to the board, and an empty row of controls at the top
+            of an unfinished order is chrome charging rent. That space stays
+            with the order until it is worth spending. */}
+        {dealer && (
+          <div className="flex items-center justify-end pr-1" style={{ gap: 4, marginTop: 2 }}>
+            <button
+              type="button" aria-label="Save this order as a draft" onClick={onSaveDraft}
+              className="flex h-9 w-9 items-center justify-center rounded-full"
+            >
+              <Save className="h-[18px] w-[18px]" strokeWidth={2} style={{ color: MUTED }} />
+            </button>
+            <button
+              type="button" aria-label="Clear this order" onClick={onClearOrder}
+              className="flex h-9 w-9 items-center justify-center rounded-full"
+            >
+              <Trash2 className="h-[18px] w-[18px]" strokeWidth={2} style={{ color: MUTED }} />
+            </button>
+          </div>
+        )}
       </header>
 
       <Band />

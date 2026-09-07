@@ -148,7 +148,13 @@ export function CustomerRow({
  * The list body. A search box above it, starred first, results below — and no
  * other sections.
  *
- * EMPTY QUERY: his STARRED dealers, in the order he starred them. Nothing else.
+ * EMPTY QUERY: his STARRED dealers, A to Z. Nothing else.
+ *
+ * 🔴 ALPHABETICAL, NOT NEWEST-FIRST. Recency is the order they were STARRED in,
+ * which is a fact about a day months ago and tells him nothing about where to
+ * look now. A list he reads every day should be in the order he can predict.
+ * Search results keep their relevance order — that ordering is an answer to
+ * what he typed, and sorting it would throw the answer away.
  *
  * 🔴 THERE IS NO ALL-DEALERS LIST AND NO BROWSE BUTTON, DELIBERATELY. Seven
  * hundred alphabetical rows is not a list anyone reads; it is a wall you scroll
@@ -207,7 +213,9 @@ export function CustomerListBody({
 
   return (
     <div>
-      {starred.map((s) => row({ name: s.name, code: s.code, area: s.area }, "star"))}
+      {[...starred]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((s) => row({ name: s.name, code: s.code, area: s.area }, "star"))}
     </div>
   );
 }

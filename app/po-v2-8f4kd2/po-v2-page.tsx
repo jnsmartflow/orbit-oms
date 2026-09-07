@@ -933,43 +933,40 @@ export default function PoV2Page(): React.JSX.Element {
           paddingBottom: `calc(${NAV_H} + ${cartOpen ? 84 : 16}px)`,
         }}
       >
-        {/* ── BRAND ROW — NOT STICKY. It scrolls away. ─────────────────────
-            🔴 RESTORING WHAT c02c549f REMOVED, and for the reason the old
-            comment gave: "DEALER BAR — scrolls AWAY. The search row below takes
-            over." A logo does not need to follow a salesman down a page. It
-            identifies the app once, on arrival, and then gets out of the way of
-            the products — which is the entire content of this screen.
+        {/* ── THE BAND ─────────────────────────────────────────────────────
+            🔴 THE SEARCH LIVES INSIDE THE VIOLET, NOT UNDER IT. With the bar on
+            white below the wash, the violet read as a STRIPE — a band of colour
+            with no job, sitting between a logo and a control. A header is a
+            region that holds the things you identify and navigate with, so it
+            holds both: the name and the depot on one row, the search on the
+            next, and the catalogue starts where the colour stops.
 
-            SURAT DEPOT balances the row and is real information, not
-            decoration: it is the one thing on the board that says which depot
-            these prices and this catalog belong to. */}
-        <div className="flex items-baseline justify-between px-4"
-             style={{ background: BRAND_WASH, paddingTop: 16, paddingBottom: 14 }}>
-          <Wordmark size={31} colour={BRAND} />
-          <span className="shrink-0 font-mono text-[10px] uppercase"
-                style={{ color: FAINT, letterSpacing: ".14em" }}>
-            Surat depot
-          </span>
+            The bar itself stays WHITE with its border and shadow. A violet
+            control on a violet ground would disappear; white on the wash is
+            what makes it read as a thing sitting ON the header rather than a
+            hole cut into it.
+
+            TWO BLOCKS, ONE BAND. The brand row scrolls away — a logo does not
+            need to follow a salesman down a page — and the search stays,
+            keeping its slice of #F5F3FF behind it so that alone at the top it
+            is still the header and not a box floating over the tiles. */}
+        <div className="px-4" style={{ background: BRAND_WASH, paddingTop: 16 }}>
+          <div className="flex items-baseline justify-between">
+            <Wordmark size={31} colour={BRAND} />
+            <span className="shrink-0 font-mono text-[10px] uppercase"
+                  style={{ color: FAINT, letterSpacing: ".14em" }}>
+              Surat depot
+            </span>
+          </div>
         </div>
 
-        {/* ── SEARCH — STICKY. On WHITE, not the wash: the violet belongs to
-            the masthead, and once the brand row has scrolled away this bar is
-            the header — a violet strip pinned to the top of a tinted board
-            would read as a second brand, not as a control. Once the brand row has gone it IS the header,
-            which is what the bottom hairline is for: alone at the top of the
-            viewport a borderless bar reads as a box floating over the tiles,
-            and with the rule under it it reads as a header.
-
-            67px of sticky against the 129px the single merged block cost —
-            about a third of a family row handed back at every scroll
-            position. */}
         <div
           className="sticky top-0 z-20 px-4"
           style={{
-            background: SURFACE,
+            background: BRAND_WASH,
             borderBottom: `1px solid ${RULE}`,
-            paddingTop: 7,
-            paddingBottom: 7,
+            paddingTop: 12,
+            paddingBottom: 12,
           }}
         >
           <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
@@ -1239,7 +1236,13 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
           </span>
         </div>
         <div className="px-2 pt-2">
-          <CustomerSearchInput value={query} onChange={onQuery} autoFocus />
+          {/* 🔴 NO autoFocus, DELIBERATELY. Focusing on mount raised the
+              keyboard every single time this screen opened, which shrank the
+              window before he had even looked at it — and most of the time he
+              is not typing at all, he is tapping a starred dealer that is
+              already on screen. The keyboard now comes up when he taps the box,
+              which is when he actually wants it. */}
+          <CustomerSearchInput value={query} onChange={onQuery} />
         </div>
       </div>
       {children}

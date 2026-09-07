@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { RULE, SCRIM } from "./v2-data";
 
 // The ONE bottom-sheet shell in v2. Extracted from product-drawer.tsx when a
@@ -105,6 +105,40 @@ export function useBodyScrollLock(active = true): void {
   }, [active]);
 }
 
+/**
+ * Keeps whatever is focused INSIDE the sheet visible when the keypad opens.
+ *
+ * 🔴 THE SHEET ITSELF NEVER MOVES TO ACHIEVE THIS. It is pinned to the visual
+ * viewport (see the container below), so when the keys appear it simply becomes
+ * the height of what is left — and the pack row he tapped can end up below that
+ * shorter area. The answer is to scroll the sheet's OWN scroller, not to shove
+ * the sheet somewhere.
+ *
+ * `block: "nearest"` scrolls the least it can get away with: enough to bring
+ * the field to the edge of the visible area and no further, so the rest of the
+ * pack list stays where he last saw it.
+ *
+ * NO TIMER AND NO rAF. This runs inside visualViewport's own resize event,
+ * which fires after the viewport has already changed, and scrollIntoView forces
+ * the layout it needs. A timer here would be guessing at when the keyboard has
+ * finished animating, which is the guess that makes these bugs come back.
+ */
+function useKeepFocusVisible(ref: React.RefObject<HTMLElement>): void {
+  useEffect(() => {
+    const vv = typeof window === "undefined" ? null : window.visualViewport;
+    if (!vv) return;
+    const onResize = (): void => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return;
+      // Only OUR sheet's fields. Another overlay's input is not our business.
+      if (!ref.current || !ref.current.contains(active)) return;
+      active.scrollIntoView({ block: "nearest", behavior: "auto" });
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, [ref]);
+}
+
 export default function V2Sheet({
   onClose,
   footer,
@@ -131,10 +165,16 @@ export default function V2Sheet({
   fixedHeight?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
+  const sheetRef = useRef<HTMLElement>(null);
   useBodyScrollLock();
+  useKeepFocusVisible(sheetRef);
 
   return (
-    /* 🔴 PINNED TO THE VISUAL VIEWPORT — BOTH ITS SIZE AND ITS POSITION.
+    /* 🔴 PINNED TO THE VISUAL VIEWPORT — BOTH ITS SIZE AND ITS POSITION, so
+       the sheet DOES NOT MOVE when the keyboard opens. It is not positioned
+       against the page, so it does not go where the page goes; it fills exactly
+       what the user can see, and its contents scroll inside it.
+
        Those are two separate axes and only the first was fixed before.
 
        HEIGHT (--vvh) was added when the dealer sheet opened blank: `inset-0`
@@ -175,6 +215,7 @@ export default function V2Sheet({
       />
 
       <section
+        ref={sheetRef}
         className={`v2-sheet${fixedHeight ? " v2-sheet-fixed" : ""} absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white`}
         style={{
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
