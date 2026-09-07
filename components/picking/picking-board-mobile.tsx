@@ -88,6 +88,10 @@ import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
+// LABEL ONLY — see formatReleaseOpensDay below. The releasability DECISION is
+// the server's (`row.releasableToday`); this import renders the day that
+// decision implies and is never used to compute one on the client.
+import { previousWorkingDateOnlyUTC } from "@/lib/picking/release-window";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
 //
@@ -971,6 +975,34 @@ function formatDispatchDay(iso: string | null): string | null {
   const weekday = dt.toLocaleDateString("en-GB", { ...opts, weekday: "short" });
   const month = dt.toLocaleDateString("en-GB", { ...opts, month: "short" });
   return `${weekday} ${d} ${month}`;
+}
+
+/**
+ * "You can release this bill early from {day}" — the last WORKING day before
+ * this bill's dispatch date, formatted through formatDispatchDay above so it
+ * reads identically to the card badge and the "Scheduled for" line.
+ *
+ * 🔴 LABEL ONLY. previousWorkingDateOnlyUTC() is called here to RENDER a date,
+ * never to decide anything. WHETHER release is offered is the SERVER's answer:
+ * it arrives as `PickingQueueRow.releasableToday`, computed by this same rule
+ * module in lib/picking/queue.ts, and enforced for real by
+ * POST /api/picking/release. Nothing in this component may branch on a date it
+ * computed itself — a phone in another timezone, or a board left open past
+ * midnight, would then disagree with the route that actually holds the rule
+ * (CORE §3's "the trigger is this logic now runs in two places").
+ *
+ * Returns null on a null or malformed date and the caller drops the sentence,
+ * the same contract formatDispatchDay has — a locked bill ALWAYS carries a
+ * date (a null-dated bill sorts to zone "due" and never reaches this sheet),
+ * so this is a guard against a white-screen, not a case that occurs.
+ */
+function formatReleaseOpensDay(iso: string | null): string | null {
+  if (iso === null) return null;
+  try {
+    return formatDispatchDay(previousWorkingDateOnlyUTC(iso));
+  } catch {
+    return null;
+  }
 }
 
 // AgeBadge moved to ./card-atoms.tsx (2026-07-29) when the picker's "My Picks"
@@ -2497,10 +2529,20 @@ export function PickingBoardMobile(): React.JSX.Element {
         const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
         if (!res.ok) {
           if (res.status === 409) {
-            // Someone else released it, or its date rolled over to today
-            // while this screen sat open — refetch and say so honestly
-            // rather than reporting a generic failure.
-            toast("Already changed — refreshed.");
+            // Someone else released it, its date rolled over to today, or the
+            // WINDOW closed while this screen sat open — refetch and say so
+            // honestly rather than reporting a generic failure.
+            //
+            // ⚠ SURFACE THE SERVER'S OWN SENTENCE (2026-09-07). The window
+            // 409 names the day the bill opens ("Too early — this bill can be
+            // released from Mon 07 Sep."), which is the whole point of that
+            // message; swallowing it behind a generic "Already changed" would
+            // throw away the only answer the supervisor needs. A board left
+            // open past midnight carries a stale `releasableToday`, so this
+            // path is reachable with the lock looking perfectly tappable.
+            // The fallback keeps the old wording for a 409 with no body.
+            toast(json.error ?? "Already changed — refreshed.");
+            setReleaseTarget(null);
             await refetchQueue();
           } else {
             toast.error(json.error ?? `Request failed (${res.status})`);
@@ -3375,7 +3417,9 @@ export function PickingBoardMobile(): React.JSX.Element {
           >
             <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
             <h3 className="text-[17px] font-extrabold text-gray-900 leading-snug">
-              Release this bill for picking early?
+              {releaseTarget.releasableToday
+                ? "Release this bill for picking early?"
+                : `Not yet — opens ${formatDispatchDay(releaseTarget.dispatchTargetDate) ?? "on its dispatch date"}`}
             </h3>
             <p className="text-[13px] text-gray-500 mt-2 leading-relaxed">
               <b className="text-gray-700 font-bold">{releaseTarget.dealerName}</b>
@@ -3391,27 +3435,63 @@ export function PickingBoardMobile(): React.JSX.Element {
                   .{" "}
                 </>
               )}
-              Releasing moves it into <b className="text-gray-700 font-bold">Due now</b> so it can be
-              assigned today.
+              {releaseTarget.releasableToday ? (
+                <>
+                  Releasing moves it into <b className="text-gray-700 font-bold">Due now</b> so it
+                  can be assigned today.
+                </>
+              ) : (
+                /* Answer "then when?" rather than only refusing — the same
+                   reason the locked detail screen carries an "Opens {day}"
+                   hint instead of a bare disabled button. The label comes from
+                   formatReleaseOpensDay (see its note: it renders a date, it
+                   does not decide anything — `releasableToday` above is the
+                   server's decision and the only thing branched on here). */
+                formatReleaseOpensDay(releaseTarget.dispatchTargetDate) !== null && (
+                  <>
+                    You can release this bill early from{" "}
+                    <b className="text-gray-700 font-bold">
+                      {formatReleaseOpensDay(releaseTarget.dispatchTargetDate)}
+                    </b>
+                    .
+                  </>
+                )
+              )}
             </p>
-            <div className="flex gap-2.5 mt-[18px]">
-              <button
-                type="button"
-                onClick={() => setReleaseTarget(null)}
-                disabled={releasing}
-                className="flex-1 h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleRelease(releaseTarget)}
-                disabled={releasing}
-                className="flex-1 h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
-              >
-                {releasing ? "Releasing…" : "Release"}
-              </button>
-            </div>
+            {/* TWO BUTTON SETS, and the informational one renders NO Release
+                control at all — not a disabled one. A disabled button that a
+                stale board could re-enable is the same bypass with extra
+                steps; there is simply nothing here that can POST. */}
+            {releaseTarget.releasableToday ? (
+              <div className="flex gap-2.5 mt-[18px]">
+                <button
+                  type="button"
+                  onClick={() => setReleaseTarget(null)}
+                  disabled={releasing}
+                  className="flex-1 h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleRelease(releaseTarget)}
+                  disabled={releasing}
+                  className="flex-1 h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
+                >
+                  {releasing ? "Releasing…" : "Release"}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-[18px]">
+                <button
+                  type="button"
+                  onClick={() => setReleaseTarget(null)}
+                  className="w-full h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold"
+                >
+                  Close
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}

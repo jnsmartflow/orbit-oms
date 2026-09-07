@@ -3,6 +3,11 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+// The early-release WINDOW rule — last working day before dispatch, Sunday
+// skipped, holidays not modelled. Pure and clock-free (the day is passed in),
+// so this route and the board ask the identical question of the identical
+// function and can never disagree about the answer.
+import { isReleasableToday, previousWorkingDateOnlyUTC } from "@/lib/picking/release-window";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +27,33 @@ function getISTTodayDateOnly(): Date {
 }
 
 /**
+ * "2026-09-07" -> "Mon 07 Sep", for the window 409's message.
+ *
+ * A deliberate MIRROR of formatDispatchDay() in
+ * components/picking/picking-board-mobile.tsx — same "en-GB" pin, same
+ * timeZone:"UTC", same weekday/day/month assembly, so the day this route names
+ * in an error reads identically to the day the card badge and the release sheet
+ * print. Same call this file already made for getISTTodayDateOnly above:
+ * the client copy lives in a "use client" component and cannot be imported
+ * here, and a formatter is not worth a shared module for one string.
+ *
+ * Parsed by regex into Date.UTC(y, m-1, d), never `new Date(str)` — CORE §3.
+ * Returns the raw input if it is somehow malformed, so a message degrades to a
+ * plain date rather than "Invalid Date".
+ */
+function formatReleaseDay(isoDate: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!m) return isoDate;
+  const [, y, mo, d] = m;
+  const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  if (Number.isNaN(dt.getTime())) return isoDate;
+  const opts = { timeZone: "UTC" } as const;
+  const weekday = dt.toLocaleDateString("en-GB", { ...opts, weekday: "short" });
+  const month = dt.toLocaleDateString("en-GB", { ...opts, month: "short" });
+  return `${weekday} ${d} ${month}`;
+}
+
+/**
  * POST /api/picking/release — manual early release of a future-dated
  * ("upcoming") bill so it can be assigned today. Body: { orderId }.
  *
@@ -35,6 +67,19 @@ function getISTTodayDateOnly(): Date {
  *
  * The automatic midnight unlock is unaffected and remains the normal path —
  * this is the override for "we need it on the truck today".
+ *
+ * ⚠ THE WINDOW RULE LIVES HERE, NOT ON THE BOARD (2026-09-07). Early release
+ * is offered only on the LAST WORKING DAY before the dispatch date. The card's
+ * lock and the sheet's two modes read `PickingQueueRow.releasableToday`, which
+ * this same lib/picking/release-window.ts rule computed server-side — but a
+ * board left open past midnight carries a stale answer, and nothing stops a
+ * direct POST, so the gate below is the enforcement and the UI is convenience.
+ *
+ * GUARD ORDER IS LOAD-BEARING — do not reorder:
+ *   permission -> dispatchStatus -> workflowStage -> not-future -> WINDOW
+ *   -> already-released
+ * The already-released 409 stays LAST so a double-tap on a bill that IS in its
+ * window still reports "already released", never "too early".
  */
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -106,14 +151,41 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Order is not future-dated — nothing to release." }, { status: 409 });
   }
 
+  // ── THE WINDOW GATE — THIS IS THE AUTHORITATIVE RULE ────────────────────
+  // A supervisor may release an upcoming bill only on the LAST WORKING DAY
+  // before its dispatch date (Sunday skipped; holidays not modelled). The
+  // board's own lock is convenience — a stale board left open past midnight,
+  // or a direct POST, both land here, and here is where the rule actually
+  // holds.
+  //
+  // Both dates come from the values this route ALREADY has: `today` is the
+  // getISTTodayDateOnly() Date computed above, sliced; `dispatchTargetIso` is
+  // the @db.Date column sliced the same way. NO second clock read, and no
+  // Date parsing of a string anywhere (CORE §3's offset-less-parse rule) —
+  // lib/picking/release-window.ts works in date-only ISO strings end to end.
+  //
+  // ORDER IS LOAD-BEARING: this sits AFTER the not-future 409 (so that one
+  // keeps its own wording for a null/past date) and BEFORE the
+  // already-released 409 (so a double-tap on a legitimately releasable bill
+  // still reports "already released", never "too early").
+  const todayIso = today.toISOString().slice(0, 10);
+  const dispatchTargetIso = order.dispatchTargetDate.toISOString().slice(0, 10);
+  if (!isReleasableToday(dispatchTargetIso, todayIso)) {
+    // Name the day rather than only refusing — the supervisor's next question
+    // is always "then when?", and a bare "too early" sends him hunting.
+    const opensOn = formatReleaseDay(previousWorkingDateOnlyUTC(dispatchTargetIso));
+    return NextResponse.json(
+      { error: `Too early — this bill can be released from ${opensOn}.` },
+      { status: 409 },
+    );
+  }
+
   // Idempotency / double-tap guard, same shape as approve/route.ts's 409:
   // the first successful call sets pickEarlyReleasedAt, so a retry lands
   // here before any write and cannot overwrite the original actor/time.
   if (order.pickEarlyReleasedAt !== null) {
     return NextResponse.json({ error: "Order was already released early." }, { status: 409 });
   }
-
-  const targetIso = order.dispatchTargetDate.toISOString().slice(0, 10);
 
   // Sequential awaits only — never prisma.$transaction (CORE §3). Unlike
   // assign/approve there is no two-write ordering hazard here: both columns
@@ -137,7 +209,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       fromStage: order.workflowStage,
       toStage: "PICK_EARLY_RELEASED",
       changedById: releasedById,
-      note: `Released early for picking by user #${releasedById} (was scheduled ${targetIso})`,
+      note: `Released early for picking by user #${releasedById} (was scheduled ${dispatchTargetIso})`,
     },
   });
 
