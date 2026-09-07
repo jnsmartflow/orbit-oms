@@ -6,17 +6,17 @@ import { Minus, Plus, Search, X } from "lucide-react";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
-  BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
-  baseChipLabel, chipLimit, chipStyle, formatPack, isLightHex, packsOf, shadeHex,
-  shadeRowMode, snapToBox,
+  BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET,
+  baseChipLabel, formatPack, isLightHex, packsOf, shadeHex, snapToBox,
   stepForLabel, unitsIn,
-  type ApiProduct, type V2ChipStyle, type V2DrawerMode, type V2Option, type V2Resolved,
+  type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
 } from "./v2-data";
 
 // Hidden v2 product drawer — the bottom sheet a board tile opens.
 //
-// 🔴 CONTAINMENT — imports only ./v2-data and node_modules. Nothing from lib/
-// or app/po/, no localStorage, no fetch. Every colour is an inline style.
+// 🔴 CONTAINMENT — imports only ./v2-data, ./v2-sheet, the documented matcher
+// and node_modules. Nothing else from lib/ or app/po/, no localStorage, no
+// fetch. Every colour is an inline style.
 //
 // State is LOCAL and unmounted with the sheet: the page renders this with
 // `key={tile.sap}`, so opening a different tile gives a fresh drawer rather
@@ -28,9 +28,58 @@ import {
 // presented differently. So the selection is ONE value, and the packs shown
 // are exactly that row's packs.
 //
-// NO HORIZONTAL SCROLL: every chip row is `flex-wrap`, never a scroller.
+// ── THE RAIL REPLACED THE CHIP ROW, 2026-09-07 ─────────────────────────────
+//
+// What went, and why none of it is worth rebuilding:
+//
+//   "+ More"            an expander that hid options behind a tap. It had
+//                       already been rebuilt twice — first as a search
+//                       round-trip that dead-ended, then as a local expansion
+//                       — and both times the real problem was that the row
+//                       could not hold the list.
+//   chipLimit()         the top-4 / top-9 cut. A cut only exists because the
+//                       row was horizontal and finite. A column is neither.
+//   the shade filter    a text search that appeared only INSIDE the expanded
+//                       shade row. The search is now permanent and at the top,
+//                       which is where a salesman looks for it.
+//   shadeRowMode()      the ΔE close-pair rule that decided colour-vs-text for
+//                       a WHOLE row. The rail decides per option — a hex gets
+//                       a swatch, no hex gets a text tile — so the all-or-
+//                       nothing question it answered no longer gets asked. Its
+//                       reasoning is recorded in v2-data beside SHADE_HEX.
+//
+// WHAT SURVIVED, because it was expensive and is still true:
+//   · every drawer opens with something selected and its packs on screen;
+//   · the pre-selection is VISIBLE — now in the name bar, at full size;
+//   · the selection is resolved against the WHOLE pool, never the visible list;
+//   · switching options never clears quantities (they are keyed by option);
+//   · the tab a drawer OPENS on comes from the 90-day ranking, not from "base".
+//
+// NO HORIZONTAL SCROLL: the rail is a vertical column and the pane is
+// `min-w-0`. Neither has an overflow-x.
 
 type Tab = "base" | "shade";
+
+/** Rail geometry, in one place because "roomy" is a measured requirement. */
+const RAIL_W   = 60;   // the column, gutters included
+const TILE     = 44;   // swatch / text tile, square
+const TILE_GAP = 12;   // between tiles — the brief's floor is 10
+
+/**
+ * The ranked list, then anything the catalog has that the ranking does not
+ * name, so the column holds EVERY option and nothing is unreachable.
+ *
+ * CURATION's arrays are ordered by 90-day order frequency, so `ranked` is
+ * already "most-ordered first" — the top of the column IS the curation, with
+ * no heading saying so. The tail is whatever else the payload carries for this
+ * product, in the depot's own sortOrder.
+ */
+function withTail(ranked: V2Option[], pool: V2Option[]): V2Option[] {
+  if (pool.length === 0) return ranked;
+  const seen = new Set(ranked.map((o) => o.value));
+  const tail = pool.filter((o) => !seen.has(o.value));
+  return tail.length === 0 ? ranked : ranked.concat(tail);
+}
 
 export default function ProductDrawer({
   product,
@@ -45,8 +94,7 @@ export default function ProductDrawer({
   /** Opened from a search hit: this exact option starts selected. */
   initialOption?: string | null;
   onClose: () => void;
-  /** MANY lines: flat and grid let one visit set quantities on several
-   *  options, and each option is its own cart line. Standard sends one. */
+  /** MANY lines: one pick per option carrying a quantity. */
   onAdd: (picks: { option: string | null; row: ApiProduct; qtys: Record<string, number> }[]) => void;
   /**
    * The cart lines this product ALREADY has. The drawer opens seeded from them,
@@ -55,45 +103,64 @@ export default function ProductDrawer({
    */
   existing?: { option: string | null; qtys: Record<string, number> }[];
   /**
-   * EVERY option this product has, in catalog order. "+ More" swaps the chip
-   * row to this list.
+   * EVERY option this product has, in catalog order, split base/shade.
    *
-   * 🔴 "+ More" USED TO RE-RUN THE SEARCH, PRE-FILLED WITH THE PRODUCT NAME.
-   * That became a DEAD END the moment search started returning one row per
-   * product: the single result was this product, tapping it reopened this
-   * drawer with the same capped chips, and options 9+ were unreachable. It is
-   * now a local expansion — no round trip, no loop.
+   * These used to be the pool behind "+ More". They are now simply the rest of
+   * the column: whatever the 90-day ranking does not name is appended after it,
+   * so the rail is complete without a second list or a second cut.
    */
   pools?: { all: V2Option[]; bases: V2Option[]; shades: V2Option[] };
   /** From drawerMode() in v2-data — the ONE place the shape is decided. */
   mode?: V2DrawerMode;
 }): React.JSX.Element {
-  const hasBases    = product.bases.length > 0;
-  const hasShades   = product.shades.length > 0;
   const hasVariants = product.variants.length > 0;
-  // A tab appears only if its list is non-empty; neither list -> no tabs.
-  const showTabs = hasBases || hasShades;
 
-  // Open on the tab that actually holds the searched option, so the chip the
-  // salesman searched for is on screen rather than one tab away.
+  // ── The two columns ──────────────────────────────────────────────────────
+  //
+  // 🔴 ONE PATTERN FOR BASES, SHADES AND VARIANTS. Variants are not a third
+  // kind of thing — Smart Choice and Promise Primer store them in `baseColour`
+  // like everything else — so they take the base column and the toggle simply
+  // does not appear. A searched NON-tile is the same case: resolveGroup puts
+  // its whole option list in `bases`, uncurated, and one column holds it.
+  const railBases = useMemo<V2Option[]>(() => {
+    const all = pools?.all ?? [];
+    if (hasVariants) return withTail(product.variants, all);
+    if (!product.curated) return withTail(product.bases, all);
+    return withTail(product.bases, pools?.bases ?? []);
+  }, [product, pools, hasVariants]);
+  const railShades = useMemo<V2Option[]>(() => {
+    if (hasVariants || !product.curated) return [];
+    return withTail(product.shades, pools?.shades ?? []);
+  }, [product, pools, hasVariants]);
+
+  const hasBaseCol  = railBases.length > 0;
+  const hasShadeCol = railShades.length > 0;
+  /** A product with only one group shows no toggle. */
+  const showToggle  = hasBaseCol && hasShadeCol;
+  /** The nine no-option products get no rail at all — straight to packs. */
+  const hasRail     = mode !== "flat" && (hasBaseCol || hasShadeCol);
+
+  // Open on the group that actually holds the searched option, so what the
+  // salesman searched for is on screen rather than one tap away.
   //
   // 🔴 THE FINAL FALLBACK IS "base", NOT "shade". It used to be
   // `hasBases ? "base" : "shade"`, which handed a product with NEITHER list a
-  // phantom shade tab — see the footer-gating note below, which is where that
-  // once turned into a blocking bug.
+  // phantom shade group — see the footer-gating note below, which is where
+  // that once turned into a blocking bug.
   const [tab, setTab] = useState<Tab>(() => {
-    if (initialOption && product.shades.some((o) => o.value === initialOption)) return "shade";
-    // 🔴 OPEN ON THE TAB HOLDING THE MOST-ORDERED OPTION, not always Base.
+    if (initialOption && railShades.some((o) => o.value === initialOption)) return "shade";
+    // 🔴 OPEN ON THE GROUP HOLDING THE MOST-ORDERED OPTION, not always Base.
     // Promise Enamel's only base is BRILLIANT WHITE (241 orders) while its top
-    // shade CLASSIC WHITE takes 797 — opening on that one-chip Base tab would
-    // put what he actually wants one tap away, every single time.
-    // defaultTab is generated from the same 90-day ranking as the chip lists.
-    if (product.defaultTab === "shade" && hasShades) return "shade";
-    if (hasBases)  return "base";
-    if (hasShades) return "shade";
+    // shade CLASSIC WHITE takes 797 — opening on that one-tile Base column
+    // would put what he actually wants one tap away, every single time.
+    // defaultTab is generated from the same 90-day ranking as the lists.
+    if (product.defaultTab === "shade" && hasShadeCol) return "shade";
+    if (hasBaseCol)  return "base";
+    if (hasShadeCol) return "shade";
     return "base";
   });
-  // ONE selection, whichever list it came from.
+
+  // ONE selection, whichever column it came from.
   //
   // 🔴 EVERY DRAWER OPENS WITH SOMETHING SELECTED, AND ITS PACKS ON SCREEN.
   // Shade and variant rows used to open empty on the reasoning that guessing a
@@ -105,18 +172,16 @@ export default function ProductDrawer({
   // guess: it is the option this product actually sells, and one tap overrides
   // it.
   //
-  // The pre-selection is only safe because it is VISIBLE — the chip carries the
-  // same violet selected state a tapped chip gets and the header sub-line names
-  // it. A default nobody can see would ship BLACK to a man who thinks he chose
-  // it, which is worse than the two taps this replaces.
-  const topOf = (list: V2Option[]): string | null => list[0]?.value ?? null;
+  // The pre-selection is only safe because it is VISIBLE. That used to mean a
+  // violet chip in the row; with no names on the rail it means the NAME BAR,
+  // which spells the option out at 15px directly above the packs. A default
+  // nobody can read would ship BLACK to a man who thinks he chose it, which is
+  // worse than the two taps this replaces.
   const [selected, setSelected] = useState<string | null>(() => {
     if (initialOption) return initialOption;
-    if (hasVariants) return topOf(product.variants);
-    const opening = product.defaultTab === "shade" && hasShades ? product.shades : product.bases;
-    return topOf(opening);
+    const opening = product.defaultTab === "shade" && hasShadeCol ? railShades : railBases;
+    return opening[0]?.value ?? null;
   });
-  const [expanded, setExpanded] = useState(false);
 
   /**
    * 🔴 ONE QUANTITY STATE FOR THE WHOLE VISIT: option -> pack label -> units.
@@ -136,9 +201,9 @@ export default function ProductDrawer({
    * path.
    */
   const [matrix, setMatrix] = useState<Record<string, Record<string, number>>>(() => {
-    // (b) SEEDED FROM THE CART. Opening a product already in the order shows
-    // what is in it, on the right options, so Add can replace rather than
-    // duplicate — and so he can SEE what he already ordered before changing it.
+    // SEEDED FROM THE CART. Opening a product already in the order shows what
+    // is in it, on the right options, so Add can replace rather than duplicate
+    // — and so he can SEE what he already ordered before changing it.
     const seed: Record<string, Record<string, number>> = {};
     for (const line of existing ?? []) {
       const key = line.option ?? "";
@@ -146,87 +211,44 @@ export default function ProductDrawer({
     }
     return seed;
   });
-  // B2: the Shade tab expands into a text FILTER, not more chips.
-  const [shadeQuery, setShadeQuery] = useState("");
 
-  // True when the chip row currently shows BASES — the only list whose labels
-  // are shortened. "BRILLIANT WHITE" is also a SHADE on GVA and Promise
-  // Enamel, and abbreviating it there would rename a colour.
-  const showingBases = !hasVariants && tab === "base";
-  // Colour swatches only on the SHADE row, and only when every shade on it has
-  // one — never a half-colour, half-code row. Bases and variants are always
-  // text: "90" and "Int Primer" are not colours.
-  const showingShades = !hasVariants && tab === "shade";
-
-  // Which options are on show right now, and which row that resolves to.
+  // ── The rail's own search ────────────────────────────────────────────────
   //
-  // 🔴 THE LIST IS RANKED AND WHOLE; chipLimit() DECIDES HOW MUCH OF IT SHOWS.
-  // CURATION used to hold a frozen top nine and the drawer showed all of it,
-  // which meant the cut lived in the data and could not tell 10 options from
-  // 11 - so Uni Stainer hid its tenth shade behind an expander that revealed
-  // exactly one chip. The arrays now carry every option in rank order and the
-  // single cut happens here, in one helper that both tabs and the searched
-  // non-tile path share.
-  const fullList: V2Option[] = hasVariants
-    ? product.variants
-    : tab === "base" ? product.bases : product.shades;
-  const chipKind = hasVariants ? "variant" : product.curated ? tab : "mixed";
-  const curatedList: V2Option[] = fullList.slice(0, chipLimit(chipKind, fullList.length));
-  // 🔴 THE EXPANSION IS FILTERED BY TAB. It used to swap in every option the
-  // product had, so expanding Gloss on the BASE tab showed BLACK, MINT GREEN
-  // and WILD PURPLE among the bases. Each tab now expands into its own pool.
-  const expansionPool: V2Option[] = tab === "base"
-    ? (pools?.bases ?? [])
-    : (pools?.shades ?? []);
-  // B2: expanding the SHADE tab opens a text FILTER, not more chips. A
-  // Gloss shade list is 29 long and chips make that a wall; a name is what the
-  // salesman actually has in his head. Ranked with the SAME matcher the main
-  // search bar uses (rankProductsForQuery) rather than a second rule.
-  const shadeSearchOpen = expanded && tab === "shade" && !hasVariants;
-  const shadeMatches = useMemo<V2Option[]>(() => {
-    const q = shadeQuery.trim();
-    if (!shadeSearchOpen) return [];
-    if (q.length === 0) return expansionPool;
-    const ranked = rankProductsForQuery(expansionPool.map((o) => o.row), q);
-    const byId = new Map(expansionPool.map((o) => [o.row.id, o]));
-    return ranked.map((r) => byId.get(r.id)).filter((o): o is V2Option => !!o);
-  }, [shadeSearchOpen, shadeQuery, expansionPool]);
+  // 🔴 PERMANENT, NOT BEHIND AN EXPANDER. With no names on the tiles this is
+  // the only way to reach one colour among thirty-two without hunting, so it
+  // cannot be something he has to find first. It filters the COLUMN he is
+  // looking at; the toggle is right beside it if the name is in the other one.
+  //
+  // Ranked with the SAME matcher the board's search bar uses — a second
+  // matcher is a second set of results for the same word.
+  const [query, setQuery] = useState("");
 
-  const shownList: V2Option[] = expanded ? expansionPool : curatedList;
-  // "+ More" earns its place only when there is genuinely more to show.
-  const hasMore = !hasVariants && !expanded && expansionPool.length > curatedList.length;
+  const column: V2Option[] = tab === "shade"
+    ? (hasShadeCol ? railShades : railBases)
+    : (hasBaseCol ? railBases : railShades);
+
+  const shown = useMemo<V2Option[]>(() => {
+    const q = query.trim();
+    if (q.length === 0) return column;
+    const ranked = rankProductsForQuery(column.map((o) => o.row), q);
+    const byId = new Map(column.map((o) => [o.row.id, o]));
+    return ranked.map((r) => byId.get(r.id)).filter((o): o is V2Option => !!o);
+  }, [column, query]);
 
   // 🔴 THE SELECTION IS RESOLVED AGAINST THE WHOLE POOL, NOT THE VISIBLE LIST.
-  // It used to be looked up in the list on screen, which collapses back to the
-  // curated nine the moment the search closes — so a shade picked out of "+
+  // It used to be looked up in the list on screen, which collapsed back to the
+  // curated nine the moment the search closed — so a shade picked out of "+
   // More" (BUS GREEN, say) was no longer findable, selectedRow fell to null,
   // the body kept demanding a shade and Add stayed dead while the header
-  // cheerfully showed BUS GREEN. What is selected and what is listed are two
-  // different questions.
-  const optionPool: V2Option[] = pools?.all ?? shownList;
+  // cheerfully showed BUS GREEN. The rail retired "+ More" but not the rule:
+  // typing a query still hides most of the column, and what is selected and
+  // what is listed remain two different questions.
+  const optionPool: V2Option[] = (pools?.all?.length ?? 0) > 0
+    ? (pools as { all: V2Option[] }).all
+    : railBases.concat(railShades);
   const selectedOption = selected === null
     ? undefined
-    : optionPool.find((o) => o.value === selected) ?? shownList.find((o) => o.value === selected);
-
-  // ...and a selection that is not in the visible list is PINNED to the front
-  // of it, so the chip row can never show nothing selected while the header
-  // says otherwise.
-  const activeList: V2Option[] = selectedOption && !shownList.some((o) => o.value === selected)
-    ? [selectedOption, ...shownList]
-    : shownList;
-
-  // Colour swatches only on the SHADE row, and only when EVERY chip on it has
-  // a hex - never a half-colour, half-code row. Bases and variants are always
-  // text: "90" and "Int Primer" are not colours.
-  //
-  // Judged over activeList, the chips actually rendered, and not over the
-  // product's whole shade pool: Gloss's full list runs to 29 names of which a
-  // dozen have no hex, so pooling would drop the top nine back to text even
-  // though all nine are mapped. It also guarantees the pinned selection above
-  // has a hex before ShadeSwatch is handed one.
-  const chipRowStyle: V2ChipStyle = showingShades && !expanded
-    ? shadeRowMode(activeList.map((o) => o.value))
-    : "text";
+    : optionPool.find((o) => o.value === selected);
 
   const selectedRow: ApiProduct | null =
     product.noOptionRow ?? selectedOption?.row ?? null;
@@ -235,16 +257,18 @@ export default function ProductDrawer({
     ? selectedRow.packs.map((p) => formatPack(p.packCode, p.unit))
     : [];
 
-  // Switching tabs clears every quantity and re-applies the same rule the
-  // drawer opened with: the top-ranked option of the tab being switched TO is
-  // selected, so a tab is never a dead screen either.
+  /**
+   * Switching the group re-applies the rule the drawer opened with: the
+   * top-ranked option of the group being switched TO is selected, so a column
+   * is never a dead screen either. The QUANTITIES are untouched — they are
+   * keyed by option and every option keeps its own.
+   */
   function switchTab(next: Tab): void {
     if (next === tab) return;
-    const list = next === "base" ? product.bases : product.shades;
+    const list = next === "base" ? railBases : railShades;
     setTab(next);
-    setSelected(topOf(list));
-    setExpanded(false);
-    setShadeQuery("");
+    setSelected(list[0]?.value ?? null);
+    setQuery("");
   }
 
   /**
@@ -286,7 +310,7 @@ export default function ProductDrawer({
     setMatrix((prev) => ({ ...prev, [option]: { ...(prev[option] ?? {}), [pack]: Math.max(0, units) } }));
   }
 
-  /** Units on ONE option, for the little count on its chip. */
+  /** Units on ONE option, for the badge on its rail tile. */
   function unitsOn(option: string): number {
     return unitsIn(matrix[option] ?? {});
   }
@@ -294,8 +318,8 @@ export default function ProductDrawer({
   /**
    * 🔴 EVERY OPTION CARRYING A QUANTITY, AS ITS OWN CART LINE — in every mode.
    *
-   * Resolved against the whole pool rather than the visible chips, so an option
-   * set and then scrolled past, filtered out, or reached through "+ More" still
+   * Resolved against the whole pool rather than the visible tiles, so an option
+   * set and then scrolled past or filtered out by the rail search still
    * commits. Falls back to the tile's own lists for a product whose pools were
    * not passed, and to noOptionRow for the nine that have no options at all.
    */
@@ -322,7 +346,7 @@ export default function ProductDrawer({
   // guards here, `needsVariant` and `needsShade`, which held Add closed until
   // an option was picked, and put a nag on the button instead of a quantity.
   // Both are gone because neither can fire any more: every drawer
-  // now opens with the top-ranked option of its opening tab selected, and
+  // now opens with the top-ranked option of its opening group selected, and
   // switchTab re-applies that, so `selected` is null only for a product that
   // has no options at all — and that product has a noOptionRow, which resolves
   // selectedRow on its own.
@@ -330,22 +354,21 @@ export default function ProductDrawer({
   // (`needsShade` was also once a live BUG worth remembering: it did not test
   // that the product HAS shades, so the nine no-option sellers — Cement SB,
   // Zinc Yellow, Red Oxide, Ext Acrylic, Damp 2in1, Roof Coat, Crack 5mm,
-  // Damp Base, Thinner — demanded a shade from a chip row never rendered for
+  // Damp Base, Thinner — demanded a shade from a column never rendered for
   // them, and were unorderable. Deleting the guard retires that class of bug
   // rather than fixing it a second time.)
   // 🔴 THE BUTTON TOTALS THE WHOLE VISIT, not the option on screen. Two bases
-  // of Stay Bright reads "Add · 18 units", not the 12 of whichever chip happens
+  // of Stay Bright reads "Add · 18 units", not the 12 of whichever tile happens
   // to be selected — otherwise the total contradicts what is about to be sent.
   const canAdd = picks.length > 0;
   const addLabel = canAdd
     ? `${existing && existing.length > 0 ? "Update" : "Add"} · ${visitUnits} units`
     : "Add to order";
 
-  // Sub-line: in FLAT the pack size, stated once so it is never ambiguous;
-  // in GRID the packs are their own column headers; otherwise the selection.
-  const selectionLine = mode === "flat" ? flatPack
-    : matrixMode ? null
-    : product.noOptionRow ? null : selected;
+  // Sub-line: in FLAT the pack size, stated once so it is never ambiguous.
+  // Everywhere else the family — the OPTION's name is no longer repeated here,
+  // because the name bar above the packs now carries it at full size.
+  const selectionLine = mode === "flat" ? flatPack : null;
 
   const footer = (
     <>
@@ -367,6 +390,14 @@ export default function ProductDrawer({
         {addLabel}
       </button>
     </>
+  );
+
+  const packList = (
+    <PackList
+      labels={packLabels} qtys={qtys}
+      onStep={(label, dir) => stepCell(optionKey, label, dir)}
+      onType={(label, next) => typeCell(optionKey, label, next)}
+    />
   );
 
   return (
@@ -396,160 +427,100 @@ export default function ProductDrawer({
         </div>
 
         {matrixMode ? (
-          <div
-            className="min-h-0 flex-1 overflow-y-auto"
-            style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
-          >
-            <FlatBody options={options} pack={flatPack} matrix={matrix}
-                      onStep={stepCell} onType={typeCell} />
-          </div>
+          <FlatBody options={options} pack={flatPack} matrix={matrix}
+                    onStep={stepCell} onType={typeCell} />
+        ) : !hasRail ? (
+          // SINGLE — nine products with exactly one row. No rail, no toggle, no
+          // search: there is nothing to choose, so the packs get the whole
+          // sheet. This is not a new code path; it is what falls out of having
+          // no options.
+          packList
         ) : (
         <>
-        {/* ── TABS — Base first, then Shade; each only if its list exists ── */}
-        {showTabs && !hasVariants && (
-          <div className="flex shrink-0 gap-5 px-4">
-            {hasBases && <TabButton label="Base" active={tab === "base"} onClick={() => switchTab("base")} />}
-            {hasShades && <TabButton label="Shade" active={tab === "shade"} onClick={() => switchTab("shade")} />}
-          </div>
-        )}
-
-            {shadeSearchOpen ? (
-              <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
-                <div className="flex items-center gap-2 rounded-[12px] px-3" style={{ background: SEARCH_BG }}>
-                  <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
-                  <input
-                    type="text" inputMode="search" autoComplete="off" autoFocus
-                    value={shadeQuery}
-                    onChange={(e) => setShadeQuery(e.target.value)}
-                    placeholder="Type a shade name"
-                    className="min-w-0 flex-1 bg-transparent py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
-                    style={{ color: INK }}
-                  />
-                  <button
-                    type="button" aria-label="Back to the short list"
-                    onClick={() => { setExpanded(false); setShadeQuery(""); }}
-                    className="shrink-0 text-[12.5px] font-extrabold" style={{ color: VIOLET }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            ) : (hasVariants || activeList.length > 0) && (
-              <div className="shrink-0 px-4 pt-3 pb-3" style={{ borderBottom: `1px solid ${RULE}` }}>
-                <div className="flex flex-wrap gap-2">
-                  {/* 🔴 THE COUNT ON A CHIP IS NOT DECORATION — it is the only
-                      proof that quantities survive a chip tap. Set BLACK, tap
-                      90 BASE, and BLACK's badge is still showing its units:
-                      without it a salesman has no way to know the first option
-                      is still in the visit, and he will not trust it enough to
-                      use it. Violet, because it is a count of HIS work. */}
-                  {activeList.map((opt) => {
-                    const on = selected === opt.value;
-                    const carrying = unitsOn(opt.value);
-                    if (chipRowStyle === "colour") {
-                      return (
-                        <ShadeSwatch
-                          key={opt.value} name={opt.value}
-                          hex={shadeHex(opt.value) as string}
-                          selected={on} carrying={carrying}
-                          onSelect={() => selectOption(opt.value)}
-                        />
-                      );
-                    }
-                    if (chipRowStyle === "swatch") {
-                      return (
-                        <SwatchChip
-                          key={opt.value} name={opt.value}
-                          hex={shadeHex(opt.value) as string}
-                          selected={on} carrying={carrying}
-                          onSelect={() => selectOption(opt.value)}
-                        />
-                      );
-                    }
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => selectOption(opt.value)}
-                        className="flex items-center gap-1.5 px-3 py-2 text-left text-[13px] font-semibold"
-                        style={chipStyle(on)}
-                      >
-                        {showingBases ? baseChipLabel(opt.value) : opt.value}
-                        {carrying > 0 && <ChipCount units={carrying} />}
-                      </button>
-                    );
-                  })}
-                  {/* + More only where the catalog has more to give — never on
-                      a variant row, which is already the complete set. */}
-                  {hasMore && (
-                    <button
-                      type="button"
-                      onClick={() => setExpanded(true)}
-                      className="px-3 py-2 text-[10.5px] font-extrabold"
-                      style={chipStyle(false, true)}
-                    >
-                      + More
-                    </button>
-                  )}
-                </div>
+          {/* ── THE STRIP: GROUP TOGGLE + RAIL SEARCH ──────────────────────
+              🔴 IT SPANS THE SHEET, NOT THE 60px RAIL. The brief puts both of
+              these "at the top of the rail", and the toggle would fit there —
+              but a search box 44px wide is a box nobody can read what they
+              typed into, and the whole point of this step is room. So the strip
+              sits directly above the column, aligned to its top edge, and uses
+              the width the sheet already has. It controls the rail and nothing
+              else: the toggle picks which group the column holds, the field
+              filters that column. */}
+          <div className="flex shrink-0 items-center gap-2 px-4 pb-3">
+            {showToggle && (
+              <div className="flex shrink-0 rounded-[11px] p-[3px]" style={{ background: FILL }}>
+                <GroupButton label="Base"  active={tab === "base"}  onClick={() => switchTab("base")} />
+                <GroupButton label="Shade" active={tab === "shade"} onClick={() => switchTab("shade")} />
               </div>
             )}
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[12px] px-3"
+                 style={{ background: SEARCH_BG }}>
+              <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
+              <input
+                // NO autoFocus. The drawer opens on a quantity, not a keyboard.
+                type="text" inputMode="search" autoComplete="off"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={hasVariants ? "Find" : tab === "shade" ? "Find a shade" : "Find a base"}
+                aria-label="Filter the options in the rail"
+                // 16px, or Safari zooms the page on focus.
+                className="min-w-0 flex-1 bg-transparent py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
+                style={{ color: INK }}
+              />
+              {query.length > 0 && (
+                <button
+                  type="button" aria-label="Clear the filter" onClick={() => setQuery("")}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                  style={{ background: RULE }}
+                >
+                  <X className="h-3 w-3" strokeWidth={3} style={{ color: MUTED }} />
+                </button>
+              )}
+            </div>
+          </div>
 
-            {shadeSearchOpen ? (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {shadeMatches.length === 0 ? (
-                  <p className="px-4 py-10 text-center text-[13px]" style={{ color: FAINT }}>
-                    No shade matches {shadeQuery.trim()}
-                  </p>
-                ) : shadeMatches.map((opt) => {
-                  const hex = shadeHex(opt.value);
-                  return (
-                    <button
-                      key={opt.value} type="button"
-                      onClick={() => { selectOption(opt.value); setExpanded(false); setShadeQuery(""); }}
-                      className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left"
-                      style={{ borderTop: `1px solid ${RULE}` }}
-                    >
-                      {hex && (
-                        <span className="shrink-0" style={{
-                          width: 22, height: 22, borderRadius: 6, background: hex,
-                          border: isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none",
-                        }} />
-                      )}
-                      <span className="min-w-0 flex-1 truncate text-[14px] font-semibold" style={{ color: INK }}>
-                        {opt.value}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-            /* 🔴 TRAILING SPACE, SO THE LAST ROW CAN CLEAR THE FOOTER.
-               The footer is a flex SIBLING and never overlaps this — but with no
-               room after the final pack row, a centre-scroll has nowhere to
-               scroll TO and degenerates into "scroll to the end", leaving the
-               20L row of a seven-pack product flush against the footer's
-               border. This is the room that lets it centre. */
+          {query.trim().length > 0 && shown.length === 0 && (
+            <p className="shrink-0 px-4 pb-2.5 text-[12.5px]" style={{ color: MUTED }}>
+              Nothing in this list matches {query.trim()}
+            </p>
+          )}
+
+          <div className="flex min-h-0 flex-1">
+            {/* ── THE RAIL ──────────────────────────────────────────────────
+                ONE column. 60px wide with an 8px gutter either side, so a 44px
+                tile is centred and its selected ring (5.5px) and count badge
+                (6px) both clear the edges without an overflow-x. */}
             <div
-              className="min-h-0 flex-1 overflow-y-auto px-4 py-1"
-              style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
+              className="shrink-0 overflow-y-auto"
+              style={{
+                width: RAIL_W, borderRight: `1px solid ${RULE}`,
+                paddingTop: 10,
+                paddingBottom: "calc(28px + env(safe-area-inset-bottom))",
+              }}
             >
+              <div className="flex flex-col items-center" style={{ gap: TILE_GAP }}>
+                {shown.map((opt) => (
+                  <RailTile
+                    key={opt.value}
+                    value={opt.value}
+                    selected={selected === opt.value}
+                    carrying={unitsOn(opt.value)}
+                    onSelect={() => selectOption(opt.value)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* ── THE PANE ────────────────────────────────────────────────── */}
+            <div className="flex min-w-0 flex-1 flex-col">
+              {selectedOption && <NameBar value={selectedOption.value} />}
               {/* No empty state. selectedRow is resolved on the first frame for
                   every one of the 32 products — by the pre-selection above, or
                   by noOptionRow for the nine that have no options — so the pack
                   rows are on screen before the sheet finishes sliding up. */}
-              {packLabels.map((label) => (
-                <PackRow
-                  key={label}
-                  label={label}
-                  step={stepForLabel(label)}
-                  qty={qtys[label] ?? 0}
-                  onStep={(dir) => stepCell(optionKey, label, dir)}
-                  onType={(next) => typeCell(optionKey, label, next)}
-                />
-              ))}
+              {packList}
             </div>
-            )}
+          </div>
         </>
         )}
     </V2Sheet>
@@ -558,14 +529,20 @@ export default function ProductDrawer({
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
 
-function TabButton({ label, active, onClick }: {
+/** One half of the group toggle. A segmented control, not two tabs: it swaps
+ *  the contents of one column rather than moving between two screens. */
+function GroupButton({ label, active, onClick }: {
   label: string; active: boolean; onClick: () => void;
 }): React.JSX.Element {
   return (
     <button
-      type="button" onClick={onClick}
-      className="pb-2 text-[15px] font-extrabold"
-      style={{ color: active ? INK : MUTED, borderBottom: `2.5px solid ${active ? VIOLET : "transparent"}` }}
+      type="button" onClick={onClick} aria-pressed={active}
+      className="rounded-[9px] px-3 py-1.5 text-[12.5px] font-extrabold"
+      style={{
+        color: active ? INK : MUTED,
+        background: active ? "#FFFFFF" : "transparent",
+        boxShadow: active ? "0 1px 2px rgba(27,24,38,.10)" : undefined,
+      }}
     >
       {label}
     </button>
@@ -573,9 +550,155 @@ function TabButton({ label, active, onClick }: {
 }
 
 /**
+ * One option in the rail — a 44px square, and nothing else.
+ *
+ * 🔴 NO NAMES ON A SWATCH, ON ANY PRODUCT. Super Satin included, which is the
+ * one that argued hardest for them: five browns as bare squares was the case
+ * that produced the swatch+name chip and its ΔE close-pair rule. The rail
+ * answers it differently and better — the NAME BAR spells the selection out at
+ * 15px the instant it is tapped, so the confirmation is bigger than a caption
+ * ever was and it is in the place he is already looking, next to the packs.
+ * A caption under every tile would just rebuild the text row this replaces.
+ *
+ * AN OPTION WITH NO HEX IS A TEXT TILE — same square, mono, the short name.
+ * That is the whole rule; it is decided per option, not per row. A wrong colour
+ * is worse than no colour, so an unmapped name never gets a guessed square.
+ *
+ * `title` / `aria-label` carry the full name for anyone who cannot use colour.
+ */
+function RailTile({ value, selected, carrying, onSelect }: {
+  value: string; selected: boolean; carrying: number; onSelect: () => void;
+}): React.JSX.Element {
+  const hex = shadeHex(value);
+  return (
+    // A bare swatch has no room for a badge INSIDE it without covering the
+    // colour, which is the one thing it exists to show. The count rides the
+    // top-right corner instead, on the wrapper.
+    <span className="relative block shrink-0" style={{ width: TILE, height: TILE }}>
+      <button
+        type="button"
+        aria-pressed={selected}
+        aria-label={carrying > 0 ? `${value}, ${carrying} units` : value}
+        title={value}
+        onClick={onSelect}
+        className="flex h-full w-full items-center justify-center overflow-hidden"
+        style={{
+          borderRadius: 10,
+          background: hex ?? FILL,
+          // A near-white fill gets a faint inner border, or a white tile on a
+          // white sheet is simply not there.
+          border: hex
+            ? (isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none")
+            : `1px solid ${RULE}`,
+          // A VIOLET RING WITH A WHITE GAP. The gap is what makes it read on a
+          // dark colour: a violet ring straight against #1A1A1A is a violet
+          // edge nobody sees.
+          boxShadow: selected ? `0 0 0 3px #FFFFFF, 0 0 0 5.5px ${VIOLET}` : undefined,
+        }}
+      >
+        {hex ? null : <TileWords label={baseChipLabel(value)} />}
+      </button>
+      {carrying > 0 && (
+        <span className="pointer-events-none absolute" style={{ top: -6, right: -6 }}>
+          <ChipCount units={carrying} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The words inside a text tile, stacked and sized to fit 44px.
+ *
+ * One word per line and the size taken from the LONGEST word, so "Freedom 2in1
+ * Primer" reads as three short lines rather than one clipped one. The size ramp
+ * is deliberately coarse — four steps, no measuring — because the authoritative
+ * name is in the bar the moment the tile is tapped; this only has to be
+ * recognisable, not readable at arm's length.
+ */
+function TileWords({ label }: { label: string }): React.JSX.Element {
+  const words = label.split(/\s+/).filter(Boolean);
+  const longest = words.reduce((n, w) => Math.max(n, w.length), 0);
+  const size = longest <= 3 ? 13 : longest <= 5 ? 11 : longest <= 7 ? 9.5 : 7.5;
+  return (
+    <span
+      className="flex flex-col items-center justify-center font-mono font-extrabold"
+      style={{ color: INK, fontSize: size, lineHeight: 1.15, letterSpacing: "-0.02em" }}
+    >
+      {words.map((w, i) => <span key={`${w}-${i}`}>{w}</span>)}
+    </span>
+  );
+}
+
+/**
+ * 🔴 THE NAME LIVES HERE NOW. It is the check against a wrong tap: the rail is
+ * squares, so this line is the only thing that says what is about to be
+ * ordered, and it sits directly above the quantity he is about to set.
+ *
+ * NEVER TRUNCATED. "ORGANIC MIDDLE YELLOW" wraps to two lines rather than
+ * becoming "ORGANIC MIDDLE YEL…", for the same reason the review screen never
+ * clips a product name in favour of its picture.
+ */
+function NameBar({ value }: { value: string }): React.JSX.Element {
+  const hex = shadeHex(value);
+  return (
+    <div className="flex shrink-0 items-center gap-2.5 px-4 py-3"
+         style={{ borderBottom: `1px solid ${RULE}` }}>
+      {hex && (
+        <span className="shrink-0" style={{
+          width: 22, height: 22, borderRadius: 6, background: hex,
+          border: isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none",
+        }} />
+      )}
+      <span className="min-w-0 flex-1 text-[15px] font-bold leading-tight" style={{ color: VIOLET }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The selected option's packs.
+ *
+ * 🔴 TRAILING SPACE, SO THE LAST ROW CAN CLEAR THE FOOTER. The footer is a flex
+ * SIBLING and never overlaps this — but with no room after the final pack row,
+ * scrollIntoView({block:"center"}) has nowhere to scroll TO and degenerates
+ * into "scroll to the end", leaving the 20L row of a seven-pack product flush
+ * against the footer's border. This is the room that lets it centre. See
+ * useKeepFocusVisible in v2-sheet.
+ */
+function PackList({ labels, qtys, onStep, onType }: {
+  labels: string[];
+  qtys: Record<string, number>;
+  onStep: (label: string, direction: 1 | -1) => void;
+  onType: (label: string, units: number) => void;
+}): React.JSX.Element {
+  return (
+    <div
+      className="min-h-0 flex-1 overflow-y-auto px-4 py-1"
+      style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
+    >
+      {labels.map((label) => (
+        <PackRow
+          key={label}
+          label={label}
+          step={stepForLabel(label)}
+          qty={qtys[label] ?? 0}
+          onStep={(dir) => onStep(label, dir)}
+          onType={(next) => onType(label, next)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
  * One pack row. The "per N" sub-label comes from the copied depot step table,
  * and is HIDDEN when the step is 1 — a drum has no box, so "per 1" would be
  * noise dressed as information.
+ *
+ * 12px above and below, not 10: the options left this pane and the room they
+ * freed belongs to the rows, not to whitespace at the bottom of the sheet.
  */
 function PackRow({ label, step, qty, onStep, onType }: {
   label: string; step: number; qty: number;
@@ -583,7 +706,7 @@ function PackRow({ label, step, qty, onStep, onType }: {
   onType: (units: number) => void;
 }): React.JSX.Element {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 py-3">
       <div className="min-w-0">
         <p className="text-[16px] font-extrabold leading-tight" style={{ color: INK }}>{label}</p>
         {step > 1 && (
@@ -684,18 +807,14 @@ function QtyField({ qty, step, label, onCommit }: {
 }
 
 /**
- * A swatch WITH its name, for a shade row too crowded to sell as bare squares.
+ * The units an option is holding. Small, violet, and only ever present when the
+ * number is real — a "0" badge on every tile would be noise on thirty-two.
  *
- * Super Satin is BLACK and five browns. As colour-only chips, SPECIAL TEAK and
- * TEAK are 7.9 ΔE apart and BROWN and RICH BROWN are 8.0 — close enough that
- * picking by eye is a coin toss, and the wrong pick is the wrong tin on a
- * lorry. The square still does the work of finding roughly the right region of
- * the row; the word is what settles it. shadeRowMode() decides which rows get
- * this, from the hexes.
- */
-/**
- * The units a chip is holding. Small, violet, and only ever present when the
- * number is real — a "0" badge on every chip would be noise on 29 of them.
+ * 🔴 IT IS NOT DECORATION — it is the only proof that quantities survive a tile
+ * tap. Set BLACK, tap 90 BASE, and BLACK's badge is still showing its units:
+ * without it a salesman has no way to know the first option is still in the
+ * visit, and he will not trust it enough to use it. Violet, because it is a
+ * count of HIS work.
  */
 function ChipCount({ units }: { units: number }): React.JSX.Element {
   return (
@@ -708,76 +827,11 @@ function ChipCount({ units }: { units: number }): React.JSX.Element {
   );
 }
 
-function SwatchChip({ name, hex, selected, carrying, onSelect }: {
-  name: string; hex: string; selected: boolean; carrying: number; onSelect: () => void;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onSelect}
-      className="flex items-center gap-2 py-2 pl-2 pr-3 text-left text-[13px] font-semibold"
-      style={chipStyle(selected)}
-    >
-      <span
-        className="block shrink-0"
-        style={{
-          width: 18, height: 18, borderRadius: 5, background: hex,
-          border: isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none",
-        }}
-      />
-      {name}
-      {carrying > 0 && <ChipCount units={carrying} />}
-    </button>
-  );
-}
-
-/**
- * A shade as a 54x44 block of the colour itself, no text inside.
- *
- * The NAME is not lost — it lands in the drawer's header sub-line the moment
- * this is selected, which is where the confirmation belongs. A caption under
- * every swatch would just rebuild the text row the colour is replacing.
- *
- * A near-white fill gets a faint inner border, or a white chip on a white
- * sheet is simply not there. `title`/`aria-label` carry the name for anyone
- * who cannot use the colour at all.
- */
-function ShadeSwatch({ name, hex, selected, carrying, onSelect }: {
-  name: string; hex: string; selected: boolean; carrying: number; onSelect: () => void;
-}): React.JSX.Element {
-  const light = isLightHex(hex);
-  return (
-    // A bare swatch has no room for a badge INSIDE it without covering the
-    // colour, which is the one thing it exists to show. The count rides the
-    // top-right corner instead, on the wrapper.
-    <span className="relative block">
-      <button
-        type="button"
-        aria-label={carrying > 0 ? `${name}, ${carrying} units` : name}
-        aria-pressed={selected}
-        title={name}
-        onClick={onSelect}
-        className="block"
-        style={{
-          width: 54, height: 44, borderRadius: 11, background: hex,
-          border: light ? "1px solid rgba(0,0,0,.15)" : "none",
-          boxShadow: selected ? `0 0 0 5px ${VIOLET_BG}, 0 0 0 7.5px ${VIOLET}` : undefined,
-        }}
-      />
-      {carrying > 0 && (
-        <span className="pointer-events-none absolute" style={{ top: -7, right: -7 }}>
-          <ChipCount units={carrying} />
-        </span>
-      )}
-    </span>
-  );
-}
-
 // ── FLAT MODE ──────────────────────────────────────────────────────────────
 /**
  * 2+ options, ONE pack. Every option on screen at once with its own stepper —
- * no option-selection step, no pack step, one screen.
+ * no option-selection step, no pack step, one screen. UNCHANGED by the rail:
+ * choosing and setting are the same act here, and a rail would add taps.
  *
  * Applies to the three flat TILES — Acotone (14 rows), Machine Tinter (9) and
  * GVA (12), 1L each — and to M900 (20L, 12 rows), which lost its tile on
@@ -787,13 +841,14 @@ function ShadeSwatch({ name, hex, selected, carrying, onSelect }: {
  *
  * Flat mode is NOT a second state shape. It writes into the same option -> pack
  * matrix every other mode does; it is simply the mode that renders every
- * option's row at once instead of one chip row plus one option's packs.
+ * option's row at once instead of one column plus one option's packs.
  *
- * The swatch here is PER ROW, not the all-or-nothing rule the chip row uses —
- * a name with a hex gets one and a name without gets none. That is why Acotone
- * shows fourteen clean text rows (no code decodes) while Machine Tinter shows
- * two swatches among nine (WHITE and BLACK decode, the seven colorant codes do
- * not). See the SHADE_HEX note in v2-data for why the codes stay unmapped.
+ * The swatch here is PER ROW — a name with a hex gets one and a name without
+ * gets none, which is the same rule the rail tiles now follow. That is why
+ * Acotone shows fourteen clean text rows (no code decodes) while Machine Tinter
+ * shows two swatches among nine (WHITE and BLACK decode, the seven colorant
+ * codes do not). See the SHADE_HEX note in v2-data for why the codes stay
+ * unmapped.
  *
  * The pack size is not repeated per row — it is stated once in the header,
  * because repeating "1L" fourteen times is noise, not information.
@@ -806,34 +861,39 @@ function FlatBody({ options, pack, matrix, onStep, onType }: {
   onType: (option: string, pack: string, units: number) => void;
 }): React.JSX.Element {
   return (
-    <div className="px-4 py-1">
-      {options.map((opt) => {
-        const qty = matrix[opt.value]?.[pack] ?? 0;
-        const hex = shadeHex(opt.value);
-        return (
-          <div key={opt.value} className="flex items-center justify-between gap-3 py-2.5"
-               style={{ borderTop: `1px solid ${RULE}` }}>
-            <div className="flex min-w-0 flex-1 items-center gap-2.5">
-              {hex && (
-                <span className="shrink-0" style={{
-                  width: 22, height: 22, borderRadius: 6, background: hex,
-                  border: isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none",
-                }} />
-              )}
-              <span className="min-w-0 truncate text-[14px] font-semibold" style={{ color: INK }}>
-                {opt.value}
-              </span>
+    <div
+      className="min-h-0 flex-1 overflow-y-auto"
+      style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
+    >
+      <div className="px-4 py-1">
+        {options.map((opt) => {
+          const qty = matrix[opt.value]?.[pack] ?? 0;
+          const hex = shadeHex(opt.value);
+          return (
+            <div key={opt.value} className="flex items-center justify-between gap-3 py-2.5"
+                 style={{ borderTop: `1px solid ${RULE}` }}>
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                {hex && (
+                  <span className="shrink-0" style={{
+                    width: 22, height: 22, borderRadius: 6, background: hex,
+                    border: isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none",
+                  }} />
+                )}
+                <span className="min-w-0 truncate text-[14px] font-semibold" style={{ color: INK }}>
+                  {opt.value}
+                </span>
+              </div>
+              <Stepper
+                qty={qty}
+                step={stepForLabel(pack)}
+                onStep={(d) => onStep(opt.value, pack, d)}
+                onType={(units) => onType(opt.value, pack, units)}
+                label={`${opt.value} ${pack}`}
+              />
             </div>
-            <Stepper
-              qty={qty}
-              step={stepForLabel(pack)}
-              onStep={(d) => onStep(opt.value, pack, d)}
-              onType={(units) => onType(opt.value, pack, units)}
-              label={`${opt.value} ${pack}`}
-            />
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -406,8 +406,9 @@ export function stepForLabel(label: string): number {
 // 🔴 THIS IS NOT THE CATALOGUE. It is EVERY option a tile has, IN RANK ORDER, ranked by what was
 // actually ordered in the 90 days to 2026-09-07 — mail-order line frequency
 // first (what the salesman ASKED for), SAP dispatch frequency breaking ties,
-// catalog sortOrder last for anything never ordered. Everything else in the
-// catalogue is behind "+ More".
+// catalog sortOrder last for anything never ordered. Anything the catalogue has
+// that this does not name is appended AFTER it, in sortOrder, by the drawer —
+// so the rail holds every option and nothing is unreachable.
 //
 // GENERATED from a read-only query, then frozen here BY DESIGN: the lists stay
 // hand-editable in this exact shape so a list can be overridden by name without
@@ -418,12 +419,12 @@ export function stepForLabel(label: string): number {
 // Sadolin stores "90 Base" while every other family stores "90 BASE", and that
 // difference is real, not a typo.
 //
-// A tab with fewer than nine options lists them all and shows no "+ More"
-// (the drawer's hasMore compares the pool against what is displayed).
+// NOTHING IS TRUNCATED HERE OR ANYWHERE DOWNSTREAM. There is no cap and no
+// expander any more — see the note where chipLimit() used to live.
 //
 // `variants` is not a different KIND of thing — Smart Choice and Promise
 // Primer store their variants in `baseColour` too. It is a separate field only
-// so the drawer can render them as one un-pre-selected row with no tabs.
+// so the drawer can render them in one column with no group toggle.
 
 export type V2Curation = {
   bases:    readonly string[];
@@ -479,10 +480,9 @@ export const CURATION: Record<string, V2Curation> = {
   "MULTI PURPOSE THINNER":     { bases: NONE, shades: NONE, variants: NONE, defaultTab: "base" },
 };
 
-// (The nine hard-coded "+ More" bases are GONE, and so is the search round-trip
-// that briefly replaced them. "+ More" now expands the chip row in place from
-// `allOptionsFor` — see the drawer's `allOptions` prop for why the round-trip
-// had to go.)
+// (The nine hard-coded "+ More" bases went first, then the search round-trip
+// that replaced them, then the in-place expansion that replaced THAT. The rail
+// replaced the question: a column shows the lot.)
 
 // ── The join ───────────────────────────────────────────────────────────────
 
@@ -537,7 +537,7 @@ export type V2Resolved = {
   /**
    * True for the 32 board tiles, whose lists are RANKED and split base/shade.
    * False for a searched non-tile, whose single list is raw catalog order and
-   * is neither — chipLimit() reads this to know which cut applies.
+   * is neither — the drawer reads this to know whether to offer a group toggle.
    */
   curated: boolean;
 };
@@ -713,9 +713,10 @@ const SHADE_HEX: Record<string, string> = {
   // GOLDEN BROWN were REFUSED once, on the grounds that as bare squares they
   // sit next to TEAK and GOLDEN BROWN as near-identical browns and a wrong
   // pick is a wrong order. That objection was right and has not gone away —
-  // it is answered by the CHIP, not by the hex: a row this crowded now renders
-  // as swatch + NAME. See shadeRowMode() below, which decides that from the
-  // colours themselves. RICH BROWN keeps its original #4A2C1A.
+  // it is answered by the drawer, not by the hex. It was a swatch + NAME chip,
+  // decided by a ΔE close-pair rule; it is now a bare rail tile whose name is
+  // spelled out at 15px in the pane the instant it is tapped. See the retired-
+  // rule note below. RICH BROWN keeps its original #4A2C1A.
   "SPECIAL TEAK":          "#A56B2E",
   "TIMBER GOLDEN BROWN":   "#BC8A3C",
 
@@ -749,130 +750,45 @@ export function isLightHex(hex: string): boolean {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.85;
 }
 
-/**
- * Does this product's shade row render as COLOUR or as TEXT?
- *
- * 🔴 MIXED ROWS ARE BANNED, and that ban is what actually decides this: a row
- * is colour only when EVERY shade on it has a swatch. The brief's threshold
- * was "fewer than half unmapped -> text", but at exactly half those two rules
- * contradict each other — 1-of-2 mapped is "not fewer than half", yet the one
- * unmapped shade would have to render as text INSIDE a colour row, which is
- * the mixed row the ban exists to prevent. All-or-nothing satisfies both.
- *
- * On the live curation the two rules agree everywhere except PU Prime Sealer
- * and Prime Matt (White mapped, Clear not), which go text — the only outcome
- * that is not visibly broken.
- */
-/** CIE L*a*b*, D65. The step ΔE2000 needs before it can compare two colours. */
-function labOf(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  const lin = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
-    const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  });
-  const X = (lin[0] * 0.4124 + lin[1] * 0.3576 + lin[2] * 0.1805) / 0.95047;
-  const Y = (lin[0] * 0.2126 + lin[1] * 0.7152 + lin[2] * 0.0722);
-  const Z = (lin[0] * 0.0193 + lin[1] * 0.1192 + lin[2] * 0.9505) / 1.08883;
-  const f = (t: number): number => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-  const [fx, fy, fz] = [f(X), f(Y), f(Z)];
-  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
-}
-
-/**
- * ΔE2000 — how different two colours look to a person, not to a computer.
- *
- * Plain RGB distance is useless here: #6B4423 and #52301C are 40 apart in RGB
- * and all but indistinguishable as two 54x44 squares on a phone, while
- * #1A1A1A and #1B8A9E are a similar RGB distance and could not be confused by
- * anyone. Super Satin is five browns; the only honest way to say "these are
- * too close to sell as bare squares" is a perceptual metric.
- */
-export function deltaE2000(hex1: string, hex2: string): number {
-  const [L1, a1, b1] = labOf(hex1), [L2, a2, b2] = labOf(hex2);
-  const RAD = Math.PI / 180, DEG = 180 / Math.PI;
-  const Cb = (Math.hypot(a1, b1) + Math.hypot(a2, b2)) / 2;
-  const G = 0.5 * (1 - Math.sqrt(Math.pow(Cb, 7) / (Math.pow(Cb, 7) + Math.pow(25, 7))));
-  const ap1 = (1 + G) * a1, ap2 = (1 + G) * a2;
-  const Cp1 = Math.hypot(ap1, b1), Cp2 = Math.hypot(ap2, b2);
-  const hue = (b: number, ap: number): number => {
-    if (b === 0 && ap === 0) return 0;
-    const h = Math.atan2(b, ap) * DEG;
-    return h < 0 ? h + 360 : h;
-  };
-  const hp1 = hue(b1, ap1), hp2 = hue(b2, ap2);
-  const dLp = L2 - L1, dCp = Cp2 - Cp1;
-  let dhp = 0;
-  if (Cp1 * Cp2 !== 0) {
-    dhp = hp2 - hp1;
-    if (dhp > 180) dhp -= 360;
-    else if (dhp < -180) dhp += 360;
-  }
-  const dHp = 2 * Math.sqrt(Cp1 * Cp2) * Math.sin((dhp / 2) * RAD);
-  const Lbp = (L1 + L2) / 2, Cbp = (Cp1 + Cp2) / 2;
-  let hbp = hp1 + hp2;
-  if (Cp1 * Cp2 !== 0) hbp = Math.abs(hp1 - hp2) > 180 ? (hbp + 360) / 2 : hbp / 2;
-  const T = 1 - 0.17 * Math.cos((hbp - 30) * RAD) + 0.24 * Math.cos(2 * hbp * RAD)
-    + 0.32 * Math.cos((3 * hbp + 6) * RAD) - 0.20 * Math.cos((4 * hbp - 63) * RAD);
-  const Sl = 1 + (0.015 * Math.pow(Lbp - 50, 2)) / Math.sqrt(20 + Math.pow(Lbp - 50, 2));
-  const Sc = 1 + 0.045 * Cbp, Sh = 1 + 0.015 * Cbp * T;
-  const Rt = -2 * Math.sqrt(Math.pow(Cbp, 7) / (Math.pow(Cbp, 7) + Math.pow(25, 7)))
-    * Math.sin(60 * Math.exp(-Math.pow((hbp - 275) / 25, 2)) * RAD);
-  return Math.sqrt(Math.pow(dLp / Sl, 2) + Math.pow(dCp / Sc, 2) + Math.pow(dHp / Sh, 2)
-    + Rt * (dCp / Sc) * (dHp / Sh));
-}
-
-/** Two shades a salesman could plausibly mix up as bare squares. */
-const CLOSE_DE = 12;
-/** Two shades nobody could tell apart — one such pair is enough on its own. */
-const TWINS_DE = 6;
-
-export type V2ChipStyle = "colour" | "swatch" | "text";
-
-/**
- * How this product's shade row renders. THREE styles, decided from the hexes.
- *
- *   text    any shade has no hex. Unchanged, and still all-or-nothing: a row
- *           that is half colour and half word is worse than either.
- *   swatch  every shade mapped, but the row is CROWDED — a small square with
- *           the name beside it, so the colour helps and the word decides.
- *   colour  every shade mapped and all of them clearly distinct — bare squares.
- *
- * 🔴 "CROWDED" IS MEASURED, NOT LISTED. Two or more pairs within ΔE 12, or any
- * single pair within ΔE 6. On the live curation that is:
- *
- *     Super Satin     6 close pairs of 21, closest 7.9   -> swatch
- *     Gloss           1 close pair  of 36, closest 10.4  -> colour
- *     Uni Stainer     1 close pair  of 45, closest 11.9  -> colour
- *     Promise Enamel  0 close pairs of 36, closest 17.3  -> colour
- *     PU Enamel       0 close pairs of 10, closest 17.3  -> colour
- *     Stay Bright     0 close pairs of 1,  closest 19.8  -> colour
- *
- * COUNTING pairs rather than taking the minimum is the point. One ambiguous
- * pair among nine well-separated colours is survivable — Gloss's two greys sit
- * beside a red, a turquoise and a yellow, so the row still reads. A row that is
- * five browns is not, and no single-minimum threshold separates those two cases
- * without landing in the 2.5-point gap between 7.9 and 10.4, where one new hex
- * would flip the wrong product. The TWINS arm fires on nothing today; it is
- * there so a genuinely indistinguishable pair can never reach a bare square.
- */
-export function shadeRowMode(values: readonly string[]): V2ChipStyle {
-  if (values.length === 0) return "text";
-  const hexes: string[] = [];
-  for (const v of values) {
-    const hex = shadeHex(v);
-    if (hex === undefined) return "text";
-    hexes.push(hex);
-  }
-  let close = 0;
-  for (let i = 0; i < hexes.length; i++) {
-    for (let j = i + 1; j < hexes.length; j++) {
-      const e = deltaE2000(hexes[i], hexes[j]);
-      if (e < TWINS_DE) return "swatch";
-      if (e < CLOSE_DE) close++;
-    }
-  }
-  return close >= 2 ? "swatch" : "colour";
-}
+// ── THE ΔE CLOSE-PAIR RULE — RETIRED 2026-09-07, RECORDED HERE ─────────────
+//
+// deltaE2000(), labOf(), shadeRowMode(), CLOSE_DE, TWINS_DE and the V2ChipStyle
+// type stood here until the drawer's chip row became a RAIL. They are removed
+// because the rail leaves nothing to call them: the question they answered —
+// "does this whole row render as colour, or as swatch+name, or as text?" — is
+// no longer asked. A rail tile decides for ITSELF, from one fact: a name in
+// SHADE_HEX gets a swatch, a name that is not there gets a text tile. Mixed
+// columns are now the intended outcome, not the thing the rule existed to
+// prevent. Grepped before deleting: product-drawer.tsx was the only caller of
+// any of them, and it no longer has a chip row.
+//
+// WHAT THE RULE WAS, so it is not re-derived from scratch if a row-level
+// decision is ever wanted again — it is in git at 2679c189:
+//
+//   Perceptual distance, CIE Lab / D65, ΔE2000 — because plain RGB distance is
+//   useless here: #6B4423 and #4A2C1A are far apart in RGB and all but
+//   identical as two squares on a phone. A row went to swatch+name when it had
+//   TWO OR MORE pairs within ΔE 12, or ANY single pair within ΔE 6; otherwise
+//   bare squares. Measured on the live curation:
+//
+//     Super Satin     6 close pairs of 21, closest  7.9  -> swatch + name
+//     Gloss           1 close pair  of 36, closest 10.4  -> bare squares
+//     Uni Stainer     1 close pair  of 45, closest 11.9  -> bare squares
+//     Promise Enamel  0 close pairs of 36, closest 17.3  -> bare squares
+//     PU Enamel       0 close pairs of 10, closest 17.3  -> bare squares
+//     Stay Bright     0 close pairs of 1,  closest 19.8  -> bare squares
+//
+//   COUNTING pairs rather than taking the minimum was the whole point: one
+//   ambiguous pair among nine well-separated colours is survivable, five browns
+//   are not, and no single-minimum threshold separates those two cases without
+//   landing in the 2.5-point gap between 7.9 and 10.4.
+//
+// 🔴 WHAT THE RULE PROVED IS STILL TRUE, and the rail answers it a different
+// way: Super Satin's browns cannot be told apart as bare squares. They are
+// still bare squares — but the NAME BAR above the packs spells the selection
+// out at 15px the moment a tile is tapped, which is a bigger, later and more
+// legible check than a caption on a chip ever was. The hexes themselves, each
+// approved by name, are untouched above.
 
 // ── Drawer shape ───────────────────────────────────────────────────────────
 
@@ -938,11 +854,13 @@ export function isBaseOption(value: string): boolean {
 }
 
 /**
- * The base and shade pools behind "+ More", split by isBaseOption().
+ * The base and shade pools the RAIL's two groups are built from, split by
+ * isBaseOption().
  *
  * Both pools are drawn from EVERY option the product has, so nothing in the
  * catalog is unreachable: whatever is not a base is a shade, and the two are
- * exhaustive and disjoint.
+ * exhaustive and disjoint. The drawer lists the ranked curation first and
+ * appends whatever these hold that the ranking does not name.
  */
 export function optionPools(
   rows: ApiProduct[],
@@ -954,29 +872,14 @@ export function optionPools(
   return { all, bases, shades };
 }
 
-/**
- * 🔴 HOW MANY CHIPS A ROW SHOWS BEFORE "+ More" - THE ONLY PLACE THIS IS DECIDED.
- * Deliberately a function in the data file and not a .slice() in the JSX, so
- * the rule can be read, argued with and changed in one place.
- *
- *   base           5 or fewer -> all;  otherwise the top 4
- *   shade/variant  10 or fewer -> all; otherwise the top 9
- *   mixed          a non-tile product's single undifferentiated list; as shade
- *
- * The "or fewer" arms exist for one reason: A SINGLE OPTION MUST NEVER HIDE
- * BEHIND "+ More". Cutting a 5-long base list to 4 buys nothing and costs a tap
- * to reach the fifth, and it is why Uni Stainer's ten shades render flat with
- * no expander at all. Bases are cut harder than shades because base names are
- * interchangeable ("92", "93", "94") - the fifth one down is not what he came
- * for, whereas the ninth shade might be.
- *
- * The list handed in is already RANKED by 90-day order frequency (see CURATION),
- * so "the top N" is literally the first N.
- */
-export function chipLimit(kind: "base" | "shade" | "variant" | "mixed", total: number): number {
-  if (kind === "base") return total <= 5 ? total : 4;
-  return total <= 10 ? total : 9;
-}
+// 🔴 chipLimit() IS GONE, AND SO IS THE IDEA BEHIND IT. It decided how many
+// chips a row showed before "+ More" — the top 4 bases, the top 9 shades — and
+// it was the last survivor of a cut that had already been rebuilt three times.
+// A cut only exists because a horizontal row is finite. The rail is a vertical
+// column that scrolls, so it holds EVERY option in rank order and hides none:
+// the top of the column is the curation, and there is nothing behind anything.
+// Deleted 2026-09-07 with "+ More" itself; in git at 2679c189 if the reasoning
+// is ever wanted.
 
 /**
  * Turn a whole searched PRODUCT into something the drawer can open on.
@@ -986,9 +889,10 @@ export function chipLimit(kind: "base" | "shade" | "variant" | "mixed", total: n
  * board and the search would teach two different products.
  *
  * A non-tile (most of the 143 catalog products) gets its options straight from
- * the payload, ordered by sortOrder — the depot's own order — IN FULL. It is not cut here:
- * chipLimit() decides how many show, so there is one cut and not two that can
- * disagree. "+ More" expands the row in place using `allOptionsFor` below.
+ * the payload, ordered by sortOrder — the depot's own order — IN FULL. Nothing
+ * cuts it, here or later: the drawer puts the whole list in one rail column
+ * with no group toggle, because an uncurated list has no base/shade split to
+ * offer.
  */
 export function resolveGroup(
   key: string,
@@ -1018,11 +922,11 @@ export function resolveGroup(
 }
 
 /**
- * EVERY option a product has, in catalog order — what "+ More" reveals.
+ * EVERY option a product has, in catalog order.
  *
- * Passed to the drawer alongside the curated/capped set so the expansion is a
- * local swap rather than a trip back through search. See the drawer's own note
- * on why the search round-trip had to go.
+ * Passed to the drawer alongside the ranked curation; the rail shows the
+ * ranking first and then whatever this holds that the ranking does not name,
+ * so one column is the complete list.
  */
 export function allOptionsFor(rows: ApiProduct[]): V2Option[] {
   return [...rows]
