@@ -1455,8 +1455,16 @@ export const BOARD: readonly V2BoardFamily[] = [
     tiles: [
       { key: "SATIN STAY BRIGHT", label: "Stay Bright", slug: "stay-bright",
         members: [{ sap: "SATIN STAY BRIGHT", label: "Stay Bright" }] },
+      // Supercover Sheen moved here from More Interior 2026-09-07. It has
+      // still never been ordered — 0 lines and 0 orders across the whole
+      // history — but it is a Supercover, and a range sits with its range.
+      // More Interior is the leftovers drawer, not a home for a product that
+      // has one.
       { key: "SUPERCOVER", label: "Supercover", slug: "supercover",
-        members: [{ sap: "SUPERCOVER", label: "Supercover" }] },
+        members: [
+          { sap: "SUPERCOVER",       label: "Supercover" },
+          { sap: "SUPERCOVER SHEEN", label: "Supercover Sheen" },
+        ] },
       { key: "SUPERCLEAN", label: "SuperClean", slug: "superclean",
         members: [
           { sap: "SUPERCLEAN",      label: "SuperClean" },
@@ -1470,9 +1478,8 @@ export const BOARD: readonly V2BoardFamily[] = [
       // leading member keeps its one-tap path.
       { key: "ACRYLIC PUTTY", label: "More Interior", slug: "more-interior",
         members: [
-          { sap: "ACRYLIC PUTTY",    label: "Acrylic Putty" },
-          { sap: "POLYPUTTY",        label: "PolyPutty" },
-          { sap: "SUPERCOVER SHEEN", label: "Supercover Sheen" },
+          { sap: "ACRYLIC PUTTY", label: "Acrylic Putty" },
+          { sap: "POLYPUTTY",     label: "PolyPutty" },
         ] },
     ],
   },
@@ -1494,17 +1501,22 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "VT ETERNA",          label: "Eterna" },
           { sap: "VT ETERNA HI-SHEEN", label: "Eterna Hi-Sheen" },
         ] },
-      // ⚠ VT DIAMOND GLO IS FAMILY 'VELVET TOUCH', NOT 'VT SPECIALTY'. It is
-      // here deliberately: 6 lines/90d and no other home on a 36-slot board.
-      // The crossing is stated, not hidden — the same handling the Interior
-      // card has always given Stay Bright, which is family SATIN.
+      // 🔴 FOUR MEMBERS, NOT SIX. VT DIAMOND GLO and VAF LEFT THE BOARD on
+      // 2026-09-07 and are search-only again. Diamond Glo was the family
+      // crossing — it is VELVET TOUCH, not VT SPECIALTY — and at 6 lines/90d
+      // it was not earning the confusion; VAF at 3 lines was the tail of the
+      // tail. What is left is the four products the family actually is.
+      //
+      // ⚠ A LINE SAVED WHILE THEY WERE MEMBERS STILL CARRIES tileSap
+      // "VELVETINO". That sap is STILL a live tile key, so the storage
+      // migration reads it as already correct and leaves it — and the next
+      // edit of this tile replaces by tile key and deletes it. Reproduced and
+      // reported 2026-09-07; the fix belongs in v2-storage.ts, not here.
       { key: "VELVETINO", label: "VT Specialty", slug: "vt-specialty",
         members: [
           { sap: "VELVETINO",          label: "Velvetino" },
           { sap: "VT CONCRETE FINISH", label: "Concrete Finish" },
           { sap: "VT CLEAR COAT",      label: "Clear Coat" },
-          { sap: "VT DIAMOND GLO",     label: "Diamond Glo" },
-          { sap: "VAF",                label: "VAF" },
           { sap: "VT MARBLE",          label: "Marble" },
         ] },
     ],
