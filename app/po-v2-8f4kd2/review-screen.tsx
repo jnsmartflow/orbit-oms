@@ -64,7 +64,8 @@ const MARKER_CHOICES: { label: string; value: V2Marker }[] = [
 
 export default function ReviewScreen({
   dealer, shipTo, lines, order,
-  onBack, onEdit, onRemoveLine, onOrderChange, onOpenDealer, onOpenShipTo, onSend, onSaveDraft,
+  onBack, onEdit, onRemoveLine, onOrderChange, onOpenDealer, onOpenShipTo, onSend,
+  onSaveDraft, onClearOrder,
 }: {
   /** NULL until he picks one — which he may leave until the last moment. */
   dealer: ApiCustomer | null;
@@ -77,6 +78,8 @@ export default function ReviewScreen({
   onRemoveLine: (id: string) => void;
   onOrderChange: (next: V2Order) => void;
   onOpenDealer: () => void;
+  /** Opens the confirm. Clearing itself happens on the page, once. */
+  onClearOrder: () => void;
   onOpenShipTo: () => void;
   /** Fires only with a dealer set. With none it opens the dealer sheet. */
   onSend: () => void;
@@ -102,6 +105,22 @@ export default function ReviewScreen({
         <h1 className="min-w-0 flex-1 truncate text-[17px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
           Review order
         </h1>
+        {/* ── CLEAR ORDER — the only way to empty the cart ─────────────────
+            🔴 QUIET TEXT, AND MUTED RATHER THAN RED. Two things follow from the
+            colour system: destructive is an outline trigger, and solid urgent
+            belongs inside the confirm — never loose on a screen where a thumb
+            can reach it by accident. Red here would also put a second accent
+            beside Save draft's violet and make the header argue with itself.
+            The weight lands on the confirm's button instead.
+
+            It sits LEFT of Save draft on purpose: the right edge is where a
+            right-handed thumb rests, so the harmless action gets that spot. */}
+        <button
+          type="button" onClick={onClearOrder}
+          className="shrink-0 text-[13.5px] font-extrabold" style={{ color: MUTED }}
+        >
+          Clear order
+        </button>
         {/* A generated label, never typed — the salesman is mid-order, not
             mid-filing. */}
         <button

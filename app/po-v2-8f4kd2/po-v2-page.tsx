@@ -18,7 +18,7 @@ import {
 } from "./v2-storage";
 import {
   BRAND, BRAND_GRADIENT, DIVIDER, FAINT, FAMILIES, FILL, INK, MUTED, RULE,
-  SURFACE, VIOLET, VIOLET_BG,
+  SURFACE, URGENT, VIOLET, VIOLET_BG,
   EMPTY_ORDER, buildCatalog, drawerMode, formatPack,
   mixToWhite, optionPools, packRows, resolveGroup, tileImage, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
@@ -98,7 +98,7 @@ type LoadState =
   | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
 
 type Screen = "order" | "review" | "sent" | "drafts" | "sentList";
-type Sheet  = null | "dealer" | "shipto" | "replace" | "summary";
+type Sheet  = null | "dealer" | "clear" | "shipto" | "replace" | "summary";
 
 export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
@@ -255,6 +255,27 @@ export default function PoV2Page(): React.JSX.Element {
 
   /** Open the dealer sheet. One entry point, so the query is always cleared. */
   function openDealerSheet(): void { setQuery(""); setSheet("dealer"); }
+
+  /**
+   * Empty the cart and go back to the board — but KEEP THE DEALER.
+   *
+   * He is standing in the same shop; the order was wrong, the customer was not.
+   * Making him name the dealer again would punish a correction. Everything that
+   * belongs to the ORDER goes: lines, dispatch, remark, notes and the ship-to
+   * override, because a stale "ship to LAKHANI" surviving a clear is exactly the
+   * kind of leftover that reaches a lorry.
+   *
+   * The reopened-draft id is dropped too, so the next Save draft files a new
+   * draft rather than overwriting the one he had open.
+   */
+  function clearOrder(): void {
+    setLines([]);
+    setOrder(EMPTY_ORDER);
+    setShipTo(null);
+    openDraftIdRef.current = null;
+    setSheet(null);
+    setScreen("order");
+  }
 
   /** Empty the order and go back to the board. The dealer clears with it. */
   function startOver(): void {
@@ -681,6 +702,7 @@ export default function PoV2Page(): React.JSX.Element {
           onSend={handleSend}
           onSaveDraft={saveDraft}
           onOpenDealer={openDealerSheet}
+          onClearOrder={() => setSheet("clear")}
           onOpenShipTo={() => { setQuery(""); setSheet("shipto"); }}
         />
         {/* ── DEALER SHEET — REVIEW ONLY ─────────────────────────────────
@@ -717,6 +739,50 @@ export default function PoV2Page(): React.JSX.Element {
           </div>
         </V2Sheet>
       )}
+        {/* ── CLEAR CONFIRM — asked once, and only from the review header ───
+            🔴 THIS IS WHERE THE URGENT COLOUR LIVES. The trigger upstairs is
+            quiet text; the solid red is here, on a button nobody reaches
+            without having already decided.
+
+            Keep is on the LEFT and outlined, Clear on the right and solid. The
+            two are the same size on purpose — the confirm is the protection,
+            and shrinking the option he just asked for would be arguing with
+            him rather than checking. */}
+        {sheet === "clear" && (
+          <V2Sheet
+            onClose={() => setSheet(null)}
+            footer={
+              <>
+                <button
+                  type="button" onClick={() => setSheet(null)}
+                  className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold"
+                  style={{ border: `1.5px solid ${RULE}`, color: INK }}
+                >
+                  Keep
+                </button>
+                <button
+                  type="button" onClick={clearOrder}
+                  className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                  style={{ background: URGENT }}
+                >
+                  Clear
+                </button>
+              </>
+            }
+          >
+            <div className="shrink-0 px-4 pt-1.5 pb-4">
+              <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+                Clear all {lines.length} {lines.length === 1 ? "item" : "items"}?
+              </h2>
+              <p className="mt-1 text-[13px] leading-relaxed" style={{ color: MUTED }}>
+                {dealer
+                  ? `The order empties and you go back to the board. ${dealer.name} stays.`
+                  : "The order empties and you go back to the board."}
+              </p>
+            </div>
+          </V2Sheet>
+        )}
+
         {toastHost}
         {sheet === "shipto" && (
           <V2Sheet onClose={() => setSheet(null)}>

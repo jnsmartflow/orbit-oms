@@ -37,6 +37,16 @@ export const VIOLET_BG  = "#F5F1FE";  // selected-chip / in-cart tile wash
 export const FOCUS      = "#8B5CF6";
 /** brand.600 at 13%. The ring, never a fill. */
 export const FOCUS_RING = "rgba(124,58,237,.13)";
+
+/**
+ * The one destructive colour, red-600.
+ *
+ * 🔴 IT APPEARS ONLY INSIDE A CONFIRM, never on a trigger sitting loose on a
+ * screen. A red button a thumb can reach by accident is not a warning, it is a
+ * hazard; the trigger that leads here is quiet text and the weight lands on the
+ * button you have to have already decided to press.
+ */
+export const URGENT     = "#DC2626";
 export const SCRIM      = "rgba(18,14,26,.42)";
 export const SEARCH_BG  = FILL;
 /** One border colour means one token. Kept as a name because rows read better
