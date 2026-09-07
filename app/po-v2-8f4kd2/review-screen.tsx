@@ -3,7 +3,7 @@
 import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
   BRAND, DIVIDER, FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
-  chipStyle, packRows, tileArtFor, unitsIn,
+  chipStyle, memberImage, packRows, tileArtFor, unitsIn,
   type ApiCustomer, type V2CartLine, type V2Marker, type V2Order,
 } from "./v2-data";
 
@@ -158,7 +158,24 @@ export default function ReviewScreen({
 
       <div>
         {lines.map((line) => {
-          const art = tileArtFor(line.tileSap);
+          // 🔴 THE LINE'S OWN PRODUCT, THEN ITS TILE, THEN NOTHING.
+          //
+          // This asked tileArtFor and stopped there, so every line of a merged
+          // tile carried its LEADER's tin: a Lustre line and an M900 Gloss line
+          // both drew pu-enamel.webp, and nine Powerflexx products drew one
+          // tub. The member sap is the catalog join key — the same
+          // COALESCE(product, subProduct) the email reads — so it is on the
+          // line already and needs no lookup.
+          //
+          // The TILE remains the fallback, deliberately: a product with no
+          // photo of its own is better represented by its family's tub than by
+          // an empty square, and that is what the cart already showed. The
+          // wash always comes from the tile, because the wash IS the family.
+          const tileArt = tileArtFor(line.tileSap);
+          const art = {
+            src: memberImage(line.product ?? line.subProduct) ?? tileArt.src,
+            wash: tileArt.wash,
+          };
           return (
           <div
             key={line.id}

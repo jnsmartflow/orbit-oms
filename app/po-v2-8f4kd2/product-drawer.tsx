@@ -7,8 +7,9 @@ import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
-  baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isLightHex, packsOf,
-  shadeHex, snapToBox, sortBases, stepForLabel, tileArtFor, unitsIn, variantImage,
+  baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isLightHex, memberImage,
+  packsOf, shadeHex, snapToBox, sortBases, stepForLabel, tileArtFor, unitsIn,
+  variantImage,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
   type V2ResolvedMember, type V2ResolvedTile,
 } from "./v2-data";
@@ -861,7 +862,12 @@ export default function ProductDrawer({
                   key={m.sap}
                   label={m.label}
                   cell={STRIP_CELL} square={STRIP_TILE} lines={2}
-                  badge={null} fill={undefined} image={null} wash={wash}
+                  // 🔴 THE MEMBER'S OWN TIN, never the tile's. A tile-art
+                  // fallback here would put one Powerflexx tub on all nine
+                  // products in the strip — which is exactly the bug the cart
+                  // has been shipping. No photo means the family wash, the
+                  // same thing the board shows for art that has not arrived.
+                  badge={null} fill={undefined} image={memberImage(m.sap)} wash={wash}
                   selected={m.sap === cur.sap}
                   carrying={unitsOnMember(m.sap)}
                   onSelect={() => selectMember(m.sap)}
@@ -970,7 +976,12 @@ export default function ProductDrawer({
                         key={m.sap}
                         label={m.label}
                         cell={RAIL_CELL} square={RAIL_TILE} lines={3}
-                        badge={null} fill={undefined} image={null} wash={wash}
+                        // Same rule as the strip: this product's own tin or
+                        // nothing. Crack Fillers and Roof Coats are the two
+                        // places several members legitimately share one photo,
+                        // and that sharing lives in v2-data's member slugs —
+                        // not in a fallback here that would hide the others.
+                        badge={null} fill={undefined} image={memberImage(m.sap)} wash={wash}
                         selected={m.sap === cur.sap}
                         carrying={unitsOnMember(m.sap)}
                         onSelect={() => selectMember(m.sap)}
