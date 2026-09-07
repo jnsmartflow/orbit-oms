@@ -14,6 +14,10 @@
 // only on write, and a full quota throws on set. A failed save is silent; a
 // failed read starts fresh. Losing a draft must never take the page down.
 
+// 🔴 A VALUE IMPORT, AND THE ONLY ONE IN THIS FILE. Both of these are DERIVED
+// indexes walked from BOARD at load — see the note on migrateLine below for
+// why a hand-written table of stale codes would be wrong.
+import { boardTile, tileKeyForMember } from "./v2-data";
 import type {
   ApiCustomer, V2CallTarget, V2CartLine, V2Dispatch, V2Marker, V2Order,
 } from "./v2-data";
@@ -106,6 +110,82 @@ function validSnapshot(v: Partial<V2Snapshot> | null | undefined): v is V2Snapsh
   return v.customer === null || v.customer === undefined || typeof v.customer.code === "string";
 }
 
+// ── Migrating a stored line onto the current board ────────────────────────
+//
+// 🔴 WHAT tileSap MEANS CHANGED, AND STORAGE STILL HOLDS THE OLD MEANING.
+//
+// Until 1129427d a tile was one product, and a cart line's `tileSap` was that
+// product's own join key. A tile can now hold several products, so `tileSap`
+// is the TILE's key and `label` is the MEMBER's name. Every line written
+// before that commit carries the old pair.
+//
+// An unmigrated line is not merely cosmetic. It still renders and it still
+// emits byte-identical email — the three fields the wire reads (product,
+// baseColour, subProduct) are untouched by any of this. But po-v2-page's
+// addLines replaces by `tileSap`, so a line filed under a code the board no
+// longer recognises is KEPT while the edit writes a second one beside it: two
+// lines, same product, both sent, and nothing on screen says so.
+//
+// ⚠ ON READ, NEVER ON WRITE. localStorage can hold data written by an older
+// build at any moment — a phone that has not reloaded, a tab left open since
+// yesterday, a draft restored after a rollback. Migrating on write would fix
+// only what this build happens to touch.
+//
+// NO VERSION BUMP. The stored SHAPE is unchanged; one field's value is
+// corrected. `version: 1` still describes the data honestly, and bumping it
+// would make every older build treat these records as unreadable.
+
+/**
+ * One line, moved onto the current board. Returns the SAME OBJECT when there
+ * is nothing to do, so idempotence is visible rather than asserted.
+ *
+ * 🔴 THE MEMBER IS IDENTIFIED FROM THE ROW, NOT FROM tileSap. `product ??
+ * subProduct` is the catalog join key — exactly what addLines snapshotted off
+ * the menu row — and it means the same thing on an old line and a new one. On
+ * an old line `tileSap` happens to hold it too; on a new line `tileSap` is
+ * the tile, which may be a different product entirely. Reading the row makes
+ * the function correct in both directions and idempotent by construction.
+ *
+ * 🔴 tileKeyForMember() IS DERIVED, WALKED FROM BOARD. It is deliberately NOT
+ * a table of the three codes this happens to move today. A tile's key is its
+ * TOP MEMBER's code, so the key changes the day sales reorder a merged tile's
+ * members — and a new set of stored codes goes stale with it. A derived lookup
+ * absorbs that forever, because whatever the key used to be it is still a
+ * member. A list of three would be right for exactly one ranking, and the bug
+ * would come back silently on the next one.
+ *
+ * A sap that is on NO tile is returned untouched. That is correct, not a gap:
+ * a product that left the board still renders, still sends, and simply has no
+ * tile to badge.
+ */
+function migrateLine(line: V2CartLine): V2CartLine {
+  const sap = line.product ?? line.subProduct;
+  const key = tileKeyForMember(sap);
+  if (key === null) return line;
+  const label = boardTile(key)?.members.find((m) => m.sap === sap)?.label ?? line.label;
+  if (line.tileSap === key && line.label === label) return line;
+  // Spread, so product / baseColour / subProduct / qtys / packOrder / rowId /
+  // option / id pass through byte for byte. Only the two board-facing fields
+  // are rewritten, and neither reaches the email.
+  return { ...line, tileSap: key, label };
+}
+
+/** The same, for a whole order. Identity-stable when nothing moved. */
+function migrateLines(lines: V2CartLine[]): V2CartLine[] {
+  let moved = false;
+  const next = lines.map((line) => {
+    const after = migrateLine(line);
+    if (after !== line) moved = true;
+    return after;
+  });
+  return moved ? next : lines;
+}
+
+function migrateSnapshot(snap: V2Snapshot): V2Snapshot {
+  const lines = migrateLines(snap.lines);
+  return lines === snap.lines ? snap : { ...snap, lines };
+}
+
 export function snapshotOf(
   customer: ApiCustomer | null, lines: V2CartLine[], shipTo: ApiCustomer | null, order: V2Order,
 ): V2Snapshot {
@@ -154,7 +234,9 @@ export function loadLiveDraft(): V2Snapshot | null {
     removeRaw(LIVE_KEY);
     return null;
   }
-  return {
+  // Migrated on the way out — see migrateLine. The live draft is the one a
+  // salesman is standing in the middle of, so it matters most.
+  return migrateSnapshot({
     customer: parsed.customer ?? null, lines: parsed.lines,
     shipToCode: typeof parsed.shipToCode === "string" ? parsed.shipToCode : null,
     dispatch:   parsed.dispatch   ?? "Normal",
@@ -162,7 +244,7 @@ export function loadLiveDraft(): V2Snapshot | null {
     marker:     parsed.marker     ?? null,
     crossDepot: typeof parsed.crossDepot === "string" ? parsed.crossDepot : "",
     notes:      typeof parsed.notes === "string" ? parsed.notes : "",
-  };
+  });
 }
 
 export function clearLiveDraft(): void {
@@ -174,7 +256,9 @@ export function clearLiveDraft(): void {
 function readDrafts(): V2SavedDraft[] {
   const parsed = readRaw(DRAFTS_KEY) as Partial<DraftStore> | null;
   if (!parsed || !Array.isArray(parsed.drafts)) return [];
-  return parsed.drafts.filter((d) => !!d && typeof d.id === "string" && validSnapshot(d.snapshot));
+  return parsed.drafts
+    .filter((d) => !!d && typeof d.id === "string" && validSnapshot(d.snapshot))
+    .map((d) => ({ ...d, snapshot: migrateSnapshot(d.snapshot) }));
 }
 
 export function loadSavedDrafts(): V2SavedDraft[] {
@@ -225,7 +309,13 @@ function pruneToRecent(orders: V2SentOrder[], nowMs: number): V2SentOrder[] {
 function readSentRaw(): V2SentOrder[] {
   const parsed = readRaw(SENT_KEY) as Partial<SentStore> | null;
   if (!parsed || !Array.isArray(parsed.orders)) return [];
-  return parsed.orders.filter((o) => !!o && typeof o.id === "string" && validSnapshot(o.snapshot));
+  // Sent orders too: "Send again" loads one back onto the board through the
+  // same applySnapshot every draft uses, so an unmigrated sent line would
+  // duplicate on the next edit exactly as a draft line would. The thumbnail
+  // and the tile badge are read off tileSap as well.
+  return parsed.orders
+    .filter((o) => !!o && typeof o.id === "string" && validSnapshot(o.snapshot))
+    .map((o) => ({ ...o, snapshot: migrateSnapshot(o.snapshot) }));
 }
 
 /** Prunes on READ and writes the pruned result back, so storage actually shrinks. */
