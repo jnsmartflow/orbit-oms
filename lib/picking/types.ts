@@ -191,6 +191,16 @@ export interface PickingQueueRow {
   // still SHOW that it arrived there by override rather than by its date —
   // do not re-derive lock state from it, `zone` is the single authority.
   isEarlyReleased: boolean;
+  // Is the manual early-release ACTION available for this bill today? The
+  // last-working-day rule, lib/picking/release-window.ts — server-decided; the
+  // client must never re-derive this from its own clock.
+  //
+  // ⚠ A DIFFERENT QUESTION FROM `zone` ABOVE, and they must not be folded
+  // together: `zone` says where the bill SITS (and an already-released bill is
+  // forced "due" forever by isEarlyReleased), this says whether the ACTION is
+  // offerable right now. A bill released yesterday correctly carries
+  // zone "due" + releasableToday false.
+  releasableToday: boolean;
   // Who released it. Cross-supervisor provenance is the entire reason the
   // release is persisted rather than session-local: any of the three
   // supervisors may find a bill in Due now that its own date says is not due

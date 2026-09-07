@@ -14,6 +14,10 @@ import {
 } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
+// The manual early-release window (last working day before dispatch, Sunday
+// skipped). Pure and clock-free — the day is passed in — so the server route
+// and the board can never disagree about whether the action is offerable.
+import { isReleasableToday } from "./release-window";
 // Name → SAP code, the inverse of the importer's own DIVISION_TO_SMU. Imported
 // rather than re-declared so the picking board can never disagree with the
 // importer about which code a name means (the ONE OWNER PER BEHAVIOUR rule this
@@ -669,16 +673,30 @@ export async function getPickingQueue(
     const ageDays = noDispatchDate
       ? null
       : Math.max(0, Math.floor((anchorMs - targetDate.getTime()) / MS_PER_DAY));
+    // Pass-through of the existing column, not a derived value: @db.Date is
+    // UTC-midnight anchored, so slicing the ISO string yields the correct
+    // calendar day with no timezone maths (same basis as `isoDate` above).
+    // Hoisted out of the literal below so the release-window rule is fed the
+    // SAME slice the row itself carries — one string, two consumers.
+    const dispatchTargetIso = targetDate === null ? null : targetDate.toISOString().slice(0, 10);
 
     return {
       zone,
       noDispatchDate,
       ageDays,
-      // Pass-through of the existing column, not a derived value: @db.Date is
-      // UTC-midnight anchored, so slicing the ISO string yields the correct
-      // calendar day with no timezone maths (same basis as `isoDate` above).
-      dispatchTargetDate: targetDate === null ? null : targetDate.toISOString().slice(0, 10),
+      dispatchTargetDate: dispatchTargetIso,
       isEarlyReleased,
+      // The early-release WINDOW rule (lib/picking/release-window.ts) — is the
+      // ACTION offerable today? Anchored on `isoDate`, the SAME resolved day
+      // `anchorMs` above comes from, so this cannot disagree with `zone` about
+      // which day it is and NO second clock is read here.
+      //
+      // ⚠ Deliberately NOT part of the zone expression above, which is
+      // untouched. An already-released bill stays zone "due" on every later day
+      // via isEarlyReleased; this field independently goes false the moment its
+      // one-day window passes. Different questions — see the note on the field
+      // in lib/picking/types.ts.
+      releasableToday: isReleasableToday(dispatchTargetIso, isoDate),
       earlyReleasedByName:
         order.pickEarlyReleasedById !== null
           ? (userNameById.get(order.pickEarlyReleasedById) ?? null)

@@ -34,6 +34,11 @@ import { suggestSlot } from "./suggest";
 // database — grouping.ts is pure (no prisma, no clock), so importing it into a
 // server module is one-directional and safe.
 import { buildOilSkuSet } from "@/lib/picking/grouping";
+// Compile-required only — FloorBoardRow extends PickingQueueRow, which gained
+// `releasableToday`. Pure and clock-free (the day is passed in), so importing
+// it into this server module is one-directional and safe, exactly like
+// grouping.ts above. Floor renders no early-release action; see the field.
+import { isReleasableToday } from "@/lib/picking/release-window";
 // Same map the picking queue uses, for the same reason: FloorBoardRow extends
 // PickingQueueRow, so this board must fill `smuCode` too. One owner for the
 // name→code rule (lib/import-upsert/types.ts), two callers.
@@ -689,6 +694,10 @@ export async function getFloorBoard(
     const ageDays = noDispatchDate
       ? null
       : Math.max(0, Math.floor((anchorMs - targetDate.getTime()) / MS_PER_DAY));
+    // Hoisted out of the row literal below so the release-window rule is fed
+    // the SAME slice the row itself carries — one string, two consumers (the
+    // identical hoist lib/picking/queue.ts makes, for the identical reason).
+    const dispatchTargetIso = targetDate ? targetDate.toISOString().slice(0, 10) : null;
 
     const displayDate = resolveFloorDisplayDate(order.orderDateTime, order.obdEmailDate);
 
@@ -768,8 +777,22 @@ export async function getFloorBoard(
       zone,
       noDispatchDate,
       ageDays,
-      dispatchTargetDate: targetDate ? targetDate.toISOString().slice(0, 10) : null,
+      dispatchTargetDate: dispatchTargetIso,
       isEarlyReleased,
+      // Inherited from PickingQueueRow (2026-09-07) — FloorBoardRow extends it,
+      // so this board has to FILL the field. Same shape as `bayNumber` and
+      // `smuCode` below: filled honestly rather than stubbed, because a shared
+      // field that means two things is worse than one nobody reads.
+      //
+      // 🔴 FLOOR OFFERS NO EARLY RELEASE AND NOTHING HERE CHANGED. Floor's own
+      // Release is the unrelated FLOOR_RELEASABLE_STAGES path (pending_support
+      // → pending_picking, FLOOR §4.2); its Upcoming strip is read-only
+      // (upcoming-strip.tsx). Nothing on Floor reads this field today.
+      //
+      // Anchored on `anchorIso` — the SAME resolved day `anchorMs` above feeds
+      // `zone`/`ageDays`, so in history mode it answers "was it releasable on
+      // day D", exactly as those two already do, and no second clock is read.
+      releasableToday: isReleasableToday(dispatchTargetIso, anchorIso),
       earlyReleasedByName: order.pickEarlyReleasedBy?.name ?? null,
       // Inherited from PickingQueueRow (2026-08-19) — derived from `order.smu`
       // in memory, no column and no extra query, exactly as lib/picking/queue.ts
