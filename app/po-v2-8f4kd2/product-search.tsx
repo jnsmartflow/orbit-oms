@@ -1,12 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { Search, X } from "lucide-react";
 // 🔴 THE ONE DOCUMENTED CONTAINMENT EXCEPTION — see the note in po-v2-page.tsx.
 // Read-only import of the tested matcher /po already uses. Nothing in lib/ is
 // modified, and its whole import graph (keyword-family-map,
 // sub-product-descriptors) is lib-only — verified by grep for `app/`.
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
-import { FAINT, INK, MUTED, RULE, SEARCH_BG, VIOLET, type ApiProduct } from "./v2-data";
+import {
+  FAINT, FOCUS, FOCUS_RING, INK, MUTED, RULE, SURFACE, VIOLET,
+  type ApiProduct,
+} from "./v2-data";
 
 // The board's product search. ONE ROW PER PRODUCT — searching "pearl glo"
 // returns "Pearl Glo" once, not eleven rows one per base. Tapping it opens the
@@ -19,18 +23,49 @@ import { FAINT, INK, MUTED, RULE, SEARCH_BG, VIOLET, type ApiProduct } from "./v
 export const MIN_QUERY = 2;
 
 /**
- * The product search field. 16px — iOS Safari zooms the page on focus below
- * that (CLAUDE_UI.md §55). The clear button is how the salesman gets back to
- * the tile board.
+ * The product search field — the ONLY interactive thing in the board header,
+ * and built like it.
+ *
+ * A 52px white bar on a white page needs a real edge to exist at all, so it
+ * carries a hairline and one soft shadow rather than the grey fill it used to
+ * have: a filled box reads as a placeholder for a control, an outlined one
+ * reads as the control.
+ *
+ * 🔴 THE FOCUS STATE IS REACT STATE, NOT :focus-within. Every colour in v2 is
+ * an inline style — no globals.css, no tailwind.config — and an inline style
+ * cannot express a pseudo-class. Tracking focus in state keeps the whole thing
+ * in one place and costs one boolean.
+ *
+ * 🔴 THE INPUT IS 16px AND THE PLACEHOLDER IS 15px, deliberately, and the two
+ * are not a mistake. iOS Safari zooms the page when a FOCUSED input's computed
+ * font-size is under 16px and never zooms back out (CLAUDE_UI.md §55); it reads
+ * the input's own size, not ::placeholder's. So the typed text is 16px and safe,
+ * and the resting placeholder is a touch lighter than the answer it is asking
+ * for. Do not "tidy" the 16px down to match.
  */
 export function ProductSearchInput({
   value, onChange, autoFocus = false,
 }: {
   value: string; onChange: (next: string) => void; autoFocus?: boolean;
 }): React.JSX.Element {
+  const [focused, setFocused] = useState(false);
   return (
-    <div className="flex items-center gap-2 rounded-[12px] px-3" style={{ background: SEARCH_BG }}>
-      <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
+    <div
+      className="flex items-center gap-2.5 px-3.5"
+      style={{
+        height: 52,
+        borderRadius: 14,
+        background: SURFACE,
+        border: `1px solid ${focused ? FOCUS : RULE}`,
+        boxShadow: focused
+          ? `0 0 0 3px ${FOCUS_RING}`
+          : "0 1px 2px rgba(27,24,38,.04)",
+      }}
+    >
+      {/* Properly stroked, not a glyph: 18px at 1.8 so it reads as drawn at the
+          same weight as the text beside it. */}
+      <Search className="shrink-0" strokeWidth={1.8}
+              style={{ width: 18, height: 18, color: MUTED }} />
       <input
         type="text"
         inputMode="search"
@@ -38,8 +73,10 @@ export function ProductSearchInput({
         autoFocus={autoFocus}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder="Search product"
-        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none placeholder:text-[#9C99AC]"
+        className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-[15px] placeholder:text-[#9C99AC]"
         style={{ color: INK }}
       />
       {value.length > 0 && (

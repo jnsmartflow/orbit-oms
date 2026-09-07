@@ -31,6 +31,12 @@ export const BODY       = "#3A3748";  // ordinary text
 export const INK        = "#1B1826";  // headings and anything that must land
 
 export const VIOLET_BG  = "#F5F1FE";  // selected-chip / in-cart tile wash
+
+/** The focused input border, violet-500 — a step lighter than brand.600 so
+ *  the ring around it reads as a halo rather than a second border. */
+export const FOCUS      = "#8B5CF6";
+/** brand.600 at 13%. The ring, never a fill. */
+export const FOCUS_RING = "rgba(124,58,237,.13)";
 export const SCRIM      = "rgba(18,14,26,.42)";
 export const SEARCH_BG  = FILL;
 /** One border colour means one token. Kept as a name because rows read better

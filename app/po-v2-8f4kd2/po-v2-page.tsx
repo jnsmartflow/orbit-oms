@@ -789,22 +789,29 @@ export default function PoV2Page(): React.JSX.Element {
         {/* ── HEADER — one slim row, and it asks nothing ────────────────────
             The mark, then product search. That is the whole board chrome.
 
-            🔴 IT USED TO BE TWO ROWS AND ~109px OF STICKY, carrying a dealer
-            name, a chevron and a clear button. All of it is gone with the
-            dealer, which buys back more than a full row of products on a 390px
-            phone and — the actual point — removes the last thing on this screen
-            that could be read as a question. */}
+            🔴 IT IS TWO LINES AGAIN, AND THAT COSTS 45px OF BOARD. The wordmark
+            gets its own line and the search bar below it is 52px, so the sticky
+            block goes 64px -> 109px on a 390px phone: about a quarter of a
+            family row, permanently. Paid deliberately. A header that is a logo
+            squeezed against a control reads as a toolbar; a header that names
+            the app and then offers ONE well-built thing to tap reads as a
+            screen, and this screen has exactly one thing to tap.
+
+            What is NOT here is the point: no dealer, no monogram, no tagline,
+            no instruction line. */}
         <div
-          className="sticky top-0 z-20 flex items-center gap-2.5 px-4 pt-2.5 pb-2.5"
+          className="sticky top-0 z-20 px-4 pt-3 pb-3"
           style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
         >
+          {/* The word IS the logo — never a symbol beside it, and never a
+              tagline under it. Outlined paths in brand.800, so it is the same
+              shape on the depot PC, an Android and an iPhone. */}
           <img
             src="/brand/orbit-wordmark.svg" alt="Orbit"
             width={2216} height={771}
-            className="shrink-0"
-            style={{ height: 19, width: "auto" }}
+            style={{ height: 22, width: "auto", display: "block" }}
           />
-          <div className="min-w-0 flex-1">
+          <div style={{ marginTop: 10 }}>
             <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
           </div>
         </div>
