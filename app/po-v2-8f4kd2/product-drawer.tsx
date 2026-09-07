@@ -1,15 +1,16 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Minus, Plus, Search, X } from "lucide-react";
+import { ChevronLeft, Minus, Plus, Search, X } from "lucide-react";
 // Documented containment exception — the tested matcher /po uses, read-only.
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET,
-  baseChipLabel, formatPack, isLightHex, packsOf, shadeHex, snapToBox,
-  sortBases, stepForLabel, tileArtFor, unitsIn, variantImage,
+  baseChipLabel, boardTileArtFor, formatPack, isLightHex, packsOf, shadeHex,
+  snapToBox, sortBases, stepForLabel, tileArtFor, unitsIn, variantImage,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
+  type V2ResolvedMember, type V2ResolvedTile,
 } from "./v2-data";
 
 // Hidden v2 product drawer — the bottom sheet a board tile opens.
@@ -55,10 +56,89 @@ import {
 //   · switching options never clears quantities (they are keyed by option);
 //   · the tab a drawer OPENS on comes from the 90-day ranking, not from "base".
 //
+// ── THE RAIL GREW A SECOND LEVEL, 2026-09-07 ───────────────────────────────
+//
+// A tile can now hold several PRODUCTS. The rail is therefore two levels and
+// you are always on exactly one of them:
+//
+//   MEMBERS  the products inside this tile
+//   OPTIONS  the selected product's bases and shades — the rail as it was
+//
+// 🔴 A ONE-MEMBER TILE NEVER SEES THE MEMBERS LEVEL. Twenty-five of the
+// thirty-six tiles hold one product, and for them `isMerged` is false, `level`
+// is pinned to "options" and no chevron renders. They take the identical code
+// path they took before this change — same mode, same pre-selection, same one
+// tap — and that is the property this whole step is measured on. The members
+// level is an ADDITION for eleven tiles, not a new shape for thirty-six.
+//
+// The drawer opens on the member the page names (initialMember: the top seller
+// from a board tap, the searched product from a search hit). If that member has
+// options the rail opens on OPTIONS with a "‹ {member}" row above it; if it has
+// none there is no second level to drill into, so the rail stays on MEMBERS
+// with that one highlighted and the pane shows its packs. Either way the thing
+// he came for is one tap away, exactly as it was.
+//
 // NO HORIZONTAL SCROLL: the rail is a vertical column and the pane is
-// `min-w-0`. Neither has an overflow-x.
+// `min-w-0`. Neither has an overflow-x. NO SECOND SHEET: a level is a state
+// change inside the one sheet, so the ref-counted body-scroll lock and the
+// --vvh / --vvo viewport pinning are untouched by any of this.
 
 type Tab = "base" | "shade";
+type Level = "members" | "options";
+
+/**
+ * One product inside the open tile, normalised.
+ *
+ * 🔴 mode AND pools ARE THE MEMBER'S OWN, never the tile's. buildBoard resolved
+ * them per member precisely so nothing downstream has to, and the union is
+ * wrong for twelve of the seventeen merged tiles — six of which are made
+ * entirely of option-less products that a union would hand a base/shade shell.
+ */
+type Member = {
+  sap:      string;
+  label:    string;
+  resolved: V2Resolved;
+  mode:     V2DrawerMode;
+  pools:    { all: V2Option[]; bases: V2Option[]; shades: V2Option[] };
+};
+
+type Rails = {
+  hasVariants: boolean;
+  /** Frequency order — what the pre-selection reads. */
+  ranked: V2Option[];
+  /** The base column, in numbered sequence. */
+  bases:  V2Option[];
+  shades: V2Option[];
+  isBaseColumn: boolean;
+};
+
+const NO_POOLS = { all: [] as V2Option[], bases: [] as V2Option[], shades: [] as V2Option[] };
+
+/**
+ * One member's two option columns. Lifted out of the component unchanged from
+ * what it used to compute inline, so a single-member tile gets byte-identical
+ * lists and a merged tile gets each member's own.
+ */
+function buildRails(m: Member): Rails {
+  const hasVariants = m.resolved.variants.length > 0;
+  const all = m.pools.all;
+  const ranked = hasVariants ? withTail(m.resolved.variants, all)
+    : !m.resolved.curated ? withTail(m.resolved.bases, all)
+    : withTail(m.resolved.bases, m.pools.bases);
+  const isBaseColumn = !hasVariants && m.resolved.curated;
+  return {
+    hasVariants, ranked,
+    bases: isBaseColumn ? sortBases(ranked) : ranked,
+    shades: hasVariants || !m.resolved.curated
+      ? [] : withTail(m.resolved.shades, m.pools.shades),
+    isBaseColumn,
+  };
+}
+
+/** Does this member have an OPTIONS level to drill into at all? */
+function hasOptions(m: Member, r: Rails): boolean {
+  return m.mode !== "flat" && r.bases.length + r.shades.length > 0;
+}
 
 /** Rail geometry, in one place because "roomy" is a measured requirement. */
 const RAIL_W   = 60;   // the column, gutters included
@@ -83,6 +163,8 @@ function withTail(ranked: V2Option[], pool: V2Option[]): V2Option[] {
 
 export default function ProductDrawer({
   product,
+  tile,
+  initialMember = null,
   initialOption = null,
   onClose,
   onAdd,
@@ -90,7 +172,19 @@ export default function ProductDrawer({
   pools,
   mode = "standard",
 }: {
+  /**
+   * The ONE product to show when no tile is passed — the search-hit path, for
+   * a product that is on no board tile. When `tile` IS passed this is the
+   * member the page opened on and the tile is the authority.
+   */
   product: V2Resolved;
+  /**
+   * The whole tile, every member resolved on its own rows. Present for every
+   * board tap; absent only for a searched non-tile product.
+   */
+  tile?: V2ResolvedTile;
+  /** Which member to open on — the top seller, or the searched product. */
+  initialMember?: string | null;
   /** Opened from a search hit: this exact option starts selected. */
   initialOption?: string | null;
   onClose: () => void;
@@ -101,7 +195,16 @@ export default function ProductDrawer({
    * and onAdd REPLACES them — so reopening a product to change one base is an
    * edit, not a second helping of the same order.
    */
-  existing?: { option: string | null; qtys: Record<string, number> }[];
+  /**
+   * 🔴 EVERY MEMBER'S LINES, EACH TAGGED WITH THE MEMBER IT BELONGS TO.
+   *
+   * `member` is not optional decoration: "90 Base" is an option on four
+   * different members across two tiles, so a flat {option, qtys} list cannot
+   * say which product a saved quantity belongs to, and seeding it under the
+   * wrong one would show a salesman someone else's numbers. It is the catalog
+   * join key — `product ?? subProduct` off the stored line.
+   */
+  existing?: { member: string; option: string | null; qtys: Record<string, number> }[];
   /**
    * EVERY option this product has, in catalog order, split base/shade.
    *
@@ -113,47 +216,43 @@ export default function ProductDrawer({
   /** From drawerMode() in v2-data — the ONE place the shape is decided. */
   mode?: V2DrawerMode;
 }): React.JSX.Element {
-  const hasVariants = product.variants.length > 0;
-
-  // ── The two columns ──────────────────────────────────────────────────────
+  // ── The tile's members ───────────────────────────────────────────────────
   //
-  // 🔴 ONE PATTERN FOR BASES, SHADES AND VARIANTS. Variants are not a third
-  // kind of thing — Smart Choice and Promise Primer store them in `baseColour`
-  // like everything else — so they take the base column and the toggle simply
-  // does not appear. A searched NON-tile is the same case: resolveGroup puts
-  // its whole option list in `bases`, uncurated, and one column holds it.
-  const rankedBases = useMemo<V2Option[]>(() => {
-    const all = pools?.all ?? [];
-    if (hasVariants) return withTail(product.variants, all);
-    if (!product.curated) return withTail(product.bases, all);
-    return withTail(product.bases, pools?.bases ?? []);
-  }, [product, pools, hasVariants]);
+  // A searched non-tile product has no tile, so it becomes a tile of one. That
+  // is the same collapse Step 1 made in the data: one shape, always a list, and
+  // the single case is the degenerate one rather than a second branch.
+  const members = useMemo<Member[]>(() => {
+    if (tile) {
+      return tile.members.map((m: V2ResolvedMember) => ({
+        sap: m.sap, label: m.label, resolved: m, mode: m.mode, pools: m.pools,
+      }));
+    }
+    return [{ sap: product.sap, label: product.label, resolved: product,
+              mode, pools: pools ?? NO_POOLS }];
+  }, [tile, product, pools, mode]);
+  const isMerged = members.length > 1;
+
+  /** Every member's option columns, computed once per member. */
+  const railsBy = useMemo<Record<string, Rails>>(() => {
+    const out: Record<string, Rails> = {};
+    for (const m of members) out[m.sap] = buildRails(m);
+    return out;
+  }, [members]);
+
+  const [memberSap, setMemberSap] = useState<string>(() =>
+    members.find((m) => m.sap === initialMember)?.sap ?? members[0].sap);
+  const cur = members.find((m) => m.sap === memberSap) ?? members[0];
+  const rails = railsBy[cur.sap];
+  const curHasOptions = hasOptions(cur, rails);
 
   /**
-   * 🔴 IS THE LEFT COLUMN REALLY *BASES*? Only for a curated tile with no
-   * variants. A searched non-tile puts its WHOLE option list in this column —
-   * shades and all, because resolveGroup has no base/shade split to make — and
-   * a variant product puts its variants here. Neither is a base column, and
-   * treating them as one would sort real colours into a tinting sequence and
-   * strip their swatches.
+   * 🔴 A ONE-MEMBER TILE IS PINNED TO "options" AND NEVER LEAVES IT. The
+   * members level does not exist for it, the chevron does not render, and the
+   * whole two-level machine collapses to the rail that shipped at b088d8c7.
    */
-  const isBaseColumn = !hasVariants && product.curated;
-  // Sequence, not sales — see sortBases. The RANKED list survives above it,
-  // because the pre-selection still wants the best-selling base.
-  const railBases = useMemo<V2Option[]>(
-    () => (isBaseColumn ? sortBases(rankedBases) : rankedBases),
-    [isBaseColumn, rankedBases]);
-  const railShades = useMemo<V2Option[]>(() => {
-    if (hasVariants || !product.curated) return [];
-    return withTail(product.shades, pools?.shades ?? []);
-  }, [product, pools, hasVariants]);
-
-  const hasBaseCol  = railBases.length > 0;
-  const hasShadeCol = railShades.length > 0;
-  /** A product with only one group shows no toggle. */
-  const showToggle  = hasBaseCol && hasShadeCol;
-  /** The nine no-option products get no rail at all — straight to packs. */
-  const hasRail     = mode !== "flat" && (hasBaseCol || hasShadeCol);
+  const [level, setLevel] = useState<Level>(() =>
+    !isMerged ? "options" : (curHasOptions ? "options" : "members"));
+  const onMembers = isMerged && level === "members";
 
   // Open on the group that actually holds the searched option, so what the
   // salesman searched for is on screen rather than one tap away.
@@ -162,74 +261,90 @@ export default function ProductDrawer({
   // `hasBases ? "base" : "shade"`, which handed a product with NEITHER list a
   // phantom shade group — see the footer-gating note below, which is where
   // that once turned into a blocking bug.
-  const [tab, setTab] = useState<Tab>(() => {
-    if (initialOption && railShades.some((o) => o.value === initialOption)) return "shade";
+  //
+  // PER MEMBER, because each member has its own defaultTab off its own 90-day
+  // ranking. Switching member and back must not land on the other one's group.
+  const openTabFor = (m: Member): Tab => {
+    const r = railsBy[m.sap];
+    if (m === cur && initialOption && r.shades.some((o) => o.value === initialOption)) return "shade";
     // 🔴 OPEN ON THE GROUP HOLDING THE MOST-ORDERED OPTION, not always Base.
     // Promise Enamel's only base is BRILLIANT WHITE (241 orders) while its top
     // shade CLASSIC WHITE takes 797 — opening on that one-tile Base column
     // would put what he actually wants one tap away, every single time.
-    // defaultTab is generated from the same 90-day ranking as the lists.
-    if (product.defaultTab === "shade" && hasShadeCol) return "shade";
-    if (hasBaseCol)  return "base";
-    if (hasShadeCol) return "shade";
+    if (m.resolved.defaultTab === "shade" && r.shades.length > 0) return "shade";
+    if (r.bases.length > 0)  return "base";
+    if (r.shades.length > 0) return "shade";
     return "base";
+  };
+  const [tabBy, setTabBy] = useState<Record<string, Tab>>(() => {
+    const seed: Record<string, Tab> = {};
+    for (const m of members) seed[m.sap] = openTabFor(m);
+    return seed;
   });
+  const tab = tabBy[cur.sap] ?? "base";
 
-  // ONE selection, whichever column it came from.
+  // ONE selection per member, whichever column it came from.
   //
   // 🔴 EVERY DRAWER OPENS WITH SOMETHING SELECTED, AND ITS PACKS ON SCREEN.
   // Shade and variant rows used to open empty on the reasoning that guessing a
   // colour for him is worse than asking — which sounds right and was wrong. It
   // bought a dead screen — no pack sizes, a nag where the quantity belongs, and
-  // a grey Add button — on Gloss, Promise Enamel, Smart Choice and Promise
-  // Primer, and made every one of them cost two taps for the thing he came to
-  // order. The lists are RANKED by 90 days of real orders, so [0] is not a
-  // guess: it is the option this product actually sells, and one tap overrides
-  // it.
+  // a grey Add button — and made every one of those products cost two taps for
+  // the thing he came to order. The lists are RANKED by 90 days of real orders,
+  // so [0] is not a guess: it is the option this product actually sells.
   //
-  // The pre-selection is only safe because it is VISIBLE. That used to mean a
-  // violet chip in the row; with no names on the rail it means the NAME BAR,
-  // which spells the option out at 15px directly above the packs. A default
-  // nobody can read would ship BLACK to a man who thinks he chose it, which is
-  // worse than the two taps this replaces.
+  // The pre-selection is only safe because it is VISIBLE — the NAME BAR spells
+  // it out at 15px directly above the packs.
   //
-  // 🔴 THE DEFAULT READS rankedBases, NOT railBases. Since the base column
-  // sorts into its numbered sequence, its first TILE is BW on almost every
-  // product — and BW is not what most of them sell. Protect Hi-Sheen sells 93
-  // BASE and Max sells 92 BASE, and letting the sort choose the default would
-  // have silently changed what those two send for anyone who did not touch the
-  // rail. Sequence is for finding; frequency is for selling.
-  const [selected, setSelected] = useState<string | null>(() => {
-    if (initialOption) return initialOption;
-    const opening = product.defaultTab === "shade" && hasShadeCol ? railShades : rankedBases;
+  // 🔴 THE DEFAULT READS `ranked`, NOT `bases`. Since the base column sorts
+  // into its numbered sequence, its first TILE is BW on almost every product —
+  // and BW is not what most of them sell. Protect Hi-Sheen sells 93 BASE and
+  // Max sells 92 BASE, and letting the sort choose the default would have
+  // silently changed what those two send for anyone who did not touch the rail.
+  // Sequence is for finding; frequency is for selling.
+  const defaultOptionFor = (m: Member): string | null => {
+    const r = railsBy[m.sap];
+    const opening = m.resolved.defaultTab === "shade" && r.shades.length > 0 ? r.shades : r.ranked;
     return opening[0]?.value ?? null;
+  };
+  const [selectedBy, setSelectedBy] = useState<Record<string, string | null>>(() => {
+    const seed: Record<string, string | null> = {};
+    for (const m of members) seed[m.sap] = defaultOptionFor(m);
+    if (initialOption) {
+      const on = members.find((m) => m.sap === initialMember)?.sap ?? members[0].sap;
+      seed[on] = initialOption;
+    }
+    return seed;
   });
+  const selected = selectedBy[cur.sap] ?? null;
 
   /**
-   * 🔴 ONE QUANTITY STATE FOR THE WHOLE VISIT: option -> pack label -> units.
+   * 🔴 ONE QUANTITY STATE FOR THE WHOLE VISIT:
+   *        member -> option -> pack label -> units.
    *
-   * There used to be TWO. `qtys` held the packs of whichever option was
-   * selected right now and was WIPED on every chip tap; `matrix` held all of
-   * them and only flat mode used it. So on a standard product a salesman could
-   * set BLACK 1L x6, tap 90 BASE to add a second base, and silently lose the
-   * first — the drawer could only ever send one line per visit, and the loss
-   * was invisible until the order arrived.
+   * There used to be two levels, and before that two separate states. The
+   * second level arrived when one tile started holding several products, and it
+   * is NESTED rather than a composite string key for one measured reason:
+   * "90 Base" is an option on PU Prime Matt, PU Prime Gloss, 2K PU Matt and 2K
+   * PU Gloss — four members across two tiles — so a flat `member|option` string
+   * is one typo away from two products sharing a bucket. A nest cannot collide.
    *
-   * Now everything writes here. Flat mode is not a special case any more, it is
-   * simply the mode that shows every option's row at once.
-   *
-   * A product with NO options at all (Cement SB, Thinner…) keys on "" — it has
-   * exactly one row, so one key is the honest shape rather than a second code
-   * path.
+   * A product with NO options at all keys on "" under its own member, which is
+   * the honest shape rather than a second code path.
    */
-  const [matrix, setMatrix] = useState<Record<string, Record<string, number>>>(() => {
-    // SEEDED FROM THE CART. Opening a product already in the order shows what
-    // is in it, on the right options, so Add can replace rather than duplicate
-    // — and so he can SEE what he already ordered before changing it.
-    const seed: Record<string, Record<string, number>> = {};
+  const [matrix, setMatrix] = useState<Record<string, Record<string, Record<string, number>>>>(() => {
+    // SEEDED FROM THE CART, PER MEMBER. Opening a tile already in the order
+    // shows what is in it, on the right member and the right option, so Add can
+    // replace rather than duplicate — and so he can SEE what he already ordered
+    // before changing it. Every member's lines are seeded, not just the one on
+    // screen: the drawer replaces the whole tile, so anything it fails to seed
+    // is work it would silently throw away.
+    const seed: Record<string, Record<string, Record<string, number>>> = {};
     for (const line of existing ?? []) {
-      const key = line.option ?? "";
-      seed[key] = { ...(seed[key] ?? {}), ...line.qtys };
+      const opt = line.option ?? "";
+      const byOpt = seed[line.member] ?? {};
+      byOpt[opt] = { ...(byOpt[opt] ?? {}), ...line.qtys };
+      seed[line.member] = byOpt;
     }
     return seed;
   });
@@ -238,54 +353,70 @@ export default function ProductDrawer({
   //
   // 🔴 PERMANENT, NOT BEHIND AN EXPANDER. With no names on the tiles this is
   // the only way to reach one colour among thirty-two without hunting, so it
-  // cannot be something he has to find first. It filters the COLUMN he is
-  // looking at; the toggle is right beside it if the name is in the other one.
+  // cannot be something he has to find first. It filters WHICHEVER LEVEL is
+  // showing — members when he is choosing a product, options when he is
+  // choosing a colour.
   //
   // Ranked with the SAME matcher the board's search bar uses — a second
   // matcher is a second set of results for the same word.
   const [query, setQuery] = useState("");
 
-  const onShade = tab === "shade" ? hasShadeCol : !hasBaseCol;
-  const column: V2Option[] = onShade ? railShades : railBases;
+  const onShade = tab === "shade" ? rails.shades.length > 0 : rails.bases.length === 0;
+  const column: V2Option[] = onShade ? rails.shades : rails.bases;
   /**
    * What the column holds, which is what decides how a tile draws itself:
    *
+   *   member   text tiles, always — a product name is never a colour
    *   base     text tiles, always — see RailTile
    *   shade    a hex is a swatch, no hex is a text tile
    *   variant  a file is a picture, no file is a text tile
    *   mixed    a searched non-tile's single undifferentiated list; as shade
    */
-  const columnKind: RailKind = hasVariants ? "variant"
-    : !product.curated ? "mixed"
+  const columnKind: RailKind = onMembers ? "member"
+    : rails.hasVariants ? "variant"
+    : !cur.resolved.curated ? "mixed"
     : onShade ? "shade" : "base";
   /** The family wash a variant's tin sits on, exactly as on the board. */
-  const wash = tileArtFor(product.sap).wash;
+  const wash = tile ? boardTileArtFor(tile.key).wash : tileArtFor(product.sap).wash;
 
-  const shown = useMemo<V2Option[]>(() => {
+  /** The rail's rows: members when on that level, this member's options when not. */
+  const rowsForRail = useMemo<{ value: string; label: string; sap: string }[]>(() => {
+    if (onMembers) return members.map((m) => ({ value: m.sap, label: m.label, sap: m.sap }));
+    return column.map((o) => ({ value: o.value, label: o.value, sap: cur.sap }));
+  }, [onMembers, members, column, cur.sap]);
+
+  const shown = useMemo(() => {
     const q = query.trim();
-    if (q.length === 0) return column;
+    if (q.length === 0) return rowsForRail;
+    if (onMembers) {
+      // Members are products, not catalog rows — a plain contains, which is
+      // what a two-word product name needs and all the matcher would give here.
+      const lower = q.toLowerCase();
+      return rowsForRail.filter((r) => r.label.toLowerCase().includes(lower));
+    }
     const ranked = rankProductsForQuery(column.map((o) => o.row), q);
     const byId = new Map(column.map((o) => [o.row.id, o]));
-    return ranked.map((r) => byId.get(r.id)).filter((o): o is V2Option => !!o);
-  }, [column, query]);
+    const hit = ranked.map((r) => byId.get(r.id)).filter((o): o is V2Option => !!o);
+    return hit.map((o) => ({ value: o.value, label: o.value, sap: cur.sap }));
+  }, [query, onMembers, rowsForRail, column, cur.sap]);
 
   // 🔴 THE SELECTION IS RESOLVED AGAINST THE WHOLE POOL, NOT THE VISIBLE LIST.
   // It used to be looked up in the list on screen, which collapsed back to the
   // curated nine the moment the search closed — so a shade picked out of "+
   // More" (BUS GREEN, say) was no longer findable, selectedRow fell to null,
   // the body kept demanding a shade and Add stayed dead while the header
-  // cheerfully showed BUS GREEN. The rail retired "+ More" but not the rule:
-  // typing a query still hides most of the column, and what is selected and
-  // what is listed remain two different questions.
-  const optionPool: V2Option[] = (pools?.all?.length ?? 0) > 0
-    ? (pools as { all: V2Option[] }).all
-    : railBases.concat(railShades);
+  // cheerfully showed BUS GREEN. Typing a query still hides most of the column,
+  // and what is selected and what is listed remain two different questions.
+  const optionPoolFor = (m: Member): V2Option[] => {
+    const r = railsBy[m.sap];
+    return m.pools.all.length > 0 ? m.pools.all : r.bases.concat(r.shades);
+  };
   const selectedOption = selected === null
     ? undefined
-    : optionPool.find((o) => o.value === selected);
+    : optionPoolFor(cur).find((o) => o.value === selected);
 
   const selectedRow: ApiProduct | null =
-    product.noOptionRow ?? selectedOption?.row ?? null;
+    cur.resolved.noOptionRow ?? selectedOption?.row ?? null;
 
   const packLabels = selectedRow
     ? selectedRow.packs.map((p) => formatPack(p.packCode, p.unit))
@@ -299,10 +430,10 @@ export default function ProductDrawer({
    */
   function switchTab(next: Tab): void {
     if (next === tab) return;
-    // rankedBases again, for the reason at the useState above.
-    const list = next === "base" ? rankedBases : railShades;
-    setTab(next);
-    setSelected(list[0]?.value ?? null);
+    // `ranked`, not `bases`, for the reason at defaultOptionFor above.
+    const list = next === "base" ? rails.ranked : rails.shades;
+    setTabBy((prev) => ({ ...prev, [cur.sap]: next }));
+    setSelectedBy((prev) => ({ ...prev, [cur.sap]: list[0]?.value ?? null }));
     setQuery("");
   }
 
@@ -311,43 +442,89 @@ export default function ProductDrawer({
    * quantities, on the reasoning that packs belong to the ROW and carrying a
    * "20L x 2" to a row that may not sell 20L would be wrong. True — but the fix
    * for that is keying quantities BY OPTION, which is what happens now, not
-   * throwing away what he just typed. Each option keeps its own packs and only
-   * ever shows its own.
+   * throwing away what he just typed.
    */
   function selectOption(value: string): void {
     if (value === selected) return;
-    setSelected(value);
+    setSelectedBy((prev) => ({ ...prev, [cur.sap]: value }));
   }
 
-  const matrixMode = mode === "flat";
-  const options = pools?.all ?? [];
+  /**
+   * 🔴 SWITCHING MEMBER CLEARS NOTHING EITHER, AND IT IS THE SAME ARGUMENT ONE
+   * LEVEL UP. The quantities are keyed by member as well as by option, so
+   * everything he has typed against every product in this tile survives every
+   * move he makes inside it. The drawer returns the lot on Add.
+   *
+   * A member WITH options drills into them. A member with none has no second
+   * level to drill into, so the rail stays where it is and only the pane
+   * changes — which is also why a one-member option-less tile never grew a
+   * chevron.
+   */
+  function selectMember(sap: string): void {
+    const m = members.find((x) => x.sap === sap);
+    if (!m) return;
+    setMemberSap(sap);
+    setQuery("");
+    setLevel(hasOptions(m, railsBy[sap]) ? "options" : "members");
+  }
+
+  function goUpToMembers(): void {
+    setLevel("members");
+    setQuery("");
+  }
+
+  const matrixMode = cur.mode === "flat";
+  const options = cur.pools.all;
   // FLAT is one pack for the whole product, so the label is stated once in the
   // header instead of on every row.
-  const flatPack = mode === "flat" ? (packsOf(options.map((o) => o.row))[0] ?? "") : "";
+  const flatPack = matrixMode ? (packsOf(options.map((o) => o.row))[0] ?? "") : "";
+  /** The rail shows SOMETHING whenever there is a member list or an option list. */
+  const showRail = isMerged || curHasOptions;
+  /**
+   * The Base / Shade toggle belongs to the OPTIONS level and to a member that
+   * actually has both groups. At the members level there is nothing to toggle —
+   * a product is not a base or a shade — so it does not render.
+   */
+  const showToggle = !onMembers && rails.bases.length > 0 && rails.shades.length > 0;
 
   /** The key the currently-selected option writes under. "" = no options. */
   const optionKey = selected ?? "";
-  const qtys = matrix[optionKey] ?? {};
+  const qtys = matrix[cur.sap]?.[optionKey] ?? {};
 
   // One tap moves a WHOLE BOX; the value shown stays in UNITS. So 1L reads
   // 0 -> 6 -> 12, and 20L (a drum, step 1) reads 0 -> 1 -> 2. Floors at 0.
-  function stepCell(option: string, pack: string, direction: 1 | -1): void {
+  function stepCell(member: string, option: string, pack: string, direction: 1 | -1): void {
     const delta = stepForLabel(pack) * direction;
     setMatrix((prev) => {
-      const row = { ...(prev[option] ?? {}) };
+      const byOpt = { ...(prev[member] ?? {}) };
+      const row = { ...(byOpt[option] ?? {}) };
       row[pack] = Math.max(0, (row[pack] ?? 0) + delta);
-      return { ...prev, [option]: row };
+      byOpt[option] = row;
+      return { ...prev, [member]: byOpt };
     });
   }
 
   /** A TYPED figure, already snapped to a whole box by the field itself. */
-  function typeCell(option: string, pack: string, units: number): void {
-    setMatrix((prev) => ({ ...prev, [option]: { ...(prev[option] ?? {}), [pack]: Math.max(0, units) } }));
+  function typeCell(member: string, option: string, pack: string, units: number): void {
+    setMatrix((prev) => {
+      const byOpt = { ...(prev[member] ?? {}) };
+      byOpt[option] = { ...(byOpt[option] ?? {}), [pack]: Math.max(0, units) };
+      return { ...prev, [member]: byOpt };
+    });
   }
 
-  /** Units on ONE option, for the badge on its rail tile. */
-  function unitsOn(option: string): number {
-    return unitsIn(matrix[option] ?? {});
+  /** Units on ONE option of ONE member, for the badge on its option tile. */
+  function unitsOn(member: string, option: string): number {
+    return unitsIn(matrix[member]?.[option] ?? {});
+  }
+
+  /** Units on a WHOLE member, summed across its options — the member badge. */
+  function unitsOnMember(member: string): number {
+    const byOpt = matrix[member];
+    if (!byOpt) return 0;
+    let total = 0;
+    for (const opt of Object.keys(byOpt)) total += unitsIn(byOpt[opt]);
+    return total;
   }
 
   /**
@@ -358,19 +535,34 @@ export default function ProductDrawer({
    * commits. Falls back to the tile's own lists for a product whose pools were
    * not passed, and to noOptionRow for the nine that have no options at all.
    */
-  const rowFor = (key: string): ApiProduct | null => {
-    if (key === "") return product.noOptionRow;
-    const inPool = options.find((o) => o.value === key);
+  const rowFor = (memberKey: string, key: string): ApiProduct | null => {
+    const m = members.find((x) => x.sap === memberKey);
+    if (!m) return null;
+    if (key === "") return m.resolved.noOptionRow;
+    const inPool = m.pools.all.find((o) => o.value === key);
     if (inPool) return inPool.row;
-    const all = [...product.bases, ...product.shades, ...product.variants];
+    const all = [...m.resolved.bases, ...m.resolved.shades, ...m.resolved.variants];
     return all.find((o) => o.value === key)?.row ?? null;
   };
-  const picks = Object.entries(matrix)
-    .map(([key, packs]) => ({
+  /**
+   * 🔴 THE WHOLE TILE, ACROSS EVERY MEMBER — not the member on screen.
+   *
+   * The page replaces a tile's lines by TILE KEY, so anything this leaves out
+   * is deleted. Returning only the current member's picks would wipe the
+   * salesman's work on every other product in the tile the moment he touched
+   * one of them, and he would not see it happen: the drawer would close, the
+   * cart would be one line lighter, and nothing on screen would say why.
+   *
+   * Each pick carries its OWN member's row, which is what lets the page set
+   * label and product/baseColour/subProduct from the row rather than from
+   * whatever the drawer happened to be showing.
+   */
+  const picks = Object.keys(matrix).flatMap((memberKey) =>
+    Object.entries(matrix[memberKey] ?? {}).map(([key, packs]) => ({
       option: key === "" ? null : key,
-      row: rowFor(key),
+      row: rowFor(memberKey, key),
       qtys: Object.fromEntries(Object.entries(packs).filter(([, q]) => q > 0)),
-    }))
+    })))
     .filter((p): p is { option: string | null; row: ApiProduct; qtys: Record<string, number> } =>
       p.row !== null && Object.keys(p.qtys).length > 0);
   const visitUnits = picks.reduce((sum, p) => sum + unitsIn(p.qtys), 0);
@@ -403,7 +595,7 @@ export default function ProductDrawer({
   // Sub-line: in FLAT the pack size, stated once so it is never ambiguous.
   // Everywhere else the family — the OPTION's name is no longer repeated here,
   // because the name bar above the packs now carries it at full size.
-  const selectionLine = mode === "flat" ? flatPack : null;
+  const selectionLine = matrixMode ? flatPack : null;
 
   const footer = (
     <>
@@ -430,8 +622,8 @@ export default function ProductDrawer({
   const packList = (
     <PackList
       labels={packLabels} qtys={qtys}
-      onStep={(label, dir) => stepCell(optionKey, label, dir)}
-      onType={(label, next) => typeCell(optionKey, label, next)}
+      onStep={(label, dir) => stepCell(cur.sap, optionKey, label, dir)}
+      onType={(label, next) => typeCell(cur.sap, optionKey, label, next)}
     />
   );
 
@@ -441,7 +633,7 @@ export default function ProductDrawer({
         <div className="flex shrink-0 items-start gap-3 px-4 pt-1.5 pb-3">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
-              {product.label}
+              {tile ? tile.label : product.label}
             </h2>
             {selectionLine ? (
               <p className="truncate text-[11.5px] font-extrabold uppercase"
@@ -449,7 +641,7 @@ export default function ProductDrawer({
                 {selectionLine}
               </p>
             ) : (
-              <p className="truncate text-[11.5px]" style={{ color: MUTED }}>{product.family}</p>
+              <p className="truncate text-[11.5px]" style={{ color: MUTED }}>{cur.resolved.family}</p>
             )}
           </div>
           <button
@@ -461,10 +653,11 @@ export default function ProductDrawer({
           </button>
         </div>
 
-        {matrixMode ? (
-          <FlatBody options={options} pack={flatPack} matrix={matrix}
-                    onStep={stepCell} onType={typeCell} />
-        ) : !hasRail ? (
+        {matrixMode && !isMerged ? (
+          <FlatBody options={options} pack={flatPack} matrix={matrix[cur.sap] ?? {}}
+                    onStep={(o, p, d) => stepCell(cur.sap, o, p, d)}
+                    onType={(o, p, u) => typeCell(cur.sap, o, p, u)} />
+        ) : !showRail ? (
           // SINGLE — nine products with exactly one row. No rail, no toggle, no
           // search: there is nothing to choose, so the packs get the whole
           // sheet. This is not a new code path; it is what falls out of having
@@ -481,6 +674,27 @@ export default function ProductDrawer({
               the width the sheet already has. It controls the rail and nothing
               else: the toggle picks which group the column holds, the field
               filters that column. */}
+          {/* ── "‹ MEMBER" — THE ONLY NEW CHROME, AND ONLY ON A MERGED TILE ──
+              It is a back button and an identity line at once. At OPTIONS level
+              the name bar below shows the OPTION, so without this row the
+              PRODUCT he is buying is nowhere on screen — which on a tile called
+              "Primers" holding six different primers is not a detail.
+
+              A one-member tile never renders it. */}
+          {isMerged && level === "options" && (
+            <button
+              type="button"
+              onClick={goUpToMembers}
+              aria-label={`Back to the products in ${tile?.label ?? ""}`}
+              className="flex shrink-0 items-center gap-1.5 px-4 pb-2.5 text-left"
+            >
+              <ChevronLeft className="h-4 w-4 shrink-0" strokeWidth={3} style={{ color: VIOLET }} />
+              <span className="min-w-0 truncate text-[13px] font-extrabold" style={{ color: VIOLET }}>
+                {cur.label}
+              </span>
+            </button>
+          )}
+
           <div className="flex shrink-0 items-center gap-2 px-4 pb-3">
             {showToggle && (
               <div className="flex shrink-0 rounded-[11px] p-[3px]" style={{ background: FILL }}>
@@ -496,8 +710,11 @@ export default function ProductDrawer({
                 type="text" inputMode="search" autoComplete="off"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={hasVariants ? "Find" : tab === "shade" ? "Find a shade" : "Find a base"}
-                aria-label="Filter the options in the rail"
+                placeholder={onMembers ? "Find a product"
+                  : rails.hasVariants ? "Find"
+                  : tab === "shade" ? "Find a shade" : "Find a base"}
+                aria-label={onMembers ? "Filter the products in this tile"
+                  : "Filter the options in the rail"}
                 // 16px, or Safari zooms the page on focus.
                 className="min-w-0 flex-1 bg-transparent py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
                 style={{ color: INK }}
@@ -534,16 +751,16 @@ export default function ProductDrawer({
               }}
             >
               <div className="flex flex-col items-center" style={{ gap: TILE_GAP }}>
-                {shown.map((opt) => (
+                {shown.map((r) => (
                   <RailTile
-                    key={opt.value}
-                    value={opt.value}
+                    key={r.value}
+                    value={r.label}
                     kind={columnKind}
-                    image={columnKind === "variant" ? variantImage(product.sap, opt.value) : null}
+                    image={columnKind === "variant" ? variantImage(cur.sap, r.value) : null}
                     wash={wash}
-                    selected={selected === opt.value}
-                    carrying={unitsOn(opt.value)}
-                    onSelect={() => selectOption(opt.value)}
+                    selected={onMembers ? r.value === cur.sap : selected === r.value}
+                    carrying={onMembers ? unitsOnMember(r.value) : unitsOn(cur.sap, r.value)}
+                    onSelect={() => (onMembers ? selectMember(r.value) : selectOption(r.value))}
                   />
                 ))}
               </div>
@@ -551,12 +768,25 @@ export default function ProductDrawer({
 
             {/* ── THE PANE ────────────────────────────────────────────────── */}
             <div className="flex min-w-0 flex-1 flex-col">
-              {selectedOption && <NameBar value={selectedOption.value} kind={columnKind} />}
+              {/* At MEMBERS level the pane belongs to the current member, so the
+                  bar names the PRODUCT; at OPTIONS level it names the option,
+                  exactly as before. Either way it is the check against a wrong
+                  tap, sitting directly above the quantity. */}
+              {onMembers
+                ? <NameBar value={cur.label} kind="member" />
+                : selectedOption && <NameBar value={selectedOption.value} kind={columnKind} />}
               {/* No empty state. selectedRow is resolved on the first frame for
                   every one of the 32 products — by the pre-selection above, or
                   by noOptionRow for the nine that have no options — so the pack
                   rows are on screen before the sheet finishes sliding up. */}
-              {packList}
+              {/* A FLAT member inside a merged tile keeps flat mode's body —
+                  every option with its own stepper — while the rail stays on
+                  the members level beside it. */}
+              {matrixMode
+                ? <FlatBody options={options} pack={flatPack} matrix={matrix[cur.sap] ?? {}}
+                            onStep={(o, p, d) => stepCell(cur.sap, o, p, d)}
+                            onType={(o, p, u) => typeCell(cur.sap, o, p, u)} />
+                : packList}
             </div>
           </div>
         </>
@@ -620,7 +850,14 @@ function GroupButton({ label, active, onClick }: {
  *
  * `title` / `aria-label` carry the full name for anyone who cannot use colour.
  */
-type RailKind = "base" | "shade" | "variant" | "mixed";
+/**
+ * 🔴 "member" IS NOT A NEW TREATMENT — it renders exactly what a variant with
+ * no image renders, a mono text tile. It exists so a product name can never be
+ * mistaken for a colour: swatchFor() returns undefined for it unconditionally,
+ * so a member that happens to share a name with a mapped shade cannot suddenly
+ * draw a coloured square where a product belongs.
+ */
+type RailKind = "member" | "base" | "shade" | "variant" | "mixed";
 
 function RailTile({ value, kind, image, wash, selected, carrying, onSelect }: {
   value: string; kind: RailKind; image: string | null; wash: string;
@@ -655,6 +892,7 @@ function RailTile({ value, kind, image, wash, selected, carrying, onSelect }: {
         }}
       >
         {image ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={image}
             alt={value}
@@ -668,7 +906,11 @@ function RailTile({ value, kind, image, wash, selected, carrying, onSelect }: {
             // every tile would be a white box.
             style={{ objectFit: "contain", mixBlendMode: "multiply" }}
           />
-        ) : hex ? null : <TileWords label={baseChipLabel(value)} />}
+        ) : hex ? null : (
+          // A member carries a display name already; only a BASE needs
+          // shortening ("90 BASE" -> "90", "BRILLIANT WHITE" -> "BW").
+          <TileWords label={kind === "member" ? value : baseChipLabel(value)} />
+        )}
       </button>
       {carrying > 0 && (
         <span className="pointer-events-none absolute" style={{ top: -6, right: -6 }}>
@@ -685,7 +927,7 @@ function RailTile({ value, kind, image, wash, selected, carrying, onSelect }: {
  * square in the name bar would be the drawer contradicting itself on screen.
  */
 function swatchFor(value: string, kind: RailKind): string | undefined {
-  return kind === "base" ? undefined : shadeHex(value);
+  return kind === "base" || kind === "member" ? undefined : shadeHex(value);
 }
 
 /**

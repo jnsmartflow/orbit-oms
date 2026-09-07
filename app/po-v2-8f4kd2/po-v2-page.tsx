@@ -522,11 +522,15 @@ export default function PoV2Page(): React.JSX.Element {
    */
   function existingFor(
     tileKey: string, memberSap: string | null,
-  ): { option: string | null; qtys: Record<string, number> }[] {
+  ): { member: string; option: string | null; qtys: Record<string, number> }[] {
     return lines
       .filter((l) => l.tileSap === tileKey &&
         (memberSap === null || (l.product ?? l.subProduct) === memberSap))
-      .map((l) => ({ option: l.option, qtys: l.qtys }));
+      // 🔴 EACH LINE CARRIES ITS MEMBER. The drawer seeds every member of the
+      // tile at once, and "90 Base" is an option on four different members —
+      // without this the seed could not tell whose quantity it was holding.
+      // It is the catalog join key, the same expression addLines writes from.
+      .map((l) => ({ member: l.product ?? l.subProduct, option: l.option, qtys: l.qtys }));
   }
 
   /** A row -> the label of the member it belongs to, for the cart line. */
@@ -614,14 +618,11 @@ export default function PoV2Page(): React.JSX.Element {
   const searching   = prodQuery.trim().length >= MIN_QUERY;
   const cartOpen    = lines.length > 0;
   /**
-   * The tile that is open, and the ONE member the drawer is showing.
+   * The tile that is open, and which member it opens ON.
    *
-   * ⚠ INTERIM — product-drawer.tsx still knows exactly one product, and it is
-   * Step 4's file. So a merged tile hands it ONE member and reaches only that
-   * one: members[0] from a board tap, or the searched member from a search
-   * hit. Step 4 gives the drawer its member column and this collapses to
-   * handing it the whole tile. Do not read the single-member hand-off as the
-   * design — it is scaffolding with a date on it.
+   * The drawer takes the WHOLE tile now and runs the member level itself. This
+   * only says where to land: the top seller from a board tap, the searched
+   * product from a search hit.
    */
   const openResolved = ready && openTile ? load.board.get(openTile.tile.key) ?? null : null;
   const openMember: V2ResolvedMember | null = openResolved
@@ -1272,26 +1273,32 @@ export default function PoV2Page(): React.JSX.Element {
       {toastHost}
 
       {/* ── PRODUCT DRAWER, from the BOARD ─────────────────────────────── */}
-      {/* ⚠ INTERIM, AND STEP 4 REPLACES IT. product-drawer.tsx knows exactly
-          one product and is not this step's file, so a merged tile hands it
-          ONE member — members[0] from a board tap, the searched product from
-          a search hit — and the tile's other members are unreachable from the
-          board until the drawer grows its member column. That is scaffolding,
-          not the design.
+      {/* 🔴 THE WHOLE TILE GOES DOWN, AND THE WHOLE TILE COMES BACK.
+          The drawer runs its own member level, so every prop here is
+          tile-scoped and the four of them have to agree:
 
-          `key` carries the member too: switching member inside one tile must
-          give a fresh drawer, or the previous member's quantities leak into
-          the next one's packs. */}
+            tile      every member, each resolved on its own rows
+            existing  EVERY member's saved lines, not just the open one — seed
+                      one and return all and the rest is deleted on Add
+            onAdd     memberSap null: replace the tile's lines wholesale,
+                      because the picks now cover the tile wholesale
+            key       the TILE only. It used to carry the member, which
+                      remounted the drawer on every member switch and threw
+                      away the quantities the salesman had just typed.
+
+          `pools` and `mode` are gone from here: they are per member and the
+          drawer reads them off tile.members, which is where buildBoard put
+          them precisely so nothing would be tempted to use the union. */}
       {openTile && openMember && (
         <ProductDrawer
-          key={`${openTile.tile.key}::${openMember.sap}`}
+          key={openTile.tile.key}
           product={openMember}
+          tile={openResolved ?? undefined}
+          initialMember={openTile.initialMember}
           onClose={() => setOpenTile(null)}
           onAdd={(picks) => addLines(
-            openTile.tile.key, memberLabelIn(openTile.tile), picks, openMember.sap)}
-          existing={existingFor(openTile.tile.key, openMember.sap)}
-          pools={openMember.pools}
-          mode={openMember.mode}
+            openTile.tile.key, memberLabelIn(openTile.tile), picks, null)}
+          existing={existingFor(openTile.tile.key, null)}
         />
       )}
 
