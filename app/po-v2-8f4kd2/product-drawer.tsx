@@ -8,7 +8,7 @@ import V2Sheet from "./v2-sheet";
 import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET,
   baseChipLabel, formatPack, isLightHex, packsOf, shadeHex, snapToBox,
-  stepForLabel, unitsIn,
+  sortBases, stepForLabel, tileArtFor, unitsIn, variantImage,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
 } from "./v2-data";
 
@@ -122,12 +122,27 @@ export default function ProductDrawer({
   // like everything else — so they take the base column and the toggle simply
   // does not appear. A searched NON-tile is the same case: resolveGroup puts
   // its whole option list in `bases`, uncurated, and one column holds it.
-  const railBases = useMemo<V2Option[]>(() => {
+  const rankedBases = useMemo<V2Option[]>(() => {
     const all = pools?.all ?? [];
     if (hasVariants) return withTail(product.variants, all);
     if (!product.curated) return withTail(product.bases, all);
     return withTail(product.bases, pools?.bases ?? []);
   }, [product, pools, hasVariants]);
+
+  /**
+   * 🔴 IS THE LEFT COLUMN REALLY *BASES*? Only for a curated tile with no
+   * variants. A searched non-tile puts its WHOLE option list in this column —
+   * shades and all, because resolveGroup has no base/shade split to make — and
+   * a variant product puts its variants here. Neither is a base column, and
+   * treating them as one would sort real colours into a tinting sequence and
+   * strip their swatches.
+   */
+  const isBaseColumn = !hasVariants && product.curated;
+  // Sequence, not sales — see sortBases. The RANKED list survives above it,
+  // because the pre-selection still wants the best-selling base.
+  const railBases = useMemo<V2Option[]>(
+    () => (isBaseColumn ? sortBases(rankedBases) : rankedBases),
+    [isBaseColumn, rankedBases]);
   const railShades = useMemo<V2Option[]>(() => {
     if (hasVariants || !product.curated) return [];
     return withTail(product.shades, pools?.shades ?? []);
@@ -177,9 +192,16 @@ export default function ProductDrawer({
   // which spells the option out at 15px directly above the packs. A default
   // nobody can read would ship BLACK to a man who thinks he chose it, which is
   // worse than the two taps this replaces.
+  //
+  // 🔴 THE DEFAULT READS rankedBases, NOT railBases. Since the base column
+  // sorts into its numbered sequence, its first TILE is BW on almost every
+  // product — and BW is not what most of them sell. Protect Hi-Sheen sells 93
+  // BASE and Max sells 92 BASE, and letting the sort choose the default would
+  // have silently changed what those two send for anyone who did not touch the
+  // rail. Sequence is for finding; frequency is for selling.
   const [selected, setSelected] = useState<string | null>(() => {
     if (initialOption) return initialOption;
-    const opening = product.defaultTab === "shade" && hasShadeCol ? railShades : railBases;
+    const opening = product.defaultTab === "shade" && hasShadeCol ? railShades : rankedBases;
     return opening[0]?.value ?? null;
   });
 
@@ -223,9 +245,21 @@ export default function ProductDrawer({
   // matcher is a second set of results for the same word.
   const [query, setQuery] = useState("");
 
-  const column: V2Option[] = tab === "shade"
-    ? (hasShadeCol ? railShades : railBases)
-    : (hasBaseCol ? railBases : railShades);
+  const onShade = tab === "shade" ? hasShadeCol : !hasBaseCol;
+  const column: V2Option[] = onShade ? railShades : railBases;
+  /**
+   * What the column holds, which is what decides how a tile draws itself:
+   *
+   *   base     text tiles, always — see RailTile
+   *   shade    a hex is a swatch, no hex is a text tile
+   *   variant  a file is a picture, no file is a text tile
+   *   mixed    a searched non-tile's single undifferentiated list; as shade
+   */
+  const columnKind: RailKind = hasVariants ? "variant"
+    : !product.curated ? "mixed"
+    : onShade ? "shade" : "base";
+  /** The family wash a variant's tin sits on, exactly as on the board. */
+  const wash = tileArtFor(product.sap).wash;
 
   const shown = useMemo<V2Option[]>(() => {
     const q = query.trim();
@@ -265,7 +299,8 @@ export default function ProductDrawer({
    */
   function switchTab(next: Tab): void {
     if (next === tab) return;
-    const list = next === "base" ? railBases : railShades;
+    // rankedBases again, for the reason at the useState above.
+    const list = next === "base" ? rankedBases : railShades;
     setTab(next);
     setSelected(list[0]?.value ?? null);
     setQuery("");
@@ -503,6 +538,9 @@ export default function ProductDrawer({
                   <RailTile
                     key={opt.value}
                     value={opt.value}
+                    kind={columnKind}
+                    image={columnKind === "variant" ? variantImage(product.sap, opt.value) : null}
+                    wash={wash}
                     selected={selected === opt.value}
                     carrying={unitsOn(opt.value)}
                     onSelect={() => selectOption(opt.value)}
@@ -513,7 +551,7 @@ export default function ProductDrawer({
 
             {/* ── THE PANE ────────────────────────────────────────────────── */}
             <div className="flex min-w-0 flex-1 flex-col">
-              {selectedOption && <NameBar value={selectedOption.value} />}
+              {selectedOption && <NameBar value={selectedOption.value} kind={columnKind} />}
               {/* No empty state. selectedRow is resolved on the first frame for
                   every one of the 32 products — by the pre-selection above, or
                   by noOptionRow for the nine that have no options — so the pack
@@ -564,12 +602,31 @@ function GroupButton({ label, active, onClick }: {
  * That is the whole rule; it is decided per option, not per row. A wrong colour
  * is worse than no colour, so an unmapped name never gets a guessed square.
  *
+ * 🔴 A BASE IS NEVER A SWATCH, EVEN WHEN A COLOUR EXISTS FOR IT. BRILLIANT
+ * WHITE has a hex (#FAF8F2) and used to render as a near-white square in the
+ * middle of 90, 92, 93 and 94. It is a tinting base standing in a column of
+ * numbered tinting bases, and it belongs with them as the word BW — a base's
+ * own colour is not the colour of the paint that comes out of it, so the square
+ * was saying nothing and costing the sequence its shape. Scoped to the BASE
+ * column: if BRILLIANT WHITE ever appears as a SHADE, it keeps its swatch,
+ * which is why this asks the column and not the name.
+ *
+ * 🔴 A VARIANT WITH A FILE IS A PICTURE. Five Smart Choice buckets are five
+ * different products, and their tins are different colours — red, cream, navy,
+ * blue-silver — so at 44px the tin separates them where a word this small
+ * struggles. A variant with no file keeps its text tile, and a mixed column is
+ * fine: telling them apart is the point and both forms do that. Bases and
+ * shades never get a picture, because there the tin is the SAME tin.
+ *
  * `title` / `aria-label` carry the full name for anyone who cannot use colour.
  */
-function RailTile({ value, selected, carrying, onSelect }: {
-  value: string; selected: boolean; carrying: number; onSelect: () => void;
+type RailKind = "base" | "shade" | "variant" | "mixed";
+
+function RailTile({ value, kind, image, wash, selected, carrying, onSelect }: {
+  value: string; kind: RailKind; image: string | null; wash: string;
+  selected: boolean; carrying: number; onSelect: () => void;
 }): React.JSX.Element {
-  const hex = shadeHex(value);
+  const hex = swatchFor(value, kind);
   return (
     // A bare swatch has no room for a badge INSIDE it without covering the
     // colour, which is the one thing it exists to show. The count rides the
@@ -584,19 +641,34 @@ function RailTile({ value, selected, carrying, onSelect }: {
         className="flex h-full w-full items-center justify-center overflow-hidden"
         style={{
           borderRadius: 10,
-          background: hex ?? FILL,
+          background: image ? wash : hex ?? FILL,
           // A near-white fill gets a faint inner border, or a white tile on a
-          // white sheet is simply not there.
-          border: hex
-            ? (isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none")
+          // white sheet is simply not there. A picture sits on the family wash
+          // and needs no edge — the tin draws its own.
+          border: image ? "none"
+            : hex ? (isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none")
             : `1px solid ${RULE}`,
           // A VIOLET RING WITH A WHITE GAP. The gap is what makes it read on a
-          // dark colour: a violet ring straight against #1A1A1A is a violet
+          // dark colour: a violet ring straight against #1D1E1F is a violet
           // edge nobody sees.
           boxShadow: selected ? `0 0 0 3px #FFFFFF, 0 0 0 5.5px ${VIOLET}` : undefined,
         }}
       >
-        {hex ? null : <TileWords label={baseChipLabel(value)} />}
+        {image ? (
+          <img
+            src={image}
+            alt={value}
+            width={600}
+            height={600}
+            decoding="async"
+            loading="lazy"
+            className="block h-full w-full"
+            // MULTIPLY, exactly as on the board: every file is an opaque white
+            // square, so painted normally it would cover the family wash and
+            // every tile would be a white box.
+            style={{ objectFit: "contain", mixBlendMode: "multiply" }}
+          />
+        ) : hex ? null : <TileWords label={baseChipLabel(value)} />}
       </button>
       {carrying > 0 && (
         <span className="pointer-events-none absolute" style={{ top: -6, right: -6 }}>
@@ -605,6 +677,15 @@ function RailTile({ value, selected, carrying, onSelect }: {
       )}
     </span>
   );
+}
+
+/**
+ * 🔴 THE ONE PLACE "DOES THIS OPTION GET A SWATCH?" IS ANSWERED, so the rail
+ * tile and the name bar can never disagree about it — a BW tile above a white
+ * square in the name bar would be the drawer contradicting itself on screen.
+ */
+function swatchFor(value: string, kind: RailKind): string | undefined {
+  return kind === "base" ? undefined : shadeHex(value);
 }
 
 /**
@@ -638,9 +719,15 @@ function TileWords({ label }: { label: string }): React.JSX.Element {
  * NEVER TRUNCATED. "ORGANIC MIDDLE YELLOW" wraps to two lines rather than
  * becoming "ORGANIC MIDDLE YEL…", for the same reason the review screen never
  * clips a product name in favour of its picture.
+ *
+ * 🔴 NO PICTURE HERE, EVER — not even for a variant that has one. The tin is
+ * already in the rail, two centimetres to the left and still on screen; a
+ * second copy of it beside the name is the same information twice and it costs
+ * the pane the room this whole step was about. The swatch is shown on the same
+ * terms the tile draws it (swatchFor), so the two always agree.
  */
-function NameBar({ value }: { value: string }): React.JSX.Element {
-  const hex = shadeHex(value);
+function NameBar({ value, kind }: { value: string; kind: RailKind }): React.JSX.Element {
+  const hex = swatchFor(value, kind);
   return (
     <div className="flex shrink-0 items-center gap-2.5 px-4 py-3"
          style={{ borderBottom: `1px solid ${RULE}` }}>
