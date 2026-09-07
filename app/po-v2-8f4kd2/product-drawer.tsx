@@ -396,7 +396,10 @@ export default function ProductDrawer({
         </div>
 
         {matrixMode ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto"
+            style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
+          >
             <FlatBody options={options} pack={flatPack} matrix={matrix}
                       onStep={stepCell} onType={typeCell} />
           </div>
@@ -521,7 +524,16 @@ export default function ProductDrawer({
                 })}
               </div>
             ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1">
+            /* 🔴 TRAILING SPACE, SO THE LAST ROW CAN CLEAR THE FOOTER.
+               The footer is a flex SIBLING and never overlaps this — but with no
+               room after the final pack row, a centre-scroll has nowhere to
+               scroll TO and degenerates into "scroll to the end", leaving the
+               20L row of a seven-pack product flush against the footer's
+               border. This is the room that lets it centre. */
+            <div
+              className="min-h-0 flex-1 overflow-y-auto px-4 py-1"
+              style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
+            >
               {/* No empty state. selectedRow is resolved on the first frame for
                   every one of the 32 products — by the pre-selection above, or
                   by noOptionRow for the nine that have no options — so the pack

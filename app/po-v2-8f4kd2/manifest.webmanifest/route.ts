@@ -33,9 +33,10 @@ export const dynamic = "force-dynamic";
 // while it starts, so it is brand.600 and matches the splash the page renders a
 // moment later.
 //
-// theme_color is the toolbar/status bar of the app IN USE, and that is WHITE.
-// The violet belongs to the home screen: the icon, the splash, the login. Every
-// inner screen is white, and the board is an inner screen.
+// theme_color is the toolbar/status bar of the app IN USE, and it is #F5F3FF —
+// the masthead's own wash, so the status bar continues the header rather than
+// cutting a white strip above it. Light enough that Android picks DARK status
+// icons from its luminance.
 //
 // 🔴 EVERY ICON IS "any maskable", and the PNGs behind them are FULL-BLEED with
 // no baked corner radius. Both platforms apply their own mask — iOS a squircle,
@@ -59,7 +60,7 @@ const MANIFEST = {
   display: "standalone",
   display_override: ["standalone"],
   background_color: "#7C3AED",
-  theme_color: "#FFFFFF",
+  theme_color: "#F5F3FF",
   orientation: "portrait",
   icons: [
     { src: "/brand/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },

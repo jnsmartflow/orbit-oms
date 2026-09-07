@@ -114,14 +114,35 @@ export function useBodyScrollLock(active = true): void {
  * shorter area. The answer is to scroll the sheet's OWN scroller, not to shove
  * the sheet somewhere.
  *
- * `block: "nearest"` scrolls the least it can get away with: enough to bring
- * the field to the edge of the visible area and no further, so the rest of the
- * pack list stays where he last saw it.
+ * 🔴 THREE THINGS WERE WRONG AND ALL THREE HAD TO GO. The 20L row — last of
+ * seven — kept ending up under the footer, and it kept coming back:
  *
- * NO TIMER AND NO rAF. This runs inside visualViewport's own resize event,
- * which fires after the viewport has already changed, and scrollIntoView forces
- * the layout it needs. A timer here would be guessing at when the keyboard has
- * finished animating, which is the guess that makes these bugs come back.
+ * 1. THIS LISTENED TO resize ONLY. CLAUDE_UI.md §55 says in so many words that
+ *    on an iOS standalone PWA the keyboard does NOT emit a clean resize — its
+ *    FINAL geometry arrives as a visualViewport scroll/offset adjustment. It is
+ *    why the --vvh writer carries both listeners. So this ran against an
+ *    intermediate, taller viewport and was never re-run once the keyboard had
+ *    actually settled. That is the cause, and it was mine.
+ *
+ * 2. block: "nearest" does the least work that satisfies the rule — it stops
+ *    the moment the row's edge touches the container's edge, which is flush
+ *    against the footer's border. Technically visible; reads as half-hidden.
+ *    "center" leaves room on both sides, so a late shift of a few pixels
+ *    cannot re-hide it.
+ *
+ * 3. Centring the LAST row is impossible without trailing space, so the scroll
+ *    container carries bottom padding (see the drawer). Without it, "center"
+ *    degenerates to "scroll to the end" for exactly the worst case.
+ *
+ * ⚠ IF IT COMES BACK AFTER THIS, STOP FIGHTING THE OS KEYBOARD. The next step
+ * is an in-sheet number pad — a small 3x4 grid drawn inside the sheet — which
+ * takes the system keyboard out of the equation entirely. Do not reach for a
+ * fourth round of viewport arithmetic.
+ *
+ * NO TIMER AND NO rAF. These run inside visualViewport's own events, which fire
+ * after the viewport has already changed, and scrollIntoView forces the layout
+ * it needs. A timer would be guessing at when the keyboard finished animating,
+ * and that guess is what makes these bugs come back.
  */
 function useKeepFocusVisible(ref: React.RefObject<HTMLElement>): void {
   useEffect(() => {
@@ -132,10 +153,15 @@ function useKeepFocusVisible(ref: React.RefObject<HTMLElement>): void {
       if (!(active instanceof HTMLElement)) return;
       // Only OUR sheet's fields. Another overlay's input is not our business.
       if (!ref.current || !ref.current.contains(active)) return;
-      active.scrollIntoView({ block: "nearest", behavior: "auto" });
+      active.scrollIntoView({ block: "center", behavior: "auto" });
     };
+    // BOTH events. See (1) above — resize alone misses the settle on iOS.
     vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
+    vv.addEventListener("scroll", onResize);
+    return () => {
+      vv.removeEventListener("resize", onResize);
+      vv.removeEventListener("scroll", onResize);
+    };
   }, [ref]);
 }
 

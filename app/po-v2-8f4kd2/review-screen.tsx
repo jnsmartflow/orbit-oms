@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, MapPin, Save, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
   BRAND, DIVIDER, FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
   chipStyle, packRows, tileArtFor, unitsIn,
@@ -82,7 +82,7 @@ export default function ReviewScreen({
   const canSend = dealer !== null;
 
   return (
-    <main className="min-h-screen w-full bg-white" style={{ paddingBottom: 148 }}>
+    <main className="min-h-screen w-full bg-white" style={{ paddingBottom: 192 }}>
       {/* ── HEADER ───────────────────────────────────────────────────────
           🔴 THE DEALER NAME IS THE TITLE *AND* THE CHANGE CONTROL. It used to
           be "Review order" with the dealer repeated in a block underneath and a
@@ -92,7 +92,11 @@ export default function ReviewScreen({
           nobody can see is one nobody discovers.
 
           THE DATE IS GONE. It was the order's own date on a screen he is
-          looking at today. */}
+          looking at today.
+
+          WHAT IS LEFT is the whole header: a back arrow, the name, its chevron,
+          and the code and area. Save and clear moved to the footer — see the
+          note above them. */}
       <header
         className="sticky top-0 z-10 px-2 pt-2 pb-2"
         style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
@@ -139,31 +143,6 @@ export default function ReviewScreen({
           </button>
         </div>
 
-        {/* 🔴 ICONS, AND ONLY ONCE THERE IS A DEALER.
-            The two words took a whole row to say what a disk and a bin say in
-            56px, on a screen whose job is to show him the order.
-
-            They are absent entirely with no dealer — not greyed, not disabled.
-            There is nothing to file and nothing to clear that he cannot do by
-            walking back to the board, and an empty row of controls at the top
-            of an unfinished order is chrome charging rent. That space stays
-            with the order until it is worth spending. */}
-        {dealer && (
-          <div className="flex items-center justify-end pr-1" style={{ gap: 4, marginTop: 2 }}>
-            <button
-              type="button" aria-label="Save this order as a draft" onClick={onSaveDraft}
-              className="flex h-9 w-9 items-center justify-center rounded-full"
-            >
-              <Save className="h-[18px] w-[18px]" strokeWidth={2} style={{ color: MUTED }} />
-            </button>
-            <button
-              type="button" aria-label="Clear this order" onClick={onClearOrder}
-              className="flex h-9 w-9 items-center justify-center rounded-full"
-            >
-              <Trash2 className="h-[18px] w-[18px]" strokeWidth={2} style={{ color: MUTED }} />
-            </button>
-          </div>
-        )}
       </header>
 
       <Band />
@@ -377,6 +356,36 @@ export default function ReviewScreen({
             Change
           </span>
         </button>
+
+        {/* ── SAVE AND CLEAR — AT THE END, WHERE THE DECISIONS ARE ────────
+            🔴 A HEADER IS FOR ORIENTATION; A FOOTER IS FOR DECISIONS. These
+            were at the top, first as two words and then as two icons, and
+            neither read right — they are end-of-flow actions sitting at the
+            START of the screen, above an order he has not finished reading.
+            They belong beside Send, which is the other thing he does when he
+            has finished looking.
+
+            Words again, because down here there is room for them, and a word
+            is unambiguous where a disk and a bin are a guess.
+
+            Only with something to save: an order with no lines has nothing to
+            file and nothing to clear. */}
+        {lines.length > 0 && (
+          <div className="flex items-center justify-between px-4 pt-2.5">
+            <button
+              type="button" onClick={onSaveDraft}
+              className="text-[13px] font-extrabold" style={{ color: MUTED }}
+            >
+              Save draft
+            </button>
+            <button
+              type="button" onClick={onClearOrder}
+              className="text-[13px] font-extrabold" style={{ color: MUTED }}
+            >
+              Clear order
+            </button>
+          </div>
+        )}
 
         <div className="px-4 pt-2.5">
           {/* 🔴 NOT `disabled`. A dead button tells a salesman nothing about why

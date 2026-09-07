@@ -950,14 +950,21 @@ export default function PoV2Page(): React.JSX.Element {
             need to follow a salesman down a page — and the search stays,
             keeping its slice of #F5F3FF behind it so that alone at the top it
             is still the header and not a box floating over the tiles. */}
-        <div className="px-4" style={{ background: BRAND_WASH, paddingTop: 16 }}>
-          <div className="flex items-baseline justify-between">
-            <Wordmark size={31} colour={BRAND} />
-            <span className="shrink-0 font-mono text-[10px] uppercase"
-                  style={{ color: FAINT, letterSpacing: ".14em" }}>
-              Surat depot
-            </span>
-          </div>
+        <div
+          className="px-4"
+          style={{
+            background: BRAND_WASH,
+            // 🔴 PADDING, NOT MARGIN. The colour has to run UNDER the status bar
+            // and the content has to sit below it. A margin would push the whole
+            // band down and leave the strip above it unpainted — which is the
+            // white bar that made this read as a stripe stuck to the page.
+            paddingTop: "calc(env(safe-area-inset-top) + 16px)",
+          }}
+        >
+          {/* The wordmark alone. SURAT DEPOT is gone: the search below now
+              fills the band, so the row does not need balancing, and the depot
+              label was the one thing here nobody was reading. */}
+          <Wordmark size={31} colour={BRAND} />
         </div>
 
         <div
@@ -966,7 +973,7 @@ export default function PoV2Page(): React.JSX.Element {
             background: BRAND_WASH,
             borderBottom: `1px solid ${RULE}`,
             paddingTop: 12,
-            paddingBottom: 12,
+            paddingBottom: 16,
           }}
         >
           <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
@@ -1229,10 +1236,6 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
               {title}
             </span>
             <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{note}</span>
-          </span>
-          <span className="shrink-0 pr-2 font-mono text-[10px] uppercase"
-                style={{ color: FAINT, letterSpacing: ".14em" }}>
-            Surat depot
           </span>
         </div>
         <div className="px-2 pt-2">

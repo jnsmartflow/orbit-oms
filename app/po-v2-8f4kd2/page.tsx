@@ -57,10 +57,15 @@ export const metadata: Metadata = {
 
 // ⚠ themeColor lives on the VIEWPORT export, not on `metadata`.
 //
-// 🔴 WHITE, NOT THE BRAND VIOLET. brand.600 belongs to the home screen — the
-// icon, the splash, the login. Every INNER screen is white, and the board is an
-// inner screen: a violet slab above a white page was the most visible thing on
-// the phone and it was the one thing that had no reason to be there.
+// 🔴 #F5F3FF — THE BAND'S OWN COLOUR, so the status bar continues the header
+// instead of arguing with it. It is NOT brand.600: a violet slab above a white
+// page was the wrong answer and stays the wrong answer. This is the same wash
+// the masthead is painted in, which is why it reads as one surface.
+//
+// The wash is light, so the status bar keeps DARK content. Nothing here forces
+// light text: appleWebApp.statusBarStyle is "default" (dark on light), never
+// "black-translucent", and Android derives its icon colour from theme_color's
+// luminance — #F5F3FF is far above the threshold, so it picks dark.
 //
 // The task said to add it to the Metadata export. In Next 14 that field is
 // DEPRECATED there: `metadata.themeColor` logs "Unsupported metadata
@@ -76,7 +81,7 @@ export const metadata: Metadata = {
 // maximumScale / userScalable / interactiveWidget untouched. Every other
 // route keeps the teal.
 export const viewport: Viewport = {
-  themeColor: "#FFFFFF",
+  themeColor: "#F5F3FF",
 };
 
 export default function Page() {
