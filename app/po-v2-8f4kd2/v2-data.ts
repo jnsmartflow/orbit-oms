@@ -712,9 +712,19 @@ const SHADE_HEX: Record<string, string> = {
   "ORGANIC MIDDLE YELLOW": "#F0B71C",
   "BLUE":                  "#1F4FA8",
 
-  // Added 2026-09-07, each one approved by name before it was written. PHIROZA
-  // reuses PHIROZA BLUE's exact value rather than a near-miss: firoza IS
-  // turquoise, and two hexes a shade apart on the same colour read as a bug.
+  // Added 2026-09-07, each one approved by name before it was written.
+  //
+  // 🔴 PHIROZA AND PHIROZA BLUE ARE DELIBERATELY DIFFERENT — DO NOT "FIX" IT.
+  // They were identical on purpose for one day, because two hexes a shade
+  // apart on the same colour read as a bug. The reason that no longer applies:
+  // PHIROZA now carries Dulux's OWN published value (#0081B0, off its shade
+  // page) and PHIROZA BLUE has no published page, so it keeps the earlier
+  // hand-authored value. An authoritative value and a hand-authored one are
+  // not the same kind of thing and should not be forced to agree.
+  //
+  // They also never meet: PHIROZA is on Gloss and PU Enamel, PHIROZA BLUE on
+  // Promise Enamel, so no rail column ever shows both. If Dulux publishes a
+  // Phiroza Blue page, take that value — do not copy PHIROZA's across.
   "PHIROZA":               "#0081B0",
   "DEEP ORANGE":           "#D2540B",
   "MAHOGANY":              "#6E2C1F",
@@ -722,23 +732,30 @@ const SHADE_HEX: Record<string, string> = {
   "ELECTRIC BLUE PLUS":    "#1560BD",
   "ORGANIC RED VIOLET":    "#9B3B7A",
 
-  // Added 2026-09-07 for Super Satin's brown row. SPECIAL TEAK and TIMBER
-  // GOLDEN BROWN were REFUSED once, on the grounds that as bare squares they
-  // sit next to TEAK and GOLDEN BROWN as near-identical browns and a wrong
-  // pick is a wrong order. That objection was right and has not gone away —
-  // it is answered by the drawer, not by the hex. It was a swatch + NAME chip,
-  // decided by a ΔE close-pair rule; it is now a bare rail tile whose name is
-  // spelled out at 15px in the pane the instant it is tapped. See the retired-
-  // rule note below.
+  // ── SPECIAL TEAK AND TIMBER GOLDEN BROWN STOOD HERE, AND CAME BACK OUT ──
   //
-  // ⚠ AND THE ROW GOT CLOSER, NOT FURTHER APART, when the dulux.in values
-  // landed: BROWN #59352F and RICH BROWN #48332F are now a few ΔE apart and
-  // TEAK #63483D sits with them. As bare 44px squares those three are a coin
-  // toss. That is a known cost of using the published values rather than
-  // separated ones, and the mitigation is the name bar and the rail search,
-  // not a nudged hex — a hex nudged to look different is a wrong colour.
-  "SPECIAL TEAK":          "#A56B2E",
-  "TIMBER GOLDEN BROWN":   "#BC8A3C",
+  // Both were hand-authored guesses (#A56B2E and #BC8A3C), added on 2026-09-07
+  // and REMOVED the same day. They were refused once on the grounds that as
+  // bare squares they sit next to TEAK and GOLDEN BROWN as near-identical
+  // browns; that refusal was overturned when a swatch + NAME chip made the
+  // word decide, and it came back the moment the rail took the names off the
+  // swatches and dulux.in's published browns landed. Measured on the rail:
+  //
+  //   before the dulux.in values   closest pair 7.9  (SPECIAL TEAK / TEAK)
+  //   after them                   closest pair 5.9  (BROWN / RICH BROWN)
+  //
+  // 🔴 SO SUPER SATIN'S IS THE TIGHTEST CLUSTER IN THE APP, and a GUESSED
+  // colour in the one place colours are hardest to tell apart is the worst
+  // combination available. They are text tiles again, and the word is the only
+  // thing that was ever deciding between them anyway. Do not re-add them
+  // without a published Dulux value; a plausible brown is not a value.
+  //
+  // ⚠ THE CLUSTER IS STILL TIGHT WITHOUT THEM. BROWN #59352F, RICH BROWN
+  // #48332F and TEAK #63483D are all published values and all within ΔE 8.2 of
+  // each other. That is a known cost of using what Dulux prints rather than
+  // colours chosen to separate, and the mitigation is the name bar and the
+  // rail search — never a nudged hex, because a hex nudged to look different
+  // is a wrong colour.
 
   // Added 2026-09-07 from the SAME dulux.in source as the replacements above.
   // MIDDLE BUFF and SAND STONE are keyed on the payload's spelling, not the
@@ -766,16 +783,35 @@ const SHADE_HEX: Record<string, string> = {
   //
   //   SKY BLUE · MINT GREEN · DEEP GREEN · AQUAMARINE · OFF WHITE
   //   PALE CREAM · ROYAL IVORY · CASCADE GREEN · OPALINE GREEN
-  //   LIGHT GREY · DAWN · TRUCK BROWN · WILD PURPLE · SPECIAL TEAK
-  //   TIMBER GOLDEN BROWN · MAHOGANY · SUNRISE · TERACOTTA
-  //   ELECTRIC BLUE PLUS · RARE PEARL COPPER · RARE PEARL GREEN
+  //   LIGHT GREY · DAWN · TRUCK BROWN · WILD PURPLE · SUNRISE
+  //   RARE PEARL COPPER · RARE PEARL GREEN
+  //   SPECIAL TEAK · TIMBER GOLDEN BROWN   (were mapped; withdrawn — see above)
   //
-  // ⚠ FOUR OF THOSE ARE ALREADY IN THE TABLE ABOVE and were NOT removed:
-  // SPECIAL TEAK, TIMBER GOLDEN BROWN, MAHOGANY, TERACOTTA and ELECTRIC BLUE
-  // PLUS were each approved by name in an earlier pass and are still rendering.
-  // The instruction was "do not invent values for these", which they are not —
-  // they are values that already exist. Removing them would take colour OFF
-  // five tiles that have it, which nobody asked for. Say the word and they go.
+  // ⚠ THREE HAND-AUTHORED VALUES ARE KEPT ON PURPOSE, and they are the only
+  // ones left in the table that Dulux does not publish a page for:
+  //
+  //   MAHOGANY #6E2C1F · TERACOTTA #A5502F · ELECTRIC BLUE PLUS #1560BD
+  //
+  // They stay because the risk that retires a guessed colour is CONFUSION WITH
+  // A NEIGHBOUR, not the guess itself — and the neighbour that matters is the
+  // NAME, not the hex.
+  //
+  // ⚠ MEASURED, BECAUSE "no near neighbours" IS NOT WHAT THE NUMBERS SAY. Two
+  // of the three have a close colour beside them:
+  //
+  //   MAHOGANY   @ Gloss        7.5 from PO RED, 8.4 from CHERRY
+  //              @ Super Satin  8.2 from BROWN, 11.9 from TEAK
+  //   TERACOTTA  @ Dustproof    9.6 from SIGNAL RED, 14.5 from PO RED
+  //   ELEC BLUE  @ Dustproof   41.6 from PO RED — genuinely alone
+  //
+  // They are kept anyway, and the reason is the NAMES. Nobody reaching for
+  // Mahogany taps Cherry or PO Red by mistake: the words are nothing alike, so
+  // the rail search finds it and the name bar confirms it. SPECIAL TEAK beside
+  // TEAK, and TIMBER GOLDEN BROWN beside GOLDEN BROWN, are near-duplicate
+  // WORDS on near-duplicate browns — the word could not break the tie because
+  // the word was half the problem. That is the test, and it is a test about
+  // names as much as colours: not "is the hex plausible" but "if he picks the
+  // wrong one, is there anything on screen that would have told him".
   //
   // Also unmapped and never to be mapped: every Acotone (NO1, XY1...) and
   // Machine Tinter (YOX, TBL...) colorant CODE.
