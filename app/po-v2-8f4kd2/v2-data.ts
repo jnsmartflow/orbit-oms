@@ -1338,3 +1338,584 @@ export function searchCustomers(customers: ApiCustomer[], rawQuery: string): Api
   return [...codePrefix, ...nameHits, ...codeSub].slice(0, SEARCH_CAP);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// THE 9 × 4 BOARD — ADDITIVE, AND NOT YET CONSUMED BY ANYTHING
+// ════════════════════════════════════════════════════════════════════════════
+//
+// 🔴 EVERYTHING ABOVE THIS LINE IS UNTOUCHED. FAMILIES still holds the live
+// 32-tile board and po-v2-page.tsx still renders from it; TILE_ART, TILE_SLUG,
+// tileArtFor and buildCatalog are byte-for-byte what they were. This section
+// adds a SECOND, richer board beside them. Step 2 owns po-v2-page.tsx and
+// switches the render over; until it does, nothing here runs on a phone.
+//
+// The whole safety property of this step is that the board renders identically
+// today, so the live constant could not be rewritten in place — see the note
+// at the foot of this section.
+//
+// ── WHAT A TILE IS NOW ────────────────────────────────────────────────────
+//
+// One tile, several PRODUCTS. Two reasons, and they are different:
+//
+//   1. Two rows the customer reads as one thing — 2K PU Matt and 2K PU Gloss
+//      are the same tin in two finishes.
+//   2. Four tiles per family, no exceptions. A family with a fifth seller
+//      merges its tail rather than dropping it to search-only.
+//
+// 🔴 ONE SHAPE, ALWAYS AN ARRAY. A single-product tile is a ONE-MEMBER tile,
+// not a separate branch. A branch would take the 32 single tiles off the code
+// path everyone edits, and that is precisely how `needsShade` demanded a shade
+// from nine products that had none, and how an empty-string baseColour made 37
+// products unorderable while the screen looked perfectly normal. Both hid for
+// months in the path nobody exercised. There is one path here.
+
+/** One product inside a tile. `sap` is the catalog join key. */
+export type V2Member = {
+  /** COALESCE(product, subProduct) — the same key buildCatalog joins on. */
+  sap:   string;
+  /** What the rail says and what the cart line will store. Display only. */
+  label: string;
+  /**
+   * Per-member art. DELIBERATELY UNSET ON EVERY MEMBER FOR NOW — per-member
+   * tins mean new files in public/category-images/, which is outside this
+   * step's fence. A member with no slug shows its tile's tin.
+   */
+  slug?: string;
+};
+
+export type V2BoardTile = {
+  /**
+   * 🔴 SCHEME A — THE KEY IS members[0].sap, THE TOP SELLER'S OWN JOIN KEY.
+   *
+   * Not a synthetic string. Under Scheme A, 29 of today's 32 tile saps are
+   * still tile keys after the merge, so 29 of every 32 stored cart lines need
+   * no migration at all — a synthetic key would have orphaned all 32.
+   *
+   * ⚠ IT IS SAFE ONLY BECAUSE tileKeyForMember() EXISTS. The key moves the day
+   * sales reorder the members; the old key is still a MEMBER, so the derived
+   * lookup still finds its tile. Never replace that lookup with a hand-written
+   * table of whichever saps happened to move — the next reorder would orphan
+   * every stored draft that used one, and the symptom is a DUPLICATE line on
+   * the next edit (po-v2-page's addLines keeps a line whose tileSap it does
+   * not recognise and writes a second one), not an error anybody sees.
+   */
+  key:     string;
+  label:   string;
+  slug:    string;
+  /** Ordered by 90-day line frequency, descending. members[0] pre-selects. */
+  members: readonly V2Member[];
+};
+
+export type V2BoardFamily = {
+  name:     string;
+  tint:     string;
+  openTab?: "base" | "shade";
+  tiles:    readonly V2BoardTile[];
+};
+
+/**
+ * 🔴 FOUR TILES PER FAMILY, NINE FAMILIES, NO EXCEPTIONS.
+ *
+ * Membership and member ORDER are generated from the same 90-day mail-order
+ * ranking as CURATION (lines resolved skuCode -> mo_sku_lookup_v2.material ->
+ * product, matched on COALESCE(product, subProduct)), then frozen here so a
+ * list can be overridden by name without re-running anything. Re-rank
+ * deliberately, never on every deploy — the board must not reshuffle under a
+ * salesman who has learned where things are.
+ *
+ * Proved against the live payload 2026-09-07: 36 tiles, 106 members, every sap
+ * present, no sap on two tiles, all 32 of today's saps surviving as a key or a
+ * member, no two members of one tile sharing a rowId.
+ */
+export const BOARD: readonly V2BoardFamily[] = [
+  {
+    name: "Enamel",
+    tint: "#F8F0E0",
+    openTab: "shade",
+    tiles: [
+      { key: "GLOSS", label: "Gloss", slug: "gloss",
+        members: [{ sap: "GLOSS", label: "Gloss" }] },
+      { key: "SUPER SATIN", label: "Super Satin", slug: "super-satin",
+        members: [{ sap: "SUPER SATIN", label: "Super Satin" }] },
+      { key: "PROMISE ENAMEL", label: "Promise Enamel", slug: "promise-enamel",
+        members: [{ sap: "PROMISE ENAMEL", label: "Promise Enamel" }] },
+      // PU Enamel gives up its own tile at 61 lines/90d — the weakest tile on
+      // today's board — and buys homes for three products that had none.
+      { key: "PU ENAMEL", label: "More Enamels", slug: "pu-enamel",
+        members: [
+          { sap: "PU ENAMEL",  label: "PU Enamel" },
+          { sap: "5IN1 GLOSS", label: "5in1 Gloss" },
+          { sap: "LUSTRE",     label: "Lustre" },
+          { sap: "M900 GLOSS", label: "M900 Gloss" },
+        ] },
+    ],
+  },
+  {
+    name: "Interior",
+    tint: "#E8EFFA",
+    tiles: [
+      { key: "SATIN STAY BRIGHT", label: "Stay Bright", slug: "stay-bright",
+        members: [{ sap: "SATIN STAY BRIGHT", label: "Stay Bright" }] },
+      { key: "SUPERCOVER", label: "Supercover", slug: "supercover",
+        members: [{ sap: "SUPERCOVER", label: "Supercover" }] },
+      { key: "SUPERCLEAN", label: "SuperClean", slug: "superclean",
+        members: [
+          { sap: "SUPERCLEAN",      label: "SuperClean" },
+          { sap: "SUPERCLEAN 3IN1", label: "SuperClean 3in1" },
+        ] },
+      // 🔴 SUPERCOVER SHEEN IS A MEMBER, NOT A TILE. It has never been ordered
+      // — 0 lines and 0 orders across the whole 148-day, 12,529-order history,
+      // no first order and no last order. A tile is a permanent slot on a
+      // 36-slot board; a member costs nothing. Acrylic Putty leads because it
+      // is the only one of the three with real demand (44 lines/90d), and a
+      // leading member keeps its one-tap path.
+      { key: "ACRYLIC PUTTY", label: "More Interior", slug: "more-interior",
+        members: [
+          { sap: "ACRYLIC PUTTY",    label: "Acrylic Putty" },
+          { sap: "POLYPUTTY",        label: "PolyPutty" },
+          { sap: "SUPERCOVER SHEEN", label: "Supercover Sheen" },
+        ] },
+    ],
+  },
+  {
+    // The ninth family, and the only new TINT on the board. A cool grey-lilac,
+    // chosen to sit apart from Promise's warm pink and Primer's blue at the
+    // 0.55 wash the tiles use. It is NOT BRAND_WASH — the masthead keeps the
+    // only violet ground in the app.
+    name: "VT",
+    tint: "#EDEBF5",
+    tiles: [
+      { key: "VT PEARL GLO", label: "Pearl Glo", slug: "pearl-glo",
+        members: [{ sap: "VT PEARL GLO", label: "Pearl Glo" }] },
+      { key: "VT PLATINUM GLO", label: "Platinum Glo", slug: "platinum-glo",
+        members: [{ sap: "VT PLATINUM GLO", label: "Platinum Glo" }] },
+      { key: "VT ETERNA MATT", label: "VT Eterna", slug: "vt-eterna",
+        members: [
+          { sap: "VT ETERNA MATT",     label: "Eterna Matt" },
+          { sap: "VT ETERNA",          label: "Eterna" },
+          { sap: "VT ETERNA HI-SHEEN", label: "Eterna Hi-Sheen" },
+        ] },
+      // ⚠ VT DIAMOND GLO IS FAMILY 'VELVET TOUCH', NOT 'VT SPECIALTY'. It is
+      // here deliberately: 6 lines/90d and no other home on a 36-slot board.
+      // The crossing is stated, not hidden — the same handling the Interior
+      // card has always given Stay Bright, which is family SATIN.
+      { key: "VELVETINO", label: "VT Specialty", slug: "vt-specialty",
+        members: [
+          { sap: "VELVETINO",          label: "Velvetino" },
+          { sap: "VT CONCRETE FINISH", label: "Concrete Finish" },
+          { sap: "VT CLEAR COAT",      label: "Clear Coat" },
+          { sap: "VT DIAMOND GLO",     label: "Diamond Glo" },
+          { sap: "VAF",                label: "VAF" },
+          { sap: "VT MARBLE",          label: "Marble" },
+        ] },
+    ],
+  },
+  {
+    name: "Promise",
+    tint: "#FBECEF",
+    tiles: [
+      { key: "PROMISE SMARTCHOICE", label: "Smart Choice", slug: "smart-choice",
+        members: [{ sap: "PROMISE SMARTCHOICE", label: "Smart Choice" }] },
+      { key: "PROMISE INTERIOR", label: "Promise", slug: "promise-int",
+        members: [
+          { sap: "PROMISE INTERIOR", label: "Promise Interior" },
+          { sap: "PROMISE EXTERIOR", label: "Promise Exterior" },
+        ] },
+      { key: "PROMISE PRIMER", label: "Promise Primer", slug: "promise-primer",
+        members: [{ sap: "PROMISE PRIMER", label: "Promise Primer" }] },
+      { key: "PROMISE SHEEN INTERIOR", label: "Promise Sheen", slug: "promise-sheen",
+        members: [
+          { sap: "PROMISE SHEEN INTERIOR", label: "Promise Sheen Interior" },
+          { sap: "PROMISE SHEEN EXTERIOR", label: "Promise Sheen Exterior" },
+        ] },
+    ],
+  },
+  {
+    name: "Exterior",
+    tint: "#EAF4E8",
+    tiles: [
+      { key: "WS PROTECT DUSTPROOF", label: "Protect Dustproof", slug: "protect-dustproof",
+        members: [{ sap: "WS PROTECT DUSTPROOF", label: "Protect Dustproof" }] },
+      { key: "WS PROTECT HI-SHEEN", label: "Protect Hi-Sheen", slug: "protect-hi-sheen",
+        members: [{ sap: "WS PROTECT HI-SHEEN", label: "Protect Hi-Sheen" }] },
+      { key: "WS MAX", label: "Max", slug: "max",
+        members: [{ sap: "WS MAX", label: "Max" }] },
+      // Powerflexx leads at 200 lines/90d, so it pre-selects and NOTHING on
+      // the board loses a tap. That is the entire reason this tile is shaped
+      // as a tail behind its best seller rather than as a "WS Protect" merge:
+      // merging Protect would have put Hi-Sheen's 702 lines one tap further
+      // away to rescue the same 94.
+      { key: "WS POWERFLEXX", label: "More Exterior", slug: "powerflexx",
+        members: [
+          { sap: "WS POWERFLEXX",        label: "Powerflexx" },
+          { sap: "TEXTURE",              label: "Texture" },
+          { sap: "WS PROTECT RAINPROOF", label: "Protect Rainproof" },
+          { sap: "WS METALLIC",          label: "WS Metallic" },
+          { sap: "FLOOR PLUS",           label: "Floor Plus" },
+          { sap: "WS TILE",              label: "WS Tile" },
+          { sap: "TEXTURE 2MM",          label: "Texture 2mm" },
+          { sap: "TEXTURE 3MM",          label: "Texture 3mm" },
+          { sap: "SMOOTHOVER",           label: "Smoothover" },
+        ] },
+    ],
+  },
+  {
+    name: "Primer",
+    tint: "#E3F1F8",
+    tiles: [
+      { key: "CEMENT PRIMER SB", label: "Cement SB", slug: "cement-sb",
+        members: [{ sap: "CEMENT PRIMER SB", label: "Cement SB" }] },
+      { key: "ZINC YELLOW METAL PRIMER", label: "Zinc Yellow", slug: "zinc-yellow",
+        members: [{ sap: "ZINC YELLOW METAL PRIMER", label: "Zinc Yellow" }] },
+      { key: "RED OXIDE METAL PRIMER", label: "Red Oxide", slug: "red-oxide",
+        members: [{ sap: "RED OXIDE METAL PRIMER", label: "Red Oxide" }] },
+      // Ext Acrylic keeps the key and the tin; the five primers that had no
+      // tile at all ride with it. That is the whole PRIMER family — nine
+      // products, four tiles, nothing left over.
+      { key: "EXTERIOR ACRYLIC PRIMER", label: "Primers", slug: "ext-acrylic",
+        members: [
+          { sap: "EXTERIOR ACRYLIC PRIMER", label: "Ext Acrylic" },
+          { sap: "WOOD PRIMER",             label: "Wood Primer" },
+          { sap: "FARCO WHITE PRIMER",      label: "Farco White" },
+          { sap: "ALKALI BLOC PRIMER",      label: "Alkali Bloc" },
+          { sap: "CEMENT PRIMER WB",        label: "Cement WB" },
+          { sap: "INTERIOR ACRYLIC PRIMER", label: "Int Acrylic" },
+        ] },
+    ],
+  },
+  {
+    name: "Stainer",
+    tint: "#F6E8C8",
+    tiles: [
+      { key: "ACOTONE", label: "Acotone", slug: "acotone",
+        members: [{ sap: "ACOTONE", label: "Acotone" }] },
+      { key: "UNIVERSAL STAINER", label: "Uni Stainer", slug: "uni-stainer",
+        members: [{ sap: "UNIVERSAL STAINER", label: "Uni Stainer" }] },
+      { key: "MACHINE TINTER", label: "Machine Tinter", slug: "machine-tinter",
+        members: [{ sap: "MACHINE TINTER", label: "Machine Tinter" }] },
+      { key: "GVA", label: "GVA", slug: "gva",
+        members: [{ sap: "GVA", label: "GVA" }] },
+    ],
+  },
+  {
+    name: "Aquatech",
+    tint: "#E0F1EA",
+    tiles: [
+      { key: "DAMP PROTECT 2IN1", label: "Damp Protect", slug: "damp-2in1",
+        members: [
+          { sap: "DAMP PROTECT 2IN1",     label: "Damp Protect 2in1" },
+          { sap: "DAMP PROTECT BASECOAT", label: "Damp Protect Basecoat" },
+        ] },
+      { key: "ROOF COAT WHITE", label: "Roof Coat", slug: "roof-coat",
+        members: [
+          { sap: "ROOF COAT WHITE",     label: "Roof Coat White" },
+          { sap: "ROOF COAT TERACOTTA", label: "Roof Coat Teracotta" },
+          { sap: "ROOF COAT GREY",      label: "Roof Coat Grey" },
+        ] },
+      { key: "CRACKFILLER 5MM", label: "Crack Filler", slug: "crack-5mm",
+        members: [
+          { sap: "CRACKFILLER 5MM",  label: "Crackfiller 5mm" },
+          { sap: "CRACKFILLER 10MM", label: "Crackfiller 10mm" },
+          { sap: "CRACKFILLER 20MM", label: "Crackfiller 20mm" },
+          { sap: "WATERPROOF PUTTY", label: "Waterproof Putty" },
+        ] },
+      // Every member here is a ONE-ROW product with no options at all, which
+      // makes this the simplest merged tile on the board: member, then packs.
+      { key: "FBC ADVANCE", label: "Coats & Additives", slug: "coats-additives",
+        members: [
+          { sap: "FBC ADVANCE",       label: "FBC Advance" },
+          { sap: "FBC NEO",           label: "FBC Neo" },
+          { sap: "INTERIOR WBC",      label: "Interior WBC" },
+          { sap: "WATERBLOCK 2K",     label: "Waterblock 2K" },
+          { sap: "IBC ADVANCE",       label: "IBC Advance" },
+          { sap: "AQUATECH PU COAT",  label: "Aquatech PU Coat" },
+          { sap: "RP LATEX",          label: "RP Latex" },
+          { sap: "WRP",               label: "WRP" },
+          { sap: "PRETREATMENT COAT", label: "Pretreatment Coat" },
+          { sap: "LW PLUS",           label: "LW Plus" },
+          { sap: "TG COTTON WOOL",    label: "TG Cotton Wool" },
+        ] },
+    ],
+  },
+  {
+    name: "Wood",
+    tint: "#EFE6DA",
+    tiles: [
+      { key: "PU PRIME MATT", label: "PU Prime", slug: "prime-matt",
+        members: [
+          { sap: "PU PRIME MATT",   label: "PU Prime Matt" },
+          { sap: "PU PRIME SEALER", label: "PU Prime Sealer" },
+          { sap: "PU PRIME GLOSS",  label: "PU Prime Gloss" },
+        ] },
+      // 2K PU THINNER stays INSIDE 2K PU rather than joining the Thinners
+      // tile: it is a system component, and a man ordering 2K PU Matt reaches
+      // for its matching thinner where the system is. Its 3L pack differs from
+      // both tiles, so neither placement is pack-uniform and that argument is
+      // a wash.
+      { key: "2K PU MATT", label: "2K PU", slug: "2k-matt",
+        members: [
+          { sap: "2K PU MATT",            label: "2K PU Matt" },
+          { sap: "2K PU GLOSS",           label: "2K PU Gloss" },
+          { sap: "2K PU THINNER",         label: "2K PU Thinner" },
+          { sap: "2K PU PRIMER SURFACER", label: "2K PU Primer Surfacer" },
+          { sap: "2K PU SEALER",          label: "2K PU Sealer" },
+        ] },
+      { key: "MULTI PURPOSE THINNER", label: "Thinners", slug: "thinner",
+        members: [
+          { sap: "MULTI PURPOSE THINNER",    label: "Multi Purpose Thinner" },
+          { sap: "EPOXY INSULATOR",          label: "Epoxy Insulator" },
+          { sap: "EPOXY INSULATOR HARDENER", label: "Epoxy Insulator Hardener" },
+          { sap: "MELAMINE THINNER",         label: "Melamine Thinner" },
+          { sap: "NC WOOD THINNER",          label: "NC Wood Thinner" },
+          { sap: "NC NECOL THINNER",         label: "NC Necol Thinner" },
+        ] },
+      { key: "NC SANDING SEALER", label: "More Wood", slug: "more-wood",
+        members: [
+          { sap: "NC SANDING SEALER",  label: "NC Sanding Sealer" },
+          { sap: "1K PU GLOSS",        label: "1K PU Gloss" },
+          { sap: "LUXURIO MATT",       label: "Luxurio Matt" },
+          { sap: "SYNTHETIC VARNISH",  label: "Synthetic Varnish" },
+          { sap: "MELAMINE SEALER",    label: "Melamine Sealer" },
+          { sap: "LUXURIO SEALER",     label: "Luxurio Sealer" },
+          { sap: "HYDRO PU DEAD MATT", label: "Hydro PU Dead Matt" },
+          { sap: "WOOD FILLER",        label: "Wood Filler" },
+          { sap: "HYDRO PU MATT",      label: "Hydro PU Matt" },
+          { sap: "LUXURIO GLOSS",      label: "Luxurio Gloss" },
+          { sap: "MELAMINE GLOSS",     label: "Melamine Gloss" },
+          { sap: "HYDRO PU GLOSS",     label: "Hydro PU Gloss" },
+          { sap: "MELAMINE MATT",      label: "Melamine Matt" },
+          { sap: "NC CLEAR LACQUER",   label: "NC Clear Lacquer" },
+          { sap: "HYDRO PU SEALER",    label: "Hydro PU Sealer" },
+          { sap: "WOOD STAIN",         label: "Wood Stain" },
+        ] },
+    ],
+  },
+];
+
+// ── The member -> tile index, DERIVED ─────────────────────────────────────
+//
+// 🔴 WALKED FROM BOARD, NEVER HAND-WRITTEN. Under Scheme A the tile key IS a
+// member sap, so the key moves whenever sales reorder the members. A derived
+// index absorbs that move for free: whatever the key used to be, it is still a
+// member, so it still resolves to its tile. A hand-written table of "the three
+// saps that changed" would be correct for exactly one ranking and would orphan
+// every stored draft using an old key on the next one — and the symptom is not
+// an error, it is a DUPLICATE cart line the salesman sends without noticing.
+//
+// Step 2's search and Step 5's storage migration both read this.
+
+const MEMBER_TILE = new Map<string, string>();
+const BOARD_TILES = new Map<string, V2BoardTile>();
+const BOARD_ART   = new Map<string, { src: string | null; wash: string }>();
+const BOARD_SLUG  = new Map<string, string>();
+
+/**
+ * Invariant violations found while indexing BOARD. Recorded, NOT thrown at
+ * module load: v2-data is imported by every screen, so a throw here would take
+ * the whole page down for an authoring mistake. buildBoard() throws on a
+ * non-empty list instead — loud exactly where it is consumed, silent where it
+ * would be a catastrophe. Nothing consumes buildBoard yet.
+ */
+export const BOARD_INVARIANTS: string[] = [];
+
+for (const family of BOARD) {
+  const wash = mixToWhite(family.tint, TILE_WASH);
+  if (family.tiles.length !== 4) {
+    BOARD_INVARIANTS.push(`family "${family.name}" has ${family.tiles.length} tiles, not 4`);
+  }
+  for (const tile of family.tiles) {
+    if (tile.members.length === 0) {
+      BOARD_INVARIANTS.push(`tile "${tile.label}" has no members`);
+      continue;
+    }
+    if (tile.key !== tile.members[0].sap) {
+      BOARD_INVARIANTS.push(
+        `tile "${tile.label}" key is "${tile.key}" but its top member is ` +
+        `"${tile.members[0].sap}" — Scheme A requires them to be the same`);
+    }
+    if (BOARD_TILES.has(tile.key)) {
+      BOARD_INVARIANTS.push(`two tiles share the key "${tile.key}"`);
+    }
+    BOARD_TILES.set(tile.key, tile);
+    BOARD_ART.set(tile.key, { src: tileImage(tile.slug), wash });
+    BOARD_SLUG.set(tile.key, tile.slug);
+    for (const member of tile.members) {
+      const already = MEMBER_TILE.get(member.sap);
+      if (already !== undefined && already !== tile.key) {
+        BOARD_INVARIANTS.push(
+          `"${member.sap}" is a member of two tiles: "${already}" and "${tile.key}"`);
+      }
+      MEMBER_TILE.set(member.sap, tile.key);
+    }
+  }
+}
+
+/**
+ * The tile key that owns this product, or null when nothing on the board does.
+ *
+ * Takes ANY member sap — including a key that used to be a tile key and is now
+ * an ordinary member, which is the case the whole index exists for.
+ */
+export function tileKeyForMember(sap: string): string | null {
+  return MEMBER_TILE.get(sap) ?? null;
+}
+
+/** The tile definition behind a key, or null. */
+export function boardTile(key: string): V2BoardTile | null {
+  return BOARD_TILES.get(key) ?? null;
+}
+
+/**
+ * Art for a BOARD tile, keyed on the TILE KEY.
+ *
+ * Deliberately a second map rather than a change to tileArtFor(): that one is
+ * keyed on the 32-tile board's saps and the review screen reads it today. Step
+ * 4 owns the switch-over.
+ */
+export function boardTileArtFor(key: string): { src: string | null; wash: string } {
+  return BOARD_ART.get(key) ?? { src: null, wash: FILL };
+}
+
+/** sap-of-tile -> image slug, for the board tiles. */
+export function boardTileSlugFor(key: string): string | null {
+  return BOARD_SLUG.get(key) ?? null;
+}
+
+// ── Resolving a board tile ────────────────────────────────────────────────
+
+/**
+ * One member, resolved.
+ *
+ * 🔴 `mode` AND `pools` ARE CARRIED HERE ON PURPOSE, and they are the reason
+ * this type is not just V2Resolved & { sap, label }. They are computed inside
+ * buildBoard from THAT MEMBER'S OWN ROWS, so no later caller can be tempted to
+ * derive them from the tile. A caller that had to call drawerMode() itself
+ * would have a tile in hand and the union is the obvious thing to pass — and
+ * the union is wrong for 12 of the 17 merged tiles.
+ */
+export type V2ResolvedMember = V2Resolved & {
+  sap:   string;
+  label: string;
+  /** drawerMode() on this member's rows alone. NEVER on the tile's union. */
+  mode:  V2DrawerMode;
+  /** optionPools() on this member's rows alone. */
+  pools: { all: V2Option[]; bases: V2Option[]; shades: V2Option[] };
+};
+
+export type V2ResolvedTile = {
+  key:     string;
+  label:   string;
+  slug:    string;
+  members: V2ResolvedMember[];
+};
+
+export type V2BoardReport = {
+  /** A member sap the live payload has no rows for. Reported, never guessed. */
+  missingMembers: { tile: string; sap: string }[];
+  /** A member that resolved but has no packs at all on any row. */
+  emptyMembers:   { tile: string; sap: string }[];
+};
+
+/**
+ * 🔴 THE ANTI-UNION ASSERTION, AND IT IS THE POINT OF THIS WHOLE FUNCTION.
+ *
+ * Every row handed to a member's resolve must belong to that member. A caller
+ * that passed the tile's combined rows — the obvious mistake, and the one the
+ * gate measured — trips this on the first foreign row.
+ *
+ * It throws. It cannot fire on any DATA: the rows come from a groupBy on the
+ * very key being checked. It can only fire on a code change, which is exactly
+ * what should stop loudly.
+ *
+ * Why it matters, measured on the live payload 2026-09-07: drawerMode() on the
+ * union returns "standard" for 12 of the 17 merged tiles, and six of those —
+ * Damp Protect, Roof Coat, Crack Filler, Coats & Additives, Thinners and the
+ * Aquatech tail — are made ENTIRELY of single-mode, option-less products. A
+ * standard base/shade shell over a product with no options is the dead screen
+ * that `needsShade` produced for nine products and that an empty-string
+ * baseColour produced for thirty-seven. Twice is enough.
+ */
+function assertOwnRows(sap: string, rows: ApiProduct[]): void {
+  for (const row of rows) {
+    const key = row.product ?? row.subProduct;
+    if (key !== sap) {
+      throw new Error(
+        `v2 board: member "${sap}" was handed a row belonging to "${key}". ` +
+        `Members must be resolved on their OWN rows — never on the union of a ` +
+        `tile's members. See assertOwnRows in v2-data.ts.`,
+      );
+    }
+  }
+}
+
+/**
+ * Resolve every board tile, ONE MEMBER AT A TIME.
+ *
+ * buildCatalog() is called once and its curated resolutions are passed through
+ * resolveGroup, so a member that is one of the 32 curated products keeps its
+ * ranked base/shade lists exactly as the board gives it today, and a member
+ * that is not gets its options straight from the payload in sortOrder. One
+ * code path, both cases — resolveGroup already branches on that internally.
+ *
+ * Nothing calls this yet. po-v2-page.tsx is Step 2's file.
+ */
+export function buildBoard(products: ApiProduct[]): {
+  byKey:  Map<string, V2ResolvedTile>;
+  report: V2BoardReport;
+} {
+  if (BOARD_INVARIANTS.length > 0) {
+    throw new Error("v2 board is mis-authored:\n  " + BOARD_INVARIANTS.join("\n  "));
+  }
+
+  const catalog = buildCatalog(products);
+  const groups = new Map<string, ApiProduct[]>();
+  for (const row of products) {
+    const key = row.product ?? row.subProduct;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(row);
+    else groups.set(key, [row]);
+  }
+
+  const byKey = new Map<string, V2ResolvedTile>();
+  const report: V2BoardReport = { missingMembers: [], emptyMembers: [] };
+
+  for (const family of BOARD) {
+    for (const tile of family.tiles) {
+      const members: V2ResolvedMember[] = [];
+      for (const member of tile.members) {
+        const rows = groups.get(member.sap) ?? [];
+        if (rows.length === 0) {
+          report.missingMembers.push({ tile: tile.label, sap: member.sap });
+          continue;
+        }
+        // 🔴 ONE MEMBER'S ROWS, AND ONLY ONE MEMBER'S ROWS.
+        assertOwnRows(member.sap, rows);
+        const resolved = resolveGroup(member.sap, rows, member.label, catalog.byTile);
+        const mode  = drawerMode(rows);
+        const pools = optionPools(rows);
+        if (packsOf(rows).length === 0) {
+          report.emptyMembers.push({ tile: tile.label, sap: member.sap });
+        }
+        members.push({ ...resolved, sap: member.sap, label: member.label, mode, pools });
+      }
+      byKey.set(tile.key, { key: tile.key, label: tile.label, slug: tile.slug, members });
+    }
+  }
+
+  return { byKey, report };
+}
+
+// ── Why FAMILIES was not rewritten in place ───────────────────────────────
+//
+// The step that authored BOARD was told two things that cannot both be done in
+// one commit: "rewrite the FAMILIES constant as 9 families x 4 tiles", and
+// "the board renders IDENTICALLY to today, all 32 current tiles behave
+// IDENTICALLY". FAMILIES is what po-v2-page.tsx renders and po-v2-page.tsx is
+// Step 2's file, not this one — rewriting FAMILIES in place would have changed
+// the live board to 36 tiles in a commit whose stated safety property is that
+// nothing moves, and it would not have compiled, because the page reads
+// `tile.sap` and a member-shaped tile has no `sap`.
+//
+// So the new board is a new constant beside the old one. Step 2 points the
+// page at BOARD and deletes FAMILIES in the same commit, which is the commit
+// where the board is MEANT to change and where a reviewer will be looking for
+// exactly that.
