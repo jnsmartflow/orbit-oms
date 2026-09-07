@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCircle2, FileText, Grid2x2, MapPin, Send } from "lucide-react";
+import { Check, CheckCircle2, FileText, Grid2x2, MapPin, Send, ShoppingCart } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet, { useBodyScrollLock } from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
@@ -12,13 +12,13 @@ import { DraftsScreen, SentScreen } from "./drafts-sent";
 import {
   addSentOrder, clearLiveDraft, labelFor, loadLiveDraft, loadSavedDrafts,
   loadSentOrders, newDraftId, newSentId, removeSavedDraft, formatSavedAt, formatTime,
-  addMyDealer, loadMyDealers, removeMyDealer, type V2Dealer,
+  loadStarred, toggleStarred, type V2Star,
   saveLiveDraft, snapshotOf, upsertSavedDraft,
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
   BRAND, BRAND_GRADIENT, DIVIDER, FAINT, FAMILIES, FILL, INK, MUTED, RULE,
-  SURFACE, URGENT, VIOLET, VIOLET_BG,
+  STAR, SURFACE, URGENT, VIOLET, VIOLET_BG,
   EMPTY_ORDER, buildCatalog, drawerMode, formatPack,
   mixToWhite, optionPools, packRows, resolveGroup, tileImage, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
@@ -104,7 +104,7 @@ export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
   const [screen, setScreen]   = useState<Screen>("order");
   const [dealer, setDealer]   = useState<ApiCustomer | null>(null);
-  const [mine, setMine]       = useState<V2Dealer[]>([]);
+  const [starred, setStarred] = useState<V2Star[]>([]);
   const [query, setQuery]     = useState("");
   const [sheet, setSheet]     = useState<Sheet>(null);
   const [prodQuery, setProdQuery] = useState("");
@@ -130,6 +130,60 @@ export default function PoV2Page(): React.JSX.Element {
   // The id a reopened draft was saved under, so re-saving upserts in place.
   const openDraftIdRef = useRef<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  /**
+   * Writes the VISUAL viewport height into --vvh, which v2-sheet's container
+   * consumes as its height.
+   *
+   * 🔴 THIS IS CLAUDE_UI.md §55's MECHANISM, NOT A SECOND ONE. /po has carried
+   * it since /order was retired; the SSR fallback `html { --vvh: 100vh }` lives
+   * in app/globals.css and `interactiveWidget: "resizes-content"` — what makes
+   * Chromium SHRINK the layout viewport instead of overlaying it — is in
+   * app/layout.tsx's app-wide viewport export. Both are inherited here and
+   * neither is edited. What v2 was missing is only the WRITER, because /po's
+   * lives inside /po's own component and never runs on this route.
+   *
+   * Straight to documentElement.style, NEVER React state: this fires on every
+   * keyboard ramp frame and a setState here would be a render storm.
+   *
+   * Listens to BOTH resize AND scroll. On an iOS standalone PWA the keyboard
+   * does not emit a clean resize — its final geometry arrives as a
+   * visualViewport scroll/offset adjustment — so resize alone leaves --vvh at
+   * the pre-keyboard height, which is exactly the bug this fixes.
+   *
+   * The h === lastH guard matters: a plain scroll reports an unchanged height,
+   * and rewriting the property on every scroll tick churns the sheet's height
+   * under the salesman's thumb.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const vv = window.visualViewport;
+    let lastH = -1;
+    const update = (): void => {
+      const h = vv ? vv.height : window.innerHeight;
+      if (h === lastH) return;
+      lastH = h;
+      document.documentElement.style.setProperty("--vvh", `${h}px`);
+    };
+    update();
+    if (vv) {
+      vv.addEventListener("resize", update);
+      vv.addEventListener("scroll", update);
+    } else {
+      window.addEventListener("resize", update);
+    }
+    return () => {
+      if (vv) {
+        vv.removeEventListener("resize", update);
+        vv.removeEventListener("scroll", update);
+      } else {
+        window.removeEventListener("resize", update);
+      }
+      // Hand the property back to globals.css's 100vh rather than leaving a
+      // stale pixel height behind for whatever renders next.
+      document.documentElement.style.removeProperty("--vvh");
+    };
+  }, []);
 
   /**
    * 🔴 THE PAGE HOLDS THE BODY-SCROLL LOCK FOR AS LONG AS *ANY* OVERLAY IS OPEN,
@@ -190,7 +244,7 @@ export default function PoV2Page(): React.JSX.Element {
   useEffect(() => { void fetchData(); }, [fetchData]);
   // Client-only reads, so the server render and the first client render agree.
   useEffect(() => {
-    setMine(loadMyDealers());
+    setStarred(loadStarred());
     setSavedDrafts(loadSavedDrafts());
     setSentOrders(loadSentOrders());   // prunes to today+yesterday IST on read
   }, []);
@@ -417,9 +471,9 @@ export default function PoV2Page(): React.JSX.Element {
       id: newSentId(), label: labelFor(snapshot), sentAt: Date.now(), snapshot,
     }));
     openDraftIdRef.current = null;
-    // 🔴 THE LIST BUILDS ITSELF HERE, and only here. Sending is the signal that
-    // this is a dealer he actually serves; merely opening one is not.
-    setMine(addMyDealer(dealer));
+    // 🔴 SENDING DOES NOT STAR ANYBODY. The list used to build itself here, and
+    // then had no way to take anything off it again. He stars a dealer himself,
+    // with one tap, and that same tap is the remove.
 
     setSent({ dealer, lines: lines.length, units: orderUnits });
     setLines([]);
@@ -483,9 +537,7 @@ export default function PoV2Page(): React.JSX.Element {
       <main className="flex min-h-screen w-full items-center justify-center"
             style={{ background: BRAND_GRADIENT }}>
         {/* Nothing else. No tagline, no spinner, no depot name. */}
-        <img src="/brand/orbit-wordmark-white.svg" alt="Orbit"
-             width={2216} height={771}
-             style={{ width: "52%", maxWidth: 260, height: "auto" }} />
+        <Wordmark size={44} colour="#FFFFFF" />
       </main>
     );
   }
@@ -731,10 +783,10 @@ export default function PoV2Page(): React.JSX.Element {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <CustomerListBody
-              customers={customers} mine={mine} query={query}
+              customers={customers} starred={starred} query={query}
               currentCode={dealer?.code ?? null}
               onPick={pickDealer}
-              onRemove={(code) => setMine(removeMyDealer(code))}
+              onToggleStar={(c) => setStarred(toggleStarred(c))}
             />
           </div>
         </V2Sheet>
@@ -784,8 +836,11 @@ export default function PoV2Page(): React.JSX.Element {
         )}
 
         {toastHost}
+        {/* Same fixed height as the dealer sheet above: its list is a search
+            result that changes length on every keystroke, and a content-sized
+            sheet grew and shrank under his thumb while he typed. */}
         {sheet === "shipto" && (
-          <V2Sheet onClose={() => setSheet(null)}>
+          <V2Sheet onClose={() => setSheet(null)} fixedHeight>
             <div className="shrink-0 px-4 pt-1.5 pb-3">
               <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
                 Ship to
@@ -797,7 +852,7 @@ export default function PoV2Page(): React.JSX.Element {
             <div className="shrink-0 px-4 pb-2">
               <CustomerSearchInput value={query} onChange={setQuery} />
             </div>
-            <div className="min-h-0 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {/* A FIXED first row for the default, so "same as billing" is a
                   thing you can pick your way back to, not just the absence of
                   a choice. Hidden while searching — it is not a search hit. */}
@@ -829,9 +884,10 @@ export default function PoV2Page(): React.JSX.Element {
                   billing, so the fall-through in CustomerListBody is
                   load-bearing here and not a convenience. */}
               <CustomerListBody
-                customers={customers} mine={mine} query={query}
+                customers={customers} starred={starred} query={query}
                 currentCode={shipTo?.code ?? null}
                 onPick={(c) => { setShipTo(c); setSheet(null); setQuery(""); }}
+                onToggleStar={(c) => setStarred(toggleStarred(c))}
               />
             </div>
           </V2Sheet>
@@ -866,18 +922,17 @@ export default function PoV2Page(): React.JSX.Element {
             What is NOT here is the point: no dealer, no monogram, no tagline,
             no instruction line. */}
         <div
-          className="sticky top-0 z-20 px-4 pt-3 pb-3"
-          style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
+          className="sticky top-0 z-20 px-4"
+          style={{
+            background: SURFACE,
+            borderBottom: `1px solid ${RULE}`,
+            // 16 above the word, 18 between it and the bar, 14 below.
+            paddingTop: 16,
+            paddingBottom: 14,
+          }}
         >
-          {/* The word IS the logo — never a symbol beside it, and never a
-              tagline under it. Outlined paths in brand.800, so it is the same
-              shape on the depot PC, an Android and an iPhone. */}
-          <img
-            src="/brand/orbit-wordmark.svg" alt="Orbit"
-            width={2216} height={771}
-            style={{ height: 22, width: "auto", display: "block" }}
-          />
-          <div style={{ marginTop: 10 }}>
+          <Wordmark size={26} colour={BRAND} />
+          <div style={{ marginTop: 18 }}>
             <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
           </div>
         </div>
@@ -994,23 +1049,38 @@ export default function PoV2Page(): React.JSX.Element {
       {/* ── BOTTOM BAR ─────────────────────────────────────────────────── */}
       {cartOpen && (
         <div
-          className="fixed inset-x-0 z-20 flex items-center gap-3 px-4 py-3"
+          className="fixed inset-x-0 z-20 flex items-center gap-3 px-4"
           style={{
             bottom: NAV_H,
+            height: 64,
             background: SURFACE,
             borderTop: `1px solid ${RULE}`,
           }}
         >
+          {/* A small tile, not a floating glyph — it gives the count something
+              to sit against and makes the bar read as one object. */}
+          <span
+            className="flex shrink-0 items-center justify-center"
+            style={{ width: 36, height: 36, borderRadius: 10, background: VIOLET_BG }}
+          >
+            <ShoppingCart className="h-[18px] w-[18px]" strokeWidth={2.2} style={{ color: VIOLET }} />
+          </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-bold" style={{ color: INK }}>
+            <p className="truncate text-[14.5px] font-bold leading-tight" style={{ color: INK }}>
               {lines.length} {lines.length === 1 ? "line" : "lines"}
             </p>
-            <p className="truncate font-mono text-[11px]" style={{ color: MUTED }}>{orderUnits} units</p>
+            <p className="truncate font-mono text-[11.5px] leading-tight" style={{ color: MUTED }}>
+              {orderUnits} units
+            </p>
           </div>
+          {/* 🔴 NO X AND NO CLEAR HERE. Clearing an order lives once, in the
+              review header, behind a confirm. A second door onto a destructive
+              action — and this one sitting under the thumb on every screen —
+              is how an order gets emptied by accident. */}
           <button
             type="button"
             onClick={() => setScreen("review")}
-            className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold text-white"
+            className="shrink-0 rounded-[12px] px-4 py-2.5 text-[14.5px] font-extrabold text-white"
             style={{ background: BRAND }}
           >
             Review order
@@ -1055,6 +1125,48 @@ export default function PoV2Page(): React.JSX.Element {
 }
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
+
+/**
+ * "Orbit", set as TEXT.
+ *
+ * 🔴 IT USED TO BE AN SVG OF FIVE HAND-CONSTRUCTED PATHS, AND IT READ "0rbit".
+ * The O was very nearly a perfect circle, which is what a zero is; a real
+ * typeface draws a capital O slightly narrower than it is tall and with the
+ * stroke thinned at the top and bottom, and those are the cues that stop the
+ * eye calling it a digit. Constructed letterforms looked fine at 512px on the
+ * app icon and wrong at 26px in a header, and no amount of tuning the geometry
+ * was going to beat a face that was drawn by someone.
+ *
+ * Plus Jakarta Sans is already loaded by app/layout.tsx via next/font and
+ * exposed as --font-sans, which tailwind maps to the font-sans class. So this
+ * costs no request and nothing outside this folder.
+ *
+ * 🔴 #7C3AED, NOT the brand doc's #5B21B6 — a DELIBERATE divergence. brand.800
+ * reads as a bruise on a white working screen; brand.600 stays a brand colour
+ * at 26px on white. The doc is wrong on that line and is being corrected. Do
+ * not "fix" this back.
+ *
+ * The OUTLINED SVG STILL EXISTS and is still correct where it is used: the app
+ * icon PNGs and anything printed, where the font cannot be guaranteed to be
+ * present. It is only in-app rendering that never needed it.
+ */
+function Wordmark({ size, colour }: { size: number; colour: string }): React.JSX.Element {
+  return (
+    <span
+      className="block font-sans font-bold"
+      style={{
+        fontSize: size,
+        // An explicit line box, so the header's height is a number we chose
+        // rather than whatever the face's default leading happens to be.
+        lineHeight: `${Math.round(size * 1.08)}px`,
+        letterSpacing: "-0.045em",
+        color: colour,
+      }}
+    >
+      Orbit
+    </span>
+  );
+}
 
 /** First word of the dealer's name, for the "keep {dealer}" label. */
 function firstWord(name: string | undefined): string {

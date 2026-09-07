@@ -47,6 +47,16 @@ export const FOCUS_RING = "rgba(124,58,237,.13)";
  * button you have to have already decided to press.
  */
 export const URGENT     = "#DC2626";
+
+/**
+ * The favourite star, amber-500.
+ *
+ * 🔴 NOT BRAND VIOLET, DELIBERATELY. Violet means "selected" everywhere else in
+ * this app — the chosen chip, the current dealer, the live button. A starred
+ * dealer is not a selected one, and painting it violet would make a list of
+ * favourites look like a list of things already picked.
+ */
+export const STAR       = "#F59E0B";
 export const SCRIM      = "rgba(18,14,26,.42)";
 export const SEARCH_BG  = FILL;
 /** One border colour means one token. Kept as a name because rows read better

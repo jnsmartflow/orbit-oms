@@ -15,23 +15,23 @@ import { RULE, SCRIM } from "./v2-data";
 // the colours. Class names are v2-prefixed so they cannot collide.
 // prefers-reduced-motion disables both animations outright.
 //
-// Height is AUTO, capped at 94% of the viewport, so only the search strip
-// shows above an open sheet and most products need no scrolling inside it. A
-// CAP for most sheets: the cancel sheet is two rows and a button and should
-// open short rather than stretch into a white void.
+// 🔴 THE HEIGHTS ARE PERCENTAGES OF THE CONTAINER, NOT vh OR dvh.
 //
-// `.v2-sheet-fixed` is the exception, opted into by `fixedHeight` - see the
-// prop's own note below for why the product drawer takes it. `dvh` is the
-// correct unit on a phone because `vh` measures the viewport with the toolbar
-// COLLAPSED; @supports keeps the vh value on engines that lack dvh.
+// The container is sized to `var(--vvh)` — the VISUAL viewport — so a sheet is
+// 94% of what the salesman can actually see rather than 94% of a layout
+// viewport the keyboard is sitting on top of. That single change is the whole
+// keyboard fix; see the container's own note below.
+//
+// Height is AUTO, capped at 94%, so only the header strip shows above an open
+// sheet. A CAP for most sheets, because a two-row confirm should open short
+// rather than stretch into a white void. `.v2-sheet-fixed` is the exception,
+// opted into by `fixedHeight` — see the prop's note.
 const SHEET_CSS = `
 @keyframes v2SheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes v2ScrimIn { from { opacity: 0; } to { opacity: 1; } }
-.v2-sheet { animation: v2SheetUp .26s cubic-bezier(.32,.72,0,1) both; max-height: 94vh; }
-.v2-sheet-fixed { height: 94vh; }
+.v2-sheet { animation: v2SheetUp .26s cubic-bezier(.32,.72,0,1) both; max-height: 94%; }
+.v2-sheet-fixed { height: 94%; }
 .v2-scrim { animation: v2ScrimIn .2s ease-out both; }
-@supports (max-height: 94dvh) { .v2-sheet { max-height: 94dvh; } }
-@supports (height: 94dvh) { .v2-sheet-fixed { height: 94dvh; } }
 @media (prefers-reduced-motion: reduce) {
   .v2-sheet, .v2-scrim { animation: none; }
 }
@@ -115,17 +115,18 @@ export default function V2Sheet({
   /** Pinned below the scroll area, with its own border and safe-area inset. */
   footer?: React.ReactNode;
   /**
-   * 🔴 ALWAYS 94% OF THE VIEWPORT, WHATEVER THE CONTENT. The product drawer
-   * sets this; every other sheet stays content-sized, where the height IS the
-   * information.
+   * 🔴 ALWAYS 94% OF THE VISIBLE VIEWPORT, WHATEVER THE CONTENT.
    *
-   * Content-sizing made Cement SB (one pack) open as a neat short sheet and
-   * Gloss (seven) as a tall one - which moved Cancel and Add under the thumb
-   * from product to product. A salesman putting forty lines into an order
-   * builds muscle memory for where Add is, standing on a warehouse floor and
-   * not looking. A tidy short sheet is not worth costing him that, so a
-   * one-pack product now opens with white space above a footer that has not
-   * moved a pixel.
+   * The product drawer takes this because content-sizing made Cement SB (one
+   * pack) open short and Gloss (seven) open tall, which moved Cancel and Add
+   * under the thumb from product to product. A salesman putting forty lines
+   * into an order builds muscle memory for where Add is, standing on a
+   * warehouse floor and not looking.
+   *
+   * The DEALER and SHIP-TO sheets take it for a different reason: their content
+   * is a result list that changes length on every keystroke, so a content-sized
+   * sheet grew and shrank under his thumb while he typed. Both are the same
+   * height as each other and neither moves, whatever matches.
    */
   fixedHeight?: boolean;
   children: React.ReactNode;
@@ -133,7 +134,20 @@ export default function V2Sheet({
   useBodyScrollLock();
 
   return (
-    <div className="fixed inset-0 z-50">
+    /* 🔴 SIZED TO THE VISUAL VIEWPORT, NOT `inset-0`.
+       This is the fix for "Change dealer opens on a blank screen". `inset-0`
+       spans the LAYOUT viewport, which the soft keyboard does not shrink — so a
+       sheet anchored to its bottom had its bottom edge underneath the keyboard
+       and pushed its own title, search box and list off the top of what the
+       salesman could see. He had to scroll a sheet that had only just opened.
+
+       --vvh carries window.visualViewport.height, written by the effect in
+       po-v2-page (CLAUDE_UI.md §55 — the same mechanism /po already uses, not a
+       second invention of it). app/globals.css declares `html { --vvh: 100vh }`
+       as the SSR fallback and app/layout.tsx's viewport export already sets
+       `interactiveWidget: "resizes-content"`, which is what makes Chromium
+       shrink rather than overlay; both are app-wide and neither is edited. */
+    <div className="fixed inset-x-0 top-0 z-50" style={{ height: "var(--vvh, 100vh)" }}>
       <style>{SHEET_CSS}</style>
 
       {/* Scrim — tapping anywhere outside the sheet closes it. */}

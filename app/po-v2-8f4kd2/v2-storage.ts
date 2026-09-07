@@ -22,7 +22,8 @@ const LIVE_KEY   = "po2_draft";
 const DRAFTS_KEY = "po2_saved_drafts";
 const SENT_KEY   = "po2_sent_orders";
 const FAVS_KEY   = "po2_fav_customers";   // read once, for the seed below
-const MINE_KEY   = "po2_my_dealers";
+const MINE_KEY   = "po2_my_dealers";       // read once, for the seed below
+const STAR_KEY   = "po2_starred_dealers";
 
 const MAX_FAVS     = 12;
 const MAX_DRAFTS   = 20;
@@ -280,69 +281,86 @@ export function loadFavs(): V2Fav[] {
     .slice(0, MAX_FAVS);
 }
 
-// ── My dealers ─────────────────────────────────────────────────────────────
+// ── Starred dealers ────────────────────────────────────────────────────────
 //
-// The list BUILDS ITSELF: sending an order puts that dealer on it. Nothing to
-// star, nothing to curate, and no all-dealers list behind it — a dealer who is
-// not on it is reached by typing his name. A salesman covers the same forty
-// shops; a list he had to maintain would be a list he stopped maintaining.
+// HE CURATES THIS LIST HIMSELF, with one tap on a star. That is both the add
+// and the remove, which is the whole reason the star is back: the previous
+// list built itself from what he SENT and gave him no way to take anything off
+// it, so it only ever grew.
+//
+// 🔴 SENDING AN ORDER DOES NOT STAR ANYBODY. A dealer he served once is not a
+// dealer he wants at the top of his list forever, and a list that adds itself
+// is a list he cannot trust to mean anything.
 
-/** Newest first. `at` is the last time an order went out to them. */
-export type V2Dealer = { name: string; code: string; area: string | null; at: number };
-type MineStore = { version: 1; dealers: V2Dealer[] };
-
-const MAX_MINE = 60;
+/** `at` is when it was starred — newest first, so a fresh star is findable. */
+export type V2Star = { name: string; code: string; area: string | null; at: number };
+type StarStore = { version: 1; dealers: V2Star[] };
 
 /**
- * 🔴 SEEDED ONCE FROM THE OLD FAVOURITES, THEN NEVER AGAIN.
- *
- * Starring is gone, but somebody has twelve dealers pinned on their phone right
- * now and they must not quietly vanish on the next deploy. So the FIRST read
- * after this ships — recognised by po2_my_dealers being absent, not by a flag
- * that could itself fail to write — folds po2_fav_customers in and saves the
- * result, after which the seed can never run twice.
- *
- * po2_fav_customers is LEFT IN PLACE. It costs nothing and it is the only copy
- * if this merge turns out to be wrong.
+ * A storage bound, not a product rule. Nothing evicts at forty; this exists so
+ * a corrupted or scripted write cannot grow localStorage without limit.
  */
-export function loadMyDealers(): V2Dealer[] {
-  const parsed = readRaw(MINE_KEY) as Partial<MineStore> | null;
-  if (parsed && Array.isArray(parsed.dealers)) return clean(parsed.dealers);
+const MAX_STARRED = 200;
 
-  const seeded = loadFavs().map((f, i) => ({
-    name: f.name, code: f.code, area: f.area,
-    // Ordered behind anything sent later, but keeping the order they were
-    // starred in. 1 not 0, so a seeded dealer is never mistaken for unset.
-    at: 1 + (MAX_MINE - i),
-  }));
-  writeRaw(MINE_KEY, { version: 1, dealers: seeded } satisfies MineStore);
+/**
+ * 🔴 MIGRATED ONCE FROM po2_my_dealers, WHICH WAS ITSELF MIGRATED ONCE FROM
+ * po2_fav_customers. Nobody loses their list twice in one night.
+ *
+ * The chain runs in order, so a phone that skipped a version still arrives
+ * here: loadMyDealers() seeds itself from the old favourites if it has to, and
+ * this seeds from that. Recognised by po2_starred_dealers being ABSENT rather
+ * than by a flag, which could itself fail to write.
+ *
+ * Both older keys are LEFT IN PLACE. They cost nothing and they are the only
+ * copies if a migration turns out to be wrong.
+ */
+export function loadStarred(): V2Star[] {
+  const parsed = readRaw(STAR_KEY) as Partial<StarStore> | null;
+  if (parsed && Array.isArray(parsed.dealers)) return cleanStars(parsed.dealers);
+
+  const seeded = cleanStars(loadMyDealers());
+  writeRaw(STAR_KEY, { version: 1, dealers: seeded } satisfies StarStore);
   return seeded;
 }
 
-function clean(rows: V2Dealer[]): V2Dealer[] {
+function cleanStars(rows: { name?: unknown; code?: unknown; area?: unknown; at?: unknown }[]): V2Star[] {
   return rows
-    .filter((r): r is V2Dealer => !!r && typeof r.name === "string" && typeof r.code === "string")
+    .filter((r): r is V2Star => !!r && typeof r.name === "string" && typeof r.code === "string")
     .map((r) => ({
       name: r.name, code: r.code,
       area: typeof r.area === "string" ? r.area : null,
       at: typeof r.at === "number" ? r.at : 1,
     }))
     .sort((x, y) => y.at - x.at)
-    .slice(0, MAX_MINE);
+    .slice(0, MAX_STARRED);
 }
 
-/** Called when an order is SENT — not when a dealer is merely opened. */
-export function addMyDealer(c: { name: string; code: string; area: string | null }): V2Dealer[] {
-  const rest = loadMyDealers().filter((d) => d.code !== c.code);
-  const next = clean([{ name: c.name, code: c.code, area: c.area ?? null, at: Date.now() }, ...rest]);
-  writeRaw(MINE_KEY, { version: 1, dealers: next } satisfies MineStore);
+/** One tap. Starred becomes unstarred and back, and returns the new list. */
+export function toggleStarred(c: { name: string; code: string; area: string | null }): V2Star[] {
+  const current = loadStarred();
+  const next = current.some((d) => d.code === c.code)
+    ? current.filter((d) => d.code !== c.code)
+    : cleanStars([{ name: c.name, code: c.code, area: c.area ?? null, at: Date.now() }, ...current]);
+  writeRaw(STAR_KEY, { version: 1, dealers: next } satisfies StarStore);
   return next;
 }
 
-export function removeMyDealer(code: string): V2Dealer[] {
-  const next = loadMyDealers().filter((d) => d.code !== code);
-  writeRaw(MINE_KEY, { version: 1, dealers: next } satisfies MineStore);
-  return next;
+// ── The old send-built list — READ ONLY, and only to seed the stars above ──
+//
+// Nothing writes it any more. It stays readable so the one-time migration in
+// loadStarred() has something to read, and stays written on the phones that
+// already have it so that migration can be undone if it was wrong.
+
+type MineStore = { version: 1; dealers: V2Star[] };
+
+function loadMyDealers(): V2Star[] {
+  const parsed = readRaw(MINE_KEY) as Partial<MineStore> | null;
+  if (parsed && Array.isArray(parsed.dealers)) return cleanStars(parsed.dealers);
+  // …and one level further back: the original starred favourites.
+  return loadFavs().map((f, i) => ({
+    name: f.name, code: f.code, area: f.area,
+    at: 1 + (MAX_STARRED - i),
+  }));
 }
 
 // ── List-row summaries ─────────────────────────────────────────────────────

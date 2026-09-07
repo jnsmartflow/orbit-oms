@@ -2,14 +2,14 @@
 
 import { ChevronRight, Check, Search, X } from "lucide-react";
 import {
-  DIVIDER, FAINT, FILL, INK, MUTED, VIOLET, VIOLET_BG,
+  DIVIDER, FAINT, FILL, INK, MUTED, STAR, VIOLET, VIOLET_BG,
   searchCustomers,
   type ApiCustomer,
 } from "./v2-data";
-import type { V2Dealer } from "./v2-storage";
+import type { V2Star } from "./v2-storage";
 
-// The dealer picker, shared by the dealer sheet on the board and the ship-to
-// sheet on review, so the two can never drift apart. One component, two places.
+// The dealer picker, shared by the dealer sheet on review and the ship-to sheet
+// beside it, so the two can never drift apart. One component, two places.
 //
 // 🔴 CONTAINMENT — imports ./v2-data, ./v2-storage and node_modules only.
 
@@ -40,8 +40,8 @@ export function CustomerSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search dealer or code"
-        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none"
-        style={{ color: INK, ["--tw-placeholder-opacity" as string]: 1 }}
+        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none placeholder:text-[#9C99AC]"
+        style={{ color: INK }}
       />
       {value.length > 0 && (
         <button
@@ -59,26 +59,48 @@ export function CustomerSearchInput({
 }
 
 /**
- * One flat dealer row: the name, then code and area beneath, then a chevron.
+ * The star. Filled amber when starred, a grey outline when not.
+ *
+ * Drawn rather than imported so the filled and hollow states are the same
+ * shape — a stroked icon and a filled icon from a set are usually two slightly
+ * different silhouettes, and the wobble shows when one sits above the other in
+ * a list.
+ */
+function StarGlyph({ filled }: { filled: boolean }): React.JSX.Element {
+  return (
+    <svg width={19} height={19} viewBox="0 0 24 24" aria-hidden
+         fill={filled ? STAR : "none"}
+         stroke={filled ? STAR : "#C9C6D6"}
+         strokeWidth={filled ? 0 : 1.9} strokeLinejoin="round">
+      <path d="M12 2.6l2.9 5.87 6.48.95-4.69 4.57 1.11 6.46L12 17.4l-5.8 3.05 1.11-6.46-4.69-4.57 6.48-.95L12 2.6z" />
+    </svg>
+  );
+}
+
+/**
+ * One flat dealer row: the name, then code and area beneath, then the star,
+ * then a chevron.
  *
  * 🔴 NO INITIALS SQUARE. A monogram used to sit at the head of this row and it
  * has been removed everywhere — "AP" tells a salesman nothing his own dealer's
  * name does not tell him better, and thirty of them down a list is thirty
  * identical grey squares competing with the only thing that identifies a row.
  *
- * The row is a <div> holding buttons rather than a <button>, because a remove
- * control has to sit beside the pick target and a button inside a button is
- * invalid HTML that React will not render predictably.
+ * The row is a <div> holding buttons rather than a <button>, because the star
+ * has to sit beside the pick target and a button inside a button is invalid
+ * HTML that React will not render predictably. The star gets its own 44px
+ * target: a thumb does not reliably hit a 19px glyph, and a miss here would
+ * open the dealer instead of starring him.
  */
 export function CustomerRow({
-  name, code, area, current = false, onPick, onRemove,
+  name, code, area, current = false, starred, onPick, onToggleStar,
 }: {
   name: string; code: string; area: string | null;
   /** Marks the dealer already on the order: tinted, with a tick not a chevron. */
   current?: boolean;
+  starred: boolean;
   onPick: () => void;
-  /** Only on the salesman's own list. Absent everywhere else. */
-  onRemove?: () => void;
+  onToggleStar: () => void;
 }): React.JSX.Element {
   return (
     <div
@@ -99,17 +121,19 @@ export function CustomerRow({
         </span>
       </button>
 
-      {onRemove && (
-        <button
-          type="button"
-          aria-label={`Remove ${name} from my dealers`}
-          onClick={onRemove}
-          className="flex shrink-0 items-center justify-center"
-          style={{ width: 44, height: 44 }}
-        >
-          <X className="h-4 w-4" strokeWidth={2.5} style={{ color: FAINT }} />
-        </button>
-      )}
+      {/* Its own button, so a tap CANNOT fall through and open the dealer. A
+          separate element rather than a stopPropagation() hack: starring and
+          choosing are genuinely different actions and the DOM should say so. */}
+      <button
+        type="button"
+        aria-label={starred ? `Unstar ${name}` : `Star ${name}`}
+        aria-pressed={starred}
+        onClick={onToggleStar}
+        className="flex shrink-0 items-center justify-center"
+        style={{ width: 44, height: 44 }}
+      >
+        <StarGlyph filled={starred} />
+      </button>
 
       <span className="flex shrink-0 items-center pr-4">
         {current
@@ -120,62 +144,50 @@ export function CustomerRow({
   );
 }
 
-/** Small uppercase section label. */
-function SectionLabel({ text }: { text: string }): React.JSX.Element {
-  return (
-    <div className="px-4 pt-4 pb-1.5">
-      <span className="text-[10px] font-extrabold uppercase" style={{ letterSpacing: "0.1em", color: FAINT }}>
-        {text}
-      </span>
-    </div>
-  );
-}
-
 /**
- * The list body.
+ * The list body. A search box above it, starred first, results below — and no
+ * other sections.
  *
- * EMPTY QUERY: the salesman's OWN dealers, and nothing else.
+ * EMPTY QUERY: his STARRED dealers, in the order he starred them. Nothing else.
  *
  * 🔴 THERE IS NO ALL-DEALERS LIST AND NO BROWSE BUTTON, DELIBERATELY. Seven
  * hundred alphabetical rows is not a list anyone reads; it is a wall you scroll
  * past on the way to the search box you were going to use anyway. A dealer who
- * is not on his list is reached by TYPING, which is faster than finding him in
- * an index and always was. Do not add a browse affordance back in.
+ * is not starred is reached by TYPING, which is faster than finding him in an
+ * index and always was. Do not add a browse affordance back in.
  *
- * WITH A QUERY: his own list is filtered first and shown under "My dealers",
- * then every other dealer in the master falls through underneath. That
- * fall-through is what makes the missing browse list unnecessary — and it is
- * load-bearing for ship-to, which routinely names a third party the salesman
- * has never ordered FOR. Cross-billing depends on it.
+ * WITH A QUERY: matches from the FULL master, flat, every row carrying its own
+ * star so he can star somebody the moment he finds them. That fall-through is
+ * what makes the missing browse list unnecessary — and it is load-bearing for
+ * ship-to, which routinely names a third party the salesman has never ordered
+ * FOR. Cross-billing depends on it.
  */
 export function CustomerListBody({
-  customers, mine, query, currentCode, onPick, onRemove,
+  customers, starred, query, currentCode, onPick, onToggleStar,
 }: {
   customers: ApiCustomer[];
-  mine: V2Dealer[];
+  starred: V2Star[];
   query: string;
   currentCode?: string | null;
   onPick: (c: ApiCustomer) => void;
-  /** Given only where removing from the list makes sense. */
-  onRemove?: (code: string) => void;
+  onToggleStar: (c: ApiCustomer) => void;
 }): React.JSX.Element {
   const trimmed = query.trim();
-  const mineCodes = new Set(mine.map((m) => m.code));
+  const starCodes = new Set(starred.map((s) => s.code));
 
-  const row = (c: ApiCustomer, keyPrefix: string, removable: boolean): React.JSX.Element => (
+  const row = (c: ApiCustomer, keyPrefix: string): React.JSX.Element => (
     <CustomerRow
       key={`${keyPrefix}-${c.code}`}
       name={c.name} code={c.code} area={c.area}
       current={currentCode === c.code}
+      starred={starCodes.has(c.code)}
       onPick={() => onPick(c)}
-      onRemove={removable && onRemove ? () => onRemove(c.code) : undefined}
+      onToggleStar={() => onToggleStar(c)}
     />
   );
 
   if (trimmed.length > 0) {
     const hits = searchCustomers(customers, trimmed);
-    const mineHits = hits.filter((c) => mineCodes.has(c.code));
-    const rest = hits.filter((c) => !mineCodes.has(c.code));
     if (hits.length === 0) {
       return (
         <p className="px-4 py-10 text-center text-[13px]" style={{ color: FAINT }}>
@@ -183,37 +195,22 @@ export function CustomerListBody({
         </p>
       );
     }
-    return (
-      <div>
-        {mineHits.length > 0 && (
-          <>
-            <SectionLabel text="My dealers" />
-            {mineHits.map((c) => row(c, "mine-hit", false))}
-          </>
-        )}
-        {rest.length > 0 && (
-          <>
-            {mineHits.length > 0 && <SectionLabel text="All dealers" />}
-            {rest.map((c) => row(c, "hit", false))}
-          </>
-        )}
-      </div>
-    );
+    return <div>{hits.map((c) => row(c, "hit"))}</div>;
   }
 
-  if (mine.length === 0) {
+  if (starred.length === 0) {
     return (
       <p className="px-4 py-10 text-center text-[13px] leading-relaxed" style={{ color: FAINT }}>
         Type a dealer name or code.
         <br />
-        Whoever you send an order to lands here.
+        Tap the star to keep one here.
       </p>
     );
   }
 
   return (
     <div>
-      {mine.map((m) => row({ name: m.name, code: m.code, area: m.area }, "mine", true))}
+      {starred.map((s) => row({ name: s.name, code: s.code, area: s.area }, "star"))}
     </div>
   );
 }
