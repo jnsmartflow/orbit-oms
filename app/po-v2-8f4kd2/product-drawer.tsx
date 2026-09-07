@@ -1124,9 +1124,19 @@ function BigTile({ label, cell, square, lines, badge, fill, image, wash, selecte
           />
         ) : badge ? (
           <span
-            className="font-extrabold"
+            // 🔴 600, NOT 800 — CLAUDE_UI §60. "Weight, not colour, is the
+            // heavy dial", and nothing on a card is 700. This glyph is a LABEL
+            // ON A PLACEHOLDER, not a heading: at 800 with negative tracking it
+            // came out as the loudest thing on the sheet, six black slabs
+            // shouting over the product name they were supposed to sit under.
+            // The SIZE is right — a 24px "90" is the tile's content and has to
+            // read across a column — so the weight is what comes down, and the
+            // negative tracking goes with it for the same reason (§60 says
+            // remove tracking before touching colour). Colour stays INK: this
+            // is the only thing identifying the option inside the square.
+            className="font-semibold"
             style={{
-              color: INK, letterSpacing: "-0.03em", lineHeight: 1,
+              color: INK, lineHeight: 1,
               // Two characters is the common case (BW, 90) and gets the whole
               // square; GREEN and PASTEL step down rather than clip.
               fontSize: badge.length <= 2 ? 24 : badge.length <= 4 ? 19 : badge.length <= 6 ? 14 : 11,
@@ -1177,7 +1187,12 @@ function TileName({ label, lines, selected }: {
       className="block w-full text-center"
       style={{
         color: selected ? VIOLET : INK,
-        fontSize: size, lineHeight: 1.2, fontWeight: selected ? 700 : 500,
+        // 🔴 600 SELECTED, NOT 700 — §60 again: nothing on a card is 700, and
+        // the emphasis is not lost because VIOLET is already carrying it. At
+        // 500 unselected this line was never the problem; it was being drowned
+        // by an 800-weight glyph three times its size, and dropping the glyph
+        // is what lets it be read at all.
+        fontSize: size, lineHeight: 1.2, fontWeight: selected ? 600 : 500,
         display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines,
         overflow: "hidden", overflowWrap: "normal", wordBreak: "normal", hyphens: "none",
       }}
@@ -1241,7 +1256,9 @@ function PackList({ labels, qtys, onStep, onType }: {
 }): React.JSX.Element {
   return (
     <div
-      className="min-h-0 flex-1 overflow-y-auto px-4 py-1"
+      // gap-2.5 is the separation the rows used to try to get from their own
+      // padding. See the PackRow note: space BETWEEN, not a taller row.
+      className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-1"
       style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
     >
       {labels.map((label) => (
@@ -1267,8 +1284,17 @@ function PackList({ labels, qtys, onStep, onType }: {
  * caption with 12px of padding above and below — 62px each, so four packs
  * filled a phone. Worse, the label outweighed the PRODUCT NAME above it
  * (15px/700), which is backwards: the name is the hero and the pack is a row
- * in a list. 15px/600 over a 10.5px caption at 6px padding reads as a list and
- * gives the strip its height back.
+ * in a list. 15px/600 over a 10.5px caption reads as a list and gives the
+ * strip its height back.
+ *
+ * 🔴 THE AIR IS BETWEEN THE ROWS, NOT INSIDE THEM. py-1.5 took the gap between
+ * two steppers down to 12px and the list closed up into a block. The fix is
+ * NOT to reinflate the padding — that grows every row and costs a row off the
+ * bottom of the screen for nothing. The row's own padding comes DOWN to 4px
+ * and the separation moves to a 10px gap on the list, so each row is a tighter
+ * object with more space around it: 18px between steppers, against 12 before
+ * and 24 in the version that read as banners. Same 56px pitch either way, and
+ * this way the thing that grew is the whitespace rather than the row.
  *
  * The +/- targets stay 36px. Trimming those to buy space would take a real tap
  * target off a man wearing gloves on a warehouse floor to save eight pixels.
@@ -1279,7 +1305,7 @@ function PackRow({ label, step, qty, onStep, onType }: {
   onType: (units: number) => void;
 }): React.JSX.Element {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
+    <div className="flex items-center justify-between gap-3 py-1">
       <div className="min-w-0">
         <p className="text-[15px] font-semibold leading-tight" style={{ color: INK }}>{label}</p>
         {step > 1 && (
