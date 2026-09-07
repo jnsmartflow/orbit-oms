@@ -245,6 +245,14 @@ export const FAMILIES: readonly V2Family[] = [
       { label: "Damp 2in1", sap: "DAMP PROTECT 2IN1", slug: "damp-2in1" },
       { label: "Roof Coat", sap: "ROOF COAT WHITE", slug: "roof-coat" },
       { label: "Crack 5mm", sap: "CRACKFILLER 5MM", slug: "crack-5mm" },
+      // ⚠ THIS SLUG NAMES NO FILE, AND NOTHING READS IT. damp-base.webp was
+      // deleted on 2026-09-07: Damp Protect Basecoat is a MEMBER of the Damp
+      // Protect 2in1 tile now and its photo ships as
+      // product-damp-protect-basecoat.webp. FAMILIES survives only because
+      // buildCatalog still walks it, and buildCatalog reads sap and label only
+      // — the whole FAMILIES.slug field has been read by nothing since
+      // tileArtFor moved onto BOARD. Left in place rather than emptied so the
+      // literal keeps one shape; the string is inert.
       { label: "Damp Base", sap: "DAMP PROTECT BASECOAT", slug: "damp-base" },
     ],
   },
@@ -289,7 +297,6 @@ export const TILE_IMAGES: ReadonlySet<string> = new Set([
   "cement-sb",
   "crack-5mm",
   "damp-2in1",
-  "damp-base",
   "ext-acrylic",
   "gloss",
   "max",
@@ -397,15 +404,33 @@ export const MEMBER_IMAGES: ReadonlySet<string> = new Set([
 /**
  * A member's own tin, or null.
  *
- * NULL IS A REAL ANSWER AND NOT A FALLBACK. The drawer draws the family wash
- * for a member with no photo, exactly as the board does for a tile with none.
- * Falling back to the TILE's art here would be the bug the cart has today —
- * nine Powerflexx lines under one tub — reproduced in the rail.
+ * 🔴 ONE FALLBACK, AND ONLY ONE: THE TILE'S LEADER GETS THE TILE'S ART.
+ *
+ * A tile's photograph IS a photograph of its top-selling member — that is what
+ * the board tile has always been showing. So PU Enamel, Powerflexx, 2K PU Matt
+ * and Promise Interior standing as bare washes in a strip beside siblings with
+ * tins was not missing art; it was the same art, unreachable by a second name.
+ * The rule costs no bytes and copies no file, which is the point: copying
+ * pu-enamel.webp to product-pu-enamel.webp would be correct for exactly as long
+ * as PU Enamel outsells Lustre, and would quietly become a lie the day it does
+ * not. A rule re-reads the board every render; a copy freezes one ranking.
+ *
+ * ⚠ A NON-LEADER WITH NO ART GETS NOTHING, DELIBERATELY. Extending the fallback
+ * to every member is precisely the bug the cart shipped for eleven commits —
+ * nine Powerflexx products under one tub, a Lustre line drawing pu-enamel — and
+ * it is worse in the strip than in the cart, because the strip's whole job is
+ * to tell nine products apart. The family wash says "no photo yet"; the
+ * leader's tin would say "this is the leader", which is false.
+ *
+ * The leader is read from LEADER_TILE, which the BOARD walk fills at
+ * members[0]. Reorder the members tomorrow and the fallback follows the new
+ * leader with nothing to edit.
  */
 export function memberImage(sap: string): string | null {
   const slug = MEMBER_SLUG.get(sap);
-  return slug !== undefined && MEMBER_IMAGES.has(slug)
-    ? `/category-images/${slug}.webp` : null;
+  if (slug !== undefined && MEMBER_IMAGES.has(slug)) return `/category-images/${slug}.webp`;
+  const leads = LEADER_TILE.get(sap);
+  return leads !== undefined ? boardTileArtFor(leads).src : null;
 }
 
 /** The tile's image URL, or null when there is no file for that slug. */
@@ -1790,6 +1815,15 @@ const BOARD_ART   = new Map<string, { src: string | null; wash: string }>();
 const BOARD_SLUG  = new Map<string, string>();
 /** member sap -> its own image slug. Empty for a product with no photo yet. */
 const MEMBER_SLUG = new Map<string, string>();
+/**
+ * The sap of each tile's members[0] -> that tile's key.
+ *
+ * DERIVED, like every other index here. Under Scheme A the leader IS the tile
+ * key, so this could be written as "is this sap a tile key?" — but that reads
+ * as a coincidence and this reads as the fact it depends on, which is that a
+ * tile's photograph is a photograph of its top seller.
+ */
+const LEADER_TILE = new Map<string, string>();
 
 /**
  * Invariant violations found while indexing BOARD. Recorded, NOT thrown at
@@ -1830,6 +1864,7 @@ for (const family of BOARD) {
       MEMBER_TILE.set(member.sap, tile.key);
       if (member.slug !== undefined) MEMBER_SLUG.set(member.sap, member.slug);
     }
+    LEADER_TILE.set(tile.members[0].sap, tile.key);
   }
 }
 
