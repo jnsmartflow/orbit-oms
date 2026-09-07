@@ -8,8 +8,8 @@ import {
 } from "./v2-data";
 import type { V2Star } from "./v2-storage";
 
-// The dealer picker, shared by the dealer sheet on review and the ship-to sheet
-// beside it, so the two can never drift apart. One component, two places.
+// The dealer list, shared by the two picker SCREENS — choose-a-dealer and
+// ship-to — so the two can never drift apart. One component, two places.
 //
 // 🔴 CONTAINMENT — imports ./v2-data, ./v2-storage and node_modules only.
 
@@ -171,7 +171,8 @@ export function CustomerListBody({
   currentCode?: string | null;
   onPick: (c: ApiCustomer) => void;
   onToggleStar: (c: ApiCustomer) => void;
-}): React.JSX.Element {
+  // null when nothing is starred and nothing typed — see the note below.
+}): React.JSX.Element | null {
   const trimmed = query.trim();
   const starCodes = new Set(starred.map((s) => s.code));
 
@@ -198,15 +199,11 @@ export function CustomerListBody({
     return <div>{hits.map((c) => row(c, "hit"))}</div>;
   }
 
-  if (starred.length === 0) {
-    return (
-      <p className="px-4 py-10 text-center text-[13px] leading-relaxed" style={{ color: FAINT }}>
-        Type a dealer name or code.
-        <br />
-        Tap the star to keep one here.
-      </p>
-    );
-  }
+  // 🔴 NOTHING STARRED YET RENDERS NOTHING. No illustration, no instruction
+  // line, no placeholder block — the search box is directly above and is the
+  // only thing to do, so a paragraph explaining that would be telling a
+  // salesman what he can already see. White space is the honest answer.
+  if (starred.length === 0) return null;
 
   return (
     <div>

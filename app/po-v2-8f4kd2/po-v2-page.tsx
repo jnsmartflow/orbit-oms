@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCircle2, FileText, Grid2x2, MapPin, Send, ShoppingCart } from "lucide-react";
+import { Check, CheckCircle2, ChevronLeft, FileText, Grid2x2, MapPin, Send, ShoppingCart } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet, { useBodyScrollLock } from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
@@ -18,7 +18,7 @@ import {
 } from "./v2-storage";
 import {
   BRAND, BRAND_GRADIENT, DIVIDER, FAINT, FAMILIES, FILL, INK, MUTED, RULE,
-  STAR, SURFACE, URGENT, VIOLET, VIOLET_BG,
+  SURFACE, URGENT, VIOLET, VIOLET_BG,
   EMPTY_ORDER, buildCatalog, drawerMode, formatPack,
   mixToWhite, optionPools, packRows, resolveGroup, tileImage, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
@@ -42,9 +42,15 @@ import {
 // the shelf, not at the account. So the board holds no dealer state at all; a
 // tile tap opens its drawer and nothing else happens. Review asks, once.
 //
-// FIVE SCREENS, ONE URL: board, review, sent-confirmation, saved drafts,
-// sent-today. All switched by state, not routing, so the fetched catalog and
-// the order survive every switch with no store and no reload.
+// SEVEN SCREENS, ONE URL: board, review, the dealer picker, ship-to,
+// sent-confirmation, saved drafts, sent-today. All switched by state, not
+// routing, so the fetched catalog and the order survive every switch with no
+// store and no reload.
+//
+// 🔴 THE TWO PICKERS ARE SCREENS AND NOT SHEETS, deliberately. A bottom sheet
+// has to be sized against something, and with the iOS soft keyboard up the
+// thing it was sized against was the wrong viewport — twice, across two rounds.
+// A page has no such problem.
 //
 // PERSISTENCE lives in ./v2-storage under po2_* keys ONLY. v2 never touches a
 // po_* or orbitoms_* key — sharing a slot with /po would mean two independent
@@ -97,8 +103,8 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; customers: ApiCustomer[]; products: ApiProduct[]; byTile: Map<string, V2Resolved> };
 
-type Screen = "order" | "review" | "sent" | "drafts" | "sentList";
-type Sheet  = null | "dealer" | "clear" | "shipto" | "replace" | "summary";
+type Screen = "order" | "review" | "dealer" | "shipto" | "sent" | "drafts" | "sentList";
+type Sheet  = null | "clear" | "replace" | "summary";
 
 export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
@@ -307,8 +313,19 @@ export default function PoV2Page(): React.JSX.Element {
     setScreen("order");
   }
 
-  /** Open the dealer sheet. One entry point, so the query is always cleared. */
-  function openDealerSheet(): void { setQuery(""); setSheet("dealer"); }
+  /**
+   * Open the dealer picker. One entry point, so the query is always cleared.
+   *
+   * 🔴 IT IS A SCREEN, NOT A SHEET. Two rounds were spent trying to make a
+   * bottom sheet behave with the iOS keyboard — first it opened blank with its
+   * content pushed off the top, then it needed --vvh sizing to stop doing that.
+   * A full screen has none of those problems because there is nothing to size
+   * against: the page scrolls, the keyboard shrinks the viewport, and the
+   * browser does what it already knows how to do. It is also the structure the
+   * product search and the drafts and sent screens already use, so this is the
+   * pattern repeated rather than a fourth one invented.
+   */
+  function openDealerSheet(): void { setQuery(""); setScreen("dealer"); }
 
   /**
    * Empty the cart and go back to the board — but KEEP THE DEALER.
@@ -755,42 +772,8 @@ export default function PoV2Page(): React.JSX.Element {
           onSaveDraft={saveDraft}
           onOpenDealer={openDealerSheet}
           onClearOrder={() => setSheet("clear")}
-          onOpenShipTo={() => { setQuery(""); setSheet("shipto"); }}
+          onOpenShipTo={() => { setQuery(""); setScreen("shipto"); }}
         />
-        {/* ── DEALER SHEET — REVIEW ONLY ─────────────────────────────────
-            The one place the app asks. Opened by the dealer row or by pressing
-            Send without one, and it always returns HERE with the finished order
-            still on screen. It is not rendered on the board at all. */}
-      {sheet === "dealer" && (
-        <V2Sheet
-          onClose={() => setSheet(null)}
-          fixedHeight
-        >
-          <div className="flex shrink-0 items-baseline gap-2 px-4 pt-1.5 pb-3">
-            <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
-              {dealer ? "Change dealer" : "Who is this order for?"}
-            </h2>
-            <span className="ml-auto shrink-0 font-mono text-[10.5px] uppercase"
-                  style={{ color: FAINT, letterSpacing: ".08em" }}>
-              Surat depot
-            </span>
-          </div>
-          <p className="shrink-0 px-4 pb-2 text-[12px]" style={{ color: MUTED }}>
-            {lines.length} {lines.length === 1 ? "line" : "lines"} in this order — they stay
-          </p>
-          <div className="shrink-0 px-4 pb-2">
-            <CustomerSearchInput value={query} onChange={setQuery} autoFocus />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <CustomerListBody
-              customers={customers} starred={starred} query={query}
-              currentCode={dealer?.code ?? null}
-              onPick={pickDealer}
-              onToggleStar={(c) => setStarred(toggleStarred(c))}
-            />
-          </div>
-        </V2Sheet>
-      )}
         {/* ── CLEAR CONFIRM — asked once, and only from the review header ───
             🔴 THIS IS WHERE THE URGENT COLOUR LIVES. The trigger upstairs is
             quiet text; the solid red is here, on a button nobody reaches
@@ -836,62 +819,80 @@ export default function PoV2Page(): React.JSX.Element {
         )}
 
         {toastHost}
-        {/* Same fixed height as the dealer sheet above: its list is a search
-            result that changes length on every keystroke, and a content-sized
-            sheet grew and shrank under his thumb while he typed. */}
-        {sheet === "shipto" && (
-          <V2Sheet onClose={() => setSheet(null)} fixedHeight>
-            <div className="shrink-0 px-4 pt-1.5 pb-3">
-              <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
-                Ship to
-              </h2>
-              <p className="text-[11.5px]" style={{ color: MUTED }}>
-                Where the goods go{dealer ? ` — the bill still goes to ${dealer.name}` : ""}
-              </p>
-            </div>
-            <div className="shrink-0 px-4 pb-2">
-              <CustomerSearchInput value={query} onChange={setQuery} />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {/* A FIXED first row for the default, so "same as billing" is a
-                  thing you can pick your way back to, not just the absence of
-                  a choice. Hidden while searching — it is not a search hit. */}
-              {query.trim().length === 0 && (
-                <button
-                  type="button"
-                  onClick={() => { setShipTo(null); setSheet(null); }}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left"
-                  style={{
-                    borderBottom: `1px solid ${DIVIDER}`,
-                    background: shipTo === null ? VIOLET_BG : undefined,
-                  }}
-                >
-                  <MapPin className="h-4 w-4 shrink-0" strokeWidth={2.5}
-                          style={{ color: shipTo === null ? VIOLET : FAINT }} />
-                  <span className="min-w-0 flex-1 truncate text-[14.5px] font-bold" style={{ color: INK }}>
-                    Same as billing
-                  </span>
-                  {shipTo === null && (
-                    <Check className="h-4 w-4 shrink-0" strokeWidth={3} style={{ color: VIOLET }} />
-                  )}
-                </button>
+      </>
+    );
+  }
+
+  // ══ SCREEN — THE DEALER PICKER ═══════════════════════════════════════════
+  // A full screen, reached from review and returning to it. Same shell as
+  // Drafts and Sent: back arrow, title, and the search directly under it.
+  if (screen === "dealer") {
+    return (
+      <>
+        <PickerScreen
+          title={dealer ? "Change dealer" : "Who is this order for?"}
+          note={`${lines.length} ${lines.length === 1 ? "line" : "lines"} in this order — they stay`}
+          query={query} onQuery={setQuery}
+          onBack={() => { setQuery(""); setScreen("review"); }}
+        >
+          <CustomerListBody
+            customers={customers} starred={starred} query={query}
+            currentCode={dealer?.code ?? null}
+            onPick={pickDealer}
+            onToggleStar={(c) => setStarred(toggleStarred(c))}
+          />
+        </PickerScreen>
+        {toastHost}
+      </>
+    );
+  }
+
+  // ══ SCREEN — SHIP TO ═════════════════════════════════════════════════════
+  if (screen === "shipto") {
+    return (
+      <>
+        <PickerScreen
+          title="Ship to"
+          note={dealer ? `Where the goods go — the bill still goes to ${dealer.name}` : "Where the goods go"}
+          query={query} onQuery={setQuery}
+          onBack={() => { setQuery(""); setScreen("review"); }}
+        >
+          {/* A FIXED first row for the default, so "same as billing" is a thing
+              you can pick your way back to, not just the absence of a choice.
+              Hidden while searching — it is not a search hit. */}
+          {query.trim().length === 0 && (
+            <button
+              type="button"
+              onClick={() => { setShipTo(null); setQuery(""); setScreen("review"); }}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left"
+              style={{
+                borderBottom: `1px solid ${DIVIDER}`,
+                background: shipTo === null ? VIOLET_BG : undefined,
+              }}
+            >
+              <MapPin className="h-4 w-4 shrink-0" strokeWidth={2.5}
+                      style={{ color: shipTo === null ? VIOLET : FAINT }} />
+              <span className="min-w-0 flex-1 truncate text-[14.5px] font-bold" style={{ color: INK }}>
+                Same as billing
+              </span>
+              {shipTo === null && (
+                <Check className="h-4 w-4 shrink-0" strokeWidth={3} style={{ color: VIOLET }} />
               )}
-              {/* 🔴 SHIP-TO REACHES EVERY DEALER IN THE MASTER, by typing. The
-                  landing has no all-dealers list by design, but ship-to names a
-                  third party the salesman has routinely never ordered FOR —
-                  LAKHANI PAINTS shipping against MOHAN COLOUR CO is a real
-                  order. Restricting this to his own list would break cross
-                  billing, so the fall-through in CustomerListBody is
-                  load-bearing here and not a convenience. */}
-              <CustomerListBody
-                customers={customers} starred={starred} query={query}
-                currentCode={shipTo?.code ?? null}
-                onPick={(c) => { setShipTo(c); setSheet(null); setQuery(""); }}
-                onToggleStar={(c) => setStarred(toggleStarred(c))}
-              />
-            </div>
-          </V2Sheet>
-        )}
+            </button>
+          )}
+          {/* 🔴 SHIP-TO REACHES EVERY DEALER IN THE MASTER, by typing. The
+              starred list is his own shortlist, but ship-to names a third party
+              he has routinely never ordered FOR — LAKHANI PAINTS shipping
+              against MOHAN COLOUR CO is a real order. Restricting this would
+              break cross billing. */}
+          <CustomerListBody
+            customers={customers} starred={starred} query={query}
+            currentCode={shipTo?.code ?? null}
+            onPick={(c) => { setShipTo(c); setQuery(""); setScreen("review"); }}
+            onToggleStar={(c) => setStarred(toggleStarred(c))}
+          />
+        </PickerScreen>
+        {toastHost}
       </>
     );
   }
@@ -908,33 +909,43 @@ export default function PoV2Page(): React.JSX.Element {
           paddingBottom: `calc(${NAV_H} + ${cartOpen ? 84 : 16}px)`,
         }}
       >
-        {/* ── HEADER — one slim row, and it asks nothing ────────────────────
-            The mark, then product search. That is the whole board chrome.
+        {/* ── BRAND ROW — NOT STICKY. It scrolls away. ─────────────────────
+            🔴 RESTORING WHAT c02c549f REMOVED, and for the reason the old
+            comment gave: "DEALER BAR — scrolls AWAY. The search row below takes
+            over." A logo does not need to follow a salesman down a page. It
+            identifies the app once, on arrival, and then gets out of the way of
+            the products — which is the entire content of this screen.
 
-            🔴 IT IS TWO LINES AGAIN, AND THAT COSTS 45px OF BOARD. The wordmark
-            gets its own line and the search bar below it is 52px, so the sticky
-            block goes 64px -> 109px on a 390px phone: about a quarter of a
-            family row, permanently. Paid deliberately. A header that is a logo
-            squeezed against a control reads as a toolbar; a header that names
-            the app and then offers ONE well-built thing to tap reads as a
-            screen, and this screen has exactly one thing to tap.
+            SURAT DEPOT balances the row and is real information, not
+            decoration: it is the one thing on the board that says which depot
+            these prices and this catalog belong to. */}
+        <div className="flex items-baseline justify-between px-4"
+             style={{ background: SURFACE, paddingTop: 16, paddingBottom: 11 }}>
+          <Wordmark size={26} colour={BRAND} />
+          <span className="shrink-0 font-mono text-[10px] uppercase"
+                style={{ color: FAINT, letterSpacing: ".14em" }}>
+            Surat depot
+          </span>
+        </div>
 
-            What is NOT here is the point: no dealer, no monogram, no tagline,
-            no instruction line. */}
+        {/* ── SEARCH — STICKY. Once the brand row has gone it IS the header,
+            which is what the bottom hairline is for: alone at the top of the
+            viewport a borderless bar reads as a box floating over the tiles,
+            and with the rule under it it reads as a header.
+
+            67px of sticky against the 129px the single merged block cost —
+            about a third of a family row handed back at every scroll
+            position. */}
         <div
           className="sticky top-0 z-20 px-4"
           style={{
             background: SURFACE,
             borderBottom: `1px solid ${RULE}`,
-            // 16 above the word, 18 between it and the bar, 14 below.
-            paddingTop: 16,
-            paddingBottom: 14,
+            paddingTop: 7,
+            paddingBottom: 7,
           }}
         >
-          <Wordmark size={26} colour={BRAND} />
-          <div style={{ marginTop: 18 }}>
-            <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
-          </div>
+          <ProductSearchInput value={prodQuery} onChange={setProdQuery} />
         </div>
 
         {/* Under 2 characters the board stands; at 2 the board is REPLACED by
@@ -1046,7 +1057,12 @@ export default function PoV2Page(): React.JSX.Element {
         )}
       </main>
 
-      {/* ── BOTTOM BAR ─────────────────────────────────────────────────── */}
+      {/* ── BOTTOM BAR ───────────────────────────────────────────────────
+          🔴 FLUSH AGAINST THE NAV — one block of two rows, the way every
+          delivery app does it. `bottom: NAV_H` puts its bottom edge exactly on
+          the nav's top edge, and neither carries a shadow, so there is no seam
+          and nothing floats. The nav's own top hairline is the divider BETWEEN
+          the two rows; this border is the outer edge of the block. */}
       {cartOpen && (
         <div
           className="fixed inset-x-0 z-20 flex items-center gap-3 px-4"
@@ -1069,21 +1085,28 @@ export default function PoV2Page(): React.JSX.Element {
             <p className="truncate text-[14.5px] font-bold leading-tight" style={{ color: INK }}>
               {lines.length} {lines.length === 1 ? "line" : "lines"}
             </p>
-            <p className="truncate font-mono text-[11.5px] leading-tight" style={{ color: MUTED }}>
-              {orderUnits} units
+            {/* 🔴 THE DEALER, NOT THE UNIT COUNT. "85 units" was a number
+                nobody acts on from here — he cannot change it on this bar and
+                the review screen totals it anyway. WHO the order is for is the
+                thing he actually wants confirmed while he keeps adding, and it
+                is the one fact the board itself no longer shows anywhere. */}
+            <p className="truncate text-[11.5px] leading-tight" style={{ color: MUTED }}>
+              {dealer ? dealer.name : "No dealer yet"}
             </p>
           </div>
           {/* 🔴 NO X AND NO CLEAR HERE. Clearing an order lives once, in the
               review header, behind a confirm. A second door onto a destructive
               action — and this one sitting under the thumb on every screen —
               is how an order gets emptied by accident. */}
+          {/* A compact pill, not a full-width block: the bar's job is to say
+              what is in the basket, and one short word is enough to open it. */}
           <button
             type="button"
             onClick={() => setScreen("review")}
-            className="shrink-0 rounded-[12px] px-4 py-2.5 text-[14.5px] font-extrabold text-white"
+            className="shrink-0 rounded-full px-5 py-2 text-[14px] font-extrabold text-white"
             style={{ background: BRAND }}
           >
-            Review order
+            View
           </button>
         </div>
       )}
@@ -1125,6 +1148,57 @@ export default function PoV2Page(): React.JSX.Element {
 }
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
+
+/**
+ * The shell both dealer pickers share: back arrow, title, a note, and the
+ * search input under them — all sticky, because on a screen whose whole purpose
+ * is search the box is the last thing that should scroll away.
+ *
+ * 🔴 A SCREEN, NOT A SHEET, AND THAT IS THE FIX. A bottom sheet has to be
+ * sized against something, and with the soft keyboard up the thing it was
+ * sized against was the wrong viewport — twice. A page has no such problem:
+ * the keyboard shrinks the viewport, the page scrolls, and the browser handles
+ * it without being told. Same shell as Drafts and Sent.
+ */
+function PickerScreen({ title, note, query, onQuery, onBack, children }: {
+  title: string;
+  note: string;
+  query: string;
+  onQuery: (next: string) => void;
+  onBack: () => void;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <main className="min-h-screen w-full" style={{ background: SURFACE, paddingBottom: 24 }}>
+      <div className="sticky top-0 z-10 px-2 pt-2 pb-2"
+           style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}>
+        <div className="flex items-center gap-1">
+          <button
+            type="button" aria-label="Back" onClick={onBack}
+            className="flex h-9 w-9 shrink-0 items-center justify-center"
+          >
+            <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
+          </button>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[17px] font-extrabold"
+                  style={{ color: INK, letterSpacing: "-0.02em" }}>
+              {title}
+            </span>
+            <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{note}</span>
+          </span>
+          <span className="shrink-0 pr-2 font-mono text-[10px] uppercase"
+                style={{ color: FAINT, letterSpacing: ".14em" }}>
+            Surat depot
+          </span>
+        </div>
+        <div className="px-2 pt-2">
+          <CustomerSearchInput value={query} onChange={onQuery} autoFocus />
+        </div>
+      </div>
+      {children}
+    </main>
+  );
+}
 
 /**
  * "Orbit", set as TEXT.

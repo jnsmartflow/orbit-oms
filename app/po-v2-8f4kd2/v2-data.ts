@@ -312,6 +312,26 @@ export function mixToWhite(hex: string, amount: number): string {
 /** How far the family tint is washed out behind the tile art. */
 export const TILE_WASH = 0.55;
 
+/**
+ * The thumbnail for a cart line, looked up by its catalog join key.
+ *
+ * Built once at module load rather than searched per render: the review screen
+ * calls this for every line on every keystroke in the notes field.
+ *
+ * A SEARCHED NON-TILE product is not in this map — there are 143 catalog
+ * products and only 32 tiles — so it gets the neutral fill and no image, the
+ * same treatment as the eight tiles whose art has not arrived.
+ */
+const TILE_ART = new Map<string, { src: string | null; wash: string }>();
+for (const family of FAMILIES) {
+  const wash = mixToWhite(family.tint, TILE_WASH);
+  for (const tile of family.tiles) TILE_ART.set(tile.sap, { src: tileImage(tile.slug), wash });
+}
+
+export function tileArtFor(sap: string): { src: string | null; wash: string } {
+  return TILE_ART.get(sap) ?? { src: null, wash: FILL };
+}
+
 // ── Pack formatting ────────────────────────────────────────────────────────
 
 /**

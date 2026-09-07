@@ -3,7 +3,7 @@
 import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
   BRAND, DIVIDER, FAINT, INK, MUTED, RULE, VIOLET,
-  chipStyle, packRows, unitsIn,
+  chipStyle, packRows, tileArtFor, unitsIn,
   type ApiCustomer, type V2CartLine, type V2Marker, type V2Order,
 } from "./v2-data";
 
@@ -182,18 +182,49 @@ export default function ReviewScreen({
       </div>
 
       <div>
-        {lines.map((line) => (
+        {lines.map((line) => {
+          const art = tileArtFor(line.tileSap);
+          return (
           <div
             key={line.id}
             className="flex items-start gap-3 px-4"
             style={{ borderTop: `1px solid ${DIVIDER}`, paddingTop: 14, paddingBottom: 14 }}
           >
+            {/* The tin, on its family wash — the same square the board uses, at
+                46px. An image-less product gets the plain wash, exactly as its
+                tile does, rather than a placeholder glyph. */}
+            <span
+              className="relative block shrink-0 overflow-hidden"
+              style={{ width: 46, height: 46, borderRadius: 11, background: art.wash }}
+            >
+              {art.src && (
+                <img
+                  src={art.src} alt="" aria-hidden
+                  width={600} height={600}
+                  decoding="async" loading="lazy"
+                  className="block h-full w-full"
+                  // MULTIPLY for the same reason as the board: every file is an
+                  // opaque white square, so painting it normally would cover
+                  // the wash and leave 46px of white.
+                  style={{ objectFit: "contain", mixBlendMode: "multiply" }}
+                />
+              )}
+            </span>
+
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-semibold" style={{ color: INK }}>
+              {/* 🔴 THE NAME IS NEVER TRUNCATED, AND THE IMAGE NEVER WINS.
+                  At 46px the tins are very nearly indistinguishable — four
+                  Weathershield tubs, four Promise tubs, all the same shape in
+                  the same blue. The photo helps him FIND the line in a list;
+                  only the name tells him WHICH PRODUCT it is. So "Protect
+                  Dustproof" wraps to a second line rather than becoming
+                  "Protect Dust…", and if a longer name ever arrives it wraps
+                  again. No truncate, no line-clamp, deliberately. */}
+              <p className="text-[15px] font-semibold leading-snug" style={{ color: INK }}>
                 {line.label}
               </p>
               {line.option && (
-                <p className="truncate text-[11.5px] font-extrabold uppercase"
+                <p className="mt-0.5 truncate text-[11.5px] font-extrabold uppercase"
                    style={{ color: VIOLET, letterSpacing: ".06em" }}>
                   {line.option}
                 </p>
@@ -208,6 +239,10 @@ export default function ReviewScreen({
                 `min-w-0` lets it shrink again; stacking the packs (below) means
                 the widest child is now one short row, so it never needs to. */}
             <div className="min-w-0 text-right">
+              {/* Pack figures unchanged. The per-line "N units" subtotal that
+                  used to sit under them is GONE: it was a number nobody acts
+                  on — he orders packs, the depot picks packs, and the only
+                  total that matters is the order's, which is still below. */}
               {packRows(line).map(({ label, qty }) => (
                 <p key={label}
                    className="whitespace-nowrap font-mono text-[13px] tabular-nums"
@@ -215,7 +250,6 @@ export default function ReviewScreen({
                   {label} ×{qty}
                 </p>
               ))}
-              <p className="text-[11px]" style={{ color: MUTED }}>{unitsIn(line.qtys)} units</p>
             </div>
             <button
               type="button" aria-label={`Remove ${line.label}`}
@@ -225,7 +259,8 @@ export default function ReviewScreen({
               <X className="h-4 w-4" strokeWidth={2.5} style={{ color: FAINT }} />
             </button>
           </div>
-        ))}
+          );
+        })}
 
         <div className="flex items-center justify-between px-4 py-2.5"
              style={{ borderTop: `1px solid ${DIVIDER}` }}>
