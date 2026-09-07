@@ -7,8 +7,8 @@ import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
-  baseChipLabel, boardTileArtFor, formatPack, isLightHex, packsOf, shadeHex,
-  snapToBox, sortBases, stepForLabel, tileArtFor, unitsIn, variantImage,
+  baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isLightHex, packsOf,
+  shadeHex, snapToBox, sortBases, stepForLabel, tileArtFor, unitsIn, variantImage,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
   type V2ResolvedMember, type V2ResolvedTile,
 } from "./v2-data";
@@ -58,12 +58,22 @@ import {
 //
 // ── THREE FIXED PLACES, 2026-09-07 ─────────────────────────────────────────
 //
-// A tile can hold several PRODUCTS. They live in a horizontal STRIP under the
-// title. Nothing drills, nothing is behind a back arrow:
+// A tile can hold several PRODUCTS. Nothing drills, nothing is behind a back
+// arrow:
 //
-//   STRIP  the products in this tile — only when there is more than one
-//   RAIL   the selected product's bases and shades, exactly as it always was
+//   STRIP  the products in this tile — only when the rail is busy holding
+//          colours, which is the strip-products LAYOUT below
+//   RAIL   the selected product's options — or, on a tile whose products have
+//          no options at all, the products themselves
 //   PANE   that option's packs
+//
+// 🔴 WHERE THE PRODUCTS GO IS A PROPERTY OF THE TILE, computed once from its
+// members and pinned for as long as the drawer is open — see `Layout`. The
+// rail-products case is not a special case bolted on: SEVEN of the thirty-six
+// tiles are made entirely of products with nothing to choose (Crack Fillers,
+// Thinners, FBC Advance's eleven), and for those a horizontal strip over an
+// empty rail was two zones spent saying one thing. A column says it once, holds
+// eleven without a swipe, and gives every name room to be read.
 //
 // 🔴 THE TWO-LEVEL RAIL AND ITS "‹" CHEVRON ARE GONE. They shipped for one
 // commit and were wrong: a rail that is sometimes products and sometimes
@@ -87,6 +97,51 @@ import {
 // --vvh / --vvo viewport pinning are untouched by any of this.
 
 type Tab = "base" | "shade";
+
+/**
+ * 🔴 WHERE THE PRODUCTS LIVE. Decided ONCE PER TILE, never per selection.
+ *
+ *   single          one product. No strip, no product picker at all — the rail
+ *                   is its options, exactly as it always was. Eighteen tiles.
+ *   rail-products   several products and NOT ONE of them has an options level.
+ *                   The rail has nothing else to hold, so it holds the products
+ *                   and the pane holds the packs. Seven tiles — and it is the
+ *                   right shape for them: FBC Advance has ELEVEN members, which
+ *                   is three sideways swipes in a strip and one flick down in a
+ *                   column, with every name readable instead of clipped.
+ *   strip-products  several products, at least one with an options level.
+ *                   Products across the top, that product's options in the
+ *                   rail. Eleven tiles.
+ */
+type Layout = "single" | "rail-products" | "strip-products";
+
+/**
+ * 🔴 THE TWO TILES THAT KEEP A BASE / SHADE TOGGLE. NAMED, NOT COUNTED.
+ *
+ * Gloss (38 options: 6 bases, 32 shades) and Super Satin (14: 7 and 7) carry
+ * colour ranges wide enough that one combined column is a long scroll with
+ * nowhere to jump to. Everywhere else the toggle was chrome over a list short
+ * enough to read whole — Promise Enamel 10, Stay Bright 7, Pearl Glo 11 — and
+ * it cost a tap to discover that the other group held two things.
+ *
+ * ⚠ IT MUST NOT BE A COUNT, AND THE LIVE DATA IS WHY: Protect Dustproof has
+ * FIFTEEN options, one MORE than Super Satin. Any threshold that keeps Super
+ * Satin keeps Dustproof, and Dustproof is precisely the tile the toggle is
+ * being taken off. There is no number that separates them, because what
+ * separates them is not size — it is that one range is browsed and the other is
+ * looked up. That is a curation judgement about two specific products, so it is
+ * written as two specific names.
+ *
+ * THE DAY A THIRD TILE WANTS IT: add its sap here and say in the commit which
+ * range grew and why. Do NOT "generalise" this back into a rule — that is
+ * exactly how Dustproof gets its toggle back by accident.
+ *
+ * Keyed on the MEMBER's sap, not on the tile key, because a toggle belongs to a
+ * product's option list and a tile can hold sixteen products. Both names here
+ * are single-member tiles today, so the two happen to coincide; keying on the
+ * member is what stays correct if either is ever merged into a bigger tile.
+ */
+const TOGGLE_MEMBERS: ReadonlySet<string> = new Set(["GLOSS", "SUPER SATIN"]);
 
 /**
  * One product inside the open tile, normalised.
@@ -142,10 +197,35 @@ function hasOptions(m: Member, r: Rails): boolean {
   return m.mode !== "flat" && r.bases.length + r.shades.length > 0;
 }
 
-/** Rail geometry, in one place because "roomy" is a measured requirement. */
-const RAIL_W   = 60;   // the column, gutters included
-const TILE     = 44;   // swatch / text tile, square
-const TILE_GAP = 12;   // between tiles — the brief's floor is 10
+/**
+ * Rail geometry, in one place because "roomy" is a measured requirement.
+ *
+ * 🔴 104px OF RAIL, 60px SQUARES, AND THE NAME UNDER THE SQUARE.
+ *
+ * It was a 60px column of 44px chips with the word crammed INSIDE the box —
+ * which is what set a nine-letter base name at 8.5px, clipped, on the tile
+ * whose whole job was to identify it. A name has no business inside a picture
+ * frame. The square is now only ever a PICTURE (a tin, a colour, or a base's
+ * number set large), and the word sits underneath it with the full width of
+ * the cell to itself.
+ *
+ * 60px is the size the product chip already uses in the strip, so a tile in the
+ * rail and a tile in the strip are visibly the same object — which is the point
+ * of merging them into one component. It is also the smallest square a real
+ * 600x600 tin photo reads as deliberate in rather than incidental.
+ *
+ * 🔴 THE 44px CAME OUT OF THE PACK ROW'S DEAD GAP, NOT OUT OF A TAP TARGET.
+ * A pack row is a short label — "100ML" is the widest anywhere on the board —
+ * against a right-aligned stepper, and everything between them was air. At
+ * 390px the pane is now 285 wide: 253 inside its px-4, less the 118px stepper
+ * and the 12px gap, leaves 123px for a label that needs about 45. The +/- stay
+ * 36px square — they are tapped by a man on a warehouse floor wearing gloves
+ * and they are not a budget.
+ */
+const RAIL_W    = 104;  // the column, gutters and border included
+const RAIL_CELL = 88;   // the tile's cell inside it — square plus name
+const RAIL_TILE = 60;   // the square itself, which is a picture and never a word
+const TILE_GAP  = 12;   // between tiles — the brief's floor is 10
 
 /**
  * Product-strip geometry.
@@ -391,24 +471,67 @@ export default function ProductDrawer({
     setQuery("");
   }
 
-  const onShade = tab === "shade" ? rails.shades.length > 0 : rails.bases.length === 0;
-  const column: V2Option[] = onShade ? rails.shades : rails.bases;
   /**
-   * What the column holds, which is what decides how a tile draws itself:
-   *
-   *   member   text tiles, always — a product name is never a colour
-   *   base     text tiles, always — see RailTile
-   *   shade    a hex is a swatch, no hex is a text tile
-   *   variant  a file is a picture, no file is a text tile
-   *   mixed    a searched non-tile's single undifferentiated list; as shade
+   * 🔴 THE LAYOUT IS A PROPERTY OF THE TILE. It reads `members` and
+   * `railsBy` — both memoised on the tile — and nothing else, so it CANNOT
+   * change while the drawer is open. That is the whole point: a drawer that
+   * reshapes itself when you tap a product moves the next target out from under
+   * the thumb, and the man doing it is holding the phone in one hand.
    */
-  const columnKind: RailKind = rails.hasVariants ? "variant"
-    : !cur.resolved.curated ? "mixed"
-    : onShade ? "shade" : "base";
+  const layout: Layout = !isMerged ? "single"
+    : members.every((m) => !hasOptions(m, railsBy[m.sap])) ? "rail-products"
+    : "strip-products";
+  /** In this one layout the rail's rows are PRODUCTS, for every member. */
+  const railHoldsProducts = layout === "rail-products";
+
+  /**
+   * Whether the OPTIONS column renders. This is per member and has to be — no
+   * layout rule can give Cement Primer WB a colour to choose, and Exterior
+   * Acrylic Primer holds six products of which exactly one has options.
+   *
+   * 🔴 AND NOTHING A THUMB AIMS AT MOVES WHEN IT CHANGES. The rail is on the
+   * LEFT and the pack row's stepper is right-aligned against the sheet edge, so
+   * dropping the rail widens the pane leftwards: the +/- buttons stay exactly
+   * where they were and only the label — which is not a tap target — slides
+   * left. That is what makes a per-member RAIL safe where a per-member LAYOUT
+   * would not be.
+   */
+  const showRail = railHoldsProducts || curHasOptions;
+
+  /**
+   * 🔴 TWO NAMED PRODUCTS, NOT A COUNT — see TOGGLE_MEMBERS. Everywhere else
+   * the rail now shows ONE combined column: the bases first in their numbered
+   * sequence, then the shades in 90-day sales order.
+   */
+  const showToggle = !railHoldsProducts && TOGGLE_MEMBERS.has(cur.sap) &&
+    rails.bases.length > 0 && rails.shades.length > 0;
+
+  const onShade = tab === "shade" ? rails.shades.length > 0 : rails.bases.length === 0;
+  /**
+   * 🔴 ONE LIST UNLESS THE PRODUCT IS ONE OF THE NAMED TWO.
+   *
+   * With a toggle, the group he is on. Without one, BOTH groups concatenated:
+   * bases first in the numbered sequence sortBases left them in, then the
+   * shades in sales order. The two are never confusable in a combined column,
+   * because a base draws its number large inside the square while a shade draws
+   * its own colour — the join is visible without a heading over it.
+   */
+  const column: V2Option[] = showToggle
+    ? (onShade ? rails.shades : rails.bases)
+    : rails.bases.concat(rails.shades);
+  /**
+   * 🔴 EACH TILE DECIDES FOR ITSELF NOW. A column-wide "kind" cannot survive a
+   * list that holds both groups at once, so the base/shade/variant/mixed enum
+   * is gone and BigTile asks isBaseOption() — the same rule that split the two
+   * groups in the first place. A base is therefore a numbered square wherever
+   * it appears and a shade is its own colour wherever it appears, which is the
+   * property the enum kept breaking the moment the two lists were shown
+   * together.
+   */
   /** The family wash a variant's tin sits on, exactly as on the board. */
   const wash = tile ? boardTileArtFor(tile.key).wash : tileArtFor(product.sap).wash;
 
-  /** The rail is the current product's options, and only ever that. */
+  /** The options the rail lists, filtered by the search when it is open. */
   const shown = useMemo<V2Option[]>(() => {
     const q = query.trim();
     if (q.length === 0) return column;
@@ -416,6 +539,30 @@ export default function ProductDrawer({
     const byId = new Map(column.map((o) => [o.row.id, o]));
     return ranked.map((r) => byId.get(r.id)).filter((o): o is V2Option => !!o);
   }, [query, column]);
+
+  /**
+   * 🔴 AND THE SAME FOR THE PRODUCT LEVEL, so the magnifier is not a dead
+   * control on the seven tiles whose rail holds products. FBC Advance's rail is
+   * eleven of them; typing "putty" should cut it to one, exactly as typing a
+   * colour cuts an options column. Same matcher, same shape, same behaviour.
+   *
+   * A member is matched through the ROW the catalog join gave it — its
+   * no-option row where it has one, otherwise the first row of its pool —
+   * because that row is what carries the search tokens.
+   */
+  const shownMembers = useMemo<Member[]>(() => {
+    const q = query.trim();
+    if (q.length === 0) return members;
+    const rowOf = (m: Member): ApiProduct | null =>
+      m.resolved.noOptionRow ?? m.pools.all[0]?.row ?? m.resolved.bases[0]?.row ?? null;
+    const rows = members.map(rowOf).filter((r): r is ApiProduct => r !== null);
+    const order = new Map(rankProductsForQuery(rows, q).map((r, i) => [r.id, i]));
+    const rank = (m: Member): number => {
+      const r = rowOf(m);
+      return r === null ? -1 : order.get(r.id) ?? -1;
+    };
+    return members.filter((m) => rank(m) >= 0).sort((a, b) => rank(a) - rank(b));
+  }, [query, members]);
 
   // 🔴 THE SELECTION IS RESOLVED AGAINST THE WHOLE POOL, NOT THE VISIBLE LIST.
   // It used to be looked up in the list on screen, which collapsed back to the
@@ -487,15 +634,6 @@ export default function ProductDrawer({
   // FLAT is one pack for the whole product, so the label is stated once in the
   // header instead of on every row.
   const flatPack = matrixMode ? (packsOf(options.map((o) => o.row))[0] ?? "") : "";
-  /**
-   * The rail exists when the CURRENT PRODUCT has options. A tile of products
-   * that have none — Damp Protect, Crack Filler — shows its strip and its
-   * packs and no rail at all, which is exactly what a one-row product has
-   * always done.
-   */
-  const showRail = curHasOptions;
-  /** Both groups, or no toggle. */
-  const showToggle = rails.bases.length > 0 && rails.shades.length > 0;
 
   /** The key the currently-selected option writes under. "" = no options. */
   const optionKey = selected ?? "";
@@ -637,6 +775,20 @@ export default function ProductDrawer({
     />
   );
 
+  /**
+   * 🔴 WHAT THE BODY IS, ASKED ONCE. A FLAT product renders every option with
+   * its own stepper; everything else renders the selected option's packs. It is
+   * the same answer with or without a rail beside it, which is why Velvetino —
+   * flat, and one of four products on a rail-products tile — gets its GOLD and
+   * SILVER rows in the pane instead of falling through to a single-option pack
+   * list that could not reach them.
+   */
+  const paneBody = matrixMode ? (
+    <FlatBody options={options} pack={flatPack} matrix={matrix[cur.sap] ?? {}}
+              onStep={(o, p, d) => stepCell(cur.sap, o, p, d)}
+              onType={(o, p, u) => typeCell(cur.sap, o, p, u)} />
+  ) : packList;
+
   return (
     <V2Sheet onClose={onClose} footer={footer} fixedHeight>
         {/* ── HEADER ────────────────────────────────────────────────────── */}
@@ -677,24 +829,39 @@ export default function ProductDrawer({
         </div>
 
         {/* ── THE PRODUCT STRIP ─────────────────────────────────────────────
-            🔴 ONLY WHEN THE TILE HOLDS MORE THAN ONE. A single-product tile
-            renders nothing here and is the drawer it always was.
+            🔴 ONLY IN THE strip-products LAYOUT. A single-product tile renders
+            nothing here, and the seven rail-products tiles put their members in
+            the rail instead — showing the same list in both places would be
+            saying one thing twice on a 390px screen.
+
+            🔴 IT HAS ITS OWN ZONE NOW. It used to float on the same white as
+            the title with nothing between them, so the chips read as part of
+            the heading rather than as the control that changes the rest of the
+            sheet. A ground and a rule above and below — FILL and RULE, both
+            already in this file — say "the thing above is a heading, this is a
+            picker". No token is invented and nothing in the header moves.
 
             ⚠ overflow-x IS DELIBERATE AND IS NOT THE BANNED KIND. The standing
-            rule is that the PAGE must never drag sideways at 390px, and it
-            does not: this is a contained scroller with its own bounds, the way
-            a carousel is. Sixteen products cannot wrap and must not be cut. */}
-        {isMerged && (
+            rule is that the PAGE must never drag sideways at 390px, and it does
+            not: this is a contained scroller with its own bounds, the way a
+            carousel is. Sixteen products cannot wrap and must not be cut. */}
+        {layout === "strip-products" && (
           <div
             className="shrink-0 overflow-x-auto"
-            style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}
+            style={{
+              WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
+              background: FILL,
+              borderTop: `1px solid ${RULE}`,
+              borderBottom: `1px solid ${RULE}`,
+            }}
           >
-            <div className="flex px-4 pb-3" style={{ gap: STRIP_GAP }}>
+            <div className="flex px-4 py-2.5" style={{ gap: STRIP_GAP }}>
               {members.map((m) => (
-                <ProductChip
+                <BigTile
                   key={m.sap}
                   label={m.label}
-                  wash={wash}
+                  cell={STRIP_CELL} square={STRIP_TILE} lines={2}
+                  badge={null} fill={undefined} image={null} wash={wash}
                   selected={m.sap === cur.sap}
                   carrying={unitsOnMember(m.sap)}
                   onSelect={() => selectMember(m.sap)}
@@ -704,22 +871,18 @@ export default function ProductDrawer({
           </div>
         )}
 
-        {/* 🔴 FLAT IS FLAT WHETHER OR NOT THE TILE IS MERGED. showRail now
-            asks the CURRENT PRODUCT, so a flat member (Velvetino in VT
-            Specialty, M900 in More Enamels) would otherwise fall through to the
-            single-option pack list and its shades would be unreachable — GOLD
-            and SILVER with no way to choose between them. The strip sits above
-            this either way. */}
-        {matrixMode ? (
-          <FlatBody options={options} pack={flatPack} matrix={matrix[cur.sap] ?? {}}
-                    onStep={(o, p, d) => stepCell(cur.sap, o, p, d)}
-                    onType={(o, p, u) => typeCell(cur.sap, o, p, u)} />
-        ) : !showRail ? (
-          // NO OPTIONS — one row, nothing to choose, so the packs get the whole
-          // sheet. This is not a new code path; it is what falls out of having
-          // no options, and it is the same branch whether the product arrived
-          // alone or as one member of a tile of option-less products.
-          packList
+        {/* 🔴 THE PANE'S BODY IS THE SAME QUESTION IN BOTH BRANCHES — flat, or
+            the selected option's packs — so it is asked once, in `paneBody`,
+            and the branch here is only about whether a rail stands beside it.
+            It used to be a three-way with the flat arm FIRST, which is what
+            once made Velvetino's GOLD and SILVER unreachable. */}
+        {!showRail ? (
+          // NOTHING TO CHOOSE — no options at all, or a flat product whose
+          // options are already every row of the body. The packs get the whole
+          // sheet. Not a new code path: it is what falls out of having no
+          // options, and it is the same branch whether the product arrived
+          // alone or as one member of a tile.
+          paneBody
         ) : (
         <>
           {/* ── THE SEARCH, ONLY WHEN ASKED FOR ──────────────────────────
@@ -737,9 +900,12 @@ export default function ProductDrawer({
                   type="text" inputMode="search" autoComplete="off" autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder={rails.hasVariants ? "Find"
-                    : tab === "shade" ? "Find a shade" : "Find a base"}
-                  aria-label="Filter the options in the rail"
+                  placeholder={railHoldsProducts ? "Find a product"
+                    : rails.hasVariants ? "Find"
+                    : showToggle ? (tab === "shade" ? "Find a shade" : "Find a base")
+                    // ONE combined column, so neither word is the whole truth.
+                    : "Find a colour"}
+                  aria-label="Filter the rail"
                   // 16px, or Safari zooms the page on focus.
                   className="min-w-0 flex-1 bg-transparent py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
                   style={{ color: INK }}
@@ -755,7 +921,7 @@ export default function ProductDrawer({
             </div>
           )}
 
-          {query.trim().length > 0 && shown.length === 0 && (
+          {query.trim().length > 0 && (railHoldsProducts ? shownMembers : shown).length === 0 && (
             <p className="shrink-0 px-4 pb-2.5 text-[12.5px]" style={{ color: MUTED }}>
               Nothing in this list matches {query.trim()}
             </p>
@@ -763,13 +929,23 @@ export default function ProductDrawer({
 
           <div className="flex min-h-0 flex-1">
             {/* ── THE RAIL ──────────────────────────────────────────────────
-                ONE column. 60px wide with an 8px gutter either side, so a 44px
-                tile is centred and its selected ring (5.5px) and count badge
-                (6px) both clear the edges without an overflow-x. */}
+                ONE column, 104px wide: an 88px cell with an 8px gutter either
+                side, holding a 60px square that centres with 14px to spare —
+                enough for the selected ring (4px) and for the count badge,
+                which now rides INSIDE the square's top-right corner instead of
+                hanging off it. Nothing overflows, so there is still no
+                overflow-x anywhere in this component. */}
             <div
               className="shrink-0 overflow-y-auto"
               style={{
                 width: RAIL_W, borderRight: `1px solid ${RULE}`,
+                // 8px of gutter each side, so the column's CONTENT box is
+                // exactly RAIL_CELL. Everything inside — the tiles and the
+                // toggle's w-full — is then the same 88px wide, and the tile's
+                // 4px selected ring has 14px of clearance either way. Tailwind
+                // sets border-box, so this is inside the 104, not added to it.
+                paddingLeft: (RAIL_W - RAIL_CELL) / 2,
+                paddingRight: (RAIL_W - RAIL_CELL) / 2,
                 paddingTop: 10,
                 paddingBottom: "calc(28px + env(safe-area-inset-bottom))",
               }}
@@ -788,18 +964,42 @@ export default function ProductDrawer({
                     <GroupButton label="Shade" active={tab === "shade"} onClick={() => switchTab("shade")} />
                   </div>
                 )}
-                {shown.map((opt) => (
-                  <RailTile
-                    key={opt.value}
-                    value={opt.value}
-                    kind={columnKind}
-                    image={columnKind === "variant" ? variantImage(cur.sap, opt.value) : null}
-                    wash={wash}
-                    selected={selected === opt.value}
-                    carrying={unitsOn(cur.sap, opt.value)}
-                    onSelect={() => selectOption(opt.value)}
-                  />
-                ))}
+                {railHoldsProducts
+                  ? shownMembers.map((m) => (
+                      <BigTile
+                        key={m.sap}
+                        label={m.label}
+                        cell={RAIL_CELL} square={RAIL_TILE} lines={3}
+                        badge={null} fill={undefined} image={null} wash={wash}
+                        selected={m.sap === cur.sap}
+                        carrying={unitsOnMember(m.sap)}
+                        onSelect={() => selectMember(m.sap)}
+                      />
+                    ))
+                  : shown.map((opt) => (
+                      <BigTile
+                        key={opt.value}
+                        label={opt.value}
+                        cell={RAIL_CELL} square={RAIL_TILE} lines={3}
+                        // 🔴 A SHADE IS ITS OWN PICTURE. A BASE IS NOT — a
+                        // tinting base's colour is not the colour of the paint
+                        // that comes out of it, which is why BRILLIANT WHITE
+                        // standing among 90/92/93/94 stopped being a near-white
+                        // square. A base draws its SHORT form large inside the
+                        // square (BW, 90, GREEN) with its full name underneath,
+                        // so the sequence keeps the shape that makes it
+                        // scannable and the option is still spelled out.
+                        // Scoped by isBaseOption, so BRILLIANT WHITE keeps its
+                        // swatch on the products where it is a finished SHADE.
+                        badge={isBaseOption(opt.value) ? baseChipLabel(opt.value) : null}
+                        fill={isBaseOption(opt.value) ? undefined : shadeHex(opt.value)}
+                        image={variantImage(cur.sap, opt.value)}
+                        wash={wash}
+                        selected={selected === opt.value}
+                        carrying={unitsOn(cur.sap, opt.value)}
+                        onSelect={() => selectOption(opt.value)}
+                      />
+                    ))}
               </div>
             </div>
 
@@ -809,12 +1009,21 @@ export default function ProductDrawer({
                   tap, directly above the quantity. Which PRODUCT it belongs to
                   is answered by the strip above, where the selected tile is
                   ringed. */}
-              {selectedOption && <NameBar value={selectedOption.value} kind={columnKind} />}
+              {/* The thing chosen, named at full size — the check against a
+                  wrong tap, directly above the quantity. When the rail holds
+                  PRODUCTS there is no option to name, so it names the product:
+                  the same guarantee one level up, that the pane always says out
+                  loud what the packs below it belong to. */}
+              <NameBar
+                value={selectedOption ? selectedOption.value : cur.label}
+                hex={selectedOption && !isBaseOption(selectedOption.value)
+                  ? shadeHex(selectedOption.value) : undefined}
+              />
               {/* No empty state. selectedRow is resolved on the first frame for
-                  every one of the 32 products — by the pre-selection above, or
-                  by noOptionRow for the nine that have no options — so the pack
-                  rows are on screen before the sheet finishes sliding up. */}
-              {packList}
+                  every one of the 36 tiles — by the pre-selection above, or by
+                  noOptionRow for the products that have no options — so the
+                  pack rows are on screen before the sheet finishes sliding up. */}
+              {paneBody}
             </div>
           </div>
         </>
@@ -846,193 +1055,134 @@ function GroupButton({ label, active, onClick }: {
 }
 
 /**
- * One option in the rail — a 44px square, and nothing else.
+ * ONE TILE — in the strip or in the rail, for a product, a base or a shade.
  *
- * 🔴 NO NAMES ON A SWATCH, ON ANY PRODUCT. Super Satin included, which is the
- * one that argued hardest for them: five browns as bare squares was the case
- * that produced the swatch+name chip and its ΔE close-pair rule. The rail
- * answers it differently and better — the NAME BAR spells the selection out at
- * 15px the instant it is tapped, so the confirmation is bigger than a caption
- * ever was and it is in the place he is already looking, next to the packs.
- * A caption under every tile would just rebuild the text row this replaces.
+ * 🔴 ONE COMPONENT, BECAUSE THEY WERE ALWAYS ONE OBJECT. A square, a name under
+ * it, a violet ring when it is chosen and a violet count when it is carrying
+ * units. It used to be two components drawing two different things at two
+ * different sizes, and the rail's version trapped the word INSIDE the square,
+ * at 8.5px, clipped. Merging them is what let the rail's tile grow to the size
+ * the strip's already was, and it is what makes "selected" look like one thing
+ * everywhere in this drawer.
  *
- * AN OPTION WITH NO HEX IS A TEXT TILE — same square, mono, the short name.
- * That is the whole rule; it is decided per option, not per row. A wrong colour
- * is worse than no colour, so an unmapped name never gets a guessed square.
+ * THE SQUARE, in precedence order:
+ *   image   a real tin photo — the five Smart Choice variants today, and every
+ *           member the day the product photos arrive
+ *   fill    a SHADE's own colour, which is the thing it actually is
+ *   badge   a BASE's short form (BW, 90, GREEN) set large, because a tinting
+ *           base has no colour worth showing and its number IS its identity
+ *   wash    the family tint — the board's own treatment for art that has not
+ *           arrived, which a salesman has already seen on the board
  *
- * 🔴 A BASE IS NEVER A SWATCH, EVEN WHEN A COLOUR EXISTS FOR IT. BRILLIANT
- * WHITE has a hex (#FAF8F2) and used to render as a near-white square in the
- * middle of 90, 92, 93 and 94. It is a tinting base standing in a column of
- * numbered tinting bases, and it belongs with them as the word BW — a base's
- * own colour is not the colour of the paint that comes out of it, so the square
- * was saying nothing and costing the sequence its shape. Scoped to the BASE
- * column: if BRILLIANT WHITE ever appears as a SHADE, it keeps its swatch,
- * which is why this asks the column and not the name.
+ * 🔴 THE NAME IS ALWAYS UNDER IT, ALWAYS IN FULL. Even under a badge: the
+ * square says "90" and the line beneath says "90 BASE", so the sequence keeps
+ * the shape that makes it scannable without the option going unnamed.
  *
- * 🔴 A VARIANT WITH A FILE IS A PICTURE. Five Smart Choice buckets are five
- * different products, and their tins are different colours — red, cream, navy,
- * blue-silver — so at 44px the tin separates them where a word this small
- * struggles. A variant with no file keeps its text tile, and a mixed column is
- * fine: telling them apart is the point and both forms do that. Bases and
- * shades never get a picture, because there the tin is the SAME tin.
- *
- * `title` / `aria-label` carry the full name for anyone who cannot use colour.
+ * WHEN THE MEMBER PHOTOS ARRIVE this is a drop-in — pass `image` and nothing
+ * about the layout moves, because the square is a fixed size and the name lives
+ * in its own cell below rather than inside it.
  */
-type RailKind = "base" | "shade" | "variant" | "mixed";
-
-/**
- * ONE PRODUCT IN THE STRIP — a 56px square with its name under it.
- *
- * 🔴 THE TREATMENT IS THE BOARD'S OWN ART-LESS TILE, NOT A NEW ONE: the family
- * wash, radius 14, no border, the violet count badge in the same corner. Every
- * member's slug is unset today, so every chip is the empty tinted square the
- * board shows for a product whose art has not arrived — which is a treatment
- * this app already has and a salesman has already seen.
- *
- * WHEN THE FILES ARRIVE this must be a drop-in: an <img> inside the same
- * square, objectFit contain, mixBlendMode multiply, and NOTHING about the
- * layout moves. That is why the square is a fixed 56 and the name sits in its
- * own 64px cell below rather than beside it.
- */
-function ProductChip({ label, wash, selected, carrying, onSelect }: {
-  label: string; wash: string; selected: boolean; carrying: number; onSelect: () => void;
+function BigTile({ label, cell, square, lines, badge, fill, image, wash, selected, carrying, onSelect }: {
+  label: string; cell: number; square: number; lines: number;
+  badge: string | null; fill?: string; image: string | null; wash: string;
+  selected: boolean; carrying: number; onSelect: () => void;
 }): React.JSX.Element {
+  const light = fill !== undefined && isLightHex(fill);
   return (
     <button
       type="button"
       aria-pressed={selected}
+      aria-label={carrying > 0 ? `${label}, ${carrying} units` : label}
+      title={label}
       onClick={onSelect}
-      className="flex shrink-0 flex-col items-center gap-1 text-left"
-      style={{ width: STRIP_CELL }}
+      className="flex shrink-0 flex-col items-center gap-1"
+      style={{ width: cell }}
     >
       <span
-        className="relative block overflow-hidden"
+        className="relative flex items-center justify-center overflow-hidden"
         style={{
-          width: STRIP_TILE, height: STRIP_TILE, borderRadius: 14,
-          background: selected ? VIOLET_BG : wash,
-          // The same ring the rail uses, so "selected" means one thing in this
-          // drawer wherever it appears.
-          boxShadow: selected ? `0 0 0 2px #FFFFFF, 0 0 0 4px ${VIOLET}` : undefined,
-        }}
-      >
-        {carrying > 0 && (
-          <span
-            className="absolute flex items-center justify-center rounded-full text-[10px] font-extrabold text-white"
-            style={{ top: 3, right: 3, minWidth: 17, height: 17, padding: "0 5px", background: VIOLET }}
-          >
-            {carrying}
-          </span>
-        )}
-      </span>
-      {/* Two lines, and the word never breaks mid-way — the board's own rule.
-          A name too long for two lines clips rather than hyphenating, which is
-          the lesser of the two wrongs at this size. */}
-      <span
-        className="block w-full text-center"
-        style={{
-          color: selected ? VIOLET : INK,
-          fontSize: 10.5, lineHeight: 1.2, fontWeight: selected ? 700 : 500,
-          display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2,
-          overflow: "hidden", overflowWrap: "normal", wordBreak: "normal", hyphens: "none",
-        }}
-      >
-        {label}
-      </span>
-    </button>
-  );
-}
-
-function RailTile({ value, kind, image, wash, selected, carrying, onSelect }: {
-  value: string; kind: RailKind; image: string | null; wash: string;
-  selected: boolean; carrying: number; onSelect: () => void;
-}): React.JSX.Element {
-  const hex = swatchFor(value, kind);
-  return (
-    // A bare swatch has no room for a badge INSIDE it without covering the
-    // colour, which is the one thing it exists to show. The count rides the
-    // top-right corner instead, on the wrapper.
-    <span className="relative block shrink-0" style={{ width: TILE, height: TILE }}>
-      <button
-        type="button"
-        aria-pressed={selected}
-        aria-label={carrying > 0 ? `${value}, ${carrying} units` : value}
-        title={value}
-        onClick={onSelect}
-        className="flex h-full w-full items-center justify-center overflow-hidden"
-        style={{
-          borderRadius: 10,
-          background: image ? wash : hex ?? FILL,
-          // A near-white fill gets a faint inner border, or a white tile on a
+          width: square, height: square, borderRadius: 14,
+          background: image ? wash : fill ?? (selected ? VIOLET_BG : wash),
+          // A near-white fill gets a faint inner border, or a white square on a
           // white sheet is simply not there. A picture sits on the family wash
           // and needs no edge — the tin draws its own.
-          border: image ? "none"
-            : hex ? (isLightHex(hex) ? "1px solid rgba(0,0,0,.15)" : "none")
-            : `1px solid ${RULE}`,
-          // A VIOLET RING WITH A WHITE GAP. The gap is what makes it read on a
-          // dark colour: a violet ring straight against #1D1E1F is a violet
-          // edge nobody sees.
-          boxShadow: selected ? `0 0 0 3px #FFFFFF, 0 0 0 5.5px ${VIOLET}` : undefined,
+          border: !image && light ? "1px solid rgba(0,0,0,.15)" : "none",
+          // THE RING, WITH A WHITE GAP. The gap is what makes it read on a dark
+          // colour: violet straight against #1D1E1F is an edge nobody sees.
+          boxShadow: selected ? `0 0 0 2px #FFFFFF, 0 0 0 4px ${VIOLET}` : undefined,
         }}
       >
         {image ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
-            src={image}
-            alt={value}
-            width={600}
-            height={600}
-            decoding="async"
-            loading="lazy"
-            className="block h-full w-full"
+            src={image} alt="" width={600} height={600}
+            decoding="async" loading="lazy" className="block h-full w-full"
             // MULTIPLY, exactly as on the board: every file is an opaque white
             // square, so painted normally it would cover the family wash and
             // every tile would be a white box.
             style={{ objectFit: "contain", mixBlendMode: "multiply" }}
           />
-        ) : hex ? null : <TileWords label={baseChipLabel(value)} />}
-      </button>
-      {carrying > 0 && (
-        <span className="pointer-events-none absolute" style={{ top: -6, right: -6 }}>
-          <ChipCount units={carrying} />
-        </span>
-      )}
-    </span>
+        ) : badge ? (
+          <span
+            className="font-extrabold"
+            style={{
+              color: INK, letterSpacing: "-0.03em", lineHeight: 1,
+              // Two characters is the common case (BW, 90) and gets the whole
+              // square; GREEN and PASTEL step down rather than clip.
+              fontSize: badge.length <= 2 ? 24 : badge.length <= 4 ? 19 : badge.length <= 6 ? 14 : 11,
+            }}
+          >
+            {badge}
+          </span>
+        ) : null}
+        {carrying > 0 && (
+          <span className="pointer-events-none absolute" style={{ top: 3, right: 3 }}>
+            <ChipCount units={carrying} />
+          </span>
+        )}
+      </span>
+      <TileName label={label} lines={lines} selected={selected} />
+    </button>
   );
 }
 
 /**
- * 🔴 THE ONE PLACE "DOES THIS OPTION GET A SWATCH?" IS ANSWERED, so the rail
- * tile and the name bar can never disagree about it — a BW tile above a white
- * square in the name bar would be the drawer contradicting itself on screen.
- */
-function swatchFor(value: string, kind: RailKind): string | undefined {
-  return kind === "base" ? undefined : shadeHex(value);
-}
-
-/**
- * The words inside a text tile, stacked and sized to fit 44px.
+ * The name under a tile — sized to the longest WORD, never broken mid-word.
  *
- * One word per line and the size taken from the LONGEST word, so "Freedom 2in1
- * Primer" reads as three short lines rather than one clipped one. The size ramp
- * is deliberately coarse — four steps, no measuring — because the authoritative
- * name is in the bar the moment the tile is tapped; this only has to be
- * recognisable, not readable at arm's length.
+ * 🔴 THE RAMP IS MEASURED AGAINST CAPITALS, because option names arrive from
+ * the catalog uppercase and uppercase runs about 20% wider per character than
+ * lowercase. In an 88px rail cell: BRILLIANT (nine letters) lands at 10px and
+ * about 56px wide, so "BRILLIANT WHITE" sets as two comfortable lines; TIMBER
+ * GOLDEN BROWN sets at 11px as TIMBER / GOLDEN BROWN; RARE PEARL COPPER as RARE
+ * PEARL / COPPER; SPECIAL TEAK fits on one. The longest single word anywhere in
+ * the catalog is FASTYELLOWGREEN at fifteen, which drops to 9px and about 84px
+ * — still inside the cell, still unbroken.
  *
- * 🔴 THE APP'S OWN SANS, NOT A MONOSPACE. It was mono, which reads as a
- * terminal rather than as a product, and it is the only place in v2 that used
- * one for a NAME. Sans is also narrower per character, so every step of the
- * ramp went UP and fewer names clip than did before.
+ * THE WORD NEVER BREAKS — the board's own rule. A name too long for its lines
+ * clips rather than hyphenating, which is the lesser wrong at this size, and it
+ * cannot cost an order: the NAME BAR above the packs carries the full name the
+ * instant the tile is tapped.
+ *
+ * THREE LINES IN THE RAIL, TWO IN THE STRIP. A vertical column can spend a
+ * line; a horizontal row would have to give that height to every tile in it.
+ * The third line is what lets "Epoxy Insulator Hardener" read whole.
  */
-function TileWords({ label }: { label: string }): React.JSX.Element {
-  const words = label.split(/\s+/).filter(Boolean);
-  const longest = words.reduce((n, w) => Math.max(n, w.length), 0);
-  const size = longest <= 3 ? 13 : longest <= 5 ? 11.5 : longest <= 7 ? 10 : 8.5;
+function TileName({ label, lines, selected }: {
+  label: string; lines: number; selected: boolean;
+}): React.JSX.Element {
+  const longest = label.split(/\s+/).reduce((n, w) => Math.max(n, w.length), 0);
+  const size = longest <= 8 ? 11 : longest <= 11 ? 10 : 9;
   return (
     <span
-      className="flex flex-col items-center justify-center font-bold"
-      style={{ color: INK, fontSize: size, lineHeight: 1.15, letterSpacing: "-0.01em" }}
+      className="block w-full text-center"
+      style={{
+        color: selected ? VIOLET : INK,
+        fontSize: size, lineHeight: 1.2, fontWeight: selected ? 700 : 500,
+        display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines,
+        overflow: "hidden", overflowWrap: "normal", wordBreak: "normal", hyphens: "none",
+      }}
     >
-      {words.map((w, i) => <span key={`${w}-${i}`}>{w}</span>)}
+      {label}
     </span>
   );
 }
@@ -1049,11 +1199,14 @@ function TileWords({ label }: { label: string }): React.JSX.Element {
  * 🔴 NO PICTURE HERE, EVER — not even for a variant that has one. The tin is
  * already in the rail, two centimetres to the left and still on screen; a
  * second copy of it beside the name is the same information twice and it costs
- * the pane the room this whole step was about. The swatch is shown on the same
- * terms the tile draws it (swatchFor), so the two always agree.
+ * the pane the room this whole step was about.
+ *
+ * The swatch is passed IN, on exactly the terms the tile drew it — a base gets
+ * none, a shade gets shadeHex — so the rail and the bar can never disagree
+ * about whether a thing has a colour. A "BW" tile above a white square here
+ * would be the drawer contradicting itself on screen.
  */
-function NameBar({ value, kind }: { value: string; kind: RailKind }): React.JSX.Element {
-  const hex = swatchFor(value, kind);
+function NameBar({ value, hex }: { value: string; hex?: string }): React.JSX.Element {
   return (
     <div className="flex shrink-0 items-center gap-2.5 px-4 py-3"
          style={{ borderBottom: `1px solid ${RULE}` }}>
