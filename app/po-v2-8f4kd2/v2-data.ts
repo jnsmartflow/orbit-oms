@@ -433,9 +433,40 @@ export function memberImage(sap: string): string | null {
   return leads !== undefined ? boardTileArtFor(leads).src : null;
 }
 
+/**
+ * 🔴 FOUR TILES WHOSE PICTURE IS ANOTHER FILE'S. AN ALIAS, NOT A COPY.
+ *
+ * SuperClean, VT Eterna, Smart Choice and Promise Sheen had no tile art of
+ * their own, and a photograph of the right product was already on disk under a
+ * product or variant name. Duplicating the bytes under a fifth name would have
+ * worked and been wrong twice over: 100 KB for nothing, and two files that can
+ * drift apart the day one of them is replaced.
+ *
+ * ⚠ IT REDIRECTS THE FILE, NEVER THE SLUG. A tile's slug is also the stem every
+ * VARIANT filename is built from — variantImage() composes
+ * <tile-slug>-<option-slug> — so renaming smart-choice's slug to the file it
+ * borrows would have silently broken all five Smart Choice bucket tins, which
+ * are the one place variant art exists. The alias is consulted here and
+ * nowhere else, so the slug keeps its other job.
+ *
+ * It lives inside tileImage() rather than beside BOARD because po-v2-page.tsx
+ * calls tileImage(tile.slug) directly for the board grid. One redirect, and the
+ * board and the drawer cannot show different pictures for the same tile.
+ */
+const TILE_ART_ALIAS: ReadonlyMap<string, string> = new Map([
+  ["superclean",    "product-superclean"],
+  ["vt-eterna",     "product-vt-eterna"],
+  ["smart-choice",  "smart-choice-acrylic-distemper"],
+  ["promise-sheen", "product-promise-sheen-interior"],
+]);
+
 /** The tile's image URL, or null when there is no file for that slug. */
 export function tileImage(slug: string): string | null {
-  return TILE_IMAGES.has(slug) ? `/category-images/${slug}.webp` : null;
+  const file = TILE_ART_ALIAS.get(slug) ?? slug;
+  // All three presence sets, because an alias deliberately points OUT of
+  // TILE_IMAGES — into a product photo or, for Smart Choice, a variant tin.
+  return TILE_IMAGES.has(file) || MEMBER_IMAGES.has(file) || VARIANT_IMAGES.has(file)
+    ? `/category-images/${file}.webp` : null;
 }
 
 /**
@@ -1651,16 +1682,17 @@ export const BOARD: readonly V2BoardFamily[] = [
       // merging Protect would have put Hi-Sheen's 702 lines one tap further
       // away to rescue the same 94.
       { key: "WS POWERFLEXX", label: "More Exterior", slug: "powerflexx",
+        // 🔴 TRIMMED 9 -> 3 on 2026-09-08. Texture, WS Metallic, WS Tile,
+        // Texture 2mm, Texture 3mm and Smoothover left the board; they are
+        // still ORDERABLE through the search bar, which files a line under the
+        // product's own key. The leader does not move, so the tile KEY does not
+        // move, so no stored line needs migrating — and the ones that were
+        // already saved under WS POWERFLEXX are refiled by v2-storage's case 3
+        // the next time they are read.
         members: [
           { sap: "WS POWERFLEXX",        label: "Powerflexx" },
-          { sap: "TEXTURE",              label: "Texture" },
           { sap: "WS PROTECT RAINPROOF", label: "Protect Rainproof", slug: "product-ws-protect-rainproof" },
-          { sap: "WS METALLIC",          label: "WS Metallic" },
           { sap: "FLOOR PLUS",           label: "Floor Plus" },
-          { sap: "WS TILE",              label: "WS Tile" },
-          { sap: "TEXTURE 2MM",          label: "Texture 2mm" },
-          { sap: "TEXTURE 3MM",          label: "Texture 3mm" },
-          { sap: "SMOOTHOVER",           label: "Smoothover" },
         ] },
     ],
   },
@@ -1722,7 +1754,7 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "CRACKFILLER 5MM",  label: "Crackfiller 5mm", slug: "product-crackfiller" },
           { sap: "CRACKFILLER 10MM", label: "Crackfiller 10mm", slug: "product-crackfiller" },
           { sap: "CRACKFILLER 20MM", label: "Crackfiller 20mm", slug: "product-crackfiller" },
-          { sap: "WATERPROOF PUTTY", label: "Waterproof Putty" },
+          // Waterproof Putty left on 2026-09-08 — search-only, same as above.
         ] },
       // Every member here is a ONE-ROW product with no options at all, which
       // makes this the simplest merged tile on the board: member, then packs.

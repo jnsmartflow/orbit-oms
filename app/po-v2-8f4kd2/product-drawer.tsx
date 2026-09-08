@@ -199,6 +199,22 @@ function hasOptions(m: Member, r: Rails): boolean {
 }
 
 /**
+ * "90 BASE" — a base whose short form is a NUMBER and whose full name is that
+ * number plus the word BASE, so the glyph in the square already says all of it.
+ *
+ * ⚠ THE TEST IS ON THE WHOLE NAME, not just on the short form. "95 BASE PLUS"
+ * would give the short form "95 BASE PLUS" through baseChipLabel (no trailing
+ * " base" to strip), fail this test, and keep its caption — which is right,
+ * because PLUS is information the square is not carrying. Nothing in the
+ * catalog looks like that today; the test is written so that if one arrives it
+ * errs towards saying more rather than less.
+ */
+function numberedBase(value: string): boolean {
+  const v = value.trim().toUpperCase();
+  return /^\d+$/.test(baseChipLabel(v)) && v === baseChipLabel(v) + " BASE";
+}
+
+/**
  * Rail geometry, in one place because "roomy" is a measured requirement.
  *
  * 🔴 104px OF RAIL, 60px SQUARES, AND THE NAME UNDER THE SQUARE.
@@ -1003,6 +1019,20 @@ export default function ProductDrawer({
                         // Scoped by isBaseOption, so BRILLIANT WHITE keeps its
                         // swatch on the products where it is a finished SHADE.
                         badge={isBaseOption(opt.value) ? baseChipLabel(opt.value) : null}
+                        // 🔴 A NUMBERED BASE NEEDS NO CAPTION. The square
+                        // already says 90 in 24px; "90 BASE" underneath adds
+                        // one word, and that word is true of every tile in the
+                        // column. Six of them stacked up read as a paragraph
+                        // where the point was a sequence.
+                        //
+                        // It is scoped to NUMBERS and nothing else, because a
+                        // number is the only short form that says the whole
+                        // name. BW does not — BRILLIANT WHITE keeps its
+                        // caption — and neither does a NAMED base: PASTEL,
+                        // GREEN, METAL and BASECOAT all keep theirs, because
+                        // "PASTEL" alone reads as a colour and the word BASE
+                        // is what says it is not one.
+                        hideLabel={numberedBase(opt.value)}
                         fill={isBaseOption(opt.value) ? undefined : shadeHex(opt.value)}
                         image={variantImage(cur.sap, opt.value)}
                         wash={wash}
@@ -1045,15 +1075,30 @@ export default function ProductDrawer({
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
 
-/** One half of the group toggle. A segmented control, not two tabs: it swaps
- *  the contents of one column rather than moving between two screens. */
+/**
+ * One half of the group toggle. A segmented control, not two tabs: it swaps the
+ * contents of one column rather than moving between two screens.
+ *
+ * 🔴 44px TALL, WHICH IS CLAUDE_UI §60's FLOOR FOR AN INTERACTIVE CONTROL. It
+ * was py-1 — about 22px, half the minimum — and it had been that since the
+ * toggle went back into the rail. It survived because it looked fine on a
+ * trackpad and nobody had missed it with a thumb yet.
+ *
+ * THE HEIGHT IS AFFORDABLE NOW AND WAS NOT BEFORE. When every tile carried a
+ * toggle, 48 extra pixels was a tax on thirty-six drawers; it is now on exactly
+ * two — Gloss and Super Satin — and it scrolls with the rail rather than
+ * costing the sheet any chrome, so the pack rows do not move.
+ *
+ * STILL VERTICAL, not two halves side by side. An 88px rail cell split in two
+ * gives 41px-wide targets, which trades a height violation for a width one.
+ */
 function GroupButton({ label, active, onClick }: {
   label: string; active: boolean; onClick: () => void;
 }): React.JSX.Element {
   return (
     <button
       type="button" onClick={onClick} aria-pressed={active}
-      className="rounded-[8px] py-1 text-[11px] font-bold"
+      className="flex h-11 items-center justify-center rounded-[8px] text-[12px] font-bold"
       style={{
         color: active ? INK : MUTED,
         background: active ? "#FFFFFF" : "transparent",
@@ -1093,9 +1138,13 @@ function GroupButton({ label, active, onClick }: {
  * about the layout moves, because the square is a fixed size and the name lives
  * in its own cell below rather than inside it.
  */
-function BigTile({ label, cell, square, lines, badge, fill, image, wash, selected, carrying, onSelect }: {
+function BigTile({ label, cell, square, lines, badge, hideLabel = false, fill, image, wash,
+                   selected, carrying, onSelect }: {
   label: string; cell: number; square: number; lines: number;
-  badge: string | null; fill?: string; image: string | null; wash: string;
+  badge: string | null;
+  /** The square already says the whole name — see numberedBase(). */
+  hideLabel?: boolean;
+  fill?: string; image: string | null; wash: string;
   selected: boolean; carrying: number; onSelect: () => void;
 }): React.JSX.Element {
   const light = fill !== undefined && isLightHex(fill);
@@ -1162,7 +1211,9 @@ function BigTile({ label, cell, square, lines, badge, fill, image, wash, selecte
           </span>
         )}
       </span>
-      <TileName label={label} lines={lines} selected={selected} />
+      {/* aria-label and title above still carry the full name, so hiding the
+          caption takes nothing away from anyone who cannot read the glyph. */}
+      {!hideLabel && <TileName label={label} lines={lines} selected={selected} />}
     </button>
   );
 }
