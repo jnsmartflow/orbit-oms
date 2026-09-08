@@ -1116,7 +1116,7 @@ export function CustomerMissingSheet({
           </Button>
           <Button
             type="button"
-            className="flex-[2] h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary flex items-center justify-center gap-2"
+            className="flex-[2] h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
             onClick={handleSave}
             disabled={saving}
           >

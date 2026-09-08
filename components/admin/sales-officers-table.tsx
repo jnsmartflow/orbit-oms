@@ -202,7 +202,7 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
             <Upload className="h-3.5 w-3.5" />
             Import File
           </button>
-          <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Sales Officer</Button>
+          <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={openAdd}>+ Add Sales Officer</Button>
         </div>
         <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
@@ -299,7 +299,7 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
             </div>
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
               <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create"}</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create"}</Button>
             </div>
           </form>
         </SheetContent>

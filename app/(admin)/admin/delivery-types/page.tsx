@@ -9,7 +9,7 @@ export default async function DeliveryTypesPage() {
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-lg font-bold" style={{ color: 'var(--navy)' }}>Delivery Types</h1>
+        <h1 className="text-lg font-bold text-ink-900">Delivery Types</h1>
         <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
           Read-only. Seeded at setup — Local and Upcountry.
         </p>

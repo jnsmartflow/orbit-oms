@@ -160,17 +160,35 @@ html, body { overscroll-behavior: none; }
   --t2:          #374151;
   --t3:          #6b7280;
   --t4:          #9ca3af;
-  --navy:        #1a237e;
-  --navy-mid:    #283593;
-  --navy-50:     #e8eaf6;
-  --navy-100:    #c5cae9;
 
-  /* Semantic status */
-  --red:         #dc2626;   --red-bg:    #fef2f2;  --red-bd:    #fecaca;
-  --green:       #16a34a;   --green-bg:  #f0fdf4;  --green-bd:  #86efac;
-  --amber:       #d97706;   --amber-bg:  #fffbeb;  --amber-bd:  #fcd34d;
-  --violet:      #7c3aed;   --violet-bg: #f5f3ff;  --violet-bd: #ddd6fe;
-  --blue:        #2563eb;   --blue-bg:   #eff6ff;  --blue-bd:   #bfdbfe;
+  /* 🔴 NINETEEN TOKENS WERE DELETED FROM HERE ON 2026-09-08 (rebrand step 1),
+     and the reason is the whole argument for the Tailwind palette that replaced
+     them. Gone: the --navy family (--navy / --navy-mid / --navy-50 / --navy-100)
+     and the entire "Semantic status" block (--red / --green / --amber / --violet
+     / --blue, each with its -bg and -bd companion).
+
+     EVERY ONE HAD ZERO READERS. Verified twice by two different expressions,
+     against a positive control that correctly found the 4 readers of --bg and
+     the 2 of --hover-row, so the zeroes are real and not a broken search.
+
+     They were not merely unused — they were being IGNORED. `--violet: #7c3aed`
+     sat here while twenty-six separate sites hand-typed `#7c3aed`, and
+     `--red: #dc2626` sat here while `.oa-btn-danger` twelve lines below wrote
+     `#dc2626` literally. A token nobody reads does not centralise a colour; it
+     just tells the next reader a lie about where the colour lives.
+
+     The replacement is `tailwind.config.ts`'s `brand` / `ink` / `tint` / `ok` /
+     `warn` / `bad` / `data` families, which are reachable as class names and
+     therefore get used. ⚠ THE SAME FATE IS AVAILABLE TO THEM: the palette only
+     earns its keep once step 2 converts the ~790 use sites onto it. Adding
+     tokens and leaving the use sites hand-typed is precisely how this block
+     ended up here (colour spec §4).
+
+     Two navy hexes survive as RAW VALUES, not tokens, and are out of scope for
+     this step: `[data-slot="sheet-title"]` and `.oa-form-section` below both
+     hardcode `#1a237e`. They are admin chrome, and whether navy is a deliberate
+     second identity for the admin panel or simply more drift is an open question
+     in the colour inventory. Do not "finish the job" by changing them here. */
 
   /* Elevation */
   --sh0: 0 1px 2px rgba(0,0,0,.04);
@@ -257,7 +275,10 @@ html, body { overscroll-behavior: none; }
 .oa-badge-warn    { background: #fffbeb; color: #92400e; border-color: #fde68a; }
 .oa-badge-danger  { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
 .oa-badge-blue    { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
-.oa-badge-purple  { background: #faf5ff; color: #6b21a8; border-color: #e9d5ff; }
+/* `.oa-badge-purple` deleted 2026-09-08 — ZERO callers, verified by grep across
+   app/ components/ lib/ before removal. It was the only purple left in this file
+   and purple is the incoming brand, so an unused badge in that family would have
+   read as a deliberate brand badge to the next person. */
 .oa-badge-neutral { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
 
 /* ── Admin Sheet / Form Styling ─────────────────────────────────────────── */
@@ -289,11 +310,13 @@ html, body { overscroll-behavior: none; }
   border-radius: 8px;
   background:    white;
 }
-.oa-sheet-form input:not([type="checkbox"]):not([type="radio"]):focus-visible {
-  border-color: #6366f1 !important;
-  outline:      none;
-  box-shadow:   0 0 0 2px rgba(99,102,241,0.18) !important;
-}
+/* 🔴 The `:focus-visible` override that sat here was DELETED 2026-09-08 (rebrand
+   step 1). It was `border-color: #6366f1 !important` plus a matching indigo ring
+   — a SECOND focus colour, competing with the `focus:border-teal-500
+   focus:ring-teal-500/10` every other input in the app uses (CLAUDE_UI.md §9).
+   Admin sheet inputs now take the app's own focus treatment, which becomes
+   `brand.500` in step 2. The non-focus rule above keeps its geometry and its
+   resting border; only the focus colour went. Same for the textarea rule below. */
 
 /* Textareas inside admin forms */
 .oa-sheet-form textarea {
@@ -301,11 +324,7 @@ html, body { overscroll-behavior: none; }
   border-color:  #e5e7eb;
   border-radius: 8px;
 }
-.oa-sheet-form textarea:focus-visible {
-  border-color: #6366f1 !important;
-  outline:      none;
-  box-shadow:   0 0 0 2px rgba(99,102,241,0.18) !important;
-}
+/* (textarea `:focus-visible` deleted in the same pass — see the note above.) */
 
 /* Select triggers inside admin forms */
 .oa-sheet-form [data-slot="select-trigger"] {
@@ -329,12 +348,25 @@ html, body { overscroll-behavior: none; }
 
 /* ── Admin Button Utilities ──────────────────────────────────────────────── */
 
-.oa-btn-primary {
-  background: #1a237e !important;
-  color:      white !important;
-  border:     none !important;
-}
-.oa-btn-primary:hover { background: #283593 !important; }
+/* 🔴 `.oa-btn-primary` and `.oa-btn-danger` were DELETED 2026-09-08 (rebrand
+   step 1). Do not reintroduce either, and do not add a third.
+
+   `.oa-btn-primary` was `background: #1a237e !important` — NAVY. Thirty-nine
+   buttons carried it, eighteen of them alongside `bg-teal-600`, and the
+   `!important` meant every one of those eighteen rendered navy while its own
+   className said teal. The stylesheet quietly won an argument the JSX did not
+   know it was having, for as long as anyone can date. All thirty-nine now carry
+   `bg-teal-600 hover:bg-teal-700 text-white` at the call site and render what
+   they say. Navy was drift, never a second brand.
+
+   `.oa-btn-danger` was `#dc2626` / hover `#b91c1c` — which are `red-600` and
+   `red-700` EXACTLY, so its two call sites moved to those Tailwind classes with
+   no pixel changing. It bought nothing but the `!important`.
+
+   `.oa-btn-ghost` SURVIVES and still carries `!important` colour. That is known
+   and deferred, not missed: 60 call sites across 24 files, and its three colours
+   (white / #374151 = gray-700 / #e5e7eb = gray-200) are neutral, so it blocks
+   nothing downstream. It is its own job. */
 
 .oa-btn-ghost {
   background: white !important;
@@ -342,13 +374,6 @@ html, body { overscroll-behavior: none; }
   border:     1px solid #e5e7eb !important;
 }
 .oa-btn-ghost:hover { background: #f7f8fa !important; }
-
-.oa-btn-danger {
-  background: #dc2626 !important;
-  color:      white !important;
-  border:     none !important;
-}
-.oa-btn-danger:hover { background: #b91c1c !important; }
 
 /* ── Scrollbar hide utility ──────────────────────────────────────────────── */
 

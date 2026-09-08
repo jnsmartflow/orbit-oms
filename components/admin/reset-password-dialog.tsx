@@ -92,7 +92,7 @@ export function ResetPasswordDialog({
             <Button type="button" variant="outline" className="oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" className="oa-btn-primary" disabled={saving}>
+            <Button type="submit" className="bg-teal-600 hover:bg-teal-700 text-white" disabled={saving}>
               {saving ? "Saving…" : "Update Password"}
             </Button>
           </DialogFooter>

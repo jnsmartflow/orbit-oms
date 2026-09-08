@@ -420,7 +420,7 @@ export function PermissionsManager({ initialPerms }: Props) {
         <h1 className="text-lg font-bold text-teal-700">Permissions</h1>
         <Button
           size="sm"
-          className="oa-btn-primary"
+          className="bg-teal-600 hover:bg-teal-700 text-white"
           disabled={!isDirty || saving}
           onClick={handleSave}
         >

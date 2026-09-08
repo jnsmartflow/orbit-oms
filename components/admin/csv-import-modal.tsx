@@ -186,7 +186,7 @@ export function CsvImportModal({
             <Button
               type="button"
               size="sm"
-              className="oa-btn-primary"
+              className="bg-teal-600 hover:bg-teal-700 text-white"
               onClick={handleConfirm}
               disabled={validCount === 0 || confirming}
             >

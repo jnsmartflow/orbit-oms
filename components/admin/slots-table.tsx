@@ -226,7 +226,7 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
     <>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-bold text-teal-700">Slot Master</h1>
-        <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Slot</Button>
+        <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={openAdd}>+ Add Slot</Button>
       </div>
 
       <div className="oa-table">
@@ -370,7 +370,7 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
               <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Slot"}</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Slot"}</Button>
             </div>
           </form>
         </SheetContent>
@@ -391,7 +391,7 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
             <Button variant="outline" className="oa-btn-ghost" onClick={() => setWarnDialog(null)} disabled={confirming}>
               Cancel
             </Button>
-            <Button variant="destructive" className="oa-btn-danger" onClick={handleForceDeactivate} disabled={confirming}>
+            <Button variant="destructive" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleForceDeactivate} disabled={confirming}>
               {confirming ? "Deactivating…" : "Deactivate Anyway"}
             </Button>
           </DialogFooter>
