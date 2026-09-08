@@ -1426,3 +1426,140 @@ read-only `SELECT`s for the replay and the exemption count.
 - It does not touch the header recompute or the 137 drifted bills.
 - It does not fix the nineteen. They are recorded in `docs/ROADMAP.md` → Import Pipeline → 🔴 P1.
 - It does not change `rowStatus`, and the gate above is the reason.
+
+---
+---
+
+# EMPTY-PAYLOAD SKIP — 2026-09-08, seventh session · commit `a11bf7ee`
+
+## GATE — does the chase window re-submit a skipped OBD? **YES. Proceed.**
+
+Read from `docs/Powershell/Auto-Import-v2.ps1`, not from the docs.
+
+First, a correction of terms: `$ChaseWindowDays = 3` (`:77`) is the **invoice** chase — Phase 9.6
+feeding `?action=pending-invoices` / `?action=patch-headers`. It has nothing to do with re-submitting
+line data. The mechanism that actually re-offers an OBD is the ordinary cycle plus Phase 3 recovery.
+
+**The chain, with line numbers:**
+
+| Step | Evidence | Effect |
+|---|---|---|
+| Pre-check asks the server what already exists | `Invoke-PreCheck` `:634-664` POSTs to `?action=check` and returns only `parsed.existing` | A skipped OBD has **no `orders` row**, so it is not in `existing` and stays in `$newObds` |
+| Today's list is rebuilt every cycle | Phase 6 `:1348-1433` paginates `/data` for `$EffectiveDate` and collects **all** of today's OBDs | The OBD reappears in the candidate list on every run |
+| Phase 6b drops only the existing | `:1437-1451` | The skipped OBD survives the filter |
+| The cycle repeats | v2 header `:27` — Task Scheduler every 10 min. **v3** (`Auto-Import-v3.ps1`, newer on disk) is a "fast lane" firing **every 1 minute**, glancing every minute during BUSY hours | Retry cadence ~10 min (v2) or ~1 min (v3) |
+| Day boundary re-arms recovery | Phase 1 `:1094-1100` — on the first run of a new day, `Write-YesterdayState -Status "pending" … -Attempts 0` and `failed-obds-json.txt` is deleted | Yesterday is queued for a replay |
+| Phase 3 replays past days | `:1221-1280`, bounded by `$MaxRecoveryDays = 3` (`:78`) and floored at `$GoLiveDate`; `Invoke-RecoveryDayPass` (`:936`) pre-checks each day (`:1001`) | Up to 3 days back get another pass |
+
+**Realistic worst-case delay before the bill appears:**
+
+- Data available on the next fetch — **one cycle: ~10 min on v2, ~1 min on v3.**
+- OBD appearing near midnight and skipped — caught by the **next morning's** Phase 3 recovery (v3: the
+  pre-10:00 MORNING SWEEP).
+- **Upper bound: 3 days.** If Breakwalls keeps returning an empty line array for longer than
+  `$MaxRecoveryDays`, the recovery window closes and the OBD is never revisited.
+
+### The honest trade, stated plainly
+
+In that 3-day-plus case the bill does **not** enter OrbitOMS at all — which is the outcome the gate
+warned about. It is still the better of the two, because the brief's actual worry is "nobody learns it
+exists", and that is now false: **every skip writes an `import_shadow_log` row, on every attempt.**
+Today's behaviour is worse on exactly that axis — the bill appears, looks real, is invoiced and
+dispatched, and is silently unfillable forever, while the depot script logs
+`FORMGET <obd> - OK (0 lines)` as a success.
+
+### Root cause on the depot side — same bug in both scripts
+
+```powershell
+$lines = Get-ObdJsonData -ObdNumber $obd -Session $Session -Config $config
+if ($null -ne $lines) {          # v2 :1471  ·  v3 :1167 and :1385
+    $todayHdrRows.Add($hdr)
+    foreach ($ln in $lines) { $todayLineRows.Add(...) }
+    Write-Log "FORMGET $obd - OK ($(@($lines).Count) lines)"
+} else {
+    $todayFailed.Add($obd)       # queued for retry
+}
+```
+
+The guard is a **null check, not a count check**. An empty array is not null, so the header row is
+added with zero line rows and the OBD is posted looking healthy. A genuine failure (`$null`) goes to
+`failed-obds-json.txt` and is retried by Phase 8; an empty-but-successful response has no such lane.
+Fixing it depot-side is an owner decision on a machine this repo cannot deploy to — the server-side
+skip is the half we control.
+
+## The change
+
+**Scope: `?action=auto-json` only**, via an explicit `skipEmptyPayloadObds` parameter on
+`processAutoImportRows`. The v1 `?action=auto` handler keeps its old behaviour; `handlePreview`
+(manual-template) and manual-SAP are untouched.
+
+When the parsed line array for an OBD is empty, `continue` — before both `obdInterims.push` and
+`summaryData.push`, so **no summary, no line rows and therefore no order**. `continue`, never an early
+return: one bad OBD must not fail a batch carrying good ones.
+
+`lib/import-qty-guard.ts` was generalised rather than duplicated. `writeQtyMismatchRecords` became
+`writeImportAnomalies` over a shared `ImportAnomaly` shape, with `toQtyMismatchAnomaly()` and
+`toEmptyPayloadAnomaly()` producing it. **This matters for correctness, not just tidiness:** each call
+rebuilds the batch label from the original `headerFile`, so a batch hitting both kinds would have had
+the second write erase the first. The auto path now makes one call with both lists.
+
+### Which batch counter, and why
+
+**`skippedObds`.** On this path it already meant "OBDs this batch declined to import" and was
+populated only by `duplicateCount` — a whole-OBD count. Adding empty-payload skips keeps it
+**homogeneous**, which is exactly what it is not on the manual-SAP path, where row-level entries
+(`"non-LF row"`, and now rule P) share the same counter. `totalObds` needs no change: it is
+`validSummaryIds.length`, and a skipped OBD never becomes a summary.
+
+The HTTP response keeps the two separate — `skippedDuplicates` unchanged plus a new
+`emptyPayloadSkipped` — so the depot log line (`UPLOAD-JSON - SUCCESS … skipped=$($parsed.skippedDuplicates)`,
+v2 `:742`) keeps meaning duplicates. The new field is additive and a PowerShell consumer reading named
+properties ignores it.
+
+## Tests — five, all green
+
+| # | Test | Result |
+|---|---|---|
+| 1 | Empty line array | **PASS** — not written, one anomaly `outcome=empty_payload_skipped actual=skipped`, `decision={declared:100, observed:0, lineCount:0}`, batch succeeds |
+| 2 | Same payload replayed WITH lines | **PASS** — imported normally, full line set, no anomaly. The skip persists nothing that could block the retry |
+| 3 | Mixed payload, 1 of 3 empty | **PASS** — `A` and `C` written and complete, `B` skipped, batch reports success |
+| 4 | Healthy batch replay (`BATCH-20260908-024`) | **PASS** — 3 OBDs, zero would-skip |
+| 5 | manual-SAP untouched — rule-P gate | **PASS** — 1921 lines, diff 0, `skipped[]` identical |
+
+Plus two structural assertions against the shipped source, because they are what makes Test 1's "no
+orders row" true: the `continue` sits at offset 9281 in `processAutoImportRows`, **before**
+`obdInterims.push` (10151) and `summaryData.push` (10370); and only `auto-json` passes `true` while
+`?action=auto` is left at the default.
+
+**What is and is not executed.** Tests 1-3 drive the real exported helpers and the real predicate over
+synthetic payloads and assert which OBDs survive the filter; they do not invoke
+`processAutoImportRows` end-to-end, because doing so would write to production. The "no summary → no
+order" link is established by the structural assertion plus reading: `summaryData` feeds the
+`import_raw_summary.createMany`, and `validSummaryIds` (derived from the inserted summaries) is what
+order creation iterates. Tests 4 and 5 run against real data and the real parser respectively.
+
+**Historical:** the rule would have prevented **10 of 7,577** auto-import summaries (0.13%) — precisely
+the ten empty bills.
+
+## Type check and commit
+
+`npx tsc --noEmit` → **exit 0**.
+
+**`a11bf7eefbac7c3edcc08d722683624bcd42b21b`** (`a11bf7ee`) on `main`. Staged by name, two files:
+
+```
+app/api/import/obd/route.ts   (+85 −…)
+lib/import-qty-guard.ts       (+94 −…)
+```
+
+141 insertions, 38 deletions. No `pass.*` scratch file in the commit. No dev server listening. No
+schema change; the only DB access was read-only `SELECT`s for tests 4 and the historical count.
+
+## What this does NOT do
+
+- **The ten existing empty bills are not touched.** They are dispatched, and inventing lines for a
+  shipped bill is not a cleanup. `docs/ROADMAP.md` → Import Pipeline → 🔴 P1 owns them.
+- It does not change the v1 `?action=auto` path, `handlePreview`, or manual-SAP.
+- It does not fix the depot-side `$null -ne $lines` guard, which is where the empty payload is born.
+  Worth its own ROADMAP line against the Auto-Import script.
+- It does not block qty mismatches — that remains a measurement pass pending the rate.
