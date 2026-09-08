@@ -9,7 +9,7 @@ import { MIN_QUERY, ProductResults, ProductSearchInput, type V2ProductGroup } fr
 import ReviewScreen from "./review-screen";
 import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import { DraftsScreen, SentScreen } from "./drafts-sent";
-import OrderDetail, { NAV_H } from "./order-sheet";
+import OrderDetail, { NAV_H, belowNav } from "./order-sheet";
 import {
   addSentOrder, clearLiveDraft, draftDisplayName, labelFor, loadLiveDraft, loadSavedDrafts,
   loadSentOrders, newDraftId, newSentId, removeSavedDraft, renameSavedDraft,
@@ -790,7 +790,7 @@ export default function PoV2Page(): React.JSX.Element {
    */
   const toastHost = toast ? (
     <div className="pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4"
-         style={{ bottom: `calc(${NAV_H} + 16px)` }}>
+         style={{ bottom: belowNav(16) }}>
       <span className="rounded-full px-4 py-2 text-[13px] font-bold text-white"
             style={{ background: INK }}>{toast}</span>
     </div>
@@ -1062,7 +1062,6 @@ export default function PoV2Page(): React.JSX.Element {
           when={formatSavedAt(openDraftDetail.savedAt)}
           shipTo={shipToOf(openDraftDetail.snapshot)}
           onBack={() => { setOpenDraftDetail(null); setScreen("drafts"); }}
-          bottomPad={NAV_H}
           footer={
             <>
               <button
@@ -1119,7 +1118,10 @@ export default function PoV2Page(): React.JSX.Element {
           when={formatSavedAt(openSent.sentAt)}
           shipTo={shipToOf(openSent.snapshot)}
           onBack={() => { setOpenSent(null); setScreen("sentList"); }}
-          bottomPad={NAV_H}
+          // A chip reading "Sent", on a screen reached from a list headed Sent,
+          // from a tab called Sent. The DRAFT detail keeps its chip: Saved vs
+          // Auto-saved is a distinction nothing else on that screen makes.
+          showStatusChip={false}
           footer={
             /* 🔴 ONE BUTTON, AND NO "EDIT". Send again already puts the order on
                the board, which is where editing happens — a second button would
@@ -1345,7 +1347,7 @@ export default function PoV2Page(): React.JSX.Element {
           background: PAGE,
           // The nav is always there; the cart bar stacks on top of it when the
           // order has lines. The board has to clear both.
-          paddingBottom: `calc(${NAV_H} + ${cartOpen ? 84 : 16}px)`,
+          paddingBottom: belowNav(cartOpen ? 84 : 16),
         }}
       >
         {/* ── THE BAND ─────────────────────────────────────────────────────

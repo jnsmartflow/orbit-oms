@@ -3,7 +3,7 @@
 import { FAINT, INK, MUTED, RULE, SURFACE, VIOLET } from "./v2-data";
 import {
   Chip, IconBolt, IconBox, IconPhone, IconReply, IconTrash, IconTruck,
-  NAV_H, SectionLabel, CARD_PAD, LIST_BG, cardFrame, dispatchLabel,
+  LIST_PAD, SectionLabel, CARD_PAD, LIST_BG, cardFrame, dispatchLabel,
 } from "./order-sheet";
 import { formatTime, draftDisplayName, type V2SavedDraft, type V2SentOrder, type V2Snapshot } from "./v2-storage";
 
@@ -21,9 +21,6 @@ import { formatTime, draftDisplayName, type V2SavedDraft, type V2SentOrder, type
 //
 // 🔴 NO UNIT TOTALS ON A CARD. They said "N units", which adds 1L tins to 20L
 // drums and produces a number nobody can act on. The COUNT CHIP is a fact.
-
-/** The bottom nav sits over the list, so the last card needs its height back. */
-const LIST_PAD = `calc(${NAV_H} + 16px)`;
 
 /**
  * 🔴 NO BACK ARROW. The bottom nav is the way back from a LIST — Board is one
@@ -83,26 +80,36 @@ function dayHeading(ts: number): string {
 
 /* ── THE CARD'S GEOMETRY, STATED AS NUMBERS ──────────────────────────────
  *
- * 🔴 112px, AND THE 65px VERSION WAS THE WRONG DIRECTION. Cutting the card to
+ * 🔴 116px, AND THE 65px VERSION WAS THE WRONG DIRECTION. Cutting the card to
  * two tight rows made the list SHORTER, not calmer: nine cards of 65px with no
  * air in them read as a printout, and the owner's word for it was FLAT. A card
  * is an object you can pick out with your eye, and an object needs room around
  * its contents, not just fewer of them.
  *
- *   14  padding top
+ *   16  padding top              CARD_PAD, and equal on all four sides
  *   22  the dealer name          T4  17 / 500
- *    4
+ *    6  NAME_TO_CODE
  *   16  "code · area"            T5  12 mono / MUTED
- *   14
+ *   12  CODE_TO_CHIPS
  *   26  the chip row             T6  12 / 600 + 13px icons — and the time
- *   14  padding bottom
+ *   16  padding bottom           CARD_PAD
  *    2  the 1px border, top and bottom
  *  ───
- *  112
+ *  116
+ *
+ * 🔴 THE TWO PADDINGS WERE ALREADY EQUAL AT 14, and the card still read
+ * bottom-heavy. See CARD_PAD in order-sheet: the unevenness is OPTICAL — the
+ * name's 22px line box for a 17px face leaves ~3px of half-leading under the
+ * top padding, and the 26px chip row has none to give. The answer is more
+ * padding and TIGHTER internal gaps (6 and 12, down from 4 and 14 — the
+ * name/code pair binds closer, the chip row sits further from the code and
+ * nearer the middle), not two different padding numbers pretending to be one.
  */
 const NAME_LH  = 22;
 const META_LH  = 16;
 const CHIP_H   = 26;
+const NAME_TO_CODE  = 6;
+const CODE_TO_CHIPS = 12;
 
 /**
  * ONE CARD, THREE ROWS. The whole card is the tap target — no "open" chevron
@@ -184,12 +191,12 @@ function OrderCard({ title, code, area, stamp, snapshot, accent, onOpen, onDelet
           {/* ── row 2 ── code · area, one block under the name ── */}
           {/* T5 card meta — 12 mono / MUTED */}
           <span className="block truncate font-mono text-[12px]"
-                style={{ color: MUTED, lineHeight: `${META_LH}px`, marginTop: 4 }}>
+                style={{ color: MUTED, lineHeight: `${META_LH}px`, marginTop: NAME_TO_CODE }}>
             {code ?? "No dealer yet"}{code && area ? ` · ${area}` : ""}
           </span>
           {/* ── row 3 ── the chips, then the time ── */}
           <span className="flex items-center gap-1.5"
-                style={{ marginTop: 14, height: CHIP_H }}>
+                style={{ marginTop: CODE_TO_CHIPS, height: CHIP_H }}>
             {/* 🔴 ALWAYS FIRST, ON EVERY CARD. */}
             <Chip icon={<IconBox />} text={String(n)} />
             {urgent && <Chip icon={<IconBolt />} text="Urgent" tone="urgent" />}

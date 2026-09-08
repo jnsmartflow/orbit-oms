@@ -3,7 +3,7 @@
 import { ChevronLeft } from "lucide-react";
 import {
   memberImage, packRows, tileArtFor,
-  DIVIDER, FILL, INK, MUTED, RULE, SURFACE, URGENT, VIOLET,
+  DIVIDER, FILL, INK, MUTED, RULE, SURFACE, VIOLET,
 } from "./v2-data";
 import type { ApiCustomer, V2CartLine } from "./v2-data";
 import type { V2Snapshot } from "./v2-storage";
@@ -65,6 +65,69 @@ import type { V2Snapshot } from "./v2-storage";
  * left out.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE BOTTOM CHROME, MEASURED — AND THE SCROLL BUG THAT CAME OF NOT
+ *    MEASURING IT.
+ *
+ * The symptom: on a real iPhone the last card of the Sent list sat under the
+ * bottom nav and scrolling to the end would not clear it.
+ *
+ * THE NAV'S REAL HEIGHT (po-v2-page.tsx's BottomNav, added up):
+ *      1  borderTop
+ *      8  pt-2
+ *     18  the icon, h-[18px]
+ *      2  gap-0.5
+ *     15  the label — text-[10px] sets ONLY font-size, so the line box is
+ *         Tailwind preflight's html line-height 1.5 -> 15px
+ *      I  paddingBottom: max(env(safe-area-inset-bottom), 8px)
+ *    ───
+ *  44 + I
+ *
+ * NAV_H claimed 54 + I. It OVERSTATED the nav by 10px, which is the wrong
+ * direction to cause a cut-off — and that is the point. The list padded itself
+ * by NAV_H + 16, so its clearance over the nav was (54 + I + 16) - (44 + I) =
+ * a CONSTANT 26px, whatever the safe-area inset is. The inset cancels. No
+ * value of I, no viewport model and no keyboard state can turn +26 into a
+ * card behind the nav.
+ *
+ * 🔴 SO THE PADDING WAS NOT SHORT — IT WAS NOT APPLYING. And the one thing
+ * that made the list different from every other consumer of NAV_H was that it
+ * NESTED the calc:
+ *
+ *     calc( calc(54px + max(env(safe-area-inset-bottom), 8px)) + 16px )
+ *
+ * A calc() wrapping a calc() wrapping a max() wrapping an env(). Every other
+ * site — the detail footer's `bottom`, the cart bar's `bottom` — used NAV_H
+ * flat, and none of them was reported wrong. A declaration a parser rejects is
+ * dropped whole, which gives padding-bottom: 0 and a last card sitting exactly
+ * under the nav, with nothing left to scroll. That is the symptom, precisely.
+ *
+ * THE FIX IS TO STOP BUILDING EXPRESSIONS OUT OF EXPRESSIONS. belowNav() emits
+ * ONE calc with ONE max and ONE env, whatever the caller wants underneath it —
+ * the same shape as the sites that already work. The arithmetic moves into
+ * JavaScript, where it can be read and proved, and the CSS stays flat.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** The nav's own height, safe area excluded. Measured above, not guessed. */
+const NAV_PX = 44;
+/**
+ * The detail's fixed button bar: 1 borderTop + 12 pt-3 + a 47px button
+ * (py-3 24 + a 15px line box at 1.5) + 12 paddingBottom.
+ */
+const FOOTER_PX = 72;
+/** Comfortable air under the last card. Not a hairline — a gap you can see. */
+const GAP_PX = 32;
+
+/**
+ * ONE flat calc: `extra` px above the nav, plus the safe-area inset once.
+ *
+ * 🔴 NEVER WRAP THE RESULT IN ANOTHER calc(). Pass what you want added as the
+ * argument instead. That nesting is the bug this function exists to retire.
+ */
+export function belowNav(extra: number): string {
+  return `calc(${NAV_PX + extra}px + max(env(safe-area-inset-bottom), 8px))`;
+}
+
 /**
  * The bottom nav's height including the safe area, as a CSS expression.
  *
@@ -74,7 +137,21 @@ import type { V2Snapshot } from "./v2-storage";
  * nav was (wrongly) hidden on those screens. The moment the nav came back, the
  * last card sat under it. One number, one home.
  */
-export const NAV_H = "calc(54px + max(env(safe-area-inset-bottom), 8px))";
+export const NAV_H = belowNav(0);
+
+/** What a LIST pads its bottom by: the nav, then a gap you can see. */
+export const LIST_PAD = belowNav(GAP_PX);
+
+/**
+ * What a DETAIL pads its bottom by: the nav, THE FOOTER, then the gap.
+ *
+ * 🔴 THE FOOTER WAS NEVER IN THE SUM, AND THIS IS THE SECOND HALF OF THE SAME
+ * BUG. The detail's buttons are a fixed bar 72px tall sitting on top of the
+ * nav, and the page padded by the nav alone — so even with the padding
+ * applying, the last product row was 72px short of clear and the comment above
+ * the footer cheerfully claimed "the page pads by nav + footer". It did not.
+ */
+export const DETAIL_PAD = belowNav(FOOTER_PX + GAP_PX);
 
 /**
  * 🔴 THE GROUND BEHIND THE CARDS, AND WHY IT IS NOT PAGE.
@@ -107,8 +184,50 @@ export const LIST_BG = FILL;
  */
 export const CARD_EDGE = "0 1px 2px rgba(27,24,38,.06)";
 export const CARD_RADIUS = 14;
-/** The inner padding both cards and every list card share. */
-export const CARD_PAD = 14;
+/**
+ * The inner padding both cards and every list card share — 16 on all four
+ * sides, up from 14.
+ *
+ * ⚠ THE TOP AND BOTTOM WERE ALREADY EQUAL, and it is worth saying so because
+ * the card genuinely READ as bottom-heavy. `padding: CARD_PAD` set all four
+ * sides to the same number. What was uneven was OPTICAL, not measured: the
+ * name's line box is 22px for a 17px face, so about 3px of half-leading sits
+ * between the padding and the top of the glyphs, while the chip row is a 26px
+ * box with its text centred and no leading to give. Same padding, ~3px more
+ * air at the top. Raising both to 16 and tightening the two internal gaps is
+ * what settles it; making the two paddings DIFFERENT would have been fixing an
+ * optical effect with a measured lie.
+ */
+export const CARD_PAD = 16;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 URGENT IS AMBER. RED IS FOR SOMETHING BEING WRONG.
+ *
+ * Urgent is a PRIORITY, not a fault. Spent on a priority, red has nothing left
+ * to say when a send fails or a dealer is blocked — and on a busy morning a
+ * column of red chips stops registering at all, which is the opposite of what
+ * the chip is for.
+ *
+ * ⚠ CLAUDE_UI CONTRADICTS ITSELF ON THIS AND THE OWNER'S RULING SETTLES IT.
+ * §1's palette line reads "red=urgent/error/blocker", but the attention-chip
+ * row in the same file reads `bg-amber-50 text-amber-700 border-amber-200`
+ * for "Bill Tomorrow, Cross XYZ, **Urgent**" — the app already ships Urgent in
+ * amber elsewhere. This takes the amber pair, so v2 now agrees with the rest
+ * of the app instead of with one stale line of the doc.
+ *
+ * ⚠ WHERE THE TOKEN LIVES, AND WHY IT IS NOT IN v2-data. Every other colour in
+ * this app is a v2-data export and this belongs there too — but v2-data is
+ * outside this step's containment, so it sits here beside CARD_EDGE rather
+ * than being scattered as a hex literal at the one call site. Move it to
+ * v2-data the next time that file is inside a fence, and delete this note.
+ *
+ * The values are Tailwind's amber-700 on amber-50, which is the pair
+ * CLAUDE_UI's attention row already names — not v2-data's STAR (#F59E0B,
+ * amber-500), which is the favourite star's fill and has no business carrying
+ * text at 12px on a light ground.
+ */
+export const ATTENTION    = "#B45309";   // amber-700 — the glyph and the word
+export const ATTENTION_BG = "#FFFBEB";   // amber-50  — the ground under them
 
 /** The frame both cards on this screen share, and the list cards copy. */
 export const cardFrame = {
@@ -317,8 +436,10 @@ function Tin({ line, size, radius }: {
 export function Chip({ icon, text, tone = "quiet" }: {
   icon: React.ReactNode; text: string; tone?: "quiet" | "urgent" | "violet";
 }): React.JSX.Element {
-  const bg = tone === "urgent" ? "#FEF2F2" : tone === "violet" ? "#F5F3FF" : FILL;
-  const fg = tone === "urgent" ? URGENT : tone === "violet" ? VIOLET : MUTED;
+  // `urgent` keeps its NAME — it is what the chip means — and changes its
+  // colour. See the ATTENTION note: red is reserved for a fault now.
+  const bg = tone === "urgent" ? ATTENTION_BG : tone === "violet" ? "#F5F3FF" : FILL;
+  const fg = tone === "urgent" ? ATTENTION : tone === "violet" ? VIOLET : MUTED;
   return (
     /* T6 chip — 12 / 600 with a 13px icon.
        min-w-0 and a truncating label, NOT shrink-0: four chips and a clock on
@@ -402,10 +523,13 @@ export function SectionLabel({ text }: { text: string }): React.JSX.Element {
  * one-pack line and a four-pack line start their numbers at the same x.
  */
 export default function OrderDetail({
-  snapshot, status, when, shipTo, onBack, footer, bottomPad,
+  snapshot, status, when, shipTo, onBack, footer, showStatusChip = true,
 }: {
   snapshot: V2Snapshot;
-  /** Sent · Saved · Auto-saved — the chip in the header. */
+  /**
+   * Sent · Saved · Auto-saved. Always the Order card's first row label; the
+   * header chip only when showStatusChip.
+   */
   status: string;
   /** Already formatted by the caller: only it knows if this was sent or saved. */
   when: string;
@@ -424,14 +548,26 @@ export default function OrderDetail({
   shipTo: ApiCustomer | null;
   onBack: () => void;
   footer: React.ReactNode;
-  /** The bottom nav's height — the footer sits above it, not under it. */
-  bottomPad: string;
+  /**
+   * 🔴 FALSE ON THE SENT DETAIL, AND THE REASON IS THAT IT SAID NOTHING.
+   *
+   * A chip reading "Sent", on a screen reached by tapping a card in a list
+   * headed Sent, from a tab called Sent. Three sayings of one word, and the
+   * one carrying it was the smallest and furthest from the eye.
+   *
+   * The DRAFT detail KEEPS it, because "Saved" versus "Auto-saved" is a real
+   * distinction and nothing else on that screen makes it: one is a basket he
+   * parked on purpose and the other is the board writing itself down every few
+   * seconds. Continuing the wrong one is the mistake the whole Drafts screen is
+   * shaped to prevent.
+   */
+  showStatusChip?: boolean;
 }): React.JSX.Element {
   const c = snapshot.customer;
   const n = snapshot.lines.length;
 
   return (
-    <main className="min-h-screen w-full" style={{ background: LIST_BG, paddingBottom: bottomPad }}>
+    <main className="min-h-screen w-full" style={{ background: LIST_BG, paddingBottom: DETAIL_PAD }}>
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-10 flex items-start gap-1 px-2 py-2"
               style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}>
@@ -457,9 +593,15 @@ export default function OrderDetail({
             </p>
           )}
         </div>
-        <span className="mt-1.5 shrink-0">
-          <Chip icon={statusIcon(status)} text={status} tone="quiet" />
-        </span>
+        {/* When the chip goes, nothing takes its place: the TITLE takes the
+            room. The dealer name is the one thing on this header worth the
+            width, and on a 390px phone it gets about 78px more of it before it
+            has to ellipsise. */}
+        {showStatusChip && (
+          <span className="mt-1.5 shrink-0">
+            <Chip icon={statusIcon(status)} text={status} tone="quiet" />
+          </span>
+        )}
       </header>
 
       {/* ── THE ORDER CARD ──────────────────────────────────────────────── */}
@@ -528,14 +670,14 @@ export default function OrderDetail({
 
       {/* ── THE BUTTONS ─────────────────────────────────────────────────── */}
       {/* Fixed above the nav, not floating over the list: the order scrolls
-          under them and the last product still clears both, because the page
-          pads by nav + footer.
+          under them and the last product NOW clears both, because DETAIL_PAD
+          is nav + footer + gap. It used to be the nav alone — see the geometry
+          block at the top of this file.
 
           ⚠ THE BUTTON TEXT IS THE ONE STYLE ON THIS SCREEN OUTSIDE THE TEN
-          ROLES (15px/800). The nodes come from po-v2-page.tsx, which this step
-          does not own, so it is reported rather than changed. */}
+          ROLES (15px/800). The nodes come from po-v2-page.tsx. */}
       <div className="fixed inset-x-0 z-10 flex gap-2 px-4 pt-3"
-           style={{ bottom: bottomPad, background: SURFACE,
+           style={{ bottom: NAV_H, background: SURFACE,
                     borderTop: `1px solid ${RULE}`, paddingBottom: 12 }}>
         {footer}
       </div>
