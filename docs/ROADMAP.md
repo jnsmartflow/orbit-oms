@@ -549,6 +549,64 @@ The whole "paused since 2026-05-14, to un-pause:" block described a world that e
   version is permanently unverifiable from the depot PC (bit the 2026-08-04 pass). One header/body
   field + one column or log line fixes the class forever.
 
+### 🔴 P1 — AUTO-IMPORT SILENTLY LOSES LINES (opened 2026-09-08)
+
+Nineteen bills are missing stock that their own header still records. **Ten hold ZERO line rows
+despite carrying an invoice, and nine of those ten are `dispatched`** — the goods left the depot and
+were billed, and the header is the only surviving record of what was on them. **Nine more are short
+against their own header** by 175, 37, 469, 50, 50, 50, 211, 50 and 36 units; **four shortfalls of
+exactly 50 point at dropped 50-unit lines, not a unit-of-measure error.**
+
+Root cause: nothing at ingest compares the Breakwalls payload's header `UnitQty` against the sum of
+its own line array, so a short fetch is accepted silently. GUARD 1 (`app/api/import/obd/route.ts:2820`)
+only catches a `createMany` that writes fewer rows than it was handed — it cannot see lines that
+never arrived. The loss is upstream of this repo.
+
+All nineteen OBD numbers, recorded here so they survive the report:
+
+- **Zero line rows (10)** — `9108714570` (header 24) · `9108718897` (200) · `9108740751` (1250) ·
+  `9108750985` (50) · `9108753988` (25) · `9108758489` (109) · `9108758491` (200) · `9108829338` (46) ·
+  `9108839310` (208) · `9109296263` (75)
+- **Short against header (9)** — `9107878744` (184 vs 9, short 175) · `9107900119` (47 vs 10, 37) ·
+  `9107931925` (471 vs 2, 469) · `9107946773` (284 vs 234, 50) · `9108203125` (102 vs 52, 50) ·
+  `9108547003` (92 vs 42, 50) · `9108630612` (293 vs 82, 211) · `9108798579` (71 vs 21, 50) ·
+  `9108886262` (47 vs 11, 36)
+
+⚠ These nineteen are also the reason the Defect B header recompute must not be allowed to run on
+them: a recompute would overwrite the header with the short line sum and erase the only evidence the
+stock is missing. Full working — `docs/prompts/drafts/code-discovery-2026-09-08-import-qty-integrity.md`
+(§DEFECT B — GATE, Gates 2 and 3).
+
+### P1 — Line weights are not populated on two of three import paths (opened 2026-09-08)
+
+Auto-import (`app/api/import/obd/route.ts:2795-2810`) and manual-template (`route.ts:900-916`) never
+write `netWeight` / `totalWeight` onto their line rows — both `createMany` field lists stop at
+`volumeLine`. `patchLines` cannot backfill them either, because `ExistingLine`'s select
+(`lib/import-upsert/state.ts:44-47`) does not fetch the two columns.
+
+Consequence across the estate: **7,610 bills have no weighed line at all, 5,988 are fully weighed,
+and 13 are mixed and silently undercount** (SQL `SUM` skips NULLs) — e.g. `9107789846`, header 372 kg
+against a line sum of 145.3 with only 15 of its 21 lines weighed. This is why the Defect B header
+recompute had to drop `grossWeight`: the lines cannot support it. Fixing weight is its own change
+(three write sites plus the patch-path select) **plus its own backfill**, and it must land before any
+line-derived weight is trusted. Detail — `docs/prompts/drafts/code-discovery-2026-09-08-import-qty-integrity.md`
+(§DEFECT B — GATE, Gate 2 condition 1).
+
+### P3 — Three loose ends from the 2026-09-08 import work
+
+- **`91074040627`** — an 11-digit delivery from a hand-made `[manual-sap] MANUAL.XLSX` (2026-06-08)
+  carrying header volume 25 against a line sum of 500, with quantity matching at 25. The only real
+  volume mismatch in the whole table (the other 308 are sub-litre float noise). Single outlier, own item.
+- **`components/shared/order-detail-panel.tsx` and its route `app/api/orders/[id]/detail`** — dead
+  code. The panel has no importer (superseded by `components/tint/manager/board-detail-panel.tsx`) and
+  is the route's only caller. Retirement candidate, not in scope now; follow
+  `archive/RETIREMENT-PLAYBOOK.md` when it is.
+- **A rule-P skip inflates `totalObds` / `skippedObds`** — both count `parseResult.skipped.length`
+  (`route.ts:1806-1807`), which mixes row-level and delivery-level skips, and the preview pushes a
+  second `outcome: "skipped"` card for a delivery that also appears as `patch`/`new`. Pre-existing
+  shape, identical to how `"non-LF row"` has always behaved. Worth a decision on counting row-level
+  skips separately, not a bug to rush.
+
 ### P2 — Auto-Import patch path
 
 Today Auto-Import is create-only. If late-update detection is needed (e.g. SAP marks an OBD as cancelled), go through `upsertObd` like manual SAP does, with `LINE_AUTHORITY['auto-import'] = 'authoritative'`. Full re-audit needed. Deferred until business case emerges.
