@@ -1563,3 +1563,114 @@ schema change; the only DB access was read-only `SELECT`s for tests 4 and the hi
 - It does not fix the depot-side `$null -ne $lines` guard, which is where the empty payload is born.
   Worth its own ROADMAP line against the Auto-Import script.
 - It does not block qty mismatches — that remains a measurement pass pending the rate.
+
+---
+---
+
+# VOLUME-ZERO CARVE-OUT — 2026-09-08, eighth session · commit `d8fcf1ed`
+
+## PART 1 — what did the skip block? **Nothing. It was never deployed.**
+
+The brief's premise was that `a11bf7ee` had been live since ~15:49 IST. It has not been live at all.
+
+```
+git rev-parse origin/main   -> 0c9f0ab0   (po-v2, pushed 2026-09-08 15:45 IST)
+git log origin/main..main   -> eb34532c, 3e75529d, a11bf7ee, 7f6569e7, 9188699a
+git merge-base --is-ancestor a11bf7ee origin/main -> NO
+```
+
+**All five of my import commits are local-only and have never been pushed.** `CLAUDE_CORE.md §3` is
+explicit: *"Commit ≠ deploy. Vercel builds from `origin/main`. A local commit on `main` is NOT live
+until `git push origin main`."* The 15:45 timestamp that looked like a deploy was the **other
+window's** po-v2 push, not this work.
+
+Corroborated in the data:
+
+| Check | Result |
+|---|---|
+| `import_shadow_log` rows with `shadowOutcome = 'empty_payload_skipped'` | **0** |
+| `import_shadow_log` rows with `shadowOutcome = 'qty_mismatch'` | **0** |
+| Every `import_shadow_log` row ever | 17,126, all `'patched'`, from the 2026-05 shadow-mode cutover |
+| Auto batches since 10:19 UTC (2750-2765) | all `skippedObds 0`, no `⚠` suffix on any `headerFile` |
+
+**No OBD was rejected. No bill is invisible. Nothing needs to be told to the depot tonight.**
+
+(The DB evidence alone would have been weak — those batches carry ~68 OBDs total, so at the measured
+0.45% rate zero qty-mismatches is unremarkable. The git evidence is what settles it.)
+
+> **Worth owning:** across five sessions I reported commit hashes and never once said the work was
+> unpushed. The hashes were accurate and the commits real, but "committed" was allowed to read as
+> "shipped". Nothing in this whole import series is in production. Pushing is a deploy to a live
+> depot system and remains the user's call.
+
+## PART 2 — the carve-out
+
+```
+lines 0  AND declared volume  > 0   -> SKIP   (lines were expected and did not arrive)
+lines 0  AND volume 0 or absent     -> IMPORT header-only, exactly as before a11bf7ee
+lines present                       -> unchanged
+```
+
+### The volume field, and why it is provably the right one
+
+`hr["Volume"]`. The identity is not inferred:
+
+| Link | Evidence |
+|---|---|
+| The script builds the header object | `Build-HeaderRow` emits the literal key `"Volume" = $dataRow.Volume` |
+| v3's rule reads that same property | `$vol = 0; if ($hdr.Volume) { try { $vol = [decimal]$hdr.Volume } catch { $vol = 0 } }` — `:1157` (recovery), `:1379` (main) |
+| The server receives that same object | the script posts `headerRows = @($hdrOut)`; `hr` **is** that object |
+| The server already reads that key | `volume: toNum(hr["Volume"])` → `import_raw_summary.volume` (`route.ts:2833`) |
+| Coercion matches | v3 defaults missing/unparseable to `0` inside its try/catch; `toNum(...) ?? 0` does the same |
+
+It is also the same header the declared `UnitQty` comes from (`hr["UnitQty"]`), as the brief required.
+
+### Both cases recorded, distinctly
+
+- `empty_payload_skipped` — `actualOutcome: "skipped"`, decision carries `declared`, `volume`,
+  `lineCount: 0`.
+- `header_only_allowed` — `actualOutcome: "imported"`, decision carries `awaitingManualSap: true`,
+  note reads *"imported header-only by the depot's volume-zero rule … AWAITING MANUAL SAP to supply
+  its lines"*.
+
+The second is the one that matters: **nothing in OrbitOMS marks a header-only bill as awaiting its
+lines**, which is the actual defect behind the ten. This row is the trace that makes surfacing them
+possible — a header-only bill now leaves a mark from the moment it lands. Building the visibility is
+the next step and is not in this commit.
+
+### One judgement call made during testing
+
+A header-only bill also trips the qty guard (declared 75 vs observed 0). Logging both would
+double-report it **and inflate the qty-mismatch rate with the single case that is fully explained**,
+which would corrupt the measurement that guard exists to produce. The qty guard is therefore
+suppressed when the header-only branch is taken; `header_only_allowed` already states declared-vs-zero.
+
+## Tests — six, all green
+
+| # | Case | Result |
+|---|---|---|
+| 1 | lines 0, volume 0 | **PASS** — imported, `header_only_allowed`, `actual: imported` |
+| 2 | lines 0, volume 100 | **PASS** — skipped, `empty_payload_skipped`, `decision={declared:100, volume:100, observed:0, lineCount:0}` |
+| 3 | lines 0, volume absent (null) | **PASS** — imported header-only, treated as 0 |
+| 4 | lines present | **PASS** — unchanged, no anomaly |
+| 5 | the ten live bills replayed from real data | **PASS** — all 10 header-only, 0 skipped, every volume `0` |
+| 6 | manual-SAP untouched — rule-P gate | **PASS** — 1921 lines, diff 0, `skipped[]` identical |
+
+Plus a structural assertion that the `continue` sits **inside** the volume>0 branch
+(`guard 9944 < vol 10101 < continue 10422 < headerOnly 10696`), so the header-only path falls through
+to the normal import rather than being dropped.
+
+## tsc and commit
+
+`npx tsc --noEmit` → **exit 0**.
+
+**`d8fcf1ed68d3cd1205fa98fad8afa727e12fc195`** (`d8fcf1ed`). Staged by name:
+
+```
+app/api/import/obd/route.ts
+lib/import-qty-guard.ts
+docs/ROADMAP.md
+```
+
+94 insertions, 17 deletions. No dev server; no schema change; the ten bills untouched; DB access
+read-only. **Still unpushed, like everything before it.**
