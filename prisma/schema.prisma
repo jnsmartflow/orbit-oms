@@ -2272,11 +2272,36 @@ model TripReport {
   custsoName          String?
   createdOn           String?
   fetchedAt           DateTime  @default(now())
+  rowHash             String?
 
   @@unique([deliveryNo, disDate], map: "trip_report_delivery_no_dis_date_key")
   @@index([disDate])
   @@index([disDate, tripNo])
   @@map("trip_report")
+}
+
+// ─────────────────────────────────────────────
+// MIRROR HEARTBEAT
+// ─────────────────────────────────────────────
+
+// Liveness for external mirrors — one row per mirror, seeded with id='trip_report'.
+// Created BY HAND in the Supabase SQL Editor and hand-mirrored here; never db push,
+// never db pull (CORE §3). camelCase columns, NO @map. Every timestamp carries
+// @db.Timestamptz(6) or Prisma emits a plain `timestamp` and mismatches the live column.
+// Zero relations. Written only by mirror_trip_report_today() and trip_mirror_ping();
+// nothing in the app writes it, and as of this change nothing in the app reads it either.
+// It exists because R6 stops trip_report.fetchedAt moving on unchanged data, and that was
+// the only signal anyone had for "is the puller alive" — CLAUDE_TRIP_REPORT.md §7.
+model MirrorHeartbeat {
+  id            String    @id
+  lastRunAt     DateTime? @db.Timestamptz(6)
+  lastChangedAt DateTime? @db.Timestamptz(6)
+  rowsSeen      Int?
+  rowsChanged   Int?
+  rowsRemoved   Int?
+  rowsSkipped   Int?
+
+  @@map("mirror_heartbeat")
 }
 
 // ─────────────────────────────────────────────
