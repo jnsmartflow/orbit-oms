@@ -1,35 +1,53 @@
 # ============================================================
-#  Auto-Import-v2.ps1 -- v1.0
+#  Auto-Import-v3.ps1 -- v3.0 "fast lane"
 #  Pure-JSON auto-import pipeline for OrbitOMS
 #
-#  Replaces per-OBD xlsx file downloads (v1) with in-memory
-#  FormGetData JSON calls.  No Excel files created.  A
-#  pre-check skips OBDs already present in OrbitOMS.
+#  v3 replaces the fixed 10-minute full cycle with a mode-based
+#  design. Task Scheduler fires this script EVERY 1 MINUTE; the
+#  script decides for itself what (if anything) to do:
 #
-#  v1 (Auto-Import.ps1) continues to run independently on its
-#  own Task Scheduler entry and is NOT modified by this script.
+#    MODE by time of day (IST, depot clock):
+#      before 10:00  SLEEP (except one MORNING SWEEP on first
+#                    run of the day: yesterday catch-up)
+#      10:00-13:15   BUSY    - glance every minute
+#      13:15-14:30   RELAX   - glance+invoice every ~10 min
+#      14:30-18:00   BUSY    - glance every minute
+#      18:00-20:00   RELAX   - glance+invoice every ~10 min
+#      20:00-24:00   PATROL  - glance every ~30 min
+#      00:00-10:00   SLEEP
 #
-#  Pipeline order (per cycle):
-#    Phase 1  - Cleanup + daily reset
-#    Phase 2  - Login (cached session reused, lazy re-login)
-#    Phase 3  - Yesterday recovery (first-of-day)
-#    Phase 4  - Spec prime
-#    Phase 5  - Pending JSON upload retry
-#    Phase 6  - /data pagination for today (full header rows)
-#    Phase 6b - Pre-check: drop OBDs already in OrbitOMS
-#    Phase 7  - FormGetData per new OBD (in-memory)
-#    Phase 8  - Retry FormGetData failures from prior runs
-#    Phase 9  - Build payload + POST ?action=auto-json
-#    Phase 9.5- Patch headers for existing OBDs (?action=patch-headers)
-#    Phase 10 - Human-noise background GET
-#    Phase 11 - Cycle summary
+#    GLANCE  = fetch page 1 of today's list, read total count,
+#              compare vs OrbitOMS (?action=day-obds). Missing
+#              OBDs -> locate (page 1 first, deeper if needed)
+#              -> FormGetData -> import. Volume=0 rows import
+#              header-only immediately (no detail fetch).
+#    INVOICE PASS = one filtered /data ask (pendingstatus =
+#              "Pending Dispatch") -> rows carry InvoiceNo ->
+#              patch-headers for any OrbitOMS blanks.
+#              Runs every 15th busy glance + every RELAX visit.
+#    DEEP SWEEP   = full all-pages reconcile of today.
+#              Runs once ~13:30 and once ~18:30.
+#    MORNING SWEEP= yesterday catch-up (recovery + filtered
+#              invoice chase). Once, on first run of the day.
 #
-#  PowerShell 5.1.  Run via Task Scheduler (every 10 min).
+#  -Practice : full real READS from Breakwalls, but NO writes
+#              to OrbitOMS. Logs "WOULD import/patch ..." so a
+#              practice day's diary can be judged against the
+#              old robot's real imports.
+#
+#  Single-instance: a lock file skips this fire if a previous
+#  run is still working (belt; Task Scheduler IgnoreNew is
+#  braces).
+#
+#  PowerShell 5.1.  Run via Task Scheduler (every 1 min).
 # ============================================================
 
 param(
     [switch]$SkipYesterday,
     [switch]$DryRun,
+    [switch]$Practice,
+    [switch]$ForceMode,          # with -Mode: override the clock (testing)
+    [string]$Mode = "",          # glance | invoice | deepsweep | morning
     [string]$TargetDate = ""
 )
 
@@ -58,7 +76,31 @@ $ApiUrlCheck    = "https://www.orbitoms.in/api/import/obd?action=check"
 $ApiUrlAutoJson     = "https://www.orbitoms.in/api/import/obd?action=auto-json"
 $ApiUrlPatchHeaders    = "https://www.orbitoms.in/api/import/obd?action=patch-headers"
 $ApiUrlPendingInvoices = "https://www.orbitoms.in/api/import/obd?action=pending-invoices"
+$ApiUrlDayObds         = "https://www.orbitoms.in/api/import/obd?action=day-obds"
 $KeyIdJson             = "auto-import-json-v1"
+
+# ---- v3 schedule (24h depot clock) ----
+$BusyWindows   = @(
+    @{ Start = "10:00"; End = "13:15" },
+    @{ Start = "14:30"; End = "18:00" }
+)
+$RelaxWindows  = @(
+    @{ Start = "13:15"; End = "14:30" },
+    @{ Start = "18:00"; End = "20:00" }
+)
+$PatrolWindow  = @{ Start = "20:00"; End = "23:59" }
+$DayStartHour  = 10      # no Breakwalls contact before this (morning sweep excepted)
+$RelaxGapMin       = 10  # minutes between RELAX visits
+$PatrolGapMin      = 30  # minutes between PATROL visits
+$InvoiceEveryNth   = 15  # busy: invoice pass rides every 15th glance
+$DeepSweepTimes    = @("13:30", "18:30")   # earliest fire time each
+$DeepSweepGraceMin = 45  # sweep may fire up to this many min after its slot
+
+# ---- v3 state files ----
+$LockFile           = "$ToolRoot\Master\v3-run.lock"
+$LockMaxAgeMin      = 25          # a lock older than this is stale (crashed run)
+$ModeStateFile      = "$ToolRoot\Master\v3-mode-state.txt"
+$KnownDeltaFile     = "$ToolRoot\Master\v3-known-delta.txt"
 
 # Breakwalls
 $BaseUrl            = "https://an.breakwalls.biz"
@@ -108,6 +150,7 @@ $Summary = [ordered]@{
     UploadErrors             = 0
     PendingUpload            = $false
     SessionAction            = "?"
+    Mode                     = "?"
     PaginationMode           = "?"
     Errors                   = [System.Collections.Generic.List[string]]::new()
 }
@@ -118,7 +161,7 @@ $Summary = [ordered]@{
 #region LOGGING
 
 if (-not (Test-Path $LogFolder)) { New-Item -ItemType Directory -Path $LogFolder | Out-Null }
-$LogFile = "$LogFolder\import-v2-log-$(Get-Date -Format 'yyyy-MM-dd').txt"
+$LogFile = "$LogFolder\import-v3-log-$(Get-Date -Format 'yyyy-MM-dd').txt"
 
 # (verbatim from v1)
 function Write-Log {
@@ -145,10 +188,137 @@ function Write-Section {
     Write-Host $line1 -ForegroundColor $Color
 }
 
-# Clean v2 logs older than 30 days
-Get-ChildItem -Path $LogFolder -Filter "import-v2-log-*.txt" -ErrorAction SilentlyContinue |
+# Clean v2/v3 logs older than 30 days
+Get-ChildItem -Path $LogFolder -Filter "import-v*-log-*.txt" -ErrorAction SilentlyContinue |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
     Remove-Item -Force -ErrorAction SilentlyContinue
+
+#endregion
+
+
+#region V3 MODE ENGINE  (new)
+
+# --- single-instance lock -----------------------------------
+function Enter-RunLock {
+    if (Test-Path $LockFile) {
+        $age = ((Get-Date) - (Get-Item $LockFile).LastWriteTime).TotalMinutes
+        if ($age -lt $LockMaxAgeMin) { return $false }     # someone's working
+        Write-Log "LOCK - stale lock ($([math]::Round($age,0)) min old), taking over" "Yellow"
+    }
+    "pid=$PID started=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Set-Content $LockFile
+    return $true
+}
+function Exit-RunLock { Remove-Item $LockFile -Force -ErrorAction SilentlyContinue }
+
+# --- mode state (what ran when, persisted between fires) ----
+function Read-ModeState {
+    $s = @{ Date=""; MorningDone=$false; GlanceCount=0; LastVisit=$null
+            Sweep1Done=$false; Sweep2Done=$false }
+    if (-not (Test-Path $ModeStateFile)) { return $s }
+    foreach ($l in (Get-Content $ModeStateFile -ErrorAction SilentlyContinue)) {
+        if     ($l -match '^date\s*:\s*(.+)$')          { $s.Date = $Matches[1].Trim() }
+        elseif ($l -match '^morning_done\s*:\s*(.+)$')  { $s.MorningDone = ($Matches[1].Trim() -eq 'true') }
+        elseif ($l -match '^glance_count\s*:\s*(\d+)$') { $s.GlanceCount = [int]$Matches[1] }
+        elseif ($l -match '^last_visit\s*:\s*(.+)$')    { try { $s.LastVisit = [datetime]::ParseExact($Matches[1].Trim(),'yyyy-MM-dd HH:mm:ss',$null) } catch {} }
+        elseif ($l -match '^sweep1_done\s*:\s*(.+)$')   { $s.Sweep1Done = ($Matches[1].Trim() -eq 'true') }
+        elseif ($l -match '^sweep2_done\s*:\s*(.+)$')   { $s.Sweep2Done = ($Matches[1].Trim() -eq 'true') }
+    }
+    return $s
+}
+function Save-ModeState {
+    param($S)
+    @(
+        "date: $($S.Date)"
+        "morning_done: $(if ($S.MorningDone) {'true'} else {'false'})"
+        "glance_count: $($S.GlanceCount)"
+        "last_visit: $(if ($S.LastVisit) { $S.LastVisit.ToString('yyyy-MM-dd HH:mm:ss') } else { '' })"
+        "sweep1_done: $(if ($S.Sweep1Done) {'true'} else {'false'})"
+        "sweep2_done: $(if ($S.Sweep2Done) {'true'} else {'false'})"
+    ) | Set-Content $ModeStateFile
+}
+
+function Test-InWindow {
+    param([datetime]$Now, $Win)
+    $t = $Now.ToString('HH:mm')
+    return ($t -ge $Win.Start -and $t -lt $Win.End)
+}
+
+# --- the decision: what should THIS fire do? ----------------
+# Returns: sleep | morning | glance | glance+invoice | deepsweep
+#          plus a reason string for the log.
+function Get-RunDecision {
+    param($State)
+    $now = Get-Date
+
+    # Manual override for testing
+    if ($ForceMode -and $Mode) { return @{ Do = $Mode; Why = "forced" } }
+
+    # New day -> reset day flags; morning sweep owed
+    if ($State.Date -ne $Today) {
+        $State.Date = $Today; $State.MorningDone = $false; $State.GlanceCount = 0
+        $State.LastVisit = $null; $State.Sweep1Done = $false; $State.Sweep2Done = $false
+    }
+
+    # Morning sweep: first fire of the day at/after 06:00
+    # (a PC left on overnight must not sweep at 00:01 - invoices
+    #  finalize through the early morning; 06:00+ catches them)
+    if (-not $State.MorningDone) {
+        if ($now.Hour -ge 6) { return @{ Do = "morning"; Why = "first run of day" } }
+        return @{ Do = "sleep"; Why = "morning sweep waits for 06:00" }
+    }
+
+    # Before opening: nothing else allowed
+    if ($now.Hour -lt $DayStartHour) { return @{ Do = "sleep"; Why = "before $DayStartHour:00" } }
+
+    # Deep sweeps: earliest slot passed + not yet done + within grace
+    for ($i = 0; $i -lt $DeepSweepTimes.Count; $i++) {
+        $slot = [datetime]::ParseExact("$Today $($DeepSweepTimes[$i])", 'yyyy-MM-dd HH:mm', $null)
+        $done = if ($i -eq 0) { $State.Sweep1Done } else { $State.Sweep2Done }
+        if (-not $done -and $now -ge $slot -and $now -le $slot.AddMinutes($DeepSweepGraceMin)) {
+            return @{ Do = "deepsweep"; Why = "slot $($DeepSweepTimes[$i])"; SweepIndex = $i }
+        }
+    }
+
+    # Busy windows: glance every fire; every Nth carries the invoice pass
+    foreach ($w in $BusyWindows) {
+        if (Test-InWindow $now $w) {
+            if ((($State.GlanceCount + 1) % $InvoiceEveryNth) -eq 0) {
+                return @{ Do = "glance+invoice"; Why = "busy, nth glance" }
+            }
+            return @{ Do = "glance"; Why = "busy" }
+        }
+    }
+
+    # Relax windows: combined visit if enough minutes passed
+    foreach ($w in $RelaxWindows) {
+        if (Test-InWindow $now $w) {
+            $gap = if ($State.LastVisit) { ($now - $State.LastVisit).TotalMinutes } else { 999 }
+            if ($gap -ge $RelaxGapMin) { return @{ Do = "glance+invoice"; Why = "relax visit" } }
+            return @{ Do = "sleep"; Why = "relax, next visit in $([math]::Round($RelaxGapMin - $gap,0)) min" }
+        }
+    }
+
+    # Patrol: slow evening watch
+    if (Test-InWindow $now $PatrolWindow) {
+        $gap = if ($State.LastVisit) { ($now - $State.LastVisit).TotalMinutes } else { 999 }
+        if ($gap -ge $PatrolGapMin) { return @{ Do = "glance"; Why = "patrol visit" } }
+        return @{ Do = "sleep"; Why = "patrol, next visit in $([math]::Round($PatrolGapMin - $gap,0)) min" }
+    }
+
+    return @{ Do = "sleep"; Why = "outside all windows" }
+}
+
+# --- practice-mode write guard ------------------------------
+# Every OrbitOMS write funnels through this. In -Practice it
+# logs the intent and swallows the call.
+function Test-WriteAllowed {
+    param([string]$WouldDo)
+    if ($Practice) {
+        Write-Log "PRACTICE - WOULD $WouldDo" "Magenta"
+        return $false
+    }
+    return $true
+}
 
 #endregion
 
@@ -404,10 +574,16 @@ function Invoke-SpecPrime {
 }
 
 function Get-OBDListPage {
-    param([int]$PageNum, [string]$Date, $Session, [hashtable]$Config)
+    param([int]$PageNum, [string]$Date, $Session, [hashtable]$Config, [array]$ExtraParams = @())
 
     $maxAttempts = 3
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+
+        $paramList = [System.Collections.Generic.List[object]]::new()
+        $paramList.Add([ordered]@{ field = "picklistdate"; value = $Date })
+        $paramList.Add([ordered]@{ field = "transporter";  value = "Select Transporter" })
+        foreach ($ep in $ExtraParams) { $paramList.Add($ep) }
+        $paramList.Add([ordered]@{ field = "formName";     value = "" })
 
         $bodyJson = [ordered]@{
             reportId    = "Reports/105VCsI1rQ6u1QSEyGJ7I3Lc"
@@ -416,11 +592,7 @@ function Get-OBDListPage {
             page        = $PageNum
             size        = 20
             sorters     = @()
-            params      = @(
-                [ordered]@{ field = "picklistdate"; value = $Date }
-                [ordered]@{ field = "transporter";  value = "Select Transporter" }
-                [ordered]@{ field = "formName";     value = "" }
-            )
+            params      = @($paramList)
         } | ConvertTo-Json -Depth 5
 
         try {
@@ -471,6 +643,14 @@ function Get-TotalCount {
             if ($v -is [int] -or $v -is [long]) { return [int]$v }
             if ($v -match '^\d+$') { return [int]$v }
         }
+    }
+
+    # Verified real source (log DIAG 2026-08): numrowsInfo =
+    # "Showing records between 1 and 20 of total 148 records"
+    if ($PageResult.PSObject.Properties['numrowsInfo']) {
+        $s = [string]$PageResult.numrowsInfo
+        if ($s -match 'of\s+total\s+(\d+)\s+record') { return [int]$Matches[1] }
+        if ($s -match '(\d+)\s*$')                   { return [int]$Matches[1] }
     }
 
     return -1
@@ -854,48 +1034,7 @@ function Get-PendingInvoiceObds {
 # Fetch a single OBD's header row from /data using the sonum filter.
 # Returns a Build-HeaderRow PSCustomObject, or $null if not found / error.
 # Uses script-level $Session, $BaseUrl, $DataPath, $Today.
-function Get-ObdHeaderBySonum {
-    param([string]$Obd)
-
-    $bodyJson = [ordered]@{
-        reportId    = "Reports/105VCsI1rQ6u1QSEyGJ7I3Lc"
-        componentId = "c01105VCsI1rQ6u1QSEyGJ7I3Lc"
-        filters     = @()
-        page        = 1
-        size        = 20
-        sorters     = @()
-        params      = @(
-            [ordered]@{ field = "sonum";       value = $Obd }
-            [ordered]@{ field = "picklistdate"; value = $Today }
-            [ordered]@{ field = "transporter";  value = "Select Transporter" }
-            [ordered]@{ field = "formName";     value = "" }
-        )
-    } | ConvertTo-Json -Depth 5
-
-    try {
-        $response = Invoke-WebRequest `
-            -Uri ($BaseUrl + $DataPath) `
-            -Method POST `
-            -Body $bodyJson `
-            -ContentType "application/json" `
-            -Headers (Get-BrowserHeaders) `
-            -WebSession $Session `
-            -UseBasicParsing `
-            -TimeoutSec 30 `
-            -ErrorAction Stop
-
-        $parsed  = $response.Content | ConvertFrom-Json
-        if ($parsed.data) {
-            $rawRow = @($parsed.data) | Where-Object {
-                $_.PickListId -and $_.PickListId.ToString().Trim() -eq $Obd
-            } | Select-Object -First 1
-            if ($rawRow) { return Build-HeaderRow $rawRow }
-        }
-    } catch {
-        Write-Log "SONUM-FETCH $Obd failed: $_" "Yellow"
-    }
-    return $null
-}
+# (v3: Get-ObdHeaderBySonum retired - replaced by the Pending Dispatch filtered ask)
 
 # Persist a failed payload JSON to disk for next-cycle retry.
 function Add-PendingJsonUpload {
@@ -1011,10 +1150,19 @@ function Invoke-RecoveryDayPass {
     $rFailed   = [System.Collections.Generic.List[string]]::new()
 
     foreach ($obd in $rNewObds) {
-        Get-RandomDelay -Min 1 -Max 3
         $hdr = $rHeaderRowsMap[$obd]
         $smu = if ($hdr -and $hdr.SMU) { $hdr.SMU.ToString() } else { "" }
 
+        # Volume-zero rule: detail form will never fill; import header-only.
+        $vol = 0; if ($hdr -and $hdr.Volume) { try { $vol = [decimal]$hdr.Volume } catch { $vol = 0 } }
+        if ($hdr -and $vol -eq 0) {
+            $rHdrOut.Add($hdr)
+            $rFetched++
+            Write-Log "RECOVERY $Date - $obd header-only (volume 0, manual SAP completes it later)" "Yellow"
+            continue
+        }
+
+        Get-RandomDelay -Min 1 -Max 3
         $lines = Get-ObdJsonData -ObdNumber $obd -Session $Session -Config $config
         # A zero-line response is a FAILURE, not a success. @() is not $null, so
         # the old `$null -ne $lines` posted a header carrying no lines at all.
@@ -1073,14 +1221,290 @@ function Invoke-RecoveryDayPass {
     return $createSuccess
 }
 
+#  ---- v3 core functions ------------------------------------
+
+# Ask OrbitOMS: how many orders for this date + which OBD numbers.
+# Returns @{ Count = int; Set = HashSet[string] } or $null on failure.
+function Get-DayObds {
+    param([string]$Date)
+    $body    = @{ fromDate = $Date; toDate = $Date } | ConvertTo-Json -Compress
+    $headers = Get-V2ApiHeaders
+    try {
+        $resp = Invoke-WebRequest `
+            -Uri $ApiUrlDayObds `
+            -Method POST `
+            -Body $body `
+            -ContentType "application/json" `
+            -Headers $headers `
+            -UseBasicParsing `
+            -TimeoutSec 60 `
+            -ErrorAction Stop
+        $parsed = $resp.Content | ConvertFrom-Json
+        if ($null -eq $parsed.count) { return $null }
+        $set = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($o in @($parsed.obdNumbers)) { if ($o) { [void]$set.Add($o.ToString().Trim()) } }
+        return @{ Count = [int]$parsed.count; Set = $set }
+    } catch {
+        Write-Log "DAY-OBDS - fetch failed: $_" "Yellow"
+        return $null
+    }
+}
+
+# Waiting throttle: OBDs whose lines aren't ready yet (Volume>0 but
+# empty detail). Re-try FormGetData at most every 5 minutes, not
+# every glance.
+$WaitingObdsFile = "$ToolRoot\Master\v3-waiting-obds.txt"
+function Test-WaitingThrottle {
+    param([string]$Obd)
+    if (-not (Test-Path $WaitingObdsFile)) { return $true }
+    foreach ($l in (Get-Content $WaitingObdsFile -ErrorAction SilentlyContinue)) {
+        $p = $l -split '\|', 2
+        if ($p.Count -eq 2 -and $p[0] -eq $Obd) {
+            try {
+                $last = [datetime]::ParseExact($p[1], 'yyyy-MM-dd HH:mm:ss', $null)
+                return (((Get-Date) - $last).TotalMinutes -ge 5)
+            } catch { return $true }
+        }
+    }
+    return $true
+}
+function Set-WaitingStamp {
+    param([string]$Obd)
+    $rows = @()
+    if (Test-Path $WaitingObdsFile) {
+        $rows = @(Get-Content $WaitingObdsFile -ErrorAction SilentlyContinue |
+                  Where-Object { $_ -and -not $_.StartsWith("$Obd|") })
+    }
+    $rows += "$Obd|$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    $rows | Set-Content $WaitingObdsFile
+}
+
+# Known-delta guard: a count mismatch we already walked every page
+# for and could not resolve (e.g. soft-removed order counted by
+# Breakwalls). Remember the signature; only re-walk when it changes.
+function Get-KnownDelta {
+    if (-not (Test-Path $KnownDeltaFile)) { return "" }
+    return (Get-Content $KnownDeltaFile -First 1 -ErrorAction SilentlyContinue)
+}
+function Set-KnownDelta { param([string]$Sig) $Sig | Set-Content $KnownDeltaFile }
+
+#  ---- THE GLANCE --------------------------------------------
+#  One page-1 fetch. Compare totals. Locate + import anything
+#  missing. Returns a result hashtable for the summary.
+function Invoke-Glance {
+    $res = @{ BwTotal = -1; OmsCount = -1; NewImported = 0; HeaderOnly = 0
+              Waiting = 0; Failed = 0; Outcome = "?" }
+
+    $p1 = Get-OBDListPage -PageNum 1 -Date $Today -Session $Session -Config $config
+    if (-not ($p1 -and $null -ne $p1.data)) {
+        Write-Log "GLANCE - page 1 unreachable, next fire retries" "Yellow"
+        $res.Outcome = "page1-fail"; return $res
+    }
+
+    $bwTotal = Get-TotalCount -PageResult $p1
+    if ($bwTotal -lt 0) { $bwTotal = @($p1.data).Count }   # worst case: page 1 size
+    $res.BwTotal = $bwTotal
+
+    $oms = Get-DayObds -Date $Today
+    if ($null -eq $oms) {
+        # Fallback: pre-check just page 1's OBDs (limited but functional)
+        $p1Obds = @($p1.data | ForEach-Object { if ($_.PickListId) { $_.PickListId.ToString().Trim() } } | Where-Object { $_ })
+        $ex = Invoke-PreCheck -obdNumbers $p1Obds -Session $Session
+        if ($null -eq $ex) { Write-Log "GLANCE - day-obds AND pre-check failed, skipping" "Yellow"; $res.Outcome = "oms-fail"; return $res }
+        $oms = @{ Count = -1; Set = $ex }
+        Write-Log "GLANCE - day-obds unavailable, page-1 fallback in use" "Yellow"
+    }
+    $res.OmsCount = $oms.Count
+
+    # Collect candidate missing rows from page 1
+    $missingRows = @{}
+    foreach ($row in $p1.data) {
+        $obd = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
+        if ($obd -and -not $oms.Set.Contains($obd)) { $missingRows[$obd] = $row }
+    }
+
+    $delta = if ($oms.Count -ge 0) { $bwTotal - $oms.Count } else { $missingRows.Count }
+
+    if ($delta -le 0 -and $missingRows.Count -eq 0) {
+        Write-Log "GLANCE - match (bw=$bwTotal oms=$($oms.Count))"
+        Save-Tally -Date $Today -TotalCount $bwTotal -Page1Obds @($p1.data | ForEach-Object { $_.PickListId }) -Status "ok"
+        if ($oms.Count -gt $bwTotal) { Write-Log "GLANCE - note: OMS holds $($oms.Count - $bwTotal) more than Breakwalls (removed on BW?)" "Yellow" }
+        $res.Outcome = "match"; return $res
+    }
+
+    Write-Log "GLANCE - bw=$bwTotal oms=$($oms.Count) -> $delta missing" "Cyan"
+
+    # Deeper pages only if page 1 didn't surface every missing OBD
+    if ($oms.Count -ge 0 -and $missingRows.Count -lt $delta) {
+        $lastPage = 1; try { $lastPage = [int]$p1.last_page } catch {}
+        $sig = "$bwTotal|$($oms.Count)"
+        if ($lastPage -gt 1) {
+            if ((Get-KnownDelta) -eq $sig) {
+                Write-Log "GLANCE - known unresolved delta ($sig), skipping page walk"
+            } else {
+                for ($p = 2; $p -le $lastPage; $p++) {
+                    Get-RandomDelay -Min 1 -Max 2
+                    $pr = Get-OBDListPage -PageNum $p -Date $Today -Session $Session -Config $config
+                    if ($pr -and $pr.data) {
+                        foreach ($row in $pr.data) {
+                            $obd = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
+                            if ($obd -and -not $oms.Set.Contains($obd) -and -not $missingRows.ContainsKey($obd)) {
+                                $missingRows[$obd] = $row
+                            }
+                        }
+                    }
+                    if ($missingRows.Count -ge $delta) { break }
+                }
+                if ($missingRows.Count -lt $delta) {
+                    Set-KnownDelta $sig
+                    Write-Log "GLANCE - walked all $lastPage pages, $($delta - $missingRows.Count) unlocatable (soft-removed?) - marked known delta" "Yellow"
+                } else {
+                    Set-KnownDelta ""
+                }
+            }
+        }
+    }
+
+    if ($missingRows.Count -eq 0) { $res.Outcome = "known-delta"; return $res }
+
+    # Import the located missing OBDs
+    $hdrOut   = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $linesOut = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    foreach ($obd in @($missingRows.Keys)) {
+        $row = $missingRows[$obd]
+        $hdr = Build-HeaderRow $row
+        $smu = if ($hdr.SMU) { $hdr.SMU.ToString() } else { "" }
+
+        $vol = 0; if ($hdr.Volume) { try { $vol = [decimal]$hdr.Volume } catch { $vol = 0 } }
+        if ($vol -eq 0) {
+            $hdrOut.Add($hdr); $res.HeaderOnly++
+            Write-Log "IMPORT $obd - header-only (volume 0, manual SAP completes it later)" "Yellow"
+            continue
+        }
+
+        if (-not (Test-WaitingThrottle -Obd $obd)) {
+            $res.Waiting++
+            continue   # tried <5 min ago; don't hammer the empty form
+        }
+
+        Get-RandomDelay -Min 1 -Max 2
+        $lines = Get-ObdJsonData -ObdNumber $obd -Session $Session -Config $config
+        # A zero-line response is a FAILURE, not a success. @() is not $null, so
+        # the old `$null -ne $lines` posted a header carrying no lines at all.
+        # 5.1-safe count: a single non-collection object has no .Count of its own
+        # (returns $null), and @($null).Count is 1 - so BOTH tests are required.
+        if (($null -ne $lines) -and (@($lines).Count -gt 0)) {
+            $hdrOut.Add($hdr)
+            foreach ($ln in $lines) { $linesOut.Add((Build-LineRow -obd $obd -line $ln -hdrSmu $smu)) }
+            Write-Log "IMPORT $obd - OK ($(@($lines).Count) lines)" "Green"
+        } else {
+            Set-WaitingStamp -Obd $obd
+            $res.Waiting++
+            if ($null -eq $lines) {
+                Write-Log "WAIT $obd - FormGetData failed, will retry" "Yellow"
+            } else {
+                Write-Log "WAIT $obd - EMPTY: 0 lines returned, not importing; will retry" "Yellow"
+            }
+        }
+    }
+
+    if ($hdrOut.Count -gt 0) {
+        $payload = @{ headerRows = @($hdrOut); lineRows = @($linesOut) }
+        if ($DryRun) {
+            $dryRunFolder = "$OutputFolder\dryrun"
+            if (-not (Test-Path $dryRunFolder)) { New-Item -ItemType Directory -Path $dryRunFolder | Out-Null }
+            $df = "$dryRunFolder\glance-$Today-$(Get-Date -Format 'HHmmss').json"
+            $payload | ConvertTo-Json -Depth 5 | Set-Content $df -Encoding UTF8
+            Write-Log "PRACTICE - WOULD import $($hdrOut.Count) OBDs ($($linesOut.Count) lines); payload -> $df" "Magenta"
+            $res.NewImported = $hdrOut.Count
+        } else {
+            Get-RandomDelay -Min 1 -Max 2
+            $up = Send-JsonPayloadToOrbitOMS -Payload $payload
+            if ($up.Success) {
+                $res.NewImported = $up.Imported
+                Write-Log "GLANCE - imported $($up.Imported) (skipped=$($up.Skipped) errors=$($up.Errors))" "Green"
+            } else {
+                Add-PendingJsonUpload -Payload $payload -Date $Today
+                $res.Failed = $hdrOut.Count
+                Write-Log "GLANCE - upload failed, parked for retry" "Red"
+            }
+        }
+    }
+
+    $res.Outcome = "imported"
+    return $res
+}
+
+#  ---- THE INVOICE PASS --------------------------------------
+#  1. Ask OrbitOMS (free): which of $Date's orders lack invoices?
+#  2. Nothing blank -> zero Breakwalls visits, done.
+#  3. Else ONE filtered ask (pendingstatus = Pending Dispatch):
+#     rows carry InvoiceNo -> patch the intersection.
+function Invoke-InvoicePass {
+    param([string]$Date)
+
+    $blanks = @(Get-PendingInvoiceObds -FromDate $Date -ToDate $Date)
+    if ($blanks.Count -eq 0) {
+        Write-Log "INVPASS $Date - no blanks in OrbitOMS, nothing to do"
+        return 0
+    }
+    $blankSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($b in $blanks) { [void]$blankSet.Add($b.ToString().Trim()) }
+
+    $filter = @([ordered]@{ field = "pendingstatus"; value = "Pending Dispatch" })
+    $collected = @()
+    $pageNum = 1; $lastPage = 1
+    do {
+        $pr = Get-OBDListPage -PageNum $pageNum -Date $Date -Session $Session -Config $config -ExtraParams $filter
+        if (-not ($pr -and $null -ne $pr.data)) { break }
+        try { $lastPage = [int]$pr.last_page } catch { $lastPage = 1 }
+        foreach ($row in $pr.data) {
+            $obd = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
+            if ($obd -and $blankSet.Contains($obd) -and $row.InvoiceNo -and $row.InvoiceNo.ToString().Trim() -ne "") {
+                $collected += Build-PatchHeaderRow (Build-HeaderRow $row)
+            }
+        }
+        $pageNum++
+        if ($pageNum -le $lastPage) { Get-RandomDelay -Min 1 -Max 2 }
+    } while ($pageNum -le $lastPage)
+
+    if ($collected.Count -gt 0) {
+        if ($Practice) { Write-Log "PRACTICE - WOULD patch $($collected.Count) invoices for $Date" "Magenta" }
+        Send-PatchHeadersToOrbitOMS -PatchHeaders $collected -IsDryRun ([bool]$DryRun) | Out-Null
+    }
+    Write-Log "INVPASS $Date - oms blanks=$($blanks.Count) bw ready=$($collected.Count) patched=$($collected.Count)"
+    return $collected.Count
+}
+
 #endregion NEW FUNCTIONS
 
 
-#region MAIN PIPELINE
+#region MAIN PIPELINE  (v3 mode-dispatched)
+
+# ============================================================
+#  MODE DECISION  (before any logging or network)
+# ============================================================
+
+$ModeState = Read-ModeState
+$decision  = Get-RunDecision -State $ModeState
+
+if ($decision.Do -eq "sleep") { exit 0 }                 # silent - no log spam
+if (-not (Enter-RunLock))     { exit 0 }                 # someone else is working
+
+# Practice implies dry-run everywhere (server-side dryRun for patches,
+# payload-to-disk for imports) plus magenta WOULD lines.
+if ($Practice) { $DryRun = $true }
+
+try {
 
 Write-Log ""
-Write-Section "RUN STARTED  $Today  [v2 pure-json]" "Cyan"
+Write-Section "RUN STARTED  $Today  [v3 $($decision.Do) - $($decision.Why)]" "Cyan"
+if ($Practice) { Write-Log "PRACTICE MODE - real reads, no OrbitOMS writes" "Magenta" }
+$Summary.Mode = $decision.Do
 
+# Jitter: never knock exactly on the minute tick
+Start-Sleep -Seconds (Get-Random -Minimum 2 -Maximum 21)
 
 # ============================================================
 #  PHASE 1 - CLEANUP + DAILY RESET
@@ -1135,6 +1559,7 @@ if (Test-Path $PendingJsonFolder) {
             Write-Log "CLEANUP - Deleted old pending-json: $($_.Name)"
         }
 }
+
 
 
 # ============================================================
@@ -1192,6 +1617,7 @@ foreach ($rawLine in (Get-Content $PackSizesFile)) {
 }
 
 
+
 # ============================================================
 #  PHASE 2 - LOGIN
 # ============================================================
@@ -1225,6 +1651,17 @@ if (-not $usedCachedSession) {
 }
 
 
+
+# ============================================================
+#  MODE DISPATCH
+# ============================================================
+
+$glanceRes = $null
+
+switch -Wildcard ($decision.Do) {
+
+    "morning" {
+        # -- yesterday catch-up: recovery (missed orders) --
 # ============================================================
 #  PHASE 3 - RECOVERY PASS (multi-day, bounded)
 # ============================================================
@@ -1232,7 +1669,7 @@ if (-not $usedCachedSession) {
 if ($SkipYesterday) {
     Write-Log "[flag] SkipYesterday - yesterday recovery skipped; today only."
 } elseif ($TargetDate -ne "") {
-    Write-Log "[flag] TargetDate=$TargetDate - yesterday recovery skipped; processing target date only."
+    Write-Log "[flag] TargetDate=$TargetDate - yesterday recovery skipped (v3: TargetDate only affects recovery skip)."
 } else {
 
 $yState = Read-YesterdayState
@@ -1290,13 +1727,22 @@ if ($yState -and $yState.Status -eq "pending") {
 }   # end -not SkipYesterday
 
 
-# ============================================================
-#  PHASE 4 - SPEC PRIME (today)
-# ============================================================
 
-$specReason = if ($Summary.YesterdayRan) { "post-yesterday" } else { "default" }
-Invoke-SpecPrime -Session $Session -Reason $specReason | Out-Null
-
+        # -- yesterday invoice chase: filtered ask per chase date --
+        $chaseTo   = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
+        $chaseFromRaw = (Get-Date).AddDays(-$ChaseWindowDays).ToString("yyyy-MM-dd")
+        $chaseFrom = if ($chaseFromRaw -gt $GoLiveDate) { $chaseFromRaw } else { $GoLiveDate }
+        if ($chaseFrom -le $chaseTo) {
+            $cd = [datetime]::ParseExact($chaseFrom, "yyyy-MM-dd", $null)
+            $ce = [datetime]::ParseExact($chaseTo,   "yyyy-MM-dd", $null)
+            while ($cd -le $ce) {
+                Invoke-SpecPrime -Session $Session -Reason "morning-chase" | Out-Null
+                Invoke-InvoicePass -Date $cd.ToString("yyyy-MM-dd") | Out-Null
+                $cd = $cd.AddDays(1)
+            }
+        } else {
+            Write-Log "MORNING - chase window empty ($chaseFrom..$chaseTo)"
+        }
 
 # ============================================================
 #  PHASE 5 - PENDING JSON UPLOAD RETRY
@@ -1352,309 +1798,143 @@ if (Test-Path $PendingJsonFile) {
 }
 
 
+
+        $ModeState.MorningDone = $true
+        Write-Log "MORNING - sweep done; quiet until $($DayStartHour):00" "Cyan"
+    }
+
+    "deepsweep" {
+        Invoke-SpecPrime -Session $Session -Reason "deep-sweep" | Out-Null
+        Write-Log "DEEPSWEEP - full reconcile of $Today" "Cyan"
+        Invoke-RecoveryDayPass -Date $Today | Out-Null
+        Invoke-InvoicePass -Date $Today | Out-Null
 # ============================================================
-#  PHASE 6 - /data PAGINATION (full header rows)
+#  PHASE 5 - PENDING JSON UPLOAD RETRY
 # ============================================================
 
-$EffectiveDate = if ($TargetDate -ne "") { $TargetDate } else { $Today }
-Write-Log "PHASE 6 - Processing date: $EffectiveDate"
-
-$headerRowsByObd = @{}
-$allObds         = [System.Collections.Generic.List[string]]::new()
-
-Get-RandomDelay -Min 2 -Max 5
-$page1 = Get-OBDListPage -PageNum 1 -Date $EffectiveDate -Session $Session -Config $config
-
-if (-not ($page1 -and $page1.data)) {
-    Write-Log "PHASE 6 - Page 1 unreachable. Cannot continue. Next cycle will retry." "Red"
-    $Summary.PaginationMode  = "page1-failed"
-    $Summary.BreakwallsTotal = "?"
-    $Summary.Errors.Add("Phase 6 page 1 failed")
-} else {
-
-    $keyList = ($page1.PSObject.Properties.Name -join ', ')
-    Write-Log "DIAG - Today page 1 response keys: $keyList"
-
-    $lastPage      = [int]$page1.last_page
-    $page1Obds     = [System.Collections.Generic.List[string]]::new()
-    $totalCount    = Get-TotalCount -PageResult $page1
-
-    foreach ($row in $page1.data) {
-        $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
-        if ($obdNum) {
-            $page1Obds.Add($obdNum)
-            $allObds.Add($obdNum)
-            $headerRowsByObd[$obdNum] = Build-HeaderRow $row
+if (Test-Path $PendingJsonFile) {
+    Write-Log "PHASE 5 - Retrying pending JSON uploads"
+    $pending = @(Get-Content $PendingJsonFile | Where-Object { $_.Trim() -ne "" })
+    foreach ($entry in $pending) {
+        $parts = $entry -split '\|', 2
+        if ($parts.Count -ne 2) { continue }
+        $pendDate     = $parts[0]
+        $pendJsonPath = $parts[1]
+        if (-not (Test-Path $pendJsonPath)) {
+            Write-Log "PHASE 5 - Pending JSON file missing: $pendJsonPath, removing entry" "Yellow"
+            Remove-PendingJsonUpload -JsonPath $pendJsonPath
+            continue
         }
-    }
-
-    if ($lastPage -gt 1) {
-        $Summary.PaginationMode = "full ($lastPage pages)"
-        Write-Log "PHASE 6 - Fetching pages 2..$lastPage"
-
-        $pageOrder = 2..$lastPage | Get-Random -Count ($lastPage - 1)
-        foreach ($p in $pageOrder) {
-            Get-RandomDelay -Min 1 -Max 3
-            $pr = Get-OBDListPage -PageNum $p -Date $EffectiveDate -Session $Session -Config $config
-            if ($pr -and $pr.data) {
-                foreach ($row in $pr.data) {
-                    $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
-                    if ($obdNum -and -not $allObds.Contains($obdNum)) {
-                        $allObds.Add($obdNum)
-                        $headerRowsByObd[$obdNum] = Build-HeaderRow $row
-                    }
-                }
-                Write-Log "PHASE 6 - Page $p/$lastPage : $($pr.data.Count) OBDs"
-            } else {
-                Write-Log "PHASE 6 - Page $p failed all retries" "Yellow"
-                $Summary.Errors.Add("Phase 6 page $p failed")
-            }
-        }
-
-        # Refetch page 1 to catch OBDs added during pagination
-        Get-RandomDelay -Min 1 -Max 3
-        $refetch = Get-OBDListPage -PageNum 1 -Date $EffectiveDate -Session $Session -Config $config
-        if ($refetch -and $refetch.data) {
-            foreach ($row in $refetch.data) {
-                $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
-                if ($obdNum -and -not $allObds.Contains($obdNum)) {
-                    $allObds.Add($obdNum)
-                    $headerRowsByObd[$obdNum] = Build-HeaderRow $row
-                    Write-Log "PHASE 6 - New OBD via page 1 refetch: $obdNum"
-                }
-            }
-            $page1Obds.Clear()
-            foreach ($row in $refetch.data) {
-                $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
-                if ($obdNum) { $page1Obds.Add($obdNum) }
-            }
-            $newTotal = Get-TotalCount -PageResult $refetch
-            if ($newTotal -ge 0) { $totalCount = $newTotal }
-        }
-    } else {
-        $Summary.PaginationMode = "single-page"
-    }
-
-    $allObdsArr = @($allObds | Select-Object -Unique)
-    Save-Tally -Date $EffectiveDate -TotalCount $totalCount -Page1Obds @($page1Obds) -Status "ok"
-    $Summary.BreakwallsTotal = if ($totalCount -ge 0) { $totalCount } else { "$($allObdsArr.Count) (estimated)" }
-    Write-Log "PHASE 6 - $($allObdsArr.Count) OBDs collected ($($headerRowsByObd.Count) header rows built)"
-
-
-    # ============================================================
-    #  PHASE 6b - PRE-CHECK
-    # ============================================================
-
-    Write-Log "PHASE 6b - Pre-check against OrbitOMS"
-    Get-RandomDelay -Min 1 -Max 3
-    $existingSet = Invoke-PreCheck -obdNumbers $allObdsArr -Session $Session
-    if ($null -eq $existingSet) {
-        $newObds = $allObdsArr
-        Write-Log "PHASE 6b - Pre-check failed, treating all $($allObdsArr.Count) as new" "Yellow"
-    } else {
-        $newObds = @($allObdsArr | Where-Object { -not $existingSet.Contains($_) })
-    }
-    $Summary.PreCheckNew      = $newObds.Count
-    $Summary.PreCheckExisting = $allObdsArr.Count - $newObds.Count
-    Write-Log "PHASE 6b - $($Summary.PreCheckNew) new, $($Summary.PreCheckExisting) already in OrbitOMS"
-
-
-    # ============================================================
-    #  PHASE 7 - FORMGETDATA PER NEW OBD
-    # ============================================================
-
-    $todayHdrRows   = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $todayLineRows  = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $fetchedObdSet  = [System.Collections.Generic.HashSet[string]]::new()
-    $todayFailed    = [System.Collections.Generic.List[string]]::new()
-
-    Write-Log "PHASE 7 - FormGetData for $($newObds.Count) new OBDs"
-
-    foreach ($obd in $newObds) {
-        Get-RandomDelay -Min 1 -Max 3
-        $hdr = $headerRowsByObd[$obd]
-        $smu = if ($hdr -and $hdr.SMU) { $hdr.SMU.ToString() } else { "" }
-
-        $lines = Get-ObdJsonData -ObdNumber $obd -Session $Session -Config $config
-        # A zero-line response is a FAILURE, not a success. @() is not $null, so
-        # the old `$null -ne $lines` posted a header carrying no lines at all.
-        # 5.1-safe count: a single non-collection object has no .Count of its own
-        # (returns $null), and @($null).Count is 1 - so BOTH tests are required.
-        if (($null -ne $lines) -and (@($lines).Count -gt 0)) {
-            $todayHdrRows.Add($hdr)
-            foreach ($ln in $lines) { $todayLineRows.Add((Build-LineRow -obd $obd -line $ln -hdrSmu $smu)) }
-            $fetchedObdSet.Add($obd) | Out-Null
-            Write-Log "FORMGET $obd - OK ($(@($lines).Count) lines)"
-        } else {
-            $todayFailed.Add($obd)
-            if ($null -eq $lines) {
-                Write-Log "FORMGET $obd - FAILED (queued for retry)" "Yellow"
-            } else {
-                Write-Log "FORMGET $obd - EMPTY: 0 lines returned, treating as failure (queued for retry)" "Yellow"
-            }
-        }
-    }
-
-    # Persist failed OBDs for retry next cycle
-    if ($todayFailed.Count -gt 0) {
-        $existingFailed = @()
-        if (Test-Path $FailedJsonObdsFile) {
-            $existingFailed = @(Get-Content $FailedJsonObdsFile | Where-Object { $_.Trim() -ne "" })
-        }
-        @($existingFailed + @($todayFailed) | Select-Object -Unique) | Set-Content $FailedJsonObdsFile
-    }
-
-    $Summary.FetchedThis = $fetchedObdSet.Count
-    $Summary.FailedThis  = $todayFailed.Count
-
-
-    # ============================================================
-    #  PHASE 8 - RETRY FAILED OBDs FROM PRIOR RUNS
-    # ============================================================
-
-    $retriedCount = 0
-    if (Test-Path $FailedJsonObdsFile) {
-        $priorFailed = @(Get-Content $FailedJsonObdsFile | Where-Object { $_.Trim() -ne "" })
-        # Only retry OBDs in today's Breakwalls list that we haven't fetched yet
-        $toRetry = @($priorFailed | Where-Object {
-            $allObdsArr -contains $_ -and
-            -not $fetchedObdSet.Contains($_) -and
-            $todayFailed -notcontains $_
-        })
-
-        if ($toRetry.Count -gt 0) {
-            Write-Log "PHASE 8 - Retrying $($toRetry.Count) prior-failed OBDs"
-            $stillFailed = [System.Collections.Generic.List[string]]::new()
-            foreach ($obd in $toRetry) {
-                Get-RandomDelay -Min 1 -Max 3
-                $hdr = $headerRowsByObd[$obd]
-                if ($null -eq $hdr) {
-                    Write-Log "RETRY $obd - no header row, skipping" "Yellow"
-                    $stillFailed.Add($obd)
-                    continue
-                }
-                $smu   = if ($hdr.SMU) { $hdr.SMU.ToString() } else { "" }
-                $lines = Get-ObdJsonData -ObdNumber $obd -Session $Session -Config $config
-                if (($null -ne $lines) -and (@($lines).Count -gt 0)) {
-                    $todayHdrRows.Add($hdr)
-                    foreach ($ln in $lines) { $todayLineRows.Add((Build-LineRow -obd $obd -line $ln -hdrSmu $smu)) }
-                    $fetchedObdSet.Add($obd) | Out-Null
-                    $retriedCount++
-                    Write-Log "RETRY $obd - OK ($(@($lines).Count) lines)" "Green"
-                } else {
-                    $stillFailed.Add($obd)
-                    if ($null -eq $lines) {
-                        Write-Log "RETRY $obd - still failing" "Yellow"
-                    } else {
-                        Write-Log "RETRY $obd - EMPTY: 0 lines returned, still failing" "Yellow"
-                    }
-                }
-            }
-
-            # Rewrite failed-obds-json.txt: keep still-failing + today's new failures
-            $combined = @(@($stillFailed) + @($todayFailed) | Select-Object -Unique)
-            if ($combined.Count -gt 0) {
-                $combined | Set-Content $FailedJsonObdsFile
-            } else {
-                Remove-Item $FailedJsonObdsFile -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-
-    $Summary.FetchedThis = $fetchedObdSet.Count   # updated with retried successes
-
-
-    # ============================================================
-    #  PHASE 9 - BUILD PAYLOAD + POST ?action=auto-json
-    # ============================================================
-
-    if ($fetchedObdSet.Count -gt 0) {
-        Write-Log "PHASE 9 - Building payload ($($todayHdrRows.Count) header rows, $($todayLineRows.Count) line rows)"
-
-        $payload = @{
-            headerRows = @($todayHdrRows)
-            lineRows   = @($todayLineRows)
-        }
-
+        # Re-POST the saved JSON bytes directly (avoids double parse/serialize)
+        $pendBody = Get-Content $pendJsonPath -Raw -Encoding UTF8
+        $headers  = Get-V2ApiHeaders
         if ($DryRun) {
-            $dryRunFolder = "$OutputFolder\dryrun"
-            if (-not (Test-Path $dryRunFolder)) { New-Item -ItemType Directory -Path $dryRunFolder | Out-Null }
-            $dryRunTs   = Get-Date -Format "HHmmss"
-            $dryRunFile = "$dryRunFolder\$EffectiveDate-$dryRunTs.json"
-            $payload | ConvertTo-Json -Depth 5 | Set-Content $dryRunFile -Encoding UTF8
-            Write-Log "[DRY RUN] would POST $($todayHdrRows.Count) header rows + $($todayLineRows.Count) line rows to ?action=auto-json" "Cyan"
-            Write-Log "[DRY RUN] payload written to $dryRunFile" "Cyan"
-            $Summary.UploadStatus = "DRY RUN (not posted)"
+            Write-Log "[DRY RUN] would POST pending payload for $pendDate to ?action=auto-json" "Cyan"
         } else {
-            Get-RandomDelay -Min 1 -Max 3
-            $upRes = Send-JsonPayloadToOrbitOMS -Payload $payload
-            if ($upRes.Success) {
-                $Summary.UploadStatus   = "SUCCESS"
-                $Summary.UploadImported = $upRes.Imported
-                $Summary.UploadSkipped  = $upRes.Skipped
-                $Summary.UploadErrors   = $upRes.Errors
-            } else {
-                $Summary.UploadStatus  = "FAILED -> pending-upload-json.txt"
-                $Summary.PendingUpload = $true
-                Add-PendingJsonUpload -Payload $payload -Date $EffectiveDate
+            $retryOk  = $false
+            $maxR     = 3
+            for ($r = 1; $r -le $maxR; $r++) {
+                try {
+                    $resp = Invoke-WebRequest `
+                        -Uri $ApiUrlAutoJson `
+                        -Method POST `
+                        -Body $pendBody `
+                        -ContentType "application/json" `
+                        -Headers $headers `
+                        -UseBasicParsing `
+                        -TimeoutSec 120 `
+                        -ErrorAction Stop
+                    $parsed = $resp.Content | ConvertFrom-Json
+                    Write-Log "PHASE 5 - Pending $pendDate cleared: batchRef=$($parsed.batchRef) imported=$($parsed.ordersCreated)" "Green"
+                    Remove-PendingJsonUpload -JsonPath $pendJsonPath
+                    $retryOk = $true
+                    break
+                } catch {
+                    Write-Log "PHASE 5 - Retry $r for $pendDate failed: $_" "Yellow"
+                    if ($r -lt $maxR) { Start-Sleep -Seconds (10 * $r) }
+                }
+            }
+            if (-not $retryOk) {
+                Write-Log "PHASE 5 - $pendDate still failing, keeping in queue" "Yellow"
             }
         }
-    } else {
-        Write-Log "PHASE 9 - No new OBDs fetched this cycle, skipping upload"
-        $Summary.UploadStatus = "n/a (no new OBDs)"
-    }
-
-
-    # ============================================================
-    #  PHASE 9.5 - PATCH HEADERS FOR EXISTING OBDs
-    # ============================================================
-
-    if ($null -ne $existingSet -and $existingSet.Count -gt 0) {
-        $existingObds = @($allObdsArr | Where-Object { $existingSet.Contains($_) })
-        Write-Log "PHASE 9.5 - Patch headers for $($existingObds.Count) existing OBDs"
-
-        $patchRows = @($existingObds | ForEach-Object { Build-PatchHeaderRow $headerRowsByObd[$_] })
-
-        Get-RandomDelay -Min 1 -Max 3
-        Send-PatchHeadersToOrbitOMS -PatchHeaders $patchRows -IsDryRun ([bool]$DryRun) | Out-Null
-    } else {
-        Write-Log "PHASE 9.5 - No existing OBDs to patch (pre-check failed or 0 existing)"
-    }
-
-}   # end Phase 6 outer block
-
-
-# ============================================================
-#  PHASE 9.6 - INVOICE CHASE
-# ============================================================
-
-$toDate   = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
-$fromRaw  = (Get-Date).AddDays(-$ChaseWindowDays).ToString("yyyy-MM-dd")
-$fromDate = if ($fromRaw -gt $GoLiveDate) { $fromRaw } else { $GoLiveDate }
-
-if ($fromDate -gt $toDate) {
-    Write-Log "PHASE 9.6 - Chase window empty ($fromDate..$toDate), skipping"
-} else {
-    $pending = @(Get-PendingInvoiceObds -FromDate $fromDate -ToDate $toDate)
-    if ($pending.Count -eq 0) {
-        Write-Log "PHASE 9.6 - 0 pending, nothing to chase"
-    } else {
-        $collected = @()
-        foreach ($obd in $pending) {
-            Get-RandomDelay -Min 1 -Max 2
-            $row = Get-ObdHeaderBySonum -Obd $obd
-            if ($row -and $row.InvoiceNo -and $row.InvoiceNo.ToString().Trim() -ne "") {
-                $collected += Build-PatchHeaderRow $row
-            }
-        }
-        $invoicedCount = $collected.Count
-        if ($invoicedCount -gt 0) {
-            Send-PatchHeadersToOrbitOMS -PatchHeaders $collected -IsDryRun ([bool]$DryRun) | Out-Null
-        }
-        Write-Log "PHASE 9.6 - Chase: $fromDate..$toDate pending=$($pending.Count) invoiced-now=$invoicedCount"
     }
 }
 
+
+        if ($decision.SweepIndex -eq 0) { $ModeState.Sweep1Done = $true } else { $ModeState.Sweep2Done = $true }
+    }
+
+    "glance*" {
+        Invoke-SpecPrime -Session $Session -Reason "glance" | Out-Null
+        $glanceRes = Invoke-Glance
+        $ModeState.GlanceCount++
+
+        if ($decision.Do -eq "glance+invoice") {
+            Invoke-InvoicePass -Date $Today | Out-Null
+            # pending upload retry rides the slower beat too
+            if (Test-Path $PendingJsonFile) {
+# ============================================================
+#  PHASE 5 - PENDING JSON UPLOAD RETRY
+# ============================================================
+
+if (Test-Path $PendingJsonFile) {
+    Write-Log "PHASE 5 - Retrying pending JSON uploads"
+    $pending = @(Get-Content $PendingJsonFile | Where-Object { $_.Trim() -ne "" })
+    foreach ($entry in $pending) {
+        $parts = $entry -split '\|', 2
+        if ($parts.Count -ne 2) { continue }
+        $pendDate     = $parts[0]
+        $pendJsonPath = $parts[1]
+        if (-not (Test-Path $pendJsonPath)) {
+            Write-Log "PHASE 5 - Pending JSON file missing: $pendJsonPath, removing entry" "Yellow"
+            Remove-PendingJsonUpload -JsonPath $pendJsonPath
+            continue
+        }
+        # Re-POST the saved JSON bytes directly (avoids double parse/serialize)
+        $pendBody = Get-Content $pendJsonPath -Raw -Encoding UTF8
+        $headers  = Get-V2ApiHeaders
+        if ($DryRun) {
+            Write-Log "[DRY RUN] would POST pending payload for $pendDate to ?action=auto-json" "Cyan"
+        } else {
+            $retryOk  = $false
+            $maxR     = 3
+            for ($r = 1; $r -le $maxR; $r++) {
+                try {
+                    $resp = Invoke-WebRequest `
+                        -Uri $ApiUrlAutoJson `
+                        -Method POST `
+                        -Body $pendBody `
+                        -ContentType "application/json" `
+                        -Headers $headers `
+                        -UseBasicParsing `
+                        -TimeoutSec 120 `
+                        -ErrorAction Stop
+                    $parsed = $resp.Content | ConvertFrom-Json
+                    Write-Log "PHASE 5 - Pending $pendDate cleared: batchRef=$($parsed.batchRef) imported=$($parsed.ordersCreated)" "Green"
+                    Remove-PendingJsonUpload -JsonPath $pendJsonPath
+                    $retryOk = $true
+                    break
+                } catch {
+                    Write-Log "PHASE 5 - Retry $r for $pendDate failed: $_" "Yellow"
+                    if ($r -lt $maxR) { Start-Sleep -Seconds (10 * $r) }
+                }
+            }
+            if (-not $retryOk) {
+                Write-Log "PHASE 5 - $pendDate still failing, keeping in queue" "Yellow"
+            }
+        }
+    }
+}
+
+
+            }
+        }
+    }
+}
+
+$ModeState.LastVisit = Get-Date
+Save-ModeState -S $ModeState
 
 # ============================================================
 #  PHASE 10 - HUMAN-NOISE BACKGROUND GET
@@ -1691,68 +1971,34 @@ if ($shouldNoise) {
 }
 
 
+
 # ============================================================
-#  PHASE 11 - CYCLE SUMMARY
+#  RUN SUMMARY  (compact, mode-aware)
 # ============================================================
 
 $cycleEnd  = Get-Date
 $cycleSecs = [Math]::Round(($cycleEnd - $Summary.CycleStart).TotalSeconds, 1)
 
-$summaryColor = "Green"
-if ($Summary.PendingUpload -or $Summary.Errors.Count -gt 0 -or $Summary.FailedThis -gt 0 -or ($Summary.YesterdayRan -and $Summary.YesterdayFailed -gt 0)) {
-    $summaryColor = "Red"
-} elseif ($Summary.BreakwallsTotal -eq "?" -or $Summary.UploadStatus -eq "n/a (no new OBDs)") {
-    $summaryColor = "Yellow"
+$sumColor = "Green"
+if ($Summary.Errors.Count -gt 0 -or ($glanceRes -and $glanceRes.Failed -gt 0)) { $sumColor = "Red" }
+
+Write-Section "CYCLE SUMMARY  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" $sumColor
+
+$modeStr = $decision.Do
+if ($glanceRes) {
+    $bw  = if ($glanceRes.BwTotal  -ge 0) { $glanceRes.BwTotal }  else { "?" }
+    $om  = if ($glanceRes.OmsCount -ge 0) { $glanceRes.OmsCount } else { "?" }
+    Add-Content -Path $LogFile -Value "----- CYCLE SUMMARY -----"
+    Add-Content -Path $LogFile -Value "Mode: $modeStr | Date: $Today | BW: $bw | OMS: $om | New: $($glanceRes.NewImported) | HeaderOnly: $($glanceRes.HeaderOnly) | Waiting: $($glanceRes.Waiting) | Failed: $($glanceRes.Failed) | Cycle: ${cycleSecs}s"
+} else {
+    Add-Content -Path $LogFile -Value "----- CYCLE SUMMARY -----"
+    Add-Content -Path $LogFile -Value "Mode: $modeStr | Date: $Today | Yesterday: total=$($Summary.YesterdayBreakwallsTotal) new=$($Summary.YesterdayPreCheckNew) fetched=$($Summary.YesterdayFetched) failed=$($Summary.YesterdayFailed) | Cycle: ${cycleSecs}s"
 }
 
-Write-Section "CYCLE SUMMARY  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" $summaryColor
+Write-Section "RUN COMPLETE" $sumColor
 
-Write-Host (" Date checked       : {0}" -f $Today)
-Write-Host (" Session            : {0}" -f $Summary.SessionAction)
-Write-Host (" Pagination         : {0}" -f $Summary.PaginationMode)
-Write-Host (" Breakwalls total   : {0}" -f $Summary.BreakwallsTotal)
-Write-Host (" Pre-check new      : {0}" -f $Summary.PreCheckNew)
-Write-Host (" Pre-check existing : {0}" -f $Summary.PreCheckExisting)
-Write-Host (" Fetched (cycle)    : {0}" -f $Summary.FetchedThis)
-$failColor = if ($Summary.FailedThis -gt 0) { "Red" } else { "Gray" }
-Write-Host " Failed (retry next): " -NoNewline; Write-Host $Summary.FailedThis -ForegroundColor $failColor
-Write-Host (" Upload             : {0}" -f $Summary.UploadStatus)
-if ($Summary.UploadStatus -eq "SUCCESS") {
-    Write-Host ("                      imported={0} skipped={1} errors={2}" -f $Summary.UploadImported, $Summary.UploadSkipped, $Summary.UploadErrors)
+} finally {
+    Exit-RunLock
 }
-if ($Summary.PendingUpload) {
-    Write-Host " Pending upload     : YES (next cycle will retry)" -ForegroundColor Red
-}
-
-if ($Summary.YesterdayRan) {
-    Write-Host ""
-    Write-Host " Yesterday recovery :" -ForegroundColor Cyan
-    Write-Host ("   Breakwalls total : {0}" -f $Summary.YesterdayBreakwallsTotal)
-    Write-Host ("   Pre-check new    : {0}" -f $Summary.YesterdayPreCheckNew)
-    Write-Host ("   Fetched          : {0}" -f $Summary.YesterdayFetched)
-    Write-Host ("   Failed           : {0}" -f $Summary.YesterdayFailed)
-    Write-Host ("   Upload           : {0}" -f $Summary.YesterdayUpload)
-    $yState2 = Read-YesterdayState
-    if ($yState2) {
-        $yColor = if ($yState2.Status -eq "done") { "Green" } else { "Yellow" }
-        Write-Host "   Status           : " -NoNewline; Write-Host $yState2.Status -ForegroundColor $yColor
-    }
-}
-
-if ($Summary.Errors.Count -gt 0) {
-    Write-Host ""
-    Write-Host " Errors this cycle  :" -ForegroundColor Red
-    foreach ($e in $Summary.Errors) { Write-Host "   - $e" -ForegroundColor Red }
-}
-
-Write-Host (" Cycle duration     : {0} sec" -f $cycleSecs)
-
-Add-Content -Path $LogFile -Value "----- CYCLE SUMMARY -----"
-Add-Content -Path $LogFile -Value "Date: $Today | Breakwalls: $($Summary.BreakwallsTotal) | New: $($Summary.PreCheckNew) | Fetched: $($Summary.FetchedThis) | Failed: $($Summary.FailedThis) | Upload: $($Summary.UploadStatus) | Cycle: ${cycleSecs}s"
-if ($Summary.YesterdayRan) {
-    Add-Content -Path $LogFile -Value "Yesterday: total=$($Summary.YesterdayBreakwallsTotal) new=$($Summary.YesterdayPreCheckNew) fetched=$($Summary.YesterdayFetched) failed=$($Summary.YesterdayFailed) upload=$($Summary.YesterdayUpload)"
-}
-
-Write-Section "RUN COMPLETE" $summaryColor
 
 #endregion MAIN PIPELINE

@@ -577,6 +577,74 @@ them: a recompute would overwrite the header with the short line sum and erase t
 stock is missing. Full working — `docs/prompts/drafts/code-discovery-2026-09-08-import-qty-integrity.md`
 (§DEFECT B — GATE, Gates 2 and 3).
 
+#### 🔴 CORRECTION 2026-09-08 — the TEN are not a bug, they are a deliberate depot-side rule
+
+Established while fixing the depot scripts, and it overturns the earlier reading. **All ten
+zero-line bills carry `volume = 0`**, and **`Auto-Import-v3.ps1` deliberately imports a volume-zero
+OBD header-only**: `:1156-1163` (recovery) and `:1372-1375` (main import), both commented
+*"Volume-zero rule: detail form will never fill; import header-only"* / *"manual SAP completes it
+later"*, and counted as `$res.HeaderOnly`. **`Auto-Import-v2.ps1` has no such path at all.** The ten
+were created 2026-08-08 → 2026-09-07, all after v3 appeared on disk (2026-08-05). So the ten are v3
+doing exactly what it was written to do — and **manual SAP never completed them**. The nine
+short-against-header bills are a separate matter and remain unexplained by this.
+
+🔴 **This puts commit `a11bf7ee` (server-side empty-payload skip) in direct conflict with a
+deliberate depot rule.** That commit makes `?action=auto-json` drop any OBD arriving with no lines,
+which is precisely v3's header-only case. Consequence: a volume-zero OBD no longer enters OrbitOMS
+from auto-import at all. If manual SAP later covers it the bill appears complete — better than
+today. **If manual SAP never covers it, the bill never appears at all — and for an invoiced,
+dispatched bill, invisible is worse than visible-but-empty, which is what the ten are.** Needs an
+owner decision between: (a) revert `a11bf7ee`, (b) carve out volume-zero so header-only still
+imports while genuinely-empty volume>0 payloads are skipped, or (c) keep the skip and accept that
+volume-zero OBDs depend entirely on manual SAP. **(b) is the recommendation** — it preserves both
+intents — but it is a behaviour decision, not a cleanup.
+
+#### The depot-side birthplace of an EMPTY (volume > 0) payload — fixed in the repo copies only
+
+Separate from the volume-zero rule above: `if ($null -ne $lines)` is a **null check, not a count
+check**. `@()` is not `$null`, so a FormGetData response carrying zero lines for an OBD that
+*should* have lines was posted as a healthy header. Verified in real PowerShell 5.1:
+`$null -ne @()` is `True`, `@($null).Count` is `1`, and a single non-collection object has **no
+`.Count` of its own** — so the naive `$lines.Count -gt 0` would have dropped legitimate one-line
+responses. The predicate used is `($null -ne $lines) -and (@($lines).Count -gt 0)`.
+
+Fixed at **five** sites, not the three first identified — v2 `:1019` (recovery), `:1471` (Phase 7),
+`:1522` (Phase 8 retry), v3 `:1167` (recovery), `:1385` (main). **v2 `:1522` was the important
+miss:** without it the Phase 8 retry lane would have re-imported the very empty response Phase 7 had
+just rejected, in the same cycle.
+
+🔴 **THE IMPORT PC STILL RUNS THE OLD COPY UNTIL SOMEONE DEPLOYS IT.** This repo holds copies only;
+nothing here reaches that machine. To deploy, on the **import PC**:
+
+| Copy from (this repo) | To (import PC) |
+|---|---|
+| `docs/Powershell/Auto-Import-v2.ps1` | `F:\VS Code\OBD-Import Tool v2\Auto-Import-v2.ps1` |
+| `docs/Powershell/Auto-Import-v3.ps1` | `F:\VS Code\OBD-Import Tool v3\Auto-Import-v3.ps1` |
+
+`$ToolRoot` is `F:\VS Code\OBD-Import Tool v2` in **both** scripts (v2 `:38`, v3 `:56`), so the
+script filenames are known but their **containing folder is inferred, not proven** — confirm the
+actual scheduled-task path on the machine before overwriting, and back up the existing file first.
+Deploy **both**: whichever is scheduled, the other must not be left with the old semantics.
+
+#### Two smaller depot findings from the same read
+
+- **`v3-waiting-obds.txt` is never pruned** (`Auto-Import-v3.ps1:1248`, written by `Set-WaitingStamp`
+  `:1263`). It gains a line per OBD ever waited on and nothing ever clears it — unlike
+  `failed-obds-json.txt`, which the daily reset deletes. Unbounded growth; the 5-minute throttle
+  itself still works.
+- **`$FailedJsonObdsFile` is dead in v3** — declared (`:68`) and deleted on the daily reset (`:1511`),
+  but never written or read. v3 replaced the Phase 8 failure lane with the Waiting throttle. Harmless,
+  but it means "the failure lane" means different things in the two scripts.
+
+#### ⚠ Canon is stale on the auto-import cadence
+
+`CLAUDE_IMPORT.md §10`/`§10.1` document **v2 at ~10 minutes** as the live pipeline. On disk there is
+also **`Auto-Import-v3.ps1` (2026-08-05), a mode-based "fast lane" that Task Scheduler fires every
+1 minute**. Live batch gaps support v3 being the deployed one: the most recent 25 auto batches show
+gaps of 1, 4, 5, 5, 5, 5, 5, 9, 10, 11 … minutes, which a fixed 10-minute schedule cannot produce.
+Combined with the volume-zero evidence above, **v3 is almost certainly what runs**. Not edited in the
+canonical file here — that is a reconciliation pass with its own version bump.
+
 ### P1 — Line weights are not populated on two of three import paths (opened 2026-09-08)
 
 Auto-import (`app/api/import/obd/route.ts:2795-2810`) and manual-template (`route.ts:900-916`) never
