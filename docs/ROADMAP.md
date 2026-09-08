@@ -769,7 +769,8 @@ disappoints.
 
 ### P2 — `trip_report` field meanings (reworded 2026-08-05)
 
-`CLAUDE_TRIP_REPORT.md §3` now lists all 38 columns (38/38 live-verified) with **10 explicitly marked
+`CLAUDE_TRIP_REPORT.md §3` now lists all **39** columns (38 until `rowHash` was added in v27.24 on
+2026-09-08; live-verified at both counts) with **10 explicitly marked
 as having no confirmed display-rule meaning** (`fixedType`, `tRate`, `vehType`, `vModal`, `modiInv`,
 `remark`, `isManual`, `tranTransporterName`, `custsoName`, `createdOn` — `volLt`/`totQty`/`totWeight`
 gained meanings in the display-rules session). Remaining work: confirm those 10 with Smart Flow and
