@@ -1889,44 +1889,63 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "HYDRO PU GLOSS",     label: "Hydro PU Gloss",     option: "Int Clear" },
           { sap: "HYDRO PU SEALER",    label: "Hydro PU Sealer",    option: "Clear" },
         ] },
-      { key: "MULTI PURPOSE THINNER", label: "Thinner & Sealer", slug: "thinner",
+      // 🔴 GROUPED BY RANGE, NOT BY FUNCTION, 2026-09-08.
+      //
+      // It was Thinner / Sealer / Other, which grouped by what a product DOES.
+      // That read well until you looked for one: NC Wood Thinner sat under
+      // "Thinner" while NC Sanding Sealer sat under "Sealer" and NC Clear
+      // Lacquer under "Other" — three chips to find three products off the same
+      // shelf, from the same range, that a dealer names in one breath. A range
+      // is how these are bought and how they are stocked; the finish is a
+      // detail INSIDE it.
+      //
+      // So: a product belongs to its RANGE first. Every NC product is under NC
+      // even when one of them is a thinner, every Melamine product under
+      // Melamine for the same reason, and the Thinner chip keeps only the two
+      // general-purpose thinners that belong to no range at all.
+      //
+      // ⚠ THE THINNER CHIP IS TWO PRODUCTS, AND THAT IS ONLY ACCEPTABLE
+      // BECAUSE THE RAIL SEARCH CROSSES CHIPS. Typing "thinner" returns all
+      // five — the two here, the two under NC, and the one under Melamine — so
+      // the range grouping never hides a product from somebody who is thinking
+      // in functions. If that search is ever scoped to the open chip, this
+      // grouping has to be revisited in the same commit.
+      //
+      // Members are in descending 90-day line order within each chip, read
+      // from the live catalog on the day of the change. The four ties at zero
+      // under NC keep their authored order; nothing in the data separates them.
+      { key: "MULTI PURPOSE THINNER", label: "Thinner & More", slug: "thinner",
         members: [
-          // ── Thinner ────────────────────────────────────────────────────
+          // ── Thinner ── the two that belong to no range ──────────────────
           { sap: "MULTI PURPOSE THINNER", label: "Multi Purpose Thinner", category: "Thinner" },
           { sap: "2K PU THINNER",         label: "2K PU Thinner",         category: "Thinner" },
-          { sap: "MELAMINE THINNER",      label: "Melamine Thinner",      category: "Thinner" },
-          { sap: "NC WOOD THINNER",       label: "NC Wood Thinner",       category: "Thinner" },
-          { sap: "NC NECOL THINNER",      label: "NC Necol Thinner",      category: "Thinner" },
-          // ── Sealer ─────────────────────────────────────────────────────
-          { sap: "NC SANDING SEALER",     label: "NC Sanding Sealer",     category: "Sealer" },
-          { sap: "MELAMINE SEALER",       label: "Melamine Sealer",       category: "Sealer",
+          // ── NC ─────────────────────────────────────────────────────────
+          { sap: "NC SANDING SEALER",     label: "NC Sanding Sealer",     category: "NC" },
+          { sap: "NC CLEAR LACQUER",      label: "NC Clear Lacquer",      category: "NC",
             option: "Clear" },
-          // ⚠ HYDRO PU SEALER LEFT ON 2026-09-08 with the rest of its range,
-          // which takes the Sealer category down to two. Reported, not
-          // rearranged: a two-product chip is thin, and the fix if it stops
-          // earning its place is to merge Sealer into Other and rename the
-          // tile — not to hold Hydro back inside a bucket to keep a chip fed.
-          // ── Other ──────────────────────────────────────────────────────
+          { sap: "NC WOOD THINNER",       label: "NC Wood Thinner",       category: "NC" },
+          { sap: "NC NECOL THINNER",      label: "NC Necol Thinner",      category: "NC" },
+          { sap: "NC NECOL CLEAR",        label: "NC Necol Clear",        category: "NC",
+            option: "Clear" },
+          { sap: "NC OPAQUE",             label: "NC Opaque",             category: "NC",
+            option: "White" },
+          // ── Melamine ───────────────────────────────────────────────────
+          { sap: "MELAMINE SEALER",       label: "Melamine Sealer",       category: "Melamine",
+            option: "Clear" },
+          { sap: "MELAMINE GLOSS",        label: "Melamine Gloss",        category: "Melamine",
+            option: "Clear" },
+          { sap: "MELAMINE MATT",         label: "Melamine Matt",         category: "Melamine",
+            option: "Clear" },
+          { sap: "MELAMINE THINNER",      label: "Melamine Thinner",      category: "Melamine" },
+          // ── Other ── what is left, and it is genuinely miscellaneous ────
           { sap: "EPOXY INSULATOR",       label: "Epoxy Insulator",       category: "Other" },
           { sap: "1K PU GLOSS",           label: "1K PU Gloss",           category: "Other",
             option: "Clear" },
           { sap: "SYNTHETIC VARNISH",     label: "Synthetic Varnish",     category: "Other",
             option: "Clear" },
-          // The three Hydro PU matts and glosses left on 2026-09-08 for the
-          // Hydro PU tile above. "Other" keeps ten.
-          { sap: "MELAMINE GLOSS",        label: "Melamine Gloss",        category: "Other",
-            option: "Clear" },
           { sap: "2K PU PRIMER SURFACER", label: "2K PU Primer Surfacer", category: "Other",
             option: "White" },
-          { sap: "MELAMINE MATT",         label: "Melamine Matt",         category: "Other",
-            option: "Clear" },
-          { sap: "NC CLEAR LACQUER",      label: "NC Clear Lacquer",      category: "Other",
-            option: "Clear" },
           { sap: "EPOXY INSULATOR HARDENER", label: "Epoxy Insulator Hardener", category: "Other" },
-          { sap: "NC NECOL CLEAR",        label: "NC Necol Clear",        category: "Other",
-            option: "Clear" },
-          { sap: "NC OPAQUE",             label: "NC Opaque",             category: "Other",
-            option: "White" },
         ] },
     ],
   },
