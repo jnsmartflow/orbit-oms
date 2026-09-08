@@ -31,6 +31,52 @@ const STAR_KEY   = "po2_starred_dealers";
 
 const MAX_FAVS     = 12;
 const MAX_DRAFTS   = 20;
+
+/**
+ * 🔴 SENT ORDERS LIVE FIVE IST DAYS — today and the four before it.
+ *
+ * It was two, and two is not enough to answer the question this list exists
+ * for. A salesman asked on Wednesday what he sent Mohan on Monday had no way
+ * to look; the row was gone. Five covers a working week from either end of it.
+ *
+ * ⚠ ORDERS ALREADY PRUNED UNDER THE TWO-DAY RULE ARE GONE. Pruning writes the
+ * shortened list back to localStorage (see loadSentOrders), so this widens the
+ * window from today onward and cannot recover anything the old rule dropped.
+ */
+const SENT_RETAIN_DAYS = 5;
+
+/**
+ * A COUNT CAP AS A SAFETY NET, NOT AS A POLICY. The date rule above is what
+ * actually prunes; this only exists so that a stuck clock or a runaway caller
+ * cannot fill the origin's quota and take every other po2_* key down with it.
+ *
+ * THE ARITHMETIC, measured rather than guessed (2026-09-08). One sent order
+ * with six lines and a full customer record serialises to 1,830 bytes — 157 of
+ * those the customer, 1,449 the lines, so about 242 bytes a line. The same
+ * order at twelve lines is 3,290.
+ *
+ *   300 x 1,830 B  = 0.52 MB      (a six-line order, the realistic shape)
+ *   300 x 3,290 B  = 0.94 MB      (every order twelve lines, pessimistic)
+ *
+ * Against a ~5 MB origin budget shared with po2_saved_drafts (20 x ~1.8 KB =
+ * 36 KB), po2_my_dealers, po2_fav_customers and po2_starred_dealers, all of
+ * which are small. Under 1 MB in the worst case leaves the rest of that budget
+ * untouched.
+ *
+ * WHY 300 AND NOT LESS. It has to be a number that CANNOT bite in normal use,
+ * or it becomes a silent data-loss rule rather than a fuse. The depot's busiest
+ * single day in 90 days of mail orders was 300 orders ACROSS EVERY SALESMAN
+ * (p95 211, average 86). 300 in five days is sixty a day from one phone — half
+ * again the whole depot's record day, on one handset. Nothing real reaches it.
+ *
+ * WHEN IT BITES the list is sorted newest-first and the OLDEST are dropped,
+ * SILENTLY. That is deliberate and consistent with the rest of this file: a
+ * quota failure here is already silent by design, and a toast about pruning an
+ * order from four days ago would interrupt a salesman mid-order to tell him
+ * about something he cannot act on. It is a fuse, and a fuse that announces
+ * itself is a fault.
+ */
+const MAX_SENT = 300;
 const LIVE_TTL_MS  = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const DAY_MS        = 24 * 60 * 60 * 1000;
@@ -61,7 +107,31 @@ export type V2Snapshot = {
   notes:      string;
 };
 
-export type V2SavedDraft = { id: string; label: string; savedAt: number; snapshot: V2Snapshot };
+/**
+ * A saved draft.
+ *
+ * 🔴 `name` IS OPTIONAL AND IS A LABEL AND NOTHING ELSE. It lets a salesman
+ * call one "Wednesday route" instead of reading "MOHAN COLOUR CO 2" off a list
+ * of four that all start the same way. It is not written into the snapshot, it
+ * is not the dealer, and no part of the email path can see it — the wire is
+ * built from each line's own product / baseColour / subProduct, which this does
+ * not touch.
+ *
+ * OPTIONAL IS WHY NOTHING NEEDS MIGRATING. A draft stored before today has no
+ * `name` key at all; it reads back as undefined, draftDisplayName falls to
+ * `label`, and the row looks exactly as it looks now. No version bump, because
+ * nothing about the SHAPE changed — a reader that does not know about `name`
+ * ignores it, and a reader that does copes with its absence.
+ */
+export type V2SavedDraft = {
+  id: string;
+  /** Derived from the snapshot at save time — the dealer, or a fallback. */
+  label: string;
+  /** What the salesman called it, if he called it anything. */
+  name?: string;
+  savedAt: number;
+  snapshot: V2Snapshot;
+};
 export type V2SentOrder  = { id: string; label: string; sentAt: number;  snapshot: V2Snapshot };
 
 type LiveDraft   = V2Snapshot & { version: 1; updatedAt: number };
@@ -308,6 +378,9 @@ function readDrafts(): V2SavedDraft[] {
   if (!parsed || !Array.isArray(parsed.drafts)) return [];
   return parsed.drafts
     .filter((d) => !!d && typeof d.id === "string" && validSnapshot(d.snapshot))
+    // The spread carries the optional name through when it is there and leaves
+    // it absent when it is not — validSnapshot is unchanged and still asks
+    // only about lines and customer, so no stored draft can start failing it.
     .map((d) => ({ ...d, snapshot: migrateSnapshot(d.snapshot) }));
 }
 
@@ -332,7 +405,46 @@ export function removeSavedDraft(id: string): V2SavedDraft[] {
   return next;
 }
 
-// ── 3. Sent orders — append-only, pruned to today + yesterday IST ─────────
+/**
+ * What a draft row should SAY. The salesman's own name if he gave one,
+ * otherwise the derived label — which is what every row shows today.
+ *
+ * Trimmed, and a name that trims to nothing is treated as no name at all: a
+ * field cleared to spaces must not leave a row captioned with whitespace.
+ */
+export function draftDisplayName(draft: V2SavedDraft): string {
+  const name = draft.name?.trim();
+  return name && name.length > 0 ? name : draft.label;
+}
+
+/**
+ * Rename one draft in place, or clear its name with "".
+ *
+ * 🔴 IT REWRITES ONE FIELD AND SPREADS THE REST. The snapshot object is carried
+ * across by reference, so the lines, the dealer, the packs and the three fields
+ * the email reads cannot be touched by a rename however this is called.
+ *
+ * A name is capped at 40 characters — long enough for "Wednesday route, Adajan"
+ * and short enough that a draft row never has to wrap. Silently trimmed rather
+ * than rejected: a rename is a caption, and refusing one at 41 characters would
+ * be a dialog about nothing.
+ */
+export function renameSavedDraft(id: string, name: string): V2SavedDraft[] {
+  const clean = name.trim().slice(0, 40);
+  const next = readDrafts().map((d) =>
+    d.id === id ? (clean.length > 0 ? { ...d, name: clean } : stripName(d)) : d);
+  writeRaw(DRAFTS_KEY, { version: 1, drafts: next } satisfies DraftStore);
+  return next;
+}
+
+/** Clearing a name REMOVES the key rather than storing "", so a cleared draft
+ *  is byte-identical to one that never had a name. */
+function stripName(draft: V2SavedDraft): V2SavedDraft {
+  const { name: _dropped, ...rest } = draft;
+  return rest;
+}
+
+// ── 3. Sent orders — append-only, pruned to the last 5 IST days ──────────
 
 /**
  * The IST calendar day for a UTC timestamp, at a FIXED +05:30 offset.
@@ -347,13 +459,32 @@ function istDateKey(epochMs: number): string {
   return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
 }
 
+/**
+ * The last SENT_RETAIN_DAYS IST calendar days, as a set of keys.
+ *
+ * 🔴 BUILT FROM istDateKey, THE SAME HELPER THE TWO-DAY RULE USED — no new date
+ * arithmetic. Stepping back in whole DAY_MS jumps and re-keying through the
+ * fixed +05:30 offset is what makes the boundary exact: a UTC-based "now minus
+ * 5 x 24h" would cut mid-afternoon IST and drop the oldest day early for every
+ * phone between 18:30 UTC and midnight. India has no DST, so there is no hour
+ * where a fixed offset and the real one disagree.
+ */
+function recentIstKeys(nowMs: number): Set<string> {
+  const keys = new Set<string>();
+  for (let i = 0; i < SENT_RETAIN_DAYS; i++) keys.add(istDateKey(nowMs - i * DAY_MS));
+  return keys;
+}
+
 function pruneToRecent(orders: V2SentOrder[], nowMs: number): V2SentOrder[] {
-  const todayKey     = istDateKey(nowMs);
-  const yesterdayKey = istDateKey(nowMs - DAY_MS);
-  return orders.filter((o) => {
-    const key = istDateKey(o.sentAt);
-    return key === todayKey || key === yesterdayKey;
-  });
+  const keep = recentIstKeys(nowMs);
+  return orders
+    .filter((o) => keep.has(istDateKey(o.sentAt)))
+    // Newest first, THEN cut. The array is already in that order by
+    // construction — addSentOrder prepends — so this is a no-op on any list
+    // this file wrote; it is here so "the oldest go first" is a property of the
+    // cap rather than an assumption about how the list got here.
+    .sort((a, b) => b.sentAt - a.sentAt)
+    .slice(0, MAX_SENT);
 }
 
 function readSentRaw(): V2SentOrder[] {
@@ -382,7 +513,9 @@ export function newSentId(): string {
 
 /** Append-only — every Send is its own event, never overwriting a prior one. */
 export function addSentOrder(order: V2SentOrder): V2SentOrder[] {
-  const next = [order, ...pruneToRecent(readSentRaw(), Date.now())];
+  // Pruned again AFTER the prepend, so the cap counts the new order too — a
+  // list already at MAX_SENT must not grow to MAX_SENT + 1 on every Send.
+  const next = pruneToRecent([order, ...readSentRaw()], Date.now());
   writeRaw(SENT_KEY, { version: 1, orders: next } satisfies SentStore);
   return next;
 }
