@@ -9,16 +9,18 @@ import { MIN_QUERY, ProductResults, ProductSearchInput, type V2ProductGroup } fr
 import ReviewScreen from "./review-screen";
 import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import { DraftsScreen, SentScreen } from "./drafts-sent";
+import OrderSheet, { NAV_H } from "./order-sheet";
 import {
-  addSentOrder, clearLiveDraft, labelFor, loadLiveDraft, loadSavedDrafts,
-  loadSentOrders, newDraftId, newSentId, removeSavedDraft, formatSavedAt, formatTime,
+  addSentOrder, clearLiveDraft, draftDisplayName, labelFor, loadLiveDraft, loadSavedDrafts,
+  loadSentOrders, newDraftId, newSentId, removeSavedDraft, renameSavedDraft,
+  formatSavedAt, formatTime,
   loadStarred, toggleStarred, type V2Star,
   saveLiveDraft, snapshotOf, upsertSavedDraft,
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
   BOARD, BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT,
-  FILL, INK, MUTED, PAGE, RULE, SURFACE, URGENT, VIOLET, VIOLET_BG,
+  FILL, INK, MUTED, PAGE, RULE, SEARCH_BG, SURFACE, URGENT, VIOLET, VIOLET_BG,
   EMPTY_ORDER, boardTile, buildBoard, buildCatalog, drawerMode, formatPack,
   mixToWhite, optionPools, packRows, resolveGroup, tileImage, tileKeyForMember,
   unitsIn, TILE_WASH,
@@ -98,7 +100,9 @@ const TILE_TEXT_STYLE: React.CSSProperties = {
  * sent orders unreachable the moment an order had a line in it, and merging
  * them into one bar puts a destructive "Review" beside two harmless tabs.
  */
-const NAV_H = "calc(54px + max(env(safe-area-inset-bottom), 8px))";
+// 🔴 NAV_H MOVED TO order-sheet.tsx and is imported above. The list screens
+// need the same number to keep their last card clear of the nav, and they
+// cannot import it from here — the page imports THEM. One home, no drift.
 
 type LoadState =
   | { kind: "loading" }
@@ -109,7 +113,44 @@ type LoadState =
       board: Map<string, V2ResolvedTile> };
 
 type Screen = "order" | "review" | "dealer" | "shipto" | "sent" | "drafts" | "sentList";
-type Sheet  = null | "clear" | "replace" | "summary";
+type Sheet  = null | "clear" | "summary" | "draft" | "load" | "rename" | "delete";
+
+/**
+ * 🔴 MERGE, NOT APPEND, WHEN HE ASKS TO ADD.
+ *
+ * Two cart lines for ONE catalogue row emit as two separately numbered lines in
+ * the same email, and the depot reads that as a mistake rather than a total. He
+ * asked to add; the sum of two quantities he typed is what adding means.
+ *
+ * IDENTICAL means the same rowId AND the same option — the same catalogue row,
+ * which is the thing the email is built from. Anything that differs by either
+ * stays its own line, because it is its own product.
+ *
+ * packOrder is taken from the line already on the board and NOT re-derived: two
+ * lines with the same rowId were snapshotted from the same menu row, so they
+ * carry the same pack order, and the email needs that catalog order rather than
+ * the order of anybody's thumbs.
+ */
+function mergeLines(current: V2CartLine[], incoming: V2CartLine[]): {
+  lines: V2CartLine[]; merged: number;
+} {
+  const out = current.map((l) => ({ ...l, qtys: { ...l.qtys } }));
+  let merged = 0;
+  for (const inc of incoming) {
+    const hit = out.find((l) => l.rowId === inc.rowId && l.option === inc.option);
+    if (hit) {
+      merged++;
+      for (const [pack, qty] of Object.entries(inc.qtys)) {
+        if (qty > 0) hit.qtys[pack] = (hit.qtys[pack] ?? 0) + qty;
+      }
+    } else {
+      // A fresh id, or React sees two children with one key the moment the
+      // same draft is added twice.
+      out.push({ ...inc, id: `${inc.tileSap}-${Date.now()}-${out.length}`, qtys: { ...inc.qtys } });
+    }
+  }
+  return { lines: out, merged };
+}
 
 export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
@@ -140,10 +181,21 @@ export default function PoV2Page(): React.JSX.Element {
   const [sent, setSent]       = useState<{ dealer: ApiCustomer; lines: number; units: number } | null>(null);
   const [savedDrafts, setSavedDrafts] = useState<V2SavedDraft[]>([]);
   const [sentOrders, setSentOrders]   = useState<V2SentOrder[]>([]);
-  // The draft a confirm sheet is about to replace live work with.
-  const [pendingDraft, setPendingDraft] = useState<V2SavedDraft | null>(null);
-  // The sent order whose read-only summary is open.
+  // The sent order whose read-only sheet is open.
   const [openSent, setOpenSent]         = useState<V2SentOrder | null>(null);
+  // The saved draft whose read-only sheet is open — Delete and Continue.
+  const [openDraftDetail, setOpenDraftDetail] = useState<V2SavedDraft | null>(null);
+  /**
+   * The order a "replace or add" prompt is about to put on the board.
+   *
+   * It holds the SNAPSHOT rather than the draft, because the same prompt serves
+   * Continue and Send again and only one of those has a draft behind it.
+   */
+  const [pendingLoad, setPendingLoad] = useState<V2Snapshot | null>(null);
+  // The draft a rename field or a delete confirm is about.
+  const [renameTarget, setRenameTarget] = useState<V2SavedDraft | null>(null);
+  const [renameText, setRenameText]     = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<V2SavedDraft | null>(null);
   // Set once the live draft has been read, so the debounced writer below
   // cannot fire (and clear the key) before the restore has had its chance.
   const [hydrated, setHydrated] = useState(false);
@@ -405,9 +457,48 @@ export default function PoV2Page(): React.JSX.Element {
   }
 
   /** Load a saved draft, remembering its id so re-saving upserts in place. */
-  function openDraft(d: V2SavedDraft): void {
-    openDraftIdRef.current = d.id;
-    applySnapshot(d.snapshot, customers);
+  /**
+   * Put a stored order on the board, asking first if there is anything to lose.
+   *
+   * 🔴 EMPTY BOARD: no question. There is nothing to replace and a prompt with
+   * one sensible answer is a tap he has to make for nothing.
+   * 🔴 NOT EMPTY: ask ONCE, and offer both — replace what is there, or add to
+   * it. Never guess, and never silently discard an order he was halfway
+   * through.
+   *
+   * The draftId argument is the id to re-save under when this came from a
+   * saved draft, so "Save draft" on a reopened basket upserts in place rather
+   * than making a second copy. Null for a sent order, which is a fresh order.
+   */
+  function loadOntoBoard(snap: V2Snapshot, draftId: string | null): void {
+    openDraftIdRef.current = draftId;
+    if (lines.length === 0) { applySnapshot(snap, customers); return; }
+    setPendingLoad(snap);
+    setSheet("load");
+  }
+
+  /** REPLACE — the board becomes this order, dealer and remarks included. */
+  function applyReplace(snap: V2Snapshot): void {
+    setSheet(null); setPendingLoad(null);
+    applySnapshot(snap, customers);
+  }
+
+  /**
+   * ADD — its lines join what is there, identical rows summed.
+   *
+   * The DEALER and the remarks are NOT taken. He is adding products to an order
+   * he is already building, and overwriting whose account it goes on would be a
+   * silent change to the one field that decides where the paint is billed.
+   */
+  function applyAdd(snap: V2Snapshot): void {
+    setSheet(null); setPendingLoad(null);
+    const { lines: next, merged } = mergeLines(lines, snap.lines);
+    setLines(next);
+    setProdQuery("");
+    setScreen("order");
+    setToast(merged > 0
+      ? `Added · ${merged} ${merged === 1 ? "line" : "lines"} merged`
+      : `Added ${snap.lines.length} ${snap.lines.length === 1 ? "product" : "products"}`);
   }
 
   /** Save the current order as a named draft and step back to the landing. */
@@ -683,6 +774,181 @@ export default function PoV2Page(): React.JSX.Element {
     </div>
   ) : null;
 
+  /**
+   * 🔴 REPLACE OR ADD — ASKED ONCE, WITH BOTH ANSWERS ON SCREEN.
+   *
+   * It used to offer one: "Load this draft", against a "Keep what I have"
+   * footer. That is a yes/no dressed as a choice, and it made the salesman who
+   * wanted BOTH orders throw one away and rebuild it by hand.
+   *
+   * Shared by Continue and by Send again, because both are the same question.
+   */
+  const loadSheet = sheet === "load" && pendingLoad ? (
+    <V2Sheet
+      onClose={() => { setSheet(null); setPendingLoad(null); }}
+      footer={
+        <button
+          type="button"
+          onClick={() => { setSheet(null); setPendingLoad(null); }}
+          className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
+          style={{ border: `1.5px solid ${RULE}`, color: INK }}
+        >
+          Cancel
+        </button>
+      }
+    >
+      <div className="shrink-0 px-4 pt-1.5 pb-3">
+        <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+          You have an order on the board
+        </h2>
+        <p className="text-[11.5px]" style={{ color: MUTED }}>
+          {lines.length} {lines.length === 1 ? "product" : "products"} already added
+        </p>
+      </div>
+      <div className="shrink-0 space-y-2 px-4 pb-4">
+        <button
+          type="button"
+          onClick={() => applyAdd(pendingLoad)}
+          className="w-full rounded-[13px] px-3 py-3 text-left"
+          style={{ border: `1.5px solid ${RULE}` }}
+        >
+          <span className="block text-[15px] font-extrabold" style={{ color: INK }}>
+            Add to this order
+          </span>
+          <span className="block text-[12px]" style={{ color: MUTED }}>
+            {/* Says out loud what merging will do, BEFORE he taps. */}
+            {pendingLoad.lines.length} {pendingLoad.lines.length === 1 ? "product" : "products"} joins
+            what is here; the same product twice is added up
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => applyReplace(pendingLoad)}
+          className="w-full rounded-[13px] px-3 py-3 text-left"
+          style={{ border: `1.5px solid ${RULE}` }}
+        >
+          <span className="block text-[15px] font-extrabold" style={{ color: URGENT }}>
+            Replace what is here
+          </span>
+          <span className="block text-[12px]" style={{ color: MUTED }}>
+            The {lines.length} {lines.length === 1 ? "product" : "products"} on the board
+            {" "}are removed, and its dealer is used
+          </span>
+        </button>
+      </div>
+    </V2Sheet>
+  ) : null;
+
+  /** Rename — SAVED drafts only. The in-progress draft has no name to give. */
+  const renameSheet = sheet === "rename" && renameTarget ? (
+    <V2Sheet
+      onClose={() => { setSheet(null); setRenameTarget(null); }}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => { setSheet(null); setRenameTarget(null); }}
+            className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
+            style={{ border: `1.5px solid ${RULE}`, color: INK }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = renameSavedDraft(renameTarget.id, renameText);
+              setSavedDrafts(next);
+              // Keep the open detail sheet in step with what was just written.
+              setOpenDraftDetail(next.find((d) => d.id === renameTarget.id) ?? null);
+              setSheet("draft"); setRenameTarget(null);
+            }}
+            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+            style={{ background: BRAND }}
+          >
+            Save name
+          </button>
+        </>
+      }
+    >
+      <div className="shrink-0 px-4 pt-1.5 pb-3">
+        <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+          Name this draft
+        </h2>
+        <p className="truncate text-[11.5px]" style={{ color: MUTED }}>
+          {labelFor(renameTarget.snapshot)}
+        </p>
+      </div>
+      <div className="shrink-0 px-4 pb-4">
+        <input
+          type="text" autoFocus value={renameText}
+          onChange={(e) => setRenameText(e.target.value)}
+          placeholder="Wednesday route"
+          aria-label="Draft name"
+          // 16px, or Safari zooms the page on focus. maxLength mirrors the
+          // 40 v2-storage trims to — the field simply stops rather than
+          // accepting characters it is about to throw away. No counter: the
+          // cap is settled and a number nobody is near is noise.
+          maxLength={40}
+          className="w-full rounded-[12px] px-3 py-3 text-[16px] outline-none"
+          style={{ background: SEARCH_BG, color: INK }}
+        />
+        <p className="mt-2 text-[11.5px]" style={{ color: MUTED }}>
+          Leave it empty to go back to the dealer's name.
+        </p>
+      </div>
+    </V2Sheet>
+  ) : null;
+
+  /**
+   * Delete — behind a confirm, and it names what it is about to remove.
+   *
+   * 🔴 THE ONLY THING THAT DELETES A DRAFT. Continue does not, saving does not,
+   * sending does not. A basket he uses at four shops has to survive being used.
+   */
+  const deleteSheet = sheet === "delete" && deleteTarget ? (
+    <V2Sheet
+      onClose={() => { setSheet(null); setDeleteTarget(null); setSheet("draft"); }}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => { setDeleteTarget(null); setSheet("draft"); }}
+            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold"
+            style={{ border: `1.5px solid ${RULE}`, color: INK }}
+          >
+            Keep it
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSavedDrafts(removeSavedDraft(deleteTarget.id));
+              setDeleteTarget(null); setOpenDraftDetail(null); setSheet(null);
+              setToast("Draft deleted");
+            }}
+            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+            style={{ background: URGENT }}
+          >
+            Delete
+          </button>
+        </>
+      }
+    >
+      <div className="shrink-0 px-4 pt-1.5 pb-4">
+        <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+          Delete this draft?
+        </h2>
+        <p className="mt-1 truncate text-[13px] font-bold" style={{ color: INK }}>
+          {draftDisplayName(deleteTarget)}
+        </p>
+        <p className="text-[11.5px]" style={{ color: MUTED }}>
+          {deleteTarget.snapshot.lines.length}
+          {deleteTarget.snapshot.lines.length === 1 ? " product" : " products"} · saved
+          {" "}{formatSavedAt(deleteTarget.savedAt)}
+        </p>
+      </div>
+    </V2Sheet>
+  ) : null;
+
   // ── First paint — the brand, not an empty white page ─────────────────────
   //
   // 🔴 THIS IS ALSO THE FIX FOR THE HOME-SCREEN SPLASH. iOS has no launch image
@@ -719,73 +985,81 @@ export default function PoV2Page(): React.JSX.Element {
     );
   }
 
-  // ══ SCREEN 5 — SAVED DRAFTS ══════════════════════════════════════════════
+  // ══ SCREEN 5 — DRAFTS ═══════════════════════════════════════════════════
   if (screen === "drafts") {
+    // The board's own state IS the in-progress draft — the same object the
+    // debounced writer puts in po2_draft. Read from live state rather than
+    // re-read from storage, so the card cannot lag what is on the board.
+    const liveSnap = lines.length > 0
+      ? { snapshot: snapshotOf(dealer, lines, shipTo, order), savedAt: Date.now() }
+      : null;
     return (
       <>
         <DraftsScreen
+          live={liveSnap}
           drafts={savedDrafts}
           onBack={() => setScreen("order")}
-          onRemove={(id) => setSavedDrafts(removeSavedDraft(id))}
-          onOpen={(d) => {
-            // 🔴 NEVER SILENTLY DISCARD WORK. A draft replaces the whole order,
-            // so live lines get a confirm first; an empty order does not need
-            // one, because there is nothing to lose.
-            if (lines.length > 0) { setPendingDraft(d); setSheet("replace"); }
-            else openDraft(d);
-          }}
+          // In progress IS the board. Opening it is going back to it.
+          onOpenLive={() => setScreen("order")}
+          onOpen={(d) => { setOpenDraftDetail(d); setSheet("draft"); }}
         />
+        <BottomNav onNavigate={(next) => setScreen(next)} />
         {toastHost}
-        {sheet === "replace" && pendingDraft && (
-          <V2Sheet
-            onClose={() => { setSheet(null); setPendingDraft(null); }}
-            footer={
-              <button
-                type="button"
-                onClick={() => { setSheet(null); setPendingDraft(null); }}
-                className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-                style={{ background: VIOLET }}
-              >
-                Keep what I have
-              </button>
-            }
-          >
-            <div className="shrink-0 px-4 pt-1.5 pb-3">
-              <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
-                Replace this order?
-              </h2>
-              <p className="text-[11.5px]" style={{ color: MUTED }}>
-                {lines.length} {lines.length === 1 ? "line" : "lines"} on screen will be replaced by this draft
-              </p>
-            </div>
-            <div className="shrink-0 px-4 pb-3">
-              <button
-                type="button"
-                onClick={() => { const d = pendingDraft; setSheet(null); setPendingDraft(null); openDraft(d); }}
-                className="flex w-full items-center gap-3 rounded-[13px] px-3 py-3 text-left"
-                style={{ border: `1.5px solid ${RULE}` }}
-              >
-                <span className="flex shrink-0 items-center justify-center rounded-[9px]"
-                      style={{ width: 32, height: 32, background: FILL }}>
-                  <FileText className="h-4 w-4" strokeWidth={2.5} style={{ color: INK }} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14.5px] font-bold" style={{ color: INK }}>
-                    Load {pendingDraft.label}
-                  </span>
-                  <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>
-                    Saved {formatSavedAt(pendingDraft.savedAt)}
-                  </span>
-                </span>
-              </button>
-            </div>
+
+        {/* ── DRAFT DETAIL — the shared sheet, Delete and Continue ────── */}
+        {sheet === "draft" && openDraftDetail && (
+          <V2Sheet onClose={() => { setSheet(null); setOpenDraftDetail(null); }} fixedHeight>
+            <OrderSheet
+              snapshot={openDraftDetail.snapshot}
+              when={`Saved ${formatSavedAt(openDraftDetail.savedAt)}`}
+              footer={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { setDeleteTarget(openDraftDetail); setSheet("delete"); }}
+                    className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
+                    style={{ border: `1.5px solid ${RULE}`, color: URGENT }}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setRenameTarget(openDraftDetail);
+                                     setRenameText(openDraftDetail.name ?? "");
+                                     setSheet("rename"); }}
+                    className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
+                    style={{ border: `1.5px solid ${RULE}`, color: INK }}
+                  >
+                    Rename
+                  </button>
+                  {/* 🔴 CONTINUE LEAVES THE DRAFT WHERE IT IS. Nothing is
+                      deleted by using it — a basket he works through four shops
+                      keeps working, and no tap makes something vanish. Delete
+                      is the only thing that deletes. */}
+                  <button
+                    type="button"
+                    onClick={() => { const d = openDraftDetail;
+                                     setSheet(null); setOpenDraftDetail(null);
+                                     loadOntoBoard(d.snapshot, d.id); }}
+                    className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                    style={{ background: BRAND }}
+                  >
+                    Continue
+                  </button>
+                </>
+              }
+            />
           </V2Sheet>
         )}
+
+        {loadSheet}
+        {renameSheet}
+        {deleteSheet}
       </>
     );
   }
 
-  // ══ SCREEN 6 — SENT TODAY ════════════════════════════════════════════════
+  // ══ SCREEN 6 — SENT ═════════════════════════════════════════════════════
   if (screen === "sentList") {
     return (
       <>
@@ -794,63 +1068,37 @@ export default function PoV2Page(): React.JSX.Element {
           onBack={() => setScreen("order")}
           onOpen={(o) => { setOpenSent(o); setSheet("summary"); }}
         />
+        <BottomNav onNavigate={(next) => setScreen(next)} />
         {toastHost}
+
+        {/* ── SENT DETAIL — the same sheet, one button ────────────────── */}
         {sheet === "summary" && openSent && (
-          <V2Sheet
-            onClose={() => { setSheet(null); setOpenSent(null); }}
-            footer={
-              <button
-                type="button"
-                onClick={() => {
-                  const snap = openSent.snapshot;
-                  setSheet(null); setOpenSent(null);
-                  // 🔴 A FRESH ORDER, not a re-send. This loads the lines onto
-                  // the board and stops — it never re-fires the mailto, so the
-                  // salesman sees and confirms what goes out a second time.
-                  openDraftIdRef.current = null;
-                  applySnapshot(snap, customers);
-                }}
-                className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-                style={{ background: VIOLET }}
-              >
-                Send again
-              </button>
-            }
-          >
-            <div className="shrink-0 px-4 pt-1.5 pb-3">
-              <h2 className="truncate text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
-                {openSent.snapshot.customer?.name ?? "—"}
-              </h2>
-              <p className="font-mono text-[11.5px]" style={{ color: MUTED }}>
-                Sent {formatTime(openSent.sentAt)}
-              </p>
-            </div>
-            {/* Read-only. No steppers, no remove — a sent order is history. */}
-            <div className="min-h-0 overflow-y-auto">
-              {openSent.snapshot.lines.map((line) => (
-                <div key={line.id} className="flex items-start gap-3 px-4 py-2.5"
-                     style={{ borderTop: `1px solid ${DIVIDER}` }}>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14.5px] font-semibold" style={{ color: INK }}>{line.label}</p>
-                    {line.option && (
-                      <p className="truncate text-[11.5px] font-extrabold uppercase"
-                         style={{ color: VIOLET, letterSpacing: ".06em" }}>{line.option}</p>
-                    )}
-                  </div>
-                  {/* min-w-0, stacked — same fix as the review row. */}
-                  <div className="min-w-0 text-right">
-                    {packRows(line).map(({ label, qty }) => (
-                      <p key={label} className="whitespace-nowrap font-mono text-[13px] tabular-nums" style={{ color: INK }}>
-                        {label} ×{qty}
-                      </p>
-                    ))}
-                    <p className="text-[11px]" style={{ color: MUTED }}>{unitsIn(line.qtys)} units</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <V2Sheet onClose={() => { setSheet(null); setOpenSent(null); }} fixedHeight>
+            <OrderSheet
+              snapshot={openSent.snapshot}
+              when={`Sent ${formatSavedAt(openSent.sentAt)}`}
+              footer={
+                <button
+                  type="button"
+                  onClick={() => {
+                    const snap = openSent.snapshot;
+                    setSheet(null); setOpenSent(null);
+                    // 🔴 A FRESH ORDER, not a re-send. This loads the lines onto
+                    // the board and stops — it never re-fires the mailto, so the
+                    // salesman sees and confirms what goes out a second time.
+                    loadOntoBoard(snap, null);
+                  }}
+                  className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                  style={{ background: VIOLET }}
+                >
+                  Send again
+                </button>
+              }
+            />
           </V2Sheet>
         )}
+
+        {loadSheet}
       </>
     );
   }
