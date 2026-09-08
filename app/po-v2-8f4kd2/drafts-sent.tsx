@@ -1,8 +1,7 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
 import { CARD_SHADOW, FAINT, INK, MUTED, PAGE, RULE, SURFACE } from "./v2-data";
-import { NAV_H, OrderTins, Pill, dispatchLabel, productCount } from "./order-sheet";
+import { NAV_H, Pill, dispatchLabel } from "./order-sheet";
 import { formatTime, draftDisplayName, type V2SavedDraft, type V2SentOrder, type V2Snapshot } from "./v2-storage";
 
 // The two list screens behind the board's bottom nav. Presentational only —
@@ -25,23 +24,22 @@ import { formatTime, draftDisplayName, type V2SavedDraft, type V2SentOrder, type
 /** The bottom nav sits over the list, so the last card needs its height back. */
 const LIST_PAD = `calc(${NAV_H} + 16px)`;
 
-function ListShell({ title, onBack, children }: {
-  title: string; onBack: () => void; children: React.ReactNode;
+/**
+ * 🔴 NO BACK ARROW. The bottom nav is the way back from a LIST — Board is one
+ * tap and it is already on screen — so a chevron beside the title was a second
+ * control for the same job, in the corner furthest from a thumb. The DETAIL
+ * screen keeps its chevron, because from there the nav goes to the board and
+ * the chevron goes back to the list, which are two different places.
+ */
+function ListShell({ title, children }: {
+  title: string; children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <main className="min-h-screen w-full" style={{ background: PAGE, paddingBottom: LIST_PAD }}>
       <header
-        className="sticky top-0 z-10 flex items-center gap-1 px-2 py-3"
+        className="sticky top-0 z-10 px-4 py-3"
         style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
       >
-        {/* 44px, CLAUDE_UI §60's floor. It was h-8 w-8 — 32px — which is the
-            one control on this screen a thumb has to hit first. */}
-        <button
-          type="button" aria-label="Back" onClick={onBack}
-          className="flex h-11 w-11 shrink-0 items-center justify-center"
-        >
-          <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
-        </button>
         <h1 className="text-[17px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
           {title}
         </h1>
@@ -90,61 +88,73 @@ function dayHeading(ts: number): string {
 }
 
 /**
- * ONE CARD. The whole card is the tap target, so there is no "open" chevron to
- * aim at and no way to miss.
+ * ONE CARD, TWO ROWS. The whole card is the tap target, so there is no "open"
+ * chevron to aim at and no way to miss.
+ *
+ *   row 1   dealer name, ellipsised · the time, right
+ *   row 2   "code · area" · the count and the dispatch tag, right
+ *
+ * 🔴 THE TIN THUMBNAILS ARE GONE. A third row carried up to four of them, on
+ * the reasoning that a salesman recognises an order by its shape. At 30px he
+ * does not: most orders are three or four near-identical blue Dulux tubs, and
+ * the row cost every card a third of its height to say nothing. The tins are
+ * still in the DETAIL at 46px, beside the product name, where they read.
  *
  * `accent` is the left edge an In-progress card carries — see DraftsScreen for
  * why the two draft kinds must not look alike.
  */
-function OrderCard({ title, subtitle, stamp, snapshot, status, statusTone, accent, onOpen, trailing }: {
+function OrderCard({ title, code, area, stamp, snapshot, status, statusTone, accent, onOpen }: {
   title: string;
-  subtitle: string | null;
+  code: string | null;
+  /** AREA IS REAL — ApiCustomer carries it. Null on the two dealers without one. */
+  area: string | null;
   stamp: string;
   snapshot: V2Snapshot;
   status: string;
   statusTone: "quiet" | "urgent" | "violet";
   accent?: string;
   onOpen: () => void;
-  trailing?: React.ReactNode;
 }): React.JSX.Element {
   const urgent = snapshot.dispatch === "Urgent";
+  const n = snapshot.lines.length;
+  // 🔴 snapshotOf STORES shipToCode ONLY WHEN IT DIFFERS from the billing
+  // dealer, so a non-null value already means "somewhere else". There is no
+  // second comparison to make and no way for the two to disagree.
+  const elsewhere = snapshot.shipToCode !== null;
   return (
     <div className="px-4 pb-2">
-      <div className="relative overflow-hidden rounded-[14px]"
+      <div className="overflow-hidden rounded-[14px]"
            style={{ background: SURFACE, boxShadow: CARD_SHADOW,
                     borderLeft: accent ? `3px solid ${accent}` : undefined }}>
-        <button type="button" onClick={onOpen}
-                className="block w-full px-3 py-3 text-left">
-          <span className="flex items-start gap-2">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] font-bold"
-                    style={{ color: snapshot.customer || title ? INK : MUTED }}>
-                {title}
-              </span>
-              {subtitle && (
-                <span className="mt-0.5 block truncate font-mono text-[11.5px]" style={{ color: MUTED }}>
-                  {subtitle}
-                </span>
-              )}
+        <button type="button" onClick={onOpen} className="block w-full px-3 py-3 text-left">
+          {/* ── row 1 ── */}
+          <span className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate text-[15px] font-bold"
+                  style={{ color: snapshot.customer ? INK : MUTED }}>
+              {title}
             </span>
             <span className="shrink-0 whitespace-nowrap font-mono text-[11.5px]" style={{ color: MUTED }}>
               {stamp}
             </span>
           </span>
-
-          <span className="mt-2 flex flex-wrap items-center gap-1.5">
-            <Pill text={dispatchLabel(snapshot)} tone={urgent ? "urgent" : "quiet"} />
-            <Pill text={status} tone={statusTone} />
-          </span>
-
-          <span className="mt-2.5 flex items-center justify-between gap-3">
-            <OrderTins lines={snapshot.lines} />
-            <span className="shrink-0 text-[12px] font-semibold" style={{ color: MUTED }}>
-              {productCount(snapshot)}
+          {/* ── row 2 ── */}
+          <span className="mt-1 flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[11.5px]" style={{ color: MUTED }}>
+              {code ? <span className="font-mono">{code}</span> : "No dealer yet"}
+              {code && area ? ` · ${area}` : ""}
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              {elsewhere && <Pill text="Ship to" tone="violet" />}
+              <span className="text-[11.5px] font-semibold" style={{ color: MUTED }}>
+                {n} {n === 1 ? "product" : "products"}
+              </span>
+              {urgent
+                ? <Pill text="Urgent" tone="urgent" />
+                : snapshot.dispatch !== "Normal" && <Pill text={dispatchLabel(snapshot)} tone="quiet" />}
+              {statusTone === "violet" && <Pill text={status} tone="violet" />}
             </span>
           </span>
         </button>
-        {trailing}
       </div>
     </div>
   );
@@ -165,16 +175,15 @@ function OrderCard({ title, subtitle, stamp, snapshot, status, statusTone, accen
  * clearing the board and that belongs on the board. Saved cards are plain, and
  * they are the only ones that can be renamed or removed.
  */
-export function DraftsScreen({ live, drafts, onBack, onOpenLive, onOpen }: {
+export function DraftsScreen({ live, drafts, onOpenLive, onOpen }: {
   /** The board's own state, when it has lines. Null when the board is empty. */
   live: { snapshot: V2Snapshot; savedAt: number } | null;
   drafts: V2SavedDraft[];
-  onBack: () => void;
   onOpenLive: () => void;
   onOpen: (draft: V2SavedDraft) => void;
 }): React.JSX.Element {
   return (
-    <ListShell title="Drafts" onBack={onBack}>
+    <ListShell title="Drafts">
       {!live && drafts.length === 0 && <Empty text="No drafts yet." />}
 
       {live && (
@@ -182,7 +191,8 @@ export function DraftsScreen({ live, drafts, onBack, onOpenLive, onOpen }: {
           <Heading text="In progress" />
           <OrderCard
             title={live.snapshot.customer?.name ?? "No dealer yet"}
-            subtitle={live.snapshot.customer?.code ?? null}
+            code={live.snapshot.customer?.code ?? null}
+            area={live.snapshot.customer?.area ?? null}
             stamp={stampFor(live.savedAt)}
             snapshot={live.snapshot}
             status="Auto-saved"
@@ -202,7 +212,8 @@ export function DraftsScreen({ live, drafts, onBack, onOpenLive, onOpen }: {
               // draftDisplayName: his own name if he gave one, else the label
               // every row shows today. Nothing changes for an unnamed draft.
               title={draftDisplayName(d)}
-              subtitle={d.snapshot.customer?.code ?? null}
+              code={d.snapshot.customer?.code ?? null}
+              area={d.snapshot.customer?.area ?? null}
               stamp={stampFor(d.savedAt)}
               snapshot={d.snapshot}
               status="Saved"
@@ -222,9 +233,8 @@ export function DraftsScreen({ live, drafts, onBack, onOpenLive, onOpen }: {
  * Grouped by day under a light heading. Inside a group the card shows the CLOCK
  * only: "Yesterday" under a "Yesterday" heading is the same word twice.
  */
-export function SentScreen({ orders, onBack, onOpen }: {
+export function SentScreen({ orders, onOpen }: {
   orders: V2SentOrder[];
-  onBack: () => void;
   onOpen: (order: V2SentOrder) => void;
 }): React.JSX.Element {
   // Newest first. loadSentOrders already sorts, and grouping preserves it.
@@ -236,7 +246,7 @@ export function SentScreen({ orders, onBack, onOpen }: {
     else groups.push({ heading, orders: [o] });
   }
   return (
-    <ListShell title="Sent" onBack={onBack}>
+    <ListShell title="Sent">
       {orders.length === 0 ? (
         <Empty text="Nothing sent in the last five days." />
       ) : (
@@ -247,7 +257,8 @@ export function SentScreen({ orders, onBack, onOpen }: {
               <OrderCard
                 key={o.id}
                 title={o.snapshot.customer?.name ?? "No dealer yet"}
-                subtitle={o.snapshot.customer?.code ?? null}
+                code={o.snapshot.customer?.code ?? null}
+                area={o.snapshot.customer?.area ?? null}
                 stamp={formatTime(o.sentAt)}
                 snapshot={o.snapshot}
                 status="Sent"

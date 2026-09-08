@@ -1,11 +1,15 @@
 "use client";
 
-import { memberImage, packRows, tileArtFor, DIVIDER, FAINT, INK, MUTED, RULE, URGENT, VIOLET } from "./v2-data";
-import type { V2CartLine } from "./v2-data";
+import { ChevronLeft } from "lucide-react";
+import {
+  memberImage, packRows, tileArtFor,
+  CARD_SHADOW, DIVIDER, FAINT, INK, MUTED, PAGE, RULE, SURFACE, URGENT, VIOLET,
+} from "./v2-data";
+import type { ApiCustomer, V2CartLine } from "./v2-data";
 import type { V2Snapshot } from "./v2-storage";
 
-// The shared read-only view of ONE stored order, and the small pieces the two
-// list screens share with it.
+// The shared read-only view of ONE stored order — a SCREEN — and the small
+// pieces the two list screens share with it.
 //
 // 🔴 CONTAINMENT — imports ./v2-data, a TYPE from ./v2-storage, and
 // node_modules. Nothing else. It owns no storage
@@ -13,7 +17,15 @@ import type { V2Snapshot } from "./v2-storage";
 // Every decision — what the buttons do, what happens to the board — belongs to
 // po-v2-page.tsx, which is why this file can be read in one sitting.
 //
-// 🔴 ONE SHEET, USED TWICE. The sent detail and the draft detail were two
+// 🔴 A SCREEN, NOT A SHEET, AND THAT IS THE CHANGE. Both details used to be a
+// V2Sheet over their list. A sheet is for a DECISION you dismiss — replace or
+// keep, delete or don't — and it comes with a scrim, a drag handle and a
+// height cap that all say "answer me and I will go away". An order you read
+// through, line by line, checking what you sent, is a PLACE you went to: it
+// gets a header with a back chevron, the full height of the screen, and the
+// bottom nav still under it so you are never stranded.
+//
+// 🔴 ONE VIEW, USED TWICE. The sent detail and the draft detail were two
 // different renderings of the same object, and they had already drifted: the
 // sent one printed a per-line "N units" subtitle that the review screen had
 // deliberately dropped. A salesman checking what he sent and a salesman
@@ -73,30 +85,11 @@ function Tin({ line, size, radius }: {
   );
 }
 
-/**
- * Up to four tins and a "+N", for a list card.
- *
- * ONE TIN PER LINE, NOT PER PRODUCT, and in the order they were added. A
- * salesman recognises an order by its shape — three blue tubs and a small
- * white tin — and de-duplicating would change that shape for no gain.
- */
-export function OrderTins({ lines, size = 30 }: {
-  lines: V2CartLine[]; size?: number;
-}): React.JSX.Element {
-  const shown = lines.slice(0, 4);
-  const rest  = lines.length - shown.length;
-  return (
-    <span className="flex items-center" style={{ gap: 4 }}>
-      {shown.map((l) => <Tin key={l.id} line={l} size={size} radius={7} />)}
-      {rest > 0 && (
-        <span className="flex shrink-0 items-center justify-center rounded-[7px] text-[11px] font-extrabold"
-              style={{ width: size, height: size, background: "#F4F3F8", color: MUTED }}>
-          +{rest}
-        </span>
-      )}
-    </span>
-  );
-}
+// 🔴 OrderTins IS GONE, 2026-09-08. A card carried up to four 30px tins on the
+// reasoning that a salesman recognises an order by its shape. He does — at 46px
+// in the DETAIL, where a tin is a photograph. Shrunk onto a card they were four
+// near-identical blue Dulux tubs costing a whole row of every card, and the row
+// said nothing the product count did not. Tins stayed; the row went.
 
 /** "1 product" / "7 products" — the only count on a card. See the note below. */
 export function productCount(snapshot: V2Snapshot): string {
@@ -119,120 +112,176 @@ export function Pill({ text, tone = "quiet" }: {
 }
 
 /**
- * ONE STORED ORDER, READ-ONLY.
+ * One labelled fact in the ORDER card. Value right-aligned, and the whole row
+ * is omitted by the caller when there is nothing to say.
+ */
+function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
+  return (
+    <div className="flex items-start justify-between gap-3 px-3 py-2"
+         style={{ borderTop: `1px solid ${DIVIDER}` }}>
+      <span className="shrink-0 text-[12.5px] font-semibold" style={{ color: MUTED }}>{label}</span>
+      <span className="min-w-0 flex-1 text-right text-[13px] font-semibold" style={{ color: INK }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * ONE STORED ORDER, READ-ONLY, AS A FULL SCREEN.
  *
  * 🔴 NO TOTALS. Not units, not a sum of anything. Units across different pack
  * sizes do not add to a number anybody can act on — six 1L and two 20L is
  * "eight units" of nothing — and a total that is wrong is worse than a total
- * that is absent. The count on the list card is "N products", which is a real
- * fact about the order, and the packs themselves carry the quantities.
+ * that is absent. The count is "N products", which is a real fact, and the
+ * packs themselves carry the quantities. As of 2026-09-08 there is no unit
+ * total anywhere in the app, review included.
  *
- * 🔴 AND NO PER-LINE "N units" SUBTITLE. The sent sheet printed one under every
- * line; the review screen removed it deliberately ("he orders packs, the depot
- * picks packs"). This is that inconsistency resolved in review's favour, so all
- * three surfaces now draw a line the same way.
- *
- * THE ROW IS review-screen.tsx's, value for value: a 46px tin at radius 11, the
- * name at 15px/600 leading-snug and NEVER truncated, the colour at 11.5px/800
- * uppercase violet with .06em tracking, and a FIXED 96px right column of
- * mono/13px tabular figures reading "1L ×6". Fixed and shrink-0 so a one-pack
- * line and a four-pack line start their numbers at the same x.
+ * THE PRODUCT ROW IS review-screen.tsx's, value for value: a 46px tin at radius
+ * 11, the name at 15px/600 leading-snug and NEVER truncated, the colour at
+ * 11.5px/800 uppercase violet with .06em tracking, and a FIXED 96px right
+ * column of mono/13px tabular figures reading "1L ×6". Fixed and shrink-0 so a
+ * one-pack line and a four-pack line start their numbers at the same x.
  */
-export default function OrderSheet({ snapshot, when, footer }: {
+export default function OrderDetail({
+  snapshot, status, when, shipTo, onBack, footer, bottomPad,
+}: {
   snapshot: V2Snapshot;
-  /** Already formatted by the caller — only it knows if this was sent or saved. */
+  /** Sent · Saved · Auto-saved — the chip in the header. */
+  status: string;
+  /** Already formatted by the caller: only it knows if this was sent or saved. */
   when: string;
+  /**
+   * 🔴 THE SHIP-TO DEALER, RESOLVED — or null.
+   *
+   * The snapshot stores a shipToCode and nothing else, deliberately: the dealer
+   * list is refetched every load and a stored copy would go stale the moment an
+   * area or a name changed. Only the page holds that list, so only the page can
+   * turn the code into a name, and it passes the answer in.
+   *
+   * snapshotOf writes shipToCode ONLY when it differs from the billing dealer,
+   * so a non-null value already means "somewhere else" — there is no second
+   * comparison to make here and no way for the two to disagree.
+   */
+  shipTo: ApiCustomer | null;
+  onBack: () => void;
   footer: React.ReactNode;
+  /** The bottom nav's height — the footer sits above it, not under it. */
+  bottomPad: string;
 }): React.JSX.Element {
-  const meta: { label: string; value: string }[] = [];
-  // 🔴 EVERY ROW THAT IS EMPTY IS OMITTED, not rendered blank. A "Remark: —"
-  // line is a row a salesman has to read before learning it says nothing.
-  if (snapshot.dispatch !== "Normal") meta.push({ label: "Dispatch", value: dispatchLabel(snapshot) });
-  if (snapshot.marker) {
-    meta.push({ label: "Remark",
-                value: snapshot.marker === "Cross Delivery" && snapshot.crossDepot.trim()
-                  ? `Cross Delivery from ${snapshot.crossDepot.trim()}` : snapshot.marker });
-  }
-  if (snapshot.notes.trim()) meta.push({ label: "Note", value: snapshot.notes.trim() });
+  const c = snapshot.customer;
+  const n = snapshot.lines.length;
 
   return (
-    <>
+    <main className="min-h-screen w-full" style={{ background: PAGE, paddingBottom: bottomPad }}>
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 pt-1.5 pb-3">
-        <h2 className="truncate text-[18px] font-extrabold"
-            style={{ color: snapshot.customer ? INK : MUTED, letterSpacing: "-0.025em" }}>
-          {snapshot.customer?.name ?? "No dealer yet"}
-        </h2>
-        <p className="truncate text-[11.5px]" style={{ color: MUTED }}>
-          {snapshot.customer?.code ? (
-            <span className="font-mono">{snapshot.customer.code}</span>
-          ) : null}
-          {snapshot.customer?.code ? " · " : ""}
-          {when}
-        </p>
-      </div>
-
-      {/* ── META ────────────────────────────────────────────────────────── */}
-      {meta.length > 0 && (
-        <div className="shrink-0 px-4 pb-3">
-          <div className="rounded-[11px] px-3 py-2" style={{ background: "#F4F3F8" }}>
-            {meta.map((m) => (
-              <p key={m.label} className="flex gap-2 text-[12.5px] leading-relaxed">
-                <span className="shrink-0 font-extrabold uppercase"
-                      style={{ color: FAINT, letterSpacing: ".04em", minWidth: 58 }}>
-                  {m.label}
-                </span>
-                <span className="min-w-0 flex-1" style={{ color: INK }}>{m.value}</span>
-              </p>
-            ))}
-          </div>
+      <header className="sticky top-0 z-10 flex items-start gap-1 px-2 py-2"
+              style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}>
+        {/* 44px — CLAUDE_UI §60's floor, and the only way out of this screen
+            other than the nav. */}
+        <button type="button" aria-label="Back" onClick={onBack}
+                className="flex h-11 w-11 shrink-0 items-center justify-center">
+          <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
+        </button>
+        <div className="min-w-0 flex-1 py-1">
+          <h1 className="truncate text-[17px] font-extrabold"
+              style={{ color: c ? INK : MUTED, letterSpacing: "-0.02em" }}>
+            {c?.name ?? "No dealer yet"}
+          </h1>
+          {c && (
+            <p className="truncate text-[11.5px]" style={{ color: MUTED }}>
+              {/* AREA IS REAL — ApiCustomer carries it and 739 of 741 dealers
+                  have one. The two that do not show the code alone rather than
+                  a dangling separator. */}
+              <span className="font-mono">{c.code}</span>{c.area ? ` · ${c.area}` : ""}
+            </p>
+          )}
         </div>
-      )}
+        <span className="mt-1.5 shrink-0"><Pill text={status} tone="quiet" /></span>
+      </header>
 
-      {/* ── LINES ───────────────────────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto"
-           style={{ borderTop: `1px solid ${RULE}` }}>
-        {snapshot.lines.map((line) => (
-          <div key={line.id} className="flex items-start gap-3 px-4"
-               style={{ borderBottom: `1px solid ${DIVIDER}`, paddingTop: 14, paddingBottom: 14 }}>
-            <Tin line={line} size={46} radius={11} />
-            <div className="min-w-0 flex-1">
-              {/* Not truncated — see review-screen: at 46px the tins are very
-                  nearly indistinguishable and only the name says which product
-                  it is, so it wraps rather than clipping. */}
-              <p className="text-[15px] font-semibold leading-snug" style={{ color: INK }}>
-                {line.label}
-              </p>
-              {line.option && (
-                <p className="mt-0.5 truncate text-[11.5px] font-extrabold uppercase"
-                   style={{ color: VIOLET, letterSpacing: ".06em" }}>
-                  {line.option}
-                </p>
-              )}
-            </div>
-            <div className="shrink-0 text-right" style={{ width: 96 }}>
-              {packRows(line).map(({ label, qty }) => (
-                <p key={label} className="whitespace-nowrap font-mono text-[13px] tabular-nums"
-                   style={{ color: INK, marginTop: 3 }}>
-                  {label} ×{qty}
-                </p>
-              ))}
-            </div>
+      {/* ── THE ORDER CARD ──────────────────────────────────────────────── */}
+      <h2 className="px-4 pb-1.5 pt-4 text-[11.5px] font-extrabold uppercase"
+          style={{ color: FAINT, letterSpacing: ".08em" }}>
+        Order
+      </h2>
+      <div className="px-4">
+        <div className="overflow-hidden rounded-[14px]"
+             style={{ background: SURFACE, boxShadow: CARD_SHADOW }}>
+          {/* 🔴 ONLY ROWS WITH CONTENT. A "Remark —" line is a row he has to
+              read before learning it says nothing. The first row is always
+              present because an order always has a time. */}
+          <div className="flex items-start justify-between gap-3 px-3 py-2">
+            <span className="shrink-0 text-[12.5px] font-semibold" style={{ color: MUTED }}>{status}</span>
+            <span className="min-w-0 flex-1 text-right text-[13px] font-semibold" style={{ color: INK }}>
+              {when}
+            </span>
           </div>
-        ))}
+          {snapshot.dispatch !== "Normal" && (
+            <Fact label="Dispatch" value={dispatchLabel(snapshot)} />
+          )}
+          {snapshot.marker && (
+            <Fact label="Remark"
+                  value={snapshot.marker === "Cross Delivery" && snapshot.crossDepot.trim()
+                    ? `Cross Delivery from ${snapshot.crossDepot.trim()}` : snapshot.marker} />
+          )}
+          {snapshot.shipToCode && (
+            <Fact label="Ship to"
+                  value={shipTo ? `${shipTo.name} · ${shipTo.code}` : snapshot.shipToCode} />
+          )}
+          {snapshot.notes.trim() && <Fact label="Note" value={snapshot.notes.trim()} />}
+        </div>
       </div>
 
-      {/* 🔴 THE FOOTER IS RENDERED HERE, NOT PASSED TO V2Sheet. The sheet has a
-          footer slot of its own and using both would draw two. This one is a
-          `shrink-0` sibling after a `min-h-0 flex-1` scroller, which is exactly
-          how V2Sheet pins its own — same border, same safe-area padding — so
-          the buttons stay put while the lines scroll, and v2-sheet.tsx is not
-          touched to achieve it. */}
-      <div className="flex shrink-0 gap-2 px-4 pt-3"
-           style={{ borderTop: `1px solid ${RULE}`,
-                    paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}>
+      {/* ── THE PRODUCTS ────────────────────────────────────────────────── */}
+      <h2 className="px-4 pb-1.5 pt-4 text-[11.5px] font-extrabold uppercase"
+          style={{ color: FAINT, letterSpacing: ".08em" }}>
+        {n} {n === 1 ? "product" : "products"}
+      </h2>
+      <div className="px-4">
+        <div className="overflow-hidden rounded-[14px]"
+             style={{ background: SURFACE, boxShadow: CARD_SHADOW }}>
+          {snapshot.lines.map((line, i) => (
+            <div key={line.id} className="flex items-start gap-3 px-3"
+                 style={{ borderTop: i === 0 ? undefined : `1px solid ${DIVIDER}`,
+                          paddingTop: 12, paddingBottom: 12 }}>
+              <Tin line={line} size={46} radius={11} />
+              <div className="min-w-0 flex-1">
+                {/* Not truncated — see review-screen: at 46px the tins are very
+                    nearly indistinguishable and only the name says which
+                    product it is, so it wraps rather than clipping. */}
+                <p className="text-[15px] font-semibold leading-snug" style={{ color: INK }}>
+                  {line.label}
+                </p>
+                {line.option && (
+                  <p className="mt-0.5 truncate text-[11.5px] font-extrabold uppercase"
+                     style={{ color: VIOLET, letterSpacing: ".06em" }}>
+                    {line.option}
+                  </p>
+                )}
+              </div>
+              <div className="shrink-0 text-right" style={{ width: 96 }}>
+                {packRows(line).map(({ label, qty }) => (
+                  <p key={label} className="whitespace-nowrap font-mono text-[13px] tabular-nums"
+                     style={{ color: INK, marginTop: 3 }}>
+                    {label} ×{qty}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── THE BUTTONS ─────────────────────────────────────────────────── */}
+      {/* Fixed above the nav, not floating over the list: the order scrolls
+          under them and the last product still clears both, because the page
+          pads by nav + footer. */}
+      <div className="fixed inset-x-0 z-10 flex gap-2 px-4 pt-3"
+           style={{ bottom: bottomPad, background: SURFACE,
+                    borderTop: `1px solid ${RULE}`, paddingBottom: 12 }}>
         {footer}
       </div>
-    </>
+    </main>
   );
 }

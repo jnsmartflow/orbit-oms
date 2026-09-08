@@ -3,7 +3,7 @@
 import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
   BRAND, DIVIDER, FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
-  chipStyle, memberImage, packRows, tileArtFor, unitsIn,
+  chipStyle, memberImage, packRows, tileArtFor,
   type ApiCustomer, type V2CartLine, type V2Marker, type V2Order,
 } from "./v2-data";
 
@@ -77,7 +77,6 @@ export default function ReviewScreen({
   onSend: () => void;
   onSaveDraft: () => void;
 }): React.JSX.Element {
-  const totalUnits = lines.reduce((sum, l) => sum + unitsIn(l.qtys), 0);
   const shipElsewhere = shipTo !== null && shipTo.code !== dealer?.code;
   const canSend = dealer !== null;
 
@@ -259,13 +258,13 @@ export default function ReviewScreen({
           );
         })}
 
-        <div className="flex items-center justify-between px-4 py-2.5"
-             style={{ borderTop: `1px solid ${DIVIDER}` }}>
-          <span className="text-[15px] font-bold" style={{ color: INK }}>Total</span>
-          <span className="font-mono text-[15px] font-bold" style={{ color: INK }}>
-            {totalUnits} units
-          </span>
-        </div>
+        {/* 🔴 THE "Total N units" ROW IS GONE, 2026-09-08, AND WITH IT THE LAST
+            UNIT TOTAL IN THE APP. Summing quantities across pack sizes adds 1L
+            tins to 20L drums: six 1L and two 20L is "eight units" of nothing,
+            and a figure a salesman cannot act on is worse than none at all. The
+            per-line subtitle went for the same reason, and the drafts and sent
+            screens never had one. The packs carry the quantities; the count of
+            LINES is the only count. */}
       </div>
 
       <Band />

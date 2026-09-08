@@ -9,7 +9,7 @@ import { MIN_QUERY, ProductResults, ProductSearchInput, type V2ProductGroup } fr
 import ReviewScreen from "./review-screen";
 import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import { DraftsScreen, SentScreen } from "./drafts-sent";
-import OrderSheet, { NAV_H } from "./order-sheet";
+import OrderDetail, { NAV_H } from "./order-sheet";
 import {
   addSentOrder, clearLiveDraft, draftDisplayName, labelFor, loadLiveDraft, loadSavedDrafts,
   loadSentOrders, newDraftId, newSentId, removeSavedDraft, renameSavedDraft,
@@ -112,8 +112,12 @@ type LoadState =
       /** The 9x4 board, EVERY MEMBER RESOLVED ON ITS OWN ROWS (buildBoard). */
       board: Map<string, V2ResolvedTile> };
 
-type Screen = "order" | "review" | "dealer" | "shipto" | "sent" | "drafts" | "sentList";
-type Sheet  = null | "clear" | "summary" | "draft" | "load" | "rename" | "delete";
+type Screen = "order" | "review" | "dealer" | "shipto" | "sent"
+            | "drafts" | "sentList" | "draftDetail" | "sentDetail";
+// 🔴 "summary" AND "draft" ARE GONE FROM HERE. Both details are SCREENS now —
+// a sheet is for a decision you dismiss, an order you read through is a place
+// you went to. What is left are the three things that really are decisions.
+type Sheet  = null | "clear" | "load" | "rename" | "delete";
 
 /**
  * 🔴 MERGE, NOT APPEND, WHEN HE ASKS TO ADD.
@@ -475,6 +479,24 @@ export default function PoV2Page(): React.JSX.Element {
     if (lines.length === 0) { applySnapshot(snap, customers); return; }
     setPendingLoad(snap);
     setSheet("load");
+  }
+
+  /**
+   * 🔴 THE SHIP-TO DEALER FOR A STORED ORDER, RESOLVED AGAINST THE LIVE LIST.
+   *
+   * The snapshot holds a shipToCode and nothing else, deliberately: a stored
+   * customer object would go stale the moment an area or a name changed. Only
+   * this page has the refetched list, so only this page can turn the code into
+   * a name — and when the code is no longer in the list (a dealer removed since
+   * the order was sent) it returns null and the detail prints the bare code
+   * rather than inventing anything.
+   *
+   * snapshotOf writes the code ONLY when it differs from the billing dealer, so
+   * a non-null shipToCode already means "somewhere else".
+   */
+  function shipToOf(snap: V2Snapshot): ApiCustomer | null {
+    if (!snap.shipToCode) return null;
+    return customers.find((c) => c.code === snap.shipToCode) ?? null;
   }
 
   /** REPLACE — the board becomes this order, dealer and remarks included. */
@@ -860,7 +882,7 @@ export default function PoV2Page(): React.JSX.Element {
               setSavedDrafts(next);
               // Keep the open detail sheet in step with what was just written.
               setOpenDraftDetail(next.find((d) => d.id === renameTarget.id) ?? null);
-              setSheet("draft"); setRenameTarget(null);
+              setSheet(null); setRenameTarget(null);
             }}
             className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
             style={{ background: BRAND }}
@@ -907,12 +929,12 @@ export default function PoV2Page(): React.JSX.Element {
    */
   const deleteSheet = sheet === "delete" && deleteTarget ? (
     <V2Sheet
-      onClose={() => { setSheet(null); setDeleteTarget(null); setSheet("draft"); }}
+      onClose={() => { setSheet(null); setDeleteTarget(null); }}
       footer={
         <>
           <button
             type="button"
-            onClick={() => { setDeleteTarget(null); setSheet("draft"); }}
+            onClick={() => { setSheet(null); setDeleteTarget(null); }}
             className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold"
             style={{ border: `1.5px solid ${RULE}`, color: INK }}
           >
@@ -923,6 +945,8 @@ export default function PoV2Page(): React.JSX.Element {
             onClick={() => {
               setSavedDrafts(removeSavedDraft(deleteTarget.id));
               setDeleteTarget(null); setOpenDraftDetail(null); setSheet(null);
+              // The draft is gone, so the screen showing it has to go too.
+              setScreen("drafts");
               setToast("Draft deleted");
             }}
             className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
@@ -998,59 +1022,12 @@ export default function PoV2Page(): React.JSX.Element {
         <DraftsScreen
           live={liveSnap}
           drafts={savedDrafts}
-          onBack={() => setScreen("order")}
           // In progress IS the board. Opening it is going back to it.
           onOpenLive={() => setScreen("order")}
-          onOpen={(d) => { setOpenDraftDetail(d); setSheet("draft"); }}
+          onOpen={(d) => { setOpenDraftDetail(d); setScreen("draftDetail"); }}
         />
         <BottomNav onNavigate={(next) => setScreen(next)} />
         {toastHost}
-
-        {/* ── DRAFT DETAIL — the shared sheet, Delete and Continue ────── */}
-        {sheet === "draft" && openDraftDetail && (
-          <V2Sheet onClose={() => { setSheet(null); setOpenDraftDetail(null); }} fixedHeight>
-            <OrderSheet
-              snapshot={openDraftDetail.snapshot}
-              when={`Saved ${formatSavedAt(openDraftDetail.savedAt)}`}
-              footer={
-                <>
-                  <button
-                    type="button"
-                    onClick={() => { setDeleteTarget(openDraftDetail); setSheet("delete"); }}
-                    className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
-                    style={{ border: `1.5px solid ${RULE}`, color: URGENT }}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setRenameTarget(openDraftDetail);
-                                     setRenameText(openDraftDetail.name ?? "");
-                                     setSheet("rename"); }}
-                    className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
-                    style={{ border: `1.5px solid ${RULE}`, color: INK }}
-                  >
-                    Rename
-                  </button>
-                  {/* 🔴 CONTINUE LEAVES THE DRAFT WHERE IT IS. Nothing is
-                      deleted by using it — a basket he works through four shops
-                      keeps working, and no tap makes something vanish. Delete
-                      is the only thing that deletes. */}
-                  <button
-                    type="button"
-                    onClick={() => { const d = openDraftDetail;
-                                     setSheet(null); setOpenDraftDetail(null);
-                                     loadOntoBoard(d.snapshot, d.id); }}
-                    className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-                    style={{ background: BRAND }}
-                  >
-                    Continue
-                  </button>
-                </>
-              }
-            />
-          </V2Sheet>
-        )}
 
         {loadSheet}
         {renameSheet}
@@ -1065,39 +1042,104 @@ export default function PoV2Page(): React.JSX.Element {
       <>
         <SentScreen
           orders={sentOrders}
-          onBack={() => setScreen("order")}
-          onOpen={(o) => { setOpenSent(o); setSheet("summary"); }}
+          onOpen={(o) => { setOpenSent(o); setScreen("sentDetail"); }}
         />
         <BottomNav onNavigate={(next) => setScreen(next)} />
         {toastHost}
 
-        {/* ── SENT DETAIL — the same sheet, one button ────────────────── */}
-        {sheet === "summary" && openSent && (
-          <V2Sheet onClose={() => { setSheet(null); setOpenSent(null); }} fixedHeight>
-            <OrderSheet
-              snapshot={openSent.snapshot}
-              when={`Sent ${formatSavedAt(openSent.sentAt)}`}
-              footer={
-                <button
-                  type="button"
-                  onClick={() => {
-                    const snap = openSent.snapshot;
-                    setSheet(null); setOpenSent(null);
-                    // 🔴 A FRESH ORDER, not a re-send. This loads the lines onto
-                    // the board and stops — it never re-fires the mailto, so the
-                    // salesman sees and confirms what goes out a second time.
-                    loadOntoBoard(snap, null);
-                  }}
-                  className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
-                  style={{ background: VIOLET }}
-                >
-                  Send again
-                </button>
-              }
-            />
-          </V2Sheet>
-        )}
+        {loadSheet}
+      </>
+    );
+  }
 
+  // ══ SCREEN 7 — ONE SAVED DRAFT ══════════════════════════════════════════
+  if (screen === "draftDetail" && openDraftDetail) {
+    return (
+      <>
+        <OrderDetail
+          snapshot={openDraftDetail.snapshot}
+          status="Saved"
+          when={formatSavedAt(openDraftDetail.savedAt)}
+          shipTo={shipToOf(openDraftDetail.snapshot)}
+          onBack={() => { setOpenDraftDetail(null); setScreen("drafts"); }}
+          bottomPad={NAV_H}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => { setDeleteTarget(openDraftDetail); setSheet("delete"); }}
+                className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-extrabold"
+                style={{ border: `1.5px solid ${RULE}`, color: URGENT }}
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRenameTarget(openDraftDetail);
+                                 setRenameText(openDraftDetail.name ?? "");
+                                 setSheet("rename"); }}
+                className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-extrabold"
+                style={{ border: `1.5px solid ${RULE}`, color: INK }}
+              >
+                Rename
+              </button>
+              {/* 🔴 CONTINUE LEAVES THE DRAFT WHERE IT IS. Nothing is deleted by
+                  using it — a basket he works through four shops keeps working,
+                  and no tap makes something vanish. Delete is the only thing
+                  that deletes, and it sits behind a confirm. */}
+              <button
+                type="button"
+                onClick={() => { const d = openDraftDetail;
+                                 setOpenDraftDetail(null);
+                                 loadOntoBoard(d.snapshot, d.id); }}
+                className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                style={{ background: BRAND }}
+              >
+                Continue
+              </button>
+            </>
+          }
+        />
+        <BottomNav onNavigate={(next) => setScreen(next)} />
+        {toastHost}
+        {loadSheet}
+        {renameSheet}
+        {deleteSheet}
+      </>
+    );
+  }
+
+  // ══ SCREEN 8 — ONE SENT ORDER ═══════════════════════════════════════════
+  if (screen === "sentDetail" && openSent) {
+    return (
+      <>
+        <OrderDetail
+          snapshot={openSent.snapshot}
+          status="Sent"
+          when={formatSavedAt(openSent.sentAt)}
+          shipTo={shipToOf(openSent.snapshot)}
+          onBack={() => { setOpenSent(null); setScreen("sentList"); }}
+          bottomPad={NAV_H}
+          footer={
+            /* 🔴 ONE BUTTON, AND NO "EDIT". Send again already puts the order on
+               the board, which is where editing happens — a second button would
+               be two names for one action. It is also a FRESH order and never a
+               re-send: it never re-fires the mailto, so he sees and confirms
+               what goes out a second time. */
+            <button
+              type="button"
+              onClick={() => { const snap = openSent.snapshot;
+                               setOpenSent(null);
+                               loadOntoBoard(snap, null); }}
+              className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+              style={{ background: VIOLET }}
+            >
+              Send again
+            </button>
+          }
+        />
+        <BottomNav onNavigate={(next) => setScreen(next)} />
+        {toastHost}
         {loadSheet}
       </>
     );
