@@ -27,11 +27,12 @@
 //
 //  - Hold → /api/floor/actions "hold" (dispatchStatus 'hold' + heldAt).
 //    ✕ → /api/floor/actions "cancel" (workflowStage 'cancelled'). Wired Step 5.
-//  - Hold and ✕ are DISABLED (visible, greyed, with a hover reason) on a bill
-//    with an OPEN tint job — tint_assignments 'assigned' / 'tinting_in_progress'
-//    / 'paused'. Cancelling one of those stranded the assignment row and jammed
-//    the operator's machine; see the tintLocked block below for the three live
-//    incidents and for why the predicate is the TINT state and not `!releasable`.
+//  - Hold and ✕ are DISABLED (visible, greyed, with a hover reason) on any tint
+//    bill whose tinting is NOT FINISHED — waiting, assigned or mixing. Only
+//    "ready" (pending_support) is still actionable. Cancelling an unfinished one
+//    strands it past the tint stage on restore and can jam the operator's
+//    machine; see the tintLocked block below for the live incidents and for why
+//    the predicate is the TINT state and not `!releasable`.
 //  - A bill is releasable only at pending_support (a non-tint bill, or a tint
 //    bill whose shades are all done). On a mid-tint bill the picker is DIMMED
 //    (disabled) — that IS the dimmed state; there is no separate greyed button.
@@ -117,36 +118,50 @@ export function RailCard({
   const releasable = card.workflowStage === "pending_support";
   const dropletReady = card.tint?.stage === "ready";
 
-  // ── TINT LOCK (2026-09-08) ──────────────────────────────────────────────
+  // ── TINT LOCK (2026-09-08, widened same day) ──────────────────────────
   // Hold and ✕ acted on the order row only and never looked at the tint side.
-  // Three live incidents, all repaired by hand in SQL: a bill cancelled while
-  // ASSIGNED came back at pending_support (Restore's one stage) and Release then
-  // pushed it to pending_picking — jumping the tint stage and vanishing from
-  // Tint Manager; and a bill cancelled NINE MINUTES after Start left
-  // tint_assignments at 'tinting_in_progress' while the job disappeared from the
-  // operator's queue, so he could neither finish it nor start anything else —
-  // the start-guard then blocked every new job on an invisible one.
+  // Live incidents, all repaired by hand in SQL: OBD 9109265718 (2026-09-02) was
+  // cancelled mid-tint, came back from Restore at pending_support and Release
+  // then pushed it to pending_picking — jumping the tint stage and vanishing
+  // from Tint Manager; OBD 9109367531 (2026-09-08) was cancelled NINE MINUTES
+  // after Start and left tint_assignments at 'tinting_in_progress' while the job
+  // disappeared from the operator's queue, so he could neither finish it nor
+  // start anything else — the start-guard then blocked every new job on an
+  // invisible one. Further bills were found stranded the same way that day.
+  //
+  // THE RULE IS "TINTING NOT FINISHED", not "an operator is attached". The first
+  // cut of this lock left "waiting" (pending_tint_assignment) open on the
+  // grounds that nobody was holding paint there yet. That was WRONG, and
+  // 9109265718 is the proof: Floor's RESTORE always writes 'pending_support' —
+  // it does NOT return a bill to the stage it was cancelled from — so a bill
+  // cancelled at "waiting" also lands PAST the tint stage on restore and also
+  // disappears from Tint Manager. The operator is irrelevant; the one-way
+  // restore is the damage.
   //
   // The predicate is the TINT state, deliberately NOT `!releasable`. Those are
   // different questions: `!releasable` is true for ANY rail bill short of
-  // pending_support, including a non-tint bill at order_created and a tint bill
-  // at pending_tint_assignment — where nobody is holding paint and Hold is the
-  // legitimate thing to do. `stage` covers all three OPEN assignment statuses:
-  // 'assigned' → "assigned", and BOTH 'tinting_in_progress' and 'paused' →
-  // "mixing", because pause/resume write the assignment row only and leave
-  // orders.workflowStage at 'tinting_in_progress' (CLAUDE_TINT §5).
+  // pending_support, including a non-tint bill at order_created, which has no
+  // tint stage to be stranded past. `stage` covers all three OPEN assignment
+  // statuses: 'assigned' → "assigned", and BOTH 'tinting_in_progress' and
+  // 'paused' → "mixing", because pause/resume write the assignment row only and
+  // leave orders.workflowStage at 'tinting_in_progress' (CLAUDE_TINT §5).
   //
-  // "waiting" and "ready" stay UNLOCKED on purpose: nothing is on the mixer at
-  // pending_tint_assignment, and at "ready" the tinting is finished and the
-  // floor SHOULD be able to hold or cancel.
+  // ONLY "ready" (pending_support) stays UNLOCKED, and it must: the tinting is
+  // finished, there is no tint stage left to strand the bill behind, and the
+  // floor has to be able to hold, cancel or release it. DO NOT WIDEN PAST THIS.
   const tintLocked =
-    card.tint !== null && (card.tint.stage === "assigned" || card.tint.stage === "mixing");
+    card.tint !== null &&
+    (card.tint.stage === "waiting" ||
+      card.tint.stage === "assigned" ||
+      card.tint.stage === "mixing");
   // undefined when unlocked, so the wrapper renders no title attribute at all.
   const tintLockReason = !tintLocked
     ? undefined
     : card.tint?.stage === "mixing"
       ? "Tinting in progress — cancel from Tint Manager"
-      : "Assigned to a tint operator — cancel from Tint Manager";
+      : card.tint?.stage === "assigned"
+        ? "Assigned to a tint operator — cancel from Tint Manager"
+        : "Tint order not yet assigned — cancel from Tint Manager";
 
   // Gen counter that opens the shared picker programmatically — same mechanism
   // the assign bar and detail panel use. Bumped by the caret, and by a body tap

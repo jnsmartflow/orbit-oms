@@ -375,33 +375,42 @@ function PanelBody({
   const canReassign = source === "floor" && !d.isDone && !d.isChecked;
   const railReleasable = source === "rail" && d.workflowStage === "pending_support";
 
-  // ── TINT LOCK (2026-09-08) ──────────────────────────────────────────────
+  // ── TINT LOCK (2026-09-08, widened same day) ────────────────────────────────────────
   // The SAME lock rail-card.tsx puts on its Hold / ✕ pair — this menu was the
   // same hole one click away, since the panel opens straight off a rail card.
-  // Read the block above `tintLocked` in rail-card.tsx for the three live
-  // incidents; only the SOURCE of the state differs.
+  // Read the block above `tintLocked` in rail-card.tsx for the live incidents
+  // and for why the rule is "tinting NOT FINISHED" rather than "an operator is
+  // attached" (Floor's Restore always writes 'pending_support', so cancelling a
+  // bill even at pending_tint_assignment strands it past the tint stage). Only
+  // the SOURCE of the state differs; keep the two seams identical.
   //
   // The card reads TintState.stage, which getFloorRail derives from
   // orders.workflowStage (lib/floor/queries.ts:531). This payload has no
   // TintState, so it derives the same answer from the same underlying facts,
   // which it already carries: `workflowStage` and `isTint`
-  // (app/api/floor/order/[orderId]/route.ts:142/150). NO new API field — the two
-  // stages below are exactly the ones queries.ts maps to "assigned" and "mixing",
-  // and 'paused' folds into 'tinting_in_progress' here for the same reason it
-  // does there: pause/resume write the assignment row only and never the order's
-  // stage (CLAUDE_TINT §5).
+  // (app/api/floor/order/[orderId]/route.ts:142/150). NO new API field — the
+  // three stages below are exactly the ones queries.ts maps to "waiting",
+  // "assigned" and "mixing", and 'paused' folds into 'tinting_in_progress' here
+  // for the same reason it does there: pause/resume write the assignment row
+  // only and never the order's stage (CLAUDE_TINT §5). The one stage left out is
+  // 'pending_support' — "ready", where tinting is done and the floor must still
+  // be able to hold, cancel or release. DO NOT WIDEN PAST THIS.
   //
   // RAIL ONLY, deliberately. A floor-sourced bill is past tinting, and the
   // "hold" source's Cancel (below) and Unassign are untouched.
   const tintLocked =
     source === "rail" &&
     d.isTint &&
-    (d.workflowStage === "tint_assigned" || d.workflowStage === "tinting_in_progress");
+    (d.workflowStage === "pending_tint_assignment" ||
+      d.workflowStage === "tint_assigned" ||
+      d.workflowStage === "tinting_in_progress");
   const tintLockReason = !tintLocked
     ? undefined
     : d.workflowStage === "tinting_in_progress"
       ? "Tinting in progress — cancel from Tint Manager"
-      : "Assigned to a tint operator — cancel from Tint Manager";
+      : d.workflowStage === "tint_assigned"
+        ? "Assigned to a tint operator — cancel from Tint Manager"
+        : "Tint order not yet assigned — cancel from Tint Manager";
 
   // Overflow (⋯) actions per source — only the ones with real routes.
   // `disabledReason` set ⇒ the item renders visible but greyed and inert, with
