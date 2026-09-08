@@ -19,7 +19,11 @@
 // - J.4  Material empty → drop + warning.
 // - P.   Parent item superseded by its batch sub-items → drop + VISIBLE skip
 //        reason. Runs after rule 1 so the ordinary zeroed parent still takes
-//        the cheap path and keeps its silent drop.
+//        the cheap path and keeps its silent drop. Only sub-items that
+//        themselves survive rules 0/E/1/J.3/J.4 supersede anything.
+//
+// Rules 0, E, 1, J.3 and J.4 have ONE implementation — `classifyRow` — because
+// rule P's pre-pass has to ask the same question the filter loop asks.
 // - J.7  Unknown item category → include line, log actionable warning.
 // - ZINR rows → emit `zinr-article-tag-pending` breadcrumb.
 // - D.3  No surviving lines → delivery skipped with reason "no-valid-lines"
@@ -41,6 +45,36 @@ import {
  * numbers — see rule P below, which is careful never to touch those.
  */
 const BATCH_SUB_ITEM_FLOOR = 900000;
+
+/**
+ * The verdict of the per-row filters. `keep` carries the Material so callers
+ * get it non-null without a cast; each rejection names the rule that fired so
+ * the caller can raise the right warning or skip.
+ */
+type RowVerdict =
+  | { keep: true;  material: string }
+  | { keep: false; reason: "non-LF" | "zzre" | "qty-zero" | "non-positive-item" | "no-material" };
+
+/**
+ * THE single definition of "would this row survive the per-row filters",
+ * evaluated in the order the rules are applied.
+ *
+ * Called twice per row — once by rule P's pre-pass, once by the filter loop —
+ * and the two MUST agree. As first shipped (25fc3c99) the pre-pass used its
+ * own inline test, so a sub-item row the loop would itself discard (qty 0,
+ * ZZRE, non-LF) still qualified its SKU for rule P: the parent was dropped as
+ * superseded while the sub-item that was supposed to carry the stock had
+ * already been thrown away, and the units vanished silently. One function,
+ * one answer, nothing to drift.
+ */
+function classifyRow(r: RawSapRow): RowVerdict {
+  if ((r.deliveryType ?? "").toUpperCase() !== "LF")           return { keep: false, reason: "non-LF" };
+  if (r.itemCategory === "ZZRE")                               return { keep: false, reason: "zzre" };
+  if (r.deliveryQuantity === null || r.deliveryQuantity === 0) return { keep: false, reason: "qty-zero" };
+  if (r.item <= 0)                                             return { keep: false, reason: "non-positive-item" };
+  if (!r.material)                                             return { keep: false, reason: "no-material" };
+  return { keep: true, material: r.material };
+}
 
 export interface LineInterim {
   /** SAP item number from col 12 — becomes ObdLineInput.lineId. */
@@ -86,15 +120,20 @@ export function applyRules(groups: GroupedDelivery[]): AppliedRulesResult {
       continue;
     }
 
-    // PRE-PASS for rule P — collect the SKUs in this delivery that already
-    // have a batch sub-item row. Built in full BEFORE the filter loop below
-    // so nothing is mutated while iterating, and so a parent is judged
-    // against every sub-item in the delivery regardless of row order.
+    // PRE-PASS for rule P — collect the SKUs in this delivery that have a
+    // batch sub-item row THAT ITSELF SURVIVES the per-row filters. Built in
+    // full BEFORE the filter loop below so nothing is mutated while iterating,
+    // and so a parent is judged against every sub-item in the delivery
+    // regardless of row order.
+    //
+    // The survivability test is `classifyRow`, the same function the loop
+    // below uses — a sub-item that is about to be discarded cannot carry the
+    // parent's stock, so it must not be allowed to supersede the parent.
     const skusWithBatchSubItems = new Set<string>();
     for (const r of g.rows) {
-      if (r.item >= BATCH_SUB_ITEM_FLOOR && r.material) {
-        skusWithBatchSubItems.add(r.material);
-      }
+      if (r.item < BATCH_SUB_ITEM_FLOOR) continue;
+      const verdict = classifyRow(r);
+      if (verdict.keep) skusWithBatchSubItems.add(verdict.material);
     }
 
     // STEP 1 — Filter rows: drop non-LF (skip + record), drop ZZRE (warn),
@@ -103,53 +142,53 @@ export function applyRules(groups: GroupedDelivery[]): AppliedRulesResult {
     // category warnings (unknown-item-category, ZINR breadcrumb) emitted here too.
     const usableRows: RawSapRow[] = [];
     for (const r of g.rows) {
-      // Row-level LF filter — broaden the existing delivery-level skip
-      // (group-rows.ts D.1) to catch non-LF rows embedded in otherwise-LF
-      // deliveries (rare but real). Whole-delivery non-LF returns are
-      // already caught upstream by D.1; this only fires for mixed cases.
-      if ((r.deliveryType ?? "").toUpperCase() !== "LF") {
-        skipped.push({
-          delivery:   g.delivery,
-          reason:     "non-LF row",
-          rowNumbers: [r.rowNumber],
-        });
-        continue;
-      }
-
-      if (r.itemCategory === "ZZRE") {
-        warnings.push({
-          delivery:   g.delivery,
-          kind:       "mixed-zzre-line",
-          message:    `ZZRE line item ${r.item} on row ${r.rowNumber} dropped (mixed with non-ZZRE lines in delivery ${g.delivery})`,
-          rowNumbers: [r.rowNumber],
-        });
-        continue;
-      }
-
-      if (r.deliveryQuantity === null || r.deliveryQuantity === 0) {
-        // Silent drop — SAP convention: qty=0 means the row carries no
-        // pickable quantity (either not yet picked or already fully picked
-        // via a counterpart row). We're only interested in qty>0.
-        continue;
-      }
-
-      if (r.item <= 0) {
-        warnings.push({
-          delivery:   g.delivery,
-          kind:       "negative-or-zero-item",
-          message:    `row ${r.rowNumber} has non-positive item number (${r.item}); dropping`,
-          rowNumbers: [r.rowNumber],
-        });
-        continue;
-      }
-
-      if (!r.material) {
-        warnings.push({
-          delivery:   g.delivery,
-          kind:       "missing-material",
-          message:    `row ${r.rowNumber} (item ${r.item}) has no Material; dropping`,
-          rowNumbers: [r.rowNumber],
-        });
+      // Rules 0/E/1/J.3/J.4, in that order, from the shared classifier. The
+      // switch only decides how each rejection is REPORTED — the conditions
+      // themselves live in classifyRow and nowhere else.
+      const verdict = classifyRow(r);
+      if (!verdict.keep) {
+        switch (verdict.reason) {
+          case "non-LF":
+            // Row-level LF filter — broaden the existing delivery-level skip
+            // (group-rows.ts D.1) to catch non-LF rows embedded in otherwise-LF
+            // deliveries (rare but real). Whole-delivery non-LF returns are
+            // already caught upstream by D.1; this only fires for mixed cases.
+            skipped.push({
+              delivery:   g.delivery,
+              reason:     "non-LF row",
+              rowNumbers: [r.rowNumber],
+            });
+            break;
+          case "zzre":
+            warnings.push({
+              delivery:   g.delivery,
+              kind:       "mixed-zzre-line",
+              message:    `ZZRE line item ${r.item} on row ${r.rowNumber} dropped (mixed with non-ZZRE lines in delivery ${g.delivery})`,
+              rowNumbers: [r.rowNumber],
+            });
+            break;
+          case "qty-zero":
+            // Silent drop — SAP convention: qty=0 means the row carries no
+            // pickable quantity (either not yet picked or already fully picked
+            // via a counterpart row). We're only interested in qty>0.
+            break;
+          case "non-positive-item":
+            warnings.push({
+              delivery:   g.delivery,
+              kind:       "negative-or-zero-item",
+              message:    `row ${r.rowNumber} has non-positive item number (${r.item}); dropping`,
+              rowNumbers: [r.rowNumber],
+            });
+            break;
+          case "no-material":
+            warnings.push({
+              delivery:   g.delivery,
+              kind:       "missing-material",
+              message:    `row ${r.rowNumber} (item ${r.item}) has no Material; dropping`,
+              rowNumbers: [r.rowNumber],
+            });
+            break;
+        }
         continue;
       }
 
@@ -171,7 +210,11 @@ export function applyRules(groups: GroupedDelivery[]): AppliedRulesResult {
       // Unlike the qty=0 drop this one is NOT silent. It is rare — 3 events in
       // 4 months — and silence is precisely how it went unnoticed, so it lands
       // in `skipped[]` where the preview and the batch record both show it.
-      if (r.item < BATCH_SUB_ITEM_FLOOR && skusWithBatchSubItems.has(r.material)) {
+      //
+      // `skusWithBatchSubItems` holds only sub-items that survive the filters
+      // above (see the pre-pass), so a parent is never dropped in favour of a
+      // sub-item that was itself discarded.
+      if (r.item < BATCH_SUB_ITEM_FLOOR && skusWithBatchSubItems.has(verdict.material)) {
         skipped.push({
           delivery:   g.delivery,
           reason:     "parent item superseded by batch sub-items",
