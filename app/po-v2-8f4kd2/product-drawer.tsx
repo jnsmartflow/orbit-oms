@@ -592,8 +592,18 @@ export default function ProductDrawer({
    * 🔴 TWO NAMED PRODUCTS, NOT A COUNT — see TOGGLE_MEMBERS. Everywhere else
    * the rail now shows ONE combined column: the bases first in their numbered
    * sequence, then the shades in 90-day sales order.
+   *
+   * 🔴 IT IS A CHIP ROW NOW, NOT A TOGGLE, AND GroupButton IS GONE. The two
+   * groups were a stacked segmented control at the top of the RAIL — two 44px
+   * halves in an 88px column, one above the other, because side by side they
+   * would have been 41px wide. That shape only ever existed to fit the rail,
+   * and it made the one control on the sheet that is not a product look like
+   * two products. Base and Shade are a FILTER over the list below them, which
+   * is exactly what a category chip is, so they are drawn with the same
+   * component in the same zone — one control, one appearance, in both places
+   * it appears.
    */
-  const showToggle = !railHoldsProducts && TOGGLE_MEMBERS.has(cur.sap) &&
+  const showGroupChips = !railHoldsProducts && TOGGLE_MEMBERS.has(cur.sap) &&
     rails.bases.length > 0 && rails.shades.length > 0;
 
   const onShade = tab === "shade" ? rails.shades.length > 0 : rails.bases.length === 0;
@@ -606,7 +616,7 @@ export default function ProductDrawer({
    * because a base draws its number large inside the square while a shade draws
    * its own colour — the join is visible without a heading over it.
    */
-  const column: V2Option[] = showToggle
+  const column: V2Option[] = showGroupChips
     ? (onShade ? rails.shades : rails.bases)
     : rails.bases.concat(rails.shades);
   /**
@@ -979,41 +989,39 @@ export default function ProductDrawer({
             The badge counts the whole category, so a man who has put six of
             something under "Other" can see it without opening the chip. */}
         {layout === "category-products" && (
-          <div
-            className="shrink-0 overflow-x-auto"
-            style={{
-              WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
-              background: FILL,
-              borderTop: `1px solid ${RULE}`,
-              borderBottom: `1px solid ${RULE}`,
-            }}
-          >
-            <div className="flex px-4 py-2" style={{ gap: 8 }}>
-              {categories.map((c) => (
-                <CategoryChip
-                  key={c}
-                  label={c}
-                  selected={c === activeCategory}
-                  carrying={unitsInCategory(c)}
-                  onSelect={() => selectCategory(c)}
-                />
-              ))}
-            </div>
-          </div>
+          <PickerZone py={8} gap={8}>
+            {categories.map((c) => (
+              <FilterChip
+                key={c}
+                label={c}
+                selected={c === activeCategory}
+                carrying={unitsInCategory(c)}
+                onSelect={() => selectCategory(c)}
+              />
+            ))}
+          </PickerZone>
+        )}
+
+        {/* ── BASE / SHADE ───────────────────────────────────────────────
+            🔴 THE SAME ZONE AND THE SAME CHIP AS THE CATEGORIES ABOVE, on the
+            two named products that keep the split. It is a filter over the
+            rail, drawn where every other filter over the rail is drawn.
+
+            `carrying` is 0 deliberately: the stacked toggle it replaces
+            carried no count either, and a group badge is a behaviour change,
+            not a restyle. */}
+        {showGroupChips && (
+          <PickerZone py={8} gap={8}>
+            <FilterChip label="Base"  selected={tab === "base"}
+                        carrying={0} onSelect={() => switchTab("base")} />
+            <FilterChip label="Shade" selected={tab === "shade"}
+                        carrying={0} onSelect={() => switchTab("shade")} />
+          </PickerZone>
         )}
 
         {layout === "strip-products" && (
-          <div
-            className="shrink-0 overflow-x-auto"
-            style={{
-              WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
-              background: FILL,
-              borderTop: `1px solid ${RULE}`,
-              borderBottom: `1px solid ${RULE}`,
-            }}
-          >
-            <div className="flex px-4 py-2.5" style={{ gap: STRIP_GAP }}>
-              {members.map((m) => (
+          <PickerZone py={10} gap={STRIP_GAP}>
+            {members.map((m) => (
                 <BigTile
                   key={m.sap}
                   label={m.label}
@@ -1029,8 +1037,7 @@ export default function ProductDrawer({
                   onSelect={() => selectMember(m.sap)}
                 />
               ))}
-            </div>
-          </div>
+          </PickerZone>
         )}
 
         {/* 🔴 THE PANE'S BODY IS THE SAME QUESTION IN BOTH BRANCHES — flat, or
@@ -1064,7 +1071,7 @@ export default function ProductDrawer({
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={railHoldsProducts ? "Find a product"
                     : rails.hasVariants ? "Find"
-                    : showToggle ? (tab === "shade" ? "Find a shade" : "Find a base")
+                    : showGroupChips ? (tab === "shade" ? "Find a shade" : "Find a base")
                     // ONE combined column, so neither word is the whole truth.
                     : "Find a colour"}
                   aria-label="Filter the rail"
@@ -1113,19 +1120,11 @@ export default function ProductDrawer({
               }}
             >
               <div className="flex flex-col items-center" style={{ gap: TILE_GAP }}>
-                {/* 🔴 THE TOGGLE IS BACK AT THE TOP OF THE RAIL, WHERE THE
-                    ORIGINAL BRIEF PUT IT. It only ever left because a search
-                    FIELD could not live in 60px and the two shared a row. The
-                    field is an icon now, so the toggle can go where it belongs
-                    — directly above the column it switches, costing the sheet
-                    no chrome height at all because it scrolls with the rail. */}
-                {showToggle && (
-                  <div className="flex w-full flex-col rounded-[10px] p-[3px]"
-                       style={{ background: FILL, marginBottom: 2 }}>
-                    <GroupButton label="Base"  active={tab === "base"}  onClick={() => switchTab("base")} />
-                    <GroupButton label="Shade" active={tab === "shade"} onClick={() => switchTab("shade")} />
-                  </div>
-                )}
+                {/* 🔴 THE BASE / SHADE CONTROL IS NO LONGER IN HERE. It was a
+                    stacked segmented toggle at the top of this column — see
+                    showGroupChips. It is now a chip row in the picker zone
+                    above, drawn with the same FilterChip the category tile
+                    uses, so the rail holds nothing but the things it lists. */}
                 {railHoldsProducts
                   ? shownMembers.map((m) => (
                       <BigTile
@@ -1216,15 +1215,62 @@ export default function ProductDrawer({
 // ── Pieces ─────────────────────────────────────────────────────────────────
 
 /**
- * ONE CATEGORY CHIP — a word, a count, and a state. Deliberately NOT a BigTile.
+ * THE PICKER ZONE — the band between the header and the rail, wherever
+ * something above the rail changes what the rail holds.
+ *
+ * A ground and a rule above and below say "the thing above is a heading, this
+ * is a picker". Three things use it now — the category chips, the Base / Shade
+ * chips and the product strip — and they used to be three copies of the same
+ * six style properties. Three copies is how one of them ends up a point darker
+ * than the other two.
+ *
+ * ⚠ overflow-x IS DELIBERATE AND IS NOT THE BANNED KIND. The standing rule is
+ * that the PAGE must never drag sideways at 390px, and it does not: this is a
+ * contained scroller with its own bounds, the way a carousel is. Sixteen
+ * products cannot wrap and must not be cut.
+ */
+function PickerZone({ py, gap, children }: {
+  py: number; gap: number; children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div
+      className="shrink-0 overflow-x-auto"
+      style={{
+        WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
+        background: FILL,
+        borderTop: `1px solid ${RULE}`,
+        borderBottom: `1px solid ${RULE}`,
+      }}
+    >
+      <div className="flex px-4" style={{ gap, paddingTop: py, paddingBottom: py }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ONE FILTER CHIP — a word, a count, and a state. Deliberately NOT a BigTile.
  *
  * A category has no photograph and never will, so giving it the product tile's
- * 60px square would be an empty frame promising art that cannot arrive. It is
- * the same object as the Base/Shade toggle one level up — a filter over the
- * rail — so it is drawn like one: a pill, violet when it is the open category,
- * 44px tall for CLAUDE_UI §60.
+ * 60px square would be an empty frame promising art that cannot arrive. It is a
+ * filter over the rail, so it is drawn like one: a pill, violet when it is the
+ * open one, 44px tall for CLAUDE_UI §60.
+ *
+ * 🔴 IT IS NOW BOTH FILTERS IN THIS DRAWER, WHICH IS WHY IT IS NO LONGER CALLED
+ * CategoryChip. Base / Shade is the same object one level down — a filter over
+ * the list in the rail — and it used to be drawn by GroupButton as a stacked
+ * segmented toggle, because it lived inside an 88px column. Two components
+ * drawing one control is how "selected" comes to mean two different things on
+ * one sheet.
+ *
+ * WHAT SHARING IT COST: the rename, and nothing else. Both call sites already
+ * wanted a label, a selected flag and an onSelect, and `carrying` was already
+ * optional in behaviour — the badge only renders above zero, and the group
+ * chips pass 0, which is exactly what the toggle showed. No prop was added and
+ * no branch was taken inside the component.
  */
-function CategoryChip({ label, selected, carrying, onSelect }: {
+function FilterChip({ label, selected, carrying, onSelect }: {
   label: string; selected: boolean; carrying: number; onSelect: () => void;
 }): React.JSX.Element {
   return (
@@ -1259,40 +1305,13 @@ function CategoryChip({ label, selected, carrying, onSelect }: {
 }
 
 
-/**
- * One half of the group toggle. A segmented control, not two tabs: it swaps the
- * contents of one column rather than moving between two screens.
- *
- * 🔴 44px TALL, WHICH IS CLAUDE_UI §60's FLOOR FOR AN INTERACTIVE CONTROL. It
- * was py-1 — about 22px, half the minimum — and it had been that since the
- * toggle went back into the rail. It survived because it looked fine on a
- * trackpad and nobody had missed it with a thumb yet.
- *
- * THE HEIGHT IS AFFORDABLE NOW AND WAS NOT BEFORE. When every tile carried a
- * toggle, 48 extra pixels was a tax on thirty-six drawers; it is now on exactly
- * two — Gloss and Super Satin — and it scrolls with the rail rather than
- * costing the sheet any chrome, so the pack rows do not move.
- *
- * STILL VERTICAL, not two halves side by side. An 88px rail cell split in two
- * gives 41px-wide targets, which trades a height violation for a width one.
- */
-function GroupButton({ label, active, onClick }: {
-  label: string; active: boolean; onClick: () => void;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button" onClick={onClick} aria-pressed={active}
-      className="flex h-11 items-center justify-center rounded-[8px] text-[12px] font-bold"
-      style={{
-        color: active ? INK : MUTED,
-        background: active ? "#FFFFFF" : "transparent",
-        boxShadow: active ? "0 1px 2px rgba(27,24,38,.10)" : undefined,
-      }}
-    >
-      {label}
-    </button>
-  );
-}
+// 🔴 GroupButton IS GONE, 2026-09-08. It was one half of the stacked Base /
+// Shade toggle at the top of the rail — a segmented control shaped by the 88px
+// column it had to fit inside, stacked vertically because side by side its two
+// halves would have been 41px wide. Base and Shade are a filter over the list
+// below them, which is precisely what a category chip is, so they are now
+// FilterChips in the picker zone. One control, one appearance. Nothing else in
+// the file drew a toggle, so no toggle survives anywhere.
 
 /**
  * ONE TILE — in the strip or in the rail, for a product, a base or a shade.

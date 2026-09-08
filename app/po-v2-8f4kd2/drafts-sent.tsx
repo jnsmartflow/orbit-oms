@@ -1,7 +1,10 @@
 "use client";
 
-import { CARD_SHADOW, FAINT, INK, MUTED, PAGE, RULE, SURFACE } from "./v2-data";
-import { NAV_H, Pill, dispatchLabel } from "./order-sheet";
+import { FAINT, INK, MUTED, RULE, SURFACE, VIOLET } from "./v2-data";
+import {
+  Chip, IconBolt, IconBox, IconPhone, IconReply, IconTrash, IconTruck,
+  NAV_H, SectionLabel, CARD_PAD, LIST_BG, cardFrame, dispatchLabel,
+} from "./order-sheet";
 import { formatTime, draftDisplayName, type V2SavedDraft, type V2SentOrder, type V2Snapshot } from "./v2-storage";
 
 // The two list screens behind the board's bottom nav. Presentational only —
@@ -11,15 +14,13 @@ import { formatTime, draftDisplayName, type V2SavedDraft, type V2SentOrder, type
 // 🔴 CONTAINMENT — imports ./v2-data, ./v2-storage, ./order-sheet and
 // node_modules only.
 //
-// 🔴 CARDS, NOT ROWS, AND THE REASON IS RECOGNITION. Both lists used to be two
-// lines of text: a dealer name and a comma-joined product string. After a busy
-// morning every row looked alike, and the only way to tell two Mohan orders
-// apart was to open both. A card carries the TINS, which is what a salesman
-// actually recognises an order by — three blue tubs and a small white one is a
-// different order from four green ones, at a glance and without reading.
+// 🔴 THE TYPE SCALE IS order-sheet.tsx's, AND IT IS STATED THERE IN FULL. Ten
+// roles, T1–T10, and every text node below carries its tag in a comment. The
+// list screens and the detail screen are one design in two files, so the scale
+// has one home and the section label is literally the same component.
 //
-// 🔴 NO UNIT TOTALS ON A ROW. They said "N units", which adds 1L tins to 20L
-// drums and produces a number nobody can act on. "N products" is a fact.
+// 🔴 NO UNIT TOTALS ON A CARD. They said "N units", which adds 1L tins to 20L
+// drums and produces a number nobody can act on. The COUNT CHIP is a fact.
 
 /** The bottom nav sits over the list, so the last card needs its height back. */
 const LIST_PAD = `calc(${NAV_H} + 16px)`;
@@ -35,12 +36,14 @@ function ListShell({ title, children }: {
   title: string; children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <main className="min-h-screen w-full" style={{ background: PAGE, paddingBottom: LIST_PAD }}>
+    <main className="min-h-screen w-full" style={{ background: LIST_BG, paddingBottom: LIST_PAD }}>
       <header
         className="sticky top-0 z-10 px-4 py-3"
         style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
       >
-        <h1 className="text-[17px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
+        {/* T1 screen title — 20 / 700 / -.02em */}
+        <h1 className="text-[20px] font-bold leading-tight"
+            style={{ color: INK, letterSpacing: "-0.02em" }}>
           {title}
         </h1>
       </header>
@@ -51,17 +54,8 @@ function ListShell({ title, children }: {
 
 /** Empty state: one grey line, nothing else. No illustration, no call to action. */
 function Empty({ text }: { text: string }): React.JSX.Element {
-  return <p className="px-4 py-12 text-center text-[13px]" style={{ color: FAINT }}>{text}</p>;
-}
-
-/** A section heading — the day on Sent, the kind of draft on Drafts. */
-function Heading({ text }: { text: string }): React.JSX.Element {
-  return (
-    <h2 className="px-4 pb-1.5 pt-4 text-[11.5px] font-extrabold uppercase"
-        style={{ color: FAINT, letterSpacing: ".08em" }}>
-      {text}
-    </h2>
-  );
+  /* T8 row value — 14 / 500, in FAINT because it describes an absence */
+  return <p className="px-4 py-12 text-center text-[14px] font-medium" style={{ color: FAINT }}>{text}</p>;
 }
 
 /**
@@ -87,33 +81,79 @@ function dayHeading(ts: number): string {
   return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
 }
 
-/**
- * ONE CARD, TWO ROWS. The whole card is the tap target, so there is no "open"
- * chevron to aim at and no way to miss.
+/* ── THE CARD'S GEOMETRY, STATED AS NUMBERS ──────────────────────────────
  *
- *   row 1   dealer name, ellipsised · the time, right
- *   row 2   "code · area" · the count and the dispatch tag, right
+ * 🔴 112px, AND THE 65px VERSION WAS THE WRONG DIRECTION. Cutting the card to
+ * two tight rows made the list SHORTER, not calmer: nine cards of 65px with no
+ * air in them read as a printout, and the owner's word for it was FLAT. A card
+ * is an object you can pick out with your eye, and an object needs room around
+ * its contents, not just fewer of them.
  *
- * 🔴 THE TIN THUMBNAILS ARE GONE. A third row carried up to four of them, on
- * the reasoning that a salesman recognises an order by its shape. At 30px he
- * does not: most orders are three or four near-identical blue Dulux tubs, and
- * the row cost every card a third of its height to say nothing. The tins are
- * still in the DETAIL at 46px, beside the product name, where they read.
- *
- * `accent` is the left edge an In-progress card carries — see DraftsScreen for
- * why the two draft kinds must not look alike.
+ *   14  padding top
+ *   22  the dealer name          T4  17 / 500
+ *    4
+ *   16  "code · area"            T5  12 mono / MUTED
+ *   14
+ *   26  the chip row             T6  12 / 600 + 13px icons — and the time
+ *   14  padding bottom
+ *    2  the 1px border, top and bottom
+ *  ───
+ *  112
  */
-function OrderCard({ title, code, area, stamp, snapshot, status, statusTone, accent, onOpen }: {
+const NAME_LH  = 22;
+const META_LH  = 16;
+const CHIP_H   = 26;
+
+/**
+ * ONE CARD, THREE ROWS. The whole card is the tap target — no "open" chevron
+ * to aim at and no way to miss.
+ *
+ *   row 1   the dealer name, ellipsised          · a delete icon, DRAFTS only
+ *   row 2   "code · area", directly beneath it
+ *   row 3   the chips                            · the time, far right
+ *
+ * 🔴 THE COUNT CHIP IS ALWAYS FIRST, AND THAT IS THE ALIGNMENT FIX. Every card
+ * carries one, no card carries two, so it holds the same x on every row of the
+ * list whatever follows it — and a salesman reading down the list is reading
+ * one column of numbers, not hunting for where the count landed this time. It
+ * is done with ORDER, not with a fixed-width column: a column would have to be
+ * wide enough for the widest chip on any card and would leave a hole on the
+ * ones that have none.
+ *
+ * 🔴 NO TIN THUMBNAILS. A third row once carried up to four of them, on the
+ * reasoning that a salesman recognises an order by its shape. At 30px he does
+ * not: most orders are three or four near-identical blue Dulux tubs. The tins
+ * are in the DETAIL at 46px, where they read.
+ *
+ * 🔴 NO STATUS PILL EITHER, ANY MORE. "SAVED" under a heading that says Saved,
+ * on a screen called Drafts, is the same word three times. What genuinely
+ * differs — the live auto-save — is already said twice over by its own heading
+ * and its violet edge.
+ *
+ * `accent` is that left edge; see DraftsScreen for why the two draft kinds must
+ * not look alike.
+ */
+function OrderCard({ title, code, area, stamp, snapshot, accent, onOpen, onDelete }: {
   title: string;
   code: string | null;
   /** AREA IS REAL — ApiCustomer carries it. Null on the two dealers without one. */
   area: string | null;
   stamp: string;
   snapshot: V2Snapshot;
-  status: string;
-  statusTone: "quiet" | "urgent" | "violet";
   accent?: string;
   onOpen: () => void;
+  /**
+   * 🔴 DRAFTS ONLY, AND ONLY WHEN THE PAGE HANDS IT DOWN.
+   *
+   * Deleting a draft means removeSavedDraft + the confirm sheet + the page's
+   * own savedDrafts state, all of which live in po-v2-page.tsx. This file must
+   * not reach into storage behind the page's back — that is how a list gets out
+   * of step with what is stored, and it would skip the confirm. So the card
+   * takes a callback and the icon renders only when there is one: a Sent card
+   * never gets it, and neither does the live auto-save, because deleting THAT
+   * means clearing the board and that belongs on the board.
+   */
+  onDelete?: () => void;
 }): React.JSX.Element {
   const urgent = snapshot.dispatch === "Urgent";
   const n = snapshot.lines.length;
@@ -123,38 +163,63 @@ function OrderCard({ title, code, area, stamp, snapshot, status, statusTone, acc
   const elsewhere = snapshot.shipToCode !== null;
   return (
     <div className="px-4 pb-2">
-      <div className="overflow-hidden rounded-[14px]"
-           style={{ background: SURFACE, boxShadow: CARD_SHADOW,
-                    borderLeft: accent ? `3px solid ${accent}` : undefined }}>
-        <button type="button" onClick={onOpen} className="block w-full px-3 py-3 text-left">
-          {/* ── row 1 ── */}
-          <span className="flex items-baseline gap-2">
-            <span className="min-w-0 flex-1 truncate text-[15px] font-bold"
-                  style={{ color: snapshot.customer ? INK : MUTED }}>
-              {title}
-            </span>
-            <span className="shrink-0 whitespace-nowrap font-mono text-[11.5px]" style={{ color: MUTED }}>
+      {/* A DIV HOLDING BUTTONS, not a button — the delete icon is a second
+          target inside the card's own bounds, and a button inside a button is
+          invalid HTML that React will not render predictably. Same shape, and
+          the same reason, as CustomerRow's star. */}
+      <div className="relative"
+           style={{ ...cardFrame, borderLeft: accent ? `3px solid ${accent}` : cardFrame.border }}>
+        <button type="button" onClick={onOpen}
+                className="block w-full text-left"
+                style={{ padding: CARD_PAD }}>
+          {/* ── row 1 ── the name, and the delete icon's gutter ── */}
+          {/* T4 card title — 17 / 500. NOT 700: §60, weight is the heavy dial,
+              and size is what carries this line now. */}
+          <span className="block truncate text-[17px] font-medium"
+                style={{ color: snapshot.customer ? INK : MUTED,
+                         lineHeight: `${NAME_LH}px`,
+                         paddingRight: onDelete ? 32 : 0 }}>
+            {title}
+          </span>
+          {/* ── row 2 ── code · area, one block under the name ── */}
+          {/* T5 card meta — 12 mono / MUTED */}
+          <span className="block truncate font-mono text-[12px]"
+                style={{ color: MUTED, lineHeight: `${META_LH}px`, marginTop: 4 }}>
+            {code ?? "No dealer yet"}{code && area ? ` · ${area}` : ""}
+          </span>
+          {/* ── row 3 ── the chips, then the time ── */}
+          <span className="flex items-center gap-1.5"
+                style={{ marginTop: 14, height: CHIP_H }}>
+            {/* 🔴 ALWAYS FIRST, ON EVERY CARD. */}
+            <Chip icon={<IconBox />} text={String(n)} />
+            {urgent && <Chip icon={<IconBolt />} text="Urgent" tone="urgent" />}
+            {snapshot.dispatch === "Call" && (
+              <Chip icon={<IconPhone />} text={dispatchLabel(snapshot)} />
+            )}
+            {elsewhere && <Chip icon={<IconTruck />} text="Ship to" tone="violet" />}
+            {snapshot.marker && <Chip icon={<IconReply />} text={snapshot.marker} />}
+            {/* T5 card meta — 12 mono / MUTED. ml-auto, so it is at the far
+                right whether the card carries one chip or four. */}
+            <span className="ml-auto shrink-0 whitespace-nowrap font-mono text-[12px]"
+                  style={{ color: MUTED }}>
               {stamp}
             </span>
           </span>
-          {/* ── row 2 ── */}
-          <span className="mt-1 flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[11.5px]" style={{ color: MUTED }}>
-              {code ? <span className="font-mono">{code}</span> : "No dealer yet"}
-              {code && area ? ` · ${area}` : ""}
-            </span>
-            <span className="flex shrink-0 items-center gap-1.5">
-              {elsewhere && <Pill text="Ship to" tone="violet" />}
-              <span className="text-[11.5px] font-semibold" style={{ color: MUTED }}>
-                {n} {n === 1 ? "product" : "products"}
-              </span>
-              {urgent
-                ? <Pill text="Urgent" tone="urgent" />
-                : snapshot.dispatch !== "Normal" && <Pill text={dispatchLabel(snapshot)} tone="quiet" />}
-              {statusTone === "violet" && <Pill text={status} tone="violet" />}
-            </span>
-          </span>
         </button>
+
+        {/* 44px — §60's floor, and it has to be its own target: a miss here
+            opens the draft instead of deleting it, which is the harmless way
+            round, but a miss the OTHER way is not. It sits over the card's
+            top-right corner, outside the open button. */}
+        {onDelete && (
+          <button
+            type="button" aria-label={`Delete ${title}`} onClick={onDelete}
+            className="absolute flex h-11 w-11 items-center justify-center"
+            style={{ top: 1, right: 1, color: FAINT }}
+          >
+            <IconTrash />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -171,16 +236,25 @@ function OrderCard({ title, code, area, stamp, snapshot, status, statusTone, acc
  * a named route order.
  *
  * So they are separated and drawn differently: In progress carries a violet
- * left edge, an "AUTO-SAVED" pill and no delete, because deleting it means
- * clearing the board and that belongs on the board. Saved cards are plain, and
- * they are the only ones that can be renamed or removed.
+ * left edge and no delete, because deleting it means clearing the board and
+ * that belongs on the board. Saved cards are the only ones that can be renamed
+ * or removed.
  */
-export function DraftsScreen({ live, drafts, onOpenLive, onOpen }: {
+export function DraftsScreen({ live, drafts, onOpenLive, onOpen, onDelete }: {
   /** The board's own state, when it has lines. Null when the board is empty. */
   live: { snapshot: V2Snapshot; savedAt: number } | null;
   drafts: V2SavedDraft[];
   onOpenLive: () => void;
   onOpen: (draft: V2SavedDraft) => void;
+  /**
+   * 🔴 THE DELETE ICON ON A SAVED CARD, AND IT IS OPTIONAL ON PURPOSE.
+   *
+   * The confirm sheet, removeSavedDraft and the savedDrafts state all belong to
+   * po-v2-page.tsx. Until it hands this down, the icon does not render — which
+   * is the honest failure: a card with no delete, not a delete that skips the
+   * confirm or leaves the list out of step with storage.
+   */
+  onDelete?: (draft: V2SavedDraft) => void;
 }): React.JSX.Element {
   return (
     <ListShell title="Drafts">
@@ -188,16 +262,14 @@ export function DraftsScreen({ live, drafts, onOpenLive, onOpen }: {
 
       {live && (
         <>
-          <Heading text="In progress" />
+          <SectionLabel text="In progress" />
           <OrderCard
             title={live.snapshot.customer?.name ?? "No dealer yet"}
             code={live.snapshot.customer?.code ?? null}
             area={live.snapshot.customer?.area ?? null}
             stamp={stampFor(live.savedAt)}
             snapshot={live.snapshot}
-            status="Auto-saved"
-            statusTone="violet"
-            accent="#7C3AED"
+            accent={VIOLET}
             onOpen={onOpenLive}
           />
         </>
@@ -205,7 +277,7 @@ export function DraftsScreen({ live, drafts, onOpenLive, onOpen }: {
 
       {drafts.length > 0 && (
         <>
-          <Heading text="Saved" />
+          <SectionLabel text="Saved" />
           {drafts.map((d) => (
             <OrderCard
               key={d.id}
@@ -216,9 +288,8 @@ export function DraftsScreen({ live, drafts, onOpenLive, onOpen }: {
               area={d.snapshot.customer?.area ?? null}
               stamp={stampFor(d.savedAt)}
               snapshot={d.snapshot}
-              status="Saved"
-              statusTone="quiet"
               onOpen={() => onOpen(d)}
+              onDelete={onDelete ? () => onDelete(d) : undefined}
             />
           ))}
         </>
@@ -232,6 +303,9 @@ export function DraftsScreen({ live, drafts, onOpenLive, onOpen }: {
  *
  * Grouped by day under a light heading. Inside a group the card shows the CLOCK
  * only: "Yesterday" under a "Yesterday" heading is the same word twice.
+ *
+ * NO DELETE ICON HERE, and not by omission: a sent order is a record of
+ * something that left the phone. It ages out on its own after five IST days.
  */
 export function SentScreen({ orders, onOpen }: {
   orders: V2SentOrder[];
@@ -252,7 +326,7 @@ export function SentScreen({ orders, onOpen }: {
       ) : (
         groups.map((g) => (
           <div key={g.heading}>
-            <Heading text={g.heading} />
+            <SectionLabel text={g.heading} />
             {g.orders.map((o) => (
               <OrderCard
                 key={o.id}
@@ -261,8 +335,6 @@ export function SentScreen({ orders, onOpen }: {
                 area={o.snapshot.customer?.area ?? null}
                 stamp={formatTime(o.sentAt)}
                 snapshot={o.snapshot}
-                status="Sent"
-                statusTone="quiet"
                 onOpen={() => onOpen(o)}
               />
             ))}
