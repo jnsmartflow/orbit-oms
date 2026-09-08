@@ -533,11 +533,35 @@ export default function PoV2Page(): React.JSX.Element {
       .map((l) => ({ member: l.product ?? l.subProduct, option: l.option, qtys: l.qtys }));
   }
 
-  /** A row -> the label of the member it belongs to, for the cart line. */
+  /**
+   * A row -> the label of the member it belongs to, for the cart line.
+   *
+   * 🔴 A PINNED MEMBER IS MATCHED ON baseColour AS WELL AS sap, AND THE PINNED
+   * ONES ARE TRIED FIRST.
+   *
+   * Two members can share one sap — Wood Primer White and Wood Primer Pink are
+   * both "WOOD PRIMER" — so matching on sap alone returned the FIRST of them
+   * for both rows, and a Pink line would have been written into the cart
+   * labelled "Wood Primer White". The email would still have been right (it is
+   * built from the row's own three fields, never from this label), which is
+   * what made it dangerous: the wrong word would have been on the screen the
+   * salesman checks and nowhere in the message that proves it.
+   *
+   * The second lookup EXCLUDES pinned members deliberately. Without that, a
+   * WOOD PRIMER row carrying some third baseColour would fall through the
+   * pinned test and then take the first pinned member's label anyway — the
+   * original bug, one branch further down. Falling through to the tile label is
+   * the honest answer for a row no member claims.
+   *
+   * Case-sensitive, because the pins are (v2-data's V2Member.option says why).
+   */
   function memberLabelIn(tile: V2BoardTile): (row: ApiProduct) => string {
     return (row) => {
       const sap = row.product ?? row.subProduct;
-      return tile.members.find((m) => m.sap === sap)?.label ?? tile.label;
+      const pinned = tile.members.find(
+        (m) => m.option !== undefined && m.sap === sap && m.option === row.baseColour);
+      if (pinned) return pinned.label;
+      return tile.members.find((m) => m.option === undefined && m.sap === sap)?.label ?? tile.label;
     };
   }
 

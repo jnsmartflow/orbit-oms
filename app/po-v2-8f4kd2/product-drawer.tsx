@@ -153,7 +153,18 @@ const TOGGLE_MEMBERS: ReadonlySet<string> = new Set(["GLOSS", "SUPER SATIN"]);
  * entirely of option-less products that a union would hand a base/shade shell.
  */
 type Member = {
+  /**
+   * 🔴 THE DRAWER'S KEY, NOT ALWAYS THE CATALOG KEY. For a PINNED member it is
+   * "WOOD PRIMER|||White" — see V2ResolvedMember.sap. Everything the drawer
+   * keys by member keys by THIS: the quantity matrix, the selection, the count
+   * badge. Sharing it between two pinned twins would sum White's units into
+   * Pink's badge and let an edit of one wipe the other.
+   */
   sap:      string;
+  /** COALESCE(product, subProduct). What the CART speaks; see seatOf(). */
+  joinSap:  string;
+  /** The pinned baseColour, or null for an ordinary member. */
+  pin:      string | null;
   label:    string;
   resolved: V2Resolved;
   mode:     V2DrawerMode;
@@ -345,10 +356,14 @@ export default function ProductDrawer({
   const members = useMemo<Member[]>(() => {
     if (tile) {
       return tile.members.map((m: V2ResolvedMember) => ({
-        sap: m.sap, label: m.label, resolved: m, mode: m.mode, pools: m.pools,
+        sap: m.sap, joinSap: m.joinSap, pin: m.pin,
+        label: m.label, resolved: m, mode: m.mode, pools: m.pools,
       }));
     }
-    return [{ sap: product.sap, label: product.label, resolved: product,
+    // A searched non-tile product is never pinned: it is whatever the catalog
+    // group resolved to, and its key is its own sap.
+    return [{ sap: product.sap, joinSap: product.sap, pin: null,
+              label: product.label, resolved: product,
               mode, pools: pools ?? NO_POOLS }];
   }, [tile, product, pools, mode]);
   const isMerged = members.length > 1;
@@ -361,7 +376,12 @@ export default function ProductDrawer({
   }, [members]);
 
   const [memberSap, setMemberSap] = useState<string>(() =>
-    members.find((m) => m.sap === initialMember)?.sap ?? members[0].sap);
+    // The page names a CATALOG sap (a search hit, or the tile's top seller), so
+    // fall back to the first member carrying that join key — which, for a
+    // pinned pair, is the one the board would have opened on anyway.
+    members.find((m) => m.sap === initialMember)?.sap ??
+    members.find((m) => m.joinSap === initialMember)?.sap ??
+    members[0].sap);
   const cur = members.find((m) => m.sap === memberSap) ?? members[0];
   const rails = railsBy[cur.sap];
   const curHasOptions = hasOptions(cur, rails);
@@ -444,6 +464,27 @@ export default function ProductDrawer({
    * A product with NO options at all keys on "" under its own member, which is
    * the honest shape rather than a second code path.
    */
+  /**
+   * 🔴 WHERE A STORED CART LINE SITS IN THIS DRAWER.
+   *
+   * The page speaks the CATALOG's language — existingFor returns
+   * { member: "WOOD PRIMER", option: "White" }, because that is what the line
+   * stores and what addLines will write back. The drawer speaks its own: that
+   * line belongs to the member keyed "WOOD PRIMER|||White", under option "",
+   * because a pinned member has no option level.
+   *
+   * The translation is a pure function of the member list and lives here not
+   * in po-v2-page.tsx on purpose: the page has no business knowing that a tile
+   * splits one product into two chips. It reads the pinned members FIRST, for
+   * the same reason memberLabelIn does — an unpinned lookup would match the
+   * twins' shared joinSap and put Pink's quantity in White's column.
+   */
+  const seatOf = (memberSap: string, option: string | null): { key: string; opt: string } => {
+    const pinned = members.find((m) => m.pin !== null && m.joinSap === memberSap && m.pin === option);
+    if (pinned) return { key: pinned.sap, opt: "" };
+    return { key: memberSap, opt: option ?? "" };
+  };
+
   const [matrix, setMatrix] = useState<Record<string, Record<string, Record<string, number>>>>(() => {
     // SEEDED FROM THE CART, PER MEMBER. Opening a tile already in the order
     // shows what is in it, on the right member and the right option, so Add can
@@ -453,10 +494,10 @@ export default function ProductDrawer({
     // is work it would silently throw away.
     const seed: Record<string, Record<string, Record<string, number>>> = {};
     for (const line of existing ?? []) {
-      const opt = line.option ?? "";
-      const byOpt = seed[line.member] ?? {};
+      const { key, opt } = seatOf(line.member, line.option);
+      const byOpt = seed[key] ?? {};
       byOpt[opt] = { ...(byOpt[opt] ?? {}), ...line.qtys };
-      seed[line.member] = byOpt;
+      seed[key] = byOpt;
     }
     return seed;
   });
@@ -724,7 +765,14 @@ export default function ProductDrawer({
    */
   const picks = Object.keys(matrix).flatMap((memberKey) =>
     Object.entries(matrix[memberKey] ?? {}).map(([key, packs]) => ({
-      option: key === "" ? null : key,
+      // 🔴 A PINNED MEMBER HAS NO OPTION LEVEL BUT ITS LINE STILL HAS A COLOUR.
+      // Returning null here would store a Wood Primer line with option null:
+      // the review screen would print no colour, and existingFor would hand the
+      // next visit two indistinguishable lines for seatOf to place — White and
+      // Pink collapsing into one seat. The pin IS the option, so it is what the
+      // pick carries. (The wire does not read it either way: addLines takes
+      // product / baseColour / subProduct off the ROW.)
+      option: key === "" ? (members.find((m) => m.sap === memberKey)?.pin ?? null) : key,
       row: rowFor(memberKey, key),
       qtys: Object.fromEntries(Object.entries(packs).filter(([, q]) => q > 0)),
     })))

@@ -1499,12 +1499,32 @@ export type V2Member = {
   sap:   string;
   /** What the rail says and what the cart line will store. Display only. */
   label: string;
-  /**
-   * Per-member art. DELIBERATELY UNSET ON EVERY MEMBER FOR NOW — per-member
-   * tins mean new files in public/category-images/, which is outside this
-   * step's fence. A member with no slug shows its tile's tin.
-   */
+  /** Per-member art — product-<sap>.webp. Unset means "no photo of its own". */
   slug?: string;
+  /**
+   * 🔴 PIN THIS MEMBER TO ONE CATALOG ROW — the row whose baseColour is exactly
+   * this string.
+   *
+   * A PRODUCT THAT IS REALLY TWO PRODUCTS. Wood Primer ships in White and Pink
+   * and nothing else; they are not "a colour you choose", they are two things a
+   * dealer asks for by name. Left as one member with a two-option rail, it made
+   * the whole Primers tile carry a product strip so that ONE of its seven
+   * members could offer a choice — six products paying for the seventh.
+   *
+   * A pinned member resolves to exactly one row, shows no picker, and its cart
+   * line carries THAT ROW's product / baseColour / subProduct, so
+   * emailLineLabel prints "Wood Primer White" and "Wood Primer Pink" with
+   * nothing in this file touching the wire.
+   *
+   * ⚠ THE MATCH IS CASE-SENSITIVE AND MUST STAY SO. The live rows are
+   * baseColour "White" (id 21910) and "PINK" (id 21911) — the catalog is not
+   * consistent, and that is exactly why this compares raw rather than folding
+   * case: the string written here has to be the string that is stored, so a
+   * typo fails loudly at build time (the member is reported missing) instead of
+   * quietly matching the wrong row. Normalising would hide the day two rows
+   * differ only by case.
+   */
+  option?: string;
 };
 
 export type V2BoardTile = {
@@ -1712,7 +1732,10 @@ export const BOARD: readonly V2BoardFamily[] = [
       { key: "EXTERIOR ACRYLIC PRIMER", label: "Primers", slug: "ext-acrylic",
         members: [
           { sap: "EXTERIOR ACRYLIC PRIMER", label: "Ext Acrylic", slug: "product-exterior-acrylic-primer" },
-          { sap: "WOOD PRIMER",             label: "Wood Primer" },
+          // 🔴 ONE PRODUCT, TWO MEMBERS, PINNED BY baseColour. The strings are
+          // the catalog's own, case for case — see V2Member.option.
+          { sap: "WOOD PRIMER",             label: "Wood Primer White", option: "White" },
+          { sap: "WOOD PRIMER",             label: "Wood Primer Pink",  option: "PINK" },
           { sap: "FARCO WHITE PRIMER",      label: "Farco White", slug: "product-farco-white-primer" },
           { sap: "ALKALI BLOC PRIMER",      label: "Alkali Bloc", slug: "product-alkali-bloc-primer" },
           { sap: "CEMENT PRIMER WB",        label: "Cement WB" },
@@ -1944,13 +1967,38 @@ export function boardTileSlugFor(key: string): string | null {
  * the union is wrong for 12 of the 17 merged tiles.
  */
 export type V2ResolvedMember = V2Resolved & {
+  /**
+   * 🔴 THE DRAWER'S KEY, WHICH IS NOT ALWAYS THE CATALOG KEY.
+   *
+   * For an ordinary member it is the sap. For a PINNED member it is
+   * memberKey() — "WOOD PRIMER|||White" — because two pinned members share one
+   * sap and the drawer keys quantities, selection and badges on this. Sharing
+   * it would sum White's units into Pink's badge and let one clear the other.
+   *
+   * Nothing downstream of the drawer sees this string: a pick carries its ROW,
+   * and the cart line is built from the row's own three catalog fields.
+   */
   sap:   string;
+  /** COALESCE(product, subProduct) — the catalog key, always, pinned or not. */
+  joinSap: string;
+  /** The pinned baseColour, or null. */
+  pin:   string | null;
   label: string;
   /** drawerMode() on this member's rows alone. NEVER on the tile's union. */
   mode:  V2DrawerMode;
   /** optionPools() on this member's rows alone. */
   pools: { all: V2Option[]; bases: V2Option[]; shades: V2Option[] };
 };
+
+/**
+ * The key a pinned member is known by inside the drawer.
+ *
+ * "|||" is the same separator the pack map already uses for
+ * product|||baseColour, and it cannot occur in a catalog value.
+ */
+export function memberKey(sap: string, option?: string): string {
+  return option === undefined ? sap : sap + "|||" + option;
+}
 
 export type V2ResolvedTile = {
   key:     string;
@@ -2040,13 +2088,47 @@ export function buildBoard(products: ApiProduct[]): {
         }
         // 🔴 ONE MEMBER'S ROWS, AND ONLY ONE MEMBER'S ROWS.
         assertOwnRows(member.sap, rows);
+
+        // ── A PINNED MEMBER IS ONE ROW AND NOTHING ELSE ──────────────────
+        //
+        // Built here rather than by resolveGroup because resolveGroup's job is
+        // to turn a GROUP of rows into a list of options, and the whole point
+        // of a pin is that there is no list. Empty bases/shades/variants and a
+        // noOptionRow is the shape the drawer already draws for a product with
+        // nothing to choose — Cement SB, Zinc Yellow — so no new code path
+        // renders it, and mode "single" keeps it out of flat mode.
+        if (member.option !== undefined) {
+          const row = rows.find((r) => r.baseColour === member.option);
+          if (!row) {
+            // Case-sensitive on purpose (see V2Member.option). A pin that does
+            // not match is reported, not silently widened.
+            report.missingMembers.push({ tile: tile.label, sap: memberKey(member.sap, member.option) });
+            continue;
+          }
+          members.push({
+            sap: memberKey(member.sap, member.option),
+            joinSap: member.sap,
+            pin: member.option,
+            label: member.label,
+            family: row.family ?? "",
+            bases: [], shades: [], variants: [],
+            noOptionRow: row,
+            defaultTab: "base",
+            curated: false,
+            mode: "single",
+            pools: { all: [], bases: [], shades: [] },
+          });
+          continue;
+        }
+
         const resolved = resolveGroup(member.sap, rows, member.label, catalog.byTile);
         const mode  = drawerMode(rows);
         const pools = optionPools(rows);
         if (packsOf(rows).length === 0) {
           report.emptyMembers.push({ tile: tile.label, sap: member.sap });
         }
-        members.push({ ...resolved, sap: member.sap, label: member.label, mode, pools });
+        members.push({ ...resolved, sap: member.sap, joinSap: member.sap, pin: null,
+                       label: member.label, mode, pools });
       }
       byKey.set(tile.key, { key: tile.key, label: tile.label, slug: tile.slug, members });
     }
