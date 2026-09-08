@@ -93,6 +93,58 @@ export function appendRowError(existing: string | null, note: string): string {
   return existing ? `${existing} · ${note}` : note;
 }
 
+// ─── Anomalies ────────────────────────────────────────────────────────────
+//
+// One shape for everything this module records, so the shadow-log write and
+// the batch-label append have a single implementation. A batch that hits both
+// kinds must produce ONE label update — two writes would each rebuild the
+// label from the original and the second would erase the first.
+
+export interface ImportAnomaly {
+  obdNumber: string;
+  /** `import_shadow_log.shadowOutcome` — the greppable kind. */
+  outcome:   "qty_mismatch" | "empty_payload_skipped";
+  /** `import_shadow_log.actualOutcome` — what happened to the bill itself. */
+  actual:    "imported" | "skipped";
+  note:      string;
+  decision:  Record<string, unknown>;
+  /** Compact form for the batch label, e.g. `9109296263(75→0)`. */
+  labelPart: string;
+}
+
+/** A recorded qty mismatch — the bill WAS imported, numbers disagree. */
+export function toQtyMismatchAnomaly(m: QtyMismatch): ImportAnomaly {
+  return {
+    obdNumber: m.obdNumber,
+    outcome:   "qty_mismatch",
+    actual:    "imported",
+    note:      qtyMismatchNote(m),
+    decision:  {
+      declared: m.declared, observed: m.observed,
+      difference: m.difference, lineCount: m.lineCount, rowStatus: m.rowStatus,
+    },
+    labelPart: `${m.obdNumber}(${m.declared}→${m.observed})`,
+  };
+}
+
+/**
+ * An OBD dropped before any row was written because its payload carried no
+ * lines. The bill is NOT created — deliberately, so the create-only auto path
+ * can pick it up again on the next cycle instead of being locked out by an
+ * existing-but-empty order it can never fill.
+ */
+export function toEmptyPayloadAnomaly(obdNumber: string, declared: number | null): ImportAnomaly {
+  return {
+    obdNumber,
+    outcome:   "empty_payload_skipped",
+    actual:    "skipped",
+    note:      `[empty_payload] payload carried 0 line rows (header UnitQty ${declared ?? "null"}); ` +
+               `OBD not created so a later cycle can retry it`,
+    decision:  { declared, observed: 0, lineCount: 0 },
+    labelPart: `${obdNumber}(${declared ?? "null"})`,
+  };
+}
+
 /**
  * Persist the batch's mismatches: one `import_shadow_log` row each, plus a
  * human-readable warning appended to the batch's own label.
@@ -115,36 +167,29 @@ export function appendRowError(existing: string | null, note: string): string {
  * throws into the caller: a measurement pass must not be able to fail an
  * import that otherwise succeeded.
  */
-export async function writeQtyMismatchRecords(
+export async function writeImportAnomalies(
   batchId:         number,
   batchRef:        string,
   source:          string,
   batchFileLabel:  string,
-  mismatches:      QtyMismatch[],
+  anomalies:       ImportAnomaly[],
 ): Promise<void> {
-  if (mismatches.length === 0) return;
+  if (anomalies.length === 0) return;
 
   try {
     await prisma.import_shadow_log.createMany({
-      data: mismatches.map((m) => ({
+      data: anomalies.map((a) => ({
         batchId,
-        obdNumber:     m.obdNumber,
+        obdNumber:     a.obdNumber,
         source,
-        actualOutcome: "imported",
-        shadowOutcome: "qty_mismatch",
-        decision: {
-          batchRef,
-          declared:   m.declared,
-          observed:   m.observed,
-          difference: m.difference,
-          lineCount:  m.lineCount,
-          rowStatus:  m.rowStatus,
-        },
-        errors: qtyMismatchNote(m),
+        actualOutcome: a.actual,
+        shadowOutcome: a.outcome,
+        decision:      { batchRef, ...a.decision },
+        errors:        a.note,
       })),
     });
   } catch (err) {
-    console.error("[qty-guard] shadow-log write failed", { batchRef, count: mismatches.length }, err);
+    console.error("[qty-guard] shadow-log write failed", { batchRef, count: anomalies.length }, err);
   }
 
   // Human-readable warning on the batch record. `import_batches` has no
@@ -153,11 +198,16 @@ export async function writeQtyMismatchRecords(
   // already reads to tell batches apart. Appending keeps the existing
   // `[auto-import] …` / `[templateId] …` prefix intact, so every LIKE-prefix
   // query still matches.
-  const listed = mismatches.slice(0, 5)
-    .map((m) => `${m.obdNumber}(${m.declared}→${m.observed})`)
-    .join(", ");
-  const more  = mismatches.length > 5 ? ` +${mismatches.length - 5} more` : "";
-  const label = `${batchFileLabel} ⚠ qty-mismatch x${mismatches.length}: ${listed}${more}`;
+  const parts: string[] = [];
+  for (const kind of ["qty_mismatch", "empty_payload_skipped"] as const) {
+    const of = anomalies.filter((a) => a.outcome === kind);
+    if (of.length === 0) continue;
+    const listed = of.slice(0, 5).map((a) => a.labelPart).join(", ");
+    const more   = of.length > 5 ? ` +${of.length - 5} more` : "";
+    const name   = kind === "qty_mismatch" ? "qty-mismatch" : "empty-skip";
+    parts.push(`${name} x${of.length}: ${listed}${more}`);
+  }
+  const label = `${batchFileLabel} ⚠ ${parts.join(" · ")}`;
 
   try {
     await prisma.import_batches.update({

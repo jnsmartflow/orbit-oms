@@ -32,9 +32,11 @@ import {
   appendRowError,
   detectQtyMismatch,
   qtyMismatchNote,
-  writeQtyMismatchRecords,
+  toEmptyPayloadAnomaly,
+  toQtyMismatchAnomaly,
+  writeImportAnomalies,
 } from "@/lib/import-qty-guard";
-import type { QtyMismatch } from "@/lib/import-qty-guard";
+import type { ImportAnomaly, QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 
@@ -912,9 +914,9 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   // ── QTY GUARD — persist what the comparison found. After the summaries
   // land (so nothing is logged for a batch that failed to write) and before
   // anything downstream. Never throws; never changes what gets imported.
-  await writeQtyMismatchRecords(
+  await writeImportAnomalies(
     batchId, batchRef, "manual-template",
-    `[${templateId}] ${batchFileName}`, qtyMismatches,
+    `[${templateId}] ${batchFileName}`, qtyMismatches.map(toQtyMismatchAnomaly),
   );
 
   // ── STEP E4 — Fetch inserted summary IDs ─────────────────────────────────
@@ -2579,6 +2581,14 @@ async function processAutoImportRows(
   headerRows: RawHeaderRow[],
   lineRows:   RawLineRow[],
   fileName:   string,
+  /**
+   * Drop an OBD whose payload carried no line rows instead of creating an
+   * empty bill. Scoped to `?action=auto-json` — the live path — by its caller;
+   * the v1 `?action=auto` handler keeps its old behaviour until someone
+   * decides to retire it (CLAUDE_IMPORT.md §15). See the block that uses it
+   * for why skipping is a retry rather than a loss.
+   */
+  skipEmptyPayloadObds = false,
 ): Promise<NextResponse> {
   // ── STEP B — Validate headers (2 bulk queries) ────────────────────────────
   const allObdNumbers    = headerRows.map((r) => toStr(r["OBD Number"])).filter(Boolean);
@@ -2681,6 +2691,8 @@ async function processAutoImportRows(
   const obdInterims:  AutoObdInterim[] = [];
   // Qty guard — records only, never blocks. Written after the summaries land.
   const qtyMismatches: QtyMismatch[] = [];
+  // Empty-payload skips — these DO block, for the one OBD each. Same writer.
+  const emptyPayloadSkips: ImportAnomaly[] = [];
   const summaryData: Prisma.import_raw_summaryCreateManyInput[] = [];
 
   for (const hr of headerRows) {
@@ -2763,6 +2775,31 @@ async function processAutoImportRows(
       });
     }
 
+    // ── EMPTY-PAYLOAD SKIP — do not create a bill we could never fill.
+    //
+    // Auto-import is CREATE-ONLY: an OBD already in OrbitOMS is dropped by the
+    // pre-check (?action=check) on every later run, so a bill created with no
+    // lines can never be filled by this pipeline again. Ten such bills are
+    // live today, nine invoiced and dispatched.
+    //
+    // Skipping is a RETRY, not a loss. The depot script keeps re-offering the
+    // OBD: Auto-Import-v2.ps1 Phase 6 re-lists the whole of today's /data every
+    // cycle, Phase 6b drops only what ?action=check reports as existing — and a
+    // skipped OBD does not exist — so it returns to $newObds next cycle
+    // (~10 min on v2, ~1 min on v3's fast lane). Phase 1 re-arms
+    // yesterday-state on the first run of each new day and Phase 3 replays up
+    // to $MaxRecoveryDays = 3 days back. Every skip is recorded either way.
+    //
+    // One bad OBD must never fail a batch carrying good ones — hence `continue`
+    // rather than an early return.
+    if (skipEmptyPayloadObds && lines.length === 0) {
+      emptyPayloadSkips.push(toEmptyPayloadAnomaly(obdNumber, toInt(hr["UnitQty"])));
+      console.warn("[auto-import] empty payload — OBD skipped for retry", {
+        batchRef, obdNumber, declared: toInt(hr["UnitQty"]),
+      });
+      continue;
+    }
+
     // ── QTY GUARD — does the header's own total match the lines that arrived?
     // This is the path the nineteen missing-stock bills came in on. Records
     // only; the import proceeds unchanged either way, and rowStatus is NOT
@@ -2822,9 +2859,11 @@ async function processAutoImportRows(
   // ── QTY GUARD — persist what the comparison found. After the summaries
   // land (so nothing is logged for a batch that failed to write) and before
   // anything downstream. Never throws; never changes what gets imported.
-  await writeQtyMismatchRecords(
-    batchId, batchRef, "auto-import",
-    `[auto-import] ${fileName}`, qtyMismatches,
+  // One call, both kinds: each invocation rebuilds the batch label from the
+  // original, so two separate writes would have the second erase the first.
+  await writeImportAnomalies(
+    batchId, batchRef, "auto-import", `[auto-import] ${fileName}`,
+    [...qtyMismatches.map(toQtyMismatchAnomaly), ...emptyPayloadSkips],
   );
 
   // ── STEP E4 — Fetch inserted summary IDs + rowStatus ─────────────────────
@@ -2904,15 +2943,25 @@ async function processAutoImportRows(
     await prisma.import_batches
       .update({
         where: { id: batchId },
-        data:  { status: "completed", totalObds: 0, skippedObds: duplicateCount, failedObds: errorCount },
+        data:  {
+          status: "completed", totalObds: 0,
+          // skippedObds = OBDs this batch declined to import. On the auto path
+          // that is whole-OBD only — duplicates plus empty payloads — unlike
+          // the manual-SAP path, where row-level skips also land in it.
+          skippedObds: duplicateCount + emptyPayloadSkips.length,
+          failedObds: errorCount,
+        },
       })
       .catch(() => undefined);
     return NextResponse.json({
-      success:           true,
+      success:             true,
       batchRef,
-      ordersCreated:     0,
-      skippedDuplicates: duplicateCount,
-      errors:            errorCount,
+      ordersCreated:       0,
+      // Kept SEPARATE from skippedDuplicates so the depot log stays precise;
+      // the batch row's skippedObds is the combined total.
+      skippedDuplicates:   duplicateCount,
+      emptyPayloadSkipped: emptyPayloadSkips.length,
+      errors:              errorCount,
     });
   }
 
@@ -3293,7 +3342,8 @@ async function processAutoImportRows(
       data: {
         status:      "completed",
         totalObds:   validSummaryIds.length,
-        skippedObds: duplicateCount,
+        // See the note on the early-return update above.
+        skippedObds: duplicateCount + emptyPayloadSkips.length,
         failedObds:  errorCount,
       },
     })
@@ -3318,8 +3368,9 @@ async function processAutoImportRows(
     success:           true,
     batchRef,
     ordersCreated,
-    skippedDuplicates: duplicateCount,
-    errors:            errorCount,
+    skippedDuplicates:   duplicateCount,
+    emptyPayloadSkipped: emptyPayloadSkips.length,
+    errors:              errorCount,
   });
 }
 
@@ -3396,7 +3447,9 @@ async function handleAutoImportJson(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "headerRows is empty" }, { status: 422 });
   }
 
-  return processAutoImportRows(headerRows, lineRows, "auto-json");
+  // `true` = skip OBDs whose payload carried no lines. auto-json only; the v1
+  // `?action=auto` handler keeps the old behaviour.
+  return processAutoImportRows(headerRows, lineRows, "auto-json", true);
 }
 
 // ── AUTO-IMPORT v2: patch-headers handler ────────────────────────────────────
