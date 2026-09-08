@@ -1575,7 +1575,9 @@ export type V2BoardFamily = {
 };
 
 /**
- * 🔴 FOUR TILES PER FAMILY, NINE FAMILIES, NO EXCEPTIONS.
+ * 🔴 NINE FAMILIES. THE TILE COUNT PER FAMILY IS BOUNDED, NOT FIXED — see
+ * FAMILY_MIN / FAMILY_MAX. It was exactly four until 2026-09-08, when Wood took
+ * a fifth for Hydro PU.
  *
  * Membership and member ORDER are generated from the same 90-day mail-order
  * ranking as CURATION (lines resolved skuCode -> mo_sku_lookup_v2.material ->
@@ -1862,6 +1864,31 @@ export const BOARD: readonly V2BoardFamily[] = [
       // Every product here has NOTHING to choose: eight have no baseColour at
       // all, thirteen are pinned to their single row. buildBoard throws if that
       // ever stops being true.
+      // 🔴 THE FIFTH WOOD TILE, 2026-09-08. Hydro PU left the category tile's
+      // "Other" and "Sealer" for a tile of its own.
+      //
+      // WHY IT EARNED ONE. It is a coherent four-product range — Dead Matt,
+      // Matt, Gloss, Sealer — and inside "Other" it was four of thirteen
+      // unrelated things, findable only by knowing to look under a word that
+      // means nothing. 48 lines across 46 orders in 90 days is not large, but
+      // it is 46 separate customers, and every one of them was scrolling past
+      // Epoxy Insulator and NC Clear Lacquer to reach it.
+      //
+      // MEMBERS ARE IN 90-DAY LINE ORDER, read from the live catalog and not
+      // from a report: Dead Matt 20, Matt 14, Gloss 10, Sealer 4. So the key is
+      // HYDRO PU DEAD MATT and a board tap lands on the one they buy most —
+      // ONE TAP to a quantity.
+      //
+      // ALL FOUR ARE PINNED, so the tile is rail-products with no top strip.
+      // Three pin to "Int Clear" and the Sealer to "Clear"; the strings are the
+      // catalog's own, case for case (see V2Member.option).
+      { key: "HYDRO PU DEAD MATT", label: "Hydro PU", slug: "hydro-pu",
+        members: [
+          { sap: "HYDRO PU DEAD MATT", label: "Hydro PU Dead Matt", option: "Int Clear" },
+          { sap: "HYDRO PU MATT",      label: "Hydro PU Matt",      option: "Int Clear" },
+          { sap: "HYDRO PU GLOSS",     label: "Hydro PU Gloss",     option: "Int Clear" },
+          { sap: "HYDRO PU SEALER",    label: "Hydro PU Sealer",    option: "Clear" },
+        ] },
       { key: "MULTI PURPOSE THINNER", label: "Thinner & Sealer", slug: "thinner",
         members: [
           // ── Thinner ────────────────────────────────────────────────────
@@ -1874,20 +1901,19 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "NC SANDING SEALER",     label: "NC Sanding Sealer",     category: "Sealer" },
           { sap: "MELAMINE SEALER",       label: "Melamine Sealer",       category: "Sealer",
             option: "Clear" },
-          { sap: "HYDRO PU SEALER",       label: "Hydro PU Sealer",       category: "Sealer",
-            option: "Clear" },
+          // ⚠ HYDRO PU SEALER LEFT ON 2026-09-08 with the rest of its range,
+          // which takes the Sealer category down to two. Reported, not
+          // rearranged: a two-product chip is thin, and the fix if it stops
+          // earning its place is to merge Sealer into Other and rename the
+          // tile — not to hold Hydro back inside a bucket to keep a chip fed.
           // ── Other ──────────────────────────────────────────────────────
           { sap: "EPOXY INSULATOR",       label: "Epoxy Insulator",       category: "Other" },
           { sap: "1K PU GLOSS",           label: "1K PU Gloss",           category: "Other",
             option: "Clear" },
           { sap: "SYNTHETIC VARNISH",     label: "Synthetic Varnish",     category: "Other",
             option: "Clear" },
-          { sap: "HYDRO PU DEAD MATT",    label: "Hydro PU Dead Matt",    category: "Other",
-            option: "Int Clear" },
-          { sap: "HYDRO PU MATT",         label: "Hydro PU Matt",         category: "Other",
-            option: "Int Clear" },
-          { sap: "HYDRO PU GLOSS",        label: "Hydro PU Gloss",        category: "Other",
-            option: "Int Clear" },
+          // The three Hydro PU matts and glosses left on 2026-09-08 for the
+          // Hydro PU tile above. "Other" keeps ten.
           { sap: "MELAMINE GLOSS",        label: "Melamine Gloss",        category: "Other",
             option: "Clear" },
           { sap: "2K PU PRIMER SURFACER", label: "2K PU Primer Surfacer", category: "Other",
@@ -1943,10 +1969,42 @@ const LEADER_TILE = new Map<string, string>();
  */
 export const BOARD_INVARIANTS: string[] = [];
 
+/**
+ * 🔴 A FAMILY MAY HOLD AS MANY TILES AS IT DESERVES — WITHIN A BOUND.
+ *
+ * This used to assert exactly four, and the assertion was never about the
+ * products: it was about the grid being four across, so four tiles filled one
+ * clean row. That is a fact about the LAYOUT, and the layout does not need the
+ * data's help — a five-tile family fills a row and leaves one tile alone on the
+ * next, inside its own block, which the owner has seen and accepted. Wood is
+ * the first family whose product range genuinely wants five.
+ *
+ * ⚠ DELETING THE CHECK ALTOGETHER WOULD BE WRONG, and the reason is that this
+ * file is a hand-authored literal seventeen hundred lines long. The realistic
+ * failure is not "a family that deserves five tiles"; it is a misplaced bracket
+ * that swallows one family's tiles into its neighbour's array, or a paste that
+ * duplicates a block. Both leave a family with an absurd count, and both would
+ * otherwise reach a phone as a board with a missing row or a wall of tiles —
+ * silently, because every individual tile in it is still well-formed. A bound
+ * catches the shape of that mistake without pretending to know how many tiles a
+ * range needs.
+ *
+ * 2 is the floor because a "family" of one is a tile that has been mislabelled
+ * as a family. 8 is the ceiling because two full rows of the 4-across grid is
+ * already more than the eye groups as one block, so anything past it is a
+ * curation decision that should be made deliberately — by raising this number,
+ * with a reason, rather than by the board quietly growing.
+ */
+const FAMILY_MIN = 2;
+const FAMILY_MAX = 8;
+
 for (const family of BOARD) {
   const wash = mixToWhite(family.tint, TILE_WASH);
-  if (family.tiles.length !== 4) {
-    BOARD_INVARIANTS.push(`family "${family.name}" has ${family.tiles.length} tiles, not 4`);
+  // 🔴 A BOUND, NOT AN EQUALITY — see FAMILY_MIN / FAMILY_MAX.
+  if (family.tiles.length < FAMILY_MIN || family.tiles.length > FAMILY_MAX) {
+    BOARD_INVARIANTS.push(
+      `family "${family.name}" has ${family.tiles.length} tiles, outside the ` +
+      `${FAMILY_MIN}-${FAMILY_MAX} bound`);
   }
   for (const tile of family.tiles) {
     if (tile.members.length === 0) {
