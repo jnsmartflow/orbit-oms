@@ -28,6 +28,13 @@ import type {
   ObdInput,
 } from "@/lib/import-upsert";
 import { parseSapFile, FileFormatError, FileParseError } from "@/lib/sap-parser";
+import {
+  appendRowError,
+  detectQtyMismatch,
+  qtyMismatchNote,
+  writeQtyMismatchRecords,
+} from "@/lib/import-qty-guard";
+import type { QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 
@@ -783,6 +790,8 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   }
 
   const obdInterims:  ObdInterim[] = [];
+  // Qty guard — records only, never blocks. Written after the summaries land.
+  const qtyMismatches: QtyMismatch[] = [];
   const summaryData: Prisma.import_raw_summaryCreateManyInput[] = [];
 
   for (const hr of headerRows) {
@@ -845,6 +854,15 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       };
     });
 
+    // ── QTY GUARD — does the header's own total match the lines that arrived?
+    // Records only; the import proceeds unchanged either way. rowStatus is NOT
+    // touched (live code branches on it — see lib/import-qty-guard.ts).
+    const qtyMismatch = detectQtyMismatch(obdNumber, toInt(hr["UnitQty"]), lines, rowStatus);
+    if (qtyMismatch) {
+      qtyMismatches.push(qtyMismatch);
+      rowError = appendRowError(rowError, qtyMismatchNote(qtyMismatch));
+    }
+
     obdInterims.push({
       obdNumber, shipToId, shipToCustomerName, emailDate,
       totalUnitQty: toInt(hr["UnitQty"]),
@@ -890,6 +908,14 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       { status: 500 },
     );
   }
+
+  // ── QTY GUARD — persist what the comparison found. After the summaries
+  // land (so nothing is logged for a batch that failed to write) and before
+  // anything downstream. Never throws; never changes what gets imported.
+  await writeQtyMismatchRecords(
+    batchId, batchRef, "manual-template",
+    `[${templateId}] ${batchFileName}`, qtyMismatches,
+  );
 
   // ── STEP E4 — Fetch inserted summary IDs ─────────────────────────────────
   const insertedSummaries = await prisma.import_raw_summary.findMany({
@@ -2653,6 +2679,8 @@ async function processAutoImportRows(
   }
 
   const obdInterims:  AutoObdInterim[] = [];
+  // Qty guard — records only, never blocks. Written after the summaries land.
+  const qtyMismatches: QtyMismatch[] = [];
   const summaryData: Prisma.import_raw_summaryCreateManyInput[] = [];
 
   for (const hr of headerRows) {
@@ -2735,6 +2763,16 @@ async function processAutoImportRows(
       });
     }
 
+    // ── QTY GUARD — does the header's own total match the lines that arrived?
+    // This is the path the nineteen missing-stock bills came in on. Records
+    // only; the import proceeds unchanged either way, and rowStatus is NOT
+    // touched (live code branches on it — see lib/import-qty-guard.ts).
+    const qtyMismatch = detectQtyMismatch(obdNumber, toInt(hr["UnitQty"]), lines, rowStatus);
+    if (qtyMismatch) {
+      qtyMismatches.push(qtyMismatch);
+      rowError = appendRowError(rowError, qtyMismatchNote(qtyMismatch));
+    }
+
     obdInterims.push({
       obdNumber, shipToId, shipToCustomerName, emailDate,
       totalUnitQty: toInt(hr["UnitQty"]),
@@ -2780,6 +2818,14 @@ async function processAutoImportRows(
       { status: 500 },
     );
   }
+
+  // ── QTY GUARD — persist what the comparison found. After the summaries
+  // land (so nothing is logged for a batch that failed to write) and before
+  // anything downstream. Never throws; never changes what gets imported.
+  await writeQtyMismatchRecords(
+    batchId, batchRef, "auto-import",
+    `[auto-import] ${fileName}`, qtyMismatches,
+  );
 
   // ── STEP E4 — Fetch inserted summary IDs + rowStatus ─────────────────────
   const insertedSummaries = await prisma.import_raw_summary.findMany({
