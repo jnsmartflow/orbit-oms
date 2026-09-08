@@ -1278,3 +1278,151 @@ already fires the rebuild in every case B1 would fire in.
 **So: proceed with a narrowed B1 — `totalUnitQty` only, guarded on `activeLineCount > 0` — after the
 nineteen bucket-C bills are recorded somewhere durable.** The weight is a separate defect with a
 separate root cause, and the nineteen are a third one that is about lost data, not stale numbers.
+
+---
+---
+
+# AUTO-IMPORT QTY GUARD — 2026-09-08, sixth session · commit `9188699a`
+
+Detect-and-record for the defect Gate 3 established: nothing at ingest compared a payload's declared
+header `UnitQty` against the sum of the line array it arrived with. **A measurement pass — it blocks
+nothing.** Same rows written, same batch outcome, same response shape.
+
+## The gate — `rowStatus` is NOT safe to reuse
+
+Swept twice (Grep tool + MSYS `grep -rn`, reconciled) for readers of `import_raw_summary.rowStatus`.
+Two things had to be separated out first: `import_raw_line_items.rowStatus` is a **different column**
+(filtered at `lib/picking/queue.ts:583` and `app/api/picking/order/[orderId]/route.ts:73`), and
+`components/floor/status-pill.tsx`'s `rowStatus()` is an **unrelated local function** computing a
+floor status. Neither is this field.
+
+Live code that branches on `import_raw_summary.rowStatus`:
+
+| Site | What it does | What a new value would do |
+|---|---|---|
+| `route.ts:2851` | `validSummaryIds = … filter(s => s.rowStatus === "valid" \|\| === "warning")` | **The OBD never becomes an `orders` row — the bill vanishes from the app** |
+| `route.ts:2878-2880` | `rowStatus: { in: ["valid","warning"] }` before order creation (auto) | same |
+| `route.ts:1043-1045` | same whitelist (manual-template) | same |
+| `route.ts:1185`, `:3038` | `customerMissing: summary.rowStatus === "warning"` | silently clears a real unknown-customer flag |
+| `route.ts:1402-1405` | `skippedObds` / `failedObds` counters | miscounts the batch |
+| `route.ts:2071` | shadow: `rowStatus === "error"` → `actualOutcome = "errored"` | misreports |
+| `route.ts:3265` | `.filter(s => s.rowStatus === "error")` | miscounts |
+
+So the conditional in the brief resolves to its second branch: **`rowStatus` is left entirely alone.**
+Writing `"qty_mismatch"` there would not have been a labelling choice, it would have deleted bills
+from the application — the exact outcome the gate existed to catch.
+
+**Recording route taken:** `rowError` (free text, read by nothing) + one `import_shadow_log` row per
+mismatch + a warning appended to the batch label. No schema change; existing columns only.
+
+## The change
+
+New **`lib/import-qty-guard.ts`** — one shared helper, called from both ingest points, no copy-paste:
+
+- `detectQtyMismatch(obdNumber, declared, lines, rowStatus)` — pure. Returns `null` when `declared`
+  is `null` or `0` (**"the source said nothing", not "the source disagreed"**) and when the sums
+  agree. Otherwise returns `{declared, observed, difference, lineCount, rowStatus}`.
+- `qtyMismatchNote()` / `appendRowError()` — the `[qty_mismatch] …` sentence, appended to any
+  existing `rowError` rather than clobbering it.
+- `writeQtyMismatchRecords()` — `import_shadow_log.createMany` (`shadowOutcome: "qty_mismatch"`,
+  the numbers in `decision`), then appends `⚠ qty-mismatch x{n}: {obd}({declared}→{observed})…` to
+  `import_batches.headerFile`. Sequential awaits, no `$transaction`, and **both writes are
+  try/caught** — a measurement pass must never be able to fail an import that otherwise succeeded.
+
+### Where it went, and a correction to the brief
+
+The brief named `handleConfirm` for the manual-template path. **`handleConfirm` never sees a
+payload.** Despite its name `handlePreview` (`route.ts:619-1040`) is the real ingest — it creates the
+`import_batches` row and writes both `import_raw_summary` and `import_raw_line_items`;
+`handleConfirm` (`:1041-1483`) reads those summaries back by id and promotes the chosen ones into
+`orders`. `awk` over `:1041-1500` finds no `hr[…]`, no `linesByObd`, no `unit_qty`. The comparison
+only exists in `handlePreview`, so that is where the guard is.
+
+Not wired into manual-SAP, deliberately: the 19-column layout has no header quantity column and
+`build-obd.ts:65` derives the total by summing the very lines that would be compared — vacuous by
+construction.
+
+### Batch-record visibility — with a caveat worth recording
+
+`import_batches` has **no free-text status column**. `CLAUDE_IMPORT.md §4` lists an `errorMessage`
+field that the live schema does not have (doc drift, noted not fixed). `headerFile` is the label a
+human already reads to tell batches apart, so the warning is appended there; the existing
+`[auto-import] …` / `[templateId] …` prefix is preserved so every `LIKE`-prefix query still matches.
+
+⚠ **There is no import UI that lists batches.** `import_batches` is read by nothing in `app/`,
+`components/` or `lib/` outside the import route itself — the `headerFile`/`lineFile` names in
+`components/import/import-page-content.tsx` are file-input state, not renders of the row. So "visible
+without a query" is only true of a `SELECT`. Surfacing batches in the admin UI is a separate item.
+
+## Tests — five, all green
+
+| # | Test | Result |
+|---|---|---|
+| 1 | Healthy auto-json replay — latest completed auto batch (`BATCH-20260908-023`), stored evidence replayed through `detectQtyMismatch` | **PASS** — 0 mismatches |
+| 2 | header 100, lines 30 + 20 | **PASS** — logged, `declared 100 observed 50 difference 50 lineCount 2` |
+| 3 | header 100, EMPTY line array | **PASS** — logged, `declared 100 observed 0 difference 100 lineCount 0` |
+| 4 | `declared = null`, and the `declared = 0` sibling | **PASS** — both exempt, no mismatch, no error |
+| 5 | manual-SAP untouched — rule-P gate re-run on `docs/vl06O/EXPORT 07.09 orbit.XLSX` | **PASS** — 1921 lines, diff 0, `skipped[]` identical, rule-P TEST 4 still green |
+
+Test 2's rowError rendering, both fresh and appended to an existing error:
+
+```
+[qty_mismatch] header UnitQty 100 vs line sum 50 across 2 line(s); difference 50
+Unknown customer: 123 · [qty_mismatch] header UnitQty 100 vs line sum 50 across 2 line(s); difference 50
+```
+
+**Test 3 — is the bill still created? YES, and that is unchanged here.** A zero-line summary keeps
+`rowStatus: "valid"`, so it passes the `validSummaryIds` whitelist and an `orders` row is created;
+the loop at `route.ts:2958` counts `summary.rawLineItems.length` for GUARD 1 but never skips on it.
+The live proof is the ten bills themselves — all sitting as `dispatched` / `pending_picking` orders
+with zero line rows. Changing that is a blocking decision, not this pass.
+
+### Historical replay — the rate this pass exists to measure
+
+Running the guard over **every header-sourced summary ever written** (7,574 rows, manual-SAP
+excluded):
+
+| | |
+|---|---|
+| mismatches the guard would have logged | **34 (0.45%)** |
+| of which zero line rows | **10** |
+| exempt (declared null or 0) | **0** |
+
+Sample: `9108839310` 208→0 · `9108714570` 24→0 · `9108630612` 293→82 · `9107931925` 471→2 ·
+`9107946773` 284→234 · and small ones like `9107900118` 83→81, `9108360479` 6→5.
+
+Two caveats on that 34. It compares the header against **today's** line state, so a few of the small
+deltas (the 1s and 2s) are post-import drift from the 137-bill population rather than ingest loss —
+the guard at ingest would not have seen them. And it is a replay of stored evidence, not of the raw
+payloads, which are not retained. Treat 34 as an upper bound and the 19 named in ROADMAP as the
+hard core.
+
+## Exemption coverage
+
+**0 of 7,574** header-sourced summaries carry a null or zero declared `UnitQty`. The
+`declared === null || declared === 0` exemption is therefore a correctness guard, not a population —
+every payload the depot has ever sent declares a real number. Worth knowing before anyone argues the
+check is noisy: on live history it would have fired 34 times in four months.
+
+## Type check and commit
+
+`npx tsc --noEmit` → **exit 0**. (The `app/po-v2-8f4kd2/` red from the previous session was fixed by
+the other window before this one started; nothing was worked around and those files were not touched.)
+
+**`9188699aa2ddb0441628b41d28e44550bd70a2f1`** (`9188699a`) on `main`. Staged by name, two files:
+
+```
+app/api/import/obd/route.ts     (+46)
+lib/import-qty-guard.ts         (+171, new)
+```
+
+No `pass.*` scratch file and no `docs/vl06O/` content is in the commit. No dev server was listening.
+No schema change, no write to any table from this session's testing — the only DB access was
+read-only `SELECT`s for the replay and the exemption count.
+
+## What this does NOT do
+
+- It does not block, reject, or alter a single imported row. That decision waits on the rate.
+- It does not touch the header recompute or the 137 drifted bills.
+- It does not fix the nineteen. They are recorded in `docs/ROADMAP.md` → Import Pipeline → 🔴 P1.
+- It does not change `rowStatus`, and the gate above is the reason.
