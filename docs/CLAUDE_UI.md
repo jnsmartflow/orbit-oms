@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.20 · September 2026 · updated 2026-09-06 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.21 · September 2026 · updated 2026-09-08 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -13,7 +13,17 @@ Single source of truth for visual styling across all screens.
 - **Three colour roles:**
   - Teal = brand action (CTAs, focus, toggles ON, nav active, avatars, logo, active slot segment)
   - Gray = structure (borders, text hierarchy, slot pills, filter chips)
-  - Semantic = status only (green=done, red=urgent/error/blocker, amber=waiting/timing)
+  - Semantic = status only (green=done, **red=ERROR AND DESTRUCTIVE ONLY**, amber=urgent/waiting/timing)
+- 🔴 **Red is for something being WRONG, or about to be undone — a failed send, a bounced
+  order, a blocked dealer, a Delete/Clear button. Never for a PRIORITY.** *(Corrected
+  2026-09-08. This line read `red=urgent/error/blocker` and contradicted §12's attention chip,
+  which had shipped `bg-amber-50 / text-amber-700` for "Bill Tomorrow, Cross XYZ, **Urgent**"
+  for over a year.)* Urgency is amber because it is a priority and not a fault: spent on a
+  priority, red has nothing left to say when something actually breaks, and a list of red
+  chips on a busy morning stops registering at all. **`/po-v2-8f4kd2` ships this** — its
+  Urgent chip is amber-700 on amber-50 and the only red left on the route is on Delete, Clear
+  and "Replace what is here". ⚠ **Three components still ship Urgent in red and are the
+  migration list, not counter-examples** — see the note under §3's Semantic table.
 - **Minimal chrome.** Header + controls in 2 rows max.
 - **Smart Title Case for display.** All DB text rendered with `smartTitleCase()` (§19).
 - **One teal element rule** — except Sampling Library (§22), which is exempted.
@@ -75,6 +85,24 @@ ViewBox: 0 0 22 22. Size: 22×22 (sidebar) or 18×18 (mobile).
 | Waiting | `bg-amber-50` | `border-amber-200` | `text-amber-700` |
 | Split | `bg-purple-50` | `border-purple-200` | `text-purple-700` |
 | Voided / Removed | `bg-red-50` | `border-red-300` | `text-red-700` (with diagonal watermark on challan) |
+
+🔴 **The `Urgent` row above is a RECORD OF SHIPPED CODE, NOT THE RULE, and the two now
+disagree.** §1's palette rule changed on 2026-09-08 — red is error and destructive only, urgency
+is amber — but this table describes what three live components actually render, and canon must
+never claim a colour a screen does not paint:
+
+| still red | what it draws |
+|---|---|
+| `components/shared/status-badge.tsx` — the `urgent` badge | `bg-red-50 text-red-700 border-red-200` |
+| `components/floor/floor-table.tsx` — the ⚡ mark-urgent button | `border-red-200 bg-red-50 text-red-500` |
+| `components/shared/duplicate-so-tag.tsx` | cites this row by name for its own red |
+
+**That is a migration list.** `/po-v2-8f4kd2` already ships Urgent in amber-700 on amber-50.
+Move these three to the `Waiting` row's amber and this row becomes `bg-amber-50 /
+border-amber-200 / text-amber-700`; until somebody does, the row stays red because the pixels
+are red. **Do not flip it to amber ahead of the code** — a stamp nobody earned is the failure
+`CLAUDE.md §4` exists to prevent. `Hold` and `Voided / Removed` keep their red under the new
+rule: both are a thing being stopped or undone.
 
 ### Delivery type dots
 | Type | Colour |

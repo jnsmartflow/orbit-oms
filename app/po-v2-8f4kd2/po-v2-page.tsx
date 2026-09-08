@@ -812,7 +812,7 @@ export default function PoV2Page(): React.JSX.Element {
         <button
           type="button"
           onClick={() => { setSheet(null); setPendingLoad(null); }}
-          className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
+          className="w-full rounded-[13px] py-3 text-[15px] font-semibold"
           style={{ border: `1.5px solid ${RULE}`, color: INK }}
         >
           Cancel
@@ -820,7 +820,7 @@ export default function PoV2Page(): React.JSX.Element {
       }
     >
       <div className="shrink-0 px-4 pt-1.5 pb-3">
-        <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+        <h2 className="text-[18px] font-bold" style={{ color: INK, letterSpacing: "-0.025em" }}>
           You have an order on the board
         </h2>
         <p className="text-[11.5px]" style={{ color: MUTED }}>
@@ -834,7 +834,7 @@ export default function PoV2Page(): React.JSX.Element {
           className="w-full rounded-[13px] px-3 py-3 text-left"
           style={{ border: `1.5px solid ${RULE}` }}
         >
-          <span className="block text-[15px] font-extrabold" style={{ color: INK }}>
+          <span className="block text-[15px] font-semibold" style={{ color: INK }}>
             Add to this order
           </span>
           <span className="block text-[12px]" style={{ color: MUTED }}>
@@ -849,7 +849,7 @@ export default function PoV2Page(): React.JSX.Element {
           className="w-full rounded-[13px] px-3 py-3 text-left"
           style={{ border: `1.5px solid ${RULE}` }}
         >
-          <span className="block text-[15px] font-extrabold" style={{ color: URGENT }}>
+          <span className="block text-[15px] font-semibold" style={{ color: URGENT }}>
             Replace what is here
           </span>
           <span className="block text-[12px]" style={{ color: MUTED }}>
@@ -870,7 +870,7 @@ export default function PoV2Page(): React.JSX.Element {
           <button
             type="button"
             onClick={() => { setSheet(null); setRenameTarget(null); }}
-            className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-extrabold"
+            className="shrink-0 rounded-[13px] px-5 py-3 text-[15px] font-semibold"
             style={{ border: `1.5px solid ${RULE}`, color: INK }}
           >
             Cancel
@@ -884,7 +884,7 @@ export default function PoV2Page(): React.JSX.Element {
               setOpenDraftDetail(next.find((d) => d.id === renameTarget.id) ?? null);
               setSheet(null); setRenameTarget(null);
             }}
-            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-semibold text-white"
             style={{ background: BRAND }}
           >
             Save name
@@ -893,7 +893,7 @@ export default function PoV2Page(): React.JSX.Element {
       }
     >
       <div className="shrink-0 px-4 pt-1.5 pb-3">
-        <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+        <h2 className="text-[18px] font-bold" style={{ color: INK, letterSpacing: "-0.025em" }}>
           Name this draft
         </h2>
         <p className="truncate text-[11.5px]" style={{ color: MUTED }}>
@@ -935,7 +935,7 @@ export default function PoV2Page(): React.JSX.Element {
           <button
             type="button"
             onClick={() => { setSheet(null); setDeleteTarget(null); }}
-            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold"
+            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-semibold"
             style={{ border: `1.5px solid ${RULE}`, color: INK }}
           >
             Keep it
@@ -949,7 +949,7 @@ export default function PoV2Page(): React.JSX.Element {
               setScreen("drafts");
               setToast("Draft deleted");
             }}
-            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+            className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-semibold text-white"
             style={{ background: URGENT }}
           >
             Delete
@@ -958,7 +958,7 @@ export default function PoV2Page(): React.JSX.Element {
       }
     >
       <div className="shrink-0 px-4 pt-1.5 pb-4">
-        <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+        <h2 className="text-[18px] font-bold" style={{ color: INK, letterSpacing: "-0.025em" }}>
           Delete this draft?
         </h2>
         <p className="mt-1 truncate text-[13px] font-bold" style={{ color: INK }}>
@@ -1000,7 +1000,7 @@ export default function PoV2Page(): React.JSX.Element {
         <p className="text-[13px] leading-relaxed" style={{ color: MUTED }}>{load.message}</p>
         <button
           type="button" onClick={() => void fetchData()}
-          className="mt-1 rounded-[13px] px-6 py-3 text-[15px] font-extrabold text-white"
+          className="mt-1 rounded-[13px] px-6 py-3 text-[15px] font-semibold text-white"
           style={{ background: BRAND }}
         >
           Retry
@@ -1025,6 +1025,11 @@ export default function PoV2Page(): React.JSX.Element {
           // In progress IS the board. Opening it is going back to it.
           onOpenLive={() => setScreen("order")}
           onOpen={(d) => { setOpenDraftDetail(d); setScreen("draftDetail"); }}
+          // 🔴 THE SAME CONFIRM THE DETAIL'S Delete OPENS — one sheet, one
+          // wording, one place removeSavedDraft is ever called. DraftsScreen
+          // hands this to SAVED cards only; the in-progress card is the order
+          // he is building and Clear order on the board is how that goes.
+          onDelete={(d) => { setDeleteTarget(d); setSheet("delete"); }}
         />
         <BottomNav onNavigate={(next) => setScreen(next)} />
         {toastHost}
@@ -1067,7 +1072,7 @@ export default function PoV2Page(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => { setDeleteTarget(openDraftDetail); setSheet("delete"); }}
-                className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-extrabold"
+                className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-semibold"
                 style={{ border: `1.5px solid ${RULE}`, color: URGENT }}
               >
                 Delete
@@ -1077,7 +1082,7 @@ export default function PoV2Page(): React.JSX.Element {
                 onClick={() => { setRenameTarget(openDraftDetail);
                                  setRenameText(openDraftDetail.name ?? "");
                                  setSheet("rename"); }}
-                className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-extrabold"
+                className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-semibold"
                 style={{ border: `1.5px solid ${RULE}`, color: INK }}
               >
                 Rename
@@ -1091,7 +1096,7 @@ export default function PoV2Page(): React.JSX.Element {
                 onClick={() => { const d = openDraftDetail;
                                  setOpenDraftDetail(null);
                                  loadOntoBoard(d.snapshot, d.id); }}
-                className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                className="min-w-0 flex-1 truncate rounded-[13px] py-3 text-[15px] font-semibold text-white"
                 style={{ background: BRAND }}
               >
                 Continue
@@ -1133,7 +1138,7 @@ export default function PoV2Page(): React.JSX.Element {
               onClick={() => { const snap = openSent.snapshot;
                                setOpenSent(null);
                                loadOntoBoard(snap, null); }}
-              className="w-full rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+              className="w-full rounded-[13px] py-3 text-[15px] font-semibold text-white"
               style={{ background: VIOLET }}
             >
               Send again
@@ -1154,7 +1159,7 @@ export default function PoV2Page(): React.JSX.Element {
     return (
       <main className="flex min-h-screen w-full flex-col items-center justify-center gap-2 bg-white px-8 text-center">
         <CheckCircle2 className="h-12 w-12" strokeWidth={2} style={{ color: "#16A34A" }} />
-        <p className="mt-1 text-[19px] font-extrabold" style={{ color: INK, letterSpacing: "-0.02em" }}>
+        <p className="mt-1 text-[19px] font-bold" style={{ color: INK, letterSpacing: "-0.02em" }}>
           Order sent
         </p>
         <p className="max-w-[280px] truncate text-[15px] font-bold" style={{ color: INK }}>
@@ -1168,7 +1173,7 @@ export default function PoV2Page(): React.JSX.Element {
           <button
             type="button"
             onClick={() => { setSent(null); setScreen("order"); }}
-            className="w-full truncate rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+            className="w-full truncate rounded-[13px] py-3 text-[15px] font-semibold text-white"
             style={{ background: BRAND }}
           >
             Another order for {firstWord(sent.dealer.name)}
@@ -1178,7 +1183,7 @@ export default function PoV2Page(): React.JSX.Element {
             onClick={() => {
               setSent(null); startOver();
             }}
-            className="w-full rounded-[13px] py-3 text-[15px] font-extrabold"
+            className="w-full rounded-[13px] py-3 text-[15px] font-semibold"
             style={{ border: `1.5px solid ${RULE}`, color: INK }}
           >
             Different customer
@@ -1225,14 +1230,14 @@ export default function PoV2Page(): React.JSX.Element {
               <>
                 <button
                   type="button" onClick={() => setSheet(null)}
-                  className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold"
+                  className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-semibold"
                   style={{ border: `1.5px solid ${RULE}`, color: INK }}
                 >
                   Keep
                 </button>
                 <button
                   type="button" onClick={clearOrder}
-                  className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-extrabold text-white"
+                  className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-semibold text-white"
                   style={{ background: URGENT }}
                 >
                   Clear
@@ -1241,7 +1246,7 @@ export default function PoV2Page(): React.JSX.Element {
             }
           >
             <div className="shrink-0 px-4 pt-1.5 pb-4">
-              <h2 className="text-[18px] font-extrabold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+              <h2 className="text-[18px] font-bold" style={{ color: INK, letterSpacing: "-0.025em" }}>
                 Clear all {lines.length} {lines.length === 1 ? "item" : "items"}?
               </h2>
               <p className="mt-1 text-[13px] leading-relaxed" style={{ color: MUTED }}>
@@ -1506,7 +1511,7 @@ export default function PoV2Page(): React.JSX.Element {
                       )}
                       {inOrder && (
                         <span
-                          className="absolute flex items-center justify-center rounded-full text-[10px] font-extrabold text-white"
+                          className="absolute flex items-center justify-center rounded-full text-[10px] font-bold text-white"
                           style={{ top: 4, right: 4, minWidth: 18, height: 18, padding: "0 5px", background: VIOLET }}
                         >
                           {count}
@@ -1575,7 +1580,7 @@ export default function PoV2Page(): React.JSX.Element {
           <button
             type="button"
             onClick={() => setScreen("review")}
-            className="shrink-0 rounded-full px-5 py-2 text-[14px] font-extrabold text-white"
+            className="shrink-0 rounded-full px-5 py-2 text-[14px] font-semibold text-white"
             style={{ background: BRAND }}
           >
             View
@@ -1671,7 +1676,7 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
             <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
           </button>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[17px] font-extrabold"
+            <span className="block truncate text-[17px] font-bold"
                   style={{ color: INK, letterSpacing: "-0.02em" }}>
               {title}
             </span>
@@ -1774,7 +1779,7 @@ function BottomNav({ onNavigate }: {
           className="flex flex-1 flex-col items-center gap-0.5"
         >
           <Icon className="h-[18px] w-[18px]" strokeWidth={2.5} style={{ color: on ? VIOLET : FAINT }} />
-          <span className="text-[10px] font-extrabold" style={{ color: on ? VIOLET : FAINT }}>
+          <span className="text-[10px] font-bold" style={{ color: on ? VIOLET : FAINT }}>
             {label}
           </span>
         </button>

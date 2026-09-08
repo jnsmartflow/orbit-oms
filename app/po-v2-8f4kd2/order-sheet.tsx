@@ -33,7 +33,8 @@ import type { V2Snapshot } from "./v2-storage";
 // at the same page.
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * 🔴 THE TYPE SCALE — TEN ROLES, AND NOTHING ON EITHER SCREEN IS OUTSIDE THEM.
+ * 🔴 THE TYPE SCALE — ELEVEN ROLES, AND NOTHING ON EITHER SCREEN IS OUTSIDE
+ *    THEM.
  *
  * The detail screen and the two list screens share one scale, stated here
  * because they are drawn in two files and a scale that lives in a designer's
@@ -51,6 +52,7 @@ import type { V2Snapshot } from "./v2-storage";
  *   T8  row value       14 / 500                   the right half of a fact
  *   T9  product name    15 / 600  ·  colour 11 / 700 caps VIOLET
  *   T10 figures         13 mono tabular            "1L x6"
+ *   T11 button          15 / 600                   every button on the route
  *
  * 🔴 T4 IS 500, NOT 700, AND THAT IS THE WHOLE POINT — CLAUDE_UI §60. "Weight,
  * not colour, is the heavy dial. Nothing on the card is 700." A 15px/700 name
@@ -59,10 +61,14 @@ import type { V2Snapshot } from "./v2-storage";
  * AND lighter than the 15px/700 it replaces, and it is the only thing on the
  * card that is 17px, so nothing has to shout to be found.
  *
- * The one style on these screens outside the scale is the DETAIL FOOTER's
- * buttons (15px/800), and they are outside this file: po-v2-page.tsx passes
- * them in as the `footer` node. Named in the step report rather than silently
- * left out.
+ * 🔴 T11 CLOSED THE LAST GAP, 2026-09-08. The buttons were the one style on
+ * these screens outside the scale — 15px/800, and the nodes belong to
+ * po-v2-page.tsx, which is why they were reported rather than changed twice
+ * over. All TWENTY-FIVE 800-weight sites on the route are gone now: sixteen
+ * 15px buttons and one 14px button to 600, four sheet titles / the "Order
+ * sent" line / a screen header to 700, and two 10px labels to 700. Nothing on
+ * this route is 800. It is the same dial that fixed the card name — weight,
+ * not colour, and it comes down before anything else does.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -215,11 +221,16 @@ export const CARD_PAD = 16;
  * amber elsewhere. This takes the amber pair, so v2 now agrees with the rest
  * of the app instead of with one stale line of the doc.
  *
- * ⚠ WHERE THE TOKEN LIVES, AND WHY IT IS NOT IN v2-data. Every other colour in
- * this app is a v2-data export and this belongs there too — but v2-data is
- * outside this step's containment, so it sits here beside CARD_EDGE rather
- * than being scattered as a hex literal at the one call site. Move it to
- * v2-data the next time that file is inside a fence, and delete this note.
+ * ⚠ WHERE THE TOKEN LIVES, AND WHY IT IS STILL NOT IN v2-data. Every other
+ * colour in this app is a v2-data export and this belongs there too — beside
+ * URGENT, which it is the counterpart to. v2-data has been outside the fence
+ * for two steps running, so it still sits here rather than being scattered as
+ * a hex literal at the call site. IT SHOULD MOVE, and when it does, URGENT
+ * should be renamed with it: after 2026-09-08 that token is never urgency, it
+ * is the destructive red on Delete, Clear and "Replace what is here". DANGER
+ * is what it means. Both are one-line changes inside v2-data plus their call
+ * sites, and neither is worth a fence of its own — do them the next time that
+ * file is open.
  *
  * The values are Tailwind's amber-700 on amber-50, which is the pair
  * CLAUDE_UI's attention row already names — not v2-data's STAR (#F59E0B,
@@ -465,25 +476,47 @@ export function Chip({ icon, text, tone = "quiet" }: {
  * border-box, so the 1px hairline is inside the 44 and the rows stack without
  * drift.
  *
- * The value TRUNCATES rather than wrapping, which is the one thing this shape
- * costs: a long Note clips here. It is the right trade at four rows — the note
- * went out on the wire in full and the review screen shows it in full — but it
- * is a trade and it is named.
+ * 🔴 `wrap` IS FOR THE NOTE ROW AND FOR NOTHING ELSE.
+ *
+ * Every other row holds a value the app itself wrote — a dispatch word, a
+ * marker, a dealer name and code — and those are short by construction, so a
+ * fixed height is free. The Note is the one field a salesman TYPES, and "Pls
+ * send shade card and call before 5" is an ordinary one. Truncating it hides
+ * the only line on the screen the depot could not have guessed.
+ *
+ * The shape: 12px of padding above and below a 20px line box, so ONE line is
+ * 12 + 20 + 12 = exactly 44 and a short note still matches its neighbours to
+ * the pixel. Two lines is 64. `minHeight`, not `height`, is what lets it grow
+ * — and it grows only as far as the two-line clamp.
+ *
+ * ⚠ A THREE-LINE NOTE IS CLIPPED, NOT SCROLLABLE, and that is deliberate: a
+ * scroller inside a 64px row on a phone is a control nobody discovers, and a
+ * card that grows without limit stops being a summary. The full note is on the
+ * review screen and it went out on the wire in full — this row is the check,
+ * not the record.
  */
-function Fact({ label, value, first = false }: {
-  label: string; value: string; first?: boolean;
+function Fact({ label, value, first = false, wrap = false }: {
+  label: string; value: string; first?: boolean; wrap?: boolean;
 }): React.JSX.Element {
   return (
     <div className="flex items-center gap-3"
-         style={{ height: 44, paddingLeft: CARD_PAD, paddingRight: CARD_PAD,
-                  borderTop: first ? undefined : `1px solid ${DIVIDER}` }}>
+         style={{ paddingLeft: CARD_PAD, paddingRight: CARD_PAD,
+                  borderTop: first ? undefined : `1px solid ${DIVIDER}`,
+                  ...(wrap
+                    ? { minHeight: 44, paddingTop: 12, paddingBottom: 12 }
+                    : { height: 44 }) }}>
       {/* T7 row label — 11 / 600 / +.1em caps / muted */}
       <span className="shrink-0 text-[11px] font-semibold uppercase"
             style={{ color: MUTED, letterSpacing: ".1em" }}>
         {label}
       </span>
       {/* T8 row value — 14 / 500 */}
-      <span className="min-w-0 flex-1 truncate text-right text-[14px] font-medium" style={{ color: INK }}>
+      <span className={`min-w-0 flex-1 text-right text-[14px] font-medium${wrap ? "" : " truncate"}`}
+            style={{ color: INK,
+                     ...(wrap
+                       ? { display: "-webkit-box", WebkitBoxOrient: "vertical",
+                           WebkitLineClamp: 2, overflow: "hidden", lineHeight: "20px" }
+                       : {}) }}>
         {value}
       </span>
     </div>
@@ -624,7 +657,9 @@ export default function OrderDetail({
             <Fact label="Ship to"
                   value={shipTo ? `${shipTo.name} · ${shipTo.code}` : snapshot.shipToCode} />
           )}
-          {snapshot.notes.trim() && <Fact label="Note" value={snapshot.notes.trim()} />}
+          {/* THE ONLY ROW THAT MAY GROW — see Fact. It is the one value he
+              typed rather than chose. */}
+          {snapshot.notes.trim() && <Fact wrap label="Note" value={snapshot.notes.trim()} />}
         </div>
       </div>
 
