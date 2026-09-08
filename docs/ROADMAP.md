@@ -577,6 +577,12 @@ them: a recompute would overwrite the header with the short line sum and erase t
 stock is missing. Full working — `docs/prompts/drafts/code-discovery-2026-09-08-import-qty-integrity.md`
 (§DEFECT B — GATE, Gates 2 and 3).
 
+> **ONE-LINE CORRECTION to the P1 above:** the ten zero-line bills are **header-only-by-design,
+> awaiting manual SAP** — not lost lines. The real gap is that **nothing surfaces them** as awaiting
+> completion. Carved out and now traced in `import_shadow_log` as `header_only_allowed` (commit
+> `df4a6d1`-series, §VOLUME-ZERO CARVE-OUT in the discovery report); **building the visibility is the
+> open work.** The nine short-against-header bills are unaffected and remain genuinely short.
+
 #### 🔴 CORRECTION 2026-09-08 — the TEN are not a bug, they are a deliberate depot-side rule
 
 Established while fixing the depot scripts, and it overturns the earlier reading. **All ten

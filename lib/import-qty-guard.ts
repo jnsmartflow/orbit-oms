@@ -103,7 +103,7 @@ export function appendRowError(existing: string | null, note: string): string {
 export interface ImportAnomaly {
   obdNumber: string;
   /** `import_shadow_log.shadowOutcome` — the greppable kind. */
-  outcome:   "qty_mismatch" | "empty_payload_skipped";
+  outcome:   "qty_mismatch" | "empty_payload_skipped" | "header_only_allowed";
   /** `import_shadow_log.actualOutcome` — what happened to the bill itself. */
   actual:    "imported" | "skipped";
   note:      string;
@@ -129,19 +129,54 @@ export function toQtyMismatchAnomaly(m: QtyMismatch): ImportAnomaly {
 
 /**
  * An OBD dropped before any row was written because its payload carried no
- * lines. The bill is NOT created — deliberately, so the create-only auto path
- * can pick it up again on the next cycle instead of being locked out by an
- * existing-but-empty order it can never fill.
+ * lines AND declared a real volume — so lines were genuinely expected and did
+ * not arrive. The bill is NOT created, deliberately, so the create-only auto
+ * path can pick it up again on the next cycle instead of being locked out by
+ * an existing-but-empty order it can never fill.
+ *
+ * NOT used for a volume-zero header — see toHeaderOnlyAnomaly().
  */
-export function toEmptyPayloadAnomaly(obdNumber: string, declared: number | null): ImportAnomaly {
+export function toEmptyPayloadAnomaly(
+  obdNumber: string, declared: number | null, volume: number | null,
+): ImportAnomaly {
   return {
     obdNumber,
     outcome:   "empty_payload_skipped",
     actual:    "skipped",
-    note:      `[empty_payload] payload carried 0 line rows (header UnitQty ${declared ?? "null"}); ` +
-               `OBD not created so a later cycle can retry it`,
-    decision:  { declared, observed: 0, lineCount: 0 },
+    note:      `[empty_payload] payload carried 0 line rows but declared volume ${volume} ` +
+               `(header UnitQty ${declared ?? "null"}); lines were expected — OBD not created ` +
+               `so a later cycle can retry it`,
+    decision:  { declared, volume, observed: 0, lineCount: 0 },
     labelPart: `${obdNumber}(${declared ?? "null"})`,
+  };
+}
+
+/**
+ * A volume-zero OBD imported HEADER-ONLY, on purpose.
+ *
+ * `Auto-Import-v3.ps1` treats volume 0 as "the detail form will never fill"
+ * and posts the header alone, expecting a later manual-SAP upload to complete
+ * it (`:1156-1163` recovery, `:1372-1375` main import, counted as
+ * `$res.HeaderOnly`). That is a deliberate depot rule, not a fault, so the
+ * empty-payload skip must not swallow it — all ten of the live zero-line
+ * bills are of exactly this kind.
+ *
+ * It is still recorded, because the real defect is that nothing surfaces such
+ * a bill as awaiting completion. This row is the trace that makes that
+ * possible: a header-only bill leaves a mark from the moment it lands.
+ */
+export function toHeaderOnlyAnomaly(
+  obdNumber: string, declared: number | null, volume: number | null,
+): ImportAnomaly {
+  return {
+    obdNumber,
+    outcome:   "header_only_allowed",
+    actual:    "imported",
+    note:      `[header_only] volume ${volume ?? "null"} — imported header-only by the depot's ` +
+               `volume-zero rule (header UnitQty ${declared ?? "null"}); AWAITING MANUAL SAP ` +
+               `to supply its lines`,
+    decision:  { declared, volume, observed: 0, lineCount: 0, awaitingManualSap: true },
+    labelPart: `${obdNumber}(${declared ?? "null"} hdr-only)`,
   };
 }
 
@@ -199,13 +234,17 @@ export async function writeImportAnomalies(
   // `[auto-import] …` / `[templateId] …` prefix intact, so every LIKE-prefix
   // query still matches.
   const parts: string[] = [];
-  for (const kind of ["qty_mismatch", "empty_payload_skipped"] as const) {
+  const KIND_LABEL = {
+    qty_mismatch:         "qty-mismatch",
+    empty_payload_skipped:"empty-skip",
+    header_only_allowed:  "header-only",
+  } as const;
+  for (const kind of ["qty_mismatch", "empty_payload_skipped", "header_only_allowed"] as const) {
     const of = anomalies.filter((a) => a.outcome === kind);
     if (of.length === 0) continue;
     const listed = of.slice(0, 5).map((a) => a.labelPart).join(", ");
     const more   = of.length > 5 ? ` +${of.length - 5} more` : "";
-    const name   = kind === "qty_mismatch" ? "qty-mismatch" : "empty-skip";
-    parts.push(`${name} x${of.length}: ${listed}${more}`);
+    parts.push(`${KIND_LABEL[kind]} x${of.length}: ${listed}${more}`);
   }
   const label = `${batchFileLabel} ⚠ ${parts.join(" · ")}`;
 

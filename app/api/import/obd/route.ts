@@ -33,6 +33,7 @@ import {
   detectQtyMismatch,
   qtyMismatchNote,
   toEmptyPayloadAnomaly,
+  toHeaderOnlyAnomaly,
   toQtyMismatchAnomaly,
   writeImportAnomalies,
 } from "@/lib/import-qty-guard";
@@ -2691,7 +2692,8 @@ async function processAutoImportRows(
   const obdInterims:  AutoObdInterim[] = [];
   // Qty guard — records only, never blocks. Written after the summaries land.
   const qtyMismatches: QtyMismatch[] = [];
-  // Empty-payload skips — these DO block, for the one OBD each. Same writer.
+  // Empty-payload skips (block) AND volume-zero header-only imports (allowed
+  // through, still recorded). Same writer, one batch label.
   const emptyPayloadSkips: ImportAnomaly[] = [];
   const summaryData: Prisma.import_raw_summaryCreateManyInput[] = [];
 
@@ -2792,19 +2794,49 @@ async function processAutoImportRows(
     //
     // One bad OBD must never fail a batch carrying good ones — hence `continue`
     // rather than an early return.
+    // VOLUME-ZERO CARVE-OUT. `Auto-Import-v3.ps1` posts a volume-zero OBD
+    // header-only ON PURPOSE — "the detail form will never fill; manual SAP
+    // completes it later" (`:1156-1163`, `:1372-1375`). Skipping those would
+    // defeat a deliberate depot rule and make an invoiced bill invisible; all
+    // ten live zero-line bills are of exactly that kind. So the skip fires
+    // only when the payload declared a real volume, i.e. lines WERE expected.
+    //
+    // `hr["Volume"]` is the same field v3 keys on: Build-HeaderRow emits
+    // `"Volume" = $dataRow.Volume`, v3's rule reads `$hdr.Volume`, and this
+    // route already stores it as import_raw_summary.volume below. v3 coerces a
+    // missing or unparseable value to 0; `toNum() ?? 0` matches that exactly.
+    let headerOnlyImport = false;
     if (skipEmptyPayloadObds && lines.length === 0) {
-      emptyPayloadSkips.push(toEmptyPayloadAnomaly(obdNumber, toInt(hr["UnitQty"])));
-      console.warn("[auto-import] empty payload — OBD skipped for retry", {
-        batchRef, obdNumber, declared: toInt(hr["UnitQty"]),
+      const declaredQty    = toInt(hr["UnitQty"]);
+      const declaredVolume = toNum(hr["Volume"]);
+      if ((declaredVolume ?? 0) > 0) {
+        emptyPayloadSkips.push(toEmptyPayloadAnomaly(obdNumber, declaredQty, declaredVolume));
+        console.warn("[auto-import] empty payload with real volume — OBD skipped for retry", {
+          batchRef, obdNumber, declared: declaredQty, volume: declaredVolume,
+        });
+        continue;
+      }
+      // Volume 0 or absent → header-only by design. Import it exactly as
+      // before a11bf7ee, but leave a trace: nothing else in the system marks
+      // such a bill as awaiting its lines, which is the real open defect.
+      emptyPayloadSkips.push(toHeaderOnlyAnomaly(obdNumber, declaredQty, declaredVolume));
+      console.warn("[auto-import] volume-zero header-only import — awaiting manual SAP", {
+        batchRef, obdNumber, declared: declaredQty,
       });
-      continue;
+      headerOnlyImport = true;
     }
 
     // ── QTY GUARD — does the header's own total match the lines that arrived?
     // This is the path the nineteen missing-stock bills came in on. Records
     // only; the import proceeds unchanged either way, and rowStatus is NOT
     // touched (live code branches on it — see lib/import-qty-guard.ts).
-    const qtyMismatch = detectQtyMismatch(obdNumber, toInt(hr["UnitQty"]), lines, rowStatus);
+    //
+    // Suppressed for a header-only import: declared-vs-zero is already stated
+    // by its own `header_only_allowed` row, and double-logging it would inflate
+    // the qty-mismatch rate with the one case that is fully explained.
+    const qtyMismatch = headerOnlyImport
+      ? null
+      : detectQtyMismatch(obdNumber, toInt(hr["UnitQty"]), lines, rowStatus);
     if (qtyMismatch) {
       qtyMismatches.push(qtyMismatch);
       rowError = appendRowError(rowError, qtyMismatchNote(qtyMismatch));
