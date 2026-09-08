@@ -1525,6 +1525,23 @@ export type V2Member = {
    * differ only by case.
    */
   option?: string;
+  /**
+   * 🔴 PUT THIS MEMBER UNDER A CATEGORY CHIP. A tile whose members carry one
+   * becomes the fourth drawer shape: categories across the top, that category's
+   * PRODUCTS in the rail, that product's packs in the pane.
+   *
+   * BOTH ZONES ARE SPENT, so every member of such a tile must have NOTHING to
+   * choose — no options at all, or exactly one that is pinned above. The Wood
+   * family is the case that asked for it: twenty-one leftovers with no colour
+   * between them, which a product strip could not hold and a flat rail could
+   * not sort. buildBoard() THROWS if a categorised member turns out to have an
+   * unpinned options level, so the mistake is caught the first time the board
+   * is built and not by a salesman looking at a rail he cannot use.
+   *
+   * The categories' ORDER is first appearance in this array — no separate list
+   * to keep in step with the members.
+   */
+  category?: string;
 };
 
 export type V2BoardTile = {
@@ -1807,46 +1824,83 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "PU PRIME SEALER", label: "PU Prime Sealer" },
           { sap: "PU PRIME GLOSS",  label: "PU Prime Gloss", slug: "product-pu-prime-gloss" },
         ] },
-      // 2K PU THINNER stays INSIDE 2K PU rather than joining the Thinners
-      // tile: it is a system component, and a man ordering 2K PU Matt reaches
-      // for its matching thinner where the system is. Its 3L pack differs from
-      // both tiles, so neither placement is pack-uniform and that argument is
-      // a wash.
+      // 🔴 2K PU THINNER AND 2K PU PRIMER SURFACER LEFT ON 2026-09-08. They are
+      // system components, and the old argument for keeping them here was that
+      // a man ordering 2K PU Matt reaches for its matching thinner where the
+      // system is. The category tile beats that: he now reaches for it under
+      // "Thinner" beside every other thinner, which is where he looks when he
+      // does NOT already have the 2K drawer open. Both are still one tap from
+      // the board, and this tile is three products with real colour ladders.
       { key: "2K PU MATT", label: "2K PU", slug: "2k-matt",
         members: [
-          { sap: "2K PU MATT",            label: "2K PU Matt" },
-          { sap: "2K PU GLOSS",           label: "2K PU Gloss" },
-          { sap: "2K PU THINNER",         label: "2K PU Thinner" },
-          { sap: "2K PU PRIMER SURFACER", label: "2K PU Primer Surfacer" },
-          { sap: "2K PU SEALER",          label: "2K PU Sealer" },
+          { sap: "2K PU MATT",   label: "2K PU Matt" },
+          { sap: "2K PU GLOSS",  label: "2K PU Gloss" },
+          { sap: "2K PU SEALER", label: "2K PU Sealer" },
         ] },
-      { key: "MULTI PURPOSE THINNER", label: "Thinners", slug: "thinner",
+      // 🔴 A NEW TILE KEY, LUXURIO MATT. Luxurio took the third slot over Hydro
+      // PU on the numbers: 62 lines / 45 orders in 90 days against 48 / 46, and
+      // decisively on LIFETIME — 122 against 48, where Hydro's lifetime equals
+      // its 90-day figure exactly on all four products because it has no
+      // history before this window. Luxurio also NEEDS a named tile and Hydro
+      // does not: all three Luxurio products carry real ladders (5, 2 and 5
+      // options) and cannot live in a category tile, while all four Hydro
+      // products pin cleanly and do.
+      { key: "LUXURIO MATT", label: "Luxurio", slug: "luxurio",
         members: [
-          { sap: "MULTI PURPOSE THINNER",    label: "Multi Purpose Thinner" },
-          { sap: "EPOXY INSULATOR",          label: "Epoxy Insulator" },
-          { sap: "EPOXY INSULATOR HARDENER", label: "Epoxy Insulator Hardener" },
-          { sap: "MELAMINE THINNER",         label: "Melamine Thinner" },
-          { sap: "NC WOOD THINNER",          label: "NC Wood Thinner" },
-          { sap: "NC NECOL THINNER",         label: "NC Necol Thinner" },
+          { sap: "LUXURIO MATT",   label: "Luxurio Matt" },
+          { sap: "LUXURIO SEALER", label: "Luxurio Sealer" },
+          { sap: "LUXURIO GLOSS",  label: "Luxurio Gloss" },
         ] },
-      { key: "NC SANDING SEALER", label: "More Wood", slug: "more-wood",
+      // 🔴 THE FIRST CATEGORY TILE. See V2Member.category.
+      //
+      // The key stays MULTI PURPOSE THINNER — it was already this family's
+      // thinner tile key and it is still members[0], so every stored line filed
+      // under it needs no migration at all. NC SANDING SEALER stops being a key
+      // and becomes a member; the derived migration refiles those lines onto
+      // this tile on read, with no code change in v2-storage.ts.
+      //
+      // Every product here has NOTHING to choose: eight have no baseColour at
+      // all, thirteen are pinned to their single row. buildBoard throws if that
+      // ever stops being true.
+      { key: "MULTI PURPOSE THINNER", label: "Thinner & Sealer", slug: "thinner",
         members: [
-          { sap: "NC SANDING SEALER",  label: "NC Sanding Sealer" },
-          { sap: "1K PU GLOSS",        label: "1K PU Gloss" },
-          { sap: "LUXURIO MATT",       label: "Luxurio Matt" },
-          { sap: "SYNTHETIC VARNISH",  label: "Synthetic Varnish" },
-          { sap: "MELAMINE SEALER",    label: "Melamine Sealer" },
-          { sap: "LUXURIO SEALER",     label: "Luxurio Sealer" },
-          { sap: "HYDRO PU DEAD MATT", label: "Hydro PU Dead Matt" },
-          { sap: "WOOD FILLER",        label: "Wood Filler" },
-          { sap: "HYDRO PU MATT",      label: "Hydro PU Matt" },
-          { sap: "LUXURIO GLOSS",      label: "Luxurio Gloss" },
-          { sap: "MELAMINE GLOSS",     label: "Melamine Gloss" },
-          { sap: "HYDRO PU GLOSS",     label: "Hydro PU Gloss" },
-          { sap: "MELAMINE MATT",      label: "Melamine Matt" },
-          { sap: "NC CLEAR LACQUER",   label: "NC Clear Lacquer" },
-          { sap: "HYDRO PU SEALER",    label: "Hydro PU Sealer" },
-          { sap: "WOOD STAIN",         label: "Wood Stain" },
+          // ── Thinner ────────────────────────────────────────────────────
+          { sap: "MULTI PURPOSE THINNER", label: "Multi Purpose Thinner", category: "Thinner" },
+          { sap: "2K PU THINNER",         label: "2K PU Thinner",         category: "Thinner" },
+          { sap: "MELAMINE THINNER",      label: "Melamine Thinner",      category: "Thinner" },
+          { sap: "NC WOOD THINNER",       label: "NC Wood Thinner",       category: "Thinner" },
+          { sap: "NC NECOL THINNER",      label: "NC Necol Thinner",      category: "Thinner" },
+          // ── Sealer ─────────────────────────────────────────────────────
+          { sap: "NC SANDING SEALER",     label: "NC Sanding Sealer",     category: "Sealer" },
+          { sap: "MELAMINE SEALER",       label: "Melamine Sealer",       category: "Sealer",
+            option: "Clear" },
+          { sap: "HYDRO PU SEALER",       label: "Hydro PU Sealer",       category: "Sealer",
+            option: "Clear" },
+          // ── Other ──────────────────────────────────────────────────────
+          { sap: "EPOXY INSULATOR",       label: "Epoxy Insulator",       category: "Other" },
+          { sap: "1K PU GLOSS",           label: "1K PU Gloss",           category: "Other",
+            option: "Clear" },
+          { sap: "SYNTHETIC VARNISH",     label: "Synthetic Varnish",     category: "Other",
+            option: "Clear" },
+          { sap: "HYDRO PU DEAD MATT",    label: "Hydro PU Dead Matt",    category: "Other",
+            option: "Int Clear" },
+          { sap: "HYDRO PU MATT",         label: "Hydro PU Matt",         category: "Other",
+            option: "Int Clear" },
+          { sap: "HYDRO PU GLOSS",        label: "Hydro PU Gloss",        category: "Other",
+            option: "Int Clear" },
+          { sap: "MELAMINE GLOSS",        label: "Melamine Gloss",        category: "Other",
+            option: "Clear" },
+          { sap: "2K PU PRIMER SURFACER", label: "2K PU Primer Surfacer", category: "Other",
+            option: "White" },
+          { sap: "MELAMINE MATT",         label: "Melamine Matt",         category: "Other",
+            option: "Clear" },
+          { sap: "NC CLEAR LACQUER",      label: "NC Clear Lacquer",      category: "Other",
+            option: "Clear" },
+          { sap: "EPOXY INSULATOR HARDENER", label: "Epoxy Insulator Hardener", category: "Other" },
+          { sap: "NC NECOL CLEAR",        label: "NC Necol Clear",        category: "Other",
+            option: "Clear" },
+          { sap: "NC OPAQUE",             label: "NC Opaque",             category: "Other",
+            option: "White" },
         ] },
     ],
   },
@@ -1983,6 +2037,8 @@ export type V2ResolvedMember = V2Resolved & {
   joinSap: string;
   /** The pinned baseColour, or null. */
   pin:   string | null;
+  /** The category chip this member sits under, or null. */
+  category: string | null;
   label: string;
   /** drawerMode() on this member's rows alone. NEVER on the tile's union. */
   mode:  V2DrawerMode;
@@ -2109,6 +2165,7 @@ export function buildBoard(products: ApiProduct[]): {
             sap: memberKey(member.sap, member.option),
             joinSap: member.sap,
             pin: member.option,
+            category: member.category ?? null,
             label: member.label,
             family: row.family ?? "",
             bases: [], shades: [], variants: [],
@@ -2127,8 +2184,24 @@ export function buildBoard(products: ApiProduct[]): {
         if (packsOf(rows).length === 0) {
           report.emptyMembers.push({ tile: tile.label, sap: member.sap });
         }
+        // 🔴 A CATEGORY TILE SPENDS BOTH ZONES, SO NOTHING IN IT MAY HAVE AN
+        // OPTIONS LEVEL. Thrown, not reported: a categorised member with a
+        // colour ladder has no zone left to render it in, so the salesman would
+        // see a product he cannot complete and the drawer would return a pick
+        // with no row. Loud at the first build, which is a developer's machine
+        // and a CI run, rather than silent on a phone in a shop.
+        if (member.category !== undefined) {
+          const n = resolved.bases.length + resolved.shades.length + resolved.variants.length;
+          if (n > 0 || mode === "flat") {
+            throw new Error(
+              `v2 board: "${member.sap}" is in the category tile "${tile.label}" but has ` +
+              `${n} option(s)${mode === "flat" ? " and is flat mode" : ""} and no pin. ` +
+              `A category tile has no zone left to choose in — either pin it with ` +
+              `option: "<the exact baseColour>", or take it off the tile.`);
+          }
+        }
         members.push({ ...resolved, sap: member.sap, joinSap: member.sap, pin: null,
-                       label: member.label, mode, pools });
+                       category: member.category ?? null, label: member.label, mode, pools });
       }
       byKey.set(tile.key, { key: tile.key, label: tile.label, slug: tile.slug, members });
     }

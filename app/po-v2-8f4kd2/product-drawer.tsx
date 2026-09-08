@@ -110,11 +110,18 @@ type Tab = "base" | "shade";
  *                   right shape for them: FBC Advance has ELEVEN members, which
  *                   is three sideways swipes in a strip and one flick down in a
  *                   column, with every name readable instead of clipped.
+ *   category-products
+ *                   the members are grouped under CATEGORY chips. The strip
+ *                   holds the categories, the rail holds that category's
+ *                   PRODUCTS, the pane holds that product's packs. Both zones
+ *                   are spent, so every member must have nothing to choose —
+ *                   buildBoard throws otherwise. One tile: Thinner & Sealer,
+ *                   twenty-one products that between them have no colour.
  *   strip-products  several products, at least one with an options level.
  *                   Products across the top, that product's options in the
- *                   rail. Eleven tiles.
+ *                   rail.
  */
-type Layout = "single" | "rail-products" | "strip-products";
+type Layout = "single" | "category-products" | "rail-products" | "strip-products";
 
 /**
  * 🔴 THE TWO TILES THAT KEEP A BASE / SHADE TOGGLE. NAMED, NOT COUNTED.
@@ -165,6 +172,8 @@ type Member = {
   joinSap:  string;
   /** The pinned baseColour, or null for an ordinary member. */
   pin:      string | null;
+  /** The category chip this member sits under, or null. */
+  category: string | null;
   label:    string;
   resolved: V2Resolved;
   mode:     V2DrawerMode;
@@ -356,13 +365,13 @@ export default function ProductDrawer({
   const members = useMemo<Member[]>(() => {
     if (tile) {
       return tile.members.map((m: V2ResolvedMember) => ({
-        sap: m.sap, joinSap: m.joinSap, pin: m.pin,
+        sap: m.sap, joinSap: m.joinSap, pin: m.pin, category: m.category,
         label: m.label, resolved: m, mode: m.mode, pools: m.pools,
       }));
     }
     // A searched non-tile product is never pinned: it is whatever the catalog
     // group resolved to, and its key is its own sap.
-    return [{ sap: product.sap, joinSap: product.sap, pin: null,
+    return [{ sap: product.sap, joinSap: product.sap, pin: null, category: null,
               label: product.label, resolved: product,
               mode, pools: pools ?? NO_POOLS }];
   }, [tile, product, pools, mode]);
@@ -375,6 +384,12 @@ export default function ProductDrawer({
     return out;
   }, [members]);
 
+  /**
+   * 🔴 THE OPEN CATEGORY. It follows the SELECTED PRODUCT rather than being a
+   * second source of truth: tapping a chip selects that category's first
+   * product, and everything else — the rail, the pane, the badges — reads the
+   * product. One state, so the two can never disagree.
+   */
   const [memberSap, setMemberSap] = useState<string>(() =>
     // The page names a CATALOG sap (a search hit, or the tile's top seller), so
     // fall back to the first member carrying that join key — which, for a
@@ -383,6 +398,12 @@ export default function ProductDrawer({
     members.find((m) => m.joinSap === initialMember)?.sap ??
     members[0].sap);
   const cur = members.find((m) => m.sap === memberSap) ?? members[0];
+  /** The category the selected product sits in — the chip that reads active. */
+  const activeCategory = cur.category;
+  /** The rail's rows in a category tile: that category's products, in order. */
+  const inCategory = useMemo<Member[]>(
+    () => (activeCategory === null ? members : members.filter((m) => m.category === activeCategory)),
+    [members, activeCategory]);
   const rails = railsBy[cur.sap];
   const curHasOptions = hasOptions(cur, rails);
 
@@ -536,11 +557,22 @@ export default function ProductDrawer({
    * reshapes itself when you tap a product moves the next target out from under
    * the thumb, and the man doing it is holding the phone in one hand.
    */
+  /**
+   * The categories, in FIRST-APPEARANCE order — no second list to keep in step
+   * with the members, so a category cannot outlive its last product.
+   */
+  const categories = useMemo<string[]>(() => {
+    const out: string[] = [];
+    for (const m of members) if (m.category !== null && !out.includes(m.category)) out.push(m.category);
+    return out;
+  }, [members]);
+
   const layout: Layout = !isMerged ? "single"
+    : categories.length > 0 ? "category-products"
     : members.every((m) => !hasOptions(m, railsBy[m.sap])) ? "rail-products"
     : "strip-products";
-  /** In this one layout the rail's rows are PRODUCTS, for every member. */
-  const railHoldsProducts = layout === "rail-products";
+  /** In BOTH of these the rail's rows are PRODUCTS, not options. */
+  const railHoldsProducts = layout === "rail-products" || layout === "category-products";
 
   /**
    * Whether the OPTIONS column renders. This is per member and has to be — no
@@ -610,17 +642,23 @@ export default function ProductDrawer({
    */
   const shownMembers = useMemo<Member[]>(() => {
     const q = query.trim();
-    if (q.length === 0) return members;
+    // 🔴 THE SEARCH CROSSES CATEGORIES. Typing "melamine" on the Thinner chip
+    // should find Melamine Sealer under Sealer — a man who knows the product
+    // name does not know which chip somebody filed it under, and making him
+    // guess is worse than the scroll it saves. The chips stay on screen and the
+    // one holding the match reads active as soon as he taps a result.
+    const pool = q.length === 0 ? inCategory : members;
+    if (q.length === 0) return pool;
     const rowOf = (m: Member): ApiProduct | null =>
       m.resolved.noOptionRow ?? m.pools.all[0]?.row ?? m.resolved.bases[0]?.row ?? null;
-    const rows = members.map(rowOf).filter((r): r is ApiProduct => r !== null);
+    const rows = pool.map(rowOf).filter((r): r is ApiProduct => r !== null);
     const order = new Map(rankProductsForQuery(rows, q).map((r, i) => [r.id, i]));
     const rank = (m: Member): number => {
       const r = rowOf(m);
       return r === null ? -1 : order.get(r.id) ?? -1;
     };
-    return members.filter((m) => rank(m) >= 0).sort((a, b) => rank(a) - rank(b));
-  }, [query, members]);
+    return pool.filter((m) => rank(m) >= 0).sort((a, b) => rank(a) - rank(b));
+  }, [query, members, inCategory]);
 
   // 🔴 THE SELECTION IS RESOLVED AGAINST THE WHOLE POOL, NOT THE VISIBLE LIST.
   // It used to be looked up in the list on screen, which collapsed back to the
@@ -680,6 +718,18 @@ export default function ProductDrawer({
    * The rail and the pane both swap to the new product. Nothing drills and
    * nothing has to be undone.
    */
+  /**
+   * Tapping a chip selects that category's FIRST product, so the pane is never
+   * empty and the next tap is a quantity. It clears nothing: quantities are
+   * keyed by member and every member keeps its own, exactly as switching a
+   * product or an option does everywhere else in this drawer.
+   */
+  function selectCategory(name: string): void {
+    if (name === activeCategory) return;
+    const first = members.find((m) => m.category === name);
+    if (first) { setMemberSap(first.sap); setQuery(""); }
+  }
+
   function selectMember(sap: string): void {
     if (sap === cur.sap) return;
     if (!members.some((x) => x.sap === sap)) return;
@@ -722,6 +772,13 @@ export default function ProductDrawer({
   /** Units on ONE option of ONE member, for the badge on its option tile. */
   function unitsOn(member: string, option: string): number {
     return unitsIn(matrix[member]?.[option] ?? {});
+  }
+
+  /** Units on a whole CATEGORY — the chip badge. Sums its products. */
+  function unitsInCategory(name: string): number {
+    let total = 0;
+    for (const m of members) if (m.category === name) total += unitsOnMember(m.sap);
+    return total;
   }
 
   /** Units on a WHOLE member, summed across its options — the member badge. */
@@ -910,6 +967,41 @@ export default function ProductDrawer({
             rule is that the PAGE must never drag sideways at 390px, and it does
             not: this is a contained scroller with its own bounds, the way a
             carousel is. Sixteen products cannot wrap and must not be cut. */}
+        {/* ── THE CATEGORY CHIPS ─────────────────────────────────────────
+            🔴 A ROW OF WORDS, NOT A ROW OF TILES. A category is not a product
+            and must not be dressed as one: a 56px square on a family wash would
+            say "here is a tin of Sealer", and there is no such tin. It is a
+            filter, so it gets a filter's shape — a segmented pill, 44px tall to
+            clear CLAUDE_UI §60's tap floor, on the same FILL ground and between
+            the same two rules the product strip uses, so the ZONE reads the
+            same even though its contents do not.
+
+            The badge counts the whole category, so a man who has put six of
+            something under "Other" can see it without opening the chip. */}
+        {layout === "category-products" && (
+          <div
+            className="shrink-0 overflow-x-auto"
+            style={{
+              WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
+              background: FILL,
+              borderTop: `1px solid ${RULE}`,
+              borderBottom: `1px solid ${RULE}`,
+            }}
+          >
+            <div className="flex px-4 py-2" style={{ gap: 8 }}>
+              {categories.map((c) => (
+                <CategoryChip
+                  key={c}
+                  label={c}
+                  selected={c === activeCategory}
+                  carrying={unitsInCategory(c)}
+                  onSelect={() => selectCategory(c)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {layout === "strip-products" && (
           <div
             className="shrink-0 overflow-x-auto"
@@ -1122,6 +1214,50 @@ export default function ProductDrawer({
 }
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
+
+/**
+ * ONE CATEGORY CHIP — a word, a count, and a state. Deliberately NOT a BigTile.
+ *
+ * A category has no photograph and never will, so giving it the product tile's
+ * 60px square would be an empty frame promising art that cannot arrive. It is
+ * the same object as the Base/Shade toggle one level up — a filter over the
+ * rail — so it is drawn like one: a pill, violet when it is the open category,
+ * 44px tall for CLAUDE_UI §60.
+ */
+function CategoryChip({ label, selected, carrying, onSelect }: {
+  label: string; selected: boolean; carrying: number; onSelect: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={carrying > 0 ? `${label}, ${carrying} units` : label}
+      onClick={onSelect}
+      className="flex h-11 shrink-0 items-center gap-2 rounded-full px-4 text-[14px]"
+      style={{
+        background: selected ? VIOLET : "#FFFFFF",
+        color: selected ? "#FFFFFF" : INK,
+        fontWeight: selected ? 700 : 500,
+        border: selected ? "none" : `1px solid ${RULE}`,
+      }}
+    >
+      {label}
+      {carrying > 0 && (
+        <span
+          className="flex items-center justify-center rounded-full text-[10px] font-extrabold"
+          style={{
+            minWidth: 18, height: 18, padding: "0 5px",
+            background: selected ? "rgba(255,255,255,.25)" : VIOLET,
+            color: "#FFFFFF",
+          }}
+        >
+          {carrying}
+        </span>
+      )}
+    </button>
+  );
+}
+
 
 /**
  * One half of the group toggle. A segmented control, not two tabs: it swaps the
