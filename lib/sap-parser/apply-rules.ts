@@ -17,6 +17,9 @@
 //        remain as separate lines.
 // - J.3  Item ≤ 0 → drop + warning.
 // - J.4  Material empty → drop + warning.
+// - P.   Parent item superseded by its batch sub-items → drop + VISIBLE skip
+//        reason. Runs after rule 1 so the ordinary zeroed parent still takes
+//        the cheap path and keeps its silent drop.
 // - J.7  Unknown item category → include line, log actionable warning.
 // - ZINR rows → emit `zinr-article-tag-pending` breadcrumb.
 // - D.3  No surviving lines → delivery skipped with reason "no-valid-lines"
@@ -29,6 +32,15 @@ import {
   SkippedRow,
   Warning,
 } from "./types";
+
+/**
+ * SAP numbers batch sub-items from 900000 up; the parent delivery item it was
+ * split from keeps its own low number (10, 20, 30 …). A row at or above this
+ * floor is therefore a batch sub-item, and its parent carries no stock of its
+ * own. Deliveries that were never batch-split keep all their stock on the low
+ * numbers — see rule P below, which is careful never to touch those.
+ */
+const BATCH_SUB_ITEM_FLOOR = 900000;
 
 export interface LineInterim {
   /** SAP item number from col 12 — becomes ObdLineInput.lineId. */
@@ -74,10 +86,21 @@ export function applyRules(groups: GroupedDelivery[]): AppliedRulesResult {
       continue;
     }
 
+    // PRE-PASS for rule P — collect the SKUs in this delivery that already
+    // have a batch sub-item row. Built in full BEFORE the filter loop below
+    // so nothing is mutated while iterating, and so a parent is judged
+    // against every sub-item in the delivery regardless of row order.
+    const skusWithBatchSubItems = new Set<string>();
+    for (const r of g.rows) {
+      if (r.item >= BATCH_SUB_ITEM_FLOOR && r.material) {
+        skusWithBatchSubItems.add(r.material);
+      }
+    }
+
     // STEP 1 — Filter rows: drop non-LF (skip + record), drop ZZRE (warn),
     // drop qty=0/null (silent), drop non-positive item (warn), drop missing
-    // material (warn). Per-row category warnings (unknown-item-category,
-    // ZINR breadcrumb) emitted here too.
+    // material (warn), drop superseded parents (skip + record, rule P). Per-row
+    // category warnings (unknown-item-category, ZINR breadcrumb) emitted here too.
     const usableRows: RawSapRow[] = [];
     for (const r of g.rows) {
       // Row-level LF filter — broaden the existing delivery-level skip
@@ -125,6 +148,33 @@ export function applyRules(groups: GroupedDelivery[]): AppliedRulesResult {
           delivery:   g.delivery,
           kind:       "missing-material",
           message:    `row ${r.rowNumber} (item ${r.item}) has no Material; dropping`,
+          rowNumbers: [r.rowNumber],
+        });
+        continue;
+      }
+
+      // Rule P — parent item superseded by its batch sub-items. When SAP
+      // batch-splits a delivery item it moves the stock onto sub-items
+      // numbered from BATCH_SUB_ITEM_FLOOR up and normally zeroes the parent,
+      // so rule 1 above drops it silently. On 2026-09-07 12:54 it did not:
+      // OBD 9109269668 arrived with parent item 10 still carrying the 26 units
+      // that sub-item 900028 also carried, and the pipeline stored the stock
+      // twice (54+26+26 against a true 80).
+      //
+      // Scope is deliberately narrow. A low-numbered row is dropped ONLY when
+      // the SAME delivery carries a sub-item row for the SAME SKU — a delivery
+      // that was never batch-split keeps every unit on items 10/20/30 and is
+      // untouched. `skuCodeRaw` is compared exactly as read: Material codes are
+      // case-sensitive SAP identifiers, so no trim beyond the cell coercer and
+      // no case folding.
+      //
+      // Unlike the qty=0 drop this one is NOT silent. It is rare — 3 events in
+      // 4 months — and silence is precisely how it went unnoticed, so it lands
+      // in `skipped[]` where the preview and the batch record both show it.
+      if (r.item < BATCH_SUB_ITEM_FLOOR && skusWithBatchSubItems.has(r.material)) {
+        skipped.push({
+          delivery:   g.delivery,
+          reason:     "parent item superseded by batch sub-items",
           rowNumbers: [r.rowNumber],
         });
         continue;

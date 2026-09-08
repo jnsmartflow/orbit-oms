@@ -38,7 +38,12 @@ export interface ParseResult {
 
 export interface SkippedRow {
   delivery:   string;
-  reason:     "non-LF return" | "all-lines-ZZRE" | "no-valid-lines" | "non-LF row";
+  reason:
+    | "non-LF return"
+    | "all-lines-ZZRE"
+    | "no-valid-lines"
+    | "non-LF row"
+    | "parent item superseded by batch sub-items";
   rowNumbers: number[];
 }
 
