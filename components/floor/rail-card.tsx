@@ -27,6 +27,11 @@
 //
 //  - Hold → /api/floor/actions "hold" (dispatchStatus 'hold' + heldAt).
 //    ✕ → /api/floor/actions "cancel" (workflowStage 'cancelled'). Wired Step 5.
+//  - Hold and ✕ are DISABLED (visible, greyed, with a hover reason) on a bill
+//    with an OPEN tint job — tint_assignments 'assigned' / 'tinting_in_progress'
+//    / 'paused'. Cancelling one of those stranded the assignment row and jammed
+//    the operator's machine; see the tintLocked block below for the three live
+//    incidents and for why the predicate is the TINT state and not `!releasable`.
 //  - A bill is releasable only at pending_support (a non-tint bill, or a tint
 //    bill whose shades are all done). On a mid-tint bill the picker is DIMMED
 //    (disabled) — that IS the dimmed state; there is no separate greyed button.
@@ -111,6 +116,37 @@ export function RailCard({
 }) {
   const releasable = card.workflowStage === "pending_support";
   const dropletReady = card.tint?.stage === "ready";
+
+  // ── TINT LOCK (2026-09-08) ──────────────────────────────────────────────
+  // Hold and ✕ acted on the order row only and never looked at the tint side.
+  // Three live incidents, all repaired by hand in SQL: a bill cancelled while
+  // ASSIGNED came back at pending_support (Restore's one stage) and Release then
+  // pushed it to pending_picking — jumping the tint stage and vanishing from
+  // Tint Manager; and a bill cancelled NINE MINUTES after Start left
+  // tint_assignments at 'tinting_in_progress' while the job disappeared from the
+  // operator's queue, so he could neither finish it nor start anything else —
+  // the start-guard then blocked every new job on an invisible one.
+  //
+  // The predicate is the TINT state, deliberately NOT `!releasable`. Those are
+  // different questions: `!releasable` is true for ANY rail bill short of
+  // pending_support, including a non-tint bill at order_created and a tint bill
+  // at pending_tint_assignment — where nobody is holding paint and Hold is the
+  // legitimate thing to do. `stage` covers all three OPEN assignment statuses:
+  // 'assigned' → "assigned", and BOTH 'tinting_in_progress' and 'paused' →
+  // "mixing", because pause/resume write the assignment row only and leave
+  // orders.workflowStage at 'tinting_in_progress' (CLAUDE_TINT §5).
+  //
+  // "waiting" and "ready" stay UNLOCKED on purpose: nothing is on the mixer at
+  // pending_tint_assignment, and at "ready" the tinting is finished and the
+  // floor SHOULD be able to hold or cancel.
+  const tintLocked =
+    card.tint !== null && (card.tint.stage === "assigned" || card.tint.stage === "mixing");
+  // undefined when unlocked, so the wrapper renders no title attribute at all.
+  const tintLockReason = !tintLocked
+    ? undefined
+    : card.tint?.stage === "mixing"
+      ? "Tinting in progress — cancel from Tint Manager"
+      : "Assigned to a tint operator — cancel from Tint Manager";
 
   // Gen counter that opens the shared picker programmatically — same mechanism
   // the assign bar and detail panel use. Bumped by the caret, and by a body tap
@@ -363,30 +399,50 @@ export function RailCard({
             a white-filled button would read as the card's primary action, and
             the teal Release split button next to them must stay the loudest
             thing on the row (UI §10, one teal per surface). */}
-        <button
-          type="button"
-          title="Hold — remove from decisions to the hold list"
-          onClick={() => onHold(card.orderId)}
-          className={
-            "h-[30px] rounded-md border px-2.5 text-[11px] " +
-            "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-          }
-         
-        >
-          Hold
-        </button>
-        <button
-          type="button"
-          title="Cancel this bill"
-          onClick={() => onCancel(card.orderId)}
-          className={
-            "h-[30px] rounded-md border px-2.5 text-[11px] " +
-            "border-gray-200 bg-white text-gray-500 hover:border-red-200 hover:text-red-600"
-          }
-         
-        >
-          &#10005;
-        </button>
+        {/* The reason lives on a SPAN WRAPPER, not on the button: a disabled
+            button generates no mouse events in Chrome, so its own `title` never
+            appears — and a reason the operator cannot read is worth nothing. The
+            span is inline-flex, so it shrink-wraps the button and the row keeps
+            its exact geometry. No tooltip component: components/ui/tooltip.tsx is
+            hover-only with no touch fallback (CLAUDE_TINT §14), and the depot is
+            desktop. The disabled styling is the picker trigger's OWN fragment,
+            "opacity-40 cursor-not-allowed" (dispatch-slot-picker.tsx:235), reused
+            verbatim so a blocked action reads the same on both controls. Neutral
+            only — a blocked action on the rail is a "not yet", not an error
+            (CLAUDE_FLOOR §8), which is also why the ✕ drops its red hover arms
+            when locked: a dead button must not paint red under the cursor. */}
+        <span className="inline-flex" title={tintLockReason}>
+          <button
+            type="button"
+            disabled={tintLocked}
+            title={tintLocked ? undefined : "Hold — remove from decisions to the hold list"}
+            onClick={() => onHold(card.orderId)}
+            className={
+              "h-[30px] rounded-md border px-2.5 text-[11px] " +
+              "border-gray-200 bg-white text-gray-500 " +
+              (tintLocked ? "opacity-40 cursor-not-allowed" : "hover:border-gray-300")
+            }
+          >
+            Hold
+          </button>
+        </span>
+        <span className="inline-flex" title={tintLockReason}>
+          <button
+            type="button"
+            disabled={tintLocked}
+            title={tintLocked ? undefined : "Cancel this bill"}
+            onClick={() => onCancel(card.orderId)}
+            className={
+              "h-[30px] rounded-md border px-2.5 text-[11px] " +
+              "border-gray-200 bg-white text-gray-500 " +
+              (tintLocked
+                ? "opacity-40 cursor-not-allowed"
+                : "hover:border-red-200 hover:text-red-600")
+            }
+          >
+            &#10005;
+          </button>
+        </span>
       </div>
 
       {/* "Why no slot?" — its own line, so the action row keeps its three-controls

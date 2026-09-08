@@ -375,12 +375,42 @@ function PanelBody({
   const canReassign = source === "floor" && !d.isDone && !d.isChecked;
   const railReleasable = source === "rail" && d.workflowStage === "pending_support";
 
+  // ── TINT LOCK (2026-09-08) ──────────────────────────────────────────────
+  // The SAME lock rail-card.tsx puts on its Hold / ✕ pair — this menu was the
+  // same hole one click away, since the panel opens straight off a rail card.
+  // Read the block above `tintLocked` in rail-card.tsx for the three live
+  // incidents; only the SOURCE of the state differs.
+  //
+  // The card reads TintState.stage, which getFloorRail derives from
+  // orders.workflowStage (lib/floor/queries.ts:531). This payload has no
+  // TintState, so it derives the same answer from the same underlying facts,
+  // which it already carries: `workflowStage` and `isTint`
+  // (app/api/floor/order/[orderId]/route.ts:142/150). NO new API field — the two
+  // stages below are exactly the ones queries.ts maps to "assigned" and "mixing",
+  // and 'paused' folds into 'tinting_in_progress' here for the same reason it
+  // does there: pause/resume write the assignment row only and never the order's
+  // stage (CLAUDE_TINT §5).
+  //
+  // RAIL ONLY, deliberately. A floor-sourced bill is past tinting, and the
+  // "hold" source's Cancel (below) and Unassign are untouched.
+  const tintLocked =
+    source === "rail" &&
+    d.isTint &&
+    (d.workflowStage === "tint_assigned" || d.workflowStage === "tinting_in_progress");
+  const tintLockReason = !tintLocked
+    ? undefined
+    : d.workflowStage === "tinting_in_progress"
+      ? "Tinting in progress — cancel from Tint Manager"
+      : "Assigned to a tint operator — cancel from Tint Manager";
+
   // Overflow (⋯) actions per source — only the ones with real routes.
-  const overflow: Array<{ label: string; danger?: boolean; fn: () => Promise<void> }> = [];
+  // `disabledReason` set ⇒ the item renders visible but greyed and inert, with
+  // the reason on a span wrapper (a disabled button shows no title of its own).
+  const overflow: Array<{ label: string; danger?: boolean; disabledReason?: string; fn: () => Promise<void> }> = [];
   if (source === "floor" && d.isAssigned) overflow.push({ label: "Unassign", fn: () => actions.onUnassign(d.orderId) });
   if (source === "floor" || source === "rail") {
-    overflow.push({ label: "Hold", fn: () => actions.onHold(d.orderId) });
-    overflow.push({ label: "Cancel", danger: true, fn: () => actions.onCancel(d.orderId) });
+    overflow.push({ label: "Hold", disabledReason: tintLockReason, fn: () => actions.onHold(d.orderId) });
+    overflow.push({ label: "Cancel", danger: true, disabledReason: tintLockReason, fn: () => actions.onCancel(d.orderId) });
   }
   if (source === "hold") overflow.push({ label: "Cancel", danger: true, fn: () => actions.onCancel(d.orderId) });
 
@@ -623,18 +653,32 @@ function PanelBody({
                   <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                   <div className="absolute right-0 z-20 mt-1 w-[150px] overflow-hidden rounded-[8px] border border-gray-200 bg-white shadow-lg">
                     {overflow.map((o) => (
-                      <button
-                        key={o.label}
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          void run(o.fn);
-                        }}
-                        className={`block w-full px-3 py-2 text-left text-[11.5px] hover:bg-gray-50 disabled:opacity-40 ${o.danger ? "text-red-600" : "text-gray-700"}`}
-                      >
-                        {o.label}
-                      </button>
+                      // The span carries the reason: a disabled button generates no
+                      // mouse events in Chrome, so its own title never shows. `block`
+                      // (not inline-flex as on the card) because these items are full
+                      // -width rows in a stacked menu, not flex children — same
+                      // wrapper trick, the menu's own geometry. A locked `danger` item
+                      // also drops its red: neutral only, a blocked action is a
+                      // "not yet", not an error (CLAUDE_FLOOR §8).
+                      <span key={o.label} className="block" title={o.disabledReason}>
+                        <button
+                          type="button"
+                          disabled={busy || o.disabledReason !== undefined}
+                          onClick={() => {
+                            setMenuOpen(false);
+                            void run(o.fn);
+                          }}
+                          className={`block w-full px-3 py-2 text-left text-[11.5px] hover:bg-gray-50 disabled:opacity-40 ${
+                            o.disabledReason !== undefined
+                              ? "cursor-not-allowed text-gray-700"
+                              : o.danger
+                                ? "text-red-600"
+                                : "text-gray-700"
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      </span>
                     ))}
                   </div>
                 </>
