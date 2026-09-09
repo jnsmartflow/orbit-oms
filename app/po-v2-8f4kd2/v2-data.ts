@@ -284,7 +284,7 @@ export const FAMILIES: readonly V2Family[] = [
       { label: "Cement SB",   sap: "CEMENT PRIMER SB", slug: "cement-sb" },
       { label: "Zinc Yellow", sap: "ZINC YELLOW METAL PRIMER", slug: "zinc-yellow" },
       { label: "Red Oxide",   sap: "RED OXIDE METAL PRIMER", slug: "red-oxide" },
-      { label: "Ext Acrylic", sap: "EXTERIOR ACRYLIC PRIMER", slug: "ext-acrylic" },
+      { label: "EAP",         sap: "EXTERIOR ACRYLIC PRIMER", slug: "ext-acrylic" },
     ],
   },
   {
@@ -292,7 +292,7 @@ export const FAMILIES: readonly V2Family[] = [
     tint: "#F6E8C8",
     tiles: [
       { label: "Acotone",        sap: "ACOTONE", slug: "acotone" },
-      { label: "Uni Stainer",    sap: "UNIVERSAL STAINER", slug: "uni-stainer" },
+      { label: "Universal Stainer", sap: "UNIVERSAL STAINER", slug: "uni-stainer" },
       { label: "Machine Tinter", sap: "MACHINE TINTER", slug: "machine-tinter" },
       { label: "GVA",            sap: "GVA", slug: "gva" },
     ],
@@ -1832,13 +1832,24 @@ export const BOARD: readonly V2BoardFamily[] = [
       // products, four tiles, nothing left over.
       { key: "EXTERIOR ACRYLIC PRIMER", label: "Primers", slug: "ext-acrylic",
         members: [
-          { sap: "EXTERIOR ACRYLIC PRIMER", label: "Ext Acrylic", slug: "product-exterior-acrylic-primer" },
+          // 🔴 MEMBER ORDER IS THE OWNER'S, 2026-09-09. EAP stays FIRST, which
+          // it has to: Scheme A makes the tile key members[0].sap, and this
+          // tile's key is EXTERIOR ACRYLIC PRIMER. Everything after it is a
+          // curation call over the 90-day ranking.
+          //
+          // ⚠ "EAP" IS THE LABEL AND THERE IS NO SECOND LINE. The owner asked
+          // for "Exterior Acrylic Primer" alongside it in the rail. V2Member
+          // has no description field and the drawer draws no secondary line
+          // per member — the NameBar above the packs shows the selected
+          // OPTION, not a product blurb. Adding one is a new UI element, so
+          // only the label changed here and the question is open.
+          { sap: "EXTERIOR ACRYLIC PRIMER", label: "EAP", slug: "product-exterior-acrylic-primer" },
+          { sap: "ALKALI BLOC PRIMER",      label: "Alkali Bloc", slug: "product-alkali-bloc-primer" },
+          { sap: "FARCO WHITE PRIMER",      label: "Farco White", slug: "product-farco-white-primer" },
           // 🔴 ONE PRODUCT, TWO MEMBERS, PINNED BY baseColour. The strings are
           // the catalog's own, case for case — see V2Member.option.
           { sap: "WOOD PRIMER",             label: "Wood White", option: "White" },
           { sap: "WOOD PRIMER",             label: "Wood Pink",  option: "PINK" },
-          { sap: "FARCO WHITE PRIMER",      label: "Farco White", slug: "product-farco-white-primer" },
-          { sap: "ALKALI BLOC PRIMER",      label: "Alkali Bloc", slug: "product-alkali-bloc-primer" },
           { sap: "CEMENT PRIMER WB",        label: "Cement WB" },
           { sap: "INTERIOR ACRYLIC PRIMER", label: "Int Acrylic" },
         ] },
@@ -1848,12 +1859,16 @@ export const BOARD: readonly V2BoardFamily[] = [
     name: "Stainer",
     tint: "#F6E8C8",
     tiles: [
-      { key: "ACOTONE", label: "Acotone", slug: "acotone",
-        members: [{ sap: "ACOTONE", label: "Acotone" }] },
-      { key: "UNIVERSAL STAINER", label: "Uni Stainer", slug: "uni-stainer",
-        members: [{ sap: "UNIVERSAL STAINER", label: "Uni Stainer" }] },
+      // 🔴 TILE ORDER IS THE OWNER'S, 2026-09-09 — Universal Stainer first,
+      // then Machine Tinter, then Acotone. It was Acotone-first from the
+      // original 90-day ranking; this is a curation call over that ranking and
+      // is meant to stay until he says otherwise. No key moved.
+      { key: "UNIVERSAL STAINER", label: "Universal Stainer", slug: "uni-stainer",
+        members: [{ sap: "UNIVERSAL STAINER", label: "Universal Stainer" }] },
       { key: "MACHINE TINTER", label: "Machine Tinter", slug: "machine-tinter",
         members: [{ sap: "MACHINE TINTER", label: "Machine Tinter" }] },
+      { key: "ACOTONE", label: "Acotone", slug: "acotone",
+        members: [{ sap: "ACOTONE", label: "Acotone" }] },
       { key: "GVA", label: "GVA", slug: "gva",
         members: [{ sap: "GVA", label: "GVA" }] },
     ],
@@ -1904,9 +1919,12 @@ export const BOARD: readonly V2BoardFamily[] = [
     tiles: [
       { key: "PU PRIME MATT", label: "PU Prime", slug: "prime-matt",
         members: [
+          // Matt, Gloss, Sealer — the owner's order, 2026-09-09, and the same
+          // three words in the same sequence on PU Prime, 2K PU and Luxurio so
+          // the thumb lands in the same place whichever range he is in.
           { sap: "PU PRIME MATT",   label: "Matt", slug: "product-pu-prime-matt" },
-          { sap: "PU PRIME SEALER", label: "Sealer" },
           { sap: "PU PRIME GLOSS",  label: "Gloss", slug: "product-pu-prime-gloss" },
+          { sap: "PU PRIME SEALER", label: "Sealer" },
         ] },
       // 🔴 2K PU THINNER AND 2K PU PRIMER SURFACER LEFT ON 2026-09-08. They are
       // system components, and the old argument for keeping them here was that
@@ -1931,9 +1949,10 @@ export const BOARD: readonly V2BoardFamily[] = [
       // products pin cleanly and do.
       { key: "LUXURIO MATT", label: "Luxurio", slug: "luxurio",
         members: [
+          // Matt, Gloss, Sealer — see PU Prime.
           { sap: "LUXURIO MATT",   label: "Matt" },
-          { sap: "LUXURIO SEALER", label: "Sealer" },
           { sap: "LUXURIO GLOSS",  label: "Gloss" },
+          { sap: "LUXURIO SEALER", label: "Sealer" },
         ] },
       // 🔴 THE FIRST CATEGORY TILE. See V2Member.category.
       //
@@ -2012,22 +2031,34 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "NC OPAQUE",             label: "NC Opaque",             category: "NC",
             option: "White" },
           // ── Melamine ───────────────────────────────────────────────────
-          { sap: "MELAMINE SEALER",       label: "Melamine Sealer",       category: "Melamine",
+          // Matt, Gloss, Sealer, Thinner — the owner's order, 2026-09-09, and
+          // the same finish sequence the three PU tiles now use.
+          { sap: "MELAMINE MATT",         label: "Melamine Matt",         category: "Melamine",
             option: "Clear" },
           { sap: "MELAMINE GLOSS",        label: "Melamine Gloss",        category: "Melamine",
             option: "Clear" },
-          { sap: "MELAMINE MATT",         label: "Melamine Matt",         category: "Melamine",
+          { sap: "MELAMINE SEALER",       label: "Melamine Sealer",       category: "Melamine",
             option: "Clear" },
           { sap: "MELAMINE THINNER",      label: "Melamine Thinner",      category: "Melamine" },
           // ── Other ── what is left, and it is genuinely miscellaneous ────
+          // The owner's order, 2026-09-09: Epoxy Insulator, Hardener, 1K PU,
+          // Synthetic Varnish, 2K PU. He named five and this category holds
+          // exactly five, so the mapping is 1:1 — "Hardener" is Epoxy
+          // Insulator Hardener, "1K PU" is 1K PU Gloss, and "2K PU" is 2K PU
+          // Primer Surfacer (the only 2K PU item in this category; the 2K PU
+          // TILE in Wood and 2K PU Thinner above are different things).
+          //
+          // ⚠ ORDER ONLY — the labels are unchanged. He listed these as a
+          // sequence, not as renames, and the RENAMES he did ask for named
+          // only Uni Stainer and Ext Acrylic.
           { sap: "EPOXY INSULATOR",       label: "Epoxy Insulator",       category: "Other" },
+          { sap: "EPOXY INSULATOR HARDENER", label: "Epoxy Insulator Hardener", category: "Other" },
           { sap: "1K PU GLOSS",           label: "1K PU Gloss",           category: "Other",
             option: "Clear" },
           { sap: "SYNTHETIC VARNISH",     label: "Synthetic Varnish",     category: "Other",
             option: "Clear" },
           { sap: "2K PU PRIMER SURFACER", label: "2K PU Primer Surfacer", category: "Other",
             option: "White" },
-          { sap: "EPOXY INSULATOR HARDENER", label: "Epoxy Insulator Hardener", category: "Other" },
         ] },
     ],
   },
