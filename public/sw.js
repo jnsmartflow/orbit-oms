@@ -29,7 +29,7 @@ self.addEventListener("push", (event) => {
     data = {};
   }
 
-  const title = data.title || "OrbitOMS";
+  const title = data.title || "Orbit";
   const body = data.body || "";
   // `tag` makes a repeat notification REPLACE the previous one (no stacking);
   // renotify:true still re-alerts the device when it does.

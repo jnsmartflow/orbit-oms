@@ -447,7 +447,7 @@ export default function TintSummaryDocument({
         <PaceChart pace={data.pace} />
         </>)}
 
-        <Foot left="OrbitOMS · Tint Manager Daily Report" page={1} gen={genFoot} />
+        <Foot left="Orbit · Tint Manager Daily Report" page={1} gen={genFoot} />
       </div>
 
       {/* ═══ PAGE 2 — Trend + operators + aging ═══ */}
@@ -488,7 +488,7 @@ export default function TintSummaryDocument({
         </div>
         </>)}
 
-        <Foot left="OrbitOMS · Tint Manager Daily Report" page={2} gen={genFoot} />
+        <Foot left="Orbit · Tint Manager Daily Report" page={2} gen={genFoot} />
       </div>
 
       {/* ═══ PAGE 3 — Two cuts + top customers ═══ */}
@@ -526,7 +526,7 @@ export default function TintSummaryDocument({
         </table>
         </>)}
 
-        <Foot left="OrbitOMS · Tint Manager Daily Report" page={3} gen={genFoot} />
+        <Foot left="Orbit · Tint Manager Daily Report" page={3} gen={genFoot} />
       </div>
 
       {/* ═══ PAGE 4 — Open + completed registers ═══ */}
@@ -579,7 +579,7 @@ export default function TintSummaryDocument({
         <div className="cap2">Done at = time the operator marked the OBD complete (IST).</div>
         </>)}
 
-        <Foot left="OrbitOMS · Tint Manager Daily Report · Surat Depot" page={4} gen={genFoot} />
+        <Foot left="Orbit · Tint Manager Daily Report · Surat Depot" page={4} gen={genFoot} />
       </div>
     </div>
   );

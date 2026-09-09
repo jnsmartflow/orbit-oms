@@ -46,7 +46,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   setVapidDetails(subject, publicKey, privateKey);
 
   const payload = JSON.stringify({
-    title: "OrbitOMS test",
+    title: "Orbit test",
     body: "Push is working",
     tag: "orbit-test",
     url: "/picking",

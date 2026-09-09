@@ -456,7 +456,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           onClick={() => setSwitcherOpen((o) => !o)}
           aria-expanded={switcherOpen}
           aria-haspopup="menu"
-          title={collapsed ? "Open OrbitOMS" : undefined}
+          title={collapsed ? "Open Orbit" : undefined}
           className={cn(
             "flex items-center rounded-lg border transition-colors",
             collapsed
@@ -470,7 +470,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           <Grid3x3 className={cn("shrink-0 text-brand-600", collapsed ? "h-[17px] w-[17px]" : "h-[15px] w-[15px]")} />
           {!collapsed && (
             <>
-              Open OrbitOMS
+              Open Orbit
               <ChevronRight className="ml-auto h-3.5 w-3.5 text-gray-400 shrink-0" />
             </>
           )}
@@ -532,7 +532,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
         </button>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit OMS</p>
+            <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit</p>
             <p className="text-[10px] text-gray-400 leading-tight">Admin Panel</p>
           </div>
         )}
@@ -594,7 +594,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           <span className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
             <OrbitWordmark height={11} className="text-white" />
           </span>
-          <span className="font-bold text-[14px] text-gray-900">Orbit OMS</span>
+          <span className="font-bold text-[14px] text-gray-900">Orbit</span>
         </div>
       </div>
 

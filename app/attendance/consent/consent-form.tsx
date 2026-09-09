@@ -59,14 +59,14 @@ export function ConsentForm({ consentVersion }: ConsentFormProps) {
           <OrbitWordmark height={12} className="text-white" />
         </div>
         <div>
-          <p className="text-[15px] font-bold text-gray-900 leading-tight">OrbitOMS</p>
+          <p className="text-[15px] font-bold text-gray-900 leading-tight">Orbit</p>
           <p className="text-[11px] text-gray-500 leading-tight">Privacy & Consent</p>
         </div>
       </header>
 
       {/* Lede */}
       <p className="text-[15px] text-gray-700 mb-5 leading-relaxed">
-        To check in, OrbitOMS captures a selfie and your location. Your data stays in India and is never shared.
+        To check in, Orbit captures a selfie and your location. Your data stays in India and is never shared.
       </p>
 
       {/* Three info cards */}
@@ -188,7 +188,7 @@ function DeclineDialog({
           Decline consent?
         </h3>
         <p className="text-[13px] text-gray-600 leading-relaxed mb-4">
-          Check-in is required to use OrbitOMS. Declining will sign you out.
+          Check-in is required to use Orbit. Declining will sign you out.
         </p>
         <div className="flex gap-2 justify-end">
           <button

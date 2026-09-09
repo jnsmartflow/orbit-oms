@@ -219,7 +219,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
         />
         {isExpanded && (
           <div className="min-w-0">
-            <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit OMS</p>
+            <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit</p>
             <p className="text-[10px] text-gray-400 leading-tight">{roleLabel}</p>
           </div>
         )}

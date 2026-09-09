@@ -278,7 +278,7 @@ export function PrintSheet({ detail, printedAt }: PrintSheetProps): React.JSX.El
       </div>
 
       <p className="mrn-sheet-foot mt-[18px] text-center text-[9px] text-[#9ca3af]">
-        OrbitOMS · JSW Dulux Surat Depot · printed {printedAt}
+        Orbit · JSW Dulux Surat Depot · printed {printedAt}
       </p>
     </div>
   );

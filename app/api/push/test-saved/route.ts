@@ -21,7 +21,7 @@ export async function POST(): Promise<NextResponse> {
   }
 
   const summary = await sendToUser(userId, {
-    title: "OrbitOMS test",
+    title: "Orbit test",
     body: "Saved-phone push is working",
     tag: "orbit-test",
     url: "/picking",

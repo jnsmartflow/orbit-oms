@@ -24,13 +24,13 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Orbit OMS",
+  title: "Orbit",
   description: "Depot Management Application",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "OrbitOMS",
+    title: "Orbit",
   },
   icons: {
     icon: [

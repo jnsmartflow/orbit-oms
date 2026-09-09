@@ -15,12 +15,12 @@ export const dynamic = "force-dynamic";
 // Next resolves metadata per route and a child segment overrides the parent
 // layout for the SAME fields, so /po links /po.webmanifest (start_url "/po")
 // and reads "Orbit PO" while every other route keeps the global /manifest.json
-// + "OrbitOMS" apple title from app/layout.tsx (which is NOT edited).
+// + "Orbit" apple title from app/layout.tsx (which is NOT edited).
 //
 // iOS A2HS uses the current page URL + these apple-mobile-web-app meta tags
 // for the standalone shell / title / icon (the manifest start_url/scope mainly
 // serve Android/Chrome) — so installing while on /po opens standalone as
-// "Orbit PO" with the universal OrbitOMS icon.
+// "Orbit PO" with the universal Orbit icon.
 export const metadata: Metadata = {
   manifest: "/po.webmanifest",
   appleWebApp: {

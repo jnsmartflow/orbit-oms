@@ -22,7 +22,7 @@ export default async function LoginPage() {
               <OrbitWordmark height={12} className="text-white" />
             </div>
             <span className="text-[22px] font-semibold text-gray-900 tracking-[-0.5px]">
-              OrbitOMS
+              Orbit
             </span>
           </div>
           <p className="text-[12.5px] text-gray-400 mt-1">One system. Zero chaos.</p>
@@ -35,7 +35,7 @@ export default async function LoginPage() {
 
         {/* Footer */}
         <p className="mt-6 text-center text-[11px] text-gray-400">
-          OrbitOMS · Internal Use Only
+          Orbit · Internal Use Only
         </p>
       </div>
     </main>

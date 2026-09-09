@@ -3115,7 +3115,7 @@ export function ReviewView({
 
             {/* ── Print Footer (only visible when printing) ── */}
             <div className="mo-print-footer">
-              OrbitOMS · JSW Dulux Surat Depot · Printed {new Date().toLocaleString("en-IN", {
+              Orbit · JSW Dulux Surat Depot · Printed {new Date().toLocaleString("en-IN", {
                 day: "2-digit", month: "short", year: "numeric",
                 hour: "2-digit", minute: "2-digit",
                 hour12: false, timeZone: "Asia/Kolkata",

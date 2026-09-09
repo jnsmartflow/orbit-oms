@@ -21,7 +21,7 @@ type BlockedReason = null | "denied" | "not-standalone" | "unsupported" | "save-
 
 const BLOCKED_COPY: Record<Exclude<BlockedReason, null>, string> = {
   denied: "Blocked in your phone settings.",
-  "not-standalone": "Add OrbitOMS to your home screen first.",
+  "not-standalone": "Add Orbit to your home screen first.",
   unsupported: "Not available on this browser.",
   "save-failed": "Couldn't turn on. Try again.",
 };

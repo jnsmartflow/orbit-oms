@@ -69,7 +69,7 @@ export default async function ReportsHubPage({ searchParams }: { searchParams: S
       <aside className="flex w-[208px] flex-shrink-0 flex-col border-r border-gray-200 bg-white py-4">
         <div className="border-b border-gray-100 px-4 pb-3">
           <Link href="/" className="text-[11px] text-gray-400 transition-colors hover:text-gray-600">
-            ← Orbit OMS
+            ← Orbit
           </Link>
           <div className="mt-1 text-[15px] font-bold text-gray-900">Reports</div>
         </div>

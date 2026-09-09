@@ -202,16 +202,16 @@ export function PushTestClient({ vapidPublicKey, initialSavedCount }: PushTestCl
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
           On iPhone, Web Push only works from the installed app. Tap the Share icon in
           Safari, choose <span className="font-semibold">Add to Home Screen</span>, then open
-          OrbitOMS from the new home-screen icon (not Safari) and return here.
+          Orbit from the new home-screen icon (not Safari) and return here.
         </div>
       )}
 
       {/* Permission denied recovery */}
       {permission === "denied" && (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
-          Notifications are blocked for OrbitOMS. Re-enable them in your phone settings
-          (iPhone: Settings → Notifications → OrbitOMS → Allow Notifications, or Settings →
-          Apps → OrbitOMS), then reopen this page. The button below cannot re-prompt while
+          Notifications are blocked for Orbit. Re-enable them in your phone settings
+          (iPhone: Settings → Notifications → Orbit → Allow Notifications, or Settings →
+          Apps → Orbit), then reopen this page. The button below cannot re-prompt while
           permission is denied.
         </div>
       )}
@@ -219,7 +219,7 @@ export function PushTestClient({ vapidPublicKey, initialSavedCount }: PushTestCl
       {/* Unsupported */}
       {!supported && (
         <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-[13px] text-gray-600">
-          This browser does not support the Push API. Use the installed OrbitOMS app.
+          This browser does not support the Push API. Use the installed Orbit app.
         </div>
       )}
 
