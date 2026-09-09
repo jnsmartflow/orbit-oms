@@ -3,9 +3,19 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
-export function LoginForm() {
+// The field is labelled "Username" per the rebrand spec, but it still accepts an
+// email OR a 10-digit mobile, and its id/name stays `email` — that is the auth
+// contract (CLAUDE_UI.md §12), not a display choice. type="text", never "email":
+// a digit-only mobile fails the browser's email validator.
+export function LoginForm({
+  greeting,
+  dateLabel,
+}: {
+  greeting: string;
+  dateLabel: string;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,7 +36,7 @@ export function LoginForm() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password.");
+        setError("Wrong username or password.");
         return;
       }
 
@@ -40,46 +50,69 @@ export function LoginForm() {
     }
   }
 
+  // Focus ring is brand-500 + rgba(139,92,246,.13). The error border is the only
+  // red on this page — the Sign in button never turns red.
+  const fieldClass = (bad: boolean) =>
+    `w-full rounded-[10px] border bg-white px-3.5 py-[11px] text-[14px] text-ink-700 placeholder-ink-400 outline-none transition-colors focus:border-brand-500 focus:ring-4 focus:ring-[rgba(139,92,246,0.13)] disabled:opacity-50 ${
+      bad ? "border-danger" : "border-ink-100"
+    }`;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-1.5">
-        <label htmlFor="email" className="block text-[13px] font-medium text-gray-700">
-          Email or Mobile Number
+    <form onSubmit={handleSubmit} noValidate>
+      <h1 className="text-[20px] font-bold tracking-[-0.02em] text-ink-900">
+        {greeting}
+      </h1>
+      <p className="mb-6 mt-1 text-[12.5px] text-ink-500">
+        Sign in to continue · {dateLabel}
+      </p>
+
+      <div className="mb-3">
+        <label
+          htmlFor="email"
+          className="mb-1.5 block text-[11px] font-semibold text-ink-600"
+        >
+          Username
         </label>
         <input
           id="email"
+          name="email"
           type="text"
-          placeholder="Enter email or 10-digit mobile"
+          placeholder="Email or 10-digit mobile"
           autoComplete="username"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={loading}
-          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[14px] text-gray-900 placeholder-gray-400 focus:border-brand-600 focus:outline-none disabled:opacity-50"
+          className={fieldClass(!!error)}
           style={{ WebkitBoxShadow: "0 0 0 1000px white inset" }}
         />
       </div>
 
-      <div className="space-y-1.5">
-        <label htmlFor="password" className="block text-[13px] font-medium text-gray-700">
+      <div className="mb-3">
+        <label
+          htmlFor="password"
+          className="mb-1.5 block text-[11px] font-semibold text-ink-600"
+        >
           Password
         </label>
         <div className="relative">
           <input
             id="password"
+            name="password"
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={loading}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 pr-10 text-[14px] text-gray-900 placeholder-gray-400 focus:border-brand-600 focus:outline-none disabled:opacity-50"
+            className={`${fieldClass(!!error)} pr-10`}
             style={{ WebkitBoxShadow: "0 0 0 1000px white inset" }}
           />
           <button
             type="button"
             onClick={() => setShowPassword((v) => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600"
+            aria-label={showPassword ? "Hide password" : "Show password"}
             tabIndex={-1}
           >
             {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -88,19 +121,24 @@ export function LoginForm() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
-          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-500" />
-          <p className="text-[13px] text-red-600">{error}</p>
-        </div>
+        <p role="alert" className="mb-1 text-[12px] font-medium text-danger-text">
+          {error}
+        </p>
       )}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-[10px] bg-brand-600 px-4 py-3 text-[13.5px] font-bold text-white transition-colors hover:bg-brand-700 disabled:opacity-60"
       >
+        {loading && <Loader2 size={15} className="animate-spin" />}
         {loading ? "Signing in…" : "Sign in"}
       </button>
+
+      <p className="mt-4 text-center text-[11.5px] text-ink-400">
+        Trouble signing in?{" "}
+        <span className="font-semibold text-brand-700">Ask the admin</span>
+      </p>
     </form>
   );
 }

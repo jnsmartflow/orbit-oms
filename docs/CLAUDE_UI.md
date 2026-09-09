@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.21 · September 2026 · updated 2026-09-08 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.22 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -305,9 +305,62 @@ ON: `bg-teal-600`. OFF: `bg-gray-300`. Sizes: 36×20px compact, 46×26px large.
 
 ## 12. Login page
 
-Page bg `bg-[#f9fafb]`, max-w-[340px]. Orbit logo + wordmark. No "Sign in" heading. Card `rounded-xl`. WebkitBoxShadow autofill override. Tagline: "One system. Zero chaos."
+**Rebuilt 2026-09-09 (rebrand step 5).** The centred card on `#f9fafb` is gone. The
+page is a split: brand panel left, white form right. Files: `app/login/page.tsx`,
+`app/login/login-form.tsx`, `app/login/login-rings.tsx`, plus one CSS block in
+`globals.css` marked "Login — orbit rings + entrance".
 
-Login field accepts email OR 10-digit mobile. Label "Email or Mobile Number". Input `type="text"` (not `email` — browser blocks digit-only). `autoComplete="username"`. Field `id`/`name` remains `email` (auth contract).
+| Item | What ships |
+|---|---|
+| Layout | `flex-col` on a phone, `md:flex-row` above. Panel `flex-[1.15]`, form side `flex-1`. |
+| Panel background | `#43168B` (`brand-900`) + `radial-gradient(82% 100% at 100% 100%, rgba(154,124,246,.55) 0%, rgba(124,58,237,.30) 34%, rgba(88,28,135,.12) 62%, rgba(67,22,139,0) 84%)` |
+| Rings | SVG layer, `absolute inset-0`, `z-1`, viewBox `0 0 705 683`, `preserveAspectRatio="xMaxYMax slice"`, centre `705,683`. Six guide circles + six travelling arcs at r = 175 / 300 / 445 / 610 / 800 / 1010. `aria-hidden` — decorative. |
+| Content | `z-3`. Wordmark white 66px (44/54 stepping down), 56×3 `brand-400` accent bar, tagline 24px/18px/15px `brand-200` with the last word white and `whitespace-nowrap`. |
+| Form | White, `max-w-[330px]`. Time-aware greeting + date. Focus `border-brand-500` + `ring-4 ring-[rgba(139,92,246,.13)]`. Sign in is the commit button, `bg-brand-600`, full width, spinner on click. |
+
+🔴 **The corner light is CSS on the panel element, never a gradient inside the rings
+SVG.** An SVG gradient is bounded by its viewBox and `slice` cuts it, which put a
+visible hard edge across the panel the first time this was built.
+
+🔴 **The outermost radius is 1010 and that number is load-bearing.** Because
+`preserveAspectRatio` is `slice`, the visible slab of the viewBox is never larger than
+705×683, so the furthest visible point from the ring centre is at most
+`√(705² + 683²) ≈ 982`. A smaller outer ring leaves arcs stopping in mid-air at a short
+viewport. Measured clearance: 92 units at a 809×900 panel, 181 at 809×500, 186 at a
+390×236 phone band.
+
+🔴 **Rotation is a CSS animation, not `<animateTransform>`.** SMIL cannot be switched
+off by a media query and `prefers-reduced-motion: reduce` has to leave the rings static.
+`transform-box: view-box` is what makes `transform-origin: 705px 683px` resolve in
+viewBox units on an SVG child. Every animated state has a resting base state that is
+already the finished one, so `animation: none` lands on the design and not on a
+half-drawn accent bar.
+
+**Greeting is computed on the SERVER in `Asia/Kolkata`** and passed down as a prop.
+Everyone who signs in is at the depot, a server value renders identically on both sides,
+and that avoids both a hydration mismatch and a one-frame flash of an empty heading.
+Morning before 12:00, afternoon to 16:59, evening from 17:00.
+
+**Tagline: "Taking efficiency into new orbit"** — one tagline across the product.
+It replaced "One system. Zero chaos.", which is retired and appears nowhere in shipping
+code.
+
+**Nothing public-facing goes on this page** — no version number, no depot name, no
+supplier name, no live figures.
+
+Login field accepts email OR 10-digit mobile. The label now reads **"Username"** (rebrand
+spec), with the affordance moved into the placeholder, "Email or 10-digit mobile". Input
+`type="text"` (not `email` — the browser blocks digit-only). `autoComplete="username"`.
+Field `id`/`name` remains `email` — that is the auth contract, not a display choice.
+
+**Tab order is username → password → Sign in.** The show/hide-password eye is
+`tabIndex={-1}` and stays out of it. The "Ask the admin" helper is `brand-700` text, not
+a link — there is no target to send anyone to.
+
+**The wrong-password border is the only red on the page.** The Sign in button never
+turns red.
+
+---
 
 ---
 
@@ -1590,4 +1643,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.20 · OrbitOMS · updated 2026-09-06 · No Schema stamp by design (see above) — **§6: the Tint Manager wiring row corrected for the 2026-09-06 board rebuild** (the operator segment pills and the card/table view toggle are both gone; `rightExtra` re-listed), plus an explicit note above the named exception that Tint Manager REMAINED a `<UniversalHeader />` consumer through that rebuild — `/floor` is still the only exception, and the count of live consumers is unchanged at 8. §57 re-pointed: the admin Hide OBD entry point is now the rail's pending-bill context strip, not a row menu. ⚠ **This footer had drifted two versions behind its own header** — footer v5.18 against header v5.19, the v5.19 pass having bumped only the header — so both now read v5.20. That is exactly the drift the "check the header AND the footer" rule exists to catch. Prior, v5.18 (final-pass 12b 2026-08-05): §55 line-number references replaced with file+symbol anchors.*
+*UI v5.22 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12 rewritten for the rebuilt login page** (rebrand step 5): the split violet panel, the rings layer and the three numbers that are load-bearing in it — the 1010 outer radius, the CSS-not-SMIL rotation, and the corner light living on the panel element rather than inside the SVG. The retired tagline "One system. Zero chaos." is recorded as retired and is gone from shipping code. ⚠ **The footer had drifted AGAIN** — the 2026-09-08 v5.21 pass bumped the header and left this line at v5.20, the same failure its own v5.20 note describes. Both ends now read v5.22; check both, every time. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*

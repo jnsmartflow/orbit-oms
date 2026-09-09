@@ -375,6 +375,46 @@ html, body { overscroll-behavior: none; }
 }
 .oa-btn-ghost:hover { background: #f7f8fa !important; }
 
+/* ── Login — orbit rings + entrance (rebrand step 5) ──────────────────────
+
+   The arcs turn about 705,683 — the login panel's own bottom-right corner, in
+   the rings SVG's viewBox units. `transform-box: view-box` is what makes a
+   transform-origin in those units mean anything on an SVG child.
+
+   These are CSS animations and not <animateTransform> ON PURPOSE: SMIL cannot
+   be switched off by a media query, and prefers-reduced-motion has to leave the
+   rings STATIC. Every animated state below therefore has a resting base state
+   that is already the finished one, so `animation: none` lands on the design
+   rather than on a half-drawn accent bar.
+   Login page only — nothing else in the app uses these classes. */
+
+.orbit-ring      { transform-box: view-box; transform-origin: 705px 683px; }
+.orbit-ring-cw   { animation: orbit-spin-cw  120s linear infinite; }
+.orbit-ring-ccw  { animation: orbit-spin-ccw 120s linear infinite; }
+
+@keyframes orbit-spin-cw  { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
+@keyframes orbit-spin-ccw { from { transform: rotate(360deg); } to { transform: rotate(0deg);   } }
+
+/* Wordmark and tagline rise in. Resting state is the arrived state. */
+.orbit-rise { animation: orbit-rise 0.85s cubic-bezier(0.16, 0.84, 0.44, 1) both; }
+@keyframes orbit-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Accent bar — 56×3, draws from zero width. Width lives on .orbit-accent so a
+   reduced-motion visitor gets the full bar and not a 0px sliver. */
+.orbit-accent { width: 56px; height: 3px; }
+.orbit-draw   { animation: orbit-draw 0.55s cubic-bezier(0.16, 0.84, 0.44, 1) 0.5s both; }
+@keyframes orbit-draw { from { width: 0; } to { width: 56px; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .orbit-ring-cw,
+  .orbit-ring-ccw,
+  .orbit-rise,
+  .orbit-draw { animation: none; }
+}
+
 /* ── Scrollbar hide utility ──────────────────────────────────────────────── */
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }
