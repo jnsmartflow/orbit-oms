@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<!--
+  /po Drafts+Sent  vs  /po-v2-8f4kd2 Drafts+Sent — side by side.
+  Built 2026-09-09. Static comparison page. No build step, no dev server.
+  Open by double-click.
+
+  SOURCES — every class string and every literal below was copied out of
+  these three files, not retyped from memory:
+    v1   app/po/po-page.tsx            Drafts card :2430  ·  Sent card :2627
+    v2   app/po-v2-8f4kd2/drafts-sent.tsx
+    v2   app/po-v2-8f4kd2/order-sheet.tsx   tokens + Chip + SectionLabel
+
+  🔴 TAILWIND IS NOT LOADED FROM A CDN, DELIBERATELY.
+  The depot PC may be offline, and a page that renders unstyled is worse
+  than no page at all when the whole point is comparing type. The Tailwind
+  CLASS STRINGS stay on the elements verbatim so you are reading the real
+  ones; the <style> block below implements exactly those classes by hand,
+  one declaration per class, nothing invented. If a rule below disagrees
+  with Tailwind's own output that is a bug in this file — say so.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drafts &amp; Sent — v1 vs v2</title>
+
+<!-- Best effort only. Offline this falls back to the system stack and the
+     letterforms will not match the phone. Listed in NOT FAITHFUL below. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   PAGE CHROME — this file's own furniture. Nothing here is from the app.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --pj: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --jb: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#eceaf1;font-family:var(--pj);color:#1B1826;padding:24px}
+h1.page{font-size:22px;font-weight:700;margin:0 0 4px}
+p.page{font-size:13px;color:#5b5870;margin:0 0 20px;max-width:860px;line-height:1.55}
+.warn{border:1px solid #f0c98a;background:#fffbeb;border-radius:12px;padding:14px 16px;margin:0 0 24px;max-width:860px}
+.warn h2{font-size:13px;font-weight:700;color:#B45309;margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em}
+.warn ol{margin:0;padding-left:20px;font-size:13px;line-height:1.65;color:#5b4413}
+.warn code{font-family:var(--jb);font-size:12px;background:#fff4dc;padding:1px 4px;border-radius:3px}
+.cols{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.col{width:390px;flex:0 0 390px}
+.colhead{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#5b5870;margin:0 0 8px}
+.colhead span{font-family:var(--jb);font-weight:400;letter-spacing:0;text-transform:none;color:#8b88a0}
+.phone{border:1px solid #d6d3e0;border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(17,24,39,.10)}
+.marker{position:relative}
+.marker::before{content:attr(data-n);position:absolute;left:-11px;top:6px;z-index:5;
+  width:20px;height:20px;border-radius:50%;background:#6D28D9;color:#fff;
+  font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  font-family:var(--pj)}
+table.ann{border-collapse:collapse;width:100%;max-width:1180px;margin-top:34px;font-size:13px}
+table.ann th,table.ann td{border:1px solid #d6d3e0;padding:8px 10px;text-align:left;vertical-align:top;line-height:1.5}
+table.ann th{background:#e3e0ea;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+table.ann td.n{text-align:center;font-weight:700;width:34px}
+table.ann code{font-family:var(--jb);font-size:11.5px}
+.shared{color:#B45309;font-weight:700}
+.local{color:#15803d;font-weight:700}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TAILWIND CLASSES USED BY THE TWO COLUMNS.
+   One rule per class, matching Tailwind's own output. Arbitrary values are
+   copied from the source files character for character.
+   ───────────────────────────────────────────────────────────────────────── */
+.flex{display:flex}
+.inline-flex{display:inline-flex}
+.block{display:block}
+.flex-col{flex-direction:column}
+.flex-wrap{flex-wrap:wrap}
+.items-start{align-items:flex-start}
+.items-center{align-items:center}
+.justify-between{justify-content:space-between}
+.justify-center{justify-content:center}
+.flex-1{flex:1 1 0%}
+.shrink-0{flex-shrink:0}
+.min-w-0{min-width:0}
+.w-full{width:100%}
+.relative{position:relative}
+.absolute{position:absolute}
+.sticky{position:sticky}
+.top-0{top:0}
+.z-10{z-index:10}
+.overflow-hidden{overflow:hidden}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.whitespace-nowrap{white-space:nowrap}
+.uppercase{text-transform:uppercase}
+.text-left{text-align:left}
+.leading-tight{line-height:1.25}
+.ml-auto{margin-left:auto}
+.h-11{height:44px}
+.w-11{width:44px}
+.h-4{height:16px}
+.w-4{width:16px}
+
+.gap-1{gap:4px}
+.gap-1\.5{gap:6px}
+.gap-3{gap:12px}
+.gap-\[6px\]{gap:6px}
+.gap-\[10px\]{gap:10px}
+
+.px-1{padding-left:4px;padding-right:4px}
+.px-2{padding-left:8px;padding-right:8px}
+.px-4{padding-left:16px;padding-right:16px}
+.py-3{padding-top:12px;padding-bottom:12px}
+.py-\[3px\]{padding-top:3px;padding-bottom:3px}
+.p-1{padding:4px}
+.-m-1{margin:-4px}
+.pt-6{padding-top:24px}
+.pb-2{padding-bottom:8px}
+.pt-5{padding-top:20px}
+.mb-2{margin-bottom:8px}
+.mt-\[3px\]{margin-top:3px}
+.mt-\[11px\]{margin-top:11px}
+
+.text-\[10px\]{font-size:10px}
+.text-\[11px\]{font-size:11px}
+.text-\[12px\]{font-size:12px}
+.text-\[15px\]{font-size:15px}
+.text-\[17px\]{font-size:17px}
+.text-\[20px\]{font-size:20px}
+.font-normal{font-weight:400}
+.font-medium{font-weight:500}
+.font-semibold{font-weight:600}
+.font-bold{font-weight:700}
+.font-mono{font-family:var(--jb)}
+.tracking-wide{letter-spacing:.025em}
+.rounded-\[6px\]{border-radius:6px}
+.rounded-\[14px\]{border-radius:14px}
+.bg-white{background:#fff}
+.text-\[\#1d2939\]{color:#1d2939}
+.text-\[\#9ca3af\]{color:#9ca3af}
+.text-\[\#98a2b3\]{color:#98a2b3}
+.min-h-screen{min-height:520px}   /* trimmed for the mock; the app uses 100vh */
+
+/* Interaction-only classes. Present on the elements for fidelity of the
+   STRING, inert here — see NOT FAITHFUL. */
+.active\:opacity-70,.active\:text-red-500{}
+</style>
+</head>
+<body>
+
+<h1 class="page">Drafts &amp; Sent — <code style="font-family:var(--jb);font-size:18px">/po</code> vs <code style="font-family:var(--jb);font-size:18px">/po-v2-8f4kd2</code></h1>
+<p class="page">
+  Same three orders, rendered by each page's own rules. Only the styling differs.
+  Numbers in the violet circles match the annotation table at the bottom.
+</p>
+
+<div class="warn">
+  <h2>Not faithful — read before deciding anything from this page</h2>
+  <ol>
+    <li><b>Typeface, if this machine is offline.</b> The app loads Plus Jakarta Sans and
+        JetBrains Mono through <code>next/font</code>. This page asks Google Fonts for
+        them. With no network it falls back to the system sans and the letterforms,
+        and therefore the apparent width of every line, will be wrong. Sizes and
+        weights are still right.</li>
+    <li><b>Tailwind is hand-implemented, not loaded.</b> The class strings on the
+        elements are verbatim from the source; the rules that render them are written
+        out in this file's <code>&lt;style&gt;</code> block. A mismatch between the two
+        would be a bug in this file.</li>
+    <li><b>No interaction.</b> <code>active:opacity-70</code> and
+        <code>active:text-red-500</code> (v1) are present as strings but inert. Nothing
+        here responds to a tap, and v2's 44px delete target cannot be felt.</li>
+    <li><b>v1's icons are lucide-react</b> (<code>Zap</code>, <code>Trash2</code>).
+        Their real path data is inlined, but lucide renders through a React component
+        with its own default attributes; a hair of stroke rendering may differ.</li>
+    <li><b>Card 2's name truncation depends on the font.</b> Where the ellipsis lands is
+        the one thing on this page most likely to be wrong offline.</li>
+    <li><b>v2's live "In progress" card is not shown.</b> It has a violet left edge and
+        no delete icon, and only ever appears on Drafts. Out of scope for a
+        like-for-like comparison; it has no v1 counterpart.</li>
+    <li><b>Screen height is trimmed.</b> <code>min-h-screen</code> is 520px here so both
+        columns fit on one page. Nothing about spacing inside a card is affected.</li>
+    <li><b>The count chip does not mean the same thing in both columns</b> — see row 4.
+        This is a real difference in the code, not an artefact of the mock.</li>
+  </ol>
+</div>
+
+<div class="cols">
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     COLUMN 1 — v1 /po
+     Source: app/po/po-page.tsx
+       page background  bg-[#f9fafb]                        :2223
+       Drafts screen    <div className="px-4 pt-6">          :2418
+       heading          text-[11px] font-semibold text-[#98a2b3] uppercase tracking-wide mb-2 px-1
+       list             flex flex-col gap-[10px]             :2429
+       card             bg-white rounded-[14px]
+                        + boxShadow ENRICHED_ROW_SHADOW      :219
+                        + padding "13px 14px"                :2437
+       CHIP_CLASS       inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]   :230
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="col">
+  <div class="colhead">v1 <span>/po</span></div>
+  <div class="phone" style="background:#f9fafb">
+
+    <div class="px-4 pt-6">
+      <!-- 1 · section heading -->
+      <div class="marker" data-n="1" style="margin-left:11px">
+        <div class="text-[11px] font-semibold text-[#98a2b3] uppercase tracking-wide mb-2 px-1">
+          Saved Drafts
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-[10px]">
+
+        <!-- CARD 1 — short name, 1 bill, no remark -->
+        <div class="bg-white rounded-[14px]"
+             style="box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 4px 14px rgba(16,24,40,0.05); padding:13px 14px">
+          <div class="flex items-start justify-between gap-3">
+            <button type="button" class="flex-1 min-w-0 text-left active:opacity-70" style="background:none;border:0;padding:0;font:inherit;color:inherit">
+              <!-- 2 · dealer name -->
+              <p class="marker text-[15px] font-medium text-[#1d2939] truncate" data-n="2" style="margin:0">Ambika Paints</p>
+              <!-- 3 · code · area -->
+              <p class="marker text-[12px] font-normal text-[#9ca3af] truncate mt-[3px]" data-n="3" style="margin:0">447636 · Katargam</p>
+              <div class="flex flex-wrap items-center gap-[6px] mt-[11px]">
+                <!-- 4 · bills chip -->
+                <span class="marker inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]" data-n="4" style="background:#F5F3FF;color:#6D28D9">1 bill</span>
+                <!-- 5 · dispatch chip — Normal is GREEN and always shown -->
+                <span class="marker inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]" data-n="5" style="background:#f0fdf4;color:#15803d">Normal</span>
+                <span class="flex-1"></span>
+                <!-- 7 · timestamp -->
+                <span class="marker text-[11px] text-[#9ca3af] shrink-0" data-n="7">Today 09:14</span>
+              </div>
+            </button>
+            <!-- 9 · delete -->
+            <button type="button" aria-label="Delete draft" class="marker shrink-0 -m-1 p-1 active:text-red-500" data-n="9" style="color:#cbd5e1;background:none;border:0">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- CARD 2 — long name (truncates), 3 bills, dispatch + remark -->
+        <div class="bg-white rounded-[14px]"
+             style="box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 4px 14px rgba(16,24,40,0.05); padding:13px 14px">
+          <div class="flex items-start justify-between gap-3">
+            <button type="button" class="flex-1 min-w-0 text-left active:opacity-70" style="background:none;border:0;padding:0;font:inherit;color:inherit">
+              <p class="text-[15px] font-medium text-[#1d2939] truncate" style="margin:0">Shree Ganesh Hardware &amp; Paint Stores</p>
+              <p class="text-[12px] font-normal text-[#9ca3af] truncate mt-[3px]" style="margin:0">SU10241 · Adajan</p>
+              <div class="flex flex-wrap items-center gap-[6px] mt-[11px]">
+                <span class="inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]" style="background:#F5F3FF;color:#6D28D9">3 bills</span>
+                <span class="inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]" style="background:#fef3e2;color:#b45309">
+                  <svg class="w-[10px] h-[10px]" style="width:10px;height:10px" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+                  Urgent
+                </span>
+                <!-- 6 · remark chip — emoji + SHORT name, from MARKER_OPTIONS :288 -->
+                <span class="marker inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]" data-n="6" style="background:#f3f4f6;color:#6b7280">🚛 Truck</span>
+                <span class="flex-1"></span>
+                <span class="text-[11px] text-[#9ca3af] shrink-0">Today 11:02</span>
+              </div>
+            </button>
+            <button type="button" aria-label="Delete draft" class="shrink-0 -m-1 p-1 active:text-red-500" style="color:#cbd5e1;background:none;border:0">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sent section — same shape as Drafts (po-page.tsx :2610) -->
+      <div class="text-[11px] font-semibold text-[#98a2b3] uppercase tracking-wide mb-2 px-1" style="margin-top:24px">
+        Sent
+      </div>
+      <div class="flex flex-col gap-[10px]" style="padding-bottom:20px">
+        <!-- CARD 3 — Sent, with a timestamp. v1 Sent KEEPS its delete icon. -->
+        <div class="bg-white rounded-[14px]"
+             style="box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 4px 14px rgba(16,24,40,0.05); padding:13px 14px">
+          <div class="flex items-start justify-between gap-3">
+            <button type="button" class="flex-1 min-w-0 text-left active:opacity-70" style="background:none;border:0;padding:0;font:inherit;color:inherit">
+              <p class="text-[15px] font-medium text-[#1d2939] truncate" style="margin:0">Maruti Hardware</p>
+              <p class="text-[12px] font-normal text-[#9ca3af] truncate mt-[3px]" style="margin:0">SU10088 · Varachha</p>
+              <div class="flex flex-wrap items-center gap-[6px] mt-[11px]">
+                <span class="inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]" style="background:#F5F3FF;color:#6D28D9">2 bills</span>
+                <span class="inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]" style="background:#fef2f2;color:#dc2626">Call · SO</span>
+                <span class="flex-1"></span>
+                <span class="text-[11px] text-[#9ca3af] shrink-0">10:42</span>
+              </div>
+            </button>
+            <button type="button" aria-label="Delete sent order" class="shrink-0 -m-1 p-1 active:text-red-500" style="color:#cbd5e1;background:none;border:0">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     COLUMN 2 — v2 /po-v2-8f4kd2
+     Sources: drafts-sent.tsx + order-sheet.tsx tokens, resolved to literals:
+       LIST_BG    = FILL         #F4F3F8   v2-data.ts:36  (order-sheet.tsx:175)
+       SURFACE                   #FFFFFF   v2-data.ts:24
+       RULE                      #E9E7F0   v2-data.ts:27
+       INK                       #1B1826   v2-data.ts:31
+       MUTED                     #74718A   v2-data.ts:29
+       FAINT                     #9C99AC   v2-data.ts:28
+       VIOLET                    #6D28D9   v2-data.ts:21
+       ATTENTION                 #B45309   order-sheet.tsx:240
+       ATTENTION_BG              #FFFBEB   order-sheet.tsx:241
+       CARD_PAD   = 16                     order-sheet.tsx:207
+       CARD_RADIUS= 14                     order-sheet.tsx:192
+       CARD_EDGE  = 0 1px 2px rgba(27,24,38,.06)   order-sheet.tsx:191
+       cardFrame  = SURFACE / 14 / 1px RULE / CARD_EDGE   order-sheet.tsx:244
+       card geometry NAME_LH 22 · META_LH 16 · CHIP_H 26
+                     NAME_TO_CODE 6 · CODE_TO_CHIPS 12    drafts-sent.tsx:105
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="col">
+  <div class="colhead">v2 <span>/po-v2-8f4kd2</span></div>
+  <div class="phone" style="background:#F4F3F8">
+
+    <!-- 10 · screen title — v2 only. ListShell, drafts-sent.tsx :36 -->
+    <header class="marker sticky top-0 z-10 px-4 py-3" data-n="10" style="background:#FFFFFF;border-bottom:1px solid #E9E7F0">
+      <!-- T1 screen title — 20 / 700 / -.02em -->
+      <h1 class="text-[20px] font-bold leading-tight" style="color:#1B1826;letter-spacing:-0.02em;margin:0">Drafts</h1>
+    </header>
+
+    <!-- 1 · SectionLabel — T3, 10 / 700 / +.13em caps. order-sheet.tsx:532 -->
+    <h2 class="marker px-4 pb-2 pt-5 text-[10px] font-bold uppercase" data-n="1" style="color:#74718A;letter-spacing:.13em;margin:0">Saved</h2>
+
+    <!-- CARD 1 — short name, 1 line, no remark -->
+    <div class="px-4 pb-2">
+      <div class="relative" style="background:#FFFFFF;border-radius:14px;border:1px solid #E9E7F0;box-shadow:0 1px 2px rgba(27,24,38,.06)">
+        <button type="button" class="block w-full text-left" style="padding:16px;background:none;border:0;font:inherit;color:inherit">
+          <!-- 2 · T4 card title — 17 / 500 -->
+          <span class="marker block truncate text-[17px] font-medium" data-n="2" style="color:#1B1826;line-height:22px;padding-right:32px">Ambika Paints</span>
+          <!-- 3 · T5 card meta — 12 mono / MUTED -->
+          <span class="marker block truncate font-mono text-[12px]" data-n="3" style="color:#74718A;line-height:16px;margin-top:6px">447636 · Katargam</span>
+          <span class="flex items-center gap-1.5" style="margin-top:12px;height:26px">
+            <!-- 4 · T6 chip — count, ALWAYS FIRST. tone quiet = FILL / MUTED -->
+            <span class="marker inline-flex min-w-0 items-center gap-1 px-2 text-[12px] font-semibold" data-n="4" style="height:26px;border-radius:8px;background:#F4F3F8;color:#74718A">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M12 2.7 20.4 7.4v9.2L12 21.3 3.6 16.6V7.4z"/><path d="M3.6 7.4 12 12l8.4-4.6M12 12v9.3"/></svg>
+              <span class="truncate">1</span>
+            </span>
+            <!-- 5 · NO dispatch chip on Normal — v2 shows nothing here -->
+            <!-- 7 · timestamp — T5, mono -->
+            <span class="marker ml-auto shrink-0 whitespace-nowrap font-mono text-[12px]" data-n="7" style="color:#74718A">09:14</span>
+          </span>
+        </button>
+        <!-- 9 · delete — 44px target over the card's top-right corner -->
+        <button type="button" aria-label="Delete Ambika Paints" class="marker absolute flex h-11 w-11 items-center justify-center" data-n="9" style="top:1px;right:1px;color:#9C99AC;background:none;border:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M4.6 6.6h14.8"/><path d="M9.4 6.6V4.4h5.2v2.2"/><path d="M6.9 6.6l.9 13a1.4 1.4 0 0 0 1.4 1.3h5.6a1.4 1.4 0 0 0 1.4-1.3l.9-13"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- CARD 2 — long name (truncates), 3 lines, urgent + remark -->
+    <div class="px-4 pb-2">
+      <div class="relative" style="background:#FFFFFF;border-radius:14px;border:1px solid #E9E7F0;box-shadow:0 1px 2px rgba(27,24,38,.06)">
+        <button type="button" class="block w-full text-left" style="padding:16px;background:none;border:0;font:inherit;color:inherit">
+          <span class="block truncate text-[17px] font-medium" style="color:#1B1826;line-height:22px;padding-right:32px">Shree Ganesh Hardware &amp; Paint Stores</span>
+          <span class="block truncate font-mono text-[12px]" style="color:#74718A;line-height:16px;margin-top:6px">SU10241 · Adajan</span>
+          <span class="flex items-center gap-1.5" style="margin-top:12px;height:26px">
+            <span class="inline-flex min-w-0 items-center gap-1 px-2 text-[12px] font-semibold" style="height:26px;border-radius:8px;background:#F4F3F8;color:#74718A">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M12 2.7 20.4 7.4v9.2L12 21.3 3.6 16.6V7.4z"/><path d="M3.6 7.4 12 12l8.4-4.6M12 12v9.3"/></svg>
+              <span class="truncate">3</span>
+            </span>
+            <!-- tone "urgent" = ATTENTION_BG / ATTENTION — amber, never red -->
+            <span class="inline-flex min-w-0 items-center gap-1 px-2 text-[12px] font-semibold" style="height:26px;border-radius:8px;background:#FFFBEB;color:#B45309">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M13.6 2.5 5.2 13.3h5.5L10.4 21.5l8.4-10.8h-5.6z"/></svg>
+              <span class="truncate">Urgent</span>
+            </span>
+            <!-- 6 · remark chip — the marker word alone, no emoji -->
+            <span class="marker inline-flex min-w-0 items-center gap-1 px-2 text-[12px] font-semibold" data-n="6" style="height:26px;border-radius:8px;background:#F4F3F8;color:#74718A">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M9.4 5.4 3.9 10.9l5.5 5.5"/><path d="M3.9 10.9h9.4a6.2 6.2 0 0 1 6.2 6.2v1.5"/></svg>
+              <span class="truncate">Truck</span>
+            </span>
+            <span class="ml-auto shrink-0 whitespace-nowrap font-mono text-[12px]" style="color:#74718A">11:02</span>
+          </span>
+        </button>
+        <button type="button" aria-label="Delete Shree Ganesh Hardware &amp; Paint Stores" class="absolute flex h-11 w-11 items-center justify-center" style="top:1px;right:1px;color:#9C99AC;background:none;border:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M4.6 6.6h14.8"/><path d="M9.4 6.6V4.4h5.2v2.2"/><path d="M6.9 6.6l.9 13a1.4 1.4 0 0 0 1.4 1.3h5.6a1.4 1.4 0 0 0 1.4-1.3l.9-13"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sent section. v2's Sent groups by day and the heading IS the day. -->
+    <h2 class="px-4 pb-2 pt-5 text-[10px] font-bold uppercase" style="color:#74718A;letter-spacing:.13em;margin:0">Today</h2>
+    <div class="px-4 pb-2" style="padding-bottom:20px">
+      <!-- CARD 3 — Sent. NO delete icon on a v2 Sent card, by design. -->
+      <div class="relative" style="background:#FFFFFF;border-radius:14px;border:1px solid #E9E7F0;box-shadow:0 1px 2px rgba(27,24,38,.06)">
+        <button type="button" class="block w-full text-left" style="padding:16px;background:none;border:0;font:inherit;color:inherit">
+          <span class="block truncate text-[17px] font-medium" style="color:#1B1826;line-height:22px">Maruti Hardware</span>
+          <span class="block truncate font-mono text-[12px]" style="color:#74718A;line-height:16px;margin-top:6px">SU10088 · Varachha</span>
+          <span class="flex items-center gap-1.5" style="margin-top:12px;height:26px">
+            <span class="inline-flex min-w-0 items-center gap-1 px-2 text-[12px] font-semibold" style="height:26px;border-radius:8px;background:#F4F3F8;color:#74718A">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M12 2.7 20.4 7.4v9.2L12 21.3 3.6 16.6V7.4z"/><path d="M3.6 7.4 12 12l8.4-4.6M12 12v9.3"/></svg>
+              <span class="truncate">2</span>
+            </span>
+            <span class="inline-flex min-w-0 items-center gap-1 px-2 text-[12px] font-semibold" style="height:26px;border-radius:8px;background:#F4F3F8;color:#74718A">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M6.7 3.4h3.1l1.5 3.9-1.9 1.2a12.6 12.6 0 0 0 5.2 5.2l1.2-1.9 3.9 1.5v3.1a1.6 1.6 0 0 1-1.8 1.6A15.9 15.9 0 0 1 5.1 5.2a1.6 1.6 0 0 1 1.6-1.8z"/></svg>
+              <span class="truncate">Call · SO</span>
+            </span>
+            <span class="ml-auto shrink-0 whitespace-nowrap font-mono text-[12px]" style="color:#74718A">10:42</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div><!-- /cols -->
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     THE ANNOTATION TABLE
+     SHARED = changing it in drafts-sent.tsx also moves the ORDER DETAIL
+     screen, because the token or component is used there too.
+     ══════════════════════════════════════════════════════════════════════ -->
+<table class="ann">
+  <thead>
+    <tr>
+      <th>#</th><th>Element</th>
+      <th>v1 — size / weight / colour</th>
+      <th>v2 — size / weight / colour</th>
+      <th>Shared?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="n">1</td>
+      <td>Section heading</td>
+      <td>11px / 600 / <code>#98a2b3</code> · caps · <code>tracking-wide</code> (.025em)<br>text "Saved Drafts"</td>
+      <td>10px / 700 / <code>#74718A</code> · caps · .13em<br>text "Saved" — <code>SectionLabel</code></td>
+      <td><span class="shared">SHARED</span> — <code>SectionLabel</code> also draws "Order" and "N products" on the <b>order detail screen</b> (order-sheet.tsx:641, :667). Fork it before changing it.</td>
+    </tr>
+    <tr>
+      <td class="n">2</td>
+      <td>Dealer name</td>
+      <td>15px / 500 / <code>#1d2939</code> · truncate</td>
+      <td>17px / 500 / <code>#1B1826</code> · truncate · line-height 22px · 32px right gutter for the delete icon</td>
+      <td><span class="local">LOCAL</span> — inline classes in drafts-sent.tsx. The detail's title is a different role (T1, 20/700).</td>
+    </tr>
+    <tr>
+      <td class="n">3</td>
+      <td>Code · area</td>
+      <td>12px / 400 / <code>#9ca3af</code> · sans · margin-top 3px</td>
+      <td>12px / 400 / <code>#74718A</code> · <b>mono</b> · line-height 16px · margin-top 6px</td>
+      <td><span class="local">LOCAL</span> — inline in drafts-sent.tsx. The detail's own meta line is 11px mono (T2), a separate declaration.</td>
+    </tr>
+    <tr>
+      <td class="n">4</td>
+      <td>Count chip</td>
+      <td>11px / 500 · <code>#6D28D9</code> on <code>#F5F3FF</code> · radius 6 · no icon<br>text <b>"1 bill" / "3 bills"</b></td>
+      <td>12px / 600 · <code>#74718A</code> on <code>#F4F3F8</code> · radius 8 · height 26 · 13px box icon<br>text <b>"1" / "3"</b></td>
+      <td><span class="shared">SHARED</span> — the <code>Chip</code> component also draws the status chip on the <b>order detail screen</b> (order-sheet.tsx:635).<br>⚠ <b>Different meaning:</b> v1 counts BILLS, v2 counts LINES. Same order can read "1 bill" and "4".</td>
+    </tr>
+    <tr>
+      <td class="n">5</td>
+      <td>Dispatch chip</td>
+      <td>Always present. Normal green <code>#15803d</code> on <code>#f0fdf4</code>; Urgent <code>#b45309</code> on <code>#fef3e2</code> + bolt; Call <b>red</b> <code>#dc2626</code> on <code>#fef2f2</code></td>
+      <td>Absent on Normal. Urgent <code>#B45309</code> on <code>#FFFBEB</code> + bolt; Call quiet grey + handset icon</td>
+      <td><span class="shared">SHARED</span> — same <code>Chip</code> as row 4, and <code>dispatchLabel</code> also feeds the detail's Dispatch row (order-sheet.tsx:649).</td>
+    </tr>
+    <tr>
+      <td class="n">6</td>
+      <td>Remark chip</td>
+      <td>11px / 500 · <code>#6b7280</code> on <code>#f3f4f6</code><br>text <b>"🚛 Truck"</b> — emoji carries it</td>
+      <td>12px / 600 · quiet grey · 13px reply icon<br>text <b>"Truck"</b> — no emoji</td>
+      <td><span class="shared">SHARED</span> — same <code>Chip</code> component as rows 4 and 5.</td>
+    </tr>
+    <tr>
+      <td class="n">7</td>
+      <td>Timestamp</td>
+      <td>11px / 400 / <code>#9ca3af</code> · sans · pushed right by a <code>flex-1</code> spacer</td>
+      <td>12px / 400 / <code>#74718A</code> · <b>mono</b> · pushed right by <code>ml-auto</code></td>
+      <td><span class="local">LOCAL</span> — inline in drafts-sent.tsx.</td>
+    </tr>
+    <tr>
+      <td class="n">8</td>
+      <td>Card frame <i>(not text — included because it sets every measurement above)</i></td>
+      <td>No border. <code>rounded-[14px]</code>, padding <b>13px 14px</b>, two-layer shadow <code>0 1px 2px rgba(16,24,40,.04), 0 4px 14px rgba(16,24,40,.05)</code>. Cards separated by a 10px gap.</td>
+      <td>1px <code>#E9E7F0</code> border, radius 14, padding <b>16 all round</b>, single shadow <code>0 1px 2px rgba(27,24,38,.06)</code>. Separated by 8px page padding.</td>
+      <td><span class="shared">SHARED</span> — <code>cardFrame</code> and <code>CARD_PAD</code> both draw the Order card and the products card on the <b>order detail screen</b> (order-sheet.tsx:643, :670, :674).</td>
+    </tr>
+    <tr>
+      <td class="n">9</td>
+      <td>Delete icon</td>
+      <td>lucide <code>Trash2</code>, 16px, <code>#cbd5e1</code>, target ≈24px. Present on <b>Drafts AND Sent</b>.</td>
+      <td>Hand-drawn trash, 15px, <code>#9C99AC</code>, 44px target pinned to the card corner. <b>Drafts only</b> — a v2 Sent card has none.</td>
+      <td><span class="local">LOCAL</span> — <code>IconTrash</code> is exported but drafts-sent.tsx is its only consumer today.</td>
+    </tr>
+    <tr>
+      <td class="n">10</td>
+      <td>Screen title</td>
+      <td><i>None.</i> v1's list has no title of its own; the app's brand bar sits above it.</td>
+      <td>20px / 700 / <code>#1B1826</code> / −.02em, in a sticky white header with a 1px <code>#E9E7F0</code> rule. Text "Drafts" / "Sent".</td>
+      <td><span class="local">LOCAL</span> — <code>ListShell</code> lives in drafts-sent.tsx. The detail screen builds its own header.</td>
+    </tr>
+    <tr>
+      <td class="n">11</td>
+      <td>Page ground <i>(not text)</i></td>
+      <td><code>#f9fafb</code></td>
+      <td><code>#F4F3F8</code> — <code>LIST_BG</code>, which is the <code>FILL</code> token</td>
+      <td><span class="shared">SHARED</span> — <code>LIST_BG</code> is also the <b>order detail screen</b>'s background (order-sheet.tsx:603).</td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="page" style="margin-top:22px">
+  Five of the eleven rows are SHARED, and all five point at the same place: the
+  <b>order detail screen</b>. Rows 1, 4, 5, 6, 8 and 11 cannot be changed in
+  drafts-sent.tsx alone.
+</p>
+
+</body>
+</html>
