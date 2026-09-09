@@ -244,7 +244,12 @@ model users {
   // here is a Prisma ambiguity ERROR, not a warning (CLAUDE_CORE.md §7.3).
   ordersPickEarlyReleased      orders[]              @relation("OrderPickEarlyReleasedBy")
   ordersInvoicedBy             orders[]              @relation("OrderInvoicedBy")
+  // Picking visibility marker (2026-09-09) — another named users relation on
+  // `orders`, same rule as the four above it. Named on both sides or generate
+  // fails with an ambiguity error.
+  ordersPickVisible            orders[]              @relation("OrderPickVisibleBy")
   billingSettingsUpdated       billing_settings[]    @relation("BillingSettingsUpdatedBy")
+  appSettingsUpdated           app_settings[]        @relation("AppSettingsUpdatedBy")
   tintSkipsAsActor             tint_skip_events[]    @relation("SkipActor")
   tintPausesAsOp               tint_pause_events[]   @relation("PauseOperator")
   tintPauseResumes             tint_pause_events[]   @relation("PauseResumer")
@@ -962,6 +967,24 @@ model orders {
   pickEarlyReleasedById Int?
   pickEarlyReleasedBy   users?                   @relation("OrderPickEarlyReleasedBy", fields: [pickEarlyReleasedById], references: [id])
 
+  // Picking visibility marker (2026-09-09). Timestamp + actor, the SAME
+  // modelling call as pickEarlyReleasedAt/ById directly above and as
+  // invoicedAt/ById below — never a new workflowStage value and never a new
+  // pick_assignments.status string (chk_pick_assignments_status is a live
+  // CHECK constraint invisible in this file; CLAUDE_PICKING.md §7).
+  //
+  // ⚠ NOTHING CONSUMES THESE YET. Columns applied by hand in the Supabase SQL
+  // Editor and mirrored here; no query, route, component or seed entry reads
+  // or writes them at the time of this commit.
+  //
+  // @db.Timestamptz(6) is REQUIRED — without it Prisma emits plain `timestamp`
+  // and mismatches the live column (CLAUDE_CORE.md §7.1.c). The @relation MUST
+  // be named: `orders` carries many FKs to `users` and an unnamed one is a
+  // Prisma ambiguity ERROR, not a warning.
+  pickVisibleAt         DateTime?                @db.Timestamptz(6)
+  pickVisibleById       Int?
+  pickVisibleBy         users?                   @relation("OrderPickVisibleBy", fields: [pickVisibleById], references: [id])
+
   // Billing · Picking tab mark-done marker (2026-07-30).
   // Timestamp + actor, NOT a new workflowStage value — same call already
   // made for pickedAt/ById, removedAt/ById, restoredAt/ById and
@@ -1049,6 +1072,37 @@ model app_tag_settings {
   isEnabled   Boolean   @default(true)
   updatedById Int?
   updatedAt   DateTime? @db.Timestamptz(6)
+}
+
+/// Generic per-flag app settings (2026-09-09). One row per named switch,
+/// keyed by `settingKey` (UNIQUE — app_settings_settingKey_key), which is what
+/// keeps a flag a singleton and what any future seed ON CONFLICT would target.
+///
+/// ⚠ NOT the same table as `app_tag_settings` above, and not a replacement for
+/// it. That one is per-BADGE (`tagKey`, default-ON: no row = badge shows,
+/// CLAUDE_CORE.md §7.10). This one is per-FLAG and default-OFF, so an absent
+/// row means the feature is off. Read the default before assuming either.
+///
+/// ⚠ NOTHING CONSUMES THIS YET — no query, route, component or seed entry.
+///
+/// `updatedById` carries a real FK to `users` (app_settings_updatedById_fkey),
+/// unlike app_tag_settings' bare Int. Named on both sides, following
+/// billing_settings' BillingSettingsUpdatedBy — the closest sibling that
+/// actually has the relation.
+///
+/// Created by hand in the Supabase SQL Editor and hand-mirrored here — db pull
+/// cannot run on this machine (CORE §3). Do NOT db push/pull.
+model app_settings {
+  id          Int      @id @default(autoincrement())
+  settingKey  String   @unique
+  isEnabled   Boolean  @default(false)
+  updatedById Int?
+  updatedBy   users?   @relation("AppSettingsUpdatedBy", fields: [updatedById], references: [id])
+  // @default(now()) mirrors the live NOT NULL DEFAULT now(); @updatedAt is what
+  // makes a Prisma UPDATE re-stamp it. Without the second directive the column
+  // would fire on INSERT only and quietly go stale — the push_subscriptions /
+  // sku_master_v2 trap. Neither directive changes the database.
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 model order_splits {
