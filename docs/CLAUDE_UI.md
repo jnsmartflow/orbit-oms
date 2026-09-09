@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.22 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.23 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -305,45 +305,115 @@ ON: `bg-teal-600`. OFF: `bg-gray-300`. Sizes: 36×20px compact, 46×26px large.
 
 ## 12. Login page
 
-**Rebuilt 2026-09-09 (rebrand step 5).** The centred card on `#f9fafb` is gone. The
-page is a split: brand panel left, white form right. Files: `app/login/page.tsx`,
-`app/login/login-form.tsx`, `app/login/login-rings.tsx`, plus one CSS block in
-`globals.css` marked "Login — orbit rings + entrance".
+**Rebuilt 2026-09-09 (rebrand step 5), corrected the same day.** The centred card on
+`#f9fafb` is gone. The page is a split: brand panel left, white form right. Files:
+`app/login/page.tsx`, `app/login/login-form.tsx`, `app/login/login-rings.tsx`, plus one
+CSS block in `globals.css` marked "Login — orbit rings + entrance".
 
 | Item | What ships |
 |---|---|
 | Layout | `flex-col` on a phone, `md:flex-row` above. Panel `flex-[1.15]`, form side `flex-1`. |
 | Panel background | `#43168B` (`brand-900`) + `radial-gradient(82% 100% at 100% 100%, rgba(154,124,246,.55) 0%, rgba(124,58,237,.30) 34%, rgba(88,28,135,.12) 62%, rgba(67,22,139,0) 84%)` |
-| Rings | SVG layer, `absolute inset-0`, `z-1`, viewBox `0 0 705 683`, `preserveAspectRatio="xMaxYMax slice"`, centre `705,683`. Six guide circles + six travelling arcs at r = 175 / 300 / 445 / 610 / 800 / 1010. `aria-hidden` — decorative. |
-| Content | `z-3`. Wordmark white 66px (44/54 stepping down), 56×3 `brand-400` accent bar, tagline 24px/18px/15px `brand-200` with the last word white and `whitespace-nowrap`. |
+| Rings | SVG layer, `absolute inset-0`, `z-1`, viewBox `0 0 705 683`, `preserveAspectRatio="xMaxYMax slice"`, centre `705,683`. Six guide circles and six travelling arcs at r = 175 / 300 / 445 / 610 / 720 / 820. `aria-hidden` — decorative. |
+| Content | `z-3`. Wordmark white at 45px of INK (30 / 38 / 45 stepping down), 56×3 `brand-400` accent bar, tagline 24px/18px/15px `brand-200` with the last word white and `whitespace-nowrap`. |
 | Form | White, `max-w-[330px]`. Time-aware greeting + date. Focus `border-brand-500` + `ring-4 ring-[rgba(139,92,246,.13)]`. Sign in is the commit button, `bg-brand-600`, full width, spinner on click. |
 
 🔴 **The corner light is CSS on the panel element, never a gradient inside the rings
 SVG.** An SVG gradient is bounded by its viewBox and `slice` cuts it, which put a
 visible hard edge across the panel the first time this was built.
 
-🔴 **The outermost radius is 1010 and that number is load-bearing.** Because
-`preserveAspectRatio` is `slice`, the visible slab of the viewBox is never larger than
-705×683, so the furthest visible point from the ring centre is at most
-`√(705² + 683²) ≈ 982`. A smaller outer ring leaves arcs stopping in mid-air at a short
-viewport. Measured clearance: 92 units at a 809×900 panel, 181 at 809×500, 186 at a
-390×236 phone band.
+### 12.1 The radius ceiling — 982, and it is a CEILING not a target
 
-🔴 **Rotation is a CSS animation, not `<animateTransform>`.** SMIL cannot be switched
-off by a media query and `prefers-reduced-motion: reduce` has to leave the rings static.
-`transform-box: view-box` is what makes `transform-origin: 705px 683px` resolve in
-viewBox units on an SVG child. Every animated state has a resting base state that is
-already the finished one, so `animation: none` lands on the design and not on a
-half-drawn accent bar.
+Because `preserveAspectRatio` is `slice`, the visible slab of the viewBox is never larger
+than 705×683. **No point on the panel is ever further than `√(705² + 683²) ≈ 982` units
+from the ring centre, at any window size.**
+
+🔴 **A radius ABOVE 982 does not "reach every edge". It is entirely outside the panel and
+draws nothing at all, guide circle included.** The first cut of this page shipped r=1010
+for exactly that inverted reason and the outermost ring never rendered a pixel at any
+viewport. The commit message and the first version of this section both stated the wrong
+reasoning as fact.
+
+**The number that matters is degrees-on-panel per radius**, not clearance against the far
+corner. For a circle centred on the visible slab's bottom-right corner, with the slab
+`visW × visH`:
+
+```
+span° = asin(min(1, visH / r)) − acos(min(1, visW / r))     // 0 if negative
+```
+
+Measured live, headless Chrome, arcs at rest:
+
+| r | 1440×900 (slab 593×683) | 1920×1080 (slab 657×683) | 1440×500 (slab 705×451) |
+|---|---|---|---|
+| 175 | 90° | 90° | 90° |
+| 300 | 90° | 90° | 90° |
+| 445 | 90° | 90° | 90° |
+| 610 | 76.4° | 90° | 47.7° |
+| 720 | 37.0° | 47.3° | 27.1° |
+| 820 | 12.7° | 19.6° | 2.7° |
+| ~~1010~~ | ~~0°~~ | ~~0°~~ | ~~0°~~ |
+
+Degrees undersell the outer rings, because a small angle on a large radius is still a long
+stroke: r=820's 12.7° is 182 units of arc, versus 275 for r=175's whole quadrant. Both
+read as a curve. Zero does not.
+
+### 12.2 The rings do not rotate — the dash travels
+
+🔴 **This is the whole mechanism, and rotating instead is what made the first cut look
+like faint guide circles and nothing else.** An SVG gradient is resolved in the user space
+of the element that REFERENCES it, so a transform on the ancestor group turns the gradient
+WITH the shape: the bright part never moves relative to the stroke, and the arc has one
+fixed brightness profile riding around with it. `gradientUnits="userSpaceOnUse"` does not
+fix a rotating shape — the rotation is still in the referencing element's user space.
+**SMIL `<animateTransform>` has the identical property**, so it is not a way out either,
+and the CSS-versus-SMIL question is a red herring here.
+
+What ships instead: the paths are **static** and only `stroke-dashoffset` animates. The
+gradient therefore holds still on the panel and the arc slides through it.
+
+- Every arc is a `<path>` (not a `<circle>` — `pathLength` on a bare circle was broken in
+  older Safari and the office is on iPhones) starting at 180°, running clockwise, with
+  `pathLength="360"`. **One path unit is one degree on every radius**, so the dash numbers
+  are shared by all six rings and the on-panel quadrant is always path 0 → 90.
+- Dash is `108 252` — 30% of the circle — on every ring.
+- **One pair of keyframes drives all six.** Per-ring speed and starting position arrive as
+  an inline `animation-duration` and a NEGATIVE `animation-delay`.
+- Laps: 24 / 34 / 46 / 58 / 72 / 88s. Rings 1, 3, 5 clockwise; 2, 4, 6 against. The first
+  cut ran 34 to 162s, and a sweep nobody stays on the page long enough to see is not a
+  sweep.
+- Each ring gets **its own gradient**, `userSpaceOnUse`, anchored to the two ends of that
+  ring's on-panel quadrant: `(705−r, 683)` on the panel's bottom edge to `(705, 683−r)` on
+  its right edge. The quadrant maps onto the gradient's whole 0→1, so the arc is already
+  dark by the time it leaves the panel and needs no clipping to look right.
+- Stops are a **plateau**, not a spike: `edge / peak at 22% / peak at 78% / edge`. The edge
+  value is deliberately non-zero (.28 and .22) so the arcs run off the edges rather than
+  evaporating before they reach them.
+- The two light points ride the **leading** end of their arc, as the head of the trail.
+  They used to sit at the arc's midpoint, which under the rotating gradient was the single
+  dimmest part of the arc they were meant to be lighting.
+
+**prefers-reduced-motion** is honoured by `animation: none`, and every animated state rests
+on an already-composed one: each arc's `stroke-dashoffset` ATTRIBUTE puts it exactly where
+its negative delay would have, and the accent bar rests at full width. The static frame is
+a designed picture, not whatever the keyframes happened to start on.
+
+### 12.3 The rest
 
 **Greeting is computed on the SERVER in `Asia/Kolkata`** and passed down as a prop.
 Everyone who signs in is at the depot, a server value renders identically on both sides,
 and that avoids both a hydration mismatch and a one-frame flash of an empty heading.
 Morning before 12:00, afternoon to 16:59, evening from 17:00.
 
-**Tagline: "Taking efficiency into new orbit"** — one tagline across the product.
-It replaced "One system. Zero chaos.", which is retired and appears nowhere in shipping
-code.
+**The wordmark height is INK height, not a font size.** `OrbitWordmark`'s viewBox is cut
+tight to the letters — 769 units of a 1000-unit em (`scripts/generate-wordmark.mjs`) — so a
+rendered height of H reads as roughly `H ÷ 0.769` of type. 45px here is ~59px of type,
+which lands on the mockup's 58px and rebrand draft §6's 60px. The first cut passed 66,
+which was ~86px of type and a third too big. **Anyone specifying this component in px must
+say which of the two they mean.**
+
+**Tagline: "Taking efficiency into new orbit"** — one tagline across the product. It
+replaced "One system. Zero chaos.", which is retired and appears nowhere in shipping code.
 
 **Nothing public-facing goes on this page** — no version number, no depot name, no
 supplier name, no live figures.
@@ -354,13 +424,11 @@ spec), with the affordance moved into the placeholder, "Email or 10-digit mobile
 Field `id`/`name` remains `email` — that is the auth contract, not a display choice.
 
 **Tab order is username → password → Sign in.** The show/hide-password eye is
-`tabIndex={-1}` and stays out of it. The "Ask the admin" helper is `brand-700` text, not
-a link — there is no target to send anyone to.
+`tabIndex={-1}` and stays out of it. The "Ask the admin" helper is `brand-700` text, not a
+link — there is no target to send anyone to.
 
-**The wrong-password border is the only red on the page.** The Sign in button never
-turns red.
-
----
+**The wrong-password border is the only red on the page.** The Sign in button never turns
+red.
 
 ---
 
@@ -1643,4 +1711,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.22 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12 rewritten for the rebuilt login page** (rebrand step 5): the split violet panel, the rings layer and the three numbers that are load-bearing in it — the 1010 outer radius, the CSS-not-SMIL rotation, and the corner light living on the panel element rather than inside the SVG. The retired tagline "One system. Zero chaos." is recorded as retired and is gone from shipping code. ⚠ **The footer had drifted AGAIN** — the 2026-09-08 v5.21 pass bumped the header and left this line at v5.20, the same failure its own v5.20 note describes. Both ends now read v5.22; check both, every time. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*
+*UI v5.23 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12 corrected, and the correction is the point.** The version of this section written hours earlier (v5.22) recorded a piece of reasoning that was exactly backwards: it called the 1010 outer radius load-bearing and printed a "clearance against the far corner" table. `slice` caps the visible slab at 705×683, so nothing on the panel is ever more than 982 units from the ring centre and **a radius above that draws NOTHING — the ring was off the panel entirely, guide circle included.** §12.1 now states the ceiling, replaces the clearance table with degrees-on-panel per radius measured live at three viewports, and strikes 1010 through. §12.2 is new: the rings no longer rotate, because a gradient is resolved in the referencing element's user space and a transform on the ancestor turns the light with the shape — `userSpaceOnUse` does not fix that and neither would SMIL. The paths are static and the dash travels, so the light holds still and the arc slides through it. §12.3 records that the wordmark's height is INK height, 769 units of a 1000-unit em, so 45px reads as ~59px of type; 66px had been ~86px. Prior, v5.22 (2026-09-09): §12 first written for the rebuilt login page; footer drift from v5.21 repaired. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*

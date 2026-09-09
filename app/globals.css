@@ -377,23 +377,33 @@ html, body { overscroll-behavior: none; }
 
 /* ── Login — orbit rings + entrance (rebrand step 5) ──────────────────────
 
-   The arcs turn about 705,683 — the login panel's own bottom-right corner, in
-   the rings SVG's viewBox units. `transform-box: view-box` is what makes a
-   transform-origin in those units mean anything on an SVG child.
+   🔴 THE RINGS DO NOT ROTATE, AND THAT IS THE WHOLE MECHANISM. The circles are
+   static and only the dash travels along them. An SVG gradient is resolved in
+   the user space of the element that REFERENCES it, so rotating the shape
+   rotates its gradient with it and the bright part never moves relative to the
+   stroke — which is why the first cut of this looked like faint guide circles
+   and nothing else. Holding the path still and moving the dash instead is what
+   makes the light stay put and the arc slide through it. Anchoring the gradient
+   with `userSpaceOnUse` does not fix a rotating shape, and neither would SMIL.
 
-   These are CSS animations and not <animateTransform> ON PURPOSE: SMIL cannot
-   be switched off by a media query, and prefers-reduced-motion has to leave the
-   rings STATIC. Every animated state below therefore has a resting base state
-   that is already the finished one, so `animation: none` lands on the design
-   rather than on a half-drawn accent bar.
+   Each ring carries pathLength="360" (see login-rings.tsx), so a path unit is a
+   degree on every radius and ONE pair of keyframes drives all six. Per-ring
+   duration and starting position ride in on inline animation-duration and a
+   NEGATIVE animation-delay.
+
+   prefers-reduced-motion has to leave the rings STATIC, so every animated state
+   below has a resting base state that is already a composed one: each arc's
+   stroke-dashoffset ATTRIBUTE puts it where its delay would have, and the
+   accent bar rests at full width. `animation: none` lands on the design rather
+   than on a half-drawn bar or a heap of arcs stacked at zero.
    Login page only — nothing else in the app uses these classes. */
 
-.orbit-ring      { transform-box: view-box; transform-origin: 705px 683px; }
-.orbit-ring-cw   { animation: orbit-spin-cw  120s linear infinite; }
-.orbit-ring-ccw  { animation: orbit-spin-ccw 120s linear infinite; }
+.orbit-arc     { animation-timing-function: linear; animation-iteration-count: infinite; }
+.orbit-arc-cw  { animation-name: orbit-travel-cw; }
+.orbit-arc-ccw { animation-name: orbit-travel-ccw; }
 
-@keyframes orbit-spin-cw  { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
-@keyframes orbit-spin-ccw { from { transform: rotate(360deg); } to { transform: rotate(0deg);   } }
+@keyframes orbit-travel-cw  { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -360; } }
+@keyframes orbit-travel-ccw { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 360;  } }
 
 /* Wordmark and tagline rise in. Resting state is the arrived state. */
 .orbit-rise { animation: orbit-rise 0.85s cubic-bezier(0.16, 0.84, 0.44, 1) both; }
@@ -409,8 +419,7 @@ html, body { overscroll-behavior: none; }
 @keyframes orbit-draw { from { width: 0; } to { width: 56px; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .orbit-ring-cw,
-  .orbit-ring-ccw,
+  .orbit-arc,
   .orbit-rise,
   .orbit-draw { animation: none; }
 }

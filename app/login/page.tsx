@@ -58,9 +58,14 @@ export default async function LoginPage() {
         <LoginRings />
 
         <div className="relative z-[3]">
+          {/* 45px is INK height, not a font size. The wordmark's viewBox is cut
+              tight to the letters (769 units of a 1000-unit em), so a height of
+              H reads as roughly H ÷ 0.769 of type — 45 here lands on the ~58px
+              the mockup sets and the 60px of rebrand draft §6. The first cut
+              passed 66, which optically was ~86px type and a third too big. */}
           <OrbitWordmark
-            height={66}
-            className="orbit-rise h-[44px] w-auto text-white sm:h-[54px] md:h-[66px]"
+            height={45}
+            className="orbit-rise h-[30px] w-auto text-white sm:h-[38px] md:h-[45px]"
           />
           <span className="orbit-accent orbit-draw mt-5 block rounded-sm bg-brand-400 md:mt-[26px]" />
           <p
