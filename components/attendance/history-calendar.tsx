@@ -87,7 +87,7 @@ export function HistoryCalendar({
       {/* Header — same 56px P5 pattern */}
       <header className="flex items-center justify-between mb-3 h-14">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-teal-600 rounded-lg flex items-center justify-center">
+          <div className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
             <svg width="18" height="18" viewBox="0 0 22 22" fill="none">
               <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
               <circle cx="11" cy="11" r="2.2" fill="white" />
@@ -96,7 +96,7 @@ export function HistoryCalendar({
           </div>
           <p className="text-[14px] font-semibold text-gray-900">History</p>
         </div>
-        <div className="w-7 h-7 bg-teal-600 rounded-full flex items-center justify-center text-white text-[11px] font-semibold">
+        <div className="w-7 h-7 bg-brand-600 rounded-full flex items-center justify-center text-white text-[11px] font-semibold">
           {getInitials(userName)}
         </div>
       </header>

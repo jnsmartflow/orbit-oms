@@ -17,7 +17,7 @@
 //   1. the PRIMARY CTA, Copy OBDs (§10)
 //   2. the LIVE count/dot — the Picking tab badge and the "live" pip
 // The section-tab active pill stays gray-900 (Floor's tabPill), and row
-// checkboxes use accent-teal-600 like every other data table in the app.
+// checkboxes use accent-brand-600 like every other data table in the app.
 //
 // A Pending row has TWO click targets (2026-08-08): the checkbox cell ticks it,
 // anywhere else opens the detail panel
@@ -391,7 +391,7 @@ export function BillingPickingTab({ date }: { date?: string }) {
                   <input
                     type="checkbox"
                     aria-label="Select all bills ready to invoice"
-                    className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
                     checked={allOn}
                     disabled={selectableRows.length === 0}
                     onChange={toggleAll}
@@ -509,7 +509,7 @@ export function BillingPickingTab({ date }: { date?: string }) {
             <button
               type="button"
               onClick={copyObds}
-              className="inline-flex h-[34px] items-center gap-2 rounded-md bg-teal-600 px-[15px] text-[12px] font-semibold text-white transition-colors hover:bg-teal-700"
+              className="inline-flex h-[34px] items-center gap-2 rounded-md bg-brand-600 px-[15px] text-[12px] font-semibold text-white transition-colors hover:bg-brand-700"
             >
               {copied ? "Copied" : "Copy OBDs"}
             </button>
@@ -589,7 +589,7 @@ function PendingRow({
   return (
     <tr
       onClick={onOpen}
-      className={`cursor-pointer ${selected ? "bg-teal-50/60" : short ? "" : "hover:bg-[#fafafa]"}`}
+      className={`cursor-pointer ${selected ? "bg-brand-50/60" : short ? "" : "hover:bg-[#fafafa]"}`}
     >
       {/* ⚠ THE CHECKBOX CELL SWALLOWS THE CLICK — on a SELECTABLE row only.
           Ticking a row and opening a row are different intents, and the tick is
@@ -635,7 +635,7 @@ function PendingRow({
           <input
             type="checkbox"
             aria-label={`Select ${row.obdNumber}`}
-            className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+            className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
             checked={selected}
             onChange={onToggle}
           />
@@ -798,7 +798,7 @@ function DoneRow({
             type="button"
             onClick={onUndo}
             disabled={busy}
-            className="text-[11px] font-semibold text-teal-700 hover:underline disabled:opacity-50"
+            className="text-[11px] font-semibold text-brand-700 hover:underline disabled:opacity-50"
           >
             Undo
           </button>

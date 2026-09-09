@@ -68,7 +68,7 @@ export const SO_ROLE_LABELS: Record<SalesOfficerRole, string> = {
 };
 
 export const SO_ROLE_AVATAR_CLASSES: Record<SalesOfficerRole, string> = {
-  PRIMARY: "bg-teal-100 text-teal-700",
+  PRIMARY: "bg-brand-100 text-brand-700",
   BACKUP:  "bg-blue-50 text-blue-700",
   JUNIOR:  "bg-amber-50 text-amber-700",
 };
@@ -630,7 +630,7 @@ export function CustomerSheet({
                   { key: "isActive",              label: "Active",           desc: "This record is active and visible" },
                 ] as const
               ).map(({ key, label, desc }) => (
-                <label key={key} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
+                <label key={key} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-brand-50 hover:border-brand-200 transition-all">
                   <div>
                     <div className="text-sm font-medium text-gray-900">{label}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
@@ -638,7 +638,7 @@ export function CustomerSheet({
                   <Switch
                     checked={form[key]}
                     onCheckedChange={(v) => setField(key, v)}
-                    className="data-[state=checked]:bg-teal-600"
+                    className="data-[state=checked]:bg-brand-600"
                   />
                 </label>
               ))}
@@ -669,7 +669,7 @@ export function CustomerSheet({
                       type="checkbox"
                       checked={form.noDeliveryDays.includes(day)}
                       onChange={() => toggleDay(day)}
-                      className="w-3.5 h-3.5 accent-teal-600"
+                      className="w-3.5 h-3.5 accent-brand-600"
                     />
                     <span className="text-xs font-medium text-gray-700">{day}</span>
                   </label>
@@ -708,7 +708,7 @@ export function CustomerSheet({
 
           <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
             <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create Customer"}</Button>
+            <Button type="submit" className="flex-1 h-10 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create Customer"}</Button>
           </div>
         </form>
       </SheetContent>

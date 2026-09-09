@@ -192,7 +192,7 @@ export function RestoreObdModal({
             }}
             placeholder="Why are you restoring this OBD?"
             disabled={submitting}
-            className="w-full min-h-[68px] px-3 py-2 text-[13px] border border-gray-200 rounded-lg outline-none resize-y focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full min-h-[68px] px-3 py-2 text-[13px] border border-gray-200 rounded-lg outline-none resize-y focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
           />
           <div className={`text-[11px] mt-1 ${charCountColor}`}>
             {remarkLen} / 500

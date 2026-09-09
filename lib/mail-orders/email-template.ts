@@ -141,7 +141,7 @@ export function buildSlotSummaryHTML(
 
   // Outer wrapper
   h += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;padding:32px 16px;"><tr><td align="center">`;
-  h += `<table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #e2e8f0;border-top:3px solid #0d9488;">`;
+  h += `<table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #e2e8f0;border-top:3px solid #7C3AED;">`;
 
   // ═══ HEADER — two column ═══
   h += `<tr>`;
@@ -153,12 +153,12 @@ export function buildSlotSummaryHTML(
   h += `<tr><td style="font-size:11px;color:#94a3b8;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
   // Right column — teal panel, flush right, full height
-  h += `<td style="vertical-align:middle;padding:0;width:110px;background-color:#0d9488;">`;
+  h += `<td style="vertical-align:middle;padding:0;width:110px;background-color:#7C3AED;">`;
   h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="text-align:center;vertical-align:middle;padding:20px;background-color:#0d9488;">`;
+  h += `<tr><td style="text-align:center;vertical-align:middle;padding:20px;background-color:#7C3AED;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0" align="center">`;
   h += `<tr><td style="font-size:32px;font-weight:700;color:#ffffff;text-align:center;line-height:1;${F}">${totalCount}</td></tr>`;
-  h += `<tr><td style="font-size:9px;color:#ccfbf1;text-align:center;text-transform:uppercase;letter-spacing:0.08em;padding-top:5px;${F}">ORDERS</td></tr>`;
+  h += `<tr><td style="font-size:9px;color:#EDE9FE;text-align:center;text-transform:uppercase;letter-spacing:0.08em;padding-top:5px;${F}">ORDERS</td></tr>`;
   h += `</table></td></tr></table></td>`;
   h += `</tr>`;
   // Header border
@@ -172,7 +172,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ PROCESSED ═══
   // Label row
-  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-bottom:2px solid #0d9488;padding:9px 32px;">`;
+  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-bottom:2px solid #7C3AED;padding:9px 32px;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
   h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Processed</td>`;
   h += `<td style="font-size:10px;color:#64748b;padding-left:4px;${F}">\u2014 ${processed.length}</td>`;
@@ -364,7 +364,7 @@ export function buildSlotSummaryHTML(
   h += `<tr><td colspan="2" style="font-size:12px;color:#0f172a;padding:0 32px 1px;${F}">${senderName}</td></tr>`;
   h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 32px 1px;${F}">Billing Team</td></tr>`;
   h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 32px 1px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
-  h += `<tr><td colspan="2" style="font-size:11px;color:#0d9488;padding:0 32px 22px;${F}">+91 ${zwsp("7435065023")}</td></tr>`;
+  h += `<tr><td colspan="2" style="font-size:11px;color:#7C3AED;padding:0 32px 22px;${F}">+91 ${zwsp("7435065023")}</td></tr>`;
 
   // ═══ FOOTER ═══
   h += `<tr><td colspan="2" style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 32px;text-align:center;font-size:9px;color:#cbd5e1;letter-spacing:0.03em;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;Do not reply to this email</td></tr>`;

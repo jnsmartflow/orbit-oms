@@ -232,7 +232,7 @@ const CHIP_CLASS = "inline-flex items-center gap-1 text-[11px] font-medium round
 // BILLS chip — always shown, teal. Reuses billsCountLabel's "N bills"/"1 bill".
 function billsChip(snapshot: Parameters<typeof draftSummary>[0]): React.JSX.Element {
   return (
-    <span className={CHIP_CLASS} style={{ background: "#f0fdfa", color: "#0f766e" }}>
+    <span className={CHIP_CLASS} style={{ background: "#F5F3FF", color: "#6D28D9" }}>
       {billsCountLabel(snapshot)}
     </span>
   );
@@ -509,7 +509,7 @@ function PackRows({
               type="button"
               tabIndex={-1}
               onClick={() => onStep(key, label, -1)}
-              className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${qty === 0 ? "text-gray-300" : "text-teal-600"}`}
+              className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${qty === 0 ? "text-gray-300" : "text-brand-600"}`}
               aria-label={`Decrease ${label}`}
             >
               −
@@ -532,13 +532,13 @@ function PackRows({
               // flush against it. Bottom-margin only; does NOT affect the focusin
               // block:"start" scroll (that honors scroll-margin-TOP). §22-safe.
               className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none scroll-mb-[32px] ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
-              style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
+              style={{ color: qty > 0 ? "#7C3AED" : "#111827" }}
             />
             <button
               type="button"
               tabIndex={-1}
               onClick={() => onStep(key, label, 1)}
-              className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
+              className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-brand-600 bg-transparent border-none"
               aria-label={`Increase ${label}`}
             >
               +
@@ -560,7 +560,7 @@ function PackRows({
               <div className="flex flex-col items-end gap-1 shrink-0">
                 {stepper}
                 {boxes != null && (
-                  <span className="text-[11px] text-teal-700 font-mono">{boxes} box</span>
+                  <span className="text-[11px] text-brand-700 font-mono">{boxes} box</span>
                 )}
               </div>
             ) : stepper}
@@ -2092,11 +2092,11 @@ export default function PoPage(): React.JSX.Element {
           className={`flex items-center gap-2 rounded-full text-[15px] font-bold ${
             disabled
               ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-              : "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
+              : "bg-brand-600 active:bg-brand-700 text-white active:opacity-90"
           }`}
           style={{
             padding: "15px 34px",
-            boxShadow: disabled ? "none" : "0 8px 22px rgba(13,148,136,0.42)",
+            boxShadow: disabled ? "none" : "0 8px 22px rgba(124,58,237,0.42)",
           }}
         >
           {icon === "send" && <Send className="w-[17px] h-[17px]" />}
@@ -2132,7 +2132,7 @@ export default function PoPage(): React.JSX.Element {
           disabled={!anyQty}
           className={`flex-1 rounded-[10px] text-[15px] font-semibold px-4 py-[12px] ${
             anyQty
-              ? "bg-teal-600 hover:bg-teal-700 text-white"
+              ? "bg-brand-600 hover:bg-brand-700 text-white"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
         >
@@ -2175,10 +2175,10 @@ export default function PoPage(): React.JSX.Element {
           disabled={!canSend}
           className={`flex-[1.5] flex items-center justify-center gap-2 h-[50px] rounded-full text-[15px] font-semibold ${
             canSend
-              ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
+              ? "bg-brand-600 active:bg-brand-700 text-white active:opacity-90"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
-          style={{ boxShadow: canSend ? "0 8px 22px rgba(13,148,136,0.42)" : "none" }}
+          style={{ boxShadow: canSend ? "0 8px 22px rgba(124,58,237,0.42)" : "none" }}
         >
           <Send className="w-[17px] h-[17px]" />
           Send order
@@ -2207,8 +2207,8 @@ export default function PoPage(): React.JSX.Element {
         <button
           type="button"
           onClick={() => resendFromReceipt(order)}
-          className="flex-[1.5] flex items-center justify-center gap-2 h-[50px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-semibold"
-          style={{ boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
+          className="flex-[1.5] flex items-center justify-center gap-2 h-[50px] rounded-full bg-brand-600 active:bg-brand-700 text-white text-[15px] font-semibold"
+          style={{ boxShadow: "0 8px 22px rgba(124,58,237,0.42)" }}
         >
           <Send className="w-[17px] h-[17px]" />
           Resend order
@@ -2310,7 +2310,7 @@ export default function PoPage(): React.JSX.Element {
           teal-brand surface here; body content stays neutral. theme-color /
           statusBarStyle unchanged. */}
       <div
-        className="flex-shrink-0 bg-[#0d9488]"
+        className="flex-shrink-0 bg-[#7C3AED]"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)" }}
       >
         <div className="max-w-[480px] mx-auto px-4 pb-[11px] flex items-center justify-between gap-3">
@@ -2499,7 +2499,7 @@ export default function PoPage(): React.JSX.Element {
                   <span className="text-[15px] font-medium text-[#1d2939] truncate flex-1 min-w-0">
                     {receiptOrder.snapshot.customer.name}
                   </span>
-                  <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 shrink-0">
+                  <span className="text-[11px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5 shrink-0">
                     Sent
                   </span>
                 </div>
@@ -2715,7 +2715,7 @@ export default function PoPage(): React.JSX.Element {
                     onClick={() => selectCustomer(c)}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
                   >
-                    <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-brand-600 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
                       <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
@@ -2796,7 +2796,7 @@ export default function PoPage(): React.JSX.Element {
                   </span>
                   <span className="text-[15px] font-semibold text-gray-900">Review &amp; send</span>
                 </span>
-                <span className="text-[12px] font-medium text-teal-600 shrink-0">Back to products</span>
+                <span className="text-[12px] font-medium text-brand-600 shrink-0">Back to products</span>
               </button>
             </div>
 
@@ -2841,7 +2841,7 @@ export default function PoPage(): React.JSX.Element {
                       </p>
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                         {lineChips(line).map((c) => (
-                          <span key={c.label} className="text-[12px] text-teal-700">
+                          <span key={c.label} className="text-[12px] text-brand-700">
                             {c.label} <span className="font-mono">×{c.units}</span>
                             {c.boxes != null && (
                               <span className="text-gray-400 font-normal"> · {c.boxes} box</span>
@@ -2868,7 +2868,7 @@ export default function PoPage(): React.JSX.Element {
               <button
                 type="button"
                 onClick={addAnotherBill}
-                className="flex items-center gap-1 text-[13px] text-teal-700 font-medium"
+                className="flex items-center gap-1 text-[13px] text-brand-700 font-medium"
               >
                 <Plus className="w-[14px] h-[14px]" /> Add another bill
               </button>
@@ -2915,7 +2915,7 @@ export default function PoPage(): React.JSX.Element {
                       onClick={() => selectShipTo(c)}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
                     >
-                      <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-brand-600 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
                         <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
@@ -2993,7 +2993,7 @@ export default function PoPage(): React.JSX.Element {
                   <button
                     type="button"
                     onClick={openCrossSheet}
-                    className="text-teal-700 font-medium active:opacity-70"
+                    className="text-brand-700 font-medium active:opacity-70"
                   >
                     change
                   </button>
@@ -3011,7 +3011,7 @@ export default function PoPage(): React.JSX.Element {
                   <button
                     type="button"
                     onClick={() => setQuickAddOpen((o) => !o)}
-                    className="flex items-center gap-1 text-[12px] text-teal-700 font-medium active:opacity-70"
+                    className="flex items-center gap-1 text-[12px] text-brand-700 font-medium active:opacity-70"
                   >
                     Quick add
                     <ChevronDown
@@ -3103,7 +3103,7 @@ export default function PoPage(): React.JSX.Element {
                       return (
                         <div
                           key={b.id}
-                          className="shrink-0 flex items-center gap-1 text-[14px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full pl-3 pr-1 py-[3px]"
+                          className="shrink-0 flex items-center gap-1 text-[14px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-full pl-3 pr-1 py-[3px]"
                         >
                           <button type="button" onClick={() => switchBill(b.id)} className="leading-none">
                             Bill {b.id}
@@ -3112,7 +3112,7 @@ export default function PoPage(): React.JSX.Element {
                             type="button"
                             aria-label={`Delete Bill ${b.id}`}
                             onClick={() => requestDeleteBill(idx)}
-                            className="w-[19px] h-[19px] rounded-full bg-teal-600 text-white flex items-center justify-center shrink-0 active:bg-teal-700"
+                            className="w-[19px] h-[19px] rounded-full bg-brand-600 text-white flex items-center justify-center shrink-0 active:bg-brand-700"
                           >
                             <span className="text-[13px] leading-none">×</span>
                           </button>
@@ -3125,7 +3125,7 @@ export default function PoPage(): React.JSX.Element {
                     type="button"
                     onClick={addBill}
                     aria-label="Add bill"
-                    className="flex items-center gap-1 text-[14px] text-teal-700 font-medium shrink-0"
+                    className="flex items-center gap-1 text-[14px] text-brand-700 font-medium shrink-0"
                   >
                     <Plus className="w-[16px] h-[16px]" />
                     {bills.length === 1 && <span>Add bill</span>}
@@ -3141,7 +3141,7 @@ export default function PoPage(): React.JSX.Element {
                     aria-checked={multiSelect}
                     aria-label="Select multiple products"
                     onClick={toggleMultiSelect}
-                    className={`relative w-[46px] h-[26px] rounded-full transition-colors shrink-0 ${multiSelect ? "bg-teal-600" : "bg-gray-300"}`}
+                    className={`relative w-[46px] h-[26px] rounded-full transition-colors shrink-0 ${multiSelect ? "bg-brand-600" : "bg-gray-300"}`}
                   >
                     <span
                       className={`absolute top-[2px] left-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform ${multiSelect ? "translate-x-[20px]" : ""}`}
@@ -3169,12 +3169,12 @@ export default function PoPage(): React.JSX.Element {
                 <div className="sticky top-0 z-30 bg-[#f9fafb] p-4 border-b border-gray-200 shadow-[0_2px_6px_rgba(0,0,0,0.04)]">
                   <div className={`flex items-center gap-3 border rounded-full px-[18px] py-[14px] transition-shadow ${
                     listening
-                      ? "border-teal-600 shadow-[0_0_0_3px_rgba(13,148,136,0.10)]"
-                      : "border-gray-300 focus-within:border-teal-600 focus-within:shadow-[0_0_0_3px_rgba(13,148,136,0.10)]"
+                      ? "border-brand-600 shadow-[0_0_0_3px_rgba(124,58,237,0.10)]"
+                      : "border-gray-300 focus-within:border-brand-600 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.10)]"
                   }`}>
-                    <Search className={`w-[19px] h-[19px] shrink-0 ${listening ? "text-teal-600" : "text-gray-400"}`} />
+                    <Search className={`w-[19px] h-[19px] shrink-0 ${listening ? "text-brand-600" : "text-gray-400"}`} />
                     {listening ? (
-                      <span className="flex-1 text-[16px] font-medium text-teal-700">Listening…</span>
+                      <span className="flex-1 text-[16px] font-medium text-brand-700">Listening…</span>
                     ) : (
                       <input
                         ref={heroInputRef}
@@ -3209,8 +3209,8 @@ export default function PoPage(): React.JSX.Element {
                         title={listening ? "Tap to stop" : "Tap to speak"}
                         className={
                           listening
-                            ? "shrink-0 w-[34px] h-[34px] rounded-full bg-teal-600 text-white flex items-center justify-center"
-                            : "shrink-0 text-teal-600"
+                            ? "shrink-0 w-[34px] h-[34px] rounded-full bg-brand-600 text-white flex items-center justify-center"
+                            : "shrink-0 text-brand-600"
                         }
                       >
                         <Mic className="w-[19px] h-[19px]" />
@@ -3221,9 +3221,9 @@ export default function PoPage(): React.JSX.Element {
                   {/* Voice listening dots (mockup state 5) */}
                   {listening && (
                     <div className="flex items-center justify-center gap-2 mt-3.5">
-                      <span className="w-[7px] h-[7px] rounded-full bg-teal-600 animate-pulse" />
-                      <span className="w-[7px] h-[7px] rounded-full bg-teal-200" />
-                      <span className="w-[7px] h-[7px] rounded-full bg-teal-200" />
+                      <span className="w-[7px] h-[7px] rounded-full bg-brand-600 animate-pulse" />
+                      <span className="w-[7px] h-[7px] rounded-full bg-brand-200" />
+                      <span className="w-[7px] h-[7px] rounded-full bg-brand-200" />
                       <span className="text-[12px] text-gray-400 ml-1.5">say a product name</span>
                     </div>
                   )}
@@ -3264,7 +3264,7 @@ export default function PoPage(): React.JSX.Element {
                               onClick={() => toggleProductSelection(p)}
                               className="flex items-center gap-3 py-[13px] px-1 border-b border-gray-100 last:border-b-0 cursor-pointer active:bg-gray-50 touch-manipulation"
                             >
-                              <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 ${selected ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300"}`}>
+                              <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 ${selected ? "bg-brand-600 border-brand-600" : "bg-white border-gray-300"}`}>
                                 {selected && (
                                   <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
                                     <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -3297,7 +3297,7 @@ export default function PoPage(): React.JSX.Element {
                                 <p className="text-[12px] text-gray-400 truncate mt-0.5">{second}{aliasLabel && <span className="text-gray-300"> · {aliasLabel}</span>}</p>
                               )}
                             </div>
-                            <Plus className="w-[18px] h-[18px] text-teal-600 shrink-0" />
+                            <Plus className="w-[18px] h-[18px] text-brand-600 shrink-0" />
                           </button>
                         );
                       })
@@ -3666,8 +3666,8 @@ export default function PoPage(): React.JSX.Element {
             >
               <div className="relative w-16 h-16 flex items-center justify-center">
                 {/* Expanding pulse ring — one shot, behind the circle */}
-                <span className="po-save-ring absolute inset-0 rounded-full border-2 border-teal-600" aria-hidden="true" />
-                <div className="po-save-circle relative w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center">
+                <span className="po-save-ring absolute inset-0 rounded-full border-2 border-brand-600" aria-hidden="true" />
+                <div className="po-save-circle relative w-16 h-16 rounded-full bg-brand-600 flex items-center justify-center">
                   {overlayKind === "saved" ? (
                     <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
                       <polyline
@@ -3724,7 +3724,7 @@ export default function PoPage(): React.JSX.Element {
                   ref={confirmBtnRef}
                   type="button"
                   onClick={confirmProceed}
-                  className="flex-1 h-[44px] rounded-[10px] bg-teal-600 text-white text-[14px] font-semibold active:bg-teal-700"
+                  className="flex-1 h-[44px] rounded-[10px] bg-brand-600 text-white text-[14px] font-semibold active:bg-brand-700"
                 >
                   {confirmCopy.cta}
                 </button>
@@ -3798,7 +3798,7 @@ export default function PoPage(): React.JSX.Element {
             type="button"
             onClick={goHome}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "home" ? "text-teal-600" : "text-gray-400"
+              browseScreen === "home" ? "text-brand-600" : "text-gray-400"
             }`}
           >
             <Home className="w-5 h-5" />
@@ -3808,7 +3808,7 @@ export default function PoPage(): React.JSX.Element {
             type="button"
             onClick={openDrafts}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "drafts" ? "text-teal-600" : "text-gray-400"
+              browseScreen === "drafts" ? "text-brand-600" : "text-gray-400"
             }`}
           >
             <Bookmark className="w-5 h-5" />
@@ -3818,7 +3818,7 @@ export default function PoPage(): React.JSX.Element {
             type="button"
             onClick={openSent}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "sent" ? "text-teal-600" : "text-gray-400"
+              browseScreen === "sent" ? "text-brand-600" : "text-gray-400"
             }`}
           >
             <Send className="w-5 h-5" />

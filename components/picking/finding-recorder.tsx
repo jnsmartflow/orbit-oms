@@ -652,7 +652,7 @@ export function FindingPopup({
             type="button"
             onClick={onSave}
             disabled={saving || !canSave}
-            className="flex-1 h-11 rounded-[10px] bg-teal-600 active:bg-teal-700 text-[13px] font-semibold text-white disabled:opacity-60"
+            className="flex-1 h-11 rounded-[10px] bg-brand-600 active:bg-brand-700 text-[13px] font-semibold text-white disabled:opacity-60"
           >
             {saving ? "Saving…" : mode === "confirm" ? "Confirm" : "Save"}
           </button>

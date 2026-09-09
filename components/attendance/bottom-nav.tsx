@@ -49,7 +49,7 @@ export function BottomNav() {
               key={href}
               href={href}
               className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                active ? "text-teal-600" : "text-gray-400 hover:text-gray-600"
+                active ? "text-brand-600" : "text-gray-400 hover:text-gray-600"
               }`}
             >
               <Icon className="w-5 h-5" />

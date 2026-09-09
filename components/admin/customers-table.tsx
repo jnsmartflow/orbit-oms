@@ -208,7 +208,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
     <>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-teal-700">
+        <h1 className="text-lg font-bold text-brand-700">
           Customers
           {total > 0 && <span className="ml-2 text-sm font-normal text-gray-400">{total} total</span>}
         </h1>
@@ -216,7 +216,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
           {canImport && (
             <button
               type="button"
-              className="flex items-center gap-1.5 text-xs font-medium text-teal-700 border border-teal-200 bg-teal-50 hover:bg-teal-100 px-3 py-2 rounded-md"
+              className="flex items-center gap-1.5 text-xs font-medium text-brand-700 border border-brand-200 bg-brand-50 hover:bg-brand-100 px-3 py-2 rounded-md"
               onClick={handleTemplateDownload}
             >
               <Download className="h-3.5 w-3.5" />
@@ -229,7 +229,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={openAdd}>+ Add Customer</Button>
+            <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={openAdd}>+ Add Customer</Button>
           )}
         </div>
       </div>
@@ -443,7 +443,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
                 </div>
               )}
               <div className="flex justify-end">
-                <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => setImportResult(null)}>Close</Button>
+                <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={() => setImportResult(null)}>Close</Button>
               </div>
             </div>
           )}

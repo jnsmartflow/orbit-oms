@@ -93,7 +93,7 @@ export default async function MrnSheetPage({
       {/* Screen-only action bar. It sits OUTSIDE #mrn-print-area, so the global
           `body * { visibility: hidden }` print rule hides it with no help. */}
       <div className="mx-auto mb-3 flex max-w-[1120px] items-center gap-2 px-4">
-        <a href="/mrn" className="text-[12px] text-teal-600 hover:text-teal-700">
+        <a href="/mrn" className="text-[12px] text-brand-600 hover:text-brand-700">
           &larr; Back to MRN
         </a>
         <div className="flex-1" />
@@ -128,7 +128,7 @@ function SheetMessage({
       {body && <p className="max-w-[420px] text-[12.5px] leading-relaxed text-gray-500">{body}</p>}
       <a
         href={backHref ?? "/mrn"}
-        className="mt-2 text-[12.5px] text-teal-600 hover:text-teal-700"
+        className="mt-2 text-[12.5px] text-brand-600 hover:text-brand-700"
       >
         &larr; Back to MRN
       </a>

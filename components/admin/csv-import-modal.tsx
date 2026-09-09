@@ -98,7 +98,7 @@ export function CsvImportModal({
     <Dialog open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-5 pb-4 border-b border-[#e5e7eb] shrink-0">
-          <DialogTitle className="text-[15px] font-bold text-teal-700">
+          <DialogTitle className="text-[15px] font-bold text-brand-700">
             {title} — Import Preview
           </DialogTitle>
           <p className="text-xs text-gray-500 mt-0.5">{fileName}</p>
@@ -186,7 +186,7 @@ export function CsvImportModal({
             <Button
               type="button"
               size="sm"
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-brand-600 hover:bg-brand-700 text-white"
               onClick={handleConfirm}
               disabled={validCount === 0 || confirming}
             >

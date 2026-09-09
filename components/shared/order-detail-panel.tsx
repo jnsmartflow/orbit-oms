@@ -281,7 +281,7 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
                     <button
                       type="button"
                       onClick={() => setExpandLines(!expandLines)}
-                      className="text-xs text-teal-600 hover:text-teal-700 mt-1.5 transition-colors"
+                      className="text-xs text-brand-600 hover:text-brand-700 mt-1.5 transition-colors"
                     >
                       {expandLines
                         ? "Show less \u25B4"
@@ -400,7 +400,7 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
                     <button
                       type="button"
                       onClick={() => setExpandSplits(!expandSplits)}
-                      className="text-xs text-teal-600 hover:text-teal-700 mt-1.5 transition-colors"
+                      className="text-xs text-brand-600 hover:text-brand-700 mt-1.5 transition-colors"
                     >
                       {expandSplits
                         ? "Show less \u25B4"

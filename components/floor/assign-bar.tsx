@@ -157,7 +157,7 @@ export function AssignBar({
               if (lockedPicker) onAssign(lockedPicker.id);
               else if (pickerId !== "") onAssign(pickerId);
             }}
-            className="h-[34px] rounded-r-md border border-teal-600 bg-teal-600 px-5 text-[12px] font-semibold text-white enabled:hover:bg-teal-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+            className="h-[34px] rounded-r-md border border-brand-600 bg-brand-600 px-5 text-[12px] font-semibold text-white enabled:hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {assignLabel}
           </button>

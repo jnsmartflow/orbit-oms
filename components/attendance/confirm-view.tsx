@@ -104,7 +104,7 @@ export function ConfirmView({
         type="button"
         onClick={onConfirm}
         disabled={submitting}
-        className="w-full h-[72px] rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-[16px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-600 shadow-sm"
+        className="w-full h-[72px] rounded-2xl bg-brand-600 hover:bg-brand-700 text-white text-[16px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-600 shadow-sm"
       >
         {submitting ? "Submitting…" : ctaLabel}
       </button>

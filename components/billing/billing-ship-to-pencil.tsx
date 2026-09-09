@@ -122,7 +122,7 @@ export function BillingShipToPencil({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search dealer by name or code…"
-            className="mb-1.5 h-[28px] w-full rounded-md border border-gray-200 px-2 text-[11px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+            className="mb-1.5 h-[28px] w-full rounded-md border border-gray-200 px-2 text-[11px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
           />
 
           {searching && <p className="px-1 py-2 text-[11px] text-gray-400">Searching…</p>}

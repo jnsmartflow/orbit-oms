@@ -86,8 +86,8 @@ export default function SplashScreen({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        // Approved launch-image gradient: top #0e988b → #0d9488 → bottom #0b8579.
-        background: "linear-gradient(180deg, #0e988b 0%, #0d9488 50%, #0b8579 100%)",
+        // Approved launch-image gradient: top #0e988b → #7C3AED → bottom #0b8579.
+        background: "linear-gradient(180deg, #0e988b 0%, #7C3AED 50%, #0b8579 100%)",
         opacity: leaving ? 0 : 1,
         transition: `opacity ${FADE_OUT_MS}ms ease-out`,
       }}

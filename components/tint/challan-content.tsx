@@ -290,7 +290,7 @@ export function ChallanContent() {
             bottom:       24,
             right:        24,
             zIndex:       9999,
-            background:   "#0d9488",
+            background:   "#7C3AED",
             color:        "#fff",
             padding:      "12px 18px",
             borderRadius: 8,
@@ -385,8 +385,8 @@ export function ChallanContent() {
                     style={{
                       padding: "10px 14px",
                       borderBottom: "1px solid #f3f4f6",
-                      borderLeft: `3px solid ${isSelected ? "#0d9488" : "transparent"}`,
-                      background: isSelected ? "#f0fdfa" : undefined,
+                      borderLeft: `3px solid ${isSelected ? "#7C3AED" : "transparent"}`,
+                      background: isSelected ? "#F5F3FF" : undefined,
                       cursor: "pointer",
                       transition: "background 0.1s",
                       // Phase 2e — fade voided rows so they read as inactive but still
@@ -402,7 +402,7 @@ export function ChallanContent() {
                         <span style={{
                           fontFamily: "'SF Mono', ui-monospace, monospace",
                           fontSize: 11, fontWeight: 600,
-                          color: isSelected ? "#0d9488" : "#374151",
+                          color: isSelected ? "#7C3AED" : "#374151",
                           // Strikethrough only the OBD number when voided.
                           textDecoration: isVoided ? "line-through" : undefined,
                         }}>
@@ -422,12 +422,12 @@ export function ChallanContent() {
                           fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4,
                           color: isVoided
                             ? "#b91c1c"
-                            : (isSelected ? "#0d9488" : "#6b7280"),
+                            : (isSelected ? "#7C3AED" : "#6b7280"),
                           background: isVoided
                             ? "#fef2f2"
-                            : (isSelected ? "#f0fdfa" : "#f9fafb"),
+                            : (isSelected ? "#F5F3FF" : "#f9fafb"),
                           border: `1px solid ${
-                            isVoided ? "#fecaca" : (isSelected ? "#99f6e4" : "#e5e7eb")
+                            isVoided ? "#fecaca" : (isSelected ? "#DDD6FE" : "#e5e7eb")
                           }`,
                         }}>
                           {item.challanNumber}

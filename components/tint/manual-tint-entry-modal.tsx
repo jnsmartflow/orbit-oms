@@ -304,7 +304,7 @@ export function ManualTintEntryModal({ open, onClose, onSuccess }: ManualTintEnt
                   className={`flex-1 h-[38px] px-3 text-[13px] border rounded-lg outline-none ${
                     fetchError
                       ? "border-red-300 ring-2 ring-red-500/10"
-                      : "border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                      : "border-gray-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
                   }`}
                 />
                 <button
@@ -392,7 +392,7 @@ export function ManualTintEntryModal({ open, onClose, onSuccess }: ManualTintEnt
                       type="checkbox"
                       checked={selectedLineIds.has(line.id)}
                       onChange={() => toggleLine(line.id)}
-                      className="mt-0.5 h-4 w-4 accent-teal-600 cursor-pointer"
+                      className="mt-0.5 h-4 w-4 accent-brand-600 cursor-pointer"
                     />
                     <div className="flex-1 min-w-0">
                       <div className="text-[12px] font-medium text-gray-900 truncate">
@@ -425,7 +425,7 @@ export function ManualTintEntryModal({ open, onClose, onSuccess }: ManualTintEnt
                   setReasonCode(e.target.value as ReasonCode);
                   if (submitError) setSubmitError(null);
                 }}
-                className="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 mb-3 bg-white"
+                className="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 mb-3 bg-white"
               >
                 {REASON_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -456,7 +456,7 @@ export function ManualTintEntryModal({ open, onClose, onSuccess }: ManualTintEnt
                 className={`w-full px-3 py-2 text-[13px] border rounded-lg outline-none ${
                   notesInvalid
                     ? "border-red-300 ring-2 ring-red-500/10"
-                    : "border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                    : "border-gray-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
                 }`}
               />
             </div>

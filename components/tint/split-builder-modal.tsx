@@ -373,7 +373,7 @@ export function SplitBuilderModal({
                               e.target.value ? Number(e.target.value) : null,
                             )
                           }
-                          className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-[12.5px] text-gray-700 bg-white focus:outline-none focus:border-teal-600"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-[12.5px] text-gray-700 bg-white focus:outline-none focus:border-brand-600"
                         >
                           <option value="">Select operator…</option>
                           {operators.map((op) => (
@@ -428,7 +428,7 @@ export function SplitBuilderModal({
                                       updateLineQty(split.id, splitLine.rawLineItemId, v);
                                     }
                                   }}
-                                  className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-[12px] text-center text-gray-800 bg-white focus:outline-none focus:border-teal-600"
+                                  className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-[12px] text-center text-gray-800 bg-white focus:outline-none focus:border-brand-600"
                                 />
                                 <span className="text-[10.5px] text-gray-400 w-12 text-right flex-shrink-0">
                                   / {maxQty}
@@ -457,7 +457,7 @@ export function SplitBuilderModal({
                             setAddLineOpenFor(isDropdownOpen ? null : split.id);
                           }}
                           disabled={availableToAdd.length === 0}
-                          className="flex items-center gap-1.5 text-[11.5px] font-semibold text-teal-700 hover:text-teal-700 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+                          className="flex items-center gap-1.5 text-[11.5px] font-semibold text-brand-700 hover:text-brand-700 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
                         >
                           <Plus size={13} />
                           Add Line
@@ -524,7 +524,7 @@ export function SplitBuilderModal({
                 type="button"
                 onClick={addSplit}
                 disabled={!hasAvailableLines}
-                className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-teal-200 rounded-xl text-[12px] font-semibold text-teal-700 hover:border-teal-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed border-brand-200 rounded-xl text-[12px] font-semibold text-brand-700 hover:border-brand-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 <Plus size={14} />
                 Add Split
@@ -560,7 +560,7 @@ export function SplitBuilderModal({
                                 : split.status === "tinting_in_progress"
                                 ? "bg-blue-50 text-blue-700 border-blue-200"
                                 : split.status === "dispatch_confirmation" || split.status === "dispatched"
-                                ? "bg-teal-50 text-teal-700 border-teal-200"
+                                ? "bg-brand-50 text-brand-700 border-brand-200"
                                 : "bg-amber-50 text-amber-700 border-amber-200"
                             )}>
                               {split.status.replace(/_/g, " ")}
@@ -599,7 +599,7 @@ export function SplitBuilderModal({
                         {/* Operator + qty row */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                            <div className="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
                               {split.assignedTo.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
                             </div>
                             <span className="text-[11.5px] font-medium text-gray-700">
@@ -669,7 +669,7 @@ export function SplitBuilderModal({
               type="button"
               onClick={handleConfirm}
               disabled={isConfirmDisabled}
-              className="text-[12.5px] font-semibold text-white bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="text-[12.5px] font-semibold text-white bg-brand-600 hover:bg-brand-700 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading && <Loader2 className="animate-spin" size={14} />}
               Confirm Splits

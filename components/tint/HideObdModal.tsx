@@ -158,7 +158,7 @@ export function HideObdModal({
             }}
             placeholder="Why are you hiding this OBD?"
             disabled={submitting}
-            className="w-full min-h-[76px] px-3 py-2 text-[13px] border border-gray-200 rounded-lg outline-none resize-y focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full min-h-[76px] px-3 py-2 text-[13px] border border-gray-200 rounded-lg outline-none resize-y focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
           />
           <div className={`text-[11px] mt-1 ${charCountColor}`}>
             {reasonLen} / 500
@@ -189,7 +189,7 @@ export function HideObdModal({
             disabled={!valid || submitting}
             className={`h-9 px-3.5 text-[13px] font-medium rounded-lg inline-flex items-center gap-1.5 ${
               valid && !submitting
-                ? "bg-teal-600 hover:bg-teal-700 text-white"
+                ? "bg-brand-600 hover:bg-brand-700 text-white"
                 : "bg-gray-300 text-white cursor-not-allowed"
             }`}
           >

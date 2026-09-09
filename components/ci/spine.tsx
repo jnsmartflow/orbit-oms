@@ -301,7 +301,7 @@ export const MUTED_NOTE = "text-[12.5px] leading-[1.5] text-[#8a929c]";
 export const SHEET_NOTE = "px-4 py-6 text-[13px]";
 /** A text ACTION inside a sheet ("More") — the option row's size, in teal. */
 export const SHEET_ACTION =
-  "w-full text-left px-4 py-3.5 text-[15px] font-semibold text-teal-700 active:bg-gray-50";
+  "w-full text-left px-4 py-3.5 text-[15px] font-semibold text-brand-700 active:bg-gray-50";
 
 // ⚠ THERE IS NO SUMMARY CHIP TOKEN, AND THERE MUST NOT BE ONE AGAIN (step 14).
 // The pack breakdown was a row of floating grey pills, which do not belong on a

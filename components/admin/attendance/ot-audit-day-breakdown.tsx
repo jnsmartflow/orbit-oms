@@ -16,7 +16,7 @@ export function OtAuditDayBreakdown({ user }: OtAuditDayBreakdownProps) {
     <div
       style={{
         background: "#f9fafb",
-        borderLeft: "2px solid #0d9488",
+        borderLeft: "2px solid #7C3AED",
         padding: "16px 20px",
       }}
     >

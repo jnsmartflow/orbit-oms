@@ -1481,7 +1481,7 @@ export function PickerMyPicksBoard({
                 type="button"
                 onClick={() => void handleMarkAllDone()}
                 disabled={markingAll}
-                className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold disabled:opacity-60"
+                className="w-full h-12 rounded-full bg-brand-600 active:bg-brand-700 text-white text-[14.5px] font-bold disabled:opacity-60"
               >
                 {markingAll ? "Marking done…" : "Mark all done"}
               </button>
@@ -1734,7 +1734,7 @@ export function PickerMyPicksBoard({
           // is back + title and nothing else. The pr-1.5 is kept anyway so the
           // two headers stay literally the same markup; a face-specific padding
           // is one more thing to drift.
-          className="bg-teal-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
+          className="bg-brand-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
           style={{
             paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
@@ -2088,7 +2088,7 @@ export function PickerMyPicksBoard({
                   className={"flex " + (rowTappable ? "cursor-pointer active:opacity-90" : "")}
                 >
                   {/* PACK TILE — SLATE #3d4650, matching the supervisor's own
-                      tile. It was teal-700 here until 2026-07-30, which broke
+                      tile. It was brand-700 here until 2026-07-30, which broke
                       the one-teal rule (CLAUDE_UI §1) the supervisor had
                       already recoloured for: teal belongs to the Mark done CTA
                       alone on this screen. Muted em-dash when the pack is
@@ -2310,7 +2310,7 @@ export function PickerMyPicksBoard({
               type="button"
               onClick={() => void handleMarkDone()}
               disabled={marking}
-              className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
+              className="w-full h-12 rounded-full bg-brand-600 active:bg-brand-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(124,58,237,0.42)] disabled:opacity-60"
             >
               {marking ? "Marking done…" : "Mark done"}
             </button>

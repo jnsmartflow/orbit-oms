@@ -191,7 +191,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
           </button>
           <button
             type="button"
-            className="bg-teal-600 hover:bg-teal-700 text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
+            className="bg-brand-600 hover:bg-brand-700 text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
             onClick={openAdd}
           >
             + Add Area
@@ -239,7 +239,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
                   <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      className="text-[11.5px] font-medium text-gray-500 border border-gray-200 bg-white hover:bg-gray-50 hover:text-teal-700 hover:border-teal-200 px-3 py-1.5 rounded-lg transition-colors"
+                      className="text-[11.5px] font-medium text-gray-500 border border-gray-200 bg-white hover:bg-gray-50 hover:text-brand-700 hover:border-brand-200 px-3 py-1.5 rounded-lg transition-colors"
                       onClick={() => openEdit(area)}
                     >
                       Edit →
@@ -317,7 +317,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
             </div>
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
               <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Area"}</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Area"}</Button>
             </div>
           </form>
         </SheetContent>

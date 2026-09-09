@@ -41,12 +41,12 @@ export default function ReportsTopBar({
             const d = e.target.value;
             if (d) router.push(buildReportsHref({ ...params, date: d }));
           }}
-          className="h-[34px] rounded-lg border border-gray-200 px-2.5 text-[13px] text-gray-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+          className="h-[34px] rounded-lg border border-gray-200 px-2.5 text-[13px] text-gray-700 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
         />
         <button
           type="button"
           onClick={() => window.open(buildPrintHref(params), "_blank")}
-          className="h-[34px] rounded-lg bg-teal-600 px-4 text-[13px] font-semibold text-white hover:bg-teal-700"
+          className="h-[34px] rounded-lg bg-brand-600 px-4 text-[13px] font-semibold text-white hover:bg-brand-700"
         >
           Generate PDF
         </button>

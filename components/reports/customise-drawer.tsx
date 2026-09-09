@@ -14,28 +14,28 @@ import {
 
 type Operator = { id: number; name: string | null };
 
-// IosToggle — ON = teal-600, OFF = gray-300 (CLAUDE_UI §11).
+// IosToggle — ON = brand-600, OFF = gray-300 (CLAUDE_UI §11).
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={on}
-      className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors ${on ? "bg-teal-600" : "bg-gray-300"}`}
+      className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors ${on ? "bg-brand-600" : "bg-gray-300"}`}
     >
       <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
     </button>
   );
 }
 
-// Selectable chip — ON = teal-600 fill. Optional leading dot (area colours).
+// Selectable chip — ON = brand-600 fill. Optional leading dot (area colours).
 function Chip({ on, onClick, dot, children }: { on: boolean; onClick: () => void; dot?: string; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
-        on ? "border-teal-600 bg-teal-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+        on ? "border-brand-600 bg-brand-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
       }`}
     >
       {dot && <span className="h-2 w-2 rounded-full" style={{ background: on ? "#fff" : dot }} />}
@@ -186,7 +186,7 @@ export default function CustomiseDrawer({
                   type="button"
                   onClick={() => setTrendDays(d)}
                   className={`rounded-md px-3 py-1 text-[12px] font-medium transition-colors ${
-                    trendDays === d ? "bg-teal-600 text-white" : "text-gray-600 hover:bg-gray-50"
+                    trendDays === d ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-50"
                   }`}
                 >
                   {d} days

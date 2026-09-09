@@ -26,7 +26,7 @@ export function SearchBox({
   return (
     <div
       className={`flex h-[30px] w-[260px] items-center gap-[7px] rounded-[7px] border bg-white px-[9px] text-[11.5px] ${
-        active ? "border-teal-500 shadow-[0_0_0_3px_rgba(13,148,136,0.08)]" : "border-gray-200"
+        active ? "border-brand-500 shadow-[0_0_0_3px_rgba(124,58,237,0.08)]" : "border-gray-200"
       }`}
     >
       <Search size={13} className="flex-shrink-0 text-gray-400" />
@@ -74,7 +74,7 @@ export function SearchHits({
   if (parsed.mode === "none" || !report) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-[#ccfbf1] bg-[#f0fdfa] px-4 py-[9px] text-[11.5px] text-[#0f766e]">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-[#EDE9FE] bg-[#F5F3FF] px-4 py-[9px] text-[11.5px] text-[#6D28D9]">
       {parsed.mode === "text" ? (
         <span>
           <b className="font-bold">{report.matchedCount}</b> match &ldquo;{parsed.text}&rdquo; in this list
@@ -102,7 +102,7 @@ export function SearchHits({
           ))}
         </>
       )}
-      <button type="button" onClick={onClear} className="ml-auto text-[11px] font-semibold text-teal-600 hover:text-teal-700">
+      <button type="button" onClick={onClear} className="ml-auto text-[11px] font-semibold text-brand-600 hover:text-brand-700">
         Clear search ✕
       </button>
     </div>

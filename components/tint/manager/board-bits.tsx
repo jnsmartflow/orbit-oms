@@ -324,7 +324,7 @@ export function OperatorMenu({
             "w-full flex items-center gap-2 px-2.5 py-2 text-[12px] text-left transition-colors",
             op.id === currentId
               ? "bg-gray-50 text-gray-400 cursor-default"
-              : "text-gray-700 hover:bg-teal-50 hover:text-teal-700",
+              : "text-gray-700 hover:bg-brand-50 hover:text-brand-700",
           )}
           disabled={op.id === currentId}
           title={op.id === currentId ? "Already assigned to this operator" : undefined}

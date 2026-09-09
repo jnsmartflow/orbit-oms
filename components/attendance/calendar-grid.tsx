@@ -54,9 +54,9 @@ export function CalendarGrid({
   );
 }
 
-// Layered styling: today's teal-bg overrides any status colour. Selected
+// Layered styling: today's ink-900 bg overrides any status colour. Selected
 // adds a gray-900 ring on top of whatever bg the cell carries — so a
-// selected today shows teal-bg + gray-900 ring (visually distinct).
+// selected today shows ink-900 bg + gray-900 ring (visually distinct).
 function cellClass(
   cell: DayCell,
   status: string | undefined,

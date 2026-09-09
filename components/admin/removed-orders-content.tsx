@@ -166,7 +166,7 @@ export function RemovedOrdersContent(): React.JSX.Element {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by OBD or customer…"
-            className="w-[280px] h-[34px] pl-8 pr-3 text-[13px] border border-gray-200 rounded-lg bg-white outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+            className="w-[280px] h-[34px] pl-8 pr-3 text-[13px] border border-gray-200 rounded-lg bg-white outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
           />
         </div>
         <div className="flex items-center gap-2 text-[12px] text-gray-500">

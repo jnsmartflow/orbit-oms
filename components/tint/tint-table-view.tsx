@@ -775,7 +775,7 @@ export function TintTableView({
                     <tr key={`ao-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
                       <SerialTd n={idx + 1} />
                       <OrderCommonTds order={order} />
-                      <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
+                      <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-brand-600" />
                       <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(order.tintAssignments[0]?.updatedAt)}</span></td>
                       <ActionsTd>
                         <PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} />
@@ -792,7 +792,7 @@ export function TintTableView({
                     <tr key={`as-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
                       <SerialTd n={assignedOrderRows.length + idx + 1} />
                       <SplitCommonTds split={split} />
-                      <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
+                      <OperatorTd name={split.assignedTo.name} avatarColor="bg-brand-600" />
                       <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(split.createdAt)}</span></td>
                       <ActionsTd>
                         <PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} />
@@ -842,7 +842,7 @@ export function TintTableView({
                       <tr key={`ipo-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
                         <SerialTd n={idx + 1} />
                         <OrderCommonTds order={order} />
-                        <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
+                        <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-brand-600" />
                         <td className={tdCls} style={tdStyle}>
                           <ElapsedBadge
                             status={status}
@@ -858,7 +858,7 @@ export function TintTableView({
                     <tr key={`ips-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
                       <SerialTd n={inProgressOrderRows.length + idx + 1} />
                       <SplitCommonTds split={split} />
-                      <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
+                      <OperatorTd name={split.assignedTo.name} avatarColor="bg-brand-600" />
                       <td className={tdCls} style={tdStyle}>
                         {/* Splits never pause (Phase 4a contract) — pass status
                             "tinting_in_progress" + accumulatedMinutes 0. */}

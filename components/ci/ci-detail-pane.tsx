@@ -473,7 +473,7 @@ export function CiDetailPane({
                 className={
                   "h-[34px] shrink-0 rounded-[8px] px-5 text-[13px] font-bold transition-colors " +
                   (canClose
-                    ? "bg-teal-600 text-white hover:bg-teal-700"
+                    ? "bg-brand-600 text-white hover:bg-brand-700"
                     : "cursor-not-allowed bg-gray-100 text-gray-400")
                 }
               >
@@ -537,7 +537,7 @@ function Fact({
 
 const BAR_INPUT =
   "h-[30px] w-full min-w-0 rounded-[6px] border border-gray-200 px-2 text-[13px] " +
-  "text-gray-900 outline-none focus:border-teal-600";
+  "text-gray-900 outline-none focus:border-brand-600";
 
 /** One field in the bar. `max-w` keeps three fields from stretching across a
  *  wide pane into inputs the size of a paragraph; `min-w-0` lets them shrink on

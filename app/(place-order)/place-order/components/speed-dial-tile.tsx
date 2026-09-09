@@ -3,8 +3,8 @@
 // Single tile in the 9-tile speed dial (and reused in the WOODCARE
 // section landing's mini-dial). Visual states match the v4 mockup:
 //   default → white bg + gray-200 border
-//   hover   → teal-600 border + teal-50 bg + 1px lift  (only when !isActive)
-//   active  → teal-600 border + teal-50 bg + teal halo (no lift)
+//   hover   → brand-600 border + brand-50 bg + 1px lift  (only when !isActive)
+//   active  → brand-600 border + brand-50 bg + teal halo (no lift)
 //   in-cart → 6×6 teal dot top-right (independent of active/hover)
 //
 // Activation is by mouse click (onClick) or by page-level digit press
@@ -20,7 +20,7 @@ export interface SpeedDialTileProps {
   parentLabel:  string | null;           // "ENAMELS", null for top-level sections
   type:         SpeedDialTileType;
   hasCartLines: boolean;                 // shows the in-cart dot indicator
-  isActive:     boolean;                 // teal-600 border + teal-50 bg when active
+  isActive:     boolean;                 // brand-600 border + brand-50 bg when active
   onClick:      () => void;
 }
 
@@ -43,15 +43,15 @@ export default function SpeedDialTile({
       style={{ height: "78px" }}
       className={`relative rounded-lg p-2 pt-5 flex flex-col items-center justify-center text-center transition-all duration-75 ${
         isActive
-          ? "bg-teal-50 border border-teal-600 shadow-[0_0_0_3px_rgba(20,184,166,0.12)]"
-          : "bg-white border border-gray-200 hover:bg-teal-50 hover:border-teal-600 hover:-translate-y-px"
+          ? "bg-brand-50 border border-brand-600 shadow-[0_0_0_3px_rgba(139,92,246,0.12)]"
+          : "bg-white border border-gray-200 hover:bg-brand-50 hover:border-brand-600 hover:-translate-y-px"
       }`}
     >
       <span className="absolute top-[6px] left-[8px] font-mono text-[10px] font-bold text-gray-400">
         {position}
       </span>
       {hasCartLines && (
-        <span className="absolute top-[6px] right-[6px] w-[6px] h-[6px] rounded-full bg-teal-600" />
+        <span className="absolute top-[6px] right-[6px] w-[6px] h-[6px] rounded-full bg-brand-600" />
       )}
       <div className={`${fontClass} font-bold text-gray-900 leading-tight whitespace-pre-line`}>
         {label}

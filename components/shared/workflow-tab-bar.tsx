@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 // Stage 4/4: restyled to the SAME icon-on-top layout as mobile-shell.tsx's
 // default <nav> buttons — copy those classes exactly
 // (`flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold`
-// + `h-6 w-6` icon + `text-teal-700`/`text-gray-400` active/inactive) so the
+// + `h-6 w-6` icon + `text-brand-700`/`text-gray-400` active/inactive) so the
 // two bars are the same height BY CONSTRUCTION, not by a hand-tuned
 // min-height that could drift out of sync with the real content. Safe-area
 // treatment mirrors the default bar's bare `env(safe-area-inset-bottom)`
@@ -52,7 +52,7 @@ export function WorkflowTabBar({ tabs, activeKey, onChange }: WorkflowTabBarProp
             className="relative flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold"
           >
             <span className="relative flex items-center justify-center">
-              <Icon className={cn("h-6 w-6", active ? "text-teal-700" : "text-gray-400")} />
+              <Icon className={cn("h-6 w-6", active ? "text-brand-700" : "text-gray-400")} />
               {showBadge && (
                 <span
                   className={cn(
@@ -60,20 +60,20 @@ export function WorkflowTabBar({ tabs, activeKey, onChange }: WorkflowTabBarProp
                     // One-teal (§1): only the ACTIVE tab's badge is teal —
                     // an inactive tab's badge stays neutral gray, same as
                     // its icon/label.
-                    active ? "bg-teal-600" : "bg-gray-400"
+                    active ? "bg-brand-600" : "bg-gray-400"
                   )}
                 >
                   {tab.count! > 99 ? "99+" : tab.count}
                 </span>
               )}
             </span>
-            <span className={cn("whitespace-nowrap", active ? "text-teal-700" : "text-gray-400")}>
+            <span className={cn("whitespace-nowrap", active ? "text-brand-700" : "text-gray-400")}>
               {tab.label}
             </span>
             <span
               aria-hidden="true"
               className={cn(
-                "absolute left-1/2 -translate-x-1/2 bottom-0 h-[3px] w-8 rounded-full bg-teal-600",
+                "absolute left-1/2 -translate-x-1/2 bottom-0 h-[3px] w-8 rounded-full bg-brand-600",
                 active ? "opacity-100" : "opacity-0"
               )}
             />

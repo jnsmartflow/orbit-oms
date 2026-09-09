@@ -145,7 +145,7 @@ export function BoardRail({
                   <button
                     type="button"
                     onClick={() => onOpenPanel(o)}
-                    className="text-[12.5px] font-bold text-gray-900 text-left leading-snug hover:text-teal-700 truncate"
+                    className="text-[12.5px] font-bold text-gray-900 text-left leading-snug hover:text-brand-700 truncate"
                   >
                     {site}
                   </button>
@@ -220,7 +220,7 @@ export function BoardRail({
                     onClick={(e) =>
                       setMenu(menu?.orderId === o.id ? null : { orderId: o.id, anchor: e.currentTarget })
                     }
-                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white rounded-[7px] text-[11px] font-bold py-2 transition-colors"
+                    className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded-[7px] text-[11px] font-bold py-2 transition-colors"
                   >
                     Assign ▾
                   </button>

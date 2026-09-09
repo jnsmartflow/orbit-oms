@@ -17,7 +17,7 @@ export default async function LoginPage() {
         {/* Brand */}
         <div className="mb-8 text-center">
           <div className="inline-flex items-center gap-2.5 mb-1.5">
-            <div className="w-9 h-9 bg-teal-600 rounded-[9px] flex items-center justify-center flex-shrink-0">
+            <div className="w-9 h-9 bg-brand-600 rounded-[9px] flex items-center justify-center flex-shrink-0">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
                 <circle cx="11" cy="11" r="2.2" fill="white"/>

@@ -403,7 +403,7 @@ export default function CartPanel({
                   autoComplete="off"
                   autoCorrect="off"
                   spellCheck={false}
-                  className="w-full h-[38px] pl-[34px] pr-3 text-[13px] text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-[9px] bg-white focus:border-teal-500 focus:outline-none"
+                  className="w-full h-[38px] pl-[34px] pr-3 text-[13px] text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-[9px] bg-white focus:border-brand-500 focus:outline-none"
                 />
                 {shipFocused && shipSuggestions.length > 0 && (
                   <div className="absolute left-0 right-0 top-[42px] z-30 bg-white border border-gray-200 rounded-[8px] shadow-lg overflow-hidden">
@@ -443,7 +443,7 @@ export default function CartPanel({
                       type="button"
                       onClick={() => { onDispatchChange(d.value); if (d.value !== "Call") onCallTargetChange(null); }}
                       className={`flex-1 h-10 rounded-[9px] border text-[12.5px] flex items-center justify-center gap-1.5 transition-colors ${
-                        on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        on ? "border-brand-500 bg-brand-50 text-brand-700 font-medium" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                       }`}
                     >
                       <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: d.dot }} />
@@ -463,7 +463,7 @@ export default function CartPanel({
                         type="button"
                         onClick={() => onCallTargetChange(t)}
                         className={`h-7 px-[13px] rounded-[14px] border text-[11.5px] flex items-center transition-colors ${
-                          on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          on ? "border-brand-500 bg-brand-50 text-brand-700 font-medium" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                         }`}
                       >
                         {t}
@@ -491,10 +491,10 @@ export default function CartPanel({
                         else { onMarkerChange(m.value); if (m.value !== "Cross Delivery") onCrossDepotChange(null); }
                       }}
                       className={`h-[42px] rounded-[9px] border text-[12.5px] flex items-center justify-center gap-[7px] transition-colors ${
-                        on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        on ? "border-brand-500 bg-brand-50 text-brand-700 font-medium" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                       }`}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={on ? "#0f766e" : m.stroke} strokeWidth="1.8">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={on ? "#6D28D9" : m.stroke} strokeWidth="1.8">
                         {m.paths}
                       </svg>
                       {m.label}
@@ -513,7 +513,7 @@ export default function CartPanel({
                         type="button"
                         onClick={() => onCrossDepotChange(depot)}
                         className={`h-7 px-[13px] rounded-[14px] border text-[11.5px] flex items-center transition-colors ${
-                          on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                          on ? "border-brand-500 bg-brand-50 text-brand-700 font-medium" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                         }`}
                       >
                         {depot}
@@ -533,7 +533,7 @@ export default function CartPanel({
                 <button
                   type="button"
                   onClick={() => setQuickAddOpen((o) => !o)}
-                  className="text-[11.5px] font-medium text-teal-600 hover:text-teal-700"
+                  className="text-[11.5px] font-medium text-brand-600 hover:text-brand-700"
                 >
                   Quick add {quickAddOpen ? "▴" : "▾"}
                 </button>
@@ -543,7 +543,7 @@ export default function CartPanel({
                 onChange={(e) => onNotesChange(e.target.value)}
                 placeholder="Add a note…"
                 rows={2}
-                className="w-full min-h-[44px] px-[11px] py-[9px] text-[13px] text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-[9px] resize-none focus:border-teal-500 focus:outline-none"
+                className="w-full min-h-[44px] px-[11px] py-[9px] text-[13px] text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-[9px] resize-none focus:border-brand-500 focus:outline-none"
               />
               {quickAddOpen && (
                 <div className="flex items-center gap-1.5 mt-[7px] flex-wrap">
@@ -580,9 +580,9 @@ export default function CartPanel({
           type="button"
           onClick={onConfirmSend}
           disabled={!canSend}
-          className={`w-full h-[40px] text-[14px] font-medium rounded-lg flex items-center justify-center gap-2 transition-colors duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 ${
+          className={`w-full h-[40px] text-[14px] font-medium rounded-lg flex items-center justify-center gap-2 transition-colors duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 ${
             canSend
-              ? "bg-teal-600 hover:bg-teal-700 text-white"
+              ? "bg-brand-600 hover:bg-brand-700 text-white"
               : "bg-gray-100 text-gray-400 cursor-not-allowed"
           }`}
         >

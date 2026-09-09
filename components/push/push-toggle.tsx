@@ -153,7 +153,7 @@ export function PushToggle() {
             !interactive
               ? "cursor-not-allowed bg-gray-200"
               : on
-                ? "bg-teal-600" // the ONE teal element in this sheet
+                ? "bg-brand-600" // the ONE teal element in this sheet
                 : "bg-gray-300",
           )}
         >

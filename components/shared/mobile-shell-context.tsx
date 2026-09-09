@@ -152,11 +152,11 @@ export function MobileShellProvider({
                     className={cn(
                       "flex items-center gap-3.5 rounded-[11px] border-l-2 px-3 py-3.5 text-[15px]",
                       active
-                        ? "bg-teal-50 text-teal-700 font-semibold border-l-teal-600"
+                        ? "bg-brand-50 text-brand-700 font-semibold border-l-brand-600"
                         : "text-gray-700 border-l-transparent"
                     )}
                   >
-                    <Icon className={cn("h-[21px] w-[21px] shrink-0", active ? "text-teal-600" : "text-gray-400")} />
+                    <Icon className={cn("h-[21px] w-[21px] shrink-0", active ? "text-brand-600" : "text-gray-400")} />
                     {item.label}
                   </Link>
                 );
@@ -175,7 +175,7 @@ export function MobileShellProvider({
           <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-gray-300" />
           <div className="flex items-center gap-3 px-5 pt-2.5 pb-3.5">
             {/* Neutral gray — the ONE teal in this sheet is the Notifications
-                ON switch below (avatar was bg-teal-600; a second teal would
+                ON switch below (avatar was bg-brand-600; a second teal would
                 break the one-teal rule once the switch was added). */}
             <div className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-[17px] font-bold text-white">
               {userInitials}

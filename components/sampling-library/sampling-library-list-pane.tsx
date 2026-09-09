@@ -251,7 +251,7 @@ function ListCard({
       onClick={() => onSelect(item.samplingNo)}
       className={`w-full text-left flex items-stretch gap-3 py-3 px-4 border-b border-gray-100 border-l-[3px] cursor-pointer transition-colors duration-100 ${
         isSelected
-          ? "bg-teal-50 border-l-teal-700"
+          ? "bg-brand-50 border-l-brand-700"
           : "bg-white border-l-transparent hover:bg-gray-50"
       }`}
     >

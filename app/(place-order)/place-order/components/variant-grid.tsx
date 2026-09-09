@@ -383,7 +383,7 @@ export function PaginationIndicator({
         disabled={currentPage === 0}
         title="Previous page"
         aria-label="Previous page"
-        className="text-gray-400 hover:text-teal-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400"
+        className="text-gray-400 hover:text-brand-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400"
       >
         ‹
       </button>
@@ -399,7 +399,7 @@ export function PaginationIndicator({
               aria-current={isActive ? "page" : undefined}
               className={`transition-all duration-150 ${
                 isActive
-                  ? "w-[22px] h-[7px] bg-teal-600 rounded-[4px]"
+                  ? "w-[22px] h-[7px] bg-brand-600 rounded-[4px]"
                   : "w-[7px] h-[7px] bg-gray-300 rounded-full hover:bg-gray-400"
               }`}
             />
@@ -412,7 +412,7 @@ export function PaginationIndicator({
         disabled={currentPage === totalPages - 1}
         title="Next page"
         aria-label="Next page"
-        className="text-gray-600 hover:text-teal-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600"
+        className="text-gray-600 hover:text-brand-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600"
       >
         ›
       </button>
@@ -436,7 +436,7 @@ export function PaginationFooter({
 }: PaginationFooterProps): React.JSX.Element {
   const kbd = "font-mono px-1 bg-white border border-gray-200 rounded text-[9px]";
   return (
-    <div className="px-3 py-1 bg-teal-50/40 border-t border-teal-100 flex items-center gap-3 text-[9.5px]">
+    <div className="px-3 py-1 bg-brand-50/40 border-t border-brand-100 flex items-center gap-3 text-[9.5px]">
       <span className="text-gray-500">
         <kbd className={kbd}>Shift+PgDn</kbd>
         {" / "}
@@ -462,7 +462,7 @@ export function PaginationFooter({
         <kbd className={kbd}>9</kbd>
         {" "}qty
       </span>
-      <span className="ml-auto text-teal-700 font-medium">
+      <span className="ml-auto text-brand-700 font-medium">
         Showing bases {pageStart + 1}–{pageEnd} of {totalItems} · Page {currentPage + 1} of {totalPages}
       </span>
     </div>

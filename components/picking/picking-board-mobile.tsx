@@ -459,7 +459,7 @@ function PickingCard({
   captionSmu?: boolean;
   /**
    * Pick-bundling hint (2026-08-18) — a 4px full-height bar on the card's LEFT
-   * EDGE, inside its rounded corners. `"teal"` = SAME MATERIAL (Rule 1),
+   * EDGE, inside its rounded corners. `"ok"` = SAME MATERIAL (Rule 1),
    * `"amber"` = MOSTLY SAME (Rule 2), null/omitted = no bar.
    *
    * ⚠ OPTIONAL AND DEFAULTED, so every existing call site is byte-identical —
@@ -635,7 +635,7 @@ function PickingCard({
     <div className="relative mb-[11px]">
       {/* Selected badge — floating teal check in the top-left corner, shown
           ONLY when this Assign card is selected. Replaces the old inline
-          checkbox: same teal-600 + white-tick language, now a ~20px round badge
+          checkbox: same brand-600 + white-tick language, now a ~20px round badge
           overhanging the corner (white ring separates it from the card's teal
           tint). Sits on this overflow-visible wrapper (the card itself keeps
           overflow-hidden for its shelf), and is pointer-events-none so a tap
@@ -643,7 +643,7 @@ function PickingCard({
           locked/picking/done variants. */}
       {variant === "assign" && selected && (
         <span
-          className="absolute -top-[7px] -left-[7px] z-10 w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center pointer-events-none"
+          className="absolute -top-[7px] -left-[7px] z-10 w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center pointer-events-none"
           style={{ boxShadow: "0 0 0 2px #fff" }}
           aria-hidden="true"
         >
@@ -658,7 +658,7 @@ function PickingCard({
           // On a duplicate the fill/border come from the style object below, so
           // no colour class is emitted here at all — a `bg-*` class plus an
           // inline background is a fight nobody needs to read later.
-          (dup ? "" : selected ? "bg-teal-50 border-teal-600 " : "bg-white border-[#eceef2] ") +
+          (dup ? "" : selected ? "bg-brand-50 border-brand-600 " : "bg-white border-[#eceef2] ") +
           // ⚠ doneChecked's opacity-75 is SUPPRESSED on a duplicate. Dimming is
           // "this one is settled, stop looking at it" — the exact opposite of
           // what a flagged card is for. Full strength, always.
@@ -1144,10 +1144,10 @@ function FilterBottomSheet({
           <span
             className={
               "text-[14px] flex items-center gap-2 " +
-              (value === null ? "text-teal-700 font-semibold" : "text-gray-900 font-medium")
+              (value === null ? "text-brand-700 font-semibold" : "text-gray-900 font-medium")
             }
           >
-            {value === null && <Check size={16} className="text-teal-600" />}
+            {value === null && <Check size={16} className="text-brand-600" />}
             {allLabel}
           </span>
           <span className="text-[12px] text-gray-400">{allCount}</span>
@@ -1165,10 +1165,10 @@ function FilterBottomSheet({
             <span
               className={
                 "text-[14px] flex items-center gap-2 min-w-0 " +
-                (value === opt.value ? "text-teal-700 font-semibold" : "text-gray-900 font-medium")
+                (value === opt.value ? "text-brand-700 font-semibold" : "text-gray-900 font-medium")
               }
             >
-              {value === opt.value && <Check size={16} className="text-teal-600 shrink-0" />}
+              {value === opt.value && <Check size={16} className="text-brand-600 shrink-0" />}
               <span className="truncate">{opt.label}</span>
             </span>
             <span className="text-[12px] text-gray-400 shrink-0">{opt.count}</span>
@@ -2678,7 +2678,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 setSearching(false);
                 setQuery("");
               }}
-              className="text-[13px] font-semibold text-teal-700 px-1 shrink-0"
+              className="text-[13px] font-semibold text-brand-700 px-1 shrink-0"
             >
               Cancel
             </button>
@@ -2695,7 +2695,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 className={
                   "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
                   (activeRoute !== null
-                    ? "border-teal-500 bg-teal-50 text-teal-700"
+                    ? "border-brand-500 bg-brand-50 text-brand-700"
                     : "border-gray-200 bg-white text-gray-500")
                 }
               >
@@ -2704,7 +2704,7 @@ export function PickingBoardMobile(): React.JSX.Element {
               </button>
             </div>
 
-            <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
+            <div className="mx-[-16px] bg-brand-50 border-t border-brand-200 px-4 py-2 text-[12px] font-medium text-brand-700 flex items-center gap-1">
               <b className="font-bold">{laneLabel}</b>
               <span>
                 &nbsp;·&nbsp;{filteredWaitingDue.length} due&nbsp;·&nbsp;{formatLitres(totalLitres)} L ready to load
@@ -2775,7 +2775,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 dropdown that used to narrow them is gone.
                 "over 30m" is scoped to still-picking (see overThresholdCount)
                 and is unchanged. Segment omitted entirely when the count is 0. */}
-            <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
+            <div className="mx-[-16px] bg-brand-50 border-t border-brand-200 px-4 py-2 text-[12px] font-medium text-brand-700 flex items-center gap-1">
               <span className="tabular-nums">
                 {pickingView === "picker" && (
                   <>
@@ -2808,7 +2808,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 className={
                   "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
                   (activeCheckedPicker !== null
-                    ? "border-teal-500 bg-teal-50 text-teal-700"
+                    ? "border-brand-500 bg-brand-50 text-brand-700"
                     : "border-gray-200 bg-white text-gray-500")
                 }
               >
@@ -2821,7 +2821,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 its explicit "today" wording because that band alone is
                 date-fenced (queue.ts's openPending scope); needs-check spans
                 all dates, so it deliberately carries no day qualifier. */}
-            <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
+            <div className="mx-[-16px] bg-brand-50 border-t border-brand-200 px-4 py-2 text-[12px] font-medium text-brand-700 flex items-center gap-1">
               <b className="font-bold">{activeCheckedPicker ?? "All pickers"}</b>
               <span>
                 &nbsp;·&nbsp;{filteredNeedsCheck.length} to check
@@ -3476,7 +3476,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   type="button"
                   onClick={() => void handleRelease(releaseTarget)}
                   disabled={releasing}
-                  className="flex-1 h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
+                  className="flex-1 h-12 rounded-full bg-brand-600 active:bg-brand-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(124,58,237,0.42)] disabled:opacity-60"
                 >
                   {releasing ? "Releasing…" : "Release"}
                 </button>
@@ -3524,7 +3524,7 @@ export function PickingBoardMobile(): React.JSX.Element {
           // Right padding is 6px, not 14px: the icon buttons are 44px tap
           // targets now, and their glyphs sit ~11px inside that box, so a 14px
           // gutter would push the visible glyph a clear 25px off the edge.
-          className="bg-teal-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
+          className="bg-brand-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
           style={{
             paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
@@ -3792,7 +3792,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 setDetailSearching(false);
                 setDetailQuery("");
               }}
-              className="text-[13px] font-semibold text-teal-700 px-1 shrink-0"
+              className="text-[13px] font-semibold text-brand-700 px-1 shrink-0"
             >
               Cancel
             </button>
@@ -4078,7 +4078,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                       <span
                         className={
                           "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
-                          (isChecked ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300")
+                          (isChecked ? "bg-brand-600 border-brand-600" : "bg-white border-gray-300")
                         }
                       >
                         {isChecked && (
@@ -4238,7 +4238,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             <button
               type="button"
               onClick={() => openPickerForRow(detailRow)}
-              className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+              className="w-full h-12 rounded-full bg-brand-600 active:bg-brand-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(124,58,237,0.42)]"
             >
               Assign to picker
             </button>
@@ -4319,7 +4319,7 @@ export function PickingBoardMobile(): React.JSX.Element {
               className={
                 "w-full h-12 rounded-full text-[14.5px] font-bold " +
                 (allLinesResolved
-                  ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+                  ? "bg-brand-600 active:bg-brand-700 text-white shadow-[0_8px_22px_rgba(124,58,237,0.42)]"
                   : "bg-gray-200 text-gray-400")
               }
             >
@@ -4389,7 +4389,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 setPickerSheetOpen(true);
               }}
               disabled={assigning}
-              className="flex items-center gap-1.5 bg-teal-600 active:bg-teal-700 text-white text-[13px] font-bold rounded-[10px] px-[15px] py-[9px] disabled:opacity-60"
+              className="flex items-center gap-1.5 bg-brand-600 active:bg-brand-700 text-white text-[13px] font-bold rounded-[10px] px-[15px] py-[9px] disabled:opacity-60"
             >
               Assign
               <ArrowRight size={14} />

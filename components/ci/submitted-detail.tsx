@@ -147,7 +147,7 @@ export function CiSubmittedDetail({
           CI is the subject and the dealer is context — the reverse of the New
           flow's bill header, where the dealer is what you are choosing. */}
       <div
-        className="bg-teal-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
+        className="bg-brand-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
         <div className="flex items-center gap-1.5">
@@ -427,7 +427,7 @@ export function CiSubmittedDetail({
             className={
               "w-full h-12 rounded-full text-[15px] font-bold " +
               (dirty && !saving
-                ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+                ? "bg-brand-600 active:bg-brand-700 text-white shadow-[0_8px_22px_rgba(124,58,237,0.42)]"
                 : "bg-gray-100 text-gray-400")
             }
           >

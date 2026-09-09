@@ -154,7 +154,7 @@ const config: Config = {
       },
       keyframes: {
         "cart-flash": {
-          "0%":   { backgroundColor: "#f0fdfa" },
+          "0%":   { backgroundColor: "#F5F3FF" },
           "100%": { backgroundColor: "transparent" },
         },
       },

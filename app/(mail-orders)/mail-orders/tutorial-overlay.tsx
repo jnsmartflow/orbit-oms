@@ -300,7 +300,7 @@ export function TutorialOverlay({ manualTrigger, onClose }: TutorialOverlayProps
       {/* Spotlight cutout */}
       {spotlightRect && (
         <div
-          className="absolute border-2 border-teal-500 rounded-md pointer-events-none transition-all duration-300 ease-out"
+          className="absolute border-2 border-brand-500 rounded-md pointer-events-none transition-all duration-300 ease-out"
           style={{
             top: spotlightRect.top - PAD,
             left: spotlightRect.left - PAD,
@@ -327,7 +327,7 @@ export function TutorialOverlay({ manualTrigger, onClose }: TutorialOverlayProps
 
         <div className="px-4 pt-3.5 pb-3">
           {/* Step counter */}
-          <p className="text-[10px] font-semibold text-teal-600 mb-1">
+          <p className="text-[10px] font-semibold text-brand-600 mb-1">
             Step {currentStep + 1} of {STEPS.length}
           </p>
 
@@ -350,7 +350,7 @@ export function TutorialOverlay({ manualTrigger, onClose }: TutorialOverlayProps
                 <div
                   key={i}
                   className={`w-[6px] h-[6px] rounded-full transition-colors ${
-                    i === currentStep ? "bg-teal-500" : "bg-gray-200"
+                    i === currentStep ? "bg-brand-500" : "bg-gray-200"
                   }`}
                 />
               ))}
@@ -368,7 +368,7 @@ export function TutorialOverlay({ manualTrigger, onClose }: TutorialOverlayProps
               )}
               <button
                 onClick={handleNext}
-                className="text-[11px] font-medium text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-md transition-colors"
+                className="text-[11px] font-medium text-white bg-brand-600 hover:bg-brand-700 px-3 py-1.5 rounded-md transition-colors"
               >
                 {isLast ? "Got it!" : "Next"}
               </button>

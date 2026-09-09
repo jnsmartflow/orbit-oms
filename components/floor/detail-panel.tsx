@@ -576,7 +576,7 @@ function PanelBody({
                 disabled={source === "rail" && !railReleasable}
                 popoverDir="down"
                 popoverAlign="left"
-                className="inline-flex h-[34px] items-center gap-1.5 rounded-md border border-teal-600 bg-teal-600 px-3.5 text-[12px] font-semibold text-white enabled:hover:bg-teal-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                className="inline-flex h-[34px] items-center gap-1.5 rounded-md border border-brand-600 bg-brand-600 px-3.5 text-[12px] font-semibold text-white enabled:hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                   <path d="M5 12h14M13 6l6 6-6 6" />
@@ -593,7 +593,7 @@ function PanelBody({
               type="button"
               disabled={busy}
               onClick={() => run(() => actions.onRestore(d.orderId))}
-              className="inline-flex h-[34px] items-center rounded-md border border-teal-600 bg-teal-600 px-3.5 text-[12px] font-semibold text-white enabled:hover:bg-teal-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+              className="inline-flex h-[34px] items-center rounded-md border border-brand-600 bg-brand-600 px-3.5 text-[12px] font-semibold text-white enabled:hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
             >
               Restore to decisions
             </button>
@@ -607,7 +607,7 @@ function PanelBody({
             onClick={() => setEditingShipTo(true)}
             className={
               source === "floor"
-                ? "inline-flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-md border border-teal-600 bg-teal-600 px-3.5 text-[12px] font-semibold text-white hover:bg-teal-700"
+                ? "inline-flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-600 bg-brand-600 px-3.5 text-[12px] font-semibold text-white hover:bg-brand-700"
                 : "inline-flex h-[34px] items-center whitespace-nowrap rounded-md border border-gray-300 bg-white px-3.5 text-[12px] font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50"
             }
           >
@@ -773,7 +773,7 @@ function ShipToEditor({
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search dealer or site name…"
-        className="h-8 w-full rounded-[7px] border border-gray-300 px-2.5 text-[12px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+        className="h-8 w-full rounded-[7px] border border-gray-300 px-2.5 text-[12px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
       />
       {q.trim().length >= 2 && (
         <div className="mt-1.5 max-h-[220px] overflow-y-auto">
@@ -788,7 +788,7 @@ function ShipToEditor({
                 type="button"
                 disabled={busy}
                 onClick={() => onPick(r.id)}
-                className="flex w-full items-center gap-2 rounded-[6px] px-2.5 py-2 text-left hover:bg-[#f0fdfa] disabled:opacity-40"
+                className="flex w-full items-center gap-2 rounded-[6px] px-2.5 py-2 text-left hover:bg-[#F5F3FF] disabled:opacity-40"
               >
                 <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-800">{r.customerName}</span>
                 {r.area && <span className="shrink-0 text-[10px] text-gray-400">{r.area}</span>}

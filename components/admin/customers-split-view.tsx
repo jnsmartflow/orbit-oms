@@ -170,7 +170,7 @@ function getInitials(name: string): string {
 function SectionHead({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <div className="flex items-center gap-2.5 mb-4">
-      <div className="w-[26px] h-[26px] rounded-[7px] bg-teal-50 flex items-center justify-center flex-shrink-0 text-teal-700">
+      <div className="w-[26px] h-[26px] rounded-[7px] bg-brand-50 flex items-center justify-center flex-shrink-0 text-brand-700">
         {icon}
       </div>
       <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">{title}</span>
@@ -187,7 +187,7 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
   );
 }
 
-const inputCls = "w-full text-[12.5px] text-gray-900 bg-white border border-[#e5e7eb] rounded-lg px-[9px] py-[6px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition-all";
+const inputCls = "w-full text-[12.5px] text-gray-900 bg-white border border-[#e5e7eb] rounded-lg px-[9px] py-[6px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 transition-all";
 const hintCls  = "text-[11px] text-[#9ca3af] mt-0.5";
 
 // ── Group type ─────────────────────────────────────────────────────────────────
@@ -718,7 +718,7 @@ export function CustomersSplitView({
           </>
         )}
         {canEdit && (
-          <button onClick={requestNew} className="flex items-center gap-1.5 text-[12.5px] font-medium text-white bg-teal-600 hover:bg-teal-700 px-3.5 py-[7px] rounded-lg transition-colors">
+          <button onClick={requestNew} className="flex items-center gap-1.5 text-[12.5px] font-medium text-white bg-brand-600 hover:bg-brand-700 px-3.5 py-[7px] rounded-lg transition-colors">
             <Plus className="w-3.5 h-3.5" />Add customer
           </button>
         )}
@@ -750,7 +750,7 @@ export function CustomersSplitView({
                 placeholder="Search name or code…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full text-[13px] text-gray-900 bg-gray-50 border border-[#e5e7eb] rounded-lg pl-8 pr-3 py-[7px] outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/10 transition-all"
+                className="w-full text-[13px] text-gray-900 bg-gray-50 border border-[#e5e7eb] rounded-lg pl-8 pr-3 py-[7px] outline-none focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-500/10 transition-all"
               />
             </div>
             <div className="flex gap-1.5 items-center">
@@ -785,19 +785,19 @@ export function CustomersSplitView({
             <div className="flex gap-1.5 items-center">
               <button
                 onClick={() => setFilterKey((v) => !v)}
-                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterKey ? "bg-teal-50 text-teal-700 border-teal-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterKey ? "bg-brand-50 text-brand-700 border-brand-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${filterKey ? "bg-teal-600" : "bg-gray-400"}`} />Key
+                <span className={`w-1.5 h-1.5 rounded-full ${filterKey ? "bg-brand-600" : "bg-gray-400"}`} />Key
               </button>
               <button
                 onClick={() => setFilterActive((v) => !v)}
-                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterActive ? "bg-teal-50 text-teal-700 border-teal-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterActive ? "bg-brand-50 text-brand-700 border-brand-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${filterActive ? "bg-teal-600" : "bg-gray-400"}`} />Active
+                <span className={`w-1.5 h-1.5 rounded-full ${filterActive ? "bg-brand-600" : "bg-gray-400"}`} />Active
               </button>
               <button
                 onClick={() => { setGroupByName((v) => !v); setPage(1); }}
-                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${groupByName ? "bg-teal-50 text-teal-700 border-teal-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${groupByName ? "bg-brand-50 text-brand-700 border-brand-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
               >
                 <Layers className="w-3 h-3" />Group
               </button>
@@ -816,7 +816,7 @@ export function CustomersSplitView({
                 onClick={() => requestSelectId(c.id)}
                 className={`flex items-stretch border-b border-[#e5e7eb] cursor-pointer transition-colors ${c.id === selectedId ? "bg-[#eef0fb]" : "hover:bg-gray-50"}`}
               >
-                <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-teal-600" : "bg-transparent"}`} />
+                <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-brand-600" : "bg-transparent"}`} />
                 <div className="flex-1 px-3.5 py-[11px] min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-0.5">
                     <span className="text-[13px] font-medium text-gray-900 truncate">{c.customerName}</span>
@@ -832,7 +832,7 @@ export function CustomersSplitView({
                     <span className={`text-[10px] font-medium px-1.5 py-px rounded-full border ${c.isActive ? "bg-[#e8f5e9] text-[#2e7d32] border-[#a5d6a7]" : "bg-[#f0f1f5] text-[#9ca3af] border-[#e5e7eb]"}`}>{c.isActive ? "Active" : "Inactive"}</span>
                     {c.isKeyCustomer && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#fef3c7] text-[#b45309] border-[#fcd34d]">Key</span>}
                     {c.premisesType && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#f3e8ff] text-[#7c3aed] border border-[#e9d5ff]">{c.premisesType.name}</span>}
-                    {c.salesOfficerGroup && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-teal-50 text-teal-700 border-teal-200 truncate max-w-[100px]">{c.salesOfficerGroup.name}</span>}
+                    {c.salesOfficerGroup && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-brand-50 text-brand-700 border-brand-200 truncate max-w-[100px]">{c.salesOfficerGroup.name}</span>}
                   </div>
                 </div>
               </div>
@@ -851,7 +851,7 @@ export function CustomersSplitView({
                     <span className="text-[12.5px] font-semibold text-gray-900 flex-1 truncate">
                       {group.name}
                     </span>
-                    <span className="text-[10px] font-bold px-[7px] py-[1px] rounded-full bg-teal-50 text-teal-700 border border-teal-200 flex-shrink-0">
+                    <span className="text-[10px] font-bold px-[7px] py-[1px] rounded-full bg-brand-50 text-brand-700 border border-brand-200 flex-shrink-0">
                       {group.items.length}
                     </span>
                   </div>
@@ -863,7 +863,7 @@ export function CustomersSplitView({
                       className={`flex items-stretch border-b border-[#e5e7eb] cursor-pointer transition-colors ${c.id === selectedId ? "bg-[#eef0fb]" : "hover:bg-gray-50"}`}
                     >
                       <div className="w-[23px] flex-shrink-0" />
-                      <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-teal-600" : "bg-transparent"}`} />
+                      <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-brand-600" : "bg-transparent"}`} />
                       <div className="flex-1 px-3 py-[9px] min-w-0">
                         {/* Row 1: code · area */}
                         <div className="flex items-center gap-1.5 mb-1">
@@ -893,7 +893,7 @@ export function CustomersSplitView({
                             <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#fef3c7] text-[#b45309] border-[#fcd34d]">Key</span>
                           )}
                           {c.salesOfficerGroup && (
-                            <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-teal-50 text-teal-700 border-teal-200 truncate max-w-[100px]">
+                            <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-brand-50 text-brand-700 border-brand-200 truncate max-w-[100px]">
                               {c.salesOfficerGroup.name}
                             </span>
                           )}
@@ -933,7 +933,7 @@ export function CustomersSplitView({
         {/* ── Resize handle ──────────────────────────────────────────────────── */}
         <div
           onMouseDown={onResizeMouseDown}
-          className="w-1 bg-transparent hover:bg-teal-100 cursor-col-resize flex-shrink-0 relative z-10 transition-colors group"
+          className="w-1 bg-transparent hover:bg-brand-100 cursor-col-resize flex-shrink-0 relative z-10 transition-colors group"
         >
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-0.5 h-8 rounded-sm bg-gray-300 group-hover:bg-gray-400" />
         </div>
@@ -986,11 +986,11 @@ export function CustomersSplitView({
                     key={tab.id}
                     type="button"
                     onClick={() => scrollToSection(tab.id)}
-                    className={`flex items-center gap-1.5 px-3 text-[11.5px] font-medium border-b-2 h-[38px] whitespace-nowrap transition-colors ${activeTab === tab.id ? "text-teal-700 border-teal-600" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+                    className={`flex items-center gap-1.5 px-3 text-[11.5px] font-medium border-b-2 h-[38px] whitespace-nowrap transition-colors ${activeTab === tab.id ? "text-brand-700 border-brand-600" : "text-gray-500 border-transparent hover:text-gray-700"}`}
                   >
                     {tab.label}
                     {tab.id === "sec-contacts" && form.contacts.length > 0 && (
-                      <span className="text-[10px] font-semibold px-1.5 py-px rounded-lg bg-teal-50 text-teal-700">{form.contacts.length}</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-px rounded-lg bg-brand-50 text-brand-700">{form.contacts.length}</span>
                     )}
                   </button>
                 ))}
@@ -1032,7 +1032,7 @@ export function CustomersSplitView({
                   )}
                   <Button
                     type="submit" size="sm" disabled={saving || !canEdit}
-                    className="text-[12.5px] bg-teal-600 hover:bg-teal-700 text-white"
+                    className="text-[12.5px] bg-brand-600 hover:bg-brand-700 text-white"
                   >{saving ? "Saving…" : (editingFull ? "Save changes" : "Create customer")}</Button>
                 </div>
               </div>
@@ -1229,13 +1229,13 @@ export function CustomersSplitView({
                         <div
                           key={key}
                           onClick={() => setField(key, !on)}
-                          className={`flex items-center justify-between p-[10px_12px] rounded-lg border cursor-pointer transition-all ${on ? "bg-[#eef0fb] border-teal-200" : "bg-gray-50 border-[#e5e7eb] hover:border-gray-300"}`}
+                          className={`flex items-center justify-between p-[10px_12px] rounded-lg border cursor-pointer transition-all ${on ? "bg-[#eef0fb] border-brand-200" : "bg-gray-50 border-[#e5e7eb] hover:border-gray-300"}`}
                         >
                           <div>
                             <div className="text-[12.5px] font-medium text-gray-900">{label}</div>
                             <div className="text-[10.5px] text-[#9ca3af] mt-0.5">{desc}</div>
                           </div>
-                          <div className={`w-[30px] h-[17px] rounded-full relative flex-shrink-0 transition-colors ${on ? "bg-teal-600" : "bg-gray-300"}`}>
+                          <div className={`w-[30px] h-[17px] rounded-full relative flex-shrink-0 transition-colors ${on ? "bg-brand-600" : "bg-gray-300"}`}>
                             <div className={`absolute w-[13px] h-[13px] rounded-full bg-white top-[2px] transition-transform shadow-sm ${on ? "translate-x-[15px]" : "translate-x-[2px]"}`} />
                           </div>
                         </div>
@@ -1296,7 +1296,7 @@ export function CustomersSplitView({
                   </div>
                   <button
                     type="button" onClick={addContact}
-                    className="flex items-center justify-center gap-1.5 w-full py-[9px] rounded-lg border-[1.5px] border-dashed border-teal-200 text-teal-700 text-[12px] font-medium hover:bg-teal-50 transition-colors"
+                    className="flex items-center justify-center gap-1.5 w-full py-[9px] rounded-lg border-[1.5px] border-dashed border-brand-200 text-brand-700 text-[12px] font-medium hover:bg-brand-50 transition-colors"
                   >
                     <Plus className="w-3 h-3" />Add contact
                   </button>
@@ -1336,7 +1336,7 @@ export function CustomersSplitView({
                 </div>
               )}
               <div className="flex justify-end">
-                <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => setImportResult(null)}>Close</Button>
+                <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={() => setImportResult(null)}>Close</Button>
               </div>
             </div>
           )}

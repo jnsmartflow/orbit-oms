@@ -170,7 +170,7 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   placeholder="Search material code or description\u2026"
-                  className="w-full h-[32px] border border-gray-200 rounded-md px-3 text-[12px] text-gray-900 placeholder:text-gray-400 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                  className="w-full h-[32px] border border-gray-200 rounded-md px-3 text-[12px] text-gray-900 placeholder:text-gray-400 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
                   autoFocus
                 />
                 {searching && (
@@ -187,7 +187,7 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
                   onClick={() => setPackFilter(prev => !prev)}
                   className={`text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors ${
                     packFilter
-                      ? "bg-teal-50 border-teal-300 text-teal-700"
+                      ? "bg-brand-50 border-brand-300 text-brand-700"
                       : "bg-gray-50 border-gray-200 text-gray-500"
                   }`}
                 >
@@ -217,7 +217,7 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
                       <span className="font-mono text-[11px] text-gray-800">{sku.material}</span>
                       <span className={`text-[10px] rounded px-1.5 ${
                         sku.packMatch
-                          ? "bg-teal-50 text-teal-700 border border-teal-200"
+                          ? "bg-brand-50 text-brand-700 border border-brand-200"
                           : "bg-gray-100 text-gray-500"
                       }`}>
                         {sku.packCode}
@@ -258,7 +258,7 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
                 type="checkbox"
                 checked={saveKeyword}
                 onChange={(e) => setSaveKeyword(e.target.checked)}
-                className="accent-teal-600"
+                className="accent-brand-600"
               />
               <span className="text-[11px] text-gray-500">
                 Remember this match for future auto-enrichment

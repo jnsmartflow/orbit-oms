@@ -88,7 +88,7 @@ export default async function TripSheetPage({
       <div className="max-w-[800px] mx-auto mb-3 flex items-center gap-2 px-4">
         <a
           href={`/trips/${encodeURIComponent(params.tripNo)}?date=${date}`}
-          className="text-[12px] text-teal-600 hover:text-teal-700"
+          className="text-[12px] text-brand-600 hover:text-brand-700"
         >
           &larr; Back
         </a>

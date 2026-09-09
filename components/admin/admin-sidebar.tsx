@@ -318,7 +318,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
                     className={cn(
                       "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
                       active
-                        ? "bg-teal-50 text-teal-700 font-semibold pl-[10px] border-l-2 border-teal-600"
+                        ? "bg-brand-50 text-brand-700 font-semibold pl-[10px] border-l-2 border-brand-600"
                         : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
                     )}
                   >
@@ -355,7 +355,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
                     className={cn(
                       "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
                       active
-                        ? "bg-teal-50 text-teal-600"
+                        ? "bg-brand-50 text-brand-600"
                         : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
                     )}
                     title={item.label}
@@ -400,7 +400,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
               className={cn(
                 "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
                 active
-                  ? "bg-teal-50 text-teal-600"
+                  ? "bg-brand-50 text-brand-600"
                   : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
               )}
               title={FOOTER_LINK.label}
@@ -425,7 +425,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           className={cn(
             "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
             active
-              ? "bg-teal-50 text-teal-700 font-semibold pl-[10px] border-l-2 border-teal-600"
+              ? "bg-brand-50 text-brand-700 font-semibold pl-[10px] border-l-2 border-brand-600"
               : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
           )}
         >
@@ -466,7 +466,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
               : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
           )}
         >
-          <Grid3x3 className={cn("shrink-0 text-teal-600", collapsed ? "h-[17px] w-[17px]" : "h-[15px] w-[15px]")} />
+          <Grid3x3 className={cn("shrink-0 text-brand-600", collapsed ? "h-[17px] w-[17px]" : "h-[15px] w-[15px]")} />
           {!collapsed && (
             <>
               Open OrbitOMS
@@ -522,7 +522,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
       >
         <button
           onClick={toggle}
-          className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] cursor-pointer hover:bg-teal-700 transition-colors flex-shrink-0"
+          className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] cursor-pointer hover:bg-brand-700 transition-colors flex-shrink-0"
           title={collapsed ? "Expand menu" : "Collapse menu"}
         >
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -548,7 +548,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           collapsed ? "flex justify-center py-3" : "flex items-center gap-2.5 px-4 py-3"
         )}
       >
-        <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">
           {getInitials(userName)}
         </div>
         {!collapsed && (
@@ -572,7 +572,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
         className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-50 flex-col bg-white shadow-sm transition-all duration-200"
         style={{
           width:       isCollapsed ? "72px" : "240px",
-          borderLeft:  "3px solid #0d9488",
+          borderLeft:  "3px solid #7C3AED",
           borderRight: "1px solid #e5e7eb",
         }}
       >
@@ -582,7 +582,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
       {/* ── Mobile top bar ─────────────────────────────────────────────────── */}
       <div
         className="md:hidden fixed top-0 left-0 z-50 flex items-center gap-3 px-4 w-full h-[52px] bg-white border-b border-gray-200 shadow-sm"
-        style={{ borderLeft: "3px solid #0d9488" }}
+        style={{ borderLeft: "3px solid #7C3AED" }}
       >
         <button
           className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 text-gray-600"
@@ -592,7 +592,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
         </button>
         <div className="flex items-center gap-2">
-          <span className="w-7 h-7 bg-teal-600 rounded-lg flex items-center justify-center">
+          <span className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
             <svg width="18" height="18" viewBox="0 0 22 22" fill="none">
               <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
               <circle cx="11" cy="11" r="2.2" fill="white"/>
@@ -608,7 +608,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
         <div className="md:hidden fixed inset-0 z-40 flex">
           <aside
             className="w-60 flex flex-col overflow-hidden bg-white shadow-sm"
-            style={{ paddingTop: "52px", borderLeft: "3px solid #0d9488", borderRight: "1px solid #e5e7eb" }}
+            style={{ paddingTop: "52px", borderLeft: "3px solid #7C3AED", borderRight: "1px solid #e5e7eb" }}
           >
             {expandedNav}
             {/* ⚠ The drawer renders expandedNav ONLY — it has no identity block.

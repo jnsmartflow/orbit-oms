@@ -198,7 +198,7 @@ export function SlotCompletionModal({
                   className={`text-[11px] font-medium border rounded-md px-3 h-[28px] transition-colors inline-flex items-center gap-1 ${
                     copiedAction === `${group.soName}-send`
                       ? "bg-green-50 text-green-700 border-green-200"
-                      : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
+                      : "bg-brand-600 text-white border-brand-600 hover:bg-brand-700"
                   }`}
                 >
                   {copiedAction === `${group.soName}-send` ? (
@@ -226,7 +226,7 @@ export function SlotCompletionModal({
           </button>
           <button
             onClick={onDismiss}
-            className="text-[12px] font-medium bg-teal-600 text-white border border-teal-600 rounded-md px-4 h-[32px] hover:bg-teal-700 transition-colors"
+            className="text-[12px] font-medium bg-brand-600 text-white border border-brand-600 rounded-md px-4 h-[32px] hover:bg-brand-700 transition-colors"
           >
             Done
           </button>

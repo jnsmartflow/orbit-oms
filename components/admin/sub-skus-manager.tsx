@@ -74,7 +74,7 @@ export function SubSkusManager({ skuId, skuCode, skuName, initialSubSkus }: SubS
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-lg font-bold text-teal-700">Sub-SKUs</h1>
+        <h1 className="text-lg font-bold text-brand-700">Sub-SKUs</h1>
         <p className="text-sm text-gray-500 mt-1">
           {skuCode} — {skuName}
         </p>

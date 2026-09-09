@@ -37,7 +37,7 @@ export function FloorTabs({
             type="button"
             onClick={() => onSelect(t.key)}
             className={`border-b-2 px-[13px] pb-[7px] pt-[9px] text-[11.5px] ${
-              on ? "border-teal-600 font-semibold text-teal-600" : "border-transparent text-gray-500 hover:text-gray-700"
+              on ? "border-brand-600 font-semibold text-brand-600" : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
           >
             {t.label} <span className="text-[10px] text-gray-400">{t.count}</span>

@@ -143,7 +143,7 @@ export function OtApproveModal({
             type="button"
             onClick={handleConfirm}
             disabled={submitting}
-            className="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold rounded-md disabled:opacity-50"
+            className="h-9 px-4 bg-brand-600 hover:bg-brand-700 text-white text-[13px] font-semibold rounded-md disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Confirm approve"}
           </button>

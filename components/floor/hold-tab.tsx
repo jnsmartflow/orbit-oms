@@ -70,7 +70,7 @@ function HoldRows({
             <input
               type="checkbox"
               aria-label="Select all held bills in this band"
-              className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+              className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
               checked={allOn}
               onChange={() => onToggleAll(rows)}
             />
@@ -93,7 +93,7 @@ function HoldRows({
                 <input
                   type="checkbox"
                   aria-label={`Select ${row.obdNumber}`}
-                  className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                  className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
                   checked={selection.has(row.orderId)}
                   onChange={() => onToggleRow(row.orderId)}
                 />

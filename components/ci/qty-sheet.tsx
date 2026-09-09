@@ -88,7 +88,7 @@ export function CiQtySheet({
               setQty(Number.isFinite(n) ? clamp(Math.trunc(n)) : 0);
             }}
             aria-label="Tins returned"
-            className="w-24 text-center text-[34px] font-extrabold tabular-nums text-gray-900 border-b-2 border-gray-200 focus:border-teal-600 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            className="w-24 text-center text-[34px] font-extrabold tabular-nums text-gray-900 border-b-2 border-gray-200 focus:border-brand-600 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
           <button
             type="button"
@@ -128,7 +128,7 @@ export function CiQtySheet({
           <button
             type="button"
             onClick={() => onSave(qty)}
-            className="flex-1 h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+            className="flex-1 h-12 rounded-full bg-brand-600 active:bg-brand-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(124,58,237,0.42)]"
           >
             Save
           </button>

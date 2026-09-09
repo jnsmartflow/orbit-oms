@@ -49,15 +49,15 @@ function SpeedPill({ position, label, isActive, onClick }: SpeedPillProps): Reac
       onClick={onClick}
       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11.5px] transition-all duration-100 ${
         isActive
-          ? "bg-teal-50 border border-teal-600 text-teal-700 font-semibold"
-          : "bg-white border border-gray-200 text-gray-600 font-medium hover:border-teal-600 hover:text-teal-600"
+          ? "bg-brand-50 border border-brand-600 text-brand-700 font-semibold"
+          : "bg-white border border-gray-200 text-gray-600 font-medium hover:border-brand-600 hover:text-brand-600"
       }`}
     >
-      <span className={`font-mono text-[10px] ${isActive ? "text-teal-600" : "text-gray-400"}`}>
+      <span className={`font-mono text-[10px] ${isActive ? "text-brand-600" : "text-gray-400"}`}>
         {position}
       </span>
       {label}
-      {isActive && <span className="text-teal-500 text-[10px] ml-0.5">▸</span>}
+      {isActive && <span className="text-brand-500 text-[10px] ml-0.5">▸</span>}
     </button>
   );
 }

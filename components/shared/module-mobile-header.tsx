@@ -73,7 +73,7 @@ export function ModuleMobileHeader({
 }: ModuleMobileHeaderProps): React.JSX.Element {
   return (
     <div
-      className="flex-shrink-0 bg-teal-600 flex items-center justify-between gap-2.5 px-3.5"
+      className="flex-shrink-0 bg-brand-600 flex items-center justify-between gap-2.5 px-3.5"
       style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)", paddingBottom: "10px" }}
     >
       <button

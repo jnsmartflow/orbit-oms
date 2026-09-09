@@ -6,7 +6,7 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 //
 // Visual states (planning doc §7.1):
 //   - Empty       : faint dot "·" placeholder
-//   - Active >0   : soft mint background, bold teal-700 number
+//   - Active >0   : soft mint background, bold brand-700 number
 //   - Focused     : white bg, 2px teal ring + outer halo
 //   - NA          : em-dash, non-interactive
 //
@@ -167,7 +167,7 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
           placeholder:text-[20px] placeholder:text-gray-600 placeholder:font-normal
           focus:bg-white focus:text-gray-900 focus:z-[2] focus:border-amber-500 focus:shadow-[inset_0_0_0_1px_#f59e0b,0_0_0_3px_rgba(245,158,11,0.18)]
           ${isActive
-            ? "bg-teal-50 text-teal-700 hover:bg-teal-100"
+            ? "bg-brand-50 text-brand-700 hover:bg-brand-100"
             : "bg-[#e5e7eb] text-transparent caret-gray-400 hover:bg-[#d1d5db]"
           }`}
       />

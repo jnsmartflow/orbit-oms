@@ -375,7 +375,7 @@ export function BaseTiPanel({
               min={0}
               value={tinQty}
               onChange={(e) => setTinQty(Number(e.target.value))}
-              className="w-16 h-7 px-2 text-[12px] border border-gray-200 rounded-md focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+              className="w-16 h-7 px-2 text-[12px] border border-gray-200 rounded-md focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
             />
           </label>
         </div>
@@ -414,7 +414,7 @@ export function BaseTiPanel({
                 value={search}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder="Search any site…"
-                className="flex-1 h-8 px-2.5 text-[12px] border border-gray-200 rounded-md focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                className="flex-1 h-8 px-2.5 text-[12px] border border-gray-200 rounded-md focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
               />
               <button
                 type="button"
@@ -441,7 +441,7 @@ export function BaseTiPanel({
               value={shadeName}
               onChange={(e) => setShadeName(e.target.value)}
               placeholder="New shade name"
-              className="flex-1 h-8 px-2.5 text-[12px] border border-gray-200 rounded-md focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+              className="flex-1 h-8 px-2.5 text-[12px] border border-gray-200 rounded-md focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
             />
             <button
               type="button"

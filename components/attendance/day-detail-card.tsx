@@ -65,7 +65,7 @@ export function DayDetailCard({
       <DetailShell
         selectedDate={selectedDate}
         rightChip={
-          <span className="inline-block whitespace-nowrap font-semibold rounded border text-[10.5px] px-2 py-0.5 bg-teal-50 border-teal-200 text-teal-700">
+          <span className="inline-block whitespace-nowrap font-semibold rounded border text-[10.5px] px-2 py-0.5 bg-brand-50 border-brand-200 text-brand-700">
             Currently working
           </span>
         }

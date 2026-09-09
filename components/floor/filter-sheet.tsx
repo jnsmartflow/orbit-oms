@@ -80,12 +80,12 @@ export function FilterSheet({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`flex h-[30px] items-center gap-1.5 rounded-[7px] border px-[11px] text-[11.5px] ${
-          count > 0 || open ? "border-teal-600 bg-[#f0fdfa] font-semibold text-[#0f766e]" : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700"
+          count > 0 || open ? "border-brand-600 bg-[#F5F3FF] font-semibold text-[#6D28D9]" : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700"
         }`}
       >
         <Filter size={13} />
         Filter
-        {count > 0 && <span className="rounded-[3px] bg-teal-600 px-[5px] py-px text-[9.5px] font-bold text-white">{count}</span>}
+        {count > 0 && <span className="rounded-[3px] bg-brand-600 px-[5px] py-px text-[9.5px] font-bold text-white">{count}</span>}
       </button>
 
       {open && (

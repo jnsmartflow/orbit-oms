@@ -50,7 +50,7 @@ export function HoldBar({
           type="button"
           disabled={!slot || busy}
           onClick={() => slot && onRelease(slot.date, slot.dispatchWindowId)}
-          className="h-[30px] rounded-[6px] bg-teal-600 px-[13px] text-[11.5px] font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
+          className="h-[30px] rounded-[6px] bg-brand-600 px-[13px] text-[11.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? "Releasing…" : "Release"}
         </button>

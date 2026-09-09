@@ -159,7 +159,7 @@ export function SkusTable({ initialSkus, initialTotal, categories, productNames,
     <>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-teal-700">
+        <h1 className="text-lg font-bold text-brand-700">
           SKUs
           {total > 0 && <span className="ml-2 text-sm font-normal text-gray-400">{total} total</span>}
         </h1>
@@ -167,7 +167,7 @@ export function SkusTable({ initialSkus, initialTotal, categories, productNames,
           {canImport && (
             <button
               type="button"
-              className="flex items-center gap-1.5 text-teal-700 border border-teal-200 bg-teal-50 hover:bg-teal-100 text-xs font-medium px-3 py-2 rounded-md"
+              className="flex items-center gap-1.5 text-brand-700 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-xs font-medium px-3 py-2 rounded-md"
               onClick={handleTemplateDownload}
             >
               <Download className="h-3.5 w-3.5" />
@@ -185,7 +185,7 @@ export function SkusTable({ initialSkus, initialTotal, categories, productNames,
             </button>
           )}
           {canEdit && (
-            <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={openAdd}>+ Add SKU</Button>
+            <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={openAdd}>+ Add SKU</Button>
           )}
         </div>
       </div>

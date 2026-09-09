@@ -393,7 +393,7 @@ function SlotGroup({
                 onClick={onTogglePunched}
                 className="text-[11px] font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1.5 shrink-0 transition-colors"
               >
-                <span className="inline-flex items-center justify-center w-[20px] h-[20px] rounded-full bg-teal-50 text-teal-700 text-[10px] font-semibold">
+                <span className="inline-flex items-center justify-center w-[20px] h-[20px] rounded-full bg-brand-50 text-brand-700 text-[10px] font-semibold">
                   {punchedOrders.length}
                 </span>
                 punched
@@ -507,7 +507,7 @@ function CodeCell({
         placeholder="Type customer name or code..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        className="text-[12px] h-[32px] px-2 border border-gray-200 rounded-md w-full focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+        className="text-[12px] h-[32px] px-2 border border-gray-200 rounded-md w-full focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 focus:outline-none"
       />
       <div className="max-h-[180px] overflow-y-auto mt-2">
         {searching && <p className="text-[11px] text-gray-400 px-1 py-2">Searching...</p>}
@@ -544,7 +544,7 @@ function CodeCell({
             onClick={handleCopyCode}
             className={`font-mono text-[11px] cursor-pointer rounded px-1.5 py-0.5 border transition-colors ${
               codeCopied || copiedCodeId === order.id
-                ? "bg-teal-50 border-teal-200 text-teal-700"
+                ? "bg-brand-50 border-brand-200 text-brand-700"
                 : "text-gray-800 bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300"
             }`}
           >
@@ -859,7 +859,7 @@ function OrderRow({
     : isFocused
       ? "3px solid #f59e0b"
       : isPunched
-        ? "3px solid #0d9488"
+        ? "3px solid #7C3AED"
         : isSplit
           ? "3px solid #a78bfa"
           : undefined;
@@ -1104,7 +1104,7 @@ function OrderRow({
               onChange={(e) => { setSoInput(e.target.value); setSoError(false); }}
               onKeyDown={(e) => { if (e.key === "Enter") handleSoSave(); if (e.key === "Escape") { setEditingSo(false); setSoInput(order.soNumber ?? ""); } }}
               onBlur={() => handleSoSave()}
-              className={`w-full border rounded px-2 h-[26px] text-[11px] font-mono text-gray-800 focus:border-teal-500 focus:outline-none placeholder:text-gray-300 ${
+              className={`w-full border rounded px-2 h-[26px] text-[11px] font-mono text-gray-800 focus:border-brand-500 focus:outline-none placeholder:text-gray-300 ${
                 soError ? "border-red-300" : "border-gray-200"
               }`}
             />
@@ -1149,7 +1149,7 @@ function OrderRow({
             <div className="flex items-center justify-end gap-1.5">
               {order.punchedBy?.name && (
                 <span
-                  className="w-[18px] h-[18px] rounded-full bg-teal-600 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                  className="w-[18px] h-[18px] rounded-full bg-brand-600 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
                   title={order.punchedBy.name}
                 >
                   {order.punchedBy.name
@@ -1221,7 +1221,7 @@ function OrderRow({
                       data-sku-panel-idx={`table-${order.id}-${idx}`}
                       className={`flex items-center gap-2 py-2.5 px-2 rounded-lg mb-1 cursor-pointer transition-colors ${
                         idx === panelHighlight
-                          ? "bg-teal-50 ring-1 ring-teal-200"
+                          ? "bg-brand-50 ring-1 ring-brand-200"
                           : isNF ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"
                       }`}
                     >
@@ -1256,7 +1256,7 @@ function OrderRow({
                             <span className="text-[8px] font-semibold px-1 py-px rounded bg-red-50 text-red-700 border border-red-200">{reasonObj.label}</span></>
                           )}
                           {isNF && status?.altSkuCode && (
-                            <span className="text-[8px] font-semibold px-1 py-px rounded bg-teal-50 text-teal-700 border border-teal-200">ALT</span>
+                            <span className="text-[8px] font-semibold px-1 py-px rounded bg-brand-50 text-brand-700 border border-brand-200">ALT</span>
                           )}
                         </div>
                       </div>

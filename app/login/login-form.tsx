@@ -55,7 +55,7 @@ export function LoginForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={loading}
-          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[14px] text-gray-900 placeholder-gray-400 focus:border-teal-600 focus:outline-none disabled:opacity-50"
+          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[14px] text-gray-900 placeholder-gray-400 focus:border-brand-600 focus:outline-none disabled:opacity-50"
           style={{ WebkitBoxShadow: "0 0 0 1000px white inset" }}
         />
       </div>
@@ -73,7 +73,7 @@ export function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={loading}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 pr-10 text-[14px] text-gray-900 placeholder-gray-400 focus:border-teal-600 focus:outline-none disabled:opacity-50"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 pr-10 text-[14px] text-gray-900 placeholder-gray-400 focus:border-brand-600 focus:outline-none disabled:opacity-50"
             style={{ WebkitBoxShadow: "0 0 0 1000px white inset" }}
           />
           <button
@@ -97,7 +97,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-teal-600 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+        className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
       >
         {loading ? "Signing in…" : "Sign in"}
       </button>

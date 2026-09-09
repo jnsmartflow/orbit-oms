@@ -105,15 +105,15 @@ export default function CustomerSearch({
     // weights. Pill sits inside the h-[52px] top bar and centers vertically
     // via the parent flex container.
     return (
-      <span className="ml-4 inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-teal-50 border border-teal-200 max-w-full min-w-0">
-        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 flex-shrink-0" />
-        <span className="text-[12px] font-medium text-teal-800 truncate">{selected.name}</span>
-        <span className="font-mono text-[10px] text-teal-600 flex-shrink-0">{selected.code}</span>
+      <span className="ml-4 inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-brand-50 border border-brand-200 max-w-full min-w-0">
+        <span className="w-1.5 h-1.5 rounded-full bg-brand-600 flex-shrink-0" />
+        <span className="text-[12px] font-medium text-brand-800 truncate">{selected.name}</span>
+        <span className="font-mono text-[10px] text-brand-600 flex-shrink-0">{selected.code}</span>
         <button
           type="button"
           onClick={onClear}
           aria-label="Clear customer"
-          className="ml-1 text-teal-400 hover:text-teal-700 text-[14px] leading-none"
+          className="ml-1 text-brand-400 hover:text-brand-700 text-[14px] leading-none"
         >
           ×
         </button>
@@ -137,7 +137,7 @@ export default function CustomerSearch({
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
-        className="w-full h-[34px] rounded-[8px] border border-gray-200 bg-white pl-9 pr-3 text-[13px] text-gray-900 placeholder:text-gray-400 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+        className="w-full h-[34px] rounded-[8px] border border-gray-200 bg-white pl-9 pr-3 text-[13px] text-gray-900 placeholder:text-gray-400 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
       />
       {suggestions.length > 0 && (
         <div className="absolute left-0 right-0 top-[40px] z-40 bg-white border border-gray-200 rounded-[8px] shadow-lg overflow-hidden">
@@ -157,10 +157,10 @@ export default function CustomerSearch({
                   onQueryChange?.("");
                 }}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-left border-b border-gray-50 last:border-b-0 ${
-                  isHighlighted ? "bg-teal-50" : "hover:bg-gray-50"
+                  isHighlighted ? "bg-brand-50" : "hover:bg-gray-50"
                 }`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-600 shrink-0" />
                 <span className="flex-1 min-w-0">
                   <span className="block text-[13px] text-gray-900 truncate">{c.name}</span>
                   <span className="block text-[11px] text-gray-400 font-mono mt-0.5 truncate">

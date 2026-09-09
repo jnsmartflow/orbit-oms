@@ -233,7 +233,7 @@ function CiRailCard({
         // a selected closed card must still read as the one being looked at.
         // 🔴 THE ONE TEAL ELEMENT ON THE RAIL (UI §1 / §10), same as MRN's.
         (selected
-          ? "border-teal-600 bg-teal-50"
+          ? "border-brand-600 bg-brand-50"
           : done
             ? // Mockup `.rcard.done`: the pack ground, a fainter border. Weight
               // and ground, never extra data, are what separate a closed card —
@@ -248,7 +248,7 @@ function CiRailCard({
         <span
           className={
             "min-w-0 truncate font-mono text-[12.5px] font-bold " +
-            (selected ? "text-teal-700" : done ? "text-[#8a929c]" : "text-[#5C666E]")
+            (selected ? "text-brand-700" : done ? "text-[#8a929c]" : "text-[#5C666E]")
           }
         >
           {row.ciNumber}

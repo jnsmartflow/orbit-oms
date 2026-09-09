@@ -96,7 +96,7 @@ export function ContactCard({
             className={
               isAuto
                 ? "h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed truncate"
-                : "h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                : "h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
             }
             value={displayName}
             placeholder="Contact name"
@@ -108,7 +108,7 @@ export function ContactCard({
             className={
               isAuto
                 ? `h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 cursor-not-allowed font-mono ${displayPhone ? "text-gray-700" : "text-gray-400 italic"}`
-                : "h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 font-mono"
+                : "h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 font-mono"
             }
             value={isAuto && !displayPhone ? "—" : displayPhone}
             placeholder="Phone"
@@ -142,7 +142,7 @@ export function ContactCard({
       <div className="flex items-center gap-2 pl-11">
         <input
           type="email"
-          className="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+          className="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
           value={contact.email}
           placeholder={isAuto ? "Email (optional — operator can add)" : "Email"}
           onChange={(e) => onUpdate("email", e.target.value)}
@@ -172,7 +172,7 @@ export function ContactCard({
       {/* Row 3 — badge (auto only) + primary checkbox */}
       <div className="flex items-center justify-between pl-11">
         {isAuto && role ? (
-          <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+          <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-full">
             <Link2 size={10} />
             Auto · {SO_ROLE_LABELS[role]} SO
           </span>
@@ -188,7 +188,7 @@ export function ContactCard({
         >
           <input
             type="checkbox"
-            className="accent-teal-600 w-3.5 h-3.5"
+            className="accent-brand-600 w-3.5 h-3.5"
             checked={isPrimaryCheckboxChecked}
             disabled={isPrimaryCheckboxDisabled}
             onChange={() => {

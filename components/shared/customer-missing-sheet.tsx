@@ -647,7 +647,7 @@ export function CustomerMissingSheet({
           ).map(({ key, label, desc }) => (
             <label
               key={key}
-              className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all"
+              className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-brand-50 hover:border-brand-200 transition-all"
             >
               <div>
                 <div className="text-sm font-medium text-gray-900">{label}</div>
@@ -656,7 +656,7 @@ export function CustomerMissingSheet({
               <Switch
                 checked={form[key]}
                 onCheckedChange={(v) => setField(key, v)}
-                className="data-[state=checked]:bg-teal-600"
+                className="data-[state=checked]:bg-brand-600"
               />
             </label>
           ))}
@@ -697,7 +697,7 @@ export function CustomerMissingSheet({
                   type="checkbox"
                   checked={form.noDeliveryDays.includes(day)}
                   onChange={() => toggleDay(day)}
-                  className="w-3.5 h-3.5 accent-teal-600"
+                  className="w-3.5 h-3.5 accent-brand-600"
                 />
                 <span className="text-xs font-medium text-gray-700">{day}</span>
               </label>
@@ -912,7 +912,7 @@ export function CustomerMissingSheet({
         ).map(({ key, label, desc }) => (
           <label
             key={key}
-            className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all"
+            className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-brand-50 hover:border-brand-200 transition-all"
           >
             <div>
               <div className="text-sm font-medium text-gray-900">{label}</div>
@@ -921,7 +921,7 @@ export function CustomerMissingSheet({
             <Switch
               checked={form[key]}
               onCheckedChange={(v) => setField(key, v)}
-              className="data-[state=checked]:bg-teal-600"
+              className="data-[state=checked]:bg-brand-600"
             />
           </label>
         ))}
@@ -962,7 +962,7 @@ export function CustomerMissingSheet({
                 type="checkbox"
                 checked={form.noDeliveryDays.includes(day)}
                 onChange={() => toggleDay(day)}
-                className="w-3.5 h-3.5 accent-teal-600"
+                className="w-3.5 h-3.5 accent-brand-600"
               />
               <span className="text-xs font-medium text-gray-700">{day}</span>
             </label>
@@ -1061,7 +1061,7 @@ export function CustomerMissingSheet({
                     onClick={() => setActiveTab(tab)}
                     className={`relative py-2.5 px-3 text-[12px] font-medium whitespace-nowrap transition-colors border-b-2 ${
                       isActive
-                        ? "border-teal-600 text-teal-700"
+                        ? "border-brand-600 text-brand-700"
                         : "border-transparent text-gray-500 hover:text-gray-700"
                     }`}
                   >
@@ -1116,7 +1116,7 @@ export function CustomerMissingSheet({
           </Button>
           <Button
             type="button"
-            className="flex-[2] h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
+            className="flex-[2] h-10 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2"
             onClick={handleSave}
             disabled={saving}
           >

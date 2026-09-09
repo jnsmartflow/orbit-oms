@@ -359,7 +359,7 @@ export function SkuSheet({ open, onOpenChange, editing, onSaved }: SkuSheetProps
             </p>
 
             {/* Is Active */}
-            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
+            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-brand-50 hover:border-brand-200 transition-all">
               <div>
                 <div className="text-sm font-medium text-gray-900">Active</div>
                 <div className="text-xs text-gray-500 mt-0.5">Inactive SKUs cannot be added to new orders</div>
@@ -367,14 +367,14 @@ export function SkuSheet({ open, onOpenChange, editing, onSaved }: SkuSheetProps
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
-                className="data-[state=checked]:bg-teal-600"
+                className="data-[state=checked]:bg-brand-600"
               />
             </label>
           </div>
 
           <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
             <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create SKU"}</Button>
+            <Button type="submit" className="flex-1 h-10 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create SKU"}</Button>
           </div>
         </form>
       </SheetContent>

@@ -143,7 +143,7 @@ export function OtRejectModal({
           rows={3}
           placeholder="Why this OT isn't being credited"
           disabled={submitting}
-          className="w-full border border-gray-300 rounded-md p-3 text-[13px] text-gray-900 placeholder-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none resize-none disabled:opacity-50 mb-1"
+          className="w-full border border-gray-300 rounded-md p-3 text-[13px] text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 focus:outline-none resize-none disabled:opacity-50 mb-1"
         />
         <div className="flex justify-end mb-4">
           <span className={`text-[12px] tabular-nums ${counterClass}`}>

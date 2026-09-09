@@ -215,8 +215,8 @@ export function SOGroupsTable({ initialRows, salesOfficers }: Props) {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-teal-700">SO Groups</h1>
-        <Button size="sm" onClick={openAdd} className="bg-teal-600 hover:bg-teal-700 text-white">+ Add Group</Button>
+        <h1 className="text-lg font-bold text-brand-700">SO Groups</h1>
+        <Button size="sm" onClick={openAdd} className="bg-brand-600 hover:bg-brand-700 text-white">+ Add Group</Button>
       </div>
 
       <div className="oa-table">
@@ -328,13 +328,13 @@ export function SOGroupsTable({ initialRows, salesOfficers }: Props) {
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
-                className="data-[state=checked]:bg-teal-600 data-[state=unchecked]:bg-gray-300"
+                className="data-[state=checked]:bg-brand-600 data-[state=unchecked]:bg-gray-300"
               />
             </div>
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
               <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Group"}</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Group"}</Button>
             </div>
           </form>
         </SheetContent>
@@ -398,7 +398,7 @@ export function SOGroupsTable({ initialRows, salesOfficers }: Props) {
             <Button
               onClick={handleReassign}
               disabled={!reassignNewSOId || reassignSaving}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-brand-600 hover:bg-brand-700 text-white"
             >
               {reassignSaving
                 ? "Reassigning…"

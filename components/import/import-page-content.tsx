@@ -88,10 +88,10 @@ function FileZone({ label, file, inputRef, onFile, onClear, accept = ".xlsx,.xls
     <div
       className={`flex-1 rounded-xl border-2 border-dashed p-8 flex flex-col items-center justify-center gap-3 cursor-pointer min-h-[200px] transition-colors ${
         isDragOver
-          ? "border-teal-600 bg-teal-50"
+          ? "border-brand-600 bg-brand-50"
           : file
           ? "border-green-400 bg-green-50/30"
-          : "border-gray-300 bg-white hover:border-teal-500 hover:bg-teal-50"
+          : "border-gray-300 bg-white hover:border-brand-500 hover:bg-brand-50"
       }`}
       onClick={() => inputRef.current?.click()}
       onDragOver={(e) => {
@@ -476,7 +476,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
                   if (combinedInputRef.current) combinedInputRef.current.value = "";
                   if (sapInputRef.current)      sapInputRef.current.value      = "";
                 }}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/10 focus:border-teal-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/10 focus:border-brand-500"
               >
                 {Object.values(IMPORT_TEMPLATES).map((t) => (
                   <option key={t.id} value={t.id}>{t.label}</option>
@@ -491,7 +491,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
                   onClick={() => setPreviewEnabled((v) => !v)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                     previewEnabled
-                      ? "bg-teal-600 text-white"
+                      ? "bg-brand-600 text-white"
                       : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                   }`}
                 >
@@ -560,7 +560,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
               type="date"
               value={sapDate}
               onChange={(e) => setSapDate(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/10 focus:border-teal-500"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/10 focus:border-brand-500"
             />
             <p className="mt-1 text-xs text-gray-400">
               Stamped on every imported OBD. Defaults to today (IST).
@@ -575,7 +575,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
               : (previewEnabled ? handlePreviewSubmit : handleImportNow)
           }
           disabled={isDisabled}
-          className="w-full bg-teal-600 text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-teal-600/90 transition-colors"
+          className="w-full bg-brand-600 text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-600/90 transition-colors"
         >
           {isLoading && <Loader2 className="animate-spin" size={18} />}
           {isLoading
@@ -696,7 +696,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        className="w-4 h-4 accent-teal-600"
+                        className="w-4 h-4 accent-brand-600"
                         checked={selectedIds.has(obd.rawSummaryId)}
                         disabled={obd.rowStatus === "duplicate"}
                         onChange={() => toggleObd(obd.rawSummaryId)}
@@ -881,7 +881,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
                   <button
                     onClick={handleConfirm}
                     disabled={selectedIds.size === 0 || isLoading}
-                    className="bg-teal-600 text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-teal-600/90 transition-colors"
+                    className="bg-brand-600 text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-600/90 transition-colors"
                   >
                     {isLoading && <Loader2 className="animate-spin" size={18} />}
                     Confirm Import ({selectedIds.size} OBDs)
@@ -907,7 +907,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
 
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-gray-50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-teal-700">{r.summary.created}</div>
+            <div className="text-2xl font-bold text-brand-700">{r.summary.created}</div>
             <div className="text-sm text-gray-500 mt-1">Created</div>
           </div>
           <div className="bg-gray-50 rounded-xl p-4">
@@ -946,7 +946,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
           </button>
           <button
             onClick={() => { window.location.href = viewOrdersHref; }}
-            className="w-full bg-teal-600 text-white rounded-lg py-2.5 font-medium hover:bg-teal-600/90 transition-colors"
+            className="w-full bg-brand-600 text-white rounded-lg py-2.5 font-medium hover:bg-brand-600/90 transition-colors"
           >
             View Orders
           </button>
@@ -965,7 +965,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
 
         <div className="grid grid-cols-2 gap-4 mb-8">
           <div className="bg-gray-50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-teal-700">
+            <div className="text-2xl font-bold text-brand-700">
               {confirmResult.ordersCreated}
             </div>
             <div className="text-sm text-gray-500 mt-1">Orders Created</div>
@@ -1001,7 +1001,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
             onClick={() => {
               window.location.href = viewOrdersHref;
             }}
-            className="w-full bg-teal-600 text-white rounded-lg py-2.5 font-medium hover:bg-teal-600/90 transition-colors"
+            className="w-full bg-brand-600 text-white rounded-lg py-2.5 font-medium hover:bg-brand-600/90 transition-colors"
           >
             View Orders
           </button>

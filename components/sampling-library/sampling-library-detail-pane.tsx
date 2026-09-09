@@ -392,7 +392,7 @@ export function SamplingLibraryDetailPane({
                   {detail.shadeName}
                 </div>
                 {detail.isActive ? (
-                  <span className="inline-flex items-center text-[10.5px] font-semibold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200 rounded px-2 py-0.5">
+                  <span className="inline-flex items-center text-[10.5px] font-semibold uppercase tracking-wider bg-brand-50 text-brand-700 border border-brand-200 rounded px-2 py-0.5">
                     Active
                   </span>
                 ) : (

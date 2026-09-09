@@ -22,7 +22,7 @@ export function RoleNav({ links }: { links: NavLink[] }) {
             href={link.href}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               isActive
-                ? "text-teal-600 border-b-2 border-teal-600"
+                ? "text-brand-600 border-b-2 border-brand-600"
                 : "text-gray-500 hover:text-gray-900"
             }`}
           >

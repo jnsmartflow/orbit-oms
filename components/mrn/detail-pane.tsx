@@ -600,7 +600,7 @@ function PaneButton({
       className={
         "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] transition-colors " +
         (tone === "primary"
-          ? "border-teal-600 bg-teal-600 font-semibold text-white hover:bg-teal-700"
+          ? "border-brand-600 bg-brand-600 font-semibold text-white hover:bg-brand-700"
           : "border-gray-200 bg-white font-medium text-[#475467] hover:bg-gray-50")
       }
     >
@@ -639,7 +639,7 @@ function PaneLink({
       className={
         "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] transition-colors " +
         (tone === "primary"
-          ? "border-teal-600 bg-teal-600 font-semibold text-white hover:bg-teal-700"
+          ? "border-brand-600 bg-brand-600 font-semibold text-white hover:bg-brand-700"
           : "border-gray-200 bg-white font-medium text-[#475467] hover:bg-gray-50")
       }
     >

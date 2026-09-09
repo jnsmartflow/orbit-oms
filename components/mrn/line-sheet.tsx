@@ -652,7 +652,7 @@ export function LineSheet({
             <span
               className={
                 "relative h-[28px] w-[48px] shrink-0 rounded-full transition-colors " +
-                (issueOpen ? "bg-teal-600" : "bg-gray-200")
+                (issueOpen ? "bg-brand-600" : "bg-gray-200")
               }
             >
               <span
@@ -815,7 +815,7 @@ export function LineSheet({
                 className={
                   "h-[50px] flex-1 rounded-[13px] text-[15px] font-bold " +
                   (canConfirm
-                    ? "bg-teal-600 text-white active:bg-teal-700"
+                    ? "bg-brand-600 text-white active:bg-brand-700"
                     : "cursor-not-allowed bg-gray-100 text-gray-400")
                 }
               >
@@ -1065,7 +1065,7 @@ function AddBatchLink({ onClick }: { onClick: () => void }): React.JSX.Element {
     <button
       type="button"
       onClick={onClick}
-      className="mt-3.5 flex h-11 items-center gap-1.5 text-[13.5px] font-semibold text-teal-700"
+      className="mt-3.5 flex h-11 items-center gap-1.5 text-[13.5px] font-semibold text-brand-700"
     >
       <Plus size={13} strokeWidth={2.6} />
       Add another manufacturing batch

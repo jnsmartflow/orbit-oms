@@ -223,7 +223,7 @@ function DateRangePicker({ dateFrom, dateTo, onChange }: {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`h-7 px-3 flex items-center gap-1.5 rounded-md border text-[11px] font-medium transition-colors ${
-          open ? "border-teal-500 text-teal-700" : "border-gray-200 text-gray-700 hover:border-gray-300"
+          open ? "border-brand-500 text-brand-700" : "border-gray-200 text-gray-700 hover:border-gray-300"
         }`}
       >
         {rangeLabel}
@@ -246,7 +246,7 @@ function DateRangePicker({ dateFrom, dateTo, onChange }: {
                 onClick={() => applyPreset(p.from, p.to)}
                 className={`text-left px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
                   dateFrom === p.from && dateTo === p.to
-                    ? "bg-teal-600 text-white"
+                    ? "bg-brand-600 text-white"
                     : "text-gray-600 hover:bg-gray-50"
                 }`}
               >
@@ -301,8 +301,8 @@ function DateRangePicker({ dateFrom, dateTo, onChange }: {
                     onMouseLeave={() => setHoverDate(null)}
                     className={`h-7 w-full text-[11px] rounded-md transition-colors
                       ${isFuture ? "text-gray-200 cursor-not-allowed" : ""}
-                      ${isFrom || isTo ? "bg-teal-600 text-white font-semibold" : ""}
-                      ${inRange ? "bg-teal-50 text-teal-700" : ""}
+                      ${isFrom || isTo ? "bg-brand-600 text-white font-semibold" : ""}
+                      ${inRange ? "bg-brand-50 text-brand-700" : ""}
                       ${!isFrom && !isTo && !inRange && !isFuture ? "text-gray-700 hover:bg-gray-50" : ""}
                       ${isToday && !isFrom && !isTo ? "font-semibold" : ""}
                     `}
@@ -587,7 +587,7 @@ export function TIReportContent() {
                       </TableCell>
                       <TableCell className="py-2.5 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                          <span className="w-5 h-5 rounded-full bg-brand-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
                             {row.operatorName.charAt(0).toUpperCase()}
                           </span>
                           <span className="text-[11px] text-gray-600">{row.operatorName}</span>

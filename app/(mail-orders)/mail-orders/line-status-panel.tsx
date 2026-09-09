@@ -152,7 +152,7 @@ export function LineStatusPanel({ line, onSave, onCancel, actionRef }: LineStatu
           <button
             type="button"
             onClick={onCancel}
-            className="flex items-center gap-1 text-[11px] text-teal-600 font-medium mb-3 hover:text-teal-800"
+            className="flex items-center gap-1 text-[11px] text-brand-600 font-medium mb-3 hover:text-brand-800"
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="10 4 6 8 10 12"/>
@@ -245,13 +245,13 @@ export function LineStatusPanel({ line, onSave, onCancel, actionRef }: LineStatu
             <div className="mb-3">
               <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Alternate material</p>
               {altSkuCode ? (
-                <div className="flex items-center gap-[5px] px-2.5 py-2 border-[1.5px] border-teal-500 rounded-md bg-teal-50">
-                  <span className="text-[7px] font-bold text-teal-700 bg-teal-100 px-1 py-px rounded shrink-0">ALT</span>
-                  <span className="font-mono text-[10px] font-medium text-teal-700 shrink-0">{altSkuCode}</span>
-                  <span className="text-[10px] text-teal-600 truncate flex-1">{altSkuDescription}</span>
+                <div className="flex items-center gap-[5px] px-2.5 py-2 border-[1.5px] border-brand-500 rounded-md bg-brand-50">
+                  <span className="text-[7px] font-bold text-brand-700 bg-brand-100 px-1 py-px rounded shrink-0">ALT</span>
+                  <span className="font-mono text-[10px] font-medium text-brand-700 shrink-0">{altSkuCode}</span>
+                  <span className="text-[10px] text-brand-600 truncate flex-1">{altSkuDescription}</span>
                   <button
                     onClick={clearAlt}
-                    className="text-[10px] text-teal-600 font-medium shrink-0 cursor-pointer"
+                    className="text-[10px] text-brand-600 font-medium shrink-0 cursor-pointer"
                   >
                     Change
                   </button>
@@ -264,7 +264,7 @@ export function LineStatusPanel({ line, onSave, onCancel, actionRef }: LineStatu
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
                       placeholder="Search SKU or product name..."
-                      className="w-full h-[34px] border-[1.5px] border-gray-200 rounded-md px-2.5 text-[11px] focus:outline-none focus:border-teal-500"
+                      className="w-full h-[34px] border-[1.5px] border-gray-200 rounded-md px-2.5 text-[11px] focus:outline-none focus:border-brand-500"
                     />
                     {searching && (
                       <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
@@ -276,7 +276,7 @@ export function LineStatusPanel({ line, onSave, onCancel, actionRef }: LineStatu
                         <button
                           key={sku.material}
                           onClick={() => selectAlt(sku)}
-                          className="w-full flex items-center gap-1.5 px-2 py-1.5 border border-gray-200 rounded-md text-left hover:bg-teal-50 hover:border-teal-500 transition-colors"
+                          className="w-full flex items-center gap-1.5 px-2 py-1.5 border border-gray-200 rounded-md text-left hover:bg-brand-50 hover:border-brand-500 transition-colors"
                         >
                           <span className="font-mono text-[10px] font-medium text-gray-600 shrink-0">{sku.material}</span>
                           <span className="text-[10px] text-gray-500 truncate flex-1">{sku.description}</span>
@@ -297,7 +297,7 @@ export function LineStatusPanel({ line, onSave, onCancel, actionRef }: LineStatu
                 value={note}
                 onChange={e => setNote(e.target.value)}
                 placeholder="Optional note..."
-                className="w-full h-[30px] border border-gray-200 rounded-md px-2.5 text-[10px] focus:outline-none focus:border-teal-500"
+                className="w-full h-[30px] border border-gray-200 rounded-md px-2.5 text-[10px] focus:outline-none focus:border-brand-500"
               />
             </div>
           </div>
@@ -315,7 +315,7 @@ export function LineStatusPanel({ line, onSave, onCancel, actionRef }: LineStatu
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 py-2.5 rounded-lg bg-teal-600 text-white text-[12px] font-semibold hover:bg-teal-700 transition-colors"
+                className="flex-1 py-2.5 rounded-lg bg-brand-600 text-white text-[12px] font-semibold hover:bg-brand-700 transition-colors"
               >
                 Save
               </button>

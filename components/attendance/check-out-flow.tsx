@@ -489,7 +489,7 @@ function OtPromptChoice({
         <button
           type="button"
           onClick={onYes}
-          className="w-full h-14 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[16px] font-semibold transition-colors"
+          className="w-full h-14 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-[16px] font-semibold transition-colors"
         >
           Yes, claim OT
         </button>
@@ -568,7 +568,7 @@ function OtPromptReason({
         maxLength={REASON_MAX_LEN}
         rows={4}
         placeholder="Brief reason"
-        className="w-full border border-gray-300 rounded-lg p-3 text-[16px] text-gray-900 placeholder-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none resize-none mb-1"
+        className="w-full border border-gray-300 rounded-lg p-3 text-[16px] text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 focus:outline-none resize-none mb-1"
       />
 
       <div className="flex items-start justify-between gap-3 mb-4">
@@ -584,7 +584,7 @@ function OtPromptReason({
         type="button"
         onClick={onSubmit}
         disabled={!canSubmit}
-        className="w-full h-14 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[16px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-600 mb-3"
+        className="w-full h-14 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-[16px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-600 mb-3"
       >
         Submit OT claim
       </button>

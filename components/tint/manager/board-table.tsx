@@ -187,7 +187,7 @@ function Row({
             className={cn(
               "w-3.5 h-3.5 border-[1.5px] rounded-[4px] inline-flex items-center justify-center text-[9px] align-middle transition-opacity",
               selected
-                ? "bg-teal-600 border-teal-600 text-white opacity-100"
+                ? "bg-brand-600 border-brand-600 text-white opacity-100"
                 : "bg-white border-gray-300 text-transparent opacity-0 group-hover:opacity-100",
             )}
           >

@@ -70,9 +70,9 @@ export default async function AdminDashboard() {
           label="Active Users"
           value={activeUsers}
           icon={<Users size={18} />}
-          iconBg="bg-teal-50"
-          iconColor="text-teal-600"
-          valueColor="text-teal-600"
+          iconBg="bg-brand-50"
+          iconColor="text-brand-600"
+          valueColor="text-brand-600"
         />
         <StatCard
           label="Active Routes"
@@ -107,7 +107,7 @@ export default async function AdminDashboard() {
           <span className="text-[13px] font-bold text-gray-900">Recent Users</span>
           <Link
             href="/admin/users"
-            className="text-[12px] text-teal-700 font-medium hover:underline"
+            className="text-[12px] text-brand-700 font-medium hover:underline"
           >
             View all →
           </Link>

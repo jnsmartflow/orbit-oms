@@ -239,7 +239,7 @@ export function SkipJobModal({
               if (errorMessage) setErrorMessage(null);
             }}
             disabled={submitting}
-            className="w-full h-[38px] px-3 text-[13px] bg-white border border-gray-200 rounded-lg outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full h-[38px] px-3 text-[13px] bg-white border border-gray-200 rounded-lg outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <option value="" disabled>Select a reason…</option>
             {REASON_OPTIONS.map((opt) => (
@@ -356,7 +356,7 @@ export function SkipJobModal({
             }}
             placeholder="Anything else worth noting…"
             disabled={submitting}
-            className="w-full min-h-[64px] px-3 py-2 text-[13px] border border-gray-200 rounded-lg outline-none resize-y focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full min-h-[64px] px-3 py-2 text-[13px] border border-gray-200 rounded-lg outline-none resize-y focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
           />
           <div className={cn("text-[11px] mt-1", charCountColor)}>
             {remarkLen} / 500

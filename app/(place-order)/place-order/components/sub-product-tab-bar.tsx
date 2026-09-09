@@ -52,7 +52,7 @@ export default function SubProductTabBar({
                 {tab.skuCount}
               </span>
               {tab.hasCartLines && (
-                <span className="inline-block w-[5px] h-[5px] rounded-full bg-teal-600 ml-1.5 align-middle" />
+                <span className="inline-block w-[5px] h-[5px] rounded-full bg-brand-600 ml-1.5 align-middle" />
               )}
             </button>
           );

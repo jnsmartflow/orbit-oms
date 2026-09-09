@@ -668,12 +668,12 @@ export function CiNewReturn({
         aria-hidden={!billOpen}
         {...(billOpen ? {} : { inert: "" as unknown as boolean })}
       >
-        {/* TEAL HEADER — picking's exact geometry: bg-teal-600, pl-3.5 pr-1.5
+        {/* TEAL HEADER — picking's exact geometry: bg-brand-600, pl-3.5 pr-1.5
             pb-3.5, safe-area top padding, 38px rounded-[10px] back square on
             white/[0.16]. Customer name at 18px/600 with the OBD beneath.
             NOTHING ELSE — no time, no dispatch window (mockup note). */}
         <div
-          className="bg-teal-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
+          className="bg-brand-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
           style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
         >
           <div className="flex items-center gap-1.5">
@@ -808,7 +808,7 @@ export function CiNewReturn({
                 className={
                   "w-full h-12 rounded-full text-[15px] font-bold " +
                   (reason !== null && !saving
-                    ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+                    ? "bg-brand-600 active:bg-brand-700 text-white shadow-[0_8px_22px_rgba(124,58,237,0.42)]"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed")
                 }
               >
@@ -867,7 +867,7 @@ export function CiNewReturn({
             </div>
 
             {/* BOTTOM PILL — picking's CTA verbatim: full width, h-12,
-                rounded-full, teal-600 with its shadow, safe-area padding. The
+                rounded-full, brand-600 with its shadow, safe-area padding. The
                 module tab bar is gone here; this is the whole bottom. */}
             <div
               className="shrink-0 px-3.5 pb-3.5 bg-[#F4F6F7]"
@@ -880,7 +880,7 @@ export function CiNewReturn({
                 className={
                   "w-full h-12 rounded-full text-[14.5px] font-bold " +
                   (canProceed
-                    ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+                    ? "bg-brand-600 active:bg-brand-700 text-white shadow-[0_8px_22px_rgba(124,58,237,0.42)]"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed")
                 }
               >
@@ -1045,7 +1045,7 @@ export function CiNewReturn({
                 // is certainly about to type again.
                 searchInputRef.current?.focus();
               }}
-              className="text-[13px] font-semibold text-teal-700 px-1 shrink-0"
+              className="text-[13px] font-semibold text-brand-700 px-1 shrink-0"
             >
               Cancel
             </button>
@@ -1200,7 +1200,7 @@ function CiSuccess({
         <button
           type="button"
           onClick={onDone}
-          className="flex-1 h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+          className="flex-1 h-12 rounded-full bg-brand-600 active:bg-brand-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(124,58,237,0.42)]"
         >
           Done
         </button>

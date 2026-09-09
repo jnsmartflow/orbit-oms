@@ -85,7 +85,7 @@ export function MobileShell({ navItems, workflowTabs, activeTabKey, onTabChange,
             onClick={closeAll}
             className={cn(
               "flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold",
-              isHomeActive ? "text-teal-700" : "text-gray-400"
+              isHomeActive ? "text-brand-700" : "text-gray-400"
             )}
           >
             <Home className="h-6 w-6" />

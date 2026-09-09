@@ -148,12 +148,12 @@ export interface UniversalHeaderProps {
    * How the Import button looks. Default `"default"` — the small grey chip it
    * has always been, unchanged for every existing caller.
    *
-   * `"primary"` makes it the row's one filled call to action: teal-600, 36px
+   * `"primary"` makes it the row's one filled call to action: brand-600, 36px
    * tall, white label. Intended for a surface where importing IS the primary
    * action rather than one utility among several. Behaviour, handler and modal
    * are identical either way — this is styling only.
    *
-   * ⚠ teal-600 is the brand accent and CLAUDE_UI reserves it for a SINGLE
+   * ⚠ brand-600 is the brand accent and CLAUDE_UI reserves it for a SINGLE
    * element per surface. A caller passing "primary" is asserting that Import is
    * that element there; do not pass it on a screen that already spends its teal
    * elsewhere.
@@ -336,7 +336,7 @@ export function UniversalHeader({
     <div
       className={
         wideSearch
-          ? "flex items-center gap-2 w-[240px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-[#f7f7f5] border border-gray-200 px-3 transition-colors hover:border-gray-300 focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15"
+          ? "flex items-center gap-2 w-[240px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-[#f7f7f5] border border-gray-200 px-3 transition-colors hover:border-gray-300 focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15"
           : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
               searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
             }`
@@ -398,7 +398,7 @@ export function UniversalHeader({
       onClick={() => setImportOpen(true)}
       className={
         importPrimary
-          ? "flex items-center gap-1.5 h-[36px] px-3.5 rounded-[10px] bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-medium transition-colors cursor-pointer"
+          ? "flex items-center gap-1.5 h-[36px] px-3.5 rounded-[10px] bg-brand-600 hover:bg-brand-700 text-white text-[13px] font-medium transition-colors cursor-pointer"
           : "bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
       }
     >
@@ -523,7 +523,7 @@ export function UniversalHeader({
               <div className="w-px h-4 bg-gray-200" />
               <button
                 onClick={() => onDownload?.()}
-                className="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-medium rounded-[5px] px-[10px] py-[4px] flex items-center gap-[4px] cursor-pointer"
+                className="bg-brand-600 hover:bg-brand-700 text-white text-[10px] font-medium rounded-[5px] px-[10px] py-[4px] flex items-center gap-[4px] cursor-pointer"
               >
                 <Download size={12} /> Download
               </button>
@@ -565,7 +565,7 @@ export function UniversalHeader({
                     onClick={() => onSegmentChange?.(isActive ? null : seg.id)}
                     className={`px-[11px] py-[4px] text-[11px] rounded-[5px] cursor-pointer transition-colors ${
                       isActive
-                        ? "bg-teal-600 text-white font-medium"
+                        ? "bg-brand-600 text-white font-medium"
                         : "text-gray-500 hover:bg-white/60"
                     }`}
                   >

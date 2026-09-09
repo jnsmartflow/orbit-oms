@@ -180,7 +180,7 @@ export function DatePickerPopover({
                 className={cn(
                   "h-[28px] text-[11px] rounded-md inline-flex items-center justify-center",
                   isSelected
-                    ? "bg-teal-600 text-white font-medium"
+                    ? "bg-brand-600 text-white font-medium"
                     : isBlocked
                       ? "text-gray-300 cursor-not-allowed"
                       : !inMonth

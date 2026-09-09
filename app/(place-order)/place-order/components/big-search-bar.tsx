@@ -132,7 +132,7 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
             aria-activedescendant={
               activeIndex >= 0 ? `${listboxId}-row-${activeIndex}` : undefined
             }
-            className="w-full h-[36px] pl-9 pr-[210px] text-[13px] border border-gray-200 rounded-lg bg-white shadow-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+            className="w-full h-[36px] pl-9 pr-[210px] text-[13px] border border-gray-200 rounded-lg bg-white shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 focus:outline-none"
           />
           <div className="absolute inset-y-0 right-0 pr-4 flex items-center text-[11px] text-gray-400 pointer-events-none">
             {query ? (
@@ -223,7 +223,7 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
                       isLast ? "" : "border-b border-gray-100"
                     } ${
                       isActive
-                        ? "bg-[#f0fdfa] border-l-teal-600"
+                        ? "bg-[#F5F3FF] border-l-brand-600"
                         : "border-l-transparent hover:bg-gray-50"
                     }`}
                   >

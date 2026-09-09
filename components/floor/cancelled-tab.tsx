@@ -101,7 +101,7 @@ export function CancelledTab({
                   <input
                     type="checkbox"
                     aria-label="Select all cancelled bills"
-                    className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                    className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
                     checked={allOn}
                     onChange={() => setSelection((s) => toggleAllIds(s, list))}
                   />
@@ -122,7 +122,7 @@ export function CancelledTab({
                       <input
                         type="checkbox"
                         aria-label={`Select ${row.obdNumber}`}
-                        className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                        className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
                         checked={selection.has(row.orderId)}
                         onChange={() => setSelection((s) => toggleOne(s, row.orderId))}
                       />
@@ -169,7 +169,7 @@ export function CancelledTab({
               type="button"
               onClick={doRestore}
               disabled={busy}
-              className="h-[30px] rounded-[6px] bg-teal-600 px-[13px] text-[11.5px] font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="h-[30px] rounded-[6px] bg-brand-600 px-[13px] text-[11.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy ? "Restoring…" : "Restore to decisions"}
             </button>

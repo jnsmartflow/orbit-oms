@@ -85,7 +85,7 @@ export default async function ReportsHubPage({ searchParams }: { searchParams: S
                 className={cn(
                   "mb-0.5 block border-l-2 px-3 py-2 text-[13px] transition-colors",
                   active
-                    ? "border-teal-600 bg-teal-50 font-semibold text-teal-700"
+                    ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
                     : "border-transparent text-gray-600 hover:bg-gray-50",
                 )}
               >

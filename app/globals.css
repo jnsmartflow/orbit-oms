@@ -178,7 +178,7 @@ html, body { overscroll-behavior: none; }
      just tells the next reader a lie about where the colour lives.
 
      The replacement is `tailwind.config.ts`'s `brand` / `ink` / `tint` / `ok` /
-     `warn` / `bad` / `data` families, which are reachable as class names and
+     `warn` / `danger` / `data` families, which are reachable as class names and
      therefore get used. ⚠ THE SAME FATE IS AVAILABLE TO THEM: the palette only
      earns its keep once step 2 converts the ~790 use sites onto it. Adding
      tokens and leaving the use sites hand-typed is precisely how this block
@@ -312,8 +312,8 @@ html, body { overscroll-behavior: none; }
 }
 /* 🔴 The `:focus-visible` override that sat here was DELETED 2026-09-08 (rebrand
    step 1). It was `border-color: #6366f1 !important` plus a matching indigo ring
-   — a SECOND focus colour, competing with the `focus:border-teal-500
-   focus:ring-teal-500/10` every other input in the app uses (CLAUDE_UI.md §9).
+   — a SECOND focus colour, competing with the `focus:border-brand-500
+   focus:ring-brand-500/10` every other input in the app uses (CLAUDE_UI.md §9).
    Admin sheet inputs now take the app's own focus treatment, which becomes
    `brand.500` in step 2. The non-focus rule above keeps its geometry and its
    resting border; only the focus colour went. Same for the textarea rule below. */
@@ -352,11 +352,11 @@ html, body { overscroll-behavior: none; }
    step 1). Do not reintroduce either, and do not add a third.
 
    `.oa-btn-primary` was `background: #1a237e !important` — NAVY. Thirty-nine
-   buttons carried it, eighteen of them alongside `bg-teal-600`, and the
+   buttons carried it, eighteen of them alongside `bg-brand-600`, and the
    `!important` meant every one of those eighteen rendered navy while its own
    className said teal. The stylesheet quietly won an argument the JSX did not
    know it was having, for as long as anyone can date. All thirty-nine now carry
-   `bg-teal-600 hover:bg-teal-700 text-white` at the call site and render what
+   `bg-brand-600 hover:bg-brand-700 text-white` at the call site and render what
    they say. Navy was drift, never a second brand.
 
    `.oa-btn-danger` was `#dc2626` / hover `#b91c1c` — which are `red-600` and

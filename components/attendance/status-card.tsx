@@ -134,7 +134,7 @@ function WorkingCard({ currentSessionStartISO, workStartTime, workEndTime }: Wor
   const progressPctStr = `${(progressPct * 100).toFixed(2)}%`;
 
   return (
-    <CardShell gradient="bg-gradient-to-br from-teal-600 to-teal-700">
+    <CardShell gradient="bg-gradient-to-br from-brand-600 to-brand-700">
       <div className="flex items-center gap-2 mb-3">
         <span className="relative flex h-2 w-2" aria-hidden>
           <span className="absolute inline-flex h-full w-full rounded-full bg-white/60 animate-ping" />

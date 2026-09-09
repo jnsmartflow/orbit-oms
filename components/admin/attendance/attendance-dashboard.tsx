@@ -263,7 +263,7 @@ function SegmentPill({
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center px-3 py-1 text-xs font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
+        className="inline-flex items-center px-3 py-1 text-xs font-medium rounded-md text-white bg-brand-600 hover:bg-brand-700"
       >
         {children}
         <span className="opacity-80 ml-1 tabular-nums">· {count}</span>

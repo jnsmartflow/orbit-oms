@@ -242,7 +242,7 @@ export function SoEmailPanel({
                   className={`inline-flex items-center gap-1 text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors ${
                     isFlashing
                       ? "bg-green-50 text-green-700 border border-green-200"
-                      : "bg-teal-600 text-white hover:bg-teal-700"
+                      : "bg-brand-600 text-white hover:bg-brand-700"
                   }`}
                 >
                   {isFlashing ? (

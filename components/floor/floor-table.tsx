@@ -250,7 +250,7 @@ export function FloorTable({
               <input
                 type="checkbox"
                 aria-label="Select all rows in this group"
-                className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
                 checked={allOn}
                 onChange={() => onToggleAll?.(rows)}
               />
@@ -393,14 +393,14 @@ export function FloorTable({
                 /* FIRST CELL when the table is selectable — it carries the bar. */
                 <td className={TD_NARROW} style={barStyle}>
                   {/* Checkbox on Waiting / With-picker rows only (design §7.8).
-                      accent-teal-600 stays: it now sits on a pale wash rather
+                      accent-brand-600 stays: it now sits on a pale wash rather
                       than a red fill, and reads the same on every row either
                       way. */}
                   {pickable && (
                     <input
                       type="checkbox"
                       aria-label={`Select ${row.obdNumber}`}
-                      className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                      className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
                       checked={selection?.has(row.orderId) ?? false}
                       onChange={() => onToggleRow?.(row.orderId)}
                     />

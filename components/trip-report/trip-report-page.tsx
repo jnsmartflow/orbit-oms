@@ -353,7 +353,7 @@ export function TripReportPage() {
 
       {/* ── Mobile app bar (below md) — sticky: brand row + search + day/type pills ── */}
       <div className="md:hidden sticky top-0 z-30 bg-white border-b border-gray-100">
-        <div className="bg-teal-600 px-3.5 py-3 flex items-center gap-2.5">
+        <div className="bg-brand-600 px-3.5 py-3 flex items-center gap-2.5">
           <svg viewBox="0 0 22 22" width="18" height="18">
             <circle cx="11" cy="11" r="7" fill="none" stroke="#fff" strokeWidth="1.5" />
             <circle cx="11" cy="11" r="2.3" fill="#fff" />
@@ -590,7 +590,7 @@ function TripDetailsView({
         <button
           type="button"
           onClick={onBack}
-          className="text-[12px] text-teal-600 hover:text-teal-700 mb-3 cursor-pointer"
+          className="text-[12px] text-brand-600 hover:text-brand-700 mb-3 cursor-pointer"
         >
           &larr; Back to trip list
         </button>
@@ -625,7 +625,7 @@ function TripDetailsView({
                   href={`/trips/${encodeURIComponent(detail.tripNo)}/sheet?date=${detail.disDate}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-medium h-[38px] px-4 rounded-lg cursor-pointer"
+                  className="inline-flex items-center justify-center bg-brand-600 hover:bg-brand-700 text-white text-[13px] font-medium h-[38px] px-4 rounded-lg cursor-pointer"
                 >
                   Trip sheet (PDF)
                 </a>
@@ -722,7 +722,7 @@ function TripDetailsView({
 
       {/* ── Mobile (below md) — app-style, matches trip-report-mobile-mock.html ── */}
       <div className="md:hidden">
-        <div className="sticky top-0 z-30 bg-teal-600 px-3.5 py-3 flex items-center gap-2.5">
+        <div className="sticky top-0 z-30 bg-brand-600 px-3.5 py-3 flex items-center gap-2.5">
           <button
             type="button"
             onClick={onBack}
@@ -772,7 +772,7 @@ function TripDetailsView({
                   href={`/trips/${encodeURIComponent(detail.tripNo)}/sheet?date=${detail.disDate}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 inline-flex items-center justify-center bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold h-[44px] rounded-[12px] cursor-pointer"
+                  className="flex-1 inline-flex items-center justify-center bg-brand-600 hover:bg-brand-700 text-white text-[13px] font-semibold h-[44px] rounded-[12px] cursor-pointer"
                 >
                   Trip sheet
                 </a>
@@ -880,7 +880,7 @@ function MobileFilterPill({
       onClick={onClick}
       className={`text-[11px] px-3 py-[5px] rounded-full border cursor-pointer ${
         active
-          ? "bg-teal-600 text-white border-teal-600 font-medium"
+          ? "bg-brand-600 text-white border-brand-600 font-medium"
           : "bg-white text-gray-500 border-gray-200"
       }`}
     >

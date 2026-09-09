@@ -58,7 +58,7 @@ import type { OilGroup, PickGroup } from "@/lib/picking/types";
 // teal per surface, and that one belongs to the assign bar's Assign).
 const CHIP = "mt-0.5 inline-flex items-center rounded-[4px] px-2 py-[2px] text-[10px] font-semibold";
 const CHIP_GREY = `${CHIP} bg-[#f3f4f6] text-[#6b7280]`;
-const CHIP_TEAL = `${CHIP} bg-teal-50 text-teal-700`;
+const CHIP_TEAL = `${CHIP} bg-brand-50 text-brand-700`;
 // ⚠ MOSTLY SAME IS DELIBERATELY NOT TEAL, AND DELIBERATELY NOT FILLED.
 // On this screen teal means "costs you nothing" — it is what the SAME MATERIAL
 // pill and the per-row FREE chip are, and a SAME MATERIAL bundle earns it: every
@@ -188,7 +188,7 @@ export function GroupRow(props: GroupRowProps) {
               PickGroup and still orders Rule 1's groups; it is simply no longer
               drawn. */}
           {free ? (
-            <span className={`${CHIP} mt-0 shrink-0 bg-teal-50 text-teal-700`}>SAME MATERIAL</span>
+            <span className={`${CHIP} mt-0 shrink-0 bg-brand-50 text-brand-700`}>SAME MATERIAL</span>
           ) : oil ? (
             <span className={`${CHIP_OIL} mt-0 shrink-0`}>MOSTLY SAME</span>
           ) : null}
@@ -209,7 +209,7 @@ export function GroupRow(props: GroupRowProps) {
           <button
             type="button"
             onClick={() => onAssignGroup(rows.map((r) => r.orderId), assignTo.id)}
-            className="ml-1 shrink-0 rounded-md border border-teal-600 bg-teal-600 px-2.5 py-[3px] text-[10.5px] font-semibold text-white hover:bg-teal-700"
+            className="ml-1 shrink-0 rounded-md border border-brand-600 bg-brand-600 px-2.5 py-[3px] text-[10.5px] font-semibold text-white hover:bg-brand-700"
           >
             Assign all {rows.length} to {assignTo.name.split(" ")[0]}
           </button>

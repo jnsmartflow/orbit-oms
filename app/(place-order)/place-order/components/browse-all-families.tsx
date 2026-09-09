@@ -60,7 +60,7 @@ export default function BrowseAllFamilies({
                     key={`${s.name}-${f.family}`}
                     type="button"
                     onClick={() => onFamilyClick(f.family)}
-                    className="text-[12px] text-gray-700 hover:text-teal-700 cursor-pointer text-left transition-colors duration-75"
+                    className="text-[12px] text-gray-700 hover:text-brand-700 cursor-pointer text-left transition-colors duration-75"
                   >
                     {f.family}
                   </button>

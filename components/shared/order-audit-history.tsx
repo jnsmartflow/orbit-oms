@@ -151,7 +151,7 @@ export function OrderAuditHistory({ orderId, isOpen }: Props) {
         <button
           type="button"
           onClick={() => load("initial")}
-          className="text-teal-600 hover:text-teal-700 underline-offset-2 hover:underline"
+          className="text-brand-600 hover:text-brand-700 underline-offset-2 hover:underline"
         >
           Retry
         </button>

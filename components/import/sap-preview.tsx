@@ -236,7 +236,7 @@ export function SapPreview({
             <button
               onClick={() => setConfirmIntent(true)}
               disabled={importableCount === 0 || isLoading}
-              className="bg-teal-600 text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-teal-600/90 transition-colors"
+              className="bg-brand-600 text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-600/90 transition-colors"
             >
               Confirm Import ({importableCount} OBDs)
             </button>
@@ -255,7 +255,7 @@ export function SapPreview({
               <button
                 onClick={onConfirm}
                 disabled={isLoading}
-                className="bg-teal-600 text-white rounded px-3 py-1.5 text-xs font-medium hover:bg-teal-600/90 flex items-center gap-1.5 disabled:opacity-50"
+                className="bg-brand-600 text-white rounded px-3 py-1.5 text-xs font-medium hover:bg-brand-600/90 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isLoading && <Loader2 className="animate-spin" size={12} />}
                 Yes, Confirm

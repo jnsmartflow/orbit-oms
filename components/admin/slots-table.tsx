@@ -225,8 +225,8 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-teal-700">Slot Master</h1>
-        <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={openAdd}>+ Add Slot</Button>
+        <h1 className="text-lg font-bold text-brand-700">Slot Master</h1>
+        <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={openAdd}>+ Add Slot</Button>
       </div>
 
       <div className="oa-table">
@@ -343,7 +343,7 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
             </div>
 
             {/* Is Next Day */}
-            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
+            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-brand-50 hover:border-brand-200 transition-all">
               <div>
                 <div className="text-sm font-medium text-gray-900">Next Day Slot</div>
                 <div className="text-xs text-gray-500 mt-0.5">Belongs to the following calendar day</div>
@@ -351,12 +351,12 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
               <Switch
                 checked={form.isNextDay}
                 onCheckedChange={(v) => setField("isNextDay", v)}
-                className="data-[state=checked]:bg-teal-600"
+                className="data-[state=checked]:bg-brand-600"
               />
             </label>
 
             {/* Is Active */}
-            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
+            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-brand-50 hover:border-brand-200 transition-all">
               <div>
                 <div className="text-sm font-medium text-gray-900">Active</div>
                 <div className="text-xs text-gray-500 mt-0.5">Inactive slots cannot be assigned to new orders</div>
@@ -364,13 +364,13 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
-                className="data-[state=checked]:bg-teal-600"
+                className="data-[state=checked]:bg-brand-600"
               />
             </label>
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
               <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Slot"}</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Slot"}</Button>
             </div>
           </form>
         </SheetContent>

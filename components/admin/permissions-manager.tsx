@@ -155,7 +155,7 @@ function ByRoleTab({
               className={cn(
                 "w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-gray-100 last:border-b-0",
                 isSelected
-                  ? "bg-teal-50 text-teal-700 font-semibold"
+                  ? "bg-brand-50 text-brand-700 font-semibold"
                   : "hover:bg-gray-50 text-gray-600"
               )}
             >
@@ -247,7 +247,7 @@ function ByRoleTab({
                             className={cn(
                               "h-6 px-2 text-xs w-12 transition-colors",
                               value && !isAdmin
-                                ? "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
+                                ? "bg-brand-600 text-white border-brand-600 hover:bg-brand-700"
                                 : isAdmin && value
                                 ? "bg-gray-100 text-gray-500 border-gray-200"
                                 : ""
@@ -333,7 +333,7 @@ function ByPageTab({ getPerms, toggle }: MatrixProps) {
                         className={cn(
                           "h-5 px-1.5 text-[10px] w-9 transition-colors",
                           value && !isAdmin
-                            ? "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
+                            ? "bg-brand-600 text-white border-brand-600 hover:bg-brand-700"
                             : isAdmin && value
                             ? "bg-gray-100 text-gray-500 border-gray-200"
                             : ""
@@ -417,10 +417,10 @@ export function PermissionsManager({ initialPerms }: Props) {
     <div>
       {/* Page header */}
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-lg font-bold text-teal-700">Permissions</h1>
+        <h1 className="text-lg font-bold text-brand-700">Permissions</h1>
         <Button
           size="sm"
-          className="bg-teal-600 hover:bg-teal-700 text-white"
+          className="bg-brand-600 hover:bg-brand-700 text-white"
           disabled={!isDirty || saving}
           onClick={handleSave}
         >
@@ -440,7 +440,7 @@ export function PermissionsManager({ initialPerms }: Props) {
             <Tabs.Tab
               key={tab.value}
               value={tab.value}
-              className="px-4 py-2.5 text-[13px] font-medium text-gray-500 border-b-2 border-transparent -mb-px transition-colors hover:text-gray-800 outline-none data-[active]:border-teal-600 data-[active]:text-teal-700 data-[active]:font-semibold"
+              className="px-4 py-2.5 text-[13px] font-medium text-gray-500 border-b-2 border-transparent -mb-px transition-colors hover:text-gray-800 outline-none data-[active]:border-brand-600 data-[active]:text-brand-700 data-[active]:font-semibold"
             >
               {tab.label}
             </Tabs.Tab>

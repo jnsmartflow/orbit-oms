@@ -123,7 +123,7 @@ export function BoardDetailPanel({
             type="button"
             disabled={busy}
             onClick={(e) => setMenuAnchor((a) => (a ? null : e.currentTarget))}
-            className="bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
+            className="bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
           >
             {busy && <Loader2 size={12} className="animate-spin" />}
             Assign operator
@@ -201,7 +201,7 @@ export function BoardDetailPanel({
             type="button"
             disabled={busy}
             onClick={(e) => setMenuAnchor((a) => (a ? null : e.currentTarget))}
-            className="bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
+            className="bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white rounded-[7px] text-[11.5px] font-semibold px-3 py-2 inline-flex items-center gap-1.5"
           >
             {busy && <Loader2 size={12} className="animate-spin" />}
             Re-assign operator
@@ -322,7 +322,7 @@ export function BoardDetailPanel({
               onClick={() => setTab(t)}
               className={cn(
                 "text-[11.5px] font-semibold px-2 py-[9px] border-b-2 transition-colors capitalize",
-                tab === t ? "text-gray-900 border-teal-600" : "text-gray-500 border-transparent hover:text-gray-700",
+                tab === t ? "text-gray-900 border-brand-600" : "text-gray-500 border-transparent hover:text-gray-700",
               )}
             >
               {t}

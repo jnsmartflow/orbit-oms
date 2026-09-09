@@ -432,7 +432,7 @@ export function FloorBoard({
         ›
       </button>
       <span className="ml-2 text-[10.5px] text-gray-400">past day — read only</span>
-      <button type="button" className="ml-auto text-[10.5px] font-semibold text-teal-600" onClick={onExitHistory}>
+      <button type="button" className="ml-auto text-[10.5px] font-semibold text-brand-600" onClick={onExitHistory}>
         Back to Live ›
       </button>
     </div>
@@ -443,7 +443,7 @@ export function FloorBoard({
       <span className="text-[10.5px] text-gray-400">
         {stillOpen} still open &middot; {liveCounts.done} checked today
       </span>
-      <button type="button" className="ml-auto text-[10.5px] font-semibold text-teal-600" onClick={onEnterHistory}>
+      <button type="button" className="ml-auto text-[10.5px] font-semibold text-brand-600" onClick={onEnterHistory}>
         History ›
       </button>
     </div>

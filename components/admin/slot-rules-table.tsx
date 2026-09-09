@@ -285,8 +285,8 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-teal-700">Slot Rules</h1>
-        <Button size="sm" onClick={openAdd} className="bg-teal-600 hover:bg-teal-700 text-white">+ Add Rule</Button>
+        <h1 className="text-lg font-bold text-brand-700">Slot Rules</h1>
+        <Button size="sm" onClick={openAdd} className="bg-brand-600 hover:bg-brand-700 text-white">+ Add Rule</Button>
       </div>
 
       <div className="oa-table">
@@ -556,13 +556,13 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
-                className="data-[state=checked]:bg-teal-600 data-[state=unchecked]:bg-gray-300"
+                className="data-[state=checked]:bg-brand-600 data-[state=unchecked]:bg-gray-300"
               />
             </div>
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
               <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Rule"}</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Rule"}</Button>
             </div>
           </form>
         </SheetContent>

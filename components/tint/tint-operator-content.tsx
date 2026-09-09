@@ -1646,7 +1646,7 @@ export function TintOperatorContent() {
                   {selectedJob ? (
                     <div
                       onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
-                      className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[7px] cursor-pointer transition-colors bg-teal-600 text-white font-medium hover:bg-teal-700"
+                      className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[7px] cursor-pointer transition-colors bg-brand-600 text-white font-medium hover:bg-brand-700"
                     >
                       <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
                       <span className="text-[13px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
@@ -1696,7 +1696,7 @@ export function TintOperatorContent() {
                             key={`q-cur-${job.type}-${job.id}`}
                             onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
                             className={cn("w-full text-left px-3 py-2 transition-colors",
-                              isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50")}
+                              isCurrent ? "bg-brand-50 border-l-[3px] border-l-brand-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50")}
                           >
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-mono text-gray-400">#1</span>
@@ -1866,7 +1866,7 @@ export function TintOperatorContent() {
                               key={`q-up-${job.type}-${job.id}`}
                               onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
                               className={cn("w-full text-left px-3 py-1.5 transition-colors opacity-70 hover:opacity-100",
-                                isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50")}
+                                isCurrent ? "bg-brand-50 border-l-[3px] border-l-brand-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50")}
                             >
                               <div className="flex items-center gap-2 text-[11.5px] text-gray-600">
                                 <span className="font-mono text-[10px] text-gray-400">#{idx + 2}</span>

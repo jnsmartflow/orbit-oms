@@ -36,7 +36,7 @@ import { ChevronDown, Download } from "lucide-react";
  *  which sits in this exact header slot on TI Report. */
 const TRIGGER_BASE =
   "h-7 px-3 flex items-center gap-1.5 rounded-md border text-[11px] font-medium transition-colors";
-const TRIGGER_OPEN = "border-teal-500 text-teal-700";
+const TRIGGER_OPEN = "border-brand-500 text-brand-700";
 const TRIGGER_IDLE = "border-gray-200 text-gray-700 hover:border-gray-300";
 
 /** components/header-filter.tsx:151 and ti-report-content.tsx:234 — the house
@@ -53,11 +53,11 @@ const PRESET_ROW =
 /** The teal action, the app's one download colour (CLAUDE_UI.md §297, and the
  *  same fill components/admin/attendance/export-button.tsx uses). */
 const ACTION =
-  "w-full h-7 rounded-md bg-teal-600 hover:bg-teal-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-[11px] font-medium transition-colors";
+  "w-full h-7 rounded-md bg-brand-600 hover:bg-brand-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-[11px] font-medium transition-colors";
 
 const FIELD_LABEL = "text-[10px] font-medium uppercase tracking-[0.06em] text-gray-400";
 const FIELD =
-  "w-full h-7 px-2 rounded-md border border-gray-200 text-[11px] text-gray-700 focus:border-teal-500 focus:outline-none";
+  "w-full h-7 px-2 rounded-md border border-gray-200 text-[11px] text-gray-700 focus:border-brand-500 focus:outline-none";
 
 /**
  * Today's calendar date IN IST, as {y, m} with a 1-based month.

@@ -1064,7 +1064,7 @@ export function ReviewView({
     const hasTruckOrder = sigs.some((s) => s.type === "truck-order");
 
     const borderClass = isFocused
-      ? "bg-teal-50 border-l-teal-600"
+      ? "bg-brand-50 border-l-brand-600"
       : isFlagged
         ? "border-l-amber-600 hover:bg-gray-50"
         : isPunched
@@ -1489,7 +1489,7 @@ export function ReviewView({
             placeholder="Or search by name..."
             value={custSearchQuery}
             onChange={(e) => setCustSearchQuery(e.target.value)}
-            className="text-[11px] h-[28px] px-2 border border-gray-200 rounded-md w-full focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+            className="text-[11px] h-[28px] px-2 border border-gray-200 rounded-md w-full focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 focus:outline-none"
           />
           {custSearching && <p className="text-[11px] text-gray-400 px-1 py-1.5">Searching...</p>}
           {!custSearching && custSearched && custSearchResults.length === 0 && (
@@ -1520,7 +1520,7 @@ export function ReviewView({
           value={custSearchQuery}
           onChange={(e) => setCustSearchQuery(e.target.value)}
           autoFocus
-          className="text-[11px] h-[28px] px-2 border border-amber-200 rounded-md w-full mb-1.5 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+          className="text-[11px] h-[28px] px-2 border border-amber-200 rounded-md w-full mb-1.5 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 focus:outline-none"
         />
         {custSearching && <p className="text-[11px] text-gray-400 px-1 py-2">Searching...</p>}
         {!custSearching && custSearched && custSearchResults.length === 0 && (
@@ -1567,7 +1567,7 @@ export function ReviewView({
       // commit and ✕ to back out. Same `handlePunchClick` save handler and the
       // same 10-digit gate as a fresh punch; only the chrome differs.
       <>
-        <div className="flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15">
+        <div className="flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15">
           <input
             type="text"
             value={soInput}
@@ -1614,8 +1614,8 @@ export function ReviewView({
         <div
           className={
             billingV2
-              ? "flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15"
-              : "flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-teal-500 focus-within:shadow-[0_0_0_3px_rgba(13,148,136,0.08)]"
+              ? "flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15"
+              : "flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-brand-500 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.08)]"
           }
         >
           <span className="text-[10px] font-medium text-gray-400 pl-2 whitespace-nowrap">Order No.</span>
@@ -1634,7 +1634,7 @@ export function ReviewView({
           disabled={!punchReady}
           className={`h-[32px] px-3.5 rounded-md text-[12px] font-semibold whitespace-nowrap transition-all ${
             punchReady
-              ? "bg-teal-600 text-white hover:bg-teal-700 cursor-pointer"
+              ? "bg-brand-600 text-white hover:bg-brand-700 cursor-pointer"
               : "bg-gray-100 text-gray-300 cursor-default"
           }`}
         >
@@ -1732,7 +1732,7 @@ export function ReviewView({
                     top: -2, right: -2,
                     width: 8, height: 8,
                     borderRadius: "50%",
-                    background: "#0d9488",
+                    background: "#7C3AED",
                     border: "1.5px solid #fff",
                     pointerEvents: "none",
                   }}
@@ -1772,7 +1772,7 @@ export function ReviewView({
             // (instructions-strip.tsx — #f5f3ff fill, #5b21b6 text, #7c3aed
             // accent), so the button and its content read as one thing.
             //
-            // It also retires a stray teal: that dot was bg-teal-600, and this
+            // It also retires a stray teal: that dot was bg-brand-600, and this
             // row already spends the brand accent on Import and the search
             // focus ring (CLAUDE_UI §1 — one teal element per surface).
             className={`${BTN_BASE} ${hasNotes ? "border-[#7c3aed]/40 bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ede9fe]" : BTN_OFF}`}
@@ -1952,9 +1952,9 @@ export function ReviewView({
             transition: "all 0.12s",
             ...(isPunched
               ? {
-                  borderColor: replyCopied ? "#5eead4" : "#99f6e4",
-                  background: replyCopied ? "#ccfbf1" : "#fff",
-                  color: "#0f766e",
+                  borderColor: replyCopied ? "#C4B5FD" : "#DDD6FE",
+                  background: replyCopied ? "#EDE9FE" : "#fff",
+                  color: "#6D28D9",
                   cursor: "pointer",
                 }
               : {
@@ -1965,8 +1965,8 @@ export function ReviewView({
                   pointerEvents: "none" as const,
                 }),
           }}
-          onMouseEnter={(e) => { if (isPunched) e.currentTarget.style.background = "#f0fdfa"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = isPunched && replyCopied ? "#ccfbf1" : "#fff"; }}
+          onMouseEnter={(e) => { if (isPunched) e.currentTarget.style.background = "#F5F3FF"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = isPunched && replyCopied ? "#EDE9FE" : "#fff"; }}
         >
           <Mail size={14} />
         </button>
@@ -2276,7 +2276,7 @@ export function ReviewView({
       return (
         <div
           key={key}
-          className={`flex items-center gap-2.5 px-2.5 py-2 mb-1.5 rounded-lg border ${primary ? "bg-teal-50 border-teal-200" : "bg-white border-gray-200"}`}
+          className={`flex items-center gap-2.5 px-2.5 py-2 mb-1.5 rounded-lg border ${primary ? "bg-brand-50 border-brand-200" : "bg-white border-gray-200"}`}
         >
           <span className="min-w-[104px] font-mono text-[12px]">{code}</span>
           <span className="flex-1 text-[10.5px] leading-[1.35] text-gray-600">{desc}</span>
@@ -2284,7 +2284,7 @@ export function ReviewView({
             <button
               type="button"
               onClick={() => copyAltCode(code)}
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[10px] font-semibold ${done ? "border-ok bg-ok text-white" : "border-teal-200 bg-white text-teal-700 hover:bg-teal-50"}`}
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[10px] font-semibold ${done ? "border-ok bg-ok text-white" : "border-brand-200 bg-white text-brand-700 hover:bg-brand-50"}`}
             >
               {done ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
             </button>
@@ -2529,7 +2529,7 @@ export function ReviewView({
                         <span
                           onClick={() => setResolveLineId(line.id)}
                           style={{
-                            fontSize: 10, color: "#0d9488", cursor: "pointer", fontWeight: 500,
+                            fontSize: 10, color: "#7C3AED", cursor: "pointer", fontWeight: 500,
                             marginLeft: 4,
                           }}
                           onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
@@ -2654,7 +2654,7 @@ export function ReviewView({
                         Primary (billed)
                       </div>
                       {renderSkuRow(ml.skuCode ?? "—", ml.skuDescription ?? "—", true, "primary")}
-                      <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-teal-700">
+                      <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-brand-700">
                         Alternate SKUs
                       </div>
                       {alts.map((a, i) => renderSkuRow(a.code, a.description, false, `${a.code}-${i}`))}
@@ -2739,7 +2739,7 @@ export function ReviewView({
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Filter orders..."
-            className="w-full h-[28px] border border-gray-200 rounded-md px-2.5 text-[11px] text-gray-600 outline-none placeholder:text-gray-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+            className="w-full h-[28px] border border-gray-200 rounded-md px-2.5 text-[11px] text-gray-600 outline-none placeholder:text-gray-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
           />
         </div>
         )}
@@ -3060,7 +3060,7 @@ export function ReviewView({
                       placeholder="Add a note for this order…"
                       rows={4}
                       maxLength={5000}
-                      className="focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                      className="focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
                       style={{
                         width: "100%",
                         minHeight: 96,

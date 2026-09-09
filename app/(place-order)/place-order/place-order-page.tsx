@@ -761,7 +761,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
   return (
     <>
       <header className="bg-white border-b border-gray-200 h-[52px] flex items-center px-4 gap-3 sticky top-0 z-30">
-        <div className="w-[28px] h-[28px] rounded-md bg-teal-600 flex items-center justify-center flex-shrink-0">
+        <div className="w-[28px] h-[28px] rounded-md bg-brand-600 flex items-center justify-center flex-shrink-0">
           <svg viewBox="0 0 22 22" className="w-[16px] h-[16px]" fill="none">
             <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.4" />
             <circle cx="11" cy="11" r="2.2" fill="white" />

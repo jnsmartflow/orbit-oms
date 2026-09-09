@@ -411,7 +411,7 @@ export function MrnSupervisorBoard(): React.JSX.Element {
         }
       >
         <div
-          className="flex shrink-0 items-center gap-1.5 bg-teal-600 pb-3.5 pl-3.5 pr-1.5"
+          className="flex shrink-0 items-center gap-1.5 bg-brand-600 pb-3.5 pl-3.5 pr-1.5"
           style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
         >
           {/* Routes through history so the chevron, a hardware back press, the
@@ -551,7 +551,7 @@ export function MrnSupervisorBoard(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => setStartSheet(true)}
-                className="h-[52px] w-full rounded-[13px] bg-teal-600 text-[15px] font-bold text-white active:bg-teal-700"
+                className="h-[52px] w-full rounded-[13px] bg-brand-600 text-[15px] font-bold text-white active:bg-brand-700"
               >
                 Start unloading
               </button>
@@ -722,7 +722,7 @@ function StartSheet({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="h-[50px] flex-1 rounded-[13px] bg-teal-600 text-[15px] font-bold text-white active:bg-teal-700 disabled:bg-gray-100 disabled:text-gray-400"
+            className="h-[50px] flex-1 rounded-[13px] bg-brand-600 text-[15px] font-bold text-white active:bg-brand-700 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {busy ? "Starting…" : "Start"}
           </button>

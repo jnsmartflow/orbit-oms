@@ -263,7 +263,7 @@ export function AccessManager({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Find a person…"
-              className="h-[31px] w-full rounded-[7px] border border-gray-200 pl-7 pr-2 text-[12px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+              className="h-[31px] w-full rounded-[7px] border border-gray-200 pl-7 pr-2 text-[12px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
             />
           </div>
 
@@ -289,7 +289,7 @@ export function AccessManager({
                 className={cn(
                   "flex w-full items-center gap-2.5 border-l-2 px-3 py-2 text-left transition-colors",
                   on
-                    ? "border-teal-600 bg-teal-50"
+                    ? "border-brand-600 bg-brand-50"
                     : "border-transparent hover:bg-gray-100/70",
                   !p.isActive && !on && "opacity-55",
                 )}
@@ -297,7 +297,7 @@ export function AccessManager({
                 <span
                   className={cn(
                     "flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full text-[9.5px] font-bold",
-                    on ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-500",
+                    on ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-500",
                   )}
                 >
                   {p.initials}
@@ -306,7 +306,7 @@ export function AccessManager({
                   <span
                     className={cn(
                       "block truncate text-[12.5px] font-semibold leading-tight",
-                      on ? "text-teal-700" : "text-gray-700",
+                      on ? "text-brand-700" : "text-gray-700",
                     )}
                   >
                     {p.name}
@@ -390,7 +390,7 @@ export function AccessManager({
                     </span>
                   </div>
                 ) : (
-                  <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-teal-100 bg-teal-50 px-3 py-2 text-[11.5px] text-teal-700">
+                  <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-[11.5px] text-brand-700">
                     <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
                     <span>
                       Matches their role exactly
@@ -482,7 +482,7 @@ export function AccessManager({
                       type="button"
                       onClick={save}
                       disabled={saving || pendingCount === 0}
-                      className="h-[34px] rounded-lg bg-teal-600 px-4 text-[12.5px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+                      className="h-[34px] rounded-lg bg-brand-600 px-4 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                     >
                       {saving ? "Saving…" : "Save changes"}
                     </button>
@@ -493,7 +493,7 @@ export function AccessManager({
               {/* ── Legend ───────────────────────────────────────────────── */}
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-gray-100 bg-[#fcfcfd] px-[18px] py-2.5 text-[10.5px] text-gray-500">
                 <span className="flex items-center gap-1.5">
-                  <i className="inline-block h-[15px] w-[15px] rounded-[4px] border-[1.6px] border-teal-600 bg-teal-600" />
+                  <i className="inline-block h-[15px] w-[15px] rounded-[4px] border-[1.6px] border-brand-600 bg-brand-600" />
                   On
                 </span>
                 <span className="flex items-center gap-1.5">
@@ -608,8 +608,8 @@ function FragmentSection({
                     }
                     className={cn(
                       "relative inline-block h-[17px] w-[17px] rounded-[5px] border-[1.6px] align-middle transition-colors",
-                      on ? "border-teal-600 bg-teal-600" : "border-gray-300 bg-white",
-                      !on && "hover:border-teal-500",
+                      on ? "border-brand-600 bg-brand-600" : "border-gray-300 bg-white",
+                      !on && "hover:border-brand-500",
                       on !== base && "ring-2 ring-amber-300",
                       isPend && "ring-2 ring-amber-500",
                     )}

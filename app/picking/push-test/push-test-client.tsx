@@ -230,7 +230,7 @@ export function PushTestClient({ vapidPublicKey, initialSavedCount }: PushTestCl
           type="button"
           onClick={handleEnable}
           disabled={!supported || busy || permission === "denied"}
-          className="h-[42px] rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[14px] font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+          className="h-[42px] rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-[14px] font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
         >
           {busy ? "Turning on…" : "Turn on notifications"}
         </button>

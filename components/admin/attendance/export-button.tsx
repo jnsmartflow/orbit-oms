@@ -37,7 +37,7 @@ export function ExportButton({ date, className }: ExportButtonProps) {
       onClick={() => triggerCsvExport(date)}
       className={
         className ??
-        "h-8 px-3 rounded-md bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-medium flex items-center gap-1.5 transition-colors"
+        "h-8 px-3 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-[12px] font-medium flex items-center gap-1.5 transition-colors"
       }
     >
       <Download className="w-3.5 h-3.5" />

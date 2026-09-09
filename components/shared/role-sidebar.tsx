@@ -142,7 +142,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
               className={cn(
                 "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
                 active
-                  ? "bg-teal-50 text-teal-700 font-semibold pl-[10px] border-l-2 border-teal-600"
+                  ? "bg-brand-50 text-brand-700 font-semibold pl-[10px] border-l-2 border-brand-600"
                   : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
               )}
             >
@@ -169,7 +169,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
               className={cn(
                 "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
                 active
-                  ? "bg-teal-50 text-teal-600"
+                  ? "bg-brand-50 text-brand-600"
                   : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
               )}
               title={item.label}
@@ -195,7 +195,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
       className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-50 flex-col bg-white transition-all duration-200"
       style={{
         width:       isExpanded ? "220px" : "72px",
-        borderLeft:  "3px solid #0d9488",
+        borderLeft:  "3px solid #7C3AED",
         borderRight: "1px solid #e5e7eb",
         boxShadow:   isExpanded ? "4px 0 16px rgba(0,0,0,0.06)" : "none",
       }}
@@ -208,7 +208,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
         )}
       >
         <div
-          className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] hover:bg-teal-700 transition-colors flex-shrink-0"
+          className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] hover:bg-brand-700 transition-colors flex-shrink-0"
         >
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
             <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
@@ -237,7 +237,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
       >
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 hover:bg-teal-700 transition-colors"
+          className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 hover:bg-brand-700 transition-colors"
           title="Sign out"
         >
           {userInitials}

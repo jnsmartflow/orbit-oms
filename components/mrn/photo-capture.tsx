@@ -260,7 +260,7 @@ export function MrnPhotoCamera({ title, onCaptured, onCancel }: CameraProps): Re
           <button
             type="button"
             onClick={use}
-            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[13px] bg-teal-600 text-[15px] font-bold text-white active:bg-teal-700"
+            className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-[13px] bg-brand-600 text-[15px] font-bold text-white active:bg-brand-700"
           >
             <Check className="h-4 w-4" />
             Use photo
@@ -327,7 +327,7 @@ export function PhotoStrip({
                   (p.status === "failed"
                     ? "ring-2 ring-red-400"
                     : p.status === "saved"
-                      ? "ring-2 ring-teal-500"
+                      ? "ring-2 ring-brand-500"
                       : "ring-1 ring-gray-200")
                 }
               />
@@ -340,7 +340,7 @@ export function PhotoStrip({
                 </span>
               )}
               {p.status === "saved" && (
-                <span className="absolute bottom-0.5 left-0.5 flex h-[16px] w-[16px] items-center justify-center rounded-full bg-teal-600 text-white">
+                <span className="absolute bottom-0.5 left-0.5 flex h-[16px] w-[16px] items-center justify-center rounded-full bg-brand-600 text-white">
                   <Check size={10} />
                 </span>
               )}

@@ -73,7 +73,7 @@ export function HideSettingsContent(): React.JSX.Element {
             onClick={() => setTab(t.key)}
             className={`text-[12.5px] font-semibold py-[11px] border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${
               tab === t.key
-                ? "text-teal-700 border-teal-600"
+                ? "text-brand-700 border-brand-600"
                 : "text-gray-500 border-transparent hover:text-gray-700"
             }`}
           >
@@ -413,7 +413,7 @@ function HiddenBecause({ reason }: { reason: HiddenReason }): React.JSX.Element 
     );
   }
   return (
-    <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 max-w-full truncate">
+    <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200 max-w-full truncate">
       Manual · &ldquo;{reason.text ?? "—"}&rdquo;
     </span>
   );
@@ -518,7 +518,7 @@ function RulesTab(): React.JSX.Element {
           <button
             type="button"
             onClick={() => { setEditing(null); setModalOpen(true); }}
-            className="bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-[7px] px-3.5 py-2 inline-flex items-center gap-1.5"
+            className="bg-brand-600 hover:bg-brand-700 text-white text-[12px] font-semibold rounded-[7px] px-3.5 py-2 inline-flex items-center gap-1.5"
           >
             + Add Rule
           </button>
@@ -625,7 +625,7 @@ function Toggle({ on, busy, onClick }: { on: boolean; busy: boolean; onClick: ()
       role="switch"
       aria-checked={on}
       className={`relative w-9 h-5 rounded-full flex-shrink-0 transition-colors disabled:opacity-50 ${
-        on ? "bg-teal-600" : "bg-gray-300"
+        on ? "bg-brand-600" : "bg-gray-300"
       }`}
     >
       <span
@@ -753,7 +753,7 @@ function RuleModal({
               onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
               placeholder="Hide HOLD orders"
               disabled={submitting}
-              className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-[12.5px] text-gray-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 disabled:opacity-60"
+              className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-[12.5px] text-gray-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60"
             />
           </div>
 
@@ -768,7 +768,7 @@ function RuleModal({
                     onClick={() => { setKind(value); if (error) setError(null); }}
                     disabled={submitting}
                     className={`text-[12px] font-semibold px-3 py-1.5 rounded-md ${
-                      kind === value ? "bg-teal-600 text-white" : "text-gray-500 hover:bg-white/60"
+                      kind === value ? "bg-brand-600 text-white" : "text-gray-500 hover:bg-white/60"
                     }`}
                   >
                     {label}
@@ -785,7 +785,7 @@ function RuleModal({
                 value="HOLD"
                 disabled={submitting}
                 onChange={() => { /* HOLD only in v1 */ }}
-                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-[12.5px] text-gray-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 disabled:opacity-60"
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-[12.5px] text-gray-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60"
               >
                 <option value="HOLD">HOLD</option>
               </select>
@@ -799,7 +799,7 @@ function RuleModal({
                 value={days}
                 onChange={(e) => { setDays(e.target.value); if (error) setError(null); }}
                 disabled={submitting}
-                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-[12.5px] text-gray-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 disabled:opacity-60"
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-[12.5px] text-gray-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60"
               />
             </div>
           )}
@@ -831,7 +831,7 @@ function RuleModal({
             type="button"
             onClick={() => void handleSubmit()}
             disabled={submitting}
-            className="bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-[7px] px-3.5 py-2 inline-flex items-center gap-1.5 disabled:opacity-60"
+            className="bg-brand-600 hover:bg-brand-700 text-white text-[12px] font-semibold rounded-[7px] px-3.5 py-2 inline-flex items-center gap-1.5 disabled:opacity-60"
           >
             {submitting && <Loader2 className="animate-spin" size={13} />}
             {editing ? "Save changes" : "Create rule"}

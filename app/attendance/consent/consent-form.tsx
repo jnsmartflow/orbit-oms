@@ -54,7 +54,7 @@ export function ConsentForm({ consentVersion }: ConsentFormProps) {
     <div>
       {/* Header — orbit logo (only teal, beside Accept CTA) */}
       <header className="flex items-center gap-2.5 mb-5">
-        <div className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center">
+        <div className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center">
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
             <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
             <circle cx="11" cy="11" r="2.2" fill="white" />
@@ -98,7 +98,7 @@ export function ConsentForm({ consentVersion }: ConsentFormProps) {
           checked={checked}
           onChange={(e) => setChecked(e.target.checked)}
           disabled={submitting}
-          className="mt-0.5 w-5 h-5 shrink-0 rounded border-gray-300 accent-teal-600 cursor-pointer disabled:cursor-not-allowed"
+          className="mt-0.5 w-5 h-5 shrink-0 rounded border-gray-300 accent-brand-600 cursor-pointer disabled:cursor-not-allowed"
         />
         <span className="text-[15px] text-gray-800 leading-snug">
           I have read and consent to the photo + location capture described above.
@@ -120,7 +120,7 @@ export function ConsentForm({ consentVersion }: ConsentFormProps) {
         type="button"
         onClick={handleAccept}
         disabled={!checked || submitting}
-        className="w-full h-[60px] rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[16px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-600"
+        className="w-full h-[60px] rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-[16px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-600"
       >
         {submitting ? "Recording…" : "Accept & Continue"}
       </button>

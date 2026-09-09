@@ -14,7 +14,7 @@
 //     the caret opens the same shared picker to choose another. Both ends funnel
 //     into the SAME onRelease the picker has always called, so there is exactly
 //     one release path — the button is a shortcut through it, never around it.
-//     Teal-600 (#0d9488, the mockup's .bt) is the ONLY filled element on the
+//     Teal-600 (#7C3AED, the mockup's .bt) is the ONLY filled element on the
 //     card; everything else stays icon/text colour (design §6.2, UI §1/§2).
 //
 //  B. WITHOUT one — [ pick slot ] [ Hold ] [ ✕ ], byte-identical to before:
@@ -112,7 +112,7 @@ export function RailCard({
   onHold: (orderId: number) => void;
   onCancel: (orderId: number) => void;
   onOpenDetail: (orderId: number) => void;
-  // Search match — a subtle teal accent. The card is NEVER hidden by search.
+  // Search match — a subtle ink-900 accent. The card is NEVER hidden by search.
   highlighted?: boolean;
 }) {
   const releasable = card.workflowStage === "pending_support";
@@ -197,12 +197,12 @@ export function RailCard({
   const suggestionDay = suggestion ? fmtSuggestionDay(suggestion.targetDate, getTodayIST()) : "";
 
   // ── Duplicate-SO, SOFT variant ────────────────────────────────────────────
-  // ⚠ SEARCH-HIGHLIGHT ON A DUPLICATE. Normally a match is a teal border + teal
+  // ⚠ SEARCH-HIGHLIGHT ON A DUPLICATE. Normally a match is an ink-900 border + ring
   // ring. Under the old solid fill the border was spoken for by the red, so a
   // highlighted duplicate had to take a WHITE border and keep the ring outside
   // the box. The soft variant frees the border again — the duplicate signal now
   // lives on the INSET accent, which cannot collide with a border or a ring — so
-  // a highlighted duplicate takes teal-400 on the border AND keeps its red bar,
+  // a highlighted duplicate takes ink-900 on the border AND keeps its red bar,
   // and both states read independently without either being disguised. The
   // rail's list padding is p-2.5 (10px), which still clears the 4px ring.
   const dup = card.hasDuplicateSo;
@@ -355,7 +355,7 @@ export function RailCard({
               type="button"
               title={`Release to ${suggestionDay} ${suggestion!.windowTime}`}
               onClick={confirmSuggestion}
-              className="flex flex-1 items-center justify-center gap-1.5 bg-teal-600 px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:bg-teal-700"
+              className="flex flex-1 items-center justify-center gap-1.5 bg-brand-600 px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:bg-brand-700"
             >
               <svg width="11" height="11" viewBox="0 0 10 10" fill="none" className="shrink-0">
                 <path
@@ -377,7 +377,7 @@ export function RailCard({
                 type="button"
                 title="Choose a different slot"
                 onClick={() => setSlotGen((g) => g + 1)}
-                className="flex w-[26px] items-center justify-center border-l border-teal-500/60 bg-teal-600 text-white transition-colors hover:bg-teal-700"
+                className="flex w-[26px] items-center justify-center border-l border-brand-500/60 bg-brand-600 text-white transition-colors hover:bg-brand-700"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                   <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />

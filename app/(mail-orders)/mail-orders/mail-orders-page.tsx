@@ -102,7 +102,7 @@ function ColumnPicker({
         onClick={() => setOpen(!open)}
         className={`inline-flex items-center gap-1.5 text-[11px] font-medium border rounded-md px-2.5 h-[28px] transition-colors ${
           hiddenCount > 0
-            ? "text-teal-700 border-teal-300 bg-teal-50 hover:bg-teal-100"
+            ? "text-brand-700 border-brand-300 bg-brand-50 hover:bg-brand-100"
             : "text-gray-600 border-gray-200 hover:bg-gray-50"
         }`}
       >
@@ -120,7 +120,7 @@ function ColumnPicker({
         </svg>
         Columns
         {hiddenCount > 0 && (
-          <span className="text-[9px] bg-teal-600 text-white rounded-full w-[16px] h-[16px] flex items-center justify-center">
+          <span className="text-[9px] bg-brand-600 text-white rounded-full w-[16px] h-[16px] flex items-center justify-center">
             {hiddenCount}
           </span>
         )}
@@ -140,7 +140,7 @@ function ColumnPicker({
                 checked={visible.has(col.key)}
                 disabled={col.alwaysVisible}
                 onChange={() => !col.alwaysVisible && toggleColumn(col.key)}
-                className="accent-teal-600 w-3.5 h-3.5"
+                className="accent-brand-600 w-3.5 h-3.5"
               />
               {col.label}
               {col.alwaysVisible && (

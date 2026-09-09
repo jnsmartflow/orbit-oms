@@ -33,7 +33,7 @@ interface SalesOfficersListProps {
 const ROLES: SalesOfficerRole[] = ["PRIMARY", "BACKUP", "JUNIOR"];
 
 const ROLE_PILL_ACTIVE: Record<SalesOfficerRole, string> = {
-  PRIMARY: "border-teal-300 bg-teal-50 text-teal-700",
+  PRIMARY: "border-brand-300 bg-brand-50 text-brand-700",
   BACKUP:  "border-blue-300 bg-blue-50 text-blue-700",
   JUNIOR:  "border-amber-300 bg-amber-50 text-amber-700",
 };
@@ -176,7 +176,7 @@ export function SalesOfficersList({ value, onChange, options, disabled = false }
           <button
             type="button"
             onClick={() => setAddOpen(true)}
-            className="w-full h-[36px] text-[12px] font-medium text-gray-500 hover:text-teal-700 hover:bg-teal-50 border border-dashed border-gray-300 hover:border-teal-300 rounded-lg flex items-center justify-center gap-2"
+            className="w-full h-[36px] text-[12px] font-medium text-gray-500 hover:text-brand-700 hover:bg-brand-50 border border-dashed border-gray-300 hover:border-brand-300 rounded-lg flex items-center justify-center gap-2"
           >
             <Plus size={14} />
             Add Sales Officer

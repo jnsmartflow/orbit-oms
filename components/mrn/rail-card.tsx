@@ -56,7 +56,7 @@ export function RailCard({ row, selected, onSelect }: RailCardProps): React.JSX.
             // here is teal — not the New MRN button, not the table's segmented
             // filter — so the operator's eye lands on the truck they are
             // looking at and nowhere else. Unchanged by the 2026-08-26 trim.
-            "border-teal-600 bg-teal-50"
+            "border-brand-600 bg-brand-50"
           : "border-[#e6e9ec] bg-white hover:bg-gray-50")
       }
     >
@@ -65,7 +65,7 @@ export function RailCard({ row, selected, onSelect }: RailCardProps): React.JSX.
       <span
         className={
           "mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] text-[12px] font-bold tabular-nums " +
-          (selected ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-500")
+          (selected ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-500")
         }
       >
         {row.srNo}

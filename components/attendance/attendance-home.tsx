@@ -74,7 +74,7 @@ export function AttendanceHome({
       {/* Header — single row ~56px (Q9) */}
       <header className="flex items-center justify-between mb-4 h-14">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-teal-600 rounded-lg flex items-center justify-center">
+          <div className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
             <svg width="18" height="18" viewBox="0 0 22 22" fill="none">
               <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
               <circle cx="11" cy="11" r="2.2" fill="white" />
@@ -84,7 +84,7 @@ export function AttendanceHome({
           <p className="text-[14px] font-semibold text-gray-900">Attendance</p>
         </div>
         <div className="flex flex-col items-end gap-0.5">
-          <div className="w-7 h-7 bg-teal-600 rounded-full flex items-center justify-center text-white text-[11px] font-semibold">
+          <div className="w-7 h-7 bg-brand-600 rounded-full flex items-center justify-center text-white text-[11px] font-semibold">
             {getInitials(userName)}
           </div>
           <p className="text-[10px] text-gray-400">{formatIstWeekdayDate(today)}</p>
@@ -189,7 +189,7 @@ function CTAButton({
 }) {
   const colorClasses =
     variant === "teal"
-      ? "bg-teal-600 hover:bg-teal-700"
+      ? "bg-brand-600 hover:bg-brand-700"
       : "bg-amber-500 hover:bg-amber-600";
   return (
     <button
