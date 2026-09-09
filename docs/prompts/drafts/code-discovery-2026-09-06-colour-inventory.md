@@ -23,6 +23,21 @@
 # visible only on a phone, on one state of one control, which is exactly the kind that ships.
 # Found on 2026-09-09 during rebrand step 2 by sweeping the tree instead of the map. All 17 were
 # converted in commit `c96157ea`. **Any future colour sweep must check six vectors, not five.**
+#
+# 🔴 SECOND CORRECTION, 2026-09-09 — A PAIRED SIGNAL MUST BE CLASSIFIED AS A PAIR, NEVER ALONE.
+# This report classified the Mail Orders **punched row wash** (`mail-orders-table.tsx:852`,
+# `bg-teal-50/40`) as STATUS and sent it to `ok`. It never recorded the **left border of the same
+# row** (`:862`, `3px solid #0d9488`) — the other half of the same signal. That border fell to the
+# BRAND bucket by default and went violet in step 2b, so for two commits a punched row carried a
+# GREEN WASH AND A VIOLET BORDER. Fixed in `b585240f`.
+#
+# The rule this yields, and it generalises well beyond colour: **a wash and its border, a dot and
+# its label, a fill and its ring are ONE signal. Classifying either half on its own will silently
+# split it, and nothing fails — the two halves just stop agreeing.** When a row/card/chip carries
+# more than one colour for one meaning, find every part before assigning a destination to any part.
+# Known pairs in this codebase: row wash + row `borderLeft` (mail-orders-table), card fill + inset
+# accent + ring (`duplicate-so-tag.tsx`), section dot + section pill (`tint-table-view` SCHEME_MAP),
+# chip bg + chip text + chip border (everywhere).
 # Every sweep run twice by two different expressions (class-name pass and hex pass) and reconciled.
 
 ---
