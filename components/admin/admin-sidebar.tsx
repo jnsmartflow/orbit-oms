@@ -530,11 +530,10 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
         >
           <OrbitWordmark height={collapsed ? 14 : 19} />
         </button>
-        {!collapsed && (
-          <div className="min-w-0">
-            <p className="text-[10px] text-gray-400 leading-tight">Admin Panel</p>
-          </div>
-        )}
+        {/* Nothing beside the wordmark here either. "Admin Panel" was a caption on
+            a mark that is already the name; the nav below and the app switcher at
+            the foot both say which app you are in, and the user block prints
+            `userRole`. */}
       </div>
 
       {collapsed ? collapsedNav : expandedNav}

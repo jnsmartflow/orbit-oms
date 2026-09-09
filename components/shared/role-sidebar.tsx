@@ -214,11 +214,11 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
           height={isExpanded ? 19 : 14}
           className="text-brand-800 flex-shrink-0"
         />
-        {/* The name is NOT repeated here — the wordmark to the left is the name.
-            Only the role label remains, which says who you are, not what this is. */}
-        {isExpanded && (
-          <p className="text-[10px] text-gray-400 leading-tight min-w-0 truncate">{roleLabel}</p>
-        )}
+        {/* NOTHING SITS BESIDE THE WORDMARK. Not the name — the wordmark is the
+            name — and not the role either. `roleLabel` still renders at :245, under
+            the user's own name in the block at the foot of the rail, which is where
+            "who you are" belongs; printing it twice made the brand row answer a
+            question the user block already answers. */}
       </div>
 
       {!isExpanded ? collapsedNav : expandedNav}
