@@ -53,7 +53,12 @@ export interface FilterGroup {
 
 export interface UniversalHeaderProps {
   // Row 1
-  title: React.ReactNode;
+  /** OPTIONAL since 2026-09-09. Most boards no longer name themselves in the
+   *  header — the nav says where you are and the tabs below name the content.
+   *  Two callers still pass a node because their title CARRIES A CONTROL
+   *  (Tint Operator's Jobs/History toggle, Mail Orders' Table/Focus toggle);
+   *  those keep the control and dropped only the word. */
+  title?: React.ReactNode;
   stats?: HeaderStat[];
   showDownload?: boolean;
   onDownload?: () => void;
@@ -420,9 +425,11 @@ export function UniversalHeader({
             so the row reads Billing · Import · search from the left edge.
             Compact keeps the bare `flex items-center` it has always had. */}
         <div className={wideSearch ? "flex items-center gap-3 min-w-0" : "flex items-center"}>
-          <span className="text-[14px] font-semibold text-gray-900">
-            {titleDisplay}
-          </span>
+          {titleDisplay && (
+            <span className="text-[14px] font-semibold text-gray-900">
+              {titleDisplay}
+            </span>
+          )}
           {stats && stats.length > 0 && (
             <span className="text-[11px] text-gray-400 ml-3">
               {stats.map((s, i) => (

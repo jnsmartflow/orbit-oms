@@ -307,7 +307,6 @@ export function ChallanContent() {
 
       {/* ── UNIVERSAL HEADER ───────────────────────────────────────────────── */}
       <UniversalHeader
-        title="Delivery Challans"
         showImport={canImportOBDs}
         stats={[
           { label: "total", value: items.length },

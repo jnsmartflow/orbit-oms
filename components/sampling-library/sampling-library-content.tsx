@@ -168,7 +168,6 @@ export function SamplingLibraryContent() {
   return (
     <div className="min-h-screen bg-white">
       <UniversalHeader
-        title="Sampling Library"
         stats={[{ label: "shades", value: totalCount ?? 0 }]}
         segments={segments}
         activeSegment={state.tinterType}

@@ -336,8 +336,7 @@ export function TripReportPage() {
       {/* ── Desktop header (md and up) — unchanged ──────────────────────── */}
       <div className="hidden md:block">
         <UniversalHeader
-          title="Trip Report"
-          stats={[{ label: "trips", value: filteredTrips.length }]}
+            stats={[{ label: "trips", value: filteredTrips.length }]}
           segments={[
             { id: "Local", label: "Local" },
             { id: "Up-Country", label: "Up-Country" },

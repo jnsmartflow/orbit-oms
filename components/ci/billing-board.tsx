@@ -196,7 +196,6 @@ export function CiBillingBoardScreen(): React.JSX.Element {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-white">
       <UniversalHeader
-        title="CI"
         searchPlaceholder="Search CI, dealer, invoice"
         searchValue={search}
         onSearchChange={setSearch}

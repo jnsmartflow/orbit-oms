@@ -206,7 +206,6 @@ export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-white">
       <UniversalHeader
-        title="Material Receipt Note"
         stats={[
           { label: rows.length === 1 ? "truck" : "trucks", value: rows.length },
           { label: "checking", value: checkingCount },

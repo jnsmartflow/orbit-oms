@@ -831,7 +831,9 @@ export function FloorPage() {
     <div className="flex h-screen flex-col overflow-hidden bg-white">
       {/* ── Row 1 — title + date/time (design §5). ───────────────────────── */}
       <div className="flex h-11 items-center gap-2.5 border-b border-[#f0f0f0] px-4">
-        <span className="text-[14.5px] font-semibold tracking-[-0.01em] text-gray-900">Floor Control</span>
+        {/* The board no longer names itself — the nav says where you are and the
+            tabs below name the content. The ROW stays: it carries the date/clock,
+            which does not move. */}
         <span suppressHydrationWarning className="ml-auto text-[11px] text-gray-400" style={{ fontVariantNumeric: "tabular-nums" }}>
           {dateStr} &middot; {timeStr}
         </span>

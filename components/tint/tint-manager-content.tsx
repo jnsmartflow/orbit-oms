@@ -818,7 +818,6 @@ export function TintManagerContent() {
     <div className="h-screen flex flex-col bg-white overflow-hidden">
 
       <UniversalHeader
-        title="Tint Manager"
         showImport={canImportOBDs}
         stats={stats}
         /* ⚠ NO `segments` / `activeSegment` / `onSegmentChange`. The operator

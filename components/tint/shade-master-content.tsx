@@ -218,7 +218,6 @@ export function ShadeMasterContent() {
     <div className="flex flex-col h-full bg-white">
 
       <UniversalHeader
-        title="Shade Master"
         showImport={canImportOBDs}
         stats={[
           { label: "shades", value: total },

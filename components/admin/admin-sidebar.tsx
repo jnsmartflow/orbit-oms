@@ -532,7 +532,6 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
         </button>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit</p>
             <p className="text-[10px] text-gray-400 leading-tight">Admin Panel</p>
           </div>
         )}
@@ -594,7 +593,6 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           <span className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
             <OrbitWordmark height={11} className="text-white" />
           </span>
-          <span className="font-bold text-[14px] text-gray-900">Orbit</span>
         </div>
       </div>
 

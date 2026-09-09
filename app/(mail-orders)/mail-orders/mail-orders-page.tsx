@@ -1227,11 +1227,10 @@ export default function MailOrdersPage() {
         // reachable for non-billing users.
         //
         // The OFF branch below is the original block, unchanged. Do not delete.
-        title={billingV2 ? (
-          <span className="text-[14px] font-semibold text-gray-900">Billing</span>
-        ) : (
+        title={billingV2 ? undefined : (
           <div className="flex items-center gap-2.5">
-            <span>Mail Orders</span>
+            {/* No "Mail Orders" word — the toggle and the % chip are controls and
+                readouts, and they stay. The billing face has no title at all. */}
             <div data-tutorial="view-toggle" className="flex border border-gray-300 rounded-[5px] overflow-hidden">
               <button
                 onClick={() => setViewMode("table")}

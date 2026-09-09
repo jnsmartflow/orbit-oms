@@ -1597,7 +1597,8 @@ export function TintOperatorContent() {
         // already, so this needs no change in UniversalHeader.
         title={
           <div className="flex items-center gap-2.5">
-            <span>My Jobs</span>
+            {/* The word "My Jobs" is gone — the nav says where you are. The
+                TOGGLE stays: it is a control, not a label. */}
             <HeaderViewToggle
               ariaLabel="View"
               value={view}

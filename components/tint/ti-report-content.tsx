@@ -466,7 +466,6 @@ export function TIReportContent() {
     <div className="flex flex-col h-full bg-white">
 
       <UniversalHeader
-        title="TI Report"
         showImport={canImportOBDs}
         stats={[
           { label: "entries", value: summary?.totalEntries ?? 0 },

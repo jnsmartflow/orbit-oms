@@ -129,9 +129,6 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
 
   const expandedNav = (
     <nav className="flex flex-col py-2 overflow-y-auto flex-1 scrollbar-hide">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 pt-4 pb-1 select-none">
-        {roleLabel}
-      </p>
       <div className="flex flex-col">
         {visibleNavItems.map((item) => {
           const Icon   = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
@@ -217,11 +214,10 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
           height={isExpanded ? 19 : 14}
           className="text-brand-800 flex-shrink-0"
         />
+        {/* The name is NOT repeated here — the wordmark to the left is the name.
+            Only the role label remains, which says who you are, not what this is. */}
         {isExpanded && (
-          <div className="min-w-0">
-            <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit</p>
-            <p className="text-[10px] text-gray-400 leading-tight">{roleLabel}</p>
-          </div>
+          <p className="text-[10px] text-gray-400 leading-tight min-w-0 truncate">{roleLabel}</p>
         )}
       </div>
 
