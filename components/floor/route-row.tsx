@@ -7,7 +7,7 @@
 
 import { ProgressBar } from "./progress-bar";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
-import { countByStatus, sumLitres } from "./status-pill";
+import { countByStatus, formatLitres, sumLitres } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -71,7 +71,7 @@ export function RouteRow({
           )}
         </span>
         <span className="w-[128px] text-[10.5px] text-gray-400">
-          {rows.length} bills · {litres} L
+          {rows.length} bills · {formatLitres(litres)} L
         </span>
         <ProgressBar counts={counts} className="max-w-[300px] flex-1 !bg-[#f3f4f6]" />
         <span className="w-[92px] text-right text-[11px] tabular-nums text-gray-700">

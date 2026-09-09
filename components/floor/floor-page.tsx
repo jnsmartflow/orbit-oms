@@ -10,14 +10,16 @@
 // The five state actions (mark-urgent · change-slot · hold · cancel · restore)
 // go through /api/floor/actions. Rail Hold/✕ and the row ⚡ are wired here too.
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
 import { AssignContextBanner } from "./assign-context-banner";
 import { BuildTripDrawer } from "./build-trip-drawer";
-import { rowStatus, countByStatus, isHeldBack } from "./status-pill";
+import { TripVehicleEditor } from "./trip-vehicle-editor";
+import { TripSelectionBar } from "./trip-selection-bar";
+import { rowStatus, countByStatus, isHeldBack, formatLitres, sumLitres } from "./status-pill";
 import { PickGateToggle } from "./pick-gate-toggle";
 import { ShowStrip } from "./show-strip";
 import { FloorSkeleton } from "./floor-skeleton";
@@ -224,6 +226,21 @@ export function FloorPage() {
   const [trips, setTrips] = useState<TripSummary[] | null>(null);
   const [tripDrawerOpen, setTripDrawerOpen] = useState(false);
   const [tripOptions, setTripOptions] = useState<TripOptions | null>(null);
+  // Which trip the vehicle editor is open over, and which trip has a write in
+  // flight. Two separate ids on purpose: the editor stays open while its own
+  // PATCH runs, and a Cancel on another band must not grey this one's buttons.
+  const [editingTripId, setEditingTripId] = useState<number | null>(null);
+  const [tripBusyId, setTripBusyId] = useState<number | null>(null);
+  const [tripBarBusy, setTripBarBusy] = useState(false);
+
+  // ⚠ REFS, NOT DEPENDENCIES, AND FOR THE REASON `bulkAssign`'s `explicitIds`
+  // parameter already documents: `setSelection()` is asynchronous, so a handler
+  // that closed over `selectedIds` would post the PREVIOUS selection if it fired
+  // in the same tick as a tick-box change. Putting them in the dependency array
+  // instead would rebuild every trip handler on every keystroke of a selection.
+  // A ref reads the CURRENT value at call time and keeps the callbacks stable.
+  const selectedIdsRef = useRef<number[]>([]);
+  const tripsRef = useRef<TripSummary[] | null>(null);
 
   // Selection (design §7.8) — a Set of orderIds; survives a re-sort, cleared on
   // any tab/scope/date change below.
@@ -455,6 +472,189 @@ export function FloorPage() {
     await load();
   }, [load]);
 
+  // ── Trip writes ───────────────────────────────────────────────────────────
+  //
+  // ⚠ EVERY ONE OF THESE CLEARS THE SELECTION AND THEN REFETCHES EXPLICITLY.
+  // The live-sync poll is PAUSED while a selection is up (FLOOR §5), so leaving
+  // the refresh to it would leave the board stale until the operator clicked
+  // something else. Same shape as the Show strip's handler and bulkAssign's.
+
+  /** Add the ticked bills to an existing trip. */
+  const addSelectionToTrip = useCallback(
+    async (tripId: number) => {
+      const ids = selectedIdsRef.current;
+      if (ids.length === 0) return;
+      setTripBusyId(tripId);
+      try {
+        const res = await fetch(`/api/floor/trips/${tripId}/bills`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderIds: ids, action: "add" }),
+        });
+        const body = await res.json().catch(() => ({}));
+        const attached: number[] = body?.attached ?? [];
+        const skipped: number[] = body?.skipped ?? [];
+        const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
+        if (!res.ok && attached.length === 0 && skipped.length === 0) {
+          toast.error(`Could not add — ${failed[0]?.error ?? body?.error ?? `HTTP ${res.status}`}`);
+        } else {
+          const parts: string[] = [];
+          if (attached.length > 0) parts.push(`${attached.length} added`);
+          if (skipped.length > 0) parts.push(`${skipped.length} already on it`);
+          if (parts.length > 0) toast.success(parts.join(", "));
+        }
+        // Never swallowed, even beside a success — FLOOR §6(b).
+        if (failed.length > 0) {
+          toast.error(
+            `${failed.length} bill${failed.length === 1 ? "" : "s"} not added — ${failed[0].error}`,
+          );
+        }
+      } catch {
+        toast.error("Could not add to the trip — check your connection.");
+      } finally {
+        setTripBusyId(null);
+      }
+      setSelection(new Set());
+      await load();
+    },
+    [load],
+  );
+
+  /** Take the ticked bills off whatever trip they are on. */
+  const removeSelectionFromTrips = useCallback(
+    async (rowsToRemove: FloorBoardRow[]) => {
+      if (rowsToRemove.length === 0) return;
+      setTripBarBusy(true);
+      try {
+        // Grouped by trip because the route is per-trip. A selection spanning
+        // two bands is ordinary — the operator ticks by eye — so this posts once
+        // per trip rather than refusing the mixed case.
+        const byTrip = new Map<string, number[]>();
+        for (const r of rowsToRemove) {
+          if (!r.tripNumber) continue;
+          const arr = byTrip.get(r.tripNumber) ?? [];
+          arr.push(r.orderId);
+          byTrip.set(r.tripNumber, arr);
+        }
+        const allTrips = tripsRef.current ?? [];
+        let removed = 0;
+        const problems: string[] = [];
+        for (const [tripNumber, orderIds] of Array.from(byTrip.entries())) {
+          const t = allTrips.find((x) => x.tripNumber === tripNumber);
+          if (!t) {
+            problems.push(`${tripNumber} is no longer on the board`);
+            continue;
+          }
+          const res = await fetch(`/api/floor/trips/${t.id}/bills`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderIds, action: "remove" }),
+          });
+          const body = await res.json().catch(() => ({}));
+          const detached: number[] = body?.detached ?? [];
+          const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
+          removed += detached.length;
+          if (failed.length > 0) problems.push(`${tripNumber}: ${failed[0].error}`);
+          else if (!res.ok) problems.push(`${tripNumber}: ${body?.error ?? `HTTP ${res.status}`}`);
+        }
+        if (removed > 0) toast.success(`${removed} removed from trip${byTrip.size === 1 ? "" : "s"}`);
+        if (problems.length > 0) toast.error(problems[0]);
+        if (removed === 0 && problems.length === 0) toast.error("Nothing was removed.");
+      } catch {
+        toast.error("Could not remove — check your connection.");
+      } finally {
+        setTripBarBusy(false);
+      }
+      setSelection(new Set());
+      await load();
+    },
+    [load],
+  );
+
+  /** Confirm / Release a draft trip. The stored value is 'released' either way. */
+  const releaseTrip = useCallback(
+    async (tripId: number) => {
+      setTripBusyId(tripId);
+      try {
+        const res = await fetch(`/api/floor/trips/${tripId}/release`, { method: "POST" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(`Could not release — ${body?.error ?? `HTTP ${res.status}`}`);
+        } else {
+          // The route's four honest buckets. `notWaiting` is not a failure — a
+          // bill already with a picker needs no handover — so it is reported
+          // separately rather than folded into either side.
+          const parts: string[] = [`${body?.trip?.tripNumber ?? "Trip"} ${gateOn ? "released" : "confirmed"}`];
+          const stamped: number[] = body?.stamped ?? [];
+          const already: number[] = body?.alreadyVisible ?? [];
+          const notWaiting: number[] = body?.notWaiting ?? [];
+          if (stamped.length > 0 && gateOn) parts.push(`${stamped.length} shown to the floor`);
+          if (already.length > 0) parts.push(`${already.length} already visible`);
+          if (notWaiting.length > 0) parts.push(`${notWaiting.length} already with a picker`);
+          toast.success(parts.join(" · "));
+          const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
+          if (failed.length > 0) toast.error(`${failed.length} bill(s) not released — ${failed[0].error}`);
+        }
+      } catch {
+        toast.error("Could not release — check your connection.");
+      } finally {
+        setTripBusyId(null);
+      }
+      setSelection(new Set());
+      await load();
+    },
+    [load, gateOn],
+  );
+
+  /** Cancel a trip. NEVER a delete — the number stays claimed (see the route). */
+  const cancelTrip = useCallback(
+    async (tripId: number) => {
+      setTripBusyId(tripId);
+      try {
+        const res = await fetch(`/api/floor/trips/${tripId}/cancel`, { method: "POST" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(`Could not cancel — ${body?.error ?? `HTTP ${res.status}`}`);
+        } else {
+          const detached: number[] = body?.detached ?? [];
+          toast.success(
+            `${body?.trip?.tripNumber ?? "Trip"} cancelled` +
+              (detached.length > 0 ? ` · ${detached.length} bill${detached.length === 1 ? "" : "s"} back at the desk` : ""),
+          );
+          const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
+          if (failed.length > 0) toast.error(`${failed.length} bill(s) not detached — ${failed[0].error}`);
+        }
+      } catch {
+        toast.error("Could not cancel — check your connection.");
+      } finally {
+        setTripBusyId(null);
+      }
+      setSelection(new Set());
+      await load();
+    },
+    [load],
+  );
+
+  /** Open the vehicle editor. Needs the same option lists the drawer does. */
+  const openVehicleEditor = useCallback(
+    async (tripId: number) => {
+      setEditingTripId(tripId);
+      if (tripOptions !== null) return;
+      try {
+        const res = await fetch("/api/floor/trips/options", { cache: "no-store" });
+        if (res.ok) setTripOptions((await res.json()) as TripOptions);
+        else {
+          setEditingTripId(null);
+          toast.error(`Could not load the form — HTTP ${res.status}`);
+        }
+      } catch {
+        setEditingTripId(null);
+        toast.error("Could not load the form — check your connection.");
+      }
+    },
+    [tripOptions],
+  );
+
   // UNSCOPED on purpose — this only resolves already-SELECTED ids into rows for
   // the bulk bar, and a selection can only ever hold in-scope ids (it is cleared
   // on every scope change by the effect above). Reading the unscoped set keeps
@@ -463,6 +663,11 @@ export function FloorPage() {
   const rows = data?.floor.rows ?? [];
   const selectedRows = rows.filter((r) => selection.has(r.orderId));
   const selectedIds = selectedRows.map((r) => r.orderId);
+  // Keep the refs the trip handlers read in step with the render. Assigning
+  // during render is safe for a ref (no subscription, no re-render) and is what
+  // makes the handlers stable without going stale.
+  selectedIdsRef.current = selectedIds;
+  tripsRef.current = trips;
 
   // ── Release + rail actions ────────────────────────────────────────────────
   const handleRelease = useCallback(
@@ -1023,6 +1228,31 @@ export function FloorPage() {
 
   const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null && !contextReadOnly;
 
+  // ── Which bar the selection gets (2026-09-10) ─────────────────────────────
+  //
+  // 🔴 TICKING INSIDE A TRIP BAND WAS SHOWING Change slot / Choose picker /
+  // Assign — three answers to questions nobody asks of a trip. The slot belongs
+  // to the trip now, and assigning a picker is the supervisor's job on
+  // /picking. What the operator wants there is one thing: take these off the
+  // load.
+  //
+  // The test is a property of the ROWS, not of the view: a selection whose bills
+  // are all already on a trip gets the remove bar. Selecting in the POOL — where
+  // every row has a null tripDropId — keeps the assign bar exactly as it was.
+  // Doing it this way rather than on `mode === "trip"` means a mixed selection
+  // cannot end up with a bar that would fail on half of it.
+  const selectedOnTrip = useMemo(
+    () => selectedRows.filter((r) => r.tripDropId !== null),
+    [selectedRows],
+  );
+  const tripBarVisible = barVisible && selectedOnTrip.length > 0 && selectedOnTrip.length === selectedRows.length;
+  // The trip they are all on, when it is one — null when the selection spans
+  // several, which the bar says out loud rather than guessing.
+  const selectedTripLabel = useMemo(() => {
+    const names = new Set(selectedOnTrip.map((r) => r.tripNumber).filter(Boolean));
+    return names.size === 1 ? (Array.from(names)[0] as string) : null;
+  }, [selectedOnTrip]);
+
   // Tab counts reflect the searched/filtered set of each surface (they equal the
   // full totals when no search/filter is active).
   const floorCount = filteredFloor?.total ?? 0;
@@ -1324,6 +1554,11 @@ export function FloorPage() {
                 trips={trips}
                 tripsLoading={loading}
                 onBuildTrip={() => void openTripDrawer()}
+                onAddToTrip={(id) => void addSelectionToTrip(id)}
+                onReleaseTrip={(id) => void releaseTrip(id)}
+                onChangeVehicle={(id) => void openVehicleEditor(id)}
+                onCancelTrip={(id) => void cancelTrip(id)}
+                tripBusyId={tripBusyId}
                 assignContext={assignContext}
                 // Name, not just the id — the By-group header button says who it
                 // is assigning to, and floor-board has no roster of its own.
@@ -1398,7 +1633,21 @@ export function FloorPage() {
             </div>
           )}
 
-          {barVisible && (
+          {/* THE TRIP BAR REPLACES THE ASSIGN BAR — never sits beside it. Both
+              are absolutely positioned at bottom-0, so rendering both would
+              stack them on the same 60px. See the note on `tripBarVisible`. */}
+          {tripBarVisible && (
+            <TripSelectionBar
+              count={selectedOnTrip.length}
+              litres={formatLitres(sumLitres(selectedOnTrip))}
+              tripLabel={selectedTripLabel}
+              busy={tripBarBusy}
+              onRemove={() => void removeSelectionFromTrips(selectedOnTrip)}
+              onClear={clearSelection}
+            />
+          )}
+
+          {barVisible && !tripBarVisible && (
             <AssignBar
               selectedRows={selectedRows}
               pickers={data!.pickers}
@@ -1439,6 +1688,32 @@ export function FloorPage() {
           onCreated={() => void onTripCreated()}
         />
       )}
+
+      {/* The vehicle / transporter / slot editor over ONE trip (2026-09-10).
+          Renders only once its options have landed and the trip is still on the
+          board — a trip that left between opening and loading simply closes.
+
+          ⚠ NO Esc HANDLER OF ITS OWN, same rule as the Build trip drawer:
+          floor-page is the single window-level Esc owner (FLOOR §4.6). */}
+      {editingTripId !== null && tripOptions && (() => {
+        const t = (trips ?? []).find((x) => x.id === editingTripId);
+        if (!t) return null;
+        return (
+          <TripVehicleEditor
+            trip={t}
+            windows={tripOptions.windows}
+            vehicles={tripOptions.vehicles}
+            transporters={tripOptions.transporters}
+            deliveryTypes={tripOptions.deliveryTypes}
+            onClose={() => setEditingTripId(null)}
+            onSaved={() => {
+              setEditingTripId(null);
+              // Explicit refetch — the poll may be paused (FLOOR §5).
+              void load();
+            }}
+          />
+        );
+      })()}
 
       {/* Detail panel (design §10) — slides over the board from any surface. */}
       {detail && (

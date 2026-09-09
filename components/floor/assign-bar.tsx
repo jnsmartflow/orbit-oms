@@ -20,7 +20,7 @@
 
 import { useState } from "react";
 import { DispatchSlotPicker, type DispatchWindow } from "@/components/floor/dispatch-slot-picker";
-import { sumLitres } from "./status-pill";
+import { formatLitres, sumLitres } from "./status-pill";
 import type { FloorBoardRow, FloorPicker } from "@/lib/floor/types";
 
 export function AssignBar({
@@ -66,8 +66,8 @@ export function AssignBar({
   // picker already. All derived from selectedRows — no new fetch.
   let summary =
     count === 1
-      ? `${selectedRows[0].dealerName} · ${litres.toLocaleString("en-US")} L`
-      : `${litres.toLocaleString("en-US")} L · ${routes} route${routes === 1 ? "" : "s"}`;
+      ? `${selectedRows[0].dealerName} · ${formatLitres(litres)} L`
+      : `${formatLitres(litres)} L · ${routes} route${routes === 1 ? "" : "s"}`;
   if (assignedCount > 0) summary += ` · ${assignedCount} already assigned`;
 
   const assignLabel = allAssigned ? `Reassign all ${count}` : "Assign";

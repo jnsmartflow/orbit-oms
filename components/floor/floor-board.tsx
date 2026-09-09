@@ -24,7 +24,7 @@ import { buildPickGroups, buildOilGroups } from "@/lib/picking/grouping";
 import { formatArticleBreakdown } from "@/lib/floor/format";
 import { CarryoverBanner } from "./carryover-banner";
 import { UpcomingStrip } from "./upcoming-strip";
-import { countByStatus, rowStatus, sumLitres } from "./status-pill";
+import { countByStatus, formatLitres, rowStatus, sumLitres } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow, FloorPicker } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
@@ -139,6 +139,11 @@ export function FloorBoard({
   trips,
   tripsLoading = false,
   onBuildTrip,
+  onAddToTrip,
+  onReleaseTrip,
+  onChangeVehicle,
+  onCancelTrip,
+  tripBusyId = null,
   assignContext,
   assignContextName,
   contextMode,
@@ -174,6 +179,16 @@ export function FloorBoard({
   tripsLoading?: boolean;
   /** Open the Build trip drawer with the current selection. */
   onBuildTrip: () => void;
+  /** Add the current selection to an existing trip. */
+  onAddToTrip: (tripId: number) => void;
+  /** Confirm / Release a draft. Wording follows the desk-control switch. */
+  onReleaseTrip: (tripId: number) => void;
+  /** Open the vehicle/transporter/slot editor over one trip. */
+  onChangeVehicle: (tripId: number) => void;
+  /** Cancel a trip — never delete it (the number must stay claimed). */
+  onCancelTrip: (tripId: number) => void;
+  /** The trip a write is currently in flight for, or null. */
+  tripBusyId?: number | null;
   // Assign context (2026-08-11) — the picker the operator drilled into from the
   // By-picker grid, or null for the ordinary board. null is the untouched path:
   // every derivation below short-circuits to exactly what it did before.
@@ -615,6 +630,13 @@ export function FloorBoard({
             selection ? poolRows.filter((r) => selection.has(r.orderId)).length : 0
           }
           onBuild={onBuildTrip}
+          // Draft and confirmed ONLY. A dispatched or cancelled trip is finished
+          // with and the bills route refuses both server-side, so offering them
+          // would be offering a guaranteed error.
+          addableTrips={(trips ?? []).filter(
+            (t) => t.status === "draft" || t.status === "released" || t.status === "loading",
+          )}
+          onAddToTrip={onAddToTrip}
           // Its own open-route state, separate from the By-route view's
           // `openRoute`: the two show different populations, and sharing one
           // string would make expanding "Adajan" in the pool silently expand it
@@ -661,6 +683,15 @@ export function FloorBoard({
                 })
               }
               variant={variant}
+              // Actions are LIVE-ONLY. In History the whole band is a record of
+              // a past day and every write path would edit a day the depot has
+              // already closed — the same rule the detail panel's `history`
+              // source follows (FLOOR §4.7).
+              onRelease={isHistory ? undefined : onReleaseTrip}
+              onAddBills={isHistory ? undefined : () => onBuildTrip()}
+              onChangeVehicle={isHistory ? undefined : onChangeVehicle}
+              onCancelTrip={isHistory ? undefined : onCancelTrip}
+              busy={tripBusyId === t.id}
               // `gateOn` rides `selProps` — both its arms carry it (see the
               // declaration). Passing it again here would be the same value
               // twice and TS flags the shadowing.
@@ -968,7 +999,7 @@ export function FloorBoard({
             <span className="text-[#22c55e]">✓</span>
             <span>
               <b className="font-semibold text-gray-900">Everything on the floor is done.</b>{" "}
-              {dueRows.length} bill{dueRows.length === 1 ? "" : "s"} · {sumLitres(dueRows)} L · all checked.
+              {dueRows.length} bill{dueRows.length === 1 ? "" : "s"} · {formatLitres(sumLitres(dueRows))} L · all checked.
               {allDoneLastMs > 0 && <> Last one closed at {hhmm(allDoneLastMs)}.</>}
             </span>
           </div>

@@ -32,10 +32,11 @@
 // The dashed border is the mockup's: a staging area, not a container of record.
 
 import { RouteRow } from "./route-row";
-import { countByStatus, sumLitres } from "./status-pill";
+import { countByStatus, formatLitres, sumLitres } from "./status-pill";
 import type { FloorTableVariant } from "./floor-table";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
+import type { TripSummary } from "@/lib/trips/queries";
 
 export function DeskPool({
   rows,
@@ -44,6 +45,8 @@ export function DeskPool({
   canBuild,
   selectedCount,
   onBuild,
+  addableTrips,
+  onAddToTrip,
   openRoute,
   onToggleRoute,
   variant,
@@ -62,6 +65,14 @@ export function DeskPool({
   /** How many of those bills the operator has ticked. */
   selectedCount: number;
   onBuild: () => void;
+  /**
+   * The day's trips a selection can be added to — draft and confirmed only.
+   * A dispatched or cancelled trip is finished with, and the bills route
+   * refuses both server-side; offering them would be offering a guaranteed
+   * error.
+   */
+  addableTrips: TripSummary[];
+  onAddToTrip: (tripId: number) => void;
   /** Which pool route is expanded, or null. Owned by the parent, like By route. */
   openRoute: string | null;
   onToggleRoute: (name: string) => void;
@@ -102,25 +113,64 @@ export function DeskPool({
       <div className="flex flex-wrap items-center gap-2.5 px-3.5 py-3">
         <h5 className="m-0 text-[13.5px] font-bold tracking-[-0.01em] text-gray-900">At desk</h5>
         <span className="text-[12px] text-gray-500">
-          {rows.length} {subject} · {litres.toLocaleString("en-US")} L ·{" "}
+          {/* formatLitres — the SAME function the trip band header uses, so the
+              two totals on this screen can never disagree by a decimal. */}
+          {rows.length} {subject} · {formatLitres(litres)} L ·{" "}
           {gateOn
             ? "not on a trip, floor cannot see them"
             : "not on a trip yet — floor can already see them"}
         </span>
 
-        <button
-          type="button"
-          onClick={onBuild}
-          disabled={!canBuild || selectedCount === 0}
-          title={
-            selectedCount === 0
-              ? "Tick the bills you want on the trip first"
-              : `Build a trip from ${selectedCount} selected ${selectedCount === 1 ? "bill" : "bills"}`
-          }
-          className="ml-auto inline-flex h-[30px] items-center rounded-[8px] bg-brand-600 px-3.5 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
-        >
-          {selectedCount > 0 ? `Build trip · ${selectedCount}` : "Build trip"}
-        </button>
+        <span className="ml-auto flex items-center gap-2">
+          {/* ADD TO AN EXISTING TRIP. A <select> that fires on change and resets
+              itself — not a menu, because the list is short and the action is
+              one press. Disabled with nothing ticked, and absent entirely when
+              there is no trip to add to. */}
+          {addableTrips.length > 0 && (
+            <select
+              aria-label="Add the selected bills to an existing trip"
+              title={
+                selectedCount === 0
+                  ? "Tick the bills you want to add first"
+                  : `Add ${selectedCount} selected ${selectedCount === 1 ? "bill" : "bills"} to a trip`
+              }
+              disabled={!canBuild || selectedCount === 0}
+              value=""
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                // Reset immediately: this is an ACTION, not a stored choice, and
+                // leaving the trip selected would read as "these bills are on
+                // it" once the board refetches.
+                e.currentTarget.value = "";
+                if (Number.isInteger(id) && id > 0) onAddToTrip(id);
+              }}
+              className="h-[30px] cursor-pointer rounded-[8px] border border-gray-300 bg-white px-2.5 text-[12.5px] font-semibold text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+            >
+              <option value="">Add to trip…</option>
+              {addableTrips.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.tripNumber}
+                  {t.vehicleNo ?? t.adhocVehicleNo ? ` · ${t.vehicleNo ?? t.adhocVehicleNo}` : ""}
+                  {` · ${t.counts.total} bill${t.counts.total === 1 ? "" : "s"}`}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <button
+            type="button"
+            onClick={onBuild}
+            disabled={!canBuild || selectedCount === 0}
+            title={
+              selectedCount === 0
+                ? "Tick the bills you want on the trip first"
+                : `Build a trip from ${selectedCount} selected ${selectedCount === 1 ? "bill" : "bills"}`
+            }
+            className="inline-flex h-[30px] items-center rounded-[8px] bg-brand-600 px-3.5 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+          >
+            {selectedCount > 0 ? `Build trip · ${selectedCount}` : "Build trip"}
+          </button>
+        </span>
       </div>
 
       {rows.length === 0 ? (

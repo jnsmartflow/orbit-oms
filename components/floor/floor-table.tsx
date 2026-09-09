@@ -27,7 +27,7 @@ import { Building2, Droplet, Mail, MoreHorizontal, Zap } from "lucide-react";
 // panel's "Invoice date" cell reads (it used to be a private fmtDate in
 // detail-details.tsx). One formatter, so the two surfaces cannot disagree.
 import { formatArticleTag, formatDateIST } from "@/lib/floor/format";
-import { StatusPill, rowStatus, isHeldBack } from "./status-pill";
+import { StatusPill, rowStatus, isHeldBack, formatLitres } from "./status-pill";
 import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
 // SOFT variant only (2026-08-25). The solid DUP_SO_* tokens are the PICKING
 // treatment and are deliberately no longer imported here: under `soft` every
@@ -98,6 +98,31 @@ function shortElapsed(fromIso: string | null, nowMs: number): string | null {
   if (hrs < 24) return `${hrs}h`;
   return `${Math.floor(hrs / 24)}d`;
 }
+/**
+ * The trip tag's SHORT form — "L-260910-02" → "L-02".
+ *
+ * 🔴 IT EXISTS BECAUSE THE FULL NUMBER TRUNCATED TO NOTHING USEFUL. The tag
+ * rides inside the OBD cell (no column was added — see the note at the call
+ * site), and that cell already carries the OBD number, a possible duplicate-SO
+ * tag and a possible age chip. An eleven-character number ellipsised to "L-26…"
+ * tells the reader the type letter and the century, which is no information at
+ * all. The type and the sequence are what distinguish one of the day's trips
+ * from another, and every band on screen is the same day, so the date is the
+ * part that can go.
+ *
+ * ⚠ THE FULL NUMBER IS STILL REACHABLE — it is the band header above the row,
+ * and it is on the tag's `title` for a hover. Nothing is hidden, only shortened.
+ *
+ * ⚠ FALLS BACK TO THE WHOLE STRING on anything that is not the expected shape.
+ * The format is `{T}-{YYMMDD}-{NN}` and `chk_trips_number_shape` enforces it in
+ * the database, so the else branch should be unreachable — but a tag is not
+ * worth throwing over, and printing the real value is the honest failure.
+ */
+function shortTripNumber(tripNumber: string): string {
+  const m = tripNumber.match(/^([A-Z])-\d{6}-(\d+)$/);
+  return m ? `${m[1]}-${m[2]}` : tripNumber;
+}
+
 // dispatchTargetDate is date-only — parse the Date.UTC way, never new Date(str).
 function fmtDay(dateOnly: string | null): string {
   if (!dateOnly) return "";
@@ -467,7 +492,7 @@ export function FloorTable({
                     title={`On trip ${row.tripNumber}${row.tripStatus ? ` · ${row.tripStatus}` : ""}`}
                     className="ml-1.5 rounded-[3px] bg-gray-900 px-[5px] py-px align-[1px] font-mono text-[9.5px] font-semibold text-white"
                   >
-                    {row.tripNumber}
+                    {shortTripNumber(row.tripNumber)}
                   </span>
                 )}
                 {(row.ageDays ?? 0) > 0 && (
@@ -618,7 +643,11 @@ export function FloorTable({
                   )}
                 </td>
               )}
-              <td className={`${TD} text-right tabular-nums`}>{row.volumeLitres ?? 0}</td>
+              {/* formatLitres, not the raw Float. A single row rarely shows the
+                  fault, but the same function everywhere is what keeps a row,
+                  its band header and the pool header from disagreeing by a
+                  decimal on one screen. Display only — nothing stored moves. */}
+              <td className={`${TD} text-right tabular-nums`}>{formatLitres(row.volumeLitres ?? 0)}</td>
               <td className={`${TD} text-[10.5px]`}>
                 <span className="text-[#6b7280]">
                   {row.articleTag ? formatArticleTag(row.articleTag) : "—"}

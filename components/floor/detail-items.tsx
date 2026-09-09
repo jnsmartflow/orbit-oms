@@ -4,6 +4,7 @@
 // total appears (design §10.1 cut the kg/litre header strip). Gift lines are
 // OUT OF SCOPE: no gift tag, no gift-excluded total.
 
+import { formatLitres } from "./status-pill";
 import type { FloorDetailLine } from "@/lib/floor/types";
 
 export function DetailItems({ lines, totalLitres }: { lines: FloorDetailLine[]; totalLitres: number }) {
@@ -27,13 +28,13 @@ export function DetailItems({ lines, totalLitres }: { lines: FloorDetailLine[]; 
           </div>
           <span className="whitespace-nowrap pt-px text-[12.5px] font-semibold text-[#374151]">{l.qty}×</span>
           <span className="w-[56px] pt-[2px] text-right text-[11px] tabular-nums text-[#9ca3af]">
-            {l.litres ? `${l.litres} L` : "—"}
+            {l.litres ? `${formatLitres(l.litres)} L` : "—"}
           </span>
         </div>
       ))}
       <div className="flex border-t border-[#f0f0f0] bg-[#fafafa] px-5 py-[11px] text-[12px] font-semibold text-[#374151]">
         <span>{lines.length} lines</span>
-        <span className="ml-auto tabular-nums">{totalLitres} L</span>
+        <span className="ml-auto tabular-nums">{formatLitres(totalLitres)} L</span>
       </div>
     </div>
   );

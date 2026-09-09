@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { formatLitres } from "./status-pill";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export interface DeliveryTypeOption {
@@ -321,14 +322,14 @@ export function BuildTripDrawer({
                 <div key={route} className="flex justify-between py-[3px] tabular-nums">
                   <span>{route}</span>
                   <span>
-                    {v.bills} bill{v.bills === 1 ? "" : "s"} · {v.litres.toLocaleString("en-US")} L
+                    {v.bills} bill{v.bills === 1 ? "" : "s"} · {formatLitres(v.litres)} L
                   </span>
                 </div>
               ))}
               <div className="mt-1.5 flex justify-between border-t border-gray-200 pt-1.5 font-semibold tabular-nums text-gray-900">
                 <span>Total</span>
                 <span>
-                  {rows.length} bill{rows.length === 1 ? "" : "s"} · {totalLitres.toLocaleString("en-US")} L
+                  {rows.length} bill{rows.length === 1 ? "" : "s"} · {formatLitres(totalLitres)} L
                 </span>
               </div>
             </div>

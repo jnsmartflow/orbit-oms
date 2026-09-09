@@ -138,3 +138,34 @@ export function sumLitres(rows: Array<Pick<FloorBoardRow, "volumeLitres">>): num
   // Gift lines are OUT OF SCOPE this step — no gift-excluded totals, plain sum.
   return rows.reduce((s, r) => s + (r.volumeLitres ?? 0), 0);
 }
+
+/**
+ * THE one litres formatter for this screen (2026-09-10).
+ *
+ * 🔴 IT EXISTS BECAUSE A HEADER READ "4729.400000000001 L". Litres are stored as
+ * a Float (`import_obd_query_summary.totalVolume`), and summing floats leaks
+ * binary representation error into the display the moment a total is anything
+ * but a round number — 0.1 + 0.2 is the textbook case and a pack list is full of
+ * .4s and .9s. Nothing is wrong with the DATA; the sum is correct to within a
+ * rounding error nobody can act on. It is the rendering that was wrong.
+ *
+ * ⚠ DISPLAY ONLY. This rounds nothing that is stored and nothing that is sent to
+ * a route. Every caller passes a number it has already computed and uses the
+ * string for text — do not feed a rounded value back into arithmetic.
+ *
+ * ONE decimal, and trailing `.0` dropped. A depot bill is quoted in whole litres
+ * or to a tenth (0.9L, 3.6L, 18.5L packs), so a tenth is the finest distinction
+ * that means anything and two decimals would be noise. `toLocaleString("en-US")`
+ * keeps the thousands separator the screen already uses.
+ *
+ * 🔴 EVERY SURFACE THAT PRINTS LITRES MUST USE THIS. The band header and the
+ * pool header sum different populations of the same bills; if one rounded and
+ * the other did not, the two could disagree by a decimal on the same screen and
+ * the operator would have no way to tell which was lying.
+ */
+export function formatLitres(litres: number): string {
+  return Number(litres.toFixed(1)).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+}

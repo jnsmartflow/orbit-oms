@@ -26,7 +26,7 @@
 // is the same answer his chip already gives (Free).
 
 import { ProgressBar } from "./progress-bar";
-import type { StatusCounts } from "./status-pill";
+import { formatLitres, type StatusCounts } from "./status-pill";
 
 // Busy tiers in MINUTES, measured on the oldest bill the picker is still
 // holding (pick_assignments.assignedAt). Same thresholds the picking
@@ -190,7 +190,7 @@ export function PickerCard({
           {counts.withPicker === 1 ? "pick" : "picks"}
         </span>
         <span>
-          <span className="font-semibold tabular-nums text-gray-700">{litres.toLocaleString("en-US")}</span> L
+          <span className="font-semibold tabular-nums text-gray-700">{formatLitres(litres)}</span> L
         </span>
         <span className="min-w-0 truncate" title="Drums · Cartons · Tins · Bags">
           {articles === null ? (

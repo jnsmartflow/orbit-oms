@@ -22,12 +22,18 @@
 
 import { ProgressBar } from "./progress-bar";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
-import type { StatusCounts } from "./status-pill";
+import { formatLitres, type StatusCounts } from "./status-pill";
+import { tripWording } from "@/lib/floor/trip-wording";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
 
-/** chk_trips_status's five values → the chip. `ready` is DERIVED, never stored. */
+/** chk_trips_status's five values → the chip. `ready` is DERIVED, never stored.
+ *
+ *  ⚠ `released`'s LABEL comes from lib/floor/trip-wording.ts and depends on the
+ *  desk-control state, so it is filled in below rather than here — with the gate
+ *  off, "Released" would name an event that did not happen. The STORED value is
+ *  'released' either way and must not be renamed (chk_trips_status). */
 const STATE_META: Record<string, { label: string; cls: string }> = {
   draft: { label: "Draft — at desk", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
   released: { label: "Released", cls: "bg-[#e8effd] text-[#2563eb]" },
@@ -35,6 +41,11 @@ const STATE_META: Record<string, { label: string; cls: string }> = {
   dispatched: { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
   cancelled: { label: "Cancelled", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
 };
+
+const ACTION =
+  "inline-flex h-[28px] items-center rounded-[7px] border border-gray-300 bg-white px-3 text-[11.5px] font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+const ACTION_PRIMARY =
+  "inline-flex h-[28px] items-center rounded-[7px] bg-brand-600 px-3.5 text-[11.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400";
 const READY_META = { label: "Ready to leave", cls: "bg-[#eaf7ee] text-[#15803d]" };
 
 /**
@@ -72,6 +83,11 @@ export function TripBand({
   onMarkUrgent,
   onOpenDetail,
   gateOn,
+  onRelease,
+  onAddBills,
+  onChangeVehicle,
+  onCancelTrip,
+  busy = false,
 }: {
   trip: TripSummary;
   /** The trip's bills that are STILL ON THE BOARD. May be shorter than `trip.counts.total`. */
@@ -86,9 +102,18 @@ export function TripBand({
   onMarkUrgent?: (id: number) => void;
   onOpenDetail?: (id: number) => void;
   gateOn?: boolean;
+  /** Confirm / Release. Absent on a History band — a past day is read-only. */
+  onRelease?: (tripId: number) => void;
+  onAddBills?: (tripId: number) => void;
+  onChangeVehicle?: (tripId: number) => void;
+  onCancelTrip?: (tripId: number) => void;
+  /** True while any write on THIS trip is in flight. */
+  busy?: boolean;
 }) {
   const counts = toStatusCounts(trip.counts);
   const pending = counts.total - counts.done;
+  // The gate decides what the second state is CALLED, never what is stored.
+  const wording = tripWording(gateOn === true);
 
   // The mockup's three shells: ready (green edge), draft (dashed), dispatched
   // (faded). Everything else is the plain surface.
@@ -106,7 +131,11 @@ export function TripBand({
   const meta =
     trip.isReady && trip.status !== "dispatched" && trip.status !== "cancelled"
       ? READY_META
-      : (STATE_META[trip.status] ?? { label: trip.status, cls: "bg-[#f1f0f5] text-[#6f6d7d]" });
+      : trip.status === "released"
+        ? // "Released" with the gate on, "Confirmed" with it off — the same
+          // stored value, described honestly for the state the desk is in.
+          { label: wording.releasedLabel, cls: STATE_META.released.cls }
+        : (STATE_META[trip.status] ?? { label: trip.status, cls: "bg-[#f1f0f5] text-[#6f6d7d]" });
 
   // "Draft vehicle N" (mockup) when neither a master vehicle nor an ad-hoc plate
   // is set. N is the trip's own per-day sequence, so two drafts never share a
@@ -117,8 +146,18 @@ export function TripBand({
     trip.windowTime,
     `${trip.dropCount} drop${trip.dropCount === 1 ? "" : "s"}`,
     `${counts.total} bill${counts.total === 1 ? "" : "s"}`,
-    `${trip.totalLitres.toLocaleString("en-US")} L`,
+    // formatLitres, never a raw toLocaleString: the API sums a Float column, so
+    // an unrounded total prints "4729.400000000001 L". The pool header uses the
+    // SAME function, so the two can never disagree by a decimal.
+    `${formatLitres(trip.totalLitres)} L`,
   ].filter(Boolean) as string[];
+
+  // Which actions this band offers. Cancelled offers NONE — it is a record of
+  // what was called off, and every write path refuses it server-side anyway
+  // (PATCH 409s, cancel is idempotent). Dispatched likewise: it has left.
+  const isClosed = trip.status === "cancelled" || trip.status === "dispatched";
+  const isDraft = trip.status === "draft";
+  const showActions = !isClosed && (onRelease || onAddBills || onChangeVehicle || onCancelTrip);
 
   return (
     <div className={`overflow-hidden rounded-[11px] border ${shell}`}>
@@ -186,6 +225,67 @@ export function TripBand({
           {counts.total === 0 && <span className="text-gray-400">no bills yet</span>}
         </div>
       </div>
+
+      {/* ── Actions ────────────────────────────────────────────────────────
+          Draft:     [Confirm plan / Release to floor] · Add bills · Change vehicle · Cancel trip
+          Confirmed:                                     Add bills · Change vehicle · Cancel trip
+          Cancelled / dispatched: none at all.
+
+          ⚠ ALWAYS VISIBLE, open or closed. The whole point of a band is that
+          the operator can act on a trip without expanding it — expanding is for
+          reading the bills, not for reaching the buttons.
+
+          ⚠ ONE PRIMARY, and only on a draft. Confirm/Release is the state's real
+          job; everything else is a plain bordered button (CLAUDE_UI §1's
+          one-teal-per-state rule, the same discipline the detail panel header
+          follows). */}
+      {showActions && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-[#f0f0f0] px-3.5 py-2.5">
+          {isDraft && onRelease && (
+            <button
+              type="button"
+              onClick={() => onRelease(trip.id)}
+              disabled={busy || counts.total === 0}
+              title={
+                counts.total === 0
+                  ? "Add bills to this trip first"
+                  : wording.releaseButton
+              }
+              className={ACTION_PRIMARY}
+            >
+              {busy ? "Working…" : wording.releaseButton}
+            </button>
+          )}
+          {onAddBills && (
+            <button type="button" onClick={() => onAddBills(trip.id)} disabled={busy} className={ACTION}>
+              Add bills
+            </button>
+          )}
+          {onChangeVehicle && (
+            <button type="button" onClick={() => onChangeVehicle(trip.id)} disabled={busy} className={ACTION}>
+              Change vehicle
+            </button>
+          )}
+          {onCancelTrip && (
+            <button
+              type="button"
+              onClick={() => onCancelTrip(trip.id)}
+              disabled={busy}
+              className={`${ACTION} !text-[#b91c1c] hover:!bg-[#fef2f2]`}
+            >
+              Cancel trip
+            </button>
+          )}
+
+          {/* 🔴 SAYS WHAT IS TRUE. With desk control off the bills are ALREADY
+              on the supervisor's board, so the button settles the plan and
+              changes nothing downstairs. Promising a handover that will not
+              happen is how an operator stops trusting the button. */}
+          {isDraft && onRelease && wording.releaseCaveat && (
+            <span className="basis-full text-[10.5px] text-gray-400">{wording.releaseCaveat}</span>
+          )}
+        </div>
+      )}
 
       {open && rows.length > 0 && (
         <FloorTable

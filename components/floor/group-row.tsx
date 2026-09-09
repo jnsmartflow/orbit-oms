@@ -42,7 +42,7 @@
 // the bill you are picking, here is what rides along with it".
 
 import { FloorTable } from "./floor-table";
-import { sumLitres } from "./status-pill";
+import { formatLitres, sumLitres } from "./status-pill";
 import type { FloorTableVariant } from "./floor-table";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
@@ -168,7 +168,7 @@ export function GroupRow(props: GroupRowProps) {
             {others > 0 && <span className="text-gray-400"> + {others} more</span>}
           </span>
           <span className="w-[118px] shrink-0 text-[10.5px] text-gray-400">
-            {litres} L &middot; {routes.length} route{routes.length === 1 ? "" : "s"}
+            {formatLitres(litres)} L &middot; {routes.length} route{routes.length === 1 ? "" : "s"}
           </span>
           <span className="w-[132px] shrink-0 truncate text-[10.5px] text-gray-400" title={slots.join(", ")}>
             {slots.join(" · ")}

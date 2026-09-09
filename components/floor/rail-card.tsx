@@ -46,6 +46,7 @@ import {
   type DispatchSlotValue,
 } from "@/components/floor/dispatch-slot-picker";
 import { getTodayIST } from "@/lib/dates";
+import { formatLitres } from "./status-pill";
 import { TintStrip } from "./tint-strip";
 import {
   DuplicateSoTag,
@@ -324,7 +325,7 @@ export function RailCard({
       <div className={"mt-[3px] text-[11.5px] " + "text-gray-600"}>
         {card.route ?? "—"}{" "}
         <span className="text-gray-400">
-          &middot; {card.volumeLitres ?? 0} L
+          &middot; {formatLitres(card.volumeLitres ?? 0)} L
         </span>
       </div>
 

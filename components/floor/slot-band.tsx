@@ -8,7 +8,7 @@
 
 import { ProgressBar } from "./progress-bar";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
-import { countByStatus, sumLitres } from "./status-pill";
+import { countByStatus, formatLitres, sumLitres } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -50,7 +50,7 @@ export function SlotBand({
         <span className="w-2.5 text-[11px] text-gray-400">{open ? "▾" : "▸"}</span>
         <span className="w-16 text-[12.5px] font-bold text-gray-900">{label}</span>
         <span className="w-[140px] text-[10.5px] text-gray-500">
-          {rows.length} bills · {litres} L
+          {rows.length} bills · {formatLitres(litres)} L
         </span>
         <ProgressBar counts={counts} className="max-w-[290px] flex-1" />
         <span className="w-[92px] text-right text-[11px] font-semibold tabular-nums text-gray-700">
