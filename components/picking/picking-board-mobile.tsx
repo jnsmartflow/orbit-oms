@@ -2856,6 +2856,37 @@ export function PickingBoardMobile(): React.JSX.Element {
           whole screen would be chrome labelling the obvious. */}
       {activeTab === "assign" && (
       <div className="px-4 py-2.5">
+        {/* ── AT THE DESK (2026-09-09) ────────────────────────────────────────
+            Bills the operator has not handed over yet. Without this band a
+            gated Assign tab is just SHORT, or empty, with nothing on screen
+            saying why — and a supervisor whose list went quiet has no way to
+            tell "the depot is quiet" from "the desk has not released today's
+            work". That ambiguity is the whole reason this exists.
+
+            🔴 RENDERED WHENEVER heldBack > 0, NOT ONLY ON AN EMPTY LIST. A
+            supervisor working through 3 released bills while 60 sit at the desk
+            needs this as much as one holding none — arguably more, because his
+            list looks perfectly normal.
+
+            CALM, and it must stay calm. Amber, one line, no icon shouting, no
+            modal and nothing blocking: bills waiting at the desk is an ordinary
+            step in the operator's flow, not a fault and not his problem to fix.
+            It is INERT — there is no action here, because releasing is the
+            operator's job on /floor, and a button the supervisor cannot use
+            would be worse than no button.
+
+            GATE OFF → `heldBack` is 0 (the server returns it without even
+            querying) → this element does not exist. */}
+        {(data?.heldBack ?? 0) > 0 && (
+          <div className="mb-2.5 flex items-center gap-2 rounded-[7px] border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#92400e]">
+            <span className="font-semibold tabular-nums">{data!.heldBack}</span>
+            <span>
+              more bill{data!.heldBack === 1 ? "" : "s"} waiting at the desk
+              {data!.heldBack === 1 ? " — it is" : " — they are"} not ready for you yet.
+            </span>
+          </div>
+        )}
+
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
 
         {!loading && error && (

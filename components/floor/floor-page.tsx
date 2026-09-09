@@ -399,18 +399,26 @@ export function FloorPage() {
   // MAX(orders.updatedAt) — a duplicate write fires a false "changed" on every
   // board (FLOOR §10). A failure is reported and left to the operator.
   const [showBusy, setShowBusy] = useState(false);
-  const showToFloor = async () => {
-    const ids = selectedHeldBack.map((r) => r.orderId);
+  // ONE function, both directions — the request differs by a single boolean and
+  // the reporting by three nouns, so two copies would be two places to fix the
+  // day the wording or the bucket names change again.
+  const setDeskVisibility = async (rows: FloorBoardRow[], visible: boolean) => {
+    const ids = rows.map((r) => r.orderId);
     if (ids.length === 0 || showBusy) return;
+    // Wording, chosen once so every branch below reads the same way.
+    const verbFail = visible ? "Show" : "Send back";
+    const didWord = visible ? "shown" : "sent back to desk";
+    const alreadyWord = visible ? "already visible" : "already at desk";
+
     setShowBusy(true);
     try {
       const res = await fetch("/api/floor/pick-visible", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: ids }),
+        body: JSON.stringify({ orderIds: ids, visible }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        shown?: number[];
+        changed?: number[];
         skipped?: number[];
         failed?: Array<{ error?: string }>;
         error?: string;
@@ -419,37 +427,39 @@ export function FloorPage() {
       // ⚠ NOT reportWrite(). That helper knows two buckets (ok / failed) and this
       // route returns THREE, so it would have to call a skip a success with no
       // detail — and the number on screen would then not match what happened.
-      // A skipped bill was already visible: a success, but nothing was written to
-      // it, and saying "15 shown" when 3 of them were already shown is a lie the
-      // operator would only catch by counting rows himself.
-      const shown = body.shown?.length ?? 0;
+      // A skipped bill was already in the requested state: a success, but nothing
+      // was written to it, and saying "15 shown" when 3 were already shown is a
+      // lie the operator would only catch by counting rows himself.
+      const changed = body.changed?.length ?? 0;
       const skipped = body.skipped?.length ?? 0;
       const failed = body.failed ?? [];
 
       if (!res.ok) {
-        // 422 = every bill failed and nothing was written.
+        // 422 = every bill was refused and nothing was written.
         toast.error(
           body.error
-            ? `Show failed — ${body.error}`
-            : `Show failed — none of the ${ids.length} bill${ids.length === 1 ? " was" : "s were"} shown.`,
+            ? `${verbFail} failed — ${body.error}`
+            : `${verbFail} failed — none of the ${ids.length} bill${ids.length === 1 ? " was" : "s were"} changed.`,
         );
       } else {
         const parts: string[] = [];
-        if (shown > 0) parts.push(`${shown} shown`);
-        if (skipped > 0) parts.push(`${skipped} already visible`);
+        if (changed > 0) parts.push(`${changed} ${didWord}`);
+        if (skipped > 0) parts.push(`${skipped} ${alreadyWord}`);
         if (parts.length > 0) toast.success(parts.join(", "));
         // Surfaced separately and never swallowed — a partial success that
         // reports only its successes is the swallowed-response bug FLOOR §6(b)
-        // closed on the release path.
+        // closed on the release path. On the reverse path the usual cause is the
+        // race the route's stage guard exists for: a supervisor assigned the bill
+        // while the operator was ticking it.
         if (failed.length > 0) {
           const reason = failed[0]?.error ?? "not valid at its current state";
           toast.error(
-            `${failed.length} bill${failed.length === 1 ? "" : "s"} not shown — ${reason}`,
+            `${failed.length} bill${failed.length === 1 ? "" : "s"} not changed — ${reason}`,
           );
         }
       }
     } catch {
-      toast.error("Show failed — check your connection.");
+      toast.error(`${verbFail} failed — check your connection.`);
     } finally {
       setShowBusy(false);
     }
@@ -936,12 +946,25 @@ export function FloorPage() {
     [filteredFloor],
   );
 
-  // The SELECTED bills that are still at the desk — the only ids the Show action
-  // ever sends. Never the whole selection: an already-visible bill would come
-  // back under `skipped` and inflate the number reported to the operator, and an
-  // assigned one would come back under `failed` for a request nobody made.
+  // The two groups inside the selection the desk strip acts on. Each button
+  // sends ONLY its own ids — never the whole selection: an already-visible bill
+  // on the Show path would come back under `skipped` and inflate the number
+  // reported to the operator, and an assigned one would come back under `failed`
+  // for a request nobody made.
+  //
+  // BOTH are computed on every render because a selection routinely spans both
+  // states — the operator ticks by eye, in bulk — and the strip offers whichever
+  // actions apply, including both at once.
   const selectedHeldBack = useMemo(
     () => selectedRows.filter((r) => isHeldBack(r)),
+    [selectedRows],
+  );
+  // Waiting AND already handed over: the reverse group. `rowStatus === "waiting"`
+  // is the same half of isHeldBack()'s rule, negated on the stamp only — an
+  // assigned or picked bill belongs to neither group, because the route refuses
+  // it in both directions and offering it would be offering a guaranteed error.
+  const selectedShown = useMemo(
+    () => selectedRows.filter((r) => rowStatus(r) === "waiting" && r.pickVisibleAt !== null),
     [selectedRows],
   );
 
@@ -1189,19 +1212,25 @@ export function FloorPage() {
               job anyway: the bar hands bills to a PICKER, this hands them to the
               FLOOR.
 
-              THREE conditions, all required: the gate is on, at least one
-              SELECTED row is still at the desk, and `barVisible` — the SAME flag
-              the assign bar uses. Reusing it is load-bearing twice: the strip is
-              positioned off the bar's 60px, so a strip without a bar would float
-              over the last table row; and barVisible already carries the live/
-              history, tab and read-only-context rules, which the strip needs
-              identically and must not restate.
+              THREE conditions, all required: the gate is on, the selection holds
+              at least one bill EITHER direction can act on, and `barVisible` —
+              the SAME flag the assign bar uses. Reusing that flag is load-bearing
+              twice: the strip is positioned off the bar's 60px, so a strip
+              without a bar would float over the last table row; and barVisible
+              already carries the live/history, tab and read-only-context rules,
+              which the strip needs identically and must not restate.
 
               Gate off → `gateOn` is false → nothing renders and this subtree
               does not exist. */}
-          {gateOn && barVisible && selectedHeldBack.length > 0 && (
+          {gateOn && barVisible && selectedHeldBack.length + selectedShown.length > 0 && (
             <div className="absolute inset-x-0 bottom-[60px] z-20">
-              <ShowStrip count={selectedHeldBack.length} busy={showBusy} onShow={() => void showToFloor()} />
+              <ShowStrip
+                notShownCount={selectedHeldBack.length}
+                shownCount={selectedShown.length}
+                busy={showBusy}
+                onShow={() => void setDeskVisibility(selectedHeldBack, true)}
+                onSendBack={() => void setDeskVisibility(selectedShown, false)}
+              />
             </div>
           )}
 

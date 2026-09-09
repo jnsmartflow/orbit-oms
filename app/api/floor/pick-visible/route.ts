@@ -15,13 +15,25 @@ interface Failed {
  * POST /api/floor/pick-visible — hand waiting bills over to the picking floor.
  *
  * Body: `{ orderIds: number[] }`. Single = an array of one; bulk = the operator's
- * whole selection. Stamps `orders.pickVisibleAt` / `pickVisibleById`, which is
+ * whole selection. Writes `orders.pickVisibleAt` / `pickVisibleById`, which is
  * what the picking visibility gate filters on
  * (`lib/picking/visibility-gate.ts` + `buildPickingWhere`'s waiting branch).
+ *
+ * `visible` (2026-09-09) chooses the DIRECTION, and defaults to true so every
+ * pre-existing caller is unchanged:
+ *   true  → stamp both columns (hand the bill to the floor)
+ *   false → clear both to null (pull it back to the desk)
  *
  * Same 422/partial contract as `/api/floor/release` and `/api/floor/actions`:
  * 422 when NOTHING was achieved, 200 otherwise, and the `failed` list always
  * rides along so a partial write can never be read as a clean success.
+ *
+ * ⚠ THE SUCCESS BUCKET IS `changed`, NOT `shown` (renamed 2026-09-09 with the
+ * `visible` flag). On a pull-back, "shown" would name the opposite of what
+ * happened — a status word that has drifted from its behaviour is the trap CORE
+ * §3 spends a paragraph on, and it is cheapest to avoid on the day the second
+ * direction lands. `skipped` and `failed` are direction-neutral and keep their
+ * names.
  *
  * ═══ 🔒 LAYER 3 — THE SERVER REFUSAL. THIS IS THE COPY THAT LASTS ═══
  *
@@ -32,6 +44,15 @@ interface Failed {
  * be changed by anyone in an afternoon; a direct POST bypasses both and lands
  * here. Do not remove this check as redundant — it is the only one that holds
  * when the other two are wrong.
+ *
+ * 🔒 AND IT APPLIES IN BOTH DIRECTIONS, WHICH IS WHAT MAKES PULL-BACK SAFE.
+ * The dangerous case is a race, not a mistake: the operator ticks a bill to send
+ * it back at the same moment a supervisor assigns it. By the time the request
+ * lands the bill is `pick_assigned` — a picker is walking to the rack — and the
+ * stage guard refuses it with a message naming the stage, instead of quietly
+ * yanking the work out of his hands and leaving him holding a bill no screen
+ * shows. Every other guard below is shared by both directions for the same
+ * reason.
  *
  * ⚠ NO `order_status_logs` ROW IS WRITTEN, and that is deliberate.
  *   - The order already carries the whole record: `pickVisibleById` is who,
@@ -63,8 +84,16 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { orderIds?: number[] };
+  const body = (await req.json().catch(() => ({}))) as { orderIds?: number[]; visible?: boolean };
   const orderIds = body.orderIds;
+  // Direction. DEFAULTS TO TRUE when absent, so a caller that predates the flag
+  // still hands bills to the floor. A strict boolean test on a value that IS
+  // present, though — "false" or 0 from a sloppy client means the reverse
+  // direction, and coercing either would send bills the wrong way.
+  if (body.visible !== undefined && typeof body.visible !== "boolean") {
+    return NextResponse.json({ error: "visible must be a boolean when supplied" }, { status: 400 });
+  }
+  const visible = body.visible ?? true;
   // Rejected BEFORE the loop, exactly as /api/floor/release rejects an empty
   // `releases`. This is what lets a 422 below mean "every bill was tried and
   // every bill failed" rather than "you sent nothing".
@@ -79,7 +108,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  const shown: number[] = [];
+  // `changed`, not `shown` — see the header. On `visible: false` these are the
+  // bills sent back to the desk.
+  const changed: number[] = [];
   const skipped: number[] = [];
   const failed: Failed[] = [];
 
@@ -102,45 +133,59 @@ export async function POST(req: Request): Promise<NextResponse> {
       if (order.workflowStage !== SUPPORT_DONE_OUTPUT) {
         failed.push({
           orderId,
-          error: `Cannot show a bill at stage ${order.workflowStage} — only waiting bills can be shown.`,
+          error: visible
+            ? `Cannot show a bill at stage ${order.workflowStage} — only waiting bills can be shown.`
+            : `Cannot send back a bill at stage ${order.workflowStage} — a picker already has it.`,
         });
         continue;
       }
 
-      // Already handed over → a SKIP, not a failure, and NO WRITE.
+      // ALREADY IN THE REQUESTED STATE → a SKIP, not a failure, and NO WRITE.
+      // The test MIRRORS with the direction: showing skips an already-stamped
+      // bill, sending back skips an already-null one.
       //
-      // Re-selecting a bill that is already visible is an ordinary bulk-selection
-      // accident, not an error: the operator asked for a state the bill is
-      // already in, so the request succeeded and there was simply no work. It is
-      // reported separately from `shown` so the client can say "4 shown, 2
-      // already visible" instead of claiming six writes it did not make.
+      // Re-selecting a bill that is already where the operator wants it is an
+      // ordinary bulk-selection accident, not an error: he asked for a state the
+      // bill is already in, so the request succeeded and there was simply no
+      // work. It is reported separately from `changed` so the client can say
+      // "4 shown, 2 already visible" instead of claiming six writes it did not
+      // make.
       //
-      // ⚠ AND THE WRITE MUST NOT HAPPEN. Re-stamping would bump
+      // ⚠ AND THE WRITE MUST NOT HAPPEN. A no-op re-write would still bump
       // `orders.updatedAt` and fire a false "changed" on every board's marker
       // (PICKING §10) — every supervisor's phone would do a full queue refetch
-      // for a bill whose state did not move. It would also overwrite the
-      // original actor and time with whoever fat-fingered the checkbox.
-      if (order.pickVisibleAt !== null) {
+      // for a bill whose state did not move. On the forward path it would also
+      // overwrite the original actor and time with whoever fat-fingered the
+      // checkbox.
+      const alreadyThere = visible ? order.pickVisibleAt !== null : order.pickVisibleAt === null;
+      if (alreadyThere) {
         skipped.push(orderId);
         continue;
       }
 
-      // EXACTLY ONE orders.update per bill. Both columns land in the same row
-      // write, so the stamp is atomic on its own and no ordering hazard exists.
+      // EXACTLY ONE orders.update per bill, in either direction. Both columns
+      // land in the same row write, so the change is atomic on its own and no
+      // ordering hazard exists.
+      //
+      // The reverse clears BOTH columns. Leaving `pickVisibleById` behind would
+      // read as "this bill was released by Ashish" on a bill that is at the desk
+      // — a half-cleared record that says something untrue.
       await prisma.orders.update({
         where: { id: orderId },
-        data: { pickVisibleAt: new Date(), pickVisibleById: visibleById },
+        data: visible
+          ? { pickVisibleAt: new Date(), pickVisibleById: visibleById }
+          : { pickVisibleAt: null, pickVisibleById: null },
       });
 
-      shown.push(orderId);
+      changed.push(orderId);
     } catch (err) {
       failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
     }
   }
 
   // Nothing achieved at all → 422, so a fully-rejected request cannot be read as
-  // success. A SKIP counts as achieved: the bills the operator asked to be
-  // visible are visible, which is the outcome he wanted.
-  const status = shown.length === 0 && skipped.length === 0 && failed.length > 0 ? 422 : 200;
-  return NextResponse.json({ shown, skipped, failed }, { status });
+  // success. A SKIP counts as achieved: the bills are in the state the operator
+  // asked for, which is the outcome he wanted.
+  const status = changed.length === 0 && skipped.length === 0 && failed.length > 0 ? 422 : 200;
+  return NextResponse.json({ changed, skipped, failed }, { status });
 }

@@ -22,7 +22,7 @@ import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
 import { isReleasableToday } from "./release-window";
 // The floor visibility gate. Read here and PASSED to buildPickingWhere, which
 // is synchronous and so cannot make the database call itself.
-import { isPickGateOn } from "./visibility-gate";
+import { isPickGateOn, countHeldBackWaiting } from "./visibility-gate";
 // Name → SAP code, the inverse of the importer's own DIVISION_TO_SMU. Imported
 // rather than re-declared so the picking board can never disagree with the
 // importer about which code a name means (the ONE OWNER PER BEHAVIOUR rule this
@@ -262,6 +262,22 @@ export interface PickingQueueResult {
   // 50% oil share against an empty oil set).
   waitingSkus: PickingBillSkus[];
   oilSkus: PickingBillSkus[];
+  /**
+   * Waiting bills the visibility gate is hiding from `rows` (2026-09-09).
+   *
+   * 🔴 ON THE PAYLOAD SO THE BAND HAS IT ON FIRST PAINT. The marker carries the
+   * same number, but it is a 15s poll whose first response is only a BASELINE —
+   * so a board that waited for it would show an unexplained short or empty
+   * Assign tab for up to a full interval, which is the exact failure the band
+   * exists to prevent.
+   *
+   * 0 when the gate is off, and then no band renders and this payload describes
+   * the same board it always did.
+   *
+   * ALWAYS 0 for a `pickerId` request: a held-back bill is unassigned, so it can
+   * belong to no picker. The picker's face reads nothing from this field.
+   */
+  heldBack: number;
 }
 
 // Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
@@ -973,10 +989,32 @@ export async function getPickingQueue(
     }
   }
 
+  // How many waiting bills the gate is hiding from `rows` above. Through the
+  // SHARED helper, never a second hand-written predicate — the marker route
+  // answers the same question with the same function, so the band on first paint
+  // and the band 15 seconds later cannot disagree (CORE §3's one-owner rule).
+  //
+  // The where handed over is the UNGATED one, rebuilt here: `where` above
+  // already carries the gate term when the gate is on, and that excludes exactly
+  // the rows being counted. The two extra clock reads cannot change the answer —
+  // only the checked branch is clock-fenced, and the helper's top-level
+  // `workflowStage` contradicts that branch.
+  //
+  // Skipped for a per-picker fetch: a held-back bill is unassigned, so the
+  // answer is 0 without a round trip. Sequential await, no $transaction.
+  const heldBack =
+    options.pickerId === undefined
+      ? await countHeldBackWaiting(
+          buildPickingWhere({ date: options.date, scope: options.scope }).where,
+          gateOn,
+        )
+      : 0;
+
   return {
     date: isoDate,
     rows: sortedRows,
     waitingSkus,
     oilSkus,
+    heldBack,
   };
 }

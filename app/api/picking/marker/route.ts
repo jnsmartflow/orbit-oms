@@ -4,8 +4,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { buildPickingWhere } from "@/lib/picking/queue";
-import { isPickGateOn } from "@/lib/picking/visibility-gate";
-import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { isPickGateOn, countHeldBackWaiting } from "@/lib/picking/visibility-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -145,23 +144,28 @@ export async function GET(req: Request): Promise<NextResponse> {
     // and that branch cannot match here).
     //
     // ⚠ TWO SKIPS, both free:
-    //   - gate OFF     → nothing is held back BY DEFINITION. Return 0 without
-    //                    asking, so the poll costs exactly what it costs today.
+    //   - gate OFF     → nothing is held back BY DEFINITION. The shared helper
+    //                    returns 0 without a query, so the poll costs exactly
+    //                    what it costs today.
     //   - a pickerId   → a held-back bill is waiting, so it carries no
     //                    pick_assignments row and can never be his. 0 without
     //                    asking rather than a round trip guaranteed to return 0.
-    // Needs its own count(): an aggregate cannot carry two different filters.
-    let heldBack = 0;
-    if (gateOn && pickerId === undefined) {
-      const { where: ungatedWhere } = buildPickingWhere({ date: dateParam, scope: scopeParam });
-      heldBack = await prisma.orders.count({
-        where: {
-          ...ungatedWhere,
-          workflowStage: SUPPORT_DONE_OUTPUT,
-          pickVisibleAt: null,
-        },
-      });
-    }
+    //
+    // 🔴 THE TERMS ARE NOT WRITTEN HERE. countHeldBackWaiting()
+    // (lib/picking/visibility-gate.ts) owns them, and getPickingQueue() feeds
+    // the board's first paint from the SAME function — the marker and the
+    // payload cannot show two different numbers for one question.
+    //
+    // It needs its own count(): an aggregate cannot carry two different filters.
+    // The where passed in is deliberately the UNGATED one (no `gateOn`), which
+    // is what that function documents and requires.
+    const heldBack =
+      pickerId === undefined
+        ? await countHeldBackWaiting(
+            buildPickingWhere({ date: dateParam, scope: scopeParam }).where,
+            gateOn,
+          )
+        : 0;
 
     const body = {
       count: agg._count,
