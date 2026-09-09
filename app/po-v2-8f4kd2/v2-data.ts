@@ -1437,22 +1437,21 @@ export function chipStyle(selected: boolean, dashed = false): React.CSSPropertie
  * whole, so every number this app shows is a number a person can act on.
  */
 /**
- * A TYPED unit figure, snapped to the nearest whole box.
+ * 🔴 snapToBox WAS HERE AND IS GONE — owner ruling 2026-09-09.
  *
- * The stepper moves by a box and always has; typing is the same rule reached a
- * different way, so 5 typed on a six-per-box pack is 6 and the field says 6
- * before the salesman looks away. Silently keeping 5 would put a number on the
- * order that the depot cannot pick.
+ * It rounded a typed figure to the nearest whole box with one box as the
+ * floor, so 9 typed on a six-per pack became 12 and 1 became 6. The argument
+ * for it was that the depot cannot pick part of a carton. The depot's answer
+ * is that it can, and a salesman who could not ask for nine was the larger
+ * problem. v1 has never snapped (`app/po/po-page.tsx:1723`), so the two pages
+ * disagreed on what a typed number means — which is exactly the kind of
+ * divergence the successor-parity gate exists to catch.
  *
- * 🔴 A POSITIVE ASK NEVER SNAPS TO NOTHING. Nearest-multiple alone sends 1 to 0
- * on a six-per, which reads as the app ignoring him rather than correcting him,
- * and he has no way to tell the two apart. One box is the floor.
+ * Recorded rather than deleted silently, because the reasoning above is
+ * plausible enough to be reinvented. It was tried, it shipped, and it was
+ * ruled against. Step drives +/- and the "per N" sub-label; it does not touch
+ * a typed figure.
  */
-export function snapToBox(units: number, step: number): number {
-  if (!Number.isFinite(units) || units <= 0) return 0;
-  if (step <= 1) return Math.round(units);
-  return Math.max(step, Math.round(units / step) * step);
-}
 
 export function unitsIn(qtys: Record<string, number>): number {
   let units = 0;

@@ -8,7 +8,7 @@ import V2Sheet from "./v2-sheet";
 import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
   baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isLightHex, memberImage,
-  packsOf, shadeHex, snapToBox, sortBases, stepForLabel, tileArtFor, unitsIn,
+  packsOf, shadeHex, sortBases, stepForLabel, tileArtFor, unitsIn,
   variantImage,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
   type V2ResolvedMember, type V2ResolvedTile,
@@ -770,7 +770,11 @@ export default function ProductDrawer({
     });
   }
 
-  /** A TYPED figure, already snapped to a whole box by the field itself. */
+  /**
+   * A TYPED figure, stored as typed. The field has already reduced anything
+   * non-numeric to 0 (see QtyField); this is the last non-negative guard and
+   * it does NOT round to a box. Owner ruling 2026-09-09 — 9 stays 9.
+   */
   function typeCell(member: string, option: string, pack: string, units: number): void {
     setMatrix((prev) => {
       const byOpt = { ...(prev[member] ?? {}) };
@@ -1585,7 +1589,7 @@ function PackRow({ label, step, qty, onStep, onType }: {
         >
           <Minus className="h-4 w-4" strokeWidth={3} style={{ color: INK }} />
         </button>
-        <QtyField qty={qty} step={step} label={label} onCommit={onType} />
+        <QtyField qty={qty} label={label} onCommit={onType} />
         <button
           type="button" aria-label={`Add one box of ${label}`} onClick={() => onStep(1)}
           className="flex h-9 w-9 items-center justify-center rounded-full"
@@ -1613,29 +1617,47 @@ function PackRow({ label, step, qty, onStep, onType }: {
  * 16px, because Safari zooms the whole page on focus for anything smaller and
  * the salesman then has to pinch back out mid-order.
  *
- * ON BLUR the value SNAPS to a whole box and the field shows the snapped
- * number — type 5 on a six-per pack and it reads 6 before he looks away.
- * Empty, or anything that is not a number, reverts to what was there: a line
- * must never be left at NaN.
+ * 🔴 A TYPED FIGURE IS STORED AS TYPED. NO SNAPPING — owner ruling 2026-09-09.
+ *
+ * This field used to round the number to a whole box on blur, so 9 on a
+ * six-per pack became 12. The reasoning was that the depot cannot pick part of
+ * a carton; the depot's answer is that it can, and being unable to ask for
+ * nine was the worse problem. v1 has always worked this way
+ * (`app/po/po-page.tsx:1723`, setPackRaw) and v2 now matches it exactly:
+ *
+ *   any non-negative integer is legal — 9 stays 9
+ *   0 clears the line
+ *   empty, or anything non-numeric, commits 0 — NOT the previous value
+ *
+ * That last line is the one that changed twice over. v1 does
+ * `parseInt(raw, 10)` and falls back to 0 when the result is not a finite
+ * non-negative number, so clearing the field in v1 clears the cell. v2 used to
+ * restore the old figure instead, which meant a man who deleted a quantity and
+ * looked away got it back. Matching v1 is what makes "0 clears the line" true
+ * by the same route on both pages.
+ *
+ * STEP NO LONGER REACHES THIS FUNCTION AT ALL — it drives +/- and the "per N"
+ * sub-label, nothing else. A quantity that is not a whole box simply shows no
+ * box hint, exactly as on v1.
  */
-function QtyField({ qty, step, label, onCommit }: {
-  qty: number; step: number; label: string; onCommit: (units: number) => void;
+function QtyField({ qty, label, onCommit }: {
+  qty: number; label: string; onCommit: (units: number) => void;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  // Blur fires after Enter's own blur() call too; this stops the commit running
-  // twice and re-snapping an already-snapped number.
+  // Blur fires after Enter's own blur() call too; this stops the commit
+  // running twice.
   const committed = useRef(false);
 
   function commit(): void {
     if (committed.current) return;
     committed.current = true;
-    const clean = draft.trim();
     setEditing(false);
-    // Nothing typed, or nothing numeric: keep what was there. Never NaN.
-    if (clean === "" || !/^\d+$/.test(clean)) return;
-    const snapped = snapToBox(Number(clean), step);
-    if (snapped !== qty) onCommit(snapped);
+    // v1's setPackRaw, byte for byte: parse, and anything that is not a finite
+    // non-negative integer is 0. Never NaN, and never the old value.
+    const parsed = parseInt(draft.trim(), 10);
+    const next = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    if (next !== qty) onCommit(next);
   }
 
   if (!editing) {
@@ -1780,7 +1802,7 @@ function Stepper({ qty, step, onStep, onType, label }: {
       >
         <Minus className={icon} strokeWidth={3} style={{ color: INK }} />
       </button>
-      <QtyField qty={qty} step={step} label={label} onCommit={onType} />
+      <QtyField qty={qty} label={label} onCommit={onType} />
       <button
         type="button" aria-label={`Add one box of ${label}`} onClick={() => onStep(1)}
         className={`flex ${btn} items-center justify-center rounded-full`}
