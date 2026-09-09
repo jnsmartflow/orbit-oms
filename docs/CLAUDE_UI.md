@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.24 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.25 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -305,94 +305,57 @@ ON: `bg-teal-600`. OFF: `bg-gray-300`. Sizes: 36×20px compact, 46×26px large.
 
 ## 12. Login page
 
-**Rebuilt 2026-09-09 (rebrand step 5), corrected twice the same day.** The centred card
-on `#f9fafb` is gone. The page is a split: brand panel left, white form right. Files:
-`app/login/page.tsx`, `app/login/login-form.tsx`, `app/login/login-rings.tsx`, plus one
-CSS block in `globals.css` marked "Login — orbit rings + entrance".
+**Rebuilt 2026-09-09 (rebrand step 5).** The centred card on `#f9fafb` is gone. The page
+is a split: brand panel left, white form right. Files: `app/login/page.tsx`,
+`app/login/login-form.tsx`, plus one CSS block in `globals.css` marked "Login — panel
+entrance".
 
 | Item | What ships |
 |---|---|
 | Layout | `flex-col` on a phone, `md:flex-row` above. Panel `flex-[1.15]`, form side `flex-1`. |
-| Panel background | `#43168B` (`brand-900`) + `radial-gradient(82% 100% at 100% 100%, rgba(154,124,246,.55) 0%, rgba(124,58,237,.30) 34%, rgba(88,28,135,.12) 62%, rgba(67,22,139,0) 84%)` |
-| Rings | SVG layer, `absolute inset-0`, `z-1`, viewBox `0 0 700 512`, `preserveAspectRatio="xMaxYMax slice"`, centre `700,512`. Six guide circles and six rotating arcs. `aria-hidden` — decorative. |
+| Panel | The app icon's gradient plus a grain layer. No drawn element — see §12.1. |
 | Content | `z-3`. Wordmark white at 45px of INK (30 / 38 / 45 stepping down), 56×3 `brand-400` accent bar, tagline 24px/18px/15px `brand-200` with the last word white and `whitespace-nowrap`. |
 | Form | White, `max-w-[330px]`. Time-aware greeting + date. Focus `border-brand-500` + `ring-4 ring-[rgba(139,92,246,.13)]`. Sign in is the commit button, `bg-brand-600`, full width, spinner on click. |
 
-🔴 **The corner light is CSS on the panel element, never a gradient inside the rings
-SVG.** An SVG gradient is bounded by its viewBox and `slice` cuts it, which put a
-visible hard edge across the panel the first time this was built.
+### 12.1 The panel — icon gradient plus grain, and NO drawn element
 
-### 12.1 The rings are the reference file's geometry, number for number
+🔴 **The panel carries no graphic, and that is a DECISION, not a deferral or a gap
+somebody has not got to yet.** Eleven variations were tried on it across one session on
+2026-09-09 — orbit arcs, ellipses, a node network, streaks, a depot scene. Every one held
+together at mockup size and fell apart at full-screen size. The arcs got furthest and
+actually shipped for a day as `app/login/login-rings.tsx`, through three rounds of
+geometry and animation fixes, before being removed. **Do not reintroduce a graphic here
+as a fresh idea.** The file is recoverable from git history if the argument is ever
+reopened, but it needs new evidence that a drawn layer survives a 1920-wide panel, not a
+new mockup.
 
-The source of truth is `docs/mockups/rebrand/orbit-login-rings-edge.html`. Everything
-below is copied from it and is **the design, not an approximation of it**:
+What carries the panel instead:
 
-| r | guide opacity | arc width | gradient | dasharray | lap | direction |
-|---|---|---|---|---|---|---|
-| 150 | .20 | 2.4 | a | `230 713` | 30s | cw |
-| 262 | .17 | 2 | b | `360 1286` | 52s | ccw |
-| 388 | .145 | 1.7 | a | `500 1938` | 72s | cw |
-| 524 | .12 | 1.5 | b | `620 2672` | 94s | ccw |
-| 668 | .095 | 1.3 | a | `760 3437` | 122s | cw |
-| 820 | .07 | 1.2 | b | `900 4252` | 150s | ccw |
+```css
+background-image: radial-gradient(125% 125% at 12% 4%,
+  #8465F0 0%, #7C4FE8 16%, #7C3AED 34%, #6428C4 68%, #4C1D95 100%);
+```
 
-Guides `#EDE9FE` 1px. Gradient `a` fades `#EDE9FE` 0 → .85 at 45% → 0 along the bbox
-diagonal; `b` fades `#C4B5FD` 0 → .65 at 50% → 0 along the other diagonal. Light points
-at the top of r=150 (3.2, white, .85) and r=262 (2.8, `#EDE9FE`, .8), inside their
-rotating group. Only the gradient **ids** differ from the reference — `ra` / `rb` are too
-generic to put in an app page.
+Over it, one grain layer — `inset 0`, `opacity .12`, `pointer-events: none`, `z-1`, under
+the content at `z-3` — tiling a 140px `feTurbulence` fractal-noise SVG as a data URI.
 
-🔴 **The viewBox's ASPECT RATIO is load-bearing. Do not "correct" it to the panel's
-proportions.** Under `slice` the scale is `max(panelW/vbW, panelH/vbH)`, so the viewBox
-aspect is what decides how large the rings render and how many of them land on the panel.
-A cut of this file derived `705×683` from the panel's own proportions, believing that was
-the more precise thing to do. It shrank every ring, pulled four extra curves onto the
-panel and made the layer read as clutter. **The panel's proportions are not an input to
-this number.**
+🔴 **The grain is the only reason the panel does not read as a flat CSS gradient.** A
+five-stop violet ramp across a 780×900 area bands visibly without it. Keep it.
 
-🔴 **r=820 is mostly or entirely off-panel, and that is fine.** So is most of r=668 at a
-tall window. The set looks right with them there and a ring that contributes nothing also
-costs nothing. This was measured, argued and **deliberately left alone** — do not
-"optimise" the far rings inward. Degrees of each circle actually on the panel, measured
-live in headless Chrome:
+⚠ **The gradient is the icon's ramp but is NOT byte-identical to the icon.** The intent is
+that the login screen and the home-screen icon read as one surface, and they do, but the
+two definitions differ slightly and a future session should reconcile rather than assume:
 
-| r | 1440×900 | 1920×1080 | 1440×500 | 390 phone |
-|---|---|---|---|---|
-| 150 | 90° | 90° | 90° | 90° |
-| 262 | 90° | 90° | 90° | 90° |
-| 388 | 90° | 90° | 90° | 90° |
-| 524 | 45.7° | 57.6° | 58.7° | 77.7° |
-| 668 | 1.8° | 7.5° | 42.1° | 31.2° |
-| 820 | 0° | 0° | 1.7° | 0° |
+| | hot spot | stops |
+|---|---|---|
+| `public/icon-source.svg`, `scripts/generate-wordmark.mjs` | 14% 6% | `#8460EF` 0 · `#7F55EB` 18% · `#7C3AED` 36% · `#6428C4` 68% · `#4C1D95` 100% |
+| `app/login/page.tsx` | 12% 4% | `#8465F0` 0 · `#7C4FE8` 16% · `#7C3AED` 34% · `#6428C4` 68% · `#4C1D95` 100% |
 
-### 12.2 The arc groups rotate — as a group, gradient included
+The last two stops and the `#7C3AED` anchor match exactly; the first two differ by a few
+units and the hot spot by two points. Visually indistinguishable, but **if the icon is
+regenerated, decide which is canonical instead of letting them drift further.**
 
-Each ring is a `<g>` holding its arc circle and, on the inner two, its light point. The
-group turns about `700,512` and the gradient turns with it, exactly as the reference's
-`<animateTransform>` does. `transform-box: view-box` is what lets `transform-origin` be
-written in viewBox units on an SVG child.
-
-**CSS animation rather than SMIL is the one departure from the reference**, and it buys
-`prefers-reduced-motion`: a media query can switch a CSS animation off and cannot touch an
-`<animateTransform>`. The motion is otherwise identical.
-
-🔴 **Do NOT replace the rotation by holding the paths still and travelling the dash.** It
-was built that way on 2026-09-09 to make the light hold still while the arc slid through
-it. It is geometrically tidier, it is measurably brighter, and it looks worse — the set
-stops reading as orbits. Reverted the same day. The related true fact is worth keeping,
-because it will come up again: **an SVG gradient is resolved in the user space of the
-element that REFERENCES it**, so rotating an ancestor group turns the gradient with the
-shape, `gradientUnits="userSpaceOnUse"` does not change that, and SMIL behaves identically.
-The rotating gradient is a property of the design, not a defect in it.
-
-**Reduced motion** switches every animation off, and each state rests on a composed one:
-the accent bar at full width, and each ring parked at its own `--orbit-rest` angle (166 /
-199 / 181 / 211 / 192 / 204°, set per ring in `login-rings.tsx`, read only inside the
-reduced-motion block). The resting angles are the one thing here with no counterpart in
-the reference, which has no reduced-motion state at all: at a flat 0° every dash sits off
-the panel and a reduced-motion visitor would get guide circles and nothing else.
-
-### 12.3 The rest
+### 12.2 The rest
 
 **Greeting is computed on the SERVER in `Asia/Kolkata`** and passed down as a prop.
 Everyone who signs in is at the depot, a server value renders identically on both sides,
@@ -402,9 +365,15 @@ Morning before 12:00, afternoon to 16:59, evening from 17:00.
 **The wordmark height is INK height, not a font size.** `OrbitWordmark`'s viewBox is cut
 tight to the letters — 769 units of a 1000-unit em (`scripts/generate-wordmark.mjs`) — so a
 rendered height of H reads as roughly `H ÷ 0.769` of type. 45px here is ~59px of type,
-which lands on the mockup's 58px and rebrand draft §6's 60px. A cut of this page passed 66,
+which lands on the mockup's 58px and rebrand draft §6's 60px. An earlier cut passed 66,
 which was ~86px of type and a third too big. **Anyone specifying this component in px must
 say which of the two they mean.**
+
+**Two entrances, and both rest on their arrived state** — the wordmark and tagline rise
+(`.orbit-rise`, 0.85s, the tagline 0.18s behind), the accent bar draws from zero width
+(`.orbit-draw`, 0.55s after a 0.5s wait, with the 56px width living on `.orbit-accent`).
+`prefers-reduced-motion` switches both off with `animation: none`, which therefore lands
+on the finished design rather than on an invisible wordmark or a 0px bar.
 
 **Tagline: "Taking efficiency into new orbit"** — one tagline across the product. It
 replaced "One system. Zero chaos.", which is retired and appears nowhere in shipping code.
@@ -412,7 +381,7 @@ replaced "One system. Zero chaos.", which is retired and appears nowhere in ship
 **Nothing public-facing goes on this page** — no version number, no depot name, no
 supplier name, no live figures.
 
-Login field accepts email OR 10-digit mobile. The label now reads **"Username"** (rebrand
+Login field accepts email OR 10-digit mobile. The label reads **"Username"** (rebrand
 spec), with the affordance moved into the placeholder, "Email or 10-digit mobile". Input
 `type="text"` (not `email` — the browser blocks digit-only). `autoComplete="username"`.
 Field `id`/`name` remains `email` — that is the auth contract, not a display choice.
@@ -1705,4 +1674,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.24 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12 rewritten onto the reference file's geometry, and the ROOT CAUSE of two days of thrash is now recorded in it.** The rings' viewBox is `0 0 700 512`, from `docs/mockups/rebrand/orbit-login-rings-edge.html`. A step-5 brief derived `705×683` from the panel's own proportions instead; under `slice` the viewBox ASPECT sets the render scale, so that shrank every ring and dragged four extra curves onto the panel — everything chased afterwards (invisible arcs, a dead r=1010 ring, degrees-on-panel tables) was downstream of that one number. §12.1 is now the reference's table number for number, states that the aspect ratio is load-bearing and must never be "corrected" to the panel, and records that r=820 sitting off-panel is a decision and not a defect. §12.2 restores group rotation and carries a 🔴 against the dash-travel variant, which was built, measured, and reverted the same day for looking worse; the true fact underneath it is kept, that a gradient resolves in the referencing element's user space so rotation turns it with the shape and neither `userSpaceOnUse` nor SMIL changes that. The per-ring reduced-motion resting angles are the only thing here with no counterpart in the reference. §12.3's wordmark ink-height note stands. ⚠ Two earlier stamps today were BOTH written against code that has since been replaced — v5.22 called the 1010 radius load-bearing, v5.23 called the rings static. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*
+*UI v5.25 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12: the rings are GONE from the login panel and the removal is a decision, not a deferral.** Eleven graphic variations were tried on that panel in one session — arcs, ellipses, a node network, streaks, a depot scene — and none survived a full-screen panel; the arcs shipped for a day and were removed with `app/login/login-rings.tsx`. §12.1 now describes the panel as the app icon's gradient plus a 140px `feTurbulence` grain layer at .12, records that the grain is the only thing keeping a five-stop violet ramp from banding, and carries a 🔴 against reintroducing a drawn layer as a fresh idea. The whole viewBox / radius / degrees-on-panel apparatus is deleted — there is no ring geometry to document. §12.1 also flags that the panel gradient is the icon's ramp but NOT byte-identical to `public/icon-source.svg` (hot spot 12%/4% against 14%/6%, first two stops a few units apart), with both sets tabulated so a regeneration reconciles them instead of drifting. §12.2 keeps the wordmark ink-height rule and now states both entrances and their reduced-motion behaviour. ⚠ Three stamps today were written against code since replaced — v5.22 called a 1010 radius load-bearing, v5.23 called the rings static, v5.24 documented the reference ring geometry. All three described a layer that no longer exists. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*

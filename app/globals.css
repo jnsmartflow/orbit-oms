@@ -375,36 +375,18 @@ html, body { overscroll-behavior: none; }
 }
 .oa-btn-ghost:hover { background: #f7f8fa !important; }
 
-/* ── Login — orbit rings + entrance (rebrand step 5) ──────────────────────
+/* ── Login — panel entrance (rebrand step 5) ──────────────────────────────
 
-   Each arc group turns as a whole about 700,512 — the ring centre in the rings
-   SVG's own viewBox units, which is the panel's bottom-right corner once
-   `xMaxYMax slice` has pinned it there. `transform-box: view-box` is what makes
-   a transform-origin in those units mean anything on an SVG child.
+   🔴 There are no ring rules here any more, and their absence is a DECISION.
+   The login panel carries no drawn element: eleven graphic variations were tried
+   on it on 2026-09-09 and none survived a full-screen panel. The panel is the
+   app icon's gradient plus a grain layer, both in app/login/page.tsx. Do not add
+   a graphic layer back without new evidence — see CLAUDE_UI.md §12.
 
-   These are CSS animations and not SMIL <animateTransform> ON PURPOSE, and it
-   is the only departure from the reference mockup: a media query can switch a
-   CSS animation off and cannot touch an <animateTransform>, so SMIL cannot
-   honour prefers-reduced-motion. The motion is otherwise identical — the group
-   turns and each arc's gradient turns with it.
-
-   🔴 Do NOT "fix" that by holding the paths still and travelling the dash
-   instead. It was tried on 2026-09-09, it is geometrically tidier, and it looks
-   worse: the whole set stops reading as orbits. Reverted the same day.
-
-   prefers-reduced-motion has to leave the rings STATIC, and every animated state
-   below rests on an already-composed one — the accent bar at full width, each
-   ring parked at its own `--orbit-rest` angle. At a flat 0° every arc sits off
-   the panel and a reduced-motion visitor would get guide circles and nothing
-   else, so the resting angles are set per ring in login-rings.tsx.
+   What is left is the two entrances. Both rest on an already-arrived state, so
+   `animation: none` under prefers-reduced-motion lands on the design rather than
+   on an invisible wordmark or a 0px accent bar.
    Login page only — nothing else in the app uses these classes. */
-
-.orbit-ring     { transform-box: view-box; transform-origin: 700px 512px; }
-.orbit-ring-cw  { animation: orbit-spin-cw  120s linear infinite; }
-.orbit-ring-ccw { animation: orbit-spin-ccw 120s linear infinite; }
-
-@keyframes orbit-spin-cw  { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
-@keyframes orbit-spin-ccw { from { transform: rotate(360deg); } to { transform: rotate(0deg);   } }
 
 /* Wordmark and tagline rise in. Resting state is the arrived state. */
 .orbit-rise { animation: orbit-rise 0.85s cubic-bezier(0.16, 0.84, 0.44, 1) both; }
@@ -420,15 +402,8 @@ html, body { overscroll-behavior: none; }
 @keyframes orbit-draw { from { width: 0; } to { width: 56px; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .orbit-ring-cw,
-  .orbit-ring-ccw,
   .orbit-rise,
   .orbit-draw { animation: none; }
-
-  /* Park each ring where its arc is actually on the panel. Without this the
-     static frame is guide circles and nothing else. */
-  .orbit-ring-cw,
-  .orbit-ring-ccw { transform: rotate(var(--orbit-rest, 0deg)); }
 }
 
 /* ── Scrollbar hide utility ──────────────────────────────────────────────── */
