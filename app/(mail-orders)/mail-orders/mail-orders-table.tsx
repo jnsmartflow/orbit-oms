@@ -97,7 +97,7 @@ function getDeliveryDotColor(deliveryType: string | null | undefined): { color: 
   switch (deliveryType.toUpperCase()) {
     case "LOCAL": return { color: "bg-blue-600", title: "Local" };
     case "UPC": return { color: "bg-orange-600", title: "Upcountry" };
-    case "IGT": return { color: "bg-teal-600", title: "IGT" };
+    case "IGT": return { color: "bg-data-teal", title: "IGT" };
     case "CROSS":
     case "CROSS DEPOT": return { color: "bg-rose-600", title: "Cross Depot" };
     default: return null;
@@ -849,7 +849,7 @@ function OrderRow({
 
   const baseTdClass = [
     isFocused && 'bg-amber-50/70',
-    isPunched && 'bg-teal-50/40',
+    isPunched && 'bg-ok-bg/40',
   ].filter(Boolean).join(' ');
 
   const isSplit = !!order.splitLabel;
@@ -1794,7 +1794,7 @@ function ExpandRow({ order, onSplitComplete, colCount, lineStatuses, onOpenPanel
                   contact: 'bg-gray-50 text-gray-600 border-gray-200',
                   instruction: 'bg-gray-50 text-gray-500 border-gray-200',
                   cross: 'bg-purple-50 text-purple-600 border-purple-200',
-                  customer: 'bg-teal-50 text-teal-600 border-teal-200',
+                  customer: 'bg-cyan-50 text-data-cyan border-cyan-200',
                   unknown: 'bg-amber-50 text-amber-700 border-amber-200',
                 };
                 return (

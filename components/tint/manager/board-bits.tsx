@@ -144,7 +144,7 @@ export function OperatorAvatar({ name, done = false, size = 20 }: { name: string
       style={{ width: size, height: size, fontSize: size <= 20 ? 9 : 10 }}
       className={cn(
         "rounded-full text-white font-bold inline-flex items-center justify-center flex-shrink-0",
-        done ? "bg-green-600" : "bg-teal-600",
+        done ? "bg-green-600" : "bg-ink-400",
       )}
     >
       {initials(name)}

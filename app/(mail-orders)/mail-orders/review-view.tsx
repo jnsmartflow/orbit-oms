@@ -149,7 +149,7 @@ function getDeliveryDotClass(type: string | null | undefined): string {
     case "LOCAL": return "bg-blue-600";
     case "UPCOUNTRY":
     case "UPC": return "bg-orange-600";
-    case "IGT": return "bg-teal-600";
+    case "IGT": return "bg-data-teal";
     case "CROSS": return "bg-rose-600";
     default: return "bg-gray-300";
   }
@@ -2284,7 +2284,7 @@ export function ReviewView({
             <button
               type="button"
               onClick={() => copyAltCode(code)}
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[10px] font-semibold ${done ? "border-teal-600 bg-teal-600 text-white" : "border-teal-200 bg-white text-teal-700 hover:bg-teal-50"}`}
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[10px] font-semibold ${done ? "border-ok bg-ok text-white" : "border-teal-200 bg-white text-teal-700 hover:bg-teal-50"}`}
             >
               {done ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
             </button>

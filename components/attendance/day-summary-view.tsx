@@ -130,14 +130,14 @@ export function DaySummaryView({
                 <div className="h-12 w-full bg-gray-100 rounded-sm flex items-end overflow-hidden">
                   {hasData && minutes > 0 && (
                     <div
-                      className={`w-full rounded-sm ${isToday ? "bg-teal-500" : "bg-gray-400"}`}
+                      className={`w-full rounded-sm ${isToday ? "bg-ink-900" : "bg-gray-400"}`}
                       style={{ height: `${heightPct}%` }}
                     />
                   )}
                 </div>
                 <span
                   className={`text-[10px] tabular-nums ${
-                    isToday ? "text-teal-600 font-semibold" : "text-gray-400"
+                    isToday ? "text-ink-900 font-semibold" : "text-gray-400"
                   }`}
                 >
                   {WEEKDAY_LABELS[i]}

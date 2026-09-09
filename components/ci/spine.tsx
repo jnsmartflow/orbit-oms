@@ -333,7 +333,7 @@ export function CiSheetOption({
       className="w-full text-left px-4 py-3.5 flex items-center justify-between gap-3 active:bg-gray-50"
     >
       <span className="text-[15px] text-gray-900 truncate min-w-0">{label}</span>
-      {selected && <Check size={16} className="text-teal-600 shrink-0" strokeWidth={2.6} />}
+      {selected && <Check size={16} className="text-ok shrink-0" strokeWidth={2.6} />}
     </button>
   );
 }

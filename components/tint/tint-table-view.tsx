@@ -123,7 +123,7 @@ function getAgeBadge(orderDateTime: string | null, obdEmailDate: string | null):
 function deliveryDotCls(type: string | null | undefined): string {
   if (type === "Local")       return "bg-blue-600";
   if (type === "Upcountry")   return "bg-orange-600";
-  if (type === "IGT")         return "bg-teal-600";
+  if (type === "IGT")         return "bg-data-teal";
   if (type === "Cross Depot") return "bg-rose-600";
   return "bg-gray-300";
 }
@@ -201,7 +201,7 @@ function PlusBtn({ id, type, onStatusPopover }: {
 // ── Section header ───────────────────────────────────────────────────────────
 
 const SCHEME_MAP = {
-  teal:  { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-teal-500",  pill: "bg-gray-100 text-gray-700 border border-gray-200" },
+  teal:  { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-tint-600", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
   amber: { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-amber-400", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
   blue:  { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-blue-400",  pill: "bg-gray-100 text-gray-700 border border-gray-200" },
   green: { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-green-400", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
@@ -641,7 +641,7 @@ export function TintTableView({
 
       {/* ── Section 1: Pending Assignment ──────────────────────────────────── */}
       <div className="mb-4">
-        <SectionHeader dotClass="bg-teal-500" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="teal" />
+        <SectionHeader dotClass="bg-tint-600" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="teal" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
           <table style={tableStyle}>
             <Colgroup />

@@ -90,7 +90,7 @@ export function BillingTabBar({
         {live && (
           <span
             aria-hidden
-            className="h-[6px] w-[6px] rounded-full bg-teal-600 ring-2 ring-teal-600/15"
+            className="h-[6px] w-[6px] rounded-full bg-ok ring-2 ring-ok/15"
           />
         )}
         {label}

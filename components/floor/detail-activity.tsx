@@ -48,7 +48,7 @@ export function DetailActivity({ d }: { d: FloorDetail }) {
     <div className="py-1">
       {d.activity.map((e, i) => {
         const isHold = !e.synthetic && e.note !== null && HOLD_LOG_NOTES.includes(e.note);
-        const dotCls = e.synthetic ? "bg-[#0d9488]" : isHold ? "bg-[#f59e0b]" : "bg-[#e5e7eb]";
+        const dotCls = e.synthetic ? "bg-ink-900" : isHold ? "bg-[#f59e0b]" : "bg-[#e5e7eb]";
 
         if (e.synthetic) {
           const hint = d.dispatchSlotRuleId ? RULE_HINT[d.dispatchSlotRuleId] ?? d.dispatchSlotRuleId : "";
@@ -59,7 +59,7 @@ export function DetailActivity({ d }: { d: FloorDetail }) {
               <div className="min-w-0">
                 <div className="text-[12px] leading-[1.4] text-[#111827]">Dispatch slot set automatically{win}</div>
                 <div className="mt-[3px] text-[10.5px] text-[#9ca3af]">
-                  <span className="rounded-[3px] bg-[#f0fdfa] px-[5px] py-px font-semibold text-[#0f766e]">enrichment</span>
+                  <span className="rounded-[3px] bg-ink-50 px-[5px] py-px font-semibold text-ink-600">enrichment</span>
                   {hint && <span className="ml-1.5">{hint}</span>}
                 </div>
               </div>

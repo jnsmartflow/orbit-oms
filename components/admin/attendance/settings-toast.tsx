@@ -24,9 +24,9 @@ const SPECS: Record<
   { container: string; icon: LucideIcon; iconClass: string }
 > = {
   rollout: {
-    container: "bg-teal-50 border-teal-200 text-teal-900",
+    container: "bg-ok-bg border-ok/30 text-ok-text",
     icon: CheckCircle2,
-    iconClass: "text-teal-700",
+    iconClass: "text-ok-text",
   },
   reconsent: {
     container: "bg-amber-50 border-amber-200 text-amber-900",

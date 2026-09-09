@@ -17,7 +17,7 @@ const ROLES_CONFIG = [
   { slug: "tint_manager",     label: "Tint Mgr",       color: "#d97706" },
   { slug: "tint_operator",    label: "Tint Op",        color: "#c2410c" },
   { slug: "floor_supervisor", label: "Floor Sup",      color: "#16a34a" },
-  { slug: "picker",           label: "Picker",         color: "#0f766e" },
+  { slug: "picker",           label: "Picker",         color: "#65A30D" },
 ] as const;
 
 const SECTIONS = ["Admin Panel", "Master Data", "Operations"] as const;

@@ -470,7 +470,7 @@ function PickingCard({
    * behaviour. The supervisor still taps the card to select and uses the assign
    * bar he already has.
    */
-  stripe?: "teal" | "amber" | null;
+  stripe?: "ok" | "amber" | null;
   onOpen: () => void;
   onToggleSelect?: () => void;
   onLockTap?: () => void;
@@ -674,7 +674,7 @@ function PickingCard({
           // px-4 padding leaves room for its 4px.
           boxShadow:
             dup && selected
-              ? `${CARD_SHADOW_V2}, 0 0 0 2px #ffffff, 0 0 0 4px #0d9488`
+              ? `${CARD_SHADOW_V2}, 0 0 0 2px #ffffff, 0 0 0 4px #1B1826`
               : CARD_SHADOW_V2,
           // ⚠ ORDER MATTERS. assignLocked sets an inline background of its own
           // (#fcfcfd); the duplicate spread comes AFTER it so the red wins, and
@@ -706,7 +706,7 @@ function PickingCard({
           aria-hidden="true"
           className={
             "absolute left-0 inset-y-0 w-[4px] pointer-events-none " +
-            (stripe === "teal" ? "bg-teal-500" : "bg-amber-400")
+            (stripe === "ok" ? "bg-ok" : "bg-amber-400")
           }
         />
       )}
@@ -927,7 +927,7 @@ function BundleHeading({
   tone,
 }: {
   label: string;
-  tone: "teal" | "amber" | "grey";
+  tone: "ok" | "amber" | "grey";
 }): React.JSX.Element {
   return (
     <div className="flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-[7px] px-[2px]">
@@ -935,7 +935,7 @@ function BundleHeading({
         <span
           aria-hidden="true"
           className={
-            "w-[7px] h-[7px] rounded-full shrink-0 " + (tone === "teal" ? "bg-teal-500" : "bg-amber-400")
+            "w-[7px] h-[7px] rounded-full shrink-0 " + (tone === "ok" ? "bg-ok" : "bg-amber-400")
           }
         />
       )}
@@ -2903,13 +2903,13 @@ export function PickingBoardMobile(): React.JSX.Element {
                 <>
                   {bundles.same.map((rows) => (
                     <div key={`same-${rows[0].orderId}`} className="mb-[6px]">
-                      <BundleHeading label="Same material · one picker" tone="teal" />
+                      <BundleHeading label="Same material · one picker" tone="ok" />
                       {rows.map((row) => (
                         <PickingCard
                           key={row.orderId}
                           row={row}
                           variant="assign"
-                          stripe="teal"
+                          stripe="ok"
                           selected={selected.has(row.orderId)}
                           onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
                           onToggleSelect={() => toggleSelect(row.orderId)}
@@ -4605,7 +4605,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                                 <span
                                   className={
                                     "w-8 h-8 rounded-full text-white text-[12px] font-bold flex items-center justify-center shrink-0 " +
-                                    (free || refreshing ? "bg-teal-600" : "bg-gray-400")
+                                    (free || refreshing ? "bg-ok" : "bg-gray-400")
                                   }
                                 >
                                   {p.avatarInitial}

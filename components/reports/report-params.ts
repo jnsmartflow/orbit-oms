@@ -32,7 +32,7 @@ export const SMU_OPTIONS = ["Decorative Projects", "Retail Offtake"] as const;
 export const AREA_OPTIONS = [
   { value: "Local", dot: "#2563eb" },      // blue
   { value: "Upcountry", dot: "#ea580c" },  // orange
-  { value: "IGT", dot: "#0d9488" },        // teal
+  { value: "IGT", dot: "#0d9488" },        // data.teal — IGT keeps this exact hex, forever
   { value: "Cross Depot", dot: "#e11d48" }, // rose
 ] as const;
 

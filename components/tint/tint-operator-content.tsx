@@ -1549,8 +1549,8 @@ export function TintOperatorContent() {
 
   // ── Derived for layout ──────────────────────────────────────────────────────
   const progressPct = totalAssignedToday > 0 ? (totalDoneToday / totalAssignedToday) * 100 : 0;
-  const progressColor = progressPct < 25 ? "bg-amber-600" : progressPct < 75 ? "bg-teal-600" : "bg-green-600";
-  const progressTextColor = progressPct < 25 ? "text-amber-700" : progressPct < 75 ? "text-teal-700" : "text-green-700";
+  const progressColor = progressPct < 25 ? "bg-amber-600" : progressPct < 75 ? "bg-tint-600" : "bg-green-600";
+  const progressTextColor = progressPct < 25 ? "text-amber-700" : progressPct < 75 ? "text-tint-700" : "text-green-700";
 
   const currentTintingLines = selectedJob
     ? selectedJob.lineItems.filter(li => li.rawLineItem.isTinting)

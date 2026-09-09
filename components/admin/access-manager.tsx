@@ -207,7 +207,7 @@ export function AccessManager({
         className={cn(
           "mt-3 flex items-start gap-2.5 rounded-[9px] border px-3.5 py-3 text-[11.5px] leading-relaxed",
           live
-            ? "border-teal-200 bg-teal-50 text-teal-800"
+            ? "border-ok/30 bg-ok-bg text-ok-text"
             : "border-amber-200 bg-amber-50 text-amber-800",
         )}
       >
@@ -219,7 +219,7 @@ export function AccessManager({
             <span
               className={cn(
                 "rounded px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-white",
-                live ? "bg-teal-600" : "bg-amber-600",
+                live ? "bg-ok" : "bg-amber-600",
               )}
             >
               {live ? "Live — per-person ticks" : "Not live — job titles"}

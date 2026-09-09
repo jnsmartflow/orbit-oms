@@ -210,7 +210,7 @@ export function FormulaMatchModal({
                             ) : scalable ? (
                               <>
                                 <span className="bg-gray-100 text-gray-400 rounded px-1.5 py-px">{packCodeToLabel(row.packCode)}</span>
-                                <span className="text-teal-700 font-semibold">×{ratio}</span>
+                                <span className="text-ink-900 font-semibold">×{ratio}</span>
                               </>
                             ) : (
                               <>

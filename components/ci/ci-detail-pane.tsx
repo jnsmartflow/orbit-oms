@@ -281,7 +281,7 @@ export function CiDetailPane({
             <span className="text-[11.5px] text-gray-500">
               {isFull ? (
                 <>
-                  <span className="font-semibold text-teal-700">WHOLE BILL</span> · all{" "}
+                  <span className="font-semibold text-ink-900">WHOLE BILL</span> · all{" "}
                   {detail.lineCount} line{detail.lineCount === 1 ? "" : "s"}
                 </>
               ) : (
@@ -455,7 +455,7 @@ export function CiDetailPane({
                 (closed
                   ? "bg-[#E7F6EE] text-[#0A7C4A]"
                   : canClose
-                    ? "bg-[#E7F4F2] text-teal-700"
+                    ? "bg-warn-bg text-warn-text"
                     : "bg-[#f1f4f5] text-[#6b7480]")
               }
             >
@@ -494,7 +494,7 @@ function ReturnTypeTag({ full }: { full: boolean }): React.JSX.Element {
     <span
       className={
         "text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-[3px] rounded-full shrink-0 " +
-        (full ? "bg-[#E7F4F2] text-teal-700" : "bg-[#f1f4f5] text-[#6b7480]")
+        (full ? "bg-ink-50 text-ink-900" : "bg-[#f1f4f5] text-ink-500")
       }
     >
       {full ? "Full bill" : "Part"}

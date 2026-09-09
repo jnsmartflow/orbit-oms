@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 export function deliveryDotClass(type: string | null | undefined): string {
   if (type === "Local") return "bg-blue-600";
   if (type === "Upcountry") return "bg-orange-600";
-  if (type === "IGT") return "bg-teal-600";
+  if (type === "IGT") return "bg-data-teal";
   if (type === "Cross Depot") return "bg-rose-600";
   return "bg-gray-400";
 }

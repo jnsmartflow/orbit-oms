@@ -432,7 +432,7 @@ export default function CartPanel({
               <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 mb-2">Dispatch</p>
               <div className="flex gap-[7px]">
                 {([
-                  { value: "Normal", dot: "#0d9488" },
+                  { value: "Normal", dot: "#9C99AC" },
                   { value: "Urgent", dot: "#f59e0b" },
                   { value: "Call",   dot: "#ef4444" },
                 ] as const).map((d) => {

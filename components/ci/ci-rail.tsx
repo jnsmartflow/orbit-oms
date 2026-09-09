@@ -276,7 +276,7 @@ function CiRailCard({
           className={
             "ml-auto shrink-0 rounded-full px-[6px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] " +
             (row.returnType === "full"
-              ? "bg-[#E7F4F2] text-teal-700"
+              ? "bg-ink-50 text-ink-900"
               : "bg-[#E7EBEC] text-[#5C666E]")
           }
         >

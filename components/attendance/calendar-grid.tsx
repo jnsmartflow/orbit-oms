@@ -67,7 +67,7 @@ function cellClass(
 
   let bgText: string;
   if (cell.isToday) {
-    bgText = "bg-teal-600 text-white font-bold";
+    bgText = "bg-ink-900 text-white font-bold";
   } else if (cell.isFuture || !cell.isCurrentMonth) {
     bgText = "bg-gray-50 text-gray-300 font-medium";
   } else if (status === "PRESENT") {

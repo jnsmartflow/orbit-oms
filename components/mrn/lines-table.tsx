@@ -725,7 +725,7 @@ function DoneTable({
                   ? formatBatchNo(receivedFrom, l.batches[0].mfgMonth, l.batches[0].mfgYear)
                   : "—"}
                 {extra > 0 && (
-                  <span className="ml-[5px] rounded-[4px] bg-[#f0fdfa] px-[4px] py-px text-[10px] font-bold text-[#0f766e]">
+                  <span className="ml-[5px] rounded-[4px] bg-ink-50 px-[4px] py-px text-[10px] font-bold text-ink-600">
                     +{extra}
                   </span>
                 )}

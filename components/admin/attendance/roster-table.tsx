@@ -111,8 +111,8 @@ function RosterRowView({
     ? formatDuration(summary.overtimeMinutes)
     : "—";
 
-  const rowBg = isSelected ? "#f0fdfa" : "transparent"; // teal-50 for selected
-  const borderLeft = isSelected ? "3px solid #14b8a6" : "3px solid transparent"; // teal-500
+  const rowBg = isSelected ? "#FAFAFC" : "transparent"; // ink-25 for selected
+  const borderLeft = isSelected ? "3px solid #D6D3E0" : "3px solid transparent"; // ink-200
 
   return (
     <tr

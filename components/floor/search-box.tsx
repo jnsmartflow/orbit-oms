@@ -93,7 +93,7 @@ export function SearchHits({
             <span
               key={t.token}
               className={`inline-flex items-center gap-[5px] rounded-[4px] border px-2 py-[2px] font-mono text-[10.5px] ${
-                t.count > 0 ? "border-[#ccfbf1] bg-white text-[#0f766e]" : "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
+                t.count > 0 ? "border-ok/30 bg-white text-ok-text" : "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
               }`}
             >
               {t.token}

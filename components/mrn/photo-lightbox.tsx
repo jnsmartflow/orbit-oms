@@ -512,7 +512,7 @@ function ActionButton({
       className={
         "flex h-[46px] flex-1 items-center justify-center gap-2 rounded-[12px] text-[14px] font-semibold disabled:opacity-50 " +
         (tone === "ok"
-          ? "bg-teal-600 text-white"
+          ? "bg-ok text-white"
           : tone === "bad"
             ? "bg-red-500/15 text-red-200 hover:bg-red-500/25"
             : "bg-white/10 text-white hover:bg-white/20")

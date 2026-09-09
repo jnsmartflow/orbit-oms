@@ -2934,7 +2934,7 @@ export default function PoPage(): React.JSX.Element {
               <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">Dispatch</p>
               <div className="grid grid-cols-3 gap-2">
                 {([
-                  { value: "Normal", dot: "bg-teal-500",  on: "border-teal-500 bg-teal-50 text-teal-700" },
+                  { value: "Normal", dot: "bg-ink-400",   on: "border-ink-400 bg-ink-50 text-ink-700" },
                   { value: "Urgent", dot: "bg-amber-400", on: "border-amber-300 bg-amber-50 text-amber-700" },
                   { value: "Call",   dot: "bg-red-400",   on: "border-red-300 bg-red-50 text-red-700" },
                 ] as const).map((d) => {

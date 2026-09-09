@@ -215,12 +215,12 @@ export function RailCard({
   const cardStyle: React.CSSProperties | undefined = dup
     ? {
         background: DUP_SO_SOFT_SURFACE,
-        borderColor: highlighted ? "#2dd4bf" : DUP_SO_SOFT_BORDER,
+        borderColor: highlighted ? "#1B1826" : DUP_SO_SOFT_BORDER,
         // The bar comes from the shared constant, never a re-typed hex — the
         // file-top rule in duplicate-so-tag.tsx. On a search hit it is prepended
         // to the ring so one boxShadow carries both.
         boxShadow: highlighted
-          ? `${DUP_SO_SOFT_BAR}, 0 0 0 2px #ffffff, 0 0 0 4px #0d9488`
+          ? `${DUP_SO_SOFT_BAR}, 0 0 0 2px #ffffff, 0 0 0 4px #1B1826`
           : DUP_SO_SOFT_BAR,
       }
     : undefined;
@@ -256,7 +256,7 @@ export function RailCard({
             // highlight classes; the ring is folded into that same boxShadow.
             ""
           : highlighted
-            ? "bg-white border-teal-400 ring-2 ring-teal-400/25"
+            ? "bg-white border-ink-900 ring-2 ring-ink-900/25"
             : "bg-white border-gray-200 hover:border-gray-300")
       }
       style={cardStyle}

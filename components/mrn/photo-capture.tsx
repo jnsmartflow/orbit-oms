@@ -309,7 +309,7 @@ export function PhotoStrip({
             // No blob to show — the row exists but this phone never held the
             // image. Saying so beats an empty box or a broken <img>.
             <div className="flex h-[62px] w-[62px] shrink-0 flex-col items-center justify-center rounded-[10px] border border-dashed border-gray-300 bg-gray-50 text-center">
-              <Check size={13} className="text-teal-600" />
+              <Check size={13} className="text-ok" />
               <span className="mt-0.5 text-[10px] font-semibold leading-tight text-[#667085]">
                 {serverCount} saved
               </span>

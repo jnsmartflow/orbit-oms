@@ -346,8 +346,8 @@ export function BillingPickingTab({ date }: { date?: string }) {
         <span className="text-[12.5px] font-bold text-gray-800">
           {loading ? "Loading…" : `${pending.length} bill${pending.length === 1 ? "" : "s"} ready to invoice`}
         </span>
-        <span className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-teal-700">
-          <span className="h-[7px] w-[7px] rounded-full bg-teal-600 ring-[3px] ring-teal-600/15" />
+        <span className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-ok-text">
+          <span className="h-[7px] w-[7px] rounded-full bg-ok ring-[3px] ring-ok/15" />
           live
         </span>
       </div>

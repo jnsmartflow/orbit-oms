@@ -79,7 +79,7 @@ const BADGE_STYLES: Record<string, string> = {
   line_added:         "bg-green-50 border-green-200 text-green-700",
   line_patched:       "bg-blue-50 border-blue-200 text-blue-700",
   line_removed:       "bg-red-50 border-red-200 text-red-700",
-  line_restored:      "bg-teal-50 border-teal-200 text-teal-700",
+  line_restored:      "bg-ok-bg border-ok/30 text-ok-text",
 };
 
 function badgeClass(changeType: string): string {

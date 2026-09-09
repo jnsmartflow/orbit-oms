@@ -332,7 +332,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
                 </TableCell>
                 <TableCell>
                   {c.isKeySite ? (
-                    <Badge variant="default" className="bg-blue-500 hover:bg-teal-500">Key</Badge>
+                    <Badge variant="default" className="bg-ink-100 text-ink-700 hover:bg-ink-200">Key</Badge>
                   ) : (
                     <span className="text-gray-300">—</span>
                   )}

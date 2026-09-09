@@ -735,7 +735,7 @@ export function LineSheet({
               {/* The count on the row itself, so a photo he just staged or saved
                   is visible without opening anything. */}
               {serverPhotos + staged.length > 0 && (
-                <span className="shrink-0 rounded-[6px] bg-teal-50 px-[7px] py-[3px] text-[12px] font-bold text-teal-700">
+                <span className="shrink-0 rounded-[6px] bg-ink-50 px-[7px] py-[3px] text-[12px] font-bold text-ink-600">
                   {serverPhotos + staged.length}
                 </span>
               )}

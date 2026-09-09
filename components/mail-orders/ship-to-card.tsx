@@ -59,7 +59,7 @@ function getDeliveryDotClass(type: string | null | undefined): string {
     case "LOCAL": return "bg-blue-600";
     case "UPCOUNTRY":
     case "UPC": return "bg-orange-600";
-    case "IGT": return "bg-teal-600";
+    case "IGT": return "bg-data-teal";
     case "CROSS": return "bg-rose-600";
     default: return "bg-gray-300";
   }

@@ -111,7 +111,18 @@ const config: Config = {
           bg:      "#FFFBEB",
           text:    "#B45309",
         },
-        bad: {
+        // 🔴 NAMED `danger`, NOT `urgent`, AND THE NAME IS THE RULE.
+        // CLAUDE_UI.md v5.21 (2026-09-08): red is ERROR AND DESTRUCTIVE ONLY —
+        // a failed send, a bounced order, a blocked dealer, Delete/Clear/Replace,
+        // Voided/Removed, Hold. **Never a priority.** Urgency is amber (`warn`),
+        // because red spent on a priority has nothing left to say when something
+        // actually breaks. The colour spec v2 predates that ruling and still calls
+        // this token `urgent`; the spec is being corrected, not this file.
+        // ⚠ Twelve live sites still paint Urgent in red. That migration is
+        // DEFERRED BY DECISION and is NOT part of the rebrand — its own session,
+        // after the predicate is settled. See
+        // docs/prompts/drafts/code-discovery-2026-09-08-urgent-red-migration.md.
+        danger: {
           DEFAULT: "#E11D48",
           bg:      "#FFF1F2",
           text:    "#BE123C",
@@ -120,11 +131,16 @@ const config: Config = {
         // The favourite star, and nothing else.
         fav: "#F59E0B",
         data: {
-          teal:   "#0D9488", // IGT delivery type — unchanged, no edit
-          cyan:   "#0891B2", // Retail Offtake SMU
-          lime:   "#65A30D", // role: picker
+          teal:   "#0D9488", // IGT delivery type — the ONE colour the rebrand does not move
+          blue:   "#2563EB", // Local delivery type
           orange: "#EA580C", // Upcountry delivery type · role: floor_supervisor
+          rose:   "#E11D48", // Cross delivery type. ⚠ Same hex as `danger` — pre-existing,
+                             // not caused by the rebrand, and deliberately left alone
+                             // (colour spec §6 item 2). Do not "resolve" it here.
+          cyan:   "#0891B2", // Retail Offtake SMU · mail-order remark type "customer"
+          lime:   "#65A30D", // role: picker
           pink:   "#DB2777", // Decorative Projects SMU (moves off #4F46E5) · role: support
+                             // · mail-order remark type "cross" (ruled 2026-09-09, applied in step 3)
           slate:  "#475569", // role: admin · unknown-category fallback
         },
       },
