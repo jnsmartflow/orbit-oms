@@ -175,7 +175,7 @@ export function DispatchCutoffsForm({ initialConfigs, deliveryTypes }: DispatchC
                       className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors disabled:opacity-40 ${
                         config.isActive
                           ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
-                          : "bg-red-50 text-red-600 border-red-300 hover:bg-red-100"
+                          : "bg-ink-50 text-ink-500 border-ink-200 hover:bg-ink-100"
                       }`}
                     >
                       {config.isActive ? "● Active" : "○ Inactive"}

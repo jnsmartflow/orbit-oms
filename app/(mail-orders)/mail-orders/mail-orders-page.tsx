@@ -1415,7 +1415,7 @@ export default function MailOrdersPage() {
                     const el = document.querySelector('tr[data-urgent="true"]');
                     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
                   }}
-                  className="text-[10px] font-medium text-red-600 hover:text-red-800 underline"
+                  className="text-[10px] font-medium text-brand-700 hover:text-brand-800 underline"
                 >
                   Jump to first ↓
                 </button>

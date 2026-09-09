@@ -217,7 +217,7 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
                               <button
                                 type="button"
                                 onClick={() => toggle(siteKey)}
-                                className="text-[10px] font-semibold text-red-600 hover:text-red-700 text-left"
+                                className="text-[10px] font-semibold text-brand-700 hover:text-brand-800 text-left"
                               >
                                 +{row.otherSites.length} site{row.otherSites.length > 1 ? "s" : ""}
                               </button>
@@ -246,7 +246,7 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
                               <button
                                 type="button"
                                 onClick={() => toggle(packKey)}
-                                className="text-[10px] font-semibold text-red-600 hover:text-red-700 text-left"
+                                className="text-[10px] font-semibold text-brand-700 hover:text-brand-800 text-left"
                               >
                                 +{otherVariants.length} pack{otherVariants.length > 1 ? "s" : ""}
                               </button>

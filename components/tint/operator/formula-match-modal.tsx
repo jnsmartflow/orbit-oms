@@ -191,7 +191,7 @@ export function FormulaMatchModal({
                           <button
                             type="button"
                             onClick={() => toggle(key)}
-                            className="block text-[11.5px] font-semibold text-red-600 hover:text-red-700 mt-[3px] text-left"
+                            className="block text-[11.5px] font-semibold text-brand-700 hover:text-brand-800 mt-[3px] text-left"
                           >
                             +{row.otherSites.length} site{row.otherSites.length > 1 ? "s" : ""}
                           </button>

@@ -222,7 +222,7 @@ export function MobileShellProvider({
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex-1 rounded-xl bg-red-600 py-3 text-[14px] font-semibold text-white"
+              className="flex-1 rounded-xl bg-brand-600 hover:bg-brand-700 py-3 text-[14px] font-semibold text-white"
             >
               Sign out
             </button>
