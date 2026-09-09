@@ -3,14 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "./sort";
 import {
-  // SUPPORT_DONE_OUTPUT was imported here for the 'rolling' arm's carry-over
-  // clause only, and went with it (2026-07-28). PICKING_OPEN_STAGES already
-  // contains that stage, so nothing here needs the bare constant.
+  // SUPPORT_DONE_OUTPUT came back on 2026-09-09 when the openPending arm split
+  // its waiting branch out of PICKING_OPEN_STAGES (see buildPickingWhere). It
+  // had been dropped on 2026-07-28 with the 'rolling' arm, on the reasoning
+  // that PICKING_OPEN_STAGES already contained the stage — true then, and no
+  // longer the shape this file uses.
+  SUPPORT_DONE_OUTPUT,
   PICK_ASSIGNED,
   PICK_DONE,
   PICK_CHECKED,
   PICKING_ACTIVE_STAGES,
-  PICKING_OPEN_STAGES,
 } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
@@ -296,10 +298,12 @@ export function buildPickingWhere(
   // callers are untouched.
   const { start: checkedStart, end: checkedEnd } = getISTDayRange();
 
-  // Two shapes, one stage universe. PICKING_OPEN_STAGES ⊂ PICKING_ACTIVE_STAGES
-  // by construction (lib/workflow-stages.ts), so the scopes cannot drift into
-  // showing different bills on desktop vs. mobile. Neither admits 'closed' —
-  // see that file for the 572-row evidence behind that exclusion.
+  // Two shapes, one stage universe. The three stages this scope's first two OR
+  // branches name below are exactly PICKING_OPEN_STAGES, which is a strict
+  // subset of PICKING_ACTIVE_STAGES by construction (lib/workflow-stages.ts),
+  // so the scopes cannot drift into showing different bills on desktop vs.
+  // mobile. Neither admits 'closed' — see that file for the 572-row evidence
+  // behind that exclusion.
   const where: Prisma.ordersWhereInput =
     scope === "openPending"
       ? {
@@ -310,7 +314,25 @@ export function buildPickingWhere(
           // per the locked design ("only the Checked band stays on today") —
           // but on the CHECK date, not the promise date. See below.
           OR: [
-            { workflowStage: { in: PICKING_OPEN_STAGES } },
+            // ── WAITING — nobody is holding it yet ────────────────────────
+            //
+            // ⚠ SPLIT OUT OF THE IN-PROGRESS BRANCH BELOW ON 2026-09-09, and
+            // the split is the whole point: this branch and the next one were
+            // ONE `{ workflowStage: { in: PICKING_OPEN_STAGES } }` clause, so
+            // any term added to narrow the waiting set narrowed assigned and
+            // picked bills too — which would make work vanish out of a
+            // picker's hands mid-pick. As two siblings under the same OR, a
+            // later visibility filter can be AND-ed onto THIS branch alone.
+            //
+            // The union is unchanged. PICKING_OPEN_STAGES is exactly
+            // [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE], so these two
+            // branches together admit precisely the rows the single `in`
+            // clause admitted — verified by an identical per-stage row census
+            // before and after the split. Do NOT re-merge them for tidiness,
+            // and do NOT reorder them against the checked branch.
+            { workflowStage: SUPPORT_DONE_OUTPUT },
+            // ── IN PROGRESS — a picker has it, or has finished picking it ──
+            { workflowStage: { in: [PICK_ASSIGNED, PICK_DONE] } },
             // Everything the floor CHECKED TODAY, whatever day it was due.
             //
             // 🔴 FENCED ON `pick_assignments.checkedAt`, NOT `dispatchTargetDate`
