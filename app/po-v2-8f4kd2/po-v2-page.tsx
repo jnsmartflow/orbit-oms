@@ -499,6 +499,28 @@ export default function PoV2Page(): React.JSX.Element {
     return customers.find((c) => c.code === snap.shipToCode) ?? null;
   }
 
+  /**
+   * 🔴 THE ONE HANDLER BEHIND ALL FIVE BOTTOM-NAV SITES.
+   *
+   * A tab goes to its own screen from anywhere — including Board, which is
+   * `screen: "order"` and was not reachable from the nav at all until this.
+   *
+   * It clears BOTH detail states on the way. A detail screen is `screen ===
+   * "draftDetail" && openDraftDetail`, so leaving the object behind would not
+   * show the wrong screen today — but it would keep a stale draft alive behind
+   * a rename or a delete, and the confirm sheets read those very fields.
+   *
+   * 🔴 THIS IS NOT THE CHEVRON. From a detail the chevron goes back to the
+   * LIST it came from (onBack, at each detail's call site); the Board tab goes
+   * to the BOARD. Two controls, two destinations, and neither may be made to
+   * do the other's job.
+   */
+  function navTo(next: "order" | "drafts" | "sentList"): void {
+    setOpenDraftDetail(null);
+    setOpenSent(null);
+    setScreen(next);
+  }
+
   /** REPLACE — the board becomes this order, dealer and remarks included. */
   function applyReplace(snap: V2Snapshot): void {
     setSheet(null); setPendingLoad(null);
@@ -1031,7 +1053,7 @@ export default function PoV2Page(): React.JSX.Element {
           // he is building and Clear order on the board is how that goes.
           onDelete={(d) => { setDeleteTarget(d); setSheet("delete"); }}
         />
-        <BottomNav onNavigate={(next) => setScreen(next)} />
+        <BottomNav active="drafts" onNavigate={navTo} />
         {toastHost}
 
         {loadSheet}
@@ -1049,7 +1071,7 @@ export default function PoV2Page(): React.JSX.Element {
           orders={sentOrders}
           onOpen={(o) => { setOpenSent(o); setScreen("sentDetail"); }}
         />
-        <BottomNav onNavigate={(next) => setScreen(next)} />
+        <BottomNav active="sent" onNavigate={navTo} />
         {toastHost}
 
         {loadSheet}
@@ -1104,7 +1126,7 @@ export default function PoV2Page(): React.JSX.Element {
             </>
           }
         />
-        <BottomNav onNavigate={(next) => setScreen(next)} />
+        <BottomNav active="drafts" onNavigate={navTo} />
         {toastHost}
         {loadSheet}
         {renameSheet}
@@ -1145,7 +1167,7 @@ export default function PoV2Page(): React.JSX.Element {
             </button>
           }
         />
-        <BottomNav onNavigate={(next) => setScreen(next)} />
+        <BottomNav active="sent" onNavigate={navTo} />
         {toastHost}
         {loadSheet}
       </>
@@ -1588,9 +1610,12 @@ export default function PoV2Page(): React.JSX.Element {
         </div>
       )}
 
-      {/* The nav lives on the BOARD only — never inside a drawer, the review
-          screen or the dealer sheet, all of which are their own context. */}
-      <BottomNav onNavigate={(next) => setScreen(next)} />
+      {/* 🔴 FIVE SITES, AND THE LIST IS CLOSED: the board, the two lists and
+          the two details. It is NEVER inside a drawer, the review screen, the
+          dealer sheet or the post-send confirmation — each of those is its own
+          context with its own way out, and a tab bar under a decision invites
+          a tap that abandons it. */}
+      <BottomNav active="board" onNavigate={navTo} />
       {toastHost}
 
       {/* ── PRODUCT DRAWER, from the BOARD ─────────────────────────────── */}
@@ -1747,21 +1772,36 @@ function firstWord(name: string | undefined): string {
 }
 
 /**
- * Board / Drafts / Sent. It renders on the board, so Board is always the
- * active item and there is no prop to pass wrong.
+ * Board / Drafts / Sent.
  *
  * 🔴 IT COSTS ABOUT 50px OF BOARD AND IS WORTH IT. Without it there is no way
  * at all to reach a saved draft or today's sent orders — po2_saved_drafts and
  * po2_sent_orders would keep being written and could never be read back. That
  * was the regression the old dealer-list screen had been quietly covering.
+ *
+ * 🔴 IT USED TO HARDCODE ITSELF, AND THAT WAS ONE BUG WEARING TWO FACES.
+ *
+ * It was written when it rendered on the BOARD and nowhere else, so it said
+ * `on: true` for Board and gave Board no `go` — the comment above it even
+ * claimed "there is no prop to pass wrong". bba21b8c put it on four more
+ * screens without giving it either. From the Drafts or Sent list, and from
+ * both details, Board was therefore the lit tab AND a dead button: the
+ * handler is `go && onNavigate(go)` and Board had no `go`. Wrong tab lit,
+ * no way home, one cause.
+ *
+ * So the active tab is now a PROP the caller states, and every item has a
+ * destination. `active` is the SCREEN GROUP, not the screen: a detail lights
+ * the tab of the list it belongs to, because that is where the user is.
  */
-function BottomNav({ onNavigate }: {
-  onNavigate: (screen: "drafts" | "sentList") => void;
+function BottomNav({ active, onNavigate }: {
+  active: "board" | "drafts" | "sent";
+  onNavigate: (screen: "order" | "drafts" | "sentList") => void;
 }): React.JSX.Element {
-  const items: { label: string; icon: typeof Grid2x2; on: boolean; go?: "drafts" | "sentList" }[] = [
-    { label: "Board",  icon: Grid2x2,  on: true },
-    { label: "Drafts", icon: FileText, on: false, go: "drafts" },
-    { label: "Sent",   icon: Send,     on: false, go: "sentList" },
+  const items: { label: string; icon: typeof Grid2x2; tab: "board" | "drafts" | "sent";
+                 go: "order" | "drafts" | "sentList" }[] = [
+    { label: "Board",  icon: Grid2x2,  tab: "board",  go: "order" },
+    { label: "Drafts", icon: FileText, tab: "drafts", go: "drafts" },
+    { label: "Sent",   icon: Send,     tab: "sent",   go: "sentList" },
   ];
   return (
     <nav
@@ -1772,18 +1812,24 @@ function BottomNav({ onNavigate }: {
         paddingBottom: "max(env(safe-area-inset-bottom), 8px)",
       }}
     >
-      {items.map(({ label, icon: Icon, on, go }) => (
-        <button
-          key={label} type="button"
-          onClick={() => go && onNavigate(go)}
-          className="flex flex-1 flex-col items-center gap-0.5"
-        >
-          <Icon className="h-[18px] w-[18px]" strokeWidth={2.5} style={{ color: on ? VIOLET : FAINT }} />
-          <span className="text-[10px] font-bold" style={{ color: on ? VIOLET : FAINT }}>
-            {label}
-          </span>
-        </button>
-      ))}
+      {items.map(({ label, icon: Icon, tab, go }) => {
+        const on = tab === active;
+        return (
+          <button
+            key={label} type="button"
+            // Every tab navigates, the lit one included. Tapping the screen you
+            // are already on is a no-op state set, not a dead button.
+            onClick={() => onNavigate(go)}
+            aria-current={on ? "page" : undefined}
+            className="flex flex-1 flex-col items-center gap-0.5"
+          >
+            <Icon className="h-[18px] w-[18px]" strokeWidth={2.5} style={{ color: on ? VIOLET : FAINT }} />
+            <span className="text-[10px] font-bold" style={{ color: on ? VIOLET : FAINT }}>
+              {label}
+            </span>
+          </button>
+        );
+      })}
     </nav>
   );
 }
