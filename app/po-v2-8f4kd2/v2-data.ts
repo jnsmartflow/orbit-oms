@@ -358,6 +358,10 @@ export const TILE_IMAGES: ReadonlySet<string> = new Set([
   "damp-2in1",
   "ext-acrylic",
   "gloss",
+  // 2026-09-10 — the first Wood tile to get a photograph of its own range.
+  // 2k-matt and prime-matt were already here; their FILES were replaced in the
+  // same pass, so those two tiles change picture rather than gain one.
+  "luxurio",
   "max",
   "pearl-glo",
   "platinum-glo",
