@@ -1770,10 +1770,16 @@ export const BOARD: readonly V2BoardFamily[] = [
         members: [{ sap: "VT PEARL GLO", label: "Pearl Glo" }] },
       { key: "VT PLATINUM GLO", label: "Platinum Glo", slug: "platinum-glo",
         members: [{ sap: "VT PLATINUM GLO", label: "Platinum Glo" }] },
+      // ⚠ THE KEY SAYS MATT AND MATT IS SECOND. Deliberate — keys are frozen
+      // historical strings (see V2BoardTile.key). Renaming it to "VT ETERNA"
+      // would delete every stored Eterna favourite. Do not tidy it.
       { key: "VT ETERNA MATT", label: "Eterna", slug: "vt-eterna",
         members: [
-          { sap: "VT ETERNA MATT",     label: "Matt", slug: "product-vt-eterna-matt" },
+          // Owner's order, 2026-09-09. Eterna leads the range so it leads the
+          // drawer. It also becomes the tile's leader for LEADER_TILE, but it
+          // carries its own tin, so nothing on screen moves except the order.
           { sap: "VT ETERNA",          label: "Eterna", slug: "product-vt-eterna" },
+          { sap: "VT ETERNA MATT",     label: "Matt", slug: "product-vt-eterna-matt" },
           { sap: "VT ETERNA HI-SHEEN", label: "Hi-Sheen", slug: "product-vt-eterna-hi-sheen" },
         ] },
       // 🔴 FOUR MEMBERS, NOT SIX. VT DIAMOND GLO and VAF LEFT THE BOARD on
@@ -2012,12 +2018,19 @@ export const BOARD: readonly V2BoardFamily[] = [
       // ALL FOUR ARE PINNED, so the tile is rail-products with no top strip.
       // Three pin to "Int Clear" and the Sealer to "Clear"; the strings are the
       // catalog's own, case for case (see V2Member.option).
+      // ⚠ THE KEY SAYS DEAD MATT AND DEAD MATT IS FOURTH. Same rule as Eterna
+      // above — frozen, not tidied.
       { key: "HYDRO PU DEAD MATT", label: "Hydro PU", slug: "hydro-pu",
         members: [
-          { sap: "HYDRO PU DEAD MATT", label: "Dead Matt", option: "Int Clear" },
+          // Matt, Gloss, Sealer, Dead Matt — owner's ruling, 2026-09-09. The
+          // first three now sit in the same places as PU Prime's, 2K PU's and
+          // Luxurio's, so the thumb lands on the same finish whichever of the
+          // four ranges he is in. Dead Matt is the one finish only this range
+          // has, so it goes last rather than displacing the pattern.
           { sap: "HYDRO PU MATT",      label: "Matt",      option: "Int Clear" },
           { sap: "HYDRO PU GLOSS",     label: "Gloss",     option: "Int Clear" },
           { sap: "HYDRO PU SEALER",    label: "Sealer",    option: "Clear" },
+          { sap: "HYDRO PU DEAD MATT", label: "Dead Matt", option: "Int Clear" },
         ] },
       // 🔴 GROUPED BY RANGE, NOT BY FUNCTION, 2026-09-08.
       //
