@@ -262,6 +262,13 @@ function numberedBase(value: string): boolean {
 const RAIL_W    = 104;  // the column, gutters and border included
 const RAIL_CELL = 88;   // the tile's cell inside it — square plus name
 const RAIL_TILE = 60;   // the square itself, which is a picture and never a word
+/**
+ * ONE size for every tile label in the drawer, rail and strip alike — owner
+ * ruling 2026-09-09. Named rather than inlined so the two call sites cannot
+ * drift apart, and so the reasoning has somewhere to point. See TileName for
+ * why it is 9 and what would let it go back up.
+ */
+const TILE_LABEL_PX = 9;
 const TILE_GAP  = 12;   // between tiles — the brief's floor is 10
 
 /**
@@ -1440,17 +1447,43 @@ function BigTile({ label, cell, square, lines, badge, hideLabel = false, fill, i
 }
 
 /**
- * The name under a tile — sized to the longest WORD, never broken mid-word.
+ * The name under a tile — ONE SIZE, centred, on a fixed two-line block.
  *
- * 🔴 THE RAMP IS MEASURED AGAINST CAPITALS, because option names arrive from
- * the catalog uppercase and uppercase runs about 20% wider per character than
- * lowercase. In an 88px rail cell: BRILLIANT (nine letters) lands at 10px and
- * about 56px wide, so "BRILLIANT WHITE" sets as two comfortable lines; TIMBER
- * GOLDEN BROWN sets at 11px as TIMBER / GOLDEN BROWN; RARE PEARL COPPER as RARE
- * PEARL / COPPER; SPECIAL TEAK fits on one. The longest single word anywhere in
- * the catalog is FASTYELLOWGREEN at fifteen, which drops to 9px and about 84px
- * — still inside the cell, still unbroken.
+ * 🔴 v2 TILE LABEL: CENTRED · ONE SIZE · FIXED 2-LINE BLOCK.
+ * Applies to every image-with-label grid in v2. Owner ruling 2026-09-09.
+ * The other grid is the BOARD in po-v2-page.tsx; keep the two in step.
  *
+ * ── WHAT WAS HERE, AND WHY IT WENT ────────────────────────────────────────
+ * A three-step ramp sized the label to its longest WORD: 11px up to eight
+ * characters, 10px to eleven, 9px beyond. It existed to stop a real clip and
+ * the arithmetic was sound — the ramp is measured against CAPITALS, because
+ * option names arrive from the catalog uppercase and uppercase runs about 20%
+ * wider per character than lowercase.
+ *
+ * It was also the reason the grids never looked uniform. Alignment alone could
+ * not fix that while neighbouring tiles set their names at different sizes, so
+ * the ruling took the variance rather than the alignment.
+ *
+ * ── WHY 9px, AND WHAT WOULD LET IT GO BACK UP ─────────────────────────────
+ * 9px is the size the ramp's own bottom step reached, so it is the size that
+ * fits everything. Counted from the live catalog on 2026-09-09, 221 labels
+ * reach this component and exactly TWO needed it:
+ *
+ *   FASTYELLOWGREEN     15 chars, one word — Universal Stainer, row 21700
+ *   Pretreatment Coat   12 chars in "Pretreatment" — Coats & Additives
+ *
+ * 198 of the 221 were at 11px. Dropping all of them two points to accommodate
+ * two is the cost of uniformity and the owner accepted it knowingly.
+ *
+ * ⚠ FASTYELLOWGREEN IS ALMOST CERTAINLY A DATA DEFECT, NOT A PRODUCT NAME. Its
+ * nine siblings on the same product are all spaced — FAST YELLOW, FAST GREEN,
+ * FAST BLUE, FAST VIOLET, FAST RED, FAST ORANGE — and only this one is run
+ * together. It is a catalog string, so fixing it is a data change and was out
+ * of scope here. If it is ever corrected to "FAST YELLOW GREEN", the longest
+ * word on the board drops to twelve and this size can be revisited. Do NOT
+ * special-case the string in code; correct the row or leave it.
+ *
+ * ── WHAT DID NOT CHANGE ───────────────────────────────────────────────────
  * THE WORD NEVER BREAKS — the board's own rule. A name too long for its lines
  * clips rather than hyphenating, which is the lesser wrong at this size, and it
  * cannot cost an order: the NAME BAR above the packs carries the full name the
@@ -1458,13 +1491,19 @@ function BigTile({ label, cell, square, lines, badge, hideLabel = false, fill, i
  *
  * THREE LINES IN THE RAIL, TWO IN THE STRIP. A vertical column can spend a
  * line; a horizontal row would have to give that height to every tile in it.
- * The third line is what lets "Epoxy Insulator Hardener" read whole.
+ * The third line is what lets "Epoxy Insulator Hardener" read whole. The CLAMP
+ * is untouched — only the block's minimum height is new.
+ *
+ * 🔴 minHeight IS IN em, NOT PIXELS. 2 lines x the 1.2 line-height below =
+ * 2.4em, so the block is two lines whatever the font size is. In px it would
+ * silently become the wrong height the first time the size changed, which is
+ * the exact fault this ruling exists to remove. min-height and not height,
+ * because a rail label that legitimately runs to three lines must be allowed
+ * to, rather than be cut through the middle of the third.
  */
 function TileName({ label, lines, selected }: {
   label: string; lines: number; selected: boolean;
 }): React.JSX.Element {
-  const longest = label.split(/\s+/).reduce((n, w) => Math.max(n, w.length), 0);
-  const size = longest <= 8 ? 11 : longest <= 11 ? 10 : 9;
   return (
     <span
       className="block w-full text-center"
@@ -1475,7 +1514,15 @@ function TileName({ label, lines, selected }: {
         // 500 unselected this line was never the problem; it was being drowned
         // by an 800-weight glyph three times its size, and dropping the glyph
         // is what lets it be read at all.
-        fontSize: size, lineHeight: 1.2, fontWeight: selected ? 600 : 500,
+        //
+        // ⚠ THIS WEIGHT CHANGE IS UNDER REVIEW, NOT SETTLED. Selection is
+        // already carried by the violet RING on the square above (BigTile's
+        // boxShadow) and by aria-pressed, so the weight may be a fourth signal
+        // for one state. Left ALONE deliberately pending an owner answer —
+        // raised 2026-09-09. It is a state signal, not size variance, so it is
+        // not what the uniformity ruling was about.
+        fontSize: TILE_LABEL_PX, lineHeight: 1.2, fontWeight: selected ? 600 : 500,
+        minHeight: "2.4em",
         display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines,
         overflow: "hidden", overflowWrap: "normal", wordBreak: "normal", hyphens: "none",
       }}

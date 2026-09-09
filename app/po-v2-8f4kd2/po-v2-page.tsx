@@ -79,10 +79,30 @@ import {
 // board into horizontal scroll. `overflow: hidden` makes an over-long word
 // cut off inside its own cell instead, so the board's no-sideways-scroll rule
 // cannot be broken by a future product name.
+/**
+ * 🔴 v2 TILE LABEL: CENTRED · ONE SIZE · FIXED 2-LINE BLOCK.
+ * Applies to every image-with-label grid in v2. Owner ruling 2026-09-09.
+ *
+ * The other grid is BigTile/TileName in product-drawer.tsx, which serves both
+ * the rail and the strip. There is no third — the two remaining image sites
+ * (the Tin in order-sheet.tsx and in review-screen.tsx) put the name BESIDE
+ * the picture in a row, not under it, and are deliberately not this shape.
+ *
+ * 🔴 minHeight IS IN em, NOT PIXELS, AND THAT IS THE POINT. 2 lines x the 1.25
+ * line-height below = 2.5em, so the block is exactly two lines whatever the
+ * font size is. Written in px it would silently become the wrong height the
+ * first time somebody changed the size, and the symptom — one-word and
+ * two-word tiles sitting at different heights — is the thing this ruling
+ * exists to fix.
+ *
+ * min-height and NOT height: the clamp is 2 lines here, but a hard height
+ * would cut a clamped line through the middle rather than let it end.
+ */
 const TILE_TEXT_STYLE: React.CSSProperties = {
   color:           INK,
   letterSpacing:   "-0.01em",
   lineHeight:      1.25,
+  minHeight:       "2.5em",
   display:         "-webkit-box",
   WebkitBoxOrient: "vertical",
   WebkitLineClamp: 2,
@@ -1541,8 +1561,19 @@ export default function PoV2Page(): React.JSX.Element {
                       )}
                     </span>
 
-                    {/* THE NAME, outside the square. */}
-                    <span className="block w-full text-[12px] font-semibold" style={TILE_TEXT_STYLE}>
+                    {/* THE NAME, outside the square.
+                        v2 tile label: centred · one size · fixed 2-line block.
+                        Applies to every image-with-label grid in v2. Owner
+                        ruling 2026-09-09.
+
+                        🔴 text-center IS SET HERE, ON THE LABEL. The button
+                        above still carries text-left because the tile's other
+                        contents want it; before this the label simply
+                        INHERITED that and was the only left-aligned thing in
+                        either grid. One declaration, on the element it
+                        describes — not a change to the button, which would
+                        move things that are not labels. */}
+                    <span className="block w-full text-center text-[12px] font-semibold" style={TILE_TEXT_STYLE}>
                       {tile.label}
                     </span>
                   </button>
