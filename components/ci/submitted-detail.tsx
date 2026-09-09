@@ -147,7 +147,9 @@ export function CiSubmittedDetail({
           CI is the subject and the dealer is context — the reverse of the New
           flow's bill header, where the dealer is what you are choosing. */}
       <div
-        className="bg-brand-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
+        // 🔴 PALE MASTHEAD (2026-09-09, CLAUDE_UI.md §59.8) — the same ground the
+        // list screen behind it uses, so one flow no longer carries two headers.
+        className="bg-[#F5F3FF] border-b border-ink-100 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
         <div className="flex items-center gap-1.5">
@@ -158,19 +160,19 @@ export function CiSubmittedDetail({
             // that logic lives in the board's popstate handler.
             onClick={() => window.history.back()}
             aria-label="Back"
-            className="w-[38px] h-[38px] rounded-[10px] bg-white/[0.16] flex items-center justify-center text-white shrink-0"
+            className="w-[38px] h-[38px] rounded-[10px] bg-white border border-ink-100 flex items-center justify-center text-ink-600 shrink-0"
           >
             <ChevronLeft size={20} />
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="font-mono text-[16px] font-semibold text-white truncate min-w-0">
+              <span className="font-mono text-[16px] font-semibold text-brand-600 truncate min-w-0">
                 {detail?.ciNumber ?? "—"}
               </span>
               {/* 🔴 STATUS IS STATED HERE AND NOWHERE ELSE ON THIS SCREEN. */}
               {detail !== null && <StatusChip status={detail.status} />}
             </div>
-            <div className="text-[11.5px] text-white/70 truncate">
+            <div className="text-[11.5px] text-ink-500 truncate">
               {detail?.customerName ?? ""}
             </div>
           </div>

@@ -411,7 +411,9 @@ export function MrnSupervisorBoard(): React.JSX.Element {
         }
       >
         <div
-          className="flex shrink-0 items-center gap-1.5 bg-brand-600 pb-3.5 pl-3.5 pr-1.5"
+          // 🔴 PALE MASTHEAD (2026-09-09, CLAUDE_UI.md §59.8) — the same ground the
+          // list screen behind it uses, so one flow no longer carries two headers.
+          className="flex shrink-0 items-center gap-1.5 bg-[#F5F3FF] border-b border-ink-100 pb-3.5 pl-3.5 pr-1.5"
           style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
         >
           {/* Routes through history so the chevron, a hardware back press, the
@@ -421,7 +423,7 @@ export function MrnSupervisorBoard(): React.JSX.Element {
             type="button"
             onClick={() => window.history.back()}
             aria-label="Back"
-            className="flex h-[38px] w-[38px] min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-[10px] bg-white/[0.16] text-white"
+            className="flex h-[38px] w-[38px] min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-[10px] bg-white border border-ink-100 text-ink-600"
           >
             <ChevronLeft size={20} />
           </button>
@@ -436,10 +438,10 @@ export function MrnSupervisorBoard(): React.JSX.Element {
               header names the right truck from the first frame rather than "—"
               while the detail fetch is in flight. */}
           <div className="min-w-0">
-            <div className="truncate text-[16px] font-bold text-white">
+            <div className="truncate text-[16px] font-bold text-brand-600">
               {detail?.receivedFrom ?? openRow?.receivedFrom ?? "—"}
             </div>
-            <div className="truncate font-mono text-[11px] text-white/75">
+            <div className="truncate font-mono text-[11px] text-ink-500">
               {detail?.stiRefNo ??
                 openRow?.stiRefNo ??
                 detail?.mrnNumber ??

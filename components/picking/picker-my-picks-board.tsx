@@ -1734,7 +1734,13 @@ export function PickerMyPicksBoard({
           // is back + title and nothing else. The pr-1.5 is kept anyway so the
           // two headers stay literally the same markup; a face-specific padding
           // is one more thing to drift.
-          className="bg-brand-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
+          // 🔴 PALE MASTHEAD (2026-09-09, CLAUDE_UI.md §59.8). The duplicate-SO
+          // branch below still wins — that red is a warning state, not a brand
+          // surface — and everything inside flips back to white for it.
+          className={
+            "pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0 " +
+            (detailRow?.hasDuplicateSo ? "" : "bg-[#F5F3FF] border-b border-ink-100")
+          }
           style={{
             paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
@@ -1750,7 +1756,12 @@ export function PickerMyPicksBoard({
             type="button"
             onClick={() => window.history.back()}
             aria-label="Back"
-            className="w-[38px] h-[38px] rounded-[10px] bg-white/[0.16] flex items-center justify-center text-white shrink-0"
+            className={
+              "w-[38px] h-[38px] rounded-[10px] flex items-center justify-center shrink-0 " +
+              (detailRow?.hasDuplicateSo
+                ? "bg-white/[0.16] text-white"
+                : "bg-white border border-ink-100 text-ink-600")
+            }
           >
             <ChevronLeft size={20} />
           </button>
@@ -1761,13 +1772,13 @@ export function PickerMyPicksBoard({
             {/* ⚠ Name alone on row 1 (restored 2026-09-01) — the chip that sat
                 here for one day (47791643) was removed after phone review, on
                 both faces together; see the supervisor's note. */}
-            <div className="text-[18px] font-semibold text-white truncate min-w-0">
+            <div className={"text-[18px] font-semibold truncate min-w-0 " + (detailRow?.hasDuplicateSo ? "text-white" : "text-brand-600")}>
               {detailRow?.dealerName ?? "—"}
             </div>
             {/* Subtitle: OBD · time, a faint rule, then the symbol run. The
                 text truncates; the run is shrink-0 and never does. */}
             <div
-              className={"flex items-center gap-2 text-[11.5px] " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
+              className={"flex items-center gap-2 text-[11.5px] " + (detailRow?.hasDuplicateSo ? "" : "text-ink-500")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
               <span className="truncate min-w-0">

@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.28 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.29 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1563,6 +1563,29 @@ inherited. Android picks dark status icons from `#F5F3FF`'s luminance on its own
 `public/po.webmanifest`'s `theme_color` moved with it; its `background_color` stays
 `#7C3AED` because that is the launch splash, which is still violet.
 
+**Detail and sub-screen headers take the same ground** (added 2026-09-09, second pass —
+the first pass reached the list screens through `ModuleMobileHeader` and missed every
+screen with a hand-rolled header, so one flow carried two different headers). Same
+geometry as before, recoloured:
+
+| | |
+|---|---|
+| Ground | `#F5F3FF` + 1px `ink-100` bottom rule |
+| Title | `brand-600`, size and weight unchanged |
+| Second line | `ink-500` |
+| Back button | white fill, `ink-600` chevron, 1px `ink-100` border — the avatar's treatment, for the avatar's reason |
+| White action chips | gain a 1px `ink-100` border; a white chip on this wash is 1.10:1 |
+
+Live on: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted
+detail, the MRN detail, and both Trip Report mobile headers. `/trips` gained the
+status-bar override with them.
+
+🔴 **The DUPLICATE-SO branch is not a brand surface and keeps its red.** Both picking
+detail headers swap the whole band to `DUP_SO_FILL` `#dc2626` when `hasDuplicateSo`, and
+everything inside — title, back button, subtitle — flips back to white for it. That
+branch was already conditional and stays conditional; the pale ground is the ELSE arm,
+never a replacement for the warning.
+
 ⚠ **`brand-50` IS `#F5F3FF` — the same hex as this ground.** Any brand-50 surface on a
 screen that has a masthead becomes a second identical wash and reads as a second header.
 Picking's three filter summary strips hit exactly this and moved to `ink-50` on
@@ -1780,4 +1803,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.28 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **new §59.8: the pale `#F5F3FF` masthead is now the mobile header standard and filled brand-600 bands are gone**, on `/po` and on `ModuleMobileHeader` across all seven of its consumers. Ground `#F5F3FF`, title `brand-600`, 1px `ink-100` rule, white avatar with `ink-600` initials, `ink-600` icon controls, bottom nav `brand-700` / `ink-400`. 🔴 Three things in §59.8 are there to stop them being undone: the wordmark stays **`brand.600` against the colour spec's `brand.800`** — the spec line is wrong and is superseded, not to be "corrected" back; the avatar is **white here and only here**, because `ink-50` `#F4F3F8` on `#F5F3FF` measures 1.01:1 and is a fill that is not a fill; and **changing this ground changes the STATUS BAR** — the app-wide `black-translucent` paints white clock glyphs that vanish on the wash, so `/picking`, `/ci` and `/mrn` gained per-route `statusBarStyle: "default"` + `themeColor` overrides to match `/po` and `/po-v2`, and `po.webmanifest`'s `theme_color` moved with them. ⚠ Also recorded: **`brand-50` is the same hex as the masthead ground**, which is how Picking's three filter summary strips became a second wash and why they moved to `ink-50`. §59.7 corrected in the same pass — it claimed a "Teal-600 band", said "do not restyle it here", and listed two consumers when there are seven across three routes. Prior, v5.27 (2026-09-09): §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back for panel proportions, §12.1.1 added. Prior, v5.25: the rings removed from the login panel. Prior, v5.21 (2026-09-08): red is error and destructive only, urgency is amber.*
+*UI v5.29 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§59.8 extended to DETAIL and sub-screen headers.** The v5.28 pass reached the list screens through `ModuleMobileHeader` and missed every screen carrying a hand-rolled header, so opening a bill from Picking took you from a pale masthead to a filled brand-600 band — one flow, two headers. Seven more headers now take the same ground: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted detail, the MRN detail, and both Trip Report mobile headers. Title `brand-600` at unchanged size and weight, second line `ink-500`, back button white with an `ink-600` chevron and an `ink-100` border, white action chips given the same border. `/trips` gained the status-bar override alongside them. 🔴 Recorded so it is not flattened later: **the duplicate-SO branch keeps its red** — both picking detail headers swap the whole band to `#dc2626` when `hasDuplicateSo` and flip title, subtitle and back button back to white, and the pale ground is the ELSE arm of that condition, never a replacement for the warning. Prior, v5.28 (2026-09-09): §59.8 created — the pale masthead replaces the filled band on `/po` and across `ModuleMobileHeader`'s seven consumers, with the brand.600-over-brand.800 ruling, the white-avatar exception and the status-bar coupling. Prior, v5.27: §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back. Prior, v5.25: the rings removed from the login panel.*

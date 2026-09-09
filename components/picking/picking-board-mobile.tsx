@@ -3559,7 +3559,15 @@ export function PickingBoardMobile(): React.JSX.Element {
           // Right padding is 6px, not 14px: the icon buttons are 44px tap
           // targets now, and their glyphs sit ~11px inside that box, so a 14px
           // gutter would push the visible glyph a clear 25px off the edge.
-          className="bg-brand-600 pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0"
+          // 🔴 PALE MASTHEAD (2026-09-09, CLAUDE_UI.md §59.8). This was a filled
+          // brand-600 band while the list screen behind it had already gone
+          // pale, so one flow carried two different headers. The DUPLICATE-SO
+          // branch is untouched and still wins: that red is a warning state, not
+          // a brand surface, and everything inside flips back to white for it.
+          className={
+            "pl-3.5 pr-1.5 pb-3.5 flex flex-col shrink-0 " +
+            (detailRow?.hasDuplicateSo ? "" : "bg-[#F5F3FF] border-b border-ink-100")
+          }
           style={{
             paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
             ...(detailRow?.hasDuplicateSo ? { background: DUP_SO_FILL } : null),
@@ -3584,7 +3592,12 @@ export function PickingBoardMobile(): React.JSX.Element {
             type="button"
             onClick={() => window.history.back()}
             aria-label="Back"
-            className="w-[38px] h-[38px] rounded-[10px] bg-white/[0.16] flex items-center justify-center text-white shrink-0"
+            className={
+              "w-[38px] h-[38px] rounded-[10px] flex items-center justify-center shrink-0 " +
+              (detailRow?.hasDuplicateSo
+                ? "bg-white/[0.16] text-white"
+                : "bg-white border border-ink-100 text-ink-600")
+            }
           >
             <ChevronLeft size={20} />
           </button>
@@ -3600,7 +3613,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 REMOVED after phone review — owner decision, not a bug. Nothing
                 else belongs on this line; that is the whole point of the header
                 collapsing to one row. */}
-            <div className="text-[18px] font-semibold text-white truncate min-w-0">
+            <div className={"text-[18px] font-semibold truncate min-w-0 " + (detailRow?.hasDuplicateSo ? "text-white" : "text-brand-600")}>
               {detailRow?.dealerName ?? "—"}
             </div>
             {/* Subtitle: OBD · time, a faint rule, then the symbol run.
@@ -3609,7 +3622,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 you cannot see is worse than an OBD you have to open the bill
                 to read. */}
             <div
-              className={"flex items-center gap-2 text-[11.5px] " + (detailRow?.hasDuplicateSo ? "" : "text-white/70")}
+              className={"flex items-center gap-2 text-[11.5px] " + (detailRow?.hasDuplicateSo ? "" : "text-ink-500")}
               style={detailRow?.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
             >
               <span className="truncate min-w-0">
@@ -3686,7 +3699,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 aria-label="Share findings on WhatsApp"
                 className="w-11 h-11 flex items-center justify-center shrink-0"
               >
-                <span className="w-[30px] h-[30px] rounded-[9px] bg-white flex items-center justify-center">
+                <span className="w-[30px] h-[30px] rounded-[9px] bg-white border border-ink-100 flex items-center justify-center">
                   <MessageCircle size={17} strokeWidth={2.2} color="#128C4A" />
                 </span>
               </button>

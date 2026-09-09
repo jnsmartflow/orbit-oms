@@ -353,10 +353,12 @@ export function TripReportPage() {
 
       {/* ── Mobile app bar (below md) — sticky: brand row + search + day/type pills ── */}
       <div className="md:hidden sticky top-0 z-30 bg-white border-b border-gray-100">
-        <div className="bg-brand-600 px-3.5 py-3 flex items-center gap-2.5">
-          <OrbitWordmark height={13} className="text-white" />
-          <span className="text-white font-semibold text-[15px]">Trip Report</span>
-          <span className="text-white/75 text-[12px] ml-auto">{mobileFilteredTrips.length} trips</span>
+        {/* 🔴 Pale masthead (2026-09-09, CLAUDE_UI.md §59.8) — filled brand-600
+            bands are gone from every mobile header in the product. */}
+        <div className="bg-[#F5F3FF] border-b border-ink-100 px-3.5 py-3 flex items-center gap-2.5">
+          <OrbitWordmark height={13} className="text-brand-600" />
+          <span className="text-brand-600 font-semibold text-[15px]">Trip Report</span>
+          <span className="text-ink-500 text-[12px] ml-auto">{mobileFilteredTrips.length} trips</span>
         </div>
 
         <div className="px-3 pt-2.5 pb-1.5">
@@ -718,18 +720,19 @@ function TripDetailsView({
 
       {/* ── Mobile (below md) — app-style, matches trip-report-mobile-mock.html ── */}
       <div className="md:hidden">
-        <div className="sticky top-0 z-30 bg-brand-600 px-3.5 py-3 flex items-center gap-2.5">
+        {/* 🔴 Pale masthead — see the list header above and CLAUDE_UI.md §59.8. */}
+        <div className="sticky top-0 z-30 bg-[#F5F3FF] border-b border-ink-100 px-3.5 py-3 flex items-center gap-2.5">
           <button
             type="button"
             onClick={onBack}
-            className="text-white text-[20px] leading-none cursor-pointer"
+            className="text-ink-600 text-[20px] leading-none cursor-pointer"
             aria-label="Back to trip list"
           >
             &lsaquo;
           </button>
-          <span className="text-white font-semibold text-[15px]">{tripNo}</span>
+          <span className="text-brand-600 font-semibold text-[15px]">{tripNo}</span>
           {detail && (
-            <span className="text-white/80 text-[12px]">&middot; {detail.header.deliveryType ?? "—"}</span>
+            <span className="text-ink-500 text-[12px]">&middot; {detail.header.deliveryType ?? "—"}</span>
           )}
         </div>
 
