@@ -268,11 +268,11 @@ export function SplitBuilderModal({
                     className="bg-white border border-gray-200 rounded-lg p-3"
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-[11.5px] font-semibold text-violet-600">
+                      <span className="font-mono text-[11.5px] font-semibold text-warn-text">
                         {dLeft.code}
                       </span>
                       {line.isTinting && (
-                        <span className="text-[9.5px] font-bold uppercase tracking-wide bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded-full">
+                        <span className="text-[9.5px] font-bold uppercase tracking-wide bg-warn-bg text-warn-text border border-warn/30 px-1.5 py-0.5 rounded-full">
                           Tint
                         </span>
                       )}
@@ -405,7 +405,7 @@ export function SplitBuilderModal({
                                     const dRaw = pickSkuDisplay(rawLine.skuDisplay, skuDisplayMode);
                                     return (
                                       <>
-                                        <p className="font-mono text-[11.5px] font-semibold text-violet-600 truncate">
+                                        <p className="font-mono text-[11.5px] font-semibold text-warn-text truncate">
                                           {dRaw.code}
                                         </p>
                                         {dRaw.description && (
@@ -481,7 +481,7 @@ export function SplitBuilderModal({
                                   onClick={() => addLineToSplit(split.id, line.id)}
                                   className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left hover:bg-gray-50 transition-colors"
                                 >
-                                  <span className="font-mono text-[11.5px] font-semibold text-violet-600 flex-shrink-0">
+                                  <span className="font-mono text-[11.5px] font-semibold text-warn-text flex-shrink-0">
                                     {dAdd.code}
                                   </span>
                                   <span className="text-[11px] text-gray-400 flex-1 truncate">
@@ -617,7 +617,7 @@ export function SplitBuilderModal({
                             const dHist = pickSkuDisplay(item.rawLineItem.skuDisplay, skuDisplayMode);
                             return (
                               <div key={idx} className="flex items-center justify-between text-[11px] text-gray-500">
-                                <span className="font-mono text-violet-600 flex-shrink-0">
+                                <span className="font-mono text-warn-text flex-shrink-0">
                                   {dHist.code}
                                 </span>
                                 <span className="flex-1 px-2 truncate">

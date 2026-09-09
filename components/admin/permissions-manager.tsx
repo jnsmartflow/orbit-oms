@@ -13,7 +13,7 @@ import type { ActionKey } from "@/lib/permissions";
 const ROLES_CONFIG = [
   { slug: "admin",            label: "Admin",          color: "#4338ca" },
   { slug: "dispatcher",       label: "Dispatcher",     color: "#dc2626" },
-  { slug: "support",          label: "Support",        color: "#7c3aed" },
+  { slug: "support",          label: "Support",        color: "#DB2777" },
   { slug: "tint_manager",     label: "Tint Mgr",       color: "#d97706" },
   { slug: "tint_operator",    label: "Tint Op",        color: "#c2410c" },
   { slug: "floor_supervisor", label: "Floor Sup",      color: "#16a34a" },

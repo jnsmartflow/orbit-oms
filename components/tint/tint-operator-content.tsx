@@ -1949,7 +1949,7 @@ export function TintOperatorContent() {
               <span className={cn(
                 "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium",
                 siteHistorySummary.isNewSite
-                  ? "bg-violet-50 text-violet-700 border-violet-200"
+                  ? "bg-warn-bg text-warn-text border-warn/30"
                   : "bg-emerald-50 text-emerald-700 border-emerald-200",
               )}>
                 {siteHistorySummary.isNewSite ? "New site" : "Repeat site"}

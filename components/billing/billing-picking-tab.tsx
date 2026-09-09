@@ -753,7 +753,7 @@ function DoneRow({
                 amber is "awaiting SAP", green is done, teal is the CTA and the
                 live pip. Same pill geometry as the amber one below, so the two
                 read as one family of states. */}
-            <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-[9.5px] font-semibold text-violet-700">
+            <span className="rounded border border-ink-200 bg-ink-100 px-1.5 py-px text-[9.5px] font-semibold text-ink-700">
               Already invoiced
             </span>
           </>

@@ -211,7 +211,7 @@ export function HistoryPanel({
                   <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
                     <span className="font-mono text-[11px] text-gray-800 truncate">{job.obdNumber}</span>
                     {job.kind === "split" && (
-                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-purple-50 border-purple-200 text-purple-700 flex-shrink-0">
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-warn-bg border-warn/30 text-warn-text flex-shrink-0">
                         Split {job.splitNumber ?? "—"}
                       </span>
                     )}
@@ -259,7 +259,7 @@ export function HistoryPanel({
             <div className="px-5 py-2.5 flex items-center gap-2.5 flex-wrap">
               <span className="font-mono text-[12px] text-gray-800">{selected.obdNumber}</span>
               {selected.kind === "split" && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-purple-50 border-purple-200 text-purple-700">
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-warn-bg border-warn/30 text-warn-text">
                   Split {selected.splitNumber ?? "—"}
                 </span>
               )}

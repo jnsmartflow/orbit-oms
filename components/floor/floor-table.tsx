@@ -537,7 +537,7 @@ export function FloorTable({
                     a blank on one side of the arrow. */}
                 {isRedirect && (
                   <div
-                    className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-[#6d28d9]"
+                    className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-warn-text"
                     title={
                       row.customerName && row.shipToOverrideName
                         ? `${row.customerName} → ship to ${row.shipToOverrideName}`

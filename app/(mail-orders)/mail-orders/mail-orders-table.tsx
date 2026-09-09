@@ -69,11 +69,11 @@ interface MailOrdersTableProps {
 // ── Slot dot colors ──────────────────────────────────────────────────────────
 
 const SLOT_DOTS: Record<string, string> = {
-  Morning: "bg-amber-400",
-  Afternoon: "bg-blue-500",
-  Evening: "bg-purple-500",
-  "Late Evening": "bg-indigo-500",
-  Night: "bg-gray-400",
+  Morning: "bg-[#CBD5E1]",
+  Afternoon: "bg-[#94A3B8]",
+  Evening: "bg-[#64748B]",
+  "Late Evening": "bg-[#475569]",
+  Night: "bg-[#334155]",
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -859,9 +859,9 @@ function OrderRow({
     : isFocused
       ? "3px solid #f59e0b"
       : isPunched
-        ? "3px solid #7C3AED"
+        ? "3px solid #059669"
         : isSplit
-          ? "3px solid #a78bfa"
+          ? "3px solid #D6D3E0"
           : undefined;
   const needsBorderCompensation = effectiveFlagged || isFocused || isPunched || isSplit;
 
@@ -1384,7 +1384,7 @@ function OriginalLinesTable({
               <td className="px-3.5 align-middle text-center">
                 <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
                   line.groupLabel === 'A'
-                    ? 'bg-purple-50 text-purple-600 border border-purple-200'
+                    ? 'bg-warn-bg text-warn-text border border-warn/30'
                     : 'bg-blue-50 text-blue-600 border border-blue-200'
                 }`}>
                   {line.groupLabel}
@@ -1585,7 +1585,7 @@ function ExpandRow({ order, onSplitComplete, colCount, lineStatuses, onOpenPanel
                 }}
                 className={`text-[10px] font-medium px-2.5 py-1 rounded border transition-colors ${
                   showOriginal
-                    ? "bg-purple-50 border-purple-200 text-purple-700"
+                    ? "bg-ink-100 border-ink-200 text-ink-700"
                     : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"
                 }`}
               >
@@ -1793,7 +1793,7 @@ function ExpandRow({ order, onSplitComplete, colCount, lineStatuses, onOpenPanel
                 const typeClasses: Record<string, string> = {
                   contact: 'bg-gray-50 text-gray-600 border-gray-200',
                   instruction: 'bg-gray-50 text-gray-500 border-gray-200',
-                  cross: 'bg-purple-50 text-purple-600 border-purple-200',
+                  cross: 'bg-pink-50 text-data-pink border-pink-200',
                   customer: 'bg-cyan-50 text-data-cyan border-cyan-200',
                   unknown: 'bg-amber-50 text-amber-700 border-amber-200',
                 };

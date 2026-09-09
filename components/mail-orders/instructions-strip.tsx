@@ -16,7 +16,7 @@ interface InstructionsStripProps {
    * "Assigned to tint operator" strip. Do not substitute a Tailwind `purple-*`
    * here: one owner for the shade, so the two screens cannot drift apart.
    */
-  tone?: "default" | "violet";
+  tone?: "default" | "notes";
   /**
    * Remark-text size in px. Default `11` — the default of the per-user column
    * that now drives it (`users.notesFontSize`, bounded 11-15). The band shipped
@@ -51,7 +51,7 @@ const DOT_BY_KIND = {
   notes: "bg-gray-600",
 } as const;
 
-const VIOLET_NOTES_DOT = "bg-[#7c3aed]";
+const NOTES_DOT = "bg-warn";
 
 type Kind = keyof typeof DOT_BY_KIND;
 
@@ -69,7 +69,7 @@ export function InstructionsStrip({
   fontSize = 11,
   controlsSlot,
 }: InstructionsStripProps): JSX.Element | null {
-  const violet = tone === "violet";
+  const attention = tone === "notes";
   const rows: { kind: Kind; text: string }[] = [];
 
   const d = trimmed(delivery);
@@ -96,8 +96,8 @@ export function InstructionsStrip({
   return (
     <div
       className={
-        violet
-          ? "flex items-start bg-[#f5f3ff] border-t border-t-gray-100 border-l-[3px] border-l-[#7c3aed] pt-3 pb-3"
+        attention
+          ? "flex items-start bg-warn-bg border-t border-t-gray-100 border-l-[3px] border-l-warn pt-3 pb-3"
           : "flex items-start bg-gray-200 border-t border-gray-100 pt-3 pb-3"
       }
     >
@@ -105,22 +105,22 @@ export function InstructionsStrip({
         {rows.map((row) => (
           <div
             key={row.kind}
-            className={`flex items-start gap-2 px-5 py-1 leading-[1.45] ${violet ? "text-[#5b21b6]" : "text-gray-700"}`}
+            className={`flex items-start gap-2 px-5 py-1 leading-[1.45] ${attention ? "text-warn-text" : "text-gray-700"}`}
             style={{ fontSize }}
           >
             <span
               className={`w-[7px] h-[7px] rounded-full flex-shrink-0 mt-1.5 ${
-                violet && row.kind === "notes" ? VIOLET_NOTES_DOT : DOT_BY_KIND[row.kind]
+                attention && row.kind === "notes" ? NOTES_DOT : DOT_BY_KIND[row.kind]
               }`}
             />
             <span
               className={`text-[10px] font-semibold uppercase tracking-[0.05em] w-16 flex-shrink-0 pt-0.5 ${
-                violet ? "text-[#7c3aed]" : "text-gray-500"
+                attention ? "text-warn" : "text-gray-500"
               }`}
             >
               {row.kind}
             </span>
-            <span className={`flex-1 pt-px ${violet ? "text-[#5b21b6]" : "text-gray-700"}`}>{row.text}</span>
+            <span className={`flex-1 pt-px ${attention ? "text-warn-text" : "text-gray-700"}`}>{row.text}</span>
           </div>
         ))}
       </div>

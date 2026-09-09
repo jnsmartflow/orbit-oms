@@ -160,7 +160,7 @@ function StarGlyph() {
 }
 
 function TruckGlyph() {
-  return <Truck size={12} strokeWidth={2} className="text-violet-700 flex-shrink-0" />;
+  return <Truck size={12} strokeWidth={2} className="text-ink-600 flex-shrink-0" />;
 }
 
 function formatTime(iso: string): string {
@@ -1109,7 +1109,7 @@ export function ReviewView({
               if (leftPanelBadges.length === 0) return null;
               const badgeStyles: Record<string, string> = {
                 bill:  "bg-blue-50 text-blue-700 border-blue-200",
-                split: "bg-purple-50 text-purple-600 border-purple-200",
+                split: "bg-warn-bg text-warn-text border-warn/30",
               };
               return leftPanelBadges.map((s, i) => (
                 <span
@@ -1775,7 +1775,7 @@ export function ReviewView({
             // It also retires a stray teal: that dot was bg-brand-600, and this
             // row already spends the brand accent on Import and the search
             // focus ring (CLAUDE_UI §1 — one teal element per surface).
-            className={`${BTN_BASE} ${hasNotes ? "border-[#7c3aed]/40 bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ede9fe]" : BTN_OFF}`}
+            className={`${BTN_BASE} ${hasNotes ? "border-warn/40 bg-warn-bg text-warn-text hover:bg-warn-bg/70" : BTN_OFF}`}
           >
             {/* Icon inherits the button's colour when notes exist — unchanged
                 expression, it just now inherits violet instead of gray-800. */}
@@ -2063,14 +2063,14 @@ export function ReviewView({
             lineHeight: 1,
             fontWeight: 600,
             borderRadius: 4,
-            border: `1px solid ${disabled ? "#e5e7eb" : "#ddd6fe"}`,
+            border: `1px solid ${disabled ? "#e5e7eb" : "#FDE68A"}`,
             background: disabled ? "#f9fafb" : "#fff",
-            color: disabled ? "#d1d5db" : "#5b21b6",
+            color: disabled ? "#d1d5db" : "#B45309",
             cursor: disabled ? "not-allowed" : "pointer",
             transition: "background 0.12s",
           }}
           onMouseEnter={(e) => {
-            if (!disabled) e.currentTarget.style.background = "#f5f3ff";
+            if (!disabled) e.currentTarget.style.background = "#FFFBEB";
           }}
           onMouseLeave={(e) => {
             if (!disabled) e.currentTarget.style.background = "#fff";
@@ -2095,7 +2095,7 @@ export function ReviewView({
             fontSize: 10,
             lineHeight: 1,
             fontWeight: 600,
-            color: "#5b21b6",
+            color: "#B45309",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -2171,7 +2171,7 @@ export function ReviewView({
             // so the OFF path is byte-identical. The card itself additionally
             // requires the override state before any violet applies, so a
             // billing order with a normal ship-to still renders white.
-            tone={billingV2 ? "violet" : "default"}
+            tone={billingV2 ? "notes" : "default"}
           />
         </div>
 
@@ -2200,7 +2200,7 @@ export function ReviewView({
             delivery={parsed.deliveryInstruction}
             bill={order.billRemarks || null}
             notes={notesString}
-            tone={billingV2 ? "violet" : "default"}
+            tone={billingV2 ? "notes" : "default"}
             fontSize={notesFontSize}
             controlsSlot={notesSizeControls}
           />

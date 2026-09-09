@@ -52,7 +52,7 @@ const STATUS_META: Record<PickerCardStatus, { accent: string; chip: string }> = 
 // carried — the colour was right, it was the PROMOTION to a status that was
 // wrong. Kept as its own constant so the status table above stays a closed set
 // of four mutually exclusive looks.
-const NEEDS_CHECK_TAG = "bg-purple-50 text-purple-700 border-purple-200";
+const NEEDS_CHECK_TAG = "bg-warn-bg text-warn-text border-warn/30";
 
 /**
  * Which of the four looks this picker wears.

@@ -251,12 +251,12 @@ export function CiDetailPane({
           all; it belongs with the identity, not above a table it does not
           describe. */}
       <div className="px-5 pb-3.5">
-        <div className="rounded-[10px] bg-[#f5f3ff] border border-[#ddd6fe] px-3.5 py-2.5 flex gap-2.5">
-          <span className="text-[#7c3aed] text-[11px] leading-[1.5] shrink-0">◆</span>
-          <p className="text-[12.5px] text-[#4c1d95] leading-[1.5] min-w-0">
+        <div className="rounded-[10px] bg-warn-bg border border-warn/30 px-3.5 py-2.5 flex gap-2.5">
+          <span className="text-warn text-[11px] leading-[1.5] shrink-0">◆</span>
+          <p className="text-[12.5px] text-warn-text leading-[1.5] min-w-0">
             <span className="font-semibold">{detail.reasonLabel}</span>
             {detail.reasonRemark !== null && (
-              <span className="text-[#6d28d9]"> — {detail.reasonRemark}</span>
+              <span className="text-warn-text"> — {detail.reasonRemark}</span>
             )}
           </p>
         </div>

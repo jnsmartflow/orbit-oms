@@ -831,7 +831,7 @@ export function CustomersSplitView({
                   <div className="flex flex-wrap gap-1">
                     <span className={`text-[10px] font-medium px-1.5 py-px rounded-full border ${c.isActive ? "bg-[#e8f5e9] text-[#2e7d32] border-[#a5d6a7]" : "bg-[#f0f1f5] text-[#9ca3af] border-[#e5e7eb]"}`}>{c.isActive ? "Active" : "Inactive"}</span>
                     {c.isKeyCustomer && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#fef3c7] text-[#b45309] border-[#fcd34d]">Key</span>}
-                    {c.premisesType && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#f3e8ff] text-[#7c3aed] border border-[#e9d5ff]">{c.premisesType.name}</span>}
+                    {c.premisesType && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-ink-50 text-ink-600 border border-ink-100">{c.premisesType.name}</span>}
                     {c.salesOfficerGroup && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-brand-50 text-brand-700 border-brand-200 truncate max-w-[100px]">{c.salesOfficerGroup.name}</span>}
                   </div>
                 </div>

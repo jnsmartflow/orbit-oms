@@ -553,7 +553,7 @@ export function TintTableView({
             {ageBadge && <span className={`text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] border leading-none ${ageBadge.className}`}>{ageBadge.text}</span>}
           </div>
         )}
-        <div className="inline-flex items-center gap-[3px] text-[9px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded mt-0.5">
+        <div className="inline-flex items-center gap-[3px] text-[9px] font-semibold text-warn-text bg-warn-bg border border-warn/30 px-1.5 py-0.5 rounded mt-0.5">
           <Scissors size={8} />
           Split #{split.splitNumber}
         </div>

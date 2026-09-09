@@ -143,7 +143,7 @@ export function PhotosButton({ detail, canDelete }: PhotosButtonProps): React.JS
             lets three digits grow it into a pill instead of squashing the
             number or bursting the circle. The white ring is what lifts it off
             the button rather than letting it look inset. */}
-        <span className="absolute -right-1.5 -top-1.5 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#f5f3ff] px-1 text-[10px] font-bold leading-none tabular-nums text-[#5b21b6] ring-2 ring-white [box-shadow:inset_0_0_0_1px_#e9e3fb]">
+        <span className="absolute -right-1.5 -top-1.5 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-ink-50 px-1 text-[10px] font-bold leading-none tabular-nums text-ink-600 ring-2 ring-white [box-shadow:inset_0_0_0_1px_#E9E7F0]">
           {ordered.length}
         </span>
       </button>

@@ -51,7 +51,7 @@ interface ShipToCardProps {
    * with a NORMAL ship-to renders exactly like today's white card. A card that
    * were always violet would make "changed" mean nothing.
    */
-  tone?: "default" | "violet";
+  tone?: "default" | "notes";
 }
 
 function getDeliveryDotClass(type: string | null | undefined): string {
@@ -80,7 +80,7 @@ export function ShipToCard({
   actionSlot,
   tone = "default",
 }: ShipToCardProps): JSX.Element {
-  const violet = tone === "violet";
+  const attention = tone === "notes";
   const capturedDisabled = disabledTagKeys?.has(MO_TAG.captured) ?? false;
 
   // When "captured" is OFF, an overridden order falls back to showing the
@@ -104,11 +104,11 @@ export function ShipToCard({
   // The violet treatment REPLACES the amber one; it never stacks on a normal
   // card. `tinted` is the one gate every violet branch reads, so the tone can
   // never leak onto a non-override card.
-  const tinted = violet && showOverrideStyling;
+  const tinted = attention && showOverrideStyling;
 
   const cardClasses = showOverrideStyling
     ? tinted
-      ? "relative bg-[#f5f3ff] border border-[#ddd6fe] rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-[#7c3aed] before:rounded-sm"
+      ? "relative bg-warn-bg border border-warn/30 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-warn before:rounded-sm"
       : "relative bg-white border border-gray-200 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-amber-500 before:rounded-sm"
     : "relative bg-white border border-gray-200 rounded-lg px-3 py-2.5";
 
@@ -132,7 +132,7 @@ export function ShipToCard({
             // pill would vanish. No ⚑ — that glyph reads as Hold elsewhere in
             // the billing face, so reusing it here would say the wrong thing.
             <span
-              className="inline-flex items-center h-4 px-[5px] text-[9.5px] font-semibold rounded border border-[#7c3aed] bg-[#7c3aed] text-white"
+              className="inline-flex items-center h-4 px-[5px] text-[9.5px] font-semibold rounded border border-warn bg-warn text-white"
               title="Ship-to changed from the bill-to address"
             >
               changed
@@ -152,7 +152,7 @@ export function ShipToCard({
         <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${dotClass}`} />
         <span
           className={`text-[14.5px] font-bold tracking-tight truncate ${
-            tinted ? "text-[#4c1d95]" : "text-gray-900"
+            tinted ? "text-warn-text" : "text-gray-900"
           }`}
         >
           {effectiveName || "—"}
@@ -167,7 +167,7 @@ export function ShipToCard({
                 // White, not gray-100: the chip's usual grey fill sits too close
                 // to the violet-50 card to read as a separate object.
                 tinted
-                  ? "bg-white border-[#ddd6fe] text-[#5b21b6]"
+                  ? "bg-white border-warn/30 text-warn-text"
                   : "bg-gray-100 text-gray-700 border-gray-200"
               }`}
             >

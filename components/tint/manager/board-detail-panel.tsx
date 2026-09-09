@@ -283,7 +283,7 @@ export function BoardDetailPanel({
             {volume != null && <><span>·</span><span>{volume} L</span></>}
             {article && <><span>·</span><span>{article}</span></>}
             {row?.type === "split" && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-[1px] rounded border bg-violet-50 text-violet-700 border-violet-200">
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-[1px] rounded border bg-warn-bg text-warn-text border-warn/30">
                 <Scissors size={8} /> Split #{row.splitNumber}
               </span>
             )}

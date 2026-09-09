@@ -70,33 +70,33 @@ export default async function AdminDashboard() {
           label="Active Users"
           value={activeUsers}
           icon={<Users size={18} />}
-          iconBg="bg-brand-50"
-          iconColor="text-brand-600"
-          valueColor="text-brand-600"
+          iconBg="bg-ink-50"
+          iconColor="text-ink-900"
+          valueColor="text-ink-900"
         />
         <StatCard
           label="Active Routes"
           value={activeRoutes}
           icon={<MapPin size={18} />}
-          iconBg="bg-blue-50"
-          iconColor="text-blue-600"
-          valueColor="text-blue-600"
+          iconBg="bg-ink-50"
+          iconColor="text-ink-900"
+          valueColor="text-ink-900"
         />
         <StatCard
           label="Active SKUs"
           value={activeSkus}
           icon={<Package size={18} />}
-          iconBg="bg-violet-50"
-          iconColor="text-violet-600"
-          valueColor="text-violet-600"
+          iconBg="bg-ink-50"
+          iconColor="text-ink-900"
+          valueColor="text-ink-900"
         />
         <StatCard
           label="Active Customers"
           value={activeCustomers}
           icon={<Building2 size={18} />}
-          iconBg="bg-emerald-50"
-          iconColor="text-emerald-600"
-          valueColor="text-emerald-600"
+          iconBg="bg-ink-50"
+          iconColor="text-ink-900"
+          valueColor="text-ink-900"
         />
       </div>
 

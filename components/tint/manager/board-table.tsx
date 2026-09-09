@@ -260,7 +260,7 @@ function Row({
           <ObdCode code={row.obdNumber} />
           {row.type === "split" && (
             <span
-              className="inline-flex items-center gap-[2px] rounded-[3px] px-[5px] py-px text-[9.5px] font-bold bg-[#ede9fe] text-[#6d28d9]"
+              className="inline-flex items-center gap-[2px] rounded-[3px] px-[5px] py-px text-[9.5px] font-bold bg-warn-bg text-warn-text"
               title={`Split #${row.splitNumber} of this OBD`}
             >
               <Scissors size={8} />
