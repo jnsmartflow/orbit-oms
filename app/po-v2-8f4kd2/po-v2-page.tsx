@@ -24,7 +24,7 @@ import {
   FAVOURITE, FILL, INK, MUTED, PAGE, RULE, SEARCH_BG, SURFACE, URGENT, VIOLET,
   VIOLET_BG,
   EMPTY_ORDER, boardTile, boardTileArtFor, buildBoard, buildCatalog, drawerMode,
-  formatPack, memberImage, memberKey, mixToWhite, optionPools, packRows,
+  formatPack, mixToWhite, optionPools, packRows,
   resolveGroup, tileImage, tileKeyForMember, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2BoardTile, type V2CartLine, type V2Order, type V2Resolved,
@@ -113,66 +113,42 @@ const TILE_TEXT_STYLE: React.CSSProperties = {
   wordBreak:       "normal",
   hyphens:         "none",
 };
-
 /* ═══════════════════════════════════════════════════════════════════════════
- * 🔴 A FAVOURITE IS A sap AND NOTHING ELSE. EVERYTHING IT SHOWS IS DERIVED.
+ * 🔴 A FAVOURITE IS A BOARD TILE KEY AND NOTHING ELSE.
  *
- * Storage holds { sap, at }. The caption, the picture and the tile it opens
- * are all resolved HERE, on every render, out of BOARD — so a member that is
- * re-labelled, re-tiled or given a photograph updates on the next load with
- * nothing to migrate. That is why v2-storage stores none of them.
+ * Storage holds { key, at }. The label, the picture and the wash are all
+ * resolved HERE on every render out of BOARD, so a tile that is re-labelled or
+ * given a photograph follows on the next load with nothing to migrate.
  *
- * 🔴 THE PIN SPLIT. A pinned member's key is memberKey(sap, option) —
- * "WOOD PRIMER|||White" — and MEMBER_TILE is indexed on the PLAIN sap, so the
- * tile lookup has to use the left half. The member is then found by its FULL
- * key, which is what keeps the two Wood Primer twins two different favourites
- * rather than one.
+ * 🔴 THE CAPTION IS THE TILE LABEL ALONE — "PU Prime", "Luxurio", "Gloss".
  *
- * Returns null when the member has left the board. That null is also the
- * liveness test the storage prune runs on — one definition, two uses, so a
- * favourite that cannot render cannot survive either.
+ * It was "{tile} {member}" while a favourite was a MEMBER, because a bare
+ * "Matt" says nothing with no parent on screen. A TILE label is already
+ * self-contained: it is the same word the board prints under the same picture
+ * in its own family. So the parent-prefix rule and the de-doubling that went
+ * with it do not apply to favourites any more.
+ *
+ * ⚠ BOTH RULES STILL STAND EVERYWHERE ELSE — the drawer's rail and strip still
+ * shorten a member against its tile (eb6d8e2f), and tileLabelFor still warns
+ * that a search row has no parent either. Nothing here repeals them.
+ *
+ * Returns null when the tile has left BOARD. That null is also the liveness
+ * test the storage prune runs on, so a favourite that cannot render cannot
+ * survive either.
  * ═══════════════════════════════════════════════════════════════════════════ */
 type FavView = {
-  /** The stored key — composite for a pinned member. */
-  sap:      string;
-  /** The tile to open, and the member to open it on. */
-  tileKey:  string;
-  memberSap: string;
-  /**
-   * "{tile} {member}", e.g. "Luxurio Matt" — NEVER the bare member label. In
-   * its own family the caption can be "Matt" because Luxurio is written across
-   * the top of the card; in the fav group the parent is not on screen and
-   * "Matt" would say nothing. This is the risk recorded at tileLabelFor.
-   *
-   * ⚠ ONE HALF WHEN BOTH HALVES ARE THE SAME WORD. 21 of the 98 members sit
-   * alone on their tile and carry its exact label, so the rule as written
-   * would print "Gloss Gloss" and "Super Satin Super Satin". There is no
-   * missing parent to restore in that case — the tile label already IS the
-   * product name — so the doubling is dropped. Deviation from the written
-   * spec, made deliberately; reverse it by removing this one condition.
-   */
-  caption:  string;
-  src:      string | null;
-  wash:     string;
+  /** V2BoardTile.key — under Scheme A, members[0].sap. */
+  key:     string;
+  caption: string;
+  src:     string | null;
+  wash:    string;
 };
 
-function resolveFav(sap: string): FavView | null {
-  const joinSap = sap.split("|||")[0];
-  const tileKey = tileKeyForMember(joinSap);
-  if (!tileKey) return null;
-  const tile = boardTile(tileKey);
+function resolveFav(key: string): FavView | null {
+  const tile = boardTile(key);
   if (!tile) return null;
-  const member = tile.members.find((m) => memberKey(m.sap, m.option) === sap);
-  if (!member) return null;
-  const art = boardTileArtFor(tileKey);
-  return {
-    sap,
-    tileKey,
-    memberSap: member.sap,
-    caption: member.label === tile.label ? tile.label : `${tile.label} ${member.label}`,
-    src: memberImage(member.sap) ?? art.src,
-    wash: art.wash,
-  };
+  const art = boardTileArtFor(key);
+  return { key, caption: tile.label, src: art.src, wash: art.wash };
 }
 
 /**
@@ -465,11 +441,12 @@ export default function PoV2Page(): React.JSX.Element {
    * real — v2-storage imports nothing from v2-data and must not, or the two
    * files become circular. So the liveness test is handed in from here, where
    * BOARD is already in scope, and a member that has left the board is dropped
-   * silently on this read. That is the only place a dead favourite is removed:
-   * pruning on write would fix only what this build happens to touch.
+   * silently on this read, and a list still in v1 MEMBER shape is migrated to
+   * tile keys at the same time. That is the only place either happens: pruning
+   * on write would fix only what this build happens to touch.
    */
   useEffect(() => {
-    setFavProducts(loadFavProducts((sap) => resolveFav(sap) !== null));
+    setFavProducts(loadFavProducts());
   }, []);
 
   /**
@@ -907,36 +884,44 @@ export default function PoV2Page(): React.JSX.Element {
    * between one order and the next; sorting by the stored key would order by a
    * string the salesman never sees ("WS PROTECT DUSTPROOF" filing under W),
    * and sorting by `at` would reshuffle the whole group every time he added
-   * one. `at` survives only as a tiebreak for two identical captions, which
-   * cannot happen today — all 98 captions are distinct — but costs nothing.
+   * one. `at` is kept only as a tiebreak, and BOARD_INVARIANTS already refuses
+   * two tiles sharing a key so it can never actually be needed.
    */
   const favViews = useMemo(() => {
     const views: FavView[] = [];
-    for (const f of favProducts) { const v = resolveFav(f.sap); if (v) views.push(v); }
+    for (const f of favProducts) { const v = resolveFav(f.key); if (v) views.push(v); }
     return views.sort((a, b) => a.caption.localeCompare(b.caption));
   }, [favProducts]);
 
   /**
-   * EVERY PRODUCT ON THE BOARD, GROUPED BY FAMILY, IN BOARD ORDER.
+   * EVERY TILE ON THE BOARD, GROUPED BY FAMILY, IN THE BOARD'S OWN ORDER.
    *
-   * The picker lists all 98 members rather than a search box over them: nine
-   * headed groups of four to nineteen rows is browsable on a phone, and a
-   * salesman choosing eight favourites is BROWSING — he does not know the name
-   * he wants, he is picking the ones he sells. A search field would answer a
-   * question he is not asking.
+   * 🔴 37 ROWS, NOT 98. This listed every MEMBER until 2026-09-09 and that was
+   * the wrong unit twice over: 98 rows is not a list anybody browses, and "PU
+   * Prime Matt", "PU Prime Sealer" and "PU Prime Gloss" each spending one of
+   * eight slots is not how a salesman thinks about PU Prime. One star brings
+   * the whole drawer.
    *
-   * Reuses resolveFav so a row and its board tile cannot disagree about the
-   * caption or the tin. Rows within a family keep BOARD's order, which is the
-   * 90-day ranking, so the ones he is most likely to want are nearest the top
-   * of each group.
+   * 🔴 IT MAPS BOARD DIRECTLY, WHICH IS THE SAME ARRAY THE BOARD RENDER MAPS.
+   * Not a copy of the family order and not a sort — the identical constant, in
+   * the identical order, so the picker and the board cannot drift into
+   * disagreeing about which family comes first.
+   *
+   * Rows within a family keep BOARD's own tile order, which is the 90-day
+   * ranking, so the ones he is most likely to want sit nearest the top of each
+   * group. No search box, per the ruling and for a reason worth writing down:
+   * a salesman choosing eight favourites is BROWSING. He is not looking up a
+   * name he knows, he is picking the ones he sells.
+   *
+   * Rows come from resolveFav, the same function the board tiles use, so a row
+   * and its tile cannot disagree about the label or the tin.
    */
   const pickerGroups = useMemo(
     () => BOARD.map((family) => ({
       name: family.name,
-      rows: family.tiles.flatMap((t) =>
-        t.members
-          .map((m) => resolveFav(memberKey(m.sap, m.option)))
-          .filter((v): v is FavView => v !== null)),
+      rows: family.tiles
+        .map((t) => resolveFav(t.key))
+        .filter((v): v is FavView => v !== null),
     })),
     [],
   );
@@ -1723,18 +1708,21 @@ export default function PoV2Page(): React.JSX.Element {
             </div>
             <div className="grid grid-cols-4" style={{ gap: 7 }}>
               {favViews.map((fav) => {
-                const count   = countsByTile[fav.tileKey] ?? 0;
+                const count   = countsByTile[fav.key] ?? 0;
                 const inOrder = count > 0;
                 return (
                   <button
-                    key={fav.sap}
+                    key={fav.key}
                     type="button"
                     disabled={!ready}
-                    // The same path a member tile already uses: the whole tile
-                    // goes down, opened on this member.
+                    // 🔴 EXACTLY WHAT ITS HOME TILE DOES — members[0], the top
+                    // seller. No initialMember and no initialOption: a
+                    // favourite is the TILE, so it opens the drawer the same
+                    // way tapping the tile in its own family would, and the
+                    // two copies cannot behave differently.
                     onClick={() => {
-                      const t = boardTile(fav.tileKey);
-                      if (t) setOpenTile({ tile: t, initialMember: fav.memberSap });
+                      const t = boardTile(fav.key);
+                      if (t) setOpenTile({ tile: t, initialMember: t.members[0].sap });
                     }}
                     className="flex min-w-0 flex-col gap-1.5 text-left"
                     style={{ opacity: ready ? 1 : 0.45 }}
@@ -1765,8 +1753,8 @@ export default function PoV2Page(): React.JSX.Element {
                     </span>
                     {/* v2 tile label: centred · one size · fixed 2-line block.
                         Applies to every image-with-label grid in v2. Owner
-                        ruling 2026-09-09. The caption is BOTH halves here —
-                        see FavView.caption for why. */}
+                        ruling 2026-09-09. The caption is the TILE LABEL, the
+                        same word its home copy carries — see FavView. */}
                     <span className="block w-full text-center text-[12px] font-semibold" style={TILE_TEXT_STYLE}>
                       {fav.caption}
                     </span>
@@ -2059,16 +2047,16 @@ export default function PoV2Page(): React.JSX.Element {
                   {group.name}
                 </h3>
                 {group.rows.map((row) => {
-                  const starred = isFavProduct(row.sap, favProducts);
+                  const starred = isFavProduct(row.key, favProducts);
                   return (
                     <button
-                      key={row.sap}
+                      key={row.key}
                       type="button"
                       // THE WHOLE ROW IS THE TARGET, not just the star. A 44px
                       // glyph at the far right of a 390px row is a long reach
                       // with a thumb, and there is nothing else a tap here
                       // could mean.
-                      onClick={() => toggleFavProduct(row.sap)}
+                      onClick={() => toggleFavProduct(row.key)}
                       aria-pressed={starred}
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
                       style={{ borderTop: `1px solid ${RULE}` }}
@@ -2082,10 +2070,9 @@ export default function PoV2Page(): React.JSX.Element {
                                style={{ objectFit: "contain", mixBlendMode: "multiply" }} />
                         )}
                       </span>
-                      {/* THE FULL CAPTION, both halves — "Luxurio Matt". The
-                          same string the board tile carries, from the same
-                          resolveFav, so a row and its tile cannot disagree.
-                          De-doubled where tile and member are the same word. */}
+                      {/* THE TILE LABEL — "PU Prime", the same string the
+                          board prints under the same picture, from the same
+                          resolveFav, so a row and its tile cannot disagree. */}
                       <span className="min-w-0 flex-1 truncate text-[14px] font-semibold"
                             style={{ color: starred ? VIOLET : INK }}>
                         {row.caption}
