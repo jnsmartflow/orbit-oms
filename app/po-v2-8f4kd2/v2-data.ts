@@ -517,6 +517,15 @@ const TILE_ART_ALIAS: ReadonlyMap<string, string> = new Map([
   ["vt-eterna",     "product-vt-eterna"],
   ["smart-choice",  "smart-choice-acrylic-distemper"],
   ["promise-sheen", "product-promise-sheen-interior"],
+  // 2026-09-09, owner's ask: "Coats : product-fbc-advance". The tin arrived as
+  // a MEMBER photo — product-fbc-advance was already FBC Advance's own slug and
+  // already in MEMBER_IMAGES, it was only the FILE that was missing — so the
+  // drawer would have picked it up on its own. The board tile would not: it
+  // resolves tileImage("coats-additives"), and nothing owns that slug. The
+  // alias is what puts the same tin on the grid, which is where he asked for
+  // it. FBC Advance leads the tile, so this is also what its leader would have
+  // inherited; the alias just says so out loud.
+  ["coats-additives", "product-fbc-advance"],
 ]);
 
 /** The tile's image URL, or null when there is no file for that slug. */
