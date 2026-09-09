@@ -2,15 +2,29 @@
 
 import { Search, LayoutGrid } from "lucide-react";
 
-// Direction-A slim module header — extracted VERBATIM from
-// components/picking/picking-board-mobile.tsx:1708-1739 (2026-07-29), which
-// had been the only implementation since the Direction-A shell shipped
-// 2026-07-19. CLAUDE_UI.md §59.6 listed "shared minimal header + big search"
-// as [DEFERRED] / "not yet extracted to a shared component" — this is that
-// extraction, and nothing else: every className, aria-label, tap target,
-// icon size and the safe-area padding are byte-identical to the inline JSX
-// it replaces. Do not restyle here; a visual change belongs in its own
-// commit against every consumer at once.
+// Direction-A slim module header. Extracted verbatim from
+// components/picking/picking-board-mobile.tsx (2026-07-29), then RESTYLED
+// 2026-09-09 — the restyle its own comment asked for, in its own commit,
+// against all seven consumers at once.
+//
+// 🔴 IT IS A PALE MASTHEAD, NOT A FILLED BAND. The band used to be solid
+// brand-600, which made it the largest and brightest block of violet in the
+// product, on the smallest screens, for a header that carries no decision.
+// The ground is now #F5F3FF and the TITLE carries the colour. The pattern and
+// its reasoning come from app/po-v2-8f4kd2/, which is the reference.
+//
+// 🔴 THE AVATAR IS WHITE, NOT ink-50. Everywhere else in the app an identity
+// avatar is an ink-50 disc (CLAUDE_UI.md §10.1), but ink-50 is #F4F3F8 and this
+// ground is #F5F3FF — seven units apart in blue and nothing else. On this one
+// surface that is a fill that is not a fill: 1.01:1, a disc defined only by its
+// hairline. White reads as an object sitting ON the wash, which is the same
+// reason v2's search bar is white on the same ground.
+//
+// 🔴 CHANGING THE GROUND HERE CHANGES THE STATUS BAR. A pale header under iOS's
+// `black-translucent` puts white clock glyphs on near-white. Every route that
+// renders this component therefore needs `statusBarStyle: "default"` and a
+// matching `themeColor` — /picking, /ci and /mrn carry those overrides for this
+// reason. A new consumer needs one too.
 //
 // Deliberately does NOT call useMobileShell() itself — the caller passes the
 // handlers in, so a future module can wire the avatar/grid to something
@@ -73,23 +87,23 @@ export function ModuleMobileHeader({
 }: ModuleMobileHeaderProps): React.JSX.Element {
   return (
     <div
-      className="flex-shrink-0 bg-brand-600 flex items-center justify-between gap-2.5 px-3.5"
+      className="flex-shrink-0 bg-[#F5F3FF] border-b border-ink-100 flex items-center justify-between gap-2.5 px-3.5"
       style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)", paddingBottom: "10px" }}
     >
       <button
         type="button"
         onClick={onAvatarClick}
         aria-label="Open account menu"
-        className="w-10 h-10 min-w-[44px] min-h-[44px] rounded-full bg-white/20 active:bg-white/30 flex items-center justify-center text-white text-[13px] font-bold shrink-0"
+        className="w-10 h-10 min-w-[44px] min-h-[44px] rounded-full bg-white border border-ink-100 active:bg-ink-50 flex items-center justify-center text-ink-600 text-[13px] font-bold shrink-0"
       >
         {avatarInitials}
       </button>
       {subtitle === undefined ? (
-        <h1 className="text-[19px] font-extrabold text-white tracking-tight">{title}</h1>
+        <h1 className="text-[19px] font-extrabold text-brand-600 tracking-tight">{title}</h1>
       ) : (
         <div className="flex min-w-0 flex-col items-center">
-          <h1 className="text-[19px] font-extrabold text-white tracking-tight">{title}</h1>
-          <p className="max-w-full truncate text-[11.5px] font-medium text-white/75 tabular-nums">
+          <h1 className="text-[19px] font-extrabold text-brand-600 tracking-tight">{title}</h1>
+          <p className="max-w-full truncate text-[11.5px] font-medium text-ink-500 tabular-nums">
             {subtitle}
           </p>
         </div>
@@ -99,7 +113,7 @@ export function ModuleMobileHeader({
           type="button"
           onClick={onMenuClick}
           aria-label="Open all pages menu"
-          className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15"
+          className="w-11 h-11 rounded-[10px] flex items-center justify-center text-ink-600 active:bg-ink-100"
         >
           <LayoutGrid size={21} />
         </button>
@@ -108,7 +122,7 @@ export function ModuleMobileHeader({
             type="button"
             onClick={onSearchToggle}
             aria-label="Search"
-            className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15"
+            className="w-11 h-11 rounded-[10px] flex items-center justify-center text-ink-600 active:bg-ink-100"
           >
             <Search size={20} />
           </button>

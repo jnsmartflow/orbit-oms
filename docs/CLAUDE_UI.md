@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.27 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.28 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1486,9 +1486,9 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 
 ### 59.7 `ModuleMobileHeader` — the shared Direction-A header [LIVE, 2026-07-29]
 
-`components/shared/module-mobile-header.tsx`. The fourth shared piece, alongside the provider (§59.1), the bar slot (§59.2) and `WorkflowTabBar` (§59.3). Extracted **verbatim** from `picking-board-mobile.tsx` (`a2fb6889`), where it had been the only implementation since Direction A shipped: every className, aria-label, tap target, icon size and the safe-area padding are byte-identical to the inline JSX it replaced. **Do not restyle it here** — a visual change belongs in its own commit, applied to every consumer at once.
+`components/shared/module-mobile-header.tsx`. The fourth shared piece, alongside the provider (§59.1), the bar slot (§59.2) and `WorkflowTabBar` (§59.3). Extracted **verbatim** from `picking-board-mobile.tsx` (`a2fb6889`), then **restyled 2026-09-09** — the one-commit-against-every-consumer change its own note asked for. See §59.8 for the treatment.
 
-**Layout:** avatar (left) · title (centre) · grid + optional search (right). Teal-600 band, `flex-shrink-0`. It does **not** position itself: the root is intended as a sibling of a `flex-1` scroll area inside a `fixed inset-0 flex flex-col` screen root, so the consumer keeps ownership of the surrounding frame.
+**Layout:** avatar (left) · title (centre) · grid + optional search (right). `flex-shrink-0`, on the pale masthead ground (§59.8), no longer a filled band. It does **not** position itself: the root is intended as a sibling of a `flex-1` scroll area inside a `fixed inset-0 flex flex-col` screen root, so the consumer keeps ownership of the surrounding frame.
 
 | Prop | | Notes |
 |---|---|---|
@@ -1504,9 +1504,69 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 
 **⚠️ `searchActive` is inert — declared, never destructured, never read.** This is not an oversight and not a bug: the inline original rendered an identical search button in both states, and the extraction was pixel-for-pixel. Wiring an active-state look during that refactor would have smuggled a visual change into a commit whose entire claim was that nothing changed. It is a **one-className job** whenever the active treatment is actually designed — do it then, in its own commit, not as a side effect. A caller may pass its real state today; it just has no effect.
 
-**Consumers today: both Picking faces, and nothing else** — `picking-board-mobile.tsx` (supervisor, `showSearch` default true + `searchActive`/`onSearchToggle` wired to its own filter row) and `picker-my-picks-board.tsx` (picker, `showSearch={false}` — that face has no search). Behaviour and per-face detail: `CLAUDE_PICKING.md §5.3`-§5.4.
+**Consumers today: SEVEN, across three routes** (recounted 2026-09-09 — this line said "both Picking faces, and nothing else", which had gone stale). `/picking`: `app/picking/page.tsx`, `picking-board-mobile.tsx` (supervisor, `showSearch` default true + `searchActive`/`onSearchToggle` wired to its own filter row) and `picker-my-picks-board.tsx` (picker, `showSearch={false}` — that face has no search). `/ci`: `ci/new-return.tsx`, `ci/submitted-board.tsx`. `/mrn`: `mrn/supervisor-board.tsx`, `mrn/line-sheet.tsx`. Behaviour and per-face detail: `CLAUDE_PICKING.md §5.3`-§5.4.
 
 **Future adopters — a swap, not a rebuild.** **Tint Operator mobile** and **Trip Report mobile** are the two named candidates (§59.4's "how a future module plugs in"); both already have a hand-rolled header, so adopting is replacing markup, not designing anything. Explicitly **NOT `/po`** — it builds its own Home/Drafts/Sent bar and header inline and is deliberately off this circuit (§59.6); do not add "protect /po" guards. Explicitly **NOT `/floor`** — desktop-first, with no mobile-shell usage at all (`CLAUDE_FLOOR.md` mentions none of this machinery, verified 2026-07-30).
+
+---
+
+### 59.8 The pale masthead — the mobile header standard [2026-09-09]
+
+**Every mobile header in the product is a pale `#F5F3FF` masthead. Filled brand-600
+bands are gone.** The reference implementation is `app/po-v2-8f4kd2/`, and the reasoning
+is its own: a solid `#7C3AED` band was the largest, brightest block of violet in the
+product, on the smallest screens, for a header that carries no decision.
+
+| | |
+|---|---|
+| Ground | `#F5F3FF`, flat, no gradient. `brand-50` is the same hex — see the collision note below |
+| Wordmark / title | `brand-600` `#7C3AED` |
+| Bottom rule | 1px `ink-100` `#E9E7F0` |
+| Avatar | **white** fill, `ink-600` initials, 1px `ink-100` border |
+| Icon controls | `ink-600`, pressed `ink-100` |
+| Subtitle | `ink-500` |
+| Bottom nav | active `brand-700` `#6D28D9`, inactive `ink-400` `#9C99AC` |
+
+Applied to `app/po/po-page.tsx` and to `ModuleMobileHeader` (§59.7), which covers all
+seven of its consumers at once.
+
+🔴 **The wordmark is `brand.600`, NOT the colour spec's `brand.800`, and that is a
+RULING not a drift.** `docs/prompts/drafts/web-update-2026-09-06-orbit-colour-spec-v2.md`
+line 42 assigns `#5B21B6` to "wordmark on white". On a white or near-white working screen
+at header size that reads as a bruise; `#7C3AED` stays a brand colour. v2 diverged first
+and was right. **The spec line is wrong and is superseded by this section — do not
+"correct" the code back to it.**
+
+🔴 **The avatar is WHITE here, and only here.** Everywhere else an identity avatar is
+`ink-50` (§10.1). `ink-50` is `#F4F3F8` and this ground is `#F5F3FF`: seven units apart
+in blue and identical in red and green, so on this one surface it measures **1.01:1** and
+is a fill that is not a fill. White is 1.10:1 and reads as an object sitting ON the wash,
+which is exactly why v2's search bar is white on the same ground.
+
+🔴 **CHANGING THIS GROUND CHANGES THE STATUS BAR, AND THAT IS THE PART THAT BITES.**
+`app/layout.tsx` sets `statusBarStyle: "black-translucent"` app-wide, which draws the page
+under the status bar and paints the clock and battery **white** — correct over a violet
+band, invisible over this wash. Every route rendering a pale masthead therefore carries
+its own override, matching what `/po` and `/po-v2` already did:
+
+```ts
+export const metadata: Metadata = { appleWebApp: { capable: true, title: "Orbit", statusBarStyle: "default" } };
+export const viewport: Viewport = { themeColor: "#F5F3FF" };
+```
+
+Live on `/picking`, `/ci`, `/mrn` and `/po`. **A new consumer of `ModuleMobileHeader` needs
+one too** — without it the symptom is "the clock disappeared", which nobody connects to a
+colour change. `themeColor` must be on the **viewport** export; in Next 14
+`metadata.themeColor` is ignored with a warning. Next shallow-merges viewport per field,
+so only `themeColor` is overridden and the layout's `viewportFit` and scale settings are
+inherited. Android picks dark status icons from `#F5F3FF`'s luminance on its own.
+`public/po.webmanifest`'s `theme_color` moved with it; its `background_color` stays
+`#7C3AED` because that is the launch splash, which is still violet.
+
+⚠ **`brand-50` IS `#F5F3FF` — the same hex as this ground.** Any brand-50 surface on a
+screen that has a masthead becomes a second identical wash and reads as a second header.
+Picking's three filter summary strips hit exactly this and moved to `ink-50` on
+2026-09-09. Check for it before painting anything `brand-50` on a mobile screen.
 
 ---
 
@@ -1720,4 +1780,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.27 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **new §10.1: a user avatar is `bg-ink-50` · `text-ink-600` · 1px `border-ink-100`.** Rebrand step 3c had moved avatars to a solid `ink-900` disc on the correct principle that an avatar identifies a person and must not carry the brand colour; the side effect was that maximum visual weight landed on something nobody is deciding about and that people look at twice a day. Identity should be legible and quiet. Initials measure 7.26:1 on the fill, clearing AA and AAA. Nine identity sites moved: the role rail, the admin rail, the phone You sheet, the attendance and history headers, the user detail panel, the tint split builder, the TI report and the mail-orders punched-by mark. 🔴 §10.1 also names the avatars that KEEP their colour because they encode a STATE rather than a person — `OperatorAvatar` in tint board-bits and `OperatorTd`'s `avatarColor` in tint-table-view, both pairing a dark not-done disc with `green-600` for done — plus the sales-officer role avatars. Recolouring only the dark half of a state pair deletes a status signal. §2 and §7's avatar lines corrected in the same pass: both still claimed `bg-teal-600`, which no avatar has painted since step 3c. Prior, v5.26 (2026-09-09): the login panel's ramp dialled back for panel proportions, and §12.1.1 added so the deliberate panel/icon divergence is not "reconciled" away. Prior, v5.25 (2026-09-09): the rings removed from the login panel as a decision, not a deferral. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip.*
+*UI v5.28 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **new §59.8: the pale `#F5F3FF` masthead is now the mobile header standard and filled brand-600 bands are gone**, on `/po` and on `ModuleMobileHeader` across all seven of its consumers. Ground `#F5F3FF`, title `brand-600`, 1px `ink-100` rule, white avatar with `ink-600` initials, `ink-600` icon controls, bottom nav `brand-700` / `ink-400`. 🔴 Three things in §59.8 are there to stop them being undone: the wordmark stays **`brand.600` against the colour spec's `brand.800`** — the spec line is wrong and is superseded, not to be "corrected" back; the avatar is **white here and only here**, because `ink-50` `#F4F3F8` on `#F5F3FF` measures 1.01:1 and is a fill that is not a fill; and **changing this ground changes the STATUS BAR** — the app-wide `black-translucent` paints white clock glyphs that vanish on the wash, so `/picking`, `/ci` and `/mrn` gained per-route `statusBarStyle: "default"` + `themeColor` overrides to match `/po` and `/po-v2`, and `po.webmanifest`'s `theme_color` moved with them. ⚠ Also recorded: **`brand-50` is the same hex as the masthead ground**, which is how Picking's three filter summary strips became a second wash and why they moved to `ink-50`. §59.7 corrected in the same pass — it claimed a "Teal-600 band", said "do not restyle it here", and listed two consumers when there are seven across three routes. Prior, v5.27 (2026-09-09): §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back for panel proportions, §12.1.1 added. Prior, v5.25: the rings removed from the login panel. Prior, v5.21 (2026-09-08): red is error and destructive only, urgency is amber.*

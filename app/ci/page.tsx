@@ -1,3 +1,4 @@
+import type { Metadata, Viewport } from "next";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
@@ -8,6 +9,33 @@ import { CiShell } from "@/components/ci/ci-shell";
 import { CiBillingBoardScreen } from "@/components/ci/billing-board";
 
 export const dynamic = "force-dynamic";
+
+// ── Status bar ───────────────────────────────────────────────────────────────
+// 🔴 THIS ROUTE'S HEADER IS A PALE MASTHEAD (#F5F3FF), SO THE STATUS BAR HAS TO
+// CARRY DARK GLYPHS. app/layout.tsx sets `statusBarStyle: "black-translucent"`
+// app-wide, which draws the page UNDER the status bar and paints the clock and
+// battery WHITE — correct over the old solid brand-600 band, and invisible over
+// the wash that replaced it on 2026-09-09. "default" makes iOS RESERVE the bar
+// and paint dark instead. Same override /po and /po-v2 already carry.
+//
+// ⚠ themeColor lives on the VIEWPORT export, not on `metadata` — in Next 14
+// `metadata.themeColor` logs "Unsupported metadata themeColor is configured in
+// metadata export" and is not honoured. Next shallow-merges viewport per FIELD,
+// so this overrides themeColor for THIS ROUTE ONLY and inherits the layout's
+// viewportFit / width / initialScale / maximumScale / userScalable untouched.
+// Android derives its icon colour from theme_color's luminance, and #F5F3FF is
+// far above the threshold, so it picks dark on its own.
+export const metadata: Metadata = {
+  appleWebApp: {
+    capable: true,
+    title: "Orbit",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#F5F3FF",
+};
 
 // /ci — Goods Return Note.
 //

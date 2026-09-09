@@ -2303,40 +2303,40 @@ export default function PoPage(): React.JSX.Element {
         <SplashScreen ready={!dataLoading} onDone={() => setSplashDone(true)} />
       )}
 
-      {/* Pinned teal Orbit brand bar — flex-shrink-0 TOP sibling of the scroll
-          area (mirrors footerPill, the shrink-0 sibling below it). It carries
-          the status-bar inset on a teal bg, so teal is continuous from the
-          status bar through the inset into the bar (no white gap). The ONE
-          teal-brand surface here; body content stays neutral. theme-color /
-          statusBarStyle unchanged. */}
+      {/* Pinned Orbit masthead — flex-shrink-0 TOP sibling of the scroll area
+          (mirrors footerPill, the shrink-0 sibling below it). It carries the
+          status-bar inset on its own ground, so the colour is continuous from
+          the status bar through the inset into the bar (no white gap).
+          statusBarStyle is already "default" on this route (app/po/page.tsx),
+          so iOS reserves the bar and paints DARK glyphs — which is what makes a
+          pale ground safe here.
+
+          🔴 A PALE MASTHEAD, NOT A FILLED BAND, matching app/po-v2-8f4kd2/.
+          A solid #7C3AED band was the largest, brightest block of violet in the
+          product, on the smallest screen, for a header that carries no
+          decision. The ground is #F5F3FF and the WORDMARK carries the colour.
+
+          🔴 THE RING MARK IS GONE. There is no symbol in this brand — the
+          rebrand deleted it everywhere in step 4 and this site was missed.
+          Wordmark only, and never a mark beside it.
+
+          🔴 "Purchase Order · Surat Depot" IS GONE and must not come back. The
+          nav already says where you are, and the depot name does not belong on
+          a screen a dealer may see. v2 dropped the same label after concluding
+          it was the one thing here nobody read. */}
       <div
-        className="flex-shrink-0 bg-[#7C3AED]"
+        className="flex-shrink-0 bg-[#F5F3FF] border-b border-ink-100"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)" }}
       >
         <div className="max-w-[480px] mx-auto px-4 pb-[11px] flex items-center justify-between gap-3">
-          <div className="min-w-0 flex items-center gap-2">
-            <svg viewBox="0 0 32 32" fill="none" className="w-[26px] h-[26px] shrink-0" aria-hidden="true">
-              <circle cx="16" cy="16" r="11" stroke="#fff" strokeWidth="2" />
-              <circle cx="16" cy="16" r="3.4" fill="#fff" />
-              <circle cx="27" cy="16" r="2.6" fill="#fff" />
-            </svg>
-            <div className="min-w-0">
-              <div className="text-[22px] font-extrabold text-white leading-none">Orbit</div>
-              {!selectedCust && (
-                <div
-                  className="text-[12px] leading-tight mt-0.5 truncate"
-                  style={{ color: "rgba(255,255,255,0.72)" }}
-                >
-                  Purchase Order · Surat Depot
-                </div>
-              )}
-            </div>
+          <div className="text-[22px] font-extrabold text-brand-600 leading-none tracking-[-0.045em]">
+            Orbit
           </div>
           {selectedCust && (
             <button
               type="button"
               onClick={onNewOrder}
-              className="flex items-center gap-1.5 text-white text-[13px] font-medium shrink-0 pl-3 active:opacity-70"
+              className="flex items-center gap-1.5 text-brand-700 text-[13px] font-medium shrink-0 pl-3 active:opacity-70"
             >
               <RefreshCw className="w-[15px] h-[15px]" /> New order
             </button>
@@ -3172,7 +3172,7 @@ export default function PoPage(): React.JSX.Element {
                       ? "border-brand-600 shadow-[0_0_0_3px_rgba(124,58,237,0.10)]"
                       : "border-gray-300 focus-within:border-brand-600 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.10)]"
                   }`}>
-                    <Search className={`w-[19px] h-[19px] shrink-0 ${listening ? "text-brand-600" : "text-gray-400"}`} />
+                    <Search className={`w-[19px] h-[19px] shrink-0 ${listening ? "text-brand-700" : "text-ink-400"}`} />
                     {listening ? (
                       <span className="flex-1 text-[16px] font-medium text-brand-700">Listening…</span>
                     ) : (
@@ -3798,7 +3798,7 @@ export default function PoPage(): React.JSX.Element {
             type="button"
             onClick={goHome}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "home" ? "text-brand-600" : "text-gray-400"
+              browseScreen === "home" ? "text-brand-700" : "text-ink-400"
             }`}
           >
             <Home className="w-5 h-5" />
@@ -3808,7 +3808,7 @@ export default function PoPage(): React.JSX.Element {
             type="button"
             onClick={openDrafts}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "drafts" ? "text-brand-600" : "text-gray-400"
+              browseScreen === "drafts" ? "text-brand-700" : "text-ink-400"
             }`}
           >
             <Bookmark className="w-5 h-5" />
@@ -3818,7 +3818,7 @@ export default function PoPage(): React.JSX.Element {
             type="button"
             onClick={openSent}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "sent" ? "text-brand-600" : "text-gray-400"
+              browseScreen === "sent" ? "text-brand-700" : "text-ink-400"
             }`}
           >
             <Send className="w-5 h-5" />

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import PoPage from "./po-page";
 
 // New public mobile order page at /po. Server wrapper so `force-dynamic` is
@@ -40,3 +40,16 @@ export const metadata: Metadata = {
 export default function Page() {
   return <PoPage />;
 }
+
+// 🔴 The masthead is now a pale #F5F3FF wash, not a solid brand-600 band, so
+// the status bar has to continue it rather than argue with it. statusBarStyle
+// above is already "default", which is what makes a light ground safe on iOS;
+// this is the Android half. Next shallow-merges viewport per FIELD, so only
+// themeColor is overridden here — app/layout.tsx's #7C3AED stays for every
+// other route, and this route inherits its viewportFit / scale settings.
+// ⚠ public/po.webmanifest's theme_color and background_color moved with it;
+// the manifest is what an INSTALLED /po reads, and leaving it violet would put
+// a violet strip above a pale header on Android.
+export const viewport: Viewport = {
+  themeColor: "#F5F3FF",
+};

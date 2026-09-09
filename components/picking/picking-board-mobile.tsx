@@ -2704,7 +2704,14 @@ export function PickingBoardMobile(): React.JSX.Element {
               </button>
             </div>
 
-            <div className="mx-[-16px] bg-brand-50 border-t border-brand-200 px-4 py-2 text-[12px] font-medium text-brand-700 flex items-center gap-1">
+            {/* 🔴 NEUTRAL, NOT brand-50, AND THE REASON IS A HEX COLLISION.
+                brand-50 is #F5F3FF, which is the exact ground the module
+                masthead took on 2026-09-09. Left violet, this strip became a
+                second identical wash on the same screen and read as a second
+                header stacked under the first. A summary of what the filters
+                currently show is inert, so it takes the inert fill and lets the
+                numbers carry themselves. All THREE tab strips move together. */}
+            <div className="mx-[-16px] bg-ink-50 border-t border-ink-100 px-4 py-2 text-[12px] font-medium text-ink-600 flex items-center gap-1">
               <b className="font-bold">{laneLabel}</b>
               <span>
                 &nbsp;·&nbsp;{filteredWaitingDue.length} due&nbsp;·&nbsp;{formatLitres(totalLitres)} L ready to load
@@ -2775,7 +2782,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 dropdown that used to narrow them is gone.
                 "over 30m" is scoped to still-picking (see overThresholdCount)
                 and is unchanged. Segment omitted entirely when the count is 0. */}
-            <div className="mx-[-16px] bg-brand-50 border-t border-brand-200 px-4 py-2 text-[12px] font-medium text-brand-700 flex items-center gap-1">
+            <div className="mx-[-16px] bg-ink-50 border-t border-ink-100 px-4 py-2 text-[12px] font-medium text-ink-600 flex items-center gap-1">
               <span className="tabular-nums">
                 {pickingView === "picker" && (
                   <>
@@ -2821,7 +2828,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 its explicit "today" wording because that band alone is
                 date-fenced (queue.ts's openPending scope); needs-check spans
                 all dates, so it deliberately carries no day qualifier. */}
-            <div className="mx-[-16px] bg-brand-50 border-t border-brand-200 px-4 py-2 text-[12px] font-medium text-brand-700 flex items-center gap-1">
+            <div className="mx-[-16px] bg-ink-50 border-t border-ink-100 px-4 py-2 text-[12px] font-medium text-ink-600 flex items-center gap-1">
               <b className="font-bold">{activeCheckedPicker ?? "All pickers"}</b>
               <span>
                 &nbsp;·&nbsp;{filteredNeedsCheck.length} to check
