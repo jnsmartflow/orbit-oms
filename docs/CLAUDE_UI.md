@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.25 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.26 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -313,11 +313,11 @@ entrance".
 | Item | What ships |
 |---|---|
 | Layout | `flex-col` on a phone, `md:flex-row` above. Panel `flex-[1.15]`, form side `flex-1`. |
-| Panel | The app icon's gradient plus a grain layer. No drawn element — see §12.1. |
+| Panel | The brand ramp tuned for a wide surface, plus a grain layer. No drawn element — see §12.1, and §12.1.1 for why it is not the icon's exact ramp. |
 | Content | `z-3`. Wordmark white at 45px of INK (30 / 38 / 45 stepping down), 56×3 `brand-400` accent bar, tagline 24px/18px/15px `brand-200` with the last word white and `whitespace-nowrap`. |
 | Form | White, `max-w-[330px]`. Time-aware greeting + date. Focus `border-brand-500` + `ring-4 ring-[rgba(139,92,246,.13)]`. Sign in is the commit button, `bg-brand-600`, full width, spinner on click. |
 
-### 12.1 The panel — icon gradient plus grain, and NO drawn element
+### 12.1 The panel — brand ramp plus grain, and NO drawn element
 
 🔴 **The panel carries no graphic, and that is a DECISION, not a deferral or a gap
 somebody has not got to yet.** Eleven variations were tried on it across one session on
@@ -332,8 +332,8 @@ new mockup.
 What carries the panel instead:
 
 ```css
-background-image: radial-gradient(125% 125% at 12% 4%,
-  #8465F0 0%, #7C4FE8 16%, #7C3AED 34%, #6428C4 68%, #4C1D95 100%);
+background-image: radial-gradient(105% 105% at 10% 2%,
+  #7A55E8 0%, #7846E2 14%, #7C3AED 30%, #6428C4 66%, #4C1D95 100%);
 ```
 
 Over it, one grain layer — `inset 0`, `opacity .12`, `pointer-events: none`, `z-1`, under
@@ -342,18 +342,33 @@ the content at `z-3` — tiling a 140px `feTurbulence` fractal-noise SVG as a da
 🔴 **The grain is the only reason the panel does not read as a flat CSS gradient.** A
 five-stop violet ramp across a 780×900 area bands visibly without it. Keep it.
 
-⚠ **The gradient is the icon's ramp but is NOT byte-identical to the icon.** The intent is
-that the login screen and the home-screen icon read as one surface, and they do, but the
-two definitions differ slightly and a future session should reconcile rather than assume:
+### 12.1.1 The panel and the icon use DIFFERENT ramps on purpose
 
-| | hot spot | stops |
-|---|---|---|
-| `public/icon-source.svg`, `scripts/generate-wordmark.mjs` | 14% 6% | `#8460EF` 0 · `#7F55EB` 18% · `#7C3AED` 36% · `#6428C4` 68% · `#4C1D95` 100% |
-| `app/login/page.tsx` | 12% 4% | `#8465F0` 0 · `#7C4FE8` 16% · `#7C3AED` 34% · `#6428C4` 68% · `#4C1D95` 100% |
+🔴 **Do not "reconcile" these two back to one set of numbers.** It looks like drift, it is
+the obvious tidy-up, and it is wrong. **The icon is square and the panel is wide, so the
+same stops do not produce the same result.** A radial gradient's light falls off over the
+ending shape's radius; on a square tile that is a short distance, and stretched across a
+780×900 panel the same numbers put the light stop over a third of the surface and wash the
+corner out. Same intent, different geometry, therefore different numbers.
 
-The last two stops and the `#7C3AED` anchor match exactly; the first two differ by a few
-units and the hot spot by two points. Visually indistinguishable, but **if the icon is
-regenerated, decide which is canonical instead of letting them drift further.**
+| | ending shape | hot spot | stops |
+|---|---|---|---|
+| Icon — `public/icon-source.svg`, `scripts/generate-wordmark.mjs` | 125% | 14% 6% | `#8460EF` 0 · `#7F55EB` 18% · `#7C3AED` 36% · `#6428C4` 68% · `#4C1D95` 100% |
+| Panel — `app/login/page.tsx` | 105% | 10% 2% | `#7A55E8` 0 · `#7846E2` 14% · `#7C3AED` 30% · `#6428C4` 66% · `#4C1D95` 100% |
+
+Three deliberate differences, applied 2026-09-09 after the icon's ramp was tried on the
+panel first and read too bright:
+
+- **Light stop two steps down**, `#8460EF` → `#7A55E8`, so the corner is lit rather than
+  washed.
+- **Ending shape 125% → 105%**, which pulls the light in so it stops covering a third of
+  the panel.
+- **`brand.600` arrives at 30% instead of 36%**, so the brand colour holds more of the
+  surface.
+
+What the two DO share is the anchor and the fall: `#7C3AED` is the pivot in both, and both
+step down through `#6428C4` to `#4C1D95`. That is what makes them read as one family. The
+first two stops and the geometry are tuned per surface and are expected to differ.
 
 ### 12.2 The rest
 
@@ -1674,4 +1689,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.25 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12: the rings are GONE from the login panel and the removal is a decision, not a deferral.** Eleven graphic variations were tried on that panel in one session — arcs, ellipses, a node network, streaks, a depot scene — and none survived a full-screen panel; the arcs shipped for a day and were removed with `app/login/login-rings.tsx`. §12.1 now describes the panel as the app icon's gradient plus a 140px `feTurbulence` grain layer at .12, records that the grain is the only thing keeping a five-stop violet ramp from banding, and carries a 🔴 against reintroducing a drawn layer as a fresh idea. The whole viewBox / radius / degrees-on-panel apparatus is deleted — there is no ring geometry to document. §12.1 also flags that the panel gradient is the icon's ramp but NOT byte-identical to `public/icon-source.svg` (hot spot 12%/4% against 14%/6%, first two stops a few units apart), with both sets tabulated so a regeneration reconciles them instead of drifting. §12.2 keeps the wordmark ink-height rule and now states both entrances and their reduced-motion behaviour. ⚠ Three stamps today were written against code since replaced — v5.22 called a 1010 radius load-bearing, v5.23 called the rings static, v5.24 documented the reference ring geometry. All three described a layer that no longer exists. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*
+*UI v5.26 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12.1: the login panel's ramp is dialled back for panel proportions, and §12.1.1 is new to stop somebody undoing it.** The icon's ramp was tried on the panel first and read too bright: a radial gradient's light falls off over its ending-shape radius, which is a short distance on a square tile and a third of the surface once stretched across a 780×900 panel. The panel now runs `radial-gradient(105% 105% at 10% 2%, #7A55E8 0%, #7846E2 14%, #7C3AED 30%, #6428C4 66%, #4C1D95 100%)` — light stop two steps down so the corner is lit rather than washed, ending shape 125%→105% to pull the light in, and brand.600 arriving at 30% instead of 36% so the brand colour holds more of the surface. 🔴 **The panel and the icon now use DIFFERENT ramps on purpose** and §12.1.1 says so with both sets tabulated, because "reconciling" them back to one set of numbers is the obvious tidy-up and it is wrong — same intent, different geometry. What they share is the `#7C3AED` anchor and the fall through `#6428C4` to `#4C1D95`, which is what makes them one family. The previous stamp (v5.25) framed the divergence as drift a future session should resolve; that framing is retired. Grain unchanged at .12. Prior, v5.25 (2026-09-09): the rings removed from the login panel as a decision, not a deferral; the whole viewBox / radius / degrees-on-panel apparatus deleted. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*

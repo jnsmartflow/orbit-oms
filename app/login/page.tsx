@@ -10,18 +10,24 @@ export const dynamic = 'force-dynamic';
 // Eleven variations of a graphic were tried on this panel over one session on
 // 2026-09-09: orbit arcs, ellipses, a node network, streaks, a depot scene. Every
 // one of them held together at mockup size and fell apart at full-screen size. The
-// arcs got furthest and shipped for a day (login-rings.tsx, removed in this commit;
+// arcs got furthest and shipped for a day (login-rings.tsx, removed 2026-09-09;
 // recoverable from git history). Do not reintroduce a graphic here without new
 // evidence that it survives a 1920-wide panel.
 //
-// What carries the panel instead is the APP ICON'S OWN GRADIENT, so the login
-// screen and the home-screen icon read as one surface, plus a grain layer.
-// ⚠ These stops are within a few units of `public/icon-source.svg` but are NOT
-// byte-identical to it — see CLAUDE_UI.md §12.1. If the icon is ever regenerated,
-// reconcile the two rather than assuming they already match.
+// What carries the panel instead is the brand ramp, plus a grain layer.
+//
+// 🔴 THE PANEL AND THE APP ICON DELIBERATELY USE DIFFERENT RAMPS. Do not
+// "reconcile" them back to one set of numbers — that is a fix somebody will
+// reach for and it is wrong. The icon is SQUARE, so its light falls off over a
+// short distance; the panel is WIDE, and the same stops stretched across it put
+// the light stop over a third of the surface and washed the corner out. Same
+// intent, different geometry, so different numbers: the panel's light is two
+// steps darker (#7A55E8), its ending shape is 105% rather than 125% so the light
+// stays in its corner, and brand.600 arrives at 30% rather than 34% so the brand
+// colour holds more of the surface. Both sets are tabulated in CLAUDE_UI.md §12.1.
 const PANEL_GRADIENT =
-  "radial-gradient(125% 125% at 12% 4%, " +
-  "#8465F0 0%, #7C4FE8 16%, #7C3AED 34%, #6428C4 68%, #4C1D95 100%)";
+  "radial-gradient(105% 105% at 10% 2%, " +
+  "#7A55E8 0%, #7846E2 14%, #7C3AED 30%, #6428C4 66%, #4C1D95 100%)";
 
 // 🔴 The grain is the only reason the panel does not read as a flat CSS gradient.
 // Keep it. Tiled 140px fractal noise at .12 — enough to break the banding, not
