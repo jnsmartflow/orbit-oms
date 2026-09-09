@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
 import { AssignContextBanner } from "./assign-context-banner";
+import { BuildTripDrawer } from "./build-trip-drawer";
 import { rowStatus, countByStatus, isHeldBack } from "./status-pill";
 import { PickGateToggle } from "./pick-gate-toggle";
 import { ShowStrip } from "./show-strip";
@@ -36,6 +37,21 @@ import type { RailReleaseSlot } from "./rail-card";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
 import type { SlotTabKey } from "./floor-tabs";
+import type { TripSummary } from "@/lib/trips/queries";
+import type {
+  DeliveryTypeOption,
+  VehicleOption,
+  TransporterOption,
+  DispatchWindowOption,
+} from "./build-trip-drawer";
+
+/** The four dropdown lists the Build trip drawer needs, from /api/floor/trips/options. */
+interface TripOptions {
+  deliveryTypes: DeliveryTypeOption[];
+  windows: DispatchWindowOption[];
+  vehicles: VehicleOption[];
+  transporters: TransporterOption[];
+}
 
 const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
 
@@ -167,7 +183,7 @@ export function FloorPage() {
   // stronger reason: bundles deliberately span slots and dates, so a slot filter
   // would cut most of them in half. With the landing view now "route", the slot
   // tab matters on first paint where under the picker default it did not.
-  const [mode, setMode] = useState<"flat" | "route" | "picker" | "group">(DEFAULT_VIEW_MODE);
+  const [mode, setMode] = useState<"flat" | "route" | "picker" | "group" | "trip">(DEFAULT_VIEW_MODE);
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
@@ -179,6 +195,21 @@ export function FloorPage() {
   //   current → what is already in his hands (read-only, just for context)
   const [assignContext, setAssignContext] = useState<number | null>(null);
   const [contextMode, setContextMode] = useState<"pending" | "current">("pending");
+
+  // ── The trip board (2026-09-09) ───────────────────────────────────────────
+  // 🔴 A SEPARATE FETCH, NOT A SLICE OF THE BOARD. `GET /api/floor/trips?date=`
+  // reads every bill under each trip through trip_drops; the board's own rows
+  // only carry what is still in `floorLiveBaseWhere`'s set. A trip whose bills
+  // are all checked has LEFT that set, so bands built by filtering board rows
+  // would render empty with a 0-of-0 bar. See trip-band.tsx's header.
+  //
+  // ⚠ NOT A SECOND POLL. It is fetched by `load()` alongside the other three
+  // feeds and on nothing else — the live-sync marker still drives exactly one
+  // refresh path, and the pause rules (panel open, selection up, History, tab
+  // hidden) are unchanged.
+  const [trips, setTrips] = useState<TripSummary[] | null>(null);
+  const [tripDrawerOpen, setTripDrawerOpen] = useState(false);
+  const [tripOptions, setTripOptions] = useState<TripOptions | null>(null);
 
   // Selection (design §7.8) — a Set of orderIds; survives a re-sort, cleared on
   // any tab/scope/date change below.
@@ -214,12 +245,33 @@ export function FloorPage() {
       else { setHoldRows([]); setSideError(`Hold feed HTTP ${holdRes.status}`); }
       if (cancRes.ok) setCancelledRows(((await cancRes.json()).rows ?? []) as FloorCancelledRow[]);
       else { setCancelledRows([]); setSideError((prev) => prev ?? `Cancelled feed HTTP ${cancRes.status}`); }
+
+      // The day's trips — a FOURTH feed, fetched here rather than by a poll of
+      // its own, so the board and the bands can never describe different
+      // moments. Anchored on the SAME day the board is showing: today in live
+      // mode, the viewed day in History.
+      //
+      // A failure leaves the bands empty and does NOT blank the board — same
+      // rule as the hold/cancelled feeds above (FLOOR §5: never throw the page
+      // away over a side feed).
+      const tripDateParam =
+        viewMode === "history" && histDate ? histDate : istTodayIso();
+      try {
+        const tripRes = await fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" });
+        if (tripRes.ok) setTrips(((await tripRes.json()).trips ?? []) as TripSummary[]);
+        else { setTrips([]); setSideError((prev) => prev ?? `Trips feed HTTP ${tripRes.status}`); }
+      } catch {
+        setTrips([]);
+        setSideError((prev) => prev ?? "Trips feed unreachable");
+      }
+
       setLastSyncedAt(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
       setData(null);
       setHoldRows(null);
       setCancelledRows(null);
+      setTrips(null);
     } finally {
       setLoading(false);
     }
@@ -332,6 +384,50 @@ export function FloorPage() {
     setContextMode("pending");
     setMode("group");
   }, []);
+
+  // ── By trip ───────────────────────────────────────────────────────────────
+  // A PLAIN setMode, and deliberately its own branch in the toggle below.
+  // "picker" routes through closeAssignContext (it IS the way back to the grid)
+  // and "group" through openGroupMode (it drops the context); "trip" does
+  // neither — it is an ordinary view with no context of its own, so routing it
+  // through either would silently clear an assign context the operator had not
+  // asked to leave.
+  const openTripMode = useCallback(() => {
+    setMode("trip");
+  }, []);
+
+  // The Build trip drawer's dropdown lists. Fetched ONCE, lazily, the first time
+  // the drawer opens — four static master-data lists have no business on the
+  // 15-second board reload, and most sessions never open the drawer at all.
+  const openTripDrawer = useCallback(async () => {
+    setTripDrawerOpen(true);
+    if (tripOptions !== null) return;
+    try {
+      const res = await fetch("/api/floor/trips/options", { cache: "no-store" });
+      if (res.ok) {
+        setTripOptions((await res.json()) as TripOptions);
+      } else {
+        // CLOSE AGAIN on failure. The drawer renders only once its options have
+        // landed, so leaving it "open" with nothing loaded would show the
+        // operator an empty screen and a toast he may have missed.
+        setTripDrawerOpen(false);
+        toast.error(`Could not load the trip form — HTTP ${res.status}`);
+      }
+    } catch {
+      setTripDrawerOpen(false);
+      toast.error("Could not load the trip form — check your connection.");
+    }
+  }, [tripOptions]);
+
+  // After a create. The selection is cleared and the board refetched EXPLICITLY:
+  // the live-sync poll is paused while a selection is up (FLOOR §5), so leaving
+  // the refresh to it would leave the new trip off screen until the operator
+  // clicked something else. Same shape as the Show strip's own handler.
+  const onTripCreated = useCallback(async () => {
+    setTripDrawerOpen(false);
+    setSelection(new Set());
+    await load();
+  }, [load]);
 
   // UNSCOPED on purpose — this only resolves already-SELECTED ids into rows for
   // the bulk bar, and a selection can only ever hold in-scope ids (it is cleared
@@ -1091,9 +1187,10 @@ export function FloorPage() {
             {topTab === "floor" && (() => {
               // Both slot-blind views keep the whole toggle visible while they
               // are active, so All + picker / All + group is never a trap.
-              const showSlotModes = slotTab !== "all" || mode === "picker" || mode === "group";
-              const modes = (["flat", "route", "picker", "group"] as const).filter(
-                (m) => m === "picker" || m === "group" || showSlotModes,
+              const showSlotModes =
+                slotTab !== "all" || mode === "picker" || mode === "group" || mode === "trip";
+              const modes = (["flat", "route", "trip", "group", "picker"] as const).filter(
+                (m) => m === "picker" || m === "group" || m === "trip" || showSlotModes,
               );
               return (
                 <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">
@@ -1111,11 +1208,25 @@ export function FloorPage() {
                           ? closeAssignContext()
                           : m === "group"
                             ? openGroupMode()
-                            : setMode(m)
+                            : // "trip" gets its OWN branch — a plain setMode. It
+                              // carries no assign context of its own, so routing
+                              // it through either handler above would clear one
+                              // the operator had not asked to leave.
+                              m === "trip"
+                              ? openTripMode()
+                              : setMode(m)
                       }
                       className={`px-[11px] text-[11px] ${mode === m ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`}
                     >
-                      {m === "flat" ? "Flat" : m === "route" ? "By route" : m === "picker" ? "By picker" : "By group"}
+                      {m === "flat"
+                        ? "Flat"
+                        : m === "route"
+                          ? "By route"
+                          : m === "trip"
+                            ? "By trip"
+                            : m === "picker"
+                              ? "By picker"
+                              : "By group"}
                     </button>
                   ))}
                 </span>
@@ -1160,6 +1271,11 @@ export function FloorPage() {
                 slotTab={slotTab}
                 onSlotTab={setSlotTab}
                 mode={mode}
+                // The day's trips, from their own feed — never derived from the
+                // board rows below them (see the state declaration).
+                trips={trips}
+                tripsLoading={loading}
+                onBuildTrip={() => void openTripDrawer()}
                 assignContext={assignContext}
                 // Name, not just the id — the By-group header button says who it
                 // is assigning to, and floor-board has no roster of its own.
@@ -1252,6 +1368,29 @@ export function FloorPage() {
           )}
         </div>
       </div>
+
+      {/* Build trip drawer (2026-09-09). Renders only once its options have
+          landed — three empty dropdowns would look like a broken form rather
+          than a loading one.
+
+          ⚠ NO Esc HANDLER OF ITS OWN. floor-page is the SINGLE window-level Esc
+          owner for the whole floor tree (FLOOR §4.6); a second listener races it
+          in registration order, which is the bug that spec replaced. The drawer
+          closes on its ✕ and on its backdrop. */}
+      {tripDrawerOpen && tripOptions && (
+        <BuildTripDrawer
+          rows={selectedRows}
+          // The board's own anchor day, not a clock read inside the drawer —
+          // so a trip built while looking at a past day carries that day.
+          tripDate={viewMode === "history" && histDate ? histDate : istTodayIso()}
+          deliveryTypes={tripOptions.deliveryTypes}
+          windows={tripOptions.windows}
+          vehicles={tripOptions.vehicles}
+          transporters={tripOptions.transporters}
+          onClose={() => setTripDrawerOpen(false)}
+          onCreated={() => void onTripCreated()}
+        />
+      )}
 
       {/* Detail panel (design §10) — slides over the board from any surface. */}
       {detail && (

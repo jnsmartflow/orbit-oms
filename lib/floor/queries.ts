@@ -680,6 +680,56 @@ export async function getFloorBoard(
   // ONE shared predicate (FLOOR §3/§5).
   const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
 
+  // ── The bill's TRIP (2026-09-09) ─────────────────────────────────────────
+  //
+  // TWO batched reads, both keyed on an `id IN (…)` list — drops first, then the
+  // trips those drops belong to. NEVER an include chain: lib/picking/queue.ts
+  // :537-554 records the measurement that settled this house rule, an include
+  // tree issuing EIGHTEEN SQL statements for a 72-row board because Prisma
+  // neither dedupes two chains to one table nor skips a chain for the rows whose
+  // FK is null. Here MOST rows have a null `tripDropId`, so an include would pay
+  // for every one of them.
+  //
+  // ⚠ A POST-FETCH ENRICHMENT, exactly like `billTo` and `duplicateSoNumbers`
+  // above. It adds NO term to `base`, nothing to `floorLiveBaseWhere()` and
+  // nothing to `getFloorLiveMarkerWhere()`, so the board and the live marker
+  // stay on the ONE shared predicate (FLOOR §3/§5 — re-declaring the WHERE in
+  // either place is the drift the PICKING §10 landmine warns about).
+  //
+  // ⚠ SELECT-ONLY. No `orders.update` anywhere near this: the marker keys on
+  // MAX(orders.updatedAt) and a second write fires a false "changed" on every
+  // board (FLOOR §10).
+  //
+  // 🔴 THIS IS THE BOARD'S VIEW OF A TRIP AND IT IS NOT THE TRIP LIST. The
+  // By-trip BANDS read GET /api/floor/trips, never these fields — a trip whose
+  // bills are all finished has left the board's live predicate, so bands built
+  // by filtering board rows would render empty and the progress bar would lie.
+  // What these fields are for is the opposite direction: putting a trip TAG on a
+  // row that is on screen.
+  const tripDropIds = Array.from(
+    new Set(orders.map((o) => o.tripDropId).filter((id): id is number => id !== null)),
+  );
+  const tripDrops =
+    tripDropIds.length > 0
+      ? await prisma.trip_drops.findMany({
+          where: { id: { in: tripDropIds } },
+          select: { id: true, tripId: true },
+        })
+      : [];
+  const tripIds = Array.from(new Set(tripDrops.map((d) => d.tripId)));
+  const tripRows =
+    tripIds.length > 0
+      ? await prisma.trips.findMany({
+          where: { id: { in: tripIds } },
+          select: { id: true, tripNumber: true, status: true },
+        })
+      : [];
+  const tripById = new Map(tripRows.map((t) => [t.id, t]));
+  // drop id → the trip it belongs to, resolved once for the whole page.
+  const tripByDropId = new Map(
+    tripDrops.map((d) => [d.id, tripById.get(d.tripId) ?? null]),
+  );
+
   let rows: FloorBoardRow[] = [];
   for (const order of orders) {
     const dealer = order.shipToOverrideCustomer ?? order.customer;
@@ -828,6 +878,19 @@ export async function getFloorBoard(
       // strip both key on it. Picking is the surface it FILTERS, through
       // buildPickingWhere's waiting branch; the two never share a predicate here.
       pickVisibleAt: order.pickVisibleAt ? order.pickVisibleAt.toISOString() : null,
+      // The bill's trip (2026-09-09) — resolved through the batched maps above,
+      // never a relation. All three are null on a bill that is on no trip, which
+      // is the normal state for most of the board.
+      //
+      // `tripDropId` is the pointer the At-desk pool keys on (null = at the
+      // desk); `tripNumber` and `tripStatus` are what the row's trip TAG reads.
+      // A dangling pointer — a drop deleted between the two reads — yields nulls
+      // for the pair rather than throwing, and the row simply shows no tag.
+      tripDropId: order.tripDropId,
+      tripNumber:
+        order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.tripNumber ?? null) : null,
+      tripStatus:
+        order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.status ?? null) : null,
     });
   }
 

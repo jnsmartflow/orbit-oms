@@ -165,6 +165,32 @@ export interface FloorBoardRow extends PickingQueueRow {
   //
   // ISO string, like every other date on this payload.
   pickVisibleAt: string | null;
+  // ── The bill's TRIP (2026-09-09) ─────────────────────────────────────────
+  //
+  // `tripDropId` is the ONE pointer on `orders`; the trip itself is reached
+  // through `trip_drops.tripId`, and there is deliberately no `tripId` column
+  // on the order (trip-schema draft §C4 — two pointers can disagree and nothing
+  // would catch it). getFloorBoard resolves the pair with TWO batched findMany
+  // calls, never an include chain.
+  //
+  // NULL on all three = the bill is on no trip. On the board that means it sits
+  // in the At-desk pool.
+  //
+  // ⚠ THESE ARE FOR THE ROW'S TAG, NOT FOR BUILDING THE TRIP BANDS. The By-trip
+  // view reads GET /api/floor/trips, because a trip whose bills are all finished
+  // is no longer in `floorLiveBaseWhere`'s set — bands filtered off board rows
+  // would render empty and their progress bars would lie. Two different
+  // questions: "which trip is this row on" (here) and "what trips exist today"
+  // (the route).
+  //
+  // ⚠ DECLARED HERE, NOT ON PickingQueueRow — same boundary as `smu`,
+  // `billToName`, the ship-to pair, the invoice pair and `pickVisibleAt` above
+  // (FLOOR §1: Floor is a CALLER of Picking; widen the Floor type, never the
+  // Picking one).
+  tripDropId: number | null;
+  tripNumber: string | null;
+  /** draft | released | loading | dispatched | cancelled — chk_trips_status. */
+  tripStatus: string | null;
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()

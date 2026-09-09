@@ -17,6 +17,8 @@ import { FloorTable } from "./floor-table";
 import { SlotBand } from "./slot-band";
 import { RouteRow } from "./route-row";
 import { GroupRow } from "./group-row";
+import { TripBand } from "./trip-band";
+import { DeskPool } from "./desk-pool";
 import { PickerCard, pickerCardStatus } from "./picker-card";
 import { buildPickGroups, buildOilGroups } from "@/lib/picking/grouping";
 import { formatArticleBreakdown } from "@/lib/floor/format";
@@ -25,6 +27,7 @@ import { UpcomingStrip } from "./upcoming-strip";
 import { countByStatus, rowStatus, sumLitres } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow, FloorPicker } from "@/lib/floor/types";
+import type { TripSummary } from "@/lib/trips/queries";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -133,6 +136,9 @@ export function FloorBoard({
   slotTab,
   onSlotTab,
   mode,
+  trips,
+  tripsLoading = false,
+  onBuildTrip,
   assignContext,
   assignContextName,
   contextMode,
@@ -156,7 +162,18 @@ export function FloorBoard({
   pickers: FloorPicker[];
   slotTab: SlotTabKey;
   onSlotTab: (key: SlotTabKey) => void;
-  mode: "flat" | "route" | "picker" | "group";
+  mode: "flat" | "route" | "picker" | "group" | "trip";
+  /**
+   * Today's trips (2026-09-09), from GET /api/floor/trips — NEVER derived from
+   * `floor.rows`. A trip whose bills are all checked has left
+   * `floorLiveBaseWhere`'s set, so a band built by filtering board rows would
+   * render empty with a 0-of-0 bar and tell the operator a finished load was
+   * never loaded. null = not fetched yet (or the fetch failed).
+   */
+  trips: TripSummary[] | null;
+  tripsLoading?: boolean;
+  /** Open the Build trip drawer with the current selection. */
+  onBuildTrip: () => void;
   // Assign context (2026-08-11) — the picker the operator drilled into from the
   // By-picker grid, or null for the ordinary board. null is the untouched path:
   // every derivation below short-circuits to exactly what it did before.
@@ -217,6 +234,12 @@ export function FloorBoard({
   // NOT one-open-at-a-time like the route rows: a bundle is a short list the
   // operator compares against others, so closing one to open the next fights him.
   const [openMains, setOpenMains] = useState<Set<number> | null>(null);
+  // By-trip expand state — a SET OF TRIP IDs the operator has OVERRIDDEN, same
+  // reasoning as `openMains` above: the 15s marker re-runs load() and re-renders
+  // the bands, so keying on position would move the open band to whatever
+  // floated to the top. A trip that leaves simply disappears; a new one arrives
+  // at its default (open unless finished).
+  const [closedTrips, setClosedTrips] = useState<Set<number>>(new Set());
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
@@ -328,7 +351,13 @@ export function FloorBoard({
   // and dates on purpose, so a slot filter would cut most bundles in half. There
   // is no date or slot term anywhere in that view — the header strip below says
   // so in plain English, and each row carries its own Slot column instead.
-  const showSlotTabs = mode !== "picker" && mode !== "group" && !(inContext && !contextPending);
+  // By trip hides them for the SAME reason By group does, and it is not a
+  // weaker one: a trip deliberately spans dispatch windows (a load is a van, not
+  // a time), so a slot filter would cut most bands in half and the progress bars
+  // would describe a fraction of the load. Each band names its own window in its
+  // meta line instead.
+  const showSlotTabs =
+    mode !== "picker" && mode !== "group" && mode !== "trip" && !(inContext && !contextPending);
 
   // ── By group — computed ONLY in group mode, so no other view pays for it ────
   //
@@ -524,6 +553,103 @@ export function FloorBoard({
           })}
         </div>
       );
+  } else if (mode === "trip") {
+    // ⚠ SITS ABOVE the `slotTab === "all"` check, for the same reason the picker
+    // grid and the group view do: switching slot tabs must not change these
+    // bands at all. Search and filter DO still apply — `dueRows` descends from
+    // the filtered set, and narrowing "which bills are we talking about" is a
+    // fair question to ask of a trip. The slot tab narrows "which window", which
+    // is the one question a trip exists to ignore.
+    //
+    // 🔴 THE BANDS COME FROM `trips`, THE ROWS COME FROM THE BOARD. Each band's
+    // counts, litres and readiness are the API's, computed over every bill on
+    // the trip; the table inside it is the subset still on today's live board.
+    // See trip-band.tsx's header for why those two numbers legitimately differ.
+    const rowsByTripId = new Map<number, FloorBoardRow[]>();
+    for (const r of dueRows) {
+      if (r.tripDropId === null) continue;
+      // The row knows its trip NUMBER, not its trip id — the payload carries the
+      // number because that is what the row's tag renders. Match on it.
+      const t = (trips ?? []).find((x) => x.tripNumber === r.tripNumber);
+      if (!t) continue;
+      const arr = rowsByTripId.get(t.id) ?? [];
+      arr.push(r);
+      rowsByTripId.set(t.id, arr);
+    }
+
+    // Bills on NO trip — the At-desk pool's population.
+    const poolRows = dueRows.filter((r) => r.tripDropId === null);
+
+    // ORDER: trips with work outstanding first, in their own number order; then
+    // the finished ones, which sink and collapse (mockup: "a trip that is fully
+    // green sinks to the bottom and collapses to one grey line"). Within each
+    // half the API's order is kept — (typeCode, seq), the order the numbers were
+    // handed out, which is the order a planner thinks in.
+    const ordered = [...(trips ?? [])].sort((a, b) => {
+      const aDone = a.counts.total > 0 && a.counts.checked === a.counts.total;
+      const bDone = b.counts.total > 0 && b.counts.checked === b.counts.total;
+      if (aDone !== bDone) return aDone ? 1 : -1;
+      return 0;
+    });
+
+    body = (
+      <div className="flex flex-col gap-3.5 p-3.5">
+        <DeskPool
+          count={poolRows.length}
+          litres={sumLitres(poolRows)}
+          gateOn={gateOn}
+          canBuild={!isHistory}
+          selectedCount={
+            selection ? poolRows.filter((r) => selection.has(r.orderId)).length : 0
+          }
+          onBuild={onBuildTrip}
+        />
+
+        {tripsLoading && trips === null && (
+          <div className="px-1 py-6 text-center text-[11.5px] text-gray-400">Loading trips…</div>
+        )}
+
+        {trips !== null && ordered.length === 0 && (
+          <div className="px-5 py-12 text-center">
+            <div className="text-[28px] leading-none text-gray-300">○</div>
+            <h4 className="mt-2 text-[13px] font-semibold text-gray-900">No trips for this day</h4>
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+              Tick bills in the pool above and press Build trip.
+            </p>
+          </div>
+        )}
+
+        {ordered.map((t) => {
+          const finished = t.counts.total > 0 && t.counts.checked === t.counts.total;
+          return (
+            <TripBand
+              key={t.id}
+              trip={t}
+              rows={sort(rowsByTripId.get(t.id) ?? [])}
+              nowMs={nowMs}
+              // Finished trips arrive COLLAPSED and everything else OPEN, unless
+              // the operator has said otherwise for that trip.
+              open={closedTrips.has(t.id) ? false : !finished}
+              onToggle={() =>
+                setClosedTrips((prev) => {
+                  const next = new Set(prev);
+                  // The set stores "the operator overrode the default", so the
+                  // toggle flips membership rather than storing a boolean.
+                  if (next.has(t.id)) next.delete(t.id);
+                  else next.add(t.id);
+                  return next;
+                })
+              }
+              variant={variant}
+              // `gateOn` rides `selProps` — both its arms carry it (see the
+              // declaration). Passing it again here would be the same value
+              // twice and TS flags the shadowing.
+              {...selProps}
+            />
+          );
+        })}
+      </div>
+    );
   } else if (mode === "group" && groupData) {
     // ⚠ SITS ABOVE the `slotTab === "all"` check, for the same reason the picker
     // grid does: switching slot tabs must not change these bundles at all.

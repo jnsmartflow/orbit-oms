@@ -448,6 +448,28 @@ export function FloorTable({
                 {/* The tag rides the OBD cell — first column a reader lands on,
                     and it never displaces the Status column's own meaning. */}
                 {dup && <DuplicateSoTag variant="soft" className="ml-1.5 align-[1px]" />}
+                {/* THE TRIP TAG (2026-09-09) — INSIDE the OBD cell, never a new
+                    column. This table's colgroup, header cells and FOUR width
+                    arrays map POSITIONALLY, so a tenth column shunts every
+                    column right on two of the four arms; the visibility-gate
+                    build made the same call and put its new fact on the status
+                    pill for the same reason.
+
+                    It rides the OBD cell because that is where the row's other
+                    identifiers already live — the duplicate-SO tag and the age
+                    chip are its neighbours — and because a trip number IS a
+                    reference number, like the OBD beside it.
+
+                    Renders NOTHING when the bill is on no trip, which is most of
+                    the board: no empty space, no dash, no placeholder. */}
+                {row.tripNumber && (
+                  <span
+                    title={`On trip ${row.tripNumber}${row.tripStatus ? ` · ${row.tripStatus}` : ""}`}
+                    className="ml-1.5 rounded-[3px] bg-gray-900 px-[5px] py-px align-[1px] font-mono text-[9.5px] font-semibold text-white"
+                  >
+                    {row.tripNumber}
+                  </span>
+                )}
                 {(row.ageDays ?? 0) > 0 && (
                   <span
                     className="ml-1.5 rounded-[3px] px-[5px] py-px text-[9.5px] font-bold bg-[#f3f4f6] text-[#6b7280]"
