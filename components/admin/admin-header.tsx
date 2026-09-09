@@ -80,7 +80,7 @@ export function AdminHeader({ userName: _userName, userRole: _userRole }: AdminH
         <LiveTime />
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-1.5 text-[12px] text-gray-500 hover:text-red-600 transition-colors"
+          className="flex items-center gap-1.5 text-[12px] text-ink-500 hover:text-ink-700 transition-colors"
         >
           <LogOut className="h-3.5 w-3.5" />
           Sign out

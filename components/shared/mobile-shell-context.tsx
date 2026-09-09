@@ -192,7 +192,7 @@ export function MobileShellProvider({
             <button
               type="button"
               onClick={openSignoutConfirm}
-              className="flex w-full items-center gap-3.5 rounded-[11px] px-3 py-3.5 text-[15px] font-medium text-red-600"
+              className="flex w-full items-center gap-3.5 rounded-[11px] px-3 py-3.5 text-[15px] font-medium text-ink-500 hover:text-ink-700"
             >
               <LogOut className="h-[21px] w-[21px]" />
               Sign out
