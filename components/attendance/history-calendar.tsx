@@ -93,7 +93,7 @@ export function HistoryCalendar({
           </div>
           <p className="text-[14px] font-semibold text-gray-900">History</p>
         </div>
-        <div className="w-7 h-7 bg-ink-900 rounded-full flex items-center justify-center text-white text-[11px] font-semibold">
+        <div className="w-7 h-7 bg-ink-50 border border-ink-100 rounded-full flex items-center justify-center text-ink-600 text-[11px] font-semibold">
           {getInitials(userName)}
         </div>
       </header>

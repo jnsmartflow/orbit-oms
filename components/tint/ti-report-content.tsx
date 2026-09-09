@@ -586,7 +586,7 @@ export function TIReportContent() {
                       </TableCell>
                       <TableCell className="py-2.5 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-ink-900 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                          <span className="w-5 h-5 rounded-full bg-ink-50 border border-ink-100 text-ink-600 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
                             {row.operatorName.charAt(0).toUpperCase()}
                           </span>
                           <span className="text-[11px] text-gray-600">{row.operatorName}</span>

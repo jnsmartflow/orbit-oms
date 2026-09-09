@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.26 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.27 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -54,7 +54,7 @@ ViewBox: 0 0 22 22. Size: 22×22 (sidebar) or 18×18 (mobile).
 - ONE primary CTA per screen — teal-600
 - Focus ring: `focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10`
 - IosToggle ON: `bg-teal-600`
-- Operator avatars: `bg-teal-600` (done = `bg-green-600`)
+- Operator avatars: **no longer teal — see §10.1.** State-encoding ones are `bg-ink-400` / `bg-ink-900` with done = `bg-green-600`; user-identity ones are pale `ink-50`.
 - Sidebar logo: `bg-teal-600 hover:bg-teal-700` with orbit SVG
 - Sidebar accent: `borderLeft: "3px solid #0d9488"`
 - OBD numbers: `text-gray-800 font-mono` (NOT teal)
@@ -248,7 +248,7 @@ Shell: `bg-white` + 3px teal left accent + right gray-200 border.
 Logo button: `bg-teal-600 hover:bg-teal-700` with orbit SVG.
 Active nav: `bg-teal-50 text-teal-700 font-semibold border-l-2 border-teal-600`.
 Inactive: `text-gray-500 hover:bg-gray-50 hover:text-gray-900`.
-User avatar: `bg-teal-600 hover:bg-teal-700`.
+User avatar: **`bg-ink-50` · `text-ink-600` · 1px `border-ink-100`, hover `bg-ink-100`** — see §10.1. (Was `bg-teal-600`, then a solid `ink-900` disc.)
 
 Behaviour spec: `CLAUDE_CORE.md §11`.
 
@@ -294,6 +294,37 @@ Remove OBD destructive confirm: `bg-red-600 hover:bg-red-700 text-white`
 - **An editable value gets a pencil, not a label.** A grey caption + chip reads as display-only; a chip carrying a small pencil is unambiguous.
 - **Facts live in the header, jobs live in the action row.** A property of the record (slot, date, number) belongs on the identity line; the action row holds only things the operator *does*.
 - **Selection summaries name what was selected** — one row shows the name; multiple show totals (volume, route count), derived from data already in the component.
+
+---
+
+### 10.1 Avatars — identity, not emphasis
+
+**A user avatar is `bg-ink-50` · `text-ink-600` · 1px `border-ink-100`.** Applied
+2026-09-09. Contrast of the initials on the fill is **7.26:1**, which clears AA and AAA
+for normal text; the hairline edge is there to separate the pale disc from the white
+surface behind it, not to carry meaning.
+
+**Why it is pale.** The avatar went to a solid `ink-900` disc in rebrand step 3c, on the
+correct principle that an avatar identifies a *person* and so must not carry the brand
+colour. But solid near-black then made it the heaviest element on the rail — maximum
+visual weight spent on something nobody is making a decision about, that people look at
+twice a day. Identity should be legible and quiet. It is neither brand nor emphasis.
+
+🔴 **An avatar whose colour encodes a STATE is a different thing and keeps its colour.**
+Two live examples, both deliberately untouched:
+
+| | not-done | done |
+|---|---|---|
+| `OperatorAvatar` — `components/tint/manager/board-bits.tsx` | `bg-ink-400` | `bg-green-600` |
+| `OperatorTd` — `components/tint/tint-table-view.tsx`, its `avatarColor` prop | `bg-ink-900` (Assigned section) | `bg-green-600` (Completed Today section) |
+
+Those discs answer "is this finished?", not "who is this?". Recolouring only their dark
+half would break the pair and delete a status signal.
+
+Sales-officer role avatars (`SO_ROLE_AVATAR_CLASSES` in
+`components/admin/customer-sheet.tsx`) also stay as they are — `brand-100`/`blue-50`/
+`amber-50` encode Primary / Backup / Junior, and they already use a pale-fill-plus-dark-
+text treatment of the same shape.
 
 ---
 
@@ -1689,4 +1720,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.26 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12.1: the login panel's ramp is dialled back for panel proportions, and §12.1.1 is new to stop somebody undoing it.** The icon's ramp was tried on the panel first and read too bright: a radial gradient's light falls off over its ending-shape radius, which is a short distance on a square tile and a third of the surface once stretched across a 780×900 panel. The panel now runs `radial-gradient(105% 105% at 10% 2%, #7A55E8 0%, #7846E2 14%, #7C3AED 30%, #6428C4 66%, #4C1D95 100%)` — light stop two steps down so the corner is lit rather than washed, ending shape 125%→105% to pull the light in, and brand.600 arriving at 30% instead of 36% so the brand colour holds more of the surface. 🔴 **The panel and the icon now use DIFFERENT ramps on purpose** and §12.1.1 says so with both sets tabulated, because "reconciling" them back to one set of numbers is the obvious tidy-up and it is wrong — same intent, different geometry. What they share is the `#7C3AED` anchor and the fall through `#6428C4` to `#4C1D95`, which is what makes them one family. The previous stamp (v5.25) framed the divergence as drift a future session should resolve; that framing is retired. Grain unchanged at .12. Prior, v5.25 (2026-09-09): the rings removed from the login panel as a decision, not a deferral; the whole viewBox / radius / degrees-on-panel apparatus deleted. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*
+*UI v5.27 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **new §10.1: a user avatar is `bg-ink-50` · `text-ink-600` · 1px `border-ink-100`.** Rebrand step 3c had moved avatars to a solid `ink-900` disc on the correct principle that an avatar identifies a person and must not carry the brand colour; the side effect was that maximum visual weight landed on something nobody is deciding about and that people look at twice a day. Identity should be legible and quiet. Initials measure 7.26:1 on the fill, clearing AA and AAA. Nine identity sites moved: the role rail, the admin rail, the phone You sheet, the attendance and history headers, the user detail panel, the tint split builder, the TI report and the mail-orders punched-by mark. 🔴 §10.1 also names the avatars that KEEP their colour because they encode a STATE rather than a person — `OperatorAvatar` in tint board-bits and `OperatorTd`'s `avatarColor` in tint-table-view, both pairing a dark not-done disc with `green-600` for done — plus the sales-officer role avatars. Recolouring only the dark half of a state pair deletes a status signal. §2 and §7's avatar lines corrected in the same pass: both still claimed `bg-teal-600`, which no avatar has painted since step 3c. Prior, v5.26 (2026-09-09): the login panel's ramp dialled back for panel proportions, and §12.1.1 added so the deliberate panel/icon divergence is not "reconciled" away. Prior, v5.25 (2026-09-09): the rings removed from the login panel as a decision, not a deferral. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip.*

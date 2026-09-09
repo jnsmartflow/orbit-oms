@@ -174,10 +174,13 @@ export function MobileShellProvider({
         >
           <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-gray-300" />
           <div className="flex items-center gap-3 px-5 pt-2.5 pb-3.5">
-            {/* Neutral gray — the ONE teal in this sheet is the Notifications
-                ON switch below (avatar was bg-brand-600; a second teal would
-                break the one-teal rule once the switch was added). */}
-            <div className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-[17px] font-bold text-white">
+            {/* An avatar identifies a PERSON, so it carries no brand colour and
+                no emphasis: pale ink-50 disc, ink-600 initials, hairline
+                ink-100 edge. It was bg-brand-600 until the Notifications switch
+                arrived and made it a second brand element, then a solid dark
+                disc, which left the heaviest thing on the sheet attached to
+                something nobody is deciding about. CLAUDE_UI.md §10.1. */}
+            <div className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full border border-ink-100 bg-ink-50 text-[17px] font-bold text-ink-600">
               {userInitials}
             </div>
             <div className="min-w-0">

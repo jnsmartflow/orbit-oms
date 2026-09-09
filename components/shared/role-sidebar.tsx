@@ -234,7 +234,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
       >
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="w-8 h-8 rounded-full bg-ink-900 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 hover:bg-ink-700 transition-colors"
+          className="w-8 h-8 rounded-full bg-ink-50 text-ink-600 border border-ink-100 flex items-center justify-center text-[11px] font-bold flex-shrink-0 hover:bg-ink-100 transition-colors"
           title="Sign out"
         >
           {userInitials}
