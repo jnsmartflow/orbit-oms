@@ -51,6 +51,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^8",
     "eslint-config-next": "14.2.29",
+    "opentype.js": "^2.0.0",
     "postcss": "^8",
     "prisma": "^5.22.0",
     "sharp": "^0.35.4",
