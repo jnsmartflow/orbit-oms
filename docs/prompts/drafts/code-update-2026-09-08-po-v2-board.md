@@ -443,21 +443,49 @@ time a membership is edited.
 hex-dumped at 89 bytes — and **rewriting BOTH cart labels to nonsense changed not one byte**.
 The same property is re-proved at every commit through the two standing fixtures.
 
-### The two standing fixtures
+### The two standing fixtures — and the script that IS them
 
-Every commit in this range re-renders both and asserts them byte for byte:
+```
+npx tsx scripts/po-v2-email-fixtures.ts
+```
 
-- **Fixture 1 — 115 bytes**, a three-line order, asserted against a full hex string
-  (`42696c6c…314c2a36`). Gloss Black `1L*6, 4L*4` · Gloss 90 Base `20L*2` · Super Satin Brown
+🔴 **Run it before any commit that touches the send path.** That means `v2-email.ts`,
+`lib/place-order/email.ts`, `lib/place-order/pack.ts`, `app/api/order/data/route.ts`, or the
+three catalog fields a cart line snapshots. It exits non-zero on any failure and prints the full
+hex of both bodies, so a diff is readable rather than a number that moved.
+
+- **Fixture 1 — 115 bytes**, a three-line order, asserted on length and on both ends of its hex
+  (`42696c6c…314c2a36`). Gloss BLACK `1L*6, 4L*4` · Gloss 90 BASE `20L*2` · Super Satin BROWN
   `1L*6`.
-- **Fixture 2 — 430 bytes**, a twelve-line order carrying Urgent + Truck + a note, asserted on
+- **Fixture 2 — 499 bytes**, a twelve-line order carrying Urgent + Truck + a note, asserted on
   length **and** on containing `e2 80 87` — the **U+2007 figure space** that pads line numbers
   past nine. That byte is the reason fixture 2 exists: it is the one character in the format a
   well-meaning "cleanup" would replace with an ordinary space, and the parser would stop
   matching.
 
-**If you change anything in this folder, re-render both.** A change that alters either is a
-change to what the depot receives.
+⚠ **499 REPLACES THE 430 THIS DOCUMENT USED TO CLAIM, AND THE 430 WAS NEVER VERIFIABLE.** The
+prose above recorded fixture 2's dealer, dispatch, marker and note but not its twelve product
+lines, so the body it measured could not be rebuilt by anyone — 430 was a number nobody could
+check. A session on 2026-09-09 tried and got 447 from an invented set. Rather than tune twelve
+lines until they summed to 430, fixture 2 is now **defined in full in the script** and 499 is
+what that definition renders against the live catalog. **If you need to know what a fixture is,
+read the script, not this paragraph.**
+
+The dealer is synthetic on both (`Shreeji Paints (SU10024)`) and so are the dispatch, marker and
+note — fixture INPUT, deliberately not read from `mo_customer_keywords`, or an unrelated edit to
+a dealer's name would "fail" the guard. Fixture 1's 115 was inherited, and its dealer string was
+reverse-engineered to fit: the three recorded facts about that body (115 bytes, the opening hex,
+the closing hex) are all reproduced, but the original dealer was never written down. Every
+product line in both fixtures is resolved live from `mo_order_form_index_v2` +
+`mo_sku_lookup_v2`, so a renamed product, a re-cased `baseColour` or a dropped pack fails the
+script **by name** instead of quietly shortening an email.
+
+The twelve are chosen, not arbitrary. Wood Primer `White` and `PINK` are the pinned twins — one
+sap, two rows, case-sensitive. `PROMISE PRIMER` is `emailLineLabel`'s named de-double. `GVA` is a
+`KEEP_CAPS_3` token that must not become "Gva". `CEMENT PRIMER SB` and `MULTI PURPOSE THINNER`
+carry a null `baseColour`. Two outputs look like typos and are not: `emailCase` upper-cases any
+token holding a digit, so `2in1 Primer` prints **2IN1 Primer**, and any token of two letters or
+fewer, so **VT** and **WS** stay capitals.
 
 **No CC.** `buildV2MailtoUrl` builds the mailto inline rather than through
 `buildMailtoUrl()`, which appends a desktop-only cc. `/po` has never carried it either.
@@ -575,18 +603,33 @@ This folder has shipped several, and each one was believed by a later session.
 - **`damp-base.webp` was described in a brief as unreferenced.** A sweep of all 1,468 tracked
   files found the slug twice, and one of them was live (`TILE_IMAGES`), so deleting the file
   without the set entry would have left a resolvable path to nothing (**e8779ce3**).
-- **Four comments in `v2-data.ts` are stale RIGHT NOW.** Recorded here rather than edited,
-  because this document changes no code — fix them the next time that file is in a fence:
+- **Five comments in `v2-data.ts` were stale. All five were corrected in place on 2026-09-09**
+  and each correction says what the old text claimed, so a reader who half-remembers the lie
+  meets the refutation rather than a silent rewrite:
   - `buildBoard`'s *"Nothing calls this yet. po-v2-page.tsx is Step 2's file."* — it is called
-    at `po-v2-page.tsx:318`.
+    at `po-v2-page.tsx:318` on every load, and by the fixture script.
   - `BOARD_INVARIANTS`'s *"Nothing consumes buildBoard yet."* — same.
   - `boardTileArtFor`'s *"Step 4 owns the switch-over."* — the switch-over happened at
     `c98b4e8c`; `tileArtFor` is now a one-line delegate to `boardTileArtFor`.
   - The closing block's *"Step 2 points the page at BOARD and deletes FAMILIES in the same
-    commit."* — **it did not.** `FAMILIES` is still exported and `buildCatalog` still walks it
-    (`v2-data.ts:786`) to build the curated `byTile` map that `buildBoard` passes into
-    `resolveGroup`. A second comment at `:483` flatly says *"FAMILIES is dead"*. It is not dead;
-    it is the curation source for the 32 legacy products. See §11.
+    commit."* — **it did not**, and the plan was right to be abandoned.
+  - `variantImage`'s inline *"FAMILIES is dead"* — it is not. `FAMILIES` is still exported and
+    `buildCatalog` still walks it (`v2-data.ts:824`) to build the curated `byTile` map that
+    `buildBoard` passes into `resolveGroup`. It now carries a block header saying what it still
+    owns (curation, the 90-day base and shade rankings), what it stopped owning (layout, art),
+    and that deleting it silently unranks 32 drawers. See §11.
+
+- ⚠ **Three more are stale and were left alone**, reported at the same pass so the next fence
+  can take them:
+  - The `BOARD` section header still reads *"THE 9 × 4 BOARD — ADDITIVE, AND NOT YET CONSUMED
+    BY ANYTHING"* and *"po-v2-page.tsx still renders from [FAMILIES]"*. Both were true for one
+    commit. It is the same lie as the two above it, in the loudest position in the file.
+  - `po-v2-page.tsx`'s three *"Step 4 widens both to the whole tile"* notes (`addLines`, its
+    line builder, `existingFor`). Step 4 has happened: both `addLines` call sites pass
+    `memberSap: null`, which is the tile-wide replace those comments describe as future.
+  - Two counts have drifted with the board. `po-v2-page.tsx`'s lazy-loading note says
+    *"all 36"* twice and `LoadState` says *"the 9x4 board"*; it is **37 tiles** across nine
+    families and Wood holds five.
 
 **The rule:** a comment that says what *another* file does, or what a *future* step will do, goes
 out of date silently. When you touch a function, re-read the comment above it and check its
@@ -694,14 +737,16 @@ beside it — the next time that file is open.
 
 ## 11. `FAMILIES` is not dead, whatever the comments say
 
-Two comments in `v2-data.ts` state that the old 32-tile `FAMILIES` constant is dead and that
-Step 2 deleted it. **Neither is true**, and a session that believes them will delete a constant
-the board still depends on.
+Two comments in `v2-data.ts` used to state that the old 32-tile `FAMILIES` constant was dead and
+that Step 2 deleted it. **Neither was true**, and a session that believed them would have deleted
+a constant the board still depends on. Both were corrected on 2026-09-09 and `FAMILIES` now
+carries a block header saying exactly what follows — but read it here too, because the header is
+the claim and this is the working.
 
 What actually happened:
 
 - **`FAMILIES` is still exported** and still holds the pre-merge 32-tile grouping.
-- **`buildCatalog()` still walks it** (`v2-data.ts:786`). For each of its tiles it looks up
+- **`buildCatalog()` still walks it** (`v2-data.ts:824`). For each of its tiles it looks up
   `CURATION[tile.sap]` and, where there is one, resolves that product's rows into a
   `V2Resolved` with **ranked** base/shade lists — the 90-day ordering that decides which colour
   a drawer pre-selects and which one leads the column.

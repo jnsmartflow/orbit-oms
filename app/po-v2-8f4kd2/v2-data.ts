@@ -166,6 +166,41 @@ export type V2Family = {
   tiles: readonly V2Tile[];
 };
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 FAMILIES IS NOT DEAD. TWO COMMENTS IN THIS FILE USED TO SAY IT WAS AND
+ *    BOTH WERE WRONG — corrected 2026-09-09, along with the closing block that
+ *    said Step 2 had deleted it.
+ *
+ * WHAT IT STILL OWNS — CURATION, and nothing else.
+ *   buildCatalog() walks this constant (its `for (const family of FAMILIES)`
+ *   loop, :824 below). For each tile it looks up
+ *   CURATION[tile.sap] and, where there is one, resolves that product's rows
+ *   into a V2Resolved with RANKED base and shade lists — the 90-day ordering
+ *   that decides which option a drawer pre-selects, which one leads the column
+ *   and which tab the drawer opens on. buildBoard() calls buildCatalog() once
+ *   and passes catalog.byTile into resolveGroup for every member, so a member
+ *   that is one of the 32 curated products keeps those rankings and a member
+ *   that is not gets its options straight from the payload in sortOrder.
+ *
+ * WHAT IT STOPPED OWNING — LAYOUT and ART.
+ *   BOARD is the layout: 9 families, 37 tiles, 98 members, and a tile may hold
+ *   several products. tileArtFor() and variantImage() were switched onto BOARD
+ *   at c98b4e8c; FAMILIES.slug has been read by nothing since.
+ *
+ * 🔴 DELETING IT BREAKS PRE-SELECTION ON 32 PRODUCTS, SILENTLY. Not a crash —
+ * buildCatalog would simply return an empty byTile, resolveGroup would fall
+ * through to the payload for every member, and each of those 32 drawers would
+ * open on an unranked list in catalog order with the wrong option selected.
+ * Nothing throws and nothing looks broken; the salesman just has to hunt for
+ * the colour that used to be first.
+ *
+ * 🔴 AND THE RANKINGS CANNOT BE DERIVED FROM BOARD. BOARD carries the order of
+ * a tile's MEMBERS. It carries nothing about the order of one product's bases
+ * and shades, which is what CURATION holds. Removing FAMILIES therefore means
+ * moving that data somewhere first — real work, not a tidy-up.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 export const FAMILIES: readonly V2Family[] = [
   {
     name: "Enamel",
@@ -480,8 +515,12 @@ export function tileImage(slug: string): string | null {
  * resolves to null and the option falls back to its text tile.
  */
 export function variantImage(sap: string, option: string): string | null {
-  // BOARD's slug, for the same reason tileArtFor moved: FAMILIES is dead and a
-  // variant filename is built from the TILE's slug, which only BOARD now knows.
+  // BOARD's slug, for the same reason tileArtFor moved: a variant filename is
+  // built from the TILE's slug, and only BOARD knows the layout now.
+  //
+  // ⚠ THIS USED TO SAY "FAMILIES is dead". It is not — it still owns curation,
+  // and buildCatalog walks it on every load. What it lost is layout and art,
+  // which is all this line ever needed. See the block above FAMILIES.
   const tile = boardTileSlugFor(sap);
   if (!tile) return null;
   const slug = `${tile}-${optionSlug(option)}`;
@@ -1984,7 +2023,12 @@ const LEADER_TILE = new Map<string, string>();
  * module load: v2-data is imported by every screen, so a throw here would take
  * the whole page down for an authoring mistake. buildBoard() throws on a
  * non-empty list instead — loud exactly where it is consumed, silent where it
- * would be a catastrophe. Nothing consumes buildBoard yet.
+ * would be a catastrophe.
+ *
+ * buildBoard IS consumed: po-v2-page.tsx:318, on every load, and
+ * scripts/po-v2-email-fixtures.ts. (This used to say "nothing consumes
+ * buildBoard yet" — it has been consumed since 1129427d.) So a violation
+ * recorded here does reach a developer, on the first render.
  */
 export const BOARD_INVARIANTS: string[] = [];
 
@@ -2070,11 +2114,18 @@ export function boardTile(key: string): V2BoardTile | null {
 }
 
 /**
- * Art for a BOARD tile, keyed on the TILE KEY.
+ * Art for a BOARD tile, keyed on the TILE KEY. THE ONLY SOURCE OF TILE ART.
  *
- * Deliberately a second map rather than a change to tileArtFor(): that one is
- * keyed on the 32-tile board's saps and the review screen reads it today. Step
- * 4 owns the switch-over.
+ * 🔴 THE SWITCH-OVER IS DONE — c98b4e8c. This used to say "Step 4 owns the
+ * switch-over", and that sentence is the single most expensive comment in the
+ * folder. Step 4 never did it. tileArtFor() went on reading the dead 32-tile
+ * grouping for ELEVEN commits, and nine tiles — SuperClean, More Interior,
+ * Pearl Glo, Platinum Glo, VT Eterna, VT Specialty, Promise Sheen, Coats &
+ * Additives, More Wood — served cart lines a family wash from the old board.
+ * Nothing errored; the tints were simply wrong.
+ *
+ * tileArtFor() is now a one-line delegate to this function (:569), so there is
+ * one map and the board and the cart cannot disagree again.
  */
 export function boardTileArtFor(key: string): { src: string | null; wash: string } {
   return BOARD_ART.get(key) ?? { src: null, wash: FILL };
@@ -2188,7 +2239,10 @@ function assertOwnRows(sap: string, rows: ApiProduct[]): void {
  * that is not gets its options straight from the payload in sortOrder. One
  * code path, both cases — resolveGroup already branches on that internally.
  *
- * Nothing calls this yet. po-v2-page.tsx is Step 2's file.
+ * CALLED AT po-v2-page.tsx:318, once per load, and by
+ * scripts/po-v2-email-fixtures.ts. (This used to say "nothing calls this yet
+ * — po-v2-page.tsx is Step 2's file". Step 2 was 1129427d and it did point
+ * the page here; the comment was never updated.)
  */
 export function buildBoard(products: ApiProduct[]): {
   byKey:  Map<string, V2ResolvedTile>;
@@ -2298,7 +2352,16 @@ export function buildBoard(products: ApiProduct[]): {
 // nothing moves, and it would not have compiled, because the page reads
 // `tile.sap` and a member-shaped tile has no `sap`.
 //
-// So the new board is a new constant beside the old one. Step 2 points the
-// page at BOARD and deletes FAMILIES in the same commit, which is the commit
-// where the board is MEANT to change and where a reviewer will be looking for
-// exactly that.
+// So the new board is a new constant beside the old one.
+//
+// 🔴 WHAT ACTUALLY HAPPENED — corrected 2026-09-09. This block used to end
+// "Step 2 points the page at BOARD and deletes FAMILIES in the same commit".
+// Step 2 (1129427d) did the first half and NOT the second, and the plan was
+// right to be abandoned: FAMILIES turned out to be the curation source, not
+// just the old layout. The page renders BOARD; FAMILIES is still exported and
+// buildCatalog still walks it for the ranked base/shade lists. Both constants
+// are live and they own different things — the block above FAMILIES says which.
+//
+// A comment describing what a FUTURE step will do goes out of date the moment
+// that step decides otherwise, and nothing fails when it does. This one was
+// believed for three weeks.
