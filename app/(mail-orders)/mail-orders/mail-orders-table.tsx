@@ -848,7 +848,7 @@ function OrderRow({
   }
 
   const baseTdClass = [
-    isFocused && 'bg-amber-50/70',
+    isFocused && 'bg-ink-25',
     isPunched && 'bg-ok-bg/40',
   ].filter(Boolean).join(' ');
 
@@ -857,7 +857,7 @@ function OrderRow({
   const borderLeft = effectiveFlagged
     ? "3px solid #f87171"
     : isFocused
-      ? "3px solid #f59e0b"
+      ? "3px solid #1B1826"
       : isPunched
         ? "3px solid #059669"
         : isSplit

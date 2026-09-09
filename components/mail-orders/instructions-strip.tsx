@@ -51,7 +51,7 @@ const DOT_BY_KIND = {
   notes: "bg-gray-600",
 } as const;
 
-const NOTES_DOT = "bg-warn";
+const NOTES_DOT = "bg-brand-600";
 
 type Kind = keyof typeof DOT_BY_KIND;
 
@@ -97,7 +97,7 @@ export function InstructionsStrip({
     <div
       className={
         attention
-          ? "flex items-start bg-warn-bg border-t border-t-gray-100 border-l-[3px] border-l-warn pt-3 pb-3"
+          ? "flex items-start bg-brand-50 border-t border-t-gray-100 border-l-[3px] border-l-brand-600 pt-3 pb-3"
           : "flex items-start bg-gray-200 border-t border-gray-100 pt-3 pb-3"
       }
     >
@@ -105,7 +105,7 @@ export function InstructionsStrip({
         {rows.map((row) => (
           <div
             key={row.kind}
-            className={`flex items-start gap-2 px-5 py-1 leading-[1.45] ${attention ? "text-warn-text" : "text-gray-700"}`}
+            className={`flex items-start gap-2 px-5 py-1 leading-[1.45] ${attention ? "text-brand-800" : "text-gray-700"}`}
             style={{ fontSize }}
           >
             <span
@@ -115,12 +115,12 @@ export function InstructionsStrip({
             />
             <span
               className={`text-[10px] font-semibold uppercase tracking-[0.05em] w-16 flex-shrink-0 pt-0.5 ${
-                attention ? "text-warn" : "text-gray-500"
+                attention ? "text-brand-600" : "text-gray-500"
               }`}
             >
               {row.kind}
             </span>
-            <span className={`flex-1 pt-px ${attention ? "text-warn-text" : "text-gray-700"}`}>{row.text}</span>
+            <span className={`flex-1 pt-px ${attention ? "text-brand-800" : "text-gray-700"}`}>{row.text}</span>
           </div>
         ))}
       </div>

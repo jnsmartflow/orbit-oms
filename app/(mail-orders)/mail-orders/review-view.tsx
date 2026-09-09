@@ -1775,7 +1775,7 @@ export function ReviewView({
             // It also retires a stray teal: that dot was bg-brand-600, and this
             // row already spends the brand accent on Import and the search
             // focus ring (CLAUDE_UI §1 — one teal element per surface).
-            className={`${BTN_BASE} ${hasNotes ? "border-warn/40 bg-warn-bg text-warn-text hover:bg-warn-bg/70" : BTN_OFF}`}
+            className={`${BTN_BASE} ${hasNotes ? "border-brand-200 bg-brand-50 text-brand-800 hover:bg-brand-100" : BTN_OFF}`}
           >
             {/* Icon inherits the button's colour when notes exist — unchanged
                 expression, it just now inherits violet instead of gray-800. */}
@@ -2063,14 +2063,14 @@ export function ReviewView({
             lineHeight: 1,
             fontWeight: 600,
             borderRadius: 4,
-            border: `1px solid ${disabled ? "#e5e7eb" : "#FDE68A"}`,
+            border: `1px solid ${disabled ? "#e5e7eb" : "#DDD6FE"}`,
             background: disabled ? "#f9fafb" : "#fff",
-            color: disabled ? "#d1d5db" : "#B45309",
+            color: disabled ? "#d1d5db" : "#5B21B6",
             cursor: disabled ? "not-allowed" : "pointer",
             transition: "background 0.12s",
           }}
           onMouseEnter={(e) => {
-            if (!disabled) e.currentTarget.style.background = "#FFFBEB";
+            if (!disabled) e.currentTarget.style.background = "#F5F3FF";
           }}
           onMouseLeave={(e) => {
             if (!disabled) e.currentTarget.style.background = "#fff";
@@ -2095,7 +2095,7 @@ export function ReviewView({
             fontSize: 10,
             lineHeight: 1,
             fontWeight: 600,
-            color: "#B45309",
+            color: "#5B21B6",
             fontVariantNumeric: "tabular-nums",
           }}
         >

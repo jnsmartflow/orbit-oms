@@ -108,7 +108,7 @@ export function ShipToCard({
 
   const cardClasses = showOverrideStyling
     ? tinted
-      ? "relative bg-warn-bg border border-warn/30 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-warn before:rounded-sm"
+      ? "relative bg-brand-50 border border-brand-200 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-brand-600 before:rounded-sm"
       : "relative bg-white border border-gray-200 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-amber-500 before:rounded-sm"
     : "relative bg-white border border-gray-200 rounded-lg px-3 py-2.5";
 
@@ -132,7 +132,7 @@ export function ShipToCard({
             // pill would vanish. No ⚑ — that glyph reads as Hold elsewhere in
             // the billing face, so reusing it here would say the wrong thing.
             <span
-              className="inline-flex items-center h-4 px-[5px] text-[9.5px] font-semibold rounded border border-warn bg-warn text-white"
+              className="inline-flex items-center h-4 px-[5px] text-[9.5px] font-semibold rounded border border-brand-600 bg-brand-600 text-white"
               title="Ship-to changed from the bill-to address"
             >
               changed
@@ -152,7 +152,7 @@ export function ShipToCard({
         <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${dotClass}`} />
         <span
           className={`text-[14.5px] font-bold tracking-tight truncate ${
-            tinted ? "text-warn-text" : "text-gray-900"
+            tinted ? "text-brand-800" : "text-gray-900"
           }`}
         >
           {effectiveName || "—"}
@@ -167,7 +167,7 @@ export function ShipToCard({
                 // White, not gray-100: the chip's usual grey fill sits too close
                 // to the violet-50 card to read as a separate object.
                 tinted
-                  ? "bg-white border-warn/30 text-warn-text"
+                  ? "bg-white border-brand-200 text-brand-800"
                   : "bg-gray-100 text-gray-700 border-gray-200"
               }`}
             >

@@ -109,7 +109,7 @@ function HoldRows({
                 {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}
                 {row.isTint && <Droplet size={12} className="ml-1 inline-block align-[-1px] text-tint-600" />}
                 {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}
-                {isRedirect && <div className="text-[11px] text-warn-text">→ ship-to changed</div>}
+                {isRedirect && <div className="text-[11px] text-brand-800">→ ship-to changed</div>}
               </td>
               <td className={TD}>{row.route ?? "—"}</td>
               <td
