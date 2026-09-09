@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 
 // ── /po opening screen ────────────────────────────────────────────────────
-// Full-screen teal Orbit splash shown on app open. Purely presentational and
+// Full-screen violet Orbit splash shown on app open. Purely presentational and
 // self-timed: it fades the mark + wordmark in on mount, stays up until BOTH a
 // minimum hold (~1000ms) has elapsed AND `ready` (catalog loaded) is true, then
 // fades the whole overlay out and calls onDone.
@@ -87,8 +87,23 @@ export default function SplashScreen({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        // Approved launch-image gradient: top #0e988b → #7C3AED → bottom #0b8579.
-        background: "linear-gradient(180deg, #0e988b 0%, #7C3AED 50%, #0b8579 100%)",
+        // 🔴 THE TWO END STOPS WERE STILL TEAL. The bulk conversion swapped the
+        // middle stop to violet and left #0e988b and #0b8579 standing, so the first
+        // screen a picker saw on opening /po faded teal → violet → teal — the old
+        // identity, on the one surface that exists to announce the new one.
+        //
+        // It carried a comment calling it the "approved launch-image gradient". That
+        // approval was given for a teal product and does not survive the rebrand, so
+        // the word is gone with the colour rather than left to vouch for a value
+        // nobody signed off. Owner ruling 2026-09-09.
+        //
+        // The three stops are brand.700 → brand.600 → brand.900, which is what the
+        // rebrand spec §6 gives the LOGIN PANEL (#43168B is listed there as "login
+        // panel background only"). ⚠ The login page does not use them YET — the §6
+        // rebuild has not run and app/login/page.tsx is still a #f9fafb page with a
+        // brand-600 tile. The splash gets there first on purpose; when login is
+        // rebuilt the two will match rather than needing a third decision.
+        background: "linear-gradient(180deg, #6D28D9 0%, #7C3AED 50%, #43168B 100%)",
         opacity: leaving ? 0 : 1,
         transition: `opacity ${FADE_OUT_MS}ms ease-out`,
       }}
