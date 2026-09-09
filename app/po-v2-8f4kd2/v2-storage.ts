@@ -28,6 +28,9 @@ const SENT_KEY   = "po2_sent_orders";
 const FAVS_KEY   = "po2_fav_customers";   // read once, for the seed below
 const MINE_KEY   = "po2_my_dealers";       // read once, for the seed below
 const STAR_KEY   = "po2_starred_dealers";
+// 🔴 PRODUCTS, and deliberately NOT named po2_favs — see the block near
+// loadFavProducts. No chain, no seed; absent means empty.
+const FAV_PRODUCTS_KEY = "po2_fav_products";
 
 const MAX_FAVS     = 12;
 const MAX_DRAFTS   = 20;
@@ -637,6 +640,99 @@ function loadMyDealers(): V2Star[] {
 }
 
 // ── List-row summaries ─────────────────────────────────────────────────────
+
+// ── Favourite PRODUCTS ─────────────────────────────────────────────────────
+//
+// 🔴 PRODUCTS, NOT DEALERS, AND A SEPARATE KEY FOR THAT REASON. The three keys
+// above (po2_fav_customers -> po2_my_dealers -> po2_starred_dealers) are a
+// migration chain about CUSTOMERS, and the first of them is live-but-legacy on
+// any phone that skipped a version. This list shares nothing with them: no
+// seed, no chain, absent means empty. The name is deliberately not po2_favs,
+// which reads as though it might be the same thing.
+//
+// 🔴 THE MEMBER'S `sap`, AND NEVER ITS rowId. The catalog seed does
+// deleteMany({}) then createMany into an autoincrement id, so EVERY id changes
+// on every reseed — a favourite keyed on one would silently point at a
+// different product after the next catalog rebuild. `sap` is
+// COALESCE(product, subProduct), the join key BOARD is authored against and the
+// one migrateLine already treats as durable identity.
+//
+// 🔴 NOTHING ELSE IS STORED. No label, no art, no tile key: all three are
+// DERIVED at render through tileKeyForMember(sap) + boardTile(). Storing the
+// label would have frozen eb6d8e2f's pre-shortening names ("Luxurio Matt")
+// onto every phone that had favourited before that commit, and a member that
+// moves tiles would keep pointing at the old one.
+
+/** `at` is when it was starred — used for nothing but a stable tiebreak. */
+export type V2FavProduct = { sap: string; at: number };
+type FavProductStore = { version: 1; favs: V2FavProduct[] };
+
+/**
+ * 🔴 EIGHT, AND THE NINTH IS REFUSED RATHER THAN EVICTED — v1's rule
+ * (lib/place-order/fav-customers.ts, FAV_CAP), kept because it is right for the
+ * same reason: this is a list the salesman CURATED. Silently dropping his
+ * oldest choice to make room for a new one deletes a decision he made, and he
+ * has no way to know it happened. Refusing is the honest answer.
+ */
+const MAX_FAV_PRODUCTS = 8;
+
+/**
+ * The favourites, dead entries pruned.
+ *
+ * 🔴 PRUNING IS THE CALLER'S JOB, NOT THIS FUNCTION'S. A member that has left
+ * BOARD cannot render — no caption, no art, no tile to open — so it has to go,
+ * but this module must not import v2-data to find that out (v2-data imports
+ * nothing from here and the dependency would be circular). The caller passes
+ * `isLive`, and the shortened list is written back.
+ *
+ * ON READ, NEVER ON WRITE, exactly as loadSentOrders prunes: localStorage can
+ * hold a list written by an older build at any moment, and pruning on write
+ * would only ever fix what this build happens to touch.
+ *
+ * ⚠ SORTING IS NOT DONE HERE. The board sorts A-Z on the RENDERED CAPTION, and
+ * the caption is a v2-data question this file cannot answer. Order out of here
+ * is storage order.
+ */
+export function loadFavProducts(isLive: (sap: string) => boolean): V2FavProduct[] {
+  const parsed = readRaw(FAV_PRODUCTS_KEY) as Partial<FavProductStore> | null;
+  if (!parsed || !Array.isArray(parsed.favs)) return [];
+  const clean = parsed.favs
+    .filter((f): f is V2FavProduct => !!f && typeof f.sap === "string")
+    .map((f) => ({ sap: f.sap, at: typeof f.at === "number" ? f.at : 1 }))
+    .slice(0, MAX_FAV_PRODUCTS);
+  const live = clean.filter((f) => isLive(f.sap));
+  // Only write back when something actually went, so a plain read is a read.
+  if (live.length !== clean.length) writeRaw(FAV_PRODUCTS_KEY, { version: 1, favs: live } satisfies FavProductStore);
+  return live;
+}
+
+/** True when this member is already a favourite. Cheap enough to call per tile. */
+export function isFavProduct(sap: string, favs: V2FavProduct[]): boolean {
+  return favs.some((f) => f.sap === sap);
+}
+
+/**
+ * Add one. Returns the new list, or "full" when the cap is reached.
+ *
+ * Idempotent — favouriting something already favourited reports "added" and
+ * writes nothing, mirroring v1's addFav. The caller shows the amber message
+ * only on "full".
+ */
+export function addFavProduct(sap: string, favs: V2FavProduct[]):
+  { result: "added"; favs: V2FavProduct[] } | { result: "full"; favs: V2FavProduct[] } {
+  if (favs.some((f) => f.sap === sap)) return { result: "added", favs };
+  if (favs.length >= MAX_FAV_PRODUCTS)  return { result: "full",  favs };
+  const next = [...favs, { sap, at: Date.now() }];
+  writeRaw(FAV_PRODUCTS_KEY, { version: 1, favs: next } satisfies FavProductStore);
+  return { result: "added", favs: next };
+}
+
+/** Remove one. Never fails, never confirms — un-starring is not destructive. */
+export function removeFavProduct(sap: string, favs: V2FavProduct[]): V2FavProduct[] {
+  const next = favs.filter((f) => f.sap !== sap);
+  writeRaw(FAV_PRODUCTS_KEY, { version: 1, favs: next } satisfies FavProductStore);
+  return next;
+}
 
 /**
  * "Gloss, Cement SB, Damp 2in1 +2 more" — what is actually IN a stored order.

@@ -42,6 +42,20 @@ export const INK        = "#1B1826";  // headings and anything that must land
 
 export const VIOLET_BG  = "#F5F1FE";  // selected-chip / in-cart tile wash
 
+/**
+ * 🔴 THE FAVOURITE STAR, AND NOTHING ELSE. Taken from the rebrand's own colour
+ * system (docs/mockups/rebrand/orbit-colour-system.html), whose note for this
+ * value reads: "The star only. Separate from attention so a favourite never
+ * reads as a problem."
+ *
+ * It is deliberately neither of the two colours already here that it could be
+ * confused with. VIOLET is the salesman's own work in progress — a violet star
+ * would read as "this is in your order". ATTENTION (#B45309, amber-700) is
+ * Urgent, and a filled amber star on a tile would read as a warning about the
+ * product rather than a mark he put there himself.
+ */
+export const FAVOURITE  = "#F59E0B";
+
 /** The focused input border, violet-500 — a step lighter than brand.600 so
  *  the ring around it reads as a halo rather than a second border. */
 export const FOCUS      = "#8B5CF6";

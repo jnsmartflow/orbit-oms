@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Minus, Plus, Search, X } from "lucide-react";
+import { Minus, Plus, Search, Star, X } from "lucide-react";
 // Documented containment exception — the tested matcher /po uses, read-only.
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
-  BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
+  BRAND, FAINT, FAVOURITE, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
   baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isLightHex, memberImage,
   packsOf, shadeHex, sortBases, stepForLabel, tileArtFor, unitsIn,
   variantImage,
@@ -323,6 +323,8 @@ export default function ProductDrawer({
   existing,
   pools,
   mode = "standard",
+  isFav = false,
+  onToggleFav,
 }: {
   /**
    * The ONE product to show when no tile is passed — the search-hit path, for
@@ -367,6 +369,23 @@ export default function ProductDrawer({
   pools?: { all: V2Option[]; bases: V2Option[]; shades: V2Option[] };
   /** From drawerMode() in v2-data — the ONE place the shape is decided. */
   mode?: V2DrawerMode;
+  /**
+   * 🔴 THE FAVOURITE STAR, AND THIS FILE OWNS NONE OF IT.
+   *
+   * The page reads and writes po2_fav_products; the drawer takes a boolean and
+   * a callback. Same rule drafts-sent.tsx follows for its delete icon: a
+   * component that reached into storage behind the page's back is how a list
+   * gets out of step with what is stored, and it would skip the cap message
+   * too. The star renders ONLY when onToggleFav is handed down, so an unwired
+   * call site shows no star rather than a dead one.
+   *
+   * It acts on the SELECTED member (`cur.sap`), not on the tile — a salesman
+   * favourites Luxurio Matt, not "Luxurio". For a PINNED member cur.sap is the
+   * composite memberKey ("WOOD PRIMER|||White"), which is what keeps the two
+   * Wood Primer twins separately favouritable.
+   */
+  isFav?: boolean;
+  onToggleFav?: (sap: string) => void;
 }): React.JSX.Element {
   // ── The tile's members ───────────────────────────────────────────────────
   //
@@ -967,6 +986,37 @@ export default function ProductDrawer({
               <p className="truncate text-[11.5px]" style={{ color: MUTED }}>{cur.resolved.family}</p>
             )}
           </div>
+          {/* ── THE FAVOURITE STAR ─────────────────────────────────────────
+              🔴 GOLD, NOT VIOLET, AND NOT AMBER. #F59E0B is the rebrand's own
+              favourite token, and its note says why: "the star only, separate
+              from attention so a favourite never reads as a problem." Violet
+              is what this app uses for the salesman's own work in progress,
+              and amber is Urgent — a filled amber star on a card would read as
+              a warning.
+
+              Filled = favourite, outline = not. The same two states v1 uses on
+              its customer build header, and the same position: with the
+              controls that are always there, never inside the product content.
+
+              ⚠ It acts on the SELECTED member, so it changes meaning as you
+              move along the strip. That is correct — the thing being
+              favourited is the product you are looking at. */}
+          {onToggleFav && (
+            <button
+              type="button"
+              aria-label={isFav ? `Remove ${cur.label} from favourites` : `Add ${cur.label} to favourites`}
+              aria-pressed={isFav}
+              onClick={() => onToggleFav(cur.sap)}
+              className="flex shrink-0 items-center justify-center rounded-full"
+              style={{ width: 30, height: 30, background: FILL }}
+            >
+              <Star
+                className="h-4 w-4" strokeWidth={2.5}
+                fill={isFav ? FAVOURITE : "none"}
+                style={{ color: isFav ? FAVOURITE : MUTED }}
+              />
+            </button>
+          )}
           {/* The magnifier sits with Close because they are the two things
               that are always available and never about the product. It only
               appears when there is a rail to search. */}
