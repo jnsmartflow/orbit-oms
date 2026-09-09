@@ -299,7 +299,7 @@ export default function PoV2Page(): React.JSX.Element {
    * state for a phone that has never favourited anything.
    */
   const [favProducts, setFavProducts] = useState<V2FavProduct[]>([]);
-  /** The gear's manage view. Not a screen — the board stays underneath. */
+  /** The header gear's picker. Not a screen — the board stays underneath. */
   const [favManage, setFavManage] = useState(false);
 
   /**
@@ -917,7 +917,65 @@ export default function PoV2Page(): React.JSX.Element {
   }, [favProducts]);
 
   /**
-   * One tap on the drawer's star. Add, or remove, or refuse at eight.
+   * EVERY PRODUCT ON THE BOARD, GROUPED BY FAMILY, IN BOARD ORDER.
+   *
+   * The picker lists all 98 members rather than a search box over them: nine
+   * headed groups of four to nineteen rows is browsable on a phone, and a
+   * salesman choosing eight favourites is BROWSING — he does not know the name
+   * he wants, he is picking the ones he sells. A search field would answer a
+   * question he is not asking.
+   *
+   * Reuses resolveFav so a row and its board tile cannot disagree about the
+   * caption or the tin. Rows within a family keep BOARD's order, which is the
+   * 90-day ranking, so the ones he is most likely to want are nearest the top
+   * of each group.
+   */
+  const pickerGroups = useMemo(
+    () => BOARD.map((family) => ({
+      name: family.name,
+      rows: family.tiles.flatMap((t) =>
+        t.members
+          .map((m) => resolveFav(memberKey(m.sap, m.option)))
+          .filter((v): v is FavView => v !== null)),
+    })),
+    [],
+  );
+
+  /**
+   * 🔴 THE PICKER PUSHES ONE HISTORY ENTRY AND CLOSES BY GOING BACK.
+   *
+   * ⚠ AND IT IS THE ONLY THING IN v2 THAT DOES. There is no history handling
+   * anywhere else in this folder — no pushState, no popstate, not in V2Sheet
+   * and not on any screen. That is a v2-wide gap, NOT something f4c0444c
+   * introduced, and this does not close it: the drawer, the dealer picker, the
+   * review screen and the confirms all still leave the page on Android back.
+   * Fixing those is a job of its own; see /po's single-back-authority model.
+   *
+   * What this does is make the ONE overlay added here behave, so a hardware
+   * back dismisses the picker instead of walking off the order. Done and the
+   * scrim both route through the same back(), so there is exactly one exit and
+   * the entry can never be left on the stack.
+   */
+  function openFavPicker(): void {
+    if (typeof window !== "undefined") window.history.pushState({ v2FavPicker: true }, "");
+    setFavManage(true);
+  }
+  function closeFavPicker(): void {
+    // Going back fires popstate, and the listener below is what actually
+    // closes. Calling setFavManage(false) here too would close it and leave
+    // the entry on the stack, so the next back would do nothing visible.
+    if (typeof window !== "undefined") window.history.back();
+    else setFavManage(false);
+  }
+  useEffect(() => {
+    if (!favManage) return;
+    const onPop = (): void => setFavManage(false);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [favManage]);
+
+  /**
+   * One tap on a picker star. Add, or remove, or refuse at eight.
    *
    * 🔴 THE REFUSAL IS THE ONLY BRANCH THAT SAYS ANYTHING. Adding and removing
    * are visible on the board a moment later and a toast for each would be
@@ -1569,10 +1627,40 @@ export default function PoV2Page(): React.JSX.Element {
             paddingTop: "calc(env(safe-area-inset-top) + 16px)",
           }}
         >
-          {/* The wordmark alone. SURAT DEPOT is gone: the search below now
-              fills the band, so the row does not need balancing, and the depot
-              label was the one thing here nobody was reading. */}
-          <Wordmark size={31} colour={BRAND} />
+          {/* The wordmark, and opposite it the ONE way into favourites.
+              SURAT DEPOT is gone: the search below fills the band, so the row
+              does not need balancing, and the depot label was the one thing
+              here nobody was reading.
+
+              🔴 WHITE ON THE WASH, for the reason the search bar is white on
+              the wash: a violet control on a violet ground disappears. 44px,
+              §60's tap-target floor, with the glyph at 18 inside it.
+
+              🔴 IT IS HERE AND NOT ON THE FAVOURITES CARD. The gear used to
+              live on that card, and the card hides when there are no
+              favourites — so a phone with none had no gear and no way to set
+              one. Reported from a real phone. One entry point, on a row that
+              is always drawn.
+
+              ⚠ THIS ROW SCROLLS AWAY. Only the search row below is sticky, by
+              an earlier decision that a logo need not follow a salesman down a
+              page. The gear now rides with the logo, so it is off screen once
+              he scrolls into Wood. It is always THERE — never conditional —
+              but it is not always ON SCREEN. If that turns out to matter, the
+              fix is to move it into the sticky row below, not to make it
+              conditional again. */}
+          <div className="flex items-center justify-between gap-3">
+            <Wordmark size={31} colour={BRAND} />
+            <button
+              type="button"
+              aria-label="Choose favourite products"
+              onClick={openFavPicker}
+              className="flex shrink-0 items-center justify-center rounded-full"
+              style={{ width: 44, height: 44, background: SURFACE, boxShadow: CARD_SHADOW }}
+            >
+              <Settings className="h-[18px] w-[18px]" strokeWidth={2.5} style={{ color: BRAND }} />
+            </button>
+          </div>
         </div>
 
         <div
@@ -1624,24 +1712,14 @@ export default function PoV2Page(): React.JSX.Element {
               <h2 className="min-w-0 truncate text-[14px] font-bold" style={{ color: INK }}>
                 Favourites
               </h2>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <span className="shrink-0 rounded-full font-mono text-[10px]"
-                      style={{ color: FAINT, background: FILL, padding: "2px 7px" }}>
-                  {favViews.length}
-                </span>
-                {/* THE GEAR MANAGES, IT DOES NOT ADD. A member is not on the
-                    board, so there is nothing here to star — adding happens in
-                    the drawer, on the product itself. This opens the list with
-                    a remove on each. */}
-                <button
-                  type="button" aria-label="Manage favourites"
-                  onClick={() => setFavManage(true)}
-                  className="flex shrink-0 items-center justify-center rounded-full"
-                  style={{ width: 26, height: 26, background: FILL }}
-                >
-                  <Settings className="h-[13px] w-[13px]" strokeWidth={2.5} style={{ color: MUTED }} />
-                </button>
-              </div>
+              {/* 🔴 NO GEAR HERE ANY MORE — it moved to the page header. This
+                  card hides when there are no favourites, so a gear on it was
+                  unreachable from the only state that needs it. The count pill
+                  matches every other family card. */}
+              <span className="shrink-0 rounded-full font-mono text-[10px]"
+                    style={{ color: FAINT, background: FILL, padding: "2px 7px" }}>
+                {favViews.length}
+              </span>
             </div>
             <div className="grid grid-cols-4" style={{ gap: 7 }}>
               {favViews.map((fav) => {
@@ -1921,12 +1999,6 @@ export default function PoV2Page(): React.JSX.Element {
           product={openMember}
           tile={openResolved ?? undefined}
           initialMember={openTile.initialMember}
-          // A PREDICATE, not a flag — the drawer asks about whichever member
-          // is selected inside it, which changes as he moves along the strip.
-          // V2ResolvedMember.sap is already the composite key for a pinned
-          // member, so nothing here has to rebuild it.
-          isFav={(sap) => isFavProduct(sap, favProducts)}
-          onToggleFav={toggleFavProduct}
           onClose={() => setOpenTile(null)}
           onAdd={(picks) => addLines(
             openTile.tile.key, memberLabelIn(openTile.tile), picks, null)}
@@ -1934,23 +2006,30 @@ export default function PoV2Page(): React.JSX.Element {
         />
       )}
 
-      {/* ── MANAGE FAVOURITES ────────────────────────────────────────────
-          🔴 IT REMOVES, IT NEVER ADDS. A member is not on the board, so there
-          is nothing on this screen to star; adding is a star in the drawer, on
-          the product itself. A gear that could only take things away is not a
-          gap — it is the honest shape of the thing.
+      {/* ── THE FAVOURITES PICKER ────────────────────────────────────────
+          🔴 THE ONE WAY TO SET A FAVOURITE. The star used to live in the
+          product drawer and the gear on the Favourites card; both are gone.
+          The card hides when empty, so its gear was unreachable from the only
+          state that needs it, and two entry points for one setting is a
+          question about which one is authoritative. One control, in the page
+          header, always drawn.
+
+          EVERY PRODUCT, GROUPED BY FAMILY, IN BOARD ORDER — all 98 members,
+          not the eight already chosen. This is where he BROWSES: he is not
+          looking up a name he knows, he is picking the ones he sells, so
+          there is deliberately NO search box. Nine headed groups is a scroll,
+          not a problem.
 
           A SHEET, NOT A SCREEN. The board stays underneath because this is a
-          tidy-up he dismisses, not a place he goes. Same rule the Clear and
-          Delete confirms follow.
+          setting he dismisses, not a place he goes.
 
-          No confirm on the remove. Un-starring is not destructive — the
-          product is still on its own family tile, untouched, and re-starring
-          is one tap in its drawer. */}
+          No confirm on un-starring. It is not destructive — the product is
+          still on its own family tile, untouched, and re-starring is one tap
+          on the same star. */}
       {favManage && (
-        <V2Sheet onClose={() => setFavManage(false)} footer={
+        <V2Sheet onClose={closeFavPicker} fixedHeight footer={
           <button
-            type="button" onClick={() => setFavManage(false)}
+            type="button" onClick={closeFavPicker}
             className="w-full rounded-[13px] py-3 text-[15px] font-semibold text-white"
             style={{ background: BRAND }}
           >
@@ -1961,42 +2040,64 @@ export default function PoV2Page(): React.JSX.Element {
             <h2 className="text-[18px] font-bold" style={{ color: INK, letterSpacing: "-0.025em" }}>
               Favourites
             </h2>
+            {/* The count is the whole state of this screen, so it is the
+                subtitle rather than a badge somewhere. At eight it is also the
+                warning, which is why it says "of 8" and not just a number. */}
             <p className="text-[11.5px]" style={{ color: MUTED }}>
-              {favViews.length} of 8 · star a product in its drawer to add one
+              {favViews.length} of 8 · they show first on the board
             </p>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4"
+          <div className="min-h-0 flex-1 overflow-y-auto"
                style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}>
-            {favViews.length === 0 ? (
-              <p className="py-10 text-center text-[13px]" style={{ color: FAINT }}>
-                No favourites yet.
-              </p>
-            ) : favViews.map((fav) => (
-              <div key={fav.sap} className="flex items-center gap-3 py-2.5"
-                   style={{ borderTop: `1px solid ${RULE}` }}>
-                <span className="shrink-0 overflow-hidden rounded-[10px]"
-                      style={{ width: 38, height: 38, background: fav.wash }}>
-                  {fav.src && (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={fav.src} alt="" width={600} height={600} decoding="async" loading="lazy"
-                         className="block h-full w-full"
-                         style={{ objectFit: "contain", mixBlendMode: "multiply" }} />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[14px] font-semibold" style={{ color: INK }}>
-                  {fav.caption}
-                </span>
-                {/* 44px — §60's floor. The star is the same control it is in
-                    the drawer, filled, and tapping it un-stars. One glyph, one
-                    meaning, both places. */}
-                <button
-                  type="button" aria-label={`Remove ${fav.caption} from favourites`}
-                  onClick={() => setFavProducts(removeFavProduct(fav.sap, favProducts))}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center"
-                >
-                  <Star className="h-[18px] w-[18px]" strokeWidth={2.5}
-                        fill={FAVOURITE} style={{ color: FAVOURITE }} />
-                </button>
+            {pickerGroups.map((group) => (
+              <div key={group.name}>
+                {/* The family name, as a sticky heading — nineteen Aquatech
+                    rows is longer than a screen and losing which family you
+                    are in halfway down is how a list stops being browsable. */}
+                <h3 className="sticky top-0 z-10 px-4 pb-1.5 pt-3 text-[10px] font-bold uppercase"
+                    style={{ color: MUTED, letterSpacing: ".13em", background: SURFACE }}>
+                  {group.name}
+                </h3>
+                {group.rows.map((row) => {
+                  const starred = isFavProduct(row.sap, favProducts);
+                  return (
+                    <button
+                      key={row.sap}
+                      type="button"
+                      // THE WHOLE ROW IS THE TARGET, not just the star. A 44px
+                      // glyph at the far right of a 390px row is a long reach
+                      // with a thumb, and there is nothing else a tap here
+                      // could mean.
+                      onClick={() => toggleFavProduct(row.sap)}
+                      aria-pressed={starred}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
+                      style={{ borderTop: `1px solid ${RULE}` }}
+                    >
+                      <span className="shrink-0 overflow-hidden rounded-[10px]"
+                            style={{ width: 38, height: 38, background: row.wash }}>
+                        {row.src && (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={row.src} alt="" width={600} height={600} decoding="async" loading="lazy"
+                               className="block h-full w-full"
+                               style={{ objectFit: "contain", mixBlendMode: "multiply" }} />
+                        )}
+                      </span>
+                      {/* THE FULL CAPTION, both halves — "Luxurio Matt". The
+                          same string the board tile carries, from the same
+                          resolveFav, so a row and its tile cannot disagree.
+                          De-doubled where tile and member are the same word. */}
+                      <span className="min-w-0 flex-1 truncate text-[14px] font-semibold"
+                            style={{ color: starred ? VIOLET : INK }}>
+                        {row.caption}
+                      </span>
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center">
+                        <Star className="h-[18px] w-[18px]" strokeWidth={2.5}
+                              fill={starred ? FAVOURITE : "none"}
+                              style={{ color: starred ? FAVOURITE : FAINT }} />
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
