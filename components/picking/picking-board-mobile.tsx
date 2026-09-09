@@ -2880,10 +2880,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         {(data?.heldBack ?? 0) > 0 && (
           <div className="mb-2.5 flex items-center gap-2 rounded-[7px] border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#92400e]">
             <span className="font-semibold tabular-nums">{data!.heldBack}</span>
-            <span>
-              more bill{data!.heldBack === 1 ? "" : "s"} waiting at the desk
-              {data!.heldBack === 1 ? " — it is" : " — they are"} not ready for you yet.
-            </span>
+            <span>more with the planner</span>
           </div>
         )}
 
