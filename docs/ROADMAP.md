@@ -1574,6 +1574,21 @@ name lies. Do it the next time `v2-data.ts` is open.
 ### P3 — A three-line note clips in the order sheet
 Known and accepted, recorded in the v2 record. Parked here so it is not rediscovered as a bug.
 
+### P2 — v2 tools step by 1 where v1 steps by 25 / 12 / 500
+**31 live products** — 9 brushes at `12PC`, 21 rollers at `25PC`, 1 stickers row at `500PC`
+(counted from `mo_sku_lookup_v2`, 2026-09-09). **Cause:** `formatPack` collapses every PC pack to
+the single string `"1 pc"`, so a label-keyed lookup can never reach `PIECE_BOX_STEP` — only
+`packStepForPack(packCode, unit, productKey)` sees them, and v2 has no `packCode` at a step call
+site. Fixing it means threading the `ApiPack` object through `PackList` / `PackRow` instead of the
+label string, which is a **drawer data-shape change, not a shim**. Search-only today — none of the
+31 is on the board. **Owner deferred 2026-09-09.**
+⚠ **The successor-parity gate WILL flag this. It is known, not new** — do not re-diagnose it, and
+do not "fix" it by keying anything off the `"1 pc"` string.
+
+⚠ Beside it, not in scope today: **v2 keeps its own `formatPack` copy** at `v2-data.ts:584`,
+behaviourally identical to `lib/place-order/pack.ts:23` — a second duplicate-owner candidate of the
+same shape as the step table that `e16f7a59`/this commit just retired.
+
 ### P2 — Three stale comments left over from `23a4a502`
 That commit corrected five lying comments in `v2-data.ts` and reported three more it did not own.
 Each states something false about the code; none breaks anything, and comments of exactly this

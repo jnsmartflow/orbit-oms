@@ -759,8 +759,16 @@ export default function ProductDrawer({
 
   // One tap moves a WHOLE BOX; the value shown stays in UNITS. So 1L reads
   // 0 -> 6 -> 12, and 20L (a drum, step 1) reads 0 -> 1 -> 2. Floors at 0.
+  //
+  // 🔴 cur.joinSap, NOT cur.sap — and this is the site the carton overrides
+  // were being missed at. `joinSap` is COALESCE(product, subProduct), the
+  // SAP-clean stock name `cartonOverride()` keys on; `sap` carries
+  // memberKey(sap, option) for a PINNED member ("WOOD PRIMER|||White"), which
+  // matches no override and would quietly fall through to the global table.
+  // Both callers pass cur.sap as `member`, so reading cur here is consistent.
+  // With the key supplied, GVA / Acotone / Machine Tinter 1L step by 1.
   function stepCell(member: string, option: string, pack: string, direction: 1 | -1): void {
-    const delta = stepForLabel(pack) * direction;
+    const delta = stepForLabel(pack, cur.joinSap) * direction;
     setMatrix((prev) => {
       const byOpt = { ...(prev[member] ?? {}) };
       const row = { ...(byOpt[option] ?? {}) };
@@ -905,7 +913,13 @@ export default function ProductDrawer({
 
   const packList = (
     <PackList
-      labels={packLabels} qtys={qtys}
+      labels={packLabels}
+      // The SELECTED ROW's own key, the same expression v1 uses at
+      // app/po/po-page.tsx:502. Taken from the row rather than from `cur`
+      // because a pinned member's `cur.sap` is a composite; the row is the
+      // catalog record and cannot be anything but right.
+      productKey={selectedRow ? selectedRow.product ?? selectedRow.subProduct : null}
+      qtys={qtys}
       onStep={(label, dir) => stepCell(cur.sap, optionKey, label, dir)}
       onType={(label, next) => typeCell(cur.sap, optionKey, label, next)}
     />
@@ -1517,8 +1531,16 @@ function NameBar({ value, hex }: { value: string; hex?: string }): React.JSX.Ele
  * against the footer's border. This is the room that lets it centre. See
  * useKeepFocusVisible in v2-sheet.
  */
-function PackList({ labels, qtys, onStep, onType }: {
+function PackList({ labels, productKey, qtys, onStep, onType }: {
   labels: string[];
+  /**
+   * 🔴 COALESCE(product, subProduct) OF THE SELECTED ROW — the only new prop
+   * the carton overrides needed. A pack label alone cannot answer "how many in
+   * a box" because the depot sells three products loose at a size it sells
+   * everything else by the six; that is a fact about the PRODUCT. Null when no
+   * row is selected, which falls back to the global table.
+   */
+  productKey: string | null;
   qtys: Record<string, number>;
   onStep: (label: string, direction: 1 | -1) => void;
   onType: (label: string, units: number) => void;
@@ -1534,7 +1556,7 @@ function PackList({ labels, qtys, onStep, onType }: {
         <PackRow
           key={label}
           label={label}
-          step={stepForLabel(label)}
+          step={stepForLabel(label, productKey)}
           qty={qtys[label] ?? 0}
           onStep={(dir) => onStep(label, dir)}
           onType={(next) => onType(label, next)}
@@ -1545,9 +1567,18 @@ function PackList({ labels, qtys, onStep, onType }: {
 }
 
 /**
- * One pack row. The "per N" sub-label comes from the copied depot step table,
- * and is HIDDEN when the step is 1 — a drum has no box, so "per 1" would be
- * noise dressed as information.
+ * One pack row. The "per N" sub-label is HIDDEN when the step is 1 — a drum
+ * has no box, so "per 1" would be noise dressed as information. Loose-sold
+ * products now lose it correctly too: GVA 1L is step 1 and says nothing, where
+ * it used to claim "per 6".
+ *
+ * 🔴 THE HINT AND THE BUTTONS READ ONE NUMBER. `step` arrives as a single prop
+ * and both the caption above and the +/- below it use that prop — there is no
+ * second lookup to drift from. The value the caller computes and the value the
+ * caller applies also agree by construction: `PackList` derives it from the
+ * SELECTED ROW's key and `stepCell` from `cur.joinSap`, and the selected row
+ * is one of `cur`'s own rows, so the two expressions are the same string. Keep
+ * it that way — a row that says "per 6" and moves by 4 is worse than either.
  *
  * 🔴 A LIST, NOT FOUR BANNERS. This row used to be 16px/800 over a mono
  * caption with 12px of padding above and below — 62px each, so four packs
@@ -1771,7 +1802,7 @@ function FlatBody({ options, pack, matrix, onStep, onType }: {
               </div>
               <Stepper
                 qty={qty}
-                step={stepForLabel(pack)}
+                step={stepForLabel(pack, opt.row.product ?? opt.row.subProduct)}
                 onStep={(d) => onStep(opt.value, pack, d)}
                 onType={(units) => onType(opt.value, pack, units)}
                 label={`${opt.value} ${pack}`}

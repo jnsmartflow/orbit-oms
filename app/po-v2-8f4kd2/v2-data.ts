@@ -2,9 +2,19 @@
 //
 // 🔴 CONTAINMENT — everything v2 needs lives inside app/po-v2-8f4kd2/.
 // Colours are exported constants used as INLINE STYLES, never CSS variables in
-// globals.css and never entries in tailwind.config.ts. Nothing here imports
-// from lib/ or app/po/ — where shared logic is needed it is COPIED in with its
-// source named, so deleting this one folder removes v2 whole.
+// globals.css and never entries in tailwind.config.ts. Where shared logic is
+// needed it is COPIED in with its source named, so deleting this one folder
+// removes v2 whole — with ONE read-only exception, stated below.
+//
+// ⚠ THE EXCEPTION, ADDED 2026-09-09: `packStep` from lib/place-order/pack.ts.
+// Nothing in lib/ is modified and app/po/ is still untouched. A COPY of the
+// depot's carton table turned out not to be a copy of the depot's carton RULE
+// — the overrides that make GVA, Acotone and Machine Tinter sell loose live in
+// a second table a snapshot could not see, so v2 stepped them by six where the
+// depot steps by one. The full reasoning sits above `stepForLabel`. Read it
+// before adding a second import; the bar is "a copy would be silently wrong",
+// not "this would be convenient".
+import { packStep } from "@/lib/place-order/pack";
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 //
@@ -598,31 +608,51 @@ export function formatPack(packCode: string, unit?: string | null): string {
 }
 
 /**
- * COPIED VERBATIM from lib/place-order/pack.ts's `PACK_STEP_MAP`
- * (read 2026-09-06). Units in one box, keyed by the RENDERED pack label.
- * A pack absent from this table steps by 1 — which is also how the depot
- * table itself spells "this is a drum, not a box" (10L/20L are literal 1s).
+ * Units moved by one tap of +/-: a whole box, or 1 for a drum.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 THE THIRD DOCUMENTED CONTAINMENT EXCEPTION, AND THE FIRST IN THIS FILE.
+ *
+ * `v2-data.ts` had no imports at all until 2026-09-09. It now has one, and the
+ * reason is that a COPY of the depot's carton table is not a copy of the
+ * depot's carton RULE.
+ *
+ * What was here: a verbatim snapshot of `PACK_STEP_MAP`, label-keyed, taken on
+ * 2026-09-06. It was accurate. It was also only half the rule —
+ * `lib/place-order/pack.ts` checks `PRODUCT_CARTON_OVERRIDES` through
+ * `cartonOverride()` BEFORE it reaches that map, and the snapshot could not.
+ * So v2 stepped GVA, Acotone and Machine Tinter 1L by six when the depot sells
+ * them loose and v1 steps them by one, and it stepped Universal Stainer's
+ * 50/100/200ML and the three Crackfillers on the wrong carton too. Nothing
+ * failed; the numbers were simply wrong, on the control the salesman actually
+ * taps.
+ *
+ * 🔴 SO THE TABLE IS DELETED, NOT EXTENDED. Copying the override table in
+ * beside the step table would have reproduced the same failure one layer up:
+ * two owners for one rule, drifting the first time the depot re-cartons
+ * anything. `packStep` is the owner. This is a delegate.
+ *
+ * The signatures line up with no shim: `packStep(packLabel, productKey?)`
+ * takes the RENDERED label, which is what every v2 call site has.
+ *
+ * ⚠ ONE THING THIS CANNOT REACH, AND IT IS NOT AN OVERSIGHT. Tools are keyed
+ * in `PIECE_BOX_STEP` on the RAW pack (`25PC` / `12PC` / `500PC`), and
+ * `formatPack` collapses every one of them to the single string `"1 pc"` — so
+ * no label-keyed lookup can tell a roller from a brush, and both come back as
+ * 1. Only `packStepForPack(packCode, unit, productKey)` sees them, and v2 has
+ * no packCode at a step call site. 31 live products, search-only, none on the
+ * board. Owner deferred it 2026-09-09 rather than reshape the drawer; it is on
+ * ROADMAP under `/po-v2-8f4kd2`. Do NOT "fix" it by keying anything off the
+ * `"1 pc"` string.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * @param productKey COALESCE(product, subProduct) — the SAP-clean stock name,
+ *   never a displayName or a board label. That is the key `cartonOverride()`
+ *   expects, and a friendly name silently misses every override and looks like
+ *   it worked. Omitted, the global table applies.
  */
-const PACK_STEP_MAP: Record<string, number> = {
-  "50ML":  12,
-  "100ML": 24,
-  "200ML": 12,
-  "500ML": 12,
-  "1L":    6,
-  "4L":    4,
-  "10L":   1,
-  "20L":   1,
-  "30L":   1,
-  "40KG":  1,
-  "25KG":  1,
-  "30KG":  1,
-  "5KG":   1,
-  "1 pc":  1,
-};
-
-/** Units moved by one tap of +/-: a whole box, or 1 for a drum. */
-export function stepForLabel(label: string): number {
-  return PACK_STEP_MAP[label] ?? 1;
+export function stepForLabel(label: string, productKey?: string | null): number {
+  return packStep(label, productKey);
 }
 
 // ── Curated option lists ───────────────────────────────────────────────────
