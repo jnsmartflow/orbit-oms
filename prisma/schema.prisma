@@ -248,6 +248,23 @@ model users {
   // `orders`, same rule as the four above it. Named on both sides or generate
   // fails with an ambiguity error.
   ordersPickVisible            orders[]              @relation("OrderPickVisibleBy")
+  // The `loaded` stage's actor (2026-09-09) — the SEVENTH named users relation
+  // on `orders`, alongside OrderPickedBy / OrderRemovedBy / OrderRestoredBy /
+  // OrderPickEarlyReleasedBy / OrderInvoicedBy / OrderPickVisibleBy above.
+  // Every one of the seven is explicitly named on BOTH sides; an unnamed one
+  // makes the whole cluster ambiguous and Prisma ERRORS at generate time
+  // (CORE §7.3). `orders.hiddenById` is deliberately a bare Int with no
+  // relation at all and is not part of this count.
+  ordersLoaded                 orders[]              @relation("OrderLoadedBy")
+  // Trip module (2026-09-09) — FOUR FKs from `trips` to `users`. The largest
+  // such cluster after Mrn*, and the same rule binds: all four MUST stay
+  // explicitly named on BOTH sides or generate fails with an ambiguity ERROR.
+  // Every one of the four is an ACTOR link, which is the side of the line this
+  // schema's convention says to name (see the MRN note above).
+  tripsCreated                 trips[]               @relation("TripCreatedBy")
+  tripsReleased                trips[]               @relation("TripReleasedBy")
+  tripsDispatched              trips[]               @relation("TripDispatchedBy")
+  tripsCancelled               trips[]               @relation("TripCancelledBy")
   billingSettingsUpdated       billing_settings[]    @relation("BillingSettingsUpdatedBy")
   appSettingsUpdated           app_settings[]        @relation("AppSettingsUpdatedBy")
   tintSkipsAsActor             tint_skip_events[]    @relation("SkipActor")
@@ -458,9 +475,28 @@ model transporter_master {
   phone         String?
   email         String?
   isActive      Boolean          @default(true)
+  // Trip module (2026-09-09). Live column: boolean NOT NULL DEFAULT false.
+  //
+  // TRUE = a real carrier, offered in the trip's transporter picker. FALSE = an
+  // SAP status code that arrived as a name — DELETE, CANCEL, HAND, PORTER,
+  // ewaybill, PICK DELETED, CI. Seven of the 25 live rows are that kind. They
+  // are KEPT, not deleted: historical orders may point at them and CORE §3
+  // forbids deleting anyway.
+  //
+  // ⚠ NOT the same question as `isActive` directly above, which means "is this
+  // carrier still trading". A row can be real and inactive. Same distinction
+  // sku_master_v2 draws between isPrimary and isActive (CORE §7.1.c) — do not
+  // conflate them or fold one into the other.
+  //
+  // Default FALSE is the safe direction: an unmarked row is simply absent from
+  // a picker, which is recoverable, rather than silently offered.
+  isRealTransporter Boolean      @default(false)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   vehicles      vehicle_master[]
+  // Trip module (2026-09-09). ONE FK from `trips` to this model, so the
+  // relation is deliberately UNNAMED — same call as `vehicles` above.
+  trips         trips[]
 }
 
 // ─────────────────────────────────────────────
@@ -475,6 +511,10 @@ model delivery_type_master {
   slotConfigs             delivery_type_slot_config[]
   dispatchDeliveryPoints  delivery_point_master[]     @relation("DispatchDeliveryType")
   reportingDeliveryPoints delivery_point_master[]     @relation("ReportingDeliveryType")
+  // Trip module (2026-09-09). ONE FK from `trips`, so deliberately UNNAMED —
+  // unlike the two above, which are named because delivery_point_master carries
+  // TWO FKs here and would otherwise be ambiguous (CORE §7.3).
+  trips                   trips[]
 }
 
 model slot_master {
@@ -506,6 +546,10 @@ model dispatch_slot_master {
   // to a DIFFERENT model, so there is no ambiguity trap — named on both sides
   // anyway, matching the house pattern.
   moOrders   mo_orders[] @relation("MoOrderDispatchWindow")
+  // Trip module (2026-09-09). A THIRD relation on this table, again to a
+  // DIFFERENT model, so there is no ambiguity trap — named anyway, matching the
+  // house pattern its two siblings above already follow.
+  trips      trips[]     @relation("TripDispatchWindow")
 }
 
 model delivery_type_slot_config {
@@ -693,6 +737,10 @@ model delivery_point_master {
   // the name carried on the ci_returns side — spec §6 lists it as
   // @relation("CiReturnCustomer"). A name on one side only is a Prisma error.
   ciReturns               ci_returns[]              @relation("CiReturnCustomer")
+  // Trip module (2026-09-09). ONE FK from `trip_drops`, so deliberately
+  // UNNAMED — contrast the two `orders` relations above, which MUST stay named
+  // because that model carries two FKs here (CORE §7.3's dual-relation trap).
+  tripDrops               trip_drops[]
 }
 
 model delivery_point_contacts {
@@ -997,6 +1045,43 @@ model orders {
   invoicedById          Int?
   invoicedBy            users?                   @relation("OrderInvoicedBy", fields: [invoicedById], references: [id])
 
+  // ── TRIP MODULE (2026-09-09) ──────────────────────────────────────────────
+  //
+  // THE ONE TRIP POINTER. Reach the trip via trip_drops.tripId — there is
+  // deliberately NO `tripId` column here (owner decision). Two pointers can
+  // disagree about the same bill and nothing in the database would catch it;
+  // the `shipToOverride` boolean beside `shipToOverrideCustomerId` above is the
+  // same shape and CORE §7.3 already flags it as a pair to keep in step by hand.
+  //
+  // NULL is the normal state — most bills are on no trip.
+  //
+  // Live FK: orders_tripDropId_fkey ... ON DELETE SET NULL. Removing a stop
+  // returns its bills to the pool; it must never delete an order. Backed by
+  // orders_tripDropId_idx, which is Prisma's default name for this shape, so
+  // the @@index below needs no `map:`.
+  tripDropId            Int?
+  tripDrop              trip_drops?              @relation(fields: [tripDropId], references: [id], onDelete: SetNull)
+
+  // The `loaded` stage's timestamp + actor (2026-09-09) — the SAME modelling
+  // call as pickEarlyReleasedAt/ById, pickVisibleAt/ById and invoicedAt/ById
+  // above: never a new pick_assignments.status string, because
+  // chk_pick_assignments_status is a live CHECK invisible in this file that
+  // permits only 'assigned' and 'picked' (CLAUDE_PICKING.md §7).
+  //
+  // ⚠ `loaded` ITSELF IS A workflowStage VALUE, and orders carries NO CHECK on
+  // that column (verified live 2026-09-09: the only constraint on this table is
+  // orders_obdNumber_key). So adding the stage is a constants edit in
+  // lib/workflow-stages.ts with zero migration — these two columns are the
+  // audit trail beside it, not the stage itself.
+  //
+  // @db.Timestamptz(6) is REQUIRED — without it Prisma emits a plain
+  // `timestamp` and mismatches the live column (CORE §7.1.c). The @relation
+  // MUST be named: this is the SEVENTH FK from `orders` to `users` and an
+  // unnamed one is a Prisma ambiguity ERROR, not a warning (CORE §7.3).
+  loadedAt              DateTime?                @db.Timestamptz(6)
+  loadedById            Int?
+  loadedBy              users?                   @relation("OrderLoadedBy", fields: [loadedById], references: [id], onDelete: SetNull)
+
   // Created directly in Supabase (orders_updatedAt_idx, "updatedAt" DESC).
   // Backs the picking change-marker's MAX(updatedAt) probe (app/api/picking/
   // marker/route.ts). Recorded here by hand — db pull cannot run on this
@@ -1010,6 +1095,12 @@ model orders {
   // scan. Prisma's default name for this is exactly `orders_invoiceNo_idx`, so
   // no `map:` is needed. Recorded by hand — db pull cannot run here (CORE §3).
   @@index([invoiceNo])
+
+  // Created directly in Supabase 2026-09-09 (orders_tripDropId_idx). Pays for
+  // "every order on this trip", which the trip band's progress bar, the derived
+  // `ready` state and the trip sheet all ask. Prisma's default name for this
+  // shape is exactly `orders_tripDropId_idx`, so no `map:` is needed.
+  @@index([tripDropId])
 
   // Partial index created directly in Supabase, NOT expressible in Prisma
   // syntax — do NOT model it as @@index:
@@ -1310,6 +1401,14 @@ model vehicle_master {
   isActive            Boolean            @default(true)
   createdAt           DateTime           @default(now())
   dispatchPlans       dispatch_plans[]
+  // Trip module (2026-09-09). ONE FK from `trips`, so deliberately UNNAMED.
+  // ⚠ A trip's driverName/driverPhone are SNAPSHOTS taken at trip time, NOT
+  // reads through this relation — the master's driver changes when a
+  // transporter swaps a man onto a van, and a sheet printed last week must keep
+  // saying who actually drove it. Do not "normalise" the trip to read through
+  // here; it is denormalised on purpose, the same call pick_findings makes for
+  // obdNumber/skuCodeRaw (CORE §7.4).
+  trips               trips[]
 }
 
 model dispatch_plans {
@@ -3000,4 +3099,213 @@ model ci_return_lines {
   // this pair is identical, so no `map:`. No separate index on ciReturnId: it is
   // the LEADING column here, which already serves every lookup by parent.
   @@unique([ciReturnId, lineNumber])
+}
+
+// ─────────────────────────────────────────────
+// TRIP MODULE — trips + trip_drops (2026-09-09)
+// ─────────────────────────────────────────────
+
+// One LOAD leaving the depot. 24 columns.
+//
+// Applied BY HAND in the Supabase SQL Editor 2026-09-09 and hand-mirrored here —
+// db push and db pull are both banned (CORE §3), and db pull additionally fails
+// on this machine with P1001. DDL of record:
+// docs/prompts/drafts/web-update-2026-09-09-trip-schema.md §D.
+//
+// 🔴 SEVEN LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA (CORE §7.4), so
+// they are invisible in this file and are recorded here by hand:
+//   chk_trips_status     CHECK (status IN ('draft','released','loading','dispatched','cancelled'))
+//   chk_trips_type_code  CHECK ("typeCode" IN ('L','U','I'))
+//   chk_trips_seq_positive        CHECK (seq >= 1)
+//   chk_trips_vehicle_one_of
+//     CHECK (NOT ("vehicleId" IS NOT NULL AND "adhocVehicleNo" IS NOT NULL))
+//   chk_trips_dispatched_complete
+//     CHECK (status <> 'dispatched'
+//            OR ("dispatchedAt" IS NOT NULL AND "dispatchedById" IS NOT NULL))
+//   chk_trips_cancelled_complete
+//     CHECK (status <> 'cancelled'
+//            OR ("cancelledAt" IS NOT NULL AND "cancelledById" IS NOT NULL))
+//   chk_trips_number_shape
+//     CHECK ("tripNumber" = "typeCode" || '-' || to_char("tripDate",'YYMMDD')
+//            || '-' || lpad(seq::text, 2, '0'))
+//
+// 🔴 A SIXTH STATUS VALUE NEEDS A SQL ALTER ON chk_trips_status FIRST — never
+// just a new string in application code. Same trap chk_pick_assignments_status
+// and chk_ci_returns_status document: `status` is a plain String here, Prisma
+// validates nothing, and a wrong literal reaches Postgres as a raw constraint
+// violation on somebody's screen. Import the vocabulary, never retype it
+// (CORE §3's status-string rule).
+//
+// ⚠ 'ready' IS DELIBERATELY NOT IN THAT LIST. A trip is ready when every bill
+// under it is at pick_checked, and that is DERIVED AT READ TIME, never stored —
+// a stored 'ready' would drift the moment a bill is added or unassigned and
+// nothing would correct it. Owner decision, 2026-09-09.
+//
+// ⚠ chk_trips_number_shape IS WHAT KEEPS THE TWO UNIQUES HONEST. `tripNumber`
+// is UNIQUE and so is (tripDate, typeCode, seq) — not redundant, because they
+// fail differently: the text catches the allocator's P2002 race, the triple
+// catches a duplicate seq that a mis-formatted number would let through. The
+// CHECK is what stops those two ever disagreeing about the same row.
+// lpad PADS and never truncates, so a 100th trip in one day renders '100' and
+// stays valid. Do not reimplement the formatter as a two-character slice.
+//
+// 🔴 FOUR FKs TO `users` — createdById / releasedById / dispatchedById /
+// cancelledById. All four carry an explicitly NAMED @relation on BOTH sides
+// (back-relations tripsCreated / tripsReleased / tripsDispatched /
+// tripsCancelled on the users model). An unnamed one is a Prisma ambiguity
+// ERROR at generate time, not a warning — CORE §7.3. Same discipline as the
+// Mrn* / PickFinding* / CiReturn* clusters.
+//
+// ⚠ driverName / driverPhone are SNAPSHOTS taken when the trip is built, NOT
+// reads through `vehicleId`. The master's driver changes when a transporter
+// swaps a man onto a van; a sheet printed last week must keep saying who
+// actually drove it. It is also what lets a trip with only an `adhocVehicleNo`
+// still name a driver.
+//
+// ⚠ `typeCode` is denormalised beside `deliveryTypeId` ON PURPOSE. The trip
+// number embeds a letter and that letter must survive a rename in
+// delivery_type_master. The FK carries the classification; typeCode carries the
+// number's own component, and chk_trips_number_shape ties them together.
+//
+// ⚠ `Cross` HAS NO LETTER. delivery_type_master holds Local / Upcountry / IGT /
+// Cross and chk_trips_type_code admits three. A Cross trip cannot be numbered
+// today and the CHECK will refuse it outright rather than degrade. Open owner
+// question — §E of the trip-schema draft.
+//
+// ⚠ `transporterId` is the TRIP'S OWN, nullable, defaulted from the vehicle
+// when one is chosen but overridable. Do not derive it from `vehicleId` at read
+// time (owner decision). Vehicle and transporter are BOTH optional: a trip must
+// be creatable with neither.
+//
+// ⚠ `transporterTripNo` is the CARRIER'S own docket — NTS calls it L41/L42, a
+// hired transporter gives a docket number. Free text, not validated, NOT
+// unique: it is their reference, not ours. During the NTS parallel run it holds
+// the matching NTS trip number. It is not comparable to `tripNumber`: NTS's own
+// counter runs monthly, not per day (measured 2026-09-08/09).
+model trips {
+  id                Int                   @id @default(autoincrement())
+  tripNumber        String                @unique
+  tripDate          DateTime              @db.Date
+  typeCode          String
+  deliveryTypeId    Int
+  deliveryType      delivery_type_master  @relation(fields: [deliveryTypeId], references: [id])
+  seq               Int
+  dispatchWindowId  Int?
+  dispatchWindow    dispatch_slot_master? @relation("TripDispatchWindow", fields: [dispatchWindowId], references: [id])
+  transporterId     Int?
+  transporter       transporter_master?   @relation(fields: [transporterId], references: [id])
+  vehicleId         Int?
+  vehicle           vehicle_master?       @relation(fields: [vehicleId], references: [id])
+  adhocVehicleNo    String?
+  driverName        String?
+  driverPhone       String?
+  transporterTripNo String?
+  note              String?
+  status            String                @default("draft")
+  releasedAt        DateTime?             @db.Timestamptz(6)
+  releasedById      Int?
+  releasedBy        users?                @relation("TripReleasedBy", fields: [releasedById], references: [id], onDelete: SetNull)
+  dispatchedAt      DateTime?             @db.Timestamptz(6)
+  dispatchedById    Int?
+  dispatchedBy      users?                @relation("TripDispatchedBy", fields: [dispatchedById], references: [id], onDelete: SetNull)
+  cancelledAt       DateTime?             @db.Timestamptz(6)
+  cancelledById     Int?
+  cancelledBy       users?                @relation("TripCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  createdAt         DateTime              @default(now()) @db.Timestamptz(6)
+  createdById       Int
+  createdBy         users                 @relation("TripCreatedBy", fields: [createdById], references: [id])
+  updatedAt         DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  drops             trip_drops[]
+
+  // Live name trips_date_type_seq_key. Prisma's default for this triple is
+  // trips_tripDate_typeCode_seq_key, so the `map:` is REQUIRED.
+  @@unique([tripDate, typeCode, seq], map: "trips_date_type_seq_key")
+  // Three hand-made index names, none of which is what Prisma would generate,
+  // so every one carries an explicit `map:` — same rule admin_audit_log follows
+  // (CORE §7.13).
+  @@index([tripDate(sort: Desc)], map: "trips_date_idx")
+  @@index([status], map: "trips_status_idx")
+  @@index([vehicleId], map: "trips_vehicle_idx")
+}
+
+// One STOP on a trip. 11 columns.
+//
+// A drop is a CUSTOMER, not a bill — two bills for one shop are one stop. That
+// matches what the existing trip sheet already counts (CLAUDE_TRIP_REPORT.md
+// §4: "Drops = unique customers, not bill rows — counted by custCode").
+//
+// Applied by hand 2026-09-09 and hand-mirrored here (CORE §3). DDL of record:
+// the trip-schema draft §D2.
+//
+// 🔴 TWO LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA, recorded by hand:
+//   chk_trip_drops_seq_positive  CHECK ("dropSeq" >= 1)
+//   chk_trip_drops_key
+//     CHECK ("dropKey" = CASE WHEN "customerId" IS NOT NULL
+//                             THEN 'c:' || "customerId"::text
+//                             ELSE 's:' || "shipToCode" END)
+//
+// 🔴 `dropKey` IS THE GROUPING IDENTITY AND THE SECOND CHECK IS WHAT MAKES IT
+// TRUSTWORTHY. The grouping rule is COALESCE(shipToOverrideCustomerId,
+// customerId) — the expression six places in lib/floor and lib/picking already
+// write. But 482 live bills carry NO customerId at all and 259 carry
+// shipToOverride = true with a NULL override id (measured 2026-09-09). A key
+// that is the FK alone therefore collapses unrelated shops onto one stop, and
+// NULLS NOT DISTINCT inverts that into the opposite bug. The prefixed text key
+// is total, survives an unmatched bill, and is inspectable with a plain SELECT
+// instead of hiding the rule in a constraint modifier nothing reads.
+//
+// ⚠ THE 'c:' / 's:' PREFIXES ARE LOAD-BEARING. customerId 1856 and a SAP
+// shipToCode of '1856' are different things in different id spaces; the
+// prefixes are what stop them colliding. Same class of mistake CORE §13's
+// id-space landmine records — never compare ids across spaces.
+//
+// ⚠ dropKey is WRITTEN BY THE APPLICATION, not generated by Postgres. The CHECK
+// proves it cannot drift from the two columns it is built from; it does not
+// fill it in. Every insert must compute it.
+//
+// ⚠ A free-text ship-to redirect (shipToOverride true, override id NULL) groups
+// under its ORIGINAL customer, which is wrong for a delivery and is the only
+// answer the data supports. The fix is upstream, in how those redirects are
+// captured — do not invent an address here.
+//
+// ⚠ ON DELETE: tripId CASCADEs, so deleting a trip deletes its drops, and
+// orders.tripDropId is ON DELETE SET NULL, so those bills return to the pool
+// rather than being deleted. That chain is a safety net, NOT a workflow — a
+// trip is CANCELLED by status, never deleted.
+//
+// Built to receive delivery / POD rows from the future driver app
+// (web-update-2026-09-09-floor-trip-module.md §3.1). The ordered-drop shape
+// exists from day one so that app attaches to rows that are already here.
+model trip_drops {
+  id           Int                    @id @default(autoincrement())
+  tripId       Int
+  trip         trips                  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  dropSeq      Int
+  customerId   Int?
+  customer     delivery_point_master? @relation(fields: [customerId], references: [id])
+  shipToCode   String
+  dropKey      String
+  customerName String
+  areaName     String?
+  routeName    String?
+  note         String?
+  createdAt    DateTime               @default(now()) @db.Timestamptz(6)
+
+  orders       orders[]
+
+  // Live names trip_drops_trip_key_key and trip_drops_trip_seq_key. Prisma's
+  // defaults would be trip_drops_tripId_dropKey_key and
+  // trip_drops_tripId_dropSeq_key, so both `map:`s are REQUIRED.
+  //
+  // TWO uniques, answering different questions: the first is the stop's
+  // IDENTITY (one customer, one stop per trip), the second is its ORDER (no two
+  // stops share a position). Neither implies the other.
+  @@unique([tripId, dropKey], map: "trip_drops_trip_key_key")
+  @@unique([tripId, dropSeq], map: "trip_drops_trip_seq_key")
+  // Hand-made names again, so both carry an explicit `map:`. tripId is already
+  // the leading column of both uniques above; the standalone index is what the
+  // live DDL created and is mirrored rather than second-guessed.
+  @@index([tripId], map: "trip_drops_trip_idx")
+  @@index([customerId], map: "trip_drops_customer_idx")
 }
