@@ -239,10 +239,10 @@ export function SoEmailPanel({
                 <button
                   onClick={() => handleSend(card)}
                   disabled={isFlashing}
-                  className={`inline-flex items-center gap-1 text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors ${
+                  className={`inline-flex items-center gap-1 text-[12px] font-semibold px-3 py-1.5 rounded-md transition-colors ${
                     isFlashing
                       ? "bg-green-50 text-green-700 border border-green-200"
-                      : "bg-brand-600 text-white hover:bg-brand-700"
+                      : "bg-white border border-ink-100 text-brand-700 hover:bg-brand-50"
                   }`}
                 >
                   {isFlashing ? (

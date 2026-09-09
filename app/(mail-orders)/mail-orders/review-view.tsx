@@ -2284,7 +2284,7 @@ export function ReviewView({
             <button
               type="button"
               onClick={() => copyAltCode(code)}
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[10px] font-semibold ${done ? "border-ok bg-ok text-white" : "border-brand-200 bg-white text-brand-700 hover:bg-brand-50"}`}
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[10px] font-semibold ${done ? "border-ok bg-ok text-white" : "border-ink-100 bg-white text-brand-700 hover:bg-brand-50"}`}
             >
               {done ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
             </button>

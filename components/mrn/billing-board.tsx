@@ -236,7 +236,7 @@ export function BillingBoard({ perms }: { perms: MrnPerms }): React.JSX.Element 
             className={
               "inline-flex h-[30px] items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-colors " +
               (selectedId === null
-                ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
+                ? "border-ink-900 bg-ink-900 text-white hover:bg-ink-700"
                 : "border-gray-200 bg-white text-[#475467] hover:bg-gray-50")
             }
           >

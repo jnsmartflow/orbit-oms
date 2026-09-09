@@ -209,7 +209,7 @@ export function GroupRow(props: GroupRowProps) {
           <button
             type="button"
             onClick={() => onAssignGroup(rows.map((r) => r.orderId), assignTo.id)}
-            className="ml-1 shrink-0 rounded-md border border-brand-200 bg-white px-2.5 py-[3px] text-[10.5px] font-semibold text-brand-700 hover:bg-brand-50"
+            className="ml-1 shrink-0 rounded-md border border-ink-100 bg-white px-2.5 py-[3px] text-[10.5px] font-semibold text-brand-700 hover:bg-brand-50"
           >
             Assign all {rows.length} to {assignTo.name.split(" ")[0]}
           </button>
