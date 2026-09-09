@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 
 // ── /po opening screen ────────────────────────────────────────────────────
 // Full-screen teal Orbit splash shown on app open. Purely presentational and
@@ -121,13 +122,9 @@ export default function SplashScreen({
             : `opacity ${ENTER_MS}ms ease-out, transform ${ENTER_MS}ms ease-out`,
         }}
       >
-        {/* Orbit mark — geometry from public/icon-source.svg, white on teal.
-            viewBox 22 at 112px → ring r7 renders ~71px diameter. */}
-        <svg width="112" height="112" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" stroke="#fff" strokeWidth="1.6" />
-          <circle cx="11" cy="11" r="2.2" fill="#fff" />
-          <circle cx="18" cy="11" r="2" fill="#fff" />
-        </svg>
+        {/* The wordmark, white on the violet gradient. No tile: the whole splash
+            screen already IS the tile the user tapped to get here. */}
+        <OrbitWordmark height={44} className="text-white" />
         <div
           style={{
             color: "#fff",

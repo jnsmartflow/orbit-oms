@@ -19,6 +19,7 @@ import { useSidebar } from "./sidebar-provider";
 // label-keyed ICONS below, so the app does not grow a FOURTH icon map.
 import { ICON_MAP, DEFAULT_ICON } from "@/components/shared/role-sidebar";
 import type { NavItemConfig, PagePermissions } from "@/lib/permissions";
+import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 
 // ── Navigation structure ─────────────────────────────────────────────────────
 
@@ -520,16 +521,14 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           collapsed ? "justify-center px-0 h-[52px]" : "gap-2.5 px-4 h-[52px]"
         )}
       >
+        {/* Wordmark only on the desk rail (no tile) — and it is STILL the collapse
+            toggle, so it keeps the button, the title and the hover. */}
         <button
           onClick={toggle}
-          className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] cursor-pointer hover:bg-brand-700 transition-colors flex-shrink-0"
+          className="flex items-center justify-center cursor-pointer flex-shrink-0 text-brand-800 hover:text-brand-600 transition-colors"
           title={collapsed ? "Expand menu" : "Collapse menu"}
         >
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
-            <circle cx="11" cy="11" r="2.2" fill="white"/>
-            <circle cx="18" cy="11" r="2" fill="white"/>
-          </svg>
+          <OrbitWordmark height={collapsed ? 14 : 19} />
         </button>
         {!collapsed && (
           <div className="min-w-0">
@@ -593,11 +592,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
         </button>
         <div className="flex items-center gap-2">
           <span className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 22 22" fill="none">
-              <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
-              <circle cx="11" cy="11" r="2.2" fill="white"/>
-              <circle cx="18" cy="11" r="2" fill="white"/>
-            </svg>
+            <OrbitWordmark height={11} className="text-white" />
           </span>
           <span className="font-bold text-[14px] text-gray-900">Orbit OMS</span>
         </div>

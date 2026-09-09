@@ -21,6 +21,7 @@ import { clearDraft, loadDraft, saveDraft, type DraftSnapshot } from "@/lib/plac
 import type { QuickTile } from "@/lib/place-order/quick-tiles-config";
 import type { SearchResult } from "@/lib/place-order/queries";
 import { useKeyboardRouting, routeDigit } from "@/lib/place-order/use-keyboard-routing";
+import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 
 // /place-order — desktop phone-order entry surface for depot operators.
 //
@@ -761,13 +762,9 @@ export default function PlaceOrderPage(): React.JSX.Element {
   return (
     <>
       <header className="bg-white border-b border-gray-200 h-[52px] flex items-center px-4 gap-3 sticky top-0 z-30">
-        <div className="w-[28px] h-[28px] rounded-md bg-brand-600 flex items-center justify-center flex-shrink-0">
-          <svg viewBox="0 0 22 22" className="w-[16px] h-[16px]" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.4" />
-            <circle cx="11" cy="11" r="2.2" fill="white" />
-            <circle cx="18" cy="11" r="2" fill="white" />
-          </svg>
-        </div>
+        {/* No tile: this page also renders the role sidebar, whose wordmark is the
+            screen brand mark. A violet tile here would be a second one. */}
+        <OrbitWordmark height={13} className="text-brand-800 flex-shrink-0" />
         <span className="text-[14px] font-semibold text-gray-900">Purchase Order (PO)</span>
         {/* min-w-0 lets the pill's `truncate` actually clip; NO overflow-hidden here — that would clip the absolute-positioned dropdown when typing a customer query. */}
         <div className="flex-1 max-w-[420px] mx-4 min-w-0">

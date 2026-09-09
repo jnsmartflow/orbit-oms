@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { Camera, MapPin, ShieldCheck } from "lucide-react";
+import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 
 interface ConsentFormProps {
   consentVersion: string;
@@ -55,11 +56,7 @@ export function ConsentForm({ consentVersion }: ConsentFormProps) {
       {/* Header — orbit logo (only teal, beside Accept CTA) */}
       <header className="flex items-center gap-2.5 mb-5">
         <div className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center">
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
-            <circle cx="11" cy="11" r="2.2" fill="white" />
-            <circle cx="18" cy="11" r="2" fill="white" />
-          </svg>
+          <OrbitWordmark height={12} className="text-white" />
         </div>
         <div>
           <p className="text-[15px] font-bold text-gray-900 leading-tight">OrbitOMS</p>

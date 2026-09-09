@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
+import { OrbitWordmark } from "./orbit-wordmark";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -207,15 +208,15 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
           !isExpanded ? "justify-center px-0 h-[52px]" : "gap-2.5 px-4 h-[52px]",
         )}
       >
-        <div
-          className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] hover:bg-brand-700 transition-colors flex-shrink-0"
-        >
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
-            <circle cx="11" cy="11" r="2.2" fill="white"/>
-            <circle cx="18" cy="11" r="2" fill="white"/>
-          </svg>
-        </div>
+        {/* The wordmark IS the logo — there is no symbol and, on the desk rail,
+            no tile either. A violet tile here would be a second brand object beside
+            the active-nav bar; the word on white carries it alone. 14px collapsed
+            fits the 72px rail (42px wide + 15px either side), so the rail does NOT
+            widen. */}
+        <OrbitWordmark
+          height={isExpanded ? 19 : 14}
+          className="text-brand-800 flex-shrink-0"
+        />
         {isExpanded && (
           <div className="min-w-0">
             <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit OMS</p>

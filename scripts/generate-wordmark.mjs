@@ -90,3 +90,56 @@ writeFileSync(OUT, svg, "utf8");
 console.log(`✓ public/orbit-wordmark.svg`);
 console.log(`  viewBox 0 0 ${r(w)} ${r(h)}   aspect ${(w / h).toFixed(4)}  (${svg.length} bytes)`);
 console.log(`  glyphs ${TEXT.length}, tracking ${TRACKING_EM}em (${tracking} units @ ${upem} upem)`);
+
+// ── The React component, emitted from THE SAME path string ──────────────────
+// The .svg cannot be used via <img> and still take its colour from the caller:
+// `currentColor` resolves inside the image's own document, not the page's. Every
+// in-app placement needs the mark to inherit — brand-800 on the white rail, white
+// on a violet tile — so the app gets an inlined component instead.
+//
+// It is GENERATED, never hand-edited, so the two artifacts cannot drift: one font,
+// one layout pass, one path string, two outputs. Editing the .tsx by hand would
+// reintroduce exactly the duplication this avoids.
+const ASPECT = w / h;
+const tsx = `// GENERATED FILE — do not edit by hand.
+// Source: scripts/generate-wordmark.mjs + scripts/fonts/PlusJakartaSans-Bold.ttf
+// Regenerate: node scripts/generate-wordmark.mjs
+//
+// The Orbit wordmark. Letters are OUTLINED PATHS, not text — the picker fleet is
+// mixed second-hand Android, the depot is on Windows and the office on iPhones, so
+// live <text> would not be the same shape twice.
+//
+// Colour comes from \`currentColor\`: set it on the element or a parent
+// (\`text-brand-800\` on the rail, \`text-white\` on a tile). There is no symbol and
+// no tile baked in here — callers own both.
+import * as React from "react";
+
+/** Intrinsic aspect ratio (width ÷ height) of the outlined word. */
+export const ORBIT_WORDMARK_ASPECT = ${ASPECT.toFixed(4)};
+
+export function OrbitWordmark({
+  height,
+  className,
+}: {
+  /** Rendered height in px. Width follows the aspect ratio. */
+  height: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 ${r(w)} ${r(h)}"
+      height={height}
+      width={Math.round(height * ORBIT_WORDMARK_ASPECT)}
+      fill="currentColor"
+      role="img"
+      aria-label="Orbit"
+      className={className}
+    >
+      <path fillRule="nonzero" d="${d}" />
+    </svg>
+  );
+}
+`;
+const OUT_TSX = join(repoRoot, "components", "shared", "orbit-wordmark.tsx");
+writeFileSync(OUT_TSX, tsx, "utf8");
+console.log(`✓ components/shared/orbit-wordmark.tsx  (aspect ${ASPECT.toFixed(4)})`);

@@ -8,6 +8,7 @@ import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { getTodayIST } from "@/lib/dates";
 import { shareTripSheetImage } from "@/lib/trip-report/share-sheet-image";
 import { resolveDeliveryArea, resolveCustomerLabelParts, isPromoRow } from "@/lib/trip-report/display";
+import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 
 // ── Types (mirror /api/trips + /api/trips/[tripNo] JSON shapes) ────────────
 
@@ -354,11 +355,7 @@ export function TripReportPage() {
       {/* ── Mobile app bar (below md) — sticky: brand row + search + day/type pills ── */}
       <div className="md:hidden sticky top-0 z-30 bg-white border-b border-gray-100">
         <div className="bg-brand-600 px-3.5 py-3 flex items-center gap-2.5">
-          <svg viewBox="0 0 22 22" width="18" height="18">
-            <circle cx="11" cy="11" r="7" fill="none" stroke="#fff" strokeWidth="1.5" />
-            <circle cx="11" cy="11" r="2.3" fill="#fff" />
-            <circle cx="18" cy="11" r="2" fill="#fff" />
-          </svg>
+          <OrbitWordmark height={13} className="text-white" />
           <span className="text-white font-semibold text-[15px]">Trip Report</span>
           <span className="text-white/75 text-[12px] ml-auto">{mobileFilteredTrips.length} trips</span>
         </div>

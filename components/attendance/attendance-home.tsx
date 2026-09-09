@@ -13,6 +13,7 @@ import {
   shiftCalendarDate,
 } from "@/lib/attendance/format";
 import type { AttendanceState, SessionPair } from "@/lib/attendance/state";
+import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 
 export interface DaySummary {
   attendanceDate: string;            // "YYYY-MM-DD"
@@ -75,11 +76,7 @@ export function AttendanceHome({
       <header className="flex items-center justify-between mb-4 h-14">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 22 22" fill="none">
-              <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
-              <circle cx="11" cy="11" r="2.2" fill="white" />
-              <circle cx="18" cy="11" r="2" fill="white" />
-            </svg>
+            <OrbitWordmark height={10} className="text-white" />
           </div>
           <p className="text-[14px] font-semibold text-gray-900">Attendance</p>
         </div>
