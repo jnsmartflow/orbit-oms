@@ -27,7 +27,7 @@ import { Building2, Droplet, Mail, MoreHorizontal, Zap } from "lucide-react";
 // panel's "Invoice date" cell reads (it used to be a private fmtDate in
 // detail-details.tsx). One formatter, so the two surfaces cannot disagree.
 import { formatArticleTag, formatDateIST } from "@/lib/floor/format";
-import { StatusPill, rowStatus } from "./status-pill";
+import { StatusPill, rowStatus, isHeldBack } from "./status-pill";
 import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
 // SOFT variant only (2026-08-25). The solid DUP_SO_* tokens are the PICKING
 // treatment and are deliberately no longer imported here: under `soft` every
@@ -150,6 +150,7 @@ export function FloorTable({
   onOpenDetail,
   showSlot = false,
   chipFor,
+  gateOn = false,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
@@ -169,6 +170,20 @@ export function FloorTable({
    * columns, same widths array, same cells.
    */
   showSlot?: boolean;
+  /**
+   * Is the picking visibility gate ON? (2026-09-09.)
+   *
+   * ⚠ CHANGES A CELL'S CONTENT, NEVER THE COLUMN SET. It swaps the Status
+   * pill's label on held-back waiting rows and does nothing else — no colgroup
+   * entry, no <th>, no width array arm. That is the entire point of carrying
+   * this fact on an element that is already in every row: the widths map
+   * POSITIONALLY (see the warning above `widths`), so a tenth column here would
+   * shunt every column right on two of the four arms.
+   *
+   * Default false = every pre-existing call site is byte-identical, and so is
+   * the whole screen whenever the gate is off.
+   */
+  gateOn?: boolean;
   /**
    * Optional chip rendered under the dealer name in the Ship-to cell. The
    * caller owns the whole element, so no tone/colour vocabulary leaks into this
@@ -359,7 +374,16 @@ export function FloorTable({
             const urgent = row.priorityLevel === 1;
             statusCell = (
               <span className="inline-flex items-center gap-2">
-                <StatusPill status={st} time={liveTime(row, nowMs)} />
+                {/* The pill carries the handover fact — NO NEW COLUMN. The rule
+                    is isHeldBack()'s (status-pill.tsx); only the gate state is
+                    this table's business. With the gate off this is
+                    heldBack={false} on every row, so the cell renders exactly
+                    the pill it has always rendered. */}
+                <StatusPill
+                  status={st}
+                  time={liveTime(row, nowMs)}
+                  heldBack={gateOn && isHeldBack(row)}
+                />
                 {/* Row hover actions (design §7.10). ⚡ is LIVE (instant urgent
                     toggle, lights red when urgent); ⋯ is INERT (detail panel is
                     a later step). */}

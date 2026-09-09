@@ -144,6 +144,27 @@ export interface FloorBoardRow extends PickingQueueRow {
   // 6,962 rows, zero exceptions), so an IST render lands on the same calendar
   // day and there is no midnight-rollover class here.
   invoiceDate: string | null;
+  // The picking visibility handover (2026-09-09) — `orders.pickVisibleAt`, set
+  // by POST /api/floor/pick-visible. Non-null means an operator has handed this
+  // bill to the floor; null on a waiting bill means it is still at the desk.
+  //
+  // ⚠ ONLY MEANINGFUL ON A WAITING ROW. Once a bill is assigned it is with a
+  // picker whatever this says, and the gate never filters those stages — so no
+  // reader may treat null as "held back" without ALSO checking the row is
+  // waiting. `isHeldBack()` in components/floor/status-pill.tsx is the ONE place
+  // that pairing is written down — the pill, the header count and the Show strip
+  // all ask it rather than re-deriving the rule.
+  //
+  // ⚠ ALSO FREE, exactly like invoiceNo/invoiceDate above: FLOOR_BOARD_INCLUDE
+  // is an `include`, not a `select`, so this scalar is already on the fetched
+  // row and was simply being discarded. No extra findMany, no extra await, and
+  // no write (FLOOR §5/§10 — the marker keys on MAX(orders.updatedAt)).
+  //
+  // ⚠ DECLARED HERE, NOT ON PickingQueueRow — same boundary as `smu`,
+  // `billToName`, the ship-to pair and the invoice pair above (FLOOR §1).
+  //
+  // ISO string, like every other date on this payload.
+  pickVisibleAt: string | null;
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()

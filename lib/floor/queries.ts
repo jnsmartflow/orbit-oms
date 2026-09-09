@@ -818,6 +818,16 @@ export async function getFloorBoard(
       // date-only in practice (all values 00:00:00 UTC, verified live
       // 2026-08-31) — formatting is the renderer's job, not this feed's.
       invoiceDate: order.invoiceDate ? order.invoiceDate.toISOString() : null,
+      // The picking visibility handover (2026-09-09). FREE for the third time on
+      // this row builder and for the same reason as the ship-to pair and the
+      // invoice pair above: FLOOR_BOARD_INCLUDE is an `include`, so this scalar
+      // was already fetched and simply discarded. No query, no await, no write.
+      //
+      // Floor is the surface that WRITES this (POST /api/floor/pick-visible) and
+      // now the surface that reads back what it wrote — the pill and the Show
+      // strip both key on it. Picking is the surface it FILTERS, through
+      // buildPickingWhere's waiting branch; the two never share a predicate here.
+      pickVisibleAt: order.pickVisibleAt ? order.pickVisibleAt.toISOString() : null,
     });
   }
 

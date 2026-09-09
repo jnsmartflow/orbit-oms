@@ -15,7 +15,9 @@ import { toast } from "sonner";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
 import { AssignContextBanner } from "./assign-context-banner";
-import { rowStatus, countByStatus } from "./status-pill";
+import { rowStatus, countByStatus, isHeldBack } from "./status-pill";
+import { PickGateToggle } from "./pick-gate-toggle";
+import { ShowStrip } from "./show-strip";
 import { FloorSkeleton } from "./floor-skeleton";
 import { AssignBar } from "./assign-bar";
 import { HoldTab } from "./hold-tab";
@@ -132,6 +134,16 @@ export function FloorPage() {
   // Server reachability, driven off the SAME /api/floor/marker probe the board's
   // live-sync runs (use-picking-marker onProbe) — one poll, no second fetch.
   const [connected, setConnected] = useState(true);
+  // The picking visibility gate (2026-09-09). Owned HERE, not by the switch,
+  // because the same fact drives the switch, the held-back pills on every row
+  // and the Show strip — three readings that must never disagree.
+  //
+  // null = not known yet (the read has not landed, or it failed). Everything
+  // downstream treats null as OFF for RENDERING (`gateOn === true` below), so an
+  // unread state shows the board exactly as it is today; the switch itself
+  // renders nothing at all rather than claiming a position it does not know.
+  const [gateEnabled, setGateEnabled] = useState<boolean | null>(null);
+  const gateOn = gateEnabled === true;
 
   // Search (committed on Enter) + filters. Both are client-side over already-
   // loaded data (design §5.2/§5.3) — no refetch, no new route.
@@ -219,6 +231,33 @@ export function FloorPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The gate state, read ONCE on mount. Deliberately NOT folded into load() and
+  // NOT re-read on the 15s marker tick: it is an operations setting that changes
+  // a handful of times a day, and adding a fourth fetch to every board reload
+  // would spend a round trip on an answer that is almost always the same. The
+  // switch is this screen's own control, so a flip made here updates state
+  // directly (`onChanged`); a flip made in another tab shows up on next load.
+  //
+  // A failure leaves `gateEnabled` null, which renders as OFF and hides the
+  // switch — the board is then exactly what it is today, which is the safe
+  // direction (FLOOR §5: never blank the board over a side feed).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/floor/pick-gate", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as { enabled?: boolean };
+        if (!cancelled && typeof body.enabled === "boolean") setGateEnabled(body.enabled);
+      } catch {
+        // silent — the switch stays hidden and the board is unaffected
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Selection does NOT survive a tab/scope/date change (design §7.8). Includes
   // the top tab: switching away from Floor drops the floor selection (Hold and
@@ -346,6 +385,78 @@ export function FloorPage() {
   // Bulk mark-urgent + bulk hold were RETIRED with the bulk-bar v2 rebuild —
   // urgent is now the per-row ⚡ (rowMarkUrgent → floor-table); hold is the detail
   // panel's ⋯ menu. Do not re-add them to the bar.
+  // ── Show to the floor (2026-09-09) ────────────────────────────────────────
+  // POSTs ONLY the selected bills that are actually at the desk, then clears the
+  // selection and reloads.
+  //
+  // ⚠ THE REFETCH IS EXPLICIT AND MUST STAY EXPLICIT. This action happens WITH a
+  // selection up, and the floor's live-sync poll is PAUSED while a selection is
+  // up (FLOOR §5) — so nothing else is going to notice the write. Same reason
+  // every other write on this page ends in `await load()`.
+  //
+  // ⚠ NO RETRY, EVER. The route makes exactly one orders.update per bill; a
+  // client retry would make a second, and the markers key on
+  // MAX(orders.updatedAt) — a duplicate write fires a false "changed" on every
+  // board (FLOOR §10). A failure is reported and left to the operator.
+  const [showBusy, setShowBusy] = useState(false);
+  const showToFloor = async () => {
+    const ids = selectedHeldBack.map((r) => r.orderId);
+    if (ids.length === 0 || showBusy) return;
+    setShowBusy(true);
+    try {
+      const res = await fetch("/api/floor/pick-visible", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: ids }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        shown?: number[];
+        skipped?: number[];
+        failed?: Array<{ error?: string }>;
+        error?: string;
+      };
+
+      // ⚠ NOT reportWrite(). That helper knows two buckets (ok / failed) and this
+      // route returns THREE, so it would have to call a skip a success with no
+      // detail — and the number on screen would then not match what happened.
+      // A skipped bill was already visible: a success, but nothing was written to
+      // it, and saying "15 shown" when 3 of them were already shown is a lie the
+      // operator would only catch by counting rows himself.
+      const shown = body.shown?.length ?? 0;
+      const skipped = body.skipped?.length ?? 0;
+      const failed = body.failed ?? [];
+
+      if (!res.ok) {
+        // 422 = every bill failed and nothing was written.
+        toast.error(
+          body.error
+            ? `Show failed — ${body.error}`
+            : `Show failed — none of the ${ids.length} bill${ids.length === 1 ? " was" : "s were"} shown.`,
+        );
+      } else {
+        const parts: string[] = [];
+        if (shown > 0) parts.push(`${shown} shown`);
+        if (skipped > 0) parts.push(`${skipped} already visible`);
+        if (parts.length > 0) toast.success(parts.join(", "));
+        // Surfaced separately and never swallowed — a partial success that
+        // reports only its successes is the swallowed-response bug FLOOR §6(b)
+        // closed on the release path.
+        if (failed.length > 0) {
+          const reason = failed[0]?.error ?? "not valid at its current state";
+          toast.error(
+            `${failed.length} bill${failed.length === 1 ? "" : "s"} not shown — ${reason}`,
+          );
+        }
+      }
+    } catch {
+      toast.error("Show failed — check your connection.");
+    } finally {
+      setShowBusy(false);
+    }
+    clearSelection();
+    await load();
+  };
+
   const bulkChangeSlot = async (date: string, windowId: number) => {
     if (selectedIds.length === 0) return;
     const r = await postJson("/api/floor/actions", { action: "change-slot", orderIds: selectedIds, dispatchTargetDate: date, dispatchWindowId: windowId });
@@ -807,6 +918,33 @@ export function FloorPage() {
     [filteredFloor],
   );
 
+  // ── The visibility gate (2026-09-09) ──────────────────────────────────────
+  // "N not shown" for the header switch, counted off the rows this screen
+  // ALREADY has. Same slice `waitingCount` above uses (due rows of the filtered
+  // floor) so the two numbers describe the same board, and through isHeldBack()
+  // rather than a hand-written `!isAssigned && pickVisibleAt === null` — that
+  // shape is the exact bug class CLAUDE_PICKING §7's standing rule warns about.
+  //
+  // ⚠ NOT the picking marker's own held-back number. Floor must never call the
+  // picking marker: two sources for one figure is two figures that can disagree,
+  // and this one has to match the pills on the rows below it.
+  const heldBackCount = useMemo(
+    () =>
+      filteredFloor
+        ? filteredFloor.rows.filter((r) => r.zone !== "upcoming" && isHeldBack(r)).length
+        : 0,
+    [filteredFloor],
+  );
+
+  // The SELECTED bills that are still at the desk — the only ids the Show action
+  // ever sends. Never the whole selection: an already-visible bill would come
+  // back under `skipped` and inflate the number reported to the operator, and an
+  // assigned one would come back under `failed` for a request nobody made.
+  const selectedHeldBack = useMemo(
+    () => selectedRows.filter((r) => isHeldBack(r)),
+    [selectedRows],
+  );
+
   // Tab pill (Floor / On hold / Cancelled) — active is dark-underlined; the count
   // badge is dark on the active tab, grey otherwise.
   function tabPill(key: TopTab, label: string, count: number) {
@@ -833,7 +971,15 @@ export function FloorPage() {
       <div className="flex h-11 items-center gap-2.5 border-b border-[#f0f0f0] px-4">
         {/* The board no longer names itself — the nav says where you are and the
             tabs below name the content. The ROW stays: it carries the date/clock,
-            which does not move. */}
+            which does not move.
+
+            The gate switch takes the vacated left end. It renders nothing at all
+            until the state is known, and reads as a quiet ghost button when the
+            gate is off — so this row is unchanged from today in both of those
+            cases. Only /floor canEdit holders reach this screen, so the control
+            needs no permission test of its own, and it must not grow one that
+            would let a viewer flip it. */}
+        <PickGateToggle enabled={gateEnabled} heldBackCount={heldBackCount} onChanged={setGateEnabled} />
         <span suppressHydrationWarning className="ml-auto text-[11px] text-gray-400" style={{ fontVariantNumeric: "tabular-nums" }}>
           {dateStr} &middot; {timeStr}
         </span>
@@ -979,6 +1125,10 @@ export function FloorPage() {
               <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
             ) : filteredFloor ? (
               <FloorBoard
+                // Forwarded to every leaf FloorTable, where it swaps the Status
+                // pill's label on held-back waiting rows. No column, no width,
+                // no band and no count on this board changes with it.
+                gateOn={gateOn}
                 floor={filteredFloor}
                 // Unscoped on purpose — the roster is scope-independent (see
                 // scopedData's note above; getFloorPickers applies no
@@ -1031,6 +1181,28 @@ export function FloorPage() {
               onRestore={cancelledRestore}
               onOpenDetail={(id) => openDetail(id, "cancelled")}
             />
+          )}
+
+          {/* The Show strip (2026-09-09) — ABOVE the assign bar, never inside it.
+              The bar is held to four controls by a recorded decision that cost
+              three bulk actions (assign-bar.tsx:11-15), and this is a different
+              job anyway: the bar hands bills to a PICKER, this hands them to the
+              FLOOR.
+
+              THREE conditions, all required: the gate is on, at least one
+              SELECTED row is still at the desk, and `barVisible` — the SAME flag
+              the assign bar uses. Reusing it is load-bearing twice: the strip is
+              positioned off the bar's 60px, so a strip without a bar would float
+              over the last table row; and barVisible already carries the live/
+              history, tab and read-only-context rules, which the strip needs
+              identically and must not restate.
+
+              Gate off → `gateOn` is false → nothing renders and this subtree
+              does not exist. */}
+          {gateOn && barVisible && selectedHeldBack.length > 0 && (
+            <div className="absolute inset-x-0 bottom-[60px] z-20">
+              <ShowStrip count={selectedHeldBack.length} busy={showBusy} onShow={() => void showToFloor()} />
+            </div>
           )}
 
           {barVisible && (

@@ -147,6 +147,7 @@ export function FloorBoard({
   onToggleAll,
   onMarkUrgent,
   onOpenDetail,
+  gateOn = false,
 }: {
   floor: FloorBoardResult;
   // Active picker roster — the By-picker grid seeds from this so a picker with
@@ -183,6 +184,17 @@ export function FloorBoard({
   onToggleAll: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
   onOpenDetail: (id: number) => void;
+  /**
+   * Is the picking visibility gate ON? (2026-09-09.) Forwarded untouched to
+   * every leaf FloorTable through `selProps`, where it swaps the Status pill's
+   * label on held-back waiting rows and nothing else. This component neither
+   * reads it nor derives anything from it — no band, no count and no grouping
+   * on this screen changes with the gate.
+   *
+   * Optional and defaulted, so the History and By-picker call paths that do not
+   * pass it are byte-identical.
+   */
+  gateOn?: boolean;
 }) {
   const [openBands, setOpenBands] = useState<Record<string, boolean>>({});
   const [openRoute, setOpenRoute] = useState<string | null>(null);
@@ -250,10 +262,15 @@ export function FloorBoard({
   // tests for a wired onToggleRow, so no checkbox column and no `#` column
   // render. ⚡ and ⋯ stay passed so neither becomes a dead button — "read only"
   // here means "you cannot select and assign from this list", not "no controls".
+  //
+  // `gateOn` rides BOTH arms (2026-09-09): the held-back pill is a READING of
+  // the row, not a control, so the "what he's holding" view must show it too —
+  // dropping it there would make the same bill read differently on two views of
+  // the same board.
   const selProps =
     inContext && !contextPending
-      ? { onMarkUrgent, onOpenDetail }
-      : { selection, onToggleRow, onToggleAll, onMarkUrgent, onOpenDetail };
+      ? { onMarkUrgent, onOpenDetail, gateOn }
+      : { selection, onToggleRow, onToggleAll, onMarkUrgent, onOpenDetail, gateOn };
 
   // Upcoming is unassigned future-dated work — it belongs to no picker and is
   // not part of either context reading, so the strip is suppressed there.
