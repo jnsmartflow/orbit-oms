@@ -100,3 +100,147 @@ export async function countHeldBackWaiting(
     },
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE STAMPER — extracted 2026-09-09 from app/api/floor/pick-visible/route.ts
+// so the trip module's Release can hand bills over by the SAME rule instead of
+// a second copy of it.
+//
+// 🔴 ONE OWNER PER BEHAVIOUR. Two callers now stamp `orders.pickVisibleAt`:
+//   - app/api/floor/pick-visible/route.ts  (the operator's Show / Send back)
+//   - app/api/trips/[id]/release/route.ts  (releasing a whole trip)
+// A second implementation would be two answers to "may this bill be handed
+// over", on the same column, on the same screen. The route that used to own
+// this now calls it and does nothing else with the columns.
+//
+// EVERY GUARD BELOW IS THE ORIGINAL, MOVED VERBATIM. Nothing was relaxed to
+// make the trip caller's life easier — if a trip holds a bill that may not be
+// stamped, the honest answer is that it is skipped, and the trip release route
+// reports that rather than working around it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PickVisibilityFailure {
+  orderId: number;
+  error: string;
+}
+
+export interface PickVisibilityResult {
+  /** Bills whose stamp actually moved. */
+  changed: number[];
+  /** Bills already in the requested state — a success, and NO write happened. */
+  skipped: number[];
+  /** Bills that could not be stamped, each with the reason. */
+  failed: PickVisibilityFailure[];
+}
+
+/**
+ * Stamp or clear `orders.pickVisibleAt` / `pickVisibleById` for a set of bills.
+ *
+ * `visible: true` hands the bills to the picking floor; `false` pulls them back
+ * to the desk. Returns three honest buckets — nothing is swallowed and a skip
+ * is never reported as a write.
+ *
+ * ═══ 🔒 THE SERVER REFUSAL. THIS IS THE COPY THAT LASTS ═══
+ *
+ * Owner ruling: a bill that is with a picker, or already picked, or checked, can
+ * NEVER be marked visible — there is nothing to hand over, the handover already
+ * happened. Three layers enforce it: the button (which does not offer it), the
+ * query (which never gates those stages), and THIS. The other two are UI and can
+ * be changed by anyone in an afternoon; a direct POST bypasses both and lands
+ * here. Do not remove this check as redundant — it is the only one that holds
+ * when the other two are wrong.
+ *
+ * 🔒 AND IT APPLIES IN BOTH DIRECTIONS, WHICH IS WHAT MAKES PULL-BACK SAFE.
+ * The dangerous case is a race, not a mistake: the operator ticks a bill to send
+ * it back at the same moment a supervisor assigns it. By the time the request
+ * lands the bill is `pick_assigned` — a picker is walking to the rack — and the
+ * stage guard refuses it with a message naming the stage, instead of quietly
+ * yanking the work out of his hands and leaving him holding a bill no screen
+ * shows.
+ *
+ * ⚠ NO `order_status_logs` ROW IS WRITTEN, and that is deliberate.
+ *   - The order already carries the whole record: `pickVisibleById` is who,
+ *     `pickVisibleAt` is when. A log row would be a second copy of two columns.
+ *   - Unlike hide (ORDER_HIDDEN) or early release (PICK_EARLY_RELEASED), this is
+ *     a routine, high-frequency action — an operator works through a selection
+ *     several times a day, and a trip release stamps a whole load at once. At
+ *     100+ bills a day the log would bury the events somebody actually reads.
+ *   - It would also be a SECOND write per bill. The live-sync markers key on
+ *     `MAX(orders.updatedAt)`, so every extra write on a picking path fires a
+ *     false "changed" on every board (FLOOR §4 / PICKING §10). One write per
+ *     bill is the contract, and this function keeps it.
+ *
+ * Sequential awaits only, never prisma.$transaction (CORE §3).
+ */
+export async function stampPickVisibility(opts: {
+  orderIds: number[];
+  visible: boolean;
+  /** The real session user. Never a body claim. */
+  actorId: number;
+}): Promise<PickVisibilityResult> {
+  const { orderIds, visible, actorId } = opts;
+
+  const changed: number[] = [];
+  const skipped: number[] = [];
+  const failed: PickVisibilityFailure[] = [];
+
+  for (const orderId of orderIds) {
+    try {
+      const order = await prisma.orders.findUnique({
+        where: { id: orderId },
+        select: { id: true, workflowStage: true, isRemoved: true, pickVisibleAt: true },
+      });
+      if (!order || order.isRemoved) {
+        failed.push({ orderId, error: "Order not found" });
+        continue;
+      }
+
+      // 🔒 THE LOCKED RULE. Only a WAITING bill can be handed over. A
+      // pick_assigned / pick_done / pick_checked bill is refused whatever the
+      // client sends, and the message names the stage so the refusal is
+      // diagnosable rather than mysterious.
+      if (order.workflowStage !== SUPPORT_DONE_OUTPUT) {
+        failed.push({
+          orderId,
+          error: visible
+            ? `Cannot show a bill at stage ${order.workflowStage} — only waiting bills can be shown.`
+            : `Cannot send back a bill at stage ${order.workflowStage} — a picker already has it.`,
+        });
+        continue;
+      }
+
+      // ALREADY IN THE REQUESTED STATE → a SKIP, not a failure, and NO WRITE.
+      // The test MIRRORS with the direction: showing skips an already-stamped
+      // bill, sending back skips an already-null one.
+      //
+      // ⚠ AND THE WRITE MUST NOT HAPPEN. A no-op re-write would still bump
+      // `orders.updatedAt` and fire a false "changed" on every board's marker
+      // (PICKING §10). On the forward path it would also overwrite the original
+      // actor and time with whoever fat-fingered the checkbox.
+      const alreadyThere = visible ? order.pickVisibleAt !== null : order.pickVisibleAt === null;
+      if (alreadyThere) {
+        skipped.push(orderId);
+        continue;
+      }
+
+      // EXACTLY ONE orders.update per bill, in either direction. Both columns
+      // land in the same row write, so the change is atomic on its own.
+      //
+      // The reverse clears BOTH columns. Leaving `pickVisibleById` behind would
+      // read as "this bill was released by Ashish" on a bill that is at the desk
+      // — a half-cleared record that says something untrue.
+      await prisma.orders.update({
+        where: { id: orderId },
+        data: visible
+          ? { pickVisibleAt: new Date(), pickVisibleById: actorId }
+          : { pickVisibleAt: null, pickVisibleById: null },
+      });
+
+      changed.push(orderId);
+    } catch (err) {
+      failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
+    }
+  }
+
+  return { changed, skipped, failed };
+}

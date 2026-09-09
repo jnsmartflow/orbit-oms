@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
-import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { stampPickVisibility } from "@/lib/picking/visibility-gate";
 
 export const dynamic = "force-dynamic";
-
-interface Failed {
-  orderId: number;
-  error: string;
-}
 
 /**
  * POST /api/floor/pick-visible — hand waiting bills over to the picking floor.
@@ -35,36 +29,26 @@ interface Failed {
  * direction lands. `skipped` and `failed` are direction-neutral and keep their
  * names.
  *
- * ═══ 🔒 LAYER 3 — THE SERVER REFUSAL. THIS IS THE COPY THAT LASTS ═══
+ * ═══ THE STAMPING RULE MOVED OUT OF THIS FILE — 2026-09-09 ═══
  *
- * Owner ruling: a bill that is with a picker, or already picked, or checked, can
- * NEVER be marked visible — there is nothing to hand over, the handover already
- * happened. Three layers enforce it: the button (which does not offer it), the
- * query (which never gates those stages), and THIS. The other two are UI and can
- * be changed by anyone in an afternoon; a direct POST bypasses both and lands
- * here. Do not remove this check as redundant — it is the only one that holds
- * when the other two are wrong.
+ * 🔴 The per-bill loop, the stage refusal, the skip test and the single
+ * `orders.update` now live in `stampPickVisibility()` in
+ * `lib/picking/visibility-gate.ts`. They were extracted, not rewritten: every
+ * guard is the original, moved verbatim, and this route's request/response
+ * contract is byte-identical to what it was.
  *
- * 🔒 AND IT APPLIES IN BOTH DIRECTIONS, WHICH IS WHAT MAKES PULL-BACK SAFE.
- * The dangerous case is a race, not a mistake: the operator ticks a bill to send
- * it back at the same moment a supervisor assigns it. By the time the request
- * lands the bill is `pick_assigned` — a picker is walking to the rack — and the
- * stage guard refuses it with a message naming the stage, instead of quietly
- * yanking the work out of his hands and leaving him holding a bill no screen
- * shows. Every other guard below is shared by both directions for the same
- * reason.
+ * WHY: `POST /api/trips/[id]/release` hands a whole trip's bills to the floor
+ * and must do it by the SAME rule. A second copy would be two answers to "may
+ * this bill be handed over" on the same column. ONE OWNER PER BEHAVIOUR — the
+ * same discipline that keeps `buildPickingWhere` shared between the queue and
+ * the marker, and `sortPickingQueue` shared between Picking and Floor.
  *
- * ⚠ NO `order_status_logs` ROW IS WRITTEN, and that is deliberate.
- *   - The order already carries the whole record: `pickVisibleById` is who,
- *     `pickVisibleAt` is when. A log row would be a second copy of two columns.
- *   - Unlike hide (ORDER_HIDDEN) or early release (PICK_EARLY_RELEASED), this is
- *     a routine, high-frequency action — an operator works through a selection
- *     several times a day. At 100+ bills a day the log would be noise that
- *     buries the events somebody actually reads back.
- *   - It would also be a SECOND write per bill. The live-sync markers key on
- *     `MAX(orders.updatedAt)`, so every extra write on a picking path fires a
- *     false "changed" on every board (FLOOR §4 / PICKING §10). One write per
- *     bill is the contract, and this route keeps it.
+ * 🔒 In particular the LOCKED RULE — only a bill at `SUPPORT_DONE_OUTPUT` can
+ * ever be stamped — did not move screens, it moved files. It is still the
+ * server-side copy that holds when the button and the query are both wrong.
+ *
+ * What stays HERE is what belongs to an HTTP route and nothing else: the
+ * session, the permission gate, body validation, and the status code.
  */
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -108,80 +92,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // `changed`, not `shown` — see the header. On `visible: false` these are the
-  // bills sent back to the desk.
-  const changed: number[] = [];
-  const skipped: number[] = [];
-  const failed: Failed[] = [];
-
-  for (const orderId of orderIds) {
-    try {
-      // Sequential awaits only — never prisma.$transaction (CORE §3).
-      const order = await prisma.orders.findUnique({
-        where: { id: orderId },
-        select: { id: true, workflowStage: true, isRemoved: true, pickVisibleAt: true },
-      });
-      if (!order || order.isRemoved) {
-        failed.push({ orderId, error: "Order not found" });
-        continue;
-      }
-
-      // 🔒 THE LOCKED RULE. Only a WAITING bill can be handed over. A
-      // pick_assigned / pick_done / pick_checked bill is refused whatever the
-      // client sends, and the message names the stage so the refusal is
-      // diagnosable rather than mysterious.
-      if (order.workflowStage !== SUPPORT_DONE_OUTPUT) {
-        failed.push({
-          orderId,
-          error: visible
-            ? `Cannot show a bill at stage ${order.workflowStage} — only waiting bills can be shown.`
-            : `Cannot send back a bill at stage ${order.workflowStage} — a picker already has it.`,
-        });
-        continue;
-      }
-
-      // ALREADY IN THE REQUESTED STATE → a SKIP, not a failure, and NO WRITE.
-      // The test MIRRORS with the direction: showing skips an already-stamped
-      // bill, sending back skips an already-null one.
-      //
-      // Re-selecting a bill that is already where the operator wants it is an
-      // ordinary bulk-selection accident, not an error: he asked for a state the
-      // bill is already in, so the request succeeded and there was simply no
-      // work. It is reported separately from `changed` so the client can say
-      // "4 shown, 2 already visible" instead of claiming six writes it did not
-      // make.
-      //
-      // ⚠ AND THE WRITE MUST NOT HAPPEN. A no-op re-write would still bump
-      // `orders.updatedAt` and fire a false "changed" on every board's marker
-      // (PICKING §10) — every supervisor's phone would do a full queue refetch
-      // for a bill whose state did not move. On the forward path it would also
-      // overwrite the original actor and time with whoever fat-fingered the
-      // checkbox.
-      const alreadyThere = visible ? order.pickVisibleAt !== null : order.pickVisibleAt === null;
-      if (alreadyThere) {
-        skipped.push(orderId);
-        continue;
-      }
-
-      // EXACTLY ONE orders.update per bill, in either direction. Both columns
-      // land in the same row write, so the change is atomic on its own and no
-      // ordering hazard exists.
-      //
-      // The reverse clears BOTH columns. Leaving `pickVisibleById` behind would
-      // read as "this bill was released by Ashish" on a bill that is at the desk
-      // — a half-cleared record that says something untrue.
-      await prisma.orders.update({
-        where: { id: orderId },
-        data: visible
-          ? { pickVisibleAt: new Date(), pickVisibleById: visibleById }
-          : { pickVisibleAt: null, pickVisibleById: null },
-      });
-
-      changed.push(orderId);
-    } catch (err) {
-      failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
-    }
-  }
+  // The whole per-bill rule, in the one place that owns it.
+  const { changed, skipped, failed } = await stampPickVisibility({
+    orderIds,
+    visible,
+    actorId: visibleById,
+  });
 
   // Nothing achieved at all → 422, so a fully-rejected request cannot be read as
   // success. A SKIP counts as achieved: the bills are in the state the operator
