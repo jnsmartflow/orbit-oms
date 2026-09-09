@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCircle2, ChevronLeft, FileText, Grid2x2, MapPin, Send, ShoppingCart } from "lucide-react";
+import { Check, CheckCircle2, ChevronLeft, FileText, Grid2x2, MapPin, Send, Settings, ShoppingCart, Star } from "lucide-react";
 import ProductDrawer from "./product-drawer";
 import V2Sheet, { useBodyScrollLock } from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
@@ -9,21 +9,23 @@ import { MIN_QUERY, ProductResults, ProductSearchInput, type V2ProductGroup } fr
 import ReviewScreen from "./review-screen";
 import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import { DraftsScreen, SentScreen } from "./drafts-sent";
-import OrderDetail, { NAV_H, belowNav } from "./order-sheet";
+import OrderDetail, { ATTENTION, ATTENTION_BG, NAV_H, belowNav } from "./order-sheet";
 import {
   addSentOrder, clearLiveDraft, draftDisplayName, labelFor, loadLiveDraft, loadSavedDrafts,
   loadSentOrders, newDraftId, newSentId, removeSavedDraft, renameSavedDraft,
   formatSavedAt, formatTime,
   loadStarred, toggleStarred, type V2Star,
+  addFavProduct, isFavProduct, loadFavProducts, removeFavProduct, type V2FavProduct,
   saveLiveDraft, snapshotOf, upsertSavedDraft,
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
   BOARD, BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT,
-  FILL, INK, MUTED, PAGE, RULE, SEARCH_BG, SURFACE, URGENT, VIOLET, VIOLET_BG,
-  EMPTY_ORDER, boardTile, buildBoard, buildCatalog, drawerMode, formatPack,
-  mixToWhite, optionPools, packRows, resolveGroup, tileImage, tileKeyForMember,
-  unitsIn, TILE_WASH,
+  FAVOURITE, FILL, INK, MUTED, PAGE, RULE, SEARCH_BG, SURFACE, URGENT, VIOLET,
+  VIOLET_BG,
+  EMPTY_ORDER, boardTile, boardTileArtFor, buildBoard, buildCatalog, drawerMode,
+  formatPack, memberImage, memberKey, mixToWhite, optionPools, packRows,
+  resolveGroup, tileImage, tileKeyForMember, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2BoardTile, type V2CartLine, type V2Order, type V2Resolved,
   type V2ResolvedMember, type V2ResolvedTile,
@@ -111,6 +113,67 @@ const TILE_TEXT_STYLE: React.CSSProperties = {
   wordBreak:       "normal",
   hyphens:         "none",
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 A FAVOURITE IS A sap AND NOTHING ELSE. EVERYTHING IT SHOWS IS DERIVED.
+ *
+ * Storage holds { sap, at }. The caption, the picture and the tile it opens
+ * are all resolved HERE, on every render, out of BOARD — so a member that is
+ * re-labelled, re-tiled or given a photograph updates on the next load with
+ * nothing to migrate. That is why v2-storage stores none of them.
+ *
+ * 🔴 THE PIN SPLIT. A pinned member's key is memberKey(sap, option) —
+ * "WOOD PRIMER|||White" — and MEMBER_TILE is indexed on the PLAIN sap, so the
+ * tile lookup has to use the left half. The member is then found by its FULL
+ * key, which is what keeps the two Wood Primer twins two different favourites
+ * rather than one.
+ *
+ * Returns null when the member has left the board. That null is also the
+ * liveness test the storage prune runs on — one definition, two uses, so a
+ * favourite that cannot render cannot survive either.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+type FavView = {
+  /** The stored key — composite for a pinned member. */
+  sap:      string;
+  /** The tile to open, and the member to open it on. */
+  tileKey:  string;
+  memberSap: string;
+  /**
+   * "{tile} {member}", e.g. "Luxurio Matt" — NEVER the bare member label. In
+   * its own family the caption can be "Matt" because Luxurio is written across
+   * the top of the card; in the fav group the parent is not on screen and
+   * "Matt" would say nothing. This is the risk recorded at tileLabelFor.
+   *
+   * ⚠ ONE HALF WHEN BOTH HALVES ARE THE SAME WORD. 21 of the 98 members sit
+   * alone on their tile and carry its exact label, so the rule as written
+   * would print "Gloss Gloss" and "Super Satin Super Satin". There is no
+   * missing parent to restore in that case — the tile label already IS the
+   * product name — so the doubling is dropped. Deviation from the written
+   * spec, made deliberately; reverse it by removing this one condition.
+   */
+  caption:  string;
+  src:      string | null;
+  wash:     string;
+};
+
+function resolveFav(sap: string): FavView | null {
+  const joinSap = sap.split("|||")[0];
+  const tileKey = tileKeyForMember(joinSap);
+  if (!tileKey) return null;
+  const tile = boardTile(tileKey);
+  if (!tile) return null;
+  const member = tile.members.find((m) => memberKey(m.sap, m.option) === sap);
+  if (!member) return null;
+  const art = boardTileArtFor(tileKey);
+  return {
+    sap,
+    tileKey,
+    memberSap: member.sap,
+    caption: member.label === tile.label ? tile.label : `${tile.label} ${member.label}`,
+    src: memberImage(member.sap) ?? art.src,
+    wash: art.wash,
+  };
+}
 
 /**
  * The bottom nav's height including the safe area, as a CSS expression.
@@ -227,6 +290,17 @@ export default function PoV2Page(): React.JSX.Element {
   // The id a reopened draft was saved under, so re-saving upserts in place.
   const openDraftIdRef = useRef<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** "warn" is the refusal tone — see toastHost. Reset with every new toast. */
+  const [toastTone, setToastTone] = useState<"info" | "warn">("info");
+  /**
+   * The favourite PRODUCTS, by member sap. Client-only: localStorage is not
+   * readable on the server and a first render that guessed would flash the
+   * wrong board. Empty until the effect below runs, which is also the honest
+   * state for a phone that has never favourited anything.
+   */
+  const [favProducts, setFavProducts] = useState<V2FavProduct[]>([]);
+  /** The gear's manage view. Not a screen — the board stays underneath. */
+  const [favManage, setFavManage] = useState(false);
 
   /**
    * Writes the visual viewport's HEIGHT into --vvh and its OFFSET into --vvo.
@@ -380,9 +454,23 @@ export default function PoV2Page(): React.JSX.Element {
   // timer cannot fire into a torn-down tree.
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 1800);
+    const t = setTimeout(() => { setToast(null); setToastTone("info"); }, 1800);
     return () => clearTimeout(t);
   }, [toast]);
+
+  /**
+   * 🔴 FAVOURITES LOAD ONCE, AND THE PRUNE IS THE POINT OF THE PREDICATE.
+   *
+   * loadFavProducts cannot decide for itself whether a stored sap is still
+   * real — v2-storage imports nothing from v2-data and must not, or the two
+   * files become circular. So the liveness test is handed in from here, where
+   * BOARD is already in scope, and a member that has left the board is dropped
+   * silently on this read. That is the only place a dead favourite is removed:
+   * pruning on write would fix only what this build happens to touch.
+   */
+  useEffect(() => {
+    setFavProducts(loadFavProducts((sap) => resolveFav(sap) !== null));
+  }, []);
 
   /**
    * The live draft, written on a DEBOUNCE.
@@ -810,6 +898,46 @@ export default function PoV2Page(): React.JSX.Element {
     : null;
   // A searched PRODUCT resolves to its curated chips when it is one of the 32,
   // and to its own payload options (sortOrder, capped) when it is not.
+  /**
+   * The favourites as the board draws them — resolved, then sorted A-Z ON THE
+   * CAPTION.
+   *
+   * 🔴 A-Z ON WHAT IS PRINTED, not on the sap and not on `at`. The point of an
+   * alphabetical fav group is that a tile does not move under the thumb
+   * between one order and the next; sorting by the stored key would order by a
+   * string the salesman never sees ("WS PROTECT DUSTPROOF" filing under W),
+   * and sorting by `at` would reshuffle the whole group every time he added
+   * one. `at` survives only as a tiebreak for two identical captions, which
+   * cannot happen today — all 98 captions are distinct — but costs nothing.
+   */
+  const favViews = useMemo(() => {
+    const views: FavView[] = [];
+    for (const f of favProducts) { const v = resolveFav(f.sap); if (v) views.push(v); }
+    return views.sort((a, b) => a.caption.localeCompare(b.caption));
+  }, [favProducts]);
+
+  /**
+   * One tap on the drawer's star. Add, or remove, or refuse at eight.
+   *
+   * 🔴 THE REFUSAL IS THE ONLY BRANCH THAT SAYS ANYTHING. Adding and removing
+   * are visible on the board a moment later and a toast for each would be
+   * noise on a control he is using deliberately. Being refused is invisible —
+   * the star simply would not fill — so that one needs words.
+   */
+  function toggleFavProduct(sap: string): void {
+    if (isFavProduct(sap, favProducts)) {
+      setFavProducts(removeFavProduct(sap, favProducts));
+      return;
+    }
+    const { result, favs } = addFavProduct(sap, favProducts);
+    if (result === "full") {
+      setToastTone("warn");
+      setToast("Favourites full (8 of 8) — remove one first");
+      return;
+    }
+    setFavProducts(favs);
+  }
+
   // 🔴 SEARCH ROWS ARE TITLED FROM FAMILIES, NOT BOARD — which is the only
   // reason the 2026-09-09 member-label shortening was safe. A BOARD member
   // label ("Int", "Matt", "Sealer") is a caption UNDER ITS PARENT TILE and
@@ -842,8 +970,15 @@ export default function PoV2Page(): React.JSX.Element {
   const toastHost = toast ? (
     <div className="pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4"
          style={{ bottom: belowNav(16) }}>
-      <span className="rounded-full px-4 py-2 text-[13px] font-bold text-white"
-            style={{ background: INK }}>{toast}</span>
+      {/* 🔴 ONE TONE OTHER THAN INK, AND ONLY FOR A REFUSAL. Every other toast
+          here reports something that HAPPENED ("Draft saved", "Added"); the
+          favourites cap reports something that did NOT, and it needs to read
+          differently or it looks like a confirmation. Amber, not red — being
+          full is not a fault, and red is reserved for something being wrong. */}
+      <span className="rounded-full px-4 py-2 text-[13px] font-bold"
+            style={toastTone === "warn"
+              ? { background: ATTENTION_BG, color: ATTENTION, border: `1px solid ${ATTENTION}33` }
+              : { background: INK, color: "#FFFFFF" }}>{toast}</span>
     </div>
   ) : null;
 
@@ -1466,6 +1601,104 @@ export default function PoV2Page(): React.JSX.Element {
           </div>
         ) : (
         <>
+        {/* ── THE FAVOURITES BLOCK ─────────────────────────────────────────
+            🔴 A FAMILY CARD IN EVERY RESPECT EXCEPT THAT IT IS NOT A FAMILY.
+            Same section shell, radius, padding, shadow, header row and 4-up
+            grid at gap 7, because it behaves like a family and should read as
+            one. But it is built from storage, not from BOARD, and it is
+            rendered ABOVE the map rather than pushed into the constant —
+            BOARD_INVARIANTS bounds a family at 2 to 8 TILES (FAMILY_MIN /
+            FAMILY_MAX), so a group holding one favourite would fail the build
+            and a group holding none has no tiles at all.
+
+            🔴 NOTHING WHEN EMPTY. Not a prompt, not an empty card. An
+            instruction that never goes away costs eight tiles of the first
+            screen forever, and the way in is the gear, not a placeholder. */}
+        {favViews.length > 0 && (
+          <section
+            className="mx-4"
+            style={{ marginTop: 11, background: SURFACE, borderRadius: 16,
+                     padding: "12px 11px 13px", boxShadow: CARD_SHADOW }}
+          >
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <h2 className="min-w-0 truncate text-[14px] font-bold" style={{ color: INK }}>
+                Favourites
+              </h2>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="shrink-0 rounded-full font-mono text-[10px]"
+                      style={{ color: FAINT, background: FILL, padding: "2px 7px" }}>
+                  {favViews.length}
+                </span>
+                {/* THE GEAR MANAGES, IT DOES NOT ADD. A member is not on the
+                    board, so there is nothing here to star — adding happens in
+                    the drawer, on the product itself. This opens the list with
+                    a remove on each. */}
+                <button
+                  type="button" aria-label="Manage favourites"
+                  onClick={() => setFavManage(true)}
+                  className="flex shrink-0 items-center justify-center rounded-full"
+                  style={{ width: 26, height: 26, background: FILL }}
+                >
+                  <Settings className="h-[13px] w-[13px]" strokeWidth={2.5} style={{ color: MUTED }} />
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-4" style={{ gap: 7 }}>
+              {favViews.map((fav) => {
+                const count   = countsByTile[fav.tileKey] ?? 0;
+                const inOrder = count > 0;
+                return (
+                  <button
+                    key={fav.sap}
+                    type="button"
+                    disabled={!ready}
+                    // The same path a member tile already uses: the whole tile
+                    // goes down, opened on this member.
+                    onClick={() => {
+                      const t = boardTile(fav.tileKey);
+                      if (t) setOpenTile({ tile: t, initialMember: fav.memberSap });
+                    }}
+                    className="flex min-w-0 flex-col gap-1.5 text-left"
+                    style={{ opacity: ready ? 1 : 0.45 }}
+                  >
+                    <span className="relative block w-full overflow-hidden rounded-[14px]"
+                          style={{ aspectRatio: "1 / 1", background: inOrder ? VIOLET_BG : fav.wash }}>
+                      {fav.src && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={fav.src} alt={fav.caption} width={600} height={600}
+                          decoding="async"
+                          // 🔴 EAGER, AND THE BOUND BELOW COMES DOWN TO PAY FOR
+                          // IT. This block is the top of the screen now, so
+                          // lazy art here would leave the first thing he sees
+                          // blank. The family loop drops from two eager to one
+                          // so the number of eager blocks does not grow.
+                          loading="eager"
+                          className="block h-full w-full"
+                          style={{ objectFit: "contain", mixBlendMode: "multiply" }}
+                        />
+                      )}
+                      {inOrder && (
+                        <span className="absolute flex items-center justify-center rounded-full text-[10px] font-bold text-white"
+                              style={{ top: 4, right: 4, minWidth: 18, height: 18, padding: "0 5px", background: VIOLET }}>
+                          {count}
+                        </span>
+                      )}
+                    </span>
+                    {/* v2 tile label: centred · one size · fixed 2-line block.
+                        Applies to every image-with-label grid in v2. Owner
+                        ruling 2026-09-09. The caption is BOTH halves here —
+                        see FavView.caption for why. */}
+                    <span className="block w-full text-center text-[12px] font-semibold" style={TILE_TEXT_STYLE}>
+                      {fav.caption}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {/* ── FAMILY BLOCKS ────────────────────────────────────────────── */}
         {BOARD.map((family, familyIndex) => {
           // 🔴 THE FIRST TWO FAMILIES LOAD EAGERLY, EVERYTHING BELOW IS LAZY.
@@ -1475,7 +1708,14 @@ export default function PoV2Page(): React.JSX.Element {
           // is 5G on the sign and not in the shed; marking all 36 lazy would
           // leave the first screen visibly empty on arrival, which reads as a
           // broken page rather than a loading one.
-          const eager = familyIndex < 2;
+          // 🔴 WAS < 2, NOW < 1 WHEN THE FAV BLOCK IS SHOWING. The rule this
+          // number encodes is "about eight tiles' worth of art loads eagerly,
+          // because that is what fits above the fold". Inserting the Fav block
+          // above this map does not shift familyIndex, so leaving it at 2 would
+          // have made THREE blocks eager and put the extra weight on the wire
+          // for nothing. The fav tiles are the ones now at the top, so they
+          // take the budget and Enamel keeps the rest.
+          const eager = familyIndex < (favViews.length > 0 ? 1 : 2);
           const wash  = mixToWhite(family.tint, TILE_WASH);
           return (
           <section
@@ -1681,11 +1921,86 @@ export default function PoV2Page(): React.JSX.Element {
           product={openMember}
           tile={openResolved ?? undefined}
           initialMember={openTile.initialMember}
+          // A PREDICATE, not a flag — the drawer asks about whichever member
+          // is selected inside it, which changes as he moves along the strip.
+          // V2ResolvedMember.sap is already the composite key for a pinned
+          // member, so nothing here has to rebuild it.
+          isFav={(sap) => isFavProduct(sap, favProducts)}
+          onToggleFav={toggleFavProduct}
           onClose={() => setOpenTile(null)}
           onAdd={(picks) => addLines(
             openTile.tile.key, memberLabelIn(openTile.tile), picks, null)}
           existing={existingFor(openTile.tile.key, null)}
         />
+      )}
+
+      {/* ── MANAGE FAVOURITES ────────────────────────────────────────────
+          🔴 IT REMOVES, IT NEVER ADDS. A member is not on the board, so there
+          is nothing on this screen to star; adding is a star in the drawer, on
+          the product itself. A gear that could only take things away is not a
+          gap — it is the honest shape of the thing.
+
+          A SHEET, NOT A SCREEN. The board stays underneath because this is a
+          tidy-up he dismisses, not a place he goes. Same rule the Clear and
+          Delete confirms follow.
+
+          No confirm on the remove. Un-starring is not destructive — the
+          product is still on its own family tile, untouched, and re-starring
+          is one tap in its drawer. */}
+      {favManage && (
+        <V2Sheet onClose={() => setFavManage(false)} footer={
+          <button
+            type="button" onClick={() => setFavManage(false)}
+            className="w-full rounded-[13px] py-3 text-[15px] font-semibold text-white"
+            style={{ background: BRAND }}
+          >
+            Done
+          </button>
+        }>
+          <div className="shrink-0 px-4 pt-1.5 pb-3">
+            <h2 className="text-[18px] font-bold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+              Favourites
+            </h2>
+            <p className="text-[11.5px]" style={{ color: MUTED }}>
+              {favViews.length} of 8 · star a product in its drawer to add one
+            </p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4"
+               style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}>
+            {favViews.length === 0 ? (
+              <p className="py-10 text-center text-[13px]" style={{ color: FAINT }}>
+                No favourites yet.
+              </p>
+            ) : favViews.map((fav) => (
+              <div key={fav.sap} className="flex items-center gap-3 py-2.5"
+                   style={{ borderTop: `1px solid ${RULE}` }}>
+                <span className="shrink-0 overflow-hidden rounded-[10px]"
+                      style={{ width: 38, height: 38, background: fav.wash }}>
+                  {fav.src && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={fav.src} alt="" width={600} height={600} decoding="async" loading="lazy"
+                         className="block h-full w-full"
+                         style={{ objectFit: "contain", mixBlendMode: "multiply" }} />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[14px] font-semibold" style={{ color: INK }}>
+                  {fav.caption}
+                </span>
+                {/* 44px — §60's floor. The star is the same control it is in
+                    the drawer, filled, and tapping it un-stars. One glyph, one
+                    meaning, both places. */}
+                <button
+                  type="button" aria-label={`Remove ${fav.caption} from favourites`}
+                  onClick={() => setFavProducts(removeFavProduct(fav.sap, favProducts))}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center"
+                >
+                  <Star className="h-[18px] w-[18px]" strokeWidth={2.5}
+                        fill={FAVOURITE} style={{ color: FAVOURITE }} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </V2Sheet>
       )}
 
       {/* ── PRODUCT DRAWER, from a SEARCH HIT ──────────────────────────── */}

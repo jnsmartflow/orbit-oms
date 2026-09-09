@@ -323,7 +323,7 @@ export default function ProductDrawer({
   existing,
   pools,
   mode = "standard",
-  isFav = false,
+  isFav,
   onToggleFav,
 }: {
   /**
@@ -383,8 +383,15 @@ export default function ProductDrawer({
    * favourites Luxurio Matt, not "Luxurio". For a PINNED member cur.sap is the
    * composite memberKey ("WOOD PRIMER|||White"), which is what keeps the two
    * Wood Primer twins separately favouritable.
+   *
+   * 🔴 isFav IS A PREDICATE, NOT A BOOLEAN, AND THAT IS NOT DECORATION. The
+   * selected member changes inside this component as the salesman moves along
+   * the strip; a boolean computed by the page from the member it OPENED on
+   * would be stale the moment he did, showing a filled star over a product
+   * that is not favourited. The page still owns the list — it just answers a
+   * question instead of pre-computing an answer.
    */
-  isFav?: boolean;
+  isFav?: (sap: string) => boolean;
   onToggleFav?: (sap: string) => void;
 }): React.JSX.Element {
   // ── The tile's members ───────────────────────────────────────────────────
@@ -1001,22 +1008,25 @@ export default function ProductDrawer({
               ⚠ It acts on the SELECTED member, so it changes meaning as you
               move along the strip. That is correct — the thing being
               favourited is the product you are looking at. */}
-          {onToggleFav && (
+          {onToggleFav && (() => {
+            const starred = isFav ? isFav(cur.sap) : false;
+            return (
             <button
               type="button"
-              aria-label={isFav ? `Remove ${cur.label} from favourites` : `Add ${cur.label} to favourites`}
-              aria-pressed={isFav}
+              aria-label={starred ? `Remove ${cur.label} from favourites` : `Add ${cur.label} to favourites`}
+              aria-pressed={starred}
               onClick={() => onToggleFav(cur.sap)}
               className="flex shrink-0 items-center justify-center rounded-full"
               style={{ width: 30, height: 30, background: FILL }}
             >
               <Star
                 className="h-4 w-4" strokeWidth={2.5}
-                fill={isFav ? FAVOURITE : "none"}
-                style={{ color: isFav ? FAVOURITE : MUTED }}
+                fill={starred ? FAVOURITE : "none"}
+                style={{ color: starred ? FAVOURITE : MUTED }}
               />
             </button>
-          )}
+            );
+          })()}
           {/* The magnifier sits with Close because they are the two things
               that are always available and never about the product. It only
               appears when there is a rail to search. */}
