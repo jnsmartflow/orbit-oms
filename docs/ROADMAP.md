@@ -1084,6 +1084,15 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
   markup swap rather than a design (§59.7). *(The "big search" half of `CLAUDE_UI.md §59.6`'s
   original deferred bullet was never built and is NOT covered by §59.7 — it stays deferred there.)*
 
+- [ ] **Three components still paint red for URGENT (P3, opened 2026-09-09).** `CLAUDE_UI.md §1`
+  was corrected at `3c713282`: **red is error and destructive only — a failed send, a bounced
+  order, a Delete or Clear button — and amber is urgent.** `components/shared/status-badge.tsx`,
+  `components/floor/floor-table.tsx` and `components/shared/duplicate-so-tag.tsx` still paint an
+  Urgent chip red. ⚠ `CLAUDE_UI.md §3`'s Semantic table deliberately still records
+  `Urgent | bg-red-50` **because those three files do** — canon must never claim a colour a
+  screen does not paint, so the table row flips when the last of the three is migrated and not
+  before.
+
 ### Code cleanup (P2 — one line)
 
 - [ ] **Stale comment in `prisma/schema.prisma`** above `model sku_master_v2`: it ends
@@ -1509,6 +1518,74 @@ Live: Physically Cross 7 · Wrong Order by S.O. 3 · Return by Dealer 3 · Order
 Cancel by Dealer 1. Double Order, Wrong Punching, Re Bill and Complaint Material
 have never been chosen. Worth asking the depot whether they earn their place
 before the SAP list lands beside them.
+
+---
+
+## `/po-v2-8f4kd2` — the hidden v2 order page (opened 2026-09-09)
+
+Record: **`docs/prompts/drafts/code-update-2026-09-08-po-v2-board.md`**. The route is live on
+production, unguarded, and reachable only by typing its address; it is in no canonical file yet
+and that record is the input to `CLAUDE_PLACE_ORDER.md` when v2 merges into `/po`. Its wire is
+guarded by **`scripts/po-v2-email-fixtures.ts`** (§6 of the record) — run it before any commit
+that touches the send path.
+
+### P2 — Fav block on the board — BLOCKED on the storage decision below
+A favourites block as the **first** block on the board, **max 8 slots**, filled by a gear
+control. A favourited product appears in BOTH the Fav block and its own family tile — it is a
+shortcut, not a move. 🔴 **Do not start it before the storage model is settled** (the DECISION
+item below): where the eight live decides whether the block is per-phone or per-salesman, and
+building it against `localStorage` first means building it twice.
+
+### P2 — Ten board tiles still have no tin photograph
+Verified against `boardTileArtFor` on 2026-09-09: **27 of 37 tiles resolve a picture, 10 do
+not** — More Interior, VT Specialty, Acotone, Uni Stainer, Machine Tinter, GVA, Coats &
+Additives, Luxurio, Hydro PU, Thinner & More. A tile with no art shows the family wash, which is
+the board's own treatment for a photo that has not arrived, so this is a gap and not a defect.
+⚠ A tile borrows art by **alias, never by copy** (`TILE_ART_ALIAS`), and the alias redirects the
+FILE and never the SLUG — a slug is also the stem `variantImage()` builds variant tins from.
+
+### P3 — Product and membership tweaks — ongoing, no fixed scope
+Individual products will move between tiles as real use shows what is wrong. Re-rank
+**deliberately, never on every deploy**: the board must not reshuffle under a salesman who has
+learned where things are.
+
+### P2 — Cutover: `/po-v2-8f4kd2` replaces `/po` — NOT SCHEDULED
+🔴 **Read `archive/RETIREMENT-PLAYBOOK.md` before any of it**, and run the **successor-parity
+gate first** — v2 must prove it does at least as much as `/po`, feature for feature, before `/po`
+is touched. That gate is not a formality: it is the step that caught a real gap last time, when
+`/order` turned out to offer a **Hold** dispatch option `/po` does not.
+
+### P1 — DECISION OPEN: the storage model, local or database
+Everything lives in one phone's `localStorage` today, under the `po2_*` keys — the live draft,
+saved drafts, sent orders, favourite customers, my dealers and starred dealers. **Nothing is
+shared between devices and nothing survives a cleared browser or a new handset.** Settle this
+before the Fav block is built; it is the blocker on that item.
+
+### P3 — Three buttons still at font-weight 800
+Outside the type-weight pass that took the route's other 25 sites to zero: **Send order** in
+`review-screen.tsx`, and **Cancel** and **Add** in `product-drawer.tsx`. Left because those two
+files were outside that step's containment. T11 in the type scale.
+
+### P3 — Rename the `URGENT` token to `DANGER` in `v2-data.ts`
+Cosmetic — the **value is already correct**. After the red/amber correction that token is never
+urgency; it is the destructive red, surviving at exactly four places, all destructive. Only the
+name lies. Do it the next time `v2-data.ts` is open.
+
+### P3 — A three-line note clips in the order sheet
+Known and accepted, recorded in the v2 record. Parked here so it is not rediscovered as a bug.
+
+### P2 — Three stale comments left over from `23a4a502`
+That commit corrected five lying comments in `v2-data.ts` and reported three more it did not own.
+Each states something false about the code; none breaks anything, and comments of exactly this
+kind have already been believed by a later session twice in this folder.
+- 🔴 **First, and the loudest.** `v2-data.ts` ~`:1508`, the `BOARD` section header: it says BOARD
+  is *"additive, and not yet consumed by anything"* and that *"FAMILIES still holds the live
+  32-tile board"*. Both are false — BOARD **is** the live board.
+- `po-v2-page.tsx` ~`:609`, ~`:635`, ~`:655` — three *"Step 4"* notes describing tile-wide
+  replace as future work. It is done: both `addLines` call sites (~`:1645`, ~`:1660`) already
+  pass `memberSap: null`.
+- `po-v2-page.tsx` ~`:1444` says *"all 36"* twice and ~`:112` says *"the 9x4 board"*. It is
+  **37 tiles across nine families**, and Wood holds five.
 
 ---
 
