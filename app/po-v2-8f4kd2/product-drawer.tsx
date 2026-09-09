@@ -265,10 +265,14 @@ const RAIL_TILE = 60;   // the square itself, which is a picture and never a wor
 /**
  * ONE size for every tile label in the drawer, rail and strip alike — owner
  * ruling 2026-09-09. Named rather than inlined so the two call sites cannot
- * drift apart, and so the reasoning has somewhere to point. See TileName for
- * why it is 9 and what would let it go back up.
+ * drift apart, and so the reasoning has somewhere to point. See TileName.
+ *
+ * ⚠ IT WAS 9 FOR ONE COMMIT AND THAT WAS WRONG — corrected the same day. 9px
+ * was the size that fitted the single widest string in the catalog, so it
+ * shrank 198 of 221 labels to accommodate one defective row. A long name is
+ * supposed to WRAP into the two-line block, not shrink the grid around it.
  */
-const TILE_LABEL_PX = 9;
+const TILE_LABEL_PX = 11;
 const TILE_GAP  = 12;   // between tiles — the brief's floor is 10
 
 /**
@@ -1455,33 +1459,42 @@ function BigTile({ label, cell, square, lines, badge, hideLabel = false, fill, i
  *
  * ── WHAT WAS HERE, AND WHY IT WENT ────────────────────────────────────────
  * A three-step ramp sized the label to its longest WORD: 11px up to eight
- * characters, 10px to eleven, 9px beyond. It existed to stop a real clip and
- * the arithmetic was sound — the ramp is measured against CAPITALS, because
- * option names arrive from the catalog uppercase and uppercase runs about 20%
- * wider per character than lowercase.
+ * characters, 10px to eleven, 9px beyond. It is why neither grid ever looked
+ * uniform — alignment alone could not fix that while neighbouring tiles set
+ * their names at different sizes.
  *
- * It was also the reason the grids never looked uniform. Alignment alone could
- * not fix that while neighbouring tiles set their names at different sizes, so
- * the ruling took the variance rather than the alignment.
+ * 🔴 AND THE RAMP'S TEST WAS WRONG ON ITS OWN TERMS. It counted CHARACTERS and
+ * assumed every label was uppercase. Catalog options are, but MEMBER names are
+ * ordinary mixed case, and lowercase runs about 20% narrower per character —
+ * so "Pretreatment Coat" was shrunk to the bottom step for a width it never
+ * had. Do not build a new heuristic on character count.
  *
- * ── WHY 9px, AND WHAT WOULD LET IT GO BACK UP ─────────────────────────────
- * 9px is the size the ramp's own bottom step reached, so it is the size that
- * fits everything. Counted from the live catalog on 2026-09-09, 221 labels
- * reach this component and exactly TWO needed it:
+ * ── ONE SIZE, AND WHY 11 AND NOT 9 ────────────────────────────────────────
+ * 9px shipped for exactly one commit (5e3319de) under a rule that read "if the
+ * longest label needs 9px, 9px is the size for all". That rule was withdrawn
+ * the same day: it shrank 198 of 221 labels to accommodate ONE defective
+ * catalog string.
  *
- *   FASTYELLOWGREEN     15 chars, one word — Universal Stainer, row 21700
- *   Pretreatment Coat   12 chars in "Pretreatment" — Coats & Additives
+ * 🔴 THE BLOCK IS WHERE A LONG NAME GOES. It is two lines tall precisely so a
+ * name has somewhere to wrap into; shrinking the whole grid to keep every name
+ * on one line defeats the thing that was built to solve it.
  *
- * 198 of the 221 were at 11px. Dropping all of them two points to accommodate
- * two is the cost of uniformity and the owner accepted it knowingly.
+ * Measured at 11px against the cell each label actually reaches (2026-09-09,
+ * live catalog, all 221 labels), exactly two want a third line:
  *
- * ⚠ FASTYELLOWGREEN IS ALMOST CERTAINLY A DATA DEFECT, NOT A PRODUCT NAME. Its
- * nine siblings on the same product are all spaced — FAST YELLOW, FAST GREEN,
- * FAST BLUE, FAST VIOLET, FAST RED, FAST ORANGE — and only this one is run
- * together. It is a catalog string, so fixing it is a data change and was out
- * of scope here. If it is ever corrected to "FAST YELLOW GREEN", the longest
- * word on the board drops to twelve and this size can be revisited. Do NOT
- * special-case the string in code; correct the row or leave it.
+ *   ORGANIC MIDDLE YELLOW   GVA, rail 88px — clamp is 3 there, so it renders
+ *   Promise Sheen Exterior  Promise Sheen, strip 72px — clamp is 2. BORDERLINE
+ *                           at ~117px, and if it does cut it reads "Promise /
+ *                           Sheen", which is its SIBLING's name too. Watch it.
+ *
+ * ⚠ FASTYELLOWGREEN IS A DATA DEFECT, NOT A PRODUCT NAME. Its nine siblings on
+ * Universal Stainer are all spaced — FAST YELLOW, FAST GREEN, FAST BLUE, FAST
+ * VIOLET, FAST RED, FAST ORANGE — and only row 21700 runs together. As one
+ * unbreakable 15-character run it is ~111px against an 88px cell, which is why
+ * overflowWrap below is "anywhere". It will break mid-word and look wrong. That
+ * is correct and temporary: the fix is a string correction, logged on ROADMAP,
+ * and it is SEED-OWNED so a live SQL edit alone would be reverted by the next
+ * reseed. Do NOT special-case the string in code.
  *
  * ── WHAT DID NOT CHANGE ───────────────────────────────────────────────────
  * THE WORD NEVER BREAKS — the board's own rule. A name too long for its lines
@@ -1509,22 +1522,26 @@ function TileName({ label, lines, selected }: {
       className="block w-full text-center"
       style={{
         color: selected ? VIOLET : INK,
-        // 🔴 600 SELECTED, NOT 700 — §60 again: nothing on a card is 700, and
-        // the emphasis is not lost because VIOLET is already carrying it. At
-        // 500 unselected this line was never the problem; it was being drowned
-        // by an 800-weight glyph three times its size, and dropping the glyph
-        // is what lets it be read at all.
-        //
-        // ⚠ THIS WEIGHT CHANGE IS UNDER REVIEW, NOT SETTLED. Selection is
-        // already carried by the violet RING on the square above (BigTile's
-        // boxShadow) and by aria-pressed, so the weight may be a fourth signal
-        // for one state. Left ALONE deliberately pending an owner answer —
-        // raised 2026-09-09. It is a state signal, not size variance, so it is
-        // not what the uniformity ruling was about.
-        fontSize: TILE_LABEL_PX, lineHeight: 1.2, fontWeight: selected ? 600 : 500,
+        // 🔴 ONE WEIGHT FOR EVERY TILE — the 600/500 selected swap is gone,
+        // owner ruling 2026-09-09. Selection is already carried twice over: the
+        // violet RING on the square above (BigTile's boxShadow, with a white
+        // gap so it reads on a dark colour) and this line turning VIOLET. A
+        // third signal on the same state bought nothing and made a selected
+        // tile's caption sit at a different width from its neighbours', which
+        // is the ragged look the whole ruling was about.
+        fontSize: TILE_LABEL_PX, lineHeight: 1.2, fontWeight: 500,
         minHeight: "2.4em",
         display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: lines,
-        overflow: "hidden", overflowWrap: "normal", wordBreak: "normal", hyphens: "none",
+        overflow: "hidden",
+        // 🔴 "anywhere" IS A SAFETY NET, NOT THE WRAP RULE. Words still break at
+        // spaces wherever they can; this only lets a single run WIDER THAN THE
+        // CELL break mid-word rather than spill out of the tile. Today that is
+        // one string, FASTYELLOWGREEN, and it is a data defect (see above).
+        // ⚠ The BOARD does NOT carry this — its wrap rules in po-v2-page.tsx
+        // are deliberate and its longest word is nine characters, so it has
+        // nothing to protect against and a mid-word break there would be a
+        // regression, not a net.
+        overflowWrap: "anywhere", wordBreak: "normal", hyphens: "none",
       }}
     >
       {label}

@@ -1574,6 +1574,21 @@ name lies. Do it the next time `v2-data.ts` is open.
 ### P3 — A three-line note clips in the order sheet
 Known and accepted, recorded in the v2 record. Parked here so it is not rediscovered as a bug.
 
+### P2 — Catalog defect: `FASTYELLOWGREEN` is missing its spaces
+Universal Stainer option, **`mo_order_form_index_v2` row 21700**. Its nine siblings on the same
+product are all spaced — FAST YELLOW, FAST GREEN, FAST BLUE, FAST VIOLET, FAST RED, FAST ORANGE —
+and only this one runs together. As a single unbreakable 15-character run it is **the widest string
+in the whole v2 tile set** (~111px against an 88px rail cell), and on 2026-09-09 it forced a
+grid-wide font shrink to 9px before the ruling was corrected. It is now contained by
+`overflowWrap: "anywhere"` on `TileName`, which breaks it mid-word — deliberately ugly, and the
+reason this item exists.
+
+**The fix is a string correction, NOT a UI change.** Do not special-case the value in code.
+
+⚠ **It is a SEED-OWNED value.** A live SQL edit alone is reverted by the next reseed
+(`CLAUDE_PLACE_ORDER.md §18`). The correction has to land in the **seed / review CSV and live
+together**, so this needs its own step — it is not a one-line UPDATE.
+
 ### P2 — v2 tools step by 1 where v1 steps by 25 / 12 / 500
 **31 live products** — 9 brushes at `12PC`, 21 rollers at `25PC`, 1 stickers row at `500PC`
 (counted from `mo_sku_lookup_v2`, 2026-09-09). **Cause:** `formatPack` collapses every PC pack to
