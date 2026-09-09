@@ -810,6 +810,15 @@ export default function PoV2Page(): React.JSX.Element {
     : null;
   // A searched PRODUCT resolves to its curated chips when it is one of the 32,
   // and to its own payload options (sortOrder, capped) when it is not.
+  // 🔴 SEARCH ROWS ARE TITLED FROM FAMILIES, NOT BOARD — which is the only
+  // reason the 2026-09-09 member-label shortening was safe. A BOARD member
+  // label ("Int", "Matt", "Sealer") is a caption UNDER ITS PARENT TILE and
+  // reads as one; a search result has no parent on screen, so repointing this
+  // at BOARD would put a bare "Int" in a list and nothing would say Int of
+  // what. Repoint it and shorten the labels back at the same time, or not at
+  // all. (The search HAYSTACK is untouched either way — mobile-search.ts
+  // matches searchTokens + displayName + baseColour and has never seen a
+  // board label.)
   const tileLabelFor = (key: string): string | undefined =>
     ready ? load.byTile.get(key)?.label : undefined;
   const groupResolved = ready && openGroup

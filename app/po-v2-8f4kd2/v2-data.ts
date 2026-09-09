@@ -1695,12 +1695,12 @@ export const BOARD: readonly V2BoardFamily[] = [
       { key: "SUPERCOVER", label: "Supercover", slug: "supercover",
         members: [
           { sap: "SUPERCOVER",       label: "Supercover", slug: "product-supercover" },
-          { sap: "SUPERCOVER SHEEN", label: "Supercover Sheen" },
+          { sap: "SUPERCOVER SHEEN", label: "Sheen" },
         ] },
       { key: "SUPERCLEAN", label: "SuperClean", slug: "superclean",
         members: [
           { sap: "SUPERCLEAN",      label: "SuperClean", slug: "product-superclean" },
-          { sap: "SUPERCLEAN 3IN1", label: "SuperClean 3in1", slug: "product-superclean-3in1" },
+          { sap: "SUPERCLEAN 3IN1", label: "3in1", slug: "product-superclean-3in1" },
         ] },
       // 🔴 SUPERCOVER SHEEN IS A MEMBER, NOT A TILE. It has never been ordered
       // — 0 lines and 0 orders across the whole 148-day, 12,529-order history,
@@ -1727,11 +1727,11 @@ export const BOARD: readonly V2BoardFamily[] = [
         members: [{ sap: "VT PEARL GLO", label: "Pearl Glo" }] },
       { key: "VT PLATINUM GLO", label: "Platinum Glo", slug: "platinum-glo",
         members: [{ sap: "VT PLATINUM GLO", label: "Platinum Glo" }] },
-      { key: "VT ETERNA MATT", label: "VT Eterna", slug: "vt-eterna",
+      { key: "VT ETERNA MATT", label: "Eterna", slug: "vt-eterna",
         members: [
-          { sap: "VT ETERNA MATT",     label: "Eterna Matt", slug: "product-vt-eterna-matt" },
+          { sap: "VT ETERNA MATT",     label: "Matt", slug: "product-vt-eterna-matt" },
           { sap: "VT ETERNA",          label: "Eterna", slug: "product-vt-eterna" },
-          { sap: "VT ETERNA HI-SHEEN", label: "Eterna Hi-Sheen", slug: "product-vt-eterna-hi-sheen" },
+          { sap: "VT ETERNA HI-SHEEN", label: "Hi-Sheen", slug: "product-vt-eterna-hi-sheen" },
         ] },
       // 🔴 FOUR MEMBERS, NOT SIX. VT DIAMOND GLO and VAF LEFT THE BOARD on
       // 2026-09-07 and are search-only again. Diamond Glo was the family
@@ -1744,7 +1744,7 @@ export const BOARD: readonly V2BoardFamily[] = [
       // migration reads it as already correct and leaves it — and the next
       // edit of this tile replaces by tile key and deletes it. Reproduced and
       // reported 2026-09-07; the fix belongs in v2-storage.ts, not here.
-      { key: "VELVETINO", label: "VT Specialty", slug: "vt-specialty",
+      { key: "VELVETINO", label: "Luxury Finish", slug: "vt-specialty",
         members: [
           { sap: "VELVETINO",          label: "Velvetino" },
           { sap: "VT CONCRETE FINISH", label: "Concrete Finish" },
@@ -1761,15 +1761,15 @@ export const BOARD: readonly V2BoardFamily[] = [
         members: [{ sap: "PROMISE SMARTCHOICE", label: "Smart Choice" }] },
       { key: "PROMISE INTERIOR", label: "Promise", slug: "promise-int",
         members: [
-          { sap: "PROMISE INTERIOR", label: "Promise Interior" },
-          { sap: "PROMISE EXTERIOR", label: "Promise Exterior" },
+          { sap: "PROMISE INTERIOR", label: "Int" },
+          { sap: "PROMISE EXTERIOR", label: "Ext" },
         ] },
       { key: "PROMISE PRIMER", label: "Promise Primer", slug: "promise-primer",
         members: [{ sap: "PROMISE PRIMER", label: "Promise Primer" }] },
       { key: "PROMISE SHEEN INTERIOR", label: "Promise Sheen", slug: "promise-sheen",
         members: [
-          { sap: "PROMISE SHEEN INTERIOR", label: "Promise Sheen Interior", slug: "product-promise-sheen-interior" },
-          { sap: "PROMISE SHEEN EXTERIOR", label: "Promise Sheen Exterior", slug: "product-promise-sheen-exterior" },
+          { sap: "PROMISE SHEEN INTERIOR", label: "Int", slug: "product-promise-sheen-interior" },
+          { sap: "PROMISE SHEEN EXTERIOR", label: "Ext", slug: "product-promise-sheen-exterior" },
         ] },
     ],
   },
@@ -1821,8 +1821,8 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "EXTERIOR ACRYLIC PRIMER", label: "Ext Acrylic", slug: "product-exterior-acrylic-primer" },
           // 🔴 ONE PRODUCT, TWO MEMBERS, PINNED BY baseColour. The strings are
           // the catalog's own, case for case — see V2Member.option.
-          { sap: "WOOD PRIMER",             label: "Wood Primer White", option: "White" },
-          { sap: "WOOD PRIMER",             label: "Wood Primer Pink",  option: "PINK" },
+          { sap: "WOOD PRIMER",             label: "Wood White", option: "White" },
+          { sap: "WOOD PRIMER",             label: "Wood Pink",  option: "PINK" },
           { sap: "FARCO WHITE PRIMER",      label: "Farco White", slug: "product-farco-white-primer" },
           { sap: "ALKALI BLOC PRIMER",      label: "Alkali Bloc", slug: "product-alkali-bloc-primer" },
           { sap: "CEMENT PRIMER WB",        label: "Cement WB" },
@@ -1850,14 +1850,14 @@ export const BOARD: readonly V2BoardFamily[] = [
     tiles: [
       { key: "DAMP PROTECT 2IN1", label: "Damp Protect", slug: "damp-2in1",
         members: [
-          { sap: "DAMP PROTECT 2IN1",     label: "Damp Protect 2in1", slug: "product-damp-protect-2in1" },
-          { sap: "DAMP PROTECT BASECOAT", label: "Damp Protect Basecoat", slug: "product-damp-protect-basecoat" },
+          { sap: "DAMP PROTECT 2IN1",     label: "2in1", slug: "product-damp-protect-2in1" },
+          { sap: "DAMP PROTECT BASECOAT", label: "Basecoat", slug: "product-damp-protect-basecoat" },
         ] },
       { key: "ROOF COAT WHITE", label: "Roof Coat", slug: "roof-coat",
         members: [
-          { sap: "ROOF COAT WHITE",     label: "Roof Coat White", slug: "product-roof-coat" },
-          { sap: "ROOF COAT TERACOTTA", label: "Roof Coat Teracotta", slug: "product-roof-coat" },
-          { sap: "ROOF COAT GREY",      label: "Roof Coat Grey", slug: "product-roof-coat" },
+          { sap: "ROOF COAT WHITE",     label: "White", slug: "product-roof-coat" },
+          { sap: "ROOF COAT TERACOTTA", label: "Teracotta", slug: "product-roof-coat" },
+          { sap: "ROOF COAT GREY",      label: "Grey", slug: "product-roof-coat" },
         ] },
       { key: "CRACKFILLER 5MM", label: "Crack Filler", slug: "crack-5mm",
         members: [
@@ -1875,7 +1875,7 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "INTERIOR WBC",      label: "Interior WBC", slug: "product-interior-wbc" },
           { sap: "WATERBLOCK 2K",     label: "Waterblock 2K", slug: "product-waterblock-2k" },
           { sap: "IBC ADVANCE",       label: "IBC Advance" },
-          { sap: "AQUATECH PU COAT",  label: "Aquatech PU Coat", slug: "product-aquatech-pu-coat" },
+          { sap: "AQUATECH PU COAT",  label: "PU Coat", slug: "product-aquatech-pu-coat" },
           { sap: "RP LATEX",          label: "RP Latex" },
           { sap: "WRP",               label: "WRP" },
           { sap: "PRETREATMENT COAT", label: "Pretreatment Coat" },
@@ -1890,9 +1890,9 @@ export const BOARD: readonly V2BoardFamily[] = [
     tiles: [
       { key: "PU PRIME MATT", label: "PU Prime", slug: "prime-matt",
         members: [
-          { sap: "PU PRIME MATT",   label: "PU Prime Matt", slug: "product-pu-prime-matt" },
-          { sap: "PU PRIME SEALER", label: "PU Prime Sealer" },
-          { sap: "PU PRIME GLOSS",  label: "PU Prime Gloss", slug: "product-pu-prime-gloss" },
+          { sap: "PU PRIME MATT",   label: "Matt", slug: "product-pu-prime-matt" },
+          { sap: "PU PRIME SEALER", label: "Sealer" },
+          { sap: "PU PRIME GLOSS",  label: "Gloss", slug: "product-pu-prime-gloss" },
         ] },
       // 🔴 2K PU THINNER AND 2K PU PRIMER SURFACER LEFT ON 2026-09-08. They are
       // system components, and the old argument for keeping them here was that
@@ -1903,9 +1903,9 @@ export const BOARD: readonly V2BoardFamily[] = [
       // the board, and this tile is three products with real colour ladders.
       { key: "2K PU MATT", label: "2K PU", slug: "2k-matt",
         members: [
-          { sap: "2K PU MATT",   label: "2K PU Matt" },
-          { sap: "2K PU GLOSS",  label: "2K PU Gloss" },
-          { sap: "2K PU SEALER", label: "2K PU Sealer" },
+          { sap: "2K PU MATT",   label: "Matt" },
+          { sap: "2K PU GLOSS",  label: "Gloss" },
+          { sap: "2K PU SEALER", label: "Sealer" },
         ] },
       // 🔴 A NEW TILE KEY, LUXURIO MATT. Luxurio took the third slot over Hydro
       // PU on the numbers: 62 lines / 45 orders in 90 days against 48 / 46, and
@@ -1917,9 +1917,9 @@ export const BOARD: readonly V2BoardFamily[] = [
       // products pin cleanly and do.
       { key: "LUXURIO MATT", label: "Luxurio", slug: "luxurio",
         members: [
-          { sap: "LUXURIO MATT",   label: "Luxurio Matt" },
-          { sap: "LUXURIO SEALER", label: "Luxurio Sealer" },
-          { sap: "LUXURIO GLOSS",  label: "Luxurio Gloss" },
+          { sap: "LUXURIO MATT",   label: "Matt" },
+          { sap: "LUXURIO SEALER", label: "Sealer" },
+          { sap: "LUXURIO GLOSS",  label: "Gloss" },
         ] },
       // 🔴 THE FIRST CATEGORY TILE. See V2Member.category.
       //
@@ -1952,10 +1952,10 @@ export const BOARD: readonly V2BoardFamily[] = [
       // catalog's own, case for case (see V2Member.option).
       { key: "HYDRO PU DEAD MATT", label: "Hydro PU", slug: "hydro-pu",
         members: [
-          { sap: "HYDRO PU DEAD MATT", label: "Hydro PU Dead Matt", option: "Int Clear" },
-          { sap: "HYDRO PU MATT",      label: "Hydro PU Matt",      option: "Int Clear" },
-          { sap: "HYDRO PU GLOSS",     label: "Hydro PU Gloss",     option: "Int Clear" },
-          { sap: "HYDRO PU SEALER",    label: "Hydro PU Sealer",    option: "Clear" },
+          { sap: "HYDRO PU DEAD MATT", label: "Dead Matt", option: "Int Clear" },
+          { sap: "HYDRO PU MATT",      label: "Matt",      option: "Int Clear" },
+          { sap: "HYDRO PU GLOSS",     label: "Gloss",     option: "Int Clear" },
+          { sap: "HYDRO PU SEALER",    label: "Sealer",    option: "Clear" },
         ] },
       // 🔴 GROUPED BY RANGE, NOT BY FUNCTION, 2026-09-08.
       //
