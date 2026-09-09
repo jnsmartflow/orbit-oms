@@ -14,6 +14,14 @@ type MarkerScope = "single" | "openPending";
 interface MarkerResponse {
   count: number;
   latest: string | null;
+  /**
+   * Waiting bills the picking visibility gate is hiding (2026-09-09). OPTIONAL
+   * because this hook is shared: `/api/picking/marker` sends it, while Floor,
+   * Billing and MRN point their own `url` at routes that do not. Every read
+   * below coalesces to 0, so those three store a constant and this number can
+   * never make one of them refetch.
+   */
+  heldBack?: number;
   scope: string;
 }
 
@@ -154,7 +162,11 @@ export function usePickingMarker({
   const pausedRef = useRef(paused);
   // Last marker value accepted as baseline. null until the first successful
   // response (which is stored, never fired).
-  const lastSeenRef = useRef<{ count: number; latest: string | null } | null>(null);
+  const lastSeenRef = useRef<{
+    count: number;
+    latest: string | null;
+    heldBack: number;
+  } | null>(null);
   // The marker moved while paused → fire once on resume.
   const pendingChangeRef = useRef(false);
   // Guard against overlapping in-flight marker requests.
@@ -241,13 +253,23 @@ export function usePickingMarker({
         const marker = (await res.json()) as MarkerResponse;
         if (cancelled) return;
         if (generation !== generationRef.current) return; // superseded by resync()
-        const next = { count: marker.count, latest: marker.latest };
+        const next = {
+          count: marker.count,
+          latest: marker.latest,
+          heldBack: marker.heldBack ?? 0,
+        };
         const prev = lastSeenRef.current;
         if (prev === null) {
           lastSeenRef.current = next; // first response = baseline, never fires
           return;
         }
-        const moved = prev.count !== next.count || prev.latest !== next.latest;
+        // `heldBack` joins the comparison, and must: a bill arriving already
+        // hidden by the visibility gate moves neither of the other two, because
+        // the gated predicate the marker aggregates over never saw it.
+        const moved =
+          prev.count !== next.count ||
+          prev.latest !== next.latest ||
+          prev.heldBack !== next.heldBack;
         if (!moved) return;
         lastSeenRef.current = next; // always advance the baseline
         if (pausedRef.current) {
@@ -331,7 +353,11 @@ export function usePickingMarker({
       if (!mountedRef.current) return;
       // Accept as the new baseline WITHOUT comparing and WITHOUT firing: the
       // caller has already fetched and rendered this state.
-      lastSeenRef.current = { count: marker.count, latest: marker.latest };
+      lastSeenRef.current = {
+        count: marker.count,
+        latest: marker.latest,
+        heldBack: marker.heldBack ?? 0,
+      };
       // Any change deferred while paused is covered by the caller's own fresh
       // fetch — leaving it armed would fire on unpause for data already shown.
       pendingChangeRef.current = false;

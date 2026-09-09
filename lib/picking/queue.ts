@@ -20,6 +20,9 @@ import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
 // skipped). Pure and clock-free — the day is passed in — so the server route
 // and the board can never disagree about whether the action is offerable.
 import { isReleasableToday } from "./release-window";
+// The floor visibility gate. Read here and PASSED to buildPickingWhere, which
+// is synchronous and so cannot make the database call itself.
+import { isPickGateOn } from "./visibility-gate";
 // Name → SAP code, the inverse of the importer's own DIVISION_TO_SMU. Imported
 // rather than re-declared so the picking board can never disagree with the
 // importer about which code a name means (the ONE OWNER PER BEHAVIOUR rule this
@@ -170,6 +173,29 @@ export interface PickingQueueOptions {
    * Omitted → board-wide, byte-identical to before this option existed.
    */
   pickerId?: number;
+  /**
+   * The floor visibility gate (2026-09-09). `true` narrows the WAITING branch
+   * to bills carrying `orders.pickVisibleAt`; `false` emits no term at all and
+   * the WHERE is byte-identical to what it was before the gate existed.
+   *
+   * 🔴 PASSED IN, NEVER READ HERE. The switch lives in `app_settings`, so
+   * resolving it is a database call and this builder is SYNCHRONOUS — that is
+   * the whole reason it is a parameter. `lib/picking/visibility-gate.ts` owns
+   * the read (`isPickGateOn()`); this function only applies the answer.
+   *
+   * 🔴 DEFAULTS TO FALSE WHEN OMITTED, and that default is load-bearing twice
+   * over. Six bench/profile scripts under `scripts/` call this builder with no
+   * `gateOn` and must keep returning the ungated set. And a caller that forgets
+   * to pass it gets the board the floor already knows, never an empty one.
+   *
+   * ⚠ BOTH LIVE CALLERS MUST PASS THE SAME VALUE — `getPickingQueue()` below
+   * and `app/api/picking/marker/route.ts`. If the queue gates and the marker
+   * does not, the marker watches a WIDER set than the queue renders, which is
+   * the harmless direction; if the marker gates and the queue does not, it
+   * watches a NARROWER one and the board stops refreshing on changes it should
+   * see (PICKING §10 — "Marker ⊇ queue, never ⊂"). Both read the one helper.
+   */
+  gateOn?: boolean;
 }
 
 // This payload carried four aggregate counters until 2026-07-28 — `windows[]`
@@ -274,7 +300,7 @@ const DEALER_SELECT = {
 export function buildPickingWhere(
   options: PickingQueueOptions = {},
 ): { where: Prisma.ordersWhereInput; isoDate: string; dateOnly: Date } {
-  const { date: dateStr, scope = "single" } = options;
+  const { date: dateStr, scope = "single", gateOn = false } = options;
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
 
   // Today in IST as a half-open INSTANT window [start, end) — the fence for
@@ -330,8 +356,24 @@ export function buildPickingWhere(
             // clause admitted — verified by an identical per-stage row census
             // before and after the split. Do NOT re-merge them for tidiness,
             // and do NOT reorder them against the checked branch.
-            { workflowStage: SUPPORT_DONE_OUTPUT },
+            //
+            // ⚠ THE GATE TERM GOES HERE AND NOWHERE ELSE (2026-09-09). With
+            // `gateOn` false this is the bare stage clause and the WHERE is
+            // byte-identical to the pre-gate board. With it true the branch
+            // additionally requires `pickVisibleAt`, so a waiting bill nobody
+            // has released is not on the Assign tab.
+            gateOn
+              ? { workflowStage: SUPPORT_DONE_OUTPUT, pickVisibleAt: { not: null } }
+              : { workflowStage: SUPPORT_DONE_OUTPUT },
             // ── IN PROGRESS — a picker has it, or has finished picking it ──
+            //
+            // 🔴 NEVER GATED, IN ANY STATE OF THE SWITCH. A LOCKED OWNER RULE,
+            // not a default and not an oversight: once a bill is in a picker's
+            // hands it cannot be hidden from the board that tracks it. Hiding
+            // it would strand physical work — the goods are off the rack and on
+            // a trolley, and no screen would say so. The same holds for the
+            // checked branch below. If you are adding a term to this branch or
+            // that one, you are almost certainly solving the wrong problem.
             { workflowStage: { in: [PICK_ASSIGNED, PICK_DONE] } },
             // Everything the floor CHECKED TODAY, whatever day it was due.
             //
@@ -446,9 +488,21 @@ export function buildPickingWhere(
 export async function getPickingQueue(
   options: PickingQueueOptions = {},
 ): Promise<PickingQueueResult> {
+  // The floor visibility gate (2026-09-09). Resolved HERE rather than by the
+  // route, so every caller of this function — the queue route, the picker face,
+  // the bench scripts — gets the same answer without each having to remember to
+  // ask. `app/api/picking/marker/route.ts` asks the SAME helper for the SAME
+  // reason it shares this builder: the marker must watch the set the queue
+  // renders (PICKING §10).
+  //
+  // A caller-supplied `options.gateOn` is deliberately OVERRIDDEN — the switch
+  // is a live setting, not a per-request argument, and letting a caller force it
+  // would let one surface show a set no other surface agrees with.
+  const gateOn = await isPickGateOn();
+
   // Scope filter + date anchors come from the shared builder (see above) — the
   // marker endpoint reuses the SAME `where`, so the two never drift.
-  const { where, isoDate, dateOnly } = buildPickingWhere(options);
+  const { where, isoDate, dateOnly } = buildPickingWhere({ ...options, gateOn });
 
   // Optional per-picker narrowing (see PickingQueueOptions.pickerId). Merged
   // HERE, not inside buildPickingWhere, so the shared scope filter stays
