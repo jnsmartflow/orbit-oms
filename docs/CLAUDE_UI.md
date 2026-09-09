@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.23 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.24 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -305,8 +305,8 @@ ON: `bg-teal-600`. OFF: `bg-gray-300`. Sizes: 36×20px compact, 46×26px large.
 
 ## 12. Login page
 
-**Rebuilt 2026-09-09 (rebrand step 5), corrected the same day.** The centred card on
-`#f9fafb` is gone. The page is a split: brand panel left, white form right. Files:
+**Rebuilt 2026-09-09 (rebrand step 5), corrected twice the same day.** The centred card
+on `#f9fafb` is gone. The page is a split: brand panel left, white form right. Files:
 `app/login/page.tsx`, `app/login/login-form.tsx`, `app/login/login-rings.tsx`, plus one
 CSS block in `globals.css` marked "Login — orbit rings + entrance".
 
@@ -314,7 +314,7 @@ CSS block in `globals.css` marked "Login — orbit rings + entrance".
 |---|---|
 | Layout | `flex-col` on a phone, `md:flex-row` above. Panel `flex-[1.15]`, form side `flex-1`. |
 | Panel background | `#43168B` (`brand-900`) + `radial-gradient(82% 100% at 100% 100%, rgba(154,124,246,.55) 0%, rgba(124,58,237,.30) 34%, rgba(88,28,135,.12) 62%, rgba(67,22,139,0) 84%)` |
-| Rings | SVG layer, `absolute inset-0`, `z-1`, viewBox `0 0 705 683`, `preserveAspectRatio="xMaxYMax slice"`, centre `705,683`. Six guide circles and six travelling arcs at r = 175 / 300 / 445 / 610 / 720 / 820. `aria-hidden` — decorative. |
+| Rings | SVG layer, `absolute inset-0`, `z-1`, viewBox `0 0 700 512`, `preserveAspectRatio="xMaxYMax slice"`, centre `700,512`. Six guide circles and six rotating arcs. `aria-hidden` — decorative. |
 | Content | `z-3`. Wordmark white at 45px of INK (30 / 38 / 45 stepping down), 56×3 `brand-400` accent bar, tagline 24px/18px/15px `brand-200` with the last word white and `whitespace-nowrap`. |
 | Form | White, `max-w-[330px]`. Time-aware greeting + date. Focus `border-brand-500` + `ring-4 ring-[rgba(139,92,246,.13)]`. Sign in is the commit button, `bg-brand-600`, full width, spinner on click. |
 
@@ -322,81 +322,75 @@ CSS block in `globals.css` marked "Login — orbit rings + entrance".
 SVG.** An SVG gradient is bounded by its viewBox and `slice` cuts it, which put a
 visible hard edge across the panel the first time this was built.
 
-### 12.1 The radius ceiling — 982, and it is a CEILING not a target
+### 12.1 The rings are the reference file's geometry, number for number
 
-Because `preserveAspectRatio` is `slice`, the visible slab of the viewBox is never larger
-than 705×683. **No point on the panel is ever further than `√(705² + 683²) ≈ 982` units
-from the ring centre, at any window size.**
+The source of truth is `docs/mockups/rebrand/orbit-login-rings-edge.html`. Everything
+below is copied from it and is **the design, not an approximation of it**:
 
-🔴 **A radius ABOVE 982 does not "reach every edge". It is entirely outside the panel and
-draws nothing at all, guide circle included.** The first cut of this page shipped r=1010
-for exactly that inverted reason and the outermost ring never rendered a pixel at any
-viewport. The commit message and the first version of this section both stated the wrong
-reasoning as fact.
+| r | guide opacity | arc width | gradient | dasharray | lap | direction |
+|---|---|---|---|---|---|---|
+| 150 | .20 | 2.4 | a | `230 713` | 30s | cw |
+| 262 | .17 | 2 | b | `360 1286` | 52s | ccw |
+| 388 | .145 | 1.7 | a | `500 1938` | 72s | cw |
+| 524 | .12 | 1.5 | b | `620 2672` | 94s | ccw |
+| 668 | .095 | 1.3 | a | `760 3437` | 122s | cw |
+| 820 | .07 | 1.2 | b | `900 4252` | 150s | ccw |
 
-**The number that matters is degrees-on-panel per radius**, not clearance against the far
-corner. For a circle centred on the visible slab's bottom-right corner, with the slab
-`visW × visH`:
+Guides `#EDE9FE` 1px. Gradient `a` fades `#EDE9FE` 0 → .85 at 45% → 0 along the bbox
+diagonal; `b` fades `#C4B5FD` 0 → .65 at 50% → 0 along the other diagonal. Light points
+at the top of r=150 (3.2, white, .85) and r=262 (2.8, `#EDE9FE`, .8), inside their
+rotating group. Only the gradient **ids** differ from the reference — `ra` / `rb` are too
+generic to put in an app page.
 
-```
-span° = asin(min(1, visH / r)) − acos(min(1, visW / r))     // 0 if negative
-```
+🔴 **The viewBox's ASPECT RATIO is load-bearing. Do not "correct" it to the panel's
+proportions.** Under `slice` the scale is `max(panelW/vbW, panelH/vbH)`, so the viewBox
+aspect is what decides how large the rings render and how many of them land on the panel.
+A cut of this file derived `705×683` from the panel's own proportions, believing that was
+the more precise thing to do. It shrank every ring, pulled four extra curves onto the
+panel and made the layer read as clutter. **The panel's proportions are not an input to
+this number.**
 
-Measured live, headless Chrome, arcs at rest:
+🔴 **r=820 is mostly or entirely off-panel, and that is fine.** So is most of r=668 at a
+tall window. The set looks right with them there and a ring that contributes nothing also
+costs nothing. This was measured, argued and **deliberately left alone** — do not
+"optimise" the far rings inward. Degrees of each circle actually on the panel, measured
+live in headless Chrome:
 
-| r | 1440×900 (slab 593×683) | 1920×1080 (slab 657×683) | 1440×500 (slab 705×451) |
-|---|---|---|---|
-| 175 | 90° | 90° | 90° |
-| 300 | 90° | 90° | 90° |
-| 445 | 90° | 90° | 90° |
-| 610 | 76.4° | 90° | 47.7° |
-| 720 | 37.0° | 47.3° | 27.1° |
-| 820 | 12.7° | 19.6° | 2.7° |
-| ~~1010~~ | ~~0°~~ | ~~0°~~ | ~~0°~~ |
+| r | 1440×900 | 1920×1080 | 1440×500 | 390 phone |
+|---|---|---|---|---|
+| 150 | 90° | 90° | 90° | 90° |
+| 262 | 90° | 90° | 90° | 90° |
+| 388 | 90° | 90° | 90° | 90° |
+| 524 | 45.7° | 57.6° | 58.7° | 77.7° |
+| 668 | 1.8° | 7.5° | 42.1° | 31.2° |
+| 820 | 0° | 0° | 1.7° | 0° |
 
-Degrees undersell the outer rings, because a small angle on a large radius is still a long
-stroke: r=820's 12.7° is 182 units of arc, versus 275 for r=175's whole quadrant. Both
-read as a curve. Zero does not.
+### 12.2 The arc groups rotate — as a group, gradient included
 
-### 12.2 The rings do not rotate — the dash travels
+Each ring is a `<g>` holding its arc circle and, on the inner two, its light point. The
+group turns about `700,512` and the gradient turns with it, exactly as the reference's
+`<animateTransform>` does. `transform-box: view-box` is what lets `transform-origin` be
+written in viewBox units on an SVG child.
 
-🔴 **This is the whole mechanism, and rotating instead is what made the first cut look
-like faint guide circles and nothing else.** An SVG gradient is resolved in the user space
-of the element that REFERENCES it, so a transform on the ancestor group turns the gradient
-WITH the shape: the bright part never moves relative to the stroke, and the arc has one
-fixed brightness profile riding around with it. `gradientUnits="userSpaceOnUse"` does not
-fix a rotating shape — the rotation is still in the referencing element's user space.
-**SMIL `<animateTransform>` has the identical property**, so it is not a way out either,
-and the CSS-versus-SMIL question is a red herring here.
+**CSS animation rather than SMIL is the one departure from the reference**, and it buys
+`prefers-reduced-motion`: a media query can switch a CSS animation off and cannot touch an
+`<animateTransform>`. The motion is otherwise identical.
 
-What ships instead: the paths are **static** and only `stroke-dashoffset` animates. The
-gradient therefore holds still on the panel and the arc slides through it.
+🔴 **Do NOT replace the rotation by holding the paths still and travelling the dash.** It
+was built that way on 2026-09-09 to make the light hold still while the arc slid through
+it. It is geometrically tidier, it is measurably brighter, and it looks worse — the set
+stops reading as orbits. Reverted the same day. The related true fact is worth keeping,
+because it will come up again: **an SVG gradient is resolved in the user space of the
+element that REFERENCES it**, so rotating an ancestor group turns the gradient with the
+shape, `gradientUnits="userSpaceOnUse"` does not change that, and SMIL behaves identically.
+The rotating gradient is a property of the design, not a defect in it.
 
-- Every arc is a `<path>` (not a `<circle>` — `pathLength` on a bare circle was broken in
-  older Safari and the office is on iPhones) starting at 180°, running clockwise, with
-  `pathLength="360"`. **One path unit is one degree on every radius**, so the dash numbers
-  are shared by all six rings and the on-panel quadrant is always path 0 → 90.
-- Dash is `108 252` — 30% of the circle — on every ring.
-- **One pair of keyframes drives all six.** Per-ring speed and starting position arrive as
-  an inline `animation-duration` and a NEGATIVE `animation-delay`.
-- Laps: 24 / 34 / 46 / 58 / 72 / 88s. Rings 1, 3, 5 clockwise; 2, 4, 6 against. The first
-  cut ran 34 to 162s, and a sweep nobody stays on the page long enough to see is not a
-  sweep.
-- Each ring gets **its own gradient**, `userSpaceOnUse`, anchored to the two ends of that
-  ring's on-panel quadrant: `(705−r, 683)` on the panel's bottom edge to `(705, 683−r)` on
-  its right edge. The quadrant maps onto the gradient's whole 0→1, so the arc is already
-  dark by the time it leaves the panel and needs no clipping to look right.
-- Stops are a **plateau**, not a spike: `edge / peak at 22% / peak at 78% / edge`. The edge
-  value is deliberately non-zero (.28 and .22) so the arcs run off the edges rather than
-  evaporating before they reach them.
-- The two light points ride the **leading** end of their arc, as the head of the trail.
-  They used to sit at the arc's midpoint, which under the rotating gradient was the single
-  dimmest part of the arc they were meant to be lighting.
-
-**prefers-reduced-motion** is honoured by `animation: none`, and every animated state rests
-on an already-composed one: each arc's `stroke-dashoffset` ATTRIBUTE puts it exactly where
-its negative delay would have, and the accent bar rests at full width. The static frame is
-a designed picture, not whatever the keyframes happened to start on.
+**Reduced motion** switches every animation off, and each state rests on a composed one:
+the accent bar at full width, and each ring parked at its own `--orbit-rest` angle (166 /
+199 / 181 / 211 / 192 / 204°, set per ring in `login-rings.tsx`, read only inside the
+reduced-motion block). The resting angles are the one thing here with no counterpart in
+the reference, which has no reduced-motion state at all: at a flat 0° every dash sits off
+the panel and a reduced-motion visitor would get guide circles and nothing else.
 
 ### 12.3 The rest
 
@@ -408,7 +402,7 @@ Morning before 12:00, afternoon to 16:59, evening from 17:00.
 **The wordmark height is INK height, not a font size.** `OrbitWordmark`'s viewBox is cut
 tight to the letters — 769 units of a 1000-unit em (`scripts/generate-wordmark.mjs`) — so a
 rendered height of H reads as roughly `H ÷ 0.769` of type. 45px here is ~59px of type,
-which lands on the mockup's 58px and rebrand draft §6's 60px. The first cut passed 66,
+which lands on the mockup's 58px and rebrand draft §6's 60px. A cut of this page passed 66,
 which was ~86px of type and a third too big. **Anyone specifying this component in px must
 say which of the two they mean.**
 
@@ -1711,4 +1705,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.23 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12 corrected, and the correction is the point.** The version of this section written hours earlier (v5.22) recorded a piece of reasoning that was exactly backwards: it called the 1010 outer radius load-bearing and printed a "clearance against the far corner" table. `slice` caps the visible slab at 705×683, so nothing on the panel is ever more than 982 units from the ring centre and **a radius above that draws NOTHING — the ring was off the panel entirely, guide circle included.** §12.1 now states the ceiling, replaces the clearance table with degrees-on-panel per radius measured live at three viewports, and strikes 1010 through. §12.2 is new: the rings no longer rotate, because a gradient is resolved in the referencing element's user space and a transform on the ancestor turns the light with the shape — `userSpaceOnUse` does not fix that and neither would SMIL. The paths are static and the dash travels, so the light holds still and the arc slides through it. §12.3 records that the wordmark's height is INK height, 769 units of a 1000-unit em, so 45px reads as ~59px of type; 66px had been ~86px. Prior, v5.22 (2026-09-09): §12 first written for the rebuilt login page; footer drift from v5.21 repaired. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*
+*UI v5.24 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§12 rewritten onto the reference file's geometry, and the ROOT CAUSE of two days of thrash is now recorded in it.** The rings' viewBox is `0 0 700 512`, from `docs/mockups/rebrand/orbit-login-rings-edge.html`. A step-5 brief derived `705×683` from the panel's own proportions instead; under `slice` the viewBox ASPECT sets the render scale, so that shrank every ring and dragged four extra curves onto the panel — everything chased afterwards (invisible arcs, a dead r=1010 ring, degrees-on-panel tables) was downstream of that one number. §12.1 is now the reference's table number for number, states that the aspect ratio is load-bearing and must never be "corrected" to the panel, and records that r=820 sitting off-panel is a decision and not a defect. §12.2 restores group rotation and carries a 🔴 against the dash-travel variant, which was built, measured, and reverted the same day for looking worse; the true fact underneath it is kept, that a gradient resolves in the referencing element's user space so rotation turns it with the shape and neither `userSpaceOnUse` nor SMIL changes that. The per-ring reduced-motion resting angles are the only thing here with no counterpart in the reference. §12.3's wordmark ink-height note stands. ⚠ Two earlier stamps today were BOTH written against code that has since been replaced — v5.22 called the 1010 radius load-bearing, v5.23 called the rings static. Prior, v5.21 (2026-09-08): §1 and §3 — red is error and destructive only, urgency is amber, with the three still-red components listed as a migration list. Prior, v5.20 (2026-09-06): §6 Tint Manager wiring row corrected for the board rebuild; §57 re-pointed to the rail's pending-bill context strip. Prior, v5.18 (2026-08-05): §55 line-number references replaced with file+symbol anchors.*

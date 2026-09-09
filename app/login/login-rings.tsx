@@ -5,90 +5,40 @@
 // preserveAspectRatio, which is what put a visible hard edge on the panel the
 // first time round (rebrand draft §6, and §8's "any glow belongs to the element").
 //
-// GEOMETRY. The ring centre is 705,683 — the panel's own BOTTOM-RIGHT corner —
-// and `xMaxYMax slice` pins that corner to the panel's corner at every size.
-// Because `slice` COVERS, the visible slab of the viewBox is never larger than
-// 705 x 683, so no point on the panel is ever further than
-// sqrt(705² + 683²) ≈ 982 units from the centre.
+// 🔴 THE viewBox IS 700x512 AND ITS ASPECT RATIO IS LOAD-BEARING. Do not
+// "correct" it to the panel's proportions. Under `slice` the scale is
+// max(panelW/vbW, panelH/vbH), so the viewBox's ASPECT is what decides how large
+// the rings render and how much of the set lands on the panel. A previous cut
+// derived 705x683 from the panel's own proportions, believing that was the
+// precise thing to do: it shrank every ring, dragged four extra curves onto the
+// panel and made the whole layer read as clutter. These numbers are the
+// reference file's — docs/mockups/rebrand/orbit-login-rings-edge.html — and they
+// are the design, not an approximation of it.
 //
-// 🔴 THAT NUMBER IS A CEILING, NOT A TARGET. A radius ABOVE it is not "big
-// enough to reach every edge" — it is entirely OUTSIDE the panel and draws
-// nothing at all, guide circle included. The first cut of this file used 1010
-// for exactly that mistaken reason and shipped a ring that never rendered a
-// pixel at any viewport. The outermost radius is now 820, which is on the panel
-// at every size that matters.
+// The far ring (r=820) is mostly or entirely off-panel at most window sizes, and
+// that is FINE and deliberate. The set looks right with it there and a ring that
+// contributes nothing also costs nothing. It is not a bug to be optimised out.
 //
-// MOTION. Nothing rotates. The circles are STATIC and only the dash travels,
-// via stroke-dashoffset. That is what makes the light hold still while the arc
-// slides through it: each ring's gradient is anchored in user space to that
-// ring's own on-panel quadrant, so it cannot move, and the arc brightens as it
-// crosses the middle of the panel and dims towards the edges.
-//   A rotation would defeat this. An SVG gradient is resolved in the user space
-// of the element that REFERENCES it, so a transform on the ancestor group turns
-// the gradient WITH the shape and the brightness never moves relative to the
-// stroke. `gradientUnits="userSpaceOnUse"` does not change that — only not
-// rotating does. SMIL <animateTransform> has the identical property, so it is
-// not a way out of it either.
-//
-// Travel is a CSS animation, so prefers-reduced-motion can switch it off. Each
-// arc's resting stroke-dashoffset attribute puts it exactly where its negative
-// animation-delay would have, so the static frame is a composed one and not
-// whatever the keyframes happened to start on.
+// Rotation is a CSS animation rather than SMIL <animateTransform>. That is the
+// ONE departure from the reference and it buys prefers-reduced-motion, which
+// SMIL cannot honour: a media query can switch a CSS animation off and cannot
+// touch an <animateTransform>. The motion is otherwise identical — the group
+// turns, and the arcs' gradients turn with it exactly as they do in the mockup.
 import * as React from "react";
 
-const CX = 705;
-const CY = 683;
+const CX = 700;
+const CY = 512;
 
-// Every ring carries pathLength="360", so one path unit is one DEGREE on every
-// radius: the dash numbers below are shared by all six, and the on-panel
-// quadrant is always path 0 to 90. The dash is 108 of 360, i.e. 30% of a circle.
-const DASH = 108;
-const GAP = 360 - DASH;
-
-const FAMILY = {
-  // Arc colour, its opacity across the middle of the quadrant, and its opacity
-  // where it meets the panel edge. The edge value is deliberately NOT zero — the
-  // arcs are meant to run off the edges, not evaporate before they reach them.
-  a: { stroke: "#EDE9FE", peak: 0.85, edge: 0.28, dot: "#FFFFFF", dotOpacity: 0.85 },
-  b: { stroke: "#C4B5FD", peak: 0.7, edge: 0.22, dot: "#EDE9FE", dotOpacity: 0.8 },
-} as const;
-
-/** r · guide opacity · arc width · colour family · seconds per lap · resting dash
- *  position in degrees · travel direction · light-point radius (0 = none) */
+/** r · guide opacity · arc width · gradient · dasharray · lap · direction ·
+ *  resting angle (see below) · light-point radius (0 = none) */
 const RINGS = [
-  { r: 175, guide: 0.26, w: 2.4, fam: "a", dur: 24, phase: 330, dir: "cw", dot: 3.2 },
-  { r: 300, guide: 0.22, w: 2.1, fam: "b", dur: 34, phase: 20, dir: "ccw", dot: 2.8 },
-  { r: 445, guide: 0.185, w: 1.8, fam: "a", dur: 46, phase: 300, dir: "cw", dot: 0 },
-  { r: 610, guide: 0.15, w: 1.6, fam: "b", dur: 58, phase: 40, dir: "ccw", dot: 0 },
-  { r: 720, guide: 0.115, w: 1.35, fam: "a", dur: 72, phase: 340, dir: "cw", dot: 0 },
-  { r: 820, guide: 0.085, w: 1.2, fam: "b", dur: 88, phase: 350, dir: "ccw", dot: 0 },
+  { r: 150, guide: 0.2,   w: 2.4, grad: "a", dash: "230 713",  dur: "30s",  dir: "cw",  rest: 166, dot: 3.2 },
+  { r: 262, guide: 0.17,  w: 2,   grad: "b", dash: "360 1286", dur: "52s",  dir: "ccw", rest: 199, dot: 2.8 },
+  { r: 388, guide: 0.145, w: 1.7, grad: "a", dash: "500 1938", dur: "72s",  dir: "cw",  rest: 181, dot: 0 },
+  { r: 524, guide: 0.12,  w: 1.5, grad: "b", dash: "620 2672", dur: "94s",  dir: "ccw", rest: 211, dot: 0 },
+  { r: 668, guide: 0.095, w: 1.3, grad: "a", dash: "760 3437", dur: "122s", dir: "cw",  rest: 192, dot: 0 },
+  { r: 820, guide: 0.07,  w: 1.2, grad: "b", dash: "900 4252", dur: "150s", dir: "ccw", rest: 204, dot: 0 },
 ] as const;
-
-/** The circle as a path STARTING at 180° (due left of the centre) and running
- *  clockwise, so with pathLength="360" a path unit is a degree measured from the
- *  panel's bottom edge and the on-panel quadrant is exactly 0 → 90. Drawn as a
- *  path rather than a <circle> because pathLength on a bare circle was broken in
- *  older Safari, and the office is on iPhones. */
-function ringPath(r: number) {
-  return `M${CX - r} ${CY}A${r} ${r} 0 1 1 ${CX + r} ${CY}A${r} ${r} 0 1 1 ${CX - r} ${CY}Z`;
-}
-
-/** Where the dash sits with the travel switched off. */
-const restOffset = (phase: number) => (360 - phase) % 360;
-
-/** Negative delay that starts the travel already at `phase`, so the animated
- *  first frame and the reduced-motion frame are the same picture. */
-function startDelay(dur: number, phase: number, dir: "cw" | "ccw") {
-  const t = dir === "cw" ? (dur * phase) / 360 : (dur * (360 - phase)) / 360;
-  return `-${Math.round(t * 1000) / 1000}s`;
-}
-
-/** The light point rides the LEADING end of its arc — the end the travel pushes
- *  forward — so it reads as the head of the trail. It used to sit at the arc's
- *  midpoint, which under the old rotating gradient was the single dimmest part
- *  of the arc it was meant to be lighting. */
-const dotPhase = (phase: number, dir: "cw" | "ccw") =>
-  dir === "cw" ? (phase + DASH) % 360 : phase;
 
 export function LoginRings() {
   return (
@@ -96,34 +46,22 @@ export function LoginRings() {
       aria-hidden="true"
       focusable="false"
       className="absolute inset-0 z-[1] block h-full w-full"
-      viewBox="0 0 705 683"
+      viewBox="0 0 700 512"
       preserveAspectRatio="xMaxYMax slice"
     >
       <defs>
-        {/* One gradient per ring, anchored in USER SPACE to the two ends of that
-            ring's on-panel quadrant: 180°, which lies on the panel's bottom edge,
-            to 270°, which lies on its right edge. The light therefore cannot
-            move, and because the quadrant maps onto the gradient's whole 0→1 the
-            arc is already dark by the time it leaves the panel. */}
-        {RINGS.map((ring) => {
-          const f = FAMILY[ring.fam];
-          return (
-            <linearGradient
-              key={`grad${ring.r}`}
-              id={`orbit-arc-${ring.r}`}
-              gradientUnits="userSpaceOnUse"
-              x1={CX - ring.r}
-              y1={CY}
-              x2={CX}
-              y2={CY - ring.r}
-            >
-              <stop offset="0%" stopColor={f.stroke} stopOpacity={f.edge} />
-              <stop offset="22%" stopColor={f.stroke} stopOpacity={f.peak} />
-              <stop offset="78%" stopColor={f.stroke} stopOpacity={f.peak} />
-              <stop offset="100%" stopColor={f.stroke} stopOpacity={f.edge} />
-            </linearGradient>
-          );
-        })}
+        {/* The reference's `ra` and `rb`, stop for stop. Only the ids are
+            namespaced — `ra` / `rb` are too generic to put in an app page. */}
+        <linearGradient id="orbit-arc-a" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#EDE9FE" stopOpacity="0" />
+          <stop offset="45%" stopColor="#EDE9FE" stopOpacity="0.85" />
+          <stop offset="100%" stopColor="#EDE9FE" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="orbit-arc-b" x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#C4B5FD" stopOpacity="0" />
+          <stop offset="50%" stopColor="#C4B5FD" stopOpacity="0.65" />
+          <stop offset="100%" stopColor="#C4B5FD" stopOpacity="0" />
+        </linearGradient>
       </defs>
 
       {/* Guide circles — the geometry reads as complete even when every bright arc is elsewhere. */}
@@ -133,49 +71,46 @@ export function LoginRings() {
         ))}
       </g>
 
-      {/* Travelling arcs. The paths never move; the dash does. */}
+      {/* Travelling arcs. Each group turns as a whole, gradient and light point
+          with it, exactly as the mockup's <animateTransform> does. */}
       <g fill="none" strokeLinecap="round">
-        {RINGS.map((ring) => {
-          const d = ringPath(ring.r);
-          const f = FAMILY[ring.fam];
-          return (
-            <React.Fragment key={`a${ring.r}`}>
-              <path
-                className={`orbit-arc orbit-arc-${ring.dir}`}
-                d={d}
-                pathLength={360}
-                stroke={`url(#orbit-arc-${ring.r})`}
-                strokeWidth={ring.w}
-                strokeDasharray={`${DASH} ${GAP}`}
-                strokeDashoffset={restOffset(ring.phase)}
-                style={{
-                  animationDuration: `${ring.dur}s`,
-                  animationDelay: startDelay(ring.dur, ring.phase, ring.dir),
-                }}
+        {RINGS.map((ring) => (
+          <g
+            key={`a${ring.r}`}
+            className={`orbit-ring orbit-ring-${ring.dir}`}
+            style={
+              {
+                animationDuration: ring.dur,
+                // Where the group parks when prefers-reduced-motion switches the
+                // animation off. The reference has no reduced-motion state to be
+                // faithful to, and at a flat 0° every arc sits off the panel —
+                // a reduced-motion visitor would get guide circles and nothing
+                // else. These angles put each arc on the panel, spread across
+                // the quadrant. Read ONLY inside the reduced-motion block.
+                "--orbit-rest": `${ring.rest}deg`,
+              } as React.CSSProperties
+            }
+          >
+            <circle
+              cx={CX}
+              cy={CY}
+              r={ring.r}
+              stroke={`url(#orbit-arc-${ring.grad})`}
+              strokeWidth={ring.w}
+              strokeDasharray={ring.dash}
+            />
+            {ring.dot > 0 && (
+              <circle
+                cx={CX}
+                cy={CY - ring.r}
+                r={ring.dot}
+                fill={ring.grad === "a" ? "#FFFFFF" : "#EDE9FE"}
+                opacity={ring.grad === "a" ? 0.85 : 0.8}
+                stroke="none"
               />
-              {ring.dot > 0 && (
-                <path
-                  className={`orbit-arc orbit-arc-${ring.dir}`}
-                  d={d}
-                  pathLength={360}
-                  stroke={f.dot}
-                  strokeOpacity={f.dotOpacity}
-                  strokeWidth={ring.dot * 2}
-                  strokeDasharray="0.1 359.9"
-                  strokeDashoffset={restOffset(dotPhase(ring.phase, ring.dir))}
-                  style={{
-                    animationDuration: `${ring.dur}s`,
-                    animationDelay: startDelay(
-                      ring.dur,
-                      dotPhase(ring.phase, ring.dir),
-                      ring.dir
-                    ),
-                  }}
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
+            )}
+          </g>
+        ))}
       </g>
     </svg>
   );
