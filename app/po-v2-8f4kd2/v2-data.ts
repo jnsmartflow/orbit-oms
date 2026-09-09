@@ -1628,24 +1628,53 @@ export type V2Member = {
 
 export type V2BoardTile = {
   /**
-   * 🔴 SCHEME A — THE KEY IS members[0].sap, THE TOP SELLER'S OWN JOIN KEY.
+   * 🔴 A FROZEN HISTORICAL STRING. IT IS NOT DERIVED FROM members[0].
    *
-   * Not a synthetic string. Under Scheme A, 29 of today's 32 tile saps are
-   * still tile keys after the merge, so 29 of every 32 stored cart lines need
-   * no migration at all — a synthetic key would have orphaned all 32.
+   * It WAS, until 2026-09-09 — "Scheme A", the tile key is the top seller's
+   * own catalog join key — and BOARD_INVARIANTS enforced it. The values below
+   * are all still exactly what that rule produced; not one was changed when the
+   * rule went. What changed is that they no longer MOVE.
    *
-   * ⚠ IT IS SAFE ONLY BECAUSE tileKeyForMember() EXISTS. The key moves the day
-   * sales reorder the members; the old key is still a MEMBER, so the derived
-   * lookup still finds its tile. Never replace that lookup with a hand-written
-   * table of whichever saps happened to move — the next reorder would orphan
-   * every stored draft that used one, and the symptom is a DUPLICATE line on
-   * the next edit (po-v2-page's addLines keeps a line whose tileSap it does
-   * not recognise and writes a second one), not an error anybody sees.
+   * ⚠ SOME NO LONGER MATCH THE FIRST PRODUCT, AND THAT IS CORRECT. Eterna's key
+   * is "VT ETERNA MATT" and Matt is now the second member. Hydro PU's is
+   * "HYDRO PU DEAD MATT" and Dead Matt is now the fourth. Do not "tidy" either
+   * one, and do not re-derive.
+   *
+   * 🔴 WHY THE RULE HAD TO GO. Deriving the key from members[0] meant that
+   * REORDERING A DRAWER RENAMED THE TILE. Favourites are stored on tile keys
+   * (po2_fav_products), so putting Eterna above Matt would have silently
+   * deleted every stored Eterna favourite on the next load — nothing thrown,
+   * nothing logged, a tile just gone from someone's board. The owner asked for
+   * two such reorders and both were blocked at 985f075f for exactly this.
+   *
+   * 🔴 SO CHANGING A KEY VALUE DELETES SOMEONE'S FAVOURITE. That is now the
+   * only rule about this field, and it is the reason the values are frozen
+   * rather than tidied. A key is an identifier, not a description.
+   *
+   * WHAT SCHEME A BOUGHT, AND WHAT IS KEPT. Choosing a real member sap over a
+   * synthetic string meant 29 of the 32 pre-merge cart lines needed no
+   * migration at all. Those saps are still the values, so that still holds.
+   * tileKeyForMember() is still the derived index that finds a tile from any
+   * member, and migrateLine() still refiles a stored line whose tileSap has
+   * gone stale — see v2-storage. Never replace either with a hand-written
+   * table of whichever saps happened to move.
+   *
+   * ⚠ ONE CONSEQUENCE, RECORDED BECAUSE IT IS SUBTLE. migrateLine's case 3
+   * argues it is "idempotent by construction" because a tile's key IS its top
+   * member's sap, so a product that is on no tile cannot have a sap that is a
+   * live tile key. Every frozen value below is still SOME member's sap, so
+   * that argument survives today. It would break if a future edit removed the
+   * member a key was named after while keeping the key. If you ever do that,
+   * re-read migrateLine before you commit it.
    */
   key:     string;
   label:   string;
   slug:    string;
-  /** Ordered by 90-day line frequency, descending. members[0] pre-selects. */
+  /**
+   * Ordered by 90-day line frequency, then by the owner's own curation.
+   * members[0] is what the drawer pre-selects and what inherits the tile's
+   * photograph (LEADER_TILE) — but it no longer decides the key.
+   */
   members: readonly V2Member[];
 };
 
@@ -2148,11 +2177,13 @@ for (const family of BOARD) {
       BOARD_INVARIANTS.push(`tile "${tile.label}" has no members`);
       continue;
     }
-    if (tile.key !== tile.members[0].sap) {
-      BOARD_INVARIANTS.push(
-        `tile "${tile.label}" key is "${tile.key}" but its top member is ` +
-        `"${tile.members[0].sap}" — Scheme A requires them to be the same`);
-    }
+    // 🔴 THE key === members[0].sap CHECK WAS HERE AND IS GONE, 2026-09-09.
+    // It enforced Scheme A, which meant reordering a drawer renamed the tile —
+    // and favourites are stored on tile keys, so a reorder silently deleted
+    // them. Keys are frozen historical strings now; see V2BoardTile.key.
+    // Everything else this loop checks is UNCHANGED and still enforced:
+    // family size 2..8, a tile with no members, two tiles sharing a key, and
+    // one member on two tiles.
     if (BOARD_TILES.has(tile.key)) {
       BOARD_INVARIANTS.push(`two tiles share the key "${tile.key}"`);
     }
