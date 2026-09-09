@@ -185,7 +185,7 @@ export function SkusTable({ initialSkus, initialTotal, categories, productNames,
             </button>
           )}
           {canEdit && (
-            <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={openAdd}>+ Add SKU</Button>
+            <Button size="sm" className="bg-ink-900 hover:bg-ink-700 text-white" onClick={openAdd}>+ Add SKU</Button>
           )}
         </div>
       </div>

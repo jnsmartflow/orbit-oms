@@ -1149,7 +1149,7 @@ function OrderRow({
             <div className="flex items-center justify-end gap-1.5">
               {order.punchedBy?.name && (
                 <span
-                  className="w-[18px] h-[18px] rounded-full bg-brand-600 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                  className="w-[18px] h-[18px] rounded-full bg-ink-900 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
                   title={order.punchedBy.name}
                 >
                   {order.punchedBy.name

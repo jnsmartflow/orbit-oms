@@ -198,7 +198,7 @@ export function SlotCompletionModal({
                   className={`text-[11px] font-medium border rounded-md px-3 h-[28px] transition-colors inline-flex items-center gap-1 ${
                     copiedAction === `${group.soName}-send`
                       ? "bg-green-50 text-green-700 border-green-200"
-                      : "bg-brand-600 text-white border-brand-600 hover:bg-brand-700"
+                      : "bg-white text-brand-700 border-brand-200 hover:bg-brand-50"
                   }`}
                 >
                   {copiedAction === `${group.soName}-send` ? (

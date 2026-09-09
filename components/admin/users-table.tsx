@@ -77,7 +77,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
     <>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-bold text-brand-700">Users</h1>
-        <Button size="sm" onClick={() => setAddSheetOpen(true)} className="bg-brand-600 hover:bg-brand-700 text-white">
+        <Button size="sm" onClick={() => setAddSheetOpen(true)} className="bg-ink-900 hover:bg-ink-700 text-white">
           + Add User
         </Button>
       </div>

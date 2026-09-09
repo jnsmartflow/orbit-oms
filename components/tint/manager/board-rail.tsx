@@ -220,7 +220,7 @@ export function BoardRail({
                     onClick={(e) =>
                       setMenu(menu?.orderId === o.id ? null : { orderId: o.id, anchor: e.currentTarget })
                     }
-                    className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded-[7px] text-[11px] font-bold py-2 transition-colors"
+                    className="flex-1 border border-brand-200 bg-white hover:bg-brand-50 text-brand-700 rounded-[7px] text-[11px] font-bold py-2 transition-colors"
                   >
                     Assign ▾
                   </button>

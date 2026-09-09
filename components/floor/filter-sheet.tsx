@@ -85,7 +85,7 @@ export function FilterSheet({
       >
         <Filter size={13} />
         Filter
-        {count > 0 && <span className="rounded-[3px] bg-brand-600 px-[5px] py-px text-[9.5px] font-bold text-white">{count}</span>}
+        {count > 0 && <span className="rounded-[3px] bg-ink-900 px-[5px] py-px text-[9.5px] font-bold text-white">{count}</span>}
       </button>
 
       {open && (

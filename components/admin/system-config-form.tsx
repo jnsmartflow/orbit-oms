@@ -235,7 +235,7 @@ export function SystemConfigForm({ initialRows }: SystemConfigFormProps) {
               onClick={() => handleSave("timing")}
               disabled={saving === "timing"}
               size="sm"
-              className="bg-brand-600 hover:bg-brand-700 text-white"
+              className="bg-ink-900 hover:bg-ink-700 text-white"
             >
               {saving === "timing" ? "Saving…" : "Save"}
             </Button>
@@ -255,7 +255,7 @@ export function SystemConfigForm({ initialRows }: SystemConfigFormProps) {
               onClick={() => handleSave("planning")}
               disabled={saving === "planning"}
               size="sm"
-              className="bg-brand-600 hover:bg-brand-700 text-white"
+              className="bg-ink-900 hover:bg-ink-700 text-white"
             >
               {saving === "planning" ? "Saving…" : "Save"}
             </Button>

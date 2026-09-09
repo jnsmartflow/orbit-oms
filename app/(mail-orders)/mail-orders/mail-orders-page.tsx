@@ -120,7 +120,7 @@ function ColumnPicker({
         </svg>
         Columns
         {hiddenCount > 0 && (
-          <span className="text-[9px] bg-brand-600 text-white rounded-full w-[16px] h-[16px] flex items-center justify-center">
+          <span className="text-[9px] bg-ink-900 text-white rounded-full w-[16px] h-[16px] flex items-center justify-center">
             {hiddenCount}
           </span>
         )}

@@ -398,7 +398,7 @@ export function UniversalHeader({
       onClick={() => setImportOpen(true)}
       className={
         importPrimary
-          ? "flex items-center gap-1.5 h-[36px] px-3.5 rounded-[10px] bg-brand-600 hover:bg-brand-700 text-white text-[13px] font-medium transition-colors cursor-pointer"
+          ? "flex items-center gap-1.5 h-[36px] px-3.5 rounded-[10px] bg-ink-900 hover:bg-ink-700 text-white text-[13px] font-medium transition-colors cursor-pointer"
           : "bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
       }
     >
@@ -523,7 +523,7 @@ export function UniversalHeader({
               <div className="w-px h-4 bg-gray-200" />
               <button
                 onClick={() => onDownload?.()}
-                className="bg-brand-600 hover:bg-brand-700 text-white text-[10px] font-medium rounded-[5px] px-[10px] py-[4px] flex items-center gap-[4px] cursor-pointer"
+                className="bg-ink-900 hover:bg-ink-700 text-white text-[10px] font-medium rounded-[5px] px-[10px] py-[4px] flex items-center gap-[4px] cursor-pointer"
               >
                 <Download size={12} /> Download
               </button>

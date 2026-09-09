@@ -243,7 +243,7 @@ export function VehiclesTable({ initialVehicles, transporters, canEdit = true, c
             </button>
           )}
           {canEdit && (
-            <Button size="sm" onClick={openAdd} className="bg-brand-600 hover:bg-brand-700 text-white">+ Add Vehicle</Button>
+            <Button size="sm" onClick={openAdd} className="bg-ink-900 hover:bg-ink-700 text-white">+ Add Vehicle</Button>
           )}
         </div>
         <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />

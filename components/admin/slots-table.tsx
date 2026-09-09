@@ -226,7 +226,7 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
     <>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-bold text-brand-700">Slot Master</h1>
-        <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={openAdd}>+ Add Slot</Button>
+        <Button size="sm" className="bg-ink-900 hover:bg-ink-700 text-white" onClick={openAdd}>+ Add Slot</Button>
       </div>
 
       <div className="oa-table">

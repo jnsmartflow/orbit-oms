@@ -229,7 +229,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={openAdd}>+ Add Customer</Button>
+            <Button size="sm" className="bg-ink-900 hover:bg-ink-700 text-white" onClick={openAdd}>+ Add Customer</Button>
           )}
         </div>
       </div>
@@ -443,7 +443,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
                 </div>
               )}
               <div className="flex justify-end">
-                <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={() => setImportResult(null)}>Close</Button>
+                <Button size="sm" className="bg-white border border-ink-100 text-ink-600 hover:bg-ink-25" onClick={() => setImportResult(null)}>Close</Button>
               </div>
             </div>
           )}

@@ -114,7 +114,7 @@ export function PdfPreview({
           <button
             type="button"
             onClick={() => window.print()}
-            className="h-[30px] rounded-[6px] bg-brand-600 px-[14px] text-[11.5px] font-semibold text-white hover:bg-brand-700"
+            className="h-[30px] rounded-[6px] bg-ink-900 px-[14px] text-[11.5px] font-semibold text-white hover:bg-ink-700"
           >
             Download PDF
           </button>

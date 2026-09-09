@@ -575,7 +575,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
               : (previewEnabled ? handlePreviewSubmit : handleImportNow)
           }
           disabled={isDisabled}
-          className="w-full bg-brand-600 text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-600/90 transition-colors"
+          className="w-full bg-ink-900 text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-ink-700 transition-colors"
         >
           {isLoading && <Loader2 className="animate-spin" size={18} />}
           {isLoading
@@ -881,7 +881,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
                   <button
                     onClick={handleConfirm}
                     disabled={selectedIds.size === 0 || isLoading}
-                    className="bg-brand-600 text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-600/90 transition-colors"
+                    className="bg-ink-900 text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-ink-700 transition-colors"
                   >
                     {isLoading && <Loader2 className="animate-spin" size={18} />}
                     Confirm Import ({selectedIds.size} OBDs)
@@ -946,7 +946,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
           </button>
           <button
             onClick={() => { window.location.href = viewOrdersHref; }}
-            className="w-full bg-brand-600 text-white rounded-lg py-2.5 font-medium hover:bg-brand-600/90 transition-colors"
+            className="w-full bg-ink-900 text-white rounded-lg py-2.5 font-medium hover:bg-ink-700 transition-colors"
           >
             View Orders
           </button>
@@ -1001,7 +1001,7 @@ export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageConte
             onClick={() => {
               window.location.href = viewOrdersHref;
             }}
-            className="w-full bg-brand-600 text-white rounded-lg py-2.5 font-medium hover:bg-brand-600/90 transition-colors"
+            className="w-full bg-ink-900 text-white rounded-lg py-2.5 font-medium hover:bg-ink-700 transition-colors"
           >
             View Orders
           </button>

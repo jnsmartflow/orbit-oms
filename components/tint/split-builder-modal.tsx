@@ -599,7 +599,7 @@ export function SplitBuilderModal({
                         {/* Operator + qty row */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                            <div className="w-5 h-5 rounded-full bg-ink-900 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
                               {split.assignedTo.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
                             </div>
                             <span className="text-[11.5px] font-medium text-gray-700">

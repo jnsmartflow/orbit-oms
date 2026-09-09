@@ -399,7 +399,7 @@ export function PaginationIndicator({
               aria-current={isActive ? "page" : undefined}
               className={`transition-all duration-150 ${
                 isActive
-                  ? "w-[22px] h-[7px] bg-brand-600 rounded-[4px]"
+                  ? "w-[22px] h-[7px] bg-ink-400 rounded-[4px]"
                   : "w-[7px] h-[7px] bg-gray-300 rounded-full hover:bg-gray-400"
               }`}
             />

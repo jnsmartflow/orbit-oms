@@ -181,7 +181,7 @@ export function RoutesTable({ initialRoutes, canEdit = true, canImport = true }:
           {canEdit && (
             <button
               type="button"
-              className="bg-brand-600 hover:bg-brand-700 text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
+              className="bg-ink-900 hover:bg-ink-700 text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
               onClick={openAdd}
             >
               + Add Route

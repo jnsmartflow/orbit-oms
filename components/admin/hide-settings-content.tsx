@@ -518,7 +518,7 @@ function RulesTab(): React.JSX.Element {
           <button
             type="button"
             onClick={() => { setEditing(null); setModalOpen(true); }}
-            className="bg-brand-600 hover:bg-brand-700 text-white text-[12px] font-semibold rounded-[7px] px-3.5 py-2 inline-flex items-center gap-1.5"
+            className="bg-ink-900 hover:bg-ink-700 text-white text-[12px] font-semibold rounded-[7px] px-3.5 py-2 inline-flex items-center gap-1.5"
           >
             + Add Rule
           </button>

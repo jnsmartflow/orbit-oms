@@ -216,7 +216,7 @@ export function SOGroupsTable({ initialRows, salesOfficers }: Props) {
     <>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-bold text-brand-700">SO Groups</h1>
-        <Button size="sm" onClick={openAdd} className="bg-brand-600 hover:bg-brand-700 text-white">+ Add Group</Button>
+        <Button size="sm" onClick={openAdd} className="bg-ink-900 hover:bg-ink-700 text-white">+ Add Group</Button>
       </div>
 
       <div className="oa-table">

@@ -718,7 +718,7 @@ export function CustomersSplitView({
           </>
         )}
         {canEdit && (
-          <button onClick={requestNew} className="flex items-center gap-1.5 text-[12.5px] font-medium text-white bg-brand-600 hover:bg-brand-700 px-3.5 py-[7px] rounded-lg transition-colors">
+          <button onClick={requestNew} className="flex items-center gap-1.5 text-[12.5px] font-medium text-white bg-ink-900 hover:bg-ink-700 px-3.5 py-[7px] rounded-lg transition-colors">
             <Plus className="w-3.5 h-3.5" />Add customer
           </button>
         )}
@@ -1336,7 +1336,7 @@ export function CustomersSplitView({
                 </div>
               )}
               <div className="flex justify-end">
-                <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white" onClick={() => setImportResult(null)}>Close</Button>
+                <Button size="sm" className="bg-white border border-ink-100 text-ink-600 hover:bg-ink-25" onClick={() => setImportResult(null)}>Close</Button>
               </div>
             </div>
           )}

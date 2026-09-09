@@ -548,7 +548,7 @@ export function AdminSidebar({ userName, userRole, isSuperuser, allPerms, switch
           collapsed ? "flex justify-center py-3" : "flex items-center gap-2.5 px-4 py-3"
         )}
       >
-        <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-ink-900 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">
           {getInitials(userName)}
         </div>
         {!collapsed && (

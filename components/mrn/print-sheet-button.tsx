@@ -22,7 +22,7 @@ export function PrintSheetButton(): React.JSX.Element {
     <button
       type="button"
       onClick={() => window.print()}
-      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-4 text-[13px] font-medium text-white hover:bg-brand-700"
+      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-ink-900 px-4 text-[13px] font-medium text-white hover:bg-ink-700"
     >
       <Printer size={14} />
       Print / Save PDF

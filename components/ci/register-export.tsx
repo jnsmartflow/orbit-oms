@@ -53,7 +53,7 @@ const PRESET_ROW =
 /** The teal action, the app's one download colour (CLAUDE_UI.md §297, and the
  *  same fill components/admin/attendance/export-button.tsx uses). */
 const ACTION =
-  "w-full h-7 rounded-md bg-brand-600 hover:bg-brand-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-[11px] font-medium transition-colors";
+  "w-full h-7 rounded-md bg-ink-900 hover:bg-ink-700 disabled:bg-ink-50 disabled:text-ink-400 text-white text-[11px] font-medium transition-colors";
 
 const FIELD_LABEL = "text-[10px] font-medium uppercase tracking-[0.06em] text-gray-400";
 const FIELD =

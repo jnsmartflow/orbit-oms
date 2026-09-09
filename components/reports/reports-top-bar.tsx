@@ -46,7 +46,7 @@ export default function ReportsTopBar({
         <button
           type="button"
           onClick={() => window.open(buildPrintHref(params), "_blank")}
-          className="h-[34px] rounded-lg bg-brand-600 px-4 text-[13px] font-semibold text-white hover:bg-brand-700"
+          className="h-[34px] rounded-lg bg-ink-900 px-4 text-[13px] font-semibold text-white hover:bg-ink-700"
         >
           Generate PDF
         </button>

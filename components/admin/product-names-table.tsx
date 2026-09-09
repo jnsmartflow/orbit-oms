@@ -221,7 +221,7 @@ export function ProductNamesTable({ initialRows, categories }: Props) {
             <Upload className="h-3.5 w-3.5" />
             Import File
           </button>
-          <Button size="sm" onClick={openAdd} className="bg-brand-600 hover:bg-brand-700 text-white">+ Add Product Name</Button>
+          <Button size="sm" onClick={openAdd} className="bg-ink-900 hover:bg-ink-700 text-white">+ Add Product Name</Button>
         </div>
         <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>

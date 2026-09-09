@@ -355,7 +355,7 @@ export function RailCard({
               type="button"
               title={`Release to ${suggestionDay} ${suggestion!.windowTime}`}
               onClick={confirmSuggestion}
-              className="flex flex-1 items-center justify-center gap-1.5 bg-brand-600 px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:bg-brand-700"
+              className="flex flex-1 items-center justify-center gap-1.5 border border-brand-200 bg-white px-2.5 text-[11.5px] font-semibold text-brand-700 transition-colors hover:bg-brand-50"
             >
               <svg width="11" height="11" viewBox="0 0 10 10" fill="none" className="shrink-0">
                 <path
@@ -377,7 +377,7 @@ export function RailCard({
                 type="button"
                 title="Choose a different slot"
                 onClick={() => setSlotGen((g) => g + 1)}
-                className="flex w-[26px] items-center justify-center border-l border-brand-500/60 bg-brand-600 text-white transition-colors hover:bg-brand-700"
+                className="flex w-[26px] items-center justify-center border border-l-0 border-brand-200 bg-white text-brand-700 transition-colors hover:bg-brand-50"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                   <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />

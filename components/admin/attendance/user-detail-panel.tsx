@@ -58,7 +58,7 @@ function UserDetailPanelInner({
     <div className="bg-white border border-gray-200 rounded-lg p-4">
       {/* User block */}
       <header className="flex items-center gap-3 mb-4">
-        <div className="w-12 h-12 rounded-full bg-brand-600 text-white flex items-center justify-center text-[14px] font-semibold shrink-0">
+        <div className="w-12 h-12 rounded-full bg-ink-900 text-white flex items-center justify-center text-[14px] font-semibold shrink-0">
           {getInitials(user.name)}
         </div>
         <div className="min-w-0">
