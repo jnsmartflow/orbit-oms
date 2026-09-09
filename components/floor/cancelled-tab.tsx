@@ -136,7 +136,7 @@ export function CancelledTab({
                       {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
                       {row.priorityLevel === 1 && <span className="ml-1 text-[#ef4444]">⚡</span>}
                       {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}
-                      {row.isTint && <Droplet size={12} className="ml-1 inline-block align-[-1px] text-[#7c3aed]" />}
+                      {row.isTint && <Droplet size={12} className="ml-1 inline-block align-[-1px] text-tint-600" />}
                       {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}
                       {isRedirect && <div className="text-[11px] text-[#6d28d9]">→ ship-to changed</div>}
                     </td>

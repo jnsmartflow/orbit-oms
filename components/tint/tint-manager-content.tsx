@@ -870,7 +870,7 @@ export function TintManagerContent() {
                           <span className={cn(
                             "text-[9px] font-medium px-1.5 py-0.5 rounded border",
                             mc.orderType === "tint"
-                              ? "bg-purple-50 text-purple-600 border-purple-200"
+                              ? "bg-tint-bg text-tint-600 border-tint-bd"
                               : "bg-gray-50 text-gray-500 border-gray-200",
                           )}>
                             {mc.orderType === "tint" ? "Tint" : "Non-Tint"}

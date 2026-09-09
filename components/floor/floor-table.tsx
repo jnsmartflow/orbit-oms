@@ -512,7 +512,7 @@ export function FloorTable({
                   <Droplet
                     size={12}
                     className="ml-1 inline-block align-[-1px]"
-                    style={{ color: "#7c3aed" }}
+                    style={{ color: "#0284C7" }}
                   />
                 )}
                 {isSite && (

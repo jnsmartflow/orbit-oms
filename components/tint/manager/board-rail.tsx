@@ -204,7 +204,7 @@ export function BoardRail({
                     </span>
                   )}
                   {o.manualTintEntry && (
-                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200" title="Manually pulled into tint">
+                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-tint-bg text-tint-700 border-tint-bd" title="Manually pulled into tint">
                       Manual
                     </span>
                   )}

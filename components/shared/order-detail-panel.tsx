@@ -273,7 +273,7 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
                         <span className="text-gray-600 truncate">{li.skuDescription}</span>
                         <span className="text-right text-gray-700 tabular-nums">{li.unitQty}</span>
                         <span className="text-right text-gray-500 tabular-nums">{li.volumeLine != null ? Math.round(li.volumeLine) : "—"}</span>
-                        <span className="text-center">{li.isTinting ? <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> : <span className="text-gray-300">—</span>}</span>
+                        <span className="text-center">{li.isTinting ? <span className="w-2 h-2 rounded-full bg-tint-600 inline-block" /> : <span className="text-gray-300">—</span>}</span>
                       </div>
                     ))}
                   </div>

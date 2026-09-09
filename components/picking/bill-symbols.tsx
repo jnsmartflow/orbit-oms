@@ -50,7 +50,7 @@ export function hasBillSymbols(row: BillSymbolSource): boolean {
 // dealer name above them.
 const KEY_COLOR   = "#fcd34d"; // ★ key dealer
 const URGENT_COLOR = "#fca5a5"; // ⚡ urgent
-const TINT_COLOR  = "#e9d5ff"; // 🎨 tint
+const TINT_COLOR  = "#BAE6FD"; // 🎨 tint
 const SMU_COLOR   = "#c7d2fe"; // the bare SMU number
 
 /**

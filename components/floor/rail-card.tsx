@@ -305,7 +305,7 @@ export function RailCard({
           {card.isTint && (
             <Droplet
               size={13}
-              className={dropletReady ? "text-[#16a34a]" : "text-[#7c3aed]"}
+              className={dropletReady ? "text-[#16a34a]" : "text-tint-600"}
              
             />
           )}

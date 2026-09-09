@@ -15,7 +15,7 @@ import type { StatusCounts } from "./status-pill";
 const SEGMENTS: Array<{ key: "done" | "needsCheck" | "withPicker" | "waiting"; color: string }> = [
   { key: "done", color: "#22c55e" },
   { key: "needsCheck", color: "#fbbf24" },
-  { key: "withPicker", color: "#a78bfa" },
+  { key: "withPicker", color: "#0284C7" },
   { key: "waiting", color: "#d1d5db" },
 ];
 

@@ -27,7 +27,7 @@ export function TintStrip({ tint }: { tint: TintState }) {
     <>
       <div
         className={`mt-[9px] flex items-center gap-[7px] rounded-md px-[9px] py-[6px] text-[11px] ${
-          ready ? "bg-[#f0fdf4] text-[#15803d]" : "bg-[#f5f3ff] text-[#5b21b6]"
+          ready ? "bg-[#f0fdf4] text-[#15803d]" : "bg-tint-bg text-tint-700"
         }`}
       >
         <Droplet size={12} className="flex-shrink-0" />
@@ -40,7 +40,7 @@ export function TintStrip({ tint }: { tint: TintState }) {
       </div>
       {hasShades && (
         <div className={`mt-[6px] h-[3px] overflow-hidden rounded-sm ${ready ? "bg-[#dcfce7]" : "bg-[#e9e3fb]"}`}>
-          <span className={`block h-full ${ready ? "bg-[#22c55e]" : "bg-[#7c3aed]"}`} style={{ width: `${pct}%` }} />
+          <span className={`block h-full ${ready ? "bg-[#22c55e]" : "bg-tint-600"}`} style={{ width: `${pct}%` }} />
         </div>
       )}
     </>

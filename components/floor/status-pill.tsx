@@ -27,7 +27,7 @@ export function rowStatus(row: StatusInput): FloorStatus {
 
 const META: Record<FloorStatus, { label: string; cls: string }> = {
   waiting: { label: "Waiting", cls: "bg-[#f3f4f6] text-[#6b7280]" },
-  withPicker: { label: "With picker", cls: "bg-[#ede9fe] text-[#6d28d9]" },
+  withPicker: { label: "With picker", cls: "bg-tint-bg text-tint-700" },
   needsCheck: { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" },
   done: { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" },
 };

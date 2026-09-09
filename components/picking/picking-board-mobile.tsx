@@ -510,7 +510,7 @@ function PickingCard({
         {row.priorityLevel === 1 && (
           <Zap size={14} className={dup ? "" : "text-amber-500 fill-amber-500"} style={iconOnRed} />
         )}
-        {row.isTint && <span className="text-[13px] text-purple-500 leading-none shrink-0">🎨</span>}
+        {row.isTint && <span className="text-[13px] text-tint-600 leading-none shrink-0">🎨</span>}
         {row.isEarlyReleased && (
           <span
             className={
@@ -531,7 +531,7 @@ function PickingCard({
         {row.isKeyCustomer && (
           <Star size={14} className={dup ? "" : "text-amber-500 fill-amber-500"} style={iconOnRed} />
         )}
-        {row.isTint && <span className="text-[13px] text-purple-500 leading-none shrink-0">🎨</span>}
+        {row.isTint && <span className="text-[13px] text-tint-600 leading-none shrink-0">🎨</span>}
         <UpcomingDayBadge row={row} onRed={dup} />
       </span>
     );
@@ -4642,7 +4642,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                                           ? "#d1d5db"
                                           : free
                                             ? "#15803d"
-                                            : "#6d28d9",
+                                            : "#0369A1",
                                       }}
                                       aria-hidden="true"
                                     />
@@ -4652,7 +4652,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                                           ? "#9ca3af"
                                           : free
                                             ? "#15803d"
-                                            : "#6d28d9",
+                                            : "#0369A1",
                                       }}
                                     >
                                       {refreshing

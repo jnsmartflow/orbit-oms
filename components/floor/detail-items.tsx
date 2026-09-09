@@ -18,7 +18,7 @@ export function DetailItems({ lines, totalLitres }: { lines: FloorDetailLine[]; 
           <div className="min-w-0 flex-1">
             <div className="text-[12px] font-medium leading-[1.4] text-[#111827]">
               {l.name ?? <span className="italic text-[#9ca3af]">{l.sku}</span>}
-              {l.isTint && <span className="ml-1.5 inline-block h-[7px] w-[7px] rounded-full bg-[#7c3aed] align-[1px]" />}
+              {l.isTint && <span className="ml-1.5 inline-block h-[7px] w-[7px] rounded-full bg-tint-600 align-[1px]" />}
             </div>
             <div className="mt-[3px] font-mono text-[10px] text-[#9ca3af]">
               {l.sku}

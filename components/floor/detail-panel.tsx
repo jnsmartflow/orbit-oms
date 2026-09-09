@@ -142,7 +142,7 @@ function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: strin
   if (source === "history") {
     if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
-    if (d.isAssigned) return { label: "With picker", cls: "bg-[#ede9fe] text-[#6d28d9]" };
+    if (d.isAssigned) return { label: "With picker", cls: "bg-tint-bg text-tint-700" };
     return { label: "Not completed", cls: "bg-[#f3f4f6] text-[#6b7280]" };
   }
   if (source === "cancelled") return { label: "Cancelled", cls: "bg-[#fef2f2] text-[#b91c1c]" };
@@ -150,13 +150,13 @@ function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: strin
   if (source === "floor") {
     if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
-    if (d.isAssigned) return { label: "With picker", cls: "bg-[#ede9fe] text-[#6d28d9]" };
+    if (d.isAssigned) return { label: "With picker", cls: "bg-tint-bg text-tint-700" };
     return { label: "Waiting", cls: "bg-[#f3f4f6] text-[#6b7280]" };
   }
   // rail
-  if (d.workflowStage === "pending_tint_assignment") return { label: "Tint · Pending", cls: "bg-[#ede9fe] text-[#6d28d9]" };
-  if (d.workflowStage === "tint_assigned") return { label: "Tint · Assigned", cls: "bg-[#ede9fe] text-[#6d28d9]" };
-  if (d.workflowStage === "tinting_in_progress") return { label: "Tint · Mixing", cls: "bg-[#ede9fe] text-[#6d28d9]" };
+  if (d.workflowStage === "pending_tint_assignment") return { label: "Tint · Pending", cls: "bg-tint-bg text-tint-700" };
+  if (d.workflowStage === "tint_assigned") return { label: "Tint · Assigned", cls: "bg-tint-bg text-tint-700" };
+  if (d.workflowStage === "tinting_in_progress") return { label: "Tint · Mixing", cls: "bg-tint-bg text-tint-700" };
   return { label: "Waiting for you", cls: "bg-[#f3f4f6] text-[#6b7280]" };
 }
 
@@ -534,7 +534,7 @@ function PanelBody({
             </span>
           )}
           {d.isTint && (
-            <span className="inline-flex items-center gap-1 rounded-[4px] bg-[#f5f3ff] px-2 py-[3px] text-[10px] font-semibold text-[#6d28d9]">
+            <span className="inline-flex items-center gap-1 rounded-[4px] bg-tint-bg px-2 py-[3px] text-[10px] font-semibold text-tint-700">
               <Droplet size={11} /> Tint
             </span>
           )}

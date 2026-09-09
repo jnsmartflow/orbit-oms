@@ -46,7 +46,7 @@ export function AssignContextBanner({
   const onPending = contextMode === "pending";
 
   return (
-    <div className="flex items-center gap-2.5 border-b border-t-gray-100 border-l-[3px] border-b-gray-200 border-l-[#7c3aed] bg-[#f5f3ff] px-3.5 py-2 text-[11.5px] text-[#5b21b6]">
+    <div className="flex items-center gap-2.5 border-b border-t-gray-100 border-l-[3px] border-b-gray-200 border-l-tint-600 bg-tint-bg px-3.5 py-2 text-[11.5px] text-tint-700">
       <span className="font-semibold">Assigning to {pickerName}</span>
 
       <span className="text-[10.5px] opacity-80">
@@ -61,7 +61,7 @@ export function AssignContextBanner({
       <button
         type="button"
         onClick={onToggleMode}
-        className="rounded-[4px] px-1.5 py-px text-[10.5px] font-semibold underline decoration-[#7c3aed]/40 underline-offset-2 hover:bg-white/60 hover:decoration-[#7c3aed]"
+        className="rounded-[4px] px-1.5 py-px text-[10.5px] font-semibold underline decoration-tint-600/40 underline-offset-2 hover:bg-white/60 hover:decoration-tint-600"
       >
         {onPending ? `Show what he's holding (${currentCount})` : `Show bills to assign (${pendingCount})`}
       </button>
@@ -71,7 +71,7 @@ export function AssignContextBanner({
         onClick={onCancel}
         aria-label="Stop assigning to this picker"
         title="Stop assigning to this picker"
-        className="ml-auto flex h-5 items-center gap-1 rounded-[4px] px-1.5 text-[10.5px] font-semibold text-[#5b21b6] hover:bg-white/60"
+        className="ml-auto flex h-5 items-center gap-1 rounded-[4px] px-1.5 text-[10.5px] font-semibold text-tint-700 hover:bg-white/60"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
           <path d="M6 6l12 12M18 6L6 18" />

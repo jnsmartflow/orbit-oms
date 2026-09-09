@@ -201,7 +201,7 @@ function PlusBtn({ id, type, onStatusPopover }: {
 // ── Section header ───────────────────────────────────────────────────────────
 
 const SCHEME_MAP = {
-  teal:  { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-tint-600", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
+  neutral: { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-ink-400",  pill: "bg-gray-100 text-gray-700 border border-gray-200" },
   amber: { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-amber-400", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
   blue:  { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-blue-400",  pill: "bg-gray-100 text-gray-700 border border-gray-200" },
   green: { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-green-400", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
@@ -212,7 +212,7 @@ function SectionHeader({ dotClass, label, count, volume, colorScheme }: {
   label:       string;
   count:       number;
   volume:      number;
-  colorScheme: "teal" | "amber" | "blue" | "green";
+  colorScheme: "neutral" | "amber" | "blue" | "green";
 }) {
   const s = SCHEME_MAP[colorScheme];
   const volStr = volume > 0 ? `${Math.round(volume).toLocaleString()} L` : "—";
@@ -469,7 +469,7 @@ export function TintTableView({
             {ageBadge && <span className={`text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] border leading-none ${ageBadge.className}`}>{ageBadge.text}</span>}
             {order.manualTintEntry && (
               <span
-                className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200 leading-none"
+                className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-tint-bg text-tint-700 border-tint-bd leading-none"
                 title="Manually pulled into tint"
               >
                 Manual
@@ -641,7 +641,7 @@ export function TintTableView({
 
       {/* ── Section 1: Pending Assignment ──────────────────────────────────── */}
       <div className="mb-4">
-        <SectionHeader dotClass="bg-tint-600" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="teal" />
+        <SectionHeader dotClass="bg-ink-400" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="neutral" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
           <table style={tableStyle}>
             <Colgroup />

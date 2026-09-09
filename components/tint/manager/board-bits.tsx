@@ -92,7 +92,7 @@ export function formatSmu(smu: string | null | undefined): string | null {
  */
 const STATUS_META: Record<BoardRowStatus, { label: string; cls: string }> = {
   assigned:            { label: "Assigned",    cls: "bg-[#f3f4f6] text-[#6b7280]" },
-  tinting_in_progress: { label: "In Progress", cls: "bg-[#ede9fe] text-[#6d28d9]" },
+  tinting_in_progress: { label: "In Progress", cls: "bg-tint-bg text-tint-700" },
   paused:              { label: "Paused",      cls: "bg-[#fef3c7] text-[#b45309]" },
   tinting_done:        { label: "Done",        cls: "bg-[#dcfce7] text-[#15803d]" },
 };

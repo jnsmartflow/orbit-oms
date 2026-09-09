@@ -71,7 +71,7 @@ export function SkuDetailsSheet({
               {lineItems.length} line{lineItems.length !== 1 ? "s" : ""}
             </span>
             <span className="text-[11px] text-gray-300">·</span>
-            <span className="text-[11px] font-semibold text-violet-600">
+            <span className="text-[11px] font-semibold text-tint-600">
               {lineItems.filter((l) => l.isTinting).length} tint
             </span>
           </div>
@@ -86,7 +86,7 @@ export function SkuDetailsSheet({
                 className={cn(
                   "rounded-xl border p-3.5",
                   line.isTinting
-                    ? "bg-violet-50/60 border-violet-200"
+                    ? "bg-tint-bg/60 border-tint-bd"
                     : "bg-gray-50 border-gray-200",
                 )}
               >
@@ -94,12 +94,12 @@ export function SkuDetailsSheet({
                 <div className="flex items-center justify-between mb-1.5">
                   <span className={cn(
                     "font-mono text-[11.5px] font-semibold",
-                    line.isTinting ? "text-violet-700" : "text-gray-700",
+                    line.isTinting ? "text-tint-700" : "text-gray-700",
                   )}>
                     {line.skuCodeRaw}
                   </span>
                   {line.isTinting && (
-                    <span className="bg-violet-100 text-violet-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-violet-200">
+                    <span className="bg-tint-bg text-tint-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-tint-bd">
                       TINT
                     </span>
                   )}
