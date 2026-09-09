@@ -11,6 +11,7 @@
 // go through /api/floor/actions. Rail Hold/✕ and the row ⚡ are wired here too.
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
@@ -134,6 +135,19 @@ function reportWrite(label: string, r: { ok: boolean; body: WriteBody }): boolea
 }
 
 export function FloorPage() {
+  // ⏳ TEMPORARY — the only thing this role is read for is whether the By trip
+  // pivot option renders (see the toggle below). It costs no fetch: the session
+  // is hydrated from the server by <SessionProvider> in app/layout.tsx, and
+  // `useSession()` is the house idiom seven other client components already use.
+  //
+  // BOTH ARMS, matching lib/rbac.ts's isSuperuser(): the flag OR the job title.
+  // The role arm is not redundant — CORE §13 records why it stays everywhere
+  // else, and a token minted before the flag shipped carries no claim at all.
+  const { data: authSession } = useSession();
+  const isAdmin =
+    authSession?.user?.isSuperuser === true ||
+    (authSession?.user?.roles ?? [authSession?.user?.role]).includes("admin");
+
   const [scope, setScope] = useState<FloorScope>("All");
   const [data, setData] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -254,15 +268,23 @@ export function FloorPage() {
       // A failure leaves the bands empty and does NOT blank the board — same
       // rule as the hold/cancelled feeds above (FLOOR §5: never throw the page
       // away over a side feed).
-      const tripDateParam =
-        viewMode === "history" && histDate ? histDate : istTodayIso();
-      try {
-        const tripRes = await fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" });
-        if (tripRes.ok) setTrips(((await tripRes.json()).trips ?? []) as TripSummary[]);
-        else { setTrips([]); setSideError((prev) => prev ?? `Trips feed HTTP ${tripRes.status}`); }
-      } catch {
-        setTrips([]);
-        setSideError((prev) => prev ?? "Trips feed unreachable");
+      //
+      // ⏳ TEMPORARY — SKIPPED ENTIRELY for a non-admin while By trip is
+      // admin-only (see the pivot toggle). They cannot reach the view, so the
+      // request would be a round trip per board reload for a payload nothing
+      // renders. Remove this guard in the same step that removes the pivot
+      // gate.
+      if (isAdmin) {
+        const tripDateParam =
+          viewMode === "history" && histDate ? histDate : istTodayIso();
+        try {
+          const tripRes = await fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" });
+          if (tripRes.ok) setTrips(((await tripRes.json()).trips ?? []) as TripSummary[]);
+          else { setTrips([]); setSideError((prev) => prev ?? `Trips feed HTTP ${tripRes.status}`); }
+        } catch {
+          setTrips([]);
+          setSideError((prev) => prev ?? "Trips feed unreachable");
+        }
       }
 
       setLastSyncedAt(new Date());
@@ -278,7 +300,11 @@ export function FloorPage() {
     // `scope` is NOT here on purpose — every fetch is unscoped and the chips are
     // a pure client-side narrowing (scopedData below). Adding it back would
     // restore the 3-fetches-per-chip-click behaviour this change removed.
-  }, [viewMode, histDate]);
+    // ⏳ `isAdmin` is here ONLY because the trips feed above is gated on it —
+    // it flips once, from false to true, when the session hydrates, and the
+    // resulting second load() is what fetches the trips. It goes when the gate
+    // goes.
+  }, [viewMode, histDate, isAdmin]);
 
   useEffect(() => {
     void load();
@@ -1190,7 +1216,29 @@ export function FloorPage() {
               const showSlotModes =
                 slotTab !== "all" || mode === "picker" || mode === "group" || mode === "trip";
               const modes = (["flat", "route", "trip", "group", "picker"] as const).filter(
-                (m) => m === "picker" || m === "group" || m === "trip" || showSlotModes,
+                (m) =>
+                  // ⏳ TEMPORARY — By trip is admin-only while it is tested on
+                  // live data (2026-09-09). Everyone else with floor access sees
+                  // the pivot exactly as it was: Flat, By route, By group, By
+                  // picker. No layout change and no extra fetch for them — the
+                  // trips feed rides load() either way and costs one request
+                  // nobody sees the result of.
+                  //
+                  // 🔴 REMOVE THIS CLAUSE IN THE STEP THAT SHIPS RELEASE. That is
+                  // the step where the view stops being a read-only preview and
+                  // starts doing the job, and it is the natural moment to widen
+                  // it to everyone who holds `floor` canEdit.
+                  //
+                  // ⚠ A UI GATE ONLY, and deliberately not a permission. There is
+                  // no new page key, no `role_permissions` row and no
+                  // `app_settings` flag — adding any of those would leave an
+                  // artefact to clean up (the Support / Planning retirements are
+                  // on record for how much work that is), and the routes behind
+                  // this view already gate on `floor` canEdit server-side. This
+                  // hides a button; it does not protect anything.
+                  m === "trip"
+                    ? isAdmin
+                    : m === "picker" || m === "group" || showSlotModes,
               );
               return (
                 <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">

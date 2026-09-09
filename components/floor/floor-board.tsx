@@ -240,6 +240,14 @@ export function FloorBoard({
   // floated to the top. A trip that leaves simply disappears; a new one arrives
   // at its default (open unless finished).
   const [closedTrips, setClosedTrips] = useState<Set<number>>(new Set());
+  // The At-desk pool's own open route. Starts NULL — every pool route collapsed,
+  // because the pool routinely holds ~197 bills and a flat list of that length is
+  // exactly what the By-route grouping exists to avoid.
+  //
+  // Deliberately NOT `openRoute` above: that one belongs to the By-route view,
+  // which shows a different population. One shared string would make expanding a
+  // route in the pool silently expand it on a view nobody is looking at.
+  const [openPoolRoute, setOpenPoolRoute] = useState<string | null>(null);
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
@@ -595,14 +603,26 @@ export function FloorBoard({
     body = (
       <div className="flex flex-col gap-3.5 p-3.5">
         <DeskPool
-          count={poolRows.length}
-          litres={sumLitres(poolRows)}
-          gateOn={gateOn}
+          // Spine-sorted before grouping, exactly as the By-route branch does —
+          // `sort` is FLOOR_SPINE (lib/floor/sort.ts), imported, never
+          // reimplemented or reordered.
+          rows={sort(poolRows)}
+          nowMs={nowMs}
+          // `gateOn` rides `selProps` below — both its arms carry it, so passing
+          // it here as well is the same value twice and TS flags the shadowing.
           canBuild={!isHistory}
           selectedCount={
             selection ? poolRows.filter((r) => selection.has(r.orderId)).length : 0
           }
           onBuild={onBuildTrip}
+          // Its own open-route state, separate from the By-route view's
+          // `openRoute`: the two show different populations, and sharing one
+          // string would make expanding "Adajan" in the pool silently expand it
+          // on a view the operator is not looking at.
+          openRoute={openPoolRoute}
+          onToggleRoute={(name) => setOpenPoolRoute((cur) => (cur === name ? null : name))}
+          variant={variant}
+          {...selProps}
         />
 
         {tripsLoading && trips === null && (
