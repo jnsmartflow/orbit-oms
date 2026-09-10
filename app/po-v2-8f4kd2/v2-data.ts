@@ -489,9 +489,47 @@ export const MEMBER_IMAGES: ReadonlySet<string> = new Set([
  * members[0]. Reorder the members tomorrow and the fallback follows the new
  * leader with nothing to edit.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 WHERE AN ART FILE LIVES — TWO FOLDERS, ONE SWITCH.
+ *
+ *   public/PO/board/    this page's own TILE art
+ *   public/PO/drawer/   this page's own MEMBER art
+ *   public/category-images/   LEGACY
+ *
+ * public/PO/ is /po-v2-8f4kd2's own art, cut out on transparency and shot for
+ * this board. public/category-images/ is what the page started on: padded
+ * opaque squares, shared in spirit with the older surfaces. It is not frozen
+ * and it is not wrong — it is simply the art that has NOT been replaced yet,
+ * and it SHRINKS every time a tile gets a cut-out. When the last one is
+ * replaced the folder retires.
+ *
+ * 🔴 ONE RULE DECIDES BOTH THINGS. TRANSPARENT_ART already says which slugs
+ * are cut-outs, and a cut-out is exactly what lives in PO/. So membership
+ * settles the folder AND the rendering — no square, no multiply, a
+ * drop-shadow. Two parallel switches would drift the first time somebody added
+ * a file to one and forgot the other, and the failure is silent: a tin
+ * multiplied into a tint looks muddy rather than broken.
+ *
+ * board vs drawer is decided by WHICH RESOLVER IS ASKING, not by a second
+ * list. tileImage says "board", memberImage and variantImage say "drawer".
+ * That is why the same slug can be a tile and a member — pu-enamel is the
+ * More Enamels TILE and the PU Enamel MEMBER, and the two folders hold the
+ * same bytes on purpose.
+ *
+ * ⚠ A WRONG PREFIX SHOWS AS A BLANK TILE, not an error. The board is the
+ * check after any change here.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function artPath(slug: string, kind: "board" | "drawer"): string {
+  return TRANSPARENT_ART.has(slug)
+    ? `/PO/${kind}/${slug}.webp`
+    : `/category-images/${slug}.webp`;
+}
+
 export function memberImage(sap: string): string | null {
   const slug = MEMBER_SLUG.get(sap);
-  if (slug !== undefined && MEMBER_IMAGES.has(slug)) return `/category-images/${slug}.webp`;
+  if (slug !== undefined && MEMBER_IMAGES.has(slug)) return artPath(slug, "drawer");
   const leads = LEADER_TILE.get(sap);
   return leads !== undefined ? boardTileArtFor(leads).src : null;
 }
@@ -595,7 +633,7 @@ export function tileImage(slug: string): string | null {
   // All three presence sets, because an alias deliberately points OUT of
   // TILE_IMAGES — into a product photo or, for Smart Choice, a variant tin.
   return TILE_IMAGES.has(file) || MEMBER_IMAGES.has(file) || VARIANT_IMAGES.has(file)
-    ? `/category-images/${file}.webp` : null;
+    ? artPath(file, "board") : null;
 }
 
 /**
@@ -618,7 +656,7 @@ export function variantImage(sap: string, option: string): string | null {
   const tile = boardTileSlugFor(sap);
   if (!tile) return null;
   const slug = `${tile}-${optionSlug(option)}`;
-  return VARIANT_IMAGES.has(slug) ? `/category-images/${slug}.webp` : null;
+  return VARIANT_IMAGES.has(slug) ? artPath(slug, "drawer") : null;
 }
 
 /** "Acrylic Distemper" -> "acrylic-distemper". Filenames only, never a value. */
