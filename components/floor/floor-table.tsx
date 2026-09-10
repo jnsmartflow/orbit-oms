@@ -9,7 +9,7 @@
 // toggle). The ⋯ (details) button stays INERT — the detail panel is a later
 // step. On history/upcoming variants everything stays read-only.
 //
-// COLUMNS: ☐ · OBD+date · Invoice · Ship to · Route · Due · Vol · KG · Article
+// COLUMNS: ☐ · OBD+date · Invoice · Ship to · Route · Due · Vol/KG · Article
 //          · Status
 //  - The # and Picker columns were REMOVED 2026-09-10 with the trip desk. See
 //    the width arrays for the before/after counts.
@@ -22,7 +22,13 @@
 //    instead of hiding in a 10px line underneath, "Today" is spelled out, a
 //    future date reads blue and an overdue one red, and the age chip moved in
 //    beside it. The `showSlot` flag is retired — see `showInvoice` below.
-//  - Vol and KG right-aligned, plain numbers. Gift lines are OUT OF SCOPE.
+//  - Vol and KG are ONE STACKED COLUMN (2026-09-10 c): litres on line one,
+//    kilos underneath, both right-aligned and tabular. Two side-by-side
+//    numeric columns cost two lots of 28px cell padding and two column
+//    minimums for two short values that are read together, and ten positions
+//    did not fit — Due, Status and Article were all clipping on the live
+//    screen. Stacking them is one position for the same two facts, and it is
+//    the shape the OBD and Invoice cells already use. Gift lines OUT OF SCOPE.
 //  - KG renders an EM DASH at zero, never "0" — see the cell.
 //  - Article reuses formatArticleTag (D/C/T/B), CLAUDE_SUPPORT §4.19.
 //  - The ☐ and # columns use NARROW padding so the row number never truncates
@@ -151,24 +157,43 @@ function fmtDay(dateOnly: string | null): string {
 }
 
 /**
- * The Due column's day label: "Today", or "Sat 12", or "Mon 8 Sep".
+ * The Due column's day label — "Sat 12", or "Mon 8 Sep", or NULL for the day the
+ * board is anchored on.
  *
- * ⚠ THE MONTH APPEARS ONLY WHEN IT DIFFERS from the day the board is anchored
- * on. The mockup writes "Mon 8" and "Sat 12", which is right for the ordinary
- * case — a bill a few days either side of today — and wrong for the one that
- * matters most: a badly carried-over bill dated 8 August, on a board anchored
- * in September, would read "Mon 8" and be taken for the 8th of this month. The
- * age chip beside it says 33d, but the DATE would be a lie, so the month goes
- * back in exactly when it is load-bearing. Today's board carries six overdue
- * bills, all in September (measured 2026-09-10), so this branch is quiet now
- * and correct when it is not.
+ * 🔴 NULL ON THE ANCHOR DAY, WHICH MAKES THE CELL SHOW A BARE TIME. READ THIS
+ * BEFORE "FIXING" IT, because it looks exactly like the landmine FLOOR §10
+ * records and it is the opposite of it.
+ *
+ * THE OLD BUG: the slot tabs printed "10:30" and the date appeared NOWHERE — not
+ * on the tab, not on the row, not in the header. Wednesday's 10:30 and
+ * Thursday's 10:30 sat in one pile and there was no way, anywhere on the screen,
+ * to tell them apart. The bare time was unreadable because it was unqualified.
+ *
+ * WHY THIS IS SAFE: the date is printed the moment it is not the anchor day, on
+ * the row itself, in colour. So a bare time now MEANS the anchor day and can
+ * mean nothing else — "10:30" and "Sat 12 · 10:30" are two different cells, and
+ * a reader who sees no date has been told the date. Spelling out "Today" on the
+ * ~80% of rows that are due today (53 of 66, measured 2026-09-10) cost the
+ * column enough width to clip the ones that are not, which turned the honest
+ * label into the reason the useful one was unreadable.
+ *
+ * ⚠ "ANCHOR DAY", NOT "TODAY". In History the board shows a past day and its
+ * rows are that day's, so the bare time means the day on screen. That is why
+ * this takes `anchorIso` rather than reading a clock.
+ *
+ * ⚠ THE MONTH APPEARS ONLY WHEN IT DIFFERS from the anchor. The mockup writes
+ * "Mon 8" and "Sat 12", which is right for a bill a few days either side of
+ * today and wrong for the case that matters most: a badly carried-over bill
+ * dated 8 August, on a September board, would read "Mon 8" and be taken for the
+ * 8th of this month. The age chip beside it says 33d, but the DATE would be a
+ * lie, so the month goes back in exactly when it is load-bearing.
  *
  * ⚠ NEVER `new Date(str)` — both arguments are date-only "YYYY-MM-DD" and an
  * offset-less string is read in the HOST's timezone (CORE §3). Same Date.UTC
  * parse fmtDay above uses.
  */
-function fmtDueDay(dateOnly: string, anchorIso: string): string {
-  if (dateOnly === anchorIso) return "Today";
+function fmtDueDay(dateOnly: string, anchorIso: string): string | null {
+  if (dateOnly === anchorIso) return null;
   const [y, m, d] = dateOnly.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
   const sameMonth = dateOnly.slice(0, 7) === anchorIso.slice(0, 7);
@@ -335,34 +360,56 @@ export function FloorTable({
   // right. Moving a column means moving its <col> width, its <th> and its <td>
   // together, in the same commit.
   //
-  // ── RECUT 2026-09-10 (b) — DUE AND KG ARRIVE ──────────────────────────────
+  // ── RECUT 2026-09-10 (c) — TEN POSITIONS DID NOT FIT ──────────────────────
   //
-  // Due sits after Route, where the old Slot column sat on the arms that had
-  // one. KG sits immediately after Vol: they are the two size numbers and a
-  // planner reads them as a pair against `vehicle_master.capacityKg`.
+  // On the live screen Due rendered "Today · 10:…", Status "Needs check 16…"
+  // and Article clipped too. Two changes bought the room back, and neither
+  // removes a fact from the row:
   //
-  // 🔴 COUNTS, BEFORE → AFTER. "Before" is this morning's recut (which had
-  // itself just taken # and Picker out); "after" is this change. Every arm
-  // sums to 100 (CLAUDE_UI §27), and the header cells below match entry for
-  // entry — count them.
+  //   1. Due drops the word "Today" — see fmtDueDay. 53 of 66 rows on the
+  //      board are due today, so ~80% of them were spending 40px on a word
+  //      whose absence now says the same thing.
+  //   2. Vol and KG STACK into one position. They are two short numbers read
+  //      as a pair; side by side they cost two lots of 28px padding and two
+  //      column minimums, and the pair is exactly the shape the OBD and
+  //      Invoice cells already stack.
   //
-  //   interactive + invoice   8 → 10   (gained Due, KG)
-  //   interactive + no-invoice 8 →  9   (gained Due, KG; lost the old Slot col)
-  //   read-only  + invoice    7 →  9   (gained Due, KG)
-  //   read-only  + no-invoice 7 →  8   (gained Due, KG; lost the old Slot col)
+  // 🔴 COUNTS, BEFORE → AFTER. Every arm sums to 100 (CLAUDE_UI §27) and the
+  // header cells below match entry for entry — count all three lists.
   //
-  // The two no-invoice arms come out one SHORTER than the naive +2 because the
-  // column they used to call "Slot" is the column now called "Due" — it is not
-  // added beside itself. That is the whole reconciliation this recut turned on.
+  //   interactive + invoice     10 → 9
+  //   interactive + no-invoice   9 → 8
+  //   read-only  + invoice       9 → 8
+  //   read-only  + no-invoice    8 → 7
   //
-  //                        ☐  OBD INV Ship Rt Due Vol KG Art Status
+  // WHERE THE RECOVERED WIDTH WENT, sized from live content measured
+  // 2026-09-10 (ship-to max 33 chars, route max 11 "IGT / CROSS", article tag
+  // max 19 chars displayed, litres max "3,507 L", kilos max "4,551 kg"):
+  //   Status  10 → 18   the pill "Needs check · 16m" is ~137px WITH padding,
+  //                     and the two hover buttons add another 58px
+  //   Ship to 20 → 17   it ellipsises by design; a name column always will,
+  //                     and the full name is in the detail panel. It gave
+  //                     width rather than took it.
+  //   Route    8 →  9   ⚠ THE ONE POINT ROUTE TOOK IS FROM SHIP TO, AND THAT
+  //                     IS NOT HIDING A PROBLEM. Route content is BOUNDED —
+  //                     the longest name in route_master is "IGT / CROSS" at
+  //                     11 characters, ~94px with padding — so it can be made
+  //                     to fit exactly and then never clips. Ship-to names are
+  //                     unbounded (33 characters on today’s board) and will
+  //                     ellipsise at ANY width this table can afford, which is
+  //                     why the point is worth more there than here.
+  //   Article  9 → 12   "168 D · 35 C · 11 T" is ~136px with padding
+  //   Due     13 → 12   it needs less now that "Today" is gone
+  //   Vol/KG 6+6 → 7    one position instead of two
+  //
+  //                        ☐  OBD INV Ship Rt Due V/KG Art Status
   const widths = interactive
     ? showInvoice
-      ? [4, 14, 10, 20, 8, 13, 6, 6, 9, 10] //                              = 100
-      : [4, 15, 22, 9, 14, 6, 6, 10, 14] //  ☐ OBD Ship Rt Due Vol KG Art St = 100
+      ? [3, 13, 9, 17, 9, 12, 7, 12, 18] //                                = 100
+      : [3, 14, 21, 9, 12, 7, 14, 20] //   ☐ OBD Ship Rt Due V/KG Art Status = 100
     : showInvoice
-      ? [15, 11, 21, 8, 13, 6, 6, 9, 11] //  OBD INV Ship Rt Due Vol KG Art St = 100
-      : [16, 23, 9, 14, 6, 6, 11, 15]; //    OBD Ship Rt Due Vol KG Art Status = 100
+      ? [14, 10, 19, 9, 12, 7, 12, 17] //  OBD INV Ship Rt Due V/KG Art Status = 100
+      : [15, 23, 10, 13, 8, 14, 17]; //    OBD Ship Rt Due V/KG Art Status   = 100
   // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. `toggleAll` is
   // per-TABLE (lib/floor/selection.ts documents it as per band), and the
   // upcoming rows are in this table — so a select-all that skipped them would
@@ -396,8 +443,7 @@ export function FloorTable({
           <th className={HEAD_TH}>Ship to</th>
           <th className={HEAD_TH}>Route</th>
           <th className={HEAD_TH}>Due</th>
-          <th className={`${HEAD_TH} text-right`}>Vol</th>
-          <th className={`${HEAD_TH} text-right`}>KG</th>
+          <th className={`${HEAD_TH} text-right`}>Vol / KG</th>
           <th className={HEAD_TH}>Article</th>
           <th className={HEAD_TH}>Status</th>
         </tr>
@@ -500,10 +546,11 @@ export function FloorTable({
     // here would show the operator a date the bill does not have.
     // Recorded in code-discovery-2026-09-10-dates-weight-orphans.md §A5.2.
     //
-    // 🔴 NEVER A BARE TIME. The slot tabs showed "10:30" with the date
-    // hidden, so Wednesday's 10:30 and Thursday's 10:30 read as one queue
-    // (FLOOR §10). Every state below carries the day or says there is no
-    // slot at all.
+    // 🔴 A BARE TIME MEANS THE ANCHOR DAY AND NOTHING ELSE. The day is
+    // printed the moment it is not the anchor day, so the absence of a
+    // day IS the statement. This is not the FLOOR §10 landmine, where the
+    // date appeared nowhere on the screen at all — read fmtDueDay's header
+    // before changing it back.
     //
     // Four states, decided by the row's own `zone` and `ageDays` — both
     // computed server-side by the ONE expression lib/picking/queue.ts:763
@@ -530,25 +577,43 @@ export function FloorTable({
         : future
           ? "font-semibold text-[#2563eb]"
           : "font-semibold text-gray-900";
+      // null on the anchor day — see fmtDueDay. The three cases below are
+      // exhaustive over (day present?) × (window present?), and the
+      // (2) case is the ~80% one.
+      const dayLabel = fmtDueDay(target, anchorDay);
+      const ageChip = overdue ? (
+        // THE EXISTING AGE CHIP, MOVED — not a second one. It was in the
+        // OBD cell until 2026-09-10 (b). Red here, where it used to be
+        // grey: it sits beside a red date now, and one signal in two
+        // colours reads as two different facts.
+        <span
+          title={`${row.ageDays} day${row.ageDays === 1 ? "" : "s"} past its dispatch date`}
+          className="ml-1.5 rounded-[3px] bg-[#fdecea] px-[5px] py-px font-mono text-[9.5px] font-bold text-[#b42318]"
+        >
+          {row.ageDays}d
+        </span>
+      ) : null;
+
+      // (2) The anchor day. Bare time, in the plain colour — an anchor-day
+      // row is neither future nor overdue, so `dayCls` is the plain arm by
+      // construction and the time carries it alone.
+      if (dayLabel === null) {
+        return (
+          <>
+            {/* A date with no window is representable in the schema and was
+                0 rows of 66 on 2026-09-10. It says the day rather than
+                rendering an empty cell. */}
+            <span className={dayCls}>{row.windowTime ?? "Today"}</span>
+            {ageChip}
+          </>
+        );
+      }
+      // (3) and (4) — any other day, with or without a window.
       return (
         <>
-          <span className={dayCls}>{fmtDueDay(target, anchorDay)}</span>
-          {/* A date with no window is not reachable on today's board (0
-              rows of 66, measured 2026-09-10) but is representable in the
-              schema, so it renders the day alone rather than " · null". */}
+          <span className={dayCls}>{dayLabel}</span>
           {row.windowTime && <span className="text-gray-500"> · {row.windowTime}</span>}
-          {/* THE EXISTING AGE CHIP, MOVED — not a second one. It was in
-              the OBD cell until this change. Red here, where it used to be
-              grey: it now sits beside a red date and one signal in two
-              colours reads as two different facts. */}
-          {overdue && (
-            <span
-              title={`${row.ageDays} day${row.ageDays === 1 ? "" : "s"} past its dispatch date`}
-              className="ml-1.5 rounded-[3px] bg-[#fdecea] px-[5px] py-px font-mono text-[9.5px] font-bold text-[#b42318]"
-            >
-              {row.ageDays}d
-            </span>
-          )}
+          {ageChip}
         </>
       );
     })();
@@ -842,32 +907,38 @@ export function FloorTable({
           {chipFor?.(row)}
         </td>
         <td className={`${TD} whitespace-nowrap tabular-nums`}>{dueCell}</td>
-        {/* formatLitres, not the raw Float. A single row rarely shows the
+        {/* ── VOL / KG, ONE STACKED CELL (2026-09-10 c) ──────────────────
+            Litres on line one, kilos underneath, both right-aligned and
+            tabular so the digits line up down the column. Two positions
+            became one because ten did not fit and these two are the
+            cheapest pair to merge: they are short, they are read
+            together, and the row already stacks OBD over its date and
+            invoice over its date.
+
+            formatLitres, not the raw Float. A single row rarely shows the
             fault, but the same function everywhere is what keeps a row,
             its band header and the pool header from disagreeing by a
-            decimal on one screen. Display only — nothing stored moves. */}
-        <td className={`${TD} text-right tabular-nums`}>{formatLitres(row.volumeLitres ?? 0)}</td>
-        {/* KG (2026-09-10) — `weightKg` has ridden this payload since
-            2026-08-11 (lib/floor/queries.ts:860) and was rendered by
-            nothing. No query changed to put it on screen.
+            decimal on one screen. Display only — nothing stored moves.
 
-            🔴 ZERO PRINTS AS AN EM DASH. formatWeightKg returns null for
-            0 because the importer stores a missing SAP gross weight as 0
+            🔴 AN UNKNOWN WEIGHT PRINTS AN EM DASH ON ITS OWN LINE, never
+            "0". formatWeightKg returns null for 0 because the importer
+            stores a missing SAP gross weight as 0
             (app/api/import/obd/route.ts:600 and three siblings), so the
             two are the same value in the column. A printed "0" would let
             a planner load a van against vehicle_master.capacityKg and be
-            short by whatever that bill really weighs; a dash says the
-            number is missing, which is the true statement. 81 live orders
-            are at 0 today, none of them on this board.
-
-            Right-aligned and tabular, matching Vol — the two size numbers
-            are read as a pair down the column. */}
+            short by whatever that bill really weighs. The dash keeps the
+            second line occupied so every row in the column is the same
+            height — a cell that collapsed to one line would make the whole
+            table jump row by row. */}
         <td className={`${TD} text-right tabular-nums`}>
-          {weightStr ?? (
-            <span title="No weight recorded for this bill" className="text-[#c6c4d1]">
-              &mdash;
-            </span>
-          )}
+          <div>{formatLitres(row.volumeLitres ?? 0)} L</div>
+          <div className="text-[10px] text-[#9ca3af]">
+            {weightStr !== null ? (
+              `${weightStr} kg`
+            ) : (
+              <span title="No weight recorded for this bill">&mdash;</span>
+            )}
+          </div>
         </td>
         <td className={`${TD} text-[10.5px]`}>
           <span className="text-[#6b7280]">

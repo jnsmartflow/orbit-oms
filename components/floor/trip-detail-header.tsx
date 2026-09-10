@@ -57,11 +57,20 @@ export function TripDetailHeader({
   // Blanks are dropped rather than rendered as dashes: a trip with no vehicle
   // yet is normal, and four em dashes in a row reads as missing data.
   const whoBits = [vehicle, trip.transporterName, trip.driverName].filter(Boolean) as string[];
-  const totalBits = [
-    `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
-    `${counts.total} bill${counts.total === 1 ? "" : "s"}`,
-    `${formatLitres(trip.totalLitres)} L`,
-  ];
+  // ⚠ AN EMPTY TRIP SAYS SO, here as on the rail card (2026-09-10 c). Three
+  // zeroes in a row read as a rendering fault rather than as a fact, and an
+  // empty draft is the state a trip is in for as long as it takes the planner
+  // to go and tick its bills. The Release button below is already disabled and
+  // already explains itself ("Add bills to this trip first"), so this line only
+  // has to stop contradicting it.
+  const isEmpty = counts.total === 0;
+  const totalBits = isEmpty
+    ? ["No bills yet"]
+    : [
+        `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
+        `${counts.total} bill${counts.total === 1 ? "" : "s"}`,
+        `${formatLitres(trip.totalLitres)} L`,
+      ];
 
   return (
     <div className="border-b border-gray-200 px-4 pb-3 pt-3.5">

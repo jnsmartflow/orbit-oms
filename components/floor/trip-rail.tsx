@@ -224,12 +224,23 @@ function TripCard({
         {vehicle ?? <span className="text-[#b45309]">Draft vehicle {trip.seq}</span>}
       </div>
 
-      <div className="text-[11px] tabular-nums text-gray-500">
-        {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {counts.total} bill
-        {counts.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
-      </div>
-
-      {counts.total > 0 && <ProgressBar counts={counts} className="mt-1.5 !h-[5px]" />}
+      {/* ⚠ AN EMPTY TRIP SAYS SO (2026-09-10 c). It used to read
+          "0 stops · 0 bills · 0 L" over an empty progress bar, which is three
+          true numbers arranged to look like a rendering fault. A brand-new draft
+          is the state this card is in most often — the planner creates the trip
+          and then goes to find bills for it — so the ordinary case was the one
+          that looked broken. */}
+      {counts.total === 0 ? (
+        <div className="text-[11px] text-gray-400">No bills yet</div>
+      ) : (
+        <>
+          <div className="text-[11px] tabular-nums text-gray-500">
+            {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {counts.total} bill
+            {counts.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
+          </div>
+          <ProgressBar counts={counts} className="mt-1.5 !h-[5px]" />
+        </>
+      )}
     </button>
   );
 }
