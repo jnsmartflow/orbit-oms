@@ -9,7 +9,9 @@
 // toggle). The ⋯ (details) button stays INERT — the detail panel is a later
 // step. On history/upcoming variants everything stays read-only.
 //
-// COLUMNS: ☐ · # · OBD+date · Invoice · Ship to · Route · Vol · Article · Picker · Status
+// COLUMNS: ☐ · OBD+date · Invoice · Ship to · Route · Vol · Article · Status
+//  - The # and Picker columns were REMOVED 2026-09-10 with the trip desk. See
+//    the width arrays for the before/after counts.
 //  - There is NO per-row Slot column: on All the slot is carried by the band
 //    header, on a slot tab by the active tab (design §7.1). Matches the mockup.
 //  - Vol right-aligned, plain litres. Gift lines are OUT OF SCOPE.
@@ -266,14 +268,31 @@ export function FloorTable({
   // Moving the column means moving its <col> width, its <th> and its <td>
   // together; any one left behind shunts every column to its right.
   //
-  //                        ☐  #  OBD INV Ship Rt Vol Art Pk Status
+  // ── RECUT 2026-09-10 — TWO COLUMNS REMOVED ────────────────────────────────
+  //
+  // The trip desk drops the **#** column and the **Picker** column:
+  //   #      — a row number is a reading aid for a flat list. The desk now reads
+  //            bills under stops and under trips, where the numbering that means
+  //            anything is the STOP's visit order, not the row's position.
+  //   Picker — the planner watches status, not who is holding it. It stays in
+  //            the detail panel with the activity trail. (v3 mockup §04.)
+  //
+  // 🔴 COUNTS, BEFORE → AFTER, because these arrays map POSITIONALLY and a
+  // mismatch shunts every column sideways:
+  //   interactive + invoice   10 → 8   (lost # and Picker)
+  //   interactive + slot       9 → 8   (lost #; that arm never had Picker)
+  //   read-only  + invoice     8 → 7   (lost Picker)
+  //   read-only  + slot        7 → 7   (unchanged — had neither)
+  // Every arm still sums to 100 (CLAUDE_UI §27).
+  //
+  //                        ☐  OBD INV Ship Rt Vol Art Status
   const widths = interactive
     ? showInvoice
-      ? [4, 4, 13, 10, 20, 9, 6, 10, 8, 16] //                            = 100
-      : [4, 4, 14, 20, 10, 9, 7, 12, 20] //  ☐ # OBD Ship Rt Slot Vol Art Status = 100
+      ? [4, 15, 12, 26, 11, 7, 11, 14] //                                  = 100
+      : [4, 15, 26, 11, 10, 7, 12, 15] //  ☐ OBD Ship Rt Slot Vol Art Status = 100
     : showInvoice
-      ? [14, 10, 24, 11, 6, 11, 8, 16] //    OBD INV Ship Rt Vol Art Pk Status  = 100
-      : [16, 24, 12, 9, 7, 13, 19]; //       OBD Ship Rt Slot Vol Art Status    = 100
+      ? [15, 12, 27, 12, 7, 12, 15] //     OBD INV Ship Rt Vol Art Status   = 100
+      : [16, 27, 12, 10, 7, 13, 15]; //    OBD Ship Rt Slot Vol Art Status  = 100
   const allOn = interactive && selection ? isAllSelected(selection, rows) : false;
 
   return (
@@ -296,7 +315,6 @@ export function FloorTable({
               />
             </th>
           )}
-          {interactive && <th className={HEAD_TH_NARROW}>#</th>}
           <th className={HEAD_TH}>OBD</th>
           {showInvoice && <th className={HEAD_TH}>Invoice</th>}
           <th className={HEAD_TH}>Ship to</th>
@@ -304,7 +322,6 @@ export function FloorTable({
           {showSlot && <th className={HEAD_TH}>Slot</th>}
           <th className={`${HEAD_TH} text-right`}>Vol</th>
           <th className={HEAD_TH}>Article</th>
-          {!showSlot && <th className={HEAD_TH}>Picker</th>}
           <th className={HEAD_TH}>Status</th>
         </tr>
       </thead>
@@ -456,11 +473,6 @@ export function FloorTable({
                   )}
                 </td>
               )}
-              {interactive && (
-                <td className={`${TD_NARROW} text-[10.5px] tabular-nums`}>
-                  <span className="text-[#9ca3af]">{i + 1}</span>
-                </td>
-              )}
               {/* On a NON-interactive table (history / upcoming / the read-only
                   "what he's holding" list) the two narrow columns are not
                   rendered, so THIS is the first cell and the bar lands here
@@ -493,6 +505,24 @@ export function FloorTable({
                     className="ml-1.5 rounded-[3px] bg-gray-900 px-[5px] py-px align-[1px] font-mono text-[9.5px] font-semibold text-white"
                   >
                     {shortTripNumber(row.tripNumber)}
+                  </span>
+                )}
+                {/* NO SLOT (2026-09-10) — a bill the dispatch engine could not
+                    schedule. These reach the board through floorBoardWhere's
+                    second arm (lib/floor/queries.ts); before the decision rail
+                    was retired they sat on it instead.
+
+                    ⚠ QUIET, AND NOT AN ERROR. No red, no amber. A bill with no
+                    slot is waiting for a planner to put it on a trip, which is
+                    the ordinary next step and the whole point of the pool. The
+                    chip exists so he can see WHICH bills still need that, not
+                    to flag a fault. */}
+                {row.windowId === null && (
+                  <span
+                    title="No dispatch slot — putting this bill on a trip gives it one"
+                    className="ml-1.5 rounded-[3px] border border-[#e2d7fb] bg-[#f2ecfd] px-[5px] py-px align-[1px] text-[9px] font-bold uppercase tracking-[0.05em] text-[#6d28d9]"
+                  >
+                    no slot
                   </span>
                 )}
                 {(row.ageDays ?? 0) > 0 && (
@@ -653,15 +683,6 @@ export function FloorTable({
                   {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
                 </span>
               </td>
-              {!showSlot && (
-                <td className={TD}>
-                  {row.assignedToName ?? (
-                    <span className="text-[#9ca3af]">
-                      —
-                    </span>
-                  )}
-                </td>
-              )}
               <td className={TD}>{statusCell}</td>
             </tr>
           );

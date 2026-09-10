@@ -75,6 +75,22 @@ const RAIL_STAGES: string[] = STAGE_LADDER
   .filter((d) => d.rank !== null && d.rank < 60)
   .map((d) => d.stage);
 
+/**
+ * The UN-SLOTTED arm — bills the dispatch engine could not schedule.
+ *
+ * 🔴 THIS IS getFloorRail's OWN PREDICATE, EXPORTED SO IT IS NEVER RETYPED.
+ * As of 2026-09-10 it is used in THREE places and all three must be the same
+ * set: the rail feed (which still exists), the board's second arm, and the
+ * live-sync marker's second arm. A second copy is how the board and the marker
+ * come to watch different sets, which is the drift FLOOR §5 exists to prevent.
+ *
+ * Pure — no hide-exclusion, no scope, no clock. Callers AND-merge the hide
+ * themselves, exactly as they do for `floorLiveBaseWhere`.
+ */
+export function floorUnslottedWhere(): Prisma.ordersWhereInput {
+  return { workflowStage: { in: RAIL_STAGES }, dispatchStatus: null, isRemoved: false };
+}
+
 // Step 10 — the render-time slot SUGGESTION is ON. Non-tint bills anchor on
 // arrival; a COMPLETED full (non-split) tint OBD anchors on its completion time.
 // Split tints and unfinished tints still get nothing — see the suggestion block
@@ -199,13 +215,42 @@ export function floorLiveBaseWhere(todayRange: { start: Date; end: Date }): Pris
   };
 }
 
+/**
+ * THE BOARD'S FULL PREDICATE (2026-09-10) — the live set OR the un-slotted set.
+ *
+ * 🔴 A DELIBERATE UNION OF TWO NAMED PREDICATES, NEVER A REMOVED TERM.
+ * The obvious way to put un-slotted bills on the board is to drop
+ * `dispatchStatus: 'dispatch'` from `floorLiveBaseWhere`. That is WRONG and it
+ * was measured: it admits every `pick_checked` bill ever finished, because the
+ * only thing keeping those off the board is the second arm's checked-today
+ * fence. On 2026-09-10 that was **2,545 finished bills onto a board showing 40**
+ * (code-discovery-2026-09-10-noslot-backlog.md §A). Sixty times the real
+ * content, all of it work that is done.
+ *
+ * The union cannot do that: each arm carries its own complete set of terms, so
+ * neither can be widened by the other. Arm 1 is byte-identical to what shipped;
+ * arm 2 is the rail's own predicate.
+ *
+ * 🔴 THE MARKER USES THIS TOO (getFloorLiveMarkerWhere below). Board and marker
+ * share one predicate on purpose — let them drift and the board silently stops
+ * refreshing (FLOOR §5, and the PICKING §10 landmine it comes from).
+ */
+export function floorBoardWhere(todayRange: { start: Date; end: Date }): Prisma.ordersWhereInput {
+  return { OR: [floorLiveBaseWhere(todayRange), floorUnslottedWhere()] };
+}
+
 /** The full live WHERE (base AND the admin hide-exclusion) — what the marker
  *  aggregates over. Uses getISTDayRange() (today), the SAME helper the board
  *  passes, so the two predicates can never drift. Sequential await, never
  *  $transaction (CORE §3). */
 export async function getFloorLiveMarkerWhere(): Promise<Prisma.ordersWhereInput> {
   const hide = await getHideExclusion();
-  return { AND: [floorLiveBaseWhere(getISTDayRange()), hide] };
+  // 🔴 THE SAME UNION THE BOARD RENDERS. Was floorLiveBaseWhere alone until
+  // 2026-09-10; widening the board without widening this would have left the
+  // marker blind to every un-slotted bill — a new one would arrive and no
+  // screen would refresh, which is exactly the failure FLOOR §5 pairs these
+  // two functions to prevent.
+  return { AND: [floorBoardWhere(getISTDayRange()), hide] };
 }
 
 // ── Shared per-obd lookups ───────────────────────────────────────────────────
@@ -350,10 +395,8 @@ export async function getFloorRail(
 
   const orders = await prisma.orders.findMany({
     where: {
-      AND: [
-        { workflowStage: { in: RAIL_STAGES }, dispatchStatus: null, isRemoved: false },
-        hide,
-      ],
+      // The one owner of "un-slotted" — see floorUnslottedWhere above.
+      AND: [floorUnslottedWhere(), hide],
     },
     include: {
       customer: { select: FLOOR_DEALER_SELECT },
@@ -657,9 +700,17 @@ export async function getFloorBoard(
         // CHECKED TODAY whatever day it was due (fenced on checkedAt, not the
         // promise day — so a completed carry-over never vanishes). Future-dated
         // not-yet-checked rides along, separated by `zone` = upcoming per row.
-        // Shared with the live-sync marker via floorLiveBaseWhere() (both pass
+        // Shared with the live-sync marker via floorBoardWhere() (both pass
         // getISTDayRange) so the two can never drift.
-        floorLiveBaseWhere(getISTDayRange());
+        //
+        // 🔴 floorBoardWhere, NOT floorLiveBaseWhere (2026-09-10). It is the
+        // UNION of the live set and the un-slotted set — the bills the decision
+        // rail used to hold now appear here, marked "no slot", and putting one
+        // on a trip is what releases it. Read that function's header before
+        // touching this: the union is deliberate and the obvious shortcut
+        // (dropping the dispatchStatus term) puts 2,545 finished bills on a
+        // board that shows 40.
+        floorBoardWhere(getISTDayRange());
 
   const orders = await prisma.orders.findMany({
     where: { AND: [base, hide] },

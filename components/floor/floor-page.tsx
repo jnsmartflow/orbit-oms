@@ -1,29 +1,44 @@
 "use client";
 
-// Floor Control composition root. Step 5 adds SELECTION + the assignment bar +
-// the mutation wiring. Additive only: the header, the rail and the board layout
-// are unchanged; floor-page owns the selection Set and every write handler.
+// Floor Control composition root. It owns the selection Set, every write
+// handler, the four feeds and the SINGLE window-level Esc listener.
 //
-// Assignment reuses the EXISTING Picking endpoints unchanged:
-//   Assign/Reassign → (unassign any already-assigned) then /api/picking/assign
-//   Unassign        → /api/picking/unassign
+// 🔴 THE FLOOR TAB IS NOW THE TRIP DESK (2026-09-10, v3 layout). What it renders
+// is <TripDesk>: trips on the left, the selected trip's bills or the not-on-a-
+// trip pool in the middle. What it STOPPED rendering, and why:
+//
+//   floor-rail.tsx        the decision rail. Its bills — released stages, no
+//                         dispatchStatus — are ROWS on the board now, because
+//                         floorBoardWhere() unions them in (lib/floor/queries).
+//                         Putting a bill on a trip is what gives it a slot, so
+//                         the rail's per-card slot picker had nothing left to do.
+//   floor-board.tsx       the slot tabs, By picker, By group, the At-desk pool
+//                         and the whole pivot. TripDesk owns Flat / By route.
+//   assign-bar.tsx        replaced by floor-bottom-bar.tsx — Add to trip /
+//                         Remove from trip. Assigning a picker is /picking's job.
+//   trip-selection-bar.tsx folded into that same one bar.
+//   build-trip-drawer.tsx replaced by trip-form.tsx, which creates a trip and
+//                         attaches the selection only when asked to.
+//   assign-context-banner.tsx  unreachable once By picker went — it was the only
+//                         way into an assign context.
+//
+// ⚠ NONE OF THOSE FILES IS DELETED. They are simply no longer rendered;
+// archiving them is its own step, with its own README (archive/RETIREMENT-
+// PLAYBOOK.md).
+//
 // The five state actions (mark-urgent · change-slot · hold · cancel · restore)
-// go through /api/floor/actions. Rail Hold/✕ and the row ⚡ are wired here too.
+// still go through /api/floor/actions, and the row ⚡ is still wired here.
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { FloorRail } from "./floor-rail";
-import { FloorBoard } from "./floor-board";
-import { AssignContextBanner } from "./assign-context-banner";
-import { BuildTripDrawer } from "./build-trip-drawer";
+import { TripDesk } from "./trip-desk";
+import { TripForm } from "./trip-form";
+import { FloorBottomBar } from "./floor-bottom-bar";
 import { TripVehicleEditor } from "./trip-vehicle-editor";
-import { TripSelectionBar } from "./trip-selection-bar";
 import { rowStatus, countByStatus, isHeldBack, formatLitres, sumLitres } from "./status-pill";
 import { PickGateToggle } from "./pick-gate-toggle";
 import { ShowStrip } from "./show-strip";
 import { FloorSkeleton } from "./floor-skeleton";
-import { AssignBar } from "./assign-bar";
 import { HoldTab } from "./hold-tab";
 import { CancelledTab } from "./cancelled-tab";
 import { DetailPanel, type DetailActions } from "./detail-panel";
@@ -36,11 +51,10 @@ import { toggleOne, toggleAll as toggleAllRows, isSelectable, type FloorSelectio
 import { railInScope, rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
-import type { RailReleaseSlot } from "./rail-card";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
-import type { SlotTabKey } from "./floor-tabs";
-import type { TripSummary } from "@/lib/trips/queries";
+import type { RailSelection } from "./trip-rail";
+import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 import type {
   DeliveryTypeOption,
   VehicleOption,
@@ -72,10 +86,6 @@ const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
 // param is absent (parseScope), so this is belt-and-braces, and it keeps the
 // request legible in the network tab and the server logs.
 const UNSCOPED_QS = "scope=All";
-
-// The view the board opens on, and the view closing an assign context returns
-// to. One definition so the two can never drift apart.
-const DEFAULT_VIEW_MODE = "route" as const;
 
 // The three top tabs (design §3 — Floor / On hold / Cancelled).
 type TopTab = "floor" | "hold" | "cancelled";
@@ -137,18 +147,14 @@ function reportWrite(label: string, r: { ok: boolean; body: WriteBody }): boolea
 }
 
 export function FloorPage() {
-  // ⏳ TEMPORARY — the only thing this role is read for is whether the By trip
-  // pivot option renders (see the toggle below). It costs no fetch: the session
-  // is hydrated from the server by <SessionProvider> in app/layout.tsx, and
-  // `useSession()` is the house idiom seven other client components already use.
-  //
-  // BOTH ARMS, matching lib/rbac.ts's isSuperuser(): the flag OR the job title.
-  // The role arm is not redundant — CORE §13 records why it stays everywhere
-  // else, and a token minted before the flag shipped carries no claim at all.
-  const { data: authSession } = useSession();
-  const isAdmin =
-    authSession?.user?.isSuperuser === true ||
-    (authSession?.user?.roles ?? [authSession?.user?.role]).includes("admin");
+  // 🔴 THE TEMPORARY ADMIN-ONLY GATE IS GONE (2026-09-10). It existed for one
+  // day, to keep the By trip pivot option off everyone else's screen while it
+  // was tested on live data, and it read the session purely to decide whether to
+  // render one button. The trip desk IS the Floor tab now — there is no pivot
+  // option to hide and nothing to gate — so `useSession`, `isAdmin` and the
+  // `isAdmin` dependency on load() all went with it. Everyone holding `floor`
+  // canView sees this screen; the routes behind it still gate canEdit
+  // server-side, exactly as they did.
 
   const [scope, setScope] = useState<FloorScope>("All");
   const [data, setData] = useState<BoardData | null>(null);
@@ -183,34 +189,15 @@ export function FloorPage() {
   const [filters, setFilters] = useState<FloorFilters>(EMPTY_FILTERS);
 
   const [topTab, setTopTab] = useState<TopTab>("floor");
-  const [slotTab, setSlotTab] = useState<SlotTabKey>("10:30");
-  // The board LANDS on DEFAULT_VIEW_MODE — currently "route" (changed
-  // 2026-08-27, commit 8468297a). Closing an assign context returns to the same
-  // constant, so the landing view and the exit view can never drift apart:
-  // change the constant and both move together.
-  //
-  // Previously landed on the picker grid (2026-08-11), on the reasoning that the
-  // desk operator's first question of the day is "who is free"; superseded
-  // 2026-08-27. Recorded so it is not rediscovered as a new idea.
-  //
-  // "picker" is the odd one out mechanically: flat/route pivot the CURRENT slot
-  // tab, picker ignores it entirely — see floor-board.tsx's branch. "group"
-  // (2026-08-17) is the second of that kind and ignores the slot tab for a
-  // stronger reason: bundles deliberately span slots and dates, so a slot filter
-  // would cut most of them in half. With the landing view now "route", the slot
-  // tab matters on first paint where under the picker default it did not.
-  const [mode, setMode] = useState<"flat" | "route" | "picker" | "group" | "trip">(DEFAULT_VIEW_MODE);
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
-  // ── Assign context (2026-08-11) ────────────────────────────────────────────
-  // Set by tapping a card in the By-picker grid: "I am deciding what to give
-  // THIS person." null is the ordinary board and every consumer short-circuits
-  // on it, so nothing below changes shape when it is unset.
-  //   pending → the waiting bills he could be given (selectable, assignable)
-  //   current → what is already in his hands (read-only, just for context)
-  const [assignContext, setAssignContext] = useState<number | null>(null);
-  const [contextMode, setContextMode] = useState<"pending" | "current">("pending");
+  // 🔴 `slotTab` AND `mode` ARE GONE (2026-09-10). The slot tabs went because a
+  // trip carries the slot now — the rail groups trips under their window, so a
+  // tab that re-cut the board by window would be the same grouping twice. The
+  // pivot went with By picker and By group, and TripDesk owns the Flat / By route
+  // choice that survived it. The assign context went with them: tapping a picker
+  // card was the ONLY way to enter one, and there is no picker grid any more.
 
   // ── The trip board (2026-09-09) ───────────────────────────────────────────
   // 🔴 A SEPARATE FETCH, NOT A SLICE OF THE BOARD. `GET /api/floor/trips?date=`
@@ -224,8 +211,29 @@ export function FloorPage() {
   // refresh path, and the pause rules (panel open, selection up, History, tab
   // hidden) are unchanged.
   const [trips, setTrips] = useState<TripSummary[] | null>(null);
-  const [tripDrawerOpen, setTripDrawerOpen] = useState(false);
   const [tripOptions, setTripOptions] = useState<TripOptions | null>(null);
+
+  // ── What the rail has selected, and the stops behind it ───────────────────
+  //
+  // The desk has exactly TWO readings and this is what picks between them: the
+  // pool ("Not on a trip") or one trip. It lands on the pool — the planner's
+  // first question of the day is what still has to go somewhere.
+  const [railSelection, setRailSelection] = useState<RailSelection>({ kind: "pool" });
+  // 🔴 A THIRD TRIP FETCH, AND IT HAS TO BE. `GET /api/floor/trips?date=` returns
+  // summaries with no drops on them — a day of trips with every stop expanded
+  // would be a payload nobody reads, since only one trip is open at a time. The
+  // stops come from `GET /api/floor/trips/[id]`, fetched when the selection
+  // changes and after every write that could move a bill between stops.
+  //
+  // ⚠ NOT A POLL. The effect below keys on `trips` — a fresh array on every
+  // load() — so the stops refresh exactly when the board does and on nothing
+  // else. The live-sync marker still drives one refresh path and the pause rules
+  // (panel open, selection up, History, tab hidden) are unchanged.
+  const [tripDetail, setTripDetail] = useState<TripDetail | null>(null);
+  // The New trip form, and what it should attach the moment the trip exists.
+  // An EMPTY array is the New trip button; a non-empty one is "New trip…" at the
+  // foot of the bottom bar's list.
+  const [tripFormSeed, setTripFormSeed] = useState<number[] | null>(null);
   // Which trip the vehicle editor is open over, and which trip has a write in
   // flight. Two separate ids on purpose: the editor stays open while its own
   // PATCH runs, and a Cancel on another band must not grey this one's buttons.
@@ -233,8 +241,7 @@ export function FloorPage() {
   const [tripBusyId, setTripBusyId] = useState<number | null>(null);
   const [tripBarBusy, setTripBarBusy] = useState(false);
 
-  // ⚠ REFS, NOT DEPENDENCIES, AND FOR THE REASON `bulkAssign`'s `explicitIds`
-  // parameter already documents: `setSelection()` is asynchronous, so a handler
+  // ⚠ REFS, NOT DEPENDENCIES. `setSelection()` is asynchronous, so a handler
   // that closed over `selectedIds` would post the PREVIOUS selection if it fired
   // in the same tick as a tick-box change. Putting them in the dependency array
   // instead would rebuild every trip handler on every keystroke of a selection.
@@ -282,16 +289,15 @@ export function FloorPage() {
       // moments. Anchored on the SAME day the board is showing: today in live
       // mode, the viewed day in History.
       //
-      // A failure leaves the bands empty and does NOT blank the board — same
+      // A failure leaves the rail empty and does NOT blank the board — same
       // rule as the hold/cancelled feeds above (FLOOR §5: never throw the page
       // away over a side feed).
       //
-      // ⏳ TEMPORARY — SKIPPED ENTIRELY for a non-admin while By trip is
-      // admin-only (see the pivot toggle). They cannot reach the view, so the
-      // request would be a round trip per board reload for a payload nothing
-      // renders. Remove this guard in the same step that removes the pivot
-      // gate.
-      if (isAdmin) {
+      // 🔴 FETCHED FOR EVERYONE. It used to be skipped for a non-admin, because
+      // By trip was an admin-only pivot option nobody else could reach. The trip
+      // desk IS the Floor tab now, so skipping this would leave the rail empty
+      // for every operator on the floor.
+      {
         const tripDateParam =
           viewMode === "history" && histDate ? histDate : istTodayIso();
         try {
@@ -317,11 +323,7 @@ export function FloorPage() {
     // `scope` is NOT here on purpose — every fetch is unscoped and the chips are
     // a pure client-side narrowing (scopedData below). Adding it back would
     // restore the 3-fetches-per-chip-click behaviour this change removed.
-    // ⏳ `isAdmin` is here ONLY because the trips feed above is gated on it —
-    // it flips once, from false to true, when the session hydrates, and the
-    // resulting second load() is what fetches the trips. It goes when the gate
-    // goes.
-  }, [viewMode, histDate, isAdmin]);
+  }, [viewMode, histDate]);
 
   useEffect(() => {
     void load();
@@ -358,119 +360,98 @@ export function FloorPage() {
   // the top tab: switching away from Floor drops the floor selection (Hold and
   // Cancelled own their own selection internally).
   //
-  // `assignContext`/`contextMode` join the list for the same reason the others
-  // are on it: each one changes WHICH ROWS ARE ON SCREEN, and a tick surviving
-  // that change means assigning a bill the operator can no longer see.
+  // `railSelection` is on the list by the same rule the others are: moving
+  // between the pool and a trip changes WHICH ROWS ARE ON SCREEN, and a tick
+  // surviving that move would put a bill on a trip the operator cannot see. It
+  // also keeps the bottom bar honest — the bar's mode is read off this same
+  // selection, so a stale tick would offer "Remove from trip" over pool rows.
   useEffect(() => {
     setSelection(new Set());
-  }, [slotTab, scope, viewMode, histDate, topTab, assignContext, contextMode]);
+  }, [scope, viewMode, histDate, topTab, railSelection]);
 
   const clearSelection = () => setSelection(new Set());
 
-  // Drop the assign context whenever its premise goes away. Leaving the Floor
-  // tab or stepping into History both mean "the operator is no longer handing
-  // work to anybody" — History is a read-only past day where assigning is not
-  // even possible.
-  useEffect(() => {
-    if (topTab !== "floor" || viewMode !== "live") {
-      setAssignContext(null);
-      setContextMode("pending");
-    }
-  }, [topTab, viewMode]);
-
-  // Which view a given context reading belongs in. ONE rule, used by the picker
-  // card and by the banner's toggle, so the band and the board below it can
-  // never describe different questions:
-  //   pending → By GROUP. "What can I give this man" is exactly the question
-  //             bundling answers, and handing him a bundle is one press.
-  //   current → By ROUTE. Grouping is meaningless on bills already assigned;
-  //             they are not candidates for anything.
-  const viewForContext = (m: "pending" | "current") => (m === "pending" ? "group" : "route");
-
-  // Tapping a picker card. `initialMode` comes from the CARD's own status
-  // (floor-board derives it with pickerCardStatus, the same rule that coloured
-  // the card): a busy picker opens on what he is holding, a free one on what he
-  // could be given. The toggle in the banner still moves between the two — this
-  // only decides which loads.
-  const openAssignContext = useCallback((pickerId: number, initialMode: "pending" | "current") => {
-    setAssignContext(pickerId);
-    setContextMode(initialMode);
-    setMode(viewForContext(initialMode));
-  }, []);
-
-  // Back to the grid. Both exits (the banner's Done and the "By picker" button)
-  // land here so there is one definition of what leaving the context means.
-  const closeAssignContext = useCallback(() => {
-    setAssignContext(null);
-    setContextMode("pending");
-    setMode(DEFAULT_VIEW_MODE);
-  }, []);
-
-  // The banner's pending/current toggle moves the VIEW with the reading, by the
-  // same rule the picker card uses — otherwise the band would say "what he's
-  // holding" over a board showing bundles of unassigned bills.
-  const toggleContextMode = useCallback(() => {
-    setContextMode((m) => {
-      const next = m === "pending" ? "current" : "pending";
-      setMode(viewForContext(next));
-      return next;
-    });
-  }, []);
-
-  // The By-group CHIP. It does NOT clear the assign context — reversed from the
-  // first cut of this view. The precedent on this screen already settles it: the
-  // existing "pending" reading shows FLOOR-WIDE waiting bills while the banner
-  // names one picker. The view is not scoped to a person; the ACTION is, and the
-  // banner announces the action. Entering from the chip with nobody chosen is
-  // the same view with no banner and a select-only header button.
-  const openGroupMode = useCallback(() => {
-    setContextMode("pending");
-    setMode("group");
-  }, []);
-
-  // ── By trip ───────────────────────────────────────────────────────────────
-  // A PLAIN setMode, and deliberately its own branch in the toggle below.
-  // "picker" routes through closeAssignContext (it IS the way back to the grid)
-  // and "group" through openGroupMode (it drops the context); "trip" does
-  // neither — it is an ordinary view with no context of its own, so routing it
-  // through either would silently clear an assign context the operator had not
-  // asked to leave.
-  const openTripMode = useCallback(() => {
-    setMode("trip");
-  }, []);
-
-  // The Build trip drawer's dropdown lists. Fetched ONCE, lazily, the first time
-  // the drawer opens — four static master-data lists have no business on the
-  // 15-second board reload, and most sessions never open the drawer at all.
-  const openTripDrawer = useCallback(async () => {
-    setTripDrawerOpen(true);
-    if (tripOptions !== null) return;
-    try {
-      const res = await fetch("/api/floor/trips/options", { cache: "no-store" });
-      if (res.ok) {
-        setTripOptions((await res.json()) as TripOptions);
-      } else {
-        // CLOSE AGAIN on failure. The drawer renders only once its options have
-        // landed, so leaving it "open" with nothing loaded would show the
-        // operator an empty screen and a toast he may have missed.
-        setTripDrawerOpen(false);
-        toast.error(`Could not load the trip form — HTTP ${res.status}`);
+  // The New trip form's dropdown lists. Fetched ONCE, lazily, the first time the
+  // form opens — four static master-data lists have no business on the
+  // 15-second board reload, and most sessions never open the form at all.
+  //
+  // `seedIds` is what the trip should be created WITH: empty from the New trip
+  // button, the current selection from "New trip…" at the foot of the Add-to-trip
+  // list.
+  const openTripForm = useCallback(
+    async (seedIds: number[]) => {
+      setTripFormSeed(seedIds);
+      if (tripOptions !== null) return;
+      try {
+        const res = await fetch("/api/floor/trips/options", { cache: "no-store" });
+        if (res.ok) {
+          setTripOptions((await res.json()) as TripOptions);
+        } else {
+          // CLOSE AGAIN on failure. The form renders only once its options have
+          // landed, so leaving it "open" with nothing loaded would show the
+          // operator an empty screen and a toast he may have missed.
+          setTripFormSeed(null);
+          toast.error(`Could not load the trip form — HTTP ${res.status}`);
+        }
+      } catch {
+        setTripFormSeed(null);
+        toast.error("Could not load the trip form — check your connection.");
       }
-    } catch {
-      setTripDrawerOpen(false);
-      toast.error("Could not load the trip form — check your connection.");
-    }
-  }, [tripOptions]);
+    },
+    [tripOptions],
+  );
 
-  // After a create. The selection is cleared and the board refetched EXPLICITLY:
-  // the live-sync poll is paused while a selection is up (FLOOR §5), so leaving
-  // the refresh to it would leave the new trip off screen until the operator
-  // clicked something else. Same shape as the Show strip's own handler.
-  const onTripCreated = useCallback(async () => {
-    setTripDrawerOpen(false);
-    setSelection(new Set());
-    await load();
-  }, [load]);
+  // After a create. The new trip is SELECTED on the rail — the planner has just
+  // said what he is building, and landing him back on the pool would make him
+  // find it. The selection is cleared and the board refetched EXPLICITLY: the
+  // live-sync poll is paused while a selection is up (FLOOR §5), so leaving the
+  // refresh to it would leave the new trip off screen until he clicked something
+  // else.
+  const onTripCreated = useCallback(
+    async (tripId: number) => {
+      setTripFormSeed(null);
+      setSelection(new Set());
+      setRailSelection({ kind: "trip", tripId });
+      await load();
+    },
+    [load],
+  );
+
+  // The selected trip's STOPS. Cleared the moment the rail moves to the pool, so
+  // a stale trip's stops can never render under a different header.
+  //
+  // ⚠ `trips` IS A DEPENDENCY ON PURPOSE. Its identity changes on every load(),
+  // which is what makes a write — add, remove, release, cancel — pull the stops
+  // again. Without it a bill added to the open trip would land on the rail card's
+  // count and nowhere in the list below it.
+  useEffect(() => {
+    if (railSelection.kind !== "trip") {
+      setTripDetail(null);
+      return;
+    }
+    const tripId = railSelection.tripId;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/floor/trips/${tripId}`, { cache: "no-store" });
+        if (!res.ok) {
+          // No toast. The rail card is still on screen with its own counts, and
+          // the desk says "Loading stops…" rather than claiming the trip is
+          // empty — a 404 here means the trip left the day, which the next
+          // load() will show honestly.
+          if (!cancelled) setTripDetail(null);
+          return;
+        }
+        const body = (await res.json()) as { trip?: TripDetail };
+        if (!cancelled) setTripDetail(body.trip ?? null);
+      } catch {
+        if (!cancelled) setTripDetail(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [railSelection, trips]);
 
   // ── Trip writes ───────────────────────────────────────────────────────────
   //
@@ -581,17 +562,38 @@ export function FloorPage() {
         if (!res.ok) {
           toast.error(`Could not release — ${body?.error ?? `HTTP ${res.status}`}`);
         } else {
-          // The route's four honest buckets. `notWaiting` is not a failure — a
-          // bill already with a picker needs no handover — so it is reported
-          // separately rather than folded into either side.
+          // 🔴 THE ROUTE'S REAL BUCKETS. This read `notWaiting` until 2026-09-10
+          // and called it "already with a picker" — a key the release route
+          // stopped returning when it was rewritten to do the FULL release
+          // through releaseBillsToFloor(). `body.notWaiting` was therefore
+          // always undefined, the `?? []` swallowed it, and that line of the
+          // toast never appeared. What the route actually answers with:
+          //
+          //   released       moved onto the floor by this press
+          //   alreadyVisible already on it — nothing to do, not a failure
+          //   waitingForTint mid-tint, so DELIBERATELY not moved yet
+          //   stamped        newly made visible to pickers (gate on only)
+          //   failed         genuinely refused, reported below
+          //
+          // ⚠ `waitingForTint` IS NEVER SWALLOWED (FLOOR §6b). It is the one
+          // bucket an operator has to act on — those bills come back to the trip
+          // when tinting finishes, and a silent count would read as a release
+          // that quietly did less than it said.
           const parts: string[] = [`${body?.trip?.tripNumber ?? "Trip"} ${gateOn ? "released" : "confirmed"}`];
-          const stamped: number[] = body?.stamped ?? [];
+          const released: number[] = body?.released ?? [];
           const already: number[] = body?.alreadyVisible ?? [];
-          const notWaiting: number[] = body?.notWaiting ?? [];
-          if (stamped.length > 0 && gateOn) parts.push(`${stamped.length} shown to the floor`);
-          if (already.length > 0) parts.push(`${already.length} already visible`);
-          if (notWaiting.length > 0) parts.push(`${notWaiting.length} already with a picker`);
+          const waitingForTint: number[] = body?.waitingForTint ?? [];
+          const stamped: number[] = body?.stamped ?? [];
+          if (released.length > 0) parts.push(`${released.length} to the floor`);
+          if (stamped.length > 0 && gateOn) parts.push(`${stamped.length} shown to pickers`);
+          if (already.length > 0) parts.push(`${already.length} already there`);
           toast.success(parts.join(" · "));
+          if (waitingForTint.length > 0) {
+            toast.info(
+              `${waitingForTint.length} bill${waitingForTint.length === 1 ? "" : "s"} still in tinting — ` +
+                `${waitingForTint.length === 1 ? "it goes" : "they go"} to the floor when the tint is done`,
+            );
+          }
           const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
           if (failed.length > 0) toast.error(`${failed.length} bill(s) not released — ${failed[0].error}`);
         }
@@ -669,31 +671,14 @@ export function FloorPage() {
   selectedIdsRef.current = selectedIds;
   tripsRef.current = trips;
 
-  // ── Release + rail actions ────────────────────────────────────────────────
-  const handleRelease = useCallback(
-    async (orderId: number, slot: RailReleaseSlot) => {
-      const r = await postJson("/api/floor/release", { releases: [{ orderId, ...slot }] });
-      reportWrite("Release", r);
-      await load();
-    },
-    [load],
-  );
-  const railHold = useCallback(
-    async (orderId: number) => {
-      const r = await postJson("/api/floor/actions", { action: "hold", orderIds: [orderId] });
-      reportWrite("Hold", r);
-      await load();
-    },
-    [load],
-  );
-  const railCancel = useCallback(
-    async (orderId: number) => {
-      const r = await postJson("/api/floor/actions", { action: "cancel", orderIds: [orderId] });
-      reportWrite("Cancel", r);
-      await load();
-    },
-    [load],
-  );
+  // ⚠ THE RAIL'S THREE HANDLERS WENT WITH THE RAIL (2026-09-10) — per-card
+  // Release-to-a-slot, Hold and ✕. Hold and Cancel are unchanged and still
+  // reachable on any bill through the detail panel (`detailActions` below);
+  // per-bill release is what putting the bill on a trip does now.
+  //
+  // /api/floor/release itself is NOT dead — lib/floor/release.ts is the one
+  // writer both it and the trip release call (FLOOR: one owner per behaviour).
+  // Nothing on this screen posts to it any more.
 
   // Row ⚡ — per-bill urgent TOGGLE (no `urgent` field → route flips it).
   const rowMarkUrgent = useCallback(
@@ -794,58 +779,16 @@ export function FloorPage() {
     await load();
   };
 
-  const bulkChangeSlot = async (date: string, windowId: number) => {
-    if (selectedIds.length === 0) return;
-    const r = await postJson("/api/floor/actions", { action: "change-slot", orderIds: selectedIds, dispatchTargetDate: date, dispatchWindowId: windowId });
-    reportWrite("Change slot", r);
-    clearSelection();
-    await load();
-  };
-
-  // Assignment REUSES the Picking endpoints unchanged. Assign/Reassign = put
-  // every selected bill under the chosen picker: unassign any already-assigned
-  // ones first (so they are back at pending_picking), then one assign batch.
+  // ⚠ THREE BULK HANDLERS WENT WITH THE BARS THAT CALLED THEM (2026-09-10):
+  // `bulkChangeSlot` (the assign bar's Change slot), `bulkAssign` (its Assign /
+  // Reassign) and `assignGroup` (the By-group header's one-press assign).
   //
-  // ⚠ `explicitIds` CLOSES A RACE, it is not a convenience. The By-group header
-  // button selects a group and assigns it in ONE press; `setSelection()` is
-  // asynchronous, so a handler that called it and then read `selectedIds` would
-  // post the PREVIOUS selection. The group passes its own ids straight down and
-  // this function never has to wait for state to commit. Omitted (the assign
-  // bar, the detail panel) it reads the live selection exactly as before.
-  const bulkAssign = async (pickerId: number, explicitIds?: number[]) => {
-    // Resolve against the UNSCOPED rows for the same reason onReassign does:
-    // "is this bill already assigned" is a property of the bill, not of the chip
-    // in view. A bill that vanished between render and click simply is not found
-    // and drops out — the server would have rejected it into `failed[]` anyway.
-    const targetRows = explicitIds
-      ? rows.filter((r) => explicitIds.includes(r.orderId))
-      : selectedRows;
-    if (targetRows.length === 0) return;
-    const targetIds = targetRows.map((r) => r.orderId);
-
-    const alreadyAssigned = targetRows.filter((r) => r.isAssigned).map((r) => r.orderId);
-    for (const orderId of alreadyAssigned) {
-      reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
-    }
-    // ONE call for the whole group — the existing batch endpoint, unchanged.
-    reportWrite("Assign", await postJson("/api/picking/assign", { orderIds: targetIds, pickerId }));
-    clearSelection();
-    await load();
-  };
-
-  // By-group one-press assign. Ticks the group (so the operator sees what went)
-  // and assigns it, passing the ids EXPLICITLY so the write cannot depend on
-  // that tick having landed. Nothing is hand-removed from the view afterwards:
-  // `load()` refetches and the bills leave the waiting set because they are no
-  // longer waiting, which is the honest reason. Failures surface through
-  // reportWrite — a non-empty `failed[]` raises a toast rather than reading as
-  // success (FLOOR §6b is the bug that rule came from).
-  const assignGroup = async (orderIds: number[], pickerId: number) => {
-    setSelection(new Set(orderIds));
-    await bulkAssign(pickerId, orderIds);
-  };
-  // (bulkUnassign was retired with the bulk-bar v2 rebuild — the bar keeps
-  // reassign-to-picker via bulkAssign; per-bill Unassign stays in the panel ⋯.)
+  // Nothing on this screen assigns a picker in bulk any more. The slot comes
+  // from the trip; handing bills to a picker is the supervisor's job on
+  // /picking, where the mobile Assign tab does it one bill at a time and always
+  // did. Per-bill Reassign and Unassign are UNCHANGED and still in the detail
+  // panel's ⋯ menu (`detailActions` below) — those call /api/picking/assign and
+  // /api/picking/unassign directly, so no Picking endpoint lost a caller.
 
   // ── Hold tab: bulk release → the floor (reuses the Step-3 release route). ──
   // Each ticked bill gets the SAME chosen date+window; the route advances it to
@@ -927,43 +870,6 @@ export function FloorPage() {
     () => (scopedCancelled ? applyFlagFilters(applySearch(scopedCancelled, parsed), filters) : null),
     [scopedCancelled, parsed, filters],
   );
-
-  // ── Assign-context derivations ─────────────────────────────────────────────
-  // Name: roster first, then any row the picker holds (an orphan — a pickerId
-  // still carrying bills whose user account was deactivated is off the roster
-  // but must not become "#42" on screen), then the id as a last resort.
-  const contextPickerName = useMemo<string | null>(() => {
-    if (assignContext === null) return null;
-    const rostered = data?.pickers.find((p) => p.id === assignContext)?.name;
-    if (rostered) return rostered;
-    const fromRow = (data?.floor.rows ?? []).find((r) => r.pickerId === assignContext)?.assignedToName;
-    return fromRow ?? `Picker #${assignContext}`;
-  }, [assignContext, data]);
-
-  // Banner counts. Derived from `filteredFloor` — the SAME rows FloorBoard sees
-  // — and with rowStatus(), the same predicate it filters on, so the number in
-  // the banner and the number of rows below it cannot disagree.
-  const contextCounts = useMemo(() => {
-    const due = (filteredFloor?.rows ?? []).filter((r) => r.zone !== "upcoming");
-    let pending = 0;
-    let current = 0;
-    for (const r of due) {
-      const st = rowStatus(r);
-      if (st === "waiting") pending++;
-      else if (r.pickerId === assignContext && (st === "withPicker" || st === "needsCheck")) current++;
-    }
-    return { pending, current };
-  }, [filteredFloor, assignContext]);
-
-  // "What he's holding" is a look, not a workspace — no ticks, so no bulk bar.
-  const contextReadOnly = assignContext !== null && contextMode === "current";
-
-  // The rail is NEVER filtered (design §6.1) — it is the undecided pile and must
-  // stay complete. Search only HIGHLIGHTS matching rail cards.
-  const railHighlightIds = useMemo<Set<number>>(() => {
-    if (parsed.mode === "none" || !scopedData) return new Set<number>();
-    return new Set(applySearch(scopedData.rail, parsed).map((c) => c.orderId));
-  }, [parsed, scopedData]);
 
   // The open tab's pool + report for the hits strip (chips / summary). Scoped,
   // so the hit counts describe the chip the operator is actually looking at.
@@ -1226,32 +1132,49 @@ export function FloorPage() {
     .replace(",", "");
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
 
-  const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null && !contextReadOnly;
+  const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null;
 
-  // ── Which bar the selection gets (2026-09-10) ─────────────────────────────
+  // ── ONE BAR, TWO READINGS (2026-09-10) ────────────────────────────────────
   //
-  // 🔴 TICKING INSIDE A TRIP BAND WAS SHOWING Change slot / Choose picker /
-  // Assign — three answers to questions nobody asks of a trip. The slot belongs
-  // to the trip now, and assigning a picker is the supervisor's job on
-  // /picking. What the operator wants there is one thing: take these off the
-  // load.
+  // 🔴 DECIDED BY THE RAIL, NOT BY THE ROWS. The previous cut tested whether
+  // every ticked bill already had a `tripDropId` — a rows test, because there
+  // were two bars and a mixed selection had to pick one. There is one bar now,
+  // and the rail already says which question the operator is asking: the pool
+  // means "where does this go", a trip means "what comes off this load". Rows
+  // cannot express that — an empty selection has no rows at all, and a bill can
+  // sit under a trip's stop while the planner is looking at the pool.
   //
-  // The test is a property of the ROWS, not of the view: a selection whose bills
-  // are all already on a trip gets the remove bar. Selecting in the POOL — where
-  // every row has a null tripDropId — keeps the assign bar exactly as it was.
-  // Doing it this way rather than on `mode === "trip"` means a mixed selection
-  // cannot end up with a bar that would fail on half of it.
-  const selectedOnTrip = useMemo(
-    () => selectedRows.filter((r) => r.tripDropId !== null),
-    [selectedRows],
+  // The trip mode's Remove posts per trip anyway (removeSelectionFromTrips
+  // groups by tripNumber), so a selection spanning stops is ordinary.
+  const barMode: "pool" | "trip" = railSelection.kind === "trip" ? "trip" : "pool";
+  // Only DRAFT and CONFIRMED trips can take bills — the routes refuse a
+  // dispatched or cancelled one, and offering it would offer a guaranteed 409.
+  const attachableTrips = useMemo(
+    () => (trips ?? []).filter((t) => t.status === "draft" || t.status === "released"),
+    [trips],
   );
-  const tripBarVisible = barVisible && selectedOnTrip.length > 0 && selectedOnTrip.length === selectedRows.length;
-  // The trip they are all on, when it is one — null when the selection spans
-  // several, which the bar says out loud rather than guessing.
-  const selectedTripLabel = useMemo(() => {
-    const names = new Set(selectedOnTrip.map((r) => r.tripNumber).filter(Boolean));
-    return names.size === 1 ? (Array.from(names)[0] as string) : null;
-  }, [selectedOnTrip]);
+  // The delivery type every ticked bill agrees on, or null. Seeds the New trip
+  // form so the common case — a planner ticking one route’s bills and pressing
+  // New trip… — needs no answer to a question he has already answered.
+  //
+  // ⚠ NULL ON A MIXED SELECTION, deliberately. There is no majority rule here:
+  // an Upcountry bill on a Local trip is a real dispatch error, and a form that
+  // guessed would make it silently.
+  const seedDeliveryTypeId = useMemo<number | null>(() => {
+    const names = new Set(selectedRows.map((r) => r.deliveryType));
+    if (names.size !== 1) return null;
+    const name = Array.from(names)[0];
+    const match = tripOptions?.deliveryTypes.find((d) => d.name === name);
+    return match?.id ?? null;
+  }, [selectedRows, tripOptions]);
+
+  // A short reminder of what the selection is sitting on. Reads off the rail,
+  // for the same reason `barMode` does.
+  const barContextLabel = useMemo(() => {
+    if (railSelection.kind !== "trip") return null;
+    const t = (trips ?? []).find((x) => x.id === railSelection.tripId);
+    return t ? `on ${t.tripNumber}` : null;
+  }, [railSelection, trips]);
 
   // Tab counts reflect the searched/filtered set of each surface (they equal the
   // full totals when no search/filter is active).
@@ -1390,24 +1313,20 @@ export function FloorPage() {
           server is unreachable. A strip, never a modal — the board stays readable. */}
       {isLive && <ConnectionStrip connected={connected} lastSyncedAt={lastSyncedAt} />}
 
-      {/* ── Body — left rail (344px) + right main. ───────────────────────── */}
-      <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "344px 1fr" }}>
-        <FloorRail
-          cards={scopedData?.rail ?? null}
-          loading={loading}
-          error={error}
-          scope={scope}
-          floorTotal={scopedData?.floor.total ?? 0}
-          windows={dispatchWindows}
-          onRelease={handleRelease}
-          onHold={railHold}
-          onCancel={railCancel}
-          onShowAll={() => setScope("All")}
-          onOpenDetail={(id) => openDetail(id, "rail")}
-          highlightIds={railHighlightIds}
-        />
+      {/* ── Body — ONE column (2026-09-10) ────────────────────────────────
+          🔴 THE 344px DECISION RAIL IS GONE. It held the bills the dispatch
+          engine could not slot, each on a card with its own slot picker and a
+          "Why no slot?" link. Those bills are ROWS on the board now — the board
+          predicate was widened to union them in (floorBoardWhere, lib/floor/
+          queries.ts), which put 4 more bills on a 40-row board — and they wear a
+          quiet `no slot` chip instead of a card. Putting one on a trip is what
+          gives it a slot, so the card's picker had nothing left to decide.
 
-        {/* Right main — tabs + board + (bulk bar overlay). */}
+          The desk grows its OWN 298px rail inside this column, of trips. Two
+          rails side by side would have been two answers to "what am I looking
+          at". */}
+      <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "1fr" }}>
+        {/* Tabs + desk + (bulk bar overlay). */}
         <div className="relative flex min-h-0 flex-col overflow-hidden">
           <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
             {/* Floor + its waiting readout as ONE unit: a tight 8px gap binds the
@@ -1415,15 +1334,14 @@ export function FloorPage() {
                 separates it from "On hold" — spaced like a fourth tab it would read
                 as one. Plain grey inline stats (CLAUDE_UI §4), NOT a second pill:
                 the badge next door is already a filled one. NOT teal either — teal
-                on this screen is the active slot tab alone (CLAUDE_UI §6 colour
+                on this row is the New trip button alone (CLAUDE_UI §6 colour
                 rule). It sits OUTSIDE the tab button on purpose: it reports, it is
-                not a fifth thing to click.
+                not a fourth thing to click.
 
-                Rendered in every view mode, By group included — that view's own
-                strip is untouched and states the same number for the same set, so
-                the two agree rather than compete. Shown at ZERO deliberately: "0
-                waiting" is the good state and worth saying out loud, the same
-                reasoning the By-group count line is built on. */}
+                Rendered on the pool and on a trip alike — it is a floor-wide
+                number, not a reading of whatever the middle happens to be showing.
+                Shown at ZERO deliberately: "0 waiting" is the good state and worth
+                saying out loud. */}
             <span className="flex items-center gap-2">
               {tabPill("floor", "Floor", floorCount)}
               <span className="text-[11px] text-gray-400" title="Bills on the floor with no picker assigned yet">
@@ -1433,100 +1351,27 @@ export function FloorPage() {
             {tabPill("hold", "On hold", holdCount)}
             {tabPill("cancelled", "Cancelled", cancelledCount)}
 
-            {/* View pivot. Flat / By route re-cut the CURRENT slot tab, so they
-                are meaningless on All (which renders slot bands and ignores
-                `mode` outright) and stay hidden there — unchanged behaviour.
-                By picker ignores the slot tab by design, so it is offered on
-                every tab including All. The `showSlotModes` term keeps all
-                three visible while picker mode is active, so there is always a
-                way back out of it — otherwise All + picker would be a trap. */}
-            {topTab === "floor" && (() => {
-              // Both slot-blind views keep the whole toggle visible while they
-              // are active, so All + picker / All + group is never a trap.
-              const showSlotModes =
-                slotTab !== "all" || mode === "picker" || mode === "group" || mode === "trip";
-              const modes = (["flat", "route", "trip", "group", "picker"] as const).filter(
-                (m) =>
-                  // ⏳ TEMPORARY — By trip is admin-only while it is tested on
-                  // live data (2026-09-09). Everyone else with floor access sees
-                  // the pivot exactly as it was: Flat, By route, By group, By
-                  // picker. No layout change and no extra fetch for them — the
-                  // trips feed rides load() either way and costs one request
-                  // nobody sees the result of.
-                  //
-                  // 🔴 REMOVE THIS CLAUSE IN THE STEP THAT SHIPS RELEASE. That is
-                  // the step where the view stops being a read-only preview and
-                  // starts doing the job, and it is the natural moment to widen
-                  // it to everyone who holds `floor` canEdit.
-                  //
-                  // ⚠ A UI GATE ONLY, and deliberately not a permission. There is
-                  // no new page key, no `role_permissions` row and no
-                  // `app_settings` flag — adding any of those would leave an
-                  // artefact to clean up (the Support / Planning retirements are
-                  // on record for how much work that is), and the routes behind
-                  // this view already gate on `floor` canEdit server-side. This
-                  // hides a button; it does not protect anything.
-                  m === "trip"
-                    ? isAdmin
-                    : m === "picker" || m === "group" || showSlotModes,
-              );
-              return (
-                <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">
-                  {modes.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      // "By picker" IS the way back to the grid, so it routes
-                      // through the one close handler rather than just setting
-                      // mode — otherwise the context would survive underneath
-                      // and the banner would hang over the roster. "By group"
-                      // drops the context for the same reason (openGroupMode).
-                      onClick={() =>
-                        m === "picker"
-                          ? closeAssignContext()
-                          : m === "group"
-                            ? openGroupMode()
-                            : // "trip" gets its OWN branch — a plain setMode. It
-                              // carries no assign context of its own, so routing
-                              // it through either handler above would clear one
-                              // the operator had not asked to leave.
-                              m === "trip"
-                              ? openTripMode()
-                              : setMode(m)
-                      }
-                      className={`px-[11px] text-[11px] ${mode === m ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`}
-                    >
-                      {m === "flat"
-                        ? "Flat"
-                        : m === "route"
-                          ? "By route"
-                          : m === "trip"
-                            ? "By trip"
-                            : m === "picker"
-                              ? "By picker"
-                              : "By group"}
-                    </button>
-                  ))}
-                </span>
-              );
-            })()}
-          </div>
+            {/* 🔴 THE VIEW PIVOT IS GONE (2026-09-10) — Flat, By route, By trip,
+                By group, By picker, and with it the ⏳ admin-only clause that hid
+                the By trip entry from everyone but an admin. Flat / By route
+                survive INSIDE the desk, on the pool where they still mean
+                something; the other three were views of a board that no longer
+                exists.
 
-          {/* Assign context band — only on the live Floor tab, only while a
-              picker card is open. Floor's OWN component: mail-orders'
-              InstructionsStrip renders a caption derived from its prop name
-              ("NOTES · …") with no way to suppress it, and belongs to the
-              Billing/Review surfaces — see assign-context-banner.tsx. */}
-          {topTab === "floor" && assignContext !== null && contextPickerName && (
-            <AssignContextBanner
-              pickerName={contextPickerName}
-              contextMode={contextMode}
-              pendingCount={contextCounts.pending}
-              currentCount={contextCounts.current}
-              onToggleMode={toggleContextMode}
-              onCancel={closeAssignContext}
-            />
-          )}
+                What takes the space is the one thing the planner starts with. It
+                is this row's only filled control (CLAUDE_UI §1) and it is
+                hidden in History, where a past day is a record and a new trip on
+                it would be a fiction. */}
+            {topTab === "floor" && isLive && (
+              <button
+                type="button"
+                onClick={() => void openTripForm([])}
+                className="ml-auto inline-flex h-[27px] items-center gap-1.5 rounded-[7px] bg-brand-600 px-3 text-[11.5px] font-semibold text-white hover:bg-brand-700"
+              >
+                <span className="text-[13px] leading-none">+</span> New trip
+              </button>
+            )}
+          </div>
 
           {topTab === "floor" ? (
             loading && !data ? (
@@ -1536,51 +1381,40 @@ export function FloorPage() {
             ) : error && !data ? (
               <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
             ) : filteredFloor ? (
-              <FloorBoard
-                // Forwarded to every leaf FloorTable, where it swaps the Status
-                // pill's label on held-back waiting rows. No column, no width,
-                // no band and no count on this board changes with it.
+              <TripDesk
+                // The gate is forwarded UNCHANGED to every leaf table, where it
+                // swaps the Status pill's label on held-back waiting rows. No
+                // column, no width array and no count moves with it.
                 gateOn={gateOn}
                 floor={filteredFloor}
-                // Unscoped on purpose — the roster is scope-independent (see
-                // scopedData's note above; getFloorPickers applies no
-                // delivery-type filter), same as DetailPanel's `pickers`.
-                pickers={data?.pickers ?? []}
-                slotTab={slotTab}
-                onSlotTab={setSlotTab}
-                mode={mode}
                 // The day's trips, from their own feed — never derived from the
-                // board rows below them (see the state declaration).
+                // board rows (see the state declaration). A trip whose bills are
+                // all checked has left the board's live set, and a rail built by
+                // filtering rows would drop it.
                 trips={trips}
                 tripsLoading={loading}
-                onBuildTrip={() => void openTripDrawer()}
-                onAddToTrip={(id) => void addSelectionToTrip(id)}
-                onReleaseTrip={(id) => void releaseTrip(id)}
-                onChangeVehicle={(id) => void openVehicleEditor(id)}
-                onCancelTrip={(id) => void cancelTrip(id)}
-                tripBusyId={tripBusyId}
-                assignContext={assignContext}
-                // Name, not just the id — the By-group header button says who it
-                // is assigning to, and floor-board has no roster of its own.
-                assignContextName={contextPickerName}
-                contextMode={contextMode}
-                onPickPicker={openAssignContext}
-                onAssignGroup={assignGroup}
+                tripDetail={tripDetail}
+                selection={railSelection}
+                onSelectRail={setRailSelection}
                 histDate={histDate}
                 onEnterHistory={enterHistory}
                 onExitHistory={exitHistory}
                 onStepHistory={stepHistory}
-                selection={selection}
+                rowSelection={selection}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
                 onMarkUrgent={rowMarkUrgent}
-                // The SAME board renders live and history, so the source is
+                tripBusyId={tripBusyId}
+                onReleaseTrip={(id) => void releaseTrip(id)}
+                onChangeVehicle={(id) => void openVehicleEditor(id)}
+                onCancelTrip={(id) => void cancelTrip(id)}
+                // The SAME desk renders live and history, so the source is
                 // decided here by the view (2026-08-25). "history" is the
                 // read-only source — it suppresses every action in the panel
                 // (detail-panel's `readOnly`). `isLive` is the one flag this
                 // screen already uses for the live/history split (the sync
                 // pauses key off it), so the panel can never disagree with the
-                // board about which day it is showing.
+                // desk about which day it is showing.
                 onOpenDetail={(id) => openDetail(id, isLive ? "floor" : "history")}
               />
             ) : null
@@ -1605,19 +1439,17 @@ export function FloorPage() {
             />
           )}
 
-          {/* The Show strip (2026-09-09) — ABOVE the assign bar, never inside it.
-              The bar is held to four controls by a recorded decision that cost
-              three bulk actions (assign-bar.tsx:11-15), and this is a different
-              job anyway: the bar hands bills to a PICKER, this hands them to the
-              FLOOR.
+          {/* The Show strip (2026-09-09) — ABOVE the bottom bar, never inside
+              it. It is a different job: the bar moves bills between the pool and
+              a trip, this hands them to the floor's PICKERS.
 
               THREE conditions, all required: the gate is on, the selection holds
               at least one bill EITHER direction can act on, and `barVisible` —
-              the SAME flag the assign bar uses. Reusing that flag is load-bearing
+              the SAME flag the bottom bar uses. Reusing that flag is load-bearing
               twice: the strip is positioned off the bar's 60px, so a strip
               without a bar would float over the last table row; and barVisible
-              already carries the live/history, tab and read-only-context rules,
-              which the strip needs identically and must not restate.
+              already carries the live/history and tab rules, which the strip
+              needs identically and must not restate.
 
               Gate off → `gateOn` is false → nothing renders and this subtree
               does not exist. */}
@@ -1633,59 +1465,52 @@ export function FloorPage() {
             </div>
           )}
 
-          {/* THE TRIP BAR REPLACES THE ASSIGN BAR — never sits beside it. Both
-              are absolutely positioned at bottom-0, so rendering both would
-              stack them on the same 60px. See the note on `tripBarVisible`. */}
-          {tripBarVisible && (
-            <TripSelectionBar
-              count={selectedOnTrip.length}
-              litres={formatLitres(sumLitres(selectedOnTrip))}
-              tripLabel={selectedTripLabel}
-              busy={tripBarBusy}
-              onRemove={() => void removeSelectionFromTrips(selectedOnTrip)}
+          {/* ONE BAR. The assign bar (Change slot · Choose picker · Assign) and
+              the trip selection bar (Remove from trip) were two components at
+              the same bottom-0, picked between by a rows test. Both are gone;
+              floor-bottom-bar.tsx does the one job that is left, and reads which
+              question to ask off the rail. */}
+          {barVisible && (
+            <FloorBottomBar
+              count={selectedRows.length}
+              litres={formatLitres(sumLitres(selectedRows))}
+              mode={barMode}
+              trips={attachableTrips}
+              busy={tripBarBusy || tripBusyId !== null}
+              onAddToTrip={(id) => void addSelectionToTrip(id)}
+              onNewTripWithSelection={() => void openTripForm(selectedIds)}
+              onRemoveFromTrip={() => void removeSelectionFromTrips(selectedRows)}
               onClear={clearSelection}
-            />
-          )}
-
-          {barVisible && !tripBarVisible && (
-            <AssignBar
-              selectedRows={selectedRows}
-              pickers={data!.pickers}
-              // In an assign context the target is already decided — the bar
-              // drops the "which picker" step rather than asking a question
-              // the operator answered by tapping the card.
-              lockedPicker={
-                assignContext !== null && contextPickerName ? { id: assignContext, name: contextPickerName } : null
-              }
-              windows={dispatchWindows}
-              onAssign={bulkAssign}
-              onChangeSlot={bulkChangeSlot}
-              onClear={clearSelection}
+              contextLabel={barContextLabel}
             />
           )}
         </div>
       </div>
 
-      {/* Build trip drawer (2026-09-09). Renders only once its options have
-          landed — three empty dropdowns would look like a broken form rather
-          than a loading one.
+      {/* The New trip form (2026-09-10, replacing build-trip-drawer.tsx).
+          Renders only once its options have landed — three empty dropdowns would
+          look like a broken form rather than a loading one.
 
           ⚠ NO Esc HANDLER OF ITS OWN. floor-page is the SINGLE window-level Esc
           owner for the whole floor tree (FLOOR §4.6); a second listener races it
-          in registration order, which is the bug that spec replaced. The drawer
+          in registration order, which is the bug that spec replaced. The form
           closes on its ✕ and on its backdrop. */}
-      {tripDrawerOpen && tripOptions && (
-        <BuildTripDrawer
-          rows={selectedRows}
-          // The board's own anchor day, not a clock read inside the drawer —
-          // so a trip built while looking at a past day carries that day.
+      {tripFormSeed !== null && tripOptions && (
+        <TripForm
+          // The board's own anchor day, not a clock read inside the form — so a
+          // trip built while looking at a past day carries that day.
           tripDate={viewMode === "history" && histDate ? histDate : istTodayIso()}
           deliveryTypes={tripOptions.deliveryTypes}
           windows={tripOptions.windows}
           vehicles={tripOptions.vehicles}
           transporters={tripOptions.transporters}
-          onClose={() => setTripDrawerOpen(false)}
-          onCreated={() => void onTripCreated()}
+          attachOrderIds={tripFormSeed}
+          // Pre-select the type when every ticked bill agrees, and leave it for
+          // the operator when they do not — guessing on a mixed selection would
+          // put a local bill on an upcountry trip without saying so.
+          seedDeliveryTypeId={seedDeliveryTypeId}
+          onClose={() => setTripFormSeed(null)}
+          onCreated={(tripId) => void onTripCreated(tripId)}
         />
       )}
 

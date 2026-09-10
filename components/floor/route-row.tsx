@@ -24,6 +24,7 @@ export function RouteRow({
   onToggleAll,
   onMarkUrgent,
   onOpenDetail,
+  gateOn,
 }: {
   name: string;
   /** The route's FULL row set — drives the summary line, bar and "N of M". */
@@ -49,6 +50,14 @@ export function RouteRow({
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
   onOpenDetail?: (id: number) => void;
+  /**
+   * The picking visibility gate, forwarded UNCHANGED to the table below.
+   *
+   * ⚠ IT CHANGES A CELL, NEVER A COLUMN (floor-table.tsx). RouteRow carries it
+   * only because it stands between the desk and the table; the summary line
+   * above reads nothing from it, and no width array on either side moves.
+   */
+  gateOn?: boolean;
 }) {
   // Summary reads the FULL set; only the table below reads the listed subset.
   const listed = listRows ?? rows;
@@ -93,6 +102,7 @@ export function RouteRow({
             onToggleAll={onToggleAll}
             onMarkUrgent={onMarkUrgent}
             onOpenDetail={onOpenDetail}
+            gateOn={gateOn}
           />
         ))}
     </>
