@@ -237,7 +237,21 @@ export default function PoV2Page(): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
   const [screen, setScreen]   = useState<Screen>("order");
   const [dealer, setDealer]   = useState<ApiCustomer | null>(null);
+  /**
+   * TWO STAR LISTS, ONE PER PICKER, AND THEY NEVER MERGE.
+   *
+   * 🔴 `starred` IS THE CUSTOMER LIST AND KEEPS THE OLD KEY AND THE OLD DATA.
+   * Every star anybody has today was made on the customer picker, so it stays
+   * exactly what it was. `shipToStarred` is new and starts empty on every
+   * phone — see V2StarList in v2-storage for why it is not seeded.
+   *
+   * ⚠ NEVER PASS ONE WHERE THE OTHER BELONGS. CustomerListBody computes its
+   * filled/empty stars from whichever array it is handed, so handing it the
+   * wrong one silently shows the wrong shortlist AND lets a tap write to the
+   * wrong store. The two branches below each name their own.
+   */
   const [starred, setStarred] = useState<V2Star[]>([]);
+  const [shipToStarred, setShipToStarred] = useState<V2Star[]>([]);
   const [query, setQuery]     = useState("");
   const [sheet, setSheet]     = useState<Sheet>(null);
   const [prodQuery, setProdQuery] = useState("");
@@ -439,7 +453,8 @@ export default function PoV2Page(): React.JSX.Element {
   useEffect(() => { void fetchData(); }, [fetchData]);
   // Client-only reads, so the server render and the first client render agree.
   useEffect(() => {
-    setStarred(loadStarred());
+    setStarred(loadStarred("dealer"));
+    setShipToStarred(loadStarred("shipto"));
     setSavedDrafts(loadSavedDrafts());
     setSentOrders(loadSentOrders());   // prunes to today+yesterday IST on read
   }, []);
@@ -1522,11 +1537,12 @@ export default function PoV2Page(): React.JSX.Element {
           query={query} onQuery={setQuery}
           onBack={() => { setQuery(""); setScreen("review"); }}
         >
+          {/* THE CUSTOMER LIST — the old key, the old data, unchanged. */}
           <CustomerListBody
             customers={customers} starred={starred} query={query}
             currentCode={dealer?.code ?? null}
             onPick={pickDealer}
-            onToggleStar={(c) => setStarred(toggleStarred(c))}
+            onToggleStar={(c) => setStarred(toggleStarred(c, "dealer"))}
           />
         </PickerScreen>
         {toastHost}
@@ -1571,12 +1587,19 @@ export default function PoV2Page(): React.JSX.Element {
               starred list is his own shortlist, but ship-to names a third party
               he has routinely never ordered FOR — LAKHANI PAINTS shipping
               against MOHAN COLOUR CO is a real order. Restricting this would
-              break cross billing. */}
+              break cross billing.
+
+              🔴 AND IT HAS ITS OWN SHORTLIST. This used to read and write the
+              CUSTOMER stars, which made the two screens one list wearing two
+              titles: starring a delivery address promoted it among the shops
+              he bills, and every shop he bills was offered as a delivery
+              address. `shipToStarred` is that list's own store, and both the
+              rendered fill and the tap write go to it and nowhere else. */}
           <CustomerListBody
-            customers={customers} starred={starred} query={query}
+            customers={customers} starred={shipToStarred} query={query}
             currentCode={shipTo?.code ?? null}
             onPick={(c) => { setShipTo(c); setQuery(""); setScreen("review"); }}
-            onToggleStar={(c) => setStarred(toggleStarred(c))}
+            onToggleStar={(c) => setShipToStarred(toggleStarred(c, "shipto"))}
           />
         </PickerScreen>
         {toastHost}

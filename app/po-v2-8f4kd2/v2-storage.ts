@@ -28,6 +28,9 @@ const SENT_KEY   = "po2_sent_orders";
 const FAVS_KEY   = "po2_fav_customers";   // read once, for the seed below
 const MINE_KEY   = "po2_my_dealers";       // read once, for the seed below
 const STAR_KEY   = "po2_starred_dealers";
+// 🔴 SHIP-TO'S OWN STARS. Same shape, same rules, different question — see the
+// note on V2StarList below. Absent means EMPTY: no seed, no chain.
+const SHIPTO_STAR_KEY = "po2_starred_shipto";
 // 🔴 PRODUCTS, and deliberately NOT named po2_favs — see the block near
 // loadFavProducts. No chain, no seed; absent means empty.
 const FAV_PRODUCTS_KEY = "po2_fav_products";
@@ -573,14 +576,43 @@ export type V2Star = { name: string; code: string; area: string | null; at: numb
 type StarStore = { version: 1; dealers: V2Star[] };
 
 /**
+ * WHICH STAR LIST. Two of them, one per picker, and they share nothing.
+ *
+ * 🔴 THEY ARE ANSWERS TO DIFFERENT QUESTIONS. "dealer" is whose account the
+ * order is billed to — his own shortlist, the twenty or so shops he actually
+ * serves. "shipto" is where the goods physically go, which is routinely a
+ * THIRD PARTY he has never billed and never will: LAKHANI PAINTS shipping
+ * against MOHAN COLOUR CO is a real cross-billing order. One list served both
+ * screens until now, so starring a ship-to address put it at the top of the
+ * list of people he sells to, and starring a customer offered that customer as
+ * a delivery address. Both were wrong in the same way.
+ *
+ * 🔴 THE SAME DEALER CAN BE IN BOTH, IN EITHER, OR IN NEITHER, and each screen
+ * must show its own answer. Never compute a row's star from a merged set or
+ * from "is this code starred anywhere" — the fill is per LIST, and that is the
+ * whole point of the split.
+ *
+ * ⚠ ONLY "dealer" CARRIES THE MIGRATION CHAIN. Every star that exists today
+ * was made on the customer picker, because that is the only thing the one list
+ * ever meant, so the existing key keeps the existing data untouched and
+ * "shipto" starts empty. Do not seed shipto from anything.
+ */
+export type V2StarList = "dealer" | "shipto";
+
+function starKey(list: V2StarList): string {
+  return list === "shipto" ? SHIPTO_STAR_KEY : STAR_KEY;
+}
+
+/**
  * A storage bound, not a product rule. Nothing evicts at forty; this exists so
  * a corrupted or scripted write cannot grow localStorage without limit.
  */
 const MAX_STARRED = 200;
 
 /**
- * 🔴 MIGRATED ONCE FROM po2_my_dealers, WHICH WAS ITSELF MIGRATED ONCE FROM
- * po2_fav_customers. Nobody loses their list twice in one night.
+ * 🔴 THE CUSTOMER LIST IS MIGRATED ONCE FROM po2_my_dealers, WHICH WAS ITSELF
+ * MIGRATED ONCE FROM po2_fav_customers. Nobody loses their list twice in one
+ * night.
  *
  * The chain runs in order, so a phone that skipped a version still arrives
  * here: loadMyDealers() seeds itself from the old favourites if it has to, and
@@ -589,10 +621,23 @@ const MAX_STARRED = 200;
  *
  * Both older keys are LEFT IN PLACE. They cost nothing and they are the only
  * copies if a migration turns out to be wrong.
+ *
+ * 🔴 THE SHIP-TO LIST HAS NO CHAIN AND IS NEVER SEEDED. There is nothing
+ * honest to seed it from: every star on this phone was made on the customer
+ * picker and means "I bill this shop", which is not a claim about where goods
+ * get delivered. Seeding would hand every salesman a delivery shortlist he
+ * never chose, and the codes in it would look deliberate. Absent means empty.
+ *
+ * ⚠ AND IT DOES NOT WRITE ON READ. The customer path writes its seed back so
+ * the migration happens once; there is no seed here, so reading an absent
+ * ship-to list must leave the key absent rather than storing an empty object.
+ * A key that appears merely because a screen was opened is a key a later
+ * reader cannot tell from one the user filled and then emptied.
  */
-export function loadStarred(): V2Star[] {
-  const parsed = readRaw(STAR_KEY) as Partial<StarStore> | null;
+export function loadStarred(list: V2StarList = "dealer"): V2Star[] {
+  const parsed = readRaw(starKey(list)) as Partial<StarStore> | null;
   if (parsed && Array.isArray(parsed.dealers)) return cleanStars(parsed.dealers);
+  if (list === "shipto") return [];
 
   const seeded = cleanStars(loadMyDealers());
   writeRaw(STAR_KEY, { version: 1, dealers: seeded } satisfies StarStore);
@@ -611,13 +656,23 @@ function cleanStars(rows: { name?: unknown; code?: unknown; area?: unknown; at?:
     .slice(0, MAX_STARRED);
 }
 
-/** One tap. Starred becomes unstarred and back, and returns the new list. */
-export function toggleStarred(c: { name: string; code: string; area: string | null }): V2Star[] {
-  const current = loadStarred();
+/**
+ * One tap. Starred becomes unstarred and back, and returns the new list.
+ *
+ * 🔴 IT READS AND WRITES ONE LIST — the one named. Toggling a dealer on the
+ * ship-to picker must not touch, reorder or unstar anything on the customer
+ * picker, and the reverse. The `list` argument is the whole guarantee, so it
+ * is threaded from the screen that is on and never inferred here.
+ */
+export function toggleStarred(
+  c: { name: string; code: string; area: string | null },
+  list: V2StarList = "dealer",
+): V2Star[] {
+  const current = loadStarred(list);
   const next = current.some((d) => d.code === c.code)
     ? current.filter((d) => d.code !== c.code)
     : cleanStars([{ name: c.name, code: c.code, area: c.area ?? null, at: Date.now() }, ...current]);
-  writeRaw(STAR_KEY, { version: 1, dealers: next } satisfies StarStore);
+  writeRaw(starKey(list), { version: 1, dealers: next } satisfies StarStore);
   return next;
 }
 
