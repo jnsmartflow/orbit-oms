@@ -356,7 +356,7 @@ export const TILE_IMAGES: ReadonlySet<string> = new Set([
   // now own one in public/PO/board/, so their slugs are declared here.
   "superclean", "vt-eterna", "smart-choice", "promise-sheen",
   "coats-additives", "vt-specialty", "thinner",
-  "uni-stainer", "machine-tinter", "acotone",
+  "uni-stainer", "machine-tinter", "acotone", "spray-paint",
   "2k-matt",
   "cement-sb",
   "crack-5mm",
@@ -647,6 +647,9 @@ export const TRANSPARENT_ART: ReadonlySet<string> = new Set([
   // tall: it pads with transparency either side and reads smaller in its
   // tile. That is the shape of the thing. Do NOT scale or crop it to match.
   "uni-stainer", "machine-tinter", "acotone",
+  // Spray Paint's first tile, 2026-09-10 — replaced More Interior, which was
+  // removed rather than renamed so no tile key had to move. See BOARD.
+  "spray-paint",
   // ── MEMBER art — public/PO/drawer/<slug>.webp ─────────────────────────
   // Four slugs appear in BOTH lists — pu-enamel, powerflexx, promise-int and
   // the rest of the leaders below. artPath picks the folder from which
@@ -1953,16 +1956,65 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "SUPERCLEAN",      label: "SuperClean", slug: "product-superclean" },
           { sap: "SUPERCLEAN 3IN1", label: "3in1", slug: "product-superclean-3in1" },
         ] },
-      // 🔴 SUPERCOVER SHEEN IS A MEMBER, NOT A TILE. It has never been ordered
-      // — 0 lines and 0 orders across the whole 148-day, 12,529-order history,
-      // no first order and no last order. A tile is a permanent slot on a
-      // 36-slot board; a member costs nothing. Acrylic Putty leads because it
-      // is the only one of the three with real demand (44 lines/90d), and a
-      // leading member keeps its one-tap path.
-      { key: "ACRYLIC PUTTY", label: "More Interior", slug: "more-interior",
+      // ═══════════════════════════════════════════════════════════════════
+      // 🔴 "MORE INTERIOR" WAS HERE AND IS GONE — 2026-09-10.
+      //
+      // It was key "ACRYLIC PUTTY", slug "more-interior", holding Acrylic
+      // Putty and PolyPutty. Spray Paint took its slot below.
+      //
+      // WHERE THE PUTTIES WENT: nowhere. Nothing was removed from the
+      // catalogue, from any keyword map or from any search path — this was a
+      // BOARD MEMBERSHIP change and only that. Both are family PUTTY with full
+      // searchTokens ("ACRYLIC PUTTY,PUTTY,ACRYLIC,PREP" and
+      // "POLYPUTTY,POLY PUTTY,PUTTY,DUWEL,PREP"), and all four keyword
+      // promotions — putty, acrylic putty, polyputty, poly putty — still
+      // resolve to family PUTTY. They are search-only now, which is what
+      // SPRAY PAINT was until this commit.
+      //
+      // 🔴 AND "ACRYLIC PUTTY" IS NO LONGER ANY TILE'S KEY. That matters more
+      // than the label. The frozen-key rule was NOT spent here: rather than
+      // rename this tile and leave its key naming a product it no longer held,
+      // the tile went and Spray Paint arrived with a key of its own. The
+      // difference is not cosmetic —
+      //
+      //   addLines filters `l.tileSap === tileKey` (po-v2-page.tsx:709). Had
+      //   the key stayed while the members changed, opening the new drawer and
+      //   adding anything would have DELETED every stored Acrylic Putty line,
+      //   silently. That is the VELVETINO incident migrateLine case 3 exists
+      //   to prevent, and keeping the key would have rebuilt it.
+      //
+      //   With no tile holding the key, migrateLine takes CASE 2 instead:
+      //   boardTile("ACRYLIC PUTTY") is null, so a stored line is returned
+      //   UNCHANGED — the same object, so migrateLines writes nothing back.
+      //   It renders, it sends, it does not badge. The documented correct end
+      //   state for a product that left the board.
+      //
+      // ⚠ ONE COST, AND IT IS SILENT: a favourite stored on the key
+      // "ACRYLIC PUTTY" is pruned on the next read (loadFavProducts filters on
+      // boardTile(f.key) !== null) with no message. Exactly one key is
+      // affected; POLYPUTTY was never a key. Judged the honest outcome — the
+      // salesman starred Acrylic Putty, and it no longer has a tile.
+      // ═══════════════════════════════════════════════════════════════════
+      //
+      // 🔴 SPRAY PAINT'S FIRST TILE. It has been a search-only family since v1
+      // (CLAUDE_PLACE_ORDER §6). ONE product, eleven colours: the key IS its
+      // single member's sap, the convention, no exception needed.
+      //
+      // No CURATION entry, so the eleven options come straight from the
+      // payload in sortOrder — Brilliant White, Black, Phiroza, Golden Yellow,
+      // Signal Red, Deep Orange, Golden Brown, Dark Brown, Gold, Silver, Bus
+      // Green. resolveGroup already branches on that; nothing to add.
+      //
+      // The member carries the tile's own label and de-doubles to one word in
+      // any caption, exactly as Gloss and Max do.
+      //
+      // ⚠ THE CAN IS TALL AND NARROW — 80% of spray-paint.webp is transparent,
+      // against 25-35% for a tub. It pads with space either side and reads
+      // smaller in its tile than its neighbours. That is the product. Do NOT
+      // scale or crop it to match the row.
+      { key: "SPRAY PAINT", label: "Spray Paint", slug: "spray-paint",
         members: [
-          { sap: "ACRYLIC PUTTY", label: "Acrylic Putty" },
-          { sap: "POLYPUTTY",     label: "PolyPutty" },
+          { sap: "SPRAY PAINT", label: "Spray Paint" },
         ] },
     ],
   },
