@@ -113,9 +113,22 @@ export function CustomerRow({
       >
         {/* min-w-0 is what lets the two lines truncate — a flex child defaults
             to min-width:auto and would otherwise push the row past the viewport. */}
+        {/* 🔴 THE NAME IS 14px AND NOT BOLD, which is v1's hierarchy and reads
+            calmer down a long list — §60's refinement principle is that exactly
+            ONE line in a card carries weight, and in a LIST of names none of
+            them can be the hero. Bold at 15px made thirty rows shout at once.
+            INK rather than a grey scale: v2 has no gray-900 and is not
+            importing one for a single row.
+
+            ⚠ NO LEADING VIOLET DOT. v1 has one; it is decoration in a list
+            where every row would carry it, so it identifies nothing.
+
+            The sub-line is ONE mono run at 12px. v1 switches to font-sans
+            mid-string for the area, which makes the middot and the area sit on
+            a different baseline rhythm from the code beside them. */}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-bold" style={{ color: INK }}>{name}</span>
-          <span className="block truncate font-mono text-[11.5px]" style={{ color: MUTED }}>
+          <span className="block truncate text-[14px]" style={{ color: INK }}>{name}</span>
+          <span className="block truncate font-mono text-[12px]" style={{ color: MUTED }}>
             {code}{area ? ` · ${area}` : ""}
           </span>
         </span>

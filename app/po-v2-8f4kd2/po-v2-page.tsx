@@ -68,6 +68,20 @@ import {
 // default to `min-width:auto`, which is what actually causes runaway rows),
 // and truncating text.
 
+/**
+ * The wordmark size in the MASTHEAD BAND — the violet-wash header block.
+ *
+ * 🔴 ONE NUMBER, TWO BANDS. The board's masthead and the dealer-picker header
+ * are the same band and must read as the same band; before this they were two
+ * hand-typed sizes waiting to drift the first time one of them was nudged.
+ *
+ * ⚠ THE SPLASH IS NOT A MASTHEAD and does not use this. It renders the
+ * wordmark alone and centred on a full-bleed gradient at 44px in white, which
+ * is a different job at a different scale — routing it through this constant
+ * would shrink the splash the next time somebody adjusts a header.
+ */
+export const MASTHEAD_WORDMARK = 31;
+
 // The product name UNDER the tile, Blinkit-style: outside the square, left
 // aligned, two lines at most.
 //
@@ -1636,7 +1650,7 @@ export default function PoV2Page(): React.JSX.Element {
               fix is to move it into the sticky row below, not to make it
               conditional again. */}
           <div className="flex items-center justify-between gap-3">
-            <Wordmark size={31} colour={BRAND} />
+            <Wordmark size={MASTHEAD_WORDMARK} colour={BRAND} />
             <button
               type="button"
               aria-label="Choose favourite products"
@@ -2171,8 +2185,32 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
 }): React.JSX.Element {
   return (
     <main className="min-h-screen w-full" style={{ background: SURFACE, paddingBottom: 24 }}>
-      <div className="sticky top-0 z-10 px-2 pt-2 pb-2"
-           style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}>
+      {/* ── THE BAND ──────────────────────────────────────────────────────
+          🔴 THE SAME BAND AS THE BOARD, not a second header that happens to
+          sit on top. This was a white bar carrying a back arrow and two lines
+          of text, so stepping off the board into a picker looked like leaving
+          the app. The wash, the rule under it and the safe-area treatment are
+          the board masthead's own values (the block above ProductSearchInput);
+          the vertical rhythm is the board's too — 16 above the wordmark row,
+          12 to the search, 16 below it.
+
+          ⚠ THE WHOLE HEADER IS STICKY HERE and only the search row is sticky
+          on the board. That difference is deliberate and predates this: on a
+          screen whose entire purpose is search, the box is the last thing that
+          should scroll away.
+
+          ⚠ NO GEAR ON THE RIGHT. Favourite PRODUCTS belong to the board, and
+          this screen picks a dealer. The right-hand side stays empty. */}
+      <div
+        className="sticky top-0 z-10 px-2"
+        style={{
+          background: BRAND_WASH,
+          borderBottom: `1px solid ${RULE}`,
+          // PADDING, NOT MARGIN — the wash has to run under the status bar.
+          paddingTop: "calc(env(safe-area-inset-top) + 16px)",
+          paddingBottom: 16,
+        }}
+      >
         <div className="flex items-center gap-1">
           <button
             type="button" aria-label="Back" onClick={onBack}
@@ -2180,15 +2218,9 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
           >
             <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
           </button>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[17px] font-bold"
-                  style={{ color: INK, letterSpacing: "-0.02em" }}>
-              {title}
-            </span>
-            <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{note}</span>
-          </span>
+          <Wordmark size={MASTHEAD_WORDMARK} colour={BRAND} />
         </div>
-        <div className="px-2 pt-2">
+        <div className="px-2 pt-3">
           {/* 🔴 NO autoFocus, DELIBERATELY. Focusing on mount raised the
               keyboard every single time this screen opened, which shrank the
               window before he had even looked at it — and most of the time he
@@ -2198,6 +2230,20 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
           <CustomerSearchInput value={query} onChange={onQuery} />
         </div>
       </div>
+
+      {/* The question, and what happens to the order while he answers it.
+          🔴 IT MOVED OUT OF THE BAND, IT WAS NOT DROPPED. Same text, same
+          17px/11.5px, same colours — but a masthead identifies the app and a
+          question belongs with the list that answers it, so it is now the
+          first block of the body and scrolls with it. */}
+      <div className="px-4 pt-3 pb-1">
+        <span className="block truncate text-[17px] font-bold"
+              style={{ color: INK, letterSpacing: "-0.02em" }}>
+          {title}
+        </span>
+        <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{note}</span>
+      </div>
+
       {children}
     </main>
   );
