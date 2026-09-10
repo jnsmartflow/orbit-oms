@@ -355,7 +355,7 @@ export const TILE_IMAGES: ReadonlySet<string> = new Set([
   // 2026-09-10: five tiles that used to BORROW a file through TILE_ART_ALIAS
   // now own one in public/PO/board/, so their slugs are declared here.
   "superclean", "vt-eterna", "smart-choice", "promise-sheen",
-  "coats-additives", "vt-specialty",
+  "coats-additives", "vt-specialty", "thinner",
   "2k-matt",
   "cement-sb",
   "crack-5mm",
@@ -625,6 +625,18 @@ export const TRANSPARENT_ART: ReadonlySet<string> = new Set([
   "ext-acrylic",
   "damp-2in1", "crack-5mm",
   "prime-matt", "2k-matt", "luxurio", "coats-additives",
+  // 2026-09-10, the last five board files. FOUR OF THESE REPLACE LEGACY
+  // OPAQUE ART — cement-sb, zinc-yellow, red-oxide and roof-coat each showed
+  // a padded white square, and joining this set is what takes the square away
+  // with the picture. "thinner" was blank and only needed the entry.
+  //
+  // ⚠ cement-sb IS FED BY A FILE NAMED cement-wb, ON THE OWNER'S EXPLICIT
+  // PLACEMENT, MADE TWICE. WB is WATER-based and SB is SOLVENT-based, and
+  // BOARD holds them as two different products: CEMENT PRIMER SB is this tile,
+  // CEMENT PRIMER WB is a separate "Cement WB" member of the Primers tile. So
+  // this tile may be showing a photograph of a different product. Recorded
+  // rather than second-guessed; ask before "fixing" it.
+  "cement-sb", "zinc-yellow", "red-oxide", "roof-coat", "thinner",
   // ── MEMBER art — public/PO/drawer/<slug>.webp ─────────────────────────
   // Four slugs appear in BOTH lists — pu-enamel, powerflexx, promise-int and
   // the rest of the leaders below. artPath picks the folder from which
