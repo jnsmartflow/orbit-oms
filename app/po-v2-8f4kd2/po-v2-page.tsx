@@ -634,6 +634,72 @@ export default function PoV2Page(): React.JSX.Element {
     return () => clearTimeout(t);
   }, [hydrated, dealer, lines, shipTo, order]);
 
+  /**
+   * 🔴 AND THE SAME WRITE, IMMEDIATELY, ON THE WAY OUT.
+   *
+   * The debounce above is right and stays — `order` carries the notes
+   * textarea, so an undebounced write would hit localStorage on every
+   * keystroke, synchronously, on a phone. What it cannot do is survive the
+   * page going away inside its own 400ms: the component unmounts, the cleanup
+   * clears the timer, and whatever changed in that window is gone. A back
+   * press off the board, a swipe-away, a call arriving, the OS reclaiming
+   * memory — all of them land in that window sooner or later, and the salesman
+   * loses the line he just added.
+   *
+   * ⚠ /po HAS NEVER HAD THIS PROBLEM because it saves SYNCHRONOUSLY at every
+   * mutation (savePoDraft, ~40 call sites, no debounce). v2 traded that for
+   * the keystroke cost and owes this in return.
+   *
+   * 🔴 pagehide AND visibilitychange, NOT beforeunload. beforeunload is
+   * unreliable on mobile — iOS Safari fires it inconsistently and Chrome
+   * ignores it for bfcache-eligible navigations. `pagehide` is the one event
+   * both fire on a real navigation, and `visibilitychange` to "hidden" is what
+   * catches the app being backgrounded without unloading at all, which is the
+   * commonest way a depot phone leaves this screen.
+   *
+   * 🔴 IT READS A REF, NOT A CLOSURE, AND THAT IS THE TRAP THIS AVOIDS. The
+   * listener is registered ONCE — empty dependency array — so a closure would
+   * capture the cart as it was on mount and faithfully save an empty order for
+   * the rest of the session. Putting the state in the deps instead would
+   * re-register both listeners on every keystroke, which is the same churn the
+   * debounce exists to prevent. A ref rewritten each render is read at CALL
+   * time and costs nothing, which is the discipline navRef already uses.
+   *
+   * IDEMPOTENT. It applies the SAME rule as the effect above, both halves: an
+   * order with lines is saved, an order without them CLEARS the key. If the
+   * debounced write also fires, the second write stores a byte-identical
+   * snapshot; only `updatedAt` is refreshed, which is what a save is for and
+   * cannot lose anything.
+   */
+  const liveRef = useRef({
+    hydrated: false,
+    dealer:   null as ApiCustomer | null,
+    lines:    [] as V2CartLine[],
+    shipTo:   null as ApiCustomer | null,
+    order:    EMPTY_ORDER,
+  });
+  liveRef.current = { hydrated, dealer, lines, shipTo, order };
+
+  useEffect(() => {
+    const flush = (): void => {
+      const s = liveRef.current;
+      // Before hydration there is nothing real to write, and writing would
+      // clobber a stored draft with the empty initial state.
+      if (!s.hydrated) return;
+      if (s.lines.length > 0) saveLiveDraft(snapshotOf(s.dealer, s.lines, s.shipTo, s.order));
+      else clearLiveDraft();
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
   const countsByTile = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const line of lines) counts[line.tileSap] = (counts[line.tileSap] ?? 0) + 1;
@@ -674,7 +740,7 @@ export default function PoV2Page(): React.JSX.Element {
    * product search and the drafts and sent screens already use, so this is the
    * pattern repeated rather than a fourth one invented.
    */
-  function openDealerSheet(): void { setQuery(""); setScreen("dealer"); }
+  function openDealerSheet(): void { openLayer(); setQuery(""); setScreen("dealer"); }
 
   /**
    * Empty the cart and go back to the board — but KEEP THE DEALER.
@@ -689,6 +755,7 @@ export default function PoV2Page(): React.JSX.Element {
    * draft rather than overwriting the one he had open.
    */
   function clearOrder(): void {
+    commitToBoard();
     setLines([]);
     setOrder(EMPTY_ORDER);
     setShipTo(null);
@@ -699,6 +766,7 @@ export default function PoV2Page(): React.JSX.Element {
 
   /** Empty the order and go back to the board. The dealer clears with it. */
   function startOver(): void {
+    commitToBoard();
     setLines([]);
     setDealer(null);
     setShipTo(null);
@@ -726,6 +794,7 @@ export default function PoV2Page(): React.JSX.Element {
     openDraftIdRef.current = draftId;
     if (lines.length === 0) { applySnapshot(snap, customers); return; }
     setPendingLoad(snap);
+    openLayer();
     setSheet("load");
   }
 
@@ -764,6 +833,20 @@ export default function PoV2Page(): React.JSX.Element {
    * do the other's job.
    */
   function navTo(next: "order" | "drafts" | "sentList"): void {
+    /* 🔴 THE TABS ARE PEERS, SO ONLY LEAVING THE BOARD IS "FORWARD".
+     *
+     * Board -> Drafts is a level down and pushes one entry. Drafts -> Sent is
+     * LATERAL and pushes nothing, or a man flicking between the two tabs would
+     * build a stack he then has to press back through. Either -> Board is a
+     * close, and it goes through the same authority as every other close so a
+     * detail screen open underneath is popped with it.
+     *
+     * This is /po's rule (po-page.tsx:1215-1235), which pushes only when
+     * `browseScreen === "home"` and closes both peers through one branch.
+     */
+    const from = navRef.current.screen;
+    if (next === "order") { commitToBoard(); }
+    else if (from === "order") { openLayer(); }
     setOpenDraftDetail(null);
     setOpenSent(null);
     setScreen(next);
@@ -771,6 +854,7 @@ export default function PoV2Page(): React.JSX.Element {
 
   /** REPLACE — the board becomes this order, dealer and remarks included. */
   function applyReplace(snap: V2Snapshot): void {
+    commitToBoard();
     setSheet(null); setPendingLoad(null);
     applySnapshot(snap, customers);
   }
@@ -783,6 +867,7 @@ export default function PoV2Page(): React.JSX.Element {
    * silent change to the one field that decides where the paint is billed.
    */
   function applyAdd(snap: V2Snapshot): void {
+    commitToBoard();
     setSheet(null); setPendingLoad(null);
     const { lines: next, merged } = mergeLines(lines, snap.lines);
     setLines(next);
@@ -821,6 +906,7 @@ export default function PoV2Page(): React.JSX.Element {
    * who the order is for keeps every line intact.
    */
   function pickDealer(c: ApiCustomer): void {
+    commitClose(1);
     setDealer(c);
     setQuery("");
     setSheet(null);
@@ -893,6 +979,7 @@ export default function PoV2Page(): React.JSX.Element {
       });
       return [...kept, ...built];
     });
+    commitClose(1);
     setOpenTile(null);
     setOpenGroup(null);
   }
@@ -961,6 +1048,7 @@ export default function PoV2Page(): React.JSX.Element {
   function openSearchHit(group: V2ProductGroup): void {
     const key = tileKeyForMember(group.key);
     const tile = key === null ? null : boardTile(key);
+    openLayer();
     if (tile) setOpenTile({ tile, initialMember: group.key });
     else setOpenGroup(group);
   }
@@ -976,7 +1064,7 @@ export default function PoV2Page(): React.JSX.Element {
   function removeLine(id: string): void {
     const next = lines.filter((l) => l.id !== id);
     setLines(next);
-    if (next.length === 0) setScreen("order");
+    if (next.length === 0) { commitClose(1); setScreen("order"); }
   }
 
   /**
@@ -1104,23 +1192,14 @@ export default function PoV2Page(): React.JSX.Element {
    * scrim both route through the same back(), so there is exactly one exit and
    * the entry can never be left on the stack.
    */
-  function openFavPicker(): void {
-    if (typeof window !== "undefined") window.history.pushState({ v2FavPicker: true }, "");
-    setFavManage(true);
-  }
-  function closeFavPicker(): void {
-    // Going back fires popstate, and the listener below is what actually
-    // closes. Calling setFavManage(false) here too would close it and leave
-    // the entry on the stack, so the next back would do nothing visible.
-    if (typeof window !== "undefined") window.history.back();
-    else setFavManage(false);
-  }
-  useEffect(() => {
-    if (!favManage) return;
-    const onPop = (): void => setFavManage(false);
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [favManage]);
+  // ⚠ THE PRIVATE HISTORY CODE THAT USED TO LIVE HERE IS GONE. This picker had
+  // its own pushState, its own back() and its own popstate listener — the only
+  // history handling in the folder, added so that ONE overlay behaved while
+  // every other one leaked a back press out of the app. It is now an ordinary
+  // layer: it opens through openLayer and closes through the one authority,
+  // like the other eleven. Nothing about what it DOES changed.
+  function openFavPicker(): void { openLayer(); setFavManage(true); }
+  function closeFavPicker(): void { setFavManage(false); }
 
   /* ═══════════════════════════════════════════════════════════════════════
    * THE CLOSING AUTHORITY
@@ -1158,6 +1237,96 @@ export default function PoV2Page(): React.JSX.Element {
     drawer: openTile !== null || openGroup !== null,
     screen,
   };
+
+  /* ── THE HISTORY STACK ────────────────────────────────────────────────
+   *
+   * 🔴 ONE ENTRY PER OPEN LAYER, AND THE BROWSER'S BACK IS JUST ANOTHER WAY
+   * TO ASK closeTopLayer. Ported from /po (po-page.tsx:1066-1128), which has
+   * run this shape in the depot for months. Two refs, and each prevents one
+   * specific failure:
+   *
+   *   depthRef       — how many entries WE pushed above the base. Without it
+   *                    a close cannot tell "there is an entry to consume"
+   *                    from "we are at the base and back means exit".
+   *   suppressPopRef — marks a popstate WE caused, after the caller has
+   *                    already changed state. Without it a commit runs its
+   *                    close twice: once itself, once through the handler.
+   *
+   * 🔴 THREE SHAPES, AND WHICH ONE A CONTROL USES DEPENDS ON WHETHER IT HAS
+   * ALREADY CHANGED STATE. /po looks contradictory here until you sort its 29
+   * back() calls into two piles, and it is the same split:
+   *
+   *   openLayer()      forward. Push one entry.
+   *   requestClose()   a DISMISS — scrim, Cancel, back chevron. Pops one
+   *                    entry and lets the handler do the closing, so a button
+   *                    and a hardware back run the SAME code.
+   *   commitClose(n)   a COMMIT — pick a depot, Delete, Replace, Add. The
+   *                    caller has already changed state, so this only
+   *                    CONSUMES the entries and suppresses the popstate.
+   *
+   * ⚠ THE HANDLER DECREMENTS ONLY WHEN IT ACTS. A suppressed pop had its
+   * depth adjusted by commitClose already; decrementing again would drift the
+   * count low and leave stale entries, which is exactly the "back does nothing
+   * and he presses it twice" failure.
+   */
+  const depthRef       = useRef(0);
+  const suppressPopRef = useRef(false);
+
+  /** Forward into a layer. Exactly one entry, every time. */
+  function openLayer(): void {
+    if (typeof window === "undefined") return;
+    window.history.pushState({ v2Layer: true }, "");
+    depthRef.current += 1;
+  }
+
+  /**
+   * A DISMISS. Pops one entry; the popstate handler closes the layer.
+   *
+   * 🔴 THE STATE CHANGE HAPPENS IN THE HANDLER, NOT HERE, and that is what
+   * makes a Cancel button and a hardware back literally the same path. If this
+   * closed the layer itself and then popped, the two routes would be two
+   * implementations that drift.
+   */
+  function requestClose(): void {
+    if (typeof window !== "undefined" && depthRef.current > 0) window.history.back();
+    else closeTopLayer();   // no entry to consume (SSR, or already at base)
+  }
+
+  /**
+   * A COMMIT. The caller has done the work AND closed the layer; this consumes
+   * the entries so a later back does not close something a second time.
+   *
+   * One go(-n) fires ONE popstate, which is why the count is adjusted here and
+   * the handler skips its own decrement for a suppressed pop.
+   */
+  function commitClose(n: number): void {
+    if (typeof window === "undefined") return;
+    const steps = Math.min(n, depthRef.current);
+    if (steps <= 0) return;
+    depthRef.current -= steps;
+    suppressPopRef.current = true;
+    window.history.go(-steps);
+  }
+
+  /** A COMMIT that lands on the board from wherever it was. */
+  function commitToBoard(): void { commitClose(depthRef.current); }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = (): void => {
+      if (suppressPopRef.current) { suppressPopRef.current = false; return; }
+      depthRef.current = Math.max(0, depthRef.current - 1);
+      // 🔴 closeTopLayer IS CAPTURED FROM THE FIRST RENDER AND THAT IS SAFE.
+      // It reads navRef, a ref rewritten every render, and calls setState
+      // functions, which React guarantees are stable. Nothing it touches can
+      // go stale — the same reason /po registers its handler once with an
+      // empty dependency array.
+      closeTopLayer();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** What the closer just shut, so a caller can tell "nothing" from "something". */
   type ClosedLayer =
@@ -1318,7 +1487,7 @@ export default function PoV2Page(): React.JSX.Element {
    */
   const loadSheet = sheet === "load" && pendingLoad ? (
     <V2Sheet
-      onClose={closeTopLayer}
+      onClose={requestClose}
       footer={
         <button
           type="button"
@@ -1375,7 +1544,7 @@ export default function PoV2Page(): React.JSX.Element {
   /** Rename — SAVED drafts only. The in-progress draft has no name to give. */
   const renameSheet = sheet === "rename" && renameTarget ? (
     <V2Sheet
-      onClose={closeTopLayer}
+      onClose={requestClose}
       footer={
         <>
           <button
@@ -1393,7 +1562,7 @@ export default function PoV2Page(): React.JSX.Element {
               setSavedDrafts(next);
               // Keep the open detail sheet in step with what was just written.
               setOpenDraftDetail(next.find((d) => d.id === renameTarget.id) ?? null);
-              setSheet(null); setRenameTarget(null);
+              commitClose(1); setSheet(null); setRenameTarget(null);
             }}
             className="min-w-0 flex-1 rounded-[13px] py-3 text-[15px] font-semibold text-white"
             style={{ background: BRAND }}
@@ -1440,7 +1609,7 @@ export default function PoV2Page(): React.JSX.Element {
    */
   const deleteSheet = sheet === "delete" && deleteTarget ? (
     <V2Sheet
-      onClose={closeTopLayer}
+      onClose={requestClose}
       footer={
         <>
           <button
@@ -1455,6 +1624,7 @@ export default function PoV2Page(): React.JSX.Element {
             type="button"
             onClick={() => {
               setSavedDrafts(removeSavedDraft(deleteTarget.id));
+              commitClose(navRef.current.screen === "draftDetail" ? 2 : 1);
               setDeleteTarget(null); setOpenDraftDetail(null); setSheet(null);
               // The draft is gone, so the screen showing it has to go too.
               setScreen("drafts");
@@ -1588,12 +1758,12 @@ export default function PoV2Page(): React.JSX.Element {
           drafts={savedDrafts}
           // In progress IS the board. Opening it is going back to it.
           onOpenLive={() => setScreen("order")}
-          onOpen={(d) => { setOpenDraftDetail(d); setScreen("draftDetail"); }}
+          onOpen={(d) => { openLayer(); setOpenDraftDetail(d); setScreen("draftDetail"); }}
           // 🔴 THE SAME CONFIRM THE DETAIL'S Delete OPENS — one sheet, one
           // wording, one place removeSavedDraft is ever called. DraftsScreen
           // hands this to SAVED cards only; the in-progress card is the order
           // he is building and Clear order on the board is how that goes.
-          onDelete={(d) => { setDeleteTarget(d); setSheet("delete"); }}
+          onDelete={(d) => { openLayer(); setDeleteTarget(d); setSheet("delete"); }}
         />
         <BottomNav active="drafts" onNavigate={navTo} />
         {toastHost}
@@ -1611,7 +1781,7 @@ export default function PoV2Page(): React.JSX.Element {
       <>
         <SentScreen
           orders={sentOrders}
-          onOpen={(o) => { setOpenSent(o); setScreen("sentDetail"); }}
+          onOpen={(o) => { openLayer(); setOpenSent(o); setScreen("sentDetail"); }}
         />
         <BottomNav active="sent" onNavigate={navTo} />
         {toastHost}
@@ -1630,12 +1800,12 @@ export default function PoV2Page(): React.JSX.Element {
           status="Saved"
           when={formatSavedAt(openDraftDetail.savedAt)}
           shipTo={shipToOf(openDraftDetail.snapshot)}
-          onBack={closeTopLayer}
+          onBack={requestClose}
           footer={
             <>
               <button
                 type="button"
-                onClick={() => { setDeleteTarget(openDraftDetail); setSheet("delete"); }}
+                onClick={() => { openLayer(); setDeleteTarget(openDraftDetail); setSheet("delete"); }}
                 className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-semibold"
                 style={{ border: `1.5px solid ${RULE}`, color: URGENT }}
               >
@@ -1645,7 +1815,7 @@ export default function PoV2Page(): React.JSX.Element {
                 type="button"
                 onClick={() => { setRenameTarget(openDraftDetail);
                                  setRenameText(openDraftDetail.name ?? "");
-                                 setSheet("rename"); }}
+                                 openLayer(); setSheet("rename"); }}
                 className="shrink-0 rounded-[13px] px-4 py-3 text-[15px] font-semibold"
                 style={{ border: `1.5px solid ${RULE}`, color: INK }}
               >
@@ -1686,7 +1856,7 @@ export default function PoV2Page(): React.JSX.Element {
           status="Sent"
           when={formatSavedAt(openSent.sentAt)}
           shipTo={shipToOf(openSent.snapshot)}
-          onBack={closeTopLayer}
+          onBack={requestClose}
           // A chip reading "Sent", on a screen reached from a list headed Sent,
           // from a tab called Sent. The DRAFT detail keeps its chip: Saved vs
           // Auto-saved is a distinction nothing else on that screen makes.
@@ -1768,18 +1938,22 @@ export default function PoV2Page(): React.JSX.Element {
           shipTo={shipTo}
           lines={lines}
           order={order}
-          onBack={closeTopLayer}
+          onBack={requestClose}
           onEdit={() => setScreen("order")}
           onRemoveLine={removeLine}
           onOrderChange={setOrder}
           onSend={handleSend}
           onSaveDraft={saveDraft}
           onOpenDealer={openDealerSheet}
-          onClearOrder={() => setSheet("clear")}
+          onClearOrder={() => { openLayer(); setSheet("clear"); }}
           reviewSheet={reviewSheet}
-          onReviewSheet={setReviewSheet}
-          onCloseTop={closeTopLayer}
-          onOpenShipTo={() => { setQuery(""); setScreen("shipto"); }}
+          onReviewSheet={(next) => {
+            // OPEN pushes; a PICK is a commit that consumes its own entry.
+            if (next === null) commitClose(1); else openLayer();
+            setReviewSheet(next);
+          }}
+          onCloseTop={requestClose}
+          onOpenShipTo={() => { openLayer(); setQuery(""); setScreen("shipto"); }}
         />
         {/* ── CLEAR CONFIRM — asked once, and only from the review header ───
             🔴 THIS IS WHERE THE URGENT COLOUR LIVES. The trigger upstairs is
@@ -1792,7 +1966,7 @@ export default function PoV2Page(): React.JSX.Element {
             him rather than checking. */}
         {sheet === "clear" && (
           <V2Sheet
-            onClose={closeTopLayer}
+            onClose={requestClose}
             footer={
               <>
                 <button
@@ -1839,7 +2013,7 @@ export default function PoV2Page(): React.JSX.Element {
         <PickerScreen
           title={dealer ? "Change dealer" : "Who is this order for?"}
           query={query} onQuery={setQuery}
-          onBack={closeTopLayer}
+          onBack={requestClose}
         >
           {/* THE CUSTOMER LIST — the old key, the old data, unchanged. */}
           <CustomerListBody
@@ -1861,7 +2035,7 @@ export default function PoV2Page(): React.JSX.Element {
         <PickerScreen
           title="Ship to"
           query={query} onQuery={setQuery}
-          onBack={closeTopLayer}
+          onBack={requestClose}
         >
           {/* A FIXED first row for the default, so "same as billing" is a thing
               you can pick your way back to, not just the absence of a choice.
@@ -1869,7 +2043,7 @@ export default function PoV2Page(): React.JSX.Element {
           {query.trim().length === 0 && (
             <button
               type="button"
-              onClick={() => { setShipTo(null); setQuery(""); setScreen("review"); }}
+              onClick={() => { commitClose(1); setShipTo(null); setQuery(""); setScreen("review"); }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left"
               style={{
                 borderBottom: `1px solid ${DIVIDER}`,
@@ -1901,7 +2075,7 @@ export default function PoV2Page(): React.JSX.Element {
           <CustomerListBody
             customers={customers} starred={shipToStarred} query={query}
             currentCode={shipTo?.code ?? null}
-            onPick={(c) => { setShipTo(c); setQuery(""); setScreen("review"); }}
+            onPick={(c) => { commitClose(1); setShipTo(c); setQuery(""); setScreen("review"); }}
             onToggleStar={(c) => setShipToStarred(toggleStarred(c, "shipto"))}
           />
         </PickerScreen>
@@ -2066,7 +2240,7 @@ export default function PoV2Page(): React.JSX.Element {
                     // two copies cannot behave differently.
                     onClick={() => {
                       const t = boardTile(fav.key);
-                      if (t) setOpenTile({ tile: t, initialMember: t.members[0].sap });
+                      if (t) { openLayer(); setOpenTile({ tile: t, initialMember: t.members[0].sap }); }
                     }}
                     className="flex min-w-0 flex-col gap-1.5 text-left"
                     style={{ opacity: ready ? 1 : 0.45 }}
@@ -2180,7 +2354,7 @@ export default function PoV2Page(): React.JSX.Element {
                     // Nothing is asked first. This is the whole interaction.
                     // A board tap opens on members[0] — the top seller, which
                     // is the whole reason members are ranked.
-                    onClick={() => setOpenTile({ tile, initialMember: tile.members[0].sap })}
+                    onClick={() => { openLayer(); setOpenTile({ tile, initialMember: tile.members[0].sap }); }}
                     className="flex min-w-0 flex-col gap-1.5 text-left"
                     style={{ opacity: ready ? 1 : 0.45 }}
                   >
@@ -2327,7 +2501,7 @@ export default function PoV2Page(): React.JSX.Element {
               what is in the basket, and one short word is enough to open it. */}
           <button
             type="button"
-            onClick={() => setScreen("review")}
+            onClick={() => { openLayer(); setScreen("review"); }}
             className="shrink-0 rounded-full px-5 py-2 text-[14px] font-semibold text-white"
             style={{ background: BRAND }}
           >
@@ -2367,7 +2541,7 @@ export default function PoV2Page(): React.JSX.Element {
           product={openMember}
           tile={openResolved ?? undefined}
           initialMember={openTile.initialMember}
-          onClose={closeTopLayer}
+          onClose={requestClose}
           onAdd={(picks) => addLines(
             openTile.tile.key, memberLabelIn(openTile.tile), picks, null)}
           existing={existingFor(openTile.tile.key, null)}
@@ -2395,9 +2569,9 @@ export default function PoV2Page(): React.JSX.Element {
           still on its own family tile, untouched, and re-starring is one tap
           on the same star. */}
       {favManage && (
-        <V2Sheet onClose={closeTopLayer} fixedHeight footer={
+        <V2Sheet onClose={requestClose} fixedHeight footer={
           <button
-            type="button" onClick={closeFavPicker}
+            type="button" onClick={() => { commitClose(1); closeFavPicker(); }}
             className="w-full rounded-[13px] py-3 text-[15px] font-semibold text-white"
             style={{ background: BRAND }}
           >
@@ -2479,7 +2653,7 @@ export default function PoV2Page(): React.JSX.Element {
         <ProductDrawer
           key={`group-${openGroup.key}`}
           product={groupResolved}
-          onClose={closeTopLayer}
+          onClose={requestClose}
           onAdd={(picks) => addLines(
             groupResolved.sap, () => groupResolved.label, picks, null)}
           existing={existingFor(groupResolved.sap, null)}
