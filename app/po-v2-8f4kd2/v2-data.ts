@@ -394,7 +394,18 @@ export const TILE_IMAGES: ReadonlySet<string> = new Set([
   // 2026-09-10: five tiles that used to BORROW a file through TILE_ART_ALIAS
   // now own one in public/PO/board/, so their slugs are declared here.
   "superclean", "vt-eterna", "smart-choice", "promise-sheen",
-  "coats-additives", "vt-specialty", "thinner",
+  "coats-additives", "vt-specialty",
+  // ⚠ "thinner" IS DELIBERATELY ABSENT, 2026-09-10. The file
+  // public/PO/board/thinner.webp IS STILL ON DISK and is NOT deleted — the
+  // picture is simply not of this product, and a tin that is not the thing is
+  // worse than no tin: it teaches a salesman the wrong shape. Undeclaring the
+  // slug is how a tile goes back to its plain family wash, which is exactly
+  // what GVA and Hydro PU already do on purpose.
+  //
+  // 🔴 EXACTLY ONE TILE USED THIS SLUG and no member did — checked by walking
+  // BOARD, not by reading the name. So this blanks "Thinner & More" and
+  // nothing else. Put the entry back the day a photograph of a real thinner
+  // arrives, and put it back in TRANSPARENT_ART at the same time.
   "uni-stainer", "machine-tinter", "acotone", "spray-paint",
   "2k-matt",
   "cement-sb",
@@ -676,7 +687,12 @@ export const TRANSPARENT_ART: ReadonlySet<string> = new Set([
   // CEMENT PRIMER WB is a separate "Cement WB" member of the Primers tile. So
   // this tile may be showing a photograph of a different product. Recorded
   // rather than second-guessed; ask before "fixing" it.
-  "cement-sb", "zinc-yellow", "red-oxide", "roof-coat", "thinner",
+  // ⚠ "thinner" WAS HERE AND CAME OUT WITH ITS TILE_IMAGES ENTRY,
+  // 2026-09-10 — the picture was not that product. Both entries go together
+  // or neither does: TRANSPARENT_ART alone declares "read from /PO/, no pale
+  // square, two-layer shadow" for a slug tileImage() will never return, which
+  // is a claim about a file nothing asks for. The file stays on disk.
+  "cement-sb", "zinc-yellow", "red-oxide", "roof-coat",
   // 2026-09-10, the Stainer family. All three tiles were BLANK, so each also
   // had to be declared in TILE_IMAGES — the entry here alone would have left
   // them blank, which is what nearly shipped for "thinner" one commit ago.
@@ -2174,10 +2190,19 @@ export const BOARD: readonly V2BoardFamily[] = [
       // migration reads it as already correct and leaves it — and the next
       // edit of this tile replaces by tile key and deletes it. Reproduced and
       // reported 2026-09-07; the fix belongs in v2-storage.ts, not here.
+      // ⚠ THE KEY SAYS VELVETINO AND VELVETINO IS SECOND, 2026-09-10 — owner's
+      // sequence: Concrete Finish, Velvetino, Clear, Marble. Same rule as
+      // Eterna and Hydro PU above: the key is FROZEN, not tidied to follow the
+      // order. It still names a member this tile HOLDS, which is the only thing
+      // that matters — addLines filters `l.tileSap === tileKey`
+      // (po-v2-page.tsx:709), so a key naming a member that had LEFT would
+      // silently delete every stored Velvetino line. Reordering inside the tile
+      // touches nothing stored: a cart line carries the tile KEY, never a
+      // position.
       { key: "VELVETINO", label: "Luxury Finish", slug: "vt-specialty",
         members: [
-          { sap: "VELVETINO",          label: "Velvetino" },
           { sap: "VT CONCRETE FINISH", label: "Concrete Finish" },
+          { sap: "VELVETINO",          label: "Velvetino" },
           { sap: "VT CLEAR COAT",      label: "Clear Coat" },
           { sap: "VT MARBLE",          label: "Marble" },
         ] },

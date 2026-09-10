@@ -1215,18 +1215,37 @@ export default function ProductDrawer({
 
             {/* ── THE PANE ────────────────────────────────────────────────── */}
             <div className="flex min-w-0 flex-1 flex-col">
-              {/* The option, named at full size — the check against a wrong
-                  tap, directly above the quantity. Which PRODUCT it belongs to
-                  is answered by the strip above, where the selected tile is
-                  ringed. */}
-              {/* The thing chosen, named at full size — the check against a
-                  wrong tap, directly above the quantity. When the rail holds
-                  PRODUCTS there is no option to name, so it names the product:
-                  the same guarantee one level up, that the pane always says out
-                  loud what the packs below it belong to. */}
+              {/* THE NAME BAR SAYS WHAT THE PACKS BELOW IT BELONG TO, and that
+                  is the whole rule. It is the check against a wrong tap, at
+                  full size, directly above the quantity.
+
+                  🔴 WHICH MEANS IT DEPENDS ON WHAT THE PANE IS SHOWING, AND
+                  UNTIL NOW IT DID NOT ASK. It named the selected option
+                  whenever there was one — correct for a STANDARD product,
+                  where the pane shows exactly that one option's packs, and a
+                  lie for a FLAT one, where the pane is FlatBody and renders
+                  EVERY option with its own stepper. Naming one of them there
+                  picks a winner out of a list the salesman is looking at.
+
+                  The symptom that found it was Velvetino: a Luxury Finish
+                  product whose two options are GOLD and SILVER, headed "GOLD"
+                  where its own name belongs. It was never about Velvetino.
+                  Walking the live catalogue found SIX flat members reading a
+                  shade or a base instead of a product name — M900 Gloss and
+                  Spray Paint as "BRILLIANT WHITE", Machine Tinter as "YOX",
+                  Acotone as "NO1", GVA as "RED OXIDE" and Velvetino as "GOLD".
+                  One rule, six screens, so the rule is what changed.
+
+                  ⚠ THE OTHER 37 ARE CORRECT AND MUST STAY THAT WAY. A standard
+                  product's pane really does show one option's packs, so naming
+                  it is the guarantee, not a bug. Do not "simplify" this to
+                  always show cur.label.
+
+                  The hex swatch follows the same test: no single option is
+                  selected in flat mode, so there is no colour to show. */}
               <NameBar
-                value={selectedOption ? selectedOption.value : cur.label}
-                hex={selectedOption && !isBaseOption(selectedOption.value)
+                value={!matrixMode && selectedOption ? selectedOption.value : cur.label}
+                hex={!matrixMode && selectedOption && !isBaseOption(selectedOption.value)
                   ? shadeHex(selectedOption.value) : undefined}
               />
               {/* No empty state. selectedRow is resolved on the first frame for
