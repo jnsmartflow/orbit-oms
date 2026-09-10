@@ -214,6 +214,29 @@ function buildRails(m: Member): Rails {
   };
 }
 
+/**
+ * 🔴 §55's AUTO-FOCUS GATE, AND ITS EXACT EXPRESSION.
+ *
+ * CLAUDE_UI.md:1317 — "Mount / mode-transition auto-focus is **desktop-only**,
+ * gated on `window.matchMedia("(min-width: 768px)").matches` … focusing an
+ * input on a phone would spring the keyboard over the content." /po carries
+ * the same test at three sites (po-page.tsx:999, :1012, :1781). The breakpoint
+ * is quoted from the rule rather than chosen here, so the two routes cannot
+ * drift into two different ideas of "desktop".
+ *
+ * ⚠ IT IS READ AT RENDER, NOT CACHED. A tablet rotating across 768px between
+ * one drawer and the next should get the answer for the width it is at now,
+ * and this is a single matchMedia read on a control that mounts on a tap.
+ *
+ * The `typeof window` guard is for the server render, where matchMedia does
+ * not exist. False is the right SSR answer regardless: nothing should be
+ * focused before hydration.
+ */
+function autoFocusAllowed(): boolean {
+  return typeof window !== "undefined"
+    && window.matchMedia("(min-width: 768px)").matches;
+}
+
 /** Does this member have an OPTIONS level to drill into at all? */
 function hasOptions(m: Member, r: Rails): boolean {
   return m.mode !== "flat" && r.bases.length + r.shades.length > 0;
@@ -557,6 +580,34 @@ export default function ProductDrawer({
    * and the --vvh / --vvo viewport pinning are not touched by it.
    */
   const [searchOpen, setSearchOpen] = useState(false);
+
+  /**
+   * 🔴 THE QUERY IS CLEARED ONLY BY AN EXPLICIT USER ACTION — the X on the
+   * search row, or closing the drawer. NEVER by selecting a member, never by
+   * switching a tab, never by picking a category.
+   *
+   * Three handlers used to wipe it — switchTab, selectCategory and
+   * selectMember — so typing "teak" and then TAPPING THE RESULT threw the
+   * search away at the exact moment it had done its job. The salesman was
+   * left looking at an unfiltered rail with no idea what he had typed, and
+   * the only way back was to type it again. That is the whole "the search is
+   * broken and inconsistent" complaint: it was not the matching that was
+   * wrong, it was that the field emptied itself under him.
+   *
+   * ⚠ A LIVE QUERY CAN LEAVE THE RAIL EMPTY, AND THAT IS CORRECT. On a
+   * strip-products tile the PRODUCT STRIP is deliberately unfiltered (see its
+   * `members.map` below), so moving to a second product whose ladder holds no
+   * match leaves the options column with nothing to list. The "Nothing in
+   * this list matches" line says so, and the PANE is unaffected — it resolves
+   * from the full pool, never from `shown`. Do not "fix" that by clearing the
+   * query again; the two are different questions, as the note on the
+   * selection below has said since it was written.
+   *
+   * ⚠ CLOSING THE DRAWER CLEARS IT TOO, and costs no code: po-v2-page mounts
+   * this component conditionally (`{openTile && openMember && …}` at :2232,
+   * `{openGroup && groupResolved && …}` at :2346), so the whole component
+   * unmounts and this useState is born empty on the next open.
+   */
   function closeSearch(): void {
     setSearchOpen(false);
     setQuery("");
@@ -716,7 +767,10 @@ export default function ProductDrawer({
     const list = next === "base" ? rails.ranked : rails.shades;
     setTabBy((prev) => ({ ...prev, [cur.sap]: next }));
     setSelectedBy((prev) => ({ ...prev, [cur.sap]: list[0]?.value ?? null }));
-    setQuery("");
+    // The query SURVIVES a tab switch — see the rule on closeSearch. Base and
+    // Shade are two halves of one ladder, and a man who typed "teak" wants it
+    // applied to whichever half he is looking at, not thrown away when he
+    // checks the other one.
   }
 
   /**
@@ -746,17 +800,21 @@ export default function ProductDrawer({
    * keyed by member and every member keeps its own, exactly as switching a
    * product or an option does everywhere else in this drawer.
    */
+  // Neither of these clears the query — see the rule on closeSearch. Tapping a
+  // result is the moment the search PAID OFF; emptying the field there is the
+  // one thing guaranteed to feel broken.
   function selectCategory(name: string): void {
     if (name === activeCategory) return;
     const first = members.find((m) => m.category === name);
-    if (first) { setMemberSap(first.sap); setQuery(""); }
+    if (first) setMemberSap(first.sap);
   }
 
   function selectMember(sap: string): void {
     if (sap === cur.sap) return;
+    // Guarded against the FULL member list, not the filtered one, so a tap on
+    // a search result is accepted whether or not the rail is showing it.
     if (!members.some((x) => x.sap === sap)) return;
     setMemberSap(sap);
-    setQuery("");
   }
 
   const matrixMode = cur.mode === "flat";
@@ -1086,17 +1144,32 @@ export default function ProductDrawer({
         <>
           {/* ── THE SEARCH, ONLY WHEN ASKED FOR ──────────────────────────
               Full width when it is open, because a field you have deliberately
-              opened should be the widest thing on the row. autoFocus IS right
-              here and is not a contradiction of "the drawer opens on a
-              quantity, not a keyboard": that rule is about OPENING the drawer.
-              Tapping a magnifier is a request to type. */}
+              opened should be the widest thing on the row.
+
+              🔴 IT DOES NOT FOCUS ITSELF ON A PHONE. This used to carry a bare
+              `autoFocus`, and the comment here argued that tapping a magnifier
+              is a request to type. On a desk that is true and it still focuses.
+              On a phone it is what SPRANG THE KEYBOARD, which halves the
+              viewport, which is the entry condition for every symptom of the
+              drawer's keyboard defect — the footer riding up over the pack
+              rows. §55 settles it: mount auto-focus is desktop-only, and the
+              cost on a phone is one extra tap on a field that is already the
+              widest thing on the row and impossible to miss.
+
+              ⚠ THE QUANTITY INPUT'S OWN autoFocus (PackRow, near the foot of
+              this file) IS NOT THIS AND STAYS. It mounts only after a tap has
+              already set `editing`, so it is the tap-to-edit swap, not a mount
+              focus; gating it would mean tapping a number and getting no
+              keyboard. §55's rule names "mount / mode-transition" focus, which
+              is this field, not that one. */}
           {searchOpen && (
             <div className="flex shrink-0 items-center gap-2 px-4 pb-3">
               <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[12px] px-3"
                    style={{ background: SEARCH_BG }}>
                 <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
                 <input
-                  type="text" inputMode="search" autoComplete="off" autoFocus
+                  type="text" inputMode="search" autoComplete="off"
+                  autoFocus={autoFocusAllowed()}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={railHoldsProducts ? "Find a product"
