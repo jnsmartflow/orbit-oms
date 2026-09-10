@@ -356,6 +356,7 @@ export const TILE_IMAGES: ReadonlySet<string> = new Set([
   // now own one in public/PO/board/, so their slugs are declared here.
   "superclean", "vt-eterna", "smart-choice", "promise-sheen",
   "coats-additives", "vt-specialty", "thinner",
+  "uni-stainer", "machine-tinter", "acotone",
   "2k-matt",
   "cement-sb",
   "crack-5mm",
@@ -637,6 +638,15 @@ export const TRANSPARENT_ART: ReadonlySet<string> = new Set([
   // this tile may be showing a photograph of a different product. Recorded
   // rather than second-guessed; ask before "fixing" it.
   "cement-sb", "zinc-yellow", "red-oxide", "roof-coat", "thinner",
+  // 2026-09-10, the Stainer family. All three tiles were BLANK, so each also
+  // had to be declared in TILE_IMAGES — the entry here alone would have left
+  // them blank, which is what nearly shipped for "thinner" one commit ago.
+  //
+  // ⚠ uni-stainer IS A BOTTLE, NOT A TUB. 62% of its file is transparent
+  // against 25-35% for its neighbours, because the product is narrow and
+  // tall: it pads with transparency either side and reads smaller in its
+  // tile. That is the shape of the thing. Do NOT scale or crop it to match.
+  "uni-stainer", "machine-tinter", "acotone",
   // ── MEMBER art — public/PO/drawer/<slug>.webp ─────────────────────────
   // Four slugs appear in BOTH lists — pu-enamel, powerflexx, promise-int and
   // the rest of the leaders below. artPath picks the folder from which
