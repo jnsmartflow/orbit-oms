@@ -21,7 +21,7 @@ import {
 } from "./v2-storage";
 import {
   BOARD, BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT,
-  FAVOURITE, FILL, INK, MUTED, PAGE, RULE, SEARCH_BG, SURFACE, URGENT, VIOLET,
+  FAVOURITE, FILL, INK, MUTED, PAGE, RULE, SCREEN_TITLE, SEARCH_BG, SURFACE, URGENT, VIOLET,
   VIOLET_BG,
   CUTOUT_SHADOW, TRANSPARENT_ART,
   EMPTY_ORDER, boardTile, boardTileArtFor, buildBoard, buildCatalog, drawerMode,
@@ -71,9 +71,12 @@ import {
 /**
  * The wordmark size in the MASTHEAD BAND — the violet-wash header block.
  *
- * 🔴 ONE NUMBER, TWO BANDS. The board's masthead and the dealer-picker header
- * are the same band and must read as the same band; before this they were two
- * hand-typed sizes waiting to drift the first time one of them was nudged.
+ * ⚠ IT HAS EXACTLY ONE CONSUMER: the board masthead. It briefly had two —
+ * cd85e189 put the wordmark in the dealer-picker band as well — and that was
+ * reverted the same day, because a picker band has to identify a SCREEN and a
+ * logo cannot. Do not read the singular as dead code and delete it: the
+ * constant is what stops the board's 31 from being re-typed as a literal, and
+ * the board is the one place a stray nudge would be noticed last.
  *
  * ⚠ THE SPLASH IS NOT A MASTHEAD and does not use this. It renders the
  * wordmark alone and centred on a full-bleed gradient at 44px in white, which
@@ -2186,18 +2189,25 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
   return (
     <main className="min-h-screen w-full" style={{ background: SURFACE, paddingBottom: 24 }}>
       {/* ── THE BAND ──────────────────────────────────────────────────────
-          🔴 THE SAME BAND AS THE BOARD, not a second header that happens to
-          sit on top. This was a white bar carrying a back arrow and two lines
-          of text, so stepping off the board into a picker looked like leaving
-          the app. The wash, the rule under it and the safe-area treatment are
-          the board masthead's own values (the block above ProductSearchInput);
-          the vertical rhythm is the board's too — 16 above the wordmark row,
+          The wash, the rule under it and the safe-area treatment are the board
+          masthead's own values (the block above ProductSearchInput), so
+          stepping off the board into a picker does not look like leaving the
+          app. The vertical rhythm is the board's too — 16 above the title row,
           12 to the search, 16 below it.
 
-          ⚠ THE WHOLE HEADER IS STICKY HERE and only the search row is sticky
-          on the board. That difference is deliberate and predates this: on a
-          screen whose entire purpose is search, the box is the last thing that
-          should scroll away.
+          🔴 THE WORDMARK WAS HERE FOR ONE COMMIT AND IS GONE (cd85e189, and
+          reverted the same day). A logo identifies an APP; this band has to
+          identify a SCREEN, and the screen is a question — "Who is this order
+          for?" — that the list underneath answers. With Orbit in the band the
+          question was pushed into the scrolling body, where it scrolled away
+          from the search box that belongs with it. The wordmark now lives on
+          the board and the splash and nowhere else.
+
+          🔴 THE TITLE AND THE SEARCH ARE PINNED TOGETHER, and that is the
+          whole point of this block. On a screen whose entire purpose is search,
+          the box is the last thing that should scroll away — and the question
+          it is answering has to still be on screen while he types. Both are
+          inside this one sticky div; do not move either of them out of it.
 
           ⚠ NO GEAR ON THE RIGHT. Favourite PRODUCTS belong to the board, and
           this screen picks a dealer. The right-hand side stays empty. */}
@@ -2218,7 +2228,15 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
           >
             <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
           </button>
-          <Wordmark size={MASTHEAD_WORDMARK} colour={BRAND} />
+          {/* SCREEN_TITLE, the same constant the checkout header's dealer name
+              uses. Two screens, one size — they were 17 and 16 and there was no
+              reason for the difference beyond nobody having compared them. */}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate" style={{ ...SCREEN_TITLE, color: INK }}>
+              {title}
+            </span>
+            <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{note}</span>
+          </span>
         </div>
         <div className="px-2 pt-3">
           {/* 🔴 NO autoFocus, DELIBERATELY. Focusing on mount raised the
@@ -2229,19 +2247,6 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
               which is when he actually wants it. */}
           <CustomerSearchInput value={query} onChange={onQuery} />
         </div>
-      </div>
-
-      {/* The question, and what happens to the order while he answers it.
-          🔴 IT MOVED OUT OF THE BAND, IT WAS NOT DROPPED. Same text, same
-          17px/11.5px, same colours — but a masthead identifies the app and a
-          question belongs with the list that answers it, so it is now the
-          first block of the body and scrolls with it. */}
-      <div className="px-4 pt-3 pb-1">
-        <span className="block truncate text-[17px] font-bold"
-              style={{ color: INK, letterSpacing: "-0.02em" }}>
-          {title}
-        </span>
-        <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{note}</span>
       </div>
 
       {children}

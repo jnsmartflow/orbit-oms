@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Bookmark, ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
   BRAND, CROSS_DEPOTS, DIVIDER, DOT_CALL, DOT_NORMAL, DOT_URGENT,
-  FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
+  FAINT, INK, MUTED, RULE, SCREEN_TITLE, SURFACE, VIOLET,
   chipStyle, memberImage, packRows, tileArtFor,
   type ApiCustomer, type V2CartLine, type V2CallTarget, type V2Dispatch,
   type V2Marker, type V2Order,
@@ -144,10 +144,16 @@ export default function ReviewScreen({
           the code and area, and — at the right-hand end — the two things you do
           to an order INSTEAD of sending it. See the note on those buttons. */}
       <header
-        className="sticky top-0 z-10 px-2 pt-2 pb-2"
+        className="sticky top-0 z-10 px-2 pt-3 pb-3"
         style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
       >
-        <div className="flex items-start gap-1">
+        {/* items-center, NOT items-start. The two 44px buttons now sit centred
+            against the name block rather than hanging off its first line, and
+            because the name is ONE line the block is a fixed 70px whatever the
+            dealer is called. It used to be 60px with a short name and 76px with
+            a wrapped one, so the whole page shifted down when a long dealer was
+            picked — the items list moved under his thumb mid-review. */}
+        <div className="flex items-center gap-1">
           <button
             type="button" aria-label="Back to products" onClick={onBack}
             className="flex h-9 w-9 shrink-0 items-center justify-center"
@@ -157,34 +163,37 @@ export default function ReviewScreen({
 
           <button
             type="button" onClick={onOpenDealer}
-            className="flex min-w-0 flex-1 items-start gap-1.5 py-0.5 text-left"
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           >
             <span className="min-w-0 flex-1">
-              {/* Two lines, then an ellipsis. A dealer name is the one thing on
-                  this screen that must be recognisable at a glance, so it gets
-                  the room; "AAI SHREE KHODIYAR COLOUR ZONE" wraps rather than
-                  being cut after two words. */}
+              {/* 🔴 ONE LINE, THEN AN ELLIPSIS — it used to clamp to TWO.
+                  Two lines were affordable when the header held nothing else;
+                  with a bookmark and an X beside it the name has 146px at
+                  320px, and a name allowed to wrap in 146px is what pushes the
+                  icons off the screen edge. Truncating is the failure that
+                  keeps every control reachable. The full name is one tap away
+                  on the dealer screen, and the code below never truncates in
+                  practice. */}
               <span
-                className="block text-[16px] font-bold"
-                style={{
-                  color: dealer ? INK : VIOLET,
-                  letterSpacing: "-0.01em",
-                  lineHeight: 1.25,
-                  display: "-webkit-box",
-                  WebkitBoxOrient: "vertical",
-                  WebkitLineClamp: 2,
-                  overflow: "hidden",
-                }}
+                className="block truncate"
+                style={{ ...SCREEN_TITLE, color: dealer ? INK : VIOLET }}
               >
                 {dealer ? dealer.name : "Choose dealer"}
               </span>
               {dealer && (
-                <span className="mt-0.5 block truncate font-mono text-[11.5px]" style={{ color: MUTED }}>
+                <span className="mt-0.5 block truncate font-mono text-[12.5px]" style={{ color: MUTED }}>
                   {dealer.code}{dealer.area ? ` · ${dealer.area}` : ""}
                 </span>
               )}
             </span>
-            <ChevronRight className="mt-1 h-4 w-4 shrink-0" strokeWidth={2.5}
+            {/* ⚠ A GLYPH, NOT A TARGET, AND DELIBERATELY SO. It is INSIDE this
+                button, so it fires the same onOpenDealer the name does — there
+                is one action here wearing two faces. Promoting it to its own
+                44px box would cost the name 26px of its 146 at 320px to add a
+                second way to do a tap that already works everywhere across the
+                name. §60 is met by the button around it, which is 46px tall and
+                the width of the whole name. */}
+            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2.5}
                           style={{ color: dealer ? FAINT : VIOLET }} />
           </button>
 
@@ -194,12 +203,12 @@ export default function ReviewScreen({
               predictably — the same shape, and the same reason, as
               CustomerRow's star and the drafts card's delete.
 
-              🔴 THEY COST THE HEADER NOTHING. The row is already 42px tall
-              with a one-line dealer name and about 62px with a wrapped one,
-              so a 44px target sits inside the height that is there: no
-              second row, no growth worth measuring. What they DO cost is
-              88px of width, which is why the name keeps min-w-0 and its
-              two-line clamp — at 390px it still has ~246px to wrap into.
+              🔴 WHAT THEY COST IS WIDTH, NOT HEIGHT. The name block is 46px
+              tall at the screen-title size, so a 44px target sits inside the
+              height that is already there and the row needs no second line.
+              The 88px they take horizontally is why the name is min-w-0 and
+              truncates: it has 146px at 320px and 216px at the 390px design
+              width, and both numbers assume the ">" stays a glyph.
 
               🔴 DISABLED, NOT HIDDEN. Hiding them until the first line
               lands made the header reflow under his thumb at the exact
@@ -368,12 +377,16 @@ export default function ReviewScreen({
 
       {/* ── DISPATCH ─────────────────────────────────────────────────────── */}
       <Section title="Dispatch">
-        {/* flex-wrap, NOT a fixed three-column grid. Three chips sit on one
-            line at the 390px design width; at 320px the Call chip carrying its
-            target ("Call · Dealer") is wider than the third of a row a grid
-            would give it, and wrapping is the correct failure — this app has no
-            horizontal scroll anywhere and is not getting one here. */}
-        <div className="flex flex-wrap gap-2">
+        {/* 🔴 THE SAME MECHANISM AS THE REMARK ROW BELOW — `flex gap-2` with
+            `min-w-0 flex-1 truncate` on each chip — so the two rows cannot
+            drift into two different layouts. Equal columns cannot overflow at
+            any width, which is what retired the flex-wrap this row used to
+            carry: wrapping was only ever there to survive a content-width
+            "Call · Dealer" at 320px, and a column that truncates survives it
+            without the row changing height. At 320px each column is ~90px and
+            the label has ~59px of it, which seats "Call · SO" and ellipsises
+            "Call · Dealer". The dot never shrinks. */}
+        <div className="flex gap-2">
           {DISPATCH_CHOICES.map((c) => {
             const isCall = c.value === "Call";
             const active = order.dispatch === c.value;
@@ -391,15 +404,16 @@ export default function ReviewScreen({
                   // stored moves. email.ts reads callTarget only when dispatch
                   // is "Call", so it is inert either way.
                   : onOrderChange({ ...order, dispatch: c.value, callTarget: "SO" }))}
-                className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold"
+                className="flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2 py-2 text-[13px] font-semibold"
                 style={chipStyle(active)}
               >
                 {/* 7px, aria-hidden, and never the only thing saying this —
                     the chip's own word carries the meaning and the dot only
-                    makes the row scannable. */}
+                    makes the row scannable. shrink-0 so a squeezed column
+                    ellipsises the WORD and never flattens the dot. */}
                 <span className="block shrink-0 rounded-full" aria-hidden
                       style={{ width: 7, height: 7, background: c.dot }} />
-                {label}
+                <span className="truncate">{label}</span>
               </button>
             );
           })}

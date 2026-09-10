@@ -1716,6 +1716,36 @@ export const EMPTY_ORDER: V2Order = {
  */
 export const CROSS_DEPOTS = ["Dahisar", "Ahmedabad", "Rajkot", "Pune"] as const;
 
+/**
+ * THE SCREEN TITLE. One scale, every screen that has a title.
+ *
+ * 🔴 IT IS THE BIGGEST TEXT ON ANY SCREEN AND IT NAMES THE SCREEN. On checkout
+ * that is the DEALER — the order is "for MOHAN COLOUR CO" and nothing else on
+ * that page outranks whose account it goes on. On the dealer and ship-to
+ * pickers it is the question being asked. Same job, so one number.
+ *
+ * 🔴 20/700 IS NOT A NEW INVENTION. The order-detail screen has shipped its
+ * h1 at exactly 20 / bold / -.02em since it was built (order-sheet.tsx, "T1
+ * screen title"). This constant is that value given a name so the other two
+ * screens can point at it instead of hand-typing 16 and 17 — which is what
+ * they did, and why no two screen titles in this app were the same size.
+ *
+ * ⚠ order-sheet.tsx STILL HAND-TYPES ITS OWN. It is outside this step's
+ * containment; point it here the next time that file is open. Three call sites
+ * agreeing by accident is the state this constant exists to end.
+ *
+ * ⚠ THE SUBORDINATE LINE UNDER IT IS NOT SCALED FROM THIS. A mono meta line
+ * grown in proportion to a 25% title bump reads as a second title. Order
+ * detail pairs this size with an 11px mono line; checkout pairs it with 12.5.
+ * Both are deliberate and neither is derived.
+ */
+export const SCREEN_TITLE: React.CSSProperties = {
+  fontSize:      20,
+  fontWeight:    700,
+  letterSpacing: "-0.02em",
+  lineHeight:    1.25,
+};
+
 /** Shared chip shell. Selected is an OUTLINE + tint, never a solid violet fill. */
 export function chipStyle(selected: boolean, dashed = false): React.CSSProperties {
   return {
