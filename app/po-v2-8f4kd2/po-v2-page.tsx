@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckCircle2, ChevronLeft, FileText, Grid2x2, MapPin, Send, Settings, ShoppingCart, Star } from "lucide-react";
+// 🔴 CONTAINMENT EXCEPTION 2 — the SPLASH's mark, read-only, never modified.
+// See the note below on why the earliest paint cannot use live text.
+import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 import ProductDrawer from "./product-drawer";
 import V2Sheet, { useBodyScrollLock } from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
@@ -34,8 +37,25 @@ import {
 
 // Hidden v2 salesman order page — the whole app, on one route.
 //
-// 🔴 CONTAINMENT — imports its own siblings, node_modules, and (the one
-// documented exception) lib/place-order's email + ranking helpers, read-only.
+// 🔴 CONTAINMENT — imports its own siblings, node_modules, and TWO documented
+// exceptions, both read-only:
+//
+//   1. lib/place-order's email + ranking helpers. Reimplementing the wire
+//      format would drift from /po the first time somebody edited the original,
+//      and the drift would be silent — the mail still sends, the parser just
+//      stops recognising the product.
+//
+//   2. components/shared/orbit-wordmark — THE SPLASH ONLY, and the reason is
+//      that THE SPLASH CANNOT WAIT FOR A FONT. It is the earliest paint in the
+//      app, and the local Wordmark below is live text in Plus Jakarta Sans
+//      loaded with `display: "swap"` — so on a cold start the first thing a
+//      salesman sees is the word set in his phone's system face, which then
+//      swaps under him. The shared component is outlined PATH data and has no
+//      such moment. The BOARD MASTHEAD keeps the local text deliberately: by
+//      the time the board renders the font has arrived, and the masthead is
+//      the one place a size can be nudged without anyone noticing it drift
+//      from ten other screens.
+//
 // Nothing outside app/po-v2-8f4kd2/ is modified. Every colour is an inline
 // style, so globals.css and tailwind.config.ts stay untouched.
 //
@@ -84,6 +104,28 @@ import {
  * would shrink the splash the next time somebody adjusts a header.
  */
 export const MASTHEAD_WORDMARK = 31;
+
+/**
+ * The SPLASH mark's size, in INK HEIGHT — the unit OrbitWordmark takes.
+ *
+ * 🔴 IT IS NOT 44, AND 44 IS NOT WRONG EITHER. They are the same mark at the
+ * same visual size stated in two different units, and the conversion is the
+ * whole point of this constant existing rather than a literal:
+ *
+ *     44px font size  x  0.769  =  33.8px of ink
+ *
+ * `OrbitWordmark`'s viewBox is cut tight to the letters — 769 units of a
+ * 1000-unit em — so its `height` measures INK, while the local Wordmark's
+ * `size` measures TYPE. CLAUDE_UI.md:411-416 states the ratio and ends with
+ * "anyone specifying this component in px must say which of the two they
+ * mean", because a cut of the login page once passed 66 for 45 and rendered a
+ * third too big. Passing 44 here would have made the same mistake.
+ *
+ * ⚠ IT IS DELIBERATELY NOT SHARED WITH MASTHEAD_WORDMARK. That one is a font
+ * size for a different component; these two constants are not interchangeable
+ * and must never be pointed at each other.
+ */
+export const SPLASH_WORDMARK_INK = 33.8;
 
 /**
  * THE SPLASH MOTION — "Trail", per docs/mockups/po-v2/splash-motion.html.
@@ -1331,12 +1373,35 @@ export default function PoV2Page(): React.JSX.Element {
       <main className="flex min-h-screen w-full items-center justify-center bg-white">
         <style>{SPLASH_CSS}</style>
 
-        {/* 🔴 THE SAME Wordmark THE BOARD RENDERS, at the same 44 it has always
-            used here. Hand-writing the letters — or reaching for the shared SVG
-            in components/shared, which has ten call sites across login, /po,
-            both sidebars, attendance and trips — is how the splash and the
-            board start drifting apart. This is v2's own component and it stays
-            v2's own component.
+        {/* 🔴 THE OUTLINED SVG HERE, AND ONLY HERE. The local Wordmark below is
+            live text in a font loaded with `display: "swap"`, and this is the
+            EARLIEST PAINT IN THE APP — so on a cold start it drew "Orbit" in
+            the phone's system face and then swapped it under the salesman's
+            eyes, on the one screen whose entire job is to say whose app this
+            is. Outlined path data has no such moment: it is correct in the
+            first frame and on a device with no network at all.
+
+            ⚠ THE BOARD MASTHEAD STILL USES THE LOCAL TEXT and must keep it.
+            By the time the board renders the font has arrived, and the
+            masthead is the one place a size can be nudged without dragging ten
+            other screens with it.
+
+            🔴 HEIGHT, NOT FONT SIZE — the units are different and passing one
+            for the other is a documented mistake (CLAUDE_UI.md:411-416). The
+            viewBox is cut tight to the ink, 769 of a 1000-unit em, so
+            `height` is INK height while the local component's `size` is a FONT
+            size. The 44 this splash has always used is a font size:
+
+                44 x 0.769 = 33.8px of ink
+
+            Passing 44 straight through would have drawn the mark about 30%
+            too large. The same trap cost the login page a cut once, at 66.
+
+            🔴 COLOUR COMES FROM THE WRAPPER. OrbitWordmark paints with
+            `currentColor` and accepts only `height` and `className` — no
+            colour prop, no style prop. The inline `color` below is what it
+            inherits, which keeps this folder's rule that every colour is an
+            inline style and tailwind.config.ts is never touched.
 
             ⚠ NOTHING HERE GATES THE LOAD. There is no timer, no minimum
             duration and no "animation finished" state anywhere on this path.
@@ -1345,8 +1410,8 @@ export default function PoV2Page(): React.JSX.Element {
             300ms, mid-animation, and that is correct. A salesman opening a warm
             app should see a flash and nothing more. */}
         <div className="relative w-fit">
-          <div className="v2-splash-mark">
-            <Wordmark size={44} colour={BRAND} />
+          <div className="v2-splash-mark" style={{ color: BRAND }}>
+            <OrbitWordmark height={SPLASH_WORDMARK_INK} />
           </div>
           {/* Rule first so the tail and the dot ride above it. No tagline —
               the mockup's own section explains why: the splash has no fixed

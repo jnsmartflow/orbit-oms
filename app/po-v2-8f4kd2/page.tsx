@@ -20,11 +20,18 @@ import PoV2Page from "./po-v2-page";
 
 export const dynamic = "force-dynamic";
 
-// Per-route PWA metadata — installable as its OWN home-screen app ("Orbit v2"),
-// exactly the way /po is (app/po/page.tsx). Next resolves metadata per route and
-// a child segment overrides the parent layout for the SAME fields, so this route
-// links its own manifest and reads "Orbit v2" while every other route keeps the
-// global /manifest.json + "OrbitOMS" apple title from app/layout.tsx (NOT edited).
+// Per-route PWA metadata — installable as its OWN home-screen app, exactly the
+// way /po is (app/po/page.tsx). Next resolves metadata per route and a child
+// segment overrides the parent layout for the SAME fields, so this route links
+// its own manifest and carries its own home-screen title, while every other
+// route keeps the global /manifest.json and the "Orbit" apple title from
+// app/layout.tsx (NOT edited).
+//
+// ⚠ THE COMMENTS HERE ONCE SAID "Orbit v2" WHILE THE CODE SAID "Orbit". The
+// title shipped as "Orbit v2" in 20f244a5, was changed to "Orbit" in c02c549f,
+// and these lines were not changed with it — so they described the code as it
+// had been, for two commits, which is exactly how a reader gets misled. It is
+// "Orbit v2" again today; see appleWebApp.title below for how long.
 //
 // The manifest is served by a ROUTE HANDLER inside this folder
 // (./manifest.webmanifest/route.ts), not a file in public/ — containment: v2
@@ -37,20 +44,40 @@ export const dynamic = "force-dynamic";
 //
 // 🔴 iOS IGNORES THE MANIFEST FOR HOME-SCREEN ICONS. It reads the
 // apple-touch-icon <link> and nothing else, so declaring icons in the manifest
-// above does not reach an iPhone at all. This route used to set no `icons` key
-// and inherited app/layout.tsx:40's `/apple-touch-icon.png` — the teal OrbitOMS
-// ring, on a violet app. Setting it HERE overrides that for this route only;
-// Next merges metadata per FIELD, so app/layout.tsx is untouched and every
-// other route keeps the teal.
+// route does not reach an iPhone at all — which is why this key is set here as
+// well, and why the two must be kept pointing at the same artwork.
+//
+// 🔴 IT POINTS AT THE ROOT ICON, AND THAT IS A CORRECTION. It pointed at
+// /brand/apple-touch-icon.png, believed to be v2's own mark against a root icon
+// that was "the teal OrbitOMS ring". Neither belief survived looking at the
+// pixels: the root icon is a violet tile carrying the SAME outlined wordmark
+// the shared component draws, regenerated 2026-09-09, and public/brand/ carries
+// the OLDER hand-built letterforms. v2 was showing the superseded drawing on
+// the one surface a salesman sees every morning. See the manifest route's own
+// note. app/layout.tsx is still untouched and every other route is unaffected.
 export const metadata: Metadata = {
   title: "Orbit",
   manifest: "/po-v2-8f4kd2/manifest.webmanifest",
   icons: {
-    apple: { url: "/brand/apple-touch-icon.png", sizes: "180x180" },
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180" },
   },
   appleWebApp: {
     capable: true,
-    title: "Orbit",
+    // 🔴 "Orbit v2" IS A TESTING LABEL WITH AN END DATE. Both apps are called
+    // Orbit and both now carry the same artwork, so on a home screen holding
+    // /po and /po-v2-8f4kd2 side by side there is nothing to tell them apart
+    // — which is fine at cutover and useless while v2 is being tested against
+    // the app it replaces.
+    //
+    // ⚠ REVERT THIS TO "Orbit" WHEN v2 REPLACES /po. At that point there is
+    // one app, and a version number on a salesman's home screen is internal
+    // noise he never asked to see.
+    //
+    // ⚠ NEITHER PLATFORM RE-READS THIS. iOS and Android both cache the name
+    // and the icon at INSTALL time, so an existing shortcut keeps whatever it
+    // was created with. Testing this means removing the app from the home
+    // screen and adding it again.
+    title: "Orbit v2",
     statusBarStyle: "default",
   },
 };

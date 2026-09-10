@@ -144,9 +144,14 @@ export const DIVIDER    = RULE;
  * read as a bruise on a full screen rather than as a brand. The radial geometry
  * is unchanged; only the dark stop is gone.
  *
- * ⚠ THE APP ICON STILL USES THE THREE-STOP VERSION and is not regenerated here.
- * A 512px tile can carry a depth a whole phone screen cannot, and that tile is
- * already approved — it is a separate decision, so public/brand/ is untouched.
+ * ⚠ THE APP ICON HAS ITS OWN GRADIENT and is not generated from this. It is
+ * public/icon-source.svg, a five-stop radial written by
+ * scripts/generate-wordmark.mjs, and a 512px tile can carry a depth a whole
+ * phone screen cannot. Editing this value does not change any icon.
+ *
+ * ⚠ THIS NOTE USED TO SAY "so public/brand/ is untouched". v2 stopped
+ * referencing that folder on 2026-09-10 — its icons are the root set now — so
+ * the sentence pointed at a relationship that no longer exists.
  */
 export const BRAND_GRADIENT =
   "radial-gradient(125% 125% at 26% 20%, #A78BFA 0%, #7C3AED 100%)";

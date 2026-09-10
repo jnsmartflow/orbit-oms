@@ -1566,6 +1566,20 @@ Outside the type-weight pass that took the route's other 25 sites to zero: **Sen
 `review-screen.tsx`, and **Cancel** and **Add** in `product-drawer.tsx`. Left because those two
 files were outside that step's containment. T11 in the type scale.
 
+### P3 — Three manifests exist; consolidate AFTER v2 launches, not before
+`public/manifest.json` (the app, `background_color` `#f9fafb`), `public/po.webmanifest` (`/po`)
+and `app/po-v2-8f4kd2/manifest.webmanifest/route.ts` (v2). The last two are near-identical apart
+from scope and `id`. ⚠ Do NOT merge them while v2 and `/po` are both installable: the separate
+`id`/`scope`/`start_url` is what keeps the two home-screen apps from folding into one.
+
+### P3 — `public/brand/` is an unreferenced icon set with superseded letterforms
+Three PNGs (`apple-touch-icon`, `icon-192`, `icon-512`) plus `orbit-wordmark.svg` and
+`orbit-wordmark-white.svg`, all dated 2026-09-07 and carrying the OLD hand-built wordmark
+(viewBox `0 -22 2216 771`, aspect 2.874) rather than the generated Plus Jakarta Sans outlines
+(`0 0 2316 769`, aspect 3.012). v2 stopped pointing at them 2026-09-10; **nothing in `app/`,
+`components/` or `lib/` references any of the five now.** Clear in a cleanup pass — not urgent,
+and they are the only copy of that drawing.
+
 ### P3 — `CROSS_DEPOTS` exists twice and the two copies must be edited together
 `app/po/po-page.tsx:89` and `app/po-v2-8f4kd2/v2-data.ts` now each hold their own
 `["Dahisar", "Ahmedabad", "Rajkot", "Pune"]`. v2 got a copy rather than an import because it

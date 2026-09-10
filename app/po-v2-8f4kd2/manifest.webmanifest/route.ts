@@ -21,17 +21,40 @@ import { NextResponse } from "next/server";
 // waved through even if the matcher did run. Both permit it; only the matcher
 // is actually operative. Nothing in middleware.ts was edited.
 //
-// Icons are v2's OWN, in public/brand/. They used to reference /icon-192.png
-// and /icon-512.png, which are the teal Orbit ring — the main app's mark on a
-// violet app, which was wrong on every home screen it ever landed on.
+// 🔴 THE ICONS ARE THE ROOT SET, AND THAT IS A CORRECTION.
+//
+// They pointed at public/brand/ for a while, on the belief that those were
+// v2's own mark and the root ones were "the teal Orbit ring" belonging to the
+// main app. Both halves turned out to be wrong. The root icons were
+// regenerated on 2026-09-09 (67d734e2) from public/icon-source.svg, which
+// carries the SAME outlined Plus Jakarta Sans paths the shared OrbitWordmark
+// component uses — a violet tile with the real wordmark, no ring anywhere.
+// public/brand/ dates from 2026-09-07 and carries the OLDER hand-built
+// letterforms, the ones whose O read as a zero. So v2 was shipping the
+// superseded drawing on its home screen while every other surface showed the
+// good one. Verified by inspecting the pixels, not the filenames.
+//
+// ⚠ public/brand/ IS LEFT ON DISK, referenced by nothing. Clearing it is a
+// cleanup pass of its own and is parked on ROADMAP.md.
 
 export const dynamic = "force-dynamic";
 
 // 🎨 THE TWO COLOURS DO DIFFERENT JOBS AND ARE DELIBERATELY NOT THE SAME.
 //
 // background_color is the LAUNCH background — Android paints it behind the app
-// while it starts, so it is brand.600 and matches the splash the page renders a
-// moment later.
+// while it starts, and it must match whatever the page paints a moment later or
+// the salesman sees a colour change on every single open.
+//
+// 🔴 IT IS #FFFFFF NOW, AND IT USED TO BE brand.600. That was correct when the
+// React splash was a white wordmark on a full-bleed violet gradient. The splash
+// is now WHITE with the mark in violet, so a violet launch background produced
+// a violet flash followed by a white screen — the one artefact this key exists
+// to prevent, pointing the wrong way.
+//
+// ⚠ IT IS THE LAUNCH GROUND, NOT AN ICON GROUND. The icons below are fully
+// opaque violet tiles with zero transparent pixels, so none of them depends on
+// this value and none of them disappears against white. Android will now draw
+// a violet tile on a white field during launch.
 //
 // theme_color is the toolbar/status bar of the app IN USE, and it is #F5F3FF —
 // the masthead's own wash, so the status bar continues the header rather than
@@ -59,12 +82,12 @@ const MANIFEST = {
   scope: "/po-v2-8f4kd2",
   display: "standalone",
   display_override: ["standalone"],
-  background_color: "#7C3AED",
+  background_color: "#FFFFFF",
   theme_color: "#F5F3FF",
   orientation: "portrait",
   icons: [
-    { src: "/brand/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
-    { src: "/brand/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
   ],
 } as const;
 
