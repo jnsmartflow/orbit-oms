@@ -925,7 +925,14 @@ export const CURATION: Record<string, V2Curation> = {
   "SUPERCOVER":                { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "96 BASE", "95 BASE", "97 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
   "VT PEARL GLO":              { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE", "PASTEL BASE"], shades: ["RARE PEARL COPPER", "RARE PEARL GREEN"], variants: NONE, defaultTab: "base" },
   "VT PLATINUM GLO":           { bases: ["BRILLIANT WHITE", "90 BASE", "92 BASE", "93 BASE", "94 BASE", "95 BASE", "96 BASE", "97 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
-  "PROMISE SMARTCHOICE":       { bases: NONE, shades: NONE, variants: ["Interior", "Acrylic Distemper", "Exterior", "Int Primer", "Ext Primer"], defaultTab: "base" },
+  // 🔴 OPTION ORDER LIVES HERE, NOT IN BOARD. These are catalog baseColour
+  // VALUES and this array is what ranks them; BOARD carries members, not
+  // options. Reordered 2026-09-10 to the owner's sequence — Distemper first,
+  // then the two paints, then the two primers. The VALUES are the catalog's
+  // own and are untouched: "Acrylic Distemper", "Int Primer" and "Ext Primer"
+  // are spelled as the rows spell them, not as the request worded them.
+  // Five options is all the tile has; there is no sixth to place.
+  "PROMISE SMARTCHOICE":       { bases: NONE, shades: NONE, variants: ["Acrylic Distemper", "Interior", "Exterior", "Int Primer", "Ext Primer"], defaultTab: "base" },
   "PROMISE PRIMER":            { bases: NONE, shades: NONE, variants: ["Freedom 2in1 Primer", "2in1 Primer", "Promise Primer"], defaultTab: "base" },
   "PROMISE INTERIOR":          { bases: ["BRILLIANT WHITE", "90 BASE", "93 BASE", "92 BASE", "94 BASE", "97 BASE", "96 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
   "PROMISE EXTERIOR":          { bases: ["BRILLIANT WHITE", "93 BASE", "90 BASE", "92 BASE", "94 BASE", "96 BASE", "98 BASE", "95 BASE"], shades: NONE, variants: NONE, defaultTab: "base" },
@@ -2183,23 +2190,49 @@ export const BOARD: readonly V2BoardFamily[] = [
           { sap: "ROOF COAT TERACOTTA", label: "Teracotta", slug: "product-roof-coat" },
           { sap: "ROOF COAT GREY",      label: "Grey", slug: "product-roof-coat" },
         ] },
-      { key: "CRACKFILLER 5MM", label: "Crack Filler", slug: "crack-5mm",
-        members: [
-          { sap: "CRACKFILLER 5MM",  label: "Crackfiller 5mm", slug: "product-crackfiller" },
-          { sap: "CRACKFILLER 10MM", label: "Crackfiller 10mm", slug: "product-crackfiller" },
-          { sap: "CRACKFILLER 20MM", label: "Crackfiller 20mm", slug: "product-crackfiller" },
-          // Waterproof Putty left on 2026-09-08 — search-only, same as above.
-        ] },
-      // Every member here is a ONE-ROW product with no options at all, which
-      // makes this the simplest merged tile on the board: member, then packs.
-      { key: "FBC ADVANCE", label: "Coats & Additives", slug: "coats-additives",
+      // ═══════════════════════════════════════════════════════════════════
+      // 🔴 THE AQUATECH REGROUP, 2026-09-10. Owner's split, and the order of
+      // these two tiles is his too: Damp Protect · Roof Coat · Other Coat ·
+      // Crack Filler and Additives.
+      //
+      // SIX MEMBERS MOVED, all one way — Waterblock 2K, RP Latex, WRP,
+      // Pretreatment Coat, LW Plus and TG Cotton Wool left the coats tile for
+      // the crack-filler one. What stayed behind is the five actual COATS:
+      // FBC Advance, FBC Neo, Interior WBC, IBC Advance and PU Coat.
+      //
+      // 🔴 NEITHER KEY MOVED, AND THAT WAS THE GATE. "Crack Filler and
+      // Additives" is still keyed CRACKFILLER 5MM and still holds it; "Other
+      // Coat" is still keyed FBC ADVANCE and still holds it. Had a key named a
+      // member that left, addLines' `l.tileSap === tileKey` filter
+      // (po-v2-page.tsx:709) would have DELETED that member's stored lines the
+      // next time anybody added from the tile — the case that stopped the
+      // Spray Paint rename. Here the two leaders both stayed put, so no
+      // exception was needed and no favourite is pruned.
+      //
+      // The six movers' stored lines are refiled by migrateLine case 1:
+      // tileKeyForMember now answers CRACKFILLER 5MM, that differs from the
+      // stored FBC ADVANCE, so tileSap is rewritten once and the second pass
+      // returns the same object. Nothing is lost and nothing churns.
+      // ═══════════════════════════════════════════════════════════════════
+      { key: "FBC ADVANCE", label: "Other Coat", slug: "coats-additives",
         members: [
           { sap: "FBC ADVANCE",       label: "FBC Advance", slug: "product-fbc-advance" },
           { sap: "FBC NEO",           label: "FBC Neo", slug: "product-fbc-neo" },
           { sap: "INTERIOR WBC",      label: "Interior WBC", slug: "product-interior-wbc" },
-          { sap: "WATERBLOCK 2K",     label: "Waterblock 2K", slug: "product-waterblock-2k" },
           { sap: "IBC ADVANCE",       label: "IBC Advance" },
           { sap: "AQUATECH PU COAT",  label: "PU Coat", slug: "product-aquatech-pu-coat" },
+        ] },
+      // The three fillers read as a SIZE LADDER under a tile that already says
+      // "Crack Filler", so they carry the size alone — eb6d8e2f's rule, the
+      // same shape Roof Coat's White/Teracotta/Grey uses. The six additives
+      // keep their full names: none of them repeats the tile.
+      { key: "CRACKFILLER 5MM", label: "Crack Filler and Additives", slug: "crack-5mm",
+        members: [
+          { sap: "CRACKFILLER 5MM",  label: "5mm", slug: "product-crackfiller" },
+          { sap: "CRACKFILLER 10MM", label: "10mm", slug: "product-crackfiller" },
+          { sap: "CRACKFILLER 20MM", label: "20mm", slug: "product-crackfiller" },
+          // Waterproof Putty left on 2026-09-08 — search-only, same as above.
+          { sap: "WATERBLOCK 2K",     label: "Waterblock 2K", slug: "product-waterblock-2k" },
           { sap: "RP LATEX",          label: "RP Latex" },
           { sap: "WRP",               label: "WRP" },
           { sap: "PRETREATMENT COAT", label: "Pretreatment Coat" },
