@@ -7,7 +7,8 @@ import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import V2Sheet from "./v2-sheet";
 import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
-  baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isLightHex, memberImage,
+  CUTOUT_SHADOW_RAIL,
+  baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isCutout, isLightHex, memberImage,
   packsOf, shadeHex, sortBases, stepForLabel, tileArtFor, unitsIn,
   variantImage,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
@@ -1380,6 +1381,8 @@ function BigTile({ label, cell, square, lines, badge, hideLabel = false, fill, i
   selected: boolean; carrying: number; onSelect: () => void;
 }): React.JSX.Element {
   const light = fill !== undefined && isLightHex(fill);
+  // One rule, read back from the resolved path — see isCutout in v2-data.
+  const cut = isCutout(image);
   return (
     <button
       type="button"
@@ -1391,16 +1394,23 @@ function BigTile({ label, cell, square, lines, badge, hideLabel = false, fill, i
       style={{ width: cell }}
     >
       <span
-        className="relative flex items-center justify-center overflow-hidden"
+        className={`relative flex items-center justify-center${cut ? "" : " overflow-hidden"}`}
         style={{
           width: square, height: square, borderRadius: 14,
-          background: image ? wash : fill ?? (selected ? VIOLET_BG : wash),
+          // 🔴 A CUT-OUT GETS NO SQUARE, exactly as on the board. Same single
+          // rule (TRANSPARENT_ART -> artPath -> /PO/), read back through
+          // isCutout, so the rail and the board cannot disagree about a tile.
+          // A member with OPAQUE art keeps its wash and a member with NO art
+          // keeps its plain wash or its colour fill — both untouched.
+          background: cut ? undefined : (image ? wash : fill ?? (selected ? VIOLET_BG : wash)),
           // A near-white fill gets a faint inner border, or a white square on a
           // white sheet is simply not there. A picture sits on the family wash
           // and needs no edge — the tin draws its own.
           border: !image && light ? "1px solid rgba(0,0,0,.15)" : "none",
           // THE RING, WITH A WHITE GAP. The gap is what makes it read on a dark
           // colour: violet straight against #1D1E1F is an edge nobody sees.
+          // It stays on a cut-out: with no square behind it, the ring is the
+          // ONLY thing left saying which product is selected.
           boxShadow: selected ? `0 0 0 2px #FFFFFF, 0 0 0 4px ${VIOLET}` : undefined,
         }}
       >
@@ -1409,10 +1419,17 @@ function BigTile({ label, cell, square, lines, badge, hideLabel = false, fill, i
           <img
             src={image} alt="" width={600} height={600}
             decoding="async" loading="lazy" className="block h-full w-full"
-            // MULTIPLY, exactly as on the board: every file is an opaque white
-            // square, so painted normally it would cover the family wash and
-            // every tile would be a white box.
-            style={{ objectFit: "contain", mixBlendMode: "multiply" }}
+            style={{
+              objectFit: "contain",
+              // MULTIPLY for an OPAQUE file: it is a white square, so painted
+              // normally it would cover the family wash and every tile would
+              // be a white box. A CUT-OUT has no white ground to drop out, so
+              // multiply would only darken the tin against the sheet.
+              mixBlendMode: cut ? undefined : "multiply",
+              // Scaled for a 60px cell, not copied from the board's 79px one —
+              // see CUTOUT_SHADOW_RAIL.
+              filter: cut ? CUTOUT_SHADOW_RAIL : undefined,
+            }}
           />
         ) : badge ? (
           <span
