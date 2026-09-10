@@ -23,6 +23,7 @@ import {
   BOARD, BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT,
   FAVOURITE, FILL, INK, MUTED, PAGE, RULE, SEARCH_BG, SURFACE, URGENT, VIOLET,
   VIOLET_BG,
+  CUTOUT_SHADOW, TRANSPARENT_ART,
   EMPTY_ORDER, boardTile, boardTileArtFor, buildBoard, buildCatalog, drawerMode,
   formatPack, mixToWhite, optionPools, packRows,
   resolveGroup, tileImage, tileKeyForMember, unitsIn, TILE_WASH,
@@ -1819,6 +1820,11 @@ export default function PoV2Page(): React.JSX.Element {
                 // placeholder glyph. A tile that says nothing reads as art that
                 // has not arrived; a tile with "CS" in it reads as a decision.
                 const src = tileImage(tile.slug);
+                // A LOOKUP, NOT A SNIFF — v2-data's TRANSPARENT_ART names the
+                // slugs whose file is a cut-out. Nothing about the extension
+                // or the folder says whether a background was actually
+                // removed; an opaque alpha channel looks identical from here.
+                const cut = TRANSPARENT_ART.has(tile.slug);
                 return (
                   <button
                     // 🔴 key ON THE TILE KEY, NOT A MEMBER SAP. Two merged
@@ -1838,10 +1844,30 @@ export default function PoV2Page(): React.JSX.Element {
                     {/* THE SQUARE. No border by design — the art carries the
                         tile and a hairline around 32 of them is a grid of
                         outlines. aspect-ratio holds the space before the image
-                        lands, so nothing on the board jumps as they arrive. */}
+                        lands, so nothing on the board jumps as they arrive.
+
+                        🔴 A CUT-OUT TILE HAS NO SQUARE AT ALL. See
+                        TRANSPARENT_ART in v2-data: the four Enamel tiles carry
+                        a tin on transparency, so the tinted panel behind them
+                        goes and the tin sits on the card itself.
+
+                        overflow-hidden GOES WITH IT, and has to: the tin fills
+                        the box edge to edge, so its drop-shadow falls OUTSIDE
+                        that box. Clipping would cut the shadow off exactly
+                        where it is meant to show. The rounding is inert
+                        without a background, so it goes too.
+
+                        ⚠ THE IN-CART VIOLET WASH DOES NOT RENDER ON THESE
+                        FOUR. It is a background, and they have none. The count
+                        badge in the corner is what says "in this order" on a
+                        cut-out tile — one signal instead of two. Worth an eye
+                        before this look spreads past Enamel. */}
                     <span
-                      className="relative block w-full overflow-hidden rounded-[14px]"
-                      style={{ aspectRatio: "1 / 1", background: inOrder ? VIOLET_BG : wash }}
+                      className={`relative block w-full${cut ? "" : " overflow-hidden rounded-[14px]"}`}
+                      style={{
+                        aspectRatio: "1 / 1",
+                        background: cut ? undefined : (inOrder ? VIOLET_BG : wash),
+                      }}
                     >
                       {src && (
                         <img
@@ -1853,16 +1879,27 @@ export default function PoV2Page(): React.JSX.Element {
                           loading={eager ? "eager" : "lazy"}
                           className="block h-full w-full"
                           style={{
+                            // contain, and the file is already square, so this
+                            // is an exact fill — nothing insets and nothing
+                            // stretches.
                             objectFit: "contain",
-                            // 🔴 MULTIPLY, NOT A PLAIN PAINT. Every file is an
-                            // OPAQUE WHITE square — that is how the converter
-                            // pads the tin to a uniform 84% share. Painted
-                            // normally it would cover the family wash entirely
-                            // and every tile would be a white box. Multiply
-                            // leaves the backdrop untouched wherever the file
-                            // is white and shows the tin everywhere else, so
-                            // the tint survives and the tin sits ON it.
-                            mixBlendMode: "multiply",
+                            // 🔴 MULTIPLY, NOT A PLAIN PAINT — FOR AN OPAQUE
+                            // FILE. Those are OPAQUE WHITE squares: the
+                            // converter pads the tin to a uniform 84% share, so
+                            // painted normally the file would cover the family
+                            // wash and every tile would be a white box.
+                            // Multiply leaves the backdrop wherever the file is
+                            // white and shows the tin everywhere else.
+                            //
+                            // 🔴 AND IT MUST NOT TOUCH A CUT-OUT. There is no
+                            // white ground to drop out, so multiply would just
+                            // darken the tin against the card — the pixels are
+                            // the product, not a backdrop.
+                            mixBlendMode: cut ? undefined : "multiply",
+                            // Follows the tin's outline because drop-shadow
+                            // reads alpha; a box-shadow would draw the very
+                            // rectangle this change removes. See CUTOUT_SHADOW.
+                            filter: cut ? CUTOUT_SHADOW : undefined,
                           }}
                         />
                       )}

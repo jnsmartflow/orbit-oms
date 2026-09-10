@@ -532,6 +532,63 @@ const TILE_ART_ALIAS: ReadonlyMap<string, string> = new Map([
   ["coats-additives", "product-fbc-advance"],
 ]);
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 WHICH TILES CARRY A CUT-OUT INSTEAD OF A PADDED WHITE SQUARE.
+ *
+ * A LIST, NOT A GUESS. It would be one line to sniff the file, and that line
+ * would be wrong the first time somebody exported a webp with an alpha channel
+ * that happens to be fully opaque — which is exactly what arrived on
+ * 2026-09-10 and was refused. Nothing about a filename or an extension tells
+ * you whether the background was actually removed. So the answer is written
+ * down, one slug at a time, by somebody who checked.
+ *
+ * Membership changes THREE things, and only for the tiles named here:
+ *   1. the pale family-tint square behind the image does not render
+ *   2. mixBlendMode: multiply does not apply — it would darken a cut-out
+ *      against the card instead of dropping out a white ground
+ *   3. the image gets a two-layer drop-shadow, so the shadow follows the
+ *      tin's OUTLINE rather than a rectangle
+ *
+ * The other 33 tiles are untouched, byte for byte.
+ *
+ * ⚠ THE FILE AND THE SET MOVE TOGETHER. Putting an opaque file at one of
+ * these slugs paints a white square on the card with a shadow around it;
+ * putting a cut-out at a slug NOT listed here multiplies it into the family
+ * tint and it will look muddy. If you swap one, swap both.
+ *
+ * ENAMEL ONLY, 2026-09-10, and deliberately — this is a look the owner is
+ * comparing against the other eight families on one screen. Do not extend it
+ * until he has seen it.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const TRANSPARENT_ART: ReadonlySet<string> = new Set([
+  "gloss",
+  "super-satin",
+  "promise-enamel",
+  "pu-enamel",
+]);
+
+/**
+ * 🔴 THE SHADOW IS A filter, NOT A box-shadow, AND THAT IS THE WHOLE POINT.
+ *
+ * box-shadow traces the element's BOX. On a tile whose image is a cut-out on
+ * transparency, that draws a rectangle floating behind a tin — the exact
+ * "sticker on a square" this change exists to remove. drop-shadow() reads the
+ * alpha channel and follows the tin's own outline, handle and all.
+ *
+ * TWO LAYERS, because one cannot do both jobs. The tight one at 1.5px/2px is
+ * CONTACT — it sits the tin on the card. The wide one at 4px/6.5px is LIFT —
+ * it gives the object somewhere to be. One shadow doing both is either too
+ * hard at the edge or too vague underneath, and reads as cheap.
+ *
+ * Values approved from the owner's preview. #181426 rather than black: the
+ * app's neutrals carry a violet tint (see the token block at the top of this
+ * file) and a pure-black shadow under them reads as a smudge.
+ */
+export const CUTOUT_SHADOW =
+  "drop-shadow(0 1.5px 2px rgba(24,20,38,0.35)) drop-shadow(0 4px 6.5px rgba(24,20,38,0.21))";
+
 /** The tile's image URL, or null when there is no file for that slug. */
 export function tileImage(slug: string): string | null {
   const file = TILE_ART_ALIAS.get(slug) ?? slug;
