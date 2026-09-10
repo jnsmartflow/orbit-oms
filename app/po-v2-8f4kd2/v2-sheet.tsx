@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { RULE, SCRIM } from "./v2-data";
 
 // The ONE bottom-sheet shell in v2. Extracted from product-drawer.tsx when a
@@ -67,12 +67,51 @@ let lockedY = 0;
 let lockedPrev: Record<string, string> = {};
 
 /**
+ * 🔴 THE LOCK RUNS BEFORE PAINT, AND THAT IS THE WHOLE OF THIS HOOK'S TIMING.
+ *
+ * It used to be a plain useEffect, which React runs AFTER the browser has
+ * painted. The sheet's slide-up is a CSS animation, so it starts on that same
+ * first paint — and `position: fixed` on <body> takes the document out of flow
+ * and COLLAPSES ITS HEIGHT. So frame 1 painted the sheet at translateY(100%)
+ * with the page still in flow, and the effect then reflowed everything
+ * underneath it. One frame of the animation ran against a layout that no
+ * longer existed by frame 2. That is the jitter, and it was never the
+ * animation: v2SheetUp touches transform only, which is as cheap as it gets.
+ *
+ * A layout effect runs after the DOM is committed and BEFORE the paint, so the
+ * animation's first frame already sees the locked layout and there is nothing
+ * left to reflow.
+ *
+ * ⚠ ISOMORPHIC, AND NOT AS A STYLE CHOICE. This hook is called from
+ * po-v2-page.tsx:521 as a TOP-LEVEL hook, above every early return, so it runs
+ * during the SERVER render too — po-v2-page is "use client" but a client
+ * component is still pre-rendered unless it is dynamically imported with
+ * ssr:false, and none is. A bare useLayoutEffect there logs React's "does
+ * nothing on the server" warning on every request. useEffect is a no-op during
+ * SSR anyway, so the server arm loses nothing.
+ *
+ * ⚠ THE UNLOCK MOVED WITH IT, DELIBERATELY. A layout effect's cleanup is also
+ * synchronous within the commit, so lock and unlock stay on the same side of a
+ * paint as each other — which is the property that keeps the scroll restore
+ * below symmetrical. It also removes a small flash that existed before: the
+ * old passive cleanup let one frame paint with the sheet gone and <body> still
+ * fixed.
+ *
+ * ⚠ NOTHING ABOUT THE MECHANISM CHANGED. The ref count, the module-level
+ * offset, the choice of position:fixed over overflow:hidden and the order of
+ * the reads and writes inside are all exactly as they were — see the note
+ * above for why each exists. This changed WHEN, not WHAT.
+ */
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+/**
  * @param active pass false to hold the hook without taking the lock. Lets a
  *   caller own the lock for a whole span (any-overlay-open) rather than for
  *   one component's lifetime.
  */
 export function useBodyScrollLock(active = true): void {
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!active) return;
     const body = document.body;
     if (lockCount === 0) {
