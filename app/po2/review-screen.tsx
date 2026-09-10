@@ -14,7 +14,7 @@ import V2Sheet from "./v2-sheet";
  *  page's ordered closing authority can see it. */
 export type V2ReviewSheet = null | "call" | "cross";
 
-// Hidden v2 review screen — the last look before Send.
+// The v2 review screen — the last look before Send.
 //
 // 🔴 CONTAINMENT — imports ./v2-data, ./v2-sheet and node_modules only.
 // (v2-sheet arrived here with the Call and Cross pickers. It is the ONE

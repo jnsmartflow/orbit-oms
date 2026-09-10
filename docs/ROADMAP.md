@@ -1521,13 +1521,44 @@ before the SAP list lands beside them.
 
 ---
 
-## `/po-v2-8f4kd2` — the hidden v2 order page (opened 2026-09-09)
+## `/po2` — the v2 order page (LIVE 2026-09-10)
 
-Record: **`docs/prompts/drafts/code-update-2026-09-08-po-v2-board.md`**. The route is live on
-production, unguarded, and reachable only by typing its address; it is in no canonical file yet
-and that record is the input to `CLAUDE_PLACE_ORDER.md` when v2 merges into `/po`. Its wire is
-guarded by **`scripts/po-v2-email-fixtures.ts`** (§6 of the record) — run it before any commit
-that touches the send path.
+**v2 is live at `/po2`.** It moved from the hidden address `/po-v2-8f4kd2` on 2026-09-10; the old
+address is a permanent redirect to `/po2` (P3 below removes it). It is **PUBLIC, exactly as `/po`
+is** — no session, no `PageKey`, no `PAGE_NAV_MAP` row, and no middleware change was needed,
+because `PUBLIC_PATHS` carries `"/po"` and the gate is a `startsWith` prefix match.
+
+`/po` is **still live and unchanged.** The two run side by side until the cutover below.
+
+Record: **`docs/prompts/drafts/code-update-2026-09-08-po-v2-board.md`**. It is in no canonical
+file yet, and that record is the input to `CLAUDE_PLACE_ORDER.md` when v2 merges into `/po`. Its
+wire is guarded by **`scripts/po-v2-email-fixtures.ts`** — run it before any commit that touches
+the send path.
+
+### P0 — 🔴 `/api/order/data` is an unauthenticated full-catalogue dump
+The ONE route `/po2` calls, and it is **wide open**: no session, no token, no rate limit, no
+origin check. Any request returns **every customer name, code and area the depot holds**
+(`mo_customer_keywords`) plus the entire active product catalogue and pack list. Putting a login
+on the page would change nothing while this stands.
+
+⚠ **GATE IT ON ITS OWN, IN ITS OWN COMMIT, AND SHIP NOTHING ELSE WITH IT.** The route is shared
+by `/po`, `/po2` and (through its sibling) `/place-order`, and it **swallows its own errors and
+answers 200 with empty arrays** (`route.ts:140`). So a wrong gate does not throw — it hands a
+salesman standing in a shop a board with no products and no explanation. Prove who calls it
+first, then verify `/po` still loads a full board **while logged out** before and after.
+
+### P2 — Retire `/po`, per the playbook — NOT SCHEDULED
+🔴 **Read `archive/RETIREMENT-PLAYBOOK.md` before any of it**, and run the **successor-parity
+gate first** — `/po2` must prove it does at least as much as `/po`, feature for feature, before
+`/po` is touched. That gate is not a formality: it caught a real gap last time, when `/order`
+turned out to offer a **Hold** dispatch option `/po` does not.
+
+### P3 — Remove the `/po-v2-8f4kd2` redirect
+`app/po-v2-8f4kd2/page.tsx` is a server redirect to `/po2`, kept so anyone with the old address
+typed, bookmarked or installed keeps working through the switchover. ⚠ It does NOT rescue an
+installed PWA — `/po2`'s manifest `id` is `"/po2"`, so the old shortcut stays a separate app,
+which is why the rollout instruction is "delete the old Orbit app first". Remove this once the
+team has moved. (Unlike `/order`, which was parked with a 404 because it had no successor.)
 
 ### P2 — Fav block on the board — BLOCKED on the storage decision below
 A favourites block as the **first** block on the board, **max 8 slots**, filled by a gear
@@ -1549,12 +1580,6 @@ Individual products will move between tiles as real use shows what is wrong. Re-
 **deliberately, never on every deploy**: the board must not reshuffle under a salesman who has
 learned where things are.
 
-### P2 — Cutover: `/po-v2-8f4kd2` replaces `/po` — NOT SCHEDULED
-🔴 **Read `archive/RETIREMENT-PLAYBOOK.md` before any of it**, and run the **successor-parity
-gate first** — v2 must prove it does at least as much as `/po`, feature for feature, before `/po`
-is touched. That gate is not a formality: it is the step that caught a real gap last time, when
-`/order` turned out to offer a **Hold** dispatch option `/po` does not.
-
 ### P1 — DECISION OPEN: the storage model, local or database
 Everything lives in one phone's `localStorage` today, under the `po2_*` keys — the live draft,
 saved drafts, sent orders, favourite customers, my dealers and starred dealers. **Nothing is
@@ -1566,10 +1591,10 @@ Outside the type-weight pass that took the route's other 25 sites to zero: **Sen
 `review-screen.tsx`, and **Cancel** and **Add** in `product-drawer.tsx`. Left because those two
 files were outside that step's containment. T11 in the type scale.
 
-### P3 — Three manifests exist; consolidate AFTER v2 launches, not before
+### P3 — Three manifests exist; consolidate now that v2 has launched
 `public/manifest.json` (the app, `background_color` `#f9fafb`), `public/po.webmanifest` (`/po`)
-and `app/po-v2-8f4kd2/manifest.webmanifest/route.ts` (v2). The last two are near-identical apart
-from scope and `id`. ⚠ Do NOT merge them while v2 and `/po` are both installable: the separate
+and `app/po2/manifest.webmanifest/route.ts` (v2). The last two are near-identical apart
+from scope and `id`. ⚠ Do NOT merge them while `/po2` and `/po` are both installable: the separate
 `id`/`scope`/`start_url` is what keeps the two home-screen apps from folding into one.
 
 ### P3 — `public/brand/` is an unreferenced icon set with superseded letterforms
@@ -1581,7 +1606,7 @@ Three PNGs (`apple-touch-icon`, `icon-192`, `icon-512`) plus `orbit-wordmark.svg
 and they are the only copy of that drawing.
 
 ### P3 — `CROSS_DEPOTS` exists twice and the two copies must be edited together
-`app/po/po-page.tsx:89` and `app/po-v2-8f4kd2/v2-data.ts` now each hold their own
+`app/po/po-page.tsx:89` and `app/po2/v2-data.ts` now each hold their own
 `["Dahisar", "Ahmedabad", "Rajkot", "Pune"]`. v2 got a copy rather than an import because it
 modifies nothing outside its own folder and `/po` is live; unify them into one shared const when
 the containment fence comes down at cutover. ⚠ Neither copy validates a stored `crossDepot` —

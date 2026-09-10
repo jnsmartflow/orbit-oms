@@ -11,7 +11,7 @@ import { Search, LayoutGrid } from "lucide-react";
 // brand-600, which made it the largest and brightest block of violet in the
 // product, on the smallest screens, for a header that carries no decision.
 // The ground is now #F5F3FF and the TITLE carries the colour. The pattern and
-// its reasoning come from app/po-v2-8f4kd2/, which is the reference.
+// its reasoning come from app/po2/, which is the reference.
 //
 // 🔴 THE AVATAR IS WHITE, NOT ink-50. Everywhere else in the app an identity
 // avatar is an ink-50 disc (CLAUDE_UI.md §10.1), but ink-50 is #F4F3F8 and this

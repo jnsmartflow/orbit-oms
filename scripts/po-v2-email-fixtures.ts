@@ -1,11 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * THE STANDING EMAIL FIXTURES FOR /po-v2-8f4kd2 — THE WIRE'S ONLY GUARD.
+ * THE STANDING EMAIL FIXTURES FOR /po2 — THE WIRE'S ONLY GUARD.
  *
  *   npx tsx scripts/po-v2-email-fixtures.ts
  *
  * 🔴 RUN THIS BEFORE ANY COMMIT THAT TOUCHES THE SEND PATH — which is
- * app/po-v2-8f4kd2/v2-email.ts, lib/place-order/email.ts, the pack helpers in
+ * app/po2/v2-email.ts, lib/place-order/email.ts, the pack helpers in
  * lib/place-order/pack.ts, app/api/order/data/route.ts, or the three catalog
  * fields a cart line snapshots (product / baseColour / subProduct). A change
  * that alters either fixture's bytes is a change to what the depot receives,
@@ -37,7 +37,7 @@
  *           reason at all.
  *
  * The body is emitted through the SHIPPED path and nothing is reimplemented:
- * buildV2Email (app/po-v2-8f4kd2/v2-email.ts) calling renderOrderBody,
+ * buildV2Email (app/po2/v2-email.ts) calling renderOrderBody,
  * emailLineLabel and emailCase (lib/place-order/email.ts).
  *
  * Read-only. Three SELECTs, sequential awaits, no $transaction — CORE §3.
@@ -46,10 +46,10 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 
-import { buildV2Email } from "../app/po-v2-8f4kd2/v2-email";
-import { buildBoard, formatPack } from "../app/po-v2-8f4kd2/v2-data";
+import { buildV2Email } from "../app/po2/v2-email";
+import { buildBoard, formatPack } from "../app/po2/v2-data";
 import type { ApiCustomer, ApiPack, ApiProduct, V2CartLine, V2Order }
-  from "../app/po-v2-8f4kd2/v2-data";
+  from "../app/po2/v2-data";
 import { packToMl } from "../lib/place-order/pack";
 
 /* ───────────────────────────────────────────────────────────────────────────

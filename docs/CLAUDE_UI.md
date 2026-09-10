@@ -20,7 +20,7 @@ Single source of truth for visual styling across all screens.
   which had shipped `bg-amber-50 / text-amber-700` for "Bill Tomorrow, Cross XYZ, **Urgent**"
   for over a year.)* Urgency is amber because it is a priority and not a fault: spent on a
   priority, red has nothing left to say when something actually breaks, and a list of red
-  chips on a busy morning stops registering at all. **`/po-v2-8f4kd2` ships this** — its
+  chips on a busy morning stops registering at all. **`/po2` ships this** — its
   Urgent chip is amber-700 on amber-50 and the only red left on the route is on Delete, Clear
   and "Replace what is here". ⚠ **Three components still ship Urgent in red and are the
   migration list, not counter-examples** — see the note under §3's Semantic table.
@@ -97,7 +97,7 @@ never claim a colour a screen does not paint:
 | `components/floor/floor-table.tsx` — the ⚡ mark-urgent button | `border-red-200 bg-red-50 text-red-500` |
 | `components/shared/duplicate-so-tag.tsx` | cites this row by name for its own red |
 
-**That is a migration list.** `/po-v2-8f4kd2` already ships Urgent in amber-700 on amber-50.
+**That is a migration list.** `/po2` already ships Urgent in amber-700 on amber-50.
 Move these three to the `Waiting` row's amber and this row becomes `bg-amber-50 /
 border-amber-200 / text-amber-700`; until somebody does, the row stays red because the pixels
 are red. **Do not flip it to amber ahead of the code** — a stamp nobody earned is the failure
@@ -1513,7 +1513,7 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 ### 59.8 The pale masthead — the mobile header standard [2026-09-09]
 
 **Every mobile header in the product is a pale `#F5F3FF` masthead. Filled brand-600
-bands are gone.** The reference implementation is `app/po-v2-8f4kd2/`, and the reasoning
+bands are gone.** The reference implementation is `app/po2/`, and the reasoning
 is its own: a solid `#7C3AED` band was the largest, brightest block of violet in the
 product, on the smallest screens, for a header that carries no decision.
 

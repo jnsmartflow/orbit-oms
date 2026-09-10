@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-// Hidden v2 PWA manifest, served at /po-v2-8f4kd2/manifest.webmanifest.
+// The v2 PWA manifest, served at /po2/manifest.webmanifest. LIVE 2026-09-10.
 //
 // 🔴 CONTAINMENT — this is a ROUTE HANDLER, not a file in public/, precisely so
-// that v2 adds nothing outside app/po-v2-8f4kd2/ and deleting that one folder
+// that v2 adds nothing outside app/po2/ and deleting that one folder
 // removes v2 whole. public/po.webmanifest (which /po uses) is NOT touched.
 //
 // The segment directory is literally named `manifest.webmanifest`, which is a
@@ -17,7 +17,8 @@ import { NextResponse } from "next/server";
 //     matcher: ["/((?!_next/static|_next/image|.*\\..*).*)"]
 // and the `.*\..*` branch of that negative lookahead excludes any path
 // containing a dot. Separately, PUBLIC_PATHS carries "/po" (middleware.ts:26)
-// and the gate at :36 is a startsWith() prefix match, so this path would be
+// and the gate at :36 is a startsWith() prefix match — "/po2" starts with "/po"
+// — so this path would be
 // waved through even if the matcher did run. Both permit it; only the matcher
 // is actually operative. Nothing in middleware.ts was edited.
 //
@@ -77,9 +78,9 @@ const MANIFEST = {
   name: "Orbit",
   short_name: "Orbit",
   description: "Place a depot order — JSW Dulux Surat Depot",
-  id: "/po-v2-8f4kd2",
-  start_url: "/po-v2-8f4kd2",
-  scope: "/po-v2-8f4kd2",
+  id: "/po2",
+  start_url: "/po2",
+  scope: "/po2",
   display: "standalone",
   display_override: ["standalone"],
   background_color: "#FFFFFF",

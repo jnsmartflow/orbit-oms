@@ -15,7 +15,7 @@ import {
   type V2ResolvedMember, type V2ResolvedTile,
 } from "./v2-data";
 
-// Hidden v2 product drawer — the bottom sheet a board tile opens.
+// The v2 product drawer — the bottom sheet a board tile opens.
 //
 // 🔴 CONTAINMENT — imports only ./v2-data, ./v2-sheet, the documented matcher
 // and node_modules. Nothing else from lib/ or app/po/, no localStorage, no

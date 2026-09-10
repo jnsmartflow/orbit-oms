@@ -1,6 +1,6 @@
-// Hidden v2 salesman order page — DATA, CURATION, AND THE CATALOG JOIN.
+// The v2 salesman order page — DATA, CURATION, AND THE CATALOG JOIN.
 //
-// 🔴 CONTAINMENT — everything v2 needs lives inside app/po-v2-8f4kd2/.
+// 🔴 CONTAINMENT — everything v2 needs lives inside app/po2/.
 // Colours are exported constants used as INLINE STYLES, never CSS variables in
 // globals.css and never entries in tailwind.config.ts. Where shared logic is
 // needed it is COPIED in with its source named, so deleting this one folder
@@ -564,7 +564,7 @@ export const MEMBER_IMAGES: ReadonlySet<string> = new Set([
  *   public/PO/drawer/   this page's own MEMBER art
  *   public/category-images/   LEGACY
  *
- * public/PO/ is /po-v2-8f4kd2's own art, cut out on transparency and shot for
+ * public/PO/ is /po2's own art, cut out on transparency and shot for
  * this board. public/category-images/ is what the page started on: padded
  * opaque squares, shared in spirit with the older surfaces. It is not frozen
  * and it is not wrong — it is simply the art that has NOT been replaced yet,
@@ -915,7 +915,7 @@ export function formatPack(packCode: string, unit?: string | null): string {
  * 1. Only `packStepForPack(packCode, unit, productKey)` sees them, and v2 has
  * no packCode at a step call site. 31 live products, search-only, none on the
  * board. Owner deferred it 2026-09-09 rather than reshape the drawer; it is on
- * ROADMAP under `/po-v2-8f4kd2`. Do NOT "fix" it by keying anything off the
+ * ROADMAP under `/po2`. Do NOT "fix" it by keying anything off the
  * `"1 pc"` string.
  * ═══════════════════════════════════════════════════════════════════════════
  *
@@ -1733,9 +1733,9 @@ export const EMPTY_ORDER: V2Order = {
  *
  * ⚠ THIS IS THE SECOND COPY. The first is `CROSS_DEPOTS` in
  * app/po/po-page.tsx:89, which is LIVE and out of v2's containment fence — v2
- * modifies nothing outside app/po-v2-8f4kd2/. The two must be edited together
+ * modifies nothing outside app/po2/. The two must be edited together
  * until they are unified into one shared const; that unification is parked on
- * ROADMAP.md under `/po-v2-8f4kd2`, because doing it now means editing v1.
+ * ROADMAP.md under `/po2`, because doing it now means editing v1.
  *
  * 🔴 THE LIST DOES NOT VALIDATE ANYTHING. `crossDepot` is a free string on
  * V2Order and stays one: drafts saved before the picker existed hold a

@@ -1,4 +1,4 @@
-// Hidden v2 order storage — live draft, saved drafts, sent orders.
+// The v2 order storage — live draft, saved drafts, sent orders.
 //
 // 🔴 v2 HAS ITS OWN STORAGE, ITS OWN TYPES, ITS OWN KEYS. Every key here is
 // `po2_*`. v2 never reads or writes a `po_*` or `orbitoms_*` key, and it does

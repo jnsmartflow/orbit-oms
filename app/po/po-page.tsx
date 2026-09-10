@@ -2311,7 +2311,7 @@ export default function PoPage(): React.JSX.Element {
           so iOS reserves the bar and paints DARK glyphs — which is what makes a
           pale ground safe here.
 
-          🔴 A PALE MASTHEAD, NOT A FILLED BAND, matching app/po-v2-8f4kd2/.
+          🔴 A PALE MASTHEAD, NOT A FILLED BAND, matching app/po2/.
           A solid #7C3AED band was the largest, brightest block of violet in the
           product, on the smallest screen, for a header that carries no
           decision. The ground is #F5F3FF and the WORDMARK carries the colour.

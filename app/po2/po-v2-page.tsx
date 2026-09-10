@@ -35,7 +35,7 @@ import {
   type V2ResolvedMember, type V2ResolvedTile,
 } from "./v2-data";
 
-// Hidden v2 salesman order page — the whole app, on one route.
+// The v2 salesman order page — the whole app, on one route. LIVE at /po2.
 //
 // 🔴 CONTAINMENT — imports its own siblings, node_modules, and TWO documented
 // exceptions, both read-only:
@@ -56,7 +56,7 @@ import {
 //      the one place a size can be nudged without anyone noticing it drift
 //      from ten other screens.
 //
-// Nothing outside app/po-v2-8f4kd2/ is modified. Every colour is an inline
+// Nothing outside app/po2/ is modified. Every colour is an inline
 // style, so globals.css and tailwind.config.ts stay untouched.
 //
 // THE BOARD IS THE LANDING, AND IT NEVER MENTIONS A DEALER.
