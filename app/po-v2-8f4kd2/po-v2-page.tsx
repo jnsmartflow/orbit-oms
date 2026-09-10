@@ -2356,9 +2356,16 @@ function PickerScreen({ title, query, onQuery, onBack, children }: {
           >
             <ChevronLeft className="h-5 w-5" strokeWidth={2.5} style={{ color: INK }} />
           </button>
-          {/* SCREEN_TITLE, the same constant the checkout header's dealer name
-              uses. Two screens, one size — they were 17 and 16 and there was no
-              reason for the difference beyond nobody having compared them.
+          {/* SCREEN_TITLE — 20/700, and THIS screen is the one that still fits
+              the description in that constant's own note: the biggest text on
+              the screen, alone on its line, naming the screen.
+
+              ⚠ CHECKOUT NO LONGER SHARES IT. The dealer name in the review
+              header forked to DEALER_TITLE (17/600) because it has to wrap
+              beside two icon buttons and above a code line, which is a
+              different job at a different width. Do not "reunify" them on the
+              strength of them once having matched — the fork is the point, and
+              the two constants sit next to each other in v2-data saying so.
 
               🔴 THE SUBORDINATE NOTE IS GONE, and the band is shorter for it.
               It said "{n} lines in this order — they stay" here and "the bill

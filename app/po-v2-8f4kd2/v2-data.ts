@@ -1755,6 +1755,33 @@ export const SCREEN_TITLE: React.CSSProperties = {
   lineHeight:    1.25,
 };
 
+/**
+ * THE DEALER NAME in the checkout header. Related to SCREEN_TITLE, not equal
+ * to it, and it has its own constant because it stopped doing the same job.
+ *
+ * 🔴 WHY IT FORKED. SCREEN_TITLE is "the biggest text on the screen, and it
+ * names the screen" — one line, alone, with nothing beside it. That is still
+ * exactly what the dealer and ship-to pickers show. The checkout header is no
+ * longer that shape: the name shares its row with two 44px icon buttons and
+ * shares its column with a code line, and it has to WRAP inside what is left.
+ * At 20 it fitted about 17 characters a line there and cut real dealers in
+ * half; 17px fits about 21. Same family, same tracking, different job — so the
+ * picker keeps SCREEN_TITLE untouched and checkout points here.
+ *
+ * 🔴 THE LINE HEIGHT IS PX, NOT A RATIO, AND THAT IS LOAD-BEARING. The header
+ * reserves a fixed block so it cannot change height when a long dealer is
+ * picked (see NAME_BLOCK_H in review-screen.tsx). That reservation is two of
+ * THIS line box plus the code line, and arithmetic on a unitless ratio is how
+ * a reservation quietly stops matching what it reserves. Change this and the
+ * two constants over there must change with it.
+ */
+export const DEALER_TITLE: React.CSSProperties = {
+  fontSize:      17,
+  fontWeight:    600,
+  letterSpacing: "-0.02em",
+  lineHeight:    "21px",
+};
+
 /** Shared chip shell. Selected is an OUTLINE + tint, never a solid violet fill. */
 export function chipStyle(selected: boolean, dashed = false): React.CSSProperties {
   return {

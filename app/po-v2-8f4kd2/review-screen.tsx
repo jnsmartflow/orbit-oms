@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Bookmark, ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
+import { Bookmark, ChevronLeft, MapPin, X } from "lucide-react";
 import {
   BRAND, BRAND_WASH, CROSS_DEPOTS, DIVIDER, DOT_CALL, DOT_NORMAL, DOT_URGENT,
-  FAINT, INK, MUTED, RULE, SCREEN_TITLE, VIOLET,
+  DEALER_TITLE, FAINT, INK, MUTED, RULE, VIOLET,
   chipStyle, memberImage, packRows, tileArtFor,
   type ApiCustomer, type V2CartLine, type V2CallTarget, type V2Dispatch,
   type V2Marker, type V2Order,
@@ -33,16 +33,35 @@ import V2Sheet from "./v2-sheet";
 // straight into the mailto.
 
 /**
- * The dealer name's line box, and the block that reserves TWO of them.
+ * The checkout header's fixed block, and the two line boxes that make it up.
  *
- * 🔴 DERIVED FROM SCREEN_TITLE, NOT GUESSED. 20px at its own 1.25 ratio is a
- * 25px line, and the header reserves two of those whatever the dealer is
- * called. Both numbers are stated here rather than inline so the relationship
- * between them cannot be half-edited: change SCREEN_TITLE's size or ratio and
- * these are the two values that must follow it.
+ * 🔴 THE RESERVATION IS ON THE BLOCK, NOT INSIDE THE NAME, AND THAT WAS A REAL
+ * BUG. The height used to sit on the NAME span together with its two-line
+ * clamp, so a one-line dealer still occupied two lines and the code line
+ * started a full empty line below the text — a visible hole in every header
+ * whose dealer happened to be short, which is most of them. The name is a
+ * normal element again; the WRAPPER holds the height and centres the pair in
+ * it. Tight when the name is one line, full when it is two, same height both
+ * times.
+ *
+ * 🔴 WHY A FIXED HEIGHT AT ALL. 9f42be29 removed wrapping outright because a
+ * header that grew by a line when a long dealer was picked shoved the items
+ * list down under a thumb already reaching for it. The wrap is back and that
+ * defect must not come with it, so the block is 59px whatever the name is:
+ *
+ *     two name lines   21 x 2 = 42
+ *     the gap (mt-0.5)        =  2
+ *     the code line           = 15
+ *                               --
+ *                               59
+ *
+ * ⚠ DERIVED FROM DEALER_TITLE, WHICH IS WHY THAT CARRIES A px LINE HEIGHT.
+ * Change its fontSize or lineHeight and these two follow, or the block stops
+ * matching what it reserves and the hole comes back.
  */
-const NAME_LINE_H  = 25;
-const NAME_BLOCK_H = NAME_LINE_H * 2;
+const NAME_LINE_H  = 21;
+const CODE_LINE_H  = 15;
+const NAME_BLOCK_H = NAME_LINE_H * 2 + 2 + CODE_LINE_H;
 
 /** Sections are separated by a 9px band, never by a border or a card. */
 function Band(): React.JSX.Element {
@@ -186,38 +205,32 @@ export default function ReviewScreen({
             type="button" onClick={onOpenDealer}
             className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           >
-            <span className="min-w-0 flex-1">
-              {/* 🔴 TWO LINES, ALWAYS RESERVED, WHETHER OR NOT IT USES BOTH.
-                  This is the whole trick and it is why `height` is set as well
-                  as the clamp. The clamp alone wraps a long name and lets a
-                  short one collapse to one line, which is exactly the bug
-                  9f42be29 removed wrapping to avoid: the sticky header grew by
-                  a line the moment a long dealer was picked, and the items list
-                  jumped down under a thumb already reaching for it. A fixed
-                  height buys the wrap back and keeps the header still — a short
-                  name simply leaves the second line empty.
-
-                  🔴 NO MID-WORD BREAKS. There is no overflowWrap here on
-                  purpose; a 146px column at 320px would happily saw
+            {/* 🔴 THE HEIGHT LIVES HERE, ON THE PAIR, NOT ON THE NAME. The
+                name and the code line are a normal stacked pair with nothing
+                between them but their own 2px; this wrapper is what is 59px
+                tall, and justify-center is what floats the pair in the middle
+                of it when the name only needs one line. Put the height back
+                inside the name and the empty-second-line hole comes back with
+                it. */}
+            <span
+              className="flex min-w-0 flex-1 flex-col justify-center"
+              style={{ height: NAME_BLOCK_H }}
+            >
+              {/* 🔴 NO MID-WORD BREAKS. There is no overflowWrap here on
+                  purpose; a 168px column at 320px would happily saw
                   "POWERFLEXX" into "POWERFL / EXX". A word too long for the
                   column overflows its line and the clamp ellipsises it, which
                   is legible where a severed word is not. */}
               <span
                 style={{
-                  ...SCREEN_TITLE,
-                  // 600, one step down from SCREEN_TITLE's 700. At 20px in
-                  // BRAND on a violet wash, 700 shouted; the size already
-                  // carries the rank. Plus Jakarta Sans is loaded as a variable
-                  // font with no weight list (app/layout.tsx), so 600 is a real
-                  // cut and not a synthesised one.
-                  fontWeight: 600,
+                  // DEALER_TITLE, not SCREEN_TITLE. 17/600 rather than 20/700 —
+                  // this name has to wrap beside two icon buttons, which is not
+                  // the job a screen title does. The pickers keep SCREEN_TITLE.
+                  ...DEALER_TITLE,
                   // BRAND, the wordmark's violet — the dealer IS this screen's
                   // title. "Choose dealer" stays the deeper VIOLET because it
-                  // is an instruction rather than a name, which is the same
-                  // split the chevron beside it already makes.
+                  // is an instruction rather than a name.
                   color: dealer ? BRAND : VIOLET,
-                  lineHeight: `${NAME_LINE_H}px`,
-                  height: NAME_BLOCK_H,
                   display: "-webkit-box",
                   WebkitBoxOrient: "vertical",
                   WebkitLineClamp: 2,
@@ -227,20 +240,23 @@ export default function ReviewScreen({
                 {dealer ? dealer.name : "Choose dealer"}
               </span>
               {dealer && (
-                <span className="mt-0.5 block truncate font-mono text-[12.5px]" style={{ color: MUTED }}>
+                <span
+                  className="mt-0.5 block truncate font-mono"
+                  style={{ fontSize: 11.5, lineHeight: `${CODE_LINE_H}px`, color: MUTED }}
+                >
                   {dealer.code}{dealer.area ? ` · ${dealer.area}` : ""}
                 </span>
               )}
             </span>
-            {/* ⚠ A GLYPH, NOT A TARGET, AND DELIBERATELY SO. It is INSIDE this
-                button, so it fires the same onOpenDealer the name does — there
-                is one action here wearing two faces. Promoting it to its own
-                44px box would cost the name 26px of its 146 at 320px to add a
-                second way to do a tap that already works everywhere across the
-                name. §60 is met by the button around it, which is 46px tall and
-                the width of the whole name. */}
-            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2.5}
-                          style={{ color: dealer ? FAINT : VIOLET }} />
+            {/* ⚠ THE ">" CHEVRON IS GONE AND THE TAP IS NOT. It sat inside this
+                same button and fired the same onOpenDealer the name fires, so
+                it was one action wearing two faces — and it cost the name 22px
+                of a 168px column to say a second time what tapping the name
+                already does. The whole button is still the target, 59px tall
+                and the full width of the name, well past §60's floor.
+
+                ⚠ THIS IS NOT THE SHIP-TO ROW'S "Change". That one names an
+                action the row does not otherwise offer and stays where it is. */}
           </button>
 
           {/* ── SAVE AND CLEAR ───────────────────────────────────────────
