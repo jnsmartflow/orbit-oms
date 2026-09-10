@@ -129,7 +129,16 @@ export const SEARCH_BG  = FILL;
 export const DIVIDER    = RULE;
 
 /**
- * The brand gradient, for the SPLASH. Screen only — it never goes on paper.
+ * The brand gradient. Screen only — it never goes on paper.
+ *
+ * ⚠ CURRENTLY UNUSED — ZERO CALL SITES, verified by grep 2026-09-10. It was the
+ * splash's ground until the splash went white with the mark in BRAND (the
+ * "Trail" motion, docs/mockups/po-v2/splash-motion.html). It is kept rather
+ * than deleted on the mockup's own advice: a full-bleed brand ground is a thing
+ * this app may want again, the value below is tuned and the tuning notes are
+ * the point of keeping it. Delete it in a deliberate cleanup, not as a side
+ * effect of some other change — and check for call sites first, because this
+ * comment goes stale the moment somebody adds one.
  *
  * 🔴 TWO STOPS, NOT THREE. It used to fall to #581C87 at the far corner, which
  * read as a bruise on a full screen rather than as a brand. The radial geometry

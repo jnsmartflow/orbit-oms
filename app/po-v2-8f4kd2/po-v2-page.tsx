@@ -20,7 +20,7 @@ import {
   type V2SavedDraft, type V2SentOrder, type V2Snapshot,
 } from "./v2-storage";
 import {
-  BOARD, BRAND, BRAND_GRADIENT, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT,
+  BOARD, BRAND, BRAND_WASH, CARD_SHADOW, DIVIDER, FAINT,
   FAVOURITE, FILL, INK, MUTED, PAGE, RULE, SCREEN_TITLE, SEARCH_BG, SURFACE, URGENT, VIOLET,
   VIOLET_BG,
   CUTOUT_SHADOW, TRANSPARENT_ART,
@@ -84,6 +84,84 @@ import {
  * would shrink the splash the next time somebody adjusts a header.
  */
 export const MASTHEAD_WORDMARK = 31;
+
+/**
+ * THE SPLASH MOTION — "Trail", per docs/mockups/po-v2/splash-motion.html.
+ *
+ * A dot runs the width of the word dragging a fading gradient tail behind it,
+ * and the tail resolves into the solid rule that is the end state. Three layers
+ * under the wordmark, 640ms end to end: the mark is readable at 380ms and the
+ * line has landed at 640ms.
+ *
+ * 🔴 EVERY KEYFRAME AND EASING IS LIFTED VERBATIM from that file's "The motion,
+ * ready to lift" block. They were reviewed and approved as a set; the delays
+ * are what make the tail hand over to the rule cleanly, so nudging one number
+ * breaks the handover rather than adjusting it. If the motion needs to change,
+ * change the mockup, look at it, and then copy it here again.
+ *
+ * 🔴 THE NAMES ARE PREFIXED AND THAT IS NOT DECORATION. The mockup calls these
+ * orbitRise/orbitRun/etc, and app/globals.css already ships `orbit-rise` and
+ * `orbit-draw` for the LOGIN page. Those are different CSS identifiers so they
+ * would not technically collide, but two animation families one hyphen apart in
+ * one document is a trap for whoever edits next. v2Splash* matches v2SheetUp
+ * and v2ScrimIn, the convention this folder already uses.
+ *
+ * 🔴 A SCOPED <style>, NOT globals.css. Same containment rule as v2-sheet.tsx:
+ * every colour in v2 is an inline style and nothing here touches globals.css or
+ * tailwind.config.ts. Keyframes cannot be inline, so they ride in the element.
+ *
+ * ⚠ THE GRADIENT'S TRANSPARENT STOP IS rgba(124,58,237,0), NOT `transparent`.
+ * The ready-to-lift block writes `transparent`, which several engines
+ * interpolate through transparent BLACK and render as a grey smear across the
+ * middle of the tail. Brand-at-zero-alpha is the same colour the mockup's own
+ * rendered `.tail` uses, and it fades cleanly. Same picture, no artefact.
+ */
+const SPLASH_CSS = `
+@keyframes v2SplashRise { from { opacity:0; transform:translateY(9px) } to { opacity:1; transform:none } }
+@keyframes v2SplashRun  { 0%   { left:0;    opacity:0 }
+                          12%  { opacity:1 }
+                          88%  { opacity:1 }
+                          100% { left:100%; opacity:0 } }
+@keyframes v2SplashTail { from { transform:scaleX(0) } to { transform:scaleX(1) } }
+@keyframes v2SplashFade { to   { opacity:0 } }
+@keyframes v2SplashRule { from { opacity:0 } to { opacity:1 } }
+
+.v2-splash-mark { animation: v2SplashRise .38s cubic-bezier(.2,.85,.25,1) both }
+
+/* The strip the three layers share, 13px under the word's own box. */
+.v2-splash-fx   { position:absolute; left:0; right:0; bottom:-13px; height:3px }
+
+/* THE END STATE. It is opacity 0 through its 460ms delay (fill mode both), so
+   the tail is the only thing on the strip until the handover. */
+.v2-splash-rule { position:absolute; inset:0; border-radius:999px;
+                  background:${BRAND};
+                  animation: v2SplashRule .18s ease-out .46s both }
+
+/* Grows from nothing under the dot, then fades out as the rule fades in. */
+.v2-splash-tail { position:absolute; inset:0; border-radius:999px;
+                  transform-origin:left center;
+                  background:linear-gradient(90deg, rgba(124,58,237,0) 0%, ${BRAND} 100%);
+                  animation: v2SplashTail .42s cubic-bezier(.3,0,.25,1) .10s both,
+                             v2SplashFade .16s ease-in .44s forwards }
+
+/* 🔴 THE ONE THING THAT ANIMATES LAYOUT, and deliberately: 'left' on a 6px
+   square is cheap where a transform would have to fight the -6px margin that
+   keeps it inside the right edge. The mockup calls this out as its single
+   exception. top:-1.5px centres 6px of dot on 3px of line. */
+.v2-splash-dot  { position:absolute; top:-1.5px; left:100%; width:6px; height:6px;
+                  margin-left:-6px; border-radius:999px; background:${BRAND}; opacity:0;
+                  animation: v2SplashRun .42s cubic-bezier(.3,0,.25,1) .10s both }
+
+/* 🔴 THE FINISHED STATE, INSTANTLY. Everything above rests on its ARRIVED
+   value, which is what lets 'animation:none' land on the design rather than on
+   an invisible wordmark or a 0px rule — the same principle CLAUDE_UI records
+   for the login page's two entrances. The dot and the tail are transitional and
+   simply never appear. */
+@media (prefers-reduced-motion: reduce) {
+  .v2-splash-mark, .v2-splash-dot, .v2-splash-tail, .v2-splash-rule { animation: none }
+  .v2-splash-dot, .v2-splash-tail { opacity: 0 }
+}
+`;
 
 // The product name UNDER the tile, Blinkit-style: outside the square, left
 // aligned, two lines at most.
@@ -1246,10 +1324,40 @@ export default function PoV2Page(): React.JSX.Element {
   // it stays right from then on without a single static asset to maintain.
   if (load.kind === "loading") {
     return (
-      <main className="flex min-h-screen w-full items-center justify-center"
-            style={{ background: BRAND_GRADIENT }}>
-        {/* Nothing else. No tagline, no spinner, no depot name. */}
-        <Wordmark size={44} colour="#FFFFFF" />
+      /* 🔴 WHITE, NOT THE GRADIENT. A full screen of violet was the loudest
+         thing in the app and it was shown at the moment the app has least to
+         say. White with the mark in BRAND is the same brand, quieter, and it
+         matches the ground every screen behind it uses. */
+      <main className="flex min-h-screen w-full items-center justify-center bg-white">
+        <style>{SPLASH_CSS}</style>
+
+        {/* 🔴 THE SAME Wordmark THE BOARD RENDERS, at the same 44 it has always
+            used here. Hand-writing the letters — or reaching for the shared SVG
+            in components/shared, which has ten call sites across login, /po,
+            both sidebars, attendance and trips — is how the splash and the
+            board start drifting apart. This is v2's own component and it stays
+            v2's own component.
+
+            ⚠ NOTHING HERE GATES THE LOAD. There is no timer, no minimum
+            duration and no "animation finished" state anywhere on this path.
+            The branch above is the only thing that decides whether this screen
+            exists, so if the catalogue arrives at 300ms the splash goes at
+            300ms, mid-animation, and that is correct. A salesman opening a warm
+            app should see a flash and nothing more. */}
+        <div className="relative w-fit">
+          <div className="v2-splash-mark">
+            <Wordmark size={44} colour={BRAND} />
+          </div>
+          {/* Rule first so the tail and the dot ride above it. No tagline —
+              the mockup's own section explains why: the splash has no fixed
+              length, so a line timed to fade in at 700ms would show about half
+              the time, and branding that appears at random reads as a fault. */}
+          <div className="v2-splash-fx" aria-hidden>
+            <span className="v2-splash-rule" />
+            <span className="v2-splash-tail" />
+            <span className="v2-splash-dot" />
+          </div>
+        </div>
       </main>
     );
   }
