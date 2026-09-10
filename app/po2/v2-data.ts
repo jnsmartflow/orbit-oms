@@ -14,7 +14,7 @@
 // depot steps by one. The full reasoning sits above `stepForLabel`. Read it
 // before adding a second import; the bar is "a copy would be silently wrong",
 // not "this would be convenient".
-import { packStep } from "@/lib/place-order/pack";
+import { packKey, packStep, sortPacks } from "@/lib/place-order/pack";
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 //
@@ -1295,6 +1295,47 @@ const SHADE_HEX: Record<string, string> = {
   "ELECTRIC BLUE PLUS":    "#1560BD",
   "ORGANIC RED VIOLET":    "#9B3B7A",
 
+  // ── SAMPLED FROM THE PRINTED CARD, 2026-09-10 ─────────────────────────
+  //
+  // 🔴 SAMPLED FROM THE PRINTED DULUX ENAMEL SHADE CARD BY SMART FLOW,
+  // 2026-09-10. Measured off the physical card, not read off a screen and not
+  // guessed — which is what this constant's no-guessing rule asks for: a value
+  // may go in when somebody can say where it came from.
+  //
+  // ⚠ A DIFFERENT SOURCE FROM THE BLOCK ABOVE, and that matters if one is ever
+  // questioned. Everything above came from dulux.in's per-shade pages. These
+  // thirteen came from the card, because Dulux publishes no page for them. The
+  // note at the head of this constant says the per-shade page is the thing to
+  // check a value against; for THESE thirteen it is the card.
+  //
+  // ⚠ THIRTEEN OF THIRTY ROWS OFFERED WERE WRITTEN. Every key below was first
+  // matched against the LIVE catalogue and confirmed to be a real baseColour
+  // with no existing hex. What was NOT written, and why:
+  //   · five CONFLICTED with a published dulux.in value already here — CHERRY,
+  //     MAHOGANY, DA GREY, SAND STONE and DEEP ORANGE. An authoritative value
+  //     is not overwritten by a sampled one without somebody choosing.
+  //   · nine were already set to the identical value, so there was nothing to do.
+  //   · BLAZING WHITE came with no value and stays unmapped.
+  // The full verdict table is in the session record.
+  //
+  // ⚠ SIGNAL RED AND SIGNAL RED PLUS ARE TWO PRODUCTS AND WERE NOT CONFLATED.
+  // The catalogue holds both: SIGNAL RED (Gloss, WS Protect, Floor Plus) which
+  // already carries #B3312C, and SIGNAL RED PLUS (Floor Plus only) which has
+  // no hex and did not get one here.
+  "ROYAL IVORY":           "#F5CF98",
+  "SKY BLUE":              "#2EA4C5",
+  "LIGHT GREY":            "#CCCCCB",
+  "DAWN":                  "#D8BAA3",
+  "MINT GREEN":            "#419343",
+  "DEEP GREEN":            "#1D2F28",
+  "TRUCK BROWN":           "#634F35",
+  "WILD PURPLE":           "#A7A3C8",
+  "AQUAMARINE":            "#53B88D",
+  "OFF WHITE":             "#F3D5A0",
+  "PALE CREAM":            "#E7C482",
+  "CASCADE GREEN":         "#A2AF73",
+  "OPALINE GREEN":         "#7C9971",
+
   // ── SPECIAL TEAK AND TIMBER GOLDEN BROWN STOOD HERE, AND CAME BACK OUT ──
   //
   // Both were hand-authored guesses (#A56B2E and #BC8A3C), added on 2026-09-07
@@ -1667,10 +1708,40 @@ export type V2CartLine = {
 };
 
 /**
+ * Pack labels for one row, smallest first, KG last and IN ORDER.
+ *
+ * 🔴 THE PAYLOAD'S SORT IS BLIND TO KG, AND THAT IS THE WHOLE REASON THIS
+ * EXISTS. route.ts:21-28 compares `packToMl`, and packToMl returns **0 for
+ * every KG, GM and PC pack** (pack.ts:47) because they are not litres. So the
+ * comparator sees 0 against 0 for a KG product, the sort is stable, and the
+ * packs come back in database insertion order: Acrylic Distemper arrives as
+ * 10KG, 20KG, 5KG.
+ *
+ * Measured against the live catalogue 2026-09-10: **6 of 347 multi-pack rows**
+ * are affected and every one of them is KG — Smart Choice's Acrylic Distemper,
+ * VT Concrete Finish, both Magik bases, Acrylic Distemper's Duwel row and
+ * Acrylic Putty. No ML or L product moves; the payload already gets those
+ * right.
+ *
+ * 🔴 pack.ts ALREADY KNOWS HOW, so this uses `sortPacks` rather than writing a
+ * second rule. That function has a dedicated KG branch comparing the numeric
+ * pack code, which is exactly the case the payload's comparator drops. The
+ * labels are still rendered by THIS file's formatPack, so nothing about how a
+ * pack is spelled changes — only the order.
+ */
+export function sortedPacks(packs: ApiPack[]): ApiPack[] {
+  const byKey = new Map<string, ApiPack>();
+  for (const p of packs) byKey.set(packKey(p.packCode, p.unit), p);
+  return sortPacks(Array.from(byKey.keys()))
+    .map((k) => byKey.get(k))
+    .filter((p): p is ApiPack => p !== undefined);
+}
+
+/**
  * The ordered packs of one line, smallest first, zero quantities dropped.
  *
- * `packOrder` is already ascending by size with KG last — the payload sorts it
- * that way (route.ts:21-28) — so this is a filter, not a re-sort.
+ * `packOrder` is sorted by sortedPacks() at the moment the line is built
+ * (po-v2-page's addLines), so this is a filter, not a re-sort.
  *
  * Returned as ROWS rather than a joined string: a review line is what somebody
  * checks a physical load against, and "100ML ×24, 200ML ×12, 500ML ×12, 1L ×6"

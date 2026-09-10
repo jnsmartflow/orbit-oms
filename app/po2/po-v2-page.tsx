@@ -29,7 +29,7 @@ import {
   CUTOUT_SHADOW, TRANSPARENT_ART,
   EMPTY_ORDER, boardTile, boardTileArtFor, buildBoard, buildCatalog, drawerMode,
   formatPack, mixToWhite, optionPools, packRows,
-  resolveGroup, tileImage, tileKeyForMember, unitsIn, TILE_WASH,
+  resolveGroup, sortedPacks, tileImage, tileKeyForMember, unitsIn, TILE_WASH,
   type ApiCustomer, type ApiPayload, type ApiProduct,
   type V2BoardTile, type V2CartLine, type V2Order, type V2Resolved,
   type V2ResolvedMember, type V2ResolvedTile,
@@ -973,7 +973,7 @@ export default function PoV2Page(): React.JSX.Element {
           // snapshotted from the member's own menu row and they are the
           // three fields emailLineLabel reads. Nothing here reaches the wire.
           tileSap: tileKey, label: labelOf(p.row), option: p.option, rowId: p.row.id, qtys,
-          packOrder: p.row.packs.map((pk) => formatPack(pk.packCode, pk.unit)),
+          packOrder: sortedPacks(p.row.packs).map((pk) => formatPack(pk.packCode, pk.unit)),
           product: p.row.product, baseColour: p.row.baseColour, subProduct: p.row.subProduct,
         };
       });

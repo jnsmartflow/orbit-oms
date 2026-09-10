@@ -9,7 +9,7 @@ import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
   CUTOUT_SHADOW_RAIL,
   baseChipLabel, boardTileArtFor, formatPack, isBaseOption, isCutout, isLightHex, memberImage,
-  packsOf, shadeHex, sortBases, stepForLabel, tileArtFor, unitsIn,
+  packsOf, shadeHex, sortBases, sortedPacks, stepForLabel, tileArtFor, unitsIn,
   variantImage,
   type ApiProduct, type V2DrawerMode, type V2Option, type V2Resolved,
   type V2ResolvedMember, type V2ResolvedTile,
@@ -775,7 +775,7 @@ export default function ProductDrawer({
     cur.resolved.noOptionRow ?? selectedOption?.row ?? null;
 
   const packLabels = selectedRow
-    ? selectedRow.packs.map((p) => formatPack(p.packCode, p.unit))
+    ? sortedPacks(selectedRow.packs).map((p) => formatPack(p.packCode, p.unit))
     : [];
 
   /**
