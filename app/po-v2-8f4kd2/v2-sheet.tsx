@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RULE, SCRIM } from "./v2-data";
 
 // The ONE bottom-sheet shell in v2. Extracted from product-drawer.tsx when a
@@ -31,6 +31,15 @@ const SHEET_CSS = `
 @keyframes v2ScrimIn { from { opacity: 0; } to { opacity: 1; } }
 .v2-sheet { animation: v2SheetUp .26s cubic-bezier(.32,.72,0,1) both; max-height: 94%; }
 .v2-sheet-fixed { height: 94%; }
+/* 🔴 THE LAST 6% IS WORTH HAVING WHEN THE KEYBOARD IS UP, and only then. The
+   94% exists so a strip of the screen behind the sheet stays visible and the
+   thing reads as a sheet rather than a page. With the keyboard open there is
+   nothing behind it worth seeing — the board is off screen anyway — and on a
+   320x568 phone that 6% is 18.5px, which is the difference between about 37px
+   and about 56px of pack rows. Half as much again of the only region he is
+   using. It reverts the moment the keyboard goes. */
+.v2-sheet-kb { max-height: 100%; }
+.v2-sheet-kb.v2-sheet-fixed { height: 100%; }
 .v2-scrim { animation: v2ScrimIn .2s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
   .v2-sheet, .v2-scrim { animation: none; }
@@ -144,6 +153,111 @@ export function useBodyScrollLock(active = true): void {
   }, [active]);
 }
 
+// ── IS THE KEYBOARD ACTUALLY OPEN ──────────────────────────────────────────
+//
+// 🔴 A REAL HEIGHT DROP, NEVER FOCUS. CLAUDE_UI §55: "All floating footers gate
+// on `keyboardOpen` (real keyboard), never `inputFocused`." Focus is the wrong
+// signal in both directions — Android's down-caret closes the keyboard while
+// the input keeps focus, so a focus-gated footer would stay hidden with half
+// the screen free; and iOS can focus a field a frame before the keys arrive.
+//
+// The shape is /po's, at po-page.tsx:961, and so are both numbers:
+//   THRESHOLD 120px — a drop smaller than this is the URL bar collapsing, not
+//                     a keyboard. Nothing in v2 argues for a different figure:
+//                     the noise is the browser's, not the page's.
+//   DEBOUNCE  100ms — the open ramp reports several intermediate heights, and
+//                     without this the chips and strip would flicker out and
+//                     back on the way up.
+//
+// 🔴 ONE LISTENER FOR THE WHOLE APP, REF-COUNTED, exactly like the lock above.
+// Subscribers share it; it attaches on the first and detaches on the last. A
+// per-component listener would be one visualViewport handler per open sheet.
+//
+// 🔴 AND NO STATE CHURN. The measure runs on every resize frame of the ramp but
+// only ever calls a subscriber when the BOOLEAN FLIPS — at most twice per
+// keyboard cycle. That is the discipline the --vvh writer documents ("never
+// React state, which would cause a render storm"); the difference is that a
+// boolean has two values and a height has hundreds.
+//
+// ⚠ IT DOES NOT SHARE THE --vvh WRITER'S LISTENER, and that is a deliberate
+// limit of this step rather than a design view. That writer lives in
+// po-v2-page.tsx, which IMPORTS this file, so it cannot be the publisher
+// without a cycle — and the brief for this change forbids editing it. So the
+// app now has two visualViewport handlers reading the same height for two
+// different outputs. There is exactly ONE source of truth for the boolean,
+// which is what matters; merging the two handlers is a tidy-up for whoever
+// next has both files open.
+
+const KB_THRESHOLD = 120;
+const KB_DEBOUNCE  = 100;
+
+let kbFullH = -1;
+let kbOpen  = false;
+let kbTimer: ReturnType<typeof setTimeout> | null = null;
+let kbDetach: (() => void) | null = null;
+const kbSubs = new Set<(next: boolean) => void>();
+
+function kbMeasure(): void {
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  // Grows on rotation and on an iOS URL-bar expand, never shrinks — the
+  // reference has to be the tallest this viewport has ever been, or the first
+  // measurement taken WITH the keyboard already up becomes "full".
+  if (h > kbFullH) kbFullH = h;
+  const next = (kbFullH - h) > KB_THRESHOLD;
+  if (next === kbOpen) return;
+  if (kbTimer) clearTimeout(kbTimer);
+  kbTimer = setTimeout(() => {
+    kbTimer = null;
+    if (next === kbOpen) return;
+    kbOpen = next;
+    kbSubs.forEach((notify) => notify(next));
+  }, KB_DEBOUNCE);
+}
+
+/**
+ * Whether the soft keyboard is up, as a boolean any sheet can read.
+ *
+ * ⚠ FALSE ON THE SERVER AND ON THE FIRST CLIENT FRAME, which is correct: a
+ * sheet that has only just mounted has not raised a keyboard yet.
+ */
+export function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    kbSubs.add(setOpen);
+    if (kbSubs.size === 1 && typeof window !== "undefined") {
+      const vv = window.visualViewport;
+      if (vv) {
+        vv.addEventListener("resize", kbMeasure);
+        vv.addEventListener("scroll", kbMeasure);
+        kbDetach = () => {
+          vv.removeEventListener("resize", kbMeasure);
+          vv.removeEventListener("scroll", kbMeasure);
+        };
+      } else {
+        window.addEventListener("resize", kbMeasure);
+        kbDetach = () => window.removeEventListener("resize", kbMeasure);
+      }
+      kbMeasure();
+    }
+    // Adopt whatever the shared value already is — a second sheet opening on
+    // top of a first must not think the keyboard is down.
+    setOpen(kbOpen);
+    return () => {
+      kbSubs.delete(setOpen);
+      if (kbSubs.size > 0) return;
+      if (kbTimer) { clearTimeout(kbTimer); kbTimer = null; }
+      kbDetach?.();
+      kbDetach = null;
+      // Reset the reference so the next sheet measures its own "full", rather
+      // than inheriting a height from a rotation two screens ago.
+      kbFullH = -1;
+      kbOpen  = false;
+    };
+  }, []);
+  return open;
+}
+
 /**
  * Keeps whatever is focused INSIDE the sheet visible when the keypad opens.
  *
@@ -192,7 +306,26 @@ function useKeepFocusVisible(ref: React.RefObject<HTMLElement>): void {
       if (!(active instanceof HTMLElement)) return;
       // Only OUR sheet's fields. Another overlay's input is not our business.
       if (!ref.current || !ref.current.contains(active)) return;
-      active.scrollIntoView({ block: "center", behavior: "auto" });
+      // 🔴 "nearest", NOT "center" — and note (2) above is what changed.
+      //
+      // That note argued for "center" so a late few-pixel shift could not
+      // re-hide a row. It was reasoning about a row inside PackList, and it was
+      // right about that. What it did not account for is that this handler also
+      // fires for the SEARCH INPUT, which sits OUTSIDE any inner scroller — so
+      // its nearest scrollable ancestor is the <section> itself. The section is
+      // overflow-hidden, which clips but is still SCROLLABLE BY SCRIPT, and
+      // "center" therefore scrolled the whole sheet to put the field in the
+      // middle — dragging the footer up over the pack rows. That is the defect
+      // in the screenshots.
+      //
+      // "nearest" is what /po uses for the same job (po-page.tsx:973) and it
+      // scrolls the minimum, so with nothing overflowing it scrolls nothing.
+      //
+      // ⚠ THIS IS THE BELT, NOT THE BRACES. Collapsing the chips and the strip
+      // (see product-drawer) is what stops the section overflowing in the first
+      // place, and a section that does not overflow cannot be scrolled by any
+      // block value. This makes the failure impossible rather than unlikely.
+      active.scrollIntoView({ block: "nearest", behavior: "auto" });
     };
     // BOTH events. See (1) above — resize alone misses the settle on iOS.
     vv.addEventListener("resize", onResize);
@@ -233,6 +366,10 @@ export default function V2Sheet({
   const sheetRef = useRef<HTMLElement>(null);
   useBodyScrollLock();
   useKeepFocusVisible(sheetRef);
+  /* Read by EVERY sheet, but it can only ever be true for one that holds an
+     input — nothing else can raise a keyboard. A sheet with no field sees
+     `false` for its whole life and renders exactly as it did before. */
+  const keyboardOpen = useKeyboardOpen();
 
   return (
     /* 🔴 PINNED TO THE VISUAL VIEWPORT — BOTH ITS SIZE AND ITS POSITION, so
@@ -281,7 +418,7 @@ export default function V2Sheet({
 
       <section
         ref={sheetRef}
-        className={`v2-sheet${fixedHeight ? " v2-sheet-fixed" : ""} absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white`}
+        className={`v2-sheet${fixedHeight ? " v2-sheet-fixed" : ""}${keyboardOpen ? " v2-sheet-kb" : ""} absolute inset-x-0 bottom-0 flex flex-col overflow-hidden bg-white`}
         style={{
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
           boxShadow: "0 -8px 32px rgba(18,14,26,.16)",
@@ -296,7 +433,18 @@ export default function V2Sheet({
         {footer && (
           <div
             className="flex shrink-0 gap-2 px-4 pt-3"
-            style={{ borderTop: `1px solid ${RULE}`, paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+            style={{
+              // 🔴 ITS OWN GROUND. This carried a border and padding and no
+              // background, and simply relied on the section's white being
+              // behind it. That held right up until something scrolled the
+              // section — then the pack rows slid UNDER a transparent footer
+              // and read as printing straight through the Add button. A bar
+              // that sits over content has to be opaque on its own account;
+              // inheriting a colour from an ancestor is not the same promise.
+              background: "#FFFFFF",
+              borderTop: `1px solid ${RULE}`,
+              paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+            }}
           >
             {footer}
           </div>

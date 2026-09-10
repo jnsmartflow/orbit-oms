@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { Minus, Plus, Search, X } from "lucide-react";
 // Documented containment exception — the tested matcher /po uses, read-only.
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
-import V2Sheet from "./v2-sheet";
+import V2Sheet, { useKeyboardOpen } from "./v2-sheet";
 import {
   BRAND, FAINT, FILL, INK, MUTED, RULE, SEARCH_BG, VIOLET, VIOLET_BG,
   CUTOUT_SHADOW_RAIL,
@@ -317,6 +317,29 @@ const TILE_GAP  = 12;   // between tiles — the brief's floor is 10
  * the fifth: an obvious half-tile, which is the whole cue. The extra 8px of
  * name width is a bonus, not the reason.
  */
+/**
+ * Trailing space under the LAST pack row. Breathing room, and nothing else.
+ *
+ * 🔴 IT USED TO BE `calc(76px + safe-area)`, AND 76 WAS THE FOOTER'S HEIGHT.
+ * The footer is a flex SIBLING and has never overlapped this scroller, so a
+ * number equal to its height was a reservation for a collision that cannot
+ * happen — measured, the footer comes to 71.5px, which is where 76 came from.
+ * A constant that pretends to be another element's height is a constant that
+ * goes wrong silently the first time that element changes.
+ *
+ * 🔴 WHAT THE SPACE IS ACTUALLY FOR, still. v2-sheet's note (2) records that
+ * `block: "nearest"` "stops the moment the row's edge touches the container's
+ * edge, which is flush against the footer's border. Technically visible; reads
+ * as half-hidden." That is a real complaint and it survives the change from
+ * "center" to "nearest" — so the room stays, at about half a pack row, which
+ * is what it takes for the last row to look finished rather than cut off.
+ *
+ * ⚠ THE SAFE-AREA TERM IS GONE TOO. The FOOTER carries the home-indicator
+ * inset (v2-sheet: `max(env(safe-area-inset-bottom), 12px)`), and it sits
+ * below this scroller. Adding it here paid for the same strip twice.
+ */
+const PACK_TRAILING = 24;
+
 const STRIP_TILE = 56;
 const STRIP_CELL = 72;
 const STRIP_GAP  = 8;
@@ -817,6 +840,41 @@ export default function ProductDrawer({
     setMemberSap(sap);
   }
 
+  /**
+   * 🔴 COMPACT — the drawer with the keyboard up and the search open.
+   *
+   * WHY IT HAS TO EXIST. Every sibling above the rail is shrink-0, so when the
+   * keyboard halves the viewport there is nothing left for flex-1 to give and
+   * the fixed-height parts OVERFLOW a section that is overflow-hidden but still
+   * scrollable by script. That overflow is what let the footer be dragged over
+   * the pack rows. Measured on a 320x568 phone with the keyboard up: the sheet
+   * is ~290px and the shrink-0 siblings come to ~379px, so the rail and pane
+   * were asked to fit in MINUS 89 pixels. Collapsing the two controls below
+   * takes the siblings to ~208px and leaves +81, and a section that does not
+   * overflow cannot be scrolled at all.
+   *
+   * WHAT COLLAPSES, AND WHY THOSE TWO. The category chips and the product strip
+   * are both ways of CHOOSING WHICH LIST THE RAIL SHOWS — and at this moment
+   * the rail is showing search results, so both are answering a question the
+   * salesman has stopped asking. The search bar, the rail, the pane and the
+   * footer all stay: they are what he is looking at and what he acts with.
+   *
+   * ⚠ BOTH CONDITIONS, NOT JUST keyboardOpen. The number keypad on a pack row
+   * also raises the keyboard, and there the strip is exactly what he needs to
+   * move to the next product without dismissing anything. Collapsing on the
+   * keyboard alone would take a control away mid-task. `searchOpen` is what
+   * says "he is choosing from the rail", which is the state the strip and the
+   * chips are redundant in.
+   *
+   * ⚠ THE HEADER AND GRAB BAR STAY, deliberately. Dropping the header's
+   * sub-line would save 17px and the whole header 62px, but the header is the
+   * only thing on screen naming the product, and +81 was already enough. The
+   * numbers are recorded so the trade is available if a smaller phone ever
+   * needs it.
+   */
+  const keyboardOpen = useKeyboardOpen();
+  const compact = keyboardOpen && searchOpen;
+
   const matrixMode = cur.mode === "flat";
   const options = cur.pools.all;
   // FLAT is one pack for the whole product, so the label is stated once in the
@@ -1077,7 +1135,7 @@ export default function ProductDrawer({
             The badge counts the whole category, so a man who has put six of
             something under "Other" can see it without opening the chip. */}
         {layout === "category-products" && (
-          <PickerZone py={8} gap={8}>
+          <PickerZone py={8} gap={8} collapsed={compact}>
             {categories.map((c) => (
               <FilterChip
                 key={c}
@@ -1099,7 +1157,7 @@ export default function ProductDrawer({
             carried no count either, and a group badge is a behaviour change,
             not a restyle. */}
         {showGroupChips && (
-          <PickerZone py={8} gap={8}>
+          <PickerZone py={8} gap={8} collapsed={compact}>
             <FilterChip label="Base"  selected={tab === "base"}
                         carrying={0} onSelect={() => switchTab("base")} />
             <FilterChip label="Shade" selected={tab === "shade"}
@@ -1108,7 +1166,7 @@ export default function ProductDrawer({
         )}
 
         {layout === "strip-products" && (
-          <PickerZone py={10} gap={STRIP_GAP}>
+          <PickerZone py={10} gap={STRIP_GAP} collapsed={compact}>
             {members.map((m) => (
                 <BigTile
                   key={m.sap}
@@ -1351,13 +1409,32 @@ export default function ProductDrawer({
  * contained scroller with its own bounds, the way a carousel is. Sixteen
  * products cannot wrap and must not be cut.
  */
-function PickerZone({ py, gap, children }: {
-  py: number; gap: number; children: React.ReactNode;
+function PickerZone({ py, gap, collapsed = false, children }: {
+  py: number; gap: number;
+  /**
+   * 🔴 display:none, NOT AN UNMOUNT, AND THAT IS THE WHOLE POINT.
+   *
+   * A collapsed zone takes zero height — which is what makes the drawer fit —
+   * but stays in the DOM, so coming back is instant and costs no re-render of
+   * sixteen tiles. Unmounting would also throw away the strip's horizontal
+   * SCROLL POSITION, and a man who had scrolled to the ninth product would be
+   * put back at the first every time he opened the keyboard.
+   *
+   * ⚠ THE SELECTED CHIP IS SAFE EITHER WAY — it derives from `cur`, which is
+   * React state and lives above this component. The scroll offset is the part
+   * that needs the DOM node kept, and browsers preserve scrollLeft across a
+   * display:none far more reliably than across an unmount, though it is not
+   * guaranteed by spec. If a phone is ever seen resetting it, the fix is
+   * visibility/height rather than a scroll-position ref.
+   */
+  collapsed?: boolean;
+  children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div
       className="shrink-0 overflow-x-auto"
       style={{
+        display: collapsed ? "none" : undefined,
         WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
         background: FILL,
         borderTop: `1px solid ${RULE}`,
@@ -1723,7 +1800,7 @@ function PackList({ labels, productKey, qtys, onStep, onType }: {
       // gap-2.5 is the separation the rows used to try to get from their own
       // padding. See the PackRow note: space BETWEEN, not a taller row.
       className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-1"
-      style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
+      style={{ paddingBottom: PACK_TRAILING }}
     >
       {labels.map((label) => (
         <PackRow
@@ -1953,7 +2030,7 @@ function FlatBody({ options, pack, matrix, onStep, onType }: {
   return (
     <div
       className="min-h-0 flex-1 overflow-y-auto"
-      style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}
+      style={{ paddingBottom: PACK_TRAILING }}
     >
       <div className="px-4 py-1">
         {options.map((opt) => {
