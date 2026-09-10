@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Bookmark, ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
-  BRAND, CROSS_DEPOTS, DIVIDER, DOT_CALL, DOT_NORMAL, DOT_URGENT,
-  FAINT, INK, MUTED, RULE, SCREEN_TITLE, SURFACE, VIOLET,
+  BRAND, BRAND_WASH, CROSS_DEPOTS, DIVIDER, DOT_CALL, DOT_NORMAL, DOT_URGENT,
+  FAINT, INK, MUTED, RULE, SCREEN_TITLE, VIOLET,
   chipStyle, memberImage, packRows, tileArtFor,
   type ApiCustomer, type V2CartLine, type V2CallTarget, type V2Dispatch,
   type V2Marker, type V2Order,
@@ -31,6 +31,18 @@ import V2Sheet from "./v2-sheet";
 // PICKER is what turns "Cross Billing Order" into "Cross Billing Order From
 // {depot}" in buildSubject. Nothing here is decoration — step 9 wires each one
 // straight into the mailto.
+
+/**
+ * The dealer name's line box, and the block that reserves TWO of them.
+ *
+ * 🔴 DERIVED FROM SCREEN_TITLE, NOT GUESSED. 20px at its own 1.25 ratio is a
+ * 25px line, and the header reserves two of those whatever the dealer is
+ * called. Both numbers are stated here rather than inline so the relationship
+ * between them cannot be half-edited: change SCREEN_TITLE's size or ratio and
+ * these are the two values that must follow it.
+ */
+const NAME_LINE_H  = 25;
+const NAME_BLOCK_H = NAME_LINE_H * 2;
 
 /** Sections are separated by a 9px band, never by a border or a card. */
 function Band(): React.JSX.Element {
@@ -143,16 +155,25 @@ export default function ReviewScreen({
           WHAT IS LEFT is the whole header: a back arrow, the name, its chevron,
           the code and area, and — at the right-hand end — the two things you do
           to an order INSTEAD of sending it. See the note on those buttons. */}
+      {/* 🔴 THE THIRD BAND, AND THE SAME BAND. The board masthead and both
+          pickers already sit on BRAND_WASH under a RULE hairline with the wash
+          running up under the status bar; this was the one header still white,
+          so checkout read as a different app from the screen it was reached
+          from. The wash, the border and the safe-area expression are those
+          bands' own values, copied rather than re-derived. */}
       <header
-        className="sticky top-0 z-10 px-2 pt-3 pb-3"
-        style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
+        className="sticky top-0 z-10 px-2"
+        style={{
+          background: BRAND_WASH,
+          borderBottom: `1px solid ${RULE}`,
+          // PADDING, NOT MARGIN — the wash has to run UNDER the status bar and
+          // the content sit below it. A margin leaves that strip unpainted.
+          paddingTop: "calc(env(safe-area-inset-top) + 16px)",
+          paddingBottom: 16,
+        }}
       >
-        {/* items-center, NOT items-start. The two 44px buttons now sit centred
-            against the name block rather than hanging off its first line, and
-            because the name is ONE line the block is a fixed 70px whatever the
-            dealer is called. It used to be 60px with a short name and 76px with
-            a wrapped one, so the whole page shifted down when a long dealer was
-            picked — the items list moved under his thumb mid-review. */}
+        {/* items-center, NOT items-start. The two 44px buttons sit centred
+            against the whole name block, which is now two lines tall. */}
         <div className="flex items-center gap-1">
           <button
             type="button" aria-label="Back to products" onClick={onBack}
@@ -166,17 +187,42 @@ export default function ReviewScreen({
             className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           >
             <span className="min-w-0 flex-1">
-              {/* 🔴 ONE LINE, THEN AN ELLIPSIS — it used to clamp to TWO.
-                  Two lines were affordable when the header held nothing else;
-                  with a bookmark and an X beside it the name has 146px at
-                  320px, and a name allowed to wrap in 146px is what pushes the
-                  icons off the screen edge. Truncating is the failure that
-                  keeps every control reachable. The full name is one tap away
-                  on the dealer screen, and the code below never truncates in
-                  practice. */}
+              {/* 🔴 TWO LINES, ALWAYS RESERVED, WHETHER OR NOT IT USES BOTH.
+                  This is the whole trick and it is why `height` is set as well
+                  as the clamp. The clamp alone wraps a long name and lets a
+                  short one collapse to one line, which is exactly the bug
+                  9f42be29 removed wrapping to avoid: the sticky header grew by
+                  a line the moment a long dealer was picked, and the items list
+                  jumped down under a thumb already reaching for it. A fixed
+                  height buys the wrap back and keeps the header still — a short
+                  name simply leaves the second line empty.
+
+                  🔴 NO MID-WORD BREAKS. There is no overflowWrap here on
+                  purpose; a 146px column at 320px would happily saw
+                  "POWERFLEXX" into "POWERFL / EXX". A word too long for the
+                  column overflows its line and the clamp ellipsises it, which
+                  is legible where a severed word is not. */}
               <span
-                className="block truncate"
-                style={{ ...SCREEN_TITLE, color: dealer ? INK : VIOLET }}
+                style={{
+                  ...SCREEN_TITLE,
+                  // 600, one step down from SCREEN_TITLE's 700. At 20px in
+                  // BRAND on a violet wash, 700 shouted; the size already
+                  // carries the rank. Plus Jakarta Sans is loaded as a variable
+                  // font with no weight list (app/layout.tsx), so 600 is a real
+                  // cut and not a synthesised one.
+                  fontWeight: 600,
+                  // BRAND, the wordmark's violet — the dealer IS this screen's
+                  // title. "Choose dealer" stays the deeper VIOLET because it
+                  // is an instruction rather than a name, which is the same
+                  // split the chevron beside it already makes.
+                  color: dealer ? BRAND : VIOLET,
+                  lineHeight: `${NAME_LINE_H}px`,
+                  height: NAME_BLOCK_H,
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 2,
+                  overflow: "hidden",
+                }}
               >
                 {dealer ? dealer.name : "Choose dealer"}
               </span>

@@ -1,96 +1,53 @@
 "use client";
 
-import { useState } from "react";
-import { Search, X } from "lucide-react";
 // 🔴 THE ONE DOCUMENTED CONTAINMENT EXCEPTION — see the note in po-v2-page.tsx.
 // Read-only import of the tested matcher /po already uses. Nothing in lib/ is
 // modified, and its whole import graph (keyword-family-map,
 // sub-product-descriptors) is lib-only — verified by grep for `app/`.
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import {
-  FAINT, FOCUS, FOCUS_RING, INK, MUTED, RULE, SURFACE, VIOLET,
+  FAINT, INK, MUTED, RULE, VIOLET,
   type ApiProduct,
 } from "./v2-data";
+import V2SearchInput from "./v2-search-input";
 
 // The board's product search. ONE ROW PER PRODUCT — searching "pearl glo"
 // returns "Pearl Glo" once, not eleven rows one per base. Tapping it opens the
 // same drawer its tile opens, and the bases are chosen in there on big targets.
 //
 // 🔴 CONTAINMENT — apart from the documented matcher import, this file touches
-// only ./v2-data and node_modules.
+// only ./v2-data, ./v2-search-input and node_modules.
 
 /** Two characters before anything is searched. One letter matches half the catalog. */
 export const MIN_QUERY = 2;
 
 /**
- * The product search field — the ONLY interactive thing in the board header,
- * and built like it.
+ * The product search field — the ONLY interactive thing in the board header.
  *
- * A 52px white bar on a white page needs a real edge to exist at all, so it
- * carries a hairline and one soft shadow rather than the grey fill it used to
- * have: a filled box reads as a placeholder for a control, an outlined one
- * reads as the control.
- *
- * 🔴 THE FOCUS STATE IS REACT STATE, NOT :focus-within. Every colour in v2 is
- * an inline style — no globals.css, no tailwind.config — and an inline style
- * cannot express a pseudo-class. Tracking focus in state keeps the whole thing
- * in one place and costs one boolean.
- *
- * 🔴 THE INPUT IS 16px AND THE PLACEHOLDER IS 15px, deliberately, and the two
- * are not a mistake. iOS Safari zooms the page when a FOCUSED input's computed
- * font-size is under 16px and never zooms back out (CLAUDE_UI.md §55); it reads
- * the input's own size, not ::placeholder's. So the typed text is 16px and safe,
- * and the resting placeholder is a touch lighter than the answer it is asking
- * for. Do not "tidy" the 16px down to match.
+ * ⚠ ITS APPEARANCE NOW LIVES IN ./v2-search-input AND IS SHARED WITH BOTH
+ * DEALER PICKERS. The 52px white bar with its hairline and soft shadow, the
+ * React focus state, the 16px input against a 15px placeholder and the reasons
+ * for each of them all moved there verbatim when the pickers stopped carrying a
+ * second, mismatched field of their own. Nothing about the board changed; the
+ * values simply have one home now. Read that file before adjusting anything
+ * here, because a change there is a change on three screens.
  */
 export function ProductSearchInput({
   value, onChange, autoFocus = false,
 }: {
   value: string; onChange: (next: string) => void; autoFocus?: boolean;
 }): React.JSX.Element {
-  const [focused, setFocused] = useState(false);
+  // 🔴 THE BODY OF THIS MOVED TO ./v2-search-input, VALUE FOR VALUE, and the
+  // two dealer pickers now render the same thing instead of a second field
+  // that only looked similar. This wrapper stays so the board's call site and
+  // this file's export do not move, and so the one genuinely product-specific
+  // thing — the placeholder — still lives beside the product search. There is
+  // nothing visual left here to tune; tune it over there and all three move.
   return (
-    <div
-      className="flex items-center gap-2.5 px-3.5"
-      style={{
-        height: 52,
-        borderRadius: 14,
-        background: SURFACE,
-        border: `1px solid ${focused ? FOCUS : RULE}`,
-        boxShadow: focused
-          ? `0 0 0 3px ${FOCUS_RING}`
-          : "0 1px 2px rgba(27,24,38,.04)",
-      }}
-    >
-      {/* Properly stroked, not a glyph: 18px at 1.8 so it reads as drawn at the
-          same weight as the text beside it. */}
-      <Search className="shrink-0" strokeWidth={1.8}
-              style={{ width: 18, height: 18, color: MUTED }} />
-      <input
-        type="text"
-        inputMode="search"
-        autoComplete="off"
-        autoFocus={autoFocus}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        placeholder="Search product"
-        className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-[15px] placeholder:text-[#9C99AC]"
-        style={{ color: INK }}
-      />
-      {value.length > 0 && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => onChange("")}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-          style={{ background: FAINT }}
-        >
-          <X className="h-3 w-3 text-white" strokeWidth={3} />
-        </button>
-      )}
-    </div>
+    <V2SearchInput
+      value={value} onChange={onChange} autoFocus={autoFocus}
+      placeholder="Search product"
+    />
   );
 }
 

@@ -1,26 +1,32 @@
 "use client";
 
-import { ChevronRight, Check, Search, X } from "lucide-react";
+import { ChevronRight, Check } from "lucide-react";
 import {
-  DIVIDER, FAINT, FILL, INK, MUTED, STAR, VIOLET, VIOLET_BG,
+  DIVIDER, FAINT, INK, MUTED, STAR, VIOLET, VIOLET_BG,
   searchCustomers,
   type ApiCustomer,
 } from "./v2-data";
 import type { V2Star } from "./v2-storage";
+import V2SearchInput from "./v2-search-input";
 
 // The dealer list, shared by the two picker SCREENS — choose-a-dealer and
 // ship-to — so the two can never drift apart. One component, two places.
 //
-// 🔴 CONTAINMENT — imports ./v2-data, ./v2-storage and node_modules only.
+// 🔴 CONTAINMENT — imports ./v2-data, ./v2-storage, ./v2-search-input and
+// node_modules only. (v2-search-input arrived when this file's own search
+// markup was retired in favour of the board's — see CustomerSearchInput.)
 
 /**
- * The search field. A REAL <input>, so it takes focus and a keyboard.
+ * The dealer search field, shared by both pickers.
  *
- * 🔴 16px IS LOAD-BEARING, NOT A STYLE CHOICE. iOS Safari zooms the whole page
- * when a focused input's font-size is below 16px, and it does not zoom back
- * out. `CLAUDE_UI.md §55` records the same trap on /po, where the qty input
- * was pushed to 16px for exactly this reason. Every <input> in v2 is 16px.
- * Do not "tidy" this down to match the 15px text around it.
+ * 🔴 IT USED TO BE ITS OWN MARKUP AND IT DID NOT MATCH THE BOARD'S. A grey
+ * FILL block, a 12px radius, a 16px icon at stroke 2.5, no focus state — beside
+ * the board's white 52px field with a 14px radius, an 18px icon at 1.8 and a
+ * violet focus ring. One control, two appearances, depending on which screen a
+ * salesman happened to be standing on, and only one of them showed focus.
+ *
+ * The board's won and lives in ./v2-search-input now. What is left here is the
+ * placeholder, which is the only part that was ever specific to dealers.
  */
 export function CustomerSearchInput({
   value, onChange, autoFocus = false,
@@ -30,31 +36,10 @@ export function CustomerSearchInput({
   autoFocus?: boolean;
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-2 rounded-[12px] px-3" style={{ background: FILL }}>
-      <Search className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: FAINT }} />
-      <input
-        type="text"
-        inputMode="search"
-        autoComplete="off"
-        autoFocus={autoFocus}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Search dealer or code"
-        className="min-w-0 flex-1 bg-transparent py-3 text-[16px] outline-none placeholder:text-[#9C99AC]"
-        style={{ color: INK }}
-      />
-      {value.length > 0 && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => onChange("")}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-          style={{ background: FAINT }}
-        >
-          <X className="h-3 w-3 text-white" strokeWidth={3} />
-        </button>
-      )}
-    </div>
+    <V2SearchInput
+      value={value} onChange={onChange} autoFocus={autoFocus}
+      placeholder="Search dealer or code"
+    />
   );
 }
 

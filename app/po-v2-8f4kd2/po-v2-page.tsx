@@ -1533,7 +1533,6 @@ export default function PoV2Page(): React.JSX.Element {
       <>
         <PickerScreen
           title={dealer ? "Change dealer" : "Who is this order for?"}
-          note={`${lines.length} ${lines.length === 1 ? "line" : "lines"} in this order — they stay`}
           query={query} onQuery={setQuery}
           onBack={() => { setQuery(""); setScreen("review"); }}
         >
@@ -1556,7 +1555,6 @@ export default function PoV2Page(): React.JSX.Element {
       <>
         <PickerScreen
           title="Ship to"
-          note={dealer ? `Where the goods go — the bill still goes to ${dealer.name}` : "Where the goods go"}
           query={query} onQuery={setQuery}
           onBack={() => { setQuery(""); setScreen("review"); }}
         >
@@ -2191,9 +2189,9 @@ export default function PoV2Page(): React.JSX.Element {
 // ── Pieces ─────────────────────────────────────────────────────────────────
 
 /**
- * The shell both dealer pickers share: back arrow, title, a note, and the
- * search input under them — all sticky, because on a screen whose whole purpose
- * is search the box is the last thing that should scroll away.
+ * The shell both dealer pickers share: back arrow, title, and the search input
+ * under them — all sticky, because on a screen whose whole purpose is search
+ * the box is the last thing that should scroll away.
  *
  * 🔴 A SCREEN, NOT A SHEET, AND THAT IS THE FIX. A bottom sheet has to be
  * sized against something, and with the soft keyboard up the thing it was
@@ -2201,9 +2199,8 @@ export default function PoV2Page(): React.JSX.Element {
  * the keyboard shrinks the viewport, the page scrolls, and the browser handles
  * it without being told. Same shell as Drafts and Sent.
  */
-function PickerScreen({ title, note, query, onQuery, onBack, children }: {
+function PickerScreen({ title, query, onQuery, onBack, children }: {
   title: string;
-  note: string;
   query: string;
   onQuery: (next: string) => void;
   onBack: () => void;
@@ -2253,12 +2250,19 @@ function PickerScreen({ title, note, query, onQuery, onBack, children }: {
           </button>
           {/* SCREEN_TITLE, the same constant the checkout header's dealer name
               uses. Two screens, one size — they were 17 and 16 and there was no
-              reason for the difference beyond nobody having compared them. */}
+              reason for the difference beyond nobody having compared them.
+
+              🔴 THE SUBORDINATE NOTE IS GONE, and the band is shorter for it.
+              It said "{n} lines in this order — they stay" here and "the bill
+              still goes to {dealer}" on ship-to: two reassurances against a
+              fear nothing on the screen creates. Nothing about picking a dealer
+              suggests the order is at risk, so the line answered a question
+              nobody asked while pushing the search box further from the title
+              it belongs with. The title alone is the band now. */}
           <span className="min-w-0 flex-1">
             <span className="block truncate" style={{ ...SCREEN_TITLE, color: INK }}>
               {title}
             </span>
-            <span className="block truncate text-[11.5px]" style={{ color: MUTED }}>{note}</span>
           </span>
         </div>
         <div className="px-2 pt-3">
