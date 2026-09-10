@@ -402,6 +402,26 @@ export function FloorTable({
   //   Due     13 → 12   it needs less now that "Today" is gone
   //   Vol/KG 6+6 → 7    one position instead of two
   //
+  // 🔴 THE CELL ORDER, WRITTEN OUT SO IT CAN BE COUNTED BY EYE. Three lists
+  // must match this, entry for entry, on every arm — the colgroup below, the
+  // <th> row, and the <td>s in renderRow. Two of the nine are conditional and
+  // the condition must be the SAME in all three places:
+  //
+  //   1  ☐        only when `interactive`
+  //   2  OBD
+  //   3  Invoice  only when `showInvoice`
+  //   4  Ship to
+  //   5  Route
+  //   6  Due
+  //   7  Vol / KG
+  //   8  Article
+  //   9  Status
+  //
+  // A `{cond && <td>}` that is false renders NOTHING — it does not leave a
+  // gap — so one missing cell shifts every column to its right by one and the
+  // headers quietly describe the wrong values. That is exactly what happened
+  // to Route between e656ad80 and this fix; see the note on its cell.
+  //
   //                        ☐  OBD INV Ship Rt Due V/KG Art Status
   const widths = interactive
     ? showInvoice
@@ -906,6 +926,22 @@ export function FloorTable({
           )}
           {chipFor?.(row)}
         </td>
+        {/* 🔴 ROUTE. THIS CELL WENT MISSING IN e656ad80 AND CAME BACK HERE.
+            The Due column was introduced by replacing a two-part anchor —
+            the Route cell plus the old guarded Slot cell — with the Due
+            cell alone, and the Route cell went with it. The colgroup and
+            the header kept their nine entries while the body rendered
+            eight, so every column from here rightwards drew one position
+            left: the ROUTE header showed the time, DUE was empty, and the
+            Status pill sat under ARTICLE.
+
+            It was not caught because the check that was supposed to catch
+            it counted `<td` with a regex over the whole function, and one
+            of the matches was the string "<td>" inside a COMMENT. Eight
+            real cells plus one commented one read as nine. Count the cells
+            against the list in the widths block above, by eye, and never
+            trust a regex that has not been made comment-blind. */}
+        <td className={TD}>{row.route ?? "—"}</td>
         <td className={`${TD} whitespace-nowrap tabular-nums`}>{dueCell}</td>
         {/* ── VOL / KG, ONE STACKED CELL (2026-09-10 c) ──────────────────
             Litres on line one, kilos underneath, both right-aligned and
