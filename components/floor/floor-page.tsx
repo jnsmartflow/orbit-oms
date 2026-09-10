@@ -1467,7 +1467,6 @@ export function FloorPage() {
                 rowSelection={selection}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
-                onClearSelection={clearSelection}
                 onMarkUrgent={rowMarkUrgent}
                 tripBusyId={tripBusyId}
                 onReleaseTrip={(id) => void releaseTrip(id)}

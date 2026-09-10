@@ -32,14 +32,7 @@ import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
-import {
-  countByStatus,
-  formatLitres,
-  sumLitres,
-  formatWeightKg,
-  sumWeightKg,
-  isReadyToLoad,
-} from "./status-pill";
+import { countByStatus, formatLitres, sumLitres, formatWeightKg, sumWeightKg } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow } from "@/lib/floor/types";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
@@ -93,7 +86,6 @@ export function TripDesk({
   rowSelection,
   onToggleRow,
   onToggleAll,
-  onClearSelection,
   onMarkUrgent,
   onOpenDetail,
   tripBusyId,
@@ -116,16 +108,6 @@ export function TripDesk({
   rowSelection: FloorSelection;
   onToggleRow: (id: number) => void;
   onToggleAll: (rows: FloorBoardRow[]) => void;
-  /**
-   * Drop every tick. Called when the Ready-to-load chip changes.
-   *
-   * ⚠ THE PAGE’S OWN RULE, APPLIED TO A NEW CONTROL. floor-page.tsx clears the
-   * selection on every scope, date, tab and rail change, for one reason it
-   * writes down: each of those changes WHICH ROWS ARE ON SCREEN, and a tick
-   * that survives becomes a bill the operator cannot see but the bottom bar
-   * still acts on. The filter chip does exactly that, so it clears too.
-   */
-  onClearSelection: () => void;
   onMarkUrgent: (id: number) => void;
   onOpenDetail: (id: number) => void;
   tripBusyId: number | null;
@@ -134,17 +116,6 @@ export function TripDesk({
   onCancelTrip: (tripId: number) => void;
 }) {
   const [pivot, setPivot] = useState<"flat" | "route">("flat");
-  // ── The pool's Ready-to-load filter (2026-09-10 d) ───────────────────────
-  //
-  // 🔴 A VIEW FILTER AND NOTHING ELSE. It narrows the rows the table renders.
-  // It does not touch a query, a predicate, or the header totals above it —
-  // those keep describing the WHOLE pool, so the chip counts and the header
-  // stay comparable and a planner can see "84 in the pool, 60 of them loadable"
-  // in one glance instead of two.
-  //
-  // Lands on "all": the pool is the list of everything still to be planned, and
-  // opening on a filtered view would hide work without saying so.
-  const [readyOnly, setReadyOnly] = useState(false);
   const [openRoute, setOpenRoute] = useState<string | null>(null);
 
   const isHistory = floor.mode === "history";
@@ -226,17 +197,6 @@ export function TripDesk({
     const litres = sumLitres(allPool);
     const weight = sumWeightKg(allPool);
     const weightStr = formatWeightKg(weight.kg);
-
-    // ⚠ THE FILTER IS APPLIED TO EACH HALF SEPARATELY, so it composes with the
-    // Upcoming divider instead of fighting it. A bill can be ready to load AND
-    // promised for a later date — those are different questions (isReadyToLoad
-    // says nothing about dates, the Due column says nothing about invoices) —
-    // and filtering the flat concatenation would have collapsed the two halves
-    // and lost the divider along with them.
-    const readyCount = allPool.filter(isReadyToLoad).length;
-    const shownDue = readyOnly ? poolRows.filter(isReadyToLoad) : poolRows;
-    const shownUpcoming = readyOnly ? poolUpcoming.filter(isReadyToLoad) : poolUpcoming;
-    const shownTotal = shownDue.length + shownUpcoming.length;
     middle = (
       <>
         <div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 px-4 py-3">
@@ -259,48 +219,6 @@ export function TripDesk({
               </span>
             )}
           </span>
-          {/* All / Ready to load. Same segmented shape as the pivot beside it
-              — this screen has one vocabulary for "choose one of these" — but
-              each chip carries its COUNT, which the pivot does not, so the two
-              controls read as different jobs at a glance. */}
-          <span className="inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[2px]">
-            {([
-              ["all", "All", allPool.length] as const,
-              ["ready", "Ready to load", readyCount] as const,
-            ]).map(([key, label, count]) => {
-              const on = (key === "ready") === readyOnly;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    const next = key === "ready";
-                    if (next === readyOnly) return;
-                    setReadyOnly(next);
-                    onClearSelection();
-                  }}
-                  title={
-                    key === "ready"
-                      ? "Checked by the floor AND invoiced by billing — a bill with no invoice cannot leave the depot"
-                      : "Every bill in the pool"
-                  }
-                  className={`inline-flex items-center gap-1.5 rounded-[5px] px-3 py-[4px] text-[11px] ${
-                    on ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {label}
-                  <span
-                    className={`rounded px-1 text-[10px] font-bold tabular-nums ${
-                      on ? "bg-gray-900 text-white" : "bg-gray-200 text-gray-500"
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </span>
-
           <span className="ml-auto inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[2px]">
             {(["flat", "route"] as const).map((p) => (
               <button
@@ -325,23 +243,10 @@ export function TripDesk({
               Nothing is waiting to be planned. New bills land here as they arrive.
             </p>
           </div>
-        ) : shownTotal === 0 ? (
-          // The pool has bills, the FILTER has none. A distinct message, because
-          // "every bill is on a trip" would be a lie here and the operator needs
-          // to know the chip is what emptied his screen.
-          <div className="px-5 py-14 text-center">
-            <div className="text-[28px] leading-none text-gray-300">○</div>
-            <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Nothing is ready to load yet</h4>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
-              A bill is ready once the floor has checked it and billing has raised its
-              invoice. {allPool.length} bill{allPool.length === 1 ? " is" : "s are"} still
-              working through that — press All to see them.
-            </p>
-          </div>
         ) : pivot === "flat" ? (
           <FloorTable
-            rows={sort(shownDue)}
-            upcomingRows={sort(shownUpcoming)}
+            rows={sort(poolRows)}
+            upcomingRows={sort(poolUpcoming)}
             anchorIso={floor.date}
             nowMs={nowMs}
             variant={variant}
@@ -354,11 +259,11 @@ export function TripDesk({
                 "Adajan is 2 of 9" would change a number the operator already
                 reads. The upcoming half follows the route rows as one block,
                 with the same divider the flat view uses. */}
-            <ByRoute rows={shownDue} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
-            {shownUpcoming.length > 0 && (
+            <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
+            {poolUpcoming.length > 0 && (
               <FloorTable
                 rows={[]}
-                upcomingRows={sort(shownUpcoming)}
+                upcomingRows={sort(poolUpcoming)}
                 anchorIso={floor.date}
                 nowMs={nowMs}
                 variant={variant}
