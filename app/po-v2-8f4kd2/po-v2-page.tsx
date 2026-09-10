@@ -9,7 +9,7 @@ import ProductDrawer from "./product-drawer";
 import V2Sheet, { useBodyScrollLock } from "./v2-sheet";
 import { CustomerListBody, CustomerSearchInput } from "./customer-list";
 import { MIN_QUERY, ProductResults, ProductSearchInput, type V2ProductGroup } from "./product-search";
-import ReviewScreen from "./review-screen";
+import ReviewScreen, { type V2ReviewSheet } from "./review-screen";
 import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import { DraftsScreen, SentScreen } from "./drafts-sent";
 import OrderDetail, { ATTENTION, ATTENTION_BG, NAV_H, belowNav } from "./order-sheet";
@@ -429,6 +429,16 @@ export default function PoV2Page(): React.JSX.Element {
   const [favProducts, setFavProducts] = useState<V2FavProduct[]>([]);
   /** The header gear's picker. Not a screen — the board stays underneath. */
   const [favManage, setFavManage] = useState(false);
+
+  /**
+   * The review screen's two pickers, LIFTED HERE from review-screen.tsx.
+   *
+   * They were the only overlays in v2 the page could not see, and an ordered
+   * closing authority cannot close a layer it does not know about. Nothing
+   * about them changed: the markup is still down there, they still commit only
+   * on a pick, and dismissing either still writes nothing.
+   */
+  const [reviewSheet, setReviewSheet] = useState<V2ReviewSheet>(null);
 
   /**
    * Writes the visual viewport's HEIGHT into --vvh and its OFFSET into --vvo.
@@ -1112,6 +1122,125 @@ export default function PoV2Page(): React.JSX.Element {
     return () => window.removeEventListener("popstate", onPop);
   }, [favManage]);
 
+  /* ═══════════════════════════════════════════════════════════════════════
+   * THE CLOSING AUTHORITY
+   *
+   * 🔴 ONE FUNCTION, ONE ORDERED LIST, AND THE ORDER IS THE WHOLE POINT.
+   *
+   * v2 had eleven ways to close something and no agreement between them about
+   * what "on top" meant, because nothing ever had to ask: each control closed
+   * the one thing it was wired to. That works for a tap on a named button and
+   * not at all for a gesture — the Android back button says "close whatever is
+   * in front of me" and nothing in this folder could answer.
+   *
+   * ⚠ THIS PROMPT ADDS NO HISTORY. No pushState, no popstate, no back(). The
+   * question "what is on top" and the question "who asked" are separable, and
+   * this is only the first. Everything here is exercised by tapping buttons,
+   * which is what makes the history step that follows a small one.
+   *
+   * 🔴 THE SNAPSHOT IS A REF, REWRITTEN EVERY RENDER — /po's navStateRef, and
+   * for /po's reason. A closer that read state through a closure would capture
+   * whatever was live when its handler was created, and the handler that
+   * matters most is the one created earliest. A ref is read at CALL time, and
+   * reading it triggers no render.
+   */
+  const navRef = useRef({
+    sheet:        null as Sheet,
+    reviewSheet:  null as V2ReviewSheet,
+    favManage:    false,
+    drawer:       false,
+    screen:       "order" as Screen,
+  });
+  navRef.current = {
+    sheet,
+    reviewSheet,
+    favManage,
+    drawer: openTile !== null || openGroup !== null,
+    screen,
+  };
+
+  /** What the closer just shut, so a caller can tell "nothing" from "something". */
+  type ClosedLayer =
+    | "sheet" | "reviewSheet" | "favPicker" | "drawer" | "detail" | "screen" | null;
+
+  /**
+   * Close the TOPMOST open layer and say which it was. `null` means nothing
+   * was open — the board with no overlay, which is the state an app is allowed
+   * to be exited from.
+   *
+   * 🔴 THE IF-CHAIN IS THE Z-ORDER, WRITTEN DOWN ONCE. Read it top to bottom
+   * and it is the stacking order of the whole app. It is derived from what can
+   * actually be open together, not from what could be in theory:
+   *
+   *   · SCREENS ARE EXCLUSIVE. Every one is an early `return` from this
+   *     component, so exactly one is ever mounted.
+   *   · AT MOST ONE OVERLAY SITS ON A SCREEN. `sheet` is a single enum, so its
+   *     four members cannot overlap; `reviewSheet` is another; the drawer and
+   *     the favourites picker each cover the board with their own scrim.
+   *   · SO THE ORDER IS ABOUT WHICH LAYER WINS IF TWO EVER DO OVERLAP, and it
+   *     follows the DOM. On review, `sheet === "clear"` renders AFTER
+   *     <ReviewScreen>, so it paints over the Call and Cross pickers and is
+   *     checked first. Everything else falls out of that same reading.
+   *
+   * 🔴 IT READS THE LIVE SNAPSHOT AND NOTHING ELSE — never an argument saying
+   * what to close, never a tag left behind by whoever opened it. /po's handler
+   * makes the same point about itself: it "never reads a pushed entry's tag,
+   * only this live enum". A tag can be stale; what is on screen cannot.
+   *
+   * 🔴 EACH BRANCH CALLS THE LAYER'S OWN EXISTING CLOSE, side effects and all.
+   * This gathers the closes; it does not reimplement them. The load sheet still
+   * drops its pending snapshot, the drawer still takes its search query down
+   * with it by unmounting, the dealer screen still clears the query, and the
+   * clear confirm still clears NOTHING on dismiss.
+   */
+  function closeTopLayer(): ClosedLayer {
+    const s = navRef.current;
+
+    // 1. The confirms and pickers that overlay ANY screen.
+    if (s.sheet !== null) {
+      setSheet(null);
+      // Each carries its own subject, and dropping it is part of the close —
+      // a stale pendingLoad would be re-offered by the next open.
+      setPendingLoad(null);
+      setRenameTarget(null);
+      setDeleteTarget(null);
+      return "sheet";
+    }
+
+    // 2. The review screen's own two pickers. Dismissing writes NOTHING —
+    //    that is the rule that makes a half-set Dispatch impossible.
+    if (s.reviewSheet !== null) { setReviewSheet(null); return "reviewSheet"; }
+
+    // 3. The favourites picker, over the board.
+    //    ⚠ closeFavPicker calls history.back(), which is the ONE piece of
+    //    history handling that already existed in this folder. It is called
+    //    here, not reimplemented, and not changed.
+    if (s.favManage) { closeFavPicker(); return "favPicker"; }
+
+    // 4. The product drawer, over the board. Both openers, one close: only one
+    //    can be set at a time, and nulling both is what every existing control
+    //    already did.
+    if (s.drawer) { setOpenTile(null); setOpenGroup(null); return "drawer"; }
+
+    // 5. A detail screen returns to the LIST it was opened from, not to the
+    //    board. Checked before the plain screens below so one close is one
+    //    level, exactly as /po does for its Sent receipt.
+    if (s.screen === "draftDetail") { setOpenDraftDetail(null); setScreen("drafts");   return "detail"; }
+    if (s.screen === "sentDetail")  { setOpenSent(null);        setScreen("sentList"); return "detail"; }
+
+    // 6. The two pickers reached FROM review go back to review, clearing the
+    //    dealer search on the way out as their back chevrons always have.
+    if (s.screen === "dealer" || s.screen === "shipto") {
+      setQuery(""); setScreen("review"); return "screen";
+    }
+
+    // 7. Everything else that is not the board returns to the board.
+    if (s.screen !== "order") { setScreen("order"); return "screen"; }
+
+    // 8. The board, with nothing over it. There is nothing left to close.
+    return null;
+  }
+
   /**
    * One tap on a picker star. Add, or remove, or refuse at eight.
    *
@@ -1189,7 +1318,7 @@ export default function PoV2Page(): React.JSX.Element {
    */
   const loadSheet = sheet === "load" && pendingLoad ? (
     <V2Sheet
-      onClose={() => { setSheet(null); setPendingLoad(null); }}
+      onClose={closeTopLayer}
       footer={
         <button
           type="button"
@@ -1246,7 +1375,7 @@ export default function PoV2Page(): React.JSX.Element {
   /** Rename — SAVED drafts only. The in-progress draft has no name to give. */
   const renameSheet = sheet === "rename" && renameTarget ? (
     <V2Sheet
-      onClose={() => { setSheet(null); setRenameTarget(null); }}
+      onClose={closeTopLayer}
       footer={
         <>
           <button
@@ -1311,7 +1440,7 @@ export default function PoV2Page(): React.JSX.Element {
    */
   const deleteSheet = sheet === "delete" && deleteTarget ? (
     <V2Sheet
-      onClose={() => { setSheet(null); setDeleteTarget(null); }}
+      onClose={closeTopLayer}
       footer={
         <>
           <button
@@ -1501,7 +1630,7 @@ export default function PoV2Page(): React.JSX.Element {
           status="Saved"
           when={formatSavedAt(openDraftDetail.savedAt)}
           shipTo={shipToOf(openDraftDetail.snapshot)}
-          onBack={() => { setOpenDraftDetail(null); setScreen("drafts"); }}
+          onBack={closeTopLayer}
           footer={
             <>
               <button
@@ -1557,7 +1686,7 @@ export default function PoV2Page(): React.JSX.Element {
           status="Sent"
           when={formatSavedAt(openSent.sentAt)}
           shipTo={shipToOf(openSent.snapshot)}
-          onBack={() => { setOpenSent(null); setScreen("sentList"); }}
+          onBack={closeTopLayer}
           // A chip reading "Sent", on a screen reached from a list headed Sent,
           // from a tab called Sent. The DRAFT detail keeps its chip: Saved vs
           // Auto-saved is a distinction nothing else on that screen makes.
@@ -1639,7 +1768,7 @@ export default function PoV2Page(): React.JSX.Element {
           shipTo={shipTo}
           lines={lines}
           order={order}
-          onBack={() => setScreen("order")}
+          onBack={closeTopLayer}
           onEdit={() => setScreen("order")}
           onRemoveLine={removeLine}
           onOrderChange={setOrder}
@@ -1647,6 +1776,9 @@ export default function PoV2Page(): React.JSX.Element {
           onSaveDraft={saveDraft}
           onOpenDealer={openDealerSheet}
           onClearOrder={() => setSheet("clear")}
+          reviewSheet={reviewSheet}
+          onReviewSheet={setReviewSheet}
+          onCloseTop={closeTopLayer}
           onOpenShipTo={() => { setQuery(""); setScreen("shipto"); }}
         />
         {/* ── CLEAR CONFIRM — asked once, and only from the review header ───
@@ -1660,7 +1792,7 @@ export default function PoV2Page(): React.JSX.Element {
             him rather than checking. */}
         {sheet === "clear" && (
           <V2Sheet
-            onClose={() => setSheet(null)}
+            onClose={closeTopLayer}
             footer={
               <>
                 <button
@@ -1707,7 +1839,7 @@ export default function PoV2Page(): React.JSX.Element {
         <PickerScreen
           title={dealer ? "Change dealer" : "Who is this order for?"}
           query={query} onQuery={setQuery}
-          onBack={() => { setQuery(""); setScreen("review"); }}
+          onBack={closeTopLayer}
         >
           {/* THE CUSTOMER LIST — the old key, the old data, unchanged. */}
           <CustomerListBody
@@ -1729,7 +1861,7 @@ export default function PoV2Page(): React.JSX.Element {
         <PickerScreen
           title="Ship to"
           query={query} onQuery={setQuery}
-          onBack={() => { setQuery(""); setScreen("review"); }}
+          onBack={closeTopLayer}
         >
           {/* A FIXED first row for the default, so "same as billing" is a thing
               you can pick your way back to, not just the absence of a choice.
@@ -2235,7 +2367,7 @@ export default function PoV2Page(): React.JSX.Element {
           product={openMember}
           tile={openResolved ?? undefined}
           initialMember={openTile.initialMember}
-          onClose={() => setOpenTile(null)}
+          onClose={closeTopLayer}
           onAdd={(picks) => addLines(
             openTile.tile.key, memberLabelIn(openTile.tile), picks, null)}
           existing={existingFor(openTile.tile.key, null)}
@@ -2263,7 +2395,7 @@ export default function PoV2Page(): React.JSX.Element {
           still on its own family tile, untouched, and re-starring is one tap
           on the same star. */}
       {favManage && (
-        <V2Sheet onClose={closeFavPicker} fixedHeight footer={
+        <V2Sheet onClose={closeTopLayer} fixedHeight footer={
           <button
             type="button" onClick={closeFavPicker}
             className="w-full rounded-[13px] py-3 text-[15px] font-semibold text-white"
@@ -2347,7 +2479,7 @@ export default function PoV2Page(): React.JSX.Element {
         <ProductDrawer
           key={`group-${openGroup.key}`}
           product={groupResolved}
-          onClose={() => setOpenGroup(null)}
+          onClose={closeTopLayer}
           onAdd={(picks) => addLines(
             groupResolved.sap, () => groupResolved.label, picks, null)}
           existing={existingFor(groupResolved.sap, null)}

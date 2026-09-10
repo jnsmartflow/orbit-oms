@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Bookmark, ChevronLeft, MapPin, X } from "lucide-react";
 import {
   BRAND, BRAND_WASH, CROSS_DEPOTS, DIVIDER, DOT_CALL, DOT_NORMAL, DOT_URGENT,
@@ -10,6 +9,10 @@ import {
   type V2Marker, type V2Order,
 } from "./v2-data";
 import V2Sheet from "./v2-sheet";
+
+/** Which of the review screen's two pickers is open. Owned by po-v2-page so the
+ *  page's ordered closing authority can see it. */
+export type V2ReviewSheet = null | "call" | "cross";
 
 // Hidden v2 review screen — the last look before Send.
 //
@@ -120,6 +123,7 @@ export default function ReviewScreen({
   dealer, shipTo, lines, order,
   onBack, onEdit, onRemoveLine, onOrderChange, onOpenDealer, onOpenShipTo, onSend,
   onSaveDraft, onClearOrder,
+  reviewSheet, onReviewSheet, onCloseTop,
 }: {
   /** NULL until he picks one — which he may leave until the last moment. */
   dealer: ApiCustomer | null;
@@ -138,6 +142,16 @@ export default function ReviewScreen({
   /** Fires only with a dealer set. With none it opens the dealer sheet. */
   onSend: () => void;
   onSaveDraft: () => void;
+  /** Which of this screen's two pickers is open. Owned by po-v2-page. */
+  reviewSheet: V2ReviewSheet;
+  /** OPENS one. Only ever called with "call" or "cross" from this file. */
+  onReviewSheet: (next: V2ReviewSheet) => void;
+  /**
+   * CLOSES whatever is topmost. The page's one ordered closing authority —
+   * every dismiss on this screen routes through it rather than nulling the
+   * state directly, so there is one place that decides what "close" means.
+   */
+  onCloseTop: () => void;
 }): React.JSX.Element {
   const shipElsewhere = shipTo !== null && shipTo.code !== dealer?.code;
   const canSend = dealer !== null;
@@ -147,13 +161,21 @@ export default function ReviewScreen({
   /* 🔴 THE PICKERS COMMIT ON THE PICK AND ON NOTHING ELSE.
    *
    * Opening either sheet writes NO state. Only choosing a target or a depot
-   * calls onOrderChange, and dismissing — scrim, or the sheet's own Cancel —
+   * calls onOrderChange, and dismissing — scrim, or the closing authority —
    * just sets this back to null. That is what makes a half-set Dispatch
    * impossible: there is no path that stores "Call" without also storing the
    * target in the same call, and none that stores "Cross Delivery" without its
    * depot. /po reached the same rule the same way (po-page.tsx:1580-1618) and
-   * its comment says so in as many words. */
-  const [sheet, setSheet] = useState<null | "call" | "cross">(null);
+   * its comment says so in as many words.
+   *
+   * ⚠ THE STATE LIVES ON THE PAGE NOW, NOT HERE. These two are the only
+   * overlays in v2 that were invisible to po-v2-page, and an ordered closing
+   * authority cannot close a layer it cannot see. Nothing else moved: the
+   * markup, the commit rule and the dismiss rule are exactly as they were, and
+   * everything the two sheets read — `order`, `onOrderChange`, CALL_TARGETS,
+   * CROSS_DEPOTS — was already a prop or a module constant, so the lift cost
+   * no plumbing beyond these two lines. */
+  const sheet = reviewSheet;
 
   const crossSet = order.marker === "Cross Delivery";
 
@@ -460,7 +482,7 @@ export default function ReviewScreen({
                 key={c.value}
                 type="button"
                 onClick={() => (isCall
-                  ? setSheet("call")
+                  ? onReviewSheet("call")
                   // Leaving Call resets the target to "SO" — the value the old
                   // four-chip row wrote for Normal and Urgent, kept so nothing
                   // stored moves. email.ts reads callTarget only when dispatch
@@ -503,7 +525,7 @@ export default function ReviewScreen({
                 type="button"
                 onClick={() => {
                   // CROSS, UNSET: ask for the depot first and commit nothing.
-                  if (isCross && !on) { setSheet("cross"); return; }
+                  if (isCross && !on) { onReviewSheet("cross"); return; }
                   // 🔴 EVERYTHING ELSE CLEARS THE DEPOT, including tapping
                   // Cross to turn it OFF. A depot left behind on a non-Cross
                   // order is invisible — nothing renders it — until somebody
@@ -535,7 +557,7 @@ export default function ReviewScreen({
           <p className="mt-2 text-[12.5px]" style={{ color: MUTED }}>
             Cross billing from {order.crossDepot.trim()}
             {" · "}
-            <button type="button" onClick={() => setSheet("cross")}
+            <button type="button" onClick={() => onReviewSheet("cross")}
                     className="font-extrabold" style={{ color: VIOLET }}>
               change
             </button>
@@ -616,14 +638,14 @@ export default function ReviewScreen({
         Who gets phoned. Dismissing leaves Dispatch exactly where it was, so
         "Call" with nobody to call cannot be stored. */}
     {sheet === "call" && (
-      <V2Sheet onClose={() => setSheet(null)}>
+      <V2Sheet onClose={onCloseTop}>
         <PickerSheet
           title="Call to?"
           options={CALL_TARGETS}
           selected={order.dispatch === "Call" ? order.callTarget : null}
           onPick={(t) => {
             onOrderChange({ ...order, dispatch: "Call", callTarget: t });
-            setSheet(null);
+            onReviewSheet(null);
           }}
         />
       </V2Sheet>
@@ -638,14 +660,14 @@ export default function ReviewScreen({
         lit — and that is right: nothing has been picked from THIS list. The
         stored value is untouched and still shows in the line above. */}
     {sheet === "cross" && (
-      <V2Sheet onClose={() => setSheet(null)}>
+      <V2Sheet onClose={onCloseTop}>
         <PickerSheet
           title="Cross billing from?"
           options={CROSS_DEPOTS}
           selected={crossSet ? order.crossDepot.trim() : null}
           onPick={(d) => {
             onOrderChange({ ...order, marker: "Cross Delivery", crossDepot: d });
-            setSheet(null);
+            onReviewSheet(null);
           }}
         />
       </V2Sheet>
