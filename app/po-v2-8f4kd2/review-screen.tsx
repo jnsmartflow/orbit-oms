@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
   BRAND, CROSS_DEPOTS, DIVIDER, DOT_CALL, DOT_NORMAL, DOT_URGENT,
   FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
@@ -110,6 +110,8 @@ export default function ReviewScreen({
 }): React.JSX.Element {
   const shipElsewhere = shipTo !== null && shipTo.code !== dealer?.code;
   const canSend = dealer !== null;
+  /** Save and Clear both need something to act on. See their note in the header. */
+  const hasLines = lines.length > 0;
 
   /* 🔴 THE PICKERS COMMIT ON THE PICK AND ON NOTHING ELSE.
    *
@@ -139,8 +141,8 @@ export default function ReviewScreen({
           looking at today.
 
           WHAT IS LEFT is the whole header: a back arrow, the name, its chevron,
-          and the code and area. Save and clear moved to the footer — see the
-          note above them. */}
+          the code and area, and — at the right-hand end — the two things you do
+          to an order INSTEAD of sending it. See the note on those buttons. */}
       <header
         className="sticky top-0 z-10 px-2 pt-2 pb-2"
         style={{ background: SURFACE, borderBottom: `1px solid ${RULE}` }}
@@ -184,6 +186,56 @@ export default function ReviewScreen({
             </span>
             <ChevronRight className="mt-1 h-4 w-4 shrink-0" strokeWidth={2.5}
                           style={{ color: dealer ? FAINT : VIOLET }} />
+          </button>
+
+          {/* ── SAVE AND CLEAR ───────────────────────────────────────────
+              🔴 SIBLINGS OF THE DEALER BUTTON, NEVER INSIDE IT. A button
+              inside a button is invalid HTML that React will not render
+              predictably — the same shape, and the same reason, as
+              CustomerRow's star and the drafts card's delete.
+
+              🔴 THEY COST THE HEADER NOTHING. The row is already 42px tall
+              with a one-line dealer name and about 62px with a wrapped one,
+              so a 44px target sits inside the height that is there: no
+              second row, no growth worth measuring. What they DO cost is
+              88px of width, which is why the name keeps min-w-0 and its
+              two-line clamp — at 390px it still has ~246px to wrap into.
+
+              🔴 DISABLED, NOT HIDDEN. Hiding them until the first line
+              lands made the header reflow under his thumb at the exact
+              moment he was reaching for something else. An order with no
+              lines has nothing to file and nothing to clear, and a greyed
+              control says that without moving.
+
+              ⚠ `disabled` HERE, DELIBERATELY, AND NOT ON SEND. Send is
+              never disabled because its one reason is recoverable and the
+              button can say so. These two have no reason to give: the item
+              list directly above is empty and that IS the explanation.
+
+              ICON-ONLY, SO EACH CARRIES ITS WORDS IN aria-label. 18px glyph
+              inside a 44px box — §60's floor is 44-48px and a glyph is not
+              a target. */}
+          <button
+            type="button"
+            aria-label="Save draft"
+            onClick={onSaveDraft}
+            disabled={!hasLines}
+            className="flex shrink-0 items-center justify-center"
+            style={{ width: 44, height: 44 }}
+          >
+            <Bookmark className="h-[18px] w-[18px]" strokeWidth={2.5}
+                      style={{ color: hasLines ? MUTED : FAINT }} />
+          </button>
+          <button
+            type="button"
+            aria-label="Clear order"
+            onClick={onClearOrder}
+            disabled={!hasLines}
+            className="flex shrink-0 items-center justify-center"
+            style={{ width: 44, height: 44 }}
+          >
+            <X className="h-[18px] w-[18px]" strokeWidth={2.5}
+               style={{ color: hasLines ? MUTED : FAINT }} />
           </button>
         </div>
 
@@ -458,36 +510,11 @@ export default function ReviewScreen({
           </span>
         </button>
 
-        {/* ── SAVE AND CLEAR — AT THE END, WHERE THE DECISIONS ARE ────────
-            🔴 A HEADER IS FOR ORIENTATION; A FOOTER IS FOR DECISIONS. These
-            were at the top, first as two words and then as two icons, and
-            neither read right — they are end-of-flow actions sitting at the
-            START of the screen, above an order he has not finished reading.
-            They belong beside Send, which is the other thing he does when he
-            has finished looking.
-
-            Words again, because down here there is room for them, and a word
-            is unambiguous where a disk and a bin are a guess.
-
-            Only with something to save: an order with no lines has nothing to
-            file and nothing to clear. */}
-        {lines.length > 0 && (
-          <div className="flex items-center justify-between px-4 pt-2.5">
-            <button
-              type="button" onClick={onSaveDraft}
-              className="text-[13px] font-extrabold" style={{ color: MUTED }}
-            >
-              Save draft
-            </button>
-            <button
-              type="button" onClick={onClearOrder}
-              className="text-[13px] font-extrabold" style={{ color: MUTED }}
-            >
-              Clear order
-            </button>
-          </div>
-        )}
-
+        {/* ⚠ SAVE AND CLEAR ARE NOT HERE ANY MORE — they are in the header,
+            as icons, and their note lives with them. The footer holds the
+            ship-to row and ONE button. Do not put a second word beside Send:
+            the footer is the send bar, and every extra target on it is a
+            target a thumb can hit while reaching for the one that matters. */}
         <div className="px-4 pt-2.5">
           {/* 🔴 NOT `disabled`. A dead button tells a salesman nothing about why
               it is dead, and this one has exactly one reason. Tapping it with no
