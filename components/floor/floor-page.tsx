@@ -56,7 +56,10 @@ import { FilterSheet } from "./filter-sheet";
 import { ConnectionStrip } from "./connection-strip";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useFloorRailPoll } from "@/lib/floor/use-floor-rail-poll";
-import { toggleOne, toggleAll as toggleAllRows, isSelectable, type FloorSelection } from "@/lib/floor/selection";
+// 🔴 toggleAllIds / (no isSelectable), NOT the stage-gated pair (2026-09-10 d).
+// Selecting a bill on this screen means putting it on a TRIP, and trip
+// membership is not stage-gated — see the two families in lib/floor/selection.ts.
+import { toggleOne, toggleAllIds, type FloorSelection } from "@/lib/floor/selection";
 import { railInScope, rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
@@ -700,7 +703,7 @@ export function FloorPage() {
   );
 
   const onToggleRow = useCallback((id: number) => setSelection((s) => toggleOne(s, id)), []);
-  const onToggleAll = useCallback((tableRows: FloorBoardRow[]) => setSelection((s) => toggleAllRows(s, tableRows)), []);
+  const onToggleAll = useCallback((tableRows: FloorBoardRow[]) => setSelection((s) => toggleAllIds(s, tableRows)), []);
 
   // ── Bulk bar actions ──────────────────────────────────────────────────────
   // Bulk mark-urgent + bulk hold were RETIRED with the bulk-bar v2 rebuild —
@@ -905,9 +908,10 @@ export function FloorPage() {
         // Searched across BOTH zones (2026-09-10 b). Pasting an OBD that turns
         // out to be promised for Saturday should find it and tick it — that is
         // exactly the case a planner pulling work forward is searching for.
-        const ids = applySearch(scopedData.floor.rows, p)
-          .filter(isSelectable)
-          .map((r) => r.orderId);
+        // No eligibility filter (2026-09-10 d). A pasted OBD that turns out to
+        // be a finished bill is exactly the one a planner is looking for when he
+        // is building a load, and it used to be found and then not ticked.
+        const ids = applySearch(scopedData.floor.rows, p).map((r) => r.orderId);
         setSelection(new Set(ids));
       } else {
         setSelection(new Set());
@@ -1084,20 +1088,19 @@ export function FloorPage() {
       const res = await fetch(`/api/floor/board?${UNSCOPED_QS}`, { cache: "no-store" });
       if (!res.ok) return;
       const board = await res.json();
-      // 🔴 NO ZONE TERM (2026-09-10 b). This read
-      // `r.zone !== "upcoming" && isSelectable(r)` while upcoming bills were off
-      // screen entirely. They are rows in the pool now, and they can be ticked
-      // and put on a trip — so the old test would have dropped every upcoming
-      // tick on the next 15-second marker and told the operator his bills had
-      // "changed elsewhere", which would have been false and unfixable.
+      // 🔴 NO ELIGIBILITY TERM AT ALL. The only honest question this reconcile
+      // can ask is "is the ticked bill still on the board", and that is now the
+      // only one it asks.
       //
-      // `isSelectable` alone is the right question and always was: it asks
-      // whether the BILL can be acted on, which has nothing to do with which day
-      // it is promised for.
+      // It has been narrowed twice and both narrowings were wrong. It read
+      // `r.zone !== "upcoming" && isSelectable(r)`: the zone term unticked every
+      // upcoming bill once those came back on screen (fixed 2026-09-10 b), and
+      // `isSelectable` — Waiting or With-picker only — would untick every
+      // finished bill the moment the marker fired, silently undoing the selection
+      // a planner had just made (2026-09-10 d). A reconcile that drops ticks the
+      // UI allows is worse than none: it is unexplainable from the screen.
       const stillSelectable = new Set<number>(
-        (board.floor?.rows ?? [])
-          .filter((r: FloorBoardRow) => isSelectable(r))
-          .map((r: FloorBoardRow) => r.orderId),
+        (board.floor?.rows ?? []).map((r: FloorBoardRow) => r.orderId),
       );
       setSelection((prev) => {
         const next = new Set<number>();
@@ -1464,6 +1467,7 @@ export function FloorPage() {
                 rowSelection={selection}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
+                onClearSelection={clearSelection}
                 onMarkUrgent={rowMarkUrgent}
                 tripBusyId={tripBusyId}
                 onReleaseTrip={(id) => void releaseTrip(id)}

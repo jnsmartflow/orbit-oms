@@ -1,13 +1,40 @@
 // Floor Control — selection state helpers (design §7.8). Pure, no React, no DB.
 //
-// Selectable = Waiting OR With-picker only (§7.8: "Checkboxes on Waiting and
-// With picker only. Past that the material is off the shelf."). That is exactly
-// "not yet picked and not yet checked" → !isDone && !isChecked. Done and
-// Needs-check rows are never selectable.
-//
 // Selection is a Set of orderIds, so it SURVIVES a re-sort by construction (it
 // keys on identity, not row position). It does NOT survive a tab change — the
 // page clears it there.
+//
+// TWO FAMILIES, and which one a surface uses is the whole question:
+//
+//   isSelectable / selectableIds / isAllSelected / toggleAll
+//       Selectable = Waiting OR With-picker only (§7.8: "Checkboxes on Waiting
+//       and With picker only. Past that the material is off the shelf.") —
+//       i.e. !isDone && !isChecked.
+//
+//       🔴 THE FLOOR TABLE NO LONGER USES THESE (2026-09-10 d). That rule was
+//       written when selecting a bill meant HANDING IT TO A PICKER, where a
+//       Done bill is genuinely not a candidate. The desk does not assign
+//       pickers any more; selecting a bill means putting it on a TRIP, and trip
+//       membership was never stage-gated (schema decision record §2: "a bill
+//       can join a trip at ANY workflowStage"). A checked, invoiced bill is the
+//       MOST loadable thing on the board, and this rule made it the one thing
+//       that could not be loaded.
+//
+//       They are kept, unchanged and uncalled, rather than widened: their
+//       contract is a real one that a future picker-facing surface would want,
+//       and turning isSelectable into an always-true test would leave four
+//       functions that are duplicates of the two below. Archiving is not this
+//       step.
+//
+//   isAllIdsSelected / toggleAllIds
+//       Every row is selectable, by plain id. Written for Hold and Cancelled,
+//       which have no "off the shelf" cutoff — and now what the floor table
+//       reads too, for the same reason.
+//
+// ⚠ toggleAll AND toggleAllIds SHARE ONE CONTRACT and it is unchanged by any of
+// this: PER GROUP (each table/band owns its own header checkbox and never
+// touches another band's ticks) and SELECT-ALL-ON-PARTIAL (a partly-ticked
+// group fills, it does not clear). Only the eligibility filter differs.
 
 export type FloorSelection = Set<number>;
 

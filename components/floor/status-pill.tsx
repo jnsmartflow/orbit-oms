@@ -47,6 +47,36 @@ export function isHeldBack(
   return rowStatus(row) === "waiting" && row.pickVisibleAt === null;
 }
 
+/**
+ * Is this bill actually ready to go on a van?
+ *
+ * 🔴 BOTH TERMS ARE REQUIRED, AND THE SECOND ONE IS THE WHOLE POINT. The
+ * depot's flow is: a picker picks it, the floor CHECKS it, billing raises the
+ * INVOICE, and only then can it be loaded. `isChecked` alone would call a bill
+ * ready while billing has not raised its invoice yet — and a bill with no
+ * invoice number cannot legally leave the depot, so it would be a chip that
+ * lied at exactly the moment a planner was deciding what to load.
+ *
+ * The invoice term looks redundant until you know that ordering, which is why
+ * it is written down here rather than left as an obvious-looking `&&`. On
+ * 2026-08-31 the invoice column's own live check found 65 of 70 checked bills
+ * carrying an invoice and 0 of the 4 still-open ones — so the two states really
+ * do come apart, and the gap is the bills that are done but not yet billed.
+ *
+ * ⚠ A BLANK STRING IS NOT AN INVOICE. `invoiceNo` is nullable and the importer
+ * fills it only when SAP has stamped one, but a trimmed test costs nothing and
+ * an empty string here would read as ready.
+ *
+ * ⚠ SAYS NOTHING ABOUT DATES. A bill promised for Saturday can be ready to load
+ * today; that is a different question and the Due column answers it. Filtering
+ * to Ready must not therefore drop the upcoming half of a list.
+ */
+export function isReadyToLoad(
+  row: Pick<FloorBoardRow, "isChecked" | "invoiceNo">,
+): boolean {
+  return row.isChecked && typeof row.invoiceNo === "string" && row.invoiceNo.trim() !== "";
+}
+
 const META: Record<FloorStatus, { label: string; cls: string }> = {
   waiting: { label: "Waiting", cls: "bg-[#f3f4f6] text-[#6b7280]" },
   withPicker: { label: "With picker", cls: "bg-tint-bg text-tint-700" },

@@ -53,7 +53,7 @@ import {
   formatWeightKg,
   sumWeightKg,
 } from "./status-pill";
-import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
+import { isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
 // SOFT variant only (2026-08-25). The solid DUP_SO_* tokens are the PICKING
 // treatment and are deliberately no longer imported here: under `soft` every
 // cell, badge and pill on a duplicate row renders exactly as it does on an
@@ -430,13 +430,19 @@ export function FloorTable({
     : showInvoice
       ? [14, 10, 19, 9, 12, 7, 12, 17] //  OBD INV Ship Rt Due V/KG Art Status = 100
       : [15, 23, 10, 13, 8, 14, 17]; //    OBD Ship Rt Due V/KG Art Status   = 100
-  // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. `toggleAll` is
+  // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. Select-all is
   // per-TABLE (lib/floor/selection.ts documents it as per band), and the
   // upcoming rows are in this table — so a select-all that skipped them would
   // read as checked while half the list stayed unticked. The divider is a
   // separator, not a group: it has no checkbox of its own and gains none.
+  //
+  // 🔴 isAllIdsSelected, NOT isAllSelected (2026-09-10 d). The stage-gated one
+  // counted only Waiting and With-picker rows, so on a table of finished bills
+  // it reported "all selected" while ticking nothing — the same gate as the
+  // per-row `selectable` below, in a second place, which is exactly where a
+  // half-done fix of this leaves a header checkbox that lies.
   const tableRows = upcoming.length > 0 ? [...rows, ...upcoming] : rows;
-  const allOn = interactive && selection ? isAllSelected(selection, tableRows) : false;
+  const allOn = interactive && selection ? isAllIdsSelected(selection, tableRows) : false;
 
   return (
     <table className="w-full table-fixed border-collapse">
@@ -527,7 +533,20 @@ export function FloorTable({
    */
   function renderRow(row: FloorBoardRow) {
     const st = rowStatus(row);
-    const pickable = st === "waiting" || st === "withPicker";
+    // 🔴 EVERY ROW IN AN INTERACTIVE TABLE IS SELECTABLE (2026-09-10 d).
+    //
+    // This read `st === "waiting" || st === "withPicker"` and was THE reason a
+    // Done bill could not be put on a trip: no checkbox rendered on it at all.
+    // The rule dates from when a tick meant "hand this to a picker", where a
+    // finished bill is genuinely not a candidate. A tick means "put this on a
+    // trip" now, trip membership was never stage-gated (schema decision record
+    // §2), and a checked bill is the most loadable thing on the board.
+    //
+    // ⚠ `interactive` STILL GATES THE COLUMN. History and the read-only lists
+    // render no checkbox column at all, which is a different question and is
+    // unchanged — see `widths`. This only decides whether the input renders
+    // INSIDE a column that already exists, so no cell count moves.
+    const selectable = true;
     const { isSite, isRedirect } = shipInfo(row);
     const obd = asStr(row.obdDateTime);
     const target = row.dispatchTargetDate;
@@ -747,7 +766,7 @@ export function FloorTable({
                 accent-brand-600 stays: it now sits on a pale wash rather
                 than a red fill, and reads the same on every row either
                 way. */}
-            {pickable && (
+            {selectable && (
               <input
                 type="checkbox"
                 aria-label={`Select ${row.obdNumber}`}
