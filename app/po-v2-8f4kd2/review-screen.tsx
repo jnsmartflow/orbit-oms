@@ -1,15 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import { ChevronLeft, ChevronRight, MapPin, X } from "lucide-react";
 import {
-  BRAND, DIVIDER, FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
+  BRAND, CROSS_DEPOTS, DIVIDER, DOT_CALL, DOT_NORMAL, DOT_URGENT,
+  FAINT, INK, MUTED, RULE, SURFACE, VIOLET,
   chipStyle, memberImage, packRows, tileArtFor,
-  type ApiCustomer, type V2CartLine, type V2Marker, type V2Order,
+  type ApiCustomer, type V2CartLine, type V2CallTarget, type V2Dispatch,
+  type V2Marker, type V2Order,
 } from "./v2-data";
+import V2Sheet from "./v2-sheet";
 
 // Hidden v2 review screen — the last look before Send.
 //
-// 🔴 CONTAINMENT — imports ./v2-data and node_modules only.
+// 🔴 CONTAINMENT — imports ./v2-data, ./v2-sheet and node_modules only.
+// (v2-sheet arrived here with the Call and Cross pickers. It is the ONE
+// bottom-sheet shell in v2 and is used unchanged — see its own note.)
 //
 // SINGLE BILL. No "Bill 1", no Add bill, no multi. /po's multi-bill machinery
 // is not carried over.
@@ -22,7 +28,7 @@ import {
 // 🔴 EVERY CONTROL HERE EXISTS BECAUSE lib/place-order/email.ts READS IT.
 // The Dispatch options produce its three literal `Dispatch:` values plus the
 // omission; the Remark options are its four markers plus null; the cross-depot
-// input is what turns "Cross Billing Order" into "Cross Billing Order From
+// PICKER is what turns "Cross Billing Order" into "Cross Billing Order From
 // {depot}" in buildSubject. Nothing here is decoration — step 9 wires each one
 // straight into the mailto.
 
@@ -31,23 +37,48 @@ function Band(): React.JSX.Element {
   return <div className="h-[10px] w-full" style={{ background: DIVIDER }} />;
 }
 
-// Dispatch is (dispatch, callTarget) collapsed into one row of four choices,
-// because those four are the only states email.ts can distinguish:
-//   Normal        -> the Dispatch: line is OMITTED
-//   Urgent        -> "Dispatch: Urgent"
-//   Call · SO     -> "Dispatch: Call to SO"
-//   Call · Dealer -> "Dispatch: Call to Dealer"
-const DISPATCH_CHOICES: { label: string; dispatch: V2Order["dispatch"]; callTarget: V2Order["callTarget"] }[] = [
-  { label: "Normal",        dispatch: "Normal", callTarget: "SO" },
-  { label: "Urgent",        dispatch: "Urgent", callTarget: "SO" },
-  { label: "Call · SO",     dispatch: "Call",   callTarget: "SO" },
-  { label: "Call · Dealer", dispatch: "Call",   callTarget: "Dealer" },
+/* Dispatch is THREE chips over TWO stored fields, and the Call chip owns both.
+ *
+ * 🔴 IT USED TO BE FOUR FLAT CHIPS — Normal, Urgent, Call · SO, Call · Dealer —
+ * which put the routing question on the row whether or not anybody was calling.
+ * Three is what /po has always shown (po-page.tsx:2932-2961) and what a
+ * salesman answers: is this normal, is it urgent, or does somebody need
+ * phoning. WHO to phone is a second question and it now gets a second screen.
+ *
+ * 🔴 NOTHING ABOUT WHAT IS STORED CHANGED. These are still the only four
+ * (dispatch, callTarget) pairs email.ts can distinguish, and the picker still
+ * writes exactly those literals:
+ *   Normal + SO      -> the Dispatch: line is OMITTED
+ *   Urgent + SO      -> "Dispatch: Urgent"
+ *   Call   + SO      -> "Dispatch: Call to SO"
+ *   Call   + Dealer  -> "Dispatch: Call to Dealer"
+ * No union gained a member, no draft needs migrating, and v2-email.ts was not
+ * opened. Normal and Urgent keep writing callTarget "SO" because that is what
+ * the four-chip row wrote — V2CallTarget has no null and this is not the step
+ * to give it one.
+ */
+const DISPATCH_CHOICES: { value: V2Dispatch; dot: string }[] = [
+  { value: "Normal", dot: DOT_NORMAL },
+  { value: "Urgent", dot: DOT_URGENT },
+  { value: "Call",   dot: DOT_CALL },
 ];
 
-// SINGLE select — buildSubject takes ONE marker, so two remarks cannot both be
-// true. "None" is the null marker: no Remark: line, subject prefix "Order".
-const MARKER_CHOICES: { label: string; value: V2Marker }[] = [
-  { label: "None",   value: null },
+/* SINGLE select — buildSubject takes ONE marker, so two remarks cannot both be
+ * true.
+ *
+ * 🔴 THE "None" CHIP IS GONE AND NULL IS STILL REACHABLE. A fifth chip whose
+ * entire job was to un-pick the other four is a control explaining a gesture
+ * every phone user already has: tapping the selected thing again. All four now
+ * toggle, which is what /po does (po-page.tsx:2978, `chooseMarker(on ? null :
+ * m.value)`), and it is what made a single row possible — five chips do not fit
+ * one line on a 320px phone and four do.
+ *
+ * ⚠ NO EMOJI, unchanged. /po's labels carry them (🚛 🔄 ↩️ 📦, po-page.tsx
+ * :287-292); v2 has never rendered an icon or an emoji on these chips and this
+ * step did not add one. Four bare words fit the row with margin to spare; four
+ * words each preceded by a colour emoji do not.
+ */
+const MARKER_CHOICES: { label: string; value: NonNullable<V2Marker> }[] = [
   { label: "Truck",  value: "Truck" },
   { label: "Cross",  value: "Cross Delivery" },
   { label: "Bounce", value: "Bounce" },
@@ -80,7 +111,21 @@ export default function ReviewScreen({
   const shipElsewhere = shipTo !== null && shipTo.code !== dealer?.code;
   const canSend = dealer !== null;
 
+  /* 🔴 THE PICKERS COMMIT ON THE PICK AND ON NOTHING ELSE.
+   *
+   * Opening either sheet writes NO state. Only choosing a target or a depot
+   * calls onOrderChange, and dismissing — scrim, or the sheet's own Cancel —
+   * just sets this back to null. That is what makes a half-set Dispatch
+   * impossible: there is no path that stores "Call" without also storing the
+   * target in the same call, and none that stores "Cross Delivery" without its
+   * depot. /po reached the same rule the same way (po-page.tsx:1580-1618) and
+   * its comment says so in as many words. */
+  const [sheet, setSheet] = useState<null | "call" | "cross">(null);
+
+  const crossSet = order.marker === "Cross Delivery";
+
   return (
+    <>
     <main className="min-h-screen w-full bg-white" style={{ paddingBottom: 192 }}>
       {/* ── HEADER ───────────────────────────────────────────────────────
           🔴 THE DEALER NAME IS THE TITLE *AND* THE CHANGE CONTROL. It used to
@@ -271,19 +316,38 @@ export default function ReviewScreen({
 
       {/* ── DISPATCH ─────────────────────────────────────────────────────── */}
       <Section title="Dispatch">
+        {/* flex-wrap, NOT a fixed three-column grid. Three chips sit on one
+            line at the 390px design width; at 320px the Call chip carrying its
+            target ("Call · Dealer") is wider than the third of a row a grid
+            would give it, and wrapping is the correct failure — this app has no
+            horizontal scroll anywhere and is not getting one here. */}
         <div className="flex flex-wrap gap-2">
           {DISPATCH_CHOICES.map((c) => {
-            const active = order.dispatch === c.dispatch
-              && (c.dispatch !== "Call" || order.callTarget === c.callTarget);
+            const isCall = c.value === "Call";
+            const active = order.dispatch === c.value;
+            // The Call chip SAYS WHO, once one is set, so the row can be read
+            // without opening anything. Same expression /po uses at :2944.
+            const label = isCall && active ? `Call · ${order.callTarget}` : c.value;
             return (
               <button
-                key={c.label}
+                key={c.value}
                 type="button"
-                onClick={() => onOrderChange({ ...order, dispatch: c.dispatch, callTarget: c.callTarget })}
-                className="px-3 py-2 text-[13px] font-semibold"
+                onClick={() => (isCall
+                  ? setSheet("call")
+                  // Leaving Call resets the target to "SO" — the value the old
+                  // four-chip row wrote for Normal and Urgent, kept so nothing
+                  // stored moves. email.ts reads callTarget only when dispatch
+                  // is "Call", so it is inert either way.
+                  : onOrderChange({ ...order, dispatch: c.value, callTarget: "SO" }))}
+                className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold"
                 style={chipStyle(active)}
               >
-                {c.label}
+                {/* 7px, aria-hidden, and never the only thing saying this —
+                    the chip's own word carries the meaning and the dot only
+                    makes the row scannable. */}
+                <span className="block shrink-0 rounded-full" aria-hidden
+                      style={{ width: 7, height: 7, background: c.dot }} />
+                {label}
               </button>
             );
           })}
@@ -294,39 +358,60 @@ export default function ReviewScreen({
 
       {/* ── REMARK ───────────────────────────────────────────────────────── */}
       <Section title="Remark">
-        <div className="flex flex-wrap gap-2">
-          {MARKER_CHOICES.map((c) => (
-            <button
-              key={c.label}
-              type="button"
-              onClick={() => onOrderChange({
-                ...order,
-                marker: c.value,
-                // Leaving Cross drops the depot: a stale depot would still
-                // reach buildSubject if Cross were re-picked later.
-                crossDepot: c.value === "Cross Delivery" ? order.crossDepot : "",
-              })}
-              className="px-3 py-2 text-[13px] font-semibold"
-              style={chipStyle(order.marker === c.value)}
-            >
-              {c.label}
-            </button>
-          ))}
+        {/* ONE ROW, NO WRAP, NO SCROLLER. Four equal columns rather than four
+            content-width chips: at 320px the four words plus their padding come
+            to about 275 of the 288px available, which fits but with nothing
+            left over for a font that measures a little wider than expected.
+            Equal columns cannot overflow at any width, and they give the four
+            the same tap target — which content-width chips did not, "DTS" being
+            barely half the width of "Bounce". */}
+        <div className="flex gap-2">
+          {MARKER_CHOICES.map((c) => {
+            const on = order.marker === c.value;
+            const isCross = c.value === "Cross Delivery";
+            return (
+              <button
+                key={c.label}
+                type="button"
+                onClick={() => {
+                  // CROSS, UNSET: ask for the depot first and commit nothing.
+                  if (isCross && !on) { setSheet("cross"); return; }
+                  // 🔴 EVERYTHING ELSE CLEARS THE DEPOT, including tapping
+                  // Cross to turn it OFF. A depot left behind on a non-Cross
+                  // order is invisible — nothing renders it — until somebody
+                  // picks Cross again months later and the subject silently
+                  // carries a depot he never chose for this order.
+                  onOrderChange({ ...order, marker: on ? null : c.value, crossDepot: "" });
+                }}
+                className="min-w-0 flex-1 truncate px-2 py-2 text-[13px] font-semibold"
+                style={chipStyle(on)}
+              >
+                {c.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Cross carries its source depot into the SUBJECT — with it the
-            prefix is "Cross Billing Order From {depot}", without it just
-            "Cross Billing Order", and the body's Remark: line trails off as
-            "Cross billing from". So the field appears the moment Cross does. */}
-        {order.marker === "Cross Delivery" && (
-          <input
-            type="text"
-            value={order.crossDepot}
-            onChange={(e) => onOrderChange({ ...order, crossDepot: e.target.value })}
-            placeholder="Cross billing from which depot?"
-            className="mt-2 w-full rounded-[12px] px-3 py-2.5 text-[16px] outline-none placeholder:text-[#9C99AC]"
-            style={{ border: `1.5px solid ${RULE}`, color: INK }}
-          />
+        {/* Cross carries its source depot into the SUBJECT — with it the prefix
+            is "Cross Billing Order From {depot}", without it just "Cross
+            Billing Order", and the body's Remark: line trails off as "Cross
+            billing from". So the depot is never optional once Cross is on, and
+            this line is how he sees which one he picked and changes it.
+
+            🔴 IT PRINTS WHATEVER IS STORED. A draft saved before the picker
+            existed holds a hand-TYPED depot, which may be a fifth name or a
+            misspelling. It renders here as it was typed and emails as it was
+            typed. Nothing on this screen checks a stored depot against
+            CROSS_DEPOTS, and nothing ever should — see that const's own note. */}
+        {crossSet && order.crossDepot.trim() && (
+          <p className="mt-2 text-[12.5px]" style={{ color: MUTED }}>
+            Cross billing from {order.crossDepot.trim()}
+            {" · "}
+            <button type="button" onClick={() => setSheet("cross")}
+                    className="font-extrabold" style={{ color: VIOLET }}>
+              change
+            </button>
+          </p>
         )}
       </Section>
 
@@ -423,6 +508,92 @@ export default function ReviewScreen({
         </div>
       </div>
     </main>
+
+    {/* ── THE CALL PICKER ─────────────────────────────────────────────────
+        Who gets phoned. Dismissing leaves Dispatch exactly where it was, so
+        "Call" with nobody to call cannot be stored. */}
+    {sheet === "call" && (
+      <V2Sheet onClose={() => setSheet(null)}>
+        <PickerSheet
+          title="Call to?"
+          options={CALL_TARGETS}
+          selected={order.dispatch === "Call" ? order.callTarget : null}
+          onPick={(t) => {
+            onOrderChange({ ...order, dispatch: "Call", callTarget: t });
+            setSheet(null);
+          }}
+        />
+      </V2Sheet>
+    )}
+
+    {/* ── THE CROSS-DEPOT PICKER ──────────────────────────────────────────
+        Where the goods are billed FROM. Dismissing leaves the Remark exactly
+        where it was, so Cross without a depot cannot be stored.
+
+        `selected` compares the STORED string to the four offered. A depot
+        typed before this picker existed matches none of them, so none is
+        lit — and that is right: nothing has been picked from THIS list. The
+        stored value is untouched and still shows in the line above. */}
+    {sheet === "cross" && (
+      <V2Sheet onClose={() => setSheet(null)}>
+        <PickerSheet
+          title="Cross billing from?"
+          options={CROSS_DEPOTS}
+          selected={crossSet ? order.crossDepot.trim() : null}
+          onPick={(d) => {
+            onOrderChange({ ...order, marker: "Cross Delivery", crossDepot: d });
+            setSheet(null);
+          }}
+        />
+      </V2Sheet>
+    )}
+    </>
+  );
+}
+
+/** The two targets, beside CROSS_DEPOTS so both pickers read the same. */
+const CALL_TARGETS: readonly V2CallTarget[] = ["SO", "Dealer"] as const;
+
+/**
+ * One list of choices in a sheet, used by both pickers.
+ *
+ * Two rows, not a grid: /po lays these out `grid grid-cols-2` at 48px, which
+ * puts "Ahmedabad" and "Dahisar" side by side in half a phone. A sheet has the
+ * whole width and no reason to halve it, and a stacked list is the shape every
+ * other v2 sheet already uses.
+ *
+ * 🔴 NO CANCEL BUTTON, AND THAT IS THE POINT. V2Sheet's scrim closes it and
+ * the grab bar says it is draggable; a footer would make dismissing look like
+ * a third choice beside SO and Dealer, when dismissing is the ABSENCE of a
+ * choice. The commit rule lives in the onPick handler, once, at each call site.
+ */
+function PickerSheet<T extends string>({ title, options, selected, onPick }: {
+  title: string;
+  options: readonly T[];
+  selected: string | null;
+  onPick: (value: T) => void;
+}): React.JSX.Element {
+  return (
+    <div className="px-4 pt-1.5 pb-3">
+      <h2 className="mb-3 text-[18px] font-bold" style={{ color: INK, letterSpacing: "-0.025em" }}>
+        {title}
+      </h2>
+      <div className="flex flex-col gap-2">
+        {options.map((o) => (
+          <button
+            key={o}
+            type="button"
+            onClick={() => onPick(o)}
+            // 48px — above §60's 44px floor, and these are the only targets on
+            // the sheet, so there is room to be generous.
+            className="w-full px-4 text-left text-[15px] font-semibold"
+            style={{ ...chipStyle(selected === o), height: 48 }}
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -1566,6 +1566,13 @@ Outside the type-weight pass that took the route's other 25 sites to zero: **Sen
 `review-screen.tsx`, and **Cancel** and **Add** in `product-drawer.tsx`. Left because those two
 files were outside that step's containment. T11 in the type scale.
 
+### P3 — `CROSS_DEPOTS` exists twice and the two copies must be edited together
+`app/po/po-page.tsx:89` and `app/po-v2-8f4kd2/v2-data.ts` now each hold their own
+`["Dahisar", "Ahmedabad", "Rajkot", "Pune"]`. v2 got a copy rather than an import because it
+modifies nothing outside its own folder and `/po` is live; unify them into one shared const when
+the containment fence comes down at cutover. ⚠ Neither copy validates a stored `crossDepot` —
+drafts predating the picker hold hand-typed depots and must keep emailing exactly as typed.
+
 ### P3 — Rename the `URGENT` token to `DANGER` in `v2-data.ts`
 Cosmetic — the **value is already correct**. After the red/amber correction that token is never
 urgency; it is the destructive red, surviving at exactly four places, all destructive. Only the

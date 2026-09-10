@@ -82,6 +82,31 @@ export const URGENT     = "#DC2626";
  */
 export const STAR       = "#F59E0B";
 
+/* ── THE THREE DISPATCH DOTS ────────────────────────────────────────────────
+ *
+ * A 7px round dot in front of each Dispatch chip, so the row reads at a glance
+ * without being read. /po has carried these for a year (po-page.tsx:2936-2938,
+ * ink-400 / amber-400 / red-400) and v2 dropped them; this brings them back
+ * against v2's own palette rather than importing Tailwind names it does not use.
+ *
+ * 🔴 NAMED FOR THE ROLE, NOT THE COLOUR. DOT_CALL is "the dispatch that needs a
+ * phone call first", not "the red one". Rename the value freely; never rename
+ * these to DOT_RED and friends, or the next person to change a hue has to
+ * change every call site to keep the file honest.
+ *
+ * ⚠ DOT_CALL IS RED AND THAT IS A DELIBERATE, NARROW EXCEPTION. CLAUDE_UI §1
+ * reserves red for something being WRONG or about to be undone, and this app
+ * ships Urgent in amber precisely because of that rule. A dot is not a chip, a
+ * pill or a button: it carries no text, it is 7px, and it is the one mark that
+ * separates "this ships" from "somebody must be phoned before this ships". It
+ * is here because the owner asked v2 to match v1's row, and it stops at the
+ * dot — the Call chip's own border, ground and text still come from chipStyle
+ * like every other chip on the screen. Do not grow it into a red chip.
+ */
+export const DOT_NORMAL = "#B9B6C6";  // grey — nothing to do, the default
+export const DOT_URGENT = "#F59E0B";  // amber-500 — a PRIORITY, never a fault
+export const DOT_CALL   = "#EF4444";  // red-500 — phone somebody before it goes
+
 /**
  * 🔴 THE ONLY VIOLET GROUND IN THE APP — the brand row, and nothing else.
  * Every other surface is SURFACE white or PAGE #FAFAFC. A second tinted ground
@@ -1672,6 +1697,24 @@ export type V2Order = {
 export const EMPTY_ORDER: V2Order = {
   dispatch: "Normal", callTarget: "SO", marker: null, crossDepot: "", notes: "",
 };
+
+/**
+ * The depots a cross-billing order can be billed FROM.
+ *
+ * ⚠ THIS IS THE SECOND COPY. The first is `CROSS_DEPOTS` in
+ * app/po/po-page.tsx:89, which is LIVE and out of v2's containment fence — v2
+ * modifies nothing outside app/po-v2-8f4kd2/. The two must be edited together
+ * until they are unified into one shared const; that unification is parked on
+ * ROADMAP.md under `/po-v2-8f4kd2`, because doing it now means editing v1.
+ *
+ * 🔴 THE LIST DOES NOT VALIDATE ANYTHING. `crossDepot` is a free string on
+ * V2Order and stays one: drafts saved before the picker existed hold a
+ * hand-typed depot, which may be a fifth name, a misspelling or a lowercase
+ * one. Those still render and still reach buildSubject exactly as typed. This
+ * array is what the SHEET OFFERS, never a whitelist a stored value is checked
+ * against — the moment it becomes one, somebody's saved order loses its depot.
+ */
+export const CROSS_DEPOTS = ["Dahisar", "Ahmedabad", "Rajkot", "Pune"] as const;
 
 /** Shared chip shell. Selected is an OUTLINE + tint, never a solid violet fill. */
 export function chipStyle(selected: boolean, dashed = false): React.CSSProperties {
