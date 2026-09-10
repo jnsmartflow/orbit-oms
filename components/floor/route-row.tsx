@@ -25,6 +25,7 @@ export function RouteRow({
   onMarkUrgent,
   onOpenDetail,
   gateOn,
+  anchorIso,
 }: {
   name: string;
   /** The route's FULL row set — drives the summary line, bar and "N of M". */
@@ -58,6 +59,13 @@ export function RouteRow({
    * above reads nothing from it, and no width array on either side moves.
    */
   gateOn?: boolean;
+  /**
+   * The day the board is anchored on, forwarded UNCHANGED to the table below,
+   * where the Due column calls it "Today". Omitted, the table falls back to the
+   * IST day of `nowMs` — right for live, wrong for a History day, which is why
+   * this is threaded rather than derived down there.
+   */
+  anchorIso?: string;
 }) {
   // Summary reads the FULL set; only the table below reads the listed subset.
   const listed = listRows ?? rows;
@@ -103,6 +111,7 @@ export function RouteRow({
             onMarkUrgent={onMarkUrgent}
             onOpenDetail={onOpenDetail}
             gateOn={gateOn}
+            anchorIso={anchorIso}
           />
         ))}
     </>

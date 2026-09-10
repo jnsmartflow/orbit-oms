@@ -251,7 +251,8 @@ export function GroupRow(props: GroupRowProps) {
           onToggleAll={onToggleAll}
           onMarkUrgent={onMarkUrgent}
           onOpenDetail={onOpenDetail}
-          showSlot
+          /* Was `showSlot`; renamed 2026-09-10 (b) with the Due column. */
+          showInvoice={false}
           /* ⚠ NO chipFor ON AN OIL GROUP — `chipFor` is optional on FloorTable,
              so omitting it renders no chip at all, which is the correct answer
              rather than an empty one. Every per-row chip this component can draw

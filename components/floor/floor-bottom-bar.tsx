@@ -28,6 +28,10 @@ import type { TripSummary } from "@/lib/trips/queries";
 export function FloorBottomBar({
   count,
   litres,
+  weight,
+  weightIsPartial,
+  articles,
+  routes,
   mode,
   trips,
   busy,
@@ -40,6 +44,28 @@ export function FloorBottomBar({
   count: number;
   /** Already formatted by the caller through formatLitres. */
   litres: string;
+  /**
+   * Already formatted by the caller through formatWeightKg. NULL when NO
+   * selected bill has a recorded weight, and then the bar prints no kg at all
+   * rather than "0 kg" — see formatWeightKg for why zero is not a weight.
+   */
+  weight: string | null;
+  /**
+   * 🔴 TRUE WHEN AT LEAST ONE SELECTED BILL HAS NO WEIGHT, and the total is
+   * therefore a LOWER BOUND. The bar renders "67+ kg" and puts the count on the
+   * title.
+   *
+   * This exists because the alternative is silent under-counting. A planner
+   * checks a selection against `vehicle_master.capacityKg` before putting it on
+   * a van; a total that quietly omitted three bills would say the load fits when
+   * it does not. Nothing here estimates the missing weight — a "+" is the honest
+   * width of what we know.
+   */
+  weightIsPartial: boolean;
+  /** Physical pieces across the selection, from countArticles. */
+  articles: number;
+  /** How many distinct routes the selection spans. */
+  routes: number;
   /** Which reading — decided by the rail's selection, not by the rows. */
   mode: "pool" | "trip";
   /** Draft and confirmed trips only. Empty is fine — New trip… still shows. */
@@ -71,8 +97,29 @@ export function FloorBottomBar({
             <path d="M6 6l12 12M18 6L6 18" />
           </svg>
         </button>
+        {/* The four numbers a planner checks before a selection goes on a van:
+            how much it holds, what it weighs, how many pieces there are to
+            stack, and how many parts of town it covers. Litres is what the depot
+            talks in; KILOS is what a vehicle's capacity is measured in
+            (vehicle_master.capacityKg), which is why the two sit together. */}
         <span className="truncate whitespace-nowrap text-[11px] tabular-nums text-gray-400">
-          &middot; {litres} L{contextLabel ? ` · ${contextLabel}` : ""}
+          &middot; {litres} L
+          {weight !== null && (
+            <span
+              title={
+                weightIsPartial
+                  ? "Some selected bills have no weight recorded — this total is a lower bound"
+                  : undefined
+              }
+            >
+              {" · "}
+              {weight}
+              {weightIsPartial ? "+" : ""} kg
+            </span>
+          )}
+          {articles > 0 && ` · ${articles} article${articles === 1 ? "" : "s"}`}
+          {routes > 0 && ` · ${routes} route${routes === 1 ? "" : "s"}`}
+          {contextLabel ? ` · ${contextLabel}` : ""}
         </span>
       </div>
 

@@ -169,3 +169,68 @@ export function formatLitres(litres: number): string {
     maximumFractionDigits: 1,
   });
 }
+
+// ── Weight ───────────────────────────────────────────────────────────────────
+// The kilogram pair, deliberately beside the litres pair. ONE OWNER PER
+// BEHAVIOUR: this file already owns `formatLitres`/`sumLitres` for the same
+// reason — a row, a stop header, a trip header and a selection bar all print the
+// same totals and must not round them differently. A second formatting module
+// would be a second answer.
+
+/**
+ * 🔴 ZERO IS NOT A WEIGHT — IT IS A MISSING ONE, AND THIS RETURNS null FOR IT.
+ *
+ * The importer writes `totalWeight: summary?.grossWeight ?? 0` at four sites in
+ * app/api/import/obd/route.ts (:600, :611, :1339, :3292), so a bill whose SAP
+ * gross weight never arrived is stored as 0 and is indistinguishable from a bill
+ * that genuinely weighs nothing. 81 live orders sit at 0 (measured 2026-09-10,
+ * code-discovery-2026-09-10-dates-weight-orphans.md §B4).
+ *
+ * A printed "0" in a KG column is a lie with consequences: a planner loading a
+ * van against `vehicle_master.capacityKg` would under-count the load by however
+ * much that bill actually weighs. null here, an em dash at the cell, and the
+ * number is visibly absent instead of quietly wrong.
+ *
+ * ⚠ null IS THE ONLY HONEST RETURN, so callers must handle it. It is not a
+ * convenience for empty rows — every caller has to decide what "unknown" looks
+ * like on its own surface, and a total has to decide whether to say so.
+ *
+ * One decimal with the trailing .0 dropped, exactly like formatLitres: SAP
+ * gross weights carry three decimals (lib/picking/group-lines.ts:48) and a
+ * tenth of a kilo is already finer than anything the floor acts on.
+ */
+export function formatWeightKg(kg: number | null | undefined): string | null {
+  if (kg === null || kg === undefined) return null;
+  if (!Number.isFinite(kg) || kg <= 0) return null;
+  return Number(kg.toFixed(1)).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+}
+
+/**
+ * Total the weight of a set of rows, and SAY HOW MANY IT COULD NOT COUNT.
+ *
+ * 🔴 THE SECOND FIELD IS THE POINT. `sumLitres` can return a bare number because
+ * a null litres value is genuinely 0 for a total. Weight cannot: an unknown
+ * weight counted as zero makes the total silently too small, and the operator
+ * has no way to see that it happened. So this returns the pair and the caller
+ * renders the caveat — the bottom bar prints "67+ kg" with the count on its
+ * title when `unknown` is not zero.
+ *
+ * `kg` is the sum of the weights that ARE known. It is a lower bound, never a
+ * guess: nothing here estimates a missing weight from litres, article counts or
+ * anything else.
+ */
+export function sumWeightKg(
+  rows: Array<Pick<FloorBoardRow, "weightKg">>,
+): { kg: number; unknown: number } {
+  let kg = 0;
+  let unknown = 0;
+  for (const r of rows) {
+    const w = r.weightKg;
+    if (w === null || w === undefined || !Number.isFinite(w) || w <= 0) unknown++;
+    else kg += w;
+  }
+  return { kg, unknown };
+}

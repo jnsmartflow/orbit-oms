@@ -804,7 +804,10 @@ export function FloorBoard({
                   Nothing else waiting shares their items
                 </div>
               </div>
-              <FloorTable rows={ungroupedRows} nowMs={nowMs} variant={variant} showSlot {...selProps} />
+              {/* `showSlot` became `showInvoice={false}` on 2026-09-10 (b) — the
+                  same column set, renamed to what the flag actually decides now
+                  that the Due column is unconditional. See floor-table.tsx. */}
+              <FloorTable rows={ungroupedRows} nowMs={nowMs} variant={variant} showInvoice={false} {...selProps} />
             </>
           )}
         </>

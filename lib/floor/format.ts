@@ -61,6 +61,33 @@ export function formatArticleBreakdown(tags: Array<string | null | undefined>): 
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+/**
+ * How many physical PIECES a set of bills adds up to — 9, not "9 D · 4 C".
+ *
+ * The selection bar wants a single number beside the litres and the kilos, and
+ * a breakdown does not fit there. Same parse, same source, same file as
+ * formatArticleBreakdown above, so the bar and the row cannot disagree about
+ * what a bill contains.
+ *
+ * ⚠ AN UNPARSEABLE OR NULL TAG CONTRIBUTES NOTHING AND IS COUNTED IN .
+ * Roughly 27% of SKUs are unmastered (CORE §7.1.c) and leave their bill
+ * untagged; letting those read as zero pieces would understate a load the same
+ * way a zero weight does. The caller decides whether to say so.
+ */
+export function countArticles(
+  tags: Array<string | null | undefined>,
+): { pieces: number; unknown: number } {
+  let pieces = 0;
+  let unknown = 0;
+  for (const tag of tags) {
+    if (!tag) { unknown++; continue; }
+    const parsed = parseArticleTag(tag);
+    if (parsed.length === 0) { unknown++; continue; }
+    for (const { count } of parsed) pieces += count;
+  }
+  return { pieces, unknown };
+}
+
 export function formatArticleTag(raw: string): string {
   const groups = raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
   if (groups.length === 0) return raw;

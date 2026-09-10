@@ -35,7 +35,16 @@ import { TripDesk } from "./trip-desk";
 import { TripForm } from "./trip-form";
 import { FloorBottomBar } from "./floor-bottom-bar";
 import { TripVehicleEditor } from "./trip-vehicle-editor";
-import { rowStatus, countByStatus, isHeldBack, formatLitres, sumLitres } from "./status-pill";
+import {
+  rowStatus,
+  countByStatus,
+  isHeldBack,
+  formatLitres,
+  sumLitres,
+  formatWeightKg,
+  sumWeightKg,
+} from "./status-pill";
+import { countArticles } from "@/lib/floor/format";
 import { PickGateToggle } from "./pick-gate-toggle";
 import { ShowStrip } from "./show-strip";
 import { FloorSkeleton } from "./floor-skeleton";
@@ -873,11 +882,16 @@ export function FloorPage() {
 
   // The open tab's pool + report for the hits strip (chips / summary). Scoped,
   // so the hit counts describe the chip the operator is actually looking at.
-  const dueFloorRows = useMemo(
-    () => (scopedData?.floor.rows ?? []).filter((r) => r.zone !== "upcoming"),
+  //
+  // ⚠ BOTH ZONES (2026-09-10 b). This filtered upcoming rows out while they were
+  // off screen; they are listed now, so a strip reporting fewer hits than the
+  // auto-tick just selected would be describing a different board from the one
+  // below it.
+  const searchableFloorRows = useMemo(
+    () => scopedData?.floor.rows ?? [],
     [scopedData],
   );
-  const activePool: Searchable[] = topTab === "floor" ? dueFloorRows : topTab === "hold" ? scopedHold ?? [] : scopedCancelled ?? [];
+  const activePool: Searchable[] = topTab === "floor" ? searchableFloorRows : topTab === "hold" ? scopedHold ?? [] : scopedCancelled ?? [];
   const tabSearchReport = useMemo(() => searchReport(activePool, parsed), [activePool, parsed]);
 
   const commitSearch = useCallback(
@@ -888,8 +902,12 @@ export function FloorPage() {
       // (Waiting / With picker, Step 5). A pasted number matching a Done or
       // Needs-check row is still found + shown, but never ticked.
       if (p.mode === "numbers" && topTab === "floor" && scopedData) {
-        const due = scopedData.floor.rows.filter((r) => r.zone !== "upcoming");
-        const ids = applySearch(due, p).filter(isSelectable).map((r) => r.orderId);
+        // Searched across BOTH zones (2026-09-10 b). Pasting an OBD that turns
+        // out to be promised for Saturday should find it and tick it — that is
+        // exactly the case a planner pulling work forward is searching for.
+        const ids = applySearch(scopedData.floor.rows, p)
+          .filter(isSelectable)
+          .map((r) => r.orderId);
         setSelection(new Set(ids));
       } else {
         setSelection(new Set());
@@ -926,7 +944,10 @@ export function FloorPage() {
       // never coexist in one payload.
       case "floor":
       case "history":
-        return (filteredFloor?.rows ?? []).filter((r) => r.zone !== "upcoming").map((r) => r.orderId);
+        // Every row the desk lists, upcoming included (2026-09-10 b). The pager
+        // must not be stricter than a tap: an upcoming row is openable from the
+        // list, so Prev/Next has to be able to reach it and leave it.
+        return (filteredFloor?.rows ?? []).map((r) => r.orderId);
       case "hold":
         return (filteredHold ?? []).map((r) => r.orderId);
       case "cancelled":
@@ -1063,9 +1084,19 @@ export function FloorPage() {
       const res = await fetch(`/api/floor/board?${UNSCOPED_QS}`, { cache: "no-store" });
       if (!res.ok) return;
       const board = await res.json();
+      // 🔴 NO ZONE TERM (2026-09-10 b). This read
+      // `r.zone !== "upcoming" && isSelectable(r)` while upcoming bills were off
+      // screen entirely. They are rows in the pool now, and they can be ticked
+      // and put on a trip — so the old test would have dropped every upcoming
+      // tick on the next 15-second marker and told the operator his bills had
+      // "changed elsewhere", which would have been false and unfixable.
+      //
+      // `isSelectable` alone is the right question and always was: it asks
+      // whether the BILL can be acted on, which has nothing to do with which day
+      // it is promised for.
       const stillSelectable = new Set<number>(
         (board.floor?.rows ?? [])
-          .filter((r: FloorBoardRow) => r.zone !== "upcoming" && isSelectable(r))
+          .filter((r: FloorBoardRow) => isSelectable(r))
           .map((r: FloorBoardRow) => r.orderId),
       );
       setSelection((prev) => {
@@ -1167,6 +1198,36 @@ export function FloorPage() {
     const match = tripOptions?.deliveryTypes.find((d) => d.name === name);
     return match?.id ?? null;
   }, [selectedRows, tripOptions]);
+
+  // ── What the selection adds up to (2026-09-10 b) ─────────────────────────
+  //
+  // Four numbers on the bar: litres, kilos, pieces, routes. Litres is what the
+  // depot talks in; KILOS is what a vehicle's capacity is measured in
+  // (`vehicle_master.capacityKg`), which is the number a planner is actually
+  // checking when he decides whether a selection fits.
+  //
+  // 🔴 AN UNKNOWN WEIGHT IS NOT COUNTED AS ZERO. `sumWeightKg` returns the total
+  // of the weights it HAS plus how many it could not read, and the bar renders
+  // "67+ kg" when that count is non-zero. The importer stores a missing SAP
+  // gross weight as 0 (app/api/import/obd/route.ts:600 and three siblings), so
+  // "0" and "unknown" are the same stored value — folding them into the sum
+  // would report a van-load as lighter than it is, silently, which is the one
+  // failure mode this number exists to prevent.
+  const selectionWeight = useMemo(() => sumWeightKg(selectedRows), [selectedRows]);
+  // Pieces. Bills with no article tag are skipped rather than counted as zero
+  // (~27% of SKUs are unmastered, CORE §7.1.c) — countArticles reports those
+  // separately and the bar simply omits the number when nothing parsed.
+  const selectionArticles = useMemo(
+    () => countArticles(selectedRows.map((r) => r.articleTag)).pieces,
+    [selectedRows],
+  );
+  // Distinct routes. A null route is its own bucket, not a skipped row: "two
+  // routes and something unrouted" is three things to plan, and dropping the
+  // unrouted one would make the bar under-report the spread.
+  const selectionRoutes = useMemo(
+    () => new Set(selectedRows.map((r) => r.route ?? "\u0000unrouted")).size,
+    [selectedRows],
+  );
 
   // A short reminder of what the selection is sitting on. Reads off the rail,
   // for the same reason `barMode` does.
@@ -1474,6 +1535,10 @@ export function FloorPage() {
             <FloorBottomBar
               count={selectedRows.length}
               litres={formatLitres(sumLitres(selectedRows))}
+              weight={formatWeightKg(selectionWeight.kg)}
+              weightIsPartial={selectionWeight.unknown > 0}
+              articles={selectionArticles}
+              routes={selectionRoutes}
               mode={barMode}
               trips={attachableTrips}
               busy={tripBarBusy || tripBusyId !== null}
