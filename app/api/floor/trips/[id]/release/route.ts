@@ -189,7 +189,35 @@ export async function POST(
   // happen — every id here was at `pending_picking` a moment ago — but a race
   // (a supervisor assigning in the same second) can produce it, and the honest
   // answer is to say so rather than fold it into a friendlier bucket.
-  const allFailed = [...rel.failed, ...stamp.failed];
+  // ── 🔴 "NOTHING TO DO" IS NOT "COULD NOT DO IT" (2026-09-11) ─────────────
+  //
+  // A bill that is already PICKED AND CHECKED has nothing left to release. It is
+  // past the point release acts on, and that is the NORMAL, EVERYDAY state of a
+  // trip on this board — every trip the desk plans is made of checked bills, and
+  // all 25 trips backfilled from the NTS report on 2026-09-11 were.
+  //
+  // `releaseBillsToFloor` correctly refuses such a bill: FLOOR_RELEASABLE_STAGES
+  // is ["pending_support","pending_picking"] and `pick_checked` is in neither, so
+  // it lands in `failed` with "Not releasable at stage pick_checked". That is
+  // honest about the MECHANISM and wrong about the MEANING — and because the
+  // 422 below counted an all-checked trip as "nothing achieved", pressing
+  // Confirm plan on one showed the operator a red
+  //     "Could not release — No bill on this trip could be released."
+  // AND LEFT THE TRIP UNCONFIRMED. The message was the visible half; the trip
+  // never reaching `released` was the real defect.
+  //
+  // ⚠ NOTHING ABOUT WHICH BILLS ARE RELEASED CHANGES, and nothing in
+  // lib/floor/release.ts is touched. FLOOR_RELEASABLE_STAGES is not widened. A
+  // checked bill is still not written to — it does not need to be. This only
+  // stops the route calling a finished bill a failure.
+  //
+  // ⚠ `dispatched` RIDES THE SAME BUCKET. A bill that has already left is
+  // likewise past release and likewise not a failure.
+  const PAST_RELEASE = new Set<string>(["pick_checked", "dispatched"]);
+  const pastReleaseMsg = (e: { error: string }) =>
+    PAST_RELEASE.has(e.error.replace("Not releasable at stage ", ""));
+  const alreadyFinished = rel.failed.filter(pastReleaseMsg).map((f) => f.orderId);
+  const allFailed = [...rel.failed.filter((f) => !pastReleaseMsg(f)), ...stamp.failed];
 
   // Nothing achieved at all → the trip does NOT move. A `released` trip whose
   // bills are all still unreleased is a lie on the board.
@@ -199,10 +227,17 @@ export async function POST(
   // the paint is still being mixed. Releasing it now is what makes the trip
   // re-runnable later, and refusing would leave him unable to confirm a plan he
   // has finished making.
+  //
+  // ⚠ `alreadyFinished` COUNTS AS ACHIEVED, for the same reason `waitingForTint`
+  // does. A trip whose bills are all checked is not a trip that failed to
+  // confirm — it is a trip with nothing left to send, which is what confirming a
+  // plan for finished goods looks like. Without this term the everyday case 422s
+  // and the trip stays draft.
   if (
     rel.released.length === 0 &&
     rel.alreadyReleased.length === 0 &&
-    rel.waitingForTint.length === 0
+    rel.waitingForTint.length === 0 &&
+    alreadyFinished.length === 0
   ) {
     return NextResponse.json(
       {
@@ -210,6 +245,7 @@ export async function POST(
         released: [],
         alreadyVisible: [],
         waitingForTint: [],
+        alreadyFinished: [],
         failed: allFailed,
       },
       { status: 422 },
@@ -251,6 +287,9 @@ export async function POST(
     stamped: stamp.changed,
     // 🔴 SKIPPED, NOT FAILED. Re-run the release once the shades are done.
     waitingForTint: rel.waitingForTint,
+    // 🔴 NOTHING TO DO, NOT A FAILURE. Already picked and checked — past the
+    // point release acts on. See the block above `allFailed`.
+    alreadyFinished,
     failed: allFailed,
   });
 }

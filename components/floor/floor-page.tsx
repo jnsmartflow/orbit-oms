@@ -596,9 +596,20 @@ export function FloorPage() {
           const already: number[] = body?.alreadyVisible ?? [];
           const waitingForTint: number[] = body?.waitingForTint ?? [];
           const stamped: number[] = body?.stamped ?? [];
+          // 🔴 ALREADY FINISHED IS A SUCCESS LINE, NOT AN ERROR ONE (2026-09-11).
+          // A picked-and-checked bill has nothing left to release, and every
+          // trip this desk plans is made of them. It used to arrive inside the
+          // failed bucket and raise a red "not released" toast beside the green
+          // "confirmed" one, on a trip that had confirmed correctly.
+          const alreadyFinished: number[] = body?.alreadyFinished ?? [];
           if (released.length > 0) parts.push(`${released.length} to the floor`);
           if (stamped.length > 0 && gateOn) parts.push(`${stamped.length} shown to pickers`);
           if (already.length > 0) parts.push(`${already.length} already there`);
+          if (alreadyFinished.length > 0) {
+            parts.push(
+              `${alreadyFinished.length} already picked and checked`,
+            );
+          }
           toast.success(parts.join(" · "));
           if (waitingForTint.length > 0) {
             toast.info(

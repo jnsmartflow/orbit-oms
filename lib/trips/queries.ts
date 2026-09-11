@@ -363,20 +363,57 @@ function toSummary(
 }
 
 /**
- * Every trip on one day, with its counts and litres.
+ * Every trip on one day, PLUS every still-open draft from an earlier one.
  *
  * Ordered by (typeCode, seq) — the order the numbers were handed out, which is
  * the order a planner thinks in. Not by status: a board that re-sorts itself as
  * trips progress moves the ground under the operator's hand, which is the same
  * defect FLOOR_SPINE drops `byAssigned` to avoid (FLOOR §3).
  *
+ * ── 🔴 THE TRAPPED-DRAFT BUG, FIXED 2026-09-11 ─────────────────────────────
+ *
+ * This read `where: { tripDate }` alone, and a draft dated in the past was
+ * UNREACHABLE. Past days are read-only on the floor board, so such a trip could
+ * never be cancelled, edited or confirmed — and its bills were stranded twice
+ * over: off the pool (they carry a `tripDropId`) and off every sweep (they are
+ * on a trip). Four of them had to be cleared by raw SQL on 2026-09-11.
+ *
+ * An OPEN DRAFT therefore follows the planner forward. It is unfinished work and
+ * unfinished work carries — the same rule `floorCarriedPoolWhere` applies to
+ * bills (lib/floor/queries.ts). A RELEASED trip does NOT: it is a decision that
+ * was made, it belongs to the day it was made on, and it drops off after it.
+ *
+ * ⚠ THE OLD DRAFT KEEPS ITS REAL `tripDate`. Nothing here rewrites it, and the
+ * rail renders it, so it reads as old rather than as today's — which is the
+ * point. A trip silently relabelled today would hide exactly the staleness the
+ * planner needs to see.
+ *
+ * ⚠ CANCELLED AND DISPATCHED ARE NOT CARRIED. Both are finished states. A
+ * cancelled trip keeps its number so the allocator can never reissue it, but it
+ * is not work and does not follow anyone forward.
+ *
+ * ⚠ HISTORY IS UNAFFECTED. A past day asked for its own date still gets its own
+ * trips; this arm only ADDS open drafts, and by definition a day in the past
+ * has none that are older than itself and still open unless they are genuinely
+ * stale — in which case the planner should see them there too.
+ *
  * Sequential awaits, never $transaction. SELECT-only.
  */
 export async function getTripsForDate(tripDate: Date): Promise<TripSummary[]> {
   const trips = (await prisma.trips.findMany({
-    where: { tripDate },
+    where: {
+      OR: [
+        { tripDate },
+        // The carried arm. `draft` by name, not `status NOT IN (...)`: a new
+        // status added to chk_trips_status must be an explicit decision to carry
+        // or not to, never something this predicate inherits by accident.
+        { status: "draft", tripDate: { lt: tripDate } },
+      ],
+    },
     select: TRIP_SELECT,
-    orderBy: [{ typeCode: "asc" }, { seq: "asc" }],
+    // tripDate leads so a carried draft sorts ABOVE the day's own trips rather
+    // than interleaving with them by type — it is older, and it reads as older.
+    orderBy: [{ tripDate: "asc" }, { typeCode: "asc" }, { seq: "asc" }],
   })) as TripRow[];
   if (trips.length === 0) return [];
 

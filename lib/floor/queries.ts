@@ -112,6 +112,49 @@ export function floorUnslottedWhere(): Prisma.ordersWhereInput {
   return { workflowStage: { in: RAIL_STAGES }, dispatchStatus: null, isRemoved: false };
 }
 
+/**
+ * The CARRIED-FORWARD POOL — checked, released to the floor, and still on no
+ * truck, whatever day it was checked (2026-09-11).
+ *
+ * 🔴 WHY THE BOARD NEEDED A THIRD ARM. `floorLiveBaseWhere`'s checked branch is
+ * fenced on `pick_assignments.checkedAt` within TODAY, which is right for a
+ * board that reports a day's work and wrong for a board that plans loads. A bill
+ * checked on Tuesday with no truck on Friday is exactly the work the planner has
+ * to see, and it was invisible to everyone: 40 bills on the day this shipped,
+ * the oldest checked three days earlier. Unfinished work carries forward; only
+ * finished work is filed by day.
+ *
+ * 🔴 `tripDropId: null` IS WHAT BOUNDS THIS ARM, and it is the whole reason the
+ * arm is safe. Without it the predicate is "every pick_checked bill ever
+ * finished" — 2,604 rows against a board showing 44 on 2026-09-10
+ * (code-discovery-2026-09-10-noslot-backlog.md §A). With it, the arm is exactly
+ * the not-on-a-truck pile, which is small and self-emptying: a bill leaves the
+ * moment it gets a trip sticker.
+ *
+ * 🔴 `dispatchStatus: 'dispatch'` IS PINNED, NOT LOOSENED. That term is the
+ * difference between 44 rows and 2,604 and it stays exactly as the other two
+ * arms carry it. A HELD bill is therefore NOT here, deliberately — hold is
+ * genuine working state (owner ruling 2026-09-10), a held bill belongs on the
+ * Hold tab, and 3 of the 82 in the pile are held.
+ *
+ * ⚠ A COMPLETE SET OF TERMS, like its two siblings. That is what makes the union
+ * in `floorBoardWhere` safe: no arm can be widened by another, because none of
+ * them relies on a term the others supply.
+ *
+ * ⚠ IT OVERLAPS ARM 1 ON PURPOSE, and that costs nothing. A bill checked TODAY
+ * with no truck matches both this and `floorLiveBaseWhere`'s checked branch; an
+ * `OR` returns it once. Writing this arm to exclude today would be a second
+ * date fence to keep in step with the first, for no gain.
+ */
+export function floorCarriedPoolWhere(): Prisma.ordersWhereInput {
+  return {
+    dispatchStatus: "dispatch",
+    workflowStage: PICK_CHECKED,
+    tripDropId: null,
+    isRemoved: false,
+  };
+}
+
 // Step 10 — the render-time slot SUGGESTION is ON. Non-tint bills anchor on
 // arrival; a COMPLETED full (non-split) tint OBD anchors on its completion time.
 // Split tints and unfinished tints still get nothing — see the suggestion block
@@ -250,14 +293,26 @@ export function floorLiveBaseWhere(todayRange: { start: Date; end: Date }): Pris
  *
  * The union cannot do that: each arm carries its own complete set of terms, so
  * neither can be widened by the other. Arm 1 is byte-identical to what shipped;
- * arm 2 is the rail's own predicate.
+ * arm 2 is the rail's own predicate; arm 3 is the carried-forward pool.
  *
- * 🔴 THE MARKER USES THIS TOO (getFloorLiveMarkerWhere below). Board and marker
- * share one predicate on purpose — let them drift and the board silently stops
- * refreshing (FLOOR §5, and the PICKING §10 landmine it comes from).
+ * ── THIRD ARM ADDED 2026-09-11 ────────────────────────────────────────────
+ * `floorCarriedPoolWhere` — checked, no truck, any check date. Read its own
+ * header for why it is bounded and why `dispatchStatus` is still pinned. It was
+ * added the SAME way arm 2 was: a new named function unioned in, never a term
+ * taken out of an existing one. That is the standing rule this comment exists to
+ * enforce, and following it twice is what keeps it true.
+ *
+ * 🔴 THE MARKER USES THIS TOO (getFloorLiveMarkerWhere below), and that is why
+ * widening happens HERE and nowhere else. Board and marker share one predicate
+ * on purpose — let them drift and the board silently stops refreshing when an
+ * invisible row changes (FLOOR §5, and the PICKING §10 landmine it comes from).
+ * Adding an arm to this function widens both in the same edit, by construction;
+ * there is no second place to remember.
  */
 export function floorBoardWhere(todayRange: { start: Date; end: Date }): Prisma.ordersWhereInput {
-  return { OR: [floorLiveBaseWhere(todayRange), floorUnslottedWhere()] };
+  return {
+    OR: [floorLiveBaseWhere(todayRange), floorUnslottedWhere(), floorCarriedPoolWhere()],
+  };
 }
 
 /** The full live WHERE (base AND the admin hide-exclusion) — what the marker

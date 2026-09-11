@@ -18,14 +18,38 @@
 // still assembling, and a trip cannot be released without a window, so this is
 // the group he has to come back to.
 //
-// ⚠ CANCELLED TRIPS SINK TO THE BOTTOM, greyed, below every slot group. They are
-// kept (a cancelled trip retains its number so the allocator can never reissue
-// it) and they are not work.
+// ⚠ CANCELLED TRIPS ARE NOT ON THIS RAIL AT ALL (2026-09-11). They used to sink
+// to the bottom, greyed. They are still kept in the database — a cancelled trip
+// retains its number so the allocator can never reissue it — and they are still
+// reachable in history. They are simply not work, and the live rail is a list of
+// work. DISPLAY ONLY: nothing here deletes or hides a row, and the summary
+// counts below describe exactly what is rendered.
+//
+// ⚠ A CARRIED DRAFT SHOWS ITS REAL DATE. lib/trips/queries.ts follows an open
+// draft forward off its own day so it can never become unreachable, and this
+// rail prints the date it actually carries rather than implying it is today's.
+// Reading as old is the point — see the date chip on the card.
 
 import { ProgressBar } from "./progress-bar";
 import { formatLitres, type StatusCounts } from "./status-pill";
 import { tripWording } from "@/lib/floor/trip-wording";
 import type { TripSummary } from "@/lib/trips/queries";
+
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "Thu 10 Sep" from a date-only "YYYY-MM-DD".
+ *
+ * ⚠ NEVER `new Date(str)` — an offset-less string is read in the HOST's
+ * timezone (CORE §3), which on a depot phone is 5.5 hours from the server's
+ * answer. Date.UTC, the same parse every other date-only formatter here uses.
+ */
+function fmtTripDay(dateOnly: string): string {
+  const [y, m, d] = dateOnly.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return `${WD[dt.getUTCDay()]} ${dt.getUTCDate()} ${MON[dt.getUTCMonth()]}`;
+}
 
 /** The rail's selection: the pool, or one trip. */
 export type RailSelection = { kind: "pool" } | { kind: "trip"; tripId: number };
@@ -81,6 +105,7 @@ export function tripStateMeta(trip: TripSummary, gateOn: boolean) {
 export function TripRail({
   trips,
   loading,
+  anchorIso,
   poolCount,
   poolLitres,
   selection,
@@ -89,6 +114,15 @@ export function TripRail({
 }: {
   trips: TripSummary[] | null;
   loading: boolean;
+  /**
+   * The day the board is anchored on, "YYYY-MM-DD".
+   *
+   * A trip whose own `tripDate` is EARLIER than this is a CARRIED DRAFT —
+   * lib/trips/queries.ts follows an open draft forward so it can never become
+   * unreachable on a read-only past day — and its card says so with its real
+   * date. Nothing else reads this.
+   */
+  anchorIso: string;
   poolCount: number;
   poolLitres: number;
   selection: RailSelection;
@@ -96,8 +130,14 @@ export function TripRail({
   gateOn: boolean;
 }) {
   const all = trips ?? [];
+  // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11). One filter, applied once,
+  // so no group below can reintroduce them.
   const live = all.filter((t) => t.status !== "cancelled");
-  const cancelled = all.filter((t) => t.status === "cancelled");
+
+  // The header's two numbers. Both describe the LIVE list — what is actually on
+  // the rail — so the count and the cards can never disagree.
+  const tripCount = live.length;
+  const billCount = live.reduce((sum, t) => sum + t.counts.total, 0);
 
   // Group by slot LABEL. Order: the windows the trips actually use, ascending by
   // time string (the labels are HH:MM, so a plain sort is the clock order), then
@@ -119,6 +159,28 @@ export function TripRail({
 
   return (
     <div className="flex min-h-0 flex-col overflow-y-auto border-r border-gray-200 bg-[#fcfbfe] px-2.5 py-2.5">
+      {/* ── The rail's own count (2026-09-11) ─────────────────────────────
+          Smart Flow had to scroll the rail to know what was on it. Two numbers,
+          one line, above everything.
+
+          Typography is the rail's existing pair, not a new style: the group
+          headings below use 10.5px bold uppercase at 0.1em in gray-400, and the
+          card sub-lines use 11px tabular-nums in gray-500. This reuses both —
+          the label from the first, the figures from the second — so it reads as
+          part of the rail rather than as a banner on top of it.
+
+          It counts the LIVE list, which is what is rendered. Cancelled trips are
+          not on the rail and are not in this number. */}
+      <div className="flex items-baseline gap-2 px-1 pb-2">
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
+          Trips
+        </span>
+        <span className="text-[11px] tabular-nums text-gray-500">
+          {tripCount} trip{tripCount === 1 ? "" : "s"} · {billCount} bill
+          {billCount === 1 ? "" : "s"}
+        </span>
+      </div>
+
       {/* ── The pool ─────────────────────────────────────────────────────── */}
       <button
         type="button"
@@ -153,6 +215,7 @@ export function TripRail({
               key={t.id}
               trip={t}
               gateOn={gateOn}
+              anchorIso={anchorIso}
               selected={selection.kind === "trip" && selection.tripId === t.id}
               onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
             />
@@ -160,22 +223,6 @@ export function TripRail({
         </div>
       ))}
 
-      {cancelled.length > 0 && (
-        <div>
-          <div className="px-1 pb-1 pt-3 text-[10.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
-            Cancelled
-          </div>
-          {cancelled.map((t) => (
-            <TripCard
-              key={t.id}
-              trip={t}
-              gateOn={gateOn}
-              selected={selection.kind === "trip" && selection.tripId === t.id}
-              onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -185,12 +232,24 @@ function TripCard({
   selected,
   onSelect,
   gateOn,
+  anchorIso,
 }: {
   trip: TripSummary;
   selected: boolean;
   onSelect: () => void;
   gateOn: boolean;
+  anchorIso: string;
 }) {
+  // 🔴 A CARRIED DRAFT READS AS OLD, NOT AS TODAY'S (2026-09-11). An open draft
+  // dated before the board's anchor now follows the planner forward rather than
+  // staying stranded on an unreachable past day. Printing its REAL date is the
+  // whole point of carrying it: a trip silently relabelled today would hide
+  // exactly the staleness the planner has to act on.
+  //
+  // A plain string compare is exact on zero-padded "YYYY-MM-DD" and needs no
+  // Date at all. Only a draft is ever carried (see getTripsForDate), so only a
+  // draft can show this chip.
+  const isCarried = trip.tripDate < anchorIso;
   const counts = toStatusCounts(trip.counts);
   const meta = tripStateMeta(trip, gateOn);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
@@ -210,6 +269,14 @@ function TripCard({
       } ${isCancelled ? "opacity-60" : ""}`}
     >
       <div className="flex items-center gap-1.5">
+        {isCarried && (
+          <span
+            title={`Still a draft from ${fmtTripDay(trip.tripDate)} — it follows you forward until it is confirmed or cancelled`}
+            className="shrink-0 rounded-[4px] bg-[#fdf3e3] px-[5px] py-px text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#b45309]"
+          >
+            {fmtTripDay(trip.tripDate)}
+          </span>
+        )}
         <span
           className={`shrink-0 rounded-[5px] px-1.5 py-px font-mono text-[11px] font-semibold ${
             isDraft || isCancelled

@@ -377,6 +377,7 @@ export function TripDesk({
         <TripRail
           trips={trips}
           loading={tripsLoading}
+          anchorIso={floor.date}
           poolCount={poolRows.length + poolUpcoming.length}
           poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
           selection={railSelection}
