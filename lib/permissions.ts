@@ -194,6 +194,24 @@ export type PageKey =
   | "place_order"
   | "trip_report"
   | "mail_orders"
+  // billing_picking — the BILLING Picking tab (bills checked on the floor and
+  // waiting to be invoiced), 2026-09-11. ⚠ NOT the floor board's `picking` key,
+  // which is two lines up in ALL_PAGE_KEYS and belongs to /picking: 24 people
+  // hold that one and nothing here may touch it. A page key and a route can
+  // share a word.
+  //
+  // ⚠ REGISTERED ONLY — NOTHING READS IT YET. The tab still gates on
+  // `mail_orders` at every one of its sites (the tab bar and body mounts in
+  // review-view.tsx, and the five /api/billing/picking/* routes). This key
+  // exists so /admin/access can show a row and Smart Flow can grant people
+  // BEFORE the gates are repointed, which is the order that avoids anybody
+  // losing the tab for a page load.
+  //
+  // ⚠ DELIBERATELY NOT IN PAGE_NAV_MAP and NOT IN ICON_MAP. It is a TAB inside
+  // /mail-orders, not a route, so there is nothing for a sidebar entry to link
+  // to. (If it ever becomes its own route, its position in PAGE_NAV_MAP is
+  // behaviour, not cosmetics — see the `mrn` entry's warning.)
+  | "billing_picking"
   | "mrn"
   // CI — Goods Return Note (2026-09-01). Live `role_permissions` rows exist for
   // billing_operator / floor_supervisor / operations, and prisma/seed.ts carries
@@ -249,7 +267,10 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "tint_manager", "tint_operator",
-  "place_order", "trip_report", "mail_orders", "mrn", "ci",
+  // ⚠ `billing_picking` (the Billing Picking TAB) sits beside `mail_orders`,
+  // its host screen. It is NOT `picking` on the line above — that is the floor
+  // board. Keep them visually apart in this list, never adjacent.
+  "place_order", "trip_report", "mail_orders", "billing_picking", "mrn", "ci",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   "settings_hide",
 ];
@@ -289,6 +310,14 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
   canEdit: [
     "mrn", "picking", "tint_manager", "tint_operator", "mail_orders", "floor",
     "sampling_library", "routes_areas", "customers", "skus", "vehicles",
+    // billing_picking — listed AHEAD of its own call sites, on purpose, and it
+    // is the one entry in this map that is not yet backed by a check. Mark done
+    // (api/billing/picking/mark-done:58) and Undo (undo:49) gate on canEdit
+    // today, against `mail_orders`; they move to this key once the gates are
+    // repointed. Without the entry /admin/access draws a DASH, and a dash is a
+    // switch nobody can turn on — which would make it impossible to grant the
+    // Edit half before the repoint, i.e. impossible to do the repoint safely.
+    "billing_picking",
   ],
   // Two helper call sites — import/obd:3796 and sampling-library:253 — plus the
   // CSV import buttons on the four master-data screens, which read canImport
@@ -326,9 +355,9 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. FIVE of
-// the 27 ALL_PAGE_KEYS are not in it and are labelled here instead:
-// dashboard, users, system_config, permissions, settings_hide.
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. SIX of
+// the 28 ALL_PAGE_KEYS are not in it and are labelled here instead:
+// dashboard, users, system_config, permissions, settings_hide, billing_picking.
 // (`attendance` IS in PAGE_NAV_MAP — but it and `attendance_admin` both carry
 // the label "Attendance" there, which is fine in a sidebar where only one is
 // ever shown and useless in a list where both appear, so both are overridden.)
@@ -339,6 +368,14 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   system_config:    "System Config",
   permissions:      "Permissions (role grid)",
   settings_hide:    "Hide Rules",
+  // 🔴 THE LABEL IS THE ONLY THING STOPPING A MIS-GRANT ON /admin/access.
+  // The floor board's row on that screen reads "Picking" (from PAGE_NAV_MAP),
+  // and both rows sit in the same Operations section. An override is REQUIRED
+  // here — without one `pageLabel()` falls through to the raw key and the row
+  // would read "billing_picking" — and the "Billing ·" prefix is what tells an
+  // admin which of the two Pickings he is ticking. Do not shorten it to
+  // "Picking".
+  billing_picking:  "Billing · Picking",
   attendance:       "Attendance — their own",
   attendance_admin: "Attendance — everyone",
 };
@@ -351,15 +388,18 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 27 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 28 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
  */
 export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
   { label: "Operations", keys: [
-    "picking", "floor", "mrn", "ci", "mail_orders", "place_order",
-    "trip_report", "import_obd",
+    // `billing_picking` follows `mail_orders` because it is a tab INSIDE that
+    // screen, and the two rows read as a pair on /admin/access. ⚠ It is not the
+    // `picking` row at the head of this list — that is the floor board.
+    "picking", "floor", "mrn", "ci", "mail_orders", "billing_picking",
+    "place_order", "trip_report", "import_obd",
   ] },
   { label: "Tinting", keys: [
     "tint_manager", "tint_operator", "operations_tinting",
@@ -487,7 +527,7 @@ async function userAllPerms(userId: number): Promise<Record<string, PagePermissi
       canDelete: row.canDelete,
     };
   }
-  // Deliberately NOT densified to all 27 keys. The role path omits keys no role
+  // Deliberately NOT densified to all 28 keys. The role path omits keys no role
   // grants, and every consumer reads an absent key as false
   // (`allPerms[key]?.canView === true`). Leaving the shapes as close as they are
   // keeps the two modes indistinguishable to callers.

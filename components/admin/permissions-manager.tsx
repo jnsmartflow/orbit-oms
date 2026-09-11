@@ -39,6 +39,23 @@ const PAGES_CONFIG = [
   { key: "tint_operator", label: "Tint Operator",  path: "/tint/operator",       section: "Operations" },
   { key: "dispatcher",    label: "Dispatcher",     path: "/dispatcher",          section: "Operations" },
   { key: "warehouse",     label: "Warehouse",      path: "/warehouse",           section: "Operations" },
+  // billing_picking — the BILLING Picking tab inside /mail-orders (bills checked
+  // on the floor, waiting to be invoiced). Added 2026-09-11 with the key itself.
+  //
+  // ⚠ NOT the floor board's `picking` key — that one gates /picking and is held
+  // by 24 people. These two share a word and nothing else.
+  //
+  // `path` is /mail-orders because the tab HAS no address of its own; this
+  // column is a display hint on this screen, not a route table.
+  //
+  // ⚠ THIS SCREEN IS THE ACCESS_SOURCE='role' ROLLBACK EDITOR (CORE §5), which
+  // is the only reason the row is here: in `user` mode nothing it writes is
+  // enforced. It is also badly out of date — 16 of the 28 ALL_PAGE_KEYS are
+  // missing from this array and two retired keys (dispatcher, warehouse) are
+  // still in it, and its ROLES_CONFIG lists none of billing_operator /
+  // operations / operation_manager, so none of THEM can be granted here either.
+  // Fixing that is separate work, deliberately not done in this commit.
+  { key: "billing_picking", label: "Billing · Picking", path: "/mail-orders",     section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [

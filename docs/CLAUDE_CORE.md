@@ -249,7 +249,7 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 **Login identifiers:** `users` has `phone TEXT` with `CHECK (phone IS NULL OR phone ~ '^[0-9]{10}$')` and partial unique index `WHERE phone IS NOT NULL`. NextAuth credentials provider accepts email OR 10-digit phone — `/^\d{10}$/` regex routes the lookup. Field `id`/`name` stays `email` (auth contract). Strict 10-digit only — no `+91`, dashes, or spaces.
 
-**Permissions:** `lib/permissions.ts` has `PAGE_NAV_MAP`, the `PageKey` type, and `ALL_PAGE_KEYS` (27 keys).
+**Permissions:** `lib/permissions.ts` has `PAGE_NAV_MAP`, the `PageKey` type, and `ALL_PAGE_KEYS` (**28 keys** since 2026-09-11 — `billing_picking` was added for the Billing Picking tab; registered only, nothing reads it yet, and it is deliberately NOT in `PAGE_NAV_MAP` because it is a tab inside `/mail-orders`, not a route).
 
 🔴 **THE TABLE BELOW IS THE ROLE TEMPLATE / FALLBACK, NOT LIVE ACCESS.** Since 2026-09-04 the
 resolvers read `user_page_access` by user id; these `role_permissions` rows are what a job title

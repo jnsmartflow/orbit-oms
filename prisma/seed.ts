@@ -162,6 +162,34 @@ async function main() {
     { roleSlug: "billing_operator", pageKey: "ci",         canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: true  },
     { roleSlug: "floor_supervisor", pageKey: "ci",         canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operations",       pageKey: "ci",         canView: true,  canEdit: true,  canImport: false, canExport: true,  canDelete: false },
+    // ── billing_picking — the BILLING Picking tab, 2026-09-11 ─────────────
+    // Bills the floor has checked, waiting to be invoiced. It is a TAB inside
+    // /mail-orders, not a route.
+    //
+    // 🔴 NOT the `picking` key three blocks up. That one gates the floor board
+    // at /picking and is held by floor_supervisor, picker and operations. These
+    // two keys share a word and nothing else — never copy a flag between them.
+    //
+    // FLAGS ARE A MIRROR OF THE LIVE `mail_orders` ROWS, and that is the whole
+    // rule: the tab has always ridden on `mail_orders`, so the people who can
+    // work it today are exactly the four role templates below. Read off a live
+    // role_permissions SELECT 2026-09-11 (discovery §C1) — canView + canEdit,
+    // every other flag false. There is no export, import or delete anywhere on
+    // this tab.
+    //
+    // ⚠ `floor_supervisor` is deliberately ABSENT. He holds `mrn` and `ci` and
+    // raises work for billing; invoicing is the desk's. Adding him here because
+    // the mrn/ci blocks above list him would hand the floor billing's handoff
+    // list.
+    //
+    // ⚠ SEED IS NOT LIVE, IN BOTH DIRECTIONS (CORE §3). These rows are the role
+    // TEMPLATE. Live access is `user_page_access` (ACCESS_SOURCE='user', CORE
+    // §5), which this file does not seed at all — so a wipe-and-reseed grants
+    // nobody this key. Smart Flow grants people by hand on /admin/access.
+    { roleSlug: "billing_operator",  pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",        pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
   ];
 
   for (const row of permRows) {
