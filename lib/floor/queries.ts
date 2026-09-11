@@ -28,6 +28,7 @@ import {
   PICK_ASSIGNED,
   PICK_DONE,
   PICK_CHECKED,
+  DISPATCHED,
 } from "@/lib/workflow-stages";
 import { suggestSlot } from "./suggest";
 // Rule 2's oil-paint definition lives in the ENGINE, not here and not in the
@@ -71,6 +72,26 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 // ladder, never hand-written, so a new pre-picking stage joins automatically.
 // order_created (10) is included for safety though import never writes it
 // (route.ts:1102 creates orders at pending_support / pending_tint_assignment).
+/**
+ * The stages FLOOR HISTORY reads — the live picking set PLUS `dispatched`.
+ *
+ * 🔴 IT EXISTS SO THE SHARED ARRAY IS NEVER EDITED. `PICKING_ACTIVE_STAGES` is
+ * owned by lib/workflow-stages.ts and is read by lib/picking/queue.ts:448 as
+ * well as here. Adding `dispatched` to it would put shipped bills back on a
+ * LIVE board, which is the one thing this whole change must not do. Spreading it
+ * and adding the stage AT THIS CALL SITE keeps the widening where it belongs.
+ *
+ * 🔴 HISTORY IS A RECORD, NOT A WORKING LIST, and that is the whole distinction.
+ * A bill that shipped still HAPPENED on the day it was promised or checked, so a
+ * past day that omits it is lying by omission — which it has been doing for
+ * 4,137 rows since July, because every reader was taught to look for
+ * `pick_checked` alone. The live board (`floorLiveBaseWhere`) is deliberately
+ * NOT widened and must never be.
+ *
+ * ⚠ ORDER IS NOT SIGNIFICANT — it feeds a Prisma `in`, not a sort.
+ */
+const FLOOR_HISTORY_STAGES: string[] = [...PICKING_ACTIVE_STAGES, DISPATCHED];
+
 const RAIL_STAGES: string[] = STAGE_LADDER
   .filter((d) => d.rank !== null && d.rank < 60)
   .map((d) => d.stage);
@@ -680,13 +701,29 @@ export async function getFloorBoard(
           // live arm's range comes from (:611 passes it with no argument for
           // "today"; this passes the viewed day). One owner for "what is an IST
           // day", never a second hand-rolled offset calculation.
+          // ⚠ `dispatchStatus: "dispatch"` IS UNTOUCHED. 238 of the dispatched
+          // rows carry a NULL status and stay invisible here because of it —
+          // deliberately. That term is a known landmine (dropping it admits
+          // every finished bill ever, measured at 2,604 against 44) and the
+          // rows it excludes are ones nothing ever dispatched properly.
           dispatchStatus: "dispatch",
           isRemoved: false,
-          workflowStage: { in: PICKING_ACTIVE_STAGES },
+          // WIDENED 2026-09-11 — see FLOOR_HISTORY_STAGES above. This top-level
+          // gate is the one that actually mattered: arm (b) alone could name
+          // `dispatched` all it liked and this clause would still have excluded
+          // the row before the OR was reached. It is also the ONLY thing letting
+          // arm (a) find a shipped bill by its promise date, which is the larger
+          // half of the population (2,935 of 4,137 carry a promise date, against
+          // 710 that carry a checkedAt).
+          workflowStage: { in: FLOOR_HISTORY_STAGES },
           OR: [
             { dispatchTargetDate: anchorDate },
             {
-              workflowStage: PICK_CHECKED,
+              // Both terminal stages. A dispatched bill passed through checking
+              // on its way out, so its `checkedAt` is as true a record of the
+              // day's work as a pick_checked bill's — the stage it ended at does
+              // not change the day it was finished on.
+              workflowStage: { in: [PICK_CHECKED, DISPATCHED] },
               pickAssignment: {
                 checkedAt: { gte: anchorRange.start, lt: anchorRange.end },
               },
@@ -867,7 +904,13 @@ export async function getFloorBoard(
       isEmailTime: displayDate.isEmailTime,
       isAssigned: order.workflowStage === PICK_ASSIGNED,
       isDone: order.workflowStage === PICK_DONE,
-      isChecked: order.workflowStage === PICK_CHECKED,
+      // 🔴 TRUE FOR A DISPATCHED BILL TOO. It passed through checking on its way
+      // out — a bill cannot ship without being checked — so a history row that
+      // reported `isChecked: false` would render a shipped bill as unchecked,
+      // which is the opposite of what happened. `isDispatched` below carries the
+      // finer fact for the surfaces that want it.
+      isChecked: order.workflowStage === PICK_CHECKED || order.workflowStage === DISPATCHED,
+      isDispatched: order.workflowStage === DISPATCHED,
       assignedAt: order.pickAssignment?.assignedAt?.toISOString() ?? null,
       pickedAt: order.pickAssignment?.pickedAt?.toISOString() ?? null,
       checkedAt: order.pickAssignment?.checkedAt?.toISOString() ?? null,

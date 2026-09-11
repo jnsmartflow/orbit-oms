@@ -92,6 +92,22 @@ export const PICK_DONE = "pick_done";
 /** The stage the (not-yet-built) supervisor Approve action will write. */
 export const PICK_CHECKED = "pick_checked";
 
+/**
+ * The terminal stage — the goods have left the depot (rank 100).
+ *
+ * 🔴 NOTHING IN THE APP WRITES IT, AND 4,137 ROWS ARE ALREADY AT IT. They came
+ * from hand-run SQL sweeps in July (CLAUDE_FLOOR.md §7 records 238 of them);
+ * the rest are unattributed because a raw UPDATE writes no log row. A one-time
+ * cutover will add roughly 2,600 more.
+ *
+ * 🔴 THE CONSTANT EXISTS SO READERS CAN NAME IT WITHOUT TOUCHING A SHARED ARRAY.
+ * It is deliberately NOT added to PICKING_OPEN_STAGES, PICKING_ACTIVE_STAGES or
+ * RAIL_STAGES: a shipped bill must never reappear on a live working board, and
+ * every one of those arrays feeds one. History readers spread the array they
+ * need and add this — see FLOOR_HISTORY_STAGES in lib/floor/queries.ts.
+ */
+export const DISPATCHED = "dispatched";
+
 /** Position of a stage on the ladder. null for BOTH unknown stages and
  *  explicitly off-ladder terminal stages ('cancelled') — callers must not
  *  read null as "unknown"; use isSupportDone() to test cancelled by name. */

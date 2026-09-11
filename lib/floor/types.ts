@@ -95,6 +95,27 @@ export interface FloorRailCard extends FloorPartyFields {
 // Floor board row — extends the picking row so the spine sort applies as-is.
 // Floor-only extras added on top (smu + bill-to for the §7.5 marker).
 export interface FloorBoardRow extends PickingQueueRow {
+  /**
+   * The bill has LEFT THE DEPOT — workflowStage `dispatched`, rank 100.
+   *
+   * 🔴 ONLY A HISTORY ROW IS EVER TRUE HERE. The live board predicate
+   * (`floorLiveBaseWhere`) does not admit rank 100 and must never be widened to;
+   * only `FLOOR_HISTORY_STAGES` does. A true value on a live row would mean the
+   * live predicate has been widened and a shipped bill is back on the floor.
+   *
+   * ⚠ FLOOR’S `isChecked` IS WIDER THAN PICKING’S, AND THIS IS WHY. The inherited
+   * field is documented on PickingQueueRow as "True at exactly PICK_CHECKED",
+   * and lib/picking/queue.ts still sets it that way. getFloorBoard sets it true
+   * for `dispatched` as well, because a shipped bill WAS checked and a history
+   * row reporting otherwise would show finished work as untouched. The two
+   * payloads therefore answer "isChecked" slightly differently on purpose; this
+   * field is what lets a Floor surface tell the two apart when it needs to.
+   *
+   * ⚠ DECLARED HERE, NOT ON PickingQueueRow — the same boundary `smu`,
+   * `billToName`, the ship-to pair and `tripDropId` sit on (FLOOR §1: Floor is a
+   * CALLER of Picking; widen the Floor type, never the Picking one).
+   */
+  isDispatched: boolean;
   smu: string | null;
   billToName: string | null;
   // The ship-to PAIR, mirroring FloorRailCard above: `customerName` is the
@@ -372,6 +393,15 @@ export interface FloorDetail {
   isAssigned: boolean;
   isDone: boolean;
   isChecked: boolean;
+  /**
+   * Shipped — workflowStage `dispatched` (2026-09-11).
+   *
+   * Mirrors FloorBoardRow.isDispatched so the detail panel can label a history
+   * row correctly. The route sets `isChecked` true for a dispatched bill as
+   * well (it was checked on its way out), so every reader must test THIS first
+   * or a shipped bill reads as "Done".
+   */
+  isDispatched: boolean;
   pickerName: string | null;
   checkedByName: string | null;
 

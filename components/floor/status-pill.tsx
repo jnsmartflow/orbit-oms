@@ -11,14 +11,36 @@
 import { DUP_SO_BADGE_CLASS } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
-export type FloorStatus = "waiting" | "withPicker" | "needsCheck" | "done";
+export type FloorStatus = "waiting" | "withPicker" | "needsCheck" | "done" | "dispatched";
 
-type StatusInput = Pick<FloorBoardRow, "isAssigned" | "isDone" | "isChecked">;
+type StatusInput = Pick<FloorBoardRow, "isAssigned" | "isDone" | "isChecked"> &
+  // Optional so the many callers that build a StatusInput by hand (the Hold and
+  // Cancelled tabs, the trip counters) are untouched — undefined reads as false,
+  // which is correct for every one of them: none can hold a shipped bill.
+  Partial<Pick<FloorBoardRow, "isDispatched">>;
 
-// pick_checked → Done, pick_done → Needs check, pick_assigned → With picker,
-// else (pending_picking) → Waiting. Order matters: checked wins over done wins
-// over assigned (a row is only ever at one stage, but the guard is explicit).
+/**
+ * dispatched → Dispatched, pick_checked → Done, pick_done → Needs check,
+ * pick_assigned → With picker, else (pending_picking) → Waiting.
+ *
+ * 🔴 THE `isDispatched` TEST IS FIRST, AND IT IS THE WHOLE POINT OF THIS CHANGE.
+ * Until 2026-09-11 this union had four members and no `dispatched` arm, so a
+ * shipped bill — `isAssigned`, `isDone` and (before today) `isChecked` all false
+ * — fell through every guard and rendered as **WAITING**. A bill that had left
+ * the depot showed on screen as not started. That is precisely the fall-through
+ * bug class lib/workflow-stages.ts:271 warns about, and it has now bitten a
+ * third time (after pick_done and pick_checked).
+ *
+ * It runs BEFORE `isChecked` because getFloorBoard sets `isChecked` true for a
+ * dispatched bill too (it was checked on its way out) — so a checked-first order
+ * would label every shipped bill "Done" and the new arm would be dead.
+ *
+ * ⚠ REACHABLE ONLY FROM HISTORY. The live board predicate does not admit rank
+ * 100. If this pill ever appears on the live board, the live predicate has been
+ * widened and that is the bug, not this function.
+ */
 export function rowStatus(row: StatusInput): FloorStatus {
+  if (row.isDispatched) return "dispatched";
   if (row.isChecked) return "done";
   if (row.isDone) return "needsCheck";
   if (row.isAssigned) return "withPicker";
@@ -52,6 +74,20 @@ const META: Record<FloorStatus, { label: string; cls: string }> = {
   withPicker: { label: "With picker", cls: "bg-tint-bg text-tint-700" },
   needsCheck: { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" },
   done: { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" },
+  // ── Dispatched (2026-09-11) ────────────────────────────────────────────────
+  // 🔴 DELIBERATELY NOT A SECOND GREEN. "Done" already owns green on this screen
+  // and it means a DIFFERENT thing — the floor finished its work. Dispatched
+  // means the goods have left the building, which is past finished: nothing on
+  // any depot screen can act on it again. Two greens side by side would read as
+  // two shades of the same state and the operator would have to learn which is
+  // which.
+  //
+  // Slate, the same family "At desk" uses for its own out-of-play reading, and
+  // DARKER than the waiting grey so it reads as a settled fact rather than an
+  // absence. Not amber (that is "needs check", a call to action), not red (this
+  // is the good outcome), not teal (reserved for the primary action,
+  // CLAUDE_UI §1).
+  dispatched: { label: "Dispatched", cls: "bg-[#e2e8f0] text-[#334155]" },
 };
 
 // The HELD-BACK reading of `waiting` (2026-09-09). A waiting bill the operator
@@ -125,11 +161,51 @@ export interface StatusCounts {
   withPicker: number;
   needsCheck: number;
   done: number;
+  /**
+   * Shipped. ALWAYS 0 on a live board — the live predicate does not admit rank
+   * 100 — and non-zero only on a history day.
+   *
+   * ⚠ IT IS ITS OWN BUCKET, NOT FOLDED INTO `done`. `countByStatus` keys off
+   * `rowStatus`, so without this key a dispatched row would increment
+   * `c["dispatched"]` on an object that has no such property: `undefined + 1` is
+   * NaN, and every progress bar built on these counts would render empty. The
+   * bucket is required for the counts to add up, exactly as `other` is on
+   * TripBillCounts.
+   */
+  dispatched: number;
   total: number;
 }
 
+/**
+ * How many of these bills are FINISHED — checked plus shipped.
+ *
+ * 🔴 IT EXISTS SO "N of M done" CANNOT LIE ON A HISTORY DAY. Every summary line
+ * read `counts.done` alone, which is the `pick_checked` bucket only. On a past
+ * day where 28 of 40 bills had shipped, the route header said "12 of 40 done" —
+ * the twelve that were checked and never dispatched. That is not a wording
+ * problem: a shipped bill is the most finished a bill can be, and a line that
+ * omits it reports a day's work as two thirds undone. Owner ruling 2026-09-11.
+ *
+ * ⚠ A DERIVED READ, NOT A WIDER BUCKET. `done` and `dispatched` stay separate in
+ * StatusCounts and separate on the progress bar and the pill, because they ARE
+ * different facts and the bar is meant to show which. Only the single "how much
+ * of this is finished" number folds them, and it folds them HERE so the next
+ * call site cannot forget — the same reason `rowStatus` and `isHeldBack` live in
+ * this file rather than at their call sites.
+ *
+ * ⚠ ALWAYS EQUAL TO `counts.done` ON A LIVE BOARD. `floorLiveBaseWhere` does not
+ * admit rank 100, so `dispatched` is 0 on every live row set and this returns
+ * exactly what the old expression did. Verified by construction, not by hope:
+ * the only predicate that admits the stage is FLOOR_HISTORY_STAGES.
+ */
+export function finishedCount(counts: StatusCounts): number {
+  return counts.done + counts.dispatched;
+}
+
 export function countByStatus(rows: StatusInput[]): StatusCounts {
-  const c: StatusCounts = { waiting: 0, withPicker: 0, needsCheck: 0, done: 0, total: rows.length };
+  const c: StatusCounts = {
+    waiting: 0, withPicker: 0, needsCheck: 0, done: 0, dispatched: 0, total: rows.length,
+  };
   for (const r of rows) c[rowStatus(r)]++;
   return c;
 }

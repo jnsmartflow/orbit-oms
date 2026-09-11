@@ -66,6 +66,12 @@ function toStatusCounts(c: TripSummary["counts"]): StatusCounts {
     withPicker: c.withPicker,
     needsCheck: c.picked,
     done: c.checked,
+    // ALWAYS 0 here, and that is correct rather than a gap. `bucketFor`
+    // (lib/trips/queries.ts) already folds `dispatched` into `checked` — a trip
+    // asks "is every bill on this load finished", and shipped and checked are
+    // both yes. The separate Dispatched reading belongs to Floor History, which
+    // is answering a different question about a different day.
+    dispatched: 0,
     total: c.total,
   };
 }

@@ -26,6 +26,7 @@ import {
   PICK_ASSIGNED,
   PICK_DONE,
   PICK_CHECKED,
+  DISPATCHED,
 } from "@/lib/workflow-stages";
 
 /**
@@ -143,7 +144,20 @@ function bucketFor(stage: string): keyof Omit<TripBillCounts, "total"> {
   if (stage === SUPPORT_DONE_OUTPUT) return "waiting";
   if (stage === PICK_ASSIGNED) return "withPicker";
   if (stage === PICK_DONE) return "picked";
-  if (stage === PICK_CHECKED) return "checked";
+  // 🔴 DISPATCHED COUNTS AS CHECKED, AND `isReady` IS WHY (2026-09-11). A
+  // shipped bill passed through checking; it did not stop being finished by
+  // leaving. `isReady` is `counts.total > 0 && counts.checked === counts.total`,
+  // so a dispatched bill landing in `other` would drop `checked` below `total`
+  // and a fully-finished trip would report NOT ready. Worse on screen: the rail
+  // folds `other` into `waiting` (toStatusCounts, trip-rail.tsx), so that trip
+  // would show a fully GREY bar while every bill on it had shipped. Four live
+  // draft trips were in exactly that position when this was written.
+  //
+  // ⚠ THE TWO STAGES ARE NOT MERGED ANYWHERE ELSE. Floor History keeps them
+  // distinct and shows a separate "Dispatched" pill; only this bucket treats
+  // them as one, because the question a trip asks is "is every bill on this load
+  // finished", and both answers to that are yes.
+  if (stage === PICK_CHECKED || stage === DISPATCHED) return "checked";
   return "other";
 }
 

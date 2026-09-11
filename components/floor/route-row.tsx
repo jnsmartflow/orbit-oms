@@ -7,7 +7,7 @@
 
 import { ProgressBar } from "./progress-bar";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
-import { countByStatus, formatLitres, sumLitres } from "./status-pill";
+import { countByStatus, finishedCount, formatLitres, sumLitres } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -92,7 +92,10 @@ export function RouteRow({
         </span>
         <ProgressBar counts={counts} className="max-w-[300px] flex-1 !bg-[#f3f4f6]" />
         <span className="w-[92px] text-right text-[11px] tabular-nums text-gray-700">
-          {counts.done} of {rows.length} done
+          {/* finishedCount, not counts.done (2026-09-11) — a shipped bill is
+              finished and must count here. Identical to counts.done on a live
+              board, where `dispatched` is always 0. */}
+          {finishedCount(counts)} of {rows.length} done
         </span>
       </button>
       {open &&

@@ -1,6 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getISTDayRange } from "@/lib/dates";
+// The terminal stage. Imported, never re-typed as a literal — the invoiced-info
+// arm names it and the pending arm deliberately does not (2026-09-11).
+import { DISPATCHED } from "@/lib/workflow-stages";
 
 /**
  * The workflowStage a bill sits at once the supervisor has approved the pick
@@ -128,9 +131,22 @@ export async function buildBillingInvoicedInfoWhere(
   return {
     AND: [
       {
-        // The SAME stage constant the pending arm uses — never a second
-        // hardcoded literal that can drift from it.
-        workflowStage: BILLING_PENDING_STAGE,
+        // ── WIDENED 2026-09-11 — THIS ARM ONLY ─────────────────────────────
+        // 🔴 THE PENDING ARM AT :66 IS DELIBERATELY NOT WIDENED, and the two
+        // must stay apart. This one is the day's RECORD — informational rows
+        // saying "SAP had already invoiced these when the day was worked" — and
+        // a bill that has since shipped still belongs in that record. The
+        // pending arm is a WORKING LIST: a shipped bill must never reappear on
+        // it for someone to action, which is the boundary the whole change
+        // turns on.
+        //
+        // It costs nothing to leave the pending arm alone here, and it was
+        // measured: ZERO of the 2,763 live `pick_checked` bills are on the
+        // pending list, because every one is already invoiced or marked done.
+        //
+        // ⚠ STILL THE SHARED CONSTANT, spread rather than re-typed — never a
+        // second hardcoded literal that can drift from the pending arm's.
+        workflowStage: { in: [BILLING_PENDING_STAGE, DISPATCHED] },
         // The inversion of the pending arm's `invoiceNo: null`, and the whole
         // point of this helper: SAP has already invoiced this bill.
         invoiceNo: { not: null },

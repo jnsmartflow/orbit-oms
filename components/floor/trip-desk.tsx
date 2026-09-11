@@ -32,7 +32,14 @@ import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
-import { countByStatus, formatLitres, sumLitres, formatWeightKg, sumWeightKg } from "./status-pill";
+import {
+  countByStatus,
+  finishedCount,
+  formatLitres,
+  sumLitres,
+  formatWeightKg,
+  sumWeightKg,
+} from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow } from "@/lib/floor/types";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
@@ -408,10 +415,15 @@ function ByRoute({
     map.set(k, arr);
   }
   const groups = Array.from(map.entries()).sort((a, b) => {
+    // The completion RATIO, worst-first. finishedCount, not `done` alone
+    // (2026-09-11): on a history day a route whose bills had all shipped scored
+    // 0% and floated to the top as the worst route on the board, when it was in
+    // fact the most complete one. Unchanged on a live board — `dispatched` is
+    // always 0 there, so this is byte-for-byte the old ratio.
     const ca = countByStatus(a[1]);
     const cb = countByStatus(b[1]);
-    const pa = ca.total ? ca.done / ca.total : 1;
-    const pb = cb.total ? cb.done / cb.total : 1;
+    const pa = ca.total ? finishedCount(ca) / ca.total : 1;
+    const pb = cb.total ? finishedCount(cb) / cb.total : 1;
     if (pa !== pb) return pa - pb;
     return b[1].length - a[1].length;
   });

@@ -677,14 +677,37 @@ export function FloorTable({
       // meaningless. The panel it opens is view-only: floor-page passes
       // source "history", which suppresses every action (detail-panel's
       // `readOnly`).
+      // 🔴 THIS BRANCH ASKS rowStatus() LIKE EVERY OTHER STATUS SURFACE DOES,
+      // AND IT MUST KEEP DOING SO (fixed 2026-09-11).
+      //
+      // It used to test `row.isChecked` and pass the STRING LITERAL
+      // `status="done"` — the only hardcoded StatusPill status anywhere in the
+      // repo. That bypassed status-pill.tsx's rowStatus(), which is the one
+      // owner of "what state is this row in", so this cell could not learn about
+      // a stage the owner already knew about.
+      //
+      // What that cost: when `dispatched` was added on 2026-09-11 and
+      // getFloorBoard started reporting `isChecked: true` for a shipped bill
+      // (correctly — it was checked on its way out), all 137 rows on 2026-08-10
+      // fell into this branch and rendered a confident green **Done** on bills
+      // that had left the depot. The By-route bar beside them said "65 of 65
+      // done" in slate, because THAT path went through rowStatus. Two surfaces,
+      // one day, two different answers.
+      //
+      // ⚠ DO NOT PUT `row.isChecked` BACK IN THIS TEST. It is not a tidier way
+      // to ask the same question: `isChecked` is TRUE for a dispatched bill, so
+      // testing it here silently re-folds two distinct states into one pill and
+      // reintroduces exactly this bug. Ask `st`.
       let histBody: ReactNode;
-      if (row.isChecked) {
+      if (st === "done" || st === "dispatched") {
         const cAt = asStr(row.checkedAt);
         const lateDays = cAt && target ? diffDays(target, istDay(cAt)) : 0;
         const timeStr = lateDays > 0 ? fmtDateTime(cAt) : hhmm(cAt);
         histBody = (
           <span className="inline-flex items-center gap-1.5">
-            <StatusPill status="done" time={timeStr} />
+            {/* `st`, never a literal. It carries "done" or "dispatched" and the
+                pill's own META owns both labels and both colours. */}
+            <StatusPill status={st} time={timeStr} />
             {lateDays > 0 && (
               <span
                 className={
@@ -698,6 +721,20 @@ export function FloorTable({
           </span>
         );
       } else {
+        // ⚠ "Not completed" IS STILL TRUE HERE, and the reason is worth stating
+        // because the obvious reading is that this branch is now stale.
+        //
+        // The `if` above catches every FINISHED state — checked, and shipped.
+        // What reaches this `else` is only `waiting`, `withPicker` and
+        // `needsCheck`: a bill that was on the board that day and had not been
+        // signed off by the end of it. That is precisely "not completed", and it
+        // stays precisely that however many terminal stages the ladder grows,
+        // BECAUSE the test above asks rowStatus() rather than naming stages.
+        //
+        // A new terminal stage therefore needs one edit — adding it to the `if`
+        // — and this line needs none. Had the `if` kept testing `isChecked`,
+        // every future terminal stage would have silently landed here and been
+        // labelled "Not completed" on work that was finished.
         histBody = <span className={"inline-flex items-center " + chipCls}>Not completed</span>;
       }
       statusCell = (

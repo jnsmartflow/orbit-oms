@@ -152,7 +152,12 @@ export async function GET(
 
     isAssigned: order.workflowStage === "pick_assigned",
     isDone: order.workflowStage === "pick_done",
-    isChecked: order.workflowStage === "pick_checked",
+    // TRUE FOR A DISPATCHED BILL TOO — it passed through checking on its way
+    // out. Same widening getFloorBoard made (lib/floor/queries.ts); the panel
+    // tests `isDispatched` first so the two do not collide.
+    isChecked:
+      order.workflowStage === "pick_checked" || order.workflowStage === "dispatched",
+    isDispatched: order.workflowStage === "dispatched",
     pickerName: order.pickAssignment?.picker?.name ?? null,
     checkedByName: order.pickAssignment?.checkedBy?.name ?? null,
 

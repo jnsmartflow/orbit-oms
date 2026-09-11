@@ -135,11 +135,21 @@ function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: strin
   // the fact that the bill was checked that day"). The labels deliberately
   // match the `"floor"` ladder below so one bill reads the same in both views.
   //
-  // The stage facts themselves are safe to read here: getFloorBoard's history
-  // predicate admits only PICKING_ACTIVE_STAGES, so a row that reaches this
-  // panel is at pending_picking / pick_assigned / pick_done / pick_checked —
-  // never cancelled, and `pick_checked` is terminal for picking.
+  // The stage facts themselves are safe to read here, but the SET IS WIDER THAN
+  // IT WAS (corrected 2026-09-11). This comment used to say the history
+  // predicate "admits only PICKING_ACTIVE_STAGES, so a row that reaches this
+  // panel is at pending_picking / pick_assigned / pick_done / pick_checked" and
+  // that `pick_checked` is terminal. Both halves are now wrong: history reads
+  // FLOOR_HISTORY_STAGES (lib/floor/queries.ts), which spreads that array and
+  // adds `dispatched` — so a fifth stage reaches this panel and it, not
+  // `pick_checked`, is the terminal one. Still never cancelled.
+  //
+  // 🔴 THE DISPATCHED TEST COMES FIRST, for the same reason it does in
+  // rowStatus: getFloorBoard sets `isChecked` true for a shipped bill too (it
+  // was checked on its way out), so a checked-first order would label every
+  // shipped bill "Done" and this arm would never run.
   if (source === "history") {
+    if (d.isDispatched) return { label: "Dispatched", cls: "bg-[#e2e8f0] text-[#334155]" };
     if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
     if (d.isAssigned) return { label: "With picker", cls: "bg-tint-bg text-tint-700" };
