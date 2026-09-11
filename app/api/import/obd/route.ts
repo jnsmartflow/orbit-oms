@@ -491,6 +491,179 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
   }
 }
 
+// ── The no-mail-order fallback ───────────────────────────────────────────────
+
+/**
+ * Release the bills this batch created that NO mail order will ever speak for.
+ *
+ * 🔴 WHY THIS EXISTS, AND WHY IT IS NOT A WORKAROUND. Until 2026-09-11 the ONLY
+ * thing that ever wrote `orders.dispatchStatus` on a new bill was
+ * `applyMailOrderEnrichment` above, copying it off a matching `mo_orders` row.
+ * No mail order meant no status; no status meant the auto-done block never fired
+ * and the engine's own gate declined; and the bill sat at `pending_support`
+ * — a queue for the Support desk, which was retired 2026-07-27 — until a person
+ * noticed it on the floor rail and released it by hand. Measured over the 30
+ * days to 2026-09-10: **zero of 711** unmatched bills were ever auto-dispatched,
+ * while a human released **861** by hand, every working day, median wait 1 hour
+ * and worst wait 32 days. Full diagnosis:
+ * docs/prompts/drafts/code-discovery-2026-09-11-pending-support.md.
+ *
+ * 🔴 THE MATCHER IS NOT BROKEN. DO NOT "FIX" IT. Owner statement 2026-09-11: the
+ * unmatched bills are the **Project, Offtake and Distributor** divisions, which
+ * do not order by mail at all and never will. There is no `mo_orders` row to
+ * find, so this fallback is the CORRECT answer and not a patch over a failing
+ * match. A future session that sets out to make the matcher find these will be
+ * chasing rows that do not exist.
+ *
+ * 🔴 THE SMU GATE IS UNCHANGED AND WILL LEAVE SOME BILLS PERMANENTLY UNSLOTTED.
+ * evaluateDispatchSlot still declines anything that is not `Deco Retail`, so of
+ * the ~23.7 bills a day this releases, about **12.5 a day** get no engine slot
+ * and arrive showing "no slot" on both boards, indefinitely. Measured over the
+ * 30 days to 2026-09-10, by division: Decorative Projects 5.0/day, Retail
+ * Offtake 4.7/day, Distributor 1.4/day, no SMU at all 1.3/day, legacy `Deco`
+ * 0.2/day. That is a BUSINESS RULE, not a bug — widening the gate is an owner
+ * decision and this change deliberately does not take it. The number is recorded
+ * here so the size of it is visible when that decision is made.
+ *
+ * ⚠ RUNS AFTER ENRICHMENT, NEVER INSTEAD OF IT. It only picks up bills still at
+ * `pending_support` with a NULL status once enrichment has had its turn, so a
+ * mail-matched bill is untouched by it. The ordering is what makes that true.
+ *
+ * ⚠ A LATE MAIL ORDER CANNOT HAPPEN, so this does not design around it. Owner
+ * statement 2026-09-11, and confirmed in the data: of 2,498 OBD/mail-order pairs
+ * in the last 30 days, the mail order preceded the OBD in **2,498** of them and
+ * followed it in **zero**. If that ever stops being true, the risk is that a
+ * `hold` intent arriving later finds the bill already released.
+ *
+ * ⚠ TINT ORDERS ARE EXCLUDED. A bill whose shades are still being made must not
+ * reach a picker (FLOOR §4.2). The tint routes release it themselves on
+ * completion — see lib/dispatch/completion-slot.ts.
+ *
+ * ⚠ A HELD BILL IS EXCLUDED BY CONSTRUCTION. `dispatchStatus: null` cannot match
+ * `'hold'`. Holds are genuine working state (owner ruling 2026-09-10) and this
+ * never moves one.
+ *
+ * ⚠ EXACTLY ONE `orders.update` PER BILL — the status, the stage and the slot in
+ * the same write — and exactly ONE `order_status_logs` row. The live-sync
+ * markers key on MAX(orders.updatedAt); a second write fires a false "changed"
+ * on every board in the depot (CORE §3, FLOOR §10, PICKING §10). Sequential
+ * awaits, never prisma.$transaction.
+ */
+async function applyNoMailOrderFallback(obdNumbers: (string | null)[]): Promise<void> {
+  const unique = Array.from(new Set(obdNumbers.filter(Boolean))) as string[];
+  if (unique.length === 0) return;
+
+  // windowTime ("10:30") → dispatch_slot_master.id. Loaded once for the batch,
+  // exactly as applyMailOrderEnrichment does. No hardcoded ids.
+  const activeWindows = await prisma.dispatch_slot_master.findMany({
+    where: { isActive: true },
+    select: { id: true, windowTime: true },
+  });
+  const windowIdByTime = new Map(activeWindows.map((w) => [w.windowTime, w.id]));
+
+  const candidates = await prisma.orders.findMany({
+    where: {
+      obdNumber: { in: unique },
+      workflowStage: "pending_support",
+      dispatchStatus: null,
+      orderType: { not: "tint" },
+      isRemoved: false,
+    },
+    select: {
+      id: true,
+      obdNumber: true,
+      smu: true,
+      orderDateTime: true,
+      obdEmailDate: true,
+      dispatchSlotSource: true,
+      customer: {
+        select: { area: { select: { deliveryType: { select: { name: true } } } } },
+      },
+    },
+  });
+  if (candidates.length === 0) return;
+
+  for (const ord of candidates) {
+    // The slot, when the engine will give one.
+    //
+    // ⚠ A HUMAN'S PICK IS NEVER OVERRIDDEN — the same `dispatchSlotSource ===
+    // "manual"` guard the enrichment loop applies at :344. The floor's own
+    // Change slot writes that source WITHOUT a status (floor/actions:115), so a
+    // bill the desk has already slotted by hand arrives here needing only the
+    // release, and its slot must survive it.
+    let slotData: Record<string, unknown> = {};
+    if (ord.dispatchSlotSource !== "manual") {
+      const clocks = resolveArrivalClocks(ord.orderDateTime, ord.obdEmailDate);
+      const result = evaluateDispatchSlot({
+        smu: ord.smu,
+        // 🔴 NOT A BYPASS OF THE GATE. The engine gates on `dispatchStatus` so it
+        // can never slot a held or cancelled bill, and that gate stays exactly as
+        // it is — lib/floor/suggest.ts reads it too. What is passed here is the
+        // value THIS SAME UPDATE is about to write, on a bill the WHERE clause
+        // above has already proved is not held (`dispatchStatus: null`). Setting
+        // the status first is what makes the gate pass honestly, rather than
+        // removing it.
+        dispatchStatus: "dispatch",
+        deliveryType: ord.customer?.area?.deliveryType?.name ?? null,
+        emailDateTime: clocks.emailDateTime,
+        punchDateTime: clocks.punchDateTime,
+      });
+
+      if (result.assigned) {
+        const dispatchWindowId = windowIdByTime.get(result.windowTime);
+        if (dispatchWindowId !== undefined) {
+          slotData = {
+            dispatchTargetDate: result.targetDate,
+            dispatchWindowId,
+            dispatchSlotRuleId: result.ruleId,
+            dispatchSlotSource: "auto",
+          };
+        } else {
+          console.warn(
+            `[no-mail-fallback] No active dispatch_slot_master row for windowTime=${result.windowTime} — obdNumber=${ord.obdNumber} released with no slot`,
+          );
+        }
+      } else {
+        // 🔴 THE SLOT STAYS NULL. Do NOT invent "today plus the next window".
+        // The four decline reasons are different problems: `smu-not-deco-retail`
+        // is a deliberate business gate (roughly 12 bills a day, the Project /
+        // Offtake / Distributor divisions), while `delivery-type-unhandled` is a
+        // master-data fault a default would hide forever. The bill still goes to
+        // the floor and shows "no slot" on both boards, where it can be worked
+        // and where the gap is visible.
+        console.log(
+          `[no-mail-fallback] obdNumber=${ord.obdNumber} — no slot, engine declined: ${result.reason}`,
+        );
+      }
+    }
+
+    // ONE update: status + stage + slot together.
+    await prisma.orders.update({
+      where: { id: ord.id },
+      data: {
+        dispatchStatus: "dispatch",
+        workflowStage: SUPPORT_DONE_OUTPUT,
+        ...slotData,
+      },
+    });
+
+    // ONE log row, and it says WHICH path released the bill. "Auto-dispatched by
+    // enrichment" would be a lie — no mail order was involved, and the
+    // distinction is the whole reason this function exists.
+    await prisma.order_status_logs.create({
+      data: {
+        orderId: ord.id,
+        fromStage: "pending_support",
+        toStage: SUPPORT_DONE_OUTPUT,
+        changedById: 1, // System action
+        note: "Auto-dispatched on import (no mail order for this bill)",
+      },
+    });
+  }
+
+  console.log(`[no-mail-fallback] Released ${candidates.length} bill(s) with no mail order`);
+}
+
 // ── Effect-firing helpers (consumed by manual-SAP confirm) ───────────────────
 
 /**
@@ -1239,6 +1412,14 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   // ── STEP D1b — Mail-order enrichment hook ─────────────────────────────────
   await applyMailOrderEnrichment(orderInterims.map((o) => o.orderData.soNumber ?? null));
 
+  // ── STEP D1c — the no-mail-order fallback (2026-09-11) ────────────────────
+  // ⚠ KEYED ON obdNumber, NOT soNumber, and that is the point. The enrichment
+  // above can only speak for bills that HAVE an SO number and a matching mail
+  // order; this has to reach the ones that have neither. Runs after it, so a
+  // mail-matched bill is already out of `pending_support` and is not a
+  // candidate.
+  await applyNoMailOrderFallback(orderInterims.map((o) => o.obdNumber));
+
   // ── STEP D2 — Fetch inserted order IDs ───────────────────────────────────
   const insertedOrders = await prisma.orders.findMany({
     where:  { obdNumber: { in: confirmedObdNumbers }, batchId: batch.id },
@@ -1822,6 +2003,18 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
         }
       }
     }
+
+    // ── The no-mail-order fallback (2026-09-11) ──────────────────────────────
+    // AFTER the effect loop, and keyed on obdNumber, because the loop cannot
+    // reach these bills: buildEffects only emits `mail-order-enrichment` when
+    // `soNumberChanged && finalSoNumber` (lib/import-upsert/effects.ts:51), so a
+    // bill with no SO number never triggers an enrichment call at all. Running
+    // the fallback over the whole batch's OBD numbers covers every outcome —
+    // created, patched and unchanged alike — and skips anything enrichment has
+    // already moved out of `pending_support`.
+    await applyNoMailOrderFallback(
+      results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber),
+    );
 
     // Update batch status.
     // - totalObds   = parser-skipped + (created + patched + unchanged + errored)
@@ -3187,6 +3380,12 @@ async function processAutoImportRows(
 
   // ── CONFIRM D1b — Mail-order enrichment hook ──────────────────────────────
   await applyMailOrderEnrichment(autoOrderInterims.map((o) => o.orderData.soNumber ?? null));
+
+  // ── CONFIRM D1c — the no-mail-order fallback (2026-09-11) ─────────────────
+  // Keyed on obdNumber, not soNumber — see the note at the manual-template call
+  // site and the function's own header. 25 of the 32 bills stranded on
+  // 2026-09-11 came through THIS path, not manual SAP.
+  await applyNoMailOrderFallback(autoOrderInterims.map((o) => o.obdNumber));
 
   // ── CONFIRM D2 — Fetch inserted order IDs ─────────────────────────────────
   const insertedOrders = await prisma.orders.findMany({

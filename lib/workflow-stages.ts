@@ -60,6 +60,29 @@ export const STAGE_LADDER: StageDef[] = [
  *  /picking must see only NEW dispatches, not resurrect old 'closed' rows. */
 export const SUPPORT_DONE_OUTPUT = "pending_picking";
 
+/**
+ * The stages a bill may still be PULLED INTO TINTING from (2026-09-11).
+ *
+ * 🔴 IT IS "HAS A PICKER TOUCHED IT YET", NOT "IS IT AT THE DESK". The two
+ * manual-tint-entry routes each hardcoded `workflowStage !== "pending_support"`,
+ * which was the same question while the desk was the only place an un-picked
+ * bill could sit. It stopped being the same question on 2026-09-11, when a
+ * non-tint bill started being released to `pending_picking` on import — after
+ * which almost nothing is at `pending_support` and the old guard would have
+ * refused every bill on the board.
+ *
+ * Both stages here mean nobody has started picking: the desk, and the floor
+ * waiting for a picker. Everything past them — `pick_assigned`, `pick_done`,
+ * `pick_checked`, `dispatched` — means the material is off the shelf and
+ * pulling it into tinting would strand physical work. `cancelled` and the
+ * legacy `closed` are finished. All of those stay refused.
+ *
+ * ⚠ DECLARED HERE, and imported by both call sites, so the two cannot drift.
+ * They were two copies of one literal and that is how they came to be wrong
+ * together.
+ */
+export const MANUAL_TINT_PULLABLE_STAGES: string[] = ["pending_support", "pending_picking"];
+
 /** The stage the (not-yet-built) Assigned button will write. */
 export const PICK_ASSIGNED = "pick_assigned";
 

@@ -484,9 +484,33 @@ function PickingCard({
   // Sort order is deliberately untouched — a red card stays where the spine put
   // it and is never floated or grouped (lib/picking/sort.ts is not involved).
   const dup = row.hasDuplicateSo;
-  const showSlotHero = rich && row.windowTime !== null;
+  // ── NO SLOT (2026-09-11) ───────────────────────────────────────────────────
+  // 🔴 A BILL WITH NO DISPATCH WINDOW CAN NOW REACH THIS BOARD, and until today
+  // one never could: a bill was only released by a human pressing Release, which
+  // always chose a window. From today the importer releases a bill the dispatch
+  // engine declined to slot (about 12 a day — the Project, Offtake and
+  // Distributor divisions, which the engine gates out by SMU), and the owner’s
+  // decision is that it still goes to the floor.
+  //
+  // ⚠ THE CARD ALREADY HANDLED IT, ALMOST. Nothing is dropped: the Assign tab is
+  // a flat list filtered by type and route, partitioned only by zone, and a null
+  // WINDOW is not a null DATE so the row is "due" and sits in Zone 1. The lane
+  // strip counts it (it counts by route). `byWindow` sorts a null window LAST
+  // (compareNullableNumberAsc), so these sink to the bottom of the list, which is
+  // the right place for work nobody has promised a time for.
+  //
+  // The ONE thing that was wrong is that the slot hero rendered NOTHING — a
+  // silent blank where every other card shows a time, which reads as a rendering
+  // fault rather than as a fact. It now says so. No group, no filter, no change
+  // to the board’s shape.
+  const showSlotHero = rich;
+  // The Done tabs caption the card with its window. Same null case as the hero
+  // above (2026-09-11) — a bill released with no slot can now be picked and
+  // checked, and an empty caption would read as missing data.
   const secondary =
-    variant === "doneCheck" || variant === "doneChecked" ? row.windowTime : formatObdDateTime(row.obdDateTime);
+    variant === "doneCheck" || variant === "doneChecked"
+      ? (row.windowTime ?? "no slot")
+      : formatObdDateTime(row.obdDateTime);
 
   // Caption-right cluster by variant. Tint reuses Support's exact indicator
   // (🎨 in purple — components/support/shared/table-cells.tsx CustomerCell) so
@@ -777,9 +801,12 @@ function PickingCard({
             {showSlotHero && (
               <span
                 className="text-[15px] font-semibold tabular-nums shrink-0"
-                style={{ color: dup ? DUP_SO_TEXT : "#475467" }}
+                style={{
+                  color: dup ? DUP_SO_TEXT : row.windowTime === null ? "#98a2b3" : "#475467",
+                }}
+                title={row.windowTime === null ? "No dispatch slot yet" : undefined}
               >
-                {row.windowTime}
+                {row.windowTime ?? "no slot"}
               </span>
             )}
           </div>

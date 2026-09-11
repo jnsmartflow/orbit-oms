@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+// The ONE way a finishing bill gets a slot — shared by all three tint-done
+// routes so they cannot drift (2026-09-11).
+import { resolveCompletionSlot } from "@/lib/dispatch/completion-slot";
 import {
   getIstUsageDate,
   writeUsageLogsForAssignment,
@@ -179,20 +182,49 @@ export async function POST(req: Request): Promise<NextResponse> {
     })();
 
     const hasPresetSlot = order.dispatchWindowId != null && order.dispatchTargetDate != null;
+    // 🔴 A HELD BILL IS NEVER RELEASED BY A TINT COMPLETION. Holds are genuine
+    // working state (owner ruling 2026-09-10) and finishing the paint does not
+    // undo the operator's decision to hold the bill. A held bill therefore keeps
+    // its status and rests at `pending_support`, which is where `isSupportDone`
+    // expects a held bill to sit (hold is not a stage — lib/workflow-stages.ts).
+    // base-bypass/route.ts:207 already warned that writing `dispatchStatus` on
+    // this branch "would stamp on a Hold"; this is that warning, honoured.
+    //
+    // Zero tint bills are held right now (measured 2026-09-11), but the state is
+    // reachable — the floor can hold a bill and the tint desk can pull a held
+    // bill in — so the guard is real, not defensive decoration.
+    const isHeld = order.dispatchStatus === "hold";
 
+    // ── WHAT CHANGED, 2026-09-11 ─────────────────────────────────────────────
+    // 🔴 A FINISHED TINT BILL NOW GOES STRAIGHT TO THE SUPERVISOR, slot or no
+    // slot. It used to land at `pending_support` whenever no slot had been
+    // pre-set, and nothing released it from there — 231 bills a month, 205 of
+    // which a person released by hand off the floor rail. Owner decision
+    // 2026-09-11: "after tinting is done it goes straight to the supervisor".
+    //
+    // ⚠ WITHOUT A PRESET SLOT THE ENGINE RUNS ON THE COMPLETION TIME, and if it
+    // declines the slot stays NULL and the bill still goes. A bill with no slot
+    // shows "no slot" on both boards and can be worked; a bill with an invented
+    // slot cannot. See lib/dispatch/completion-slot.ts.
+    const completionSlot =
+      !isHeld && !hasPresetSlot ? await resolveCompletionSlot(orderId, now) : null;
+
+    // ONE orders.update — the stage, the status and the slot together. The
+    // live-sync markers key on MAX(orders.updatedAt) (CORE §3, PICKING §10).
     await prisma.orders.update({
       where: { id: orderId },
-      data: hasPresetSlot
+      data: isHeld
         ? {
-            workflowStage: SUPPORT_DONE_OUTPUT,
-            dispatchStatus: "dispatch",
+            workflowStage: "pending_support",
             slotId: completionSlotId,
             originalSlotId: completionSlotId,
           }
         : {
-            workflowStage: "pending_support",
+            workflowStage: SUPPORT_DONE_OUTPUT,
+            dispatchStatus: "dispatch",
             slotId: completionSlotId,
             originalSlotId: completionSlotId,
+            ...(completionSlot ?? {}),
           },
     })
 
@@ -210,11 +242,18 @@ export async function POST(req: Request): Promise<NextResponse> {
       data: {
         orderId,
         fromStage:   "tinting_in_progress",
-        toStage:     hasPresetSlot ? SUPPORT_DONE_OUTPUT : "pending_support",
+        toStage:     isHeld ? "pending_support" : SUPPORT_DONE_OUTPUT,
         changedById: userId,
-        note:        hasPresetSlot
-          ? "Auto-dispatched on tint completion (operator pre-set slot)"
-          : "Tinting completed — moved to support queue",
+        // The note says WHICH of the three outcomes happened, because they are
+        // genuinely different facts and the old "moved to support queue" now
+        // describes only the held one.
+        note:        isHeld
+          ? "Tinting completed — bill is on hold, left at the desk"
+          : hasPresetSlot
+            ? "Auto-dispatched on tint completion (operator pre-set slot)"
+            : completionSlot
+              ? "Auto-dispatched on tint completion (slot from completion time)"
+              : "Auto-dispatched on tint completion (no slot — engine declined)",
       },
     })
 

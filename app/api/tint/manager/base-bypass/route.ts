@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+// The ONE way a finishing bill gets a slot — shared by all three tint-done
+// routes so they cannot drift (2026-09-11).
+import { resolveCompletionSlot } from "@/lib/dispatch/completion-slot";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 import { BASE_OPERATOR_EMAIL, getBaseOperatorId } from "@/lib/tint/base-operator";
 
@@ -92,6 +95,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       customerMissing:    true,
       dispatchWindowId:   true,
       dispatchTargetDate: true,
+      dispatchStatus:     true,
     },
   });
   if (!order) {
@@ -169,12 +173,16 @@ export async function POST(req: Request): Promise<NextResponse> {
     return 4;
   })();
 
-  // Same branch as done/route.ts:181. A slot pre-set at the desk (Floor's
-  // change-slot) means the bill has already been decided for a dispatch window,
-  // so completion flips it straight to Dispatch rather than returning it to the
-  // Floor rail. CLAUDE_TINT.md §2.
+  // Same three-way rule as done/route.ts — read that file's comment block for
+  // why. A bypass IS a completion: the bill's paint is settled, so it goes to
+  // the supervisor like any other finished tint bill.
+  //
+  // 🔴 A HELD BILL IS NEVER RELEASED BY A BYPASS. This file's own comment at the
+  // update below used to warn that writing `dispatchStatus` here "would stamp on
+  // a Hold". That warning is now honoured explicitly instead of by omission.
   const hasPresetSlot = order.dispatchWindowId != null && order.dispatchTargetDate != null;
-  const nextStage = hasPresetSlot ? SUPPORT_DONE_OUTPUT : "pending_support";
+  const isHeld = order.dispatchStatus === "hold";
+  const nextStage = isHeld ? "pending_support" : SUPPORT_DONE_OUTPUT;
   const now = new Date();
 
   // ── 4a. The completed assignment row ───────────────────────────────────────
@@ -205,24 +213,26 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // ── 4b. Advance the order ──────────────────────────────────────────────────
-  // Identical field set to done/route.ts:183-197. On the no-preset branch
-  // `dispatchStatus` is deliberately NOT written — done leaves it alone there,
-  // and clearing or setting it would stamp on a Hold or on a value enrichment
-  // put there.
+  // Identical field set to done/route.ts. `dispatchStatus` is written on the
+  // released branch and deliberately LEFT ALONE on the held one — see `isHeld`
+  // above. ONE orders.update; the markers key on MAX(orders.updatedAt).
+  const completionSlot =
+    !isHeld && !hasPresetSlot ? await resolveCompletionSlot(orderId, now) : null;
   try {
     await prisma.orders.update({
       where: { id: orderId },
-      data: hasPresetSlot
+      data: isHeld
         ? {
-            workflowStage:  SUPPORT_DONE_OUTPUT,
-            dispatchStatus: "dispatch",
+            workflowStage:  "pending_support",
             slotId:         completionSlotId,
             originalSlotId: completionSlotId,
           }
         : {
-            workflowStage:  "pending_support",
+            workflowStage:  SUPPORT_DONE_OUTPUT,
+            dispatchStatus: "dispatch",
             slotId:         completionSlotId,
             originalSlotId: completionSlotId,
+            ...(completionSlot ?? {}),
           },
     });
   } catch (err) {

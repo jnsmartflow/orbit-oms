@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { MANUAL_TINT_PULLABLE_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -129,10 +130,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return err("ALREADY_TINT", "This OBD is already in the tint workflow", 400);
   }
 
-  if (order.workflowStage !== "pending_support") {
+  // ── WIDENED 2026-09-11 ─────────────────────────────────────────────────────
+  // 🔴 THIS READ `!== "pending_support"` AND WOULD HAVE BROKEN THE WHOLE SCREEN.
+  // From today a non-tint bill is released to `pending_picking` the moment it is
+  // imported (the no-mail-order fallback in app/api/import/obd/route.ts), so
+  // almost NO bill is at `pending_support` any more and manual tint entry would
+  // have found nothing to pull in.
+  //
+  // ⚠ THE REAL QUESTION THIS GUARD ASKS IS "HAS A PICKER TOUCHED IT YET", and
+  // `pending_support` was only ever a proxy for that. Both stages below mean
+  // nobody has: `pending_support` is the desk, `pending_picking` is on the floor
+  // and waiting. Every later stage — pick_assigned, pick_done, pick_checked,
+  // dispatched — means the material is off the shelf, and cancelled/closed mean
+  // the bill is finished. All of those are still refused, which is the safety
+  // this guard was actually providing.
+  //
+  // ⚠ STILL SAFE because the two checks above it do the heavy lifting: the bill
+  // must exist and must be `orderType: "non_tint"`, so a bill already in the
+  // tint workflow can never reach here whatever its stage.
+  if (!MANUAL_TINT_PULLABLE_STAGES.includes(order.workflowStage)) {
     return err(
       "PAST_TINT",
-      "This OBD has moved past the support stage and cannot be pulled into tinting",
+      "This OBD has already been picked and cannot be pulled into tinting",
       400,
     );
   }
@@ -225,7 +244,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await prisma.order_status_logs.create({
       data: {
         orderId:     order.id,
-        fromStage:   "pending_support",
+        // The bill's REAL prior stage (2026-09-11). It was hardcoded
+        // "pending_support", which was true while that was the only pullable
+        // stage and is a lie now that `pending_picking` is one too — and a
+        // wrong `fromStage` is exactly what makes an audit trail useless.
+        fromStage:   order.workflowStage,
         toStage:     "pending_tint_assignment",
         changedById: performedById,
         note:

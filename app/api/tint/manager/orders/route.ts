@@ -8,6 +8,7 @@ import { getHideExclusion } from "@/lib/hide/visibility";
 import { aggregateArticleTags } from "@/lib/article-tag-parse";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -231,12 +232,35 @@ export async function GET(): Promise<NextResponse> {
       }),
 
       // Set B — completed today (legacy, kept for split-builder existingSplits)
+      //
+      // ── WIDENED 2026-09-11 ──────────────────────────────────────────────
+      // 🔴 THIS READ `workflowStage: "pending_support"` AND WOULD HAVE GONE
+      // EMPTY. From today a finished tint bill goes straight to
+      // `pending_picking` whether or not a slot was pre-set
+      // (tint/operator/done and its two siblings), so nothing would have
+      // landed in the stage this set was keyed on.
+      //
+      // ⚠ THE STAGE TERM WAS ALWAYS A PROXY. The predicate that actually
+      // answers "which tint OBDs finished today" is the `tintAssignments`
+      // clause below, on `status: "tinting_done"` and today's `completedAt`.
+      // The stage term is kept, widened, only to preserve the other thing it
+      // was doing: EXCLUDING a bill a picker has since taken. A completion
+      // that is now pick_assigned or beyond is still out.
+      //
+      // ⚠ THIS SET GREW. A bill that auto-flipped to `pending_picking` on a
+      // pre-set slot was previously excluded — the note at the articleTag
+      // mapping below records that — and is now included. Safe: Set B rows
+      // never render as cards (rows.ts's orderStatus() returns null for
+      // anything not at tint_assigned / tinting_in_progress, and buildRail
+      // takes only pending_tint_assignment), and the remainingQty loop that
+      // reads them is counting "this OBD's work is accounted for", which is
+      // equally true of a pre-set-slot completion.
       prisma.orders.findMany({
         where: {
           AND: [
             {
               orderType:     "tint",
-              workflowStage: "pending_support",
+              workflowStage: { in: ["pending_support", SUPPORT_DONE_OUTPUT] },
               isRemoved:     false,
               tintAssignments: {
                 some: {
@@ -817,6 +841,8 @@ export async function GET(): Promise<NextResponse> {
       // (Set B only picks up completions that landed at `pending_support`, so a
       // bill that auto-flipped to `pending_picking` on a pre-set slot is in this
       // set and not that one). Same typed-string shape either way.
+      // ⚠ As of 2026-09-11 Set B admits BOTH stages, so the parenthetical above
+      // describes why the fallback exists rather than which set a bill is in.
       soNumber:         a.order.soNumber ?? null,
       route:            (a.order as any).customer?.area?.primaryRoute?.name ?? null,
       articleTag:       (a.order as any).querySnapshot?.articleTag ?? null,

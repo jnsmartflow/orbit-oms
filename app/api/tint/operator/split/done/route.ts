@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+// The ONE way a finishing bill gets a slot — shared by all three tint-done
+// routes so they cannot drift (2026-09-11).
+import { resolveCompletionSlot } from "@/lib/dispatch/completion-slot";
 
 export const dynamic = "force-dynamic";
 
@@ -186,25 +189,42 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (activeCount > 0 && doneCount === activeCount) {
       const parent = await prisma.orders.findUnique({
         where:  { id: parentOrderId },
-        select: { workflowStage: true, dispatchWindowId: true, dispatchTargetDate: true },
+        select: {
+          workflowStage: true, dispatchWindowId: true, dispatchTargetDate: true,
+          dispatchStatus: true,
+        },
       });
       if (parent?.workflowStage === "tinting_in_progress") {
         const hasPresetSlot = parent.dispatchWindowId != null && parent.dispatchTargetDate != null;
+        // Same three-way rule as tint/operator/done — read that file's comment
+        // block for why. 🔴 A HELD BILL IS NEVER RELEASED BY A COMPLETION.
+        const isHeld = parent.dispatchStatus === "hold";
+        const completionSlot =
+          !isHeld && !hasPresetSlot ? await resolveCompletionSlot(parentOrderId, new Date()) : null;
+
         await prisma.orders.update({
           where: { id: parentOrderId },
-          data:  hasPresetSlot
-            ? { workflowStage: SUPPORT_DONE_OUTPUT, dispatchStatus: "dispatch" }
-            : { workflowStage: "pending_support" },
+          data:  isHeld
+            ? { workflowStage: "pending_support" }
+            : {
+                workflowStage: SUPPORT_DONE_OUTPUT,
+                dispatchStatus: "dispatch",
+                ...(completionSlot ?? {}),
+              },
         });
         await prisma.order_status_logs.create({
           data: {
             orderId:     parentOrderId,
             fromStage:   "tinting_in_progress",
-            toStage:     hasPresetSlot ? SUPPORT_DONE_OUTPUT : "pending_support",
+            toStage:     isHeld ? "pending_support" : SUPPORT_DONE_OUTPUT,
             changedById: 1,
-            note:        hasPresetSlot
-              ? "Auto-dispatched on tint completion (operator pre-set slot)"
-              : "Auto-advanced: all splits tinting_done",
+            note:        isHeld
+              ? "All splits tinting_done — bill is on hold, left at the desk"
+              : hasPresetSlot
+                ? "Auto-dispatched on tint completion (operator pre-set slot)"
+                : completionSlot
+                  ? "Auto-dispatched on tint completion (slot from completion time)"
+                  : "Auto-dispatched on tint completion (no slot — engine declined)",
           },
         });
       }
