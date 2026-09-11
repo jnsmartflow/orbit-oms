@@ -23,6 +23,7 @@ export function BillingTabBar({
   onChange,
   ordersCount,
   rightSlot,
+  showPicking = true,
 }: {
   active: BillingTab;
   onChange: (tab: BillingTab) => void;
@@ -40,6 +41,28 @@ export function BillingTabBar({
    * Omitted → the live caption keeps the right edge, exactly as before.
    */
   rightSlot?: React.ReactNode;
+  /**
+   * Does this viewer hold `billing_picking`/canView? (2026-09-11.)
+   * 🔴 The BILLING Picking tab's key, not the floor board's `picking`.
+   *
+   * FALSE means two things, and BOTH matter:
+   *   1. no Picking pill — the row is Orders plus `rightSlot`;
+   *   2. NO REQUEST TO THE MARKER ENDPOINT, ever. The count fetch below runs on
+   *      mount and again on every marker tick, independently of which tab is
+   *      open, because the badge has to stay live while the operator works in
+   *      Orders. Ungated, a viewer without the key would sit here collecting a
+   *      403 every 30 seconds for their whole shift.
+   *
+   * The shared provider (billing-marker-provider.tsx) is disabled for the same
+   * viewer by mail-orders-page.tsx, which stops the POLL. This prop stops the
+   * bar's own mount-time fetch, which that provider does not own. Both are
+   * needed; neither is sufficient.
+   *
+   * Defaults TRUE so the prop is purely additive — the bar behaves exactly as
+   * it did for every existing caller. The one live caller (review-view.tsx)
+   * always passes it explicitly.
+   */
+  showPicking?: boolean;
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   // Guards against a late response from a superseded request overwriting a
@@ -47,6 +70,12 @@ export function BillingTabBar({
   const reqRef = useRef(0);
 
   const refreshCount = useCallback(async () => {
+    // 🔴 THE GUARD THAT KEEPS A NON-HOLDER OFF THE WIRE. Checked here rather
+    // than at each of the two call sites (the mount effect and the marker
+    // subscription) so there is ONE place to be wrong. `showPicking` is in the
+    // dependency list, so a grant arriving mid-session starts the count on the
+    // next render rather than needing a reload.
+    if (!showPicking) return;
     const seq = ++reqRef.current;
     try {
       const res = await fetch(MARKER_URL, { cache: "no-store" });
@@ -58,7 +87,7 @@ export function BillingTabBar({
       // Silent, like the marker hook itself — this runs all day and a blip
       // must not produce a toast or a console full of noise.
     }
-  }, []);
+  }, [showPicking]);
 
   useEffect(() => {
     void refreshCount();
@@ -108,7 +137,12 @@ export function BillingTabBar({
   return (
     <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
       {pill("orders", "Orders", ordersCount, false)}
-      {pill("picking", "Picking", pendingCount, true)}
+      {/* Gated on `billing_picking`/canView (2026-09-11). Without it the row is
+          Orders plus `rightSlot` — still the right shape, because this bar also
+          carries the date stepper, Filter and shortcuts on the billing face.
+          ⚠ The pill is a SIBLING inside the existing flex row, not wrapped in a
+          new div (§23.1), so the granted layout is byte-identical. */}
+      {showPicking && pill("picking", "Picking", pendingCount, true)}
       {/* ⚠ `ml-auto` lives HERE now. It used to sit on a caption span that ran
           between the pills and this slot; removing that span without moving the
           class would have left the controls butted against the Picking pill

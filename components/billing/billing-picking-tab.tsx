@@ -97,7 +97,32 @@ function formatDayLabel(dateStr: string): string {
   });
 }
 
-export function BillingPickingTab({ date }: { date?: string }) {
+export function BillingPickingTab({
+  date,
+  canEdit = true,
+}: {
+  date?: string;
+  /**
+   * Does this viewer hold `billing_picking`/canEdit? (2026-09-11.)
+   * 🔴 The BILLING Picking tab's key, not the floor board's `picking`.
+   *
+   * FALSE HIDES Mark done (bulk bar and detail panel) and Undo. HIDDEN, never
+   * disabled — CLAUDE_UI §10: hidden says "not yours", a ROLE fact; disabled
+   * says "not yet", a STATE fact. MRN learned this the hard way when
+   * `operations` was offered a Delete that came back "Forbidden" — the route
+   * was right, offering the button was the bug.
+   *
+   * Selection, Copy OBDs and the detail panel all stay: they read and copy, and
+   * a view-only holder is here to see what is waiting and hand the OBDs on.
+   *
+   * ⚠ NOT AUTHORISATION. mark-done and undo re-check billing_picking/canEdit
+   * server-side and that is what actually refuses the write.
+   *
+   * Defaults TRUE so the prop is additive — every existing caller behaves as
+   * before. The one live caller (review-view.tsx) passes it explicitly.
+   */
+  canEdit?: boolean;
+}) {
   const [data, setData] = useState<BillingPickingList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -461,6 +486,7 @@ export function BillingPickingTab({ date }: { date?: string }) {
                     row={row}
                     busy={busy}
                     isToday={isToday}
+                    canEdit={canEdit}
                     onUndo={() => undo(row.id)}
                   />
                 ))}
@@ -513,14 +539,20 @@ export function BillingPickingTab({ date }: { date?: string }) {
             >
               {copied ? "Copied" : "Copy OBDs"}
             </button>
-            <button
-              type="button"
-              onClick={markDone}
-              disabled={busy}
-              className="inline-flex h-[34px] items-center gap-2 rounded-md border border-gray-300 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {busy ? "Marking…" : "Mark done"}
-            </button>
+            {/* HIDDEN without billing_picking/canEdit, not disabled (§10 — and
+                the prop's own note above). Copy OBDs above stays either way:
+                it writes nothing, and copying the list on is exactly what a
+                view-only holder is here to do. */}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={markDone}
+                disabled={busy}
+                className="inline-flex h-[34px] items-center gap-2 rounded-md border border-gray-300 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {busy ? "Marking…" : "Mark done"}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -537,6 +569,10 @@ export function BillingPickingTab({ date }: { date?: string }) {
         <BillingOrderDetailPanel
           key={detailOrderId}
           orderId={detailOrderId}
+          // Threaded from this tab rather than read from context in the panel:
+          // the panel's Mark done is the SAME action as the bulk bar's, so the
+          // two must be hidden and shown by the same value. One source.
+          canEdit={canEdit}
           onClose={() => setDetailOrderId(null)}
           onMarkedDone={handleDetailMarkedDone}
         />
@@ -721,12 +757,15 @@ function DoneRow({
   row,
   busy,
   isToday,
+  canEdit,
   onUndo,
 }: {
   row: BillingDoneRow;
   busy: boolean;
   /** Undo is a today-only server action — see the Undo cell below. */
   isToday: boolean;
+  /** `billing_picking`/canEdit. False hides Undo entirely — see the Undo cell. */
+  canEdit: boolean;
   onUndo: () => void;
 }) {
   const info = row.kind === "invoiced";
@@ -792,8 +831,11 @@ function DoneRow({
             `isToday` closes the other half. The server's undo window is TODAY
             (undo/route.ts:77) and that scope is deliberate — so on a stepped-
             back day the button would post, match zero rows and report "0 of 1
-            updated". A control that cannot work must not be offered. */}
-        {!info && isToday && row.invoiceNo === null && (
+            updated". A control that cannot work must not be offered.
+            `canEdit` is the fourth term and the only one that is about the
+            PERSON rather than the row: without billing_picking/canEdit the
+            server refuses the undo, so the link must not be there to click. */}
+        {canEdit && !info && isToday && row.invoiceNo === null && (
           <button
             type="button"
             onClick={onUndo}

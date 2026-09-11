@@ -26,8 +26,9 @@ export const dynamic = "force-dynamic";
  * out to avoid (CLAUDE_MAIL_ORDERS §23.3); this route is the third instance of
  * the same call, not a new pattern.
  * It also carries ship-to/slot/override/activity facts this panel has no
- * controls for. Gate: `mail_orders`/canView, identical to the list route
- * beside it, so anyone who can see the list can open a row on it.
+ * controls for. Gate: `billing_picking`/canView (was `mail_orders` until
+ * 2026-09-11), identical to the list route beside it, so anyone who can see the
+ * list can open a row on it.
  *
  * ── WHAT IT DELIBERATELY DOES NOT DO ───────────────────────────────────────
  * 🔴 CONFIRMED FINDINGS ONLY — `recordedById: { not: null }`. A PENDING finding
@@ -52,9 +53,15 @@ export async function GET(
   }
 
   // The SAME gate as app/api/billing/picking/list/route.ts — admin bypass, else
-  // mail_orders/canView. NOT floor/canView; see the block comment above.
+  // billing_picking/canView (was mail_orders/canView until 2026-09-11).
+  //
+  // ⚠ STILL NOT `floor`/canView, and that is what the block comment above is
+  // about: this route exists precisely because reusing /api/floor/order/[orderId]
+  // would 403 for the billing operators, who hold no `floor`. Repointing the key
+  // does not soften that — the reason simply moved from one billing key to a
+  // narrower one. And it is NOT the floor board's `picking` either.
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
+  const allowed = await checkAnyPermission(roles, "billing_picking", "canView");
   if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -72,7 +79,7 @@ export async function GET(
   // the list handed over. Duplicating buildBillingPendingWhere() would mean a
   // row that is legitimately rendered (an already-invoiced info row, say, if a
   // later step makes those clickable) opening onto a 404. The payload is
-  // read-only and reveals nothing an operator with mail_orders/canView cannot
+  // read-only and reveals nothing a holder of billing_picking/canView cannot
   // already see on the list.
   const order = await prisma.orders.findFirst({
     where: { id: orderId, isRemoved: false },

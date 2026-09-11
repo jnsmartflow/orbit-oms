@@ -88,10 +88,30 @@ function fmtDateTime(iso: string | null): string {
 
 export function BillingOrderDetailPanel({
   orderId,
+  canEdit = true,
   onClose,
   onMarkedDone,
 }: {
   orderId: number;
+  /**
+   * Does this viewer hold `billing_picking`/canEdit? (2026-09-11.)
+   * 🔴 The BILLING Picking tab's key, not the floor board's `picking`.
+   *
+   * FALSE hides Mark done. HIDDEN, not disabled (CLAUDE_UI §10). Everything
+   * else on this panel stays: it is a READ-ONLY view of the bill's lines and
+   * its confirmed shortages, which is precisely what a view-only holder is
+   * here for.
+   *
+   * ⚠ This matters more here than on the bulk bar. A bill carrying a confirmed
+   * finding renders NO checkbox on the list, so this panel is the ONLY path to
+   * marking it done — hiding the button here is what makes a view-only grant
+   * actually view-only rather than "view-only except for flagged bills".
+   *
+   * Defaults TRUE so the prop is additive. The one live caller
+   * (billing-picking-tab.tsx) passes its own `canEdit` straight through, so the
+   * button and the bulk bar's can never disagree.
+   */
+  canEdit?: boolean;
   onClose: () => void;
   /**
    * Fired AFTER the server has acknowledged the mark-done write for this bill.
@@ -306,14 +326,19 @@ export function BillingOrderDetailPanel({
                 on a bill the write would refuse. Also shown while an
                 actionError stands, so the "already moved on" message survives
                 the refetch that flips isPending false. */}
-            {(detail.isPending || actionError) && (
+            {/* `canEdit &&` on the isPending term, NOT on the whole strip: an
+                actionError must still be able to show. It cannot arise for a
+                view-only holder today (they can never press the button), but
+                tying the message's visibility to the permission would make the
+                strip lie the moment some other action writes into it. */}
+            {((canEdit && detail.isPending) || actionError) && (
               <div className="flex items-center gap-3 border-t border-gray-200 bg-white px-5 py-[11px]">
                 {actionError && (
                   <span className="min-w-0 flex-1 text-[11px] leading-snug text-amber-700">
                     {actionError}
                   </span>
                 )}
-                {detail.isPending && (
+                {canEdit && detail.isPending && (
                   /* The SAME ghost styling as the bulk bar's Mark done
                      (billing-picking-tab.tsx). One action, one look, wherever
                      it is reached from. Not teal: on this screen teal means the

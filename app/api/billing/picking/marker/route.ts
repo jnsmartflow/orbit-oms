@@ -58,8 +58,16 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   // Same gate as the list route — this endpoint is reachable directly by URL
   // and reflects real depot data.
+  //
+  // 🔴 `billing_picking` since 2026-09-11 (was `mail_orders`), and NOT the floor
+  // board's `picking`. This one matters more than it looks: the tab bar polls
+  // this route every 30s to keep the Picking badge live WHILE THE OPERATOR IS
+  // ON THE ORDERS TAB, so before the client was gated too, a non-holder's
+  // browser would have sat here collecting 403s all day. The provider that owns
+  // that poll is now mounted only for holders
+  // (components/billing/billing-marker-provider.tsx).
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
+  const allowed = await checkAnyPermission(roles, "billing_picking", "canView");
   if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

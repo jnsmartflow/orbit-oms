@@ -89,6 +89,30 @@ interface ReviewViewProps {
   billingV2?: boolean;
   billingTab?: BillingTab;
   onBillingTabChange?: (tab: BillingTab) => void;
+  /**
+   * The Picking tab's own permission (2026-09-11). 🔴 `billing_picking` — the
+   * BILLING Picking tab — and NOT the floor board's `picking` key.
+   *
+   * FALSE hides the Picking PILL and the Picking BODY, and the pill's live
+   * count is never fetched. The tab bar itself still renders with Orders alone,
+   * because it also carries the date stepper, Filter and the shortcuts popover
+   * (`billingHeaderSlot`) — removing the row would strip the billing face of
+   * its only date control, which is the bug the zero-order shell mount at
+   * mail-orders-page.tsx already exists to avoid.
+   *
+   * Defaults FALSE so a caller that omits it renders no Picking tab at all —
+   * the same fail-closed default the server resolvers use.
+   */
+  billingPickingCanView?: boolean;
+  /**
+   * May Mark done / Undo. FALSE hides both controls (HIDDEN, not disabled —
+   * CLAUDE_UI §10: hidden means "not yours", disabled means "not yet"). Copy
+   * OBDs stays, it writes nothing. Meaningless without `billingPickingCanView`.
+   *
+   * ⚠ This only stops the screen OFFERING the action. The real lock is
+   * billing_picking/canEdit on mark-done and undo, server-side.
+   */
+  billingPickingCanEdit?: boolean;
   /** Phase 2 — reload the order list after a billing action writes mo_orders. */
   onBillingActionSaved?: () => void;
   /**
@@ -535,6 +559,8 @@ export function ReviewView({
   billingV2 = false,
   billingTab = "orders",
   onBillingTabChange,
+  billingPickingCanView = false,
+  billingPickingCanEdit = false,
   onBillingActionSaved,
   billingHeaderSlot,
   hasHeaderFilter = false,
@@ -2801,12 +2827,24 @@ export function ReviewView({
               onChange={onBillingTabChange}
               ordersCount={pendingActionCount}
               rightSlot={billingHeaderSlot}
+              // 🔴 GATE 1 OF 2 — the Picking PILL, and the count fetch behind
+              // it. False → the row renders with Orders alone and the bar makes
+              // no request at all. The other gate is the tab BODY, immediately
+              // below; both read this same prop, so a pill can never lead to a
+              // pane the viewer may not see, and a body can never mount without
+              // a pill to reach it.
+              showPicking={billingPickingCanView}
             />
           </div>
         )}
 
-        {billingV2 && billingTab === "picking" ? (
-          <BillingPickingTab date={selectedDate} />
+        {billingV2 && billingPickingCanView && billingTab === "picking" ? (
+          /* GATE 2 OF 2 — the Picking BODY. The `billingPickingCanView` term is
+             belt-and-braces on top of the parent's derived tab (which already
+             forces "orders" without the key): this is the component that fetches
+             the list and renders the bills, so it carries its own check rather
+             than trusting a prop computed a file away. */
+          <BillingPickingTab date={selectedDate} canEdit={billingPickingCanEdit} />
         ) : billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing

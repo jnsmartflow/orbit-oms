@@ -79,10 +79,17 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   // Same gate shape as app/api/picking/marker/route.ts. Stricter than the
   // legacy session-only /api/mail-orders routes on purpose — new routes get
-  // real gating. The operations-only pilot is enforced by the UI feature flag,
-  // not here; this route stays on mail_orders/canView.
+  // real gating.
+  //
+  // 🔴 `billing_picking`, NOT `mail_orders` (repointed 2026-09-11) and NOT the
+  // floor board's `picking`. The Picking tab rode on `mail_orders` from its
+  // build until now, which meant it could not be granted or revoked apart from
+  // the Orders tab — the whole reason the key exists. Every active holder was
+  // granted the new key BEFORE this line moved, so nobody lost the tab.
+  // The Orders-side routes (/api/billing/mail-order/actions, /ship-to-search,
+  // /dispatch-windows) stay on `mail_orders`; do not sweep them up.
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "mail_orders", "canView");
+  const allowed = await checkAnyPermission(roles, "billing_picking", "canView");
   if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

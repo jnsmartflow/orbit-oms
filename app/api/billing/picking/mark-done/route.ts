@@ -49,13 +49,24 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // canEdit, NOT canView — this is a write. A view-only role (tint_manager has
-  // mail_orders canView but canEdit false) must not be able to invoice. The
-  // read routes (list / marker) stay on canView. Admin bypass lives inside
-  // checkAnyPermission, so no wrapper is needed — same shape as
-  // app/api/picking/approve/route.ts.
+  // canEdit, NOT canView — this is a write. Somebody granted the tab read-only
+  // must not be able to invoice. The read routes (list / marker / order) stay
+  // on canView. Admin bypass lives inside checkAnyPermission, so no wrapper is
+  // needed — same shape as app/api/picking/approve/route.ts.
+  //
+  // 🔴 `billing_picking`/canEdit since 2026-09-11 (was `mail_orders`/canEdit),
+  // and NOT the floor board's `picking`. This gate is THE lock on invoicing: the
+  // screen hides Mark done and Undo without canEdit, but hiding a button is a
+  // courtesy and this line is the refusal.
+  //
+  // ⚠ The parenthetical this comment used to carry — "tint_manager has
+  // mail_orders canView but canEdit false" — was WRONG on the live data: a
+  // SELECT on 2026-09-01 showed tint_manager holding canEdit=true, and
+  // CLAUDE_MAIL_ORDERS §22 was corrected to match. There is no view-only holder
+  // of either key today, so this branch has never actually refused anybody.
+  // Do not treat it as dead code — it is what makes a view-only grant possible.
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "mail_orders", "canEdit");
+  const allowed = await checkAnyPermission(roles, "billing_picking", "canEdit");
   if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

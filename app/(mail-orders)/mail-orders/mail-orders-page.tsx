@@ -15,6 +15,7 @@ import { ReviewView } from "./review-view";
 import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
+import { useBillingPickingAccess } from "@/components/billing/billing-picking-access-provider";
 import { BillingMarkerProvider } from "@/components/billing/billing-marker-provider";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useInitialNotesFontSize } from "@/components/mail-orders/notes-font-size-provider";
@@ -218,7 +219,19 @@ export default function MailOrdersPage() {
   // ReviewView so the chosen tab survives that component re-mounting.
   // `billingTab` is not persisted: a reload lands back on Orders.
   const billingV2 = useBillingV2();
+  // ── Billing Picking tab access (2026-09-11) ─────────────────────────────────
+  // Resolved server-side in layout.tsx off the permission map it already had,
+  // and couriered down — no fetch here. 🔴 `billing_picking`, the BILLING tab;
+  // NOT the floor board's `picking` key.
+  const { canView: canViewPicking, canEdit: canEditPicking } = useBillingPickingAccess();
   const [billingTab, setBillingTab] = useState<BillingTab>("orders");
+  // The tab actually rendered. A viewer without the key can never be on Picking,
+  // whatever `billingTab` holds — derived rather than corrected in an effect, so
+  // there is no frame where the Picking body is mounted for someone who may not
+  // see it, and no setState-during-render. State itself is left alone: if the
+  // grant is restored the operator lands back where they were.
+  const effectiveBillingTab: BillingTab =
+    billingTab === "picking" && !canViewPicking ? "orders" : billingTab;
   // ── Notes-band text size (per user, px) ─────────────────────────────────────
   // Seeded from the value the layout resolved server-side for THIS user, so the
   // band paints at the stored size on first frame — no default-then-snap flash.
@@ -1344,7 +1357,20 @@ export default function MailOrdersPage() {
         // it is an inert pass-through — so the non-billing tree is unchanged.
         // Mounted HERE rather than inside review-view.tsx to keep that shared
         // component untouched (§23.1).
-        <BillingMarkerProvider enabled={billingV2} date={selectedDate}>
+        //
+        // 🔴 `&& canViewPicking` (2026-09-11) IS THE WHOLE "no polling for a
+        // non-holder" REQUIREMENT. This provider polls exactly one endpoint,
+        // /api/billing/picking/marker, and nothing else — verified by reading
+        // it; it serves the Picking count and the Picking list's refetch and
+        // has no other subscriber. Disabled, it is a pure pass-through with an
+        // INERT context: no timer, no fetch, and any subscriber inside simply
+        // never fires. So a viewer without the key makes zero requests to it
+        // rather than collecting a 403 every 30 seconds all day.
+        //
+        // ⚠ That alone is NOT sufficient — BillingTabBar also fires one direct
+        // count fetch on mount, outside this provider. It is gated separately
+        // on the same fact (billing-tab-bar.tsx). Both, or neither works.
+        <BillingMarkerProvider enabled={billingV2 && canViewPicking} date={selectedDate}>
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1368,8 +1394,15 @@ export default function MailOrdersPage() {
           onSplitComplete={handleSplitComplete}
           disabledTagKeys={disabledTagKeys}
           billingV2={billingV2}
-          billingTab={billingTab}
+          billingTab={effectiveBillingTab}
           onBillingTabChange={setBillingTab}
+          // The Picking tab's two gates, threaded rather than read from context
+          // inside ReviewView: that component is SHARED with the non-billing
+          // face, and every billing concern reaches it as an explicit prop
+          // (§23.1). Both default to false inside ReviewView, so the non-billing
+          // face is unchanged by construction.
+          billingPickingCanView={canViewPicking}
+          billingPickingCanEdit={canEditPicking}
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
           hasHeaderFilter={hasHeaderFilter}

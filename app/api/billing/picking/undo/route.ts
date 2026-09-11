@@ -44,9 +44,15 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // canEdit — undo is a write, same gate as mark-done.
+  // canEdit — undo is a write, same gate as mark-done: `billing_picking` since
+  // 2026-09-11 (was `mail_orders`), and NOT the floor board's `picking`.
+  // ⚠ The permission is only the OUTER gate here. The inner one — the
+  // today-only window AND `invoiceNo: null` in the updateMany below — is what
+  // stops a bill SAP has already invoiced being un-invoiced, and it is
+  // untouched by this repoint. Read the block comment at the top before
+  // changing either.
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "mail_orders", "canEdit");
+  const allowed = await checkAnyPermission(roles, "billing_picking", "canEdit");
   if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
