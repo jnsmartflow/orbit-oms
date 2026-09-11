@@ -1157,12 +1157,44 @@ model billing_settings {
   @@unique([scope])
 }
 
+/// Tag on/off switches, scoped (2026-09-11 · sql/2026-09-11-hide-tag-scope.sql).
+/// One row per (tagKey, audience). `scope` says who the row is about:
+///
+///   'everyone' → roleSlug NULL, userId NULL
+///   'role'     → roleSlug set,  userId NULL
+///   'user'     → roleSlug NULL, userId set
+///
+/// Enforced live by chk_app_tag_settings_scope, which Prisma cannot express.
+///
+/// 🔴 `tagKey` IS NO LONGER @unique, AND THAT IS NOT AN OVERSIGHT. The live
+/// uniqueness guarantee is THREE PARTIAL UNIQUE INDEXES, one per scope —
+/// app_tag_settings_everyone_key ("tagKey") · _role_key ("tagKey","roleSlug") ·
+/// _user_key ("tagKey","userId"). Prisma cannot model a partial index at all, so
+/// there is nothing to write here; the old single-column UNIQUE was DROPPED on
+/// live because it allowed only one row per tag and made exceptions impossible.
+/// A plain composite @@unique would NOT be equivalent: Postgres treats NULLs as
+/// distinct, so it would accept two 'everyone' rows for one tag.
+///
+/// ⚠ CONSEQUENCE FOR CODE: `upsert` is unavailable here — it needs a unique
+/// Prisma knows about, and its native path emits ON CONFLICT against one. Writes
+/// go findFirst → update-by-id / create / delete, as sequential awaits
+/// (CORE §3). See app/api/admin/tag-settings/route.ts.
+///
+/// `userId` is a SCALAR with no relation, per the §7.10 convention for this
+/// feature's tables (the live FK to users(id) ON DELETE CASCADE is real; it is
+/// simply not modelled). Default-ON: no row for a tag ≡ the badge shows.
 model app_tag_settings {
   id          Int       @id @default(autoincrement())
-  tagKey      String    @unique
+  tagKey      String
+  scope       String    @default("everyone")
+  roleSlug    String?
+  userId      Int?
   isEnabled   Boolean   @default(true)
   updatedById Int?
   updatedAt   DateTime? @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([roleSlug])
 }
 
 /// Generic per-flag app settings (2026-09-09). One row per named switch,

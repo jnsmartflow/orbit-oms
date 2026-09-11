@@ -13,8 +13,12 @@ export interface TagCatalogEntry {
   tagKey:      string;
   /** Human label shown in the Tags admin UI. */
   label:       string;
-  /** Section grouping in the Tags admin UI. */
-  group:       "Mail Orders";
+  /**
+   * Section grouping in the Tags admin UI. The Tags tab groups by this value in
+   * FIRST-SEEN order, so a new group appears simply by using it on an entry —
+   * there is no second list to keep in step.
+   */
+  group:       "Mail Orders" | "Violet band (Billing)";
   /** One-line description of what the badge means. */
   description: string;
   /** Important tags prompt a confirm before turning OFF; cosmetic ones don't. */
@@ -39,6 +43,16 @@ export const MO_TAG = {
   splitSuggestion:  "mail_orders.split_suggestion",
   hold:             "mail_orders.hold",
   captured:         "mail_orders.captured",
+  // ── Added 2026-09-11 — the Billing face's un-switchable badges ────────────
+  // Every one of these renders OUTSIDE getOrderSignals(), so each is gated at
+  // its own render call site rather than by that function's filter. Evidence:
+  // docs/prompts/drafts/code-discovery-2026-09-11-hide-tags-billing.md §A.
+  keyCustomer:      "mail_orders.key_customer",
+  matchChip:        "mail_orders.match_chip",
+  punchedBy:        "mail_orders.punched_by",
+  notesBand:        "mail_orders.notes_band",
+  deliveryLine:     "mail_orders.delivery_line",
+  billLine:         "mail_orders.bill_line",
 } as const;
 
 export const TAG_CATALOG: TagCatalogEntry[] = [
@@ -57,5 +71,22 @@ export const TAG_CATALOG: TagCatalogEntry[] = [
   { tagKey: MO_TAG.truckOrder,     label: "Truck Order",      group: "Mail Orders", description: "Violet truck pill — punch when material is received.",        important: false },
   { tagKey: MO_TAG.splitLabel,     label: "Split (✂ Bill)",   group: "Mail Orders", description: "Purple badge on the split halves of a bill.",                 important: false },
   { tagKey: MO_TAG.splitSuggestion, label: "Split suggestion", group: "Mail Orders", description: "Amber-dot badge suggesting a large order be split.",        important: false },
-  { tagKey: MO_TAG.captured,       label: "Ship-to captured", group: "Mail Orders", description: "Amber ⚑ pill when a delivery override is detected.",         important: false },
+  // ⚠ NOT a cosmetic switch, which is why it is `important`. Turning this off
+  // makes the Ship To card show the BILL-TO dealer in place of the real delivery
+  // dealer, with nothing on the card saying the bill was redirected — the card
+  // falls back to the bill-to identity wholesale (ship-to-card.tsx:90-95). On the
+  // Billing face the redirect is something the operator set with the ✎ pencil
+  // minutes earlier, so this is a screen disagreeing with the database, not a pill
+  // being hidden. Reworded + flagged 2026-09-11.
+  { tagKey: MO_TAG.captured,       label: "Ship-to captured", group: "Mail Orders", description: "The ⚑ pill and amber bar marking a redirected delivery. Turning it off makes the Ship To card show the BILL-TO dealer instead of the real delivery dealer.", important: true  },
+  { tagKey: MO_TAG.keyCustomer,    label: "Key dealer (★)",   group: "Mail Orders", description: "Amber star on the inbox row and the “Key” pill on the Bill To card.", important: false },
+  { tagKey: MO_TAG.matchChip,      label: "Match chip",       group: "Mail Orders", description: "The ✓ 6/6 readiness chip above the SKU lines, counting matched lines.", important: false },
+  { tagKey: MO_TAG.punchedBy,      label: "Punched-by line",  group: "Mail Orders", description: "“punched by Bankim 14:20” on the order ribbon, once an order is punched.", important: false },
+
+  // ── The violet instruction band, one switch per row ───────────────────────
+  // Three separate keys, not one: the rows come from three different places and
+  // an operator who wants the delivery line may still want the notes line gone.
+  { tagKey: MO_TAG.notesBand,      label: "Notes line",       group: "Violet band (Billing)", description: "The NOTES row of the violet band — remarks the parser found in the email. Does NOT affect the operator’s own note, which stays on the Notes button.", important: false },
+  { tagKey: MO_TAG.deliveryLine,   label: "Delivery line",    group: "Violet band (Billing)", description: "The DELIVERY row of the violet band, from the email’s delivery remark.", important: false },
+  { tagKey: MO_TAG.billLine,       label: "Bill line",        group: "Violet band (Billing)", description: "The BILL row of the violet band, from the email’s billing remark.", important: false },
 ];

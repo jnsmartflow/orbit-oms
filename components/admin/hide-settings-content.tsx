@@ -96,23 +96,133 @@ export function HideSettingsContent(): React.JSX.Element {
   );
 }
 
-// ── Tags tab ─────────────────────────────────────────────────────────────────
+// ── Tags tab — "Who sees it" ─────────────────────────────────────────────────
+//
+// One dropdown per tag instead of a bare on/off. The four modes below are the
+// whole vocabulary; the stored rows are DERIVED from the chosen mode by the API
+// (app/api/admin/tag-settings/route.ts), never edited one by one here.
+//
+//   Everyone         everyone row on,  no exceptions
+//   Nobody           everyone row off, no exceptions
+//   Everyone except… everyone row on  + exception rows off
+//   Only…            everyone row off + exception rows on
+//
+// Changing mode drops the previous mode's exceptions — under the new mode they
+// would mean the opposite thing. The screen says so before it happens.
+
+type TagMode = "everyone" | "nobody" | "except" | "only";
+
+const MODE_LABEL: Record<TagMode, string> = {
+  everyone: "Everyone",
+  nobody:   "Nobody",
+  except:   "Everyone except…",
+  only:     "Only…",
+};
+
+/** One chip: a role (stored by slug) or a person (stored by id). */
+type Exception =
+  | { kind: "role"; roleSlug: string; label: string }
+  | { kind: "user"; userId: number;   label: string };
+
+interface TagRow {
+  id:        number;
+  tagKey:    string;
+  scope:     string;
+  roleSlug:  string | null;
+  userId:    number | null;
+  isEnabled: boolean;
+}
+
+interface AudiencePerson { id: number; name: string; roleSlugs: string[]; roleLabel: string }
+interface AudienceRole   { slug: string; label: string; count: number }
+
+/** What one tag's stored rows mean, as the dropdown states it. */
+function deriveAudience(
+  rows: TagRow[],
+  people: AudiencePerson[],
+  roles: AudienceRole[],
+): { mode: TagMode; exceptions: Exception[] } {
+  // Default-ON: a tag with no row at all is seen by everyone.
+  const everyoneRow = rows.find((r) => r.scope === "everyone");
+  const everyoneOn  = everyoneRow ? everyoneRow.isEnabled : true;
+
+  const exceptions: Exception[] = [];
+  for (const r of rows) {
+    if (r.scope === "role" && r.roleSlug) {
+      exceptions.push({
+        kind: "role",
+        roleSlug: r.roleSlug,
+        // A slug whose role has been renamed still shows — as the slug. Silently
+        // dropping it would hide a row that is really there and really applies.
+        label: roles.find((x) => x.slug === r.roleSlug)?.label ?? r.roleSlug,
+      });
+    } else if (r.scope === "user" && r.userId != null) {
+      const uid = r.userId;
+      exceptions.push({
+        kind: "user",
+        userId: uid,
+        label: people.find((p) => p.id === uid)?.name ?? `User ${uid}`,
+      });
+    }
+  }
+
+  if (exceptions.length === 0) return { mode: everyoneOn ? "everyone" : "nobody", exceptions };
+  return { mode: everyoneOn ? "except" : "only", exceptions };
+}
+
+/** The plain sentence under the chips. Never a restatement of the dropdown. */
+function audienceSentence(mode: TagMode, exceptions: Exception[]): string {
+  const names = exceptions.map((e) => e.label);
+  const list =
+    names.length === 0 ? "" :
+    names.length === 1 ? names[0] :
+    `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+  switch (mode) {
+    case "everyone": return "Everyone sees it.";
+    case "nobody":   return "Nobody sees it.";
+    case "except":   return list ? `Everyone sees it, except ${list}.` : "Everyone sees it.";
+    case "only":     return list ? `Only ${list} sees it.` : "Nobody sees it.";
+  }
+}
+
+/** Does this choice hide the badge from anybody? Drives the confirm on important tags. */
+function hidesFromSomeone(mode: TagMode): boolean {
+  return mode !== "everyone";
+}
 
 function TagsTab(): React.JSX.Element {
-  const [settings, setSettings] = useState<Record<string, boolean>>({});
-  const [loading, setLoading]   = useState(true);
-  const [busyKey, setBusyKey]   = useState<string | null>(null);
+  const [rows, setRows]       = useState<TagRow[]>([]);
+  const [people, setPeople]   = useState<AudiencePerson[]>([]);
+  const [roles, setRoles]     = useState<AudienceRole[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Two independent reads, awaited in sequence. Not Promise.all: the audience
+      // list is the smaller, cheaper call and a failure in it must not discard a
+      // successful tag read.
       const res  = await fetch("/api/admin/tag-settings", { credentials: "include" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.ok === false) {
         toast.error(typeof json.error === "string" ? json.error : "Could not load tags");
         return;
       }
-      setSettings(json.settings && typeof json.settings === "object" ? json.settings : {});
+      setRows(Array.isArray(json.rows) ? json.rows : []);
+
+      const aRes  = await fetch("/api/admin/tag-audience", { credentials: "include" });
+      const aJson = await aRes.json().catch(() => ({}));
+      if (aRes.ok && aJson.ok !== false) {
+        setPeople(Array.isArray(aJson.people) ? aJson.people : []);
+        setRoles(Array.isArray(aJson.roles) ? aJson.roles : []);
+      } else {
+        // The screen still works: every tag can be set to Everyone or Nobody.
+        // Only the exception picker is unavailable, and it says so.
+        toast.error("Could not load the list of people — exceptions are unavailable.");
+      }
     } catch (err) {
       console.error("[tags] load failed", err);
       toast.error("Network error loading tags");
@@ -123,45 +233,66 @@ function TagsTab(): React.JSX.Element {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Default ON: a tag with no row is enabled.
-  const isOn = (tagKey: string): boolean => settings[tagKey] ?? true;
+  const rowsFor = useCallback(
+    (tagKey: string) => rows.filter((r) => r.tagKey === tagKey),
+    [rows],
+  );
 
-  async function toggle(entry: TagCatalogEntry): Promise<void> {
-    const current  = isOn(entry.tagKey);
-    const newValue = !current;
-
-    // Important tags confirm before turning OFF.
-    if (!newValue && entry.important) {
-      if (!window.confirm(`Turn off the ${entry.label} badge everywhere?`)) return;
+  /** Send one tag's whole audience. The server derives the rows. */
+  async function save(
+    entry: TagCatalogEntry,
+    mode: TagMode,
+    exceptions: Exception[],
+  ): Promise<void> {
+    // Important tags confirm whenever the choice hides the badge from anyone —
+    // not only when it is switched off for everybody. "Only Bankim" hides it from
+    // the other five people just as surely as "Nobody" does.
+    if (entry.important && hidesFromSomeone(mode)) {
+      const who = audienceSentence(mode, exceptions);
+      if (!window.confirm(`${entry.label}\n\n${who}\n\nNothing is deleted — only what renders changes. Continue?`)) {
+        return;
+      }
     }
 
-    // Optimistic update; revert on failure.
-    setSettings((prev) => ({ ...prev, [entry.tagKey]: newValue }));
     setBusyKey(entry.tagKey);
     try {
       const res = await fetch("/api/admin/tag-settings", {
-        method:      "PATCH",
+        method:      "PUT",
         credentials: "include",
         headers:     { "Content-Type": "application/json" },
-        body:        JSON.stringify({ tagKey: entry.tagKey, isEnabled: newValue }),
+        body: JSON.stringify({
+          tagKey: entry.tagKey,
+          mode,
+          exceptions: exceptions.map((e) =>
+            e.kind === "role"
+              ? { kind: "role", roleSlug: e.roleSlug }
+              : { kind: "user", userId: e.userId },
+          ),
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json.ok === false) {
-        setSettings((prev) => ({ ...prev, [entry.tagKey]: current }));
-        toast.error(typeof json.error === "string" ? json.error : "Could not update tag");
+        toast.error(typeof json.error === "string" ? json.error : "Could not save this tag");
+        // A 409 means somebody else moved first — reload rather than leave the
+        // screen showing a state the database does not have.
+        if (res.status === 409) await load();
         return;
       }
-      toast.success(newValue ? `${entry.label} badge on` : `${entry.label} badge off`);
+      // The server returns the recomputed rows, so the screen updates from the
+      // answer rather than from a client guess.
+      setRows(Array.isArray(json.rows) ? json.rows : []);
+      toast.success(`${entry.label} — ${audienceSentence(mode, exceptions).replace(/\.$/, "")}`);
     } catch (err) {
-      console.error("[tags] toggle failed", err);
-      setSettings((prev) => ({ ...prev, [entry.tagKey]: current }));
+      console.error("[tags] save failed", err);
       toast.error("Network error");
     } finally {
       setBusyKey(null);
+      setPickerFor(null);
     }
   }
 
-  // Group catalog entries by `group`, preserving first-seen order.
+  // Group by `group`, first-seen order — so a new group appears in the catalog
+  // alone, with no second list here to keep in step.
   const groups: { group: string; entries: TagCatalogEntry[] }[] = [];
   for (const entry of TAG_CATALOG) {
     let bucket = groups.find((g) => g.group === entry.group);
@@ -172,11 +303,10 @@ function TagsTab(): React.JSX.Element {
   return (
     <>
       <div className="bg-white border border-gray-200 rounded-[10px] overflow-hidden">
-        {/* Card header */}
         <div className="px-4 py-3.5 border-b border-gray-200">
           <h3 className="text-[13px] font-bold text-gray-900">Tags</h3>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Switch a badge on/off across the whole app. Data stays — only the visual badge changes. Saves automatically.
+            Choose who sees each badge. Data is never changed — only what renders. Saves automatically.
           </p>
         </div>
 
@@ -190,46 +320,270 @@ function TagsTab(): React.JSX.Element {
               <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 pt-3.5 pb-1.5">
                 {g.group}
               </div>
-              {g.entries.map((entry) => (
-                <div
-                  key={entry.tagKey}
-                  className="flex items-center gap-3.5 px-4 py-3 border-b border-gray-100 last:border-b-0"
-                >
-                  {/* Badge preview */}
-                  <div className="w-[88px] flex-shrink-0">
-                    <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200 max-w-full truncate">
-                      {entry.label}
-                    </span>
-                  </div>
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[12.5px] font-bold text-gray-900 flex items-center gap-1.5">
-                      {entry.label}
-                      {entry.important && (
-                        <span className="text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-px rounded bg-amber-50 text-amber-700 border border-amber-200">
-                          Important
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-gray-500 mt-0.5">{entry.description}</div>
-                  </div>
-                  {/* Toggle */}
-                  <Toggle
-                    on={isOn(entry.tagKey)}
+              {g.entries.map((entry) => {
+                const { mode, exceptions } = deriveAudience(rowsFor(entry.tagKey), people, roles);
+                return (
+                  <TagAudienceRow
+                    key={entry.tagKey}
+                    entry={entry}
+                    mode={mode}
+                    exceptions={exceptions}
+                    people={people}
+                    roles={roles}
                     busy={busyKey === entry.tagKey}
-                    onClick={() => void toggle(entry)}
+                    pickerOpen={pickerFor === entry.tagKey}
+                    onOpenPicker={() => setPickerFor(pickerFor === entry.tagKey ? null : entry.tagKey)}
+                    onSave={(m, ex) => void save(entry, m, ex)}
                   />
-                </div>
-              ))}
+                );
+              })}
             </div>
           ))
         )}
       </div>
 
       <p className="text-[10.5px] text-gray-400 mt-3">
-        Important tags ask before turning off. Changes apply across the app and are saved automatically.
+        A person with more than one job title keeps the badge if any of their roles still shows it.
+        Important tags ask before hiding. Every change is recorded against your name.
       </p>
     </>
+  );
+}
+
+// ── One tag row ──────────────────────────────────────────────────────────────
+
+function TagAudienceRow({
+  entry, mode, exceptions, people, roles, busy, pickerOpen, onOpenPicker, onSave,
+}: {
+  entry:        TagCatalogEntry;
+  mode:         TagMode;
+  exceptions:   Exception[];
+  people:       AudiencePerson[];
+  roles:        AudienceRole[];
+  busy:         boolean;
+  pickerOpen:   boolean;
+  onOpenPicker: () => void;
+  onSave:       (mode: TagMode, exceptions: Exception[]) => void;
+}): React.JSX.Element {
+  const needsExceptions = mode === "except" || mode === "only";
+
+  function changeMode(next: TagMode): void {
+    if (next === mode) return;
+    if (next === "everyone" || next === "nobody") {
+      // Moving to a mode that takes no exceptions drops the ones on screen. Said
+      // out loud rather than done quietly — the chips are about to vanish.
+      if (exceptions.length > 0 &&
+          !window.confirm(`Switching to “${MODE_LABEL[next]}” removes the ${exceptions.length} exception${exceptions.length === 1 ? "" : "s"} on this tag. Continue?`)) {
+        return;
+      }
+      onSave(next, []);
+      return;
+    }
+    // except ↔ only keeps the chips: the same people, the opposite meaning. With
+    // none yet, the mode is not saved until the first chip is added — the API
+    // rejects an empty except/only, and rightly so: it would say nothing.
+    if (exceptions.length === 0) { onOpenPicker(); return; }
+    onSave(next, exceptions);
+  }
+
+  function addException(e: Exception): void {
+    const dup = exceptions.some((x) =>
+      x.kind === e.kind &&
+      (x.kind === "role" ? x.roleSlug === (e as { roleSlug: string }).roleSlug
+                         : x.userId  === (e as { userId: number }).userId));
+    if (dup) return;
+    // Adding the first chip from Everyone/Nobody implies the matching mode: from
+    // Everyone you are carving somebody out; from Nobody you are letting somebody in.
+    const nextMode: TagMode = needsExceptions ? mode : (mode === "everyone" ? "except" : "only");
+    onSave(nextMode, [...exceptions, e]);
+  }
+
+  function removeException(e: Exception): void {
+    const next = exceptions.filter((x) => x !== e);
+    // The last chip removed collapses to the mode that means the same thing:
+    // "everyone except nobody" is Everyone, "only nobody" is Nobody.
+    if (next.length === 0) { onSave(mode === "except" ? "everyone" : "nobody", []); return; }
+    onSave(mode, next);
+  }
+
+  return (
+    <div className="px-4 py-3 border-b border-gray-100 last:border-b-0">
+      <div className="flex items-start gap-3.5">
+        {/* Badge preview */}
+        <div className="w-[88px] flex-shrink-0 pt-0.5">
+          <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200 max-w-full truncate">
+            {entry.label}
+          </span>
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="text-[12.5px] font-bold text-gray-900 flex items-center gap-1.5">
+            {entry.label}
+            {entry.important && (
+              <span className="text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-px rounded bg-amber-50 text-amber-700 border border-amber-200">
+                Important
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] text-gray-500 mt-0.5">{entry.description}</div>
+        </div>
+
+        {/* Who sees it */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {busy && <Loader2 className="animate-spin text-gray-400" size={13} />}
+          <select
+            value={mode}
+            disabled={busy}
+            onChange={(e) => changeMode(e.target.value as TagMode)}
+            aria-label={`Who sees ${entry.label}`}
+            className="h-[28px] rounded-md border border-gray-200 bg-white px-2 text-[11.5px] font-medium text-gray-700 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-50"
+          >
+            {(Object.keys(MODE_LABEL) as TagMode[]).map((m) => (
+              <option key={m} value={m}>{MODE_LABEL[m]}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Chips + sentence, under the dropdown */}
+      <div className="ml-[102px] mt-2">
+        {exceptions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+            {exceptions.map((e) => (
+              <span
+                key={e.kind === "role" ? `r:${e.roleSlug}` : `u:${e.userId}`}
+                className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-brand-50 text-brand-800 border border-brand-200"
+              >
+                <span className="text-[9px] font-extrabold uppercase tracking-wide text-brand-600/80">
+                  {e.kind === "role" ? "Role" : "Person"}
+                </span>
+                {e.label}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => removeException(e)}
+                  aria-label={`Remove ${e.label}`}
+                  className="text-brand-600 hover:text-red-600 disabled:opacity-50"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2.5">
+          <p className="text-[11px] text-gray-500">{audienceSentence(mode, exceptions)}</p>
+          <button
+            type="button"
+            disabled={busy || people.length === 0}
+            onClick={onOpenPicker}
+            className="text-[11px] font-semibold text-brand-700 border border-brand-200 rounded-md px-2 py-0.5 hover:bg-brand-50 disabled:opacity-40"
+          >
+            + Exception
+          </button>
+        </div>
+
+        {pickerOpen && (
+          <AudiencePicker
+            people={people}
+            roles={roles}
+            taken={exceptions}
+            onPick={addException}
+            onClose={onOpenPicker}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── The picker: one search, two sections ─────────────────────────────────────
+//
+// People are the ACTIVE users who can open Mail Orders today, and Roles are the
+// roles those people hold — both from /api/admin/tag-audience, which reads the
+// LIVE access source. Offering anyone else would build a switch that can never fire.
+
+function AudiencePicker({
+  people, roles, taken, onPick, onClose,
+}: {
+  people: AudiencePerson[];
+  roles:  AudienceRole[];
+  taken:  Exception[];
+  onPick: (e: Exception) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [q, setQ] = useState("");
+  const term = q.trim().toLowerCase();
+
+  const hasRole = (slug: string) => taken.some((t) => t.kind === "role" && t.roleSlug === slug);
+  const hasUser = (id: number)   => taken.some((t) => t.kind === "user" && t.userId === id);
+
+  const shownRoles  = roles.filter((r) => !hasRole(r.slug) && (!term || r.label.toLowerCase().includes(term) || r.slug.includes(term)));
+  const shownPeople = people.filter((p) => !hasUser(p.id) && (!term || p.name.toLowerCase().includes(term) || p.roleLabel.toLowerCase().includes(term)));
+
+  return (
+    <div className="mt-2 w-[300px] rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <input
+          type="text"
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search roles or people…"
+          className="h-[28px] flex-1 rounded-md border border-gray-200 px-2 text-[11px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+        />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="w-[26px] h-[28px] rounded-md border border-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center"
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      <div className="max-h-[260px] overflow-y-auto">
+        {shownRoles.length > 0 && (
+          <>
+            <div className="text-[9.5px] font-bold uppercase tracking-widest text-gray-400 px-1 pt-1 pb-1">Roles</div>
+            {shownRoles.map((r) => (
+              <div
+                key={r.slug}
+                onClick={() => onPick({ kind: "role", roleSlug: r.slug, label: r.label })}
+                className="flex items-center justify-between gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50"
+              >
+                <span className="text-[11px] text-gray-700 truncate">{r.label}</span>
+                <span className="text-[10px] text-gray-400 flex-shrink-0">
+                  {r.count} {r.count === 1 ? "person" : "people"}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
+
+        {shownPeople.length > 0 && (
+          <>
+            <div className="text-[9.5px] font-bold uppercase tracking-widest text-gray-400 px-1 pt-2 pb-1">People</div>
+            {shownPeople.map((p) => (
+              <div
+                key={p.id}
+                onClick={() => onPick({ kind: "user", userId: p.id, label: p.name })}
+                className="flex items-center justify-between gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50"
+              >
+                <span className="text-[11px] text-gray-700 truncate">{p.name}</span>
+                <span className="text-[10px] text-gray-400 flex-shrink-0 truncate">{p.roleLabel}</span>
+              </div>
+            ))}
+          </>
+        )}
+
+        {shownRoles.length === 0 && shownPeople.length === 0 && (
+          <p className="px-2 py-3 text-[11px] text-gray-400">Nothing left to add.</p>
+        )}
+      </div>
+    </div>
   );
 }
 

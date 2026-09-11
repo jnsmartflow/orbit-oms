@@ -265,12 +265,22 @@ export async function GET(req: Request): Promise<NextResponse> {
     };
   });
 
-  // Tag visibility (Feature B) — disabled tag keys (isEnabled === false) so the
+  // Tag visibility (Feature B) — the tag keys THIS VIEWER must not see, so the
   // client can suppress the matching badges. Sequential await, no $transaction.
-  const tagSettings = await getTagSettings();
-  const disabledTags = Object.entries(tagSettings)
-    .filter(([, enabled]) => enabled === false)
-    .map(([key]) => key);
+  //
+  // Scoped since 2026-09-11: a switch can apply to everyone, to a role, or to one
+  // person, and the resolver folds them (user > role > everyone, show wins across
+  // roles). The payload shape is unchanged — still a flat array of keys — so
+  // mail-orders-page.tsx and both view components need no edit.
+  //
+  // The id and the slugs come from the SAME session, so they always describe one
+  // person. A malformed id resolves to null, which the resolver reads as "no
+  // user-scoped rows apply" and falls through to the role/everyone tiers.
+  const viewerId = Number.parseInt(session.user.id, 10);
+  const disabledTags = await getTagSettings(
+    Number.isFinite(viewerId) ? viewerId : null,
+    session.user.roles ?? (session.user.role ? [session.user.role] : []),
+  );
 
   return NextResponse.json({ orders: enrichedOrders, disabledTags });
 }

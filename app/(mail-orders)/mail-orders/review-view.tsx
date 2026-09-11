@@ -1086,7 +1086,19 @@ export function ReviewView({
     const isPunched = order.status === "punched";
     // Computed once here and reused below for both the truck icon and the
     // bill/split badges — do not call getOrderSignals a second time per row.
-    const sigs = getOrderSignals(order, { disabledTagKeys });
+    //
+    // ⚠ `isPunched` is passed with the DETAIL CARD'S definition, not the looser
+    // `isPunched` above (2026-09-11). getOrderSignals only emits the "⚠ Split"
+    // suggestion when it is false (utils.ts:779-781), and this call used to omit
+    // the option entirely — so a punched bill over 1500 L showed the suggestion
+    // on the rail and nothing on the card that opened from it. The card's
+    // expression is `status === "punched" && !!soNumber` (:1356), and auto-punch
+    // can leave a bill punched with no number, so the two terms are not
+    // interchangeable. One definition, two surfaces.
+    const sigs = getOrderSignals(order, {
+      isPunched: order.status === "punched" && !!order.soNumber,
+      disabledTagKeys,
+    });
     const hasTruckOrder = sigs.some((s) => s.type === "truck-order");
 
     const borderClass = isFocused
@@ -1123,7 +1135,11 @@ export function ReviewView({
             <span className="text-[13px] font-semibold text-gray-900 truncate">
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
             </span>
-            {order.isKeyCustomer && <StarGlyph />}
+            {/* The ★ does not come through getOrderSignals, so it is gated here
+                by hand. Same key as the Bill To card's "Key" pill (:2140) — one
+                switch, both surfaces, or an admin turns it off and it half
+                disappears. */}
+            {order.isKeyCustomer && !disabledTagKeys?.has(MO_TAG.keyCustomer) && <StarGlyph />}
             {hasTruckOrder && <TruckGlyph />}
             {(() => {
               // Show bill OR split badges in left panel — each order gets
@@ -1856,7 +1872,12 @@ export function ReviewView({
             action cluster past the right edge. */}
         <span className="min-w-0 truncate text-[11px] text-gray-400">
           {soNameFormatted} · {receivedAtFormatted}
-          {!!punchedByName && !!punchedAtFormatted &&
+          {/* The punched-by half has its own switch (2026-09-11). It is ANDed
+              into BillingOrderInfo's original both-halves guard rather than
+              wrapped around it, so a name with no time still renders neither —
+              one condition, not two that can disagree. The sales officer and the
+              arrival time are not part of this switch and always render. */}
+          {!disabledTagKeys?.has(MO_TAG.punchedBy) && !!punchedByName && !!punchedAtFormatted &&
             ` · punched by ${punchedByName} ${punchedAtFormatted}`}
         </span>
         <div className="flex-1" />
@@ -2163,7 +2184,11 @@ export function ReviewView({
             customerArea={order.customerArea ?? null}
             customerDeliveryType={order.customerDeliveryType ?? null}
             customerMatchStatus={order.customerMatchStatus ?? null}
-            isKeyCustomer={order.isKeyCustomer}
+            // Gated at the CALL SITE, never inside BillToCard — that card is
+            // SHARED with the non-billing Focus face and knows nothing about tags
+            // (§23.6). Suppressed resolves to false/undefined, which is what the
+            // card already renders for a non-key dealer, so no markup changes.
+            isKeyCustomer={order.isKeyCustomer && !disabledTagKeys?.has(MO_TAG.keyCustomer)}
             signals={billSignals}
             onCodeClick={onCodeClickHandler}
             popoverSlot={popoverContent}
@@ -2222,10 +2247,17 @@ export function ReviewView({
               other face keeps the grey strip. This component renders in FOCUS
               mode for non-billing users too, so the recolour has to be a prop —
               it is not reachable behind a render-time billingV2 branch. */}
+          {/* Each band row has its own switch (2026-09-11). Gated by passing
+              `null` — the value the strip already treats as "this row has no
+              text" — so no branch inside the component changes. With all three
+              suppressed `rows` is empty and InstructionsStrip returns null
+              (instructions-strip.tsx:83): no empty violet band, no stray border.
+              ⚠ The notes-size stepper rides that same null return by design
+              (:37-39), so it goes with the band on an otherwise-quiet order. */}
           <InstructionsStrip
-            delivery={parsed.deliveryInstruction}
-            bill={order.billRemarks || null}
-            notes={notesString}
+            delivery={disabledTagKeys?.has(MO_TAG.deliveryLine) ? null : parsed.deliveryInstruction}
+            bill={disabledTagKeys?.has(MO_TAG.billLine) ? null : (order.billRemarks || null)}
+            notes={disabledTagKeys?.has(MO_TAG.notesBand) ? null : notesString}
             tone={billingV2 ? "notes" : "default"}
             fontSize={notesFontSize}
             controlsSlot={notesSizeControls}
@@ -2335,7 +2367,12 @@ export function ReviewView({
     // single-line case reads "1 line".
     const captionLines = order.totalLines ?? order.lines.length;
     const captionVolume = volumeStringFor(order);
-    const captionChip = getMatchChip(order.matchedLines, order.totalLines);
+    // Suppressed by folding the switch into the chip itself rather than at the
+    // render site below: getMatchChip() already returns null for "no lines", and
+    // the render arm handles null, so hiding reuses a path that is already there.
+    const captionChip = disabledTagKeys?.has(MO_TAG.matchChip)
+      ? null
+      : getMatchChip(order.matchedLines, order.totalLines);
 
     return (
       <>

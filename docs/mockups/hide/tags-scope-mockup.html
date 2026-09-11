@@ -3,29 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settings › Hide › Tags — scope mockup</title>
+<title>Settings › Hide › Tags — “Who sees it”</title>
 <style>
   /* ── OrbitOMS tokens (tailwind.config.ts, rebrand step 1) ──────────────────
-     brand = violet accent · ink = violet-tinted neutral ramp (no 300, no 800)
-     Toggles ON are brand-600, exactly as components/admin/hide-settings-content.tsx:628.
-     The Important chip keeps the amber it ships today (:208-212).            */
+     brand = violet accent · ink = violet-tinted neutral ramp (no 300, no 800).
+     Geometry copied from the shipped row: 88px preview, 12.5px name, 11px
+     description, 28px controls.  components/admin/hide-settings-content.tsx    */
   :root{
-    --brand-50:#F5F3FF; --brand-100:#EDE9FE; --brand-200:#DDD6FE; --brand-600:#7C3AED; --brand-700:#6D28D9; --brand-800:#5B21B6;
-    --ink-0:#FFFFFF; --ink-25:#FAFAFC; --ink-50:#F4F3F8; --ink-100:#E9E7F0; --ink-200:#D6D3E0;
-    --ink-400:#9C99AC; --ink-500:#74718A; --ink-600:#514E63; --ink-700:#3A3748; --ink-900:#1B1826;
+    --brand-50:#F5F3FF; --brand-100:#EDE9FE; --brand-200:#DDD6FE; --brand-500:#8B5CF6;
+    --brand-600:#7C3AED; --brand-700:#6D28D9; --brand-800:#5B21B6;
+    --ink-25:#FAFAFC; --ink-50:#F4F3F8; --ink-100:#E9E7F0; --ink-200:#D6D3E0;
+    --ink-400:#9C99AC; --ink-500:#74718A; --ink-600:#514E63; --ink-900:#1B1826;
     --warn-bg:#FFFBEB; --warn-bd:#FDE68A; --warn-tx:#B45309;
-    --danger:#E11D48; --danger-bg:#FFF1F2; --danger-bd:#FECDD3; --danger-tx:#BE123C;
-    --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db; --gray-400:#9ca3af; --gray-500:#6b7280; --gray-700:#374151; --gray-900:#111827;
+    --danger:#E11D48; --danger-bg:#FFF1F2; --danger-bd:#FECDD3;
+    --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db;
+    --gray-400:#9ca3af; --gray-500:#6b7280; --gray-700:#374151; --gray-900:#111827;
   }
   *{box-sizing:border-box}
   body{margin:0;background:#f9fafb;color:var(--gray-900);
        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
        -webkit-font-smoothing:antialiased;padding:28px 20px 60px}
-  .wrap{max-width:840px;margin:0 auto}
+  .wrap{max-width:880px;margin:0 auto}
 
   /* Mockup-only scaffolding — not part of the screen */
   .note{border:1px dashed var(--ink-200);background:var(--ink-25);border-radius:8px;
-        padding:10px 12px;font-size:11px;line-height:1.55;color:var(--ink-600);margin-bottom:18px}
+        padding:10px 12px;font-size:11px;line-height:1.6;color:var(--ink-600);margin-bottom:18px}
   .note b{color:var(--ink-900)}
   .caption{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;
            color:var(--ink-400);margin:26px 0 8px}
@@ -33,306 +35,331 @@
   /* ── Card ──────────────────────────────────────────────────────────────── */
   .card{background:#fff;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden}
   .card-head{padding:14px 16px;border-bottom:1px solid var(--gray-200)}
-  .card-head h3{margin:0;font-size:13px;font-weight:700;color:var(--gray-900)}
+  .card-head h3{margin:0;font-size:13px;font-weight:700}
   .card-head p{margin:3px 0 0;font-size:11px;color:var(--gray-400);line-height:1.5}
-
   .group{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
          color:var(--gray-400);padding:14px 16px 6px}
 
   /* ── One tag row ───────────────────────────────────────────────────────── */
   .row{border-bottom:1px solid var(--gray-100);padding:12px 16px}
   .row:last-child{border-bottom:0}
-  .row-main{display:flex;align-items:center;gap:14px}
-  .preview{width:88px;flex-shrink:0}
+  .top{display:flex;align-items:flex-start;gap:14px}
+  .preview{width:88px;flex-shrink:0;padding-top:2px}
   .chip{display:inline-flex;align-items:center;font-size:10px;font-weight:700;
         padding:2px 8px;border-radius:4px;background:var(--gray-100);
         color:var(--gray-700);border:1px solid var(--gray-200);max-width:100%;
         overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .info{flex:1;min-width:0}
-  .name{font-size:12.5px;font-weight:700;color:var(--gray-900);display:flex;align-items:center;gap:6px}
+  .name{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px}
   .desc{font-size:11px;color:var(--gray-500);margin-top:2px;line-height:1.45}
   .imp{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
        padding:1px 6px;border-radius:4px;background:var(--warn-bg);color:var(--warn-tx);
        border:1px solid var(--warn-bd)}
 
-  .ctl{display:flex;align-items:center;gap:10px;flex-shrink:0}
-  .scope-lbl{font-size:10px;color:var(--ink-400);text-transform:uppercase;letter-spacing:.06em}
+  /* "Who sees it" — the one control, right of the row */
+  select.who{height:28px;border-radius:6px;border:1px solid var(--gray-200);background:#fff;
+             padding:0 24px 0 8px;font-size:11.5px;font-weight:500;color:var(--gray-700);
+             flex-shrink:0;appearance:none;cursor:pointer;
+             background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' fill='none' stroke='%239ca3af' stroke-width='1.4'/></svg>");
+             background-repeat:no-repeat;background-position:right 8px center}
+  select.who:focus{outline:none;border-color:var(--brand-500);box-shadow:0 0 0 2px rgba(124,58,237,.10)}
 
-  /* Toggle — w-9 h-5, knob 16px, brand-600 when on */
-  .tg{position:relative;width:36px;height:20px;border-radius:999px;border:0;padding:0;
-      background:var(--gray-300);cursor:pointer;flex-shrink:0}
-  .tg.on{background:var(--brand-600)}
-  .tg i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:999px;background:#fff;
-        transition:left .12s}
-  .tg.on i{left:18px}
-  .tg.sm{width:30px;height:17px}
-  .tg.sm i{width:13px;height:13px}
-  .tg.sm.on i{left:15px}
-
-  /* ── Exceptions ────────────────────────────────────────────────────────── */
-  .exc{margin:10px 0 0 102px;border-left:2px solid var(--brand-200);padding-left:12px}
-  .exc-row{display:flex;align-items:center;gap:10px;padding:6px 0}
-  .tagp{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;
-        padding:2px 8px;border-radius:999px;background:var(--brand-50);color:var(--brand-800);
-        border:1px solid var(--brand-200);flex-shrink:0}
-  .tagp .kind{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
-              color:var(--brand-600);opacity:.8}
-  .exc-state{font-size:11px;color:var(--ink-500);flex:1;min-width:0}
-  .exc-state b{color:var(--ink-900);font-weight:700}
-  .x{border:1px solid var(--gray-200);background:#fff;color:var(--gray-400);cursor:pointer;
-     width:20px;height:20px;border-radius:5px;font-size:12px;line-height:1;flex-shrink:0}
-  .x:hover{color:var(--danger);border-color:var(--danger-bd);background:var(--danger-bg)}
-
-  .addbtn{display:inline-flex;align-items:center;gap:5px;margin:8px 0 0 102px;
-          font-size:11px;font-weight:600;color:var(--brand-700);background:#fff;
-          border:1px solid var(--brand-200);border-radius:6px;padding:4px 9px;cursor:pointer}
+  /* ── Chips + sentence, under the dropdown ──────────────────────────────── */
+  .below{margin-left:102px;margin-top:8px}
+  .chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
+  .exc{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;
+       padding:2px 8px;border-radius:999px;background:var(--brand-50);color:var(--brand-800);
+       border:1px solid var(--brand-200)}
+  .exc .kind{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+             color:var(--brand-600);opacity:.8}
+  .exc button{border:0;background:none;padding:0;cursor:pointer;color:var(--brand-600);
+              font-size:12px;line-height:1}
+  .exc button:hover{color:var(--danger)}
+  .line{display:flex;align-items:center;gap:10px}
+  .sentence{font-size:11px;color:var(--gray-500);margin:0}
+  .addbtn{font-size:11px;font-weight:600;color:var(--brand-700);background:#fff;
+          border:1px solid var(--brand-200);border-radius:6px;padding:2px 8px;cursor:pointer}
   .addbtn:hover{background:var(--brand-50)}
+  .addbtn[disabled]{opacity:.4;cursor:default}
 
   .foot{font-size:10.5px;color:var(--gray-400);margin-top:12px;line-height:1.6}
 
-  /* ── Confirm dialog (important tags) ───────────────────────────────────── */
-  .dlgwrap{position:relative;background:rgba(27,24,38,.45);border-radius:10px;padding:34px 16px}
-  .dlg{max-width:400px;margin:0 auto;background:#fff;border-radius:12px;
-       box-shadow:0 18px 40px rgba(27,24,38,.22);padding:18px 18px 14px}
-  .dlg h4{margin:0 0 6px;font-size:13.5px;font-weight:700;color:var(--gray-900)}
+  /* ── Picker ────────────────────────────────────────────────────────────── */
+  .pop{margin-top:8px;width:300px;background:#fff;border:1px solid var(--gray-200);
+       border-radius:8px;box-shadow:0 10px 26px rgba(27,24,38,.14);padding:8px}
+  .pop .srch{display:flex;gap:6px;margin-bottom:6px}
+  .pop input{flex:1;height:28px;border:1px solid var(--gray-200);border-radius:6px;
+             padding:0 8px;font-size:11px;outline:none}
+  .pop input:focus{border-color:var(--brand-500);box-shadow:0 0 0 2px rgba(124,58,237,.10)}
+  .pop .close{width:26px;height:28px;border:1px solid var(--gray-200);border-radius:6px;
+              background:#fff;color:var(--gray-400);cursor:pointer;font-size:12px}
+  .sec{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;
+       color:var(--gray-400);padding:6px 4px 4px}
+  .opt{display:flex;align-items:center;justify-content:space-between;gap:8px;
+       padding:6px 8px;border-radius:6px;font-size:11px;color:var(--gray-700);cursor:pointer}
+  .opt:hover{background:var(--ink-50)}
+  .opt small{color:var(--gray-400);font-size:10px;flex-shrink:0}
+
+  /* ── Confirm ───────────────────────────────────────────────────────────── */
+  .dlgwrap{background:rgba(27,24,38,.45);border-radius:10px;padding:34px 16px}
+  .dlg{max-width:420px;margin:0 auto;background:#fff;border-radius:12px;
+       box-shadow:0 18px 40px rgba(27,24,38,.22);padding:18px}
+  .dlg h4{margin:0 0 8px;font-size:13.5px;font-weight:700}
+  .dlg .said{font-size:12px;font-weight:600;color:var(--brand-800);background:var(--brand-50);
+             border:1px solid var(--brand-200);border-radius:7px;padding:8px 10px;margin-bottom:10px}
   .dlg p{margin:0;font-size:11.5px;line-height:1.55;color:var(--ink-500)}
-  .dlg .who{margin-top:10px;padding:8px 10px;border-radius:7px;background:var(--warn-bg);
-            border:1px solid var(--warn-bd);font-size:11px;color:var(--warn-tx);line-height:1.5}
   .dlg .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
   .btn{font-size:11.5px;font-weight:600;border-radius:7px;padding:7px 13px;cursor:pointer}
   .btn.ghost{background:#fff;border:1px solid var(--gray-200);color:var(--gray-700)}
-  .btn.warn{background:var(--warn-tx);border:1px solid var(--warn-tx);color:#fff}
-
-  /* ── Picker popover ────────────────────────────────────────────────────── */
-  .pop{width:280px;background:#fff;border:1px solid var(--gray-200);border-radius:9px;
-       box-shadow:0 10px 26px rgba(27,24,38,.14);padding:8px;margin:10px 0 0 102px}
-  .pop .seg{display:flex;gap:4px;margin-bottom:8px}
-  .pop .seg button{flex:1;font-size:10.5px;font-weight:700;padding:5px 0;border-radius:6px;
-                   border:1px solid var(--gray-200);background:#fff;color:var(--gray-500);cursor:pointer}
-  .pop .seg button.sel{background:var(--brand-600);border-color:var(--brand-600);color:#fff}
-  .pop input{width:100%;height:28px;border:1px solid var(--gray-200);border-radius:6px;
-             padding:0 8px;font-size:11px;outline:none}
-  .pop input:focus{border-color:var(--brand-500,#8B5CF6);box-shadow:0 0 0 2px rgba(124,58,237,.10)}
-  .pop .opt{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:6px;font-size:11px;
-            color:var(--gray-700);cursor:pointer}
-  .pop .opt:hover{background:var(--ink-50)}
-  .pop .opt small{color:var(--gray-400);font-size:10px}
+  .btn.go{background:var(--brand-600);border:1px solid var(--brand-600);color:#fff}
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <div class="note">
-    <b>Mockup only — static HTML, nothing is wired.</b> Admin-only screen: Settings › Hide › Tags
-    (<code>components/admin/hide-settings-content.tsx</code>). Phase 1 is <b>badges and bands</b>.
-    Hold / Slot / Urgent / the ship-to pencil are <b>not here</b> — they are capabilities, not
-    badges, and belong to the per-user access ticks in phase 2.<br>
-    <b>Grouping:</b> the three instruction-band keys sit in a new <b>Billing bands</b> group. Key
-    dealer, match chip and punched-by are badges, not bands, so they stay in <b>Mail Orders</b>.
-    Say the word if you want all six under Billing bands instead.<br>
-    <b>Resolution:</b> user &gt; role &gt; everyone. A role exception applies to a multi-role person
-    only if <b>every</b> role they hold hides it — show wins. No admin bypass: you see these
-    switches take effect yourself.
+    <b>Mockup only — static HTML, nothing is wired.</b> Admin-only: Settings › Hide › Tags
+    (<code>components/admin/hide-settings-content.tsx</code>).<br>
+    <b>Option A “Who sees it”.</b> One dropdown per tag — Everyone · Nobody · Everyone except… ·
+    Only… — with exceptions as chips beneath it and one plain sentence under those. Changing mode
+    clears the previous mode’s exceptions, and the screen asks first.<br>
+    <b>Phase 1 is badges and bands.</b> Hold / Slot / Urgent / the ship-to pencil are not here —
+    they are capabilities, not badges, and belong to the per-user access ticks in phase 2.<br>
+    <b>Picker population:</b> People are the active users who can open Mail Orders today, read from
+    the <i>live</i> access source; Roles are the roles those people hold. Stored by role slug and
+    user id.<br>
+    <b>Resolution:</b> person &gt; role &gt; everyone. For a multi-role person, show wins — a role
+    exception bites only if every role they hold hides it. No admin bypass.
   </div>
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <div class="card">
     <div class="card-head">
       <h3>Tags</h3>
-      <p>Switch a badge on or off. Choose who it applies to. Data is never changed — only what
-         renders. Saves automatically.</p>
+      <p>Choose who sees each badge. Data is never changed — only what renders. Saves automatically.</p>
     </div>
 
-    <!-- ── Group: Mail Orders (abridged — 16 live entries today) ────────── -->
     <div class="group">Mail Orders</div>
 
-    <!-- STATE 1 — no exceptions -->
+    <!-- STATE 1 — Everyone, no exceptions -->
     <div class="row">
-      <div class="row-main">
-        <div class="preview"><span class="chip">Key dealer</span></div>
+      <div class="top">
+        <div class="preview"><span class="chip">Key dealer (★)</span></div>
         <div class="info">
           <div class="name">Key dealer (★)</div>
           <div class="desc">Amber star on the inbox row and the “Key” pill on the Bill&nbsp;To card.</div>
         </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
+        <select class="who">
+          <option selected>Everyone</option><option>Nobody</option>
+          <option>Everyone except…</option><option>Only…</option>
+        </select>
+      </div>
+      <div class="below">
+        <div class="line">
+          <p class="sentence">Everyone sees it.</p>
+          <button class="addbtn">+ Exception</button>
         </div>
       </div>
-      <button class="addbtn">+ Exception</button>
     </div>
 
-    <!-- STATE 2 — one role exception -->
+    <!-- STATE 2 — Everyone except…, one ROLE chip -->
     <div class="row" style="background:var(--ink-25)">
-      <div class="row-main">
+      <div class="top">
         <div class="preview"><span class="chip">Match chip</span></div>
         <div class="info">
-          <div class="name">Match chip (✓ 6/6)</div>
-          <div class="desc">SKU readiness chip above the line table on the Billing face.</div>
+          <div class="name">Match chip</div>
+          <div class="desc">The ✓ 6/6 readiness chip above the SKU lines, counting matched lines.</div>
         </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
+        <select class="who">
+          <option>Everyone</option><option>Nobody</option>
+          <option selected>Everyone except…</option><option>Only…</option>
+        </select>
+      </div>
+      <div class="below">
+        <div class="chips">
+          <span class="exc"><span class="kind">Role</span> Billing Operator <button title="Remove">×</button></span>
+        </div>
+        <div class="line">
+          <p class="sentence">Everyone sees it, except Billing Operator.</p>
+          <button class="addbtn">+ Exception</button>
         </div>
       </div>
-      <div class="exc">
-        <div class="exc-row">
-          <span class="tagp"><span class="kind">Role</span> billing_operator</span>
-          <span class="exc-state">Hidden for this role — <b>off</b></span>
-          <button class="tg sm" aria-label="off"><i></i></button>
-          <button class="x" title="Remove exception">×</button>
-        </div>
-      </div>
-      <button class="addbtn">+ Exception</button>
     </div>
 
-    <!-- STATE 3 — one user exception -->
+    <!-- STATE 3 — Only…, one PERSON chip -->
     <div class="row">
-      <div class="row-main">
-        <div class="preview"><span class="chip">Punched by</span></div>
+      <div class="top">
+        <div class="preview"><span class="chip">Punched-by line</span></div>
         <div class="info">
           <div class="name">Punched-by line</div>
           <div class="desc">“punched by Bankim 14:20” on the order ribbon, once an order is punched.</div>
         </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
+        <select class="who">
+          <option>Everyone</option><option>Nobody</option>
+          <option>Everyone except…</option><option selected>Only…</option>
+        </select>
+      </div>
+      <div class="below">
+        <div class="chips">
+          <span class="exc"><span class="kind">Person</span> Deepanshu Thakur <button title="Remove">×</button></span>
+        </div>
+        <div class="line">
+          <p class="sentence">Only Deepanshu Thakur sees it.</p>
+          <button class="addbtn">+ Exception</button>
         </div>
       </div>
-      <div class="exc">
-        <div class="exc-row">
-          <span class="tagp"><span class="kind">Person</span> Deepanshu Thakur</span>
-          <span class="exc-state">Hidden for this person — <b>off</b></span>
-          <button class="tg sm" aria-label="off"><i></i></button>
-          <button class="x" title="Remove exception">×</button>
-        </div>
-      </div>
-      <button class="addbtn">+ Exception</button>
     </div>
 
-    <!-- An important tag, reworded -->
+    <!-- An important tag -->
     <div class="row">
-      <div class="row-main">
+      <div class="top">
         <div class="preview"><span class="chip">Ship-to captured</span></div>
         <div class="info">
           <div class="name">Ship-to captured <span class="imp">Important</span></div>
-          <div class="desc">Turning this off does more than hide a pill: the card then shows the
-            <b>bill-to</b> dealer in place of the redirect, with nothing saying it was changed.</div>
+          <div class="desc">The ⚑ pill and amber bar marking a redirected delivery. Turning it off
+            makes the Ship&nbsp;To card show the <b>bill-to</b> dealer instead of the real delivery dealer.</div>
         </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
+        <select class="who">
+          <option selected>Everyone</option><option>Nobody</option>
+          <option>Everyone except…</option><option>Only…</option>
+        </select>
+      </div>
+      <div class="below">
+        <div class="line">
+          <p class="sentence">Everyone sees it.</p>
+          <button class="addbtn">+ Exception</button>
         </div>
       </div>
-      <button class="addbtn">+ Exception</button>
     </div>
 
-    <!-- ── Group: Billing bands (new) ───────────────────────────────────── -->
-    <div class="group">Billing bands</div>
+    <div class="group">Violet band (Billing)</div>
 
     <div class="row">
-      <div class="row-main">
-        <div class="preview"><span class="chip">Notes band</span></div>
+      <div class="top">
+        <div class="preview"><span class="chip">Notes line</span></div>
         <div class="info">
-          <div class="name">Notes band</div>
-          <div class="desc">The NOTES row of the violet band — parser-detected remarks.
-            <b>Not</b> the operator’s own note, which stays on the Notes button.</div>
+          <div class="name">Notes line</div>
+          <div class="desc">The NOTES row of the violet band — remarks the parser found in the
+            email. Does <b>not</b> affect the operator’s own note, which stays on the Notes button.</div>
         </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
+        <select class="who">
+          <option selected>Everyone</option><option>Nobody</option>
+          <option>Everyone except…</option><option>Only…</option>
+        </select>
+      </div>
+      <div class="below">
+        <div class="line">
+          <p class="sentence">Everyone sees it.</p>
+          <button class="addbtn">+ Exception</button>
         </div>
       </div>
-      <button class="addbtn">+ Exception</button>
-    </div>
-
-    <div class="row">
-      <div class="row-main">
-        <div class="preview"><span class="chip">Delivery band</span></div>
-        <div class="info">
-          <div class="name">Delivery instruction band</div>
-          <div class="desc">The DELIVERY row of the band, from the email’s delivery remark.</div>
-        </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
-        </div>
-      </div>
-      <button class="addbtn">+ Exception</button>
     </div>
 
     <div class="row">
-      <div class="row-main">
-        <div class="preview"><span class="chip">Bill band</span></div>
+      <div class="top">
+        <div class="preview"><span class="chip">Delivery line</span></div>
         <div class="info">
-          <div class="name">Bill instruction band</div>
-          <div class="desc">The BILL row of the band, from the email’s billing remark.</div>
+          <div class="name">Delivery line</div>
+          <div class="desc">The DELIVERY row of the violet band, from the email’s delivery remark.</div>
         </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
+        <select class="who">
+          <option selected>Everyone</option><option>Nobody</option>
+          <option>Everyone except…</option><option>Only…</option>
+        </select>
+      </div>
+      <div class="below">
+        <div class="line">
+          <p class="sentence">Everyone sees it.</p>
+          <button class="addbtn">+ Exception</button>
         </div>
       </div>
-      <button class="addbtn">+ Exception</button>
+    </div>
+
+    <div class="row">
+      <div class="top">
+        <div class="preview"><span class="chip">Bill line</span></div>
+        <div class="info">
+          <div class="name">Bill line</div>
+          <div class="desc">The BILL row of the violet band, from the email’s billing remark.</div>
+        </div>
+        <select class="who">
+          <option>Everyone</option><option selected>Nobody</option>
+          <option>Everyone except…</option><option>Only…</option>
+        </select>
+      </div>
+      <div class="below">
+        <div class="line">
+          <p class="sentence">Nobody sees it.</p>
+          <button class="addbtn">+ Exception</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <p class="foot">
-    Important tags ask before turning off. A person with more than one job title keeps the badge if
-    any of their roles still shows it. Every change is recorded against your name.
+    A person with more than one job title keeps the badge if any of their roles still shows it.
+    Important tags ask before hiding. Every change is recorded against your name.
   </p>
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
-  <div class="caption">“+ Exception” — the picker, open</div>
-  <div class="card" style="padding-bottom:12px">
+  <div class="caption">“+ Exception” — one search, two sections</div>
+  <div class="card">
     <div class="row" style="border-bottom:0">
-      <div class="row-main">
-        <div class="preview"><span class="chip">Notes band</span></div>
+      <div class="top">
+        <div class="preview"><span class="chip">Notes line</span></div>
         <div class="info">
-          <div class="name">Notes band</div>
-          <div class="desc">Choose a role or a person. Their setting overrides Everyone.</div>
+          <div class="name">Notes line</div>
+          <div class="desc">Pick a role or a person. Their setting overrides Everyone.</div>
         </div>
-        <div class="ctl">
-          <span class="scope-lbl">Everyone</span>
-          <button class="tg on" aria-label="on"><i></i></button>
-        </div>
+        <select class="who">
+          <option selected>Everyone</option><option>Nobody</option>
+          <option>Everyone except…</option><option>Only…</option>
+        </select>
       </div>
-      <div class="pop">
-        <div class="seg">
-          <button class="sel">By role</button>
-          <button>By person</button>
+      <div class="below">
+        <div class="line">
+          <p class="sentence">Everyone sees it.</p>
+          <button class="addbtn" disabled>+ Exception</button>
         </div>
-        <input type="text" placeholder="Search roles…">
-        <div style="margin-top:6px">
-          <div class="opt">billing_operator <small>· 3 people</small></div>
-          <div class="opt">operations <small>· 1 person</small></div>
-          <div class="opt">operation_manager <small>· 1 person</small></div>
-          <div class="opt">tint_manager <small>· 1 person</small></div>
+        <div class="pop">
+          <div class="srch">
+            <input type="text" placeholder="Search roles or people…">
+            <button class="close" title="Close">×</button>
+          </div>
+          <div class="sec">Roles</div>
+          <div class="opt"><span>Billing Operator</span><small>3 people</small></div>
+          <div class="opt"><span>Operations</span><small>1 person</small></div>
+          <div class="opt"><span>Operation Manager</span><small>1 person</small></div>
+          <div class="opt"><span>Tint Manager</span><small>1 person</small></div>
+          <div class="sec">People</div>
+          <div class="opt"><span>Bankim</span><small>Billing Operator</small></div>
+          <div class="opt"><span>Chandresh Kolgha</span><small>Tint Manager</small></div>
+          <div class="opt"><span>Deepanshu Thakur</span><small>Billing Operator</small></div>
+          <div class="opt"><span>Prakash</span><small>Operation Manager</small></div>
         </div>
       </div>
     </div>
   </div>
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
-  <div class="caption">Important tag — the confirm before switching off</div>
+  <div class="caption">Important tag — the confirm, whenever the choice hides it from anyone</div>
   <div class="dlgwrap">
     <div class="dlg">
-      <h4>Turn the Ship-to captured badge off?</h4>
-      <p>The Ship&nbsp;To card will show the <b>bill-to</b> dealer instead of the redirect, and
-         nothing on the card will say the bill was redirected. Nothing is deleted — the redirect
-         itself is untouched and still drives dispatch.</p>
-      <div class="who">Applies to <b>everyone</b>. Add an exception instead if you only mean one
-        role or one person.</div>
+      <h4>Ship-to captured</h4>
+      <div class="said">Only Bankim sees it.</div>
+      <p>The Ship&nbsp;To card will show the <b>bill-to</b> dealer instead of the redirect for
+         everybody else, with nothing saying the bill was redirected. Nothing is deleted — the
+         redirect itself is untouched and still drives dispatch.</p>
       <div class="acts">
-        <button class="btn ghost">Keep it on</button>
-        <button class="btn warn">Turn it off</button>
+        <button class="btn ghost">Cancel</button>
+        <button class="btn go">Continue</button>
       </div>
     </div>
   </div>
 
   <p class="foot">
-    Mockup · <code>docs/mockups/hide/tags-scope-mockup.html</code> · 2026-09-11 ·
-    tokens from <code>tailwind.config.ts</code>, row geometry from the live Tags tab.
+    Mockup · <code>docs/mockups/hide/tags-scope-mockup.html</code> · rewritten 2026-09-11 for
+    Option A · tokens from <code>tailwind.config.ts</code>, geometry from the shipped Tags row.
   </p>
 
 </div>

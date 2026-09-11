@@ -17,10 +17,18 @@ export const dynamic = "force-dynamic";
 // ─────────────────────────────────────────────────────────────────────────────
 // Save per-user page access.
 //
-// 🔴 WRITING HERE CHANGES WHAT NOBODY CAN DO. Every gate and every menu still
-// resolves through role_permissions; this table is consulted by nothing until
-// step 4. That is the whole point of the step — the owner sets up what the
-// switch will do, and the screen shows the difference.
+// 🔴 WRITING HERE CHANGES WHAT PEOPLE CAN DO, IMMEDIATELY.
+//
+// ⚠ Corrected 2026-09-11. This block used to read "this table is consulted by
+// nothing until step 4" — true for about a day. Step 4 shipped (`2f461f93`) and
+// system_config.ACCESS_SOURCE is live at 'user', so all five resolvers in
+// lib/permissions.ts read user_page_access and a tick saved here takes effect
+// within the 30-second source cache (lib/access/source.ts). role_permissions is
+// now only the rollback path, read when ACCESS_SOURCE reads 'role'.
+//
+// The screen's own banner has always told the truth — it drives off the same
+// cached value the resolvers read — so it was this comment, and only this
+// comment, that was stale. Model: CORE §5. Schema: §7.14.
 //
 // SAVE ONLY WHAT CHANGED. The client sends the flags it actually toggled, and
 // this route writes exactly those. It never re-posts a full grid. The old
