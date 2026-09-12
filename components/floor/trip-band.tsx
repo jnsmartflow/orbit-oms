@@ -308,13 +308,22 @@ export function TripBand({
       )}
 
       {/* The honest gap. `counts.total` is every bill on the trip; `rows` is the
-          ones still on today's live board. A finished trip has all of the first
-          and none of the second, and saying so is better than an empty table
-          under a full progress bar. */}
+          ones the board payload actually carries. Saying so is better than an
+          empty table under a full progress bar.
+
+          🔴 THE FIRST BRANCH USED TO CLAIM A CAUSE IT COULD NOT SEE — "they
+          have left the live board", as though finishing were the reason. It was
+          not: a bill checked on an earlier day and now on a trip matched no arm
+          of the board predicate, which `floorTripBillsWhere` (lib/floor/
+          queries.ts, 2026-09-13) closes. Both branches now state only what this
+          component can observe. That `counts.done === counts.total` IS
+          established — it comes from the trips payload, which reads every bill
+          through trip_drops — so the finished fact stays; only the causal claim
+          beside it goes. */}
       {open && rows.length === 0 && counts.total > 0 && (
         <div className="border-t border-[#f0f0f0] px-3.5 py-3 text-[11px] text-gray-400">
           {counts.done === counts.total
-            ? `All ${counts.total} bill${counts.total === 1 ? "" : "s"} finished — they have left the live board.`
+            ? `All ${counts.total} bill${counts.total === 1 ? " is" : "s are"} finished. None ${counts.total === 1 ? "is" : "are"} on today's board.`
             : `None of this trip's ${counts.total} bill${counts.total === 1 ? " is" : "s are"} on today's board.`}
         </div>
       )}

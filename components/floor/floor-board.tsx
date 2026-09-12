@@ -481,9 +481,21 @@ export function FloorBoard({
   //
   // `countByStatus` is the shared helper (status-pill.tsx), not a hand-written
   // stage test: four stage meanings, one owner. Its `done` bucket IS
-  // pick_checked, and on the live board a pick_checked row can only be there
-  // via arm 2 — i.e. it was checked today — so "checked today" is exact, not an
-  // approximation.
+  // pick_checked.
+  //
+  // 🔴 THIS BLOCK USED TO SAY "checked today" IS EXACT. IT IS NOT, AND HAS NOT
+  // BEEN SINCE 2026-09-11. The claim rested on a pick_checked row only ever
+  // reaching the live board through arm 1's checked-TODAY branch. That stopped
+  // being true when `floorCarriedPoolWhere` began admitting bills checked on any
+  // day, and again with `floorTripBillsWhere` on 2026-09-13. `done` is a STAGE
+  // bucket and carries no date.
+  //
+  // ⚠ THIS FILE RENDERS NOTHING — trip-desk.tsx replaced the Floor tab on
+  // 2026-09-10 (see its header) and floor-page.tsx does not import this
+  // component. The comment is corrected rather than the code because the
+  // reasoning above is exactly what a reader would carry back to the live twin;
+  // the fix itself lives in trip-desk.tsx, which splits the checked half by
+  // `checkedAt` and says "checked earlier" for the rest.
   const liveCounts = countByStatus(dueRows);
   const stillOpen = liveCounts.total - liveCounts.done;
 

@@ -50,6 +50,20 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 function istTodayIso(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
+/**
+ * The IST calendar day an instant falls on, for the date-bar strip below.
+ *
+ * ⚠ SAFE AGAINST THE OFFSET-LESS-STRING TRAP (CORE §3) BY ITS INPUT, not by
+ * luck. `Date | string | null` is the shared PickingQueueRow shape: a real Date
+ * is unambiguous, and every STRING this board carries is produced server-side by
+ * `.toISOString()` (lib/floor/queries.ts), so it always ends in `Z` and reads as
+ * UTC on a depot phone and on Vercel alike. Never point this at a hand-built
+ * "YYYY-MM-DDTHH:mm" — that one is parsed in the HOST's zone, the two hosts
+ * disagree by 5.5 hours, and it only shows near midnight.
+ */
+function istDayOf(at: Date | string | null): string | null {
+  return at === null ? null : new Date(at).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
 function addDaysIso(iso: string, delta: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
@@ -167,8 +181,40 @@ export function TripDesk({
   const navCls =
     "flex h-6 w-6 items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-500 disabled:opacity-40";
 
+  // ── THE LIVE STRIP — it now COUNTS WHAT IT CLAIMS (2026-09-13) ───────────
+  //
+  // 🔴 IT USED TO READ "{liveCounts.done} checked today" AND THAT WAS A LIE THE
+  // MOMENT THE BOARD GREW A CARRIED ARM. `countByStatus().done` is a STAGE
+  // bucket — it counts rows sitting at pick_checked — and says nothing about
+  // WHEN they were checked. That was exact while the only way onto the live
+  // board for a checked bill was arm 1's checked-TODAY branch. It stopped being
+  // exact on 2026-09-11 when `floorCarriedPoolWhere` began admitting bills
+  // checked on any day, and again on 2026-09-13 with `floorTripBillsWhere`.
+  // Measured on 2026-09-12 the strip claimed 184 checked today when 165 were;
+  // measured early on 2026-09-13, before anyone had checked anything, it
+  // claimed 47 checked today when the true figure was ZERO. A number that wrong
+  // is worse than no number.
+  //
+  // ⚠ WORDING AND COUNTING ONLY — NO PREDICATE MOVED. The payload already
+  // carries what an honest count needs: every checked row on the board has a
+  // `checkedAt` (measured live, 47 of 47, none null), so the day test is done
+  // HERE on data already fetched. No arm, no `floorBoardWhere`, no extra fetch
+  // and no per-row lookup was touched to get this.
+  //
+  // ⚠ `countByStatus` IS STILL THE OWNER OF THE FOUR STATUSES and is not
+  // re-implemented. `stillOpen` comes straight off it, exactly as before; only
+  // the checked HALF is split by date, and it is split here rather than inside
+  // the shared helper because widening `StatusCounts` would change what "done"
+  // means on the slot bands, the route rows and the By-picker cards too.
+  //
+  // The three numbers partition `dueRows` exactly, so the strip still adds up.
+  // A checked row with no timestamp would fall in "checked earlier" — it cannot
+  // be shown as today's without a date saying so, and none exist today.
   const liveCounts = countByStatus(dueRows);
   const stillOpen = liveCounts.total - liveCounts.done;
+  const todayIso = istTodayIso();
+  const checkedToday = dueRows.filter((r) => r.isChecked && istDayOf(r.checkedAt) === todayIso).length;
+  const checkedEarlier = liveCounts.done - checkedToday;
 
   const dateBar = isHistory ? (
     <div className="flex items-center gap-2 border-b border-gray-200 bg-[#f9fafb] px-3.5 py-[7px] text-[11.5px]">
@@ -185,7 +231,8 @@ export function TripDesk({
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#10b981]" />
       <span className="font-semibold">Live</span>
       <span className="text-[10.5px] text-gray-400">
-        {stillOpen} still open &middot; {liveCounts.done} checked today
+        {stillOpen} still open &middot; {checkedToday} checked today
+        {checkedEarlier > 0 && <> &middot; {checkedEarlier} checked earlier</>}
       </span>
       <button type="button" className="ml-auto text-[10.5px] font-semibold text-brand-600" onClick={onEnterHistory}>
         History ›
@@ -291,10 +338,22 @@ export function TripDesk({
     // The trip's bills, grouped under its stops. `tripDetail` carries the drops
     // in dropSeq order and which orders sit on each; the board carries the rows.
     //
-    // ⚠ A DROP CAN HOLD BILLS THE BOARD NO LONGER SHOWS — a finished trip's
-    // bills have left the live predicate. The stop still renders, with a line
-    // saying so, rather than vanishing and making the stop count disagree with
-    // the header's.
+    // ⚠ A DROP CAN STILL HOLD BILLS THE BOARD DOES NOT CARRY, and the stop
+    // renders anyway with a line saying so, rather than vanishing and making
+    // the stop count disagree with the header's.
+    //
+    // 🔴 THAT LINE USED TO BE A GUESS, AND FROM 2026-09-13 IT IS ALSO RARE.
+    // It read "N bills finished — off today's live board", which asserted two
+    // things this component cannot see: that the bills were finished, and that
+    // being finished is why they are absent. The real cause was a gap in the
+    // board predicate — a bill checked on an earlier day and now on a trip
+    // matched no arm — and `floorTripBillsWhere` (lib/floor/queries.ts) closes
+    // it. For any bill on a live, non-cancelled trip dated today or later, this
+    // branch is now unreachable. It is kept as an HONEST fallback for the one
+    // case left (a bill whose `dispatchStatus` is not "dispatch", which every
+    // arm pins), and its wording now states only what is observable here: the
+    // row is not in the payload. Why it is not in the payload is a question
+    // this file has no way to answer and must stop pretending to.
     // ⚠ BUILT FROM THE WHOLE BOARD, NOT `dueRows`. A bill promised for a later
     // date can sit on a trip — that is the point of being able to plan Saturday
     // on Thursday — and while this map read only the due half, such a bill was
@@ -359,7 +418,7 @@ export function TripDesk({
                   />
                 ) : (
                   <div className="px-3.5 py-2.5 pl-[34px] text-[11px] text-gray-400">
-                    {d.bills} bill{d.bills === 1 ? "" : "s"} finished — off today&rsquo;s live board.
+                    {d.bills} bill{d.bills === 1 ? " is" : "s are"} on this stop, not on today&rsquo;s board.
                   </div>
                 )}
               </div>

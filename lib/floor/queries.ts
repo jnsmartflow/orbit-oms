@@ -155,6 +155,94 @@ export function floorCarriedPoolWhere(): Prisma.ordersWhereInput {
   };
 }
 
+/**
+ * BILLS ON A LIVE TRIP — checked whenever, still on a truck that has not gone
+ * (2026-09-13).
+ *
+ * 🔴 WHY A FOURTH ARM WAS NEEDED. A bill checked on an EARLIER day that is now
+ * ON a trip matched nothing at all: arm 1's checked branch fences on today, arm
+ * 2 wants no dispatch decision at all, and arm 3 requires `tripDropId: null` —
+ * which is precisely what a bill on a trip is not. So it was absent from the
+ * board's row set, and the trip desk, which looks each stop's bills up IN that
+ * row set, found none and printed "N bills finished — off today's live board":
+ * a sentence asserting a fact the code had never established. Live case,
+ * 2026-09-12: trip L-260912-01 stop 1 (OBD 9109437142, checked 2026-09-11) drew
+ * that line while stops 2 and 3, checked that morning, drew their rows.
+ *
+ * ⚠ THIS GAP IS OLDER THAN THE CARRIED POOL AND 36a39ba7 DID NOT CAUSE IT.
+ * Rebuilding the pre-36a39ba7 two-arm board shows the same bill missing. That
+ * commit closed the NOT-on-a-trip half of this one class and left this half
+ * standing, which is the only reason it reads as a regression.
+ *
+ * 🔴 `tripDropId: { not: null }` IS REDUNDANT AND LOAD-BEARING. DO NOT DELETE
+ * IT. A row whose FK is null has no `tripDrop`, so the relation filter below
+ * already implies the term and it changes not one row — measured, both forms
+ * return the same 142 rows with zero on either side. What it changes is the
+ * PLAN. Every other arm is driven by `workflowStage`, so Postgres covers the
+ * whole OR with a bitmap union over `orders_workflowStage_idx`. This arm has no
+ * stage term (deliberately — see below), so with no indexed column of its own
+ * the planner abandons the union and sequentially scans `orders`:
+ *
+ *     relation filter alone           Seq Scan on orders, 12,020 rows  23.72 ms
+ *     + tripDropId: { not: null }     BitmapOr preserved                2.33 ms
+ *
+ * The redundant term hands it `orders_tripDropId_idx` and the bitmap union
+ * survives. It looks pointless. It is worth 21 ms on every board load and on
+ * every 15s marker probe, which share this predicate.
+ *
+ * ⚠ NO `workflowStage` TERM, ON PURPOSE. Fencing this arm on stage restores the
+ * plan just as well (2.33 ms, identical rows today) and was rejected on
+ * meaning, not on cost: trip membership is not gated by stage — a trip can
+ * legitimately hold a bill at `pending_support` or `dispatched`, as
+ * trip-band.tsx's own header says — so a stage list would rebuild the exact
+ * class of hole this arm exists to close, and the next bill to fall through it
+ * would arrive looking like a brand-new bug.
+ *
+ * ⚠ A COMPLETE SET OF TERMS, like its three siblings — that is what makes the
+ * union in `floorBoardWhere` safe. `dispatchStatus: "dispatch"` is PINNED
+ * exactly as arms 1 and 3 carry it and is NOT loosened; dropping that term is
+ * the documented way to put every finished bill ever onto a 40-row board. It
+ * costs nothing today (every bill on a live trip carries `dispatch` — measured,
+ * the unpinned variant returns the identical 142 rows); it is what keeps that
+ * true tomorrow.
+ *
+ * ⚠ CANCELLED TRIPS ARE OUT, and so is a trip dated in the PAST.
+ *
+ * 🔴 AND THAT SECOND FENCE IS A KNOWN, MEASURED GAP — NOT A FINISHED THOUGHT.
+ * `getTripsForDate` (lib/trips/queries.ts) carries a past-dated DRAFT onto
+ * today's rail on purpose: its predicate is "tripDate = today OR (status
+ * 'draft' AND tripDate < today)". This arm's `tripDate >= today` does NOT
+ * match that, so the desk can show a carried draft whose bills this arm
+ * refuses, and every one of its stops falls back to the "not on today's board"
+ * line.
+ *
+ * It is not hypothetical and it is not small. On the morning of 2026-09-13
+ * every trip on the rail was a draft carried from 2026-09-12 — 22 of them, 105
+ * bills — so this arm admitted ZERO rows and 86 of 88 stops came up empty. The
+ * same measurement taken on 2026-09-12 could not see the problem at all,
+ * because every trip that day was dated that day and the two rules agreed.
+ *
+ * Widening the fence to "tripDate >= today OR status = 'draft'" closes it and
+ * admits 103 further rows (all pick_checked, oldest checked 2026-09-11). That
+ * is past the row budget agreed for this change, and it hands an UNBOUNDED past
+ * to the draft arm — a draft left open for a month would keep its bills on the
+ * live board for a month — so it is an owner decision, deliberately not taken
+ * here. Until it is taken, a carried draft's bills reach the board only through
+ * whichever other arm still describes them, exactly as before this arm existed.
+ *
+ * `todayDateOnly` is passed in (UTC-midnight, the `@db.Date` shape) so this
+ * stays pure and clock-free, the same contract `floorLiveBaseWhere` keeps.
+ */
+export function floorTripBillsWhere(todayDateOnly: Date): Prisma.ordersWhereInput {
+  return {
+    dispatchStatus: "dispatch",
+    isRemoved: false,
+    // Redundant by meaning, load-bearing by plan. Read the header before touching.
+    tripDropId: { not: null },
+    tripDrop: { trip: { status: { not: "cancelled" }, tripDate: { gte: todayDateOnly } } },
+  };
+}
+
 // Step 10 — the render-time slot SUGGESTION is ON. Non-tint bills anchor on
 // arrival; a COMPLETED full (non-split) tint OBD anchors on its completion time.
 // Split tints and unfinished tints still get nothing — see the suggestion block
@@ -302,6 +390,16 @@ export function floorLiveBaseWhere(todayRange: { start: Date; end: Date }): Pris
  * taken out of an existing one. That is the standing rule this comment exists to
  * enforce, and following it twice is what keeps it true.
  *
+ * ── FOURTH ARM ADDED 2026-09-13 ───────────────────────────────────────────
+ * `floorTripBillsWhere` — on a live trip, checked whenever. Arm 3 covers the
+ * bills NOT on a truck; this one covers the bills that ARE, which fell between
+ * every arm and left the trip desk printing a claim it could not support. Added
+ * the same way again: a new named function unioned in, `dispatchStatus` pinned
+ * exactly as its siblings pin it, not one term removed from anything. Three for
+ * three. Read that function's header before editing it — one of its terms is
+ * redundant by meaning and load-bearing by query plan, and deleting it as dead
+ * weight turns this whole OR into a sequential scan.
+ *
  * 🔴 THE MARKER USES THIS TOO (getFloorLiveMarkerWhere below), and that is why
  * widening happens HERE and nowhere else. Board and marker share one predicate
  * on purpose — let them drift and the board silently stops refreshing when an
@@ -309,9 +407,21 @@ export function floorLiveBaseWhere(todayRange: { start: Date; end: Date }): Pris
  * Adding an arm to this function widens both in the same edit, by construction;
  * there is no second place to remember.
  */
-export function floorBoardWhere(todayRange: { start: Date; end: Date }): Prisma.ordersWhereInput {
+export function floorBoardWhere(
+  todayRange: { start: Date; end: Date },
+  // The same day as `todayRange`, in the UTC-midnight `@db.Date` shape that
+  // `trips.tripDate` is stored in. Passed in beside the range rather than
+  // derived here so this function stays pure and clock-free, and so both
+  // callers below are visibly handing it ONE day.
+  todayDateOnly: Date,
+): Prisma.ordersWhereInput {
   return {
-    OR: [floorLiveBaseWhere(todayRange), floorUnslottedWhere(), floorCarriedPoolWhere()],
+    OR: [
+      floorLiveBaseWhere(todayRange),
+      floorUnslottedWhere(),
+      floorCarriedPoolWhere(),
+      floorTripBillsWhere(todayDateOnly),
+    ],
   };
 }
 
@@ -326,7 +436,11 @@ export async function getFloorLiveMarkerWhere(): Promise<Prisma.ordersWhereInput
   // marker blind to every un-slotted bill — a new one would arrive and no
   // screen would refresh, which is exactly the failure FLOOR §5 pairs these
   // two functions to prevent.
-  return { AND: [floorBoardWhere(getISTDayRange()), hide] };
+  // Both arguments are TODAY, read from the one clock a line apart, exactly as
+  // getFloorBoard's live branch reads them. Widening happens inside
+  // floorBoardWhere, so the marker gained the fourth arm in the same edit the
+  // board did and there is still no second place to remember.
+  return { AND: [floorBoardWhere(getISTDayRange(), getISTTodayDateOnly()), hide] };
 }
 
 // ── Shared per-obd lookups ───────────────────────────────────────────────────
@@ -802,7 +916,13 @@ export async function getFloorBoard(
         // touching this: the union is deliberate and the obvious shortcut
         // (dropping the dispatchStatus term) puts 2,545 finished bills on a
         // board that shows 40.
-        floorBoardWhere(getISTDayRange());
+        //
+        // 🔴 FOUR ARMS SINCE 2026-09-13. The fourth is `floorTripBillsWhere` —
+        // bills on a live trip, checked whenever — which is why a stop on the
+        // trip desk can no longer come up empty and claim its bills are
+        // finished. `todayDateOnly` above is the same day `getISTDayRange()`
+        // names; both are handed over rather than re-derived inside.
+        floorBoardWhere(getISTDayRange(), todayDateOnly);
 
   const orders = await prisma.orders.findMany({
     where: { AND: [base, hide] },
