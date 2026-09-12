@@ -1,77 +1,75 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- user_page_access — grant the FOUR billing action ticks
+-- user_page_access — the FOUR billing action ticks, one row per user per key
 -- 2026-09-11 · Register half of the Hold / Slot / Urgent / ship-to conversion
 --
 -- Run in the Supabase SQL Editor.  NO transaction wrapper — BEGIN/COMMIT fails
 -- silently there (CORE §3).  Plain statements only.  camelCase identifiers
--- quoted.  Idempotent: running it twice changes nothing the first run did not.
+-- quoted.  Idempotent, and safely re-runnable — see the conflict arm.
 --
--- 🔴 RUN THIS ONLY AFTER THE VERCEL DEPLOY OF ITS COMMIT IS LIVE.
--- The four page keys must exist in ALL_PAGE_KEYS before these rows mean
--- anything: /admin/access renders the rows from that list, so granting first
--- would write rows the screen cannot show and nobody could then revoke from the
--- UI.  Nothing BREAKS if it is run early — the rows are inert either way, since
--- no gate reads these keys yet — but the owner would be flying blind.
+-- 🔴 THIS FILE IS THE RECORD OF WHAT WAS ACTUALLY RUN, rewritten after the fact.
+-- The version committed in c73ee93b inserted rows ONLY for the five people who
+-- were to be granted.  The owner ran this corrected version instead, and the
+-- difference matters in two ways:
 --
--- ── WHAT THIS DOES ─────────────────────────────────────────────────────────
+--   1. ROWS FOR EVERY USER, NOT JUST THE GRANTED FIVE.  /admin/access counts a
+--      person's rows against ALL_PAGE_KEYS and warns when any are missing; four
+--      new keys granted to five people would have left the other 35 short and
+--      put a "page rows are missing" banner on every one of their pages.  An
+--      all-false row and an absent row mean exactly the same thing to every
+--      resolver (`allPerms[key]?.canEdit === true`, absent ≡ false), so writing
+--      the full grid costs nothing and silences a banner that would otherwise
+--      be read as a fault.  Live result: 40 users × 4 keys = 160 rows.
 --
--- Grants canEdit on billing_hold / billing_slot / billing_urgent /
--- billing_ship_to to exactly the people who can press those four buttons TODAY,
--- so that the LATER gate commit changes nothing for anybody.
+--   2. THE CONFLICT ARM ONLY EVER RAISES.  `"canEdit" = user_page_access."canEdit"
+--      OR excluded."canEdit"` — a re-run can grant somebody who was missed, and
+--      can NEVER take a tick back from somebody an admin deliberately revoked on
+--      /admin/access.  A plain `= excluded."canEdit"` would silently undo every
+--      hand revocation the next time this file was pasted, which is exactly the
+--      kind of quiet regression a re-runnable grant script must not have.
 --
--- The population is DERIVED FROM THE LIVE TABLE, never a hardcoded id list:
+-- ── WHO IS GRANTED ─────────────────────────────────────────────────────────
+--
+-- canEdit = true for the people who can press those four buttons TODAY, so the
+-- gate commit changes nothing for anybody:
 --
 --     isActive = true                     -- checked at sign-in
 --   AND isSuperuser = false               -- superusers short-circuit to all-true
 --                                         -- inside checkAnyPermission
---                                         -- (lib/permissions.ts:583-589) and
---                                         -- need no row; giving them one would
---                                         -- imply the flag is what grants them
+--                                         -- (lib/permissions.ts) and need no row;
+--                                         -- granting one would imply the flag is
+--                                         -- not what admits them.  Harsh holds
+--                                         -- four all-false rows and keeps every
+--                                         -- button — that IS the bypass working.
 --   AND user_page_access(mail_orders).canEdit = true
---                                         -- the ONLY gate those four buttons
---                                         -- have today
---                                         -- (api/billing/mail-order/actions:73)
+--                                         -- the only gate those four buttons had
+--                                         -- before the repoint
+--                                         -- (api/billing/mail-order/actions)
 --
--- Deriving it means the file cannot go stale between being written and being
--- run.  Expected result on 2026-09-11: Bankim, Chandresh Kolgha, Deepanshu
--- Thakur, Operations User, Prakash — five people × four keys = 20 rows.  Harsh
--- is the superuser and is deliberately absent.  ⚠ That list is the EXPECTATION,
--- not the instruction: whoever holds mail_orders canEdit when this runs is who
--- gets the ticks.
+-- Derived from the LIVE table, never a hardcoded id list, so the file cannot go
+-- stale between being written and being run.  Live result 2026-09-11: Bankim,
+-- Chandresh Kolgha, Deepanshu Thakur, Operations User, Prakash.  ⚠ That is the
+-- EXPECTATION, not the instruction — whoever holds mail_orders canEdit when this
+-- runs is who gets the ticks.
 --
--- ── WHY canEdit ONLY ───────────────────────────────────────────────────────
+-- ── WHY canView MIRRORS canEdit ────────────────────────────────────────────
 --
--- canEdit is the one question the app will ask of these keys: "may this person
--- press that button".  canView is written true as well, and it is the ONE thing
--- here that gates nothing: /admin/access draws a View box for every key
--- unconditionally (isActionAvailable returns true for View), so a row reading
--- canView=false would show an admin an unticked box next to a working button
--- and read as a half-grant.  Import / Export / Delete stay false and DASH on
--- that screen, correctly.
---
--- ── WHY DO UPDATE, NOT DO NOTHING ──────────────────────────────────────────
---
--- These rows do not exist yet, so the first run is pure INSERT.  But the
--- conflict arm must still RAISE a row rather than skip it: a person who has been
--- given an all-false row in the meantime — by a save on /admin/access, or by a
--- second run of this file after someone revoked a tick — must end up granted,
--- and DO NOTHING would silently leave them denied.  That is the failure this
--- whole file exists to prevent.
---
--- ⚠ "updatedAt" is set explicitly in the conflict arm.  Its DEFAULT now() fires
--- on INSERT only; without this an UPDATE would leave the old timestamp and the
--- row would lie about when it last moved.
+-- canEdit is the only question the app asks of these keys: "may this person press
+-- that button".  canView is written to the SAME value purely so the access screen
+-- reads honestly — it draws a View box for every key unconditionally
+-- (isActionAvailable returns true for View), and a granted row showing an
+-- unticked View box would read as a half-grant.  Nothing reads canView on these
+-- four keys.  Import / Export / Delete stay false and DASH on that screen.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 
 -- ───────────────────────────────────────────────────────────────────────────
--- PART 1 — the grant
+-- PART 1 — one row per user per key, granted only where earned
 --
 -- ON CONFLICT names the REAL constraint: user_page_access_user_page_key, a
 -- genuine UNIQUE ("userId","pageKey") created as a named constraint precisely so
 -- it could be an ON CONFLICT target (sql/2026-09-04-user-page-access.sql:81).
--- "id", "createdAt" and "updatedAt" are left to their column defaults on insert;
--- every other NOT NULL column is named explicitly below.
+-- "id", "createdAt" and "updatedAt" take their column defaults on insert; every
+-- other NOT NULL column is named explicitly.
 -- ───────────────────────────────────────────────────────────────────────────
 
 INSERT INTO user_page_access
@@ -79,28 +77,38 @@ INSERT INTO user_page_access
 SELECT
   u.id,
   k."pageKey",
-  true,   -- canView   — inert for these keys; see the header
-  false,  -- canImport
-  false,  -- canExport
-  true,   -- canEdit   — THE meaning: may press that button
-  false   -- canDelete
+  earned.ok,   -- canView   — mirrors canEdit so the screen reads honestly
+  false,       -- canImport
+  false,       -- canExport
+  earned.ok,   -- canEdit   — THE meaning: may press that button
+  false        -- canDelete
 FROM users u
-JOIN user_page_access mo
-  ON  mo."userId"  = u.id
-  AND mo."pageKey" = 'mail_orders'
-  AND mo."canEdit" = true
 CROSS JOIN (VALUES
   ('billing_hold'),
   ('billing_slot'),
   ('billing_urgent'),
   ('billing_ship_to')
 ) AS k("pageKey")
-WHERE u."isActive"    = true
-  AND u."isSuperuser" = false
+CROSS JOIN LATERAL (
+  SELECT (
+    u."isActive" = true
+    AND u."isSuperuser" = false
+    AND EXISTS (
+      SELECT 1 FROM user_page_access mo
+       WHERE mo."userId"  = u.id
+         AND mo."pageKey" = 'mail_orders'
+         AND mo."canEdit" = true
+    )
+  ) AS ok
+) AS earned
 ON CONFLICT ON CONSTRAINT user_page_access_user_page_key
 DO UPDATE SET
-  "canView"   = true,
-  "canEdit"   = true,
+  -- 🔴 RAISE ONLY, NEVER LOWER. A re-run can grant somebody who was missed and
+  -- can never undo a revocation made by hand on /admin/access.
+  "canView"   = user_page_access."canView" OR excluded."canView",
+  "canEdit"   = user_page_access."canEdit" OR excluded."canEdit",
+  -- Its DEFAULT now() fires on INSERT only; without this an UPDATE would leave
+  -- the old timestamp and the row would lie about when it last moved.
   "updatedAt" = now();
 
 
@@ -108,41 +116,52 @@ DO UPDATE SET
 -- PART 2 — verification.  ONE SELECT, because the Supabase editor shows only
 -- the LAST statement's result.
 --
--- One line per ACTIVE person who holds mail_orders canEdit, with the four ticks
--- side by side.  Every one of them must read true in all four columns.
---
--- The final GRANTED-ROWS line is the count: expect 4 × the number of people
--- listed above it.  A mismatch means a row did not land, and the person columns
--- say which.
---
--- ⚠ Superusers are shown for completeness with a 'bypass' marker — they are
--- NOT granted and must NOT be, so `false` in their four columns is correct.
+--   GRANTED   one line per person who can now press the buttons — all four
+--             columns must read true.  Expect the five named in the header.
+--   BYPASS    superusers.  All four false is CORRECT: they never needed a row.
+--   NO-GRANT  everybody else, collapsed to a count.  All-false rows, present so
+--             the access screen does not report missing rows.
+--   TOTALS    expect rows = users × 4, and granted = granted-people × 4.
 -- ───────────────────────────────────────────────────────────────────────────
 
-SELECT 1 AS sort_order,
-       u.name                                              AS person,
-       CASE WHEN u."isSuperuser" THEN 'bypass (no rows needed)'
-            ELSE 'granted' END                             AS status,
-       COALESCE(bool_or(a."pageKey" = 'billing_hold'    AND a."canEdit"), false)::text AS hold,
-       COALESCE(bool_or(a."pageKey" = 'billing_slot'    AND a."canEdit"), false)::text AS slot,
-       COALESCE(bool_or(a."pageKey" = 'billing_urgent'  AND a."canEdit"), false)::text AS urgent,
-       COALESCE(bool_or(a."pageKey" = 'billing_ship_to' AND a."canEdit"), false)::text AS ship_to
+WITH per_user AS (
+  SELECT
+    u.id,
+    u.name,
+    u."isSuperuser",
+    bool_or(a."pageKey" = 'billing_hold'    AND a."canEdit") AS hold,
+    bool_or(a."pageKey" = 'billing_slot'    AND a."canEdit") AS slot,
+    bool_or(a."pageKey" = 'billing_urgent'  AND a."canEdit") AS urgent,
+    bool_or(a."pageKey" = 'billing_ship_to' AND a."canEdit") AS ship_to
   FROM users u
-  JOIN user_page_access mo
-    ON  mo."userId"  = u.id
-    AND mo."pageKey" = 'mail_orders'
-    AND mo."canEdit" = true
   LEFT JOIN user_page_access a
     ON  a."userId"  = u.id
     AND a."pageKey" IN ('billing_hold','billing_slot','billing_urgent','billing_ship_to')
- WHERE u."isActive" = true
- GROUP BY u.id, u.name, u."isSuperuser"
+  GROUP BY u.id, u.name, u."isSuperuser"
+)
+SELECT 1 AS sort_order, 'GRANTED' AS line_type, name AS person,
+       COALESCE(hold,false)::text    AS hold,
+       COALESCE(slot,false)::text    AS slot,
+       COALESCE(urgent,false)::text  AS urgent,
+       COALESCE(ship_to,false)::text AS ship_to
+  FROM per_user
+ WHERE COALESCE(hold,false)
 UNION ALL
-SELECT 2,
-       'GRANTED-ROWS',
-       'expect 4 per person listed above',
-       count(*)::text, '', '', ''
-  FROM user_page_access
- WHERE "pageKey" IN ('billing_hold','billing_slot','billing_urgent','billing_ship_to')
-   AND "canEdit" = true
+SELECT 2, 'BYPASS', name || ' (superuser — sees every button without a tick)',
+       COALESCE(hold,false)::text, COALESCE(slot,false)::text,
+       COALESCE(urgent,false)::text, COALESCE(ship_to,false)::text
+  FROM per_user
+ WHERE "isSuperuser"
+UNION ALL
+SELECT 3, 'NO-GRANT', count(*)::text || ' other people — all-false rows present', '', '', '', ''
+  FROM per_user
+ WHERE NOT COALESCE(hold,false) AND NOT "isSuperuser"
+UNION ALL
+SELECT 4, 'TOTALS',
+       'rows ' || (SELECT count(*)::text FROM user_page_access
+                    WHERE "pageKey" IN ('billing_hold','billing_slot','billing_urgent','billing_ship_to'))
+               || ' (expect users x 4)',
+       'granted ' || (SELECT count(*)::text FROM user_page_access
+                       WHERE "pageKey" IN ('billing_hold','billing_slot','billing_urgent','billing_ship_to')
+                         AND "canEdit"), '', '', ''
  ORDER BY sort_order, person;

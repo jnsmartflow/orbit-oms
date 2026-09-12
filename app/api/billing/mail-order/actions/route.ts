@@ -93,6 +93,51 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
+  // ── PER-ACTION GATE (2026-09-11) — the real lock ────────────────────────
+  //
+  // One page key per button, so the owner can grant Slot without Hold. Checked
+  // HERE — after the action name is validated, before any payload is built and
+  // before any read or write touches a bill — so a refusal costs one permission
+  // lookup and changes nothing.
+  //
+  // 🔴 THIS IS THE LOCK; hiding the button is not. The client provider
+  // (components/billing/billing-actions-access-provider.tsx) only stops the
+  // screen OFFERING a control. Anyone can post to this route.
+  //
+  // The `mail_orders` canEdit check above STAYS as the outer gate and both must
+  // pass: `mail_orders` says "you may work on this screen", this key says "you
+  // may take this decision". Narrowing one never widens the other.
+  //
+  // Admin / superuser bypass comes free — both arms short-circuit inside
+  // checkAnyPermission before any table is read (lib/permissions.ts). Do NOT add
+  // a second bypass here.
+  //
+  // ⚠ Slot set and Slot clear share `billing_slot`, and ship-to set and clear
+  // share `billing_ship_to`, deliberately: clearing a redirect is as much a
+  // dispatch decision as setting one, and splitting them would let somebody
+  // create a state they could not undo.
+  //
+  // ⚠ A refusal writes NO audit line. `admin_audit_log` records what CHANGED
+  // (CORE §7.13); nothing changed, and a refused click is not an admin action.
+  const ACTION_KEY = {
+    hold:   "billing_hold",
+    slot:   "billing_slot",
+    urgent: "billing_urgent",
+    shipTo: "billing_ship_to",
+  } as const;
+
+  const ACTION_REFUSAL = {
+    hold:   "You do not have permission to hold or release a bill from Billing.",
+    slot:   "You do not have permission to change the dispatch slot from Billing.",
+    urgent: "You do not have permission to change urgency from Billing.",
+    shipTo: "You do not have permission to change the ship-to dealer from Billing.",
+  } as const;
+
+  const mayAct = await checkAnyPermission(roles, ACTION_KEY[action], "canEdit");
+  if (!mayAct) {
+    return NextResponse.json({ error: ACTION_REFUSAL[action] }, { status: 403 });
+  }
+
   // Sequential awaits only, never prisma.$transaction (CORE §3).
   const mailOrder = await prisma.mo_orders.findUnique({
     where: { id: moOrderId },

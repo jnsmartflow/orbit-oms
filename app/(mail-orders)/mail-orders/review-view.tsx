@@ -31,6 +31,7 @@ import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
 import { BillingActionRibbon, BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
 import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
+import { useBillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
@@ -593,6 +594,15 @@ export function ReviewView({
   const [editingSoNumber, setEditingSoNumber] = useState(false);
   const [replyCopied, setReplyCopied] = useState(false);
   const [codePopoverOpen, setCodePopoverOpen] = useState(false);
+
+  // Billing ACTION ticks (2026-09-11). Read from context rather than threaded
+  // as props: only the ship-to pencil below needs it here, and BillingActionRibbon
+  // reads the same context for its own three buttons — one source, two readers,
+  // no prop chain through mail-orders-page for a value it does not use.
+  //
+  // Defaults to all-false outside the provider, and is meaningless with the flag
+  // off: every one of these controls is already inside a `billingV2` branch.
+  const billingActions = useBillingActionsAccess();
 
   // Customer search popover state
   const [custSearchQuery, setCustSearchQuery] = useState("");
@@ -2204,8 +2214,21 @@ export function ReviewView({
             disabledTagKeys={disabledTagKeys}
             // Phase 2 — undefined unless the flag is on, so the card renders
             // nothing extra for every user today.
+            // `&& billingActions.shipTo` (2026-09-11) — the per-user tick.
+            // Gated HERE, at the call site, never inside ShipToCard: that card
+            // is SHARED with the non-billing Focus face and knows nothing about
+            // permissions (§23.6).
+            //
+            // ⚠ Still resolves to `undefined`, never null or false, so a person
+            // without the tick gets the card React has always rendered for
+            // everyone off the flag — no element, no comment node, no layout
+            // shift (the prop's own contract, ship-to-card.tsx:27-33).
+            //
+            // Hiding the pencil does NOT clear an existing redirect: the card
+            // keeps showing the real delivery dealer, its violet treatment and
+            // its `changed` pill. Only the way to CHANGE it goes.
             actionSlot={
-              billingV2 ? (
+              billingV2 && billingActions.shipTo ? (
                 <BillingShipToPencil
                   moOrderId={order.id}
                   hasOverride={order.shipToOverride ?? false}

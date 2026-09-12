@@ -21,6 +21,7 @@
 import { useState } from "react";
 import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
 import { postMailOrderAction } from "@/lib/billing/mo-actions";
+import { useBillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
 import type { MoOrder } from "@/lib/mail-orders/types";
 
 // EXPORTED so the Billing ribbon's other icon+label buttons (Notes, ⓘ) match
@@ -51,6 +52,11 @@ export function BillingActionRibbon({
   const [err, setErr] = useState<string | null>(null);
   const [slotGen, setSlotGen] = useState(0);
 
+  // Per-button ticks (2026-09-11). Three independent grants — a person may hold
+  // Slot and not Hold. The server re-checks each one before it writes; this only
+  // decides what is offered.
+  const access = useBillingActionsAccess();
+
   const holdOn = (order.dispatchStatus ?? "").toLowerCase() === "hold";
   const urgentOn = (order.dispatchPriority ?? "") === "Urgent";
   const slotDate = toDateString(order.dispatchTargetDate);
@@ -79,8 +85,25 @@ export function BillingActionRibbon({
     onSaved();
   }
 
+  // 🔴 RENDER NOTHING AT ALL when this person holds none of the three. Returning
+  // an empty <span> would still be a flex ITEM in the ribbon row, and that row's
+  // `gap-2` would then leave an 8px hole between the spacer and the Notes button
+  // — a gap with nothing in it reads as a missing control. `null` contributes no
+  // item, so the row closes up and renders correctly with just Notes / Copy /
+  // Order No + Punch. The row's one divider still sits between those and the
+  // punch group, which is exactly what it is for.
+  //
+  // ⚠ `err` lives inside this span, and that is fine: with no button there is no
+  // way to start an action that could fail.
+  if (!access.urgent && !access.hold && !access.slot) return null;
+
   return (
     <span className="mo-print-hide inline-flex items-center gap-1.5">
+      {/* Hidden, never disabled (CLAUDE_UI §10): hidden says "not yours",
+          disabled says "not yet". `false &&` contributes no DOM, so a person
+          without the tick gets a row that closes up rather than one with a hole
+          where a control used to be. */}
+      {access.urgent && (
       <button
         type="button"
         disabled={disabled}
@@ -90,7 +113,9 @@ export function BillingActionRibbon({
       >
         <span className={urgentOn ? "" : "text-gray-400"}>⚡</span> Urgent
       </button>
+      )}
 
+      {access.hold && (
       <button
         type="button"
         disabled={disabled}
@@ -100,11 +125,18 @@ export function BillingActionRibbon({
       >
         <span className={holdOn ? "" : "text-gray-400"}>⚑</span> Hold
       </button>
+      )}
 
       {/* Slot — the reused Floor picker. Its own trigger is overlaid invisibly
           on our spec-styled button purely to anchor the (body-portalled)
           popover; the shared component is NOT modified. Same technique as
-          components/floor/assign-bar.tsx. */}
+          components/floor/assign-bar.tsx.
+
+          ⚠ The WHOLE wrapper is gated, not just the visible button — the
+          overlaid DispatchSlotPicker inside it is a real, clickable trigger, so
+          hiding only the button would leave an invisible control that still
+          opens the popover and posts a slot change. */}
+      {access.slot && (
       <span className="relative inline-flex h-[27px]">
         <button
           type="button"
@@ -138,6 +170,7 @@ export function BillingActionRibbon({
           </span>
         )}
       </span>
+      )}
 
       {err && <span className="text-[10px] font-medium text-red-600">{err}</span>}
     </span>

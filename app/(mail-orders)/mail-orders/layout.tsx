@@ -6,6 +6,7 @@ import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { isBillingV2Enabled } from "@/lib/billing/flag";
 import { BillingV2Provider } from "@/components/billing/billing-v2-provider";
 import { BillingPickingAccessProvider } from "@/components/billing/billing-picking-access-provider";
+import { BillingActionsAccessProvider } from "@/components/billing/billing-actions-access-provider";
 import { getNotesFontSize } from "@/lib/mail-orders/notes-font-size";
 import { NotesFontSizeProvider } from "@/components/mail-orders/notes-font-size-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -69,6 +70,26 @@ export default async function MailOrdersLayout({
   const canViewBillingPicking = pickingPerms?.canView ?? false;
   const canEditBillingPicking = pickingPerms?.canEdit ?? false;
 
+  // ── Billing ACTION ticks (2026-09-11) ───────────────────────────────────────
+  // The four dispatch decisions on the Orders tab — Hold, Slot, Urgent and the ✎
+  // ship-to pencil — one key each, so Slot can be granted without Hold.
+  //
+  // Read off the SAME `allPerms` map as everything above: no second query, no
+  // client fetch, nothing per poll. The map already follows ACCESS_SOURCE, and
+  // admin / superuser is short-circuited to all-true inside
+  // getAllPermissionsForRoles — so Harsh keeps every button while holding four
+  // all-false rows, which is exactly what the bypass is for.
+  //
+  // 🔴 canEdit ONLY. `canView` on these four keys gates nothing and must never
+  // be read here (lib/permissions.ts — isActionAvailable's known limit).
+  //
+  // An absent key reads as false, which is what an absent row means everywhere
+  // else in the app.
+  const canHold   = allPerms["billing_hold"]?.canEdit    ?? false;
+  const canSlot   = allPerms["billing_slot"]?.canEdit    ?? false;
+  const canUrgent = allPerms["billing_urgent"]?.canEdit  ?? false;
+  const canShipTo = allPerms["billing_ship_to"]?.canEdit ?? false;
+
   // Billing v2 rollout (Phase 0) — global stage (billing_settings.rolloutStage)
   // AND the per-user opt-in, read FRESH each load (never cached onto the JWT;
   // see lib/billing/flag.ts for why). Read ONCE here and branched from, so the
@@ -108,7 +129,18 @@ export default async function MailOrdersLayout({
             canView={canViewBillingPicking}
             canEdit={canEditBillingPicking}
           >
-            <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+            {/* Separate from the Picking provider above for the same reason that
+                one is separate from the flag: the Picking TAB and the four
+                Orders-tab BUTTONS are different grants with different holders,
+                and merging them would make one revocation look like the other. */}
+            <BillingActionsAccessProvider
+              hold={canHold}
+              slot={canSlot}
+              urgent={canUrgent}
+              shipTo={canShipTo}
+            >
+              <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+            </BillingActionsAccessProvider>
           </BillingPickingAccessProvider>
         </BillingV2Provider>
       </RoleLayoutClient>
