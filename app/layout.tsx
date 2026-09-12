@@ -3,6 +3,11 @@ import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { SessionProvider } from "@/components/shared/session-provider";
 import { Toaster } from "@/components/ui/sonner";
+// Vercel Web Analytics. Page views only — no custom events. The package's
+// /next entry is itself a client component ("use client") and wraps its own
+// <Suspense>, so mounting it from this SERVER layout adds no client boundary of
+// ours and opts no route out of SSR.
+import { Analytics } from "@vercel/analytics/next";
 // The NODE auth entry (lib/auth.ts), not the Edge config — this layout renders
 // on the server runtime. The Node/Edge split stays exactly as it is (CORE §3);
 // nothing here merges them.
@@ -79,6 +84,7 @@ export default async function RootLayout({
       <body className={`${jakarta.variable} ${mono.variable} font-sans`}>
         <SessionProvider session={session}>{children}</SessionProvider>
         <Toaster richColors position="top-right" />
+        <Analytics />
       </body>
     </html>
   );
