@@ -277,13 +277,41 @@ export function FloorPage() {
         params.set("mode", "history");
         params.set("date", histDate);
       }
-      // Board + hold + cancelled — three independent GET routes, fetched together
-      // (parallel client fetches, not a prisma $transaction). Hold/Cancelled are
-      // pure open states (no date anchor), so they ignore the history params.
-      const [boardRes, holdRes, cancRes] = await Promise.all([
+      // Board + hold + cancelled + trips — four independent GET routes, fetched
+      // together (parallel client fetches, not a prisma $transaction).
+      // Hold/Cancelled are pure open states (no date anchor), so they ignore the
+      // history params.
+      //
+      // ⚠ TRIPS JOINED THIS Promise.all ON 2026-09-12. It used to be awaited
+      // AFTER these three, and it depends on none of them, so it sat on the
+      // critical path for nothing: 32 statements and ~1 s of pure serial
+      // latency on a page whose own board query executes in 4 ms server-side.
+      // Measured before/after in the commit message. No predicate moved, no
+      // poll interval moved, nothing under lib/floor/queries.ts was touched.
+      //
+      // 🔴 THE TRIPS REJECTION IS CAUGHT INSIDE THE ARRAY, AND THAT IS THE
+      // WHOLE CARE OF THIS CHANGE. A bare fourth entry would make a trips
+      // network failure reject the Promise.all, fall to the outer catch, and
+      // BLANK THE BOARD — which is precisely what the sequential try/catch that
+      // used to sit below these three prevented (FLOOR §5: never throw the page
+      // away over a side feed). Catching to `null` here leaves that promise
+      // unable to reject, so the failure semantics are byte-for-byte what they
+      // were when trips ran last: a board rejection blanks, a trips failure
+      // does not. The `null` is read in the trips block further down.
+      //
+      // ⚠ One honest difference: when the board answers non-2xx the throw below
+      // now happens with the trips request ALREADY ISSUED, where before it was
+      // never sent. That request is a read-only GET whose response is discarded,
+      // and the outer catch still does `setTrips(null)`, so nothing observable
+      // changes — but it is a difference, and it is written down rather than
+      // discovered later.
+      const tripDateParam =
+        viewMode === "history" && histDate ? histDate : istTodayIso();
+      const [boardRes, holdRes, cancRes, tripRes] = await Promise.all([
         fetch(`/api/floor/board?${params.toString()}`, { cache: "no-store" }),
         fetch(`/api/floor/hold?${UNSCOPED_QS}`, { cache: "no-store" }),
         fetch(`/api/floor/cancelled?${UNSCOPED_QS}`, { cache: "no-store" }),
+        fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" }).catch(() => null),
       ]);
       if (!boardRes.ok) throw new Error(`HTTP ${boardRes.status}`);
       const board = await boardRes.json();
@@ -296,30 +324,31 @@ export function FloorPage() {
       if (cancRes.ok) setCancelledRows(((await cancRes.json()).rows ?? []) as FloorCancelledRow[]);
       else { setCancelledRows([]); setSideError((prev) => prev ?? `Cancelled feed HTTP ${cancRes.status}`); }
 
-      // The day's trips — a FOURTH feed, fetched here rather than by a poll of
-      // its own, so the board and the bands can never describe different
-      // moments. Anchored on the SAME day the board is showing: today in live
-      // mode, the viewed day in History.
+      // The day's trips — a FOURTH feed, issued in the Promise.all above rather
+      // than by a poll of its own, so the board and the bands can never describe
+      // different moments. Anchored on the SAME day the board is showing: today
+      // in live mode, the viewed day in History.
       //
-      // A failure leaves the rail empty and does NOT blank the board — same
-      // rule as the hold/cancelled feeds above (FLOOR §5: never throw the page
-      // away over a side feed).
+      // A failure leaves the rail empty and does NOT blank the board — same rule
+      // as the hold/cancelled feeds above (FLOOR §5: never throw the page away
+      // over a side feed). THREE failure shapes, all landing on that rule:
+      //   `tripRes === null` — the request itself failed, caught in the array.
+      //   `!tripRes.ok`      — the route answered non-2xx.
+      //   a throw from .json() — a malformed body, which rejects HERE and not in
+      //                          the array, which is why the try/catch survives
+      //                          the move rather than being folded into it.
       //
       // 🔴 FETCHED FOR EVERYONE. It used to be skipped for a non-admin, because
       // By trip was an admin-only pivot option nobody else could reach. The trip
       // desk IS the Floor tab now, so skipping this would leave the rail empty
       // for every operator on the floor.
-      {
-        const tripDateParam =
-          viewMode === "history" && histDate ? histDate : istTodayIso();
-        try {
-          const tripRes = await fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" });
-          if (tripRes.ok) setTrips(((await tripRes.json()).trips ?? []) as TripSummary[]);
-          else { setTrips([]); setSideError((prev) => prev ?? `Trips feed HTTP ${tripRes.status}`); }
-        } catch {
-          setTrips([]);
-          setSideError((prev) => prev ?? "Trips feed unreachable");
-        }
+      try {
+        if (tripRes === null) { setTrips([]); setSideError((prev) => prev ?? "Trips feed unreachable"); }
+        else if (tripRes.ok) setTrips(((await tripRes.json()).trips ?? []) as TripSummary[]);
+        else { setTrips([]); setSideError((prev) => prev ?? `Trips feed HTTP ${tripRes.status}`); }
+      } catch {
+        setTrips([]);
+        setSideError((prev) => prev ?? "Trips feed unreachable");
       }
 
       setLastSyncedAt(new Date());
