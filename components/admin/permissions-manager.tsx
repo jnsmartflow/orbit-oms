@@ -56,6 +56,18 @@ const PAGES_CONFIG = [
   // operations / operation_manager, so none of THEM can be granted here either.
   // Fixing that is separate work, deliberately not done in this commit.
   { key: "billing_picking", label: "Billing · Picking", path: "/mail-orders",     section: "Operations" },
+  // The four Billing action ticks — Hold / Slot / Urgent / ship-to pencil on the
+  // Orders tab (2026-09-11, registered with the keys themselves). `canEdit` is
+  // their only meaning; this screen's View column is inert for them, exactly as
+  // it is on /admin/access (isActionAvailable's known limit).
+  //
+  // ⚠ Same caveat as the row above: this is the ACCESS_SOURCE='role' ROLLBACK
+  // editor, so nothing it writes is enforced while the live source is 'user'.
+  // The rows are here so the rollback path knows the keys exist at all.
+  { key: "billing_hold",    label: "Billing · Hold",    path: "/mail-orders",     section: "Operations" },
+  { key: "billing_slot",    label: "Billing · Slot",    path: "/mail-orders",     section: "Operations" },
+  { key: "billing_urgent",  label: "Billing · Urgent",  path: "/mail-orders",     section: "Operations" },
+  { key: "billing_ship_to", label: "Billing · Ship-to", path: "/mail-orders",     section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [

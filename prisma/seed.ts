@@ -190,6 +190,46 @@ async function main() {
     { roleSlug: "operations",        pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operation_manager", pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "tint_manager",      pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+
+    // ── Billing action ticks — Hold / Slot / Urgent / ship-to pencil ─────────
+    // Registered 2026-09-11 alongside the keys. One key per button so that Slot
+    // can be granted without Hold.
+    //
+    // 🔴 canEdit IS THE ONLY MEANING — "may press that button on the Billing
+    // face". `canView` is set true only because /admin/access always draws a
+    // View box for every key (isActionAvailable's known limit) and a template
+    // row reading false there would look like a half-grant; nothing reads it.
+    //
+    // FLAGS MIRROR THE LIVE `mail_orders` ROWS, same rule as billing_picking
+    // above: these four buttons have always ridden on `mail_orders` canEdit, so
+    // the four role templates that hold it are exactly the ones that can press
+    // them today. `floor_supervisor` is absent for the same reason as above —
+    // and doubly so here, since Floor reaches all four facts through its own
+    // `floor` key and does not need billing's.
+    //
+    // ⚠ SEED IS NOT LIVE, IN BOTH DIRECTIONS (CORE §3). These are the role
+    // TEMPLATE. Live access is `user_page_access` (ACCESS_SOURCE='user'), which
+    // this file does not seed at all — so a wipe-and-reseed grants nobody these
+    // keys. sql/2026-09-11-billing-action-ticks.sql is what grants real people.
+    { roleSlug: "billing_operator",  pageKey: "billing_hold",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",        pageKey: "billing_hold",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "billing_hold",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "billing_hold",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+
+    { roleSlug: "billing_operator",  pageKey: "billing_slot",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",        pageKey: "billing_slot",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "billing_slot",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "billing_slot",    canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+
+    { roleSlug: "billing_operator",  pageKey: "billing_urgent",  canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",        pageKey: "billing_urgent",  canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "billing_urgent",  canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "billing_urgent",  canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+
+    { roleSlug: "billing_operator",  pageKey: "billing_ship_to", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",        pageKey: "billing_ship_to", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "billing_ship_to", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "billing_ship_to", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
   ];
 
   for (const row of permRows) {
