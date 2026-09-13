@@ -271,6 +271,7 @@ export function FloorTable({
   onMarkUrgent,
   onOpenDetail,
   showInvoice = true,
+  operatorByOrderId,
   upcomingRows,
   anchorIso,
   chipFor,
@@ -305,6 +306,30 @@ export function FloorTable({
    * least room to spare.
    */
   showInvoice?: boolean;
+  /**
+   * Order id → tint operator name, for the Tinting tab's Operator column
+   * (2026-09-14). Absent everywhere else, and the column with it.
+   *
+   * 🔴 IT TAKES THE INVOICE COLUMN'S SLOT RATHER THAN ADDING A TENTH. This
+   * file's own header warns that the widths, the `<th>`s and the `<td>`s map
+   * POSITIONALLY and that one missing cell shifts every column to its right —
+   * a bug that has already happened once, to Route. A third conditional would
+   * have taken the width matrix from four arms to eight, each hand-counted to
+   * 100. Sharing one slot keeps it at four and keeps ONE condition, `hasExtra`,
+   * in all three places.
+   *
+   * The two are MUTUALLY EXCLUSIVE and the Tinting tab passes
+   * `showInvoice={false}` alongside this. That costs nothing real: an invoice
+   * number is stamped by SAP long after picking, and every bill on that tab is
+   * at `pending_tint_assignment` or `tint_assigned` — the column would be blank
+   * on every row, which is the same argument the two waiting-only views already
+   * won for dropping it.
+   *
+   * ⚠ A MISS RENDERS A DASH, NOT A BLANK. A bill at `pending_tint_assignment`
+   * has no assignment row by definition, and an empty cell would read as "we do
+   * not know" rather than "nobody has it".
+   */
+  operatorByOrderId?: Map<number, string | null>;
   /**
    * Bills promised for a LATER date — `zone: "upcoming"` (lib/floor/queries.ts).
    *
@@ -449,11 +474,15 @@ export function FloorTable({
   // to Route between e656ad80 and this fix; see the note on its cell.
   //
   //                        ☐  OBD INV Ship Rt Due V/KG Art Status
+  // ⚠ ONE CONDITION, NOT TWO. Invoice and Operator share the third slot and are
+  // mutually exclusive (see `operatorByOrderId`), so the matrix stays at four
+  // arms and the colgroup, the <th> row and the <td>s all test THIS.
+  const hasExtra = showInvoice || operatorByOrderId !== undefined;
   const widths = interactive
-    ? showInvoice
+    ? hasExtra
       ? [3, 13, 9, 17, 9, 12, 7, 12, 18] //                                = 100
       : [3, 14, 21, 9, 12, 7, 14, 20] //   ☐ OBD Ship Rt Due V/KG Art Status = 100
-    : showInvoice
+    : hasExtra
       ? [14, 10, 19, 9, 12, 7, 12, 17] //  OBD INV Ship Rt Due V/KG Art Status = 100
       : [15, 23, 10, 13, 8, 14, 17]; //    OBD Ship Rt Due V/KG Art Status   = 100
   // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. Select-all is
@@ -491,7 +520,7 @@ export function FloorTable({
             </th>
           )}
           <th className={HEAD_TH}>OBD</th>
-          {showInvoice && <th className={HEAD_TH}>Invoice</th>}
+          {hasExtra && <th className={HEAD_TH}>{operatorByOrderId ? "Operator" : "Invoice"}</th>}
           <th className={HEAD_TH}>Ship to</th>
           <th className={HEAD_TH}>Route</th>
           <th className={HEAD_TH}>Due</th>
@@ -931,20 +960,37 @@ export function FloorTable({
 
             formatDateIST is the SHARED formatter the detail panel's
             "Invoice date" reads — never a second local one. */}
-        {showInvoice && (
-          <td className={TD}>
-            {row.invoiceNo && (
-              <span className="font-mono text-[11.5px] font-medium text-[#111827]">
-                {row.invoiceNo}
-              </span>
-            )}
-            {row.invoiceDate && (
-              <div className="text-[10px] text-[#9ca3af]">
-                {formatDateIST(row.invoiceDate)}
-              </div>
-            )}
-          </td>
-        )}
+        {/* THE SHARED THIRD SLOT — Invoice, or Operator on the Tinting tab. One
+            condition, `hasExtra`, matching the colgroup and the <th> above; see
+            `operatorByOrderId` for why they share rather than sit side by side. */}
+        {hasExtra &&
+          (operatorByOrderId ? (
+            <td className={TD}>
+              {/* A DASH, NEVER A BLANK. A bill at pending_tint_assignment has no
+                  assignment row at all, and an empty cell reads as "unknown"
+                  rather than "nobody has it yet". */}
+              {operatorByOrderId.get(row.orderId) ? (
+                <span className="text-[11.5px] font-medium text-[#111827]">
+                  {operatorByOrderId.get(row.orderId)}
+                </span>
+              ) : (
+                <span className="text-[11.5px] text-[#d1d5db]">—</span>
+              )}
+            </td>
+          ) : (
+            <td className={TD}>
+              {row.invoiceNo && (
+                <span className="font-mono text-[11.5px] font-medium text-[#111827]">
+                  {row.invoiceNo}
+                </span>
+              )}
+              {row.invoiceDate && (
+                <div className="text-[10px] text-[#9ca3af]">
+                  {formatDateIST(row.invoiceDate)}
+                </div>
+              )}
+            </td>
+          ))}
         <td className={TD}>
           <span className="text-[11.5px] font-medium text-[#111827]">
             {row.dealerName}

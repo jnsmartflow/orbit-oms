@@ -10,7 +10,7 @@
 // and the whole card have nothing left to do.
 //
 // Two kinds of entry, and only one is selected at a time:
-//   - "Not on a trip" — the pool. The default.
+//   - "To plan" — the pool. The default.
 //   - one card per trip, grouped under its slot label.
 //
 // ⚠ GROUPED BY SLOT LABEL, NOT BY SLOT ID. A trip with no window sits under
@@ -119,9 +119,6 @@ export function TripRail({
   anchorIso,
   poolCount,
   poolLitres,
-  tintingCount,
-  tintingLitres,
-  tintByStatus,
   selection,
   onSelect,
   gateOn,
@@ -139,27 +136,10 @@ export function TripRail({
   anchorIso: string;
   poolCount: number;
   poolLitres: number;
-  /**
-   * The tint room, counted off BOARD ROWS by the caller (2026-09-13).
-   *
-   * ⚠ NOT FETCHED. These bills are already rows on the board — `floorBoardWhere`
-   * arm 2 admits them — so trip-desk.tsx derives both figures from
-   * `floor.rows` with a filter and a sum. No query, no await, no round trip on a
-   * page that is latency-bound.
-   *
-   * Zero means the line is not rendered at all; see the render below for why
-   * this one hides at zero while "Trips" does not.
-   */
-  tintingCount: number;
-  tintingLitres: number;
-  /**
-   * The same pipeline split four ways (2026-09-14). `tintingCount` above is the
-   * STUCK total — pending + with an operator + mixing — and `tintDone` is
-   * carried here but deliberately NOT in it: a tinted bill that is ready is
-   * loadable, and folding it into "not loadable yet" would be the same lie the
-   * header count was fixed for.
-   */
-  tintByStatus: { tintPending: number; tintAssigned: number; tinting: number; tintDone: number };
+  // ⚠ THE "IN TINTING" LINE WAS HERE AND WENT ON 2026-09-14. It counted the tint
+  // room above the trips; the TINTING TAB now does that job, with a table behind
+  // it and an Operator column the line could never carry. Two summaries of one
+  // pile is one too many, and the tab is the one you can act on.
   selection: RailSelection;
   onSelect: (sel: RailSelection) => void;
   gateOn: boolean;
@@ -206,58 +186,6 @@ export function TripRail({
 
           It counts the LIVE list, which is what is rendered. Cancelled trips are
           not on the rail and are not in this number. */}
-      {/* ── The tint room, above the trips (2026-09-13) ───────────────────
-          What is coming and cannot be loaded yet. The planner's whole question
-          about the tint room is "how much, and can a truck wait for it" — the
-          count and the litres answer both, and the litres are the half that
-          decides.
-
-          ⚠ NO "READY BY" TIME, AND THERE MUST NOT BE ONE. `tint_assignments`
-          carries `startedAt` and `completedAt` and no estimate; there is no
-          duration model anywhere in the app. An invented figure would be worse
-          than none, because a planner would hold a truck for it.
-
-          TYPOGRAPHY IS THE ROW BELOW, not a new style: the same 10.5px bold
-          uppercase 0.1em label and the same 11px tabular-nums figures the Trips
-          line uses. Only the hue moves, to the pill pink of the rows it counts
-          (status-pill.tsx META) so the line and the rows read as one fact.
-
-          HIDDEN AT ZERO, unlike "Trips" beside it. An empty tint room is the
-          ordinary state on most days and "0 bills" would be a line the eye has
-          to skip every time. */}
-      {tintingCount > 0 && (
-        <div className="px-1 pb-1.5">
-          <div className="flex items-baseline gap-2">
-            <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-[#9d174d]">
-              In tinting
-            </span>
-            <span className="text-[11px] tabular-nums text-[#be185d]">
-              {tintingCount} bill{tintingCount === 1 ? "" : "s"} · {formatLitres(tintingLitres)} L
-            </span>
-          </div>
-          {/* The breakdown, one line under the total (2026-09-14). Five bills
-              nobody has started and five on the mixer are the same number and a
-              completely different wait, so the total alone could not answer the
-              planner's real question. Zero states are dropped rather than
-              printed as "0 mixing" — a line of zeroes is a line to skip.
-
-              "not loadable yet" trails the STUCK states and sits after `done`,
-              which is counted here but is NOT in the total above: a tinted bill
-              that is ready is exactly what the planner was waiting for. */}
-          <div className="mt-px text-[11px] tabular-nums text-gray-500">
-            {[
-              tintByStatus.tintPending > 0 ? `${tintByStatus.tintPending} waiting` : null,
-              tintByStatus.tintAssigned > 0 ? `${tintByStatus.tintAssigned} with operator` : null,
-              tintByStatus.tinting > 0 ? `${tintByStatus.tinting} mixing` : null,
-              tintByStatus.tintDone > 0 ? `${tintByStatus.tintDone} done` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-            <span className="text-gray-400"> · not loadable yet</span>
-          </div>
-        </div>
-      )}
-
       <div className="flex items-baseline gap-2 px-1 pb-2">
         <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
           Trips
@@ -276,7 +204,27 @@ export function TripRail({
           poolOn ? "border-brand-600 bg-brand-50" : "border-gray-200 bg-white hover:bg-[#fafafa]"
         }`}
       >
-        <div className="text-[13px] font-bold tracking-[-0.008em] text-gray-900">Not on a trip</div>
+        {/* ── "To plan", RENAMED FROM "Not on a trip" (2026-09-14) ──────────
+            "Pending dispatch" was considered and rejected: `dispatched` now
+            means gone on a truck (POST …/trips/[id]/release writes the stage),
+            and this pile includes bills still being picked.
+
+            🔴 THE COUNT DOES NOT CHANGE WHEN YOU CLICK A TAB, AND THE
+            ARITHMETIC IS HERE BECAUSE THE GAP LOOKS LIKE A BUG.
+
+                105 rows on the Floor tab  +  5 on the Tinting tab  =  110 here
+
+            The Tinting tab takes its rows OUT of the Floor tab's table, but they
+            are still not on a trip, so they are still to plan. A bill in the
+            tint room genuinely needs a truck — a 4pm load can be planned for
+            paint that will be mixed by 3 — so leaving it out of this number
+            would hide work the planner has to place. And the rail is identical
+            on all four tabs (that is the whole point of it not moving); a card
+            whose number changed on a tab click would contradict it.
+
+            Owner decision 2026-09-14. Do not "fix" this to match the Floor
+            tab's row count. */}
+        <div className="text-[13px] font-bold tracking-[-0.008em] text-gray-900">To plan</div>
         <div className="mt-px text-[11.5px] tabular-nums text-gray-500">
           {poolCount} bill{poolCount === 1 ? "" : "s"} · {formatLitres(poolLitres)} L
         </div>

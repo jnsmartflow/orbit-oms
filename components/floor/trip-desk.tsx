@@ -114,6 +114,10 @@ export function TripDesk({
   onReleaseTrip,
   onChangeVehicle,
   onCancelTrip,
+  activeTab,
+  tabs,
+  sideBody,
+  tintOperators,
 }: {
   floor: FloorBoardResult;
   trips: TripSummary[] | null;
@@ -136,6 +140,20 @@ export function TripDesk({
   onReleaseTrip: (tripId: number) => void;
   onChangeVehicle: (tripId: number) => void;
   onCancelTrip: (tripId: number) => void;
+  /** Which of the four tabs is open. The RAIL is identical on all of them. */
+  activeTab: "floor" | "tinting" | "hold" | "cancelled";
+  /** The tab pills + their counts + New trip, built by floor-page and rendered
+   *  as the first child of the TABLE column. Passed as a node rather than
+   *  rebuilt here: the counts come from four different filtered lists that
+   *  floor-page already owns, and a second derivation of them is two answers. */
+  tabs: ReactNode;
+  /** The Hold / Cancelled body. Rendered in the table column when `activeTab`
+   *  is neither floor nor tinting, so those tabs keep the rail beside them. */
+  sideBody: ReactNode;
+  /** Order id → tint operator name, for the Tinting tab's Operator column.
+   *  null while it has not been fetched — the tab is what triggers the fetch,
+   *  so the Floor tab never asks (see /api/floor/tint-operators). */
+  tintOperators: Map<number, string | null> | null;
 }) {
   const [pivot, setPivot] = useState<"flat" | "route">("flat");
   const [openRoute, setOpenRoute] = useState<string | null>(null);
@@ -172,48 +190,6 @@ export function TripDesk({
   const poolRows = dueRows.filter((r) => r.tripDropId === null);
   const poolUpcoming = upcomingAll.filter((r) => r.tripDropId === null);
 
-  // ── THE TINT ROOM, FOR THE RAIL LINE (2026-09-13) ────────────────────────
-  //
-  // 🔴 DERIVED FROM ROWS THE PAYLOAD ALREADY CARRIES. These bills reach the
-  // board through `floorBoardWhere` arm 2 (`floorUnslottedWhere`) and are rows
-  // like any other — a filter and a sum, no fetch, no await, no predicate.
-  // /floor is latency-bound (a board call is ~84 statements and its own query
-  // runs in 4 ms), so a second request for five numbers would cost more than
-  // everything it displays.
-  //
-  // ⚠ EVERY ROW, NOT `dueRows`. A tint bill promised for Saturday is exactly
-  // what "what is coming" means; scoping this to today's due slice would hide
-  // the half of the answer the planner is asking for. That is the same reason
-  // picker-card.tsx reads `dueRows` and this does not — the two lines answer
-  // different questions.
-  //
-  // ⚠ `rowStatus`, NOT `r.tintPhase` DIRECTLY. The phase says where the tint
-  // room is; the STATUS says whether anyone else has taken over. A tint bill
-  // with a picker is `tintPhase: "done"` and must not be counted here, and
-  // asking the one owner is what guarantees that (status-pill.tsx).
-  //
-  // ⚠ BROKEN DOWN BY STATE SINCE 2026-09-14. A single "5 bills" told the planner
-  // how much was stuck without saying how stuck: five bills nobody has started
-  // and five on the mixer are the same number and a completely different wait.
-  // The four counts come off `rowStatus` like everything else, so the line and
-  // the pills beside it can never disagree.
-  const tintByStatus = { tintPending: 0, tintAssigned: 0, tinting: 0, tintDone: 0 };
-  const tintingRows: FloorBoardRow[] = [];
-  for (const r of floor.rows) {
-    const s = rowStatus(r);
-    if (s === "tintPending" || s === "tintAssigned" || s === "tinting") {
-      tintingRows.push(r);
-      tintByStatus[s] += 1;
-    } else if (s === "tintDone") {
-      // 🔴 COUNTED IN THE BREAKDOWN, NOT IN THE TOTAL. A tinted bill that is
-      // ready IS loadable — it is exactly what the planner was waiting for — so
-      // folding it into "not loadable yet" would be the same lie the header
-      // count was fixed for. It rides the line so the four states read as one
-      // pipeline, and the litres and the bill count describe only what is stuck.
-      tintByStatus.tintDone += 1;
-    }
-  }
-  const tintingLitres = sumLitres(tintingRows);
   const selectedTrip =
     railSelection.kind === "trip"
       ? (trips ?? []).find((t) => t.id === railSelection.tripId) ?? null
@@ -260,15 +236,38 @@ export function TripDesk({
   const checkedToday = dueRows.filter((r) => r.isChecked && istDayOf(r.checkedAt) === todayIso).length;
   const checkedEarlier = liveCounts.done - checkedToday;
 
-  const dateBar = isHistory ? (
-    <div className="flex items-center gap-2 border-b border-gray-200 bg-[#f9fafb] px-3.5 py-[7px] text-[11.5px]">
+  // ── THE DATE CONTROL SPLIT IN TWO (2026-09-14) ───────────────────────────
+  //
+  // It used to be one full-width bar above the rail AND the table. The tab row
+  // moved into the table column (the original July shape, and the one Mail
+  // Orders still uses), and this went with it — split by JOB, not by chunk:
+  //
+  //   dateControl  the things you PRESS — History ›, or the ‹ date › stepper
+  //                and Back to Live. Rides the tab row, right-aligned.
+  //   liveBar      the things you READ — Live + the counts, or "past day —
+  //                read only". Its own strip under the tabs.
+  //
+  // Controls up with the other controls, information down next to the data it
+  // describes. Both live INSIDE the table column now, so neither moves when the
+  // rail is there and neither spans the rail.
+  const dateControl = isHistory ? (
+    <span className="ml-auto flex items-center gap-2">
       <button type="button" className={navCls} onClick={() => onStepHistory(-1)}>‹</button>
-      <span className="font-semibold">{histDate ? fmtHistLabel(histDate) : ""}</span>
+      <span className="text-[11.5px] font-semibold">{histDate ? fmtHistLabel(histDate) : ""}</span>
       <button type="button" className={navCls} disabled={forwardDisabled} onClick={() => !forwardDisabled && onStepHistory(1)}>›</button>
-      <span className="ml-2 text-[10.5px] text-gray-400">past day — read only</span>
-      <button type="button" className="ml-auto text-[10.5px] font-semibold text-brand-600" onClick={onExitHistory}>
+      <button type="button" className="text-[10.5px] font-semibold text-brand-600" onClick={onExitHistory}>
         Back to Live ›
       </button>
+    </span>
+  ) : (
+    <button type="button" className="ml-auto text-[10.5px] font-semibold text-brand-600" onClick={onEnterHistory}>
+      History ›
+    </button>
+  );
+
+  const liveBar = isHistory ? (
+    <div className="flex items-center gap-2 border-b border-gray-200 bg-[#f9fafb] px-3.5 py-[7px] text-[11.5px]">
+      <span className="text-[10.5px] text-gray-400">past day — read only</span>
     </div>
   ) : (
     <div className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-3.5 py-[7px] text-[11.5px]">
@@ -278,10 +277,67 @@ export function TripDesk({
         {stillOpen} still open &middot; {checkedToday} checked today
         {checkedEarlier > 0 && <> &middot; {checkedEarlier} checked earlier</>}
       </span>
-      <button type="button" className="ml-auto text-[10.5px] font-semibold text-brand-600" onClick={onEnterHistory}>
-        History ›
-      </button>
     </div>
+  );
+
+  // ── THE TINTING TAB (2026-09-14) ─────────────────────────────────────────
+  //
+  // 🔴 A CLIENT-SIDE SPLIT OF ROWS THE BOARD ALREADY HAS. Every bill here came
+  // in through `floorBoardWhere` arm 2 and is a row like any other — no
+  // predicate, no arm, no query was added to build this tab. It is a `filter`.
+  //
+  // WHAT IT HOLDS: tint bills NOT YET BEING MIXED — `pending_tint_assignment`
+  // and `tint_assigned`. A bill LEAVES this tab the moment mixing starts and
+  // appears on Floor wearing the solid pink Tinting pill, because at that point
+  // it is coming soon and the planner should be looking at it.
+  //
+  // ⚠ THE STATUS ASKED IS rowStatus, NOT `tintPhase` DIRECTLY. The phase says
+  // where the tint room is; the status says whether anyone downstream has taken
+  // over. They agree here today, and asking the one owner is what keeps them
+  // agreeing if the picking booleans ever start outranking the phase for one of
+  // these stages.
+  const tintingTabRows = floor.rows.filter((r) => {
+    const s = rowStatus(r);
+    return s === "tintPending" || s === "tintAssigned";
+  });
+  const tintingBody: ReactNode = (
+    <>
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 px-4 py-3">
+        <h4 className="m-0 text-[14px] font-bold tracking-[-0.01em] text-gray-900">In the tint room</h4>
+        <span className="text-[11.5px] tabular-nums text-gray-500">
+          {tintingTabRows.length} bill{tintingTabRows.length === 1 ? "" : "s"} ·{" "}
+          {formatLitres(sumLitres(tintingTabRows))} L
+        </span>
+        <span className="text-[11px] text-gray-400">
+          not yet mixing — a bill moves to Floor when the operator starts
+        </span>
+      </div>
+      {tintingTabRows.length === 0 ? (
+        <div className="px-5 py-14 text-center">
+          <div className="text-[28px] leading-none text-gray-300">○</div>
+          <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Nothing waiting on tint</h4>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+            Every tint bill is either being mixed or finished. Both are on the Floor tab.
+          </p>
+        </div>
+      ) : (
+        <FloorTable
+          rows={sort(tintingTabRows)}
+          anchorIso={floor.date}
+          nowMs={nowMs}
+          variant={variant}
+          // Invoice OFF, Operator ON — they share the third column slot. Neither
+          // bill on this tab has been picked, so no invoice exists to show and
+          // the column would be blank on every row (floor-table.tsx explains the
+          // slot sharing). `tintOperators` is null until the tab's own fetch
+          // lands; an empty map renders a dash everywhere, which is the honest
+          // in-between state.
+          showInvoice={false}
+          operatorByOrderId={tintOperators ?? new Map()}
+          {...selProps}
+        />
+      )}
+    </>
   );
 
   // ── The middle ───────────────────────────────────────────────────────────
@@ -298,7 +354,7 @@ export function TripDesk({
     middle = (
       <>
         <div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 px-4 py-3">
-          <h4 className="m-0 text-[14px] font-bold tracking-[-0.01em] text-gray-900">Not on a trip</h4>
+          <h4 className="m-0 text-[14px] font-bold tracking-[-0.01em] text-gray-900">To plan</h4>
           <span className="text-[12px] tabular-nums text-gray-500">
             {allPool.length} bill{allPool.length === 1 ? "" : "s"} · {formatLitres(litres)} L
             {weightStr !== null && (
@@ -473,24 +529,43 @@ export function TripDesk({
     );
   }
 
+  // ── THE MIDDLE COLUMN'S CONTENT, BY TAB ──────────────────────────────────
+  //
+  // 🔴 THE RAIL RENDERS ON ALL FOUR TABS, and that is the whole reason this
+  // component is now the shell for every one of them rather than the Floor
+  // tab's body. Before, On hold and Cancelled rendered instead of the desk, the
+  // 298px rail vanished, and the table jumped a column-width sideways — every
+  // heading landing somewhere new on a tab change. Switching tabs must change
+  // WHAT IS IN THE TABLE and never where the table is.
+  //
+  // On the non-Floor tabs the rail is informational: nothing on those tabs is
+  // addable to a trip anyway, so it needs no special rule, no disabled state
+  // and no second code path.
+  const body: ReactNode =
+    activeTab === "tinting" ? tintingBody : activeTab === "floor" ? middle : sideBody;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {dateBar}
-      <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "298px 1fr" }}>
-        <TripRail
-          trips={trips}
-          loading={tripsLoading}
-          anchorIso={floor.date}
-          poolCount={poolRows.length + poolUpcoming.length}
-          poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
-          tintingCount={tintingRows.length}
-          tintingLitres={tintingLitres}
-          tintByStatus={tintByStatus}
-          selection={railSelection}
-          onSelect={onSelectRail}
-          gateOn={gateOn}
-        />
-        <div className="min-h-0 overflow-y-auto">{middle}</div>
+    <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "298px 1fr" }}>
+      <TripRail
+        trips={trips}
+        loading={tripsLoading}
+        anchorIso={floor.date}
+        poolCount={poolRows.length + poolUpcoming.length}
+        poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
+        selection={railSelection}
+        onSelect={onSelectRail}
+        gateOn={gateOn}
+      />
+      {/* THE TABLE COLUMN. Tabs first, exactly as the original July board had
+          them and as Mail Orders still does — the scope row spans the page
+          above, and everything below it belongs to one column or the other. */}
+      <div className="flex min-h-0 flex-col overflow-hidden">
+        <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
+          {tabs}
+          {dateControl}
+        </div>
+        {liveBar}
+        <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
       </div>
     </div>
   );

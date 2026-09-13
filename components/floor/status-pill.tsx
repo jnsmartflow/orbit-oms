@@ -356,6 +356,12 @@ export function waitingForPickerCount(c: StatusCounts): number {
  * could start. Same defect class as the "checked today" count fixed 2026-09-12:
  * a label asserting something it does not test.
  */
+// ⚠ NO CALLER SINCE 2026-09-14, AND KEPT ANYWAY. Its reader was the header's
+// "N in tinting" readout, which the TINTING TAB's own badge replaced. The fold
+// itself — which statuses mean "the tint room still has it" — is a rule worth
+// exactly one home, and the next surface to ask should find this rather than
+// write `tintPending + tintAssigned + tinting` for itself and get it wrong when
+// a fifth state appears.
 export function inTintingCount(c: StatusCounts): number {
   return IN_TINTING.reduce((n, k) => n + c[k as keyof StatusCounts], 0);
 }

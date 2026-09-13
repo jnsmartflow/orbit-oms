@@ -39,7 +39,7 @@ import {
   rowStatus,
   countByStatus,
   waitingForPickerCount,
-  inTintingCount,
+
   isHeldBack,
   formatLitres,
   sumLitres,
@@ -121,8 +121,13 @@ const STAGE_WORDS: Record<string, string> = {
   cancelled: "cancelled",
 };
 
-// The three top tabs (design §3 — Floor / On hold / Cancelled).
-type TopTab = "floor" | "hold" | "cancelled";
+// The FOUR top tabs (design §3, plus Tinting on 2026-09-14).
+//
+// ⚠ "tinting" IS A VIEW, NOT A FEED. It has no route, no predicate and no arm of
+// its own — it is a client-side filter of board rows the payload already holds
+// (see TripDesk). The other three each have a feed behind them; this one does
+// not, and giving it one would be the mistake.
+type TopTab = "floor" | "tinting" | "hold" | "cancelled";
 
 interface BoardData {
   // ⚠ NO `rail` SINCE 2026-09-13 — see app/api/floor/board/route.ts. The feed is
@@ -251,7 +256,7 @@ export function FloorPage() {
   // ── What the rail has selected, and the stops behind it ───────────────────
   //
   // The desk has exactly TWO readings and this is what picks between them: the
-  // pool ("Not on a trip") or one trip. It lands on the pool — the planner's
+  // pool ("To plan") or one trip. It lands on the pool — the planner’s
   // first question of the day is what still has to go somewhere.
   const [railSelection, setRailSelection] = useState<RailSelection>({ kind: "pool" });
   // 🔴 A THIRD TRIP FETCH, AND IT HAS TO BE. `GET /api/floor/trips?date=` returns
@@ -1050,7 +1055,12 @@ export function FloorPage() {
     () => scopedData?.floor.rows ?? [],
     [scopedData],
   );
-  const activePool: Searchable[] = topTab === "floor" ? searchableFloorRows : topTab === "hold" ? scopedHold ?? [] : scopedCancelled ?? [];
+  // ⚠ "tinting" SEARCHES THE FLOOR ROWS, and that is right rather than lazy:
+  // its rows ARE floor rows, filtered client-side, so the same searchable list
+  // covers both tabs. A separate list would report a hit count for a set the
+  // user is not looking at.
+  const activePool: Searchable[] =
+    topTab === "hold" ? scopedHold ?? [] : topTab === "cancelled" ? scopedCancelled ?? [] : searchableFloorRows;
   const tabSearchReport = useMemo(() => searchReport(activePool, parsed), [activePool, parsed]);
 
   const commitSearch = useCallback(
@@ -1443,11 +1453,65 @@ export function FloorPage() {
     () => (filteredFloor ? waitingForPickerCount(countByStatus(filteredFloor.rows.filter((r) => r.zone !== "upcoming"))) : 0),
     [filteredFloor],
   );
-  /** Bills the tint room still holds — nobody can pick these. 0 hides the chip. */
-  const inTinting = useMemo(
-    () => (filteredFloor ? inTintingCount(countByStatus(filteredFloor.rows.filter((r) => r.zone !== "upcoming"))) : 0),
-    [filteredFloor],
-  );
+
+  // ── THE TINTING TAB'S COUNT AND ITS OPERATOR LOOKUP ──────────────────────
+  //
+  // The tab holds tint bills NOT YET BEING MIXED. Counted off `rowStatus`, the
+  // one owner, so the badge and the rows behind it cannot disagree — and off
+  // EVERY row rather than the due slice, because a tint bill promised for
+  // Saturday is exactly what "what is coming" means.
+  const tintingCount = useMemo(() => {
+    if (!filteredFloor) return 0;
+    return filteredFloor.rows.filter((r) => {
+      const s = rowStatus(r);
+      return s === "tintPending" || s === "tintAssigned";
+    }).length;
+  }, [filteredFloor]);
+
+  const [tintOperators, setTintOperators] = useState<Map<number, string | null> | null>(null);
+
+  /**
+   * Who holds each bill in the tint room.
+   *
+   * 🔴 FETCHED ONLY WHILE THE TINTING TAB IS OPEN, AND THAT IS THE POINT. The
+   * board query does not read `tint_assignments` and must not — the rail feed
+   * that used to was deleted on 2026-09-13 for costing 772 ms and 25 of the
+   * call's 84 statements, taking the board from 3,909 ms to 1,958 ms. An
+   * operator name on the row would have spent it back on every load AND on
+   * every 30-second poll.
+   *
+   * ⚠ IT IS DELIBERATELY NOT IN `load()`, which is what the 30s rail poll calls.
+   * Being its own effect keyed on the tab is the whole mechanism: the Floor tab
+   * never mounts it, the poll never touches it, and the 15s marker is unrelated.
+   * Measured cost when it does run: +171 ms and +5 statements.
+   *
+   * ⚠ AND IT DOES NOT FOLLOW THE POLL EITHER. An operator name changes when a
+   * manager assigns — a handful of times a day — so a name 30 seconds stale is
+   * not worth a recurring read on the depot's link. It refetches when the tab is
+   * opened and when `load()` has just run for another reason (`lastSyncedAt`),
+   * which covers the explicit Refresh without adding a timer of its own.
+   * Owner decision 2026-09-14.
+   */
+  useEffect(() => {
+    if (topTab !== "tinting") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/floor/tint-operators", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { operators?: Array<{ orderId: number; name: string | null }> };
+        if (cancelled) return;
+        setTintOperators(new Map((body.operators ?? []).map((o) => [o.orderId, o.name])));
+      } catch {
+        // A missing name is a dash, never an error banner: the tab's real
+        // content is the rows, and they are already on screen. Leaving the map
+        // as it was is better than blanking a column over a dropped request.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [topTab, lastSyncedAt]);
 
   // ── The visibility gate (2026-09-09) ──────────────────────────────────────
   // "N not shown" for the header switch, counted off the rows this screen
@@ -1509,6 +1573,64 @@ export function FloorPage() {
     );
   }
 
+  /**
+   * The tab pills, their readouts and New trip — rendered by TripDesk as the
+   * first child of the TABLE column (2026-09-14).
+   *
+   * ⚠ BUILT HERE, RENDERED THERE. The four counts come from four different
+   * filtered lists this component already owns, so deriving them inside the desk
+   * would be a second answer to each. Passing the finished node keeps one.
+   */
+  const tabRow = (
+    <>
+      {/* Floor + its waiting readout as ONE unit: a tight 8px gap binds the
+          label to the badge it qualifies while the row's own 18px gap still
+          separates it from the next tab. Plain grey inline stats (CLAUDE_UI §4),
+          NOT a second pill: the badge next door is already a filled one. NOT
+          teal either — teal on this row is the New trip button alone
+          (CLAUDE_UI §6). It sits OUTSIDE the tab button on purpose: it reports,
+          it is not a fifth thing to click.
+
+          Shown at ZERO deliberately: "0 waiting" is the good state and worth
+          saying out loud. */}
+      <span className="flex items-center gap-2">
+        {tabPill("floor", "Floor", floorCount)}
+        <span className="text-[11px] text-gray-400" title="Bills on the floor with no picker assigned yet">
+          <span className="font-semibold tabular-nums text-gray-700">{waitingCount}</span> waiting
+        </span>
+      </span>
+      {/* 🔴 THE TINTING TAB IS STYLED LIKE EVERY OTHER TAB — ink when active, no
+          pink anywhere on it. Pink belongs to the PILLS, which say what state a
+          bill is in; a pink tab would make the colour mean two things and would
+          shout on a row of four equals. The `inTinting` readout that used to sit
+          beside "waiting" is gone with it: the tab's own badge is that number,
+          and two of them side by side was one too many. */}
+      {tabPill("tinting", "Tinting", tintingCount)}
+      {tabPill("hold", "On hold", holdCount)}
+      {tabPill("cancelled", "Cancelled", cancelledCount)}
+
+      {/* 🔴 THE VIEW PIVOT IS GONE (2026-09-10) — Flat, By route, By trip, By
+          group, By picker, and with it the ⏳ admin-only clause. Flat / By route
+          survive INSIDE the desk, on the pool where they still mean something.
+
+          What takes the space is the one thing the planner starts with. It is
+          this row's only filled control (CLAUDE_UI §1) and it is hidden in
+          History, where a past day is a record and a new trip on it would be a
+          fiction. `ml-auto` is NOT set here: the date/History control that
+          TripDesk appends after it carries it, so the two sit together at the
+          right end rather than being pushed apart. */}
+      {topTab === "floor" && isLive && (
+        <button
+          type="button"
+          onClick={() => void openTripForm([])}
+          className="ml-auto inline-flex h-[27px] items-center gap-1.5 rounded-[7px] bg-brand-600 px-3 text-[11.5px] font-semibold text-white hover:bg-brand-700"
+        >
+          <span className="text-[13px] leading-none">+</span> New trip
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-white">
       {/* ── Row 1 — title + date/time (design §5). ───────────────────────── */}
@@ -1548,7 +1670,7 @@ export function FloorPage() {
 
         <div className="ml-auto flex items-center gap-2">
           <SearchBox committed={searchQuery} onSearch={commitSearch} onClear={clearSearch} />
-          <FilterSheet filters={filters} onChange={setFilters} showStatus={topTab === "floor"} />
+          <FilterSheet filters={filters} onChange={setFilters} showStatus={topTab === "floor" || topTab === "tinting"} />
         </div>
       </div>
 
@@ -1572,129 +1694,94 @@ export function FloorPage() {
           rails side by side would have been two answers to "what am I looking
           at". */}
       <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "1fr" }}>
-        {/* Tabs + desk + (bulk bar overlay). */}
+        {/* The desk + (bulk bar overlay).
+
+            🔴 THE TAB ROW MOVED INSIDE THE TABLE COLUMN (2026-09-14). It used to
+            sit here, spanning the whole page above the rail. That is the shape
+            the original July board had it in and the one Mail Orders still uses:
+            a full-width SCOPE row, then rail and main side by side, with the
+            tabs as the first child of main. It also fixes the bug that came
+            with the old shape — On hold and Cancelled rendered INSTEAD of the
+            desk, the 298px rail disappeared, and every column jumped sideways
+            on a tab change.
+
+            `tabRow` is built here because the four counts come from four
+            different filtered lists this component already owns; TripDesk
+            renders it, so the rail and the tabs cannot get out of line. */}
         <div className="relative flex min-h-0 flex-col overflow-hidden">
-          <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
-            {/* Floor + its waiting readout as ONE unit: a tight 8px gap binds the
-                label to the badge it qualifies while the row's own 18px gap still
-                separates it from "On hold" — spaced like a fourth tab it would read
-                as one. Plain grey inline stats (CLAUDE_UI §4), NOT a second pill:
-                the badge next door is already a filled one. NOT teal either — teal
-                on this row is the New trip button alone (CLAUDE_UI §6 colour
-                rule). It sits OUTSIDE the tab button on purpose: it reports, it is
-                not a fourth thing to click.
-
-                Rendered on the pool and on a trip alike — it is a floor-wide
-                number, not a reading of whatever the middle happens to be showing.
-                Shown at ZERO deliberately: "0 waiting" is the good state and worth
-                saying out loud. */}
-            <span className="flex items-center gap-2">
-              {tabPill("floor", "Floor", floorCount)}
-              <span className="text-[11px] text-gray-400" title="Bills on the floor with no picker assigned yet">
-                <span className="font-semibold tabular-nums text-gray-700">{waitingCount}</span> waiting
-              </span>
-              {/* The tint room, stated separately and only when it has something.
-                  Pink to match the pills on the rows it is counting, quiet weight
-                  because it is a fact and not a call to action. Hidden at zero,
-                  unlike "waiting" beside it — "0 waiting" is the good state and
-                  worth saying, while "0 in tinting" is just noise on the many
-                  days no tint order is open. */}
-              {inTinting > 0 && (
-                <span className="text-[11px] text-[#9d174d]" title="Bills in the tint room — no picker can start these yet">
-                  <span className="font-semibold tabular-nums">{inTinting}</span> in tinting
-                </span>
-              )}
-            </span>
-            {tabPill("hold", "On hold", holdCount)}
-            {tabPill("cancelled", "Cancelled", cancelledCount)}
-
-            {/* 🔴 THE VIEW PIVOT IS GONE (2026-09-10) — Flat, By route, By trip,
-                By group, By picker, and with it the ⏳ admin-only clause that hid
-                the By trip entry from everyone but an admin. Flat / By route
-                survive INSIDE the desk, on the pool where they still mean
-                something; the other three were views of a board that no longer
-                exists.
-
-                What takes the space is the one thing the planner starts with. It
-                is this row's only filled control (CLAUDE_UI §1) and it is
-                hidden in History, where a past day is a record and a new trip on
-                it would be a fiction. */}
-            {topTab === "floor" && isLive && (
-              <button
-                type="button"
-                onClick={() => void openTripForm([])}
-                className="ml-auto inline-flex h-[27px] items-center gap-1.5 rounded-[7px] bg-brand-600 px-3 text-[11.5px] font-semibold text-white hover:bg-brand-700"
-              >
-                <span className="text-[13px] leading-none">+</span> New trip
-              </button>
-            )}
-          </div>
-
-          {topTab === "floor" ? (
-            loading && !data ? (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <FloorSkeleton variant="floor" />
-              </div>
-            ) : error && !data ? (
-              <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
-            ) : filteredFloor ? (
-              <TripDesk
-                // The gate is forwarded UNCHANGED to every leaf table, where it
-                // swaps the Status pill's label on held-back waiting rows. No
-                // column, no width array and no count moves with it.
-                gateOn={gateOn}
-                floor={filteredFloor}
-                // The day's trips, from their own feed — never derived from the
-                // board rows (see the state declaration). A trip whose bills are
-                // all checked has left the board's live set, and a rail built by
-                // filtering rows would drop it.
-                trips={trips}
-                tripsLoading={loading}
-                tripDetail={tripDetail}
-                selection={railSelection}
-                onSelectRail={setRailSelection}
-                histDate={histDate}
-                onEnterHistory={enterHistory}
-                onExitHistory={exitHistory}
-                onStepHistory={stepHistory}
-                rowSelection={selection}
-                onToggleRow={onToggleRow}
-                onToggleAll={onToggleAll}
-                onMarkUrgent={rowMarkUrgent}
-                tripBusyId={tripBusyId}
-                onReleaseTrip={(id) => void releaseTrip(id)}
-                onChangeVehicle={(id) => void openVehicleEditor(id)}
-                onCancelTrip={(id) => void cancelTrip(id)}
-                // The SAME desk renders live and history, so the source is
-                // decided here by the view (2026-08-25). "history" is the
-                // read-only source — it suppresses every action in the panel
-                // (detail-panel's `readOnly`). `isLive` is the one flag this
-                // screen already uses for the live/history split (the sync
-                // pauses key off it), so the panel can never disagree with the
-                // desk about which day it is showing.
-                onOpenDetail={(id) => openDetail(id, isLive ? "floor" : "history")}
-              />
-            ) : null
-          ) : topTab === "hold" ? (
-            <HoldTab
-              rows={filteredHold}
-              loading={loading && filteredHold === null}
-              error={error ?? sideError}
-              scope={scope}
-              windows={dispatchWindows}
-              onRelease={holdRelease}
-              onOpenDetail={(id) => openDetail(id, "hold")}
+          {loading && !data ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <FloorSkeleton variant="floor" />
+            </div>
+          ) : error && !data ? (
+            <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
+          ) : filteredFloor ? (
+            <TripDesk
+              // The gate is forwarded UNCHANGED to every leaf table, where it
+              // swaps the Status pill's label on held-back waiting rows. No
+              // column, no width array and no count moves with it.
+              gateOn={gateOn}
+              floor={filteredFloor}
+              // The day's trips, from their own feed — never derived from the
+              // board rows (see the state declaration). A trip whose bills are
+              // all checked has left the board's live set, and a rail built by
+              // filtering rows would drop it.
+              trips={trips}
+              tripsLoading={loading}
+              tripDetail={tripDetail}
+              selection={railSelection}
+              onSelectRail={setRailSelection}
+              histDate={histDate}
+              onEnterHistory={enterHistory}
+              onExitHistory={exitHistory}
+              onStepHistory={stepHistory}
+              rowSelection={selection}
+              onToggleRow={onToggleRow}
+              onToggleAll={onToggleAll}
+              onMarkUrgent={rowMarkUrgent}
+              tripBusyId={tripBusyId}
+              onReleaseTrip={(id) => void releaseTrip(id)}
+              onChangeVehicle={(id) => void openVehicleEditor(id)}
+              onCancelTrip={(id) => void cancelTrip(id)}
+              // 🔴 RENDERED ON ALL FOUR TABS (2026-09-14). The desk owns the
+              // rail, and the rail must not move when the tab changes — so the
+              // desk is the shell for every tab and swaps only what is in the
+              // TABLE column. Hold and Cancelled ride in as `sideBody`.
+              activeTab={topTab}
+              tabs={tabRow}
+              sideBody={
+                topTab === "hold" ? (
+                  <HoldTab
+                    rows={filteredHold}
+                    loading={loading && filteredHold === null}
+                    error={error ?? sideError}
+                    scope={scope}
+                    windows={dispatchWindows}
+                    onRelease={holdRelease}
+                    onOpenDetail={(id) => openDetail(id, "hold")}
+                  />
+                ) : topTab === "cancelled" ? (
+                  <CancelledTab
+                    rows={filteredCancelled}
+                    loading={loading && filteredCancelled === null}
+                    error={error ?? sideError}
+                    scope={scope}
+                    onRestore={cancelledRestore}
+                    onOpenDetail={(id) => openDetail(id, "cancelled")}
+                  />
+                ) : null
+              }
+              tintOperators={tintOperators}
+              // The SAME desk renders live and history, so the source is
+              // decided here by the view (2026-08-25). "history" is the
+              // read-only source — it suppresses every action in the panel
+              // (detail-panel's `readOnly`). `isLive` is the one flag this
+              // screen already uses for the live/history split (the sync
+              // pauses key off it), so the panel can never disagree with the
+              // desk about which day it is showing.
+              onOpenDetail={(id) => openDetail(id, isLive ? "floor" : "history")}
             />
-          ) : (
-            <CancelledTab
-              rows={filteredCancelled}
-              loading={loading && filteredCancelled === null}
-              error={error ?? sideError}
-              scope={scope}
-              onRestore={cancelledRestore}
-              onOpenDetail={(id) => openDetail(id, "cancelled")}
-            />
-          )}
+          ) : null}
 
           {/* The Show strip (2026-09-09) — ABOVE the bottom bar, never inside
               it. It is a different job: the bar moves bills between the pool and
