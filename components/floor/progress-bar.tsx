@@ -43,7 +43,7 @@ import type { StatusCounts } from "./status-pill";
 // toward each other; keeping the pill values at least makes the solid `tinting`
 // segment read as the loud one it is on the row above.
 const SEGMENTS: Array<{
-  key: "dispatched" | "done" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintPending";
+  key: "dispatched" | "done" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintAssigned" | "tintPending";
   color: string;
 }> = [
   { key: "dispatched", color: "#94a3b8" },
@@ -51,8 +51,9 @@ const SEGMENTS: Array<{
   { key: "needsCheck", color: "#fbbf24" },
   { key: "withPicker", color: "#0284C7" },
   { key: "waiting", color: "#d1d5db" },
-  { key: "tintDone", color: "#f9a8d4" },
+  { key: "tintDone", color: "#fbcfe8" },
   { key: "tinting", color: "#db2777" },
+  { key: "tintAssigned", color: "#f9a8d4" },
   { key: "tintPending", color: "#fce7f3" },
 ];
 

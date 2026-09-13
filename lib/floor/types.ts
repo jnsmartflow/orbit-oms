@@ -130,15 +130,24 @@ export interface FloorBoardRow extends PickingQueueRow {
    * A single named phase cannot do that — an unmapped stage produces an
    * unmapped VALUE, which is visible, rather than a false, which is not.
    *
-   * The three values, derived server-side from `orders.workflowStage` in the
+   * The four values, derived server-side from `orders.workflowStage` in the
    * row builder (lib/floor/queries.ts) and nowhere else:
    *   "pending"  — pending_tint_assignment. Nobody has been given the shades.
-   *   "tinting"  — tint_assigned OR tinting_in_progress. On the mixer. A PAUSED
-   *                job lives here too: pause/resume write the assignment row and
-   *                never the order's stage (CLAUDE_TINT §5).
-   *   "done"     — a tint bill past all three tint stages. NOT "it was tinted"
+   *   "assigned" — tint_assigned. An operator has it and has not started.
+   *   "tinting"  — tinting_in_progress. On the mixer. A PAUSED job lives here
+   *                too: pause/resume write the assignment row and never the
+   *                order's stage (CLAUDE_TINT §5), so the stage cannot tell a
+   *                paused job from a running one and this value must not claim
+   *                to. See the pill labels for how that is handled honestly.
+   *   "done"     — a tint bill past all four tint stages. NOT "it was tinted"
    *                — it is "the tint room has no more claim on it", which is the
    *                question the floor is asking.
+   *
+   * ⚠ "assigned" SPLIT OUT OF "tinting" ON 2026-09-14. The two were merged, so
+   * a bill sitting untouched in an operator's queue rendered the same pill as
+   * one actually on the mixer — the board claimed work was happening when it
+   * may not have been. Same shape of lie as the grey "Waiting" this whole enum
+   * was introduced to fix, one level down.
    *
    * ⚠ IT DOES NOT SAY WHOSE HANDS THE BILL IS IN. A tint bill with a picker is
    * `tintPhase: "done"` AND `isAssigned: true`, and `rowStatus` reads the
@@ -151,7 +160,7 @@ export interface FloorBoardRow extends PickingQueueRow {
    * interface would force every Picking construction site to fill a field that
    * screen has no use for (FLOOR §1: Floor is a CALLER of Picking).
    */
-  tintPhase: "pending" | "tinting" | "done" | null;
+  tintPhase: "pending" | "assigned" | "tinting" | "done" | null;
   smu: string | null;
   billToName: string | null;
   // The ship-to PAIR, mirroring FloorRailCard above: `customerName` is the
@@ -408,6 +417,43 @@ export interface FloorActivityEntry {
 
 // The whole detail payload for one order — header + Details groups + Items +
 // Activity, in ONE GET (app/api/floor/order/[orderId]).
+/**
+ * The Tint block on the detail panel — what the archived rail strip used to show,
+ * plus the two timestamps the pill has no room for.
+ *
+ * ⚠ THE WHOLE-ORDER ASSIGNMENT, latest first. An order reassigned to a second
+ * operator leaves its earlier row behind, and the most recent one describes the
+ * bill. Split-level assignments (`splitId` not null) are excluded — a split
+ * order's completion lives per split and has no single whole-order moment, the
+ * same v1 boundary the retired rail strip drew.
+ */
+export interface FloorDetailTint {
+  /** tint_assignments.assignedTo.name — null when nobody has it yet. */
+  operatorName: string | null;
+  /**
+   * The ASSIGNMENT's status, not the order's stage: `assigned`,
+   * `tinting_in_progress`, `paused`, `tinting_done`, `skipped`, `cancelled`.
+   * A plain String column with no CHECK — CORE §3's status-string rule applies,
+   * so read it, never retype a literal to compare against it.
+   */
+  status: string | null;
+  /** tint_assignments.createdAt — when the operator was given it. */
+  assignedAt: string | null;
+  /** tint_assignments.startedAt — when mixing began. Null until Start. */
+  startedAt: string | null;
+  /** tint_assignments.completedAt — when it finished. Null until done. */
+  completedAt: string | null;
+  /** Non-cancelled `order_splits` at `tinting_done`, over the non-cancelled total.
+   *  Both 0 on a full (non-split) OBD — see `hasSplits`. */
+  shadesDone: number;
+  shadesTotal: number;
+  /** TRUE when the order has ANY split rows, counted BEFORE the cancelled
+   *  filter. Do NOT infer "full OBD" from shadesTotal === 0: an order whose
+   *  splits were all cancelled also reports 0. The same trap the retired
+   *  TintState carried this flag for. */
+  hasSplits: boolean;
+}
+
 export interface FloorDetail {
   orderId: number;
   obdNumber: string;
@@ -424,6 +470,26 @@ export interface FloorDetail {
   priorityLevel: number;
   isTint: boolean;
   isSite: boolean;             // Retail Offtake / Decorative Projects, not overridden
+
+  /**
+   * THE TINT ROOM'S OWN FACTS — null on a plain order, and on a tint order that
+   * has never been assigned (2026-09-14).
+   *
+   * 🔴 THIS IS WHY THE BOARD ROW DOES NOT CARRY THEM. Operator, start and finish
+   * all live on `tint_assignments`, which the board query deliberately does not
+   * read: the rail feed that used to was deleted on 2026-09-13 for costing
+   * 772 ms and 25 statements per call on a payload nothing rendered. Reading it
+   * here costs ONE round trip, ON CLICK — not on every board load and not on
+   * every 30-second poll. The pill says which state; the panel says who, when
+   * and how far.
+   *
+   * ⚠ `status` IS THE ASSIGNMENT'S, NOT THE ORDER'S, and that is the whole
+   * reason it is here. Pause and resume write the assignment row and never the
+   * order's stage (CLAUDE_TINT §5), so `workflowStage` cannot tell a paused job
+   * from a running one and neither can the pill. This field can, and it is the
+   * only place on the floor that can.
+   */
+  tint: FloorDetailTint | null;
 
   // Picking status (for the floor-source header pill + Details picker line)
   isAssigned: boolean;

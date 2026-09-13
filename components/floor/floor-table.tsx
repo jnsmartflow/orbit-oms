@@ -204,11 +204,38 @@ function fmtDueDay(dateOnly: string, anchorIso: string): string | null {
 // Live elapsed by status (design §7.7). Waiting has NO anchor in the payload —
 // no release/updated timestamp on FloorBoardRow — so it shows no time; an honest
 // blank beats a wrong duration (deferred follow-up needs releasedAt).
+/**
+ * The time inside a live pill. In-progress states show ELAPSED, finished states
+ * show the CLOCK — the board's standing rule, unchanged.
+ *
+ * ── THE TINT PILLS GET ONE TIME BETWEEN THEM, AND THAT IS THE HONEST ANSWER
+ * (2026-09-14). Four times were wanted; the board payload can supply exactly
+ * one, and the other three live on `tint_assignments`, which the board query
+ * deliberately does not read (the rail feed that used to was deleted on
+ * 2026-09-13 for costing 772 ms and 25 statements of a request nothing
+ * rendered). Fetching for a pill would spend that back:
+ *
+ *   Waiting        ELAPSED, and it is real. A tint order is created straight at
+ *                  `pending_tint_assignment` (app/api/import/obd/route.ts:3307),
+ *                  so its arrival IS the moment it began waiting for an
+ *                  operator. `obdDateTime` is already on the row.
+ *   With operator  would need `tint_assignments.createdAt`  — NOT on the payload.
+ *   Tinting        would need `tint_assignments.startedAt`  — NOT on the payload.
+ *   Tint done      would need `tint_assignments.completedAt`— NOT on the payload.
+ *
+ * The three without a source render with NO TIME rather than borrowing one that
+ * looks right and is not — `obdDateTime` would tick up for all of them and read
+ * as "mixing for 3d" on a bill an operator picked up ten minutes ago. All three
+ * timestamps ARE on the detail panel, which reads the assignment row once, on
+ * click. That is the trade: a clock per row would cost a round trip on every
+ * board load and every 30-second poll; a click costs one, when asked.
+ */
 function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   const st = rowStatus(row);
   if (st === "done") return hhmm(asStr(row.checkedAt));
   if (st === "needsCheck") return shortElapsed(asStr(row.pickedAt), nowMs);
   if (st === "withPicker") return shortElapsed(asStr(row.assignedAt), nowMs);
+  if (st === "tintPending") return shortElapsed(asStr(row.obdDateTime), nowMs);
   return null;
 }
 

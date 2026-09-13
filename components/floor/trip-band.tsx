@@ -80,6 +80,7 @@ function toStatusCounts(c: TripSummary["counts"]): StatusCounts {
     // separate decision: a trip asks "can this load go", and the answer for an
     // untinted bill is no, the same no as any other unfinished bill.
     tintPending: 0,
+    tintAssigned: 0,
     tinting: 0,
     tintDone: 0,
     total: c.total,

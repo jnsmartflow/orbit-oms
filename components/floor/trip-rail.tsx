@@ -92,6 +92,7 @@ export function toStatusCounts(c: TripSummary["counts"]): StatusCounts {
     // separate decision: a trip asks "can this load go", and the answer for an
     // untinted bill is no, the same no as any other unfinished bill.
     tintPending: 0,
+    tintAssigned: 0,
     tinting: 0,
     tintDone: 0,
     total: c.total,
@@ -120,6 +121,7 @@ export function TripRail({
   poolLitres,
   tintingCount,
   tintingLitres,
+  tintByStatus,
   selection,
   onSelect,
   gateOn,
@@ -150,6 +152,14 @@ export function TripRail({
    */
   tintingCount: number;
   tintingLitres: number;
+  /**
+   * The same pipeline split four ways (2026-09-14). `tintingCount` above is the
+   * STUCK total — pending + with an operator + mixing — and `tintDone` is
+   * carried here but deliberately NOT in it: a tinted bill that is ready is
+   * loadable, and folding it into "not loadable yet" would be the same lie the
+   * header count was fixed for.
+   */
+  tintByStatus: { tintPending: number; tintAssigned: number; tinting: number; tintDone: number };
   selection: RailSelection;
   onSelect: (sel: RailSelection) => void;
   gateOn: boolean;
@@ -216,14 +226,35 @@ export function TripRail({
           ordinary state on most days and "0 bills" would be a line the eye has
           to skip every time. */}
       {tintingCount > 0 && (
-        <div className="flex items-baseline gap-2 px-1 pb-1.5">
-          <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-[#9d174d]">
-            In tinting
-          </span>
-          <span className="text-[11px] tabular-nums text-[#be185d]">
-            {tintingCount} bill{tintingCount === 1 ? "" : "s"} · {formatLitres(tintingLitres)} L ·{" "}
-            <span className="text-gray-400">not loadable yet</span>
-          </span>
+        <div className="px-1 pb-1.5">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-[#9d174d]">
+              In tinting
+            </span>
+            <span className="text-[11px] tabular-nums text-[#be185d]">
+              {tintingCount} bill{tintingCount === 1 ? "" : "s"} · {formatLitres(tintingLitres)} L
+            </span>
+          </div>
+          {/* The breakdown, one line under the total (2026-09-14). Five bills
+              nobody has started and five on the mixer are the same number and a
+              completely different wait, so the total alone could not answer the
+              planner's real question. Zero states are dropped rather than
+              printed as "0 mixing" — a line of zeroes is a line to skip.
+
+              "not loadable yet" trails the STUCK states and sits after `done`,
+              which is counted here but is NOT in the total above: a tinted bill
+              that is ready is exactly what the planner was waiting for. */}
+          <div className="mt-px text-[11px] tabular-nums text-gray-500">
+            {[
+              tintByStatus.tintPending > 0 ? `${tintByStatus.tintPending} waiting` : null,
+              tintByStatus.tintAssigned > 0 ? `${tintByStatus.tintAssigned} with operator` : null,
+              tintByStatus.tinting > 0 ? `${tintByStatus.tinting} mixing` : null,
+              tintByStatus.tintDone > 0 ? `${tintByStatus.tintDone} done` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            <span className="text-gray-400"> · not loadable yet</span>
+          </div>
         </div>
       )}
 

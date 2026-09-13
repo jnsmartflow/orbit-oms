@@ -191,10 +191,28 @@ export function TripDesk({
   // room is; the STATUS says whether anyone else has taken over. A tint bill
   // with a picker is `tintPhase: "done"` and must not be counted here, and
   // asking the one owner is what guarantees that (status-pill.tsx).
-  const tintingRows = floor.rows.filter((r) => {
+  //
+  // ⚠ BROKEN DOWN BY STATE SINCE 2026-09-14. A single "5 bills" told the planner
+  // how much was stuck without saying how stuck: five bills nobody has started
+  // and five on the mixer are the same number and a completely different wait.
+  // The four counts come off `rowStatus` like everything else, so the line and
+  // the pills beside it can never disagree.
+  const tintByStatus = { tintPending: 0, tintAssigned: 0, tinting: 0, tintDone: 0 };
+  const tintingRows: FloorBoardRow[] = [];
+  for (const r of floor.rows) {
     const s = rowStatus(r);
-    return s === "tintPending" || s === "tinting";
-  });
+    if (s === "tintPending" || s === "tintAssigned" || s === "tinting") {
+      tintingRows.push(r);
+      tintByStatus[s] += 1;
+    } else if (s === "tintDone") {
+      // 🔴 COUNTED IN THE BREAKDOWN, NOT IN THE TOTAL. A tinted bill that is
+      // ready IS loadable — it is exactly what the planner was waiting for — so
+      // folding it into "not loadable yet" would be the same lie the header
+      // count was fixed for. It rides the line so the four states read as one
+      // pipeline, and the litres and the bill count describe only what is stuck.
+      tintByStatus.tintDone += 1;
+    }
+  }
   const tintingLitres = sumLitres(tintingRows);
   const selectedTrip =
     railSelection.kind === "trip"
@@ -467,6 +485,7 @@ export function TripDesk({
           poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
           tintingCount={tintingRows.length}
           tintingLitres={tintingLitres}
+          tintByStatus={tintByStatus}
           selection={railSelection}
           onSelect={onSelectRail}
           gateOn={gateOn}

@@ -116,7 +116,7 @@ const STAGE_WORDS: Record<string, string> = {
   pick_assigned: "with a picker",
   pick_done: "picked, awaiting check",
   pending_tint_assignment: "waiting for tinting",
-  tint_assigned: "with the tinter",
+  tint_assigned: "with the operator",
   tinting_in_progress: "still tinting",
   cancelled: "cancelled",
 };

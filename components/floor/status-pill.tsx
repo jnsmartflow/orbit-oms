@@ -8,6 +8,7 @@
 // Also exports the row→status mapping and count helper reused by the progress
 // bar, slot bands and route rows so the four surfaces can never disagree.
 
+import { Check } from "lucide-react";
 import { DUP_SO_BADGE_CLASS } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -25,7 +26,13 @@ export type FloorStatus =
   // was available that nobody could start. Fourth instance of the fall-through
   // class lib/workflow-stages.ts warns about, after pick_done, pick_checked and
   // dispatched.
+  //
+  // FOUR, NOT THREE, SINCE 2026-09-14. `tintAssigned` and `tinting` were one
+  // value, so a bill sitting untouched in an operator's queue rendered the same
+  // pill as one on the mixer. That is the same lie one level down: the board
+  // claiming work is happening when it may not be.
   | "tintPending"
+  | "tintAssigned"
   | "tinting"
   | "tintDone";
 
@@ -59,7 +66,7 @@ const PICKABLE_WAITING: readonly FloorStatus[] = ["waiting", "tintDone"];
  * is done with it. Folding it in would report a bill that is ready to pick as
  * stuck on the mixer.
  */
-const IN_TINTING: readonly FloorStatus[] = ["tintPending", "tinting"];
+const IN_TINTING: readonly FloorStatus[] = ["tintPending", "tintAssigned", "tinting"];
 
 /**
  * dispatched → Dispatched, pick_checked → Done, pick_done → Needs check,
@@ -96,6 +103,7 @@ export function rowStatus(row: StatusInput): FloorStatus {
   // tinted twin of "Waiting" and sits on the same rung (see PICKABLE_WAITING).
   if (row.isAssigned) return "withPicker";
   if (row.tintPhase === "pending") return "tintPending";
+  if (row.tintPhase === "assigned") return "tintAssigned";
   if (row.tintPhase === "tinting") return "tinting";
   if (row.tintPhase === "done") return "tintDone";
   return "waiting";
@@ -167,25 +175,56 @@ const META: Record<FloorStatus, { label: string; cls: string }> = {
   //
   // ⚠ A PLAIN ORDER NEVER WEARS PINK. `tintPhase` is null on a non-tint bill and
   // `rowStatus` falls through to grey "Waiting", byte-identical to before.
+  //
+  // ── FOUR STATES, ONE HUE, FOUR TREATMENTS (2026-09-14) ────────────────────
+  // Empty → light → loud → ticked. The WEIGHT carries the progress, so the
+  // reader learns one colour and one ramp instead of four pinks to tell apart.
+  // SOLID IS THE ONLY STATE WHERE WORK IS ACTUALLY HAPPENING, which is the whole
+  // reason `tintAssigned` was split out of it.
   tintPending: {
-    label: "Tint pending",
-    cls: "bg-[#fce7f3] text-[#9d174d] dark:bg-[#3d1029] dark:text-[#f9a8d4]",
+    // 🔴 "Waiting", THE SAME WORD THE GREY PILL USES, AND THAT IS DELIBERATE —
+    // DO NOT "FIX" THE DUPLICATION. The word says the STATE and the colour says
+    // WHICH ROOM: grey Waiting is waiting for a picker, pink Waiting is waiting
+    // for a tint operator. Renaming this one to keep the labels unique would
+    // make the reader learn two words for one state, and would lose the pairing
+    // that makes the pink ramp legible beside the grey one.
+    label: "Waiting",
+    cls: "border border-[#f9a8d4] text-[#db2777] dark:border-[#9d174d] dark:text-[#f9a8d4]",
+  },
+  tintAssigned: {
+    // ⚠ "With operator", MIRRORING "With picker" ONE COLUMN OVER — the same
+    // sentence shape for the same fact, a named person is holding it.
+    //
+    // 🔴 IT IS ALSO THE HONEST WORD FOR A PAUSED JOB. Pause is written to the
+    // assignment row and never to the order's stage (CLAUDE_TINT §5), so a
+    // paused bill is indistinguishable from a running one at `tinting_in_
+    // progress` — the board cannot know. "With operator" stays true either way;
+    // it claims possession, not activity. Whether the machine is running is on
+    // the detail panel, which reads the assignment row.
+    label: "With operator",
+    cls: "bg-[#fce7f3] text-[#be185d] dark:bg-[#3d1229] dark:text-[#f9a8d4]",
   },
   tinting: {
-    // The one solid fill among the three. Same value in both themes: a saturated
-    // pink on white text reads identically on either ground, and dimming it for
-    // dark mode would lose exactly the emphasis this state is carrying.
+    // The one solid fill. Same value in both themes: a saturated pink under
+    // white text reads identically on either ground, and dimming it for dark
+    // mode would lose exactly the emphasis this state is carrying — it is the
+    // only pink that means a machine is running and a truck may be waiting.
     label: "Tinting",
     cls: "bg-[#db2777] text-white dark:bg-[#db2777] dark:text-white",
   },
   tintDone: {
-    // The only pill on this screen with a border, and it earns one: without it
-    // the pale ground is nearly the page and the pill loses its edge. The border
-    // is also what reads as "outline" against the other two weights.
+    // Deep fill plus a TICK. The tick is what separates this from "With
+    // operator" at a glance — two filled pinks a step apart in depth are a weak
+    // distinction on a dense row, and a glyph is not. Rendered by the pill body
+    // below, keyed off the status, so no caller has to remember it.
     label: "Tint done",
-    cls: "border border-[#f9a8d4] bg-[#fdf2f8] text-[#be185d] dark:border-[#9d174d] dark:bg-[#2a1220] dark:text-[#f472b6]",
+    cls: "bg-[#fbcfe8] text-[#9d174d] dark:bg-[#5c1638] dark:text-[#fbcfe8]",
   },
 };
+
+/** The one status that carries a glyph. Kept beside META so the pill body has a
+ *  single place to ask, rather than a literal in the render. */
+const TICKED: readonly FloorStatus[] = ["tintDone"];
 
 // The HELD-BACK reading of `waiting` (2026-09-09). A waiting bill the operator
 // has not yet handed to the floor: still at the desk, invisible to the picking
@@ -242,6 +281,11 @@ export function StatusPill({
         onRed ? DUP_SO_BADGE_CLASS : m.cls
       }`}
     >
+      {/* The tick on Tint done — see TICKED. `strokeWidth` 3 because at 10px a
+          default-weight check reads as a smudge. */}
+      {TICKED.includes(status) && !onRed && (
+        <Check size={10} strokeWidth={3} className="mr-1 shrink-0" />
+      )}
       {m.label}
       {time ? (
         <>
@@ -282,6 +326,7 @@ export interface StatusCounts {
    * short — its own header says so and it has happened once already.
    */
   tintPending: number;
+  tintAssigned: number;
   tinting: number;
   tintDone: number;
   total: number;
@@ -344,7 +389,7 @@ export function finishedCount(counts: StatusCounts): number {
 export function countByStatus(rows: StatusInput[]): StatusCounts {
   const c: StatusCounts = {
     waiting: 0, withPicker: 0, needsCheck: 0, done: 0, dispatched: 0,
-    tintPending: 0, tinting: 0, tintDone: 0, total: rows.length,
+    tintPending: 0, tintAssigned: 0, tinting: 0, tintDone: 0, total: rows.length,
   };
   for (const r of rows) c[rowStatus(r)]++;
   return c;

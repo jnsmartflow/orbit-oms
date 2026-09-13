@@ -112,7 +112,8 @@ const RAIL_STAGES: string[] = STAGE_LADDER
  * Those feed predicates; this feeds a DISPLAY field and nothing else.
  */
 const TINT_PENDING_STAGE = "pending_tint_assignment";
-const TINT_ACTIVE_STAGES: string[] = ["tint_assigned", "tinting_in_progress"];
+const TINT_ASSIGNED_STAGE = "tint_assigned";
+const TINT_MIXING_STAGE = "tinting_in_progress";
 
 /**
  * Where a bill stands with the tint room — `null` for every plain order.
@@ -122,10 +123,19 @@ const TINT_ACTIVE_STAGES: string[] = ["tint_assigned", "tinting_in_progress"];
  * "done" is deliberately the FALL-THROUGH for a tint bill: past the three tint
  * stages means the tint room is finished with it, whatever happened next.
  */
-function tintPhaseOf(orderType: string, workflowStage: string): "pending" | "tinting" | "done" | null {
+function tintPhaseOf(
+  orderType: string,
+  workflowStage: string,
+): "pending" | "assigned" | "tinting" | "done" | null {
   if (orderType !== "tint") return null;
   if (workflowStage === TINT_PENDING_STAGE) return "pending";
-  if (TINT_ACTIVE_STAGES.includes(workflowStage)) return "tinting";
+  // ⚠ ASSIGNED AND MIXING ARE SEPARATE ANSWERS (2026-09-14). They shared the
+  // "tinting" value until today, which made the board claim work was happening
+  // on a bill nobody had touched. One stage, one value, and a stage this
+  // function has not been taught about falls to "done" — visibly wrong on a
+  // tint bill rather than invisibly folded into a state that looks busy.
+  if (workflowStage === TINT_ASSIGNED_STAGE) return "assigned";
+  if (workflowStage === TINT_MIXING_STAGE) return "tinting";
   return "done";
 }
 

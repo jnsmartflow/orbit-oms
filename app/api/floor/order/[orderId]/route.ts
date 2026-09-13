@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { formatPack } from "@/lib/place-order/pack";
-import type { FloorDetail, FloorActivityEntry, FloorDetailLine } from "@/lib/floor/types";
+import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailTint } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
 
@@ -134,6 +134,64 @@ export async function GET(
   const dealer = order.shipToOverrideCustomer ?? order.customer;
   const isSite = order.smu !== null && PROJECT_SMUS.has(order.smu) && order.shipToOverrideCustomerId === null;
 
+  // ── THE TINT BLOCK (2026-09-14) ───────────────────────────────────────────
+  //
+  // 🔴 THE ONLY PLACE ON THE FLOOR THAT READS `tint_assignments`, AND IT READS
+  // IT ON CLICK. The board query does not touch that table and must not: the
+  // rail feed that used to was deleted on 2026-09-13 for costing 772 ms and 25
+  // statements on every board load and every 30-second poll, for a payload
+  // nothing rendered. The four pink pills say WHICH state a bill is in from
+  // `orders.workflowStage` alone; who has it, when they started and how many
+  // shades are done cost a round trip, so they are paid for here, once, by
+  // someone who asked.
+  //
+  // ⚠ TWO SEQUENTIAL AWAITS, GUARDED BY `orderType`. A plain order — the large
+  // majority of every panel opened — issues NEITHER. Never $transaction
+  // (CORE §3), and SELECT-only: no `orders.update` anywhere near this, since the
+  // live marker keys on MAX(orders.updatedAt) (FLOOR §10).
+  //
+  // ⚠ `splitId: null` KEEPS THIS TO THE WHOLE-ORDER ASSIGNMENT, and `take: 1` on
+  // createdAt desc takes the LATEST — a reassigned order leaves its earlier row
+  // behind and the most recent one describes the bill. The same two rules
+  // getFloorRail applied before it was archived.
+  const tintAssignment =
+    order.orderType === "tint"
+      ? await prisma.tint_assignments.findFirst({
+          where: { orderId, splitId: null },
+          orderBy: { createdAt: "desc" },
+          select: {
+            status: true,
+            createdAt: true,
+            startedAt: true,
+            completedAt: true,
+            assignedTo: { select: { name: true } },
+          },
+        })
+      : null;
+  const tintSplits =
+    order.orderType === "tint"
+      ? await prisma.order_splits.findMany({
+          where: { orderId },
+          select: { status: true },
+        })
+      : [];
+  const nonCancelledSplits = tintSplits.filter((s) => s.status !== "cancelled");
+  const tint: FloorDetailTint | null =
+    order.orderType === "tint"
+      ? {
+          operatorName: tintAssignment?.assignedTo?.name ?? null,
+          status: tintAssignment?.status ?? null,
+          assignedAt: tintAssignment?.createdAt?.toISOString() ?? null,
+          startedAt: tintAssignment?.startedAt?.toISOString() ?? null,
+          completedAt: tintAssignment?.completedAt?.toISOString() ?? null,
+          shadesDone: nonCancelledSplits.filter((s) => s.status === "tinting_done").length,
+          shadesTotal: nonCancelledSplits.length,
+          // The RAW array — cancelled included. An all-cancelled split order
+          // reports shadesTotal 0 and would otherwise pass for a full OBD.
+          hasSplits: tintSplits.length > 0,
+        }
+      : null;
+
   const detail: FloorDetail = {
     orderId: order.id,
     obdNumber: order.obdNumber,
@@ -149,6 +207,7 @@ export async function GET(
     priorityLevel: order.priorityLevel,
     isTint: order.orderType === "tint",
     isSite,
+    tint,
 
     isAssigned: order.workflowStage === "pick_assigned",
     isDone: order.workflowStage === "pick_done",

@@ -79,6 +79,93 @@ export function DetailDetails({ d }: { d: FloorDetail }) {
         <Cell k="Tinting" v={d.isTint ? "Yes" : "No"} />
         <Cell k="Material" v={d.materialType} />
       </div>
+
+      {/* ── THE TINT ROOM (2026-09-14) ───────────────────────────────────────
+          Everything the four pink pills have no room for: WHO has it, WHEN they
+          started and finished, and how many shades are done.
+
+          🔴 THIS IS THE ONLY FLOOR SURFACE THAT READS `tint_assignments`, and it
+          reads it on CLICK. The board query does not touch that table and must
+          not — the rail feed that used to was deleted on 2026-09-13 for costing
+          772 ms and 25 statements on every board load and every 30-second poll.
+          A pill per row would have spent that back; a panel spends it once, when
+          somebody asks.
+
+          🔴 "Machine status" IS THE ASSIGNMENT'S STATUS, AND IT IS THE ONLY
+          PLACE A PAUSE IS VISIBLE. Pause and resume write the assignment row and
+          never the order's stage (CLAUDE_TINT §5), so `workflowStage` — and
+          therefore the pill — cannot tell a paused job from a running one. The
+          pill says "With operator", which stays true either way; this cell says
+          which.
+
+          Rendered only on a tint bill. `d.tint` is null on a plain order, so the
+          whole section is absent rather than a grid of dashes. */}
+      {d.tint && (
+        <>
+          <Section title="Tint room" />
+          <div className="grid grid-cols-2">
+            <Cell k="Operator" v={d.tint.operatorName} />
+            <Cell k="Machine status" v={tintStatusWord(d.tint.status)} />
+            <Cell k="Assigned" v={fmtDateTime(d.tint.assignedAt)} />
+            <Cell k="Started" v={fmtDateTime(d.tint.startedAt)} />
+            <Cell k="Finished" v={fmtDateTime(d.tint.completedAt)} />
+            <Cell k="Time on it" v={tintElapsed(d.tint)} />
+            {/* Shades — the count the archived rail strip used to carry. A full
+                (non-split) OBD has no shade rows at all, and "0 of 0" reads as
+                broken, so it says so in words instead. `hasSplits` is counted
+                BEFORE the cancelled filter for exactly this: an all-cancelled
+                split order also reports 0 and would otherwise pass for a full
+                OBD. */}
+            <Cell
+              k="Shades"
+              v={d.tint.hasSplits ? `${d.tint.shadesDone} of ${d.tint.shadesTotal} done` : "Full OBD — no split"}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
+}
+
+/**
+ * `tint_assignments.status` in the operator's words.
+ *
+ * ⚠ A PLAIN String COLUMN WITH NO CHECK (CORE §3's status-string rule), so an
+ * unknown value is PRINTED RATHER THAN HIDDEN — a status this panel has not been
+ * taught about should look unfamiliar on screen, not silently read as one of the
+ * five it knows.
+ */
+function tintStatusWord(status: string | null): string | null {
+  if (status === null) return null;
+  const WORDS: Record<string, string> = {
+    assigned: "Not started",
+    tinting_in_progress: "Mixing",
+    paused: "Paused",
+    tinting_done: "Finished",
+    skipped: "Skipped",
+    cancelled: "Cancelled",
+  };
+  return WORDS[status] ?? status;
+}
+
+/**
+ * How long the tint room has had it. Finished → start to finish; started →
+ * start to now; neither → nothing.
+ *
+ * ⚠ NOT AN ACCUMULATED WORKING TIME. `tint_assignments` carries an
+ * `accumulatedMinutes` for the pause maths, and this is deliberately NOT it:
+ * this is wall clock, which is what a planner deciding whether to hold a truck
+ * is actually asking. A paused job's wall clock keeps running, and that is the
+ * honest answer to "how long has this been in the tint room".
+ */
+function tintElapsed(t: NonNullable<FloorDetail["tint"]>): string | null {
+  if (!t.startedAt) return null;
+  const from = new Date(t.startedAt).getTime();
+  const to = t.completedAt ? new Date(t.completedAt).getTime() : Date.now();
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  const mins = Math.max(0, Math.floor((to - from) / 60000));
+  if (mins < 60) return `${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem === 0 ? `${hrs} hr` : `${hrs} hr ${rem} min`;
 }
