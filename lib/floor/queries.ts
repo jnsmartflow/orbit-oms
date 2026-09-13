@@ -49,6 +49,13 @@ import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 // behaviour: a second copy of "what counts as a duplicate" is how the phone and
 // the desk would come to flag different bills.
 import { getDuplicateSoNumbers } from "@/lib/picking/duplicate-so";
+// WHICH TRIPS A DAY'S DESK IS ABOUT — owned by lib/trips/live-trips.ts and
+// shared with getTripsForDate, the feed behind the rail. The board's trip arm
+// below must never spell this rule out for itself: the one day it did, the two
+// spellings disagreed and every carried draft's stops rendered empty. Pure, no
+// prisma, no clock, so importing it here is one-directional and safe — the same
+// argument grouping.ts and release-window.ts carry above.
+import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -206,32 +213,30 @@ export function floorCarriedPoolWhere(): Prisma.ordersWhereInput {
  * the unpinned variant returns the identical 142 rows); it is what keeps that
  * true tomorrow.
  *
- * ⚠ CANCELLED TRIPS ARE OUT, and so is a trip dated in the PAST.
+ * 🔴 WHICH TRIPS COUNT IS NOT DECIDED HERE, AND THAT IS THE POINT.
+ * `liveTripsOnDeskWhere` (lib/trips/live-trips.ts) owns it, and
+ * `getTripsForDate` — the feed behind the rail — derives from the SAME module.
+ * Neither carries a copy.
  *
- * 🔴 AND THAT SECOND FENCE IS A KNOWN, MEASURED GAP — NOT A FINISHED THOUGHT.
- * `getTripsForDate` (lib/trips/queries.ts) carries a past-dated DRAFT onto
- * today's rail on purpose: its predicate is "tripDate = today OR (status
- * 'draft' AND tripDate < today)". This arm's `tripDate >= today` does NOT
- * match that, so the desk can show a carried draft whose bills this arm
- * refuses, and every one of its stops falls back to the "not on today's board"
- * line.
+ * This arm shipped for one day with its own spelling, `tripDate >= today`,
+ * while the rail's feed said "dated today OR an open draft of any age". That
+ * gap WAS this bug in its second form: on the morning of 2026-09-13 every trip
+ * on the rail was a draft carried from 2026-09-12 — 22 trips, 105 bills — so
+ * the arm matched NONE of them and 86 of 88 stops came up empty. The same
+ * comparison made a day earlier could not see it, because every trip that day
+ * was dated that day and the two spellings happened to agree. Hand-syncing two
+ * rules is how you get a bug that is invisible on the day you check it.
  *
- * It is not hypothetical and it is not small. On the morning of 2026-09-13
- * every trip on the rail was a draft carried from 2026-09-12 — 22 of them, 105
- * bills — so this arm admitted ZERO rows and 86 of 88 stops came up empty. The
- * same measurement taken on 2026-09-12 could not see the problem at all,
- * because every trip that day was dated that day and the two rules agreed.
+ * ⚠ A CARRIED DRAFT HAS NO DATE FLOOR, and that is a characteristic rather than
+ * a hole. An open draft is on the rail where somebody can see it, and confirming
+ * or cancelling it removes it; it is bounded by attention, exactly as the
+ * carried pool in `floorCarriedPoolWhere` is. A guard by date would instead hide
+ * the bills of a draft the planner can still act on, which is the failure this
+ * whole arm exists to stop.
  *
- * Widening the fence to "tripDate >= today OR status = 'draft'" closes it and
- * admits 103 further rows (all pick_checked, oldest checked 2026-09-11). That
- * is past the row budget agreed for this change, and it hands an UNBOUNDED past
- * to the draft arm — a draft left open for a month would keep its bills on the
- * live board for a month — so it is an owner decision, deliberately not taken
- * here. Until it is taken, a carried draft's bills reach the board only through
- * whichever other arm still describes them, exactly as before this arm existed.
- *
- * `todayDateOnly` is passed in (UTC-midnight, the `@db.Date` shape) so this
- * stays pure and clock-free, the same contract `floorLiveBaseWhere` keeps.
+ * `todayDateOnly` is passed in (UTC-midnight, the `@db.Date` shape that
+ * `trips.tripDate` is stored in) so this stays pure and clock-free, the same
+ * contract `floorLiveBaseWhere` keeps.
  */
 export function floorTripBillsWhere(todayDateOnly: Date): Prisma.ordersWhereInput {
   return {
@@ -239,7 +244,8 @@ export function floorTripBillsWhere(todayDateOnly: Date): Prisma.ordersWhereInpu
     isRemoved: false,
     // Redundant by meaning, load-bearing by plan. Read the header before touching.
     tripDropId: { not: null },
-    tripDrop: { trip: { status: { not: "cancelled" }, tripDate: { gte: todayDateOnly } } },
+    // The shared rule, never a local spelling of it.
+    tripDrop: { trip: liveTripsOnDeskWhere(todayDateOnly) },
   };
 }
 

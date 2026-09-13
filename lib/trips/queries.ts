@@ -28,6 +28,10 @@ import {
   PICK_CHECKED,
   DISPATCHED,
 } from "@/lib/workflow-stages";
+// The ONE definition of which trips a day's desk is about. Shared with the
+// board's trip arm (lib/floor/queries.ts) so the rail and the board cannot
+// disagree about it again — read that module's header before changing the rule.
+import { tripsOnDeskWhere } from "@/lib/trips/live-trips";
 
 /**
  * Per-trip bill counts by state.
@@ -401,15 +405,14 @@ function toSummary(
  */
 export async function getTripsForDate(tripDate: Date): Promise<TripSummary[]> {
   const trips = (await prisma.trips.findMany({
-    where: {
-      OR: [
-        { tripDate },
-        // The carried arm. `draft` by name, not `status NOT IN (...)`: a new
-        // status added to chk_trips_status must be an explicit decision to carry
-        // or not to, never something this predicate inherits by accident.
-        { status: "draft", tripDate: { lt: tripDate } },
-      ],
-    },
+    // 🔴 THE RULE MOVED OUT, IT DID NOT CHANGE (2026-09-13). This used to spell
+    // out "tripDate = D, OR an open draft older than D" inline. It now comes
+    // from lib/trips/live-trips.ts, because the board's trip arm needs the SAME
+    // answer and the two spellings had already drifted: the board said
+    // `tripDate >= today`, so it refused the bills of every carried draft this
+    // feed was busy putting on the rail. 22 trips and 105 bills on the morning
+    // of 2026-09-13. Same set as before, one owner now.
+    where: tripsOnDeskWhere(tripDate),
     select: TRIP_SELECT,
     // tripDate leads so a carried draft sorts ABOVE the day's own trips rather
     // than interleaving with them by type — it is older, and it reads as older.
