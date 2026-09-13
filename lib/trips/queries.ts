@@ -92,6 +92,27 @@ export interface TripSummary {
   /** DERIVED, never stored — every bill checked and at least one bill. */
   isReady: boolean;
   counts: TripBillCounts;
+  /**
+   * How many of this trip's bills have actually LEFT — `workflowStage`
+   * 'dispatched' (2026-09-13).
+   *
+   * 🔴 A SEPARATE FIGURE, NOT A SIXTH BUCKET, AND THAT IS DELIBERATE.
+   * `counts.checked` folds `dispatched` into `checked` on purpose — read
+   * `bucketFor` for why `isReady` and the progress bar depend on it — so
+   * `counts` alone cannot tell "checked, still here" from "checked and gone".
+   * Splitting the bucket would change what the bar means on every trip surface;
+   * adding one number beside it changes nothing and answers the question.
+   *
+   * ⚠ WHAT IT IS FOR. Confirming a trip marks its checked bills dispatched and
+   * leaves anything still being picked exactly where it is (lib/floor/dispatch
+   * .ts). That skip is rare — one trip in 55, measured 2026-09-13 — so it must
+   * be visible on the TRIP afterwards, not only in a toast the operator has
+   * already dismissed. `counts.total - dispatchedCount` on a confirmed trip is
+   * exactly "how many did not go", and unlike a buckets-based guess it also
+   * catches a HELD bill at `pick_checked`, which sits in `checked` and is never
+   * dispatched.
+   */
+  dispatchedCount: number;
   totalLitres: number;
   dropCount: number;
   releasedAt: string | null;
@@ -325,9 +346,14 @@ function toSummary(
 ): TripSummary {
   const counts: TripBillCounts = { ...EMPTY_COUNTS };
   let totalLitres = 0;
+  // Counted in the SAME pass, off the stage the bucket already reads — no extra
+  // query, no extra column fetched. See `dispatchedCount` on TripSummary for why
+  // it rides beside `counts` instead of inside it.
+  let dispatchedCount = 0;
   for (const b of bills) {
     counts[bucketFor(b.workflowStage)] += 1;
     counts.total += 1;
+    if (b.workflowStage === DISPATCHED) dispatchedCount += 1;
     totalLitres += b.litres;
   }
 
@@ -357,6 +383,7 @@ function toSummary(
     // announce itself as ready to leave.
     isReady: counts.total > 0 && counts.checked === counts.total,
     counts,
+    dispatchedCount,
     totalLitres,
     dropCount,
     releasedAt: t.releasedAt?.toISOString() ?? null,

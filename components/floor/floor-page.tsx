@@ -99,6 +99,26 @@ const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
 // request legible in the network tab and the server logs.
 const UNSCOPED_QS = "scope=All";
 
+/**
+ * Stage → the words an operator uses, for the "not dispatched" toast.
+ *
+ * ⚠ PLAIN ENGLISH, NOT `STAGE_LADDER`'s labels. The ladder's are written for a
+ * developer reading a registry ("Assigned to Picker"); this reads inside a
+ * sentence about what did not go on the truck. Only the stages a bill can
+ * actually be left behind at are here — anything else falls back to the raw
+ * value rather than being silently renamed into something friendlier.
+ */
+const STAGE_WORDS: Record<string, string> = {
+  pending_support: "not yet on the floor",
+  pending_picking: "waiting for a picker",
+  pick_assigned: "with a picker",
+  pick_done: "picked, awaiting check",
+  pending_tint_assignment: "waiting for tinting",
+  tint_assigned: "with the tinter",
+  tinting_in_progress: "still tinting",
+  cancelled: "cancelled",
+};
+
 // The three top tabs (design §3 — Floor / On hold / Cancelled).
 type TopTab = "floor" | "hold" | "cancelled";
 
@@ -596,6 +616,38 @@ export function FloorPage() {
   /** Confirm / Release a draft trip. The stored value is 'released' either way. */
   const releaseTrip = useCallback(
     async (tripId: number) => {
+      // ── ONE CONFIRMATION STEP, BECAUSE THIS IS NOW TERMINAL (2026-09-13) ──
+      //
+      // 🔴 THE BUTTON MOVES REAL GOODS TO THE END OF THE LADDER AND THE ONLY
+      // UNDO IS HAND-WRITTEN SQL. Until today this fired the POST on the first
+      // click with nothing in between, which was right when confirming only
+      // meant "the plan is settled". It now marks bills `dispatched`.
+      //
+      // ⚠ IT STATES THE CONSEQUENCE AND THE COUNT, never "are you sure" — a
+      // generic prompt trains the hand to dismiss it, and this one has to still
+      // be read on the day the number is wrong. `window.confirm` is the house
+      // pattern for exactly this (components/admin/access-manager.tsx,
+      // hide-settings-content.tsx ×3, import/import-modal.tsx): one step, no
+      // modal flow, no new component.
+      //
+      // ⚠ THE COUNT IS `counts.checked`, WHICH IS WHAT WILL MOVE. A bill not yet
+      // checked is left alone by the route, so promising it would overstate the
+      // press. On a trip where nothing is checked the prompt says so plainly
+      // rather than offering "Mark 0 bills dispatched?", which reads as a bug.
+      const t = (tripsRef.current ?? []).find((x) => x.id === tripId);
+      const willDispatch = t ? t.counts.checked - t.dispatchedCount : 0;
+      const leftBehind = t ? t.counts.total - t.counts.checked : 0;
+      const label = t?.tripNumber ?? "this trip";
+      const prompt =
+        willDispatch > 0
+          ? `Mark ${willDispatch} bill${willDispatch === 1 ? "" : "s"} dispatched on ${label}?` +
+            (leftBehind > 0
+              ? `\n\n${leftBehind} more ${leftBehind === 1 ? "is" : "are"} still being picked and will be left alone.`
+              : "") +
+            `\n\nThis is the end of the line for those bills — undoing it needs a developer.`
+          : `Confirm ${label}?\n\nNothing on it is checked yet, so no bill will be marked dispatched.`;
+      if (!window.confirm(prompt)) return;
+
       setTripBusyId(tripId);
       try {
         const res = await fetch(`/api/floor/trips/${tripId}/release`, { method: "POST" });
@@ -631,6 +683,21 @@ export function FloorPage() {
           // failed bucket and raise a red "not released" toast beside the green
           // "confirmed" one, on a trip that had confirmed correctly.
           const alreadyFinished: number[] = body?.alreadyFinished ?? [];
+          // ── THE DISPATCH MARK, SAID FIRST (2026-09-13) ──────────────────────
+          //
+          // 🔴 IT LEADS THE LINE BECAUSE IT IS THE BIGGEST THING THAT HAPPENED.
+          // Everything else on this toast is about where a bill sits on the
+          // floor; this one says goods left the building.
+          const dispatched: number[] = body?.dispatched ?? [];
+          const alreadyDispatched: number[] = body?.alreadyDispatched ?? [];
+          const notDispatched: Array<{ orderId: number; workflowStage: string }> =
+            body?.notDispatched ?? [];
+          const held: number[] = body?.held ?? [];
+          const needsSlot: number[] = body?.needsSlot ?? [];
+          if (dispatched.length > 0) {
+            parts.push(`${dispatched.length} dispatched`);
+          }
+          if (alreadyDispatched.length > 0) parts.push(`${alreadyDispatched.length} already gone`);
           if (released.length > 0) parts.push(`${released.length} to the floor`);
           if (stamped.length > 0 && gateOn) parts.push(`${stamped.length} shown to pickers`);
           if (already.length > 0) parts.push(`${already.length} already there`);
@@ -639,7 +706,44 @@ export function FloorPage() {
               `${alreadyFinished.length} already picked and checked`,
             );
           }
+          // ⚠ TRUE AT ZERO. A confirm that dispatched nothing must say so rather
+          // than show a bare "confirmed" that reads as a full success.
+          if (
+            dispatched.length === 0 &&
+            alreadyDispatched.length === 0 &&
+            (notDispatched.length > 0 || held.length > 0)
+          ) {
+            parts.push("nothing dispatched");
+          }
           toast.success(parts.join(" · "));
+
+          // 🔴 NEVER SWALLOWED, AND ITS OWN TOAST. A bill left in the building
+          // is the one thing the operator has to come back to, and folding it
+          // into the success line would let it scroll past. The trip itself also
+          // carries the count from now on (trip-detail-header.tsx), so this toast
+          // is the prompt and the trip is the record.
+          if (notDispatched.length > 0) {
+            const byStage = new Map<string, number>();
+            for (const b of notDispatched) byStage.set(b.workflowStage, (byStage.get(b.workflowStage) ?? 0) + 1);
+            const detail = Array.from(byStage.entries())
+              .map(([s, n]) => `${n} ${STAGE_WORDS[s] ?? s}`)
+              .join(", ");
+            toast.info(
+              `${notDispatched.length} bill${notDispatched.length === 1 ? "" : "s"} NOT dispatched — ${detail}. ` +
+                `Confirm again once checked.`,
+            );
+          }
+          if (held.length > 0) {
+            toast.info(
+              `${held.length} bill${held.length === 1 ? " is" : "s are"} on hold and ${held.length === 1 ? "was" : "were"} not dispatched.`,
+            );
+          }
+          if (needsSlot.length > 0) {
+            toast.info(
+              `${needsSlot.length} bill${needsSlot.length === 1 ? "" : "s"} could not be sent to the floor — ` +
+                `this trip has no slot. Set one and confirm again.`,
+            );
+          }
           if (waitingForTint.length > 0) {
             toast.info(
               `${waitingForTint.length} bill${waitingForTint.length === 1 ? "" : "s"} still in tinting — ` +

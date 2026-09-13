@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { DISPATCHED } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +102,50 @@ export async function POST(
     where: { tripId },
     select: { id: true },
   });
+
+  // ── A TRIP THAT HAS ALREADY GONE CANNOT BE CALLED OFF (2026-09-13) ────────
+  //
+  // 🔴 REFUSING IS THE ONLY HONEST ANSWER OF THE THREE. Since confirming began
+  // marking bills `dispatched` (POST …/release, lib/floor/dispatch.ts), a
+  // cancel can now meet goods that are recorded as having left. Both obvious
+  // behaviours are worse than refusing:
+  //
+  //   - detach and leave them dispatched → a cancelled trip whose bills say
+  //     they shipped on it. The trip is gone and the record still claims a
+  //     load that officially never happened.
+  //   - detach and un-dispatch them → silently rewriting the history of real
+  //     goods on a real truck, from a button labelled "Cancel trip".
+  //
+  // Refusing does neither, and it is the RECOVERABLE direction: admitting this
+  // case later is one edit, while an un-dispatch cannot be taken back and
+  // `order_status_logs` is insert-only. If an undo is ever wanted it belongs in
+  // its own deliberate action that writes `dispatched → pick_checked` log rows,
+  // never as a side effect of cancelling.
+  //
+  // ⚠ THE COUNT IS IN THE MESSAGE. "Cannot cancel" sends the operator looking
+  // for a bug; "3 bills on it are already marked dispatched" tells them what
+  // happened and what to do about it.
+  //
+  // ⚠ IT SITS ABOVE THE DETACH LOOP, so a refusal writes nothing at all — the
+  // same shape as the `cancelled` and `dispatched` status checks above it.
+  const dispatchedCount =
+    drops.length > 0
+      ? await prisma.orders.count({
+          where: { tripDropId: { in: drops.map((d) => d.id) }, workflowStage: DISPATCHED },
+        })
+      : 0;
+  if (dispatchedCount > 0) {
+    return NextResponse.json(
+      {
+        error:
+          `This trip cannot be cancelled — ${dispatchedCount} bill${dispatchedCount === 1 ? " on it is" : "s on it are"} ` +
+          `already marked dispatched. The load has gone; cancelling it now would either leave those bills ` +
+          `claiming a trip that never ran, or rewrite the record of goods that really shipped.`,
+        dispatchedCount,
+      },
+      { status: 409 },
+    );
+  }
   const orders =
     drops.length > 0
       ? await prisma.orders.findMany({

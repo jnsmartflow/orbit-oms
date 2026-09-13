@@ -53,6 +53,27 @@ export function TripDetailHeader({
   const isClosed = trip.status === "cancelled" || trip.status === "dispatched";
   const isDraft = trip.status === "draft";
 
+  // ── WHAT DID NOT GO (2026-09-13) ─────────────────────────────────────────
+  //
+  // 🔴 A SKIPPED BILL MUST BE VISIBLE ON THE TRIP, NOT ONLY IN A TOAST.
+  // Confirming marks every CHECKED bill dispatched and deliberately leaves
+  // anything still being picked exactly where it is (lib/floor/dispatch.ts).
+  // That skip is rare — one trip in 55, measured 2026-09-13 — which is precisely
+  // why it cannot live only in a success line the operator has already
+  // dismissed. At that rate nobody is watching for it, and a trip that quietly
+  // left two bills behind looks identical to one that did not.
+  //
+  // ⚠ `dispatchedCount` IS THE REAL FIGURE, not `counts.total - counts.checked`.
+  // `counts` folds `dispatched` INTO `checked` (bucketFor, lib/trips/queries.ts)
+  // so the bucket cannot tell "checked and gone" from "checked and still here",
+  // and a HELD bill at pick_checked — never dispatched — sits in `checked` too.
+  // The payload carries the count for exactly this line.
+  //
+  // ⚠ ONLY AFTER A CONFIRM. On a draft every bill is undispatched and saying so
+  // would be noise on the one state where it means nothing.
+  const notDispatched = trip.counts.total - trip.dispatchedCount;
+  const showNotDispatched = !isDraft && trip.counts.total > 0 && notDispatched > 0;
+
   // Line two — everything known about who is carrying it, then the totals.
   // Blanks are dropped rather than rendered as dashes: a trip with no vehicle
   // yet is normal, and four em dashes in a row reads as missing data.
@@ -143,20 +164,34 @@ export function TripDetailHeader({
         </>
       )}
 
+      {/* The skip, stated on the trip and not only in a toast. Amber, because
+          it is something to come back to rather than something that went wrong
+          — a red band on a correct confirm would teach the operator to ignore
+          it, which is the opposite of the point. */}
+      {showNotDispatched && (
+        <div className="mt-2 rounded-[7px] border border-[#fde3b4] bg-[#fffaf0] px-2.5 py-1.5 text-[11.5px] text-[#92400e]">
+          <b className="font-bold tabular-nums">{notDispatched}</b> of{" "}
+          <span className="tabular-nums">{trip.counts.total}</span> bill
+          {trip.counts.total === 1 ? "" : "s"} not dispatched — still being picked, or on hold.
+          Confirm again once {notDispatched === 1 ? "it is" : "they are"} checked.
+        </div>
+      )}
+
       {!isClosed && !readOnly && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {isDraft && (
             <button
               type="button"
               onClick={onRelease}
-              disabled={busy || counts.total === 0 || trip.dispatchWindowId === null}
-              title={
-                counts.total === 0
-                  ? "Add bills to this trip first"
-                  : trip.dispatchWindowId === null
-                    ? "Set a slot first — the release writes it onto every bill"
-                    : wording.releaseButton
-              }
+              // 🔴 THE SLOT GATE IS GONE (2026-09-13). This read
+              // `|| trip.dispatchWindowId === null` and stranded 104 bills
+              // across 19 slot-less trips with no way forward. The slot only
+              // ever mattered to the RELEASE write, which a checked bill never
+              // receives, so the gate moved into the route and onto that write
+              // alone. The slot keeps its display job: the rail groups by it,
+              // and "No slot yet" is a fine group to sit in.
+              disabled={busy || counts.total === 0}
+              title={counts.total === 0 ? "Add bills to this trip first" : wording.releaseButton}
               className={PRIMARY}
             >
               {busy ? "Working…" : wording.releaseButton}

@@ -199,9 +199,15 @@ export function TripForm({
                   <option key={w.id} value={w.id}>{w.windowTime}</option>
                 ))}
               </select>
+              {/* ⚠ THIS SAID "A trip cannot be released without one" UNTIL
+                  2026-09-13, AND THAT IS NOW FALSE — the slot gate on Confirm
+                  is gone, and a slot-less trip confirms and dispatches like any
+                  other. The hint says what the slot IS for instead of what it
+                  used to block. The "Not set" default is deliberate and stays:
+                  the slot is optional. */}
               {dispatchWindowId === "" && (
                 <p className="mt-1 text-[10.5px] text-gray-400">
-                  A trip cannot be released without one.
+                  Optional — the rail groups trips by slot, so this one sits under &ldquo;No slot yet&rdquo;.
                 </p>
               )}
             </div>

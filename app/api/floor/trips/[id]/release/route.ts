@@ -3,6 +3,9 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { releaseBillsToFloor } from "@/lib/floor/release";
+import { markBillsDispatched } from "@/lib/floor/dispatch";
+import { FLOOR_RELEASABLE_STAGES } from "@/lib/floor/release-stages";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { stampPickVisibility } from "@/lib/picking/visibility-gate";
 
 export const dynamic = "force-dynamic";
@@ -40,10 +43,27 @@ export const dynamic = "force-dynamic";
  * `releasedAt`/`releasedById` are stamped only on the FIRST release, so a
  * re-run cannot overwrite who released it or when.
  *
- * ⚠ A TRIP WITH NO SLOT CANNOT BE RELEASED — 409. The release writes the trip's
- * window onto its bills, and a trip with `dispatchWindowId` NULL has nothing to
- * write. Writing a null window would hand the floor a bill with a dispatch
- * status and no time, which sorts nowhere and reads as an error on every board.
+ * 🔴 THE SLOT GATE IS GONE (2026-09-13), AND CONFIRMING NOW MARKS DISPATCH.
+ *
+ * This route used to 409 on `dispatchWindowId: null`. The reasoning was sound —
+ * the release writes the trip's window onto its bills and a null window would
+ * hand the floor a bill with a dispatch status and no time — but it gated the
+ * WHOLE button on a write that, for the everyday trip, never happens: a
+ * `pick_checked` bill is not in FLOOR_RELEASABLE_STAGES, so the slot is
+ * cascaded nowhere. Measured 2026-09-12: 19 of 22 draft trips had no slot and
+ * 104 bills were stranded behind a disabled button with no way forward.
+ *
+ * So the gate moved from the TRIP to the WRITE. A slot-less trip confirms; the
+ * release step is simply skipped, and any bill that would have been released is
+ * reported in `needsSlot` rather than written with a null window. Set a slot and
+ * press again — this route is idempotent by design.
+ *
+ * ⚠ STEP 2b IS NEW AND IT IS TERMINAL. Every bill at `pick_checked` and not on
+ * hold moves to `dispatched`, with a log row (lib/floor/dispatch.ts). In the
+ * depot's practice confirming a plan IS the truck going; the stage was being
+ * written every evening by hand from an NTS spreadsheet, 136 bills in one
+ * second on 2026-09-13 with not one `order_status_logs` row between them. Read
+ * that module's header before touching what moves and what does not.
  *
  * ⚠ THE BUCKETS ARE HONEST AND A REFUSAL IS NEVER RE-LABELLED:
  *   released       — the full write happened
@@ -108,25 +128,21 @@ export async function POST(
     );
   }
 
-  // (b) No slot → nothing to write. Refused before anything is read or written.
-  if (trip.dispatchWindowId === null) {
-    return NextResponse.json(
-      {
-        error:
-          "This trip has no slot — set a dispatch window before releasing it, " +
-          "or its bills would reach the floor with no time on them.",
-      },
-      { status: 409 },
-    );
-  }
+  // ⚠ NO SLOT IS NO LONGER A REFUSAL — see the header. The trip confirms; only
+  // the release WRITE is skipped, because that is the only part a window is
+  // needed for.
+  const windowId = trip.dispatchWindowId;
+  const hasSlot = windowId !== null;
 
   // The window's label, for the log note. ONE read for the whole trip, never
-  // per bill.
-  const window = await prisma.dispatch_slot_master.findUnique({
-    where: { id: trip.dispatchWindowId },
-    select: { windowTime: true },
-  });
-  const windowLabel = window?.windowTime ?? String(trip.dispatchWindowId);
+  // per bill, and not read at all when there is no window to name.
+  const window = hasSlot
+    ? await prisma.dispatch_slot_master.findUnique({
+        where: { id: windowId },
+        select: { windowTime: true },
+      })
+    : null;
+  const windowLabel = window?.windowTime ?? String(windowId);
 
   // The trip's bills, via its drops. TWO batched reads keyed on an IN list —
   // never an include chain (lib/picking/queue.ts:537-554).
@@ -134,11 +150,13 @@ export async function POST(
     where: { tripId },
     select: { id: true },
   });
+  // `workflowStage` + `dispatchStatus` ride the SAME query — no extra read — so
+  // the no-slot path below can name which bills it had to skip.
   const orders =
     drops.length > 0
       ? await prisma.orders.findMany({
           where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
-          select: { id: true },
+          select: { id: true, workflowStage: true, dispatchStatus: true },
           orderBy: { id: "asc" },
         })
       : [];
@@ -162,15 +180,38 @@ export async function POST(
   // move a promised time because the bill happened to be on a trip, and would
   // spend an `orders.update` — and therefore a false marker change on every
   // board — doing it.
-  const rel = await releaseBillsToFloor({
-    orderIds,
-    targetDate: trip.tripDate,
-    windowId: trip.dispatchWindowId,
-    windowLabel,
-    actorId: releasedById,
-    noteLabel: `Released with trip ${trip.tripNumber}`,
-    skipAlreadyReleased: true,
-  });
+  //
+  // ⚠ SKIPPED ENTIRELY WHEN THE TRIP HAS NO SLOT (2026-09-13). `windowId` is
+  // typed `number` and IS written onto every bill it releases, so calling this
+  // with a null window would strip a bill's own time rather than leave it be —
+  // the hazard the old 409 existed to prevent. Not calling it is the whole
+  // difference; nothing in lib/floor/release.ts changed.
+  //
+  // `needsSlot` is what that costs, reported rather than swallowed: the bills
+  // this press WOULD have released, mirroring the same already-released skip
+  // the writer applies, so the operator learns a slot is worth setting. One
+  // such bill exists across every live trip today.
+  const rel = hasSlot
+    ? await releaseBillsToFloor({
+        orderIds,
+        targetDate: trip.tripDate,
+        windowId,
+        windowLabel,
+        actorId: releasedById,
+        noteLabel: `Released with trip ${trip.tripNumber}`,
+        skipAlreadyReleased: true,
+      })
+    : { released: [], alreadyReleased: [], waitingForTint: [], failed: [] };
+
+  const needsSlot = hasSlot
+    ? []
+    : orders
+        .filter(
+          (o) =>
+            FLOOR_RELEASABLE_STAGES.includes(o.workflowStage) &&
+            !(o.workflowStage === SUPPORT_DONE_OUTPUT && o.dispatchStatus === "dispatch"),
+        )
+        .map((o) => o.id);
 
   // ── STEP 2 · the visibility stamp ────────────────────────────────────────
   //
@@ -213,11 +254,40 @@ export async function POST(
   //
   // ⚠ `dispatched` RIDES THE SAME BUCKET. A bill that has already left is
   // likewise past release and likewise not a failure.
+  // ── STEP 2b · THE DISPATCH MARK — the truck goes ─────────────────────────
+  //
+  // 🔴 THIS IS THE TERMINAL WRITE AND THE ONLY UNDO IS HAND-WRITTEN SQL. Every
+  // bill at `pick_checked` and not on hold moves to `dispatched`, with one
+  // `orders.update` and one `order_status_logs` row each. Which bills move, and
+  // the reasons a bill is left alone, are owned by lib/floor/dispatch.ts — read
+  // its `notChecked` and `held` buckets before changing anything here.
+  //
+  // ⚠ RUN AFTER THE RELEASE, DELIBERATELY. A bill the release just moved is now
+  // at `pending_picking`, so it cannot be dispatched by the same press — which
+  // is correct: it has not been picked, let alone checked. The order makes that
+  // true by construction rather than by a guard.
+  //
+  // ⚠ IT DOES NOT NEED A SLOT. Dispatch writes one stage column and no window,
+  // so a slot-less trip marks dispatch exactly like any other. That is what
+  // unstrands the bills the old 409 was holding.
+  const disp = await markBillsDispatched({
+    orderIds,
+    actorId: releasedById,
+    noteLabel: `Dispatched with trip ${trip.tripNumber}`,
+  });
+
   const PAST_RELEASE = new Set<string>(["pick_checked", "dispatched"]);
   const pastReleaseMsg = (e: { error: string }) =>
     PAST_RELEASE.has(e.error.replace("Not releasable at stage ", ""));
   const alreadyFinished = rel.failed.filter(pastReleaseMsg).map((f) => f.orderId);
-  const allFailed = [...rel.failed.filter((f) => !pastReleaseMsg(f)), ...stamp.failed];
+  const allFailed = [
+    ...rel.failed.filter((f) => !pastReleaseMsg(f)),
+    ...stamp.failed,
+    // A dispatch failure IS a real failure — the bill was eligible and the write
+    // threw. `notChecked` and `held` are NOT here; they are deliberate skips and
+    // have their own buckets on the payload.
+    ...disp.failed,
+  ];
 
   // Nothing achieved at all → the trip does NOT move. A `released` trip whose
   // bills are all still unreleased is a lie on the board.
@@ -233,11 +303,21 @@ export async function POST(
   // confirm — it is a trip with nothing left to send, which is what confirming a
   // plan for finished goods looks like. Without this term the everyday case 422s
   // and the trip stays draft.
+  //
+  // ⚠ A DISPATCH COUNTS AS ACHIEVED, and on a slot-less trip it is the ONLY
+  // thing that can be. Without this term the everyday no-slot confirm — four
+  // checked bills, nothing releasable — would 422 with "no bill could be
+  // released" while having just marked four loads out of the building.
+  //
+  // ⚠ SO DOES `alreadyDispatched`: a re-run of a confirm on a trip that has
+  // already gone is a no-op, not a failure.
   if (
     rel.released.length === 0 &&
     rel.alreadyReleased.length === 0 &&
     rel.waitingForTint.length === 0 &&
-    alreadyFinished.length === 0
+    alreadyFinished.length === 0 &&
+    disp.dispatched.length === 0 &&
+    disp.alreadyDispatched.length === 0
   ) {
     return NextResponse.json(
       {
@@ -246,6 +326,10 @@ export async function POST(
         alreadyVisible: [],
         waitingForTint: [],
         alreadyFinished: [],
+        dispatched: [],
+        notDispatched: disp.notChecked,
+        held: disp.held,
+        needsSlot,
         failed: allFailed,
       },
       { status: 422 },
@@ -290,6 +374,19 @@ export async function POST(
     // 🔴 NOTHING TO DO, NOT A FAILURE. Already picked and checked — past the
     // point release acts on. See the block above `allFailed`.
     alreadyFinished,
+    // ── The dispatch mark (2026-09-13) ──────────────────────────────────────
+    // The goods that just left. Terminal.
+    dispatched: disp.dispatched,
+    // Already gone on an earlier press. A no-op, not a failure.
+    alreadyDispatched: disp.alreadyDispatched,
+    // 🔴 LEFT IN THE BUILDING ON PURPOSE, WITH THE STAGE SO THE CALLER CAN SAY
+    // WHY. Not a failure and never folded into one — see lib/floor/dispatch.ts.
+    notDispatched: disp.notChecked,
+    // A hold outranks the trip. Its own bucket for the same reason.
+    held: disp.held,
+    // Bills this press would have released if the trip had a slot. Empty
+    // whenever it has one.
+    needsSlot,
     failed: allFailed,
   });
 }

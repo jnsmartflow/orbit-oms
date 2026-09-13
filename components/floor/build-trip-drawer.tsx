@@ -250,6 +250,16 @@ export function BuildTripDrawer({
                   <option key={w.id} value={w.id}>{w.windowTime}</option>
                 ))}
               </select>
+              {/* The same honest one-liner trip-form.tsx carries (2026-09-13).
+                  This surface had NO hint at all, which is how an operator
+                  created a trip that — under the old slot gate — could never be
+                  confirmed, without being told anything. The gate is gone, so
+                  the line says what the slot is FOR rather than what it blocks. */}
+              {dispatchWindowId === "" && (
+                <p className="mt-1 text-[10.5px] text-gray-400">
+                  Optional — the rail groups trips by slot, so this one sits under &ldquo;No slot yet&rdquo;.
+                </p>
+              )}
             </div>
           </div>
 

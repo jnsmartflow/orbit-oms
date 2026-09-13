@@ -44,8 +44,22 @@ export function tripWording(gateOn: boolean): TripWording {
         releaseCaveat: null,
       }
     : {
-        releaseButton: "Confirm plan",
+        // 🔴 "Confirm plan" STOPPED BEING TRUE ON 2026-09-13. From that day the
+        // press also marks every checked bill `dispatched` — the end of the
+        // ladder, undoable only by hand-written SQL. A word meaning "the load is
+        // settled" cannot stand in front of a write that says the goods have
+        // left; the operator would learn the consequence by discovering it.
+        releaseButton: "Confirm & mark dispatched",
+        // ⚠ THE CHIP STAYS "Confirmed", DELIBERATELY. `chk_trips_status` has a
+        // real `dispatched` value for TRIPS, which this trip does NOT have — it
+        // is at `released`. Labelling it "Dispatched" would make one word mean
+        // two different states on the same rail, and the trip has genuinely not
+        // reached that status: its bills have gone, the trip row has not been
+        // closed out.
         releasedLabel: "Confirmed",
-        releaseCaveat: "Desk control is off — the floor already sees these bills.",
+        // Says what the press does, in the order it matters. The old line named
+        // only the visibility fact, which is now the smaller half.
+        releaseCaveat:
+          "Checked bills are marked dispatched. Anything still being picked is left alone.",
       };
 }
