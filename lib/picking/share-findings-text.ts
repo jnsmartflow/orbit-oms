@@ -1,5 +1,9 @@
 // ── WhatsApp share — picking findings, PLAIN TEXT ──────────────────────────
-// Spec: docs/mockups/picking/picking-whatsapp-share.html (approved 05 Sep 2026).
+// Spec: the message layout was RE-CUT on 13 Sep 2026 (see buildFindingsMessage).
+// ⚠ docs/mockups/picking/picking-whatsapp-share.html (approved 05 Sep 2026) is
+// STALE for the message body since then — its heading, labels, `·` separators
+// and indented continuation line are all gone. It still describes the icon and
+// the share flow correctly.
 // One consumer today: the SUPERVISOR detail screen's header icon
 // (components/picking/picking-board-mobile.tsx). The picker face is deliberately
 // not a caller — §5 of the mockup: "supervisor board only".
@@ -23,7 +27,7 @@
 // any of it — the message is built in memory from what the detail screen has
 // already fetched, and forgotten the moment the share sheet closes.
 
-import { MFG_MONTH_LABELS, findingReasonLabel, mfgLabel } from "./findings-reasons";
+import { findingReasonLabel, mfgLabel } from "./findings-reasons";
 import type { PickingDetailLine } from "./types";
 
 /**
@@ -88,25 +92,24 @@ function normaliseInstant(value: Date | string | null): Date | null {
 }
 
 /**
- * "04 Sep 2026, 5:42 pm" in IST — the mockup's §2 format, exactly.
+ * "04-09-26, 5:42 pm" in IST — `dd-MM-yy, h:mm am/pm` (re-cut 13 Sep 2026; was
+ * "04 Sep 2026, 5:42 pm"). Two-digit day, month and year; 12-hour clock with no
+ * leading zero on the hour; lower-case meridiem after ONE ASCII space.
  *
  * ⚠ NO `Intl` AND NO `toLocale*` ANYWHERE IN HERE, deliberately. Every ICU
  * route to this string was tried and each carries a real defect:
  *   • `en-GB` short month renders September as **"Sept"**, not "Sep" — caught
- *     by the smoke test on the very date this shipped. That is not only off the
- *     approved spec, it disagrees with `MFG_MONTH_LABELS` ("Sep") in the SAME
- *     message, which prints the MFG tail three lines below.
+ *     by the smoke test on the very date the first format shipped. The month is
+ *     numeric now, but the next point still stands on its own.
  *   • `en-US` with `hour12` emits a NARROW NO-BREAK SPACE (U+202F) before
- *     AM/PM on modern ICU (Node 18+, Chrome 110+), not the ASCII space the
- *     mockup shows. Invisible in review, wrong in the string.
+ *     AM/PM on modern ICU (Node 18+, Chrome 110+), not an ASCII space.
+ *     Invisible in review, wrong in the string — and it would land inside a
+ *     message pasted into a chat.
  *   • `en-GB`'s lower-case "pm" is an ICU detail, not a guarantee, and the
  *     depot phones and Vercel do not run the same ICU build.
  * So the instant is shifted by the fixed IST offset and read through the UTC
  * getters — the identical pattern `istDayRangeFor()` uses in
- * lib/picking/picker-split.ts, and never the local getters — and the month name
- * comes from **MFG_MONTH_LABELS**, this module's own closed vocabulary. The two
- * month abbreviations in the message are then the same twelve strings by
- * construction rather than by coincidence.
+ * lib/picking/picker-split.ts, and never the local getters.
  *
  * The board's own `formatObdDateTime()` is deliberately NOT reused: it renders
  * the CARD caption ("19 Jul, 4:05 PM" — no year, upper-case meridiem) and is
@@ -115,9 +118,9 @@ function normaliseInstant(value: Date | string | null): Date | null {
  * card's caption as a side effect.
  *
  * Returns null on a missing or unparseable timestamp — the caller OMITS the
- * whole *Order* line rather than printing a placeholder (mockup §3: the field
- * is "when SAP raised the order", and a line that cannot say when is not a
- * shorter truth, it is a wrong one).
+ * whole 🕐 line rather than printing a placeholder (the field is "when SAP
+ * raised the order", and a line that cannot say when is not a shorter truth,
+ * it is a wrong one).
  */
 export function formatOrderStamp(value: Date | string | null): string | null {
   const instant = normaliseInstant(value);
@@ -127,8 +130,8 @@ export function formatOrderStamp(value: Date | string | null): string | null {
   // are the machine's zone, which is the entire failure this avoids.
   const ist = new Date(instant.getTime() + IST_OFFSET_MS);
   const day = String(ist.getUTCDate()).padStart(2, "0");
-  const month = MFG_MONTH_LABELS[ist.getUTCMonth()];
-  const year = ist.getUTCFullYear();
+  const month = String(ist.getUTCMonth() + 1).padStart(2, "0");
+  const year = String(ist.getUTCFullYear() % 100).padStart(2, "0");
 
   const h24 = ist.getUTCHours();
   const meridiem = h24 < 12 ? "am" : "pm";
@@ -136,61 +139,159 @@ export function formatOrderStamp(value: Date | string | null): string | null {
   const hour = h24 % 12 === 0 ? 12 : h24 % 12;
   const minute = String(ist.getUTCMinutes()).padStart(2, "0");
 
-  return `${day} ${month} ${year}, ${hour}:${minute} ${meridiem}`;
+  return `${day}-${month}-${year}, ${hour}:${minute} ${meridiem}`;
+}
+
+// ── The material block's labels ─────────────────────────────────────────────
+// A CLOSED set. Every value starts at the same column because every label is
+// padded to the LONGEST one plus a fixed gap — never to the longest label
+// actually present on this bill, which would move the column between messages
+// (a bill with no Pack line would shift everything left).
+//
+// ⚠ Derived, not typed as 6: a longer label added here shifts all four
+// together instead of breaking alignment for one.
+const MATERIAL_LABELS = {
+  pack:   "Pack",
+  order:  "Order",
+  found:  "Found",
+  reason: "Reason",
+} as const;
+
+const LABEL_GAP = 2;
+
+const LABEL_COLUMN_WIDTH =
+  Math.max(...Object.values(MATERIAL_LABELS).map((label) => label.length)) + LABEL_GAP;
+
+/**
+ * `Pack    20L` — label, then PLAIN ASCII SPACES (U+0020) to the value column.
+ *
+ * ⚠ Never a figure space, a no-break space or a tab. The block is a WhatsApp
+ * monospace fence, where ordinary spaces align exactly; the exotic ones are
+ * what render at a different width and break the column.
+ */
+function labelledLine(label: string, value: string): string {
+  return `${label.padEnd(LABEL_COLUMN_WIDTH, " ")}${value}`;
 }
 
 /**
- * THE message. Mockup §2, character for character.
+ * The product name with its pack taken OFF THE END, when the catalog
+ * description already ends with it — stainers and some other ranges do
+ * ("DN Stainer Burnt Sienna 50ML"), which is what printed "50ML · 50ML". The
+ * pack has its own line now, so the name no longer needs to carry it.
  *
- *   *Material not found — Picking*
+ * Matching ignores ALL whitespace and case on both sides, so "…Sienna 50 ml"
+ * against pack "50ML" still matches; the cut is made in the ORIGINAL string so
+ * nothing else about the name changes.
  *
- *   *Customer*  Shree Paint House
- *   *OBD No*  9108973203
- *   *Order*  04 Sep 2026, 5:42 pm
+ * 🔴 DIGIT-BOUNDARY GUARD. "Putty 120KG" with pack "20KG" ends-with-matches on
+ * the text alone, and trimming it would print "Putty 1" — a different product.
+ * If the character just before the matched segment (whitespace ignored, as in
+ * the comparison) is a digit, it is NOT a match and the name is left whole.
  *
- *   *Material*
- *   1. Weathershield Max White · 20L
- *       Order 10 · Found 6 · Short quantity
+ * Returns the name unchanged when nothing matches, and also when trimming would
+ * leave nothing — a name that IS only its pack is still better than a blank
+ * numbered line.
+ */
+function stripTrailingPack(name: string, pack: string): string {
+  const target = pack.replace(/\s+/g, "").toUpperCase();
+  if (target === "") return name;
+
+  // Walk back from the end of the ORIGINAL name, skipping whitespace, matching
+  // the normalised pack right to left. `cut` ends at the first matched char.
+  let cut = name.length;
+  let remaining = target.length;
+  while (remaining > 0) {
+    cut -= 1;
+    if (cut < 0) return name;
+    const ch = name[cut];
+    if (/\s/.test(ch)) continue;
+    if (ch.toUpperCase() !== target[remaining - 1]) return name;
+    remaining -= 1;
+  }
+
+  // The guard: the nearest non-whitespace character before the segment.
+  let before = cut - 1;
+  while (before >= 0 && /\s/.test(name[before])) before -= 1;
+  if (before >= 0 && /[0-9]/.test(name[before])) return name;
+
+  const stripped = name.slice(0, cut).trimEnd();
+  return stripped === "" ? name : stripped;
+}
+
+/** WhatsApp's monospace fence — a line holding exactly three backticks. */
+const MONOSPACE_FENCE = "```";
+
+/**
+ * THE message. Re-cut 13 Sep 2026, character for character:
  *
- *   2. Gloss Brilliant White · 4L
- *       Order 12 · Found 12 · Old MFG · Mar 2024
+ *   ⚠️ *SHORT DISPATCH*
+ *
+ *   🏪 *Shree Paint House*
+ *   🧾 9108973203
+ *   🕐 04-09-26, 5:42 pm
+ *
+ *   ```
+ *   1. Weathershield Max White
+ *   Pack    20L
+ *   Order   10
+ *   Found   6
+ *   Reason  Short quantity
+ *
+ *   2. Gloss Brilliant White
+ *   Pack    4L
+ *   Order   12
+ *   Found   12
+ *   Reason  Old MFG Mar 2024
+ *   ```
+ *
+ * Why it changed (a real message from the floor, 12 Sep 2026): the pack printed
+ * twice ("50ML · 50ML"), the indented continuation line wrapped into something
+ * that looked broken on a narrow phone, the bold labels were obvious words
+ * eating width, and the heading did not say the one thing billing must act on —
+ * the bill is dispatching SHORT.
  *
  * Format rules, all load-bearing:
- * - `*…*` is WHATSAPP BOLD, not markdown. No tables, no pipes, no backticks —
- *   WhatsApp renders none of them and a pipe table becomes unreadable ASCII on
- *   a phone.
- * - TWO SPACES after each bold label. That is what lines the three values up in
- *   the bubble; a single space reads as ragged.
- * - Blank line between numbered items; the continuation line is indented FOUR
- *   spaces. Both are in the approved bubble.
+ * - ONE emoji, at the FRONT of the heading only. No "— Picking" suffix.
+ * - `*…*` is WHATSAPP BOLD, not markdown — on the heading and the dealer name
+ *   only. The OBD number and the date carry no label word; the emoji is the
+ *   label.
+ * - The material list sits inside a ``` MONOSPACE FENCE, which is the only
+ *   thing that makes a value column line up in a chat bubble. Label + ASCII
+ *   spaces to a fixed column (LABEL_COLUMN_WIDTH), no colon, no hyphen, no `·`
+ *   anywhere. Blank line between materials, none before the closing fence, and
+ *   nothing after it.
  * - Plain `\n`. NOTHING is pre-encoded here — `shareFindingsText` encodes for
  *   the wa.me path only, and double-encoding is how a message arrives full of
  *   `%0A`.
  * - Reason labels come from findings-reasons.ts. Never hardcode "Short
  *   quantity" / "Old MFG": that module is the closed vocabulary the live CHECK
  *   constraint mirrors, and a hand-typed label is a second list to drift.
- * - The MFG tail is CONDITIONAL on `mfgLabel()` returning non-null. It returns
+ * - The MFG date is CONDITIONAL on `mfgLabel()` returning non-null. It returns
  *   null for `old_mfg` rows recorded before 2026-08-08, which carry no
  *   month/year and which nothing can backfill — 3 of the 4 live old-MFG rows
  *   were dateless at the 2026-08-09 count (CLAUDE_PICKING.md §11.3). Those
- *   lines simply end after the reason: no trailing " · ", never "undefined
- *   NaN". The mockup calls this out in its own panel.
+ *   read exactly `Reason  Old MFG`: no trailing space, never "undefined NaN".
  * - `name ?? sku`: PickingDetailLine.name is nullable, and the route already
  *   falls back to the raw SAP description before that. The SAP code is the last
- *   resort and is still a true identifier of the tin.
+ *   resort and is still a true identifier of the tin — and is never trimmed.
  * - A blank pack STAYS BLANK (`pack` is null on ~27% unmastered codes) — the
- *   " · {pack}" segment is dropped rather than guessed. CLAUDE_PICKING.md §7: a
- *   blank is a mis-pick preventer, a wrong value is not.
+ *   whole Pack line is dropped rather than guessed, and the name is left
+ *   untouched. CLAUDE_PICKING.md §7: a blank is a mis-pick preventer, a wrong
+ *   value is not.
+ * - Brand prefixes ("DN", "IN") are NOT stripped from the name. That needs the
+ *   real prefix list from live data and is a separate change.
  */
 export function buildFindingsMessage(bill: FindingsMessageBill): string {
-  const blocks: string[] = ["*Material not found — Picking*"];
+  const blocks: string[] = ["⚠️ *SHORT DISPATCH*"];
 
   const stamp = formatOrderStamp(bill.obdDateTime);
   const header = [
-    `*Customer*  ${bill.dealerName}`,
-    `*OBD No*  ${bill.obdNumber}`,
+    // Trimmed: WhatsApp will not embolden `*Name *` — a stray trailing space
+    // from the master would print literal asterisks.
+    `🏪 *${bill.dealerName.trim()}*`,
+    `🧾 ${bill.obdNumber}`,
     // Omitted entirely when there is no readable date — see formatOrderStamp.
-    ...(stamp !== null ? [`*Order*  ${stamp}`] : []),
+    ...(stamp !== null ? [`🕐 ${stamp}`] : []),
   ];
   blocks.push(header.join("\n"));
 
@@ -202,26 +303,30 @@ export function buildFindingsMessage(bill: FindingsMessageBill): string {
     if (finding === null) continue;
     n += 1;
 
-    const product = line.name ?? line.sku;
-    const packTail = line.pack !== null ? ` · ${line.pack}` : "";
+    const pack = line.pack !== null && line.pack.trim() !== "" ? line.pack.trim() : null;
+    const product =
+      line.name !== null
+        ? (pack !== null ? stripTrailingPack(line.name, pack) : line.name).trim()
+        : line.sku;
     const mfg = mfgLabel(finding.mfgMonth, finding.mfgYear);
-    const mfgTail = mfg !== null ? ` · ${mfg}` : "";
+    const reason = findingReasonLabel(finding.reason);
 
     items.push(
-      `${n}. ${product}${packTail}\n` +
-        `    Order ${line.qty} · Found ${finding.qtyFound} · ${findingReasonLabel(finding.reason)}${mfgTail}`,
+      [
+        `${n}. ${product}`,
+        ...(pack !== null ? [labelledLine(MATERIAL_LABELS.pack, pack)] : []),
+        labelledLine(MATERIAL_LABELS.order, String(line.qty)),
+        labelledLine(MATERIAL_LABELS.found, String(finding.qtyFound)),
+        labelledLine(MATERIAL_LABELS.reason, mfg !== null ? `${reason} ${mfg}` : reason),
+      ].join("\n"),
     );
   }
 
-  // The *Material* heading owns the blank line ABOVE it (every block is joined
-  // by one) and sits DIRECTLY on item 1 with no gap — that is what the approved
-  // bubble shows. The items are then separated from EACH OTHER by a blank line.
   // Skipped entirely on an empty list: the caller only renders the icon when
   // there is at least one confirmed finding, so this is a seatbelt, not a
-  // supported shape — but a bare "*Material*" heading over nothing would be a
-  // worse message than none.
+  // supported shape — but an empty fence would be a worse message than none.
   if (items.length > 0) {
-    blocks.push(`*Material*\n${items.join("\n\n")}`);
+    blocks.push(`${MONOSPACE_FENCE}\n${items.join("\n\n")}\n${MONOSPACE_FENCE}`);
   }
 
   return blocks.join("\n\n");
