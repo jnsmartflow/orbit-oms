@@ -44,12 +44,24 @@ export function tripWording(gateOn: boolean): TripWording {
         releaseCaveat: null,
       }
     : {
-        // 🔴 "Confirm plan" STOPPED BEING TRUE ON 2026-09-13. From that day the
-        // press also marks every checked bill `dispatched` — the end of the
-        // ladder, undoable only by hand-written SQL. A word meaning "the load is
-        // settled" cannot stand in front of a write that says the goods have
-        // left; the operator would learn the consequence by discovering it.
-        releaseButton: "Confirm & mark dispatched",
+        // 🔴 "Confirm plan" IS DELIBERATELY UNCHANGED, AND THAT IS AN OWNER
+        // DECISION (2026-09-13) — DO NOT RENAME IT.
+        //
+        // Since that day the press ALSO marks every checked bill `dispatched`.
+        // The obvious move was to rename this "Confirm & mark dispatched", and
+        // it was considered and rejected: **the dispatch mark is temporary**. It
+        // belongs to the loading screen, which is a few weeks out, and it lives
+        // on this button only until that screen exists (see the header of
+        // lib/floor/dispatch.ts). Naming a button after a side effect that is
+        // scheduled to be taken away teaches the depot a word with an expiry
+        // date, and the button's REAL job — confirming the plan — does not
+        // change when loading arrives.
+        //
+        // The consequence is told where it is read instead: the caption below,
+        // and the confirmation prompt at the moment of the click
+        // (`releaseTrip`, components/floor/floor-page.tsx), which names the
+        // real count and the skipped count.
+        releaseButton: "Confirm plan",
         // ⚠ THE CHIP STAYS "Confirmed", DELIBERATELY. `chk_trips_status` has a
         // real `dispatched` value for TRIPS, which this trip does NOT have — it
         // is at `released`. Labelling it "Dispatched" would make one word mean

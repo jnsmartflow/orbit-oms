@@ -19,6 +19,33 @@
 // does dispatched mean" is two answers on the same column, and the copy is
 // always the one that misses the next rule change.
 //
+// ─────────────────────────────────────────────────────────────────────────
+// 🔴 WHERE THIS IS CALLED FROM IS TEMPORARY. READ THIS BEFORE BUILDING ON IT.
+//
+// The WRITE below is permanent — this is what dispatching a bill means, and it
+// keeps that job. What is temporary is its CALLER. Confirming a trip marks
+// dispatch only because Orbit has no loading or dispatch screen yet; until it
+// does, "Confirm plan" is the last thing the depot presses before the truck
+// goes, and the stage was otherwise being written every evening by hand from an
+// NTS spreadsheet with no audit trail at all.
+//
+// WHEN THE LOADING SCREEN IS BUILT (a few weeks out, as of 2026-09-13), the
+// dispatch mark MOVES THERE and comes off the confirm. This module is where it
+// moves FROM, not a statement that confirming and dispatching are the same act.
+// They are not, and the depot should not learn that they are.
+//
+// ⚠ WHICH IS WHY THE BUTTON IS STILL CALLED "Confirm plan". Renaming it to
+// "Confirm & mark dispatched" was considered and rejected on exactly this
+// ground: a button named after a side effect that is scheduled to be taken away
+// teaches a word with an expiry date, and confirming the plan is the button's
+// real job either way. The consequence is told in the caption and in the
+// confirmation prompt instead (lib/floor/trip-wording.ts, and `releaseTrip` in
+// components/floor/floor-page.tsx). Owner decision — do not "tidy" the label.
+//
+// A future session must not read the confirm→dispatch wiring as the permanent
+// design. The rules in this file are; the call site is a stopgap with a date.
+// ─────────────────────────────────────────────────────────────────────────
+//
 // ⚠ WHAT A DISPATCH IS, in one place: ONE column, in ONE `orders.update`, plus
 // ONE `order_status_logs` row.
 //   workflowStage — DISPATCHED, and nothing else

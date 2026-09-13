@@ -58,12 +58,14 @@ export const dynamic = "force-dynamic";
  * reported in `needsSlot` rather than written with a null window. Set a slot and
  * press again — this route is idempotent by design.
  *
- * ⚠ STEP 2b IS NEW AND IT IS TERMINAL. Every bill at `pick_checked` and not on
- * hold moves to `dispatched`, with a log row (lib/floor/dispatch.ts). In the
- * depot's practice confirming a plan IS the truck going; the stage was being
- * written every evening by hand from an NTS spreadsheet, 136 bills in one
- * second on 2026-09-13 with not one `order_status_logs` row between them. Read
- * that module's header before touching what moves and what does not.
+ * ⚠ STEP 2b IS NEW, TERMINAL, AND TEMPORARY. Every bill at `pick_checked` and
+ * not on hold moves to `dispatched`, with a log row (lib/floor/dispatch.ts).
+ * Until Orbit has a loading screen, confirming a plan is the last press before
+ * the truck goes; the stage was otherwise written every evening by hand from an
+ * NTS spreadsheet — 136 bills in one second on 2026-09-13 with not one
+ * `order_status_logs` row between them. **The mark moves to the loading screen
+ * when that is built and comes off this route.** Read that module's header
+ * before touching what moves and what does not.
  *
  * ⚠ THE BUCKETS ARE HONEST AND A REFUSAL IS NEVER RE-LABELLED:
  *   released       — the full write happened
@@ -256,7 +258,24 @@ export async function POST(
   // likewise past release and likewise not a failure.
   // ── STEP 2b · THE DISPATCH MARK — the truck goes ─────────────────────────
   //
-  // 🔴 THIS IS THE TERMINAL WRITE AND THE ONLY UNDO IS HAND-WRITTEN SQL. Every
+  // 🔴 THIS STEP IS TEMPORARY AND LIVES HERE ONLY UNTIL THE LOADING SCREEN
+  // EXISTS. Orbit has no loading or dispatch screen yet — a few weeks out as of
+  // 2026-09-13 — so "Confirm plan" is the last thing pressed before the truck
+  // goes, and without this the stage was written every evening by hand from an
+  // NTS spreadsheet with no audit trail. When that screen is built, THE
+  // DISPATCH MARK MOVES TO IT and this step comes out of the confirm. The write
+  // itself (lib/floor/dispatch.ts) is permanent; this CALL SITE is the stopgap.
+  //
+  // ⚠ WHICH IS WHY THE BUTTON IS STILL "Confirm plan" AND MUST STAY THAT WAY.
+  // Renaming it after a side effect scheduled to be removed would teach the
+  // depot a word with an expiry date, and confirming the plan is the button's
+  // real job before and after loading arrives. Owner decision 2026-09-13. The
+  // consequence is told in the caption (lib/floor/trip-wording.ts) and in the
+  // click-time prompt (`releaseTrip`, components/floor/floor-page.tsx).
+  //
+  // A future session must not read confirm→dispatch as the permanent design.
+  //
+  // 🔴 IT IS THE TERMINAL WRITE AND THE ONLY UNDO IS HAND-WRITTEN SQL. Every
   // bill at `pick_checked` and not on hold moves to `dispatched`, with one
   // `orders.update` and one `order_status_logs` row each. Which bills move, and
   // the reasons a bill is left alone, are owned by lib/floor/dispatch.ts — read

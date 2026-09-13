@@ -638,14 +638,24 @@ export function FloorPage() {
       const willDispatch = t ? t.counts.checked - t.dispatchedCount : 0;
       const leftBehind = t ? t.counts.total - t.counts.checked : 0;
       const label = t?.tripNumber ?? "this trip";
+      //
+      // ⚠ IT LEADS WITH THE BUTTON'S OWN WORDS, "Confirm plan", and states the
+      // dispatch as the consequence rather than the name. The button is NOT
+      // called "Confirm & mark dispatched" on purpose — the mark is temporary
+      // and moves to the loading screen when that is built (lib/floor/trip-
+      // wording.ts, lib/floor/dispatch.ts). This prompt is where the operator
+      // learns what the press does today, so it carries the real numbers.
       const prompt =
         willDispatch > 0
-          ? `Mark ${willDispatch} bill${willDispatch === 1 ? "" : "s"} dispatched on ${label}?` +
+          ? `Confirm plan for ${label} — ${willDispatch} bill${willDispatch === 1 ? "" : "s"} will be marked dispatched?` +
             (leftBehind > 0
               ? `\n\n${leftBehind} more ${leftBehind === 1 ? "is" : "are"} still being picked and will be left alone.`
               : "") +
-            `\n\nThis is the end of the line for those bills — undoing it needs a developer.`
-          : `Confirm ${label}?\n\nNothing on it is checked yet, so no bill will be marked dispatched.`;
+            `\n\nMarking dispatched is the end of the line for those bills — undoing it needs a developer.`
+          : `Confirm plan for ${label}?\n\nNothing on it is checked yet, so no bill will be marked dispatched.` +
+            (leftBehind > 0
+              ? `\n\nAll ${leftBehind} bill${leftBehind === 1 ? " is" : "s are"} still being picked and will be left alone.`
+              : "");
       if (!window.confirm(prompt)) return;
 
       setTripBusyId(tripId);
