@@ -62,7 +62,6 @@ import { isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
 import {
   DuplicateSoTag,
   DUP_SO_SOFT_BAR,
-  DUP_SO_SOFT_ROW_CLASS,
 } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -565,7 +564,7 @@ export function FloorTable({
     const dup = row.hasDuplicateSo;
     const chipCls =
       "rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]";
-    // The 3px red-500 left bar, as an inset shadow (never border-left —
+    // The 4px red-500 left bar, as an inset shadow (never border-left —
     // this table is table-layout:fixed with colgroup percentages, UI §27,
     // and the first column's pl-[10px] pr-[4px] would be eaten by a real
     // border). It rides whichever cell is FIRST, and that changes with
@@ -794,8 +793,19 @@ export function FloorTable({
       );
     }
 
+    // 🔴 NO ROW WASH ON A DUPLICATE-SO ROW SINCE 2026-09-13 — the bar and the
+    // SAME tag carry it, and the row hovers like every other. A wash and a
+    // status pill are two jobs fighting over one channel: every colour on this
+    // row is already a status (amber Needs check, blue With picker, green Done,
+    // slate Dispatched, pink Tinting), so a coloured ground is a second colour
+    // system competing on the same pixels. Pale pink "Tint pending" on the pale
+    // red wash is the pair that actually blurred, but re-hueing the wash only
+    // moves the collision to whichever status owns the new hue — there is no
+    // free colour left. Full reasoning on DUP_SO_SOFT_ROW_CLASS
+    // (components/shared/duplicate-so-tag.tsx), which this file no longer
+    // imports. The bar went 3px → 4px in the same change to carry the load.
     return (
-      <tr key={row.orderId} className={"group " + (dup ? DUP_SO_SOFT_ROW_CLASS : "hover:bg-[#fafafa]")}>
+      <tr key={row.orderId} className="group hover:bg-[#fafafa]">
         {interactive && (
           /* FIRST CELL when the table is selectable — it carries the bar. */
           <td className={TD_NARROW} style={barStyle}>

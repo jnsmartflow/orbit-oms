@@ -105,15 +105,37 @@ export const DUP_SO_ROW_CLASS = "bg-[#dc2626] hover:bg-[#b91c1c]";
 
 /** Row / card ground. Tailwind classes, not an inline style: an inline
  *  background beats the `hover:` rule and kills the row hover (same reason
- *  DUP_SO_ROW_CLASS above is a class string). */
+ *  DUP_SO_ROW_CLASS above is a class string).
+ *
+ *  🔴 THE FLOOR TABLE STOPPED USING THIS ON 2026-09-13, AND MUST NOT GO BACK.
+ *  A ROW WASH AND A STATUS PILL ARE TWO JOBS FIGHTING OVER ONE CHANNEL. Every
+ *  colour on a floor row is already a status — amber is Needs check, blue is
+ *  With picker, green is Done, slate is Dispatched, and pink is now Tinting —
+ *  so a coloured ground under them is a second colour system competing with the
+ *  first on the same pixels. The pale pink of "Tint pending" on this pale red
+ *  is the pair that actually blurred, but that is the symptom: moving the wash
+ *  to another hue only moves the collision to whichever status owns that hue
+ *  next. There is no free colour left, and there will not be one.
+ *
+ *  The left BAR and the SAME tag are where no pill ever goes, so they carry the
+ *  signal with nothing to fight. The row itself goes plain.
+ *
+ *  Kept, not deleted (CORE §3), and still correct for a surface with no status
+ *  pills on it. Do not reintroduce it on a row that has one. */
 export const DUP_SO_SOFT_ROW_CLASS = "bg-[#fef2f2] hover:bg-[#fee2e2]";
 
-/** The 3px left accent, as an INSET BOX-SHADOW on the first cell.
+/** The left accent, as an INSET BOX-SHADOW on the first cell.
  *  ⚠ NEVER `border-left`. The floor table is `table-layout: fixed` with colgroup
  *  percentage widths (CLAUDE_UI §27) and its first column carries
  *  `pl-[10px] pr-[4px]` — a real border consumes that padding and shifts the row.
- *  A shadow paints inside the box and costs no layout. */
-export const DUP_SO_SOFT_BAR = "inset 3px 0 0 #ef4444";
+ *  A shadow paints inside the box and costs no layout.
+ *
+ *  ⚠ 4px SINCE 2026-09-13, WAS 3px. It took over the whole signal when the row
+ *  wash came off the floor table (see DUP_SO_SOFT_ROW_CLASS above), and 3px of
+ *  red against a plain white row is easy to miss at a glance. One pixel is the
+ *  smallest change that reads; a wider bar would start competing with the row's
+ *  own left padding. Still a shadow, so still no layout cost. */
+export const DUP_SO_SOFT_BAR = "inset 4px 0 0 #ef4444";
 
 /** Card surface + edge, for the rail card and the detail panel — the same two
  *  values the row uses, in the form a bordered card needs them. */

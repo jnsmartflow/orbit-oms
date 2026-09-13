@@ -84,6 +84,16 @@ export function toStatusCounts(c: TripSummary["counts"]): StatusCounts {
     // both yes. The separate Dispatched reading belongs to Floor History, which
     // is answering a different question about a different day.
     dispatched: 0,
+    // ⚠ ALWAYS 0 HERE TOO, and required for the same reason `dispatched` is:
+    // StatusCounts needs a key per status or the bar renders short. A TRIP is
+    // counted by TripBillCounts (lib/trips/queries.ts), whose `bucketFor` has no
+    // tint bucket — a mid-tint bill lands in `other` and is folded into
+    // `waiting` above. Splitting the trip buckets to match the pills is a
+    // separate decision: a trip asks "can this load go", and the answer for an
+    // untinted bill is no, the same no as any other unfinished bill.
+    tintPending: 0,
+    tinting: 0,
+    tintDone: 0,
     total: c.total,
   };
 }
@@ -108,6 +118,8 @@ export function TripRail({
   anchorIso,
   poolCount,
   poolLitres,
+  tintingCount,
+  tintingLitres,
   selection,
   onSelect,
   gateOn,
@@ -125,6 +137,19 @@ export function TripRail({
   anchorIso: string;
   poolCount: number;
   poolLitres: number;
+  /**
+   * The tint room, counted off BOARD ROWS by the caller (2026-09-13).
+   *
+   * ⚠ NOT FETCHED. These bills are already rows on the board — `floorBoardWhere`
+   * arm 2 admits them — so trip-desk.tsx derives both figures from
+   * `floor.rows` with a filter and a sum. No query, no await, no round trip on a
+   * page that is latency-bound.
+   *
+   * Zero means the line is not rendered at all; see the render below for why
+   * this one hides at zero while "Trips" does not.
+   */
+  tintingCount: number;
+  tintingLitres: number;
   selection: RailSelection;
   onSelect: (sel: RailSelection) => void;
   gateOn: boolean;
@@ -171,6 +196,37 @@ export function TripRail({
 
           It counts the LIVE list, which is what is rendered. Cancelled trips are
           not on the rail and are not in this number. */}
+      {/* ── The tint room, above the trips (2026-09-13) ───────────────────
+          What is coming and cannot be loaded yet. The planner's whole question
+          about the tint room is "how much, and can a truck wait for it" — the
+          count and the litres answer both, and the litres are the half that
+          decides.
+
+          ⚠ NO "READY BY" TIME, AND THERE MUST NOT BE ONE. `tint_assignments`
+          carries `startedAt` and `completedAt` and no estimate; there is no
+          duration model anywhere in the app. An invented figure would be worse
+          than none, because a planner would hold a truck for it.
+
+          TYPOGRAPHY IS THE ROW BELOW, not a new style: the same 10.5px bold
+          uppercase 0.1em label and the same 11px tabular-nums figures the Trips
+          line uses. Only the hue moves, to the pill pink of the rows it counts
+          (status-pill.tsx META) so the line and the rows read as one fact.
+
+          HIDDEN AT ZERO, unlike "Trips" beside it. An empty tint room is the
+          ordinary state on most days and "0 bills" would be a line the eye has
+          to skip every time. */}
+      {tintingCount > 0 && (
+        <div className="flex items-baseline gap-2 px-1 pb-1.5">
+          <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-[#9d174d]">
+            In tinting
+          </span>
+          <span className="text-[11px] tabular-nums text-[#be185d]">
+            {tintingCount} bill{tintingCount === 1 ? "" : "s"} · {formatLitres(tintingLitres)} L ·{" "}
+            <span className="text-gray-400">not loadable yet</span>
+          </span>
+        </div>
+      )}
+
       <div className="flex items-baseline gap-2 px-1 pb-2">
         <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
           Trips

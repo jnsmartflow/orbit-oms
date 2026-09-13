@@ -72,6 +72,16 @@ function toStatusCounts(c: TripSummary["counts"]): StatusCounts {
     // both yes. The separate Dispatched reading belongs to Floor History, which
     // is answering a different question about a different day.
     dispatched: 0,
+    // ⚠ ALWAYS 0 HERE TOO, and required for the same reason `dispatched` is:
+    // StatusCounts needs a key per status or the bar renders short. A TRIP is
+    // counted by TripBillCounts (lib/trips/queries.ts), whose `bucketFor` has no
+    // tint bucket — a mid-tint bill lands in `other` and is folded into
+    // `waiting` above. Splitting the trip buckets to match the pills is a
+    // separate decision: a trip asks "can this load go", and the answer for an
+    // untinted bill is no, the same no as any other unfinished bill.
+    tintPending: 0,
+    tinting: 0,
+    tintDone: 0,
     total: c.total,
   };
 }

@@ -11,13 +11,55 @@
 import { DUP_SO_BADGE_CLASS } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
-export type FloorStatus = "waiting" | "withPicker" | "needsCheck" | "done" | "dispatched";
+export type FloorStatus =
+  | "waiting"
+  | "withPicker"
+  | "needsCheck"
+  | "done"
+  | "dispatched"
+  // ── The tint room (2026-09-13) ────────────────────────────────────────────
+  // A tint order passes through the tint room BEFORE picking, and until today
+  // all three of its stages fell through every guard below and rendered as grey
+  // "Waiting" — the same pill a bill wears while waiting for a picker. A picker
+  // cannot touch a bill that is on the mixer, so the board was asserting work
+  // was available that nobody could start. Fourth instance of the fall-through
+  // class lib/workflow-stages.ts warns about, after pick_done, pick_checked and
+  // dispatched.
+  | "tintPending"
+  | "tinting"
+  | "tintDone";
 
 type StatusInput = Pick<FloorBoardRow, "isAssigned" | "isDone" | "isChecked"> &
   // Optional so the many callers that build a StatusInput by hand (the Hold and
   // Cancelled tabs, the trip counters) are untouched — undefined reads as false,
   // which is correct for every one of them: none can hold a shipped bill.
-  Partial<Pick<FloorBoardRow, "isDispatched">>;
+  Partial<Pick<FloorBoardRow, "isDispatched">> &
+  // Optional for the same reason, and `undefined` reads as "not a tint bill",
+  // which is right for every hand-built caller: the Hold and Cancelled tabs and
+  // the trip counters all describe bills by their PICKING state and none of them
+  // carries a tint phase. Only the board row does.
+  Partial<Pick<FloorBoardRow, "tintPhase">>;
+
+/**
+ * The statuses that mean "ready for a picker, and nobody has it yet".
+ *
+ * 🔴 TWO MEMBERS, AND THE SECOND IS THE POINT. A tint bill whose shades are
+ * finished sits at exactly the same rung as a plain waiting bill — on the floor,
+ * pickable, untouched — it just wears a different pill so the operator can see
+ * it came through the tint room. Any count or gate that means "waiting for a
+ * picker" must ask this set, never `=== "waiting"`, or a tinted bill silently
+ * stops being counted as available work the moment it is ready.
+ */
+const PICKABLE_WAITING: readonly FloorStatus[] = ["waiting", "tintDone"];
+
+/**
+ * The statuses that mean "the tint room still has it". NOT pickable by anyone.
+ *
+ * ⚠ `tintDone` IS DELIBERATELY NOT HERE. Its shades are finished; the tint room
+ * is done with it. Folding it in would report a bill that is ready to pick as
+ * stuck on the mixer.
+ */
+const IN_TINTING: readonly FloorStatus[] = ["tintPending", "tinting"];
 
 /**
  * dispatched → Dispatched, pick_checked → Done, pick_done → Needs check,
@@ -43,7 +85,19 @@ export function rowStatus(row: StatusInput): FloorStatus {
   if (row.isDispatched) return "dispatched";
   if (row.isChecked) return "done";
   if (row.isDone) return "needsCheck";
+  // ⚠ THE PICKING BOOLEANS ABOVE OUTRANK THE TINT PHASE, AND THE ORDER IS THE
+  // RULE. A tint bill with a picker carries `tintPhase: "done"` AND
+  // `isAssigned: true`; the floor's answer wins once somebody is holding the
+  // bill, so "With picker" must be reachable for a tint order. Reading the phase
+  // first would pin every tinted bill to "Tint done" for the rest of its life.
+  //
+  // What is left below this line is exactly "nobody has it yet", which is where
+  // the tint room's three answers belong — including "Tint done", which is the
+  // tinted twin of "Waiting" and sits on the same rung (see PICKABLE_WAITING).
   if (row.isAssigned) return "withPicker";
+  if (row.tintPhase === "pending") return "tintPending";
+  if (row.tintPhase === "tinting") return "tinting";
+  if (row.tintPhase === "done") return "tintDone";
   return "waiting";
 }
 
@@ -66,7 +120,14 @@ export function rowStatus(row: StatusInput): FloorStatus {
 export function isHeldBack(
   row: StatusInput & Pick<FloorBoardRow, "pickVisibleAt">,
 ): boolean {
-  return rowStatus(row) === "waiting" && row.pickVisibleAt === null;
+  // ⚠ `PICKABLE_WAITING`, NOT `=== "waiting"` (2026-09-13). A tint bill whose
+  // shades are finished is on the picking board like any other and CAN be held
+  // back; it just wears "Tint done" instead of "Waiting" now. Testing the
+  // literal would have silently dropped every tinted bill out of the "N not
+  // shown" count and off the Show strip the moment the pills landed — the count
+  // would have been wrong in the safe-looking direction, which is the hardest
+  // kind to notice.
+  return PICKABLE_WAITING.includes(rowStatus(row)) && row.pickVisibleAt === null;
 }
 
 const META: Record<FloorStatus, { label: string; cls: string }> = {
@@ -88,6 +149,42 @@ const META: Record<FloorStatus, { label: string; cls: string }> = {
   // is the good outcome), not teal (reserved for the primary action,
   // CLAUDE_UI §1).
   dispatched: { label: "Dispatched", cls: "bg-[#e2e8f0] text-[#334155]" },
+  // ── The three tint pills (2026-09-13) ──────────────────────────────────────
+  //
+  // 🔴 PINK, AND NOT VIOLET. Violet is Orbit's ACTION colour (CLAUDE_UI §1) and
+  // it is already spent on this very row — "With picker" wears it. A violet tint
+  // pill would read as a thing to click, and would collide with the one status
+  // it most needs to be told apart from. Pink is unclaimed on every floor
+  // surface and carries no action meaning anywhere in the app.
+  //
+  // ⚠ WEIGHT CARRIES THE PROGRESS, which is what makes three pills of one hue
+  // readable at a glance instead of three shades to memorise:
+  //   pale    → not started (the tint room has not begun)
+  //   solid   → in hand (somebody is mixing it right now — the loudest state,
+  //             and the only one that is actively blocking a truck)
+  //   outline → finished (done, and quiet again, like every other outline on a
+  //             finished thing)
+  //
+  // ⚠ A PLAIN ORDER NEVER WEARS PINK. `tintPhase` is null on a non-tint bill and
+  // `rowStatus` falls through to grey "Waiting", byte-identical to before.
+  tintPending: {
+    label: "Tint pending",
+    cls: "bg-[#fce7f3] text-[#9d174d] dark:bg-[#3d1029] dark:text-[#f9a8d4]",
+  },
+  tinting: {
+    // The one solid fill among the three. Same value in both themes: a saturated
+    // pink on white text reads identically on either ground, and dimming it for
+    // dark mode would lose exactly the emphasis this state is carrying.
+    label: "Tinting",
+    cls: "bg-[#db2777] text-white dark:bg-[#db2777] dark:text-white",
+  },
+  tintDone: {
+    // The only pill on this screen with a border, and it earns one: without it
+    // the pale ground is nearly the page and the pill loses its edge. The border
+    // is also what reads as "outline" against the other two weights.
+    label: "Tint done",
+    cls: "border border-[#f9a8d4] bg-[#fdf2f8] text-[#be185d] dark:border-[#9d174d] dark:bg-[#2a1220] dark:text-[#f472b6]",
+  },
 };
 
 // The HELD-BACK reading of `waiting` (2026-09-09). A waiting bill the operator
@@ -173,7 +270,49 @@ export interface StatusCounts {
    * TripBillCounts.
    */
   dispatched: number;
+  /**
+   * The tint room's three buckets (2026-09-13).
+   *
+   * ⚠ REQUIRED FOR THE COUNTS TO ADD UP, exactly as `dispatched` is.
+   * `countByStatus` does `c[rowStatus(r)]++`, so a status with no key here
+   * increments `undefined` and every progress bar built on these counts renders
+   * NaN-wide. A key per status, always.
+   *
+   * ⚠ AND A SEGMENT PER KEY IN progress-bar.tsx, or the bar quietly renders
+   * short — its own header says so and it has happened once already.
+   */
+  tintPending: number;
+  tinting: number;
+  tintDone: number;
   total: number;
+}
+
+/**
+ * Bills ready for a picker with nobody on them — grey Waiting PLUS pink Tint
+ * done, which is the same rung wearing a different pill.
+ *
+ * 🔴 IT EXISTS SO THE HEADER CANNOT LIE THE OTHER WAY. Splitting the tint states
+ * out of `waiting` was the point of the change; letting `tintDone` fall out with
+ * them would have been the same defect mirrored — a bill sitting on the floor,
+ * pickable and untouched, missing from the one number that counts exactly that.
+ */
+export function waitingForPickerCount(c: StatusCounts): number {
+  // Summed FROM the set, not from a hand-written pair, so the set stays the one
+  // definition and adding a member cannot leave this behind.
+  return PICKABLE_WAITING.reduce((n, k) => n + c[k as keyof StatusCounts], 0);
+}
+
+/**
+ * Bills the tint room still holds. Nobody can pick these, whatever else the
+ * board says about them.
+ *
+ * 🔴 THE NUMBER THE HEADER WAS HIDING. "16 waiting" counted five bills that were
+ * on the mixer, so it told the planner there was work available that no picker
+ * could start. Same defect class as the "checked today" count fixed 2026-09-12:
+ * a label asserting something it does not test.
+ */
+export function inTintingCount(c: StatusCounts): number {
+  return IN_TINTING.reduce((n, k) => n + c[k as keyof StatusCounts], 0);
 }
 
 /**
@@ -204,7 +343,8 @@ export function finishedCount(counts: StatusCounts): number {
 
 export function countByStatus(rows: StatusInput[]): StatusCounts {
   const c: StatusCounts = {
-    waiting: 0, withPicker: 0, needsCheck: 0, done: 0, dispatched: 0, total: rows.length,
+    waiting: 0, withPicker: 0, needsCheck: 0, done: 0, dispatched: 0,
+    tintPending: 0, tinting: 0, tintDone: 0, total: rows.length,
   };
   for (const r of rows) c[rowStatus(r)]++;
   return c;

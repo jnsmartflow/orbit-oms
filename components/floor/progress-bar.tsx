@@ -24,8 +24,26 @@
 
 import type { StatusCounts } from "./status-pill";
 
+// ── EIGHT SEGMENTS SINCE 2026-09-13 ─────────────────────────────────────────
+// The three tint buckets joined StatusCounts with the tint pills, and the rule
+// at the top of this file applied immediately: a bucket with no segment
+// contributes nothing and the bar stops short of its right edge. Added in the
+// same change, exactly as `dispatched` was.
+//
+// ORDER IS THE WORKFLOW, finished at the left edge and least-started at the
+// right. The tint states sit to the RIGHT of `waiting` because the tint room
+// comes BEFORE picking: a bill on the mixer is further from done than one
+// waiting for a picker. `tintDone` sits immediately beside `waiting` because
+// they are the same rung — both mean "on the floor, nobody has it" — and then
+// `tinting` and `tintPending` trail off as the work gets earlier.
+//
+// The pinks are the PILL values (status-pill.tsx META), not lightened bar tones
+// like the four originals. A 7px sliver has no room to carry a weight
+// distinction, so the three would be indistinguishable if they were tinted down
+// toward each other; keeping the pill values at least makes the solid `tinting`
+// segment read as the loud one it is on the row above.
 const SEGMENTS: Array<{
-  key: "dispatched" | "done" | "needsCheck" | "withPicker" | "waiting";
+  key: "dispatched" | "done" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintPending";
   color: string;
 }> = [
   { key: "dispatched", color: "#94a3b8" },
@@ -33,6 +51,9 @@ const SEGMENTS: Array<{
   { key: "needsCheck", color: "#fbbf24" },
   { key: "withPicker", color: "#0284C7" },
   { key: "waiting", color: "#d1d5db" },
+  { key: "tintDone", color: "#f9a8d4" },
+  { key: "tinting", color: "#db2777" },
+  { key: "tintPending", color: "#fce7f3" },
 ];
 
 export function ProgressBar({ counts, className = "" }: { counts: StatusCounts; className?: string }) {

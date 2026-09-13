@@ -116,6 +116,42 @@ export interface FloorBoardRow extends PickingQueueRow {
    * CALLER of Picking; widen the Floor type, never the Picking one).
    */
   isDispatched: boolean;
+  /**
+   * WHERE THIS BILL IS IN THE TINT ROOM — `null` on every plain order
+   * (2026-09-13).
+   *
+   * 🔴 ONE EXPLICIT PHASE, NOT TWO MORE BOOLEANS, AND THE REASON IS A BUG THAT
+   * HAS BITTEN THREE TIMES. `lib/workflow-stages.ts` warns that a new stage is
+   * `false` on every existing boolean, so an inline `!isAssigned && !isDone`
+   * silently reads it as "still waiting" — which is exactly what happened to
+   * `pick_done`, then `pick_checked`, then `dispatched`. A pair of
+   * `isTintPending` / `isTinting` flags would rebuild that trap for the fourth
+   * time: add a tint stage tomorrow and it reads as a plain waiting bill again.
+   * A single named phase cannot do that — an unmapped stage produces an
+   * unmapped VALUE, which is visible, rather than a false, which is not.
+   *
+   * The three values, derived server-side from `orders.workflowStage` in the
+   * row builder (lib/floor/queries.ts) and nowhere else:
+   *   "pending"  — pending_tint_assignment. Nobody has been given the shades.
+   *   "tinting"  — tint_assigned OR tinting_in_progress. On the mixer. A PAUSED
+   *                job lives here too: pause/resume write the assignment row and
+   *                never the order's stage (CLAUDE_TINT §5).
+   *   "done"     — a tint bill past all three tint stages. NOT "it was tinted"
+   *                — it is "the tint room has no more claim on it", which is the
+   *                question the floor is asking.
+   *
+   * ⚠ IT DOES NOT SAY WHOSE HANDS THE BILL IS IN. A tint bill with a picker is
+   * `tintPhase: "done"` AND `isAssigned: true`, and `rowStatus` reads the
+   * picking booleans FIRST — so the pill says "With picker", not "Tint done".
+   * The phase is the tint room's answer; the booleans are the floor's, and the
+   * floor's outranks it once a picker has the bill.
+   *
+   * ⚠ DECLARED HERE, NOT ON PickingQueueRow — the same boundary `isDispatched`
+   * above, `smu`, `billToName` and `tripDropId` sit on. Widening the shared
+   * interface would force every Picking construction site to fill a field that
+   * screen has no use for (FLOOR §1: Floor is a CALLER of Picking).
+   */
+  tintPhase: "pending" | "tinting" | "done" | null;
   smu: string | null;
   billToName: string | null;
   // The ship-to PAIR, mirroring FloorRailCard above: `customerName` is the

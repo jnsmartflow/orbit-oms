@@ -38,6 +38,8 @@ import { TripVehicleEditor } from "./trip-vehicle-editor";
 import {
   rowStatus,
   countByStatus,
+  waitingForPickerCount,
+  inTintingCount,
   isHeldBack,
   formatLitres,
   sumLitres,
@@ -60,11 +62,11 @@ import { useFloorRailPoll } from "@/lib/floor/use-floor-rail-poll";
 // Selecting a bill on this screen means putting it on a TRIP, and trip
 // membership is not stage-gated — see the two families in lib/floor/selection.ts.
 import { toggleOne, toggleAllIds, type FloorSelection } from "@/lib/floor/selection";
-import { railInScope, rowsInScope, scopeBoard } from "@/lib/floor/scope";
+import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
-import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
+import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
 import type { RailSelection } from "./trip-rail";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 import type {
@@ -123,7 +125,8 @@ const STAGE_WORDS: Record<string, string> = {
 type TopTab = "floor" | "hold" | "cancelled";
 
 interface BoardData {
-  rail: FloorRailCard[];
+  // ⚠ NO `rail` SINCE 2026-09-13 — see app/api/floor/board/route.ts. The feed is
+  // gone; arm 2 of floorBoardWhere is not, so those bills are still here as rows.
   floor: FloorBoardResult;
   pickers: FloorPicker[];
 }
@@ -335,7 +338,7 @@ export function FloorPage() {
       ]);
       if (!boardRes.ok) throw new Error(`HTTP ${boardRes.status}`);
       const board = await boardRes.json();
-      setData({ rail: board.rail ?? [], floor: board.floor, pickers: board.pickers ?? [] });
+      setData({ floor: board.floor, pickers: board.pickers ?? [] });
 
       // A failed side feed must not blank the board — surface its own error and
       // leave the tab empty rather than throwing the whole page away.
@@ -997,7 +1000,6 @@ export function FloorPage() {
     if (!data) return null;
     if (scope === "All") return data; // identity — skip the work entirely
     return {
-      rail: railInScope(data.rail, scope),
       floor: scopeBoard(data.floor, scope),
       pickers: data.pickers,
     };
@@ -1093,8 +1095,11 @@ export function FloorPage() {
   const detailList = useMemo<number[]>(() => {
     if (!detail) return [];
     switch (detail.source) {
-      case "rail":
-        return (scopedData?.rail ?? []).map((c) => c.orderId);
+      // ⚠ NO "rail" CASE SINCE 2026-09-13. The decision rail stopped rendering on
+      // 2026-09-10 and its feed was removed today, so `openDetail(id, "rail")`
+      // has no caller and this arm had no list to walk. The union member stays on
+      // FloorDetailSource — detail-panel.tsx still branches on it for the
+      // release affordance, and narrowing the union is a separate decision.
       // Both floor sources walk the SAME list, and that is already the right
       // one for either: `filteredFloor` is derived from `scopedData.floor.rows`,
       // which IS the history payload in history mode. So Prev/Next steps
@@ -1110,8 +1115,12 @@ export function FloorPage() {
         return (filteredHold ?? []).map((r) => r.orderId);
       case "cancelled":
         return (filteredCancelled ?? []).map((r) => r.orderId);
+      // "rail" — no list. Its feed and its only opener are gone (above); the
+      // pager simply has nothing to walk, which is the honest answer.
+      default:
+        return [];
     }
-  }, [detail, scopedData, filteredFloor, filteredHold, filteredCancelled]);
+  }, [detail, filteredFloor, filteredHold, filteredCancelled]);
 
   // Duplicate-SO flag for the OPEN bill, taken from the row that is ALREADY
   // loaded — no second fetch and no new field on /api/floor/order/[orderId],
@@ -1128,8 +1137,8 @@ export function FloorPage() {
   // the known gap, not a bug.
   const detailHasDuplicateSo = useMemo(() => {
     if (!detail) return false;
-    const railHit = (data?.rail ?? []).find((c) => c.orderId === detail.orderId);
-    if (railHit) return railHit.hasDuplicateSo;
+    // The rail lookup that used to sit here went with the rail feed (2026-09-13);
+    // it always missed and fell through to the board rows anyway.
     return (data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId)?.hasDuplicateSo ?? false;
   }, [detail, data]);
 
@@ -1416,8 +1425,27 @@ export function FloorPage() {
   // bucket. queries.ts already carries one server-side inline copy for the By-group
   // payload, flagged there as having to stay in step; a third copy would be a third
   // place to forget.
+  // ── "N waiting" NOW COUNTS WHAT IT CLAIMS (2026-09-13) ────────────────────
+  //
+  // 🔴 IT READ `counts.waiting` AND THAT SWEPT IN THE TINT ROOM. Every bill at
+  // a tint stage fell through `rowStatus` to "waiting", so the badge — titled
+  // "Bills on the floor with no picker assigned yet" — counted five bills that
+  // were on the mixer and that no picker could start. Measured 2026-09-13: it
+  // read 16 when 11 were actually available. Same defect as the "checked today"
+  // count fixed on 2026-09-12: a label asserting something it does not test.
+  //
+  // ⚠ COUNTING ONLY. No predicate, no arm, no fetch. `rowStatus` now returns the
+  // three tint statuses, so the split falls out of the vocabulary rather than
+  // from a second rule written here — and the two folds live in status-pill.tsx
+  // beside it, because "which statuses mean waiting for a picker" is that file's
+  // question and not this one's.
   const waitingCount = useMemo(
-    () => (filteredFloor ? countByStatus(filteredFloor.rows.filter((r) => r.zone !== "upcoming")).waiting : 0),
+    () => (filteredFloor ? waitingForPickerCount(countByStatus(filteredFloor.rows.filter((r) => r.zone !== "upcoming"))) : 0),
+    [filteredFloor],
+  );
+  /** Bills the tint room still holds — nobody can pick these. 0 hides the chip. */
+  const inTinting = useMemo(
+    () => (filteredFloor ? inTintingCount(countByStatus(filteredFloor.rows.filter((r) => r.zone !== "upcoming"))) : 0),
     [filteredFloor],
   );
 
@@ -1565,6 +1593,17 @@ export function FloorPage() {
               <span className="text-[11px] text-gray-400" title="Bills on the floor with no picker assigned yet">
                 <span className="font-semibold tabular-nums text-gray-700">{waitingCount}</span> waiting
               </span>
+              {/* The tint room, stated separately and only when it has something.
+                  Pink to match the pills on the rows it is counting, quiet weight
+                  because it is a fact and not a call to action. Hidden at zero,
+                  unlike "waiting" beside it — "0 waiting" is the good state and
+                  worth saying, while "0 in tinting" is just noise on the many
+                  days no tint order is open. */}
+              {inTinting > 0 && (
+                <span className="text-[11px] text-[#9d174d]" title="Bills in the tint room — no picker can start these yet">
+                  <span className="font-semibold tabular-nums">{inTinting}</span> in tinting
+                </span>
+              )}
             </span>
             {tabPill("hold", "On hold", holdCount)}
             {tabPill("cancelled", "Cancelled", cancelledCount)}

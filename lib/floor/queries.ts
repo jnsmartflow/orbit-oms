@@ -30,7 +30,6 @@ import {
   PICK_CHECKED,
   DISPATCHED,
 } from "@/lib/workflow-stages";
-import { suggestSlot } from "./suggest";
 // Rule 2's oil-paint definition lives in the ENGINE, not here and not in the
 // database — grouping.ts is pure (no prisma, no clock), so importing it into a
 // server module is one-directional and safe.
@@ -59,7 +58,6 @@ import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
-  FloorRailCard,
   FloorBoardRow,
   FloorBoardResult,
   FloorHoldRow,
@@ -67,9 +65,6 @@ import type {
   FloorPicker,
   FloorWaitingSkus,
   FloorOilSkus,
-  TintState,
-  TintStage,
-  SlotSuggestion,
 } from "./types";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -102,6 +97,37 @@ const FLOOR_HISTORY_STAGES: string[] = [...PICKING_ACTIVE_STAGES, DISPATCHED];
 const RAIL_STAGES: string[] = STAGE_LADDER
   .filter((d) => d.rank !== null && d.rank < 60)
   .map((d) => d.stage);
+
+/**
+ * THE TINT ROOM'S OWN STAGES — a NEW named constant, not an edit to a shared
+ * array (2026-09-13).
+ *
+ * ⚠ WRITTEN OUT, NOT DERIVED FROM RANK. Ranks 20-40 happen to be these three
+ * today, and a rank filter would silently absorb any future mid-pipeline stage
+ * into "this bill is in the tint room" — a claim about paint that a number
+ * cannot make. The same argument `TINT_IN_PROGRESS_STAGES` in lib/floor/
+ * release.ts makes for its own three names; a fourth here needs a person.
+ *
+ * ⚠ NOT ADDED TO RAIL_STAGES, PICKING_OPEN_STAGES OR ANY OTHER SHARED ARRAY.
+ * Those feed predicates; this feeds a DISPLAY field and nothing else.
+ */
+const TINT_PENDING_STAGE = "pending_tint_assignment";
+const TINT_ACTIVE_STAGES: string[] = ["tint_assigned", "tinting_in_progress"];
+
+/**
+ * Where a bill stands with the tint room — `null` for every plain order.
+ *
+ * The full contract is on `FloorBoardRow.tintPhase` (lib/floor/types.ts); this
+ * is its ONE implementation, so a second surface cannot invent a fourth answer.
+ * "done" is deliberately the FALL-THROUGH for a tint bill: past the three tint
+ * stages means the tint room is finished with it, whatever happened next.
+ */
+function tintPhaseOf(orderType: string, workflowStage: string): "pending" | "tinting" | "done" | null {
+  if (orderType !== "tint") return null;
+  if (workflowStage === TINT_PENDING_STAGE) return "pending";
+  if (TINT_ACTIVE_STAGES.includes(workflowStage)) return "tinting";
+  return "done";
+}
 
 /**
  * The UN-SLOTTED arm — bills the dispatch engine could not schedule.
@@ -249,24 +275,16 @@ export function floorTripBillsWhere(todayDateOnly: Date): Prisma.ordersWhereInpu
   };
 }
 
-// Step 10 — the render-time slot SUGGESTION is ON. Non-tint bills anchor on
-// arrival; a COMPLETED full (non-split) tint OBD anchors on its completion time.
-// Split tints and unfinished tints still get nothing — see the suggestion block
-// in getFloorRail for the full ladder and why.
-//
-// The 23-Jul stale-date bug ("Release to Wed 16:00" on a Thursday) that took this
-// down is now FIXED AT SOURCE — lib/floor/suggest.ts grew a past-date arm — not
-// hidden behind this flag. Turning it on only makes DATA flow: `suggestion` has
-// always been on FloorRailCard and has always shipped through /api/floor/board,
-// and no component reads it yet (rail-card.tsx still renders the grey picker), so
-// there is no visible change and no write path.
-//
-// The constant stays as the single kill switch: flip to `false` and every card
-// goes back to suggestion=null, no other edit needed.
-const RAIL_SUGGESTIONS_ENABLED = true;
+// RAIL_SUGGESTIONS_ENABLED WAS HERE AND WENT WITH THE RAIL (2026-09-13). It was
+// the kill switch for the render-time slot suggestion on a rail card, and there
+// are no rail cards. `lib/floor/suggest.ts` is left in place, unimported and
+// unchanged (CORE §3 — nothing is deleted): the slot-suggestion RULE it holds is
+// worth keeping if a future surface asks the same question, and it is pure, so
+// it costs nothing sitting there. CLAUDE_FLOOR §8 documents the layer as LIVE
+// and is now out of date on that point.
 
-// Rule 2 — the oil-paint (10K warehouse) bundler, a TRIAL. Same shape and same
-// role as RAIL_SUGGESTIONS_ENABLED above: the single kill switch.
+// Rule 2 — the oil-paint (10K warehouse) bundler, a TRIAL. The single kill
+// switch for its own feature, and the last one of this shape left in the file.
 //
 // FALSE REMOVES RULE 2 COMPLETELY. No catalog fetch happens (the extra await
 // below is inside the branch, so the flag costs a query, not just an if), and
@@ -327,13 +345,6 @@ function istDayOf(date: Date | null): string | null {
   return date ? date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null;
 }
 
-/** Whole IST days between an arrival timestamp and today, floored at 0. */
-function arrivalAgeDays(arrival: Date | null, todayMs: number): number {
-  const iso = istDayOf(arrival);
-  if (!iso) return 0;
-  const [y, m, d] = iso.split("-").map(Number);
-  return Math.max(0, Math.floor((todayMs - Date.UTC(y, m - 1, d)) / MS_PER_DAY));
-}
 
 // `inScope` MOVED to lib/floor/scope.ts (2026-08-09) — same function, byte for
 // byte. It now has a second consumer: the client board re-derives each scope's
@@ -574,221 +585,32 @@ export async function getFloorPickers(): Promise<FloorPicker[]> {
   return pickers.map((p) => ({ id: p.id, name: p.name, onHand: loadById.get(p.id) ?? 0 }));
 }
 
-// ── 1. RAIL — "needs your decision" ──────────────────────────────────────────
-
-export async function getFloorRail(
-  scope: FloorScope = "All",
-  // Pre-computed admin hide-exclusion. OPTIONAL — omitted, this reads it itself
-  // and behaves exactly as before. /api/floor/board passes it so the rail and
-  // the board share ONE read instead of two (they always agreed anyway; sharing
-  // the object also removes the millisecond skew a `daysOld` rule's Date.now()
-  // cutoff could otherwise have between the two calls).
-  hideExclusion?: Prisma.ordersWhereInput,
-): Promise<FloorRailCard[]> {
-  const hide = hideExclusion ?? (await getHideExclusion());
-  const now = new Date();
-  const todayMs = getISTTodayDateOnly().getTime();
-
-  const orders = await prisma.orders.findMany({
-    where: {
-      // The one owner of "un-slotted" — see floorUnslottedWhere above.
-      AND: [floorUnslottedWhere(), hide],
-    },
-    include: {
-      customer: { select: FLOOR_DEALER_SELECT },
-      shipToOverrideCustomer: { select: FLOOR_DEALER_SELECT },
-      dispatchWindow: { select: { windowTime: true } },
-      querySnapshot: { select: { articleTag: true, totalVolume: true } },
-    },
-  });
-
-  const obds = orders.map((o) => o.obdNumber);
-  const billTo = await billToByObd(obds);
-
-  // Same-SO detection — one bounded groupBy for the whole rail, sequential
-  // await, never $transaction (CORE §3). Post-fetch: it adds nothing to the
-  // rail's WHERE and nothing to getFloorLiveMarkerWhere, so neither feed's row
-  // set nor the live marker moves. `order.soNumber` rides the `include` above
-  // for free — no select entry added.
-  const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
-
-  // Tint split counts + operator, one bulk read for the tint orders on the rail.
-  const tintIds = orders.filter((o) => o.orderType === "tint").map((o) => o.id);
-  const splits =
-    tintIds.length > 0
-      ? await prisma.order_splits.findMany({
-          where: { orderId: { in: tintIds } },
-          select: { orderId: true, status: true, assignedTo: { select: { name: true } } },
-        })
-      : [];
-  const splitsByOrder = new Map<number, { status: string; op: string | null }[]>();
-  for (const s of splits) {
-    const arr = splitsByOrder.get(s.orderId) ?? [];
-    arr.push({ status: s.status, op: s.assignedTo?.name ?? null });
-    splitsByOrder.set(s.orderId, arr);
-  }
-
-  // Whole-order tint COMPLETION, one bulk read for the same tint ids. This is
-  // what a completed full OBD's suggestion anchors on (see the suggestion block
-  // below). Sequential await, never $transaction (CORE §3).
-  //
-  // splitId: null keeps this to WHOLE-ORDER assignments. A split's completion
-  // lives on order_splits.completedAt, per split, and never reaches this table.
-  // The live assign route (app/api/tint/manager/assign/route.ts:149) never sets
-  // splitId, so today this filter changes nothing — it is here to make
-  // "whole-order" true by construction rather than by accident, if a future
-  // split-assignment path ever starts writing rows here.
-  const tintAssignments =
-    tintIds.length > 0
-      ? await prisma.tint_assignments.findMany({
-          where: { orderId: { in: tintIds }, splitId: null },
-          select: { orderId: true, status: true, completedAt: true },
-        })
-      : [];
-  // LATEST completedAt wins — a reassigned order leaves its earlier assignment
-  // row behind, and the most recent finish is the one that describes the bill.
-  const completedAtByOrder = new Map<number, Date>();
-  for (const a of tintAssignments) {
-    if (a.status !== "tinting_done" || a.completedAt === null) continue;
-    const prev = completedAtByOrder.get(a.orderId);
-    if (prev === undefined || a.completedAt.getTime() > prev.getTime()) {
-      completedAtByOrder.set(a.orderId, a.completedAt);
-    }
-  }
-
-  const cards: FloorRailCard[] = [];
-  for (const order of orders) {
-    const dealer = order.shipToOverrideCustomer ?? order.customer;
-    const deliveryType = dealer?.area?.deliveryType?.name ?? null;
-    if (!inScope(deliveryType, scope)) continue;
-
-    // The real Date is kept HERE, not on the card: TintState.completedAt is an
-    // ISO string for the wire, but the engine needs an actual Date. buildTintState
-    // serialises for the payload; the suggestion below uses this value directly.
-    const tintCompletedAt = completedAtByOrder.get(order.id) ?? null;
-
-    const tint: TintState | null =
-      order.orderType === "tint"
-        ? buildTintState(order.workflowStage, splitsByOrder.get(order.id) ?? [], tintCompletedAt)
-        : null;
-
-    // ── SLOT SUGGESTION — which clock this bill is judged on ──────────────────
-    //
-    //   not tint                   → arrival-anchored (order email / OBD punch)
-    //   tint + hasSplits           → null. A split order has no single
-    //                                whole-order finish: completion is per split
-    //                                on order_splits.completedAt, and the parent
-    //                                bubble writes no timestamp at all. Deciding
-    //                                which of those moments speaks for the bill
-    //                                is a real question, deliberately out of v1.
-    //   tint + not finished        → null. Nothing to anchor to yet; the arrival
-    //                                clock would happily offer today 12:30 to a
-    //                                bill still on the mixer.
-    //   tint + full + finished     → completion-anchored (tint_assignments.
-    //                                completedAt), which is the first moment the
-    //                                bill could actually go on a vehicle.
-    //
-    // The 60-minute grace test inside suggestSlot applies unchanged in every
-    // case — a tint finished long ago has a closed batch like anything else.
-    let suggestion: SlotSuggestion | null = null;
-    if (RAIL_SUGGESTIONS_ENABLED) {
-      if (tint === null) {
-        suggestion = suggestSlot({
-          smu: order.smu,
-          deliveryType,
-          emailDateTime: order.orderDateTime,
-          punchDateTime: order.obdEmailDate,
-          now,
-        });
-      } else if (!tint.hasSplits && tintCompletedAt !== null) {
-        suggestion = suggestSlot({
-          smu: order.smu,
-          deliveryType,
-          emailDateTime: null,
-          punchDateTime: null,
-          // The Date, never the card's ISO string — suggestSlot feeds this
-          // straight to the engine, which does epoch arithmetic on it.
-          completionDateTime: tintCompletedAt,
-          now,
-        });
-      }
-    }
-
-    const displayDate = resolveFloorDisplayDate(order.orderDateTime, order.obdEmailDate);
-
-    cards.push({
-      orderId: order.id,
-      obdNumber: order.obdNumber,
-      workflowStage: order.workflowStage,
-      customerName: order.customer?.customerName ?? null,
-      shipToOverrideName: order.shipToOverrideCustomer?.customerName ?? null,
-      dealerName: dealer?.customerName ?? "(Unmatched)",
-      billToName: billTo.get(order.obdNumber) ?? null,
-      isShipToOverride: order.shipToOverrideCustomerId !== null,
-      smu: order.smu,
-      route: dealer?.area?.primaryRoute?.name ?? null,
-      area: dealer?.area?.name ?? null,
-      deliveryType,
-      isKeyCustomer: dealer?.isKeyCustomer ?? false,
-      priorityLevel: order.priorityLevel,
-      isTint: order.orderType === "tint",
-      volumeLitres: order.querySnapshot?.totalVolume ?? null,
-      articleTag: order.querySnapshot?.articleTag ?? null,
-      obdDateTime: displayDate.obdDateTime?.toISOString() ?? null,
-      isEmailTime: displayDate.isEmailTime,
-      ageDays: arrivalAgeDays(order.obdEmailDate ?? order.orderDateTime, todayMs),
-      // Boolean only — the SO number itself never reaches the card payload.
-      hasDuplicateSo: order.soNumber !== null && duplicateSoNumbers.has(order.soNumber),
-      tint,
-      suggestion,
-      presetWindowTime: order.dispatchWindow?.windowTime ?? null,
-      presetTargetDate: order.dispatchTargetDate ? order.dispatchTargetDate.toISOString().slice(0, 10) : null,
-    });
-  }
-
-  // Oldest first, always (design §6.1). Nulls sink last.
-  cards.sort((a, b) => {
-    if (a.obdDateTime === b.obdDateTime) return a.obdNumber.localeCompare(b.obdNumber, "en");
-    if (a.obdDateTime === null) return 1;
-    if (b.obdDateTime === null) return -1;
-    return a.obdDateTime < b.obdDateTime ? -1 : 1;
-  });
-
-  return cards;
-}
-
-function buildTintState(
-  workflowStage: string,
-  splits: { status: string; op: string | null }[],
-  completedAt: Date | null,
-): TintState {
-  const nonCancelled = splits.filter((s) => s.status !== "cancelled");
-  const shadesTotal = nonCancelled.length;
-  const shadesDone = nonCancelled.filter((s) => s.status === "tinting_done").length;
-  const operatorName = nonCancelled.find((s) => s.op)?.op ?? null;
-
-  let stage: TintStage;
-  if (workflowStage === "pending_tint_assignment") stage = "waiting";
-  else if (workflowStage === "tint_assigned") stage = "assigned";
-  else if (workflowStage === "tinting_in_progress") stage = "mixing";
-  else stage = "ready"; // pending_support = all splits done, awaiting release
-
-  // hasSplits reads the RAW array — every split row, cancelled included — which
-  // is the whole point: shadesTotal has already dropped the cancelled ones, so
-  // an all-cancelled split order would report 0 there and pass for a full OBD.
-  //
-  // completedAt is serialised HERE — TintState rides the /api/floor/board payload,
-  // where a Date would become an ISO string anyway; sending one deliberately keeps
-  // the type honest about what the client actually receives.
-  return {
-    stage,
-    shadesDone,
-    shadesTotal,
-    operatorName,
-    hasSplits: splits.length > 0,
-    completedAt: completedAt?.toISOString() ?? null,
-  };
-}
+// ── 1. RAIL — REMOVED 2026-09-13 ─────────────────────────────────────────────
+//
+// `getFloorRail` and its `buildTintState` helper lived here. They built one
+// FloorRailCard per undecided bill — dealer, route, litres, age, same-SO flag,
+// tint state and a slot suggestion — and nothing had rendered any of it since
+// 2026-09-10, when the trip desk replaced the board. `TripDesk` is never passed
+// a rail prop, and FloorRail / RailCard / TintStrip were imported by no live
+// file. Measured cost of building a payload with no reader: 772 ms and 25 of the
+// board call's 84 statements, roughly 28% of a request on a page that is
+// latency-bound rather than query-bound.
+//
+// 🔴 `floorUnslottedWhere` IS STILL HERE AND IS STILL LIVE. It was the rail's
+// predicate AND it is arm 2 of `floorBoardWhere`, and only the first use went.
+// Those bills are on the board as ROWS and always were — that is exactly what
+// the trip desk's own header says happened to them. REMOVING A FETCH IS NOT
+// REMOVING AN ARM, and anyone tidying the "unused rail predicate" next would
+// drop five live bills off the screen. Row counts were taken either side of this
+// change and did not move.
+//
+// What the tint strip used to say now lives in the three tint PILLS
+// (status-pill.tsx) and the rail's In-tinting line (trip-rail.tsx), both built
+// from board rows this feed is not needed for. The orphaned components moved to
+// archive/2026-09-floor-rail/ with `git mv`, so their history follows them.
+//
+// Still exported and still used by the board: `floorUnslottedWhere` (above),
+// `billToByObd`, `skusByObd`, `getFloorPickers`.
 
 // ── 2. FLOOR — the live board (+ history mode) ───────────────────────────────
 
@@ -1077,6 +899,11 @@ export async function getFloorBoard(
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       weightKg: order.querySnapshot?.totalWeight ?? null,
       isTint: order.orderType === "tint",
+      // Which of the three tint pills this row wears, or null for a plain order.
+      // Derived HERE and only here — see tintPhaseOf above and the field's own
+      // contract on FloorBoardRow. No extra query: `orderType` and
+      // `workflowStage` are already on the fetched row.
+      tintPhase: tintPhaseOf(order.orderType, order.workflowStage),
       // Floor does not render product families — skip the catalog join; empties
       // are honest "not computed / not applicable" for this board.
       families: [],

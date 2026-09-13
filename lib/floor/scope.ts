@@ -18,7 +18,7 @@
 // import from it, and a second copy of `inScope` living in the component is
 // exactly the drift this file exists to prevent. Keep it dependency-free.
 
-import type { FloorScope, FloorBoardResult, FloorRailCard } from "./types";
+import type { FloorScope, FloorBoardResult } from "./types";
 
 /** Does a row's delivery type belong to this scope? `All` admits everything,
  *  including a null delivery type; a named scope matches by exact string.
@@ -35,11 +35,11 @@ export function rowsInScope<T extends { deliveryType: string | null }>(
   return scope === "All" ? rows : rows.filter((r) => inScope(r.deliveryType, scope));
 }
 
-/** Narrow the rail to one scope. Same predicate, named separately only so call
- *  sites read clearly — the rail is a different shape but scopes identically. */
-export function railInScope(cards: FloorRailCard[], scope: FloorScope): FloorRailCard[] {
-  return rowsInScope(cards, scope);
-}
+// `railInScope` LIVED HERE UNTIL 2026-09-13 and went with the rail feed itself
+// (app/api/floor/board/route.ts). It was `rowsInScope` under another name, for a
+// payload nothing has rendered since 2026-09-10. `rowsInScope` above is the
+// general form and takes any shape with a `deliveryType`, so a future rail-like
+// list needs no new wrapper.
 
 /**
  * Re-derive a scoped FloorBoardResult from an UNSCOPED one.

@@ -33,6 +33,7 @@ import { RouteRow } from "./route-row";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import {
+  rowStatus,
   countByStatus,
   finishedCount,
   formatLitres,
@@ -170,6 +171,31 @@ export function TripDesk({
   const upcomingAll = floor.rows.filter((r) => r.zone === "upcoming");
   const poolRows = dueRows.filter((r) => r.tripDropId === null);
   const poolUpcoming = upcomingAll.filter((r) => r.tripDropId === null);
+
+  // ── THE TINT ROOM, FOR THE RAIL LINE (2026-09-13) ────────────────────────
+  //
+  // 🔴 DERIVED FROM ROWS THE PAYLOAD ALREADY CARRIES. These bills reach the
+  // board through `floorBoardWhere` arm 2 (`floorUnslottedWhere`) and are rows
+  // like any other — a filter and a sum, no fetch, no await, no predicate.
+  // /floor is latency-bound (a board call is ~84 statements and its own query
+  // runs in 4 ms), so a second request for five numbers would cost more than
+  // everything it displays.
+  //
+  // ⚠ EVERY ROW, NOT `dueRows`. A tint bill promised for Saturday is exactly
+  // what "what is coming" means; scoping this to today's due slice would hide
+  // the half of the answer the planner is asking for. That is the same reason
+  // picker-card.tsx reads `dueRows` and this does not — the two lines answer
+  // different questions.
+  //
+  // ⚠ `rowStatus`, NOT `r.tintPhase` DIRECTLY. The phase says where the tint
+  // room is; the STATUS says whether anyone else has taken over. A tint bill
+  // with a picker is `tintPhase: "done"` and must not be counted here, and
+  // asking the one owner is what guarantees that (status-pill.tsx).
+  const tintingRows = floor.rows.filter((r) => {
+    const s = rowStatus(r);
+    return s === "tintPending" || s === "tinting";
+  });
+  const tintingLitres = sumLitres(tintingRows);
   const selectedTrip =
     railSelection.kind === "trip"
       ? (trips ?? []).find((t) => t.id === railSelection.tripId) ?? null
@@ -439,6 +465,8 @@ export function TripDesk({
           anchorIso={floor.date}
           poolCount={poolRows.length + poolUpcoming.length}
           poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
+          tintingCount={tintingRows.length}
+          tintingLitres={tintingLitres}
           selection={railSelection}
           onSelect={onSelectRail}
           gateOn={gateOn}

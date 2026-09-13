@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { getFloorRail, getFloorBoard, getFloorPickers } from "@/lib/floor/queries";
+import { getFloorBoard, getFloorPickers } from "@/lib/floor/queries";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import type { FloorScope } from "@/lib/floor/types";
 
@@ -13,8 +13,21 @@ function parseScope(v: string | null): FloorScope {
 }
 
 // GET /api/floor/board?scope=All|Local|Upcountry|IGT&mode=live|history&date=YYYY-MM-DD
-// Returns the left rail + the floor board + counts. The delivery-type scope
-// applies to BOTH feeds (design §5.2). `mode=history` requires `date`.
+// Returns the floor board + the picker roster. `mode=history` requires `date`.
+//
+// 🔴 THE `rail` FEED IS GONE (2026-09-13) AND THE ARM THAT FED IT IS NOT.
+// This used to also call `getFloorRail` and return `rail` + `railCount`. Nothing
+// had rendered them since 2026-09-10, when the trip desk replaced the board:
+// `TripDesk` is never passed a rail prop and FloorRail / RailCard / TintStrip
+// were imported by no live file. It cost 772 ms and 25 of the call's 84
+// statements — about 28% of the whole board request — on a page that is
+// latency-bound rather than query-bound.
+//
+// ⚠ `floorUnslottedWhere` IS UNTOUCHED. It is BOTH the old rail's predicate AND
+// arm 2 of `floorBoardWhere`, and only the first use is gone: those bills are
+// still on the board, as rows, exactly as before. Removing the FETCH is not
+// removing the ARM, and conflating the two would drop five live bills off the
+// screen. Verified by row count either side of the change, not by reading.
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,18 +44,14 @@ export async function GET(req: Request) {
   try {
     // Sequential awaits only — never prisma.$transaction (CORE §3).
     //
-    // ONE hide read for the whole request, passed into both feeds. getFloorRail
-    // and getFloorBoard each read it themselves when not given one (unchanged
-    // for every other caller) — this route is the only path that calls both, so
-    // it was the only one paying for two identical obd_visibility_rules reads.
-    // Not a cache: still a real, fresh read on every request, just once instead
-    // of twice. Also makes the two feeds share one `daysOld` cutoff instant
-    // rather than two computed milliseconds apart.
+    // ONE hide read for the whole request. It was shared between two feeds until
+    // the rail went; `getFloorBoard` reads it itself when not given one, so the
+    // explicit read is kept rather than dropped — it is the same single query
+    // either way, and it stays the seam a future second feed would hang off.
     const hideExclusion = await getHideExclusion();
-    const rail = await getFloorRail(scope, hideExclusion);
     const floor = await getFloorBoard({ mode, date, scope, hideExclusion });
     const pickers = await getFloorPickers();
-    return NextResponse.json({ scope, rail, railCount: rail.length, floor, pickers });
+    return NextResponse.json({ scope, floor, pickers });
   } catch (e) {
     // parseFloorDate throws on a malformed/impossible history date.
     return NextResponse.json({ error: e instanceof Error ? e.message : "Bad request" }, { status: 400 });
