@@ -1,3 +1,5 @@
+import type { PasteRowError } from "@/lib/sap-paste/read-paste"
+
 export interface ImportLinePreview {
   rawLineItemId: number
   lineId: number
@@ -105,3 +107,28 @@ export interface SapConfirmResponse {
   }
   errors:   Array<{ obdNumber: string; message: string }>
 }
+
+// ─── SAP paste response shapes (?action=sap-paste-preview / -confirm) ─────
+//
+// A successful paste preview/confirm returns SapPreviewResponse /
+// SapConfirmResponse unchanged. A paste that could not be read returns this,
+// with every unreadable line — nothing is previewed or written.
+
+export interface SapPasteBlockedResponse {
+  ok:     false
+  error:  string
+  errors: PasteRowError[]
+}
+
+/**
+ * A customer code on a newly-created OBD that is missing from
+ * delivery_point_master, so its screen-shortened name could not be completed.
+ * One entry per CODE. `text` is the name as pasted.
+ */
+export interface PasteUnresolvedCustomer {
+  code: string
+  text: string
+}
+
+export type SapPastePreviewResponse = SapPreviewResponse & { unresolvedCustomers: PasteUnresolvedCustomer[] }
+export type SapPasteConfirmResponse = SapConfirmResponse & { unresolvedCustomers: PasteUnresolvedCustomer[] }

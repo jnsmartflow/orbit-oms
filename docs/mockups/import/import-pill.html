@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Import progress pill (mockup)</title>
+<style>
+  :root{
+    --ink:#1a1d26; --ink-2:#5b616e; --ink-3:#8b909c;
+    --line:#e4e6eb; --line-2:#d3d7de;
+    --bg:#f2f4f7; --card:#fff; --dark:#232838; --pill:#f0f1f4;
+    --purple:#6c4ef0;
+    --ok:#0f9960; --ok-bg:#eaf7f0; --ok-line:#bfe6d2;
+    --warn:#c0392b; --warn-bg:#fdeeec; --warn-line:#f5c6c0;
+    --amber:#b7791f; --amber-bg:#fdf6e7; --amber-line:#eedcae;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px;margin:0 auto;padding-block:40px;padding-left:20px;padding-right:20px}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:-.2px}
+  .sub{color:var(--ink-2);margin:0 0 34px;font-size:14px}
+
+  .state{margin-bottom:38px}
+  .state-head{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;flex-wrap:wrap}
+  .tag{background:var(--dark);color:#fff;font-size:11px;font-weight:600;letter-spacing:.04em;border-radius:5px;padding:3px 8px;flex:0 0 auto}
+  .tag.quiet{background:#c7ccd6}
+  .state-head h3{font-size:16px;margin:0;letter-spacing:-.1px}
+  .state-why{color:var(--ink-2);font-size:13px;margin:0 0 14px}
+
+  /* ---- header strip ---- */
+  .stage{background:#dfe3ea;border-radius:14px;padding:18px;overflow-x:auto}
+  .header{
+    background:var(--card);border-radius:10px;min-width:620px;
+    display:flex;align-items:center;gap:14px;padding:12px 18px;
+    box-shadow:0 1px 3px rgba(20,24,35,.08);
+  }
+  .brand{font-size:19px;font-weight:700;color:var(--purple);letter-spacing:-.3px;flex:0 0 auto}
+  .spacer{flex:1}
+  .imp-btn{
+    background:var(--dark);color:#fff;font-size:14px;font-weight:600;
+    border-radius:9px;padding:10px 18px;display:flex;align-items:center;gap:8px;flex:0 0 auto;
+  }
+  .search{
+    background:var(--pill);border-radius:9px;padding:10px 14px;color:var(--ink-3);
+    font-size:14px;display:flex;align-items:center;gap:9px;min-width:190px;flex:0 0 auto;
+  }
+  .slash{
+    margin-left:auto;border:1px solid var(--line-2);border-radius:4px;
+    padding:1px 6px;font-size:11px;color:var(--ink-3);
+  }
+
+  /* ---- the pill ---- */
+  .ipill{
+    display:inline-flex;align-items:center;gap:9px;flex:0 0 auto;
+    border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:500;
+    border:1px solid;white-space:nowrap;
+  }
+  .ipill.run{background:var(--pill);border-color:var(--line-2);color:var(--ink-2)}
+  .ipill.ok {background:var(--ok-bg);border-color:var(--ok-line);color:#0b6e47;font-weight:600}
+  .ipill.bad{background:var(--warn-bg);border-color:var(--warn-line);color:#9b2c1e;font-weight:600}
+  .ipill b{font-weight:700}
+  .spin{
+    width:14px;height:14px;border-radius:50%;flex:0 0 auto;
+    border:2px solid #c8ccd4;border-top-color:var(--dark);
+    animation:sp .8s linear infinite;
+  }
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .dot{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;font-size:9px;color:#fff;flex:0 0 auto;font-weight:700}
+  .dot.g{background:var(--ok)} .dot.r{background:var(--warn)}
+  .chev{color:currentColor;opacity:.5;font-size:10px}
+  .xmini{opacity:.45;font-size:13px;margin-left:2px}
+
+  .bar{
+    height:3px;border-radius:2px;background:#dcdfe5;overflow:hidden;
+    width:52px;flex:0 0 auto;
+  }
+  .bar i{display:block;height:100%;width:42%;background:var(--dark);border-radius:2px;
+    animation:crawl 2.2s ease-in-out infinite}
+  @keyframes crawl{0%{margin-left:-42%}100%{margin-left:100%}}
+
+  /* ---- dropdown panel ---- */
+  .panelwrap{position:relative;min-width:620px}
+  .panel{
+    position:absolute;right:210px;top:-6px;width:320px;background:#fff;
+    border:1px solid var(--line);border-radius:11px;
+    box-shadow:0 12px 32px rgba(20,24,35,.16);padding:16px;
+  }
+  .panel h5{margin:0 0 3px;font-size:14px;font-weight:600}
+  .panel .ref{
+    font:11.5px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--ink-3);margin-bottom:13px;display:block;
+  }
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .cell{background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+  .cell .k{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .cell .v{font-size:19px;font-weight:600;margin-top:2px}
+  .cell.hi .v{color:var(--ok)}
+  .panel .foot{
+    margin-top:13px;padding-top:12px;border-top:1px solid var(--line);
+    display:flex;gap:14px;font-size:12.5px;color:var(--ink-2);flex-wrap:wrap;
+  }
+  .panel .foot a{color:var(--ink-2);text-decoration:underline;text-underline-offset:2px}
+  .missing{
+    margin-top:12px;background:var(--amber-bg);border:1px solid var(--amber-line);
+    border-radius:8px;padding:10px 12px;font-size:12px;color:#7a5610;line-height:1.55;
+  }
+
+  .notes{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;margin-top:8px}
+  .notes h2{font-size:15px;margin:0 0 14px}
+  .notes ul{margin:0;padding-left:20px}
+  .notes li{margin-bottom:11px;color:var(--ink-2);font-size:13.5px}
+  .notes li b{color:var(--ink)}
+  .notes li:last-child{margin-bottom:0}
+
+  @media (max-width:640px){ .stage{padding:12px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Import runs in the header, not in a window</h1>
+  <p class="sub">Hit Import, the window closes, the pill takes over. You carry on working; it follows you around Orbit.</p>
+
+  <!-- A -->
+  <section class="state">
+    <div class="state-head"><span class="tag quiet">A</span><h3>Normal — no import running</h3></div>
+    <p class="state-why">Your header exactly as it is today. The pill only exists while there is something to say.</p>
+    <div class="stage">
+      <div class="header">
+        <span class="brand">Orbit</span>
+        <span class="spacer"></span>
+        <span class="imp-btn">⬆ Import</span>
+        <span class="search">🔍 Search orders…<span class="slash">/</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- B -->
+  <section class="state">
+    <div class="state-head"><span class="tag">B</span><h3>Running</h3></div>
+    <p class="state-why">Appears the instant you click Import, as the window closes. The bar just shows it is alive — it does not claim to know how far along it is, because the server does not report that.</p>
+    <div class="stage">
+      <div class="header">
+        <span class="brand">Orbit</span>
+        <span class="spacer"></span>
+        <span class="ipill run"><span class="spin"></span> Importing <b>98&nbsp;OBDs</b>… <span class="bar"><i></i></span></span>
+        <span class="imp-btn">⬆ Import</span>
+        <span class="search">🔍 Search orders…<span class="slash">/</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- C -->
+  <section class="state">
+    <div class="state-head"><span class="tag">C</span><h3>Finished</h3></div>
+    <p class="state-why">Turns green and stays until you dismiss it or click it. It does not fade on its own — if you were away from your desk when it finished, it must still be there when you get back.</p>
+    <div class="stage">
+      <div class="header">
+        <span class="brand">Orbit</span>
+        <span class="spacer"></span>
+        <span class="ipill ok"><span class="dot g">✓</span> 93 OBDs imported <span class="chev">▾</span><span class="xmini">✕</span></span>
+        <span class="imp-btn">⬆ Import</span>
+        <span class="search">🔍 Search orders…<span class="slash">/</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- D -->
+  <section class="state">
+    <div class="state-head"><span class="tag">D</span><h3>Clicked open</h3></div>
+    <p class="state-why">The same numbers the window used to show, now in a small panel. The missing-customer line appears only when there is one.</p>
+    <div class="stage">
+      <div class="panelwrap">
+        <div class="header">
+          <span class="brand">Orbit</span>
+          <span class="spacer"></span>
+          <span class="ipill ok"><span class="dot g">✓</span> 93 OBDs imported <span class="chev">▴</span><span class="xmini">✕</span></span>
+          <span class="imp-btn">⬆ Import</span>
+          <span class="search">🔍 Search orders…<span class="slash">/</span></span>
+        </div>
+        <div class="panel">
+          <h5>Import complete</h5>
+          <span class="ref">BATCH-20260914-037 · Clipboard paste</span>
+          <div class="grid">
+            <div class="cell"><div class="k">Created</div><div class="v">0</div></div>
+            <div class="cell"><div class="k">Patched</div><div class="v">0</div></div>
+            <div class="cell hi"><div class="k">Unchanged</div><div class="v">93</div></div>
+            <div class="cell"><div class="k">Errored</div><div class="v">0</div></div>
+          </div>
+          <div class="missing">
+            3 customer names couldn't be completed — codes 637316, 498453, 826379 aren't in your customer list.
+          </div>
+          <div class="foot"><a>View audit ↗</a><a>Import another</a><a>Dismiss</a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- E -->
+  <section class="state">
+    <div class="state-head"><span class="tag">E</span><h3>Failed</h3></div>
+    <p class="state-why">Red, and it never disappears by itself. A failed import that quietly vanishes is worse than no pill at all.</p>
+    <div class="stage">
+      <div class="header">
+        <span class="brand">Orbit</span>
+        <span class="spacer"></span>
+        <span class="ipill bad"><span class="dot r">!</span> Import failed <span class="chev">▾</span></span>
+        <span class="imp-btn">⬆ Import</span>
+        <span class="search">🔍 Search orders…<span class="slash">/</span></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="notes">
+    <h2>How it behaves</h2>
+    <ul>
+      <li><b>One import at a time.</b> While the pill is running, the Import button is disabled with a tooltip saying an import is already running. Two SAP imports at once on the authoritative path is not something worth finding out the hard way.</li>
+      <li><b>It survives moving around Orbit</b> — floor, picking, mail orders — because it lives in the header, above the page. It does <b>not</b> survive a hard refresh or closing the tab. The import still finishes on the server; you just lose the result, which you can still find under View Audit.</li>
+      <li><b>No progress percentage.</b> The server returns once, at the end — it doesn't report progress as it goes. A bar that pretends to know would be a lie, so it just shows movement.</li>
+      <li><b>Green never auto-hides.</b> The whole point is that you walked away. It clears when you click ✕ or Dismiss, or when you start the next import.</li>
+      <li><b>Red never auto-hides either</b>, and it can't be cleared by starting another import — you have to open it and look first.</li>
+      <li><b>Phone notifications are deliberately NOT in this step.</b> You already have Web Push working for picking, so it can be added later. But it only matters if you close Orbit mid-import, and the person pasting is sitting at the screen. Worth doing only if that turns out to be real.</li>
+      <li><b>Same pill for the .xlsx path.</b> It reads "Importing 98 OBDs" either way — the source appears in the panel, not the pill.</li>
+    </ul>
+  </section>
+
+</div>
+</body>
+</html>

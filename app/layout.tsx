@@ -2,6 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { SessionProvider } from "@/components/shared/session-provider";
+// Holds the in-flight OBD import write. HERE, in the root layout, because this
+// is the only layout that survives client-side navigation between every screen
+// — the Import window (inside each board's header) does not. See the file.
+import { ImportProgressProvider } from "@/components/import/import-progress-provider";
 import { Toaster } from "@/components/ui/sonner";
 // Vercel Web Analytics. Page views only — no custom events. The package's
 // /next entry is itself a client component ("use client") and wraps its own
@@ -82,7 +86,9 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={`${jakarta.variable} ${mono.variable} font-sans`}>
-        <SessionProvider session={session}>{children}</SessionProvider>
+        <SessionProvider session={session}>
+          <ImportProgressProvider>{children}</ImportProgressProvider>
+        </SessionProvider>
         <Toaster richColors position="top-right" />
         <Analytics />
       </body>

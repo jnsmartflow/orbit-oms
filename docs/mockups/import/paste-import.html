@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Import OBDs — Paste from SAP (mockup)</title>
+<style>
+  :root{
+    --ink:#1a1d26;
+    --ink-2:#5b616e;
+    --ink-3:#8b909c;
+    --line:#e4e6eb;
+    --line-2:#d3d7de;
+    --bg:#f2f4f7;
+    --card:#ffffff;
+    --dark:#232838;
+    --pill:#f0f1f4;
+    --ok:#0f9960;
+    --ok-bg:#eaf7f0;
+    --ok-line:#bfe6d2;
+    --warn:#c0392b;
+    --warn-bg:#fdeeec;
+    --warn-line:#f5c6c0;
+    --accent:#6c4ef0;
+    --amber:#b7791f;
+    --amber-bg:#fdf6e7;
+    --amber-line:#eedcae;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding-block:40px;padding-left:20px;padding-right:20px}
+
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:-.2px}
+  .sub{color:var(--ink-2);margin:0 0 34px;font-size:14px}
+
+  /* ---------- flow strip ---------- */
+  .flow{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px;margin-bottom:40px;
+  }
+  .flow h2{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin:0 0 16px;font-weight:600}
+  .steps{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  .step{
+    display:flex;align-items:center;gap:10px;
+    background:var(--pill);border-radius:9px;padding:10px 14px;flex:0 0 auto;
+  }
+  .step .n{
+    width:20px;height:20px;border-radius:50%;background:var(--dark);color:#fff;
+    font-size:11px;font-weight:600;display:grid;place-items:center;flex:0 0 auto;
+  }
+  .step .t{font-size:13px;white-space:nowrap}
+  kbd{
+    font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:#fff;border:1px solid var(--line-2);border-bottom-width:2px;
+    border-radius:5px;padding:4px 7px;color:var(--ink);
+  }
+  .arrow{color:var(--ink-3);font-size:15px;flex:0 0 auto}
+  .flow-note{margin:16px 0 0;font-size:13px;color:var(--ink-2)}
+  .flow-note b{color:var(--ink)}
+  .old-flow{
+    margin-top:14px;padding-top:14px;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--ink-3);
+  }
+  .old-flow s{opacity:.75}
+
+  /* ---------- state blocks ---------- */
+  .state{margin-bottom:44px}
+  .state-head{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;flex-wrap:wrap}
+  .tag{
+    background:var(--dark);color:#fff;font-size:11px;font-weight:600;letter-spacing:.04em;
+    border-radius:5px;padding:3px 8px;flex:0 0 auto;
+  }
+  .tag.quiet{background:#c7ccd6}
+  .state-head h3{font-size:16px;margin:0;letter-spacing:-.1px}
+  .state-why{color:var(--ink-2);font-size:13px;margin:0 0 16px}
+
+  /* ---------- modal ---------- */
+  .stage{
+    background:#dfe3ea;border-radius:14px;padding:26px;
+    display:grid;place-items:center;
+  }
+  .modal{
+    width:100%;max-width:620px;background:var(--card);border-radius:12px;
+    box-shadow:0 18px 48px rgba(20,24,35,.16);overflow:hidden;
+  }
+  .m-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:20px 24px 0;
+  }
+  .m-head h4{margin:0;font-size:18px;font-weight:600;letter-spacing:-.2px}
+  .x{color:var(--ink-3);font-size:20px;line-height:1;cursor:default}
+  .m-body{padding:20px 24px 22px}
+
+  .lbl-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+  .lbl{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .link{font-size:12.5px;color:var(--ink-2)}
+
+  .tabs{display:inline-flex;background:var(--pill);border-radius:9px;padding:4px;gap:2px;flex-wrap:wrap}
+  .tab{
+    font-size:13.5px;font-weight:500;color:var(--ink-2);
+    padding:7px 15px;border-radius:6px;white-space:nowrap;
+  }
+  .tab.on{background:var(--dark);color:#fff;font-weight:600}
+  .hint{font-size:12.5px;color:var(--ink-3);margin:10px 0 0}
+
+  /* paste box */
+  .pastebox{
+    margin-top:18px;border:1px solid var(--line-2);border-radius:10px;background:#fcfcfd;
+    min-height:190px;padding:22px;text-align:center;display:grid;place-content:center;
+  }
+  .pastebox.focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(108,78,240,.12);background:#fff}
+  .pastebox .kbdline{margin-bottom:12px}
+  .pastebox .kbdline kbd{font-size:14px;padding:7px 11px;margin:0 2px}
+  .pastebox .cur{font-size:15px;color:var(--ink);margin-bottom:8px}
+  .pastebox .small{font-size:12.5px;color:var(--ink-3);line-height:1.7}
+  .mono{font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  .fallback{
+    margin-top:16px;text-align:center;font-size:12.5px;color:var(--ink-3);
+  }
+  .fallback a{color:var(--ink-2);text-decoration:underline;text-underline-offset:2px}
+
+  /* file zone (fallback state) */
+  .zone{
+    margin-top:18px;border:1px dashed var(--line-2);border-radius:10px;
+    padding:34px 20px;text-align:center;background:#fcfcfd;
+  }
+  .zone .ic{font-size:22px;color:var(--ink-3);display:block;margin-bottom:10px}
+  .zone .big{font-size:15px;color:var(--ink);margin-bottom:5px}
+  .zone .small{font-size:12.5px;color:var(--ink-3)}
+
+  /* filled state */
+  .filled{
+    margin-top:18px;border:1px solid var(--ok-line);background:var(--ok-bg);
+    border-radius:10px;padding:16px 18px;
+  }
+  .filled-top{display:flex;align-items:center;gap:9px;margin-bottom:12px;flex-wrap:wrap}
+  .check{
+    width:18px;height:18px;border-radius:50%;background:var(--ok);color:#fff;
+    font-size:11px;display:grid;place-items:center;flex:0 0 auto;font-weight:700;
+  }
+  .filled-top strong{font-size:14px;color:#0b6e47}
+  .stats{display:flex;flex-wrap:wrap;gap:8px}
+  .stat{
+    background:#fff;border:1px solid var(--ok-line);border-radius:7px;
+    padding:7px 11px;font-size:12.5px;color:var(--ink-2);
+  }
+  .stat b{color:var(--ink);font-weight:600}
+  .replace{
+    margin-top:12px;font-size:12.5px;color:var(--ink-2);
+    display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+  }
+
+  .tablewrap{margin-top:14px;overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+  table{border-collapse:collapse;width:100%;font-size:12px;min-width:430px}
+  th{
+    text-align:left;font-weight:600;color:var(--ink-3);font-size:10.5px;
+    letter-spacing:.05em;text-transform:uppercase;padding:9px 12px;border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  td{padding:8px 12px;border-bottom:1px solid #f2f3f6;white-space:nowrap;color:var(--ink-2)}
+  tr:last-child td{border-bottom:0}
+  td.num{font:12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink)}
+  .was{color:var(--ink-3);text-decoration:line-through;margin-right:6px;font-size:11px}
+  .now{color:var(--ok);font-weight:600}
+
+  /* error */
+  .err{
+    margin-top:18px;border:1px solid var(--warn-line);background:var(--warn-bg);
+    border-radius:10px;padding:16px 18px;
+  }
+  .err-top{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .bang{
+    width:18px;height:18px;border-radius:50%;background:var(--warn);color:#fff;
+    font-size:11px;display:grid;place-items:center;flex:0 0 auto;font-weight:700;
+  }
+  .err-top strong{font-size:14px;color:#9b2c1e}
+  .err p{margin:0;font-size:13px;color:var(--ink-2)}
+  .err .mono{
+    display:block;margin-top:10px;background:#fff;border:1px solid var(--warn-line);
+    border-radius:6px;padding:9px 11px;color:var(--ink-2);overflow-x:auto;
+  }
+
+  .amber{
+    margin-top:14px;border:1px solid var(--amber-line);background:var(--amber-bg);
+    border-radius:9px;padding:12px 14px;font-size:12.5px;color:#7a5610;
+  }
+
+  /* form rows */
+  .field{margin-top:20px}
+  .field .lbl{display:block;margin-bottom:8px}
+  .input{
+    border:1px solid var(--line-2);border-radius:8px;padding:11px 13px;font-size:14px;
+    display:flex;align-items:center;justify-content:space-between;color:var(--ink);background:#fff;
+  }
+  .field .note{font-size:12.5px;color:var(--ink-3);margin-top:7px}
+
+  .toggle-row{
+    display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+    margin-top:22px;padding-top:20px;border-top:1px solid var(--line);
+  }
+  .toggle-row .tt{font-size:14px;margin-bottom:3px}
+  .toggle-row .ts{font-size:12.5px;color:var(--ink-3)}
+  .sw{width:38px;height:22px;border-radius:11px;background:#dcdfe5;position:relative;flex:0 0 auto;margin-top:2px}
+  .sw:after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .sw.on{background:var(--dark)}
+  .sw.on:after{left:19px}
+
+  .m-foot{
+    display:flex;align-items:center;justify-content:flex-end;gap:8px;
+    padding:16px 24px;border-top:1px solid var(--line);background:#fafbfc;flex-wrap:wrap;
+  }
+  .btn{font-size:14px;font-weight:500;border-radius:8px;padding:10px 18px}
+  .btn.ghost{color:var(--ink-2)}
+  .btn.primary{background:var(--dark);color:#fff;font-weight:600}
+  .btn.primary.off{background:#e6e8ec;color:#a8adb7}
+
+  .notes{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;margin-top:8px;
+  }
+  .notes h2{font-size:15px;margin:0 0 14px}
+  .notes ul{margin:0;padding-left:20px}
+  .notes li{margin-bottom:11px;color:var(--ink-2);font-size:13.5px}
+  .notes li b{color:var(--ink)}
+  .notes li:last-child{margin-bottom:0}
+
+  @media (max-width:640px){
+    .stage{padding:14px}
+    .m-head,.m-body{padding-left:16px;padding-right:16px}
+    .m-foot{padding-left:16px;padding-right:16px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Import OBDs — paste is the default</h1>
+  <p class="sub">Mockup for review. Nothing here is built yet. Open Import and the paste box is already waiting.</p>
+
+  <!-- FLOW -->
+  <section class="flow">
+    <h2>The whole journey</h2>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><span class="t">Select rows in SAP</span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">2</span><span class="t"><kbd>Ctrl</kbd><kbd>C</kbd></span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">3</span><span class="t">Click <b>Import</b> in Orbit</span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">4</span><span class="t"><kbd>Ctrl</kbd><kbd>V</kbd></span></div>
+      <span class="arrow">→</span>
+      <div class="step"><span class="n">5</span><span class="t">Click <b>Import</b></span></div>
+    </div>
+    <p class="flow-note">
+      <b>Two clicks and two keystrokes.</b> The modal opens straight onto the paste box with the cursor already in it —
+      no tab to pick, no box to click into first. <kbd>Ctrl</kbd><kbd>V</kbd> also works if the operator happens to be
+      on another tab; the modal switches itself when it sees SAP text on the clipboard.
+    </p>
+    <p class="old-flow">
+      Replaces: <s>click Import → switch to SAP → run the export → wait → find the file in Downloads → drag it in → Import</s>
+    </p>
+  </section>
+
+  <!-- STATE A -->
+  <section class="state">
+    <div class="state-head"><span class="tag">A</span><h3>Modal just opened — this is the default screen</h3></div>
+    <p class="state-why">Paste sits first in the tab strip and is already active. The box is focused on open, so <kbd>Ctrl</kbd><kbd>V</kbd> lands immediately. The .xlsx upload is still there, one click away, but it is no longer the thing you land on.</p>
+    <div class="stage">
+      <div class="modal">
+        <div class="m-head"><h4>Import OBDs</h4><span class="x">✕</span></div>
+        <div class="m-body">
+          <div class="lbl-row">
+            <span class="lbl">Source format</span>
+            <span class="link">⤓ Download blank template</span>
+          </div>
+          <div class="tabs">
+            <span class="tab on">Paste from SAP</span>
+            <span class="tab">SAP file</span>
+            <span class="tab">Manual template</span>
+          </div>
+          <p class="hint">Copy the OBD list straight off the SAP screen — header row and all. No download needed.</p>
+
+          <div class="pastebox focus">
+            <div class="kbdline"><kbd>Ctrl</kbd><kbd>V</kbd></div>
+            <div class="cur">Paste the rows you copied from SAP</div>
+            <div class="small">
+              All 19 columns, exactly as SAP shows them.<br>
+              The header line and the dashed <span class="mono">-----</span> lines are ignored automatically.
+            </div>
+          </div>
+
+          <div class="fallback">Got a downloaded file instead? <a>Upload a .xlsx</a></div>
+
+          <div class="field">
+            <span class="lbl">OBD date</span>
+            <div class="input"><span>14-09-2026</span><span style="color:var(--ink-3)">▦</span></div>
+            <p class="note">Defaults to today. Set to actual file date if importing yesterday's data.</p>
+          </div>
+
+          <div class="toggle-row">
+            <div><div class="tt">Preview before import</div><div class="ts">Review changes per-OBD before writing to live tables.</div></div>
+            <span class="sw"></span>
+          </div>
+        </div>
+        <div class="m-foot"><span class="btn ghost">Cancel</span><span class="btn primary off">Import</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATE B -->
+  <section class="state">
+    <div class="state-head"><span class="tag">B</span><h3>Pasted and read — ready to import</h3></div>
+    <p class="state-why">The raw text is never shown back. The operator sees what Orbit understood, not what they pasted. The line-number conversion is stated plainly so it is never a hidden step.</p>
+    <div class="stage">
+      <div class="modal">
+        <div class="m-head"><h4>Import OBDs</h4><span class="x">✕</span></div>
+        <div class="m-body">
+          <div class="lbl-row">
+            <span class="lbl">Source format</span>
+            <span class="link">⤓ Download blank template</span>
+          </div>
+          <div class="tabs">
+            <span class="tab on">Paste from SAP</span>
+            <span class="tab">SAP file</span>
+            <span class="tab">Manual template</span>
+          </div>
+
+          <div class="filled">
+            <div class="filled-top"><span class="check">✓</span><strong>Read 1,556 rows from your clipboard</strong></div>
+            <div class="stats">
+              <span class="stat"><b>229</b> OBDs</span>
+              <span class="stat"><b>1,556</b> lines</span>
+              <span class="stat"><b>733</b> picked rows</span>
+              <span class="stat"><b>0</b> problems</span>
+            </div>
+            <div class="replace">
+              <span>Picked line numbers matched to Orbit's format</span>
+              <span class="mono" style="color:var(--ink-3)">001 → 900001</span>
+            </div>
+          </div>
+
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>OBD</th><th>Customer</th><th>Item</th><th>Material</th><th>Qty</th></tr></thead>
+              <tbody>
+                <tr><td class="num">9109179959</td><td>MURLIDHAR COLOUR</td><td class="num">10</td><td class="num">IN34220082</td><td class="num">0</td></tr>
+                <tr><td class="num">9109179959</td><td>MURLIDHAR COLOUR</td><td class="num"><span class="was">001</span><span class="now">900001</span></td><td class="num">IN34220082</td><td class="num">20</td></tr>
+                <tr><td class="num">9109179960</td><td>Polishwala Trading Co.</td><td class="num">10</td><td class="num">9055676</td><td class="num">2</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="amber">
+            <b>2 customer names came in shortened</b> — Orbit will use the full name from your customer list instead. Nothing for you to do.
+          </div>
+
+          <div class="fallback">Wrong data? Just press <kbd>Ctrl</kbd><kbd>V</kbd> again to replace it.</div>
+
+          <div class="field">
+            <span class="lbl">OBD date</span>
+            <div class="input"><span>12-09-2026</span><span style="color:var(--ink-3)">▦</span></div>
+            <p class="note">Read from the pasted rows. Change it if this is not the right day.</p>
+          </div>
+
+          <div class="toggle-row">
+            <div><div class="tt">Preview before import</div><div class="ts">Review changes per-OBD before writing to live tables.</div></div>
+            <span class="sw"></span>
+          </div>
+        </div>
+        <div class="m-foot"><span class="btn ghost">Cancel</span><span class="btn primary">Import 229 OBDs</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATE C -->
+  <section class="state">
+    <div class="state-head"><span class="tag">C</span><h3>Something was wrong with the paste</h3></div>
+    <p class="state-why">One unreadable row blocks the whole paste — same rule as the MRN paste. A half-imported day is worse than no import.</p>
+    <div class="stage">
+      <div class="modal">
+        <div class="m-head"><h4>Import OBDs</h4><span class="x">✕</span></div>
+        <div class="m-body">
+          <div class="lbl-row"><span class="lbl">Source format</span><span class="link">⤓ Download blank template</span></div>
+          <div class="tabs">
+            <span class="tab on">Paste from SAP</span>
+            <span class="tab">SAP file</span>
+            <span class="tab">Manual template</span>
+          </div>
+
+          <div class="err">
+            <div class="err-top"><span class="bang">!</span><strong>Could not read 1 row — nothing imported</strong></div>
+            <p>Row 402 has 12 columns. This report should have 19. It looks like only part of the screen was copied.</p>
+            <span class="mono">402 │ |  9109180117|IN53  |2000|70|3275628   |SHREE RAM AUT</span>
+          </div>
+
+          <div class="amber">
+            Select the whole list in SAP before copying, then press <kbd>Ctrl</kbd><kbd>V</kbd> again to replace what is here.
+          </div>
+
+          <div class="field">
+            <span class="lbl">OBD date</span>
+            <div class="input"><span>12-09-2026</span><span style="color:var(--ink-3)">▦</span></div>
+          </div>
+        </div>
+        <div class="m-foot"><span class="btn ghost">Cancel</span><span class="btn primary off">Import</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATE D -->
+  <section class="state">
+    <div class="state-head"><span class="tag quiet">D</span><h3>The file path — unchanged, just no longer first</h3></div>
+    <p class="state-why">One click away, working exactly as it does today. This is the fallback for a bad paste, a month-end bulk load, or an export someone else sent over.</p>
+    <div class="stage">
+      <div class="modal">
+        <div class="m-head"><h4>Import OBDs</h4><span class="x">✕</span></div>
+        <div class="m-body">
+          <div class="lbl-row"><span class="lbl">Source format</span><span class="link">⤓ Download blank template</span></div>
+          <div class="tabs">
+            <span class="tab">Paste from SAP</span>
+            <span class="tab on">SAP file</span>
+            <span class="tab">Manual template</span>
+          </div>
+          <p class="hint">SAP OBT export. Single .xlsx file.</p>
+
+          <div class="zone">
+            <span class="ic">⬆</span>
+            <div class="big">Drop file here or click to browse</div>
+            <div class="small">.xlsx files only · max 10 MB</div>
+          </div>
+
+          <div class="field">
+            <span class="lbl">OBD date</span>
+            <div class="input"><span>14-09-2026</span><span style="color:var(--ink-3)">▦</span></div>
+            <p class="note">Defaults to today. Set to actual file date if importing yesterday's data.</p>
+          </div>
+
+          <div class="toggle-row">
+            <div><div class="tt">Preview before import</div><div class="ts">Review changes per-OBD before writing to live tables.</div></div>
+            <span class="sw"></span>
+          </div>
+        </div>
+        <div class="m-foot"><span class="btn ghost">Cancel</span><span class="btn primary off">Import</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NOTES -->
+  <section class="notes">
+    <h2>Decisions baked into this mockup</h2>
+    <ul>
+      <li><b>Paste is the default tab and sits first.</b> The modal opens with the paste box focused, so the operator's <kbd>Ctrl</kbd><kbd>V</kbd> lands without a single extra click. The .xlsx path keeps its tab and behaves exactly as it does today.</li>
+      <li><b>Paste still works from any tab.</b> <kbd>Ctrl</kbd><kbd>V</kbd> is caught on the modal, not on the text box. If the text looks like the SAP OBD report, the modal jumps to the Paste tab and reads it. If it doesn't, the paste is ignored and nothing changes on screen.</li>
+      <li><b>Listen only while the modal is open.</b> The orders screen already uses <kbd>Ctrl</kbd><kbd>V</kbd> to paste an SO number (the hint in that page's footer). A page-level listener would fight it. This one mounts with the modal and unmounts with it.</li>
+      <li><b>The raw text is never echoed back.</b> 370 KB of pipes tells the operator nothing. What they need is: how many OBDs, how many lines, any problems — which is what the box becomes after pasting.</li>
+      <li><b>The <span class="mono">001 → 900001</span> conversion is shown, not hidden.</b> One quiet line plus a struck-through value in the sample rows. If it ever misfires, the operator sees it on screen instead of someone finding bad quantities a week later.</li>
+      <li><b>Re-pasting replaces.</b> No clear button, no confirm. Paste again and the previous block is dropped — which is also how the error state is recovered from.</li>
+      <li><b>OBD date auto-fills from the pasted rows</b> instead of staying on today, with the note changed to say where it came from. Manual override stays.</li>
+      <li><b>Still to decide:</b> after a clean paste, should <b>Preview before import</b> default to on? The operator is already on screen and it costs one click — but it also slows down the fast path this whole change exists to create.</li>
+    </ul>
+  </section>
+
+</div>
+</body>
+</html>

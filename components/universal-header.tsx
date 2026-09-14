@@ -7,6 +7,8 @@ import {
   Upload,
 } from "lucide-react";
 import { ImportModal } from "@/components/import/import-modal";
+import { ImportProgressPill } from "@/components/import/import-progress-pill";
+import { useImportProgress } from "@/components/import/import-progress-provider";
 // Row 2's Filter and date stepper were extracted 2026-07-31 so the Billing tab
 // row can host the SAME controls rather than lookalikes. Both are verbatim
 // moves — see each file's header. This header still owns `filterOpen` and
@@ -396,15 +398,40 @@ export function UniversalHeader({
   // "default" is the original chip character-for-character; every consumer that
   // does not pass the prop gets exactly it.
   const importPrimary = importVariant === "primary";
+
+  // The import-progress pill (components/import/import-progress-pill.tsx) sits
+  // immediately LEFT of the Import button. `importBusy` is read from the
+  // provider in the ROOT layout, so it is the same for every screen's header.
+  //
+  // ⚠ IDLE MUST LEAVE THIS HEADER EXACTLY AS IT WAS: the pill renders null, and
+  // the `importPillVisible` gates below only ever ADD the pill's slot when there
+  // is something to show. With nothing running, every screen's DOM is unchanged.
+  //
+  // Import is disabled while a write is RUNNING (two concurrent SAP imports on
+  // the authoritative patch path is not worth discovering in production) and
+  // while a FAILURE is unread — starting another must not wipe it; the red pill
+  // has to be opened and dismissed first.
+  const importRun = useImportProgress();
+  const importPillVisible = importRun.state.status !== "idle";
+  const importBlockedReason =
+    importRun.state.status === "running" ? "An import is already running — wait for it to finish"
+    : importRun.state.status === "failed" ? "The last import failed — open the red pill and dismiss it before importing again"
+    : null;
+  // "Import another" only where this header actually mounts the Import window.
+  const importPill = (
+    <ImportProgressPill onImportAnother={showImport ? () => setImportOpen(true) : undefined} />
+  );
+
   const importButton = (
     <button
       type="button"
-      title="Import OBDs"
+      title={importBlockedReason ?? "Import OBDs"}
       onClick={() => setImportOpen(true)}
+      disabled={importBlockedReason !== null}
       className={
         importPrimary
-          ? "flex items-center gap-1.5 h-[36px] px-3.5 rounded-[10px] bg-ink-900 hover:bg-ink-700 text-white text-[13px] font-medium transition-colors cursor-pointer"
-          : "bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
+          ? "flex items-center gap-1.5 h-[36px] px-3.5 rounded-[10px] bg-ink-900 hover:bg-ink-700 text-white text-[13px] font-medium transition-colors cursor-pointer disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+          : "bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
       }
     >
       <Upload size={importPrimary ? 15 : 13} className={importPrimary ? "text-white" : "text-gray-400"} />
@@ -450,6 +477,7 @@ export function UniversalHeader({
               cluster below and its search stays at the end of it.
               WIDE-RIGHT renders neither here either: both move to the head of
               the right cluster below, so the row reads Title … Import search. */}
+          {wideSearch && !wideRight && importPillVisible && importPill}
           {wideSearch && !wideRight && showImport && importButton}
           {/* Sizing wrapper — "wide" ONLY. It exists to give the box a definite
               parent width; the box's own w-[300px] makes it unnecessary in
@@ -474,6 +502,7 @@ export function UniversalHeader({
               No divider between them or after them: in compact the divider
               separates Import from the clock/shortcuts that follow, and here
               the caller that uses this layout hides both. */}
+          {wideRight && importPillVisible && importPill}
           {wideRight && showImport && importButton}
           {wideRight && searchBox}
 
@@ -481,9 +510,14 @@ export function UniversalHeader({
               COMPACT ONLY: in either wide mode it has already rendered — left
               cluster for "wide", head of this one for "wide-right" — and its
               divider goes with it, since nothing would follow the separator. */}
-          {!wideSearch && showImport && (
+          {/* The pill joins this slot only while it has something to say, so an
+              idle header renders exactly what it always has. It also shows on a
+              screen that hides the Import button: the result belongs to the
+              operator, not to whichever board they happen to be on. */}
+          {!wideSearch && (showImport || importPillVisible) && (
             <>
-              {importButton}
+              {importPillVisible && importPill}
+              {showImport && importButton}
               <div className="w-px h-4 bg-gray-200" />
             </>
           )}

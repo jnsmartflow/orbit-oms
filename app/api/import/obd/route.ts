@@ -16,6 +16,7 @@ import type {
   ImportPreviewResponse,
   ImportConfirmBody,
   ImportConfirmResponse,
+  PasteUnresolvedCustomer,
 } from "@/lib/import-types";
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
@@ -28,6 +29,8 @@ import type {
   ObdInput,
 } from "@/lib/import-upsert";
 import { parseSapFile, FileFormatError, FileParseError } from "@/lib/sap-parser";
+import { parseSapPaste } from "@/lib/sap-paste";
+import { resolvePasteCustomerNames, type KeptName } from "@/lib/sap-paste/resolve-names";
 import {
   appendRowError,
   detectQtyMismatch,
@@ -2113,6 +2116,485 @@ async function parseManualSapForm(req: Request): Promise<ParsedManualSapForm> {
   };
 }
 
+// ── SAP PASTE (clipboard) import ──────────────────────────────────────────────
+//
+// The third manual source: the operator copies SAP's on-screen OBD list and
+// pastes the raw text — no file. lib/sap-paste/ turns it into the SAME
+// ParseResult the .xlsx path produces (proven line-for-line against the
+// 12.09.2026 fixture by scripts/_compare-paste-vs-xlsx.ts), so everything after
+// parsing is the manual-SAP flow.
+//
+// 🔴 THE .XLSX HANDLERS ABOVE ARE DELIBERATELY NOT SHARED OR EDITED. The two
+// handlers below are copies of handleManualSapPreview / handleManualSapConfirm
+// with the differences called out inline. If you change the effect dispatch,
+// the fallback, or the batch accounting in one, change it in the other.
+//
+// ⚠ SOURCE STAYS "manual-sap". The paste is the same SAP report, so it must
+// carry the same line authority (LINE_AUTHORITY, lib/import-upsert/types.ts).
+// A paste batch is told apart only by its headerFile marker `[sap-paste] …`;
+// the per-OBD audit notes read "via manual-sap batch BATCH-…".
+
+/** Characters, not bytes. A full day is ~370 KB; Vercel refuses a 4.5 MB body
+ *  with a NON-JSON 413, so refuse well before it with one the client can read. */
+const SAP_PASTE_MAX_CHARS = 4_000_000;
+
+/**
+ * The names the operator can actually fix: codes missing from
+ * delivery_point_master, ONE entry per customer code however many OBDs or name
+ * fields carried it. "no-match" entries are deliberately NOT returned — they
+ * are the master disagreeing with SAP (e.g. counter code 899199), not a gap the
+ * operator can close, and they already appear in the preview's per-OBD issues.
+ */
+function unresolvedPasteCustomers(kept: KeptName[]): PasteUnresolvedCustomer[] {
+  const byCode = new Map<string, string>();
+  for (const k of kept) {
+    if (k.reason !== "not-in-master") continue;
+    if (!byCode.has(k.code)) byCode.set(k.code, k.text);
+  }
+  return Array.from(byCode.entries()).map(([code, text]) => ({ code, text }));
+}
+
+type ParsedSapPasteBody =
+  | { kind: "ok"; block: string; fallbackObdEmailDate: Date; dateStr: string }
+  | { kind: "error"; response: NextResponse };
+
+async function parseSapPasteBody(req: Request): Promise<ParsedSapPasteBody> {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "Request body must be JSON" }, { status: 400 },
+    )};
+  }
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+
+  if (typeof b.block !== "string" || b.block.trim() === "") {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "Paste the SAP list first — nothing was received" }, { status: 400 },
+    )};
+  }
+  if (b.block.length > SAP_PASTE_MAX_CHARS) {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "This paste is too large to import in one go. Split it, or import the day from the .xlsx file." },
+      { status: 413 },
+    )};
+  }
+
+  // Validated exactly as parseManualSapForm does.
+  const dateStr = b.obdEmailDate;
+  if (typeof dateStr !== "string" || dateStr.trim() === "") {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "obdEmailDate is required" }, { status: 400 },
+    )};
+  }
+  const fallbackObdEmailDate = new Date(dateStr.trim());
+  if (isNaN(fallbackObdEmailDate.getTime())) {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "obdEmailDate is not a valid date" }, { status: 400 },
+    )};
+  }
+
+  return { kind: "ok", block: b.block, fallbackObdEmailDate, dateStr: dateStr.trim() };
+}
+
+// ── SAP PASTE PREVIEW handler ─────────────────────────────────────────────────
+
+async function handleSapPastePreview(req: Request, _session: Session): Promise<NextResponse> {
+  if (process.env.SAP_IMPORT_ENABLED !== "true") {
+    return NextResponse.json(
+      { ok: false, error: "SAP import path not enabled in this environment" },
+      { status: 503 },
+    );
+  }
+
+  const parsed = await parseSapPasteBody(req);
+  if (parsed.kind === "error") return parsed.response;
+  const { block, fallbackObdEmailDate } = parsed;
+
+  // DIFFERENCE vs .xlsx: a bad paste does not throw — it comes back blocked,
+  // with EVERY unreadable line, and nothing is previewed.
+  const pasteResult = await parseSapPaste(block, { fallbackObdEmailDate });
+  if (pasteResult.kind === "blocked") {
+    return NextResponse.json(
+      { ok: false, error: pasteResult.error, errors: pasteResult.errors },
+      { status: 400 },
+    );
+  }
+  const parseResult = pasteResult.result;
+
+  const obdNumbers = parseResult.obds.map((o) => o.obdNumber);
+  const shipToIds  = parseResult.obds
+    .map((o) => o.shipToCustomerId)
+    .filter((c): c is string => c !== null && c !== "");
+  const skuCodes = Array.from(new Set(
+    parseResult.obds.flatMap((o) => o.lines.map((l) => l.skuCodeRaw)).filter(Boolean),
+  ));
+
+  const [existingOrders, existingCustomers, existingSkus] = await Promise.all([
+    obdNumbers.length > 0
+      ? prisma.orders.findMany({
+          where:  { obdNumber: { in: obdNumbers } },
+          select: { obdNumber: true },
+        })
+      : Promise.resolve([] as { obdNumber: string }[]),
+    shipToIds.length > 0
+      ? prisma.delivery_point_master.findMany({
+          where:  { customerCode: { in: shipToIds } },
+          select: { customerCode: true },
+        })
+      : Promise.resolve([] as { customerCode: string }[]),
+    skuCodes.length > 0
+      ? prisma.sku_master_v2.findMany({
+          where:  { material: { in: skuCodes } },
+          select: { material: true },
+        })
+      : Promise.resolve([] as { material: string }[]),
+  ]);
+
+  const existingObdSet  = new Set(existingOrders.map((o) => o.obdNumber));
+  const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
+  const existingSkuSet  = new Set(existingSkus.map((s) => s.material));
+
+  // DIFFERENCE vs .xlsx: repair the screen-shortened names on the OBDs that
+  // would be NEW, and surface every name it could not repair before confirm.
+  const newObdNumbers = new Set(obdNumbers.filter((n) => !existingObdSet.has(n)));
+  const names = await resolvePasteCustomerNames(parseResult.obds, newObdNumbers);
+  const nameIssuesByObd = new Map<string, string[]>();
+  for (const k of names.kept) {
+    const which = k.field === "billToCustomerName" ? "bill-to" : "ship-to";
+    const why   = k.reason === "not-in-master"
+      ? `code ${k.code} is not in the customer master`
+      : `the customer master's name for ${k.code} does not start with it`;
+    if (!nameIssuesByObd.has(k.obdNumber)) nameIssuesByObd.set(k.obdNumber, []);
+    nameIssuesByObd.get(k.obdNumber)!.push(
+      `${which} name may be cut short by SAP's screen — ${why}; kept as pasted: "${k.text}"`,
+    );
+  }
+
+  const warningsByObd = new Map<string, string[]>();
+  for (const w of parseResult.warnings) {
+    if (!w.delivery) continue;
+    if (!warningsByObd.has(w.delivery)) warningsByObd.set(w.delivery, []);
+    const compact = w.message.replace(/\. Future:.*$/, "");
+    warningsByObd.get(w.delivery)!.push(`${w.kind}: ${compact}`);
+  }
+
+  type PreviewObd = {
+    obdNumber:    string;
+    outcome:      "new" | "patch" | "skipped" | "error";
+    lineCount:    number;
+    totalUnitQty: number;
+    issues:       string[];
+  };
+
+  const obdEntries: PreviewObd[] = [];
+
+  for (const o of parseResult.obds) {
+    const issues: string[] = [
+      ...(warningsByObd.get(o.obdNumber) ?? []),
+      ...(nameIssuesByObd.get(o.obdNumber) ?? []),
+    ];
+    if (o.shipToCustomerId && !existingCustSet.has(o.shipToCustomerId)) {
+      issues.push(`unknown customer code: ${o.shipToCustomerId}`);
+    }
+    if (!o.division || !resolveSmuFromDivision(o.division).smu) {
+      issues.push(`unmapped SMU division: ${o.division ?? "(none)"}`);
+    }
+    for (const line of o.lines) {
+      if (!existingSkuSet.has(line.skuCodeRaw)) {
+        issues.push(`unknown SKU: ${line.skuCodeRaw}`);
+      }
+    }
+    obdEntries.push({
+      obdNumber:    o.obdNumber,
+      outcome:      existingObdSet.has(o.obdNumber) ? "patch" : "new",
+      lineCount:    o.lines.length,
+      totalUnitQty: o.totalUnitQty ?? 0,
+      issues,
+    });
+  }
+
+  for (const s of parseResult.skipped) {
+    const issues = warningsByObd.get(s.delivery) ?? [];
+    issues.unshift(`skip-reason: ${s.reason} (rows ${s.rowNumbers.join(",")})`);
+    obdEntries.push({
+      obdNumber:    s.delivery,
+      outcome:      "skipped",
+      lineCount:    0,
+      totalUnitQty: 0,
+      issues,
+    });
+  }
+
+  const summary = {
+    newOBDs:     obdEntries.filter((o) => o.outcome === "new").length,
+    patchOBDs:   obdEntries.filter((o) => o.outcome === "patch").length,
+    skippedOBDs: obdEntries.filter((o) => o.outcome === "skipped").length,
+    errorOBDs:   obdEntries.filter((o) => o.outcome === "error").length,
+  };
+
+  return NextResponse.json({
+    ok:        true,
+    // DIFFERENCE vs .xlsx: there is no file, so the label says what it was.
+    filename:  `Clipboard paste (${parseResult.fileStats.totalRows} rows)`,
+    fileStats: parseResult.fileStats,
+    summary,
+    obds:      obdEntries,
+    warnings:  parseResult.warnings,
+    unresolvedCustomers: unresolvedPasteCustomers(names.kept),
+  });
+}
+
+// ── SAP PASTE CONFIRM handler ─────────────────────────────────────────────────
+//
+// A copy of handleManualSapConfirm with exactly three differences, each marked:
+//   1. the headerFile marker
+//   2. resolvePasteCustomerNames, between the preload and the upsert loop
+//   3. (none to upsertObd — the source value is "manual-sap", unchanged)
+
+async function handleSapPasteConfirm(req: Request, session: Session): Promise<NextResponse> {
+  if (process.env.SAP_IMPORT_ENABLED !== "true") {
+    return NextResponse.json(
+      { ok: false, error: "SAP import path not enabled in this environment" },
+      { status: 503 },
+    );
+  }
+
+  const parsedBody = await parseSapPasteBody(req);
+  if (parsedBody.kind === "error") return parsedBody.response;
+  const { block, fallbackObdEmailDate, dateStr } = parsedBody;
+
+  // Re-parsed here — the server is the only parsing authority; the preview's
+  // result is never trusted for a write.
+  const pasteResult = await parseSapPaste(block, { fallbackObdEmailDate });
+  if (pasteResult.kind === "blocked") {
+    return NextResponse.json(
+      { ok: false, error: pasteResult.error, errors: pasteResult.errors },
+      { status: 400 },
+    );
+  }
+  const parseResult = pasteResult.result;
+
+  const userId = parseInt(session.user.id, 10);
+  if (isNaN(userId)) {
+    return NextResponse.json({ ok: false, error: "Invalid session user id" }, { status: 500 });
+  }
+
+  // DIFFERENCE 1 — the marker. import_batches has no source column; this prefix
+  // is how a paste batch is told apart later (`headerFile LIKE '[sap-paste]%'`).
+  const batchRef = await generateBatchRef();
+  const batch = await createBatchWithRetry({
+    batchRef,
+    importedBy:   { connect: { id: userId } },
+    headerFile:   `[sap-paste] clipboard ${parseResult.fileStats.totalRows} rows (obdEmailDate: ${dateStr})`,
+    lineFile:     "",
+    status:       "processing",
+  });
+  const batchId = batch.id;
+
+  try {
+    const obdNumbers = parseResult.obds.map((o) => o.obdNumber);
+
+    // Bulk preload for upsertObd injection.
+    const [shadowOrders, shadowSummaries, shadowCustomers] = await Promise.all([
+      obdNumbers.length > 0
+        ? prisma.orders.findMany({
+            where: { obdNumber: { in: obdNumbers } },
+            select: {
+              id: true, obdNumber: true, customerId: true, shipToCustomerName: true,
+              customerMissing: true, orderType: true, workflowStage: true, slotId: true,
+              invoiceNo: true, invoiceDate: true, soNumber: true,
+              obdEmailDate: true, orderDateTime: true, smu: true, sapStatus: true,
+              materialType: true, natureOfTransaction: true, warehouse: true,
+              totalUnitQty: true, grossWeight: true, volume: true,
+            },
+          })
+        : Promise.resolve([] as Array<ExistingOrder & { obdNumber: string }>),
+      obdNumbers.length > 0
+        ? prisma.import_raw_summary.findMany({
+            where:   { obdNumber: { in: obdNumbers } },
+            orderBy: { id: "asc" },
+            select:  { id: true, obdNumber: true, obdEmailTime: true, smuCode: true },
+          })
+        : Promise.resolve([] as Array<{ id: number; obdNumber: string; obdEmailTime: string | null; smuCode: string | null }>),
+      prisma.delivery_point_master.findMany({
+        where:  { customerCode: { in: parseResult.obds.map((o) => o.shipToCustomerId).filter((c): c is string => c !== null && c !== "") } },
+        select: { id: true, customerCode: true },
+      }),
+    ]);
+
+    const orderByObd = new Map<string, ExistingOrder>();
+    for (const o of shadowOrders) {
+      const { obdNumber, ...existing } = o;
+      orderByObd.set(obdNumber, existing as ExistingOrder);
+    }
+
+    const summaryByObd = new Map<string, ExistingSummary>();
+    for (const s of shadowSummaries) {
+      if (!summaryByObd.has(s.obdNumber)) {
+        summaryByObd.set(s.obdNumber, { id: s.id, obdEmailTime: s.obdEmailTime, smuCode: s.smuCode });
+      }
+    }
+
+    const summaryIds = Array.from(summaryByObd.values()).map((s) => s.id);
+    const shadowLines = summaryIds.length > 0
+      ? await prisma.import_raw_line_items.findMany({
+          where:  { rawSummaryId: { in: summaryIds } }, // no lineStatus filter — patch logic needs to see soft-removed
+          select: {
+            id: true, rawSummaryId: true, lineId: true, skuCodeRaw: true,
+            unitQty: true, volumeLine: true, isTinting: true, lineStatus: true,
+          },
+        })
+      : [];
+
+    const linesBySummaryId = new Map<number, ExistingLine[]>();
+    for (const l of shadowLines) {
+      if (!linesBySummaryId.has(l.rawSummaryId)) linesBySummaryId.set(l.rawSummaryId, []);
+      linesBySummaryId.get(l.rawSummaryId)!.push(l as ExistingLine);
+    }
+
+    const customerIdByCode = new Map(shadowCustomers.map((c) => [c.customerCode, c.id]));
+
+    const rollupCatalog = await loadPackCatalog([
+      ...parseResult.obds.flatMap((o) => o.lines.map((l) => l.skuCodeRaw)),
+      ...shadowLines.map((l) => l.skuCodeRaw),
+    ]);
+
+    // DIFFERENCE 2 — repair screen-shortened customer names, CREATE PATH ONLY.
+    // Scoped to OBDs with no order: on the patch path header.ts:74 only fills a
+    // NULL ship-to name and bill-to is never patched, so nothing there can store
+    // a shortened name. A create that loses a P2002 race and falls back to
+    // patchPath (lib/import-upsert.ts:197-205) carries harmless repaired names.
+    const createObdNumbers = new Set(obdNumbers.filter((n) => !orderByObd.has(n)));
+    const names = await resolvePasteCustomerNames(parseResult.obds, createObdNumbers);
+    if (names.kept.length > 0 || names.repaired > 0) {
+      console.log(`[sap-paste] names: repaired=${names.repaired} kept=${names.kept.length}`, batchRef);
+    }
+
+    // Per-OBD upsert loop.
+    const now = new Date();
+    type Counter = { created: number; patched: number; unchanged: number; errored: number };
+    const counters: Counter = { created: 0, patched: 0, unchanged: 0, errored: 0 };
+    const errors: Array<{ obdNumber: string; message: string }> = [];
+
+    type ResultEntry = { obdNumber: string; outcome: string; orderId: number | null; effects: import("@/lib/import-upsert").DownstreamEffect[] };
+    const results: ResultEntry[] = [];
+
+    for (const input of names.obds) {
+      const existingOrder   = orderByObd.get(input.obdNumber) ?? null;
+      const existingSummary = summaryByObd.get(input.obdNumber) ?? null;
+      const existingLines   = existingSummary
+        ? (linesBySummaryId.get(existingSummary.id) ?? [])
+        : [];
+      const customerId      = input.shipToCustomerId
+        ? (customerIdByCode.get(input.shipToCustomerId) ?? null)
+        : null;
+
+      // Source is "manual-sap" ON PURPOSE — same report, same line authority.
+      const r = await upsertObd(
+        input, "manual-sap", batchId, batchRef, userId, now,
+        { dryRun: false, preloaded: { order: existingOrder, summary: existingSummary, lines: existingLines, customerId } },
+      );
+
+      counters[r.outcome] += 1;
+      if (r.outcome === "errored" && r.errors.length > 0) {
+        errors.push({ obdNumber: r.obdNumber, message: r.errors.join(" | ") });
+      }
+      results.push({ obdNumber: r.obdNumber, outcome: r.outcome, orderId: r.orderId, effects: r.effects });
+    }
+
+    // Reserve a challan-number range from the current DB max, once.
+    const challanEffectCount = results.reduce(
+      (acc, r) => acc + r.effects.filter((e) => e.type === "challan-create").length,
+      0,
+    );
+    let nextChallanSeq = 1;
+    if (challanEffectCount > 0) {
+      const lastChallan = await prisma.delivery_challans.findFirst({
+        orderBy: { id: "desc" },
+        select: { challanNumber: true },
+      });
+      if (lastChallan?.challanNumber) {
+        const parts   = lastChallan.challanNumber.split("-");
+        const lastNum = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(lastNum)) nextChallanSeq = lastNum + 1;
+      }
+    }
+    const challanYear = new Date().getFullYear();
+    const nextSeqClosure = (): number => nextChallanSeq++;
+
+    // Effect dispatch — sequential, per OBD, every effect wrapped in try/catch.
+    for (const r of results) {
+      if (r.outcome === "errored") continue;
+      for (const eff of r.effects) {
+        try {
+          switch (eff.type) {
+            case "mail-order-enrichment":
+              await applyMailOrderEnrichment([eff.payload.soNumber as string]);
+              break;
+            case "challan-create":
+              await createChallanForOrder(eff.orderId, nextSeqClosure, challanYear);
+              break;
+            case "query-summary-rebuild":
+              await rebuildQuerySummaryForOrder(
+                eff.orderId,
+                String(eff.payload.obdNumber ?? r.obdNumber),
+                rollupCatalog,
+              );
+              break;
+            case "customer-resolved":
+              console.log("[sap-paste] customer-resolved effect", eff);
+              break;
+            case "order-type-mismatch":
+              console.log("[sap-paste] order-type-mismatch effect", eff);
+              break;
+            default: {
+              console.log("[sap-paste] slot-recalc effect (no-op)", eff);
+            }
+          }
+        } catch (effErr) {
+          console.error("[sap-paste] effect failed", { type: eff.type, orderId: eff.orderId }, effErr);
+        }
+      }
+    }
+
+    // The no-mail-order fallback — identical to the .xlsx confirm (see there).
+    await applyNoMailOrderFallback(
+      results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber),
+    );
+
+    await prisma.import_batches
+      .update({
+        where: { id: batchId },
+        data: {
+          status:      "completed",
+          totalObds:   parseResult.skipped.length + results.length,
+          skippedObds: parseResult.skipped.length,
+          failedObds:  counters.errored,
+        },
+      })
+      .catch(() => undefined);
+
+    return NextResponse.json({
+      ok:       true,
+      batchId,
+      batchRef,
+      summary:  counters,
+      errors,
+      unresolvedCustomers: unresolvedPasteCustomers(names.kept),
+    });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : "SAP paste confirm failed" },
+      { status: 500 },
+    );
+  }
+}
+
 // ── HMAC verification ─────────────────────────────────────────────────────────
 
 function verifyHmacSignature(req: Request): boolean {
@@ -4129,9 +4611,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "confirm") return handleConfirm(req, session!);
   if (action === "manual-sap-preview") return handleManualSapPreview(req, session!);
   if (action === "manual-sap-confirm") return handleManualSapConfirm(req, session!);
+  if (action === "sap-paste-preview")  return handleSapPastePreview(req, session!);
+  if (action === "sap-paste-confirm")  return handleSapPasteConfirm(req, session!);
 
   return NextResponse.json(
-    { error: "Invalid action. Use ?action=auto, ?action=check, ?action=auto-json, ?action=patch-headers, ?action=pending-invoices, ?action=day-obds, ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
+    { error: "Invalid action. Use ?action=auto, ?action=check, ?action=auto-json, ?action=patch-headers, ?action=pending-invoices, ?action=day-obds, ?action=preview, ?action=confirm, ?action=manual-sap-preview, ?action=manual-sap-confirm, ?action=sap-paste-preview, or ?action=sap-paste-confirm" },
     { status: 400 },
   );
 }
