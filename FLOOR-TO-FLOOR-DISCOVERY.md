@@ -4,6 +4,35 @@ Read-only. No code was changed to produce this. Every claim below cites a file a
 
 ---
 
+## Where we are — 2026-09-14
+
+| Slice | State | Commits |
+|---|---|---|
+| 1 — dead status, dead button, caption, wording switch | done | `c539aae4` |
+| 2 — `trip_activity`, a trip's own history | done | `c84f8faa`, fixes `aef342a1` (slot/transporter named), `b15b337b` (vehicle logs its transporter) |
+| 3 — trip release route deleted, trips-only `POST .../confirm` | done, deployed, acceptance-tested on L-260914-28 | `8eaa4663` |
+| 3b — Clear hold | **parked — groundwork only**, nothing wired | `82b25ce0` |
+| 4 — Mark dispatched | **next** | — |
+
+The rule since slice 3: **no trip action may change a bill's status or its hold.** Confirm and
+PATCH touch no order row; Add, Remove and Cancel write `tripDropId` and nothing else.
+
+**Parked, each waiting on its own decision:**
+
+- **Clear hold** (3b) — `FLOOR_CLEAR_HOLD_STAGES` and `FLOOR_CLEAR_HOLD_NOTE` exist, unused. Not
+  built: the `clear-hold` action in `/api/floor/actions` and the detail-panel button. 29 held bills
+  at `pick_done` / `pick_checked` still cannot leave Hold. See §9.5.
+- **Held bills on trips** — whether a held bill may be added to a trip at all. To be decided in the
+  same conversation as Clear hold.
+- **Orphan `trip_drops`** — cancel leaves empty stops behind (104 on 2026-09-14, plus one from the
+  slice 3 test). See §9.4.
+- **Slice 8 — the band's "at desk, floor cannot see" text** — true only for drafts since slice 3
+  removed the visibility stamp. See §9.5.
+
+Sections 0–9 below are the record of the tree as found; later slices annotate them in blockquotes.
+
+---
+
 ## 0. First, a naming note
 
 There is nothing called "floor to floor" in this repo. A case-insensitive search for
