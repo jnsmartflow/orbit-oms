@@ -214,6 +214,45 @@ export async function logTripVehicleChanged(opts: {
   });
 }
 
+/** The PATCH fields `details_changed` covers. The vehicle has its own action. */
+export type TripDetailField = "dispatchWindowId" | "transporterId" | "note" | "transporterTripNo";
+
+export interface TripDetailChange {
+  field: TripDetailField;
+  /** Raw column values — ids for the two FKs. These go into `detail` untouched. */
+  from: string | number | null;
+  to: string | number | null;
+  /**
+   * The resulting value as the trip header prints it — the slot's `windowTime`,
+   * the transporter's `name`. Resolved by the caller through
+   * loadSlotAndTransporterNames (lib/trips/queries.ts), the header's own
+   * resolver. Summary wording only; NEVER written into `detail`.
+   */
+  toLabel?: string | null;
+}
+
+/**
+ * One field's clause, in the words the floor uses — never the column name.
+ * Reads the same way vehicle_changed does: "Vehicle set to GJ05AB1234".
+ *
+ * ⚠ AN UNRESOLVED ID STILL SAYS SOMETHING TRUE. A slot or transporter row that
+ * cannot be found (deactivated, deleted) falls back to "#12" rather than
+ * dropping the clause or printing the column name back.
+ */
+function detailClause(c: TripDetailChange): string {
+  const shown = c.toLabel ?? (c.to !== null ? `#${c.to}` : null);
+  switch (c.field) {
+    case "dispatchWindowId":
+      return shown === null ? "Slot cleared" : `Slot set to ${shown}`;
+    case "transporterId":
+      return shown === null ? "Transporter cleared" : `Transporter set to ${shown}`;
+    case "note":
+      return c.to === null ? "Note cleared" : "Note updated";
+    case "transporterTripNo":
+      return c.to === null ? "Transporter trip no cleared" : `Transporter trip no set to ${c.to}`;
+  }
+}
+
 /**
  * Any other edit through PATCH — the slot, the transporter, the note, the
  * transporter's own trip number.
@@ -221,20 +260,27 @@ export async function logTripVehicleChanged(opts: {
  * 🔴 IT EXISTS SO A SLOT CHANGE IS NOT INVISIBLE. Logging only the vehicle
  * would have left four of PATCH's six fields unrecorded, which is most of the
  * gap this table was built to close.
+ *
+ * ⚠ SUMMARY IN FLOOR WORDS, DETAIL IN COLUMN NAMES (2026-09-14). The first
+ * cut printed "Updated transporterId", which nobody on the floor can read. The
+ * summary now names each field and its new value; `detail.changes` still
+ * carries `{ field, from, to }` with the raw column names and ids, exactly as
+ * before — the labels are wording, and wording is not a fact worth storing twice.
  */
 export async function logTripDetailsChanged(opts: {
   tripId: number;
   actorId: number;
-  changes: Array<{ field: string; from: unknown; to: unknown }>;
+  changes: TripDetailChange[];
 }): Promise<void> {
   if (opts.changes.length === 0) return;
-  const names = opts.changes.map((c) => c.field).join(", ");
+  const summary = opts.changes.map(detailClause).join(" · ");
+  const rawChanges = opts.changes.map(({ field, from, to }) => ({ field, from, to }));
   await writeActivity({
     tripId: opts.tripId,
     action: TRIP_DETAILS_CHANGED,
     actorId: opts.actorId,
-    summary: `Updated ${names}`,
-    detail: { changes: opts.changes as unknown as Prisma.InputJsonValue },
+    summary,
+    detail: { changes: rawChanges },
   });
 }
 

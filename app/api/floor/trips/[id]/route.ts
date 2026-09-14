@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { logTripDetailsChanged, logTripVehicleChanged } from "@/lib/trips/activity";
+import {
+  logTripDetailsChanged,
+  logTripVehicleChanged,
+  type TripDetailChange,
+} from "@/lib/trips/activity";
 import { prisma } from "@/lib/prisma";
-import { getTripDetail } from "@/lib/trips/queries";
+import { getTripDetail, loadSlotAndTransporterNames } from "@/lib/trips/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -302,12 +306,34 @@ export async function PATCH(
 
     // Everything else, compared field by field against the row as it was.
     const OTHER_FIELDS = ["transporterId", "dispatchWindowId", "note", "transporterTripNo"] as const;
-    const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
+    const changes: TripDetailChange[] = [];
     for (const field of OTHER_FIELDS) {
       if (!has(body, field)) continue;
       const from = trip[field] ?? null;
       const to = data[field] ?? null;
       if (from !== to) changes.push({ field, from, to });
+    }
+
+    // The summary names the NEW slot and transporter, in the header's own
+    // words — resolved through the header's own resolver so the two never
+    // disagree. At most two statements, and none on a press that touched
+    // neither; skipped entirely when nothing changed.
+    const newWindowIds = changes
+      .filter((c) => c.field === "dispatchWindowId" && typeof c.to === "number")
+      .map((c) => c.to as number);
+    const newTransporterIds = changes
+      .filter((c) => c.field === "transporterId" && typeof c.to === "number")
+      .map((c) => c.to as number);
+    if (newWindowIds.length > 0 || newTransporterIds.length > 0) {
+      const { windowTimeById, transporterById } = await loadSlotAndTransporterNames(
+        newWindowIds,
+        newTransporterIds,
+      );
+      for (const c of changes) {
+        if (typeof c.to !== "number") continue;
+        if (c.field === "dispatchWindowId") c.toLabel = windowTimeById.get(c.to) ?? null;
+        if (c.field === "transporterId") c.toLabel = transporterById.get(c.to) ?? null;
+      }
     }
     await logTripDetailsChanged({ tripId, actorId: Number(session.user.id), changes });
 

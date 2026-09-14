@@ -349,6 +349,41 @@ async function loadTripLabels(trips: TripRow[]) {
         select: { id: true, name: true },
       })
     : [];
+  const { windowTimeById, transporterById } = await loadSlotAndTransporterNames(
+    windowIds,
+    transporterIds,
+  );
+  const vehicles = vehicleIds.length
+    ? await prisma.vehicle_master.findMany({
+        where: { id: { in: vehicleIds } },
+        select: { id: true, vehicleNo: true },
+      })
+    : [];
+
+  return {
+    deliveryTypeById: new Map(deliveryTypes.map((r) => [r.id, r.name])),
+    windowTimeById,
+    transporterById,
+    vehicleNoById: new Map(vehicles.map((r) => [r.id, r.vehicleNo])),
+  };
+}
+
+/**
+ * The slot's time and the transporter's name, by id — the two words the trip
+ * header prints (`windowTime`, `transporterName`).
+ *
+ * 🔴 ONE RESOLVER FOR THE HEADER AND THE ACTIVITY LOG (2026-09-14). The PATCH
+ * route calls this to word its `details_changed` summary, so "Slot set to 18:00"
+ * in the history and "· 18:00" in the header are read from the same column by
+ * the same query and cannot disagree. Word either one from a different column
+ * (`dispatch_slot_master.label`, say) and they will.
+ *
+ * Batched `id IN (…)`; an empty id list issues no query.
+ */
+export async function loadSlotAndTransporterNames(
+  windowIds: number[],
+  transporterIds: number[],
+): Promise<{ windowTimeById: Map<number, string>; transporterById: Map<number, string> }> {
   const windows = windowIds.length
     ? await prisma.dispatch_slot_master.findMany({
         where: { id: { in: windowIds } },
@@ -361,18 +396,9 @@ async function loadTripLabels(trips: TripRow[]) {
         select: { id: true, name: true },
       })
     : [];
-  const vehicles = vehicleIds.length
-    ? await prisma.vehicle_master.findMany({
-        where: { id: { in: vehicleIds } },
-        select: { id: true, vehicleNo: true },
-      })
-    : [];
-
   return {
-    deliveryTypeById: new Map(deliveryTypes.map((r) => [r.id, r.name])),
     windowTimeById: new Map(windows.map((r) => [r.id, r.windowTime])),
     transporterById: new Map(transporters.map((r) => [r.id, r.name])),
-    vehicleNoById: new Map(vehicles.map((r) => [r.id, r.vehicleNo])),
   };
 }
 
