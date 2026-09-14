@@ -1239,6 +1239,15 @@ invisible to pickers as a draft's, and the band calls them "waiting". Today the 
 trip holds a waiting bill (read 2026-09-14), so nothing shows wrongly. Owner decision: leave it to
 slice 8.
 
+**The "not dispatched" banner calls checked bills "still being picked" — for slice 4.** Seen in
+the slice 3 acceptance test on L-260914-28: the detail header read "2 of 2 bills not dispatched —
+2 still being picked" while both bills showed Done in the table. Both were at `pick_checked`.
+The cause is the arithmetic at `components/floor/trip-detail-header.tsx:101`:
+`stillGoing = total − dispatchedCount − held` counts a checked bill that is waiting for Mark
+dispatched as "still being picked", because nothing subtracts the checked-and-waiting bills
+(the same figure the button's own count uses). Owner decision: not fixed — the banner exists only
+to prompt another press of Mark dispatched, and slice 4 deletes it with the button.
+
 **Held bills that cannot leave Hold.** Read 2026-09-14: 179 bills carry `dispatchStatus = 'hold'`
 — 143 at `pending_support` (142 with no slot), 7 at `pending_picking`, 20 at `pick_checked`,
 9 at `pick_done`. Every Release on the floor goes through `FLOOR_RELEASABLE_STAGES`

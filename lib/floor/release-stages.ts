@@ -27,3 +27,32 @@ export const FLOOR_RELEASABLE_STAGES: string[] = [
   // exact silent-no-op bug this list fixes.
   "pending_picking",
 ];
+
+// ── CLEAR HOLD (slice 3b, 2026-09-14) ───────────────────────────────────────
+//
+// The stages a HELD bill may have its hold cleared at: `dispatchStatus`
+// hold → dispatch, stage untouched, no slot asked for.
+//
+// 🔴 EVERY STAGE HERE IS ONE THE BILL REACHED BY BEING SENT TO THE FLOOR. Such a
+// bill needs nothing but the hold gone. Before this list existed, the only way
+// off Hold was Release, and Release admits only FLOOR_RELEASABLE_STAGES — so a
+// bill held at `pick_done` or `pick_checked` could not leave Hold at all (29 of
+// them, read 2026-09-14).
+//
+// 🔴 `pending_support` IS DELIBERATELY ABSENT, AND MUST NEVER BE ADDED. That
+// bill has never been sent anywhere; it needs a slot and a stage, which is
+// Release. Writing `dispatch` onto it leaves a bill no screen shows — no arm of
+// floorBoardWhere (lib/floor/queries.ts) matches `pending_support` + `dispatch`,
+// nor the Hold tab, nor the picking queue. That is the one outcome worse than
+// being stuck on Hold.
+//
+// ⚠ WRITTEN OUT, NOT PICKING_ACTIVE_STAGES by import. They are the same four
+// today; a stage added to the picking ladder must be a decision to make it
+// clearable, never something this list inherits. Pure and import-free so the
+// detail panel (client) and the actions route (server) read ONE list.
+export const FLOOR_CLEAR_HOLD_STAGES: string[] = [
+  "pending_picking",
+  "pick_assigned",
+  "pick_done",
+  "pick_checked",
+];
