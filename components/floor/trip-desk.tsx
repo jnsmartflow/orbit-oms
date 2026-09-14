@@ -542,7 +542,6 @@ export function TripDesk({
       <>
         <TripDetailHeader
           trip={selectedTrip}
-          gateOn={gateOn}
           busy={tripBusyId === selectedTrip.id}
           readOnly={isHistory}
           onRelease={() => onReleaseTrip(selectedTrip.id)}
@@ -632,7 +631,6 @@ export function TripDesk({
         poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
         selection={railSelection}
         onSelect={onSelectRail}
-        gateOn={gateOn}
       />
       {/* THE TABLE COLUMN. Tabs first, exactly as the original July board had
           them and as Mail Orders still does — the scope row spans the page

@@ -658,7 +658,14 @@ export function FloorPage() {
           // bucket an operator has to act on — those bills come back to the trip
           // when tinting finishes, and a silent count would read as a release
           // that quietly did less than it said.
-          const parts: string[] = [`${body?.trip?.tripNumber ?? "Trip"} ${gateOn ? "released" : "confirmed"}`];
+          // ⚠ THE VERB IS FROZEN AT "confirmed" (2026-09-14). It read
+          // `gateOn ? "released" : "confirmed"`, which made the toast disagree
+          // with the button that raised it the moment the switch moved. The
+          // button is fixed at "Confirm plan" (lib/floor/trip-wording.ts), so
+          // the toast says the same word. The `shown to pickers` clause below is
+          // NOT frozen with it — that one reports a fact about the gate rather
+          // than naming the press, and it is only true when the gate is on.
+          const parts: string[] = [`${body?.trip?.tripNumber ?? "Trip"} confirmed`];
           const released: number[] = body?.released ?? [];
           const already: number[] = body?.alreadyVisible ?? [];
           const waitingForTint: number[] = body?.waitingForTint ?? [];

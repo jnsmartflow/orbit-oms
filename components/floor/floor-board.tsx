@@ -645,8 +645,12 @@ export function FloorBoard({
           // Draft and confirmed ONLY. A dispatched or cancelled trip is finished
           // with and the bills route refuses both server-side, so offering them
           // would be offering a guaranteed error.
+          //
+          // ⚠ A THIRD TERM, `|| t.status === "loading"`, WENT ON 2026-09-14 with
+          // the status itself. Nothing ever wrote it and no row was ever at it,
+          // so this set is unchanged.
           addableTrips={(trips ?? []).filter(
-            (t) => t.status === "draft" || t.status === "released" || t.status === "loading",
+            (t) => t.status === "draft" || t.status === "released",
           )}
           onAddToTrip={onAddToTrip}
           // Its own open-route state, separate from the By-route view's

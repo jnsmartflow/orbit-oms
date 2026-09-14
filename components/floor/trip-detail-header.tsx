@@ -27,7 +27,6 @@ const PRIMARY =
 
 export function TripDetailHeader({
   trip,
-  gateOn,
   busy,
   readOnly,
   onRelease,
@@ -37,7 +36,6 @@ export function TripDetailHeader({
   onCancelTrip,
 }: {
   trip: TripSummary;
-  gateOn: boolean;
   busy: boolean;
   /** History — a past day is a record, not a thing to edit. */
   readOnly: boolean;
@@ -52,8 +50,8 @@ export function TripDetailHeader({
   onCancelTrip: () => void;
 }) {
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
-  const meta = tripStateMeta(trip, gateOn);
-  const wording = tripWording(gateOn);
+  const meta = tripStateMeta(trip);
+  const wording = tripWording();
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
   const isClosed = trip.status === "cancelled" || trip.status === "dispatched";
   const isDraft = trip.status === "draft";
@@ -276,18 +274,6 @@ export function TripDetailHeader({
           <button type="button" onClick={onChangeVehicle} disabled={busy} className={ACTION}>
             Change vehicle
           </button>
-          {/* ⚠ NOT BUILT. There is no route that writes trip_drops.dropSeq, and
-              this step was told to add none. Rendered disabled rather than
-              omitted so the mockup's action row is recognisable and the gap is
-              visible rather than silently missing. */}
-          <button
-            type="button"
-            disabled
-            title="Not built yet — stop order is the order bills were added"
-            className={ACTION}
-          >
-            Reorder stops
-          </button>
           <button
             type="button"
             onClick={onCancelTrip}
@@ -296,10 +282,6 @@ export function TripDetailHeader({
           >
             Cancel trip
           </button>
-
-          {isDraft && wording.releaseCaveat && (
-            <span className="basis-full text-[10.5px] text-gray-400">{wording.releaseCaveat}</span>
-          )}
         </div>
       )}
     </div>

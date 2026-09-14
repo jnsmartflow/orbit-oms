@@ -3146,7 +3146,10 @@ model ci_return_lines {
 //
 // 🔴 SEVEN LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA (CORE §7.4), so
 // they are invisible in this file and are recorded here by hand:
-//   chk_trips_status     CHECK (status IN ('draft','released','loading','dispatched','cancelled'))
+//   chk_trips_status     CHECK (status IN ('draft','released','dispatched','cancelled'))
+//     ⚠ 'loading' was REMOVED from this CHECK on 2026-09-14. Nothing had ever
+//       written it and production held zero rows at it. It comes back only
+//       alongside the loading screen, by ALTER, never by code assuming it.
 //   chk_trips_type_code  CHECK ("typeCode" IN ('L','U','I'))
 //   chk_trips_seq_positive        CHECK (seq >= 1)
 //   chk_trips_vehicle_one_of

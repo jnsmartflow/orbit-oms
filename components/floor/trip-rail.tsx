@@ -54,13 +54,27 @@ function fmtTripDay(dateOnly: string): string {
 /** The rail's selection: the pool, or one trip. */
 export type RailSelection = { kind: "pool" } | { kind: "trip"; tripId: number };
 
+// ⚠ EVERY KEY HERE IS A VALUE `chk_trips_status` ADMITS, AND THAT IS THE WHOLE
+// LIST. A `loading` entry sat here until 2026-09-14 wearing an amber "Loading"
+// chip; no route ever wrote that status, production never held a row at it, and
+// the constraint dropped it in the same slice. If the loading screen is ever
+// built, the value comes back to the CHECK and to this map together.
+//
+// 🔴 A MISS MUST NEVER REACH THE DOM AS `undefined`. Read this map through
+// `stateMetaFor` below and never by direct index — a status the map has not been
+// taught then renders as itself in the neutral draft wash, instead of putting
+// `undefined.label` on the rail.
 const STATE_META: Record<string, { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
   released: { label: "Confirmed", cls: "bg-[#e8effd] text-[#2563eb]" },
-  loading: { label: "Loading", cls: "bg-[#fdf3e3] text-[#b45309]" },
   dispatched: { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
   cancelled: { label: "Cancelled", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
 };
+
+/** The safe answer for a status STATE_META does not carry. Never undefined. */
+function stateMetaFor(status: string): { label: string; cls: string } {
+  return STATE_META[status] ?? { label: status, cls: STATE_META.draft.cls };
+}
 const READY = { label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
 
 /**
@@ -103,17 +117,19 @@ export function toStatusCounts(c: TripSummary["counts"], dispatchedCount = 0): S
 }
 
 /** The chip a trip wears. `ready` is DERIVED and outranks the stored status. */
-export function tripStateMeta(trip: TripSummary, gateOn: boolean) {
+export function tripStateMeta(trip: TripSummary) {
   if (trip.status === "cancelled" || trip.status === "dispatched") {
-    return STATE_META[trip.status];
+    return stateMetaFor(trip.status);
   }
   if (trip.isReady) return READY;
   if (trip.status === "released") {
-    // "Confirmed" with desk control off, "Released" with it on — the same stored
-    // value, described honestly for the state the desk is in.
-    return { label: tripWording(gateOn).releasedLabel, cls: STATE_META.released.cls };
+    // ⚠ THE LABEL NO LONGER DEPENDS ON THE DESK-CONTROL SWITCH (2026-09-14).
+    // This read `tripWording(gateOn).releasedLabel` and said "Released" with the
+    // gate on, "Confirmed" with it off. One fixed word now — see
+    // lib/floor/trip-wording.ts. The stored status is still `released`.
+    return { label: tripWording().releasedLabel, cls: STATE_META.released.cls };
   }
-  return STATE_META[trip.status] ?? { label: trip.status, cls: STATE_META.draft.cls };
+  return stateMetaFor(trip.status);
 }
 
 export function TripRail({
@@ -124,7 +140,6 @@ export function TripRail({
   poolLitres,
   selection,
   onSelect,
-  gateOn,
 }: {
   trips: TripSummary[] | null;
   loading: boolean;
@@ -145,7 +160,6 @@ export function TripRail({
   // pile is one too many, and the tab is the one you can act on.
   selection: RailSelection;
   onSelect: (sel: RailSelection) => void;
-  gateOn: boolean;
 }) {
   const all = trips ?? [];
   // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11). One filter, applied once,
@@ -252,7 +266,6 @@ export function TripRail({
             <TripCard
               key={t.id}
               trip={t}
-              gateOn={gateOn}
               anchorIso={anchorIso}
               selected={selection.kind === "trip" && selection.tripId === t.id}
               onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
@@ -269,13 +282,11 @@ function TripCard({
   trip,
   selected,
   onSelect,
-  gateOn,
   anchorIso,
 }: {
   trip: TripSummary;
   selected: boolean;
   onSelect: () => void;
-  gateOn: boolean;
   anchorIso: string;
 }) {
   // 🔴 A CARRIED DRAFT READS AS OLD, NOT AS TODAY'S (2026-09-11). An open draft
@@ -289,7 +300,7 @@ function TripCard({
   // draft can show this chip.
   const isCarried = trip.tripDate < anchorIso;
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
-  const meta = tripStateMeta(trip, gateOn);
+  const meta = tripStateMeta(trip);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
   const isDraft = trip.status === "draft";
   const isCancelled = trip.status === "cancelled";

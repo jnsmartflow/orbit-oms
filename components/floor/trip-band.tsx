@@ -28,16 +28,23 @@ import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
 
-/** chk_trips_status's five values → the chip. `ready` is DERIVED, never stored.
+/** chk_trips_status's four values → the chip. `ready` is DERIVED, never stored.
  *
- *  ⚠ `released`'s LABEL comes from lib/floor/trip-wording.ts and depends on the
- *  desk-control state, so it is filled in below rather than here — with the gate
- *  off, "Released" would name an event that did not happen. The STORED value is
- *  'released' either way and must not be renamed (chk_trips_status). */
+ *  ⚠ A `loading` ENTRY SAT HERE UNTIL 2026-09-14, wearing an amber "Loading"
+ *  chip. Nothing ever wrote that status, production never held a row at it, and
+ *  the CHECK dropped it in the same slice. Same removal in trip-rail.tsx. If the
+ *  loading screen is ever built, the value returns to the CHECK and to both maps
+ *  together.
+ *
+ *  ⚠ `released`'s LABEL is filled in below rather than here, because the chip
+ *  reads "Confirmed" over a row whose status column says `released`. The STORED
+ *  value must not be renamed (chk_trips_status); see lib/floor/trip-wording.ts.
+ *
+ *  🔴 READ THROUGH THE `??` BELOW, never by bare index — a status this map has
+ *  not been taught must render as itself, not as `undefined.label`. */
 const STATE_META: Record<string, { label: string; cls: string }> = {
   draft: { label: "Draft — at desk", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
   released: { label: "Released", cls: "bg-[#e8effd] text-[#2563eb]" },
-  loading: { label: "Loading", cls: "bg-[#fdf3e3] text-[#b45309]" },
   dispatched: { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
   cancelled: { label: "Cancelled", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
 };
@@ -133,7 +140,7 @@ export function TripBand({
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
   const pending = counts.total - counts.done;
   // The gate decides what the second state is CALLED, never what is stored.
-  const wording = tripWording(gateOn === true);
+  const wording = tripWording();
 
   // The mockup's three shells: ready (green edge), draft (dashed), dispatched
   // (faded). Everything else is the plain surface.
@@ -152,8 +159,9 @@ export function TripBand({
     trip.isReady && trip.status !== "dispatched" && trip.status !== "cancelled"
       ? READY_META
       : trip.status === "released"
-        ? // "Released" with the gate on, "Confirmed" with it off — the same
-          // stored value, described honestly for the state the desk is in.
+        ? // ⚠ ONE FIXED WORD SINCE 2026-09-14. This used to read "Released" with
+          // desk control on and "Confirmed" with it off; the stored value was
+          // `released` either way. See lib/floor/trip-wording.ts.
           { label: wording.releasedLabel, cls: STATE_META.released.cls }
         : (STATE_META[trip.status] ?? { label: trip.status, cls: "bg-[#f1f0f5] text-[#6f6d7d]" });
 
@@ -247,8 +255,8 @@ export function TripBand({
       </div>
 
       {/* ── Actions ────────────────────────────────────────────────────────
-          Draft:     [Confirm plan / Release to floor] · Add bills · Change vehicle · Cancel trip
-          Confirmed:                                     Add bills · Change vehicle · Cancel trip
+          Draft:     [Confirm plan] · Add bills · Change vehicle · Cancel trip
+          Confirmed:                 Add bills · Change vehicle · Cancel trip
           Cancelled / dispatched: none at all.
 
           ⚠ ALWAYS VISIBLE, open or closed. The whole point of a band is that
@@ -295,14 +303,6 @@ export function TripBand({
             >
               Cancel trip
             </button>
-          )}
-
-          {/* 🔴 SAYS WHAT IS TRUE. With desk control off the bills are ALREADY
-              on the supervisor's board, so the button settles the plan and
-              changes nothing downstairs. Promising a handover that will not
-              happen is how an operator stops trusting the button. */}
-          {isDraft && onRelease && wording.releaseCaveat && (
-            <span className="basis-full text-[10.5px] text-gray-400">{wording.releaseCaveat}</span>
           )}
         </div>
       )}
