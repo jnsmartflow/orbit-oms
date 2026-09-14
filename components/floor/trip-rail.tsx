@@ -72,18 +72,21 @@ const READY = { label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
  * counts through it. The band's own legend names the remainder; a rail card is
  * too small for that, so here it simply reads as waiting.
  */
-export function toStatusCounts(c: TripSummary["counts"]): StatusCounts {
+export function toStatusCounts(c: TripSummary["counts"], dispatchedCount = 0): StatusCounts {
   return {
     waiting: c.waiting + c.other,
     withPicker: c.withPicker,
     needsCheck: c.picked,
-    done: c.checked,
-    // ALWAYS 0 here, and that is correct rather than a gap. `bucketFor`
-    // (lib/trips/queries.ts) already folds `dispatched` into `checked` — a trip
-    // asks "is every bill on this load finished", and shipped and checked are
-    // both yes. The separate Dispatched reading belongs to Floor History, which
-    // is answering a different question about a different day.
-    dispatched: 0,
+    // ⚠ SPLIT SINCE 2026-09-14, AND THE SUBTRACTION IS THE WHOLE FIX.
+    // `bucketFor` folds `dispatched` INTO `checked` on purpose — `isReady`
+    // depends on it — so `counts.checked` is "finished", both still-here and
+    // gone. The bar was reading that as "8 done" while two of those bills wore a
+    // Dispatched pill one column over: one word for two states, on live, in
+    // front of the operator. `dispatchedCount` is the separate figure the
+    // payload already carries for exactly this.
+    done: Math.max(0, c.checked - dispatchedCount),
+    dispatched: dispatchedCount,
+    // `dispatched` is set in the fold above — the caller passes the count.
     // ⚠ ALWAYS 0 HERE TOO, and required for the same reason `dispatched` is:
     // StatusCounts needs a key per status or the bar renders short. A TRIP is
     // counted by TripBillCounts (lib/trips/queries.ts), whose `bucketFor` has no
@@ -285,7 +288,7 @@ function TripCard({
   // Date at all. Only a draft is ever carried (see getTripsForDate), so only a
   // draft can show this chip.
   const isCarried = trip.tripDate < anchorIso;
-  const counts = toStatusCounts(trip.counts);
+  const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
   const meta = tripStateMeta(trip, gateOn);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
   const isDraft = trip.status === "draft";

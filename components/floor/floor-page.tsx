@@ -625,47 +625,14 @@ export function FloorPage() {
   /** Confirm / Release a draft trip. The stored value is 'released' either way. */
   const releaseTrip = useCallback(
     async (tripId: number) => {
-      // ── ONE CONFIRMATION STEP, BECAUSE THIS IS NOW TERMINAL (2026-09-13) ──
-      //
-      // 🔴 THE BUTTON MOVES REAL GOODS TO THE END OF THE LADDER AND THE ONLY
-      // UNDO IS HAND-WRITTEN SQL. Until today this fired the POST on the first
-      // click with nothing in between, which was right when confirming only
-      // meant "the plan is settled". It now marks bills `dispatched`.
-      //
-      // ⚠ IT STATES THE CONSEQUENCE AND THE COUNT, never "are you sure" — a
-      // generic prompt trains the hand to dismiss it, and this one has to still
-      // be read on the day the number is wrong. `window.confirm` is the house
-      // pattern for exactly this (components/admin/access-manager.tsx,
-      // hide-settings-content.tsx ×3, import/import-modal.tsx): one step, no
-      // modal flow, no new component.
-      //
-      // ⚠ THE COUNT IS `counts.checked`, WHICH IS WHAT WILL MOVE. A bill not yet
-      // checked is left alone by the route, so promising it would overstate the
-      // press. On a trip where nothing is checked the prompt says so plainly
-      // rather than offering "Mark 0 bills dispatched?", which reads as a bug.
-      const t = (tripsRef.current ?? []).find((x) => x.id === tripId);
-      const willDispatch = t ? t.counts.checked - t.dispatchedCount : 0;
-      const leftBehind = t ? t.counts.total - t.counts.checked : 0;
-      const label = t?.tripNumber ?? "this trip";
-      //
-      // ⚠ IT LEADS WITH THE BUTTON'S OWN WORDS, "Confirm plan", and states the
-      // dispatch as the consequence rather than the name. The button is NOT
-      // called "Confirm & mark dispatched" on purpose — the mark is temporary
-      // and moves to the loading screen when that is built (lib/floor/trip-
-      // wording.ts, lib/floor/dispatch.ts). This prompt is where the operator
-      // learns what the press does today, so it carries the real numbers.
-      const prompt =
-        willDispatch > 0
-          ? `Confirm plan for ${label} — ${willDispatch} bill${willDispatch === 1 ? "" : "s"} will be marked dispatched?` +
-            (leftBehind > 0
-              ? `\n\n${leftBehind} more ${leftBehind === 1 ? "is" : "are"} still being picked and will be left alone.`
-              : "") +
-            `\n\nMarking dispatched is the end of the line for those bills — undoing it needs a developer.`
-          : `Confirm plan for ${label}?\n\nNothing on it is checked yet, so no bill will be marked dispatched.` +
-            (leftBehind > 0
-              ? `\n\nAll ${leftBehind} bill${leftBehind === 1 ? " is" : "s are"} still being picked and will be left alone.`
-              : "");
-      if (!window.confirm(prompt)) return;
+      // ⚠ NO CONFIRMATION STEP, AND THAT IS THE POINT OF THE CHANGE
+      // (2026-09-14). This press used to mark bills dispatched, so it was
+      // terminal and carried a window.confirm naming the count. Release no
+      // longer dispatches anything: it makes the bills visible to pickers and
+      // moves the trip out of draft, both of which are reversible and neither
+      // of which puts anything on a truck. A prompt in front of an ordinary
+      // press is a prompt the hand learns to dismiss, which is exactly what
+      // would blunt the one on `dispatchTrip` below, where it is earned.
 
       setTripBusyId(tripId);
       try {
@@ -702,21 +669,6 @@ export function FloorPage() {
           // failed bucket and raise a red "not released" toast beside the green
           // "confirmed" one, on a trip that had confirmed correctly.
           const alreadyFinished: number[] = body?.alreadyFinished ?? [];
-          // ── THE DISPATCH MARK, SAID FIRST (2026-09-13) ──────────────────────
-          //
-          // 🔴 IT LEADS THE LINE BECAUSE IT IS THE BIGGEST THING THAT HAPPENED.
-          // Everything else on this toast is about where a bill sits on the
-          // floor; this one says goods left the building.
-          const dispatched: number[] = body?.dispatched ?? [];
-          const alreadyDispatched: number[] = body?.alreadyDispatched ?? [];
-          const notDispatched: Array<{ orderId: number; workflowStage: string }> =
-            body?.notDispatched ?? [];
-          const held: number[] = body?.held ?? [];
-          const needsSlot: number[] = body?.needsSlot ?? [];
-          if (dispatched.length > 0) {
-            parts.push(`${dispatched.length} dispatched`);
-          }
-          if (alreadyDispatched.length > 0) parts.push(`${alreadyDispatched.length} already gone`);
           if (released.length > 0) parts.push(`${released.length} to the floor`);
           if (stamped.length > 0 && gateOn) parts.push(`${stamped.length} shown to pickers`);
           if (already.length > 0) parts.push(`${already.length} already there`);
@@ -725,38 +677,11 @@ export function FloorPage() {
               `${alreadyFinished.length} already picked and checked`,
             );
           }
-          // ⚠ TRUE AT ZERO. A confirm that dispatched nothing must say so rather
-          // than show a bare "confirmed" that reads as a full success.
-          if (
-            dispatched.length === 0 &&
-            alreadyDispatched.length === 0 &&
-            (notDispatched.length > 0 || held.length > 0)
-          ) {
-            parts.push("nothing dispatched");
-          }
           toast.success(parts.join(" · "));
 
-          // 🔴 NEVER SWALLOWED, AND ITS OWN TOAST. A bill left in the building
-          // is the one thing the operator has to come back to, and folding it
-          // into the success line would let it scroll past. The trip itself also
-          // carries the count from now on (trip-detail-header.tsx), so this toast
-          // is the prompt and the trip is the record.
-          if (notDispatched.length > 0) {
-            const byStage = new Map<string, number>();
-            for (const b of notDispatched) byStage.set(b.workflowStage, (byStage.get(b.workflowStage) ?? 0) + 1);
-            const detail = Array.from(byStage.entries())
-              .map(([s, n]) => `${n} ${STAGE_WORDS[s] ?? s}`)
-              .join(", ");
-            toast.info(
-              `${notDispatched.length} bill${notDispatched.length === 1 ? "" : "s"} NOT dispatched — ${detail}. ` +
-                `Confirm again once checked.`,
-            );
-          }
-          if (held.length > 0) {
-            toast.info(
-              `${held.length} bill${held.length === 1 ? " is" : "s are"} on hold and ${held.length === 1 ? "was" : "were"} not dispatched.`,
-            );
-          }
+          // The dispatch buckets that used to be read here are gone with the
+          // dispatch itself — `dispatchTrip` below owns them now.
+          const needsSlot: number[] = body?.needsSlot ?? [];
           if (needsSlot.length > 0) {
             toast.info(
               `${needsSlot.length} bill${needsSlot.length === 1 ? "" : "s"} could not be sent to the floor — ` +
@@ -781,6 +706,96 @@ export function FloorPage() {
       await load();
     },
     [load, gateOn],
+  );
+
+  /**
+   * Mark a released trip's CHECKED bills dispatched. Repeatable through the day.
+   *
+   * 🔴 THE PRESS RELEASE USED TO DO, SEPARATED OUT (2026-09-14). Release makes
+   * bills visible to pickers; this says the goods have gone. They were one
+   * button until today, so the single morning press shipped whatever was already
+   * checked and nothing could ship afterwards.
+   *
+   * ⚠ THE CONFIRM STAYS HERE AND CAME OFF `releaseTrip`. This is the terminal
+   * one — the only undo is hand-written SQL — and a prompt in front of an
+   * ordinary press is a prompt the hand learns to dismiss. It names the count and
+   * the consequence, never "are you sure" (the house pattern:
+   * components/admin/access-manager.tsx, hide-settings-content.tsx ×3,
+   * import/import-modal.tsx).
+   */
+  const dispatchTrip = useCallback(
+    async (tripId: number) => {
+      const t = (tripsRef.current ?? []).find((x) => x.id === tripId);
+      const willGo = t ? Math.max(0, t.counts.checked - t.dispatchedCount) : 0;
+      const label = t?.tripNumber ?? "this trip";
+      const heldN = t?.counts.held ?? 0;
+      const stillGoing = t ? Math.max(0, t.counts.total - t.dispatchedCount - heldN - willGo) : 0;
+      if (willGo === 0) {
+        toast.info(`Nothing on ${label} is checked and waiting to go.`);
+        return;
+      }
+      const prompt =
+        `Mark ${willGo} bill${willGo === 1 ? "" : "s"} dispatched on ${label}?` +
+        (stillGoing > 0
+          ? `\n\n${stillGoing} more ${stillGoing === 1 ? "is" : "are"} still being picked and will be left alone.`
+          : "") +
+        (heldN > 0 ? `\n\n${heldN} on hold — holds never dispatch.` : "") +
+        `\n\nThis is the end of the line for those bills — undoing it needs a developer.`;
+      if (!window.confirm(prompt)) return;
+
+      setTripBusyId(tripId);
+      try {
+        const res = await fetch(`/api/floor/trips/${tripId}/dispatch`, { method: "POST" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(`Could not dispatch — ${body?.error ?? `HTTP ${res.status}`}`);
+        } else {
+          const dispatched: number[] = body?.dispatched ?? [];
+          const already: number[] = body?.alreadyDispatched ?? [];
+          const notDispatched: Array<{ orderId: number; workflowStage: string }> =
+            body?.notDispatched ?? [];
+          const held: number[] = body?.held ?? [];
+          const parts: string[] = [];
+          if (dispatched.length > 0) parts.push(`${dispatched.length} dispatched`);
+          if (already.length > 0) parts.push(`${already.length} already gone`);
+          // TRUE AT ZERO — a press that moved nothing must say so rather than
+          // show a bare trip number that reads as a full success.
+          if (parts.length === 0) parts.push("nothing dispatched");
+          if (body?.closed) parts.push("trip closed");
+          toast.success(`${body?.trip?.tripNumber ?? "Trip"} · ${parts.join(" · ")}`);
+
+          // 🔴 NEVER SWALLOWED, AND ITS OWN TOAST. A bill left in the building is
+          // the one thing to come back to, and the trip carries the count
+          // afterwards (trip-detail-header.tsx) so this is the prompt, not the
+          // record.
+          if (notDispatched.length > 0) {
+            const byStage = new Map<string, number>();
+            for (const b of notDispatched) byStage.set(b.workflowStage, (byStage.get(b.workflowStage) ?? 0) + 1);
+            const detail = Array.from(byStage.entries())
+              .map(([s, n]) => `${n} ${STAGE_WORDS[s] ?? s}`)
+              .join(", ");
+            toast.info(
+              `${notDispatched.length} bill${notDispatched.length === 1 ? "" : "s"} NOT dispatched — ${detail}. ` +
+                `Press again once checked.`,
+            );
+          }
+          if (held.length > 0) {
+            toast.info(
+              `${held.length} bill${held.length === 1 ? " is" : "s are"} on hold and ${held.length === 1 ? "was" : "were"} not dispatched.`,
+            );
+          }
+          const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
+          if (failed.length > 0) toast.error(`${failed.length} bill(s) failed — ${failed[0].error}`);
+        }
+      } catch {
+        toast.error("Could not dispatch — check your connection.");
+      } finally {
+        setTripBusyId(null);
+      }
+      setSelection(new Set());
+      await load();
+    },
+    [load],
   );
 
   /** Cancel a trip. NEVER a delete — the number stays claimed (see the route). */
@@ -1754,6 +1769,7 @@ export function FloorPage() {
               onReleaseTrip={(id) => void releaseTrip(id)}
               onChangeVehicle={(id) => void openVehicleEditor(id)}
               onCancelTrip={(id) => void cancelTrip(id)}
+              onDispatchTrip={(id) => void dispatchTrip(id)}
               // 🔴 RENDERED ON ALL FOUR TABS (2026-09-14). The desk owns the
               // rail, and the rail must not move when the tab changes — so the
               // desk is the shell for every tab and swaps only what is in the
@@ -1783,6 +1799,11 @@ export function FloorPage() {
                 ) : null
               }
               tintOperators={tintOperators}
+              // ⚠ THE UNFILTERED ROWS, for the trip pane’s stop lookup ONLY. The desk
+              // still receives the FILTERED board as `floor`; this is the second
+              // array, and TripDesk’s own comment says why a pool filter must not
+              // decide what a stop contains.
+              unfilteredRows={scopedData?.floor.rows ?? []}
               // The SAME desk renders live and history, so the source is
               // decided here by the view (2026-08-25). "history" is the
               // read-only source — it suppresses every action in the panel

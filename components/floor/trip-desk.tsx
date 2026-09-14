@@ -115,10 +115,12 @@ export function TripDesk({
   onReleaseTrip,
   onChangeVehicle,
   onCancelTrip,
+  onDispatchTrip,
   activeTab,
   tabs,
   sideBody,
   tintOperators,
+  unfilteredRows,
 }: {
   floor: FloorBoardResult;
   trips: TripSummary[] | null;
@@ -141,6 +143,8 @@ export function TripDesk({
   onReleaseTrip: (tripId: number) => void;
   onChangeVehicle: (tripId: number) => void;
   onCancelTrip: (tripId: number) => void;
+  /** Mark a released trip's checked bills dispatched. Repeatable through the day. */
+  onDispatchTrip: (tripId: number) => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
   activeTab: "floor" | "tinting" | "hold" | "cancelled";
   /** The tab pills + their counts + New trip, built by floor-page and rendered
@@ -155,6 +159,21 @@ export function TripDesk({
    *  null while it has not been fetched — the tab is what triggers the fetch,
    *  so the Floor tab never asks (see /api/floor/tint-operators). */
   tintOperators: Map<number, string | null> | null;
+  /**
+   * The board rows BEFORE search and the Status/Flags filter (2026-09-14).
+   *
+   * 🔴 IT EXISTS SO A POOL FILTER CANNOT EMPTY THE TRIP PANE. The stop lookup
+   * below used the filtered array, so ticking one Status chip blanked every stop
+   * on every trip and each one fell back to "not on today's board". Live case:
+   * L-260914-01, 5 stops and 11 bills, all 11 genuinely on the board — the
+   * filter was the whole of it, and the two that still rendered an hour earlier
+   * had simply not yet moved out of the filtered set.
+   *
+   * ⚠ THE TRIP PANE IS A RECORD OF WHAT IS ON THE TRIP. A filter aimed at the
+   * pool has no business deciding what a stop contains. Everything else in this
+   * component still reads the FILTERED `floor` — only the lookup changed.
+   */
+  unfilteredRows: FloorBoardRow[];
 }) {
   const [pivot, setPivot] = useState<"flat" | "route">("flat");
   const [openRoute, setOpenRoute] = useState<string | null>(null);
@@ -511,9 +530,12 @@ export function TripDesk({
     // on Thursday — and while this map read only the due half, such a bill was
     // missing from its stop and the stop rendered the "finished, off today's
     // board" line instead. Wrong on both counts.
-    const rowById = new Map(
-      [...dueRows, ...upcomingAll].map((r) => [r.orderId, r] as const),
-    );
+    // ⚠ UNFILTERED, AND NOT `dueRows`/`upcomingAll` (2026-09-14). Those two are
+    // derived from the filtered board, so an active Status chip emptied every
+    // stop — see the `unfilteredRows` prop. The tint-room exclusion is dropped
+    // here too: a trip can carry a tint bill, and the Tinting TAB is a view of
+    // the pool, never a rule about what a stop may contain.
+    const rowById = new Map(unfilteredRows.map((r) => [r.orderId, r] as const));
     const drops = tripDetail?.id === selectedTrip.id ? tripDetail.drops : [];
 
     middle = (
@@ -527,6 +549,10 @@ export function TripDesk({
           onAddBills={() => onSelectRail({ kind: "pool" })}
           onChangeVehicle={() => onChangeVehicle(selectedTrip.id)}
           onCancelTrip={() => onCancelTrip(selectedTrip.id)}
+          // Absent in History — a past day is a record, and `readOnly` already
+          // suppresses the whole action row there. Passing it anyway would be
+          // wiring a button nothing renders.
+          onDispatch={isHistory ? undefined : () => onDispatchTrip(selectedTrip.id)}
         />
 
         {tripDetail === null || tripDetail.id !== selectedTrip.id ? (

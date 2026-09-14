@@ -49,6 +49,21 @@ export interface TripBillCounts {
   withPicker: number;
   picked: number;
   checked: number;
+  /**
+   * A human said "not this one" — `orders.dispatchStatus = 'hold'`, whatever the
+   * stage (2026-09-14).
+   *
+   * 🔴 IT EXISTS BECAUSE A HELD BILL USED TO PIN A TRIP OPEN FOREVER. `bucketFor`
+   * read only the STAGE and `loadTripBills` did not even fetch the status, so a
+   * bill held at `pending_picking` counted as `waiting`. `isReady` is "every bill
+   * checked", a held bill never reaches `pick_checked`, and the trip could
+   * therefore never report ready — waiting on a decision somebody had already
+   * made in the other direction.
+   *
+   * ⚠ IT OUTRANKS THE STAGE, not the other way round. A hold is a human
+   * instruction and it is true at every rung of the ladder.
+   */
+  held: number;
   other: number;
   total: number;
 }
@@ -130,6 +145,7 @@ const EMPTY_COUNTS: TripBillCounts = {
   withPicker: 0,
   picked: 0,
   checked: 0,
+  held: 0,
   other: 0,
   total: 0,
 };
@@ -165,7 +181,12 @@ export function parseTripDate(dateStr: string): Date {
  * discipline). Anything outside the four picking stages lands in `other` — see
  * the note on TripBillCounts for why that bucket is not optional.
  */
-function bucketFor(stage: string): keyof Omit<TripBillCounts, "total"> {
+function bucketFor(stage: string, dispatchStatus: string | null): keyof Omit<TripBillCounts, "total"> {
+  // 🔴 THE HOLD TEST IS FIRST AND IT OUTRANKS EVERY STAGE (2026-09-14). Hold is a
+  // STATUS, not a rung — a held bill can sit at any stage, including
+  // `pick_checked` — so a stage-only test both mislabels it and, through
+  // `isReady`, pinned the whole trip open. See TripBillCounts.held.
+  if (dispatchStatus === "hold") return "held";
   if (stage === SUPPORT_DONE_OUTPUT) return "waiting";
   if (stage === PICK_ASSIGNED) return "withPicker";
   if (stage === PICK_DONE) return "picked";
@@ -191,6 +212,14 @@ interface TripBillRow {
   id: number;
   tripDropId: number | null;
   workflowStage: string;
+  /**
+   * `orders.dispatchStatus` — 'dispatch' | 'hold' | null.
+   *
+   * ⚠ FETCHED SINCE 2026-09-14 AND NOT BEFORE. Without it `bucketFor` could not
+   * see a hold at all, which is how a held bill came to count as waiting. Same
+   * query, one more column, no extra read.
+   */
+  dispatchStatus: string | null;
   litres: number;
 }
 
@@ -217,7 +246,7 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
 
   const orders = await prisma.orders.findMany({
     where: { tripDropId: { in: dropIds }, isRemoved: false },
-    select: { id: true, tripDropId: true, workflowStage: true },
+    select: { id: true, tripDropId: true, workflowStage: true, dispatchStatus: true },
     orderBy: { id: "asc" },
   });
   if (orders.length === 0) return [];
@@ -235,6 +264,7 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
     id: o.id,
     tripDropId: o.tripDropId,
     workflowStage: o.workflowStage,
+    dispatchStatus: o.dispatchStatus,
     // A bill with no snapshot row contributes 0, never null — the same choice
     // lib/floor/queries.ts makes for `volumeLitres` on its own rows.
     litres: litresByOrderId.get(o.id) ?? 0,
@@ -351,7 +381,7 @@ function toSummary(
   // it rides beside `counts` instead of inside it.
   let dispatchedCount = 0;
   for (const b of bills) {
-    counts[bucketFor(b.workflowStage)] += 1;
+    counts[bucketFor(b.workflowStage, b.dispatchStatus)] += 1;
     counts.total += 1;
     if (b.workflowStage === DISPATCHED) dispatchedCount += 1;
     totalLitres += b.litres;
@@ -381,7 +411,16 @@ function toSummary(
     // ready, it is empty. Without that clause `every bill checked` is
     // vacuously true on a trip with no bills and a brand-new draft would
     // announce itself as ready to leave.
-    isReady: counts.total > 0 && counts.checked === counts.total,
+    // 🔴 HELD BILLS ARE OUT OF THE MATHS (2026-09-14). Ready means every bill
+    // that is GOING is finished; a held bill is not going, and leaving it in the
+    // denominator meant one hold could keep a finished load from ever reporting
+    // ready. `counts.total > 0` is still load-bearing for the empty trip, and a
+    // trip of nothing BUT holds is deliberately not ready either — there is
+    // nothing on it to send.
+    isReady:
+      counts.total > 0 &&
+      counts.total - counts.held > 0 &&
+      counts.checked === counts.total - counts.held,
     counts,
     dispatchedCount,
     totalLitres,

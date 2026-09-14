@@ -47,7 +47,10 @@ export function tripWording(gateOn: boolean): TripWording {
         // 🔴 "Confirm plan" IS DELIBERATELY UNCHANGED, AND THAT IS AN OWNER
         // DECISION (2026-09-13) — DO NOT RENAME IT.
         //
-        // Since that day the press ALSO marks every checked bill `dispatched`.
+        // ⚠ THE REASON BELOW IS NOW HISTORY, AND THE CONCLUSION STILL HOLDS. The
+        // press marked bills dispatched for one day (2026-09-13 → 09-14); it no
+        // longer does, so the argument against renaming is simply that the
+        // button confirms a plan and always did.
         // The obvious move was to rename this "Confirm & mark dispatched", and
         // it was considered and rejected: **the dispatch mark is temporary**. It
         // belongs to the loading screen, which is a few weeks out, and it lives
@@ -69,9 +72,13 @@ export function tripWording(gateOn: boolean): TripWording {
         // reached that status: its bills have gone, the trip row has not been
         // closed out.
         releasedLabel: "Confirmed",
-        // Says what the press does, in the order it matters. The old line named
-        // only the visibility fact, which is now the smaller half.
+        // ⚠ IT SAID "Checked bills are marked dispatched" UNTIL 2026-09-14, and
+        // that stopped being true when release stopped dispatching. The press
+        // now does one thing, and the line names the NEXT step rather than a
+        // consequence of this one — dispatch is its own button on a released
+        // trip (trip-detail-header.tsx), pressed through the day as bills are
+        // checked.
         releaseCaveat:
-          "Checked bills are marked dispatched. Anything still being picked is left alone.",
+          "The floor can see these bills. Dispatch them as they are checked.",
       };
 }

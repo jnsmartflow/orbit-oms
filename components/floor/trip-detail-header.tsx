@@ -31,6 +31,7 @@ export function TripDetailHeader({
   busy,
   readOnly,
   onRelease,
+  onDispatch,
   onAddBills,
   onChangeVehicle,
   onCancelTrip,
@@ -41,17 +42,27 @@ export function TripDetailHeader({
   /** History — a past day is a record, not a thing to edit. */
   readOnly: boolean;
   onRelease: () => void;
+  /** Mark this released trip’s checked bills dispatched. Absent on a History
+   *  band — a past day is a record, and the button is suppressed with every
+   *  other write by `readOnly`. */
+  onDispatch?: () => void;
   /** Switches the rail back to the pool, where bills are ticked. */
   onAddBills: () => void;
   onChangeVehicle: () => void;
   onCancelTrip: () => void;
 }) {
-  const counts = toStatusCounts(trip.counts);
+  const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
   const meta = tripStateMeta(trip, gateOn);
   const wording = tripWording(gateOn);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
   const isClosed = trip.status === "cancelled" || trip.status === "dispatched";
   const isDraft = trip.status === "draft";
+  // What a Mark-dispatched press would actually move, right now. `counts.checked`
+  // folds `dispatched` into `checked` (bucketFor, lib/trips/queries.ts), so the
+  // subtraction is what separates “finished” from “finished and still here”.
+  // Floored at 0 — the two figures come from one payload and cannot disagree,
+  // but a negative in a button label would be worse than a stale zero.
+  const readyToDispatch = Math.max(0, trip.counts.checked - trip.dispatchedCount);
 
   // ── WHAT DID NOT GO (2026-09-13) ─────────────────────────────────────────
   //
@@ -71,8 +82,13 @@ export function TripDetailHeader({
   //
   // ⚠ ONLY AFTER A CONFIRM. On a draft every bill is undispatched and saying so
   // would be noise on the one state where it means nothing.
-  const notDispatched = trip.counts.total - trip.dispatchedCount;
-  const showNotDispatched = !isDraft && trip.counts.total > 0 && notDispatched > 0;
+  // ⚠ HOLDS ARE COUNTED SEPARATELY, NOT AS "still being picked" (2026-09-14).
+  // The line used to sweep them in, which described a bill a human had
+  // deliberately stopped as one the floor was busy with. `stillGoing` is what is
+  // actually outstanding; `trip.counts.held` is named on its own.
+  const heldCount = trip.counts.held;
+  const stillGoing = Math.max(0, trip.counts.total - trip.dispatchedCount - heldCount);
+  const showNotDispatched = !isDraft && trip.counts.total > 0 && (stillGoing > 0 || heldCount > 0);
 
   // Line two — everything known about who is carrying it, then the totals.
   // Blanks are dropped rather than rendered as dashes: a trip with no vehicle
@@ -133,6 +149,18 @@ export function TripDetailHeader({
         <>
           <ProgressBar counts={counts} className="mt-2.5 !h-2" />
           <div className="mt-1.5 flex flex-wrap gap-3 text-[11.5px] tabular-nums text-gray-600">
+            {/* 🔴 DISPATCHED LEADS, AND IT IS ITS OWN WORD (2026-09-14). The bar
+                read "8 done" while two of those eight wore a Dispatched pill one
+                column over — `bucketFor` folds the two stages into `checked` so
+                `isReady` keeps working, and the legend was printing that fold as
+                a single state. It confused the operator on live today. The pill
+                was always right; this is the surface that was not. */}
+            {counts.dispatched > 0 && (
+              <span>
+                <i className="mr-1.5 inline-block h-2 w-2 rounded-[3px] bg-[#94a3b8]" />
+                <b className="font-bold">{counts.dispatched}</b> dispatched
+              </span>
+            )}
             {counts.done > 0 && (
               <span>
                 <i className="mr-1.5 inline-block h-2 w-2 rounded-[3px] bg-[#22c55e]" />
@@ -157,7 +185,18 @@ export function TripDetailHeader({
                 <b className="font-bold">{counts.waiting}</b> waiting
               </span>
             )}
-            {counts.total > 0 && counts.done === counts.total && (
+            {/* On hold — its own entry since 2026-09-14, because it is its own
+                answer. A held bill used to bucket as `waiting` and read as work
+                somebody was about to do; it is the opposite, a human saying not
+                this one. Slate rather than red: a hold is a decision, not a
+                fault. */}
+            {trip.counts.held > 0 && (
+              <span>
+                <i className="mr-1.5 inline-block h-2 w-2 rounded-[3px] bg-[#64748b]" />
+                <b className="font-bold">{trip.counts.held}</b> on hold
+              </span>
+            )}
+            {counts.total > 0 && counts.done + counts.dispatched + trip.counts.held === counts.total && (
               <span className="text-gray-400">nothing pending</span>
             )}
           </div>
@@ -170,10 +209,12 @@ export function TripDetailHeader({
           it, which is the opposite of the point. */}
       {showNotDispatched && (
         <div className="mt-2 rounded-[7px] border border-[#fde3b4] bg-[#fffaf0] px-2.5 py-1.5 text-[11.5px] text-[#92400e]">
-          <b className="font-bold tabular-nums">{notDispatched}</b> of{" "}
+          <b className="font-bold tabular-nums">{stillGoing + heldCount}</b> of{" "}
           <span className="tabular-nums">{trip.counts.total}</span> bill
-          {trip.counts.total === 1 ? "" : "s"} not dispatched — still being picked, or on hold.
-          Confirm again once {notDispatched === 1 ? "it is" : "they are"} checked.
+          {trip.counts.total === 1 ? "" : "s"} not dispatched
+          {stillGoing > 0 && <> — {stillGoing} still being picked</>}
+          {heldCount > 0 && <> — {heldCount} on hold</>}.
+          {stillGoing > 0 && <> Press Mark dispatched again once {stillGoing === 1 ? "it is" : "they are"} checked.</>}
         </div>
       )}
 
@@ -195,6 +236,38 @@ export function TripDetailHeader({
               className={PRIMARY}
             >
               {busy ? "Working…" : wording.releaseButton}
+            </button>
+          )}
+          {/* ── MARK DISPATCHED (2026-09-14) ──────────────────────────────
+              🔴 THE PRESS THAT USED TO BE PART OF RELEASE. Release makes bills
+              visible to pickers; THIS says the goods have gone. They were one
+              button until today, so the single morning press shipped whatever
+              was already checked and nothing could ship afterwards.
+
+              ⚠ ALWAYS RENDERED ON A RELEASED TRIP, DISABLED AT ZERO, NEVER
+              HIDDEN. It is pressed repeatedly through the day as bills become
+              checked, so it has to be in the same place every time the operator
+              looks. A button that vanishes when idle is one he stops looking
+              for — and this is the only way to dispatch anything from the app.
+
+              ⚠ THE COUNT IS LIVE AND IT IS WHAT WILL ACTUALLY MOVE:
+              `counts.checked` minus what has already gone. `bucketFor` folds
+              `dispatched` into `checked` (lib/trips/queries.ts), so the
+              subtraction is what turns "finished" into "finished and still
+              here". A held bill is not in it — holds never dispatch. */}
+          {!isDraft && onDispatch && (
+            <button
+              type="button"
+              onClick={onDispatch}
+              disabled={busy || readyToDispatch === 0}
+              title={
+                readyToDispatch === 0
+                  ? "Nothing on this trip is checked and waiting to go"
+                  : `Mark ${readyToDispatch} checked bill${readyToDispatch === 1 ? "" : "s"} dispatched`
+              }
+              className={PRIMARY}
+            >
+              {busy ? "Working…" : `Mark dispatched (${readyToDispatch})`}
             </button>
           )}
           <button type="button" onClick={onAddBills} disabled={busy} className={ACTION}>

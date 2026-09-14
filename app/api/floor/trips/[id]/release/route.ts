@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { releaseBillsToFloor } from "@/lib/floor/release";
-import { markBillsDispatched } from "@/lib/floor/dispatch";
 import { FLOOR_RELEASABLE_STAGES } from "@/lib/floor/release-stages";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { stampPickVisibility } from "@/lib/picking/visibility-gate";
@@ -43,7 +42,7 @@ export const dynamic = "force-dynamic";
  * `releasedAt`/`releasedById` are stamped only on the FIRST release, so a
  * re-run cannot overwrite who released it or when.
  *
- * 🔴 THE SLOT GATE IS GONE (2026-09-13), AND CONFIRMING NOW MARKS DISPATCH.
+ * 🔴 THE SLOT GATE IS GONE (2026-09-13).
  *
  * This route used to 409 on `dispatchWindowId: null`. The reasoning was sound —
  * the release writes the trip's window onto its bills and a null window would
@@ -58,14 +57,11 @@ export const dynamic = "force-dynamic";
  * reported in `needsSlot` rather than written with a null window. Set a slot and
  * press again — this route is idempotent by design.
  *
- * ⚠ STEP 2b IS NEW, TERMINAL, AND TEMPORARY. Every bill at `pick_checked` and
- * not on hold moves to `dispatched`, with a log row (lib/floor/dispatch.ts).
- * Until Orbit has a loading screen, confirming a plan is the last press before
- * the truck goes; the stage was otherwise written every evening by hand from an
- * NTS spreadsheet — 136 bills in one second on 2026-09-13 with not one
- * `order_status_logs` row between them. **The mark moves to the loading screen
- * when that is built and comes off this route.** Read that module's header
- * before touching what moves and what does not.
+ * 🔴 THIS ROUTE NO LONGER DISPATCHES ANYTHING (2026-09-14). For one day it
+ * did — step 2b called `markBillsDispatched` here, so the press a planner
+ * makes at the START of the day also shipped whichever bills were already
+ * checked. Release is now exactly what its name says and nothing more.
+ * Dispatch is its own repeatable press: POST /api/floor/trips/[id]/dispatch.
  *
  * ⚠ THE BUCKETS ARE HONEST AND A REFUSAL IS NEVER RE-LABELLED:
  *   released       — the full write happened
@@ -256,44 +252,28 @@ export async function POST(
   //
   // ⚠ `dispatched` RIDES THE SAME BUCKET. A bill that has already left is
   // likewise past release and likewise not a failure.
-  // ── STEP 2b · THE DISPATCH MARK — the truck goes ─────────────────────────
+  // ── DISPATCH NO LONGER HAPPENS HERE (2026-09-14) ────────────────────────
   //
-  // 🔴 THIS STEP IS TEMPORARY AND LIVES HERE ONLY UNTIL THE LOADING SCREEN
-  // EXISTS. Orbit has no loading or dispatch screen yet — a few weeks out as of
-  // 2026-09-13 — so "Confirm plan" is the last thing pressed before the truck
-  // goes, and without this the stage was written every evening by hand from an
-  // NTS spreadsheet with no audit trail. When that screen is built, THE
-  // DISPATCH MARK MOVES TO IT and this step comes out of the confirm. The write
-  // itself (lib/floor/dispatch.ts) is permanent; this CALL SITE is the stopgap.
+  // 🔴 RELEASE MEANS ONE THING: these bills become visible to pickers, and the
+  // trip stops being a private draft. It does NOT mean anything has gone on a
+  // truck, and for one day it did.
   //
-  // ⚠ WHICH IS WHY THE BUTTON IS STILL "Confirm plan" AND MUST STAY THAT WAY.
-  // Renaming it after a side effect scheduled to be removed would teach the
-  // depot a word with an expiry date, and confirming the plan is the button's
-  // real job before and after loading arrives. Owner decision 2026-09-13. The
-  // consequence is told in the caption (lib/floor/trip-wording.ts) and in the
-  // click-time prompt (`releaseTrip`, components/floor/floor-page.tsx).
+  // Step 2b called `markBillsDispatched` right here, so the single press a
+  // planner makes at the START of the day also shipped whichever bills happened
+  // to be checked at that instant. Live evidence, trip L-260914-01: released
+  // 2026-09-14T04:15:14Z, and two bills carry an `order_status_logs` row stamped
+  // the SAME SECOND reading "pick_checked → dispatched · Dispatched with trip
+  // L-260914-01". Nothing had left the building. The depot sequence is release
+  // in the morning, pick and check through the day, dispatch as bills become
+  // ready — three steps, and this route was doing the first and the last
+  // together.
   //
-  // A future session must not read confirm→dispatch as the permanent design.
-  //
-  // 🔴 IT IS THE TERMINAL WRITE AND THE ONLY UNDO IS HAND-WRITTEN SQL. Every
-  // bill at `pick_checked` and not on hold moves to `dispatched`, with one
-  // `orders.update` and one `order_status_logs` row each. Which bills move, and
-  // the reasons a bill is left alone, are owned by lib/floor/dispatch.ts — read
-  // its `notChecked` and `held` buckets before changing anything here.
-  //
-  // ⚠ RUN AFTER THE RELEASE, DELIBERATELY. A bill the release just moved is now
-  // at `pending_picking`, so it cannot be dispatched by the same press — which
-  // is correct: it has not been picked, let alone checked. The order makes that
-  // true by construction rather than by a guard.
-  //
-  // ⚠ IT DOES NOT NEED A SLOT. Dispatch writes one stage column and no window,
-  // so a slot-less trip marks dispatch exactly like any other. That is what
-  // unstrands the bills the old 409 was holding.
-  const disp = await markBillsDispatched({
-    orderIds,
-    actorId: releasedById,
-    noteLabel: `Dispatched with trip ${trip.tripNumber}`,
-  });
+  // ⚠ THE WRITER IS UNCHANGED AND STILL LIVE. `lib/floor/dispatch.ts` now
+  // belongs to POST /api/floor/trips/[id]/dispatch, which is re-runnable
+  // through the day and is the only thing that writes stage 'dispatched' from
+  // the app. Do not put a dispatch call back in this route: the two presses
+  // answer different questions and the operator has to be able to make them at
+  // different times.
 
   const PAST_RELEASE = new Set<string>(["pick_checked", "dispatched"]);
   const pastReleaseMsg = (e: { error: string }) =>
@@ -302,10 +282,6 @@ export async function POST(
   const allFailed = [
     ...rel.failed.filter((f) => !pastReleaseMsg(f)),
     ...stamp.failed,
-    // A dispatch failure IS a real failure — the bill was eligible and the write
-    // threw. `notChecked` and `held` are NOT here; they are deliberate skips and
-    // have their own buckets on the payload.
-    ...disp.failed,
   ];
 
   // Nothing achieved at all → the trip does NOT move. A `released` trip whose
@@ -334,9 +310,7 @@ export async function POST(
     rel.released.length === 0 &&
     rel.alreadyReleased.length === 0 &&
     rel.waitingForTint.length === 0 &&
-    alreadyFinished.length === 0 &&
-    disp.dispatched.length === 0 &&
-    disp.alreadyDispatched.length === 0
+    alreadyFinished.length === 0
   ) {
     return NextResponse.json(
       {
@@ -345,9 +319,6 @@ export async function POST(
         alreadyVisible: [],
         waitingForTint: [],
         alreadyFinished: [],
-        dispatched: [],
-        notDispatched: disp.notChecked,
-        held: disp.held,
         needsSlot,
         failed: allFailed,
       },
@@ -393,16 +364,6 @@ export async function POST(
     // 🔴 NOTHING TO DO, NOT A FAILURE. Already picked and checked — past the
     // point release acts on. See the block above `allFailed`.
     alreadyFinished,
-    // ── The dispatch mark (2026-09-13) ──────────────────────────────────────
-    // The goods that just left. Terminal.
-    dispatched: disp.dispatched,
-    // Already gone on an earlier press. A no-op, not a failure.
-    alreadyDispatched: disp.alreadyDispatched,
-    // 🔴 LEFT IN THE BUILDING ON PURPOSE, WITH THE STAGE SO THE CALLER CAN SAY
-    // WHY. Not a failure and never folded into one — see lib/floor/dispatch.ts.
-    notDispatched: disp.notChecked,
-    // A hold outranks the trip. Its own bucket for the same reason.
-    held: disp.held,
     // Bills this press would have released if the trip had a slot. Empty
     // whenever it has one.
     needsSlot,
