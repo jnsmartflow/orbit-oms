@@ -69,6 +69,40 @@ const PICKABLE_WAITING: readonly FloorStatus[] = ["waiting", "tintDone"];
 const IN_TINTING: readonly FloorStatus[] = ["tintPending", "tintAssigned", "tinting"];
 
 /**
+ * The statuses the TINTING TAB shows — and therefore, by exact complement, the
+ * ones the Floor tab must not (2026-09-14).
+ *
+ * 🔴 ONE PREDICATE, TWO CALLERS, BECAUSE THE BUG WAS HAVING ONLY ONE HALF.
+ * The Tinting tab filtered rows IN and nothing filtered them OUT of the Floor
+ * lists or the Floor badge, so five bills rendered on both tabs and Floor's
+ * count included them. Two lists that must be exact complements cannot be
+ * written as two independent conditions; this is the include, and `!` of it is
+ * the exclude.
+ *
+ * ⚠ `tinting` IS DELIBERATELY NOT HERE, AND THAT IS NOT AN OVERSIGHT. A bill on
+ * the mixer LEAVES this tab and appears on Floor wearing the solid pink Tinting
+ * pill: it is coming soon, and the planner is the person who needs to see it.
+ * Owner ruling 2026-09-14. `rowStatus` does have a value for it, so the omission
+ * is a choice the code can state rather than a gap it fell into — widening this
+ * set would silently pull mixing bills off the planner's board.
+ *
+ * ⚠ `tintDone` IS NOT HERE EITHER. Its shades are finished, it is pickable, and
+ * it belongs on Floor with everything else anyone can act on.
+ */
+const TINT_ROOM: readonly FloorStatus[] = ["tintPending", "tintAssigned"];
+
+/**
+ * Is this row the Tinting tab's, rather than the Floor tab's?
+ *
+ * The ONE owner of that split. Tinting includes on it, Floor excludes on it,
+ * and the Floor badge counts through the same exclusion — so the two tabs are
+ * exact complements and the badge can never disagree with the table under it.
+ */
+export function isTintRoomRow(row: StatusInput): boolean {
+  return TINT_ROOM.includes(rowStatus(row));
+}
+
+/**
  * dispatched → Dispatched, pick_checked → Done, pick_done → Needs check,
  * pick_assigned → With picker, else (pending_picking) → Waiting.
  *

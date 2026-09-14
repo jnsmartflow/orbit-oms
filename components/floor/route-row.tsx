@@ -26,6 +26,8 @@ export function RouteRow({
   onOpenDetail,
   gateOn,
   anchorIso,
+  showInvoice,
+  operatorByOrderId,
 }: {
   name: string;
   /** The route's FULL row set — drives the summary line, bar and "N of M". */
@@ -45,6 +47,11 @@ export function RouteRow({
   nowMs: number;
   open: boolean;
   onToggle: () => void;
+  /** Forwarded straight to the FloorTable inside — the Tinting tab's
+   *  Invoice-off / Operator-on pair. Undefined everywhere else, which is the
+   *  table's own default. */
+  showInvoice?: boolean;
+  operatorByOrderId?: Map<number, string | null>;
   variant: FloorTableVariant;
   selection?: FloorSelection;
   onToggleRow?: (id: number) => void;
@@ -115,6 +122,8 @@ export function RouteRow({
             onOpenDetail={onOpenDetail}
             gateOn={gateOn}
             anchorIso={anchorIso}
+            showInvoice={showInvoice}
+            operatorByOrderId={operatorByOrderId}
           />
         ))}
     </>

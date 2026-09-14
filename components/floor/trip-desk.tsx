@@ -34,6 +34,7 @@ import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import {
   rowStatus,
+  isTintRoomRow,
   countByStatus,
   finishedCount,
   formatLitres,
@@ -161,7 +162,23 @@ export function TripDesk({
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
   const nowMs = Date.now();
-  const dueRows = floor.rows.filter((r) => r.zone !== "upcoming");
+  // ── THE FLOOR / TINTING SPLIT (2026-09-14) ───────────────────────────────
+  //
+  // 🔴 EXCLUDED HERE, ONCE, AT THE TOP. Every Floor list below is built from
+  // `dueRows` or `upcomingAll`, so excluding at this line is what makes the two
+  // tabs exact complements. The bug this fixes was having the include without
+  // the exclude: the Tinting tab filtered rows IN and nothing filtered them OUT,
+  // so five bills rendered on both tabs and Floor's badge counted them twice.
+  //
+  // ⚠ `floor.rows` STAYS WHOLE. `tintingTabRows` below reads the unfiltered
+  // array, and so does the Tinting tab's own count in floor-page.tsx. Filtering
+  // the source would empty the tab it feeds.
+  //
+  // ⚠ ONE PREDICATE, NOT A SECOND COPY OF THE CONDITION. `isTintRoomRow` lives
+  // beside `rowStatus` in status-pill.tsx, which owns "what state is this row
+  // in" for the whole screen.
+  const floorTabRows = floor.rows.filter((r) => !isTintRoomRow(r));
+  const dueRows = floorTabRows.filter((r) => r.zone !== "upcoming");
 
   // Selection/urgent/detail wiring, forwarded to every leaf table. Read-only in
   // History: a past day is a record, and every write path would edit a day the
@@ -186,7 +203,7 @@ export function TripDesk({
   // lib/floor/queries.ts:793 share, and it already handles the two cases a naive
   // `targetDate > today` gets wrong: a NULL date is "due", never "upcoming", and
   // a bill a supervisor released early stays "due" for good.
-  const upcomingAll = floor.rows.filter((r) => r.zone === "upcoming");
+  const upcomingAll = floorTabRows.filter((r) => r.zone === "upcoming");
   const poolRows = dueRows.filter((r) => r.tripDropId === null);
   const poolUpcoming = upcomingAll.filter((r) => r.tripDropId === null);
 
@@ -250,32 +267,90 @@ export function TripDesk({
   // Controls up with the other controls, information down next to the data it
   // describes. Both live INSIDE the table column now, so neither moves when the
   // rail is there and neither spans the rail.
-  const dateControl = isHistory ? (
-    <span className="ml-auto flex items-center gap-2">
-      <button type="button" className={navCls} onClick={() => onStepHistory(-1)}>‹</button>
-      <span className="text-[11.5px] font-semibold">{histDate ? fmtHistLabel(histDate) : ""}</span>
-      <button type="button" className={navCls} disabled={forwardDisabled} onClick={() => !forwardDisabled && onStepHistory(1)}>›</button>
-      <button type="button" className="text-[10.5px] font-semibold text-brand-600" onClick={onExitHistory}>
-        Back to Live ›
-      </button>
+  // ── THE FLAT / BY ROUTE PIVOT, LIFTED (2026-09-14) ───────────────────────
+  //
+  // 🔴 IT USED TO BE A CHILD OF THE "To plan" HEADING ROW, which is why it had
+  // to move BEFORE that row could be deleted. It lost its `ml-auto` parent in
+  // the lift, so it carries its own right-alignment here.
+  //
+  // ⚠ RENDERED WHERE IT DOES SOMETHING, AND NOWHERE ELSE. It controls the POOL
+  // and the TINTING list, which are the two views that group by route. On a
+  // selected TRIP the bills are grouped by STOP and the pivot has nothing to
+  // pivot; on Hold and Cancelled it is not that table's control at all. A
+  // control that renders and then does nothing when pressed is worse than one
+  // that is absent, so it is absent there.
+  const showPivot =
+    (activeTab === "floor" && railSelection.kind === "pool") || activeTab === "tinting";
+  const pivotToggle = showPivot ? (
+    <span className="inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[2px]">
+      {(["flat", "route"] as const).map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => setPivot(p)}
+          className={`rounded-[5px] px-3 py-[3px] text-[11px] ${
+            pivot === p ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          {p === "flat" ? "Flat" : "By route"}
+        </button>
+      ))}
     </span>
-  ) : (
-    <button type="button" className="ml-auto text-[10.5px] font-semibold text-brand-600" onClick={onEnterHistory}>
-      History ›
-    </button>
-  );
+  ) : null;
 
-  const liveBar = isHistory ? (
-    <div className="flex items-center gap-2 border-b border-gray-200 bg-[#f9fafb] px-3.5 py-[7px] text-[11.5px]">
-      <span className="text-[10.5px] text-gray-400">past day — read only</span>
-    </div>
-  ) : (
-    <div className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-3.5 py-[7px] text-[11.5px]">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#10b981]" />
-      <span className="font-semibold">Live</span>
-      <span className="text-[10.5px] text-gray-400">
-        {stillOpen} still open &middot; {checkedToday} checked today
-        {checkedEarlier > 0 && <> &middot; {checkedEarlier} checked earlier</>}
+  // ── ONE ROW, LEFT AND RIGHT (2026-09-14) ─────────────────────────────────
+  //
+  // The date control moved DOWN off the tab row and onto this one, and the
+  // pivot moved UP off the heading row onto it. Both now sit at the right end,
+  // with what you READ on the left:
+  //
+  //   live     ● Live · N still open · …        [Flat | By route]  History ›
+  //   history  ‹ 12 Sept ›                      [Flat | By route]  ‹ Back to Live
+  //
+  // ⚠ THE HISTORY STEPPER REPLACES "past day — read only" rather than sitting
+  // beside it. The stepper IS the read-only signal: it names a past date and the
+  // forward arrow is disabled at yesterday. A second row for a caption would be
+  // a row that says nothing the date does not.
+  const liveBar = (
+    <div
+      className={`flex items-center gap-2 border-b border-gray-200 px-3.5 py-[7px] text-[11.5px] ${
+        isHistory ? "bg-[#f9fafb]" : "bg-[#fcfcfd]"
+      }`}
+    >
+      {isHistory ? (
+        <>
+          <button type="button" className={navCls} onClick={() => onStepHistory(-1)}>‹</button>
+          <span className="font-semibold">{histDate ? fmtHistLabel(histDate) : ""}</span>
+          <button
+            type="button"
+            className={navCls}
+            disabled={forwardDisabled}
+            onClick={() => !forwardDisabled && onStepHistory(1)}
+          >
+            ›
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#10b981]" />
+          <span className="font-semibold">Live</span>
+          <span className="text-[10.5px] text-gray-400">
+            {stillOpen} still open &middot; {checkedToday} checked today
+            {checkedEarlier > 0 && <> &middot; {checkedEarlier} checked earlier</>}
+          </span>
+        </>
+      )}
+      <span className="ml-auto flex items-center gap-3">
+        {pivotToggle}
+        {isHistory ? (
+          <button type="button" className="text-[10.5px] font-semibold text-brand-600" onClick={onExitHistory}>
+            &lsaquo; Back to Live
+          </button>
+        ) : (
+          <button type="button" className="text-[10.5px] font-semibold text-brand-600" onClick={onEnterHistory}>
+            History &rsaquo;
+          </button>
+        )}
       </span>
     </div>
   );
@@ -296,22 +371,26 @@ export function TripDesk({
   // over. They agree here today, and asking the one owner is what keeps them
   // agreeing if the picking booleans ever start outranking the phase for one of
   // these stages.
-  const tintingTabRows = floor.rows.filter((r) => {
-    const s = rowStatus(r);
-    return s === "tintPending" || s === "tintAssigned";
-  });
+  // The include half of the same split — `floorTabRows` above is its exact
+  // complement, both through the one predicate.
+  const tintingTabRows = floor.rows.filter(isTintRoomRow);
+  // ⚠ NO HEADING ROW (2026-09-14). "In the tint room · N bills · N L" was
+  // deleted with its Floor twin: the tab pill above already names the view and
+  // carries the count, and the row spent 44px repeating it. Nothing else read
+  // it — its counts were computed inline from `tintingTabRows`, which the table
+  // below still uses.
+  //
+  // ⚠ Invoice OFF, Operator ON — they share the third column slot. Neither bill
+  // on this tab has been picked, so no invoice exists and the column would be
+  // blank on every row (floor-table.tsx explains the sharing). `tintOperators`
+  // is null until the tab's own fetch lands; an empty map renders a dash
+  // everywhere, which is the honest in-between state.
+  const tintLeaf = {
+    showInvoice: false,
+    operatorByOrderId: tintOperators ?? new Map<number, string | null>(),
+  };
   const tintingBody: ReactNode = (
     <>
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 px-4 py-3">
-        <h4 className="m-0 text-[14px] font-bold tracking-[-0.01em] text-gray-900">In the tint room</h4>
-        <span className="text-[11.5px] tabular-nums text-gray-500">
-          {tintingTabRows.length} bill{tintingTabRows.length === 1 ? "" : "s"} ·{" "}
-          {formatLitres(sumLitres(tintingTabRows))} L
-        </span>
-        <span className="text-[11px] text-gray-400">
-          not yet mixing — a bill moves to Floor when the operator starts
-        </span>
-      </div>
       {tintingTabRows.length === 0 ? (
         <div className="px-5 py-14 text-center">
           <div className="text-[28px] leading-none text-gray-300">○</div>
@@ -320,20 +399,28 @@ export function TripDesk({
             Every tint bill is either being mixed or finished. Both are on the Floor tab.
           </p>
         </div>
+      ) : pivot === "route" ? (
+        // The pivot lives on the Live row now and that row renders on every tab,
+        // so this tab has to honour it too — a toggle that moved but only worked
+        // on one of the two views it is shown above would be worse than the
+        // heading row it came from.
+        <ByRoute
+          rows={sort(tintingTabRows)}
+          nowMs={nowMs}
+          anchorIso={floor.date}
+          variant={variant}
+          openRoute={openRoute}
+          onToggleRoute={(name) => setOpenRoute(name)}
+          selProps={selProps}
+          leafProps={tintLeaf}
+        />
       ) : (
         <FloorTable
           rows={sort(tintingTabRows)}
           anchorIso={floor.date}
           nowMs={nowMs}
           variant={variant}
-          // Invoice OFF, Operator ON — they share the third column slot. Neither
-          // bill on this tab has been picked, so no invoice exists to show and
-          // the column would be blank on every row (floor-table.tsx explains the
-          // slot sharing). `tintOperators` is null until the tab's own fetch
-          // lands; an empty map renders a dash everywhere, which is the honest
-          // in-between state.
-          showInvoice={false}
-          operatorByOrderId={tintOperators ?? new Map()}
+          {...tintLeaf}
           {...selProps}
         />
       )}
@@ -353,41 +440,6 @@ export function TripDesk({
     const weightStr = formatWeightKg(weight.kg);
     middle = (
       <>
-        <div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 px-4 py-3">
-          <h4 className="m-0 text-[14px] font-bold tracking-[-0.01em] text-gray-900">To plan</h4>
-          <span className="text-[12px] tabular-nums text-gray-500">
-            {allPool.length} bill{allPool.length === 1 ? "" : "s"} · {formatLitres(litres)} L
-            {weightStr !== null && (
-              // "+" when some bill has no weight recorded — the total is a lower
-              // bound, never a guess. See sumWeightKg in status-pill.tsx.
-              <span
-                title={
-                  weight.unknown > 0
-                    ? `${weight.unknown} bill${weight.unknown === 1 ? " has" : "s have"} no weight recorded`
-                    : undefined
-                }
-              >
-                {" · "}
-                {weightStr}
-                {weight.unknown > 0 ? "+" : ""} kg
-              </span>
-            )}
-          </span>
-          <span className="ml-auto inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[2px]">
-            {(["flat", "route"] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPivot(p)}
-                className={`rounded-[5px] px-3 py-[4px] text-[11px] ${
-                  pivot === p ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                {p === "flat" ? "Flat" : "By route"}
-              </button>
-            ))}
-          </span>
-        </div>
 
         {allPool.length === 0 ? (
           <div className="px-5 py-14 text-center">
@@ -560,9 +612,11 @@ export function TripDesk({
           them and as Mail Orders still does — the scope row spans the page
           above, and everything below it belongs to one column or the other. */}
       <div className="flex min-h-0 flex-col overflow-hidden">
+        {/* THE TAB ROW. "+ New trip" stays here; the date control moved DOWN onto
+            the Live row below (2026-09-14), so this row is tabs and the one
+            filled action and nothing else. */}
         <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
           {tabs}
-          {dateControl}
         </div>
         {liveBar}
         <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
@@ -580,6 +634,7 @@ function ByRoute({
   openRoute,
   onToggleRoute,
   selProps,
+  leafProps,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
@@ -588,6 +643,10 @@ function ByRoute({
   openRoute: string | null;
   onToggleRoute: (name: string | null) => void;
   selProps: LeafProps;
+  /** Column options forwarded to each route's FloorTable — the Tinting tab's
+   *  Invoice-off / Operator-on pair. Omitted on the pool, where the defaults
+   *  are what every other Floor table already uses. */
+  leafProps?: { showInvoice?: boolean; operatorByOrderId?: Map<number, string | null> };
 }) {
   const map = new Map<string, FloorBoardRow[]>();
   for (const r of rows) {
@@ -622,6 +681,7 @@ function ByRoute({
           open={openRoute === name}
           onToggle={() => onToggleRoute(openRoute === name ? null : name)}
           variant={variant}
+          {...leafProps}
           {...selProps}
         />
       ))}

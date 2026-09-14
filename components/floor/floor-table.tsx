@@ -221,7 +221,9 @@ function fmtDueDay(dateOnly: string, anchorIso: string): string | null {
  *                  operator. `obdDateTime` is already on the row.
  *   With operator  would need `tint_assignments.createdAt`  — NOT on the payload.
  *   Tinting        would need `tint_assignments.startedAt`  — NOT on the payload.
- *   Tint done      would need `tint_assignments.completedAt`— NOT on the payload.
+ *   Tint done      CLOCK, added 2026-09-14 after the cost was measured. The
+ *                  board now reads ONE tint column, `tintCompletedAt`, for
+ *                  exactly this pill — see that field on FloorBoardRow.
  *
  * The three without a source render with NO TIME rather than borrowing one that
  * looks right and is not — `obdDateTime` would tick up for all of them and read
@@ -236,6 +238,10 @@ function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   if (st === "needsCheck") return shortElapsed(asStr(row.pickedAt), nowMs);
   if (st === "withPicker") return shortElapsed(asStr(row.assignedAt), nowMs);
   if (st === "tintPending") return shortElapsed(asStr(row.obdDateTime), nowMs);
+  // FINISHED, so the CLOCK, exactly as "done" reads — the board's standing rule
+  // is elapsed while in progress, wall time once finished. Null when the stamp
+  // is missing: no time beats a borrowed one (2026-09-14).
+  if (st === "tintDone") return hhmm(asStr(row.tintCompletedAt));
   return null;
 }
 

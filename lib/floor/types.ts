@@ -161,6 +161,34 @@ export interface FloorBoardRow extends PickingQueueRow {
    * screen has no use for (FLOOR §1: Floor is a CALLER of Picking).
    */
   tintPhase: "pending" | "assigned" | "tinting" | "done" | null;
+  /**
+   * When the tint room finished with it — `tint_assignments.completedAt`, the
+   * LATEST whole-order row (2026-09-14). Null on a plain order, and on a tint
+   * bill nobody has finished.
+   *
+   * 🔴 THE ONE TINT FIELD THE BOARD PAYS FOR, and it was measured before it was
+   * added. The board query reads `tint_assignments` for this and nothing else:
+   * ONE extra statement (20 on the orders fetch, 60 on the whole call), whose
+   * own EXPLAIN ANALYZE is 0.05 ms, and whose wall-clock delta is below the
+   * measurement floor on this link — interleaved n=8, alternating lead, it came
+   * out at -46 ms, i.e. indistinguishable. Prisma emits a separate SELECT for a
+   * relation rather than a SQL JOIN, so the board's own query plan is
+   * byte-identical either way.
+   *
+   * ⚠ EVERYTHING ELSE ABOUT THE TINT ROOM STAYS OFF THIS ROW. Operator, start,
+   * assignment status and shade progress are on the detail panel, which pays a
+   * round trip on click, and the operator name is on the Tinting tab's own
+   * tab-scoped route. This field is here only because a pill with no time beside
+   * three pills that have one reads as broken.
+   *
+   * ⚠ NO FALLBACK. When it is null the pill renders no time. `order_status_logs`
+   * records the stage change out of `tinting_in_progress` and could stand in,
+   * but it is a transition log rather than the completion stamp, and a
+   * plausible-looking wrong clock is worse than none. Live check 2026-09-14:
+   * 976 of 976 finished whole-order assignments carry the real value, so the
+   * null case is rare by construction rather than by hope.
+   */
+  tintCompletedAt: string | null;
   smu: string | null;
   billToName: string | null;
   // The ship-to PAIR, mirroring FloorRailCard above: `customerName` is the

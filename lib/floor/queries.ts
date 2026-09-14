@@ -630,6 +630,18 @@ const FLOOR_BOARD_INCLUDE = {
   dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
   querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
   pickEarlyReleasedBy: { select: { name: true } },
+  // ⚠ THE ONLY TINT READ ON THIS QUERY, AND IT IS ONE COLUMN. Measured before
+  // it was added: +1 statement, 0.05 ms server-side, wall-clock delta below the
+  // noise floor (interleaved n=8, alternating lead: -46 ms). `splitId: null` +
+  // latest-first + take 1 is the WHOLE-ORDER completion, the same boundary the
+  // detail panel draws. Operator, start and shade progress stay OFF this query
+  // — they are on the panel and on the Tinting tab's own route.
+  tintAssignments: {
+    where: { splitId: null },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+    select: { completedAt: true },
+  },
   pickAssignment: {
     select: {
       pickerId: true,
@@ -914,6 +926,10 @@ export async function getFloorBoard(
       // contract on FloorBoardRow. No extra query: `orderType` and
       // `workflowStage` are already on the fetched row.
       tintPhase: tintPhaseOf(order.orderType, order.workflowStage),
+      // ISO for the wire, like every other date here. Null when the tint room
+      // has not finished — the pill then renders no time rather than a
+      // borrowed one (see the field on FloorBoardRow).
+      tintCompletedAt: order.tintAssignments[0]?.completedAt?.toISOString() ?? null,
       // Floor does not render product families — skip the catalog join; empties
       // are honest "not computed / not applicable" for this board.
       families: [],

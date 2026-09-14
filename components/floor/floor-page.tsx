@@ -37,6 +37,7 @@ import { FloorBottomBar } from "./floor-bottom-bar";
 import { TripVehicleEditor } from "./trip-vehicle-editor";
 import {
   rowStatus,
+  isTintRoomRow,
   countByStatus,
   waitingForPickerCount,
 
@@ -1029,7 +1030,16 @@ export function FloorPage() {
   const filteredFloor = useMemo<FloorBoardResult | null>(() => {
     if (!scopedData) return null;
     const fRows = applyFloorFilters(applySearch(scopedData.floor.rows, parsed), filters);
-    const due = fRows.filter((r) => r.zone !== "upcoming");
+    // ⚠ `total` IS THE FLOOR TAB'S BADGE, SO IT EXCLUDES THE TINT ROOM
+    // (2026-09-14). Those rows are the Tinting tab's and are counted by
+    // `tintingCount` below; leaving them in here was half the double-count bug
+    // — the badge said 111 while the Floor table listed the same five bills the
+    // Tinting tab was also listing. Same predicate as the table's own exclusion
+    // in trip-desk.tsx, so the badge and the rows under it cannot disagree.
+    //
+    // ⚠ `rows` STAYS WHOLE. TripDesk splits it into the two tabs itself, and the
+    // Tinting tab reads this array; filtering here would empty it.
+    const due = fRows.filter((r) => r.zone !== "upcoming" && !isTintRoomRow(r));
     const windows = scopedData.floor.windows.map((w) => ({ ...w, count: due.filter((r) => r.windowId === w.id).length }));
     return { ...scopedData.floor, rows: fRows, windows, total: due.length };
   }, [scopedData, parsed, filters]);
@@ -1462,10 +1472,9 @@ export function FloorPage() {
   // Saturday is exactly what "what is coming" means.
   const tintingCount = useMemo(() => {
     if (!filteredFloor) return 0;
-    return filteredFloor.rows.filter((r) => {
-      const s = rowStatus(r);
-      return s === "tintPending" || s === "tintAssigned";
-    }).length;
+    // The include half of the split, through the SAME predicate `filteredFloor.
+    // total` excludes on. Two badges, one rule, exact complements.
+    return filteredFloor.rows.filter(isTintRoomRow).length;
   }, [filteredFloor]);
 
   const [tintOperators, setTintOperators] = useState<Map<number, string | null> | null>(null);
@@ -1616,9 +1625,11 @@ export function FloorPage() {
           What takes the space is the one thing the planner starts with. It is
           this row's only filled control (CLAUDE_UI §1) and it is hidden in
           History, where a past day is a record and a new trip on it would be a
-          fiction. `ml-auto` is NOT set here: the date/History control that
-          TripDesk appends after it carries it, so the two sit together at the
-          right end rather than being pushed apart. */}
+          fiction — `isLive` is that guard, so a past day shows no New trip.
+
+          The date/History control is NOT beside it any more: it moved DOWN onto
+          the Live row on 2026-09-14, which is where the Flat / By route pivot
+          also landed. This row is tabs and one filled action, nothing else. */}
       {topTab === "floor" && isLive && (
         <button
           type="button"
