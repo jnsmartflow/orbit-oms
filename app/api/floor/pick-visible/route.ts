@@ -37,9 +37,11 @@ export const dynamic = "force-dynamic";
  * guard is the original, moved verbatim, and this route's request/response
  * contract is byte-identical to what it was.
  *
- * WHY: `POST /api/trips/[id]/release` hands a whole trip's bills to the floor
- * and must do it by the SAME rule. A second copy would be two answers to "may
- * this bill be handed over" on the same column. ONE OWNER PER BEHAVIOUR — the
+ * WHY: the trip release route handed a whole trip's bills to the floor and had
+ * to do it by the SAME rule. That route was deleted in slice 3 (2026-09-14) and
+ * this is the only caller left, but the rule keeps its one owner. A second copy
+ * would be two answers to "may this bill be handed over" on the same column.
+ * ONE OWNER PER BEHAVIOUR — the
  * same discipline that keeps `buildPickingWhere` shared between the queue and
  * the marker, and `sortPickingQueue` shared between Picking and Floor.
  *

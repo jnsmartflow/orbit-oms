@@ -15,7 +15,7 @@
 //
 // 🔴 ONE OWNER PER BEHAVIOUR, the same discipline that put the release write in
 // lib/floor/release.ts rather than in the route that happened to need it first.
-// One caller today (POST /api/floor/trips/[id]/release). A second copy of "what
+// One caller today (POST /api/floor/trips/[id]/dispatch). A second copy of "what
 // does dispatched mean" is two answers on the same column, and the copy is
 // always the one that misses the next rule change.
 //

@@ -20,8 +20,9 @@
 // on the backdrop, and Esc is not its business.
 //
 // ⚠ RELEASE IS NOT HERE. The mockup shows a "release to the floor now" tick; it
-// is deliberately absent from this step. The route exists
-// (POST /api/floor/trips/[id]/release) but no button calls it yet.
+// is deliberately absent. No trip action releases a bill any more — the trip
+// release route was deleted in slice 3 (2026-09-14); Confirm plan
+// (POST /api/floor/trips/[id]/confirm) writes the trip row only.
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";

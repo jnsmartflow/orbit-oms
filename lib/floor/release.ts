@@ -2,23 +2,17 @@
 //
 // THE release write. What it means to send a bill to the picking floor.
 //
-// 🔴 ONE OWNER PER BEHAVIOUR. Extracted 2026-09-10 from
-// app/api/floor/release/route.ts so the trip module's Release can do the SAME
-// thing instead of a second version of it. Two callers now:
-//   - POST /api/floor/release              (the rail and the Hold tab)
-//   - POST /api/floor/trips/[id]/release   (a whole trip)
-// A second copy of a release rule is two answers to "what does releasing mean",
-// on the same columns, and the second copy is always the one that misses the
-// next change. The same discipline that put `stampPickVisibility` in
-// lib/picking/visibility-gate.ts and `buildPickingWhere` in lib/picking/queue.ts.
+// 🔴 ONE CALLER: POST /api/floor/release (the rail, the Hold tab and the detail
+// panel's Release). Extracted 2026-09-10 so the trip module's Release could do
+// the same write; that second caller, POST /api/floor/trips/[id]/release, was
+// DELETED in slice 3 (2026-09-14) under the rule NO TRIP ACTION MAY CHANGE A
+// BILL'S STATUS OR ITS HOLD. Its trip-only option (`skipAlreadyReleased`) and
+// bucket (`alreadyReleased`) went with it.
 //
-// 🔴 THE BUG THIS EXISTS TO CLOSE, recorded so it is not reintroduced.
-// Before this, the trip release called `stampPickVisibility` and NOTHING ELSE.
-// That function refuses any bill not already at `SUPPORT_DONE_OUTPUT`, so a bill
-// at `pending_support` put on a trip and released stayed at `pending_support`,
-// kept `dispatchStatus` NULL, never reached the picking board — and came back in
-// a bucket the route had labelled "already with a picker", which was false on
-// screen. Diagnosis: code-discovery-2026-09-10-noslot-backlog.md §B5.
+// 🔴 DO NOT ADD A TRIP CALLER BACK. A bill reaches the floor through the
+// import's auto-dispatch or through this write, pressed on the floor next to
+// the bill. The file stays a module rather than folding into the route because
+// "what does releasing mean" is still one rule with one owner.
 //
 // ⚠ WHAT A RELEASE IS, in one place: the slot, the status, the stage and the
 // provenance, in ONE `orders.update`, plus ONE `order_status_logs` row.
@@ -87,25 +81,14 @@ const TINT_IN_PROGRESS_STAGES = new Set<string>([
 /**
  * Release a set of bills to the floor, all onto the SAME slot.
  *
- * `targetDate` + `windowId` are the slot every released bill receives. The trip
- * caller passes the trip's own; the rail caller passes the one the operator
- * picked per bill (and so calls this once per bill — see that route).
+ * `targetDate` + `windowId` are the slot every released bill receives. The one
+ * caller passes the slot the operator picked per bill, and so calls this once
+ * per bill — see that route.
  *
- * 🔴 A BILL ALREADY RELEASED IS NOT REWRITTEN. `pending_picking` +
- * `dispatchStatus: 'dispatch'` means it is already on the floor with a slot
- * somebody chose — possibly deliberately, and possibly different from this
- * trip's. Rewriting it would silently move a bill's promised time because it
- * happened to be on a trip, and would burn an `orders.update` (and therefore a
- * false marker change) to do it. It comes back in `released` as a no-op only if
- * the caller asks for that; here it is simply left alone and reported by the
- * caller through the visibility stamp instead.
- *
- * ⚠ `skipAlreadyReleased` exists so the rail caller keeps its exact current
- * behaviour. `/api/floor/release` serves the Hold tab, where a bill AT
- * `pending_picking` with `dispatchStatus: 'hold'` MUST be rewritten — that is
- * the whole point of `pending_picking` being in FLOOR_RELEASABLE_STAGES, and
- * the silent-no-op bug FLOOR §6(b) records. So the rail passes `false`, and only
- * the trip caller passes `true`.
+ * ⚠ A BILL ALREADY AT `pending_picking` IS REWRITTEN, deliberately. The Hold
+ * tab's bills sit there with `dispatchStatus: 'hold'`, and releasing one MUST
+ * flip it back — the whole point of `pending_picking` being in
+ * FLOOR_RELEASABLE_STAGES, and the silent-no-op bug FLOOR §6(b) records.
  */
 export async function releaseBillsToFloor(opts: {
   orderIds: number[];
@@ -118,24 +101,10 @@ export async function releaseBillsToFloor(opts: {
   actorId: number;
   /** A note prefix for the log row, so each caller says where it came from. */
   noteLabel: string;
-  /**
-   * Leave an already-released bill alone rather than rewriting its slot.
-   * TRUE for the trip caller (c), FALSE for the rail/Hold caller.
-   */
-  skipAlreadyReleased?: boolean;
-}): Promise<ReleaseOutcome & { alreadyReleased: number[] }> {
-  const {
-    orderIds,
-    targetDate,
-    windowId,
-    windowLabel,
-    actorId,
-    noteLabel,
-    skipAlreadyReleased = false,
-  } = opts;
+}): Promise<ReleaseOutcome> {
+  const { orderIds, targetDate, windowId, windowLabel, actorId, noteLabel } = opts;
 
   const released: number[] = [];
-  const alreadyReleased: number[] = [];
   const waitingForTint: Array<{ orderId: number; workflowStage: string }> = [];
   const failed: ReleaseFailure[] = [];
 
@@ -150,17 +119,7 @@ export async function releaseBillsToFloor(opts: {
         continue;
       }
 
-      // (c) Already on the floor with a slot — leave it exactly as it is.
-      if (
-        skipAlreadyReleased &&
-        order.workflowStage === SUPPORT_DONE_OUTPUT &&
-        order.dispatchStatus === "dispatch"
-      ) {
-        alreadyReleased.push(orderId);
-        continue;
-      }
-
-      // (d) Mid-tint — skipped, NOT failed. Checked BEFORE the releasable test
+      // Mid-tint — skipped, NOT failed. Checked BEFORE the releasable test
       // so the reason reaching the caller is "waiting for tint" rather than the
       // generic "not releasable at stage X", which is true but useless.
       if (TINT_IN_PROGRESS_STAGES.has(order.workflowStage)) {
@@ -204,5 +163,5 @@ export async function releaseBillsToFloor(opts: {
     }
   }
 
-  return { released, alreadyReleased, waitingForTint, failed };
+  return { released, waitingForTint, failed };
 }

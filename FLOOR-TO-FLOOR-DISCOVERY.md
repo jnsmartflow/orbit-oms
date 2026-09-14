@@ -192,6 +192,12 @@ finished load open forever.
 | `draft` or `released` | `cancelled` | `POST .../[id]/cancel`, `route.ts:190-194` | not already `cancelled` (`:82`); not `dispatched` (`:92`); **refused if any bill on it is already `dispatched`** (`:137-146`) | `cancelledAt`, `cancelledById`; every bill's `tripDropId` set to `null` (`:169`) |
 | anything | `loading` | **no route** | — | — |
 
+> 🔴 **Out of date — slice 3 (2026-09-14) deleted `POST .../[id]/release`.** The `draft → released`
+> row is now `POST .../[id]/confirm`: not `cancelled`, not `dispatched`, trip must have bills;
+> writes `status`, and `releasedAt`/`releasedById` on the first confirm, plus one
+> `trip_activity` row. It **touches no order row.** An already-`released` trip answers 200 and
+> writes nothing, so the `released → released` row is gone.
+
 ### The closing test
 
 `dispatch/route.ts:139-157`. After bills move, the route re-counts:
@@ -246,6 +252,13 @@ The count only runs when something actually moved (`:139`).
 ```
 
 ### What each press does to the bills
+
+> 🔴 **Out of date — slice 3 (2026-09-14).** No trip press releases a bill any more. The rule
+> slice 3 adopted: **no trip action may change a bill's status or its hold.** The paragraphs on
+> Release below describe the deleted trip route. `lib/floor/release.ts` survives with one caller,
+> `POST /api/floor/release` (rail, Hold tab, detail panel), and lost its trip-only
+> `skipAlreadyReleased` option and `alreadyReleased` bucket. Add / Remove / Cancel still write
+> `orders.tripDropId`, because membership lives on the order — and nothing else.
 
 **Release** — `lib/floor/release.ts:179-199`. For each eligible bill, one `orders.update`
 setting `dispatchTargetDate`, `dispatchWindowId`, `dispatchStatus: "dispatch"`,
@@ -1018,6 +1031,11 @@ row in the `trips` table and touches no bill at all. Not "clears holds and nothi
 does not even clear holds, because no held bill is ever on a trip. Its entire bill-level job
 applies to two stages that no trip bill is at.
 
+> 🔴 **Acted on — slice 3 (2026-09-14).** The route was deleted and Confirm plan became
+> `POST /api/floor/trips/[id]/confirm`, which is effect 4 alone: one `trips.update`, one activity
+> row, zero order rows. Effects 1-3 and 6-8 went with the route. Effect 5 (the wording) is
+> unchanged. Holds are to be cleared on the floor, next to the held bill — see §9.5.
+
 That is not accidental, and the route says so. `route.ts:290-313` records that a trip made
 entirely of checked bills is "the NORMAL, EVERYDAY state of a trip on this board", and that the
 `alreadyFinished` bucket exists precisely so such a press marks the trip released instead of
@@ -1150,6 +1168,11 @@ shown rather than hidden. The band drops the empty label silently and the detail
 
 **No.**
 
+> 🔴 **Acted on — slice 3 (2026-09-14).** Release is deleted and `trips.dispatchWindowId` is
+> display-only. Items 4 and 5 in §9.2 are gone; what remains are the two writes (6, 7), the
+> label lookup (1-3, now through `loadSlotAndTransporterNames`), the four display paths (8-11)
+> and the wording of a `details_changed` activity row. Nothing branches on it.
+
 Nothing else in the codebase branches on `trips.dispatchWindowId`. Delete the release route and
 the column has exactly four consumers left — items 8 through 11 above — and all four are
 labels. Every one of them already handles null, because 24 live trips are exercising that path
@@ -1206,6 +1229,27 @@ Three things a later slice has to decide, none of them obvious:
 ⚠ Not a bug, not urgent, and **not to be swept up inside another slice**. A DELETE against 104
 rows that are somebody's only record of a planned route deserves its own decision.
 
+### 9.5 Recorded during slice 3, not fixed
+
+**The band's "at desk, floor cannot see" text — for slice 8.** `components/floor/trip-band.tsx`
+prints it on a DRAFT trip's waiting bills when desk control (the pick-visibility gate) is on, and
+"waiting" otherwise. It was true while confirming a trip also stamped its waiting bills visible.
+Slice 3 removed that stamp: with the gate on, a CONFIRMED trip's waiting bills are now exactly as
+invisible to pickers as a draft's, and the band calls them "waiting". Today the gate is off and no
+trip holds a waiting bill (read 2026-09-14), so nothing shows wrongly. Owner decision: leave it to
+slice 8.
+
+**Held bills that cannot leave Hold.** Read 2026-09-14: 179 bills carry `dispatchStatus = 'hold'`
+— 143 at `pending_support` (142 with no slot), 7 at `pending_picking`, 20 at `pick_checked`,
+9 at `pick_done`. Every Release on the floor goes through `FLOOR_RELEASABLE_STAGES`
+(`pending_support`, `pending_picking`), so the **29 at `pick_checked` / `pick_done` cannot leave
+Hold at all**. A one-job Clear hold (`hold → dispatch`, stage untouched) was decided on and held
+back before building, because of one combination: a `pending_support` bill set to `dispatch`
+matches none of the floor board's four arms (`floorLiveBaseWhere` needs a picking stage;
+`floorUnslottedWhere` needs `dispatchStatus` null), nor the Hold tab, nor the picking queue — it
+would be on no screen. The `pending_picking` + `dispatch` + no slot combination is handled
+everywhere (the board's "No slot" band, `zone: 'due'`, the picking card's no-date chip).
+
 ---
 
 *Written 2026-09-14 against the tree at commit `a501650f`. Sections 7, 8 and 9 added the same
@@ -1215,6 +1259,9 @@ day; section 8 corrects section 6, item 4. Section 9.4 added 2026-09-14 while sc
 Where a later slice has removed something they describe, the passage carries a blockquote naming
 the slice. **Slice 1 (2026-09-14)** removed the `loading` trip status from the code, the
 "Reorder stops" button, the caption under the draft button, and the desk-control switch inside
-`lib/floor/trip-wording.ts` — flagged in sections 2, 4 and 6.*
+`lib/floor/trip-wording.ts` — flagged in sections 2, 4 and 6. **Slice 3 (2026-09-14)** deleted
+`POST /api/floor/trips/[id]/release`, replaced it with the trips-only `.../confirm`, removed the
+trip-only option from `lib/floor/release.ts`, and made `trips.dispatchWindowId` display-only —
+flagged in sections 3, 8 and 9; section 9.5 added.*
 
 *Every count is a live reading taken while writing, not a constant.*

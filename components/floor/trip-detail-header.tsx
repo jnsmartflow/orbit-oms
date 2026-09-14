@@ -240,8 +240,9 @@ export function TripDetailHeader({
               // across 19 slot-less trips with no way forward. The slot only
               // ever mattered to the RELEASE write, which a checked bill never
               // receives, so the gate moved into the route and onto that write
-              // alone. The slot keeps its display job: the rail groups by it,
-              // and "No slot yet" is a fine group to sit in.
+              // alone. Slice 3 (2026-09-14) deleted that route: the trip's slot
+              // is now DISPLAY-ONLY and nothing branches on it. The rail groups
+              // by it, and "No slot yet" is a fine group to sit in.
               disabled={busy || counts.total === 0}
               title={counts.total === 0 ? "Add bills to this trip first" : wording.releaseButton}
               className={PRIMARY}
@@ -250,8 +251,8 @@ export function TripDetailHeader({
             </button>
           )}
           {/* ── MARK DISPATCHED (2026-09-14) ──────────────────────────────
-              🔴 THE PRESS THAT USED TO BE PART OF RELEASE. Release makes bills
-              visible to pickers; THIS says the goods have gone. They were one
+              🔴 THE PRESS THAT USED TO BE PART OF RELEASE. Confirm plan
+              settles the trip; THIS says the goods have gone. They were one
               button until today, so the single morning press shipped whatever
               was already checked and nothing could ship afterwards.
 

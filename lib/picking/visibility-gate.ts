@@ -106,17 +106,15 @@ export async function countHeldBackWaiting(
 // so the trip module's Release can hand bills over by the SAME rule instead of
 // a second copy of it.
 //
-// 🔴 ONE OWNER PER BEHAVIOUR. Two callers now stamp `orders.pickVisibleAt`:
+// 🔴 ONE OWNER PER BEHAVIOUR. ONE caller stamps `orders.pickVisibleAt`:
 //   - app/api/floor/pick-visible/route.ts  (the operator's Show / Send back)
-//   - app/api/trips/[id]/release/route.ts  (releasing a whole trip)
-// A second implementation would be two answers to "may this bill be handed
-// over", on the same column, on the same screen. The route that used to own
-// this now calls it and does nothing else with the columns.
+// The second, app/api/floor/trips/[id]/release/route.ts, was DELETED in slice
+// 3 (2026-09-14): no trip action may change a bill's status or its hold, and
+// visibility went with it. Do not re-add a trip caller. The function stays
+// here rather than folding back into the route because the rule is still one
+// rule with one owner.
 //
-// EVERY GUARD BELOW IS THE ORIGINAL, MOVED VERBATIM. Nothing was relaxed to
-// make the trip caller's life easier — if a trip holds a bill that may not be
-// stamped, the honest answer is that it is skipped, and the trip release route
-// reports that rather than working around it.
+// EVERY GUARD BELOW IS THE ORIGINAL, MOVED VERBATIM.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PickVisibilityFailure {

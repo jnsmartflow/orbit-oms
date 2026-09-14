@@ -639,10 +639,9 @@ export function FloorTable({
     //
     // 🔴 THE BILL'S OWN `dispatchTargetDate` AND `windowTime`, NEVER THE
     // TRIP'S `tripDate`. A trip's bills genuinely carry different dates:
-    // releaseBillsToFloor is called with `skipAlreadyReleased: true` from
-    // the trip route (app/api/floor/trips/[id]/release/route.ts:171), so a
-    // bill already on the floor keeps the slot somebody already promised
-    // rather than being silently moved to the trip's day. Reading the trip
+    // no trip action writes a bill's slot (slice 3, 2026-09-14 — the trip
+    // release route that once could was deleted), so a bill keeps the slot
+    // somebody already promised whatever trip it rides. Reading the trip
     // here would show the operator a date the bill does not have.
     // Recorded in code-discovery-2026-09-10-dates-weight-orphans.md §A5.2.
     //

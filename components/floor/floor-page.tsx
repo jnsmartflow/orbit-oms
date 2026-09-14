@@ -622,104 +622,50 @@ export function FloorPage() {
     [load],
   );
 
-  /** Confirm / Release a draft trip. The stored value is 'released' either way. */
+  /** Confirm plan on a draft trip. The stored value is 'released'. */
   const releaseTrip = useCallback(
     async (tripId: number) => {
       // ⚠ NO CONFIRMATION STEP, AND THAT IS THE POINT OF THE CHANGE
       // (2026-09-14). This press used to mark bills dispatched, so it was
-      // terminal and carried a window.confirm naming the count. Release no
-      // longer dispatches anything: it makes the bills visible to pickers and
-      // moves the trip out of draft, both of which are reversible and neither
-      // of which puts anything on a truck. A prompt in front of an ordinary
+      // terminal and carried a window.confirm naming the count. It now moves
+      // the trip out of draft and touches no bill at all (slice 3), which puts
+      // nothing on a truck. A prompt in front of an ordinary
       // press is a prompt the hand learns to dismiss, which is exactly what
       // would blunt the one on `dispatchTrip` below, where it is earned.
 
       setTripBusyId(tripId);
       try {
-        const res = await fetch(`/api/floor/trips/${tripId}/release`, { method: "POST" });
+        // 🔴 A TRIPS-ONLY WRITE SINCE SLICE 3 (2026-09-14). This called
+        // /api/floor/trips/[id]/release, which ran the floor release over the
+        // trip's bills and answered with per-bill buckets (released, already
+        // visible, waiting for tint, needs slot, already finished) that this
+        // handler turned into four different toasts. On the trips this desk
+        // builds every one of those buckets described a bill the press did not
+        // touch. /confirm moves the trip out of draft and touches no order, so
+        // there is one thing to report: that it did.
+        const res = await fetch(`/api/floor/trips/${tripId}/confirm`, { method: "POST" });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          toast.error(`Could not release — ${body?.error ?? `HTTP ${res.status}`}`);
+          toast.error(`Could not confirm — ${body?.error ?? `HTTP ${res.status}`}`);
         } else {
-          // 🔴 THE ROUTE'S REAL BUCKETS. This read `notWaiting` until 2026-09-10
-          // and called it "already with a picker" — a key the release route
-          // stopped returning when it was rewritten to do the FULL release
-          // through releaseBillsToFloor(). `body.notWaiting` was therefore
-          // always undefined, the `?? []` swallowed it, and that line of the
-          // toast never appeared. What the route actually answers with:
-          //
-          //   released       moved onto the floor by this press
-          //   alreadyVisible already on it — nothing to do, not a failure
-          //   waitingForTint mid-tint, so DELIBERATELY not moved yet
-          //   stamped        newly made visible to pickers (gate on only)
-          //   failed         genuinely refused, reported below
-          //
-          // ⚠ `waitingForTint` IS NEVER SWALLOWED (FLOOR §6b). It is the one
-          // bucket an operator has to act on — those bills come back to the trip
-          // when tinting finishes, and a silent count would read as a release
-          // that quietly did less than it said.
-          // ⚠ THE VERB IS FROZEN AT "confirmed" (2026-09-14). It read
-          // `gateOn ? "released" : "confirmed"`, which made the toast disagree
-          // with the button that raised it the moment the switch moved. The
-          // button is fixed at "Confirm plan" (lib/floor/trip-wording.ts), so
-          // the toast says the same word. The `shown to pickers` clause below is
-          // NOT frozen with it — that one reports a fact about the gate rather
-          // than naming the press, and it is only true when the gate is on.
-          const parts: string[] = [`${body?.trip?.tripNumber ?? "Trip"} confirmed`];
-          const released: number[] = body?.released ?? [];
-          const already: number[] = body?.alreadyVisible ?? [];
-          const waitingForTint: number[] = body?.waitingForTint ?? [];
-          const stamped: number[] = body?.stamped ?? [];
-          // 🔴 ALREADY FINISHED IS A SUCCESS LINE, NOT AN ERROR ONE (2026-09-11).
-          // A picked-and-checked bill has nothing left to release, and every
-          // trip this desk plans is made of them. It used to arrive inside the
-          // failed bucket and raise a red "not released" toast beside the green
-          // "confirmed" one, on a trip that had confirmed correctly.
-          const alreadyFinished: number[] = body?.alreadyFinished ?? [];
-          if (released.length > 0) parts.push(`${released.length} to the floor`);
-          if (stamped.length > 0 && gateOn) parts.push(`${stamped.length} shown to pickers`);
-          if (already.length > 0) parts.push(`${already.length} already there`);
-          if (alreadyFinished.length > 0) {
-            parts.push(
-              `${alreadyFinished.length} already picked and checked`,
-            );
-          }
-          toast.success(parts.join(" · "));
-
-          // The dispatch buckets that used to be read here are gone with the
-          // dispatch itself — `dispatchTrip` below owns them now.
-          const needsSlot: number[] = body?.needsSlot ?? [];
-          if (needsSlot.length > 0) {
-            toast.info(
-              `${needsSlot.length} bill${needsSlot.length === 1 ? "" : "s"} could not be sent to the floor — ` +
-                `this trip has no slot. Set one and confirm again.`,
-            );
-          }
-          if (waitingForTint.length > 0) {
-            toast.info(
-              `${waitingForTint.length} bill${waitingForTint.length === 1 ? "" : "s"} still in tinting — ` +
-                `${waitingForTint.length === 1 ? "it goes" : "they go"} to the floor when the tint is done`,
-            );
-          }
-          const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
-          if (failed.length > 0) toast.error(`${failed.length} bill(s) not released — ${failed[0].error}`);
+          toast.success(`${body?.trip?.tripNumber ?? "Trip"} confirmed`);
         }
       } catch {
-        toast.error("Could not release — check your connection.");
+        toast.error("Could not confirm — check your connection.");
       } finally {
         setTripBusyId(null);
       }
       setSelection(new Set());
       await load();
     },
-    [load, gateOn],
+    [load],
   );
 
   /**
    * Mark a released trip's CHECKED bills dispatched. Repeatable through the day.
    *
-   * 🔴 THE PRESS RELEASE USED TO DO, SEPARATED OUT (2026-09-14). Release makes
-   * bills visible to pickers; this says the goods have gone. They were one
+   * 🔴 THE PRESS RELEASE USED TO DO, SEPARATED OUT (2026-09-14). Confirm plan
+   * settles the trip; this says the goods have gone. They were one
    * button until today, so the single morning press shipped whatever was already
    * checked and nothing could ship afterwards.
    *

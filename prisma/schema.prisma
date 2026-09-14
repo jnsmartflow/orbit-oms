@@ -3383,11 +3383,13 @@ model trip_drops {
 // by the database, which is the failure you want, but the constant is why it
 // never gets that far.
 //
-// ⚠ 'released' AND 'dispatched' ARE TEMPORARY WRITERS. Slice 3 deletes the
-// release route and slice 4 deletes Mark dispatched; both writers go with the
-// routes they live in. The ACTIONS stay in the vocabulary so historic rows keep
-// rendering — a log that stops explaining its own old rows is worse than one
-// that carries two retired verbs.
+// ⚠ 'dispatched' IS A TEMPORARY WRITER; 'released' NO LONGER IS. Slice 4
+// deletes Mark dispatched and its writer goes with it. Slice 3 (2026-09-14)
+// deleted the release route but kept the press: Confirm plan
+// (POST /api/floor/trips/[id]/confirm) still writes 'released' until slice 6.
+// Every ACTION stays in the vocabulary so historic rows keep rendering — a log
+// that stops explaining its own old rows is worse than one that carries retired
+// verbs.
 // ─────────────────────────────────────────────────────────────────────────────
 model trip_activity {
   id        Int      @id @default(autoincrement())

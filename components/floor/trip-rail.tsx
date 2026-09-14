@@ -223,7 +223,7 @@ export function TripRail({
       >
         {/* ── "To plan", RENAMED FROM "Not on a trip" (2026-09-14) ──────────
             "Pending dispatch" was considered and rejected: `dispatched` now
-            means gone on a truck (POST …/trips/[id]/release writes the stage),
+            means gone on a truck (POST …/trips/[id]/dispatch writes the stage),
             and this pile includes bills still being picked.
 
             🔴 THE COUNT DOES NOT CHANGE WHEN YOU CLICK A TAB, AND THE

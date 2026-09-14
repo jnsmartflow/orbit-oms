@@ -38,25 +38,21 @@ function parseDateOnly(s: string): Date | null {
 // `fromStage`-is-the-real-prior-stage rule and the one-write contract are the
 // originals, moved verbatim.
 //
-// WHY: `POST /api/floor/trips/[id]/release` was doing only the visibility stamp
-// and NOT this write, so a bill at `pending_support` put on a trip never
-// actually reached the floor (`code-discovery-2026-09-10-noslot-backlog.md §B5`).
-// It now calls the same function. ONE OWNER PER BEHAVIOUR — the discipline that
-// already keeps `buildPickingWhere` shared between the queue and the marker, and
-// `stampPickVisibility` between this module and pick-visible.
+// WHY: the trip module's release route needed the same write. That route was
+// DELETED in slice 3 (2026-09-14) — no trip action may change a bill's status
+// or its hold — so this is the ONLY caller again, and the only place a bill is
+// released by hand. The writer stays in lib/ as one rule with one owner.
 //
-// ⚠ THIS ROUTE'S BEHAVIOUR IS UNCHANGED, and one flag is what guarantees it:
-// `skipAlreadyReleased` is left FALSE here. The Hold tab depends on rewriting a
-// bill that is ALREADY at `pending_picking` — that is the whole reason
-// `pending_picking` is in FLOOR_RELEASABLE_STAGES, and the silent-no-op bug
-// FLOOR §6(b) records. Only the trip caller passes `true`.
+// ⚠ THE HOLD TAB DEPENDS ON REWRITING a bill that is ALREADY at
+// `pending_picking` — that is the whole reason `pending_picking` is in
+// FLOOR_RELEASABLE_STAGES, and the silent-no-op bug FLOOR §6(b) records. The
+// trip-only `skipAlreadyReleased` flag that could have stopped it is gone.
 //
 // ⚠ A MID-TINT BILL IS STILL A FAILURE HERE, not a skip. The shared writer
 // separates `waitingForTint` from `failed`, and this route folds it back in:
 // the rail never offers a mid-tint bill a Release button, so one arriving at
 // this endpoint is a malformed request, and reporting it as a quiet skip would
-// hide that. The trip caller reports it as its own bucket, because there a
-// mid-tint bill on a trip is an ordinary, expected state.
+// hide that.
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -103,9 +99,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
 
     // ONE bill at a time, because each carries its OWN slot — the rail's whole
-    // shape (the operator confirms a suggestion per card). The shared writer
-    // takes a list because the trip caller has one slot for many bills; here the
-    // list is always length 1.
+    // shape (the operator confirms a suggestion per card). The writer takes a
+    // list because it once also served a trip; here the list is always length 1.
     const out = await releaseBillsToFloor({
       orderIds: [r.orderId],
       targetDate: date,
@@ -113,9 +108,6 @@ export async function POST(req: Request): Promise<NextResponse> {
       windowLabel: windowTimeById.get(r.dispatchWindowId) ?? String(r.dispatchWindowId),
       actorId: changedById,
       noteLabel: "Released to floor",
-      // FALSE — see the header. The Hold tab must rewrite an already-
-      // pending_picking bill, or a held bill can never leave Hold.
-      skipAlreadyReleased: false,
     });
 
     released.push(...out.released);

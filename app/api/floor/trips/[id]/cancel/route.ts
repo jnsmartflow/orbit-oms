@@ -107,7 +107,7 @@ export async function POST(
   // ── A TRIP THAT HAS ALREADY GONE CANNOT BE CALLED OFF (2026-09-13) ────────
   //
   // 🔴 REFUSING IS THE ONLY HONEST ANSWER OF THE THREE. Since confirming began
-  // marking bills `dispatched` (POST …/release, lib/floor/dispatch.ts), a
+  // marking bills `dispatched` (now POST …/dispatch, lib/floor/dispatch.ts), a
   // cancel can now meet goods that are recorded as having left. Both obvious
   // behaviours are worse than refusing:
   //

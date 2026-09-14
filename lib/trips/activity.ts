@@ -50,11 +50,13 @@ export const TRIP_DETAILS_CHANGED = "details_changed";
 export const TRIP_CANCELLED_ACTION = "cancelled";
 
 /**
- * ⚠ THESE TWO ARE TEMPORARY WRITERS AND THAT IS PLANNED, NOT A DEFECT.
+ * ⚠ `dispatched` IS A TEMPORARY WRITER; `released` NO LONGER IS.
  *
- * Slice 3 deletes the release route entirely; slice 4 deletes Mark dispatched.
- * Both writers vanish with the routes they live in, and the cleanup is free
- * because the whole file goes.
+ * Slice 4 deletes Mark dispatched, and the `dispatched` writer vanishes with
+ * the route it lives in. `released` was planned the same way, but slice 3
+ * (2026-09-14) replaced the release route with a trips-only Confirm plan
+ * (POST /api/floor/trips/[id]/confirm), which still writes it — until slice 6
+ * retires the Draft / Confirmed words.
  *
  * 🔴 THE ACTIONS STAY IN THIS LIST AFTERWARDS, and must stay in the CHECK too.
  * Rows written today outlive their writers, and a log that stops explaining its
@@ -348,36 +350,32 @@ export async function logTripCancelled(opts: {
 }
 
 /**
- * The trip was confirmed.
+ * The trip was confirmed — Confirm plan, draft → released.
  *
- * ⚠ TEMPORARY WRITER — slice 3 deletes the release route. See TRIP_RELEASED.
+ * 🔴 NO LONGER A TEMPORARY WRITER (slice 3, 2026-09-14). Slice 2 wrote this
+ * from POST /api/floor/trips/[id]/release and marked it to vanish with that
+ * route. The route went; the press did not. Its caller is now
+ * POST /api/floor/trips/[id]/confirm, a trips-only write, which lives until
+ * slice 6 retires the Draft / Confirmed words. See TRIP_RELEASED.
+ *
+ * ⚠ `detail` HAS TWO SHAPES IN THE TABLE. Rows written by the old release
+ * route carry `{ releasedCount, alreadyFinishedCount }` and read "confirmed,
+ * N bills already finished — no bill changed". Rows written from here carry
+ * `{ billCount }`. Both are true of their moment; neither is rewritten.
  */
 export async function logTripReleased(opts: {
   tripId: number;
   actorId: number;
   tripNumber: string;
-  releasedCount: number;
-  alreadyFinishedCount: number;
+  /** Bills on the trip at the moment it was confirmed. Nothing was written to them. */
+  billCount: number;
 }): Promise<void> {
-  // ⚠ SAYS WHAT THE PRESS DID, WHICH IS USUALLY NOTHING TO THE BILLS. Every
-  // trip this desk plans is made of already-checked bills, and release has
-  // nothing left to do to them (section 8.4 of the discovery report). A summary
-  // claiming otherwise would be the log telling a nicer story than the truth.
-  const moved =
-    opts.releasedCount > 0
-      ? `${bills(opts.releasedCount)} released to the floor`
-      : opts.alreadyFinishedCount > 0
-        ? `${bills(opts.alreadyFinishedCount)} already finished — no bill changed`
-        : "no bill changed";
   await writeActivity({
     tripId: opts.tripId,
     action: TRIP_RELEASED,
     actorId: opts.actorId,
-    summary: `Trip ${opts.tripNumber} confirmed, ${moved}`,
-    detail: {
-      releasedCount: opts.releasedCount,
-      alreadyFinishedCount: opts.alreadyFinishedCount,
-    },
+    summary: `Trip ${opts.tripNumber} confirmed with ${bills(opts.billCount)}`,
+    detail: { billCount: opts.billCount },
   });
 }
 
