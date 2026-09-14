@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { computeDropKey, dropShipToCode } from "@/lib/trips/drop-key";
+import { logTripBills } from "@/lib/trips/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,13 @@ export async function POST(
   const allowed = await checkAnyPermission(roles, "floor", "canEdit");
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  // The real session user, for the activity log. Never a body claim, and the
+  // same shape every other trip write route uses.
+  const actorId = Number(session.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
+  }
+
   const tripId = Number(params.id);
   if (!Number.isInteger(tripId) || tripId <= 0) {
     return NextResponse.json({ error: "Invalid trip id" }, { status: 400 });
@@ -90,6 +98,10 @@ export async function POST(
   }
 
   const changed: number[] = [];
+  // ⚠ FILLED IN LOCKSTEP WITH `changed`, for the activity row. Same order, same
+  // length — a bill that was skipped or refused is in neither, because the log
+  // records what HAPPENED and not what was asked for.
+  const changedObds: string[] = [];
   const skipped: number[] = [];
   const failed: Failed[] = [];
 
@@ -99,6 +111,10 @@ export async function POST(
         where: { id: orderId },
         select: {
           id: true,
+          // For the ACTIVITY LOG (lib/trips/activity.ts). An order id means
+          // nothing to a planner reading a trip's history months later; the OBD
+          // number is what is printed on the paper in his hand.
+          obdNumber: true,
           isRemoved: true,
           tripDropId: true,
           customerId: true,
@@ -128,6 +144,7 @@ export async function POST(
           data: { tripDropId: null },
         });
         changed.push(orderId);
+        changedObds.push(order.obdNumber);
 
         // If that stop now holds nothing, delete it. Counted AFTER the update
         // above so this bill is already gone from the tally.
@@ -242,10 +259,28 @@ export async function POST(
         data: { tripDropId: drop.id },
       });
       changed.push(orderId);
+      changedObds.push(order.obdNumber);
     } catch (err) {
       failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
     }
   }
+
+  // ── ONE ACTIVITY ROW FOR THE WHOLE PRESS (2026-09-14, slice 2) ───────────
+  // Never one per bill: attaching 40 bills is ONE thing a planner did, and 40
+  // rows would bury the events somebody reads back — the same reasoning the
+  // header gives for writing no `order_status_logs` rows on this path.
+  //
+  // Written whatever the status below turns out to be, the 422 case INCLUDED: a
+  // press that moved some bills and failed on others still moved them.
+  // `logTripBills` returns early when nothing actually changed, so a press that
+  // achieved nothing writes no row.
+  await logTripBills({
+    tripId,
+    actorId,
+    direction: action,
+    orderIds: changed,
+    obdNumbers: changedObds,
+  });
 
   // Nothing achieved at all → 422. A SKIP counts as achieved: the bill is in the
   // state the caller asked for.

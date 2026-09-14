@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
+import { logTripDetailsChanged, logTripVehicleChanged } from "@/lib/trips/activity";
 import { prisma } from "@/lib/prisma";
 import { getTripDetail } from "@/lib/trips/queries";
 
@@ -138,7 +139,23 @@ export async function PATCH(
 
   const trip = await prisma.trips.findUnique({
     where: { id: tripId },
-    select: { id: true, status: true, vehicleId: true, adhocVehicleNo: true, transporterId: true },
+    // 🔴 THE BEFORE SIDE, AND IT IS READ FOR THE LOG AS MUCH AS FOR THE GUARD.
+    // "Changed the vehicle" answers nothing a month later; "GJ05AB1234 →
+    // GJ05XY9999" answers it completely, and the only moment the old value
+    // exists is before the update below. `vehicle` is the relation, for the
+    // plate — one extra join on a single-row read, on a route pressed a handful
+    // of times a day.
+    select: {
+      id: true,
+      status: true,
+      vehicleId: true,
+      adhocVehicleNo: true,
+      transporterId: true,
+      dispatchWindowId: true,
+      note: true,
+      transporterTripNo: true,
+      vehicle: { select: { vehicleNo: true } },
+    },
   });
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   if (trip.status === "cancelled") {
@@ -239,6 +256,61 @@ export async function PATCH(
       data,
       select: { id: true, tripNumber: true, status: true },
     });
+
+    // ── ONE ACTIVITY ROW PER PRESS (2026-09-14, slice 2) ──────────────────
+    //
+    // Split two ways on purpose. The VAN is the thing a planner comes back to
+    // ask about, so a vehicle or plate change gets its own action and its own
+    // before → after. Everything else PATCH can touch — the slot, the
+    // transporter, the note, the transporter's trip number — lands in one
+    // `details_changed` row naming the fields, because logging only the vehicle
+    // would leave four of this route's six fields unrecorded, which is most of
+    // the gap this table was built to close.
+    //
+    // ⚠ A PRESS THAT MOVES BOTH WRITES BOTH. Swapping the van while also
+    // changing the slot is two facts, and folding them into one row would make
+    // one of them unfindable. Each writer returns early when its own side is
+    // empty.
+    const beforeVehicle = trip.vehicle?.vehicleNo ?? trip.adhocVehicleNo;
+    const vehicleTouched = has(body, "vehicleId") || has(body, "adhocVehicleNo");
+    if (vehicleTouched) {
+      // The resulting plate, resolved the same way `nextVehicleId`/`nextAdhoc`
+      // were for the CHECK above — an unmentioned column keeps its stored value.
+      let afterVehicle: string | null = nextAdhoc;
+      if (nextVehicleId !== null) {
+        afterVehicle =
+          nextVehicleId === trip.vehicleId
+            ? (trip.vehicle?.vehicleNo ?? null)
+            : ((
+                await prisma.vehicle_master.findUnique({
+                  where: { id: nextVehicleId },
+                  select: { vehicleNo: true },
+                })
+              )?.vehicleNo ?? null);
+      }
+      // Not every PATCH that MENTIONS the vehicle CHANGES it. A no-op press
+      // writes no row — the log is a record of change, not of intent.
+      if (afterVehicle !== beforeVehicle) {
+        await logTripVehicleChanged({
+          tripId,
+          actorId: Number(session.user.id),
+          from: beforeVehicle,
+          to: afterVehicle,
+        });
+      }
+    }
+
+    // Everything else, compared field by field against the row as it was.
+    const OTHER_FIELDS = ["transporterId", "dispatchWindowId", "note", "transporterTripNo"] as const;
+    const changes: Array<{ field: string; from: unknown; to: unknown }> = [];
+    for (const field of OTHER_FIELDS) {
+      if (!has(body, field)) continue;
+      const from = trip[field] ?? null;
+      const to = data[field] ?? null;
+      if (from !== to) changes.push({ field, from, to });
+    }
+    await logTripDetailsChanged({ tripId, actorId: Number(session.user.id), changes });
+
     return NextResponse.json({ trip: updated });
   } catch (err) {
     // A CHECK or FK the validation above did not pre-empt. Surfaced as a 400

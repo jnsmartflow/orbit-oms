@@ -4,6 +4,7 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { allocateTripNumberWithRetry, typeCodeForDeliveryType } from "@/lib/trips/number";
 import { getTripsForDate, parseTripDate } from "@/lib/trips/queries";
+import { logTripCreated } from "@/lib/trips/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -189,6 +190,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // ── Resolve the vehicle, for the driver snapshot + the transporter default ─
+  // The van as a HUMAN reads it, for the log. An ad-hoc plate is already a
+  // label; a master vehicle becomes one below.
+  let vehicleLabel: string | null = adhoc.value;
   let driverName: string | null = null;
   let driverPhone: string | null = null;
   let transporterId: number | null = suppliedTransporterId.value;
@@ -196,13 +200,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (vehicleId.value !== null) {
     const vehicle = await prisma.vehicle_master.findUnique({
       where: { id: vehicleId.value },
-      select: { id: true, driverName: true, driverPhone: true, transporterId: true },
+      // vehicleNo is read for the ACTIVITY LOG only (lib/trips/activity.ts) —
+      // "vehicle set to GJ05AB1234" is worth one column in a SELECT already
+      // being made; "vehicle set" is worth nothing a month later.
+      select: { id: true, vehicleNo: true, driverName: true, driverPhone: true, transporterId: true },
     });
     if (!vehicle) {
       return NextResponse.json({ error: `No vehicle found for id ${vehicleId.value}` }, { status: 400 });
     }
     // SNAPSHOT — see the header. Copied at build time, never read back through
     // the FK.
+    vehicleLabel = vehicle.vehicleNo;
     driverName = vehicle.driverName;
     driverPhone = vehicle.driverPhone;
     // Default from the vehicle, but a supplied value WINS. `??` is exactly the
@@ -240,6 +248,30 @@ export async function POST(req: Request): Promise<NextResponse> {
         select: { id: true, tripNumber: true, tripDate: true, typeCode: true, seq: true, status: true },
       }),
     );
+
+    // ── THE STORY STARTS HERE (2026-09-14, slice 2) ────────────────────────
+    // One activity row, after the trip exists and never before — its id is the
+    // FK. `logTripCreated` swallows its own failure, so a logging problem can
+    // never turn a created trip into a 500 (lib/trips/activity.ts).
+    //
+    // The window's LABEL is stored, not its id: a log read a month later should
+    // not need a join to say when the load was meant to leave. One extra read,
+    // and only when a window was actually chosen.
+    const createdWindow =
+      windowId.value !== null
+        ? await prisma.dispatch_slot_master.findUnique({
+            where: { id: windowId.value },
+            select: { windowTime: true },
+          })
+        : null;
+    await logTripCreated({
+      tripId: trip.id,
+      actorId: createdById,
+      tripNumber: trip.tripNumber,
+      tripDate: trip.tripDate.toISOString().slice(0, 10),
+      vehicleLabel,
+      windowLabel: createdWindow?.windowTime ?? null,
+    });
 
     return NextResponse.json(
       {

@@ -32,6 +32,7 @@ import {
 // board's trip arm (lib/floor/queries.ts) so the rail and the board cannot
 // disagree about it again — read that module's header before changing the rule.
 import { tripsOnDeskWhere } from "@/lib/trips/live-trips";
+import { getTripActivity, type TripActivityRow } from "@/lib/trips/activity";
 
 /**
  * Per-trip bill counts by state.
@@ -138,6 +139,14 @@ export interface TripSummary {
 
 export interface TripDetail extends TripSummary {
   drops: TripDropSummary[];
+  /**
+   * The trip's own history, oldest first (2026-09-14, slice 2).
+   *
+   * ⚠ ON THE DETAIL PATH ONLY, NEVER ON THE BOARD. getTripsForDate does not
+   * fetch this and must not — the board's statement count is fought over every
+   * week, and nobody reads a history they have not opened a trip to see.
+   */
+  activity: TripActivityRow[];
 }
 
 const EMPTY_COUNTS: TripBillCounts = {
@@ -551,6 +560,9 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
 
   const bills = await loadTripBills(drops.map((d) => d.id));
   const labels = await loadTripLabels([trip]);
+  // Two more statements, on a fetch that runs when a planner opens ONE trip.
+  // See TripDetail.activity — deliberately absent from the board feed.
+  const activity = await getTripActivity(tripId);
 
   const billsByDropId = new Map<number, TripBillRow[]>();
   for (const b of bills) {
@@ -581,5 +593,6 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
   return {
     ...toSummary(trip, labels, bills, drops.length),
     drops: dropSummaries,
+    activity,
   };
 }

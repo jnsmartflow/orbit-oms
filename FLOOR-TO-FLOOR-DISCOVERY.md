@@ -1168,10 +1168,48 @@ Two caveats on that answer:
   to removing its behaviour, would leave the rail with no grouping at all. That is a product
   decision, not a code dependency.
 
+### 9.4 Orphan `trip_drops` rows — recorded for a later slice, not fixed
+
+Raised while scoping slice 2 and deliberately left alone.
+
+Cancelling a trip sets `tripDropId` to null on every bill
+(`app/api/floor/trips/[id]/cancel/route.ts:169`) and does **not** delete the stops. The drop
+rows survive as empty shells. The only `trip_drops.delete` in the module is
+`bills/route.ts:143`, on the remove path, and it fires only when a stop's last bill leaves one
+at a time — a cancel never reaches it.
+
+Read live:
+
+| | |
+|---|---|
+| `trip_drops` rows in total | 297 |
+| holding no bills at all | **104** |
+| of those, on a cancelled trip | **104** |
+| of those, on a live trip | 0 |
+
+So 35% of the table is dead weight, and every one of those rows sits behind a cancelled trip.
+Nothing reads them: `getTripDetail` lists drops with their bills, and an empty drop renders as a
+stop with no rows. They are not corrupting anything — they are litter with a shape.
+
+Three things a later slice has to decide, none of them obvious:
+
+- **Whether deleting them is even right.** An empty drop is the last trace that a customer was
+  ever a stop on that trip. Slice 2's `trip_activity` cancel row now records the bills, but it
+  does not record the STOPS, and it was not backfilled — so for the 49 trips cancelled before
+  2026-09-14, these orphan rows are the only surviving evidence of the route that was planned.
+  Deleting them is not a tidy-up; it is the second half of the erasure section 9.1 describes.
+- **Whether cancel should delete them going forward.** Cheap and consistent, but it makes the
+  point above permanent for every future cancel.
+- **Whether the drop should record its own bills at cancel time**, the way the activity row now
+  does, which would make the orphan rows genuinely redundant and safe to drop.
+
+⚠ Not a bug, not urgent, and **not to be swept up inside another slice**. A DELETE against 104
+rows that are somebody's only record of a planned route deserves its own decision.
+
 ---
 
 *Written 2026-09-14 against the tree at commit `a501650f`. Sections 7, 8 and 9 added the same
-day; section 8 corrects section 6, item 4.*
+day; section 8 corrects section 6, item 4. Section 9.4 added 2026-09-14 while scoping slice 2.*
 
 *Sections 0 to 9 are a record of the tree AS FOUND and are not rewritten when the code changes.
 Where a later slice has removed something they describe, the passage carries a blockquote naming

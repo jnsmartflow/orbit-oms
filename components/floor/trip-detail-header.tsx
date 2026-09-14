@@ -14,6 +14,7 @@
 // ⚠ A CANCELLED OR DISPATCHED TRIP OFFERS NOTHING. Every write path refuses both
 // server-side; showing buttons that will 409 is worse than showing none.
 
+import type { ReactNode } from "react";
 import { ProgressBar } from "./progress-bar";
 import { formatLitres } from "./status-pill";
 import { toStatusCounts, tripStateMeta } from "./trip-rail";
@@ -34,6 +35,7 @@ export function TripDetailHeader({
   onAddBills,
   onChangeVehicle,
   onCancelTrip,
+  recent,
 }: {
   trip: TripSummary;
   busy: boolean;
@@ -48,6 +50,17 @@ export function TripDetailHeader({
   onAddBills: () => void;
   onChangeVehicle: () => void;
   onCancelTrip: () => void;
+  /**
+   * The trip's last two or three activity lines (2026-09-14, slice 2).
+   *
+   * ⚠ A NODE, NOT DATA. This component composes the header; it does not decide
+   * what a history line says. lib/trips/activity.ts writes every summary at the
+   * source and components/floor/trip-history.tsx renders it — passing rows here
+   * would put a second spelling of the same event in a second file, which is
+   * the drift that let the release toast and the release button disagree before
+   * slice 1.
+   */
+  recent?: ReactNode;
 }) {
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
   const meta = tripStateMeta(trip);
@@ -284,6 +297,15 @@ export function TripDetailHeader({
           </button>
         </div>
       )}
+
+      {/* ── THE LAST FEW LINES (2026-09-14, slice 2) ──────────────────────
+          OUTSIDE the `!isClosed && !readOnly` guard above, deliberately. A
+          cancelled trip has no action row at all, and its history — including
+          the bill list the cancel row carries, which is the only surviving
+          record of what was on it — is exactly what a planner opens it to read.
+          Suppressing it with the buttons would hide the answer on the one trip
+          state where the question always gets asked. */}
+      {recent}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
+import { logTripCancelled } from "@/lib/trips/activity";
 import { prisma } from "@/lib/prisma";
 import { DISPATCHED } from "@/lib/workflow-stages";
 
@@ -150,10 +151,36 @@ export async function POST(
     drops.length > 0
       ? await prisma.orders.findMany({
           where: { tripDropId: { in: drops.map((d) => d.id) } },
-          select: { id: true },
+          // 🔴 `obdNumber` IS READ HERE FOR THE ACTIVITY LOG AND THE READ CANNOT
+          // MOVE LATER. The loop below sets `tripDropId` to null on every one of
+          // these bills, and after that there is no way to ask which bills were
+          // on this trip — the drop rows survive but hold nothing. This SELECT
+          // is the last moment the answer exists.
+          select: { id: true, obdNumber: true },
           orderBy: { id: "asc" },
         })
       : [];
+
+  // ── THE RECORD, WRITTEN BEFORE THE ERASURE (2026-09-14, slice 2) ─────────
+  // Deliberately ahead of the detach loop rather than after it. Written even
+  // when the trip carried nothing: an empty load being called off is still a
+  // thing that happened, and `obdNumbers: []` says so precisely.
+  //
+  // ⚠ IT LOGS THE INTENT, AND THE LOOP BELOW CAN STILL PARTLY FAIL. The
+  // alternative — logging afterwards from the `detached` list — loses the whole
+  // record if the process dies mid-loop, which is the failure that matters.
+  // A bill that refused to detach is reported to the caller in `failed`.
+  await logTripCancelled({
+    tripId,
+    actorId: cancelledById,
+    tripNumber: trip.tripNumber,
+    orderIds: orders.map((o) => o.id),
+    obdNumbers: orders.map((o) => o.obdNumber),
+    // ⚠ NO REASON IS PASSED, because this route does not take one — it reads
+    // `_req` and never parses a body. `logTripCancelled` accepts one so a later
+    // slice can add the field without touching the writer; inventing a body
+    // parameter here would be a different change than the one asked for.
+  });
 
   // ⚠ NO `isRemoved: false` FILTER HERE, unlike every other orders read (CORE
   // §3's soft-delete rule). A soft-removed bill still carries its `tripDropId`,

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { releaseBillsToFloor } from "@/lib/floor/release";
+import { logTripReleased } from "@/lib/trips/activity";
 import { FLOOR_RELEASABLE_STAGES } from "@/lib/floor/release-stages";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { stampPickVisibility } from "@/lib/picking/visibility-gate";
@@ -332,6 +333,22 @@ export async function POST(
   // and `releasedAt`/`releasedById` are left exactly as they were — a catch-up
   // release of one tint bill must not rewrite who released the load, or when.
   // The status write is still made so a `draft` trip advances on its first run.
+  // ── ONE ACTIVITY ROW (2026-09-14, slice 2) ───────────────────────────────
+  // ⚠ A TEMPORARY WRITER. Slice 3 deletes this route and this call goes with
+  // it; the `released` action stays in the vocabulary so rows written today
+  // keep rendering (lib/trips/activity.ts).
+  //
+  // Written after the 422 above, so a press that achieved nothing leaves no
+  // row. The summary says what the press actually DID — usually nothing to the
+  // bills, because every trip this desk plans is made of already-checked ones.
+  await logTripReleased({
+    tripId,
+    actorId: releasedById,
+    tripNumber: trip.tripNumber,
+    releasedCount: rel.released.length,
+    alreadyFinishedCount: alreadyFinished.length,
+  });
+
   const alreadyReleasedTrip = trip.releasedAt !== null;
   const updated = await prisma.trips.update({
     where: { id: tripId },

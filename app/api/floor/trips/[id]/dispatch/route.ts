@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { markBillsDispatched } from "@/lib/floor/dispatch";
+import { logTripDispatched } from "@/lib/trips/activity";
 import { DISPATCHED } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
@@ -111,7 +112,9 @@ export async function POST(
     drops.length > 0
       ? await prisma.orders.findMany({
           where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
-          select: { id: true },
+          // `obdNumber` rides along for the ACTIVITY LOG — the bills that move
+          // are named by the number on the paper, not by an internal id.
+          select: { id: true, obdNumber: true },
           orderBy: { id: "asc" },
         })
       : [];
@@ -155,6 +158,23 @@ export async function POST(
       closed = true;
     }
   }
+
+  // ── ONE ACTIVITY ROW PER PRESS (2026-09-14, slice 2) ────────────────────
+  // ⚠ A TEMPORARY WRITER. Slice 4 deletes Mark dispatched and this call goes
+  // with it; the `dispatched` action stays in the vocabulary.
+  //
+  // ⚠ SEVERAL ROWS PER TRIP IS CORRECT. This press is re-runnable through the
+  // day — four bills at 11:00 and six more at 15:00 is two rows, which is what
+  // happened. A press that moved nothing writes none.
+  const obdById = new Map(orders.map((o) => [o.id, o.obdNumber]));
+  await logTripDispatched({
+    tripId,
+    actorId,
+    tripNumber: trip.tripNumber,
+    orderIds: disp.dispatched,
+    obdNumbers: disp.dispatched.map((id) => obdById.get(id) ?? String(id)),
+    closed,
+  });
 
   return NextResponse.json({
     trip: {
