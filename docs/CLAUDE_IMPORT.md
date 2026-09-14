@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.9 · Schema v27.15 · August 2026 · updated 2026-08-09 · Lives in: orbit-oms/docs/
+# v1.10 · Schema v27.15 · September 2026 · updated 2026-09-14 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (**LIVE** — see §10), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -124,12 +124,31 @@ Pre-2026-05-14 25-column export. **No backwards-compat shim.** A user uploading 
 ### import_batches
 
 ```
-id, batchRef (UNIQUE, retry-safe), source ('manual-sap'|'auto-import'),
-fileName, fileSize, uploadedById, status ('processing'|'success'|'error'),
-errorMessage, createdAt, completedAt
+id, batchRef (UNIQUE, retry-safe), importedById (FK users),
+headerFile, lineFile, totalObds, skippedObds, failedObds,
+status, createdAt, updatedAt
 ```
+*(schema.prisma:783-799, verified 2026-09-14)*
 
-`batchRef` collisions hit a P2002 retry pattern.
+`batchRef` collisions hit a P2002 retry pattern (`createBatchWithRetry`).
+
+⚠ **THERE IS NO `source` COLUMN.** Until 2026-09-14 this block listed `source ('manual-sap'|'auto-import')`,
+plus `fileName`, `fileSize`, `uploadedById`, `errorMessage` and `completedAt` — none of which exist.
+**Source is readable ONLY from the `headerFile` PREFIX**, written by each confirm handler:
+
+| Prefix | Written by | Example |
+|---|---|---|
+| `[auto-import] auto-json` | `processAutoImportRows` (`?action=auto-json`) | `[auto-import] auto-json` (a header-only suffix may follow) |
+| `[manual-sap]` | `handleManualSapConfirm` | `[manual-sap] EXPORT 12.09.XLSX (obdEmailDate: 2026-09-12)` |
+| `[sap-paste]` | `handleSapPasteConfirm` (2026-09-14) | `[sap-paste] clipboard 546 rows (obdEmailDate: 2026-09-14)` |
+
+Filter with `"headerFile" LIKE '[sap-paste]%'` etc. — in Postgres `LIKE`, `[` is a literal. ⚠ A paste
+batch's per-OBD audit notes still read `via manual-sap batch BATCH-…` (its `ImportSource` is
+`"manual-sap"`, §6), so the batch's `headerFile` is the ONLY place a paste is distinguishable.
+
+**`status`** — the code writes `processing` → `completed` | `failed` (the old `'success'|'error'` never
+existed). Live SELECT 2026-09-14: every persisted row is `completed` (2,421 auto-import · 570 manual-sap ·
+2 sap-paste).
 
 ### import_raw_summary
 
@@ -207,10 +226,23 @@ indexed on (batchId), (obdNumber), (createdAt)
 
 ## 5. Parser package — lib/sap-parser/
 
-Pure synchronous module. No DB access, no HTTP, no `Date.now()` side effects. Deterministic given same buffer + `fallbackObdEmailDate`.
+⚠ **NOT a pure module — corrected 2026-09-14.** Until then this line read "Pure synchronous module. No DB
+access", which has been false since **2026-08-09**: `buildObds` reads the `sku_master_v2` pack catalog
+from the database (`loadPackCatalog`, `build-obd.ts:33,47`) to resolve `article`/`articleTag` (§8.2), and
+that is why `parseSapFile` is `async`.
+
+| Stage | Pure? |
+|---|---|
+| `readSheet` (`read-sheet.ts`) — and the paste counterpart `readPaste` (`lib/sap-paste/read-paste.ts`) | **Pure, synchronous** — no DB, no HTTP, no clock |
+| `groupRows` (`group-rows.ts`) | **Pure, synchronous** |
+| `applyRules` (`apply-rules.ts`) | **Pure, synchronous** |
+| `buildObds` (`build-obd.ts`) | **NOT pure — async, ONE catalog `findMany` per file**, then no per-line I/O |
+
+Still true: no HTTP, no `Date.now()`, no writes, and deterministic given the same input,
+`fallbackObdEmailDate` **and the same catalog rows**. A file/paste costs one query, not one per line.
 
 Files:
-- `index.ts` — entry point. `parseSapFile(buffer, options) → ParseResult`. Orchestrates `readSheet → groupRows → applyRules → buildObds`. Computes file-level invariant `createdObds + skippedDeliveries === uniqueDeliveries`; emits `stats-mismatch` warning on failure (no throw).
+- `index.ts` — entry point. `parseSapFile(buffer, options) → Promise<ParseResult>` (async, for `buildObds`). Orchestrates `readSheet → groupRows → applyRules → buildObds`. Computes file-level invariant `createdObds + skippedDeliveries === uniqueDeliveries`; emits `stats-mismatch` warning on failure (no throw).
 - `read-sheet.ts` — opens workbook via `xlsx` package, validates header width, converts data rows to `RawSapRow[]`.
 - `group-rows.ts` — buckets rows by delivery. Skips short-delivery non-LF returns (`delivery.length < 10 && deliveryType !== "LF"`) with reason `"non-LF return"`.
 - `apply-rules.ts` — STEP 1: row-level non-LF filter. STEP 2: ZZRE checks. STEP 3: per-row validation. **NO grouping** — every surviving row becomes one DB row (2026-05-14 change, dropped SKU-summing logic).
@@ -290,15 +322,29 @@ Why composite: SAP can emit two rows with the same SKU but different `lineId` (a
 ### LINE_AUTHORITY map
 
 ```ts
-const LINE_AUTHORITY: Record<ObdSource, "authoritative" | "non-authoritative"> = {
-  "manual-sap": "authoritative",
-  "auto-import": "non-authoritative",
+// lib/import-upsert/types.ts:10 and :256-260
+export type ImportSource = "auto-import" | "manual-template" | "manual-sap";
+
+export const LINE_AUTHORITY: Record<ImportSource, boolean> = {
+  "auto-import":     false,
+  "manual-template": false,
+  "manual-sap":      true,
 };
 ```
 
-Authoritative: the source can mark orphan lines `removed_by_import`. Non-authoritative: orphans left alone.
+*(Corrected 2026-09-14. This block showed a two-value `ObdSource` and a `"authoritative" | "non-authoritative"`
+STRING map; the code has had THREE sources and a BOOLEAN map. There is no type named `ObdSource`.)*
 
-In practice Auto-Import never reaches `applyLinePatch` (create-only path), so the flag is mostly hypothetical until Auto-Import resumes.
+`true` (authoritative): the source can overwrite `unitQty`/`volumeLine`/`isTinting`, restore soft-removed
+lines, and mark orphan lines `removed_by_import`. `false`: adds new lines and fills a NULL `volumeLine` only;
+orphans left alone.
+
+⚠ **The SAP paste import (2026-09-14) deliberately passes `"manual-sap"`** — it is the same SAP report, so it
+must carry the same authority. It did NOT add a fourth value. Its batches are told apart by the
+`[sap-paste]` `headerFile` prefix (§4).
+
+In practice Auto-Import never reaches `applyLinePatch`: it is LIVE but CREATE-ONLY (§2, §10), so its `false`
+entry is not exercised. *(This line said "until Auto-Import resumes" — it resumed 2026-06-20.)*
 
 ### Orphan handling
 
@@ -530,12 +576,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   const url = new URL(req.url, "http://localhost");
   const action = url.searchParams.get("action");
 
-  // Five HMAC-authenticated actions dispatch BEFORE session auth:
+  // SIX HMAC-authenticated actions dispatch BEFORE session auth:
   if (action === "auto")              return handleAutoImport(req);           // v1 — wired, zero batch evidence
   if (action === "check")             return handleAutoImportCheck(req);      // v2, LIVE
   if (action === "auto-json")         return handleAutoImportJson(req);       // v2, LIVE
   if (action === "patch-headers")     return handleAutoImportPatchHeaders(req);    // v2, LIVE
   if (action === "pending-invoices")  return handleAutoImportPendingInvoices(req); // v2, LIVE
+  if (action === "day-obds")          return handleAutoImportDayObds(req);         // v2 (added to this snippet 2026-09-14)
 
   const session = await auth();
   requireRole(session, [
@@ -556,6 +603,12 @@ export async function POST(req: Request): Promise<NextResponse> {
 }
 ```
 
+⚠ **This snippet is the 2026-08-04 shape and is known to lag the code (flagged 2026-09-14, not rewritten
+here):** the live `POST` (`route.ts:4585-4621`) has `day-obds` (now added above), a role list that also
+includes `OPERATION_MANAGER` and `OPERATIONS`, **no** admin short-circuit before `checkPermission`, and two
+session-auth actions shipped 2026-09-14 — `sap-paste-preview` / `sap-paste-confirm` — documented in
+`docs/prompts/drafts/code-update-2026-09-14-sap-paste-import.md` pending consolidation.
+
 | Action | Handler | Purpose |
 |---|---|---|
 | `manual-sap-preview` | `handleManualSapPreview` | SAP preview (dry run) |
@@ -565,6 +618,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 | `check` | `handleAutoImportCheck` | **[LIVE — v2]** read-only pre-check: which submitted OBDs are new? |
 | `patch-headers` | `handleAutoImportPatchHeaders` | **[LIVE — v2]** null-only invoice fill + clock/arrival-slot/dispatch-window repair (§12) |
 | `pending-invoices` | `handleAutoImportPendingInvoices` | **[LIVE — v2]** OBDs in a date window with `invoiceNo` null (feeds Phase 9.5) |
+| `day-obds` | `handleAutoImportDayObds` (`route.ts:4506`) | **[v2, HMAC v2]** read-only: count + OBD numbers whose `obdEmailDate` falls in a `fromDate`–`toDate` window (31-day cap). Near-clone of `pending-invoices` with **no** `invoiceNo` filter and **no** `isRemoved` filter — soft-removed orders are included on purpose, mirroring `check`, so the depot script never sees them as "missing" and re-imports them forever. *(Row added 2026-09-14 — the action was wired, dispatched at `route.ts:4594`, and absent from this table.)* |
 | `preview` | `handlePreview` | Legacy preview (kept for backwards compat) |
 | `confirm` | `handleConfirm` | Legacy confirm |
 
@@ -820,7 +874,7 @@ flows through, as the acceptance check.
 - **Auto-Import ingest is create-only for lines.** `processAutoImportRows` skips existing OBDs entirely; line-patch logic is exclusive to Manual SAP. The auto pipeline's ONLY writes to existing OBDs are the separate `patch-headers` action's null-only invoice fill + clock/slot/window repair (§12) — header fields, never lines.
 - **THE NAMING TRAP — three scripts, misleading version labels.** `Auto-Import.ps1` titled "**v2.0**" is the **v1 XLSX/multipart** script ("v2.0" = OBD-Import **Tool** v2, not the pipeline) — copies at `docs/sample/`, `docs/Parser/` (untracked), `docs/Powershell/`, all posting to the OLD `orbit-oms.vercel.app` domain, zero batch evidence ever. The script matching what runs is `Auto-Import-v2.ps1` titled "**v1.0**" (pure JSON, `www.orbitoms.in`). "Version two" is ambiguous across every doc mention — name the FILE, not the number. *(The Parser copy's `$ToolRoot` also points at a `%USERPROFILE%\OneDrive` path while the v2 script and CORE §4 say `F:\` — different machines/eras; only the import PC knows its own truth.)*
 - **`import_batches.createdAt` is `timestamp` WITHOUT time zone (naive UTC).** Postgres `AT TIME ZONE 'Asia/Kolkata'` on it converts the WRONG WAY (treats the naive value as IST) — silently shifting every timestamp by −11h. Convert with `+ interval '5 hours 30 minutes'`. This bit the 2026-08-04 cadence measurement on its first attempt.
-- **`ObdSource` enum has two values.** Don't re-add a third without auditing `LINE_AUTHORITY`, the orphan handler, and the audit logger.
+- **`ImportSource` has THREE values — `auto-import`, `manual-template`, `manual-sap` (`lib/import-upsert/types.ts:10`).** Don't add a FOURTH without auditing `LINE_AUTHORITY` (a `Record<ImportSource, boolean>`, so the compiler forces an entry but not a correct one), the orphan handler, the `source === "auto-import"` branches in `header.ts` and `import-upsert.ts`, and the audit-note wording. *(Corrected 2026-09-14: this said "`ObdSource` enum has two values" — no type of that name exists, and there were three. The caution stands; only the count was wrong.)* The SAP paste import deliberately reuses `"manual-sap"` rather than adding one (§6).
 - **`ExistingLine` doesn't carry weights.** `state.ts:42-48` SELECT clause omits `netWeight` and `totalWeight`. Weight diffs on re-import currently go silently un-audited. Data still updates if the row is touched for other reasons. See §15 if weight diff becomes needed.
 - **`refItem` field deleted.** Pre-rewrite `RawSapRow` had `refItem: number | null` reading col 9 as an integer. New layout's col 9 is the SAP Reference Document (string). Field deleted, replaced by `referenceDoc: string | null`. Don't reintroduce.
 - **Patch-path `createMany` parity.** Both `createPath` (`lib/import-upsert.ts`) and `applyLinePatch` (`lib/import-upsert/lines.ts`) call `createMany` to insert new rows. Both must include the same columns. The 2026-05-14 weight fields were added to both — easy to forget one.
@@ -860,11 +914,36 @@ flows through, as the acceptance check.
 - **Backfill of historical null AND wrong `articleTag` is NOT done — a separate decision.** This change fixes new imports only. `patchLines` (`lib/import-upsert/lines.ts`) never touches `articleTag` on an existing line, so even a manual-SAP re-upload of an old OBD will not fix it. Two distinct populations: ~19,200 historical **null** lines, and the **138 wrongly-tagged** lines on the four 9-per-carton SKUs (§8.2), which are worse than null because they read as authoritative. Needs an owner decision on whether to rewrite live picking data. Tracked in `docs/ROADMAP.md` → Import Pipeline.
 - **Pack sizes still deliberately untagged**, pending depot confirmation of the container word: `0.4` (400 ML sprays, 57 lines), `5` (221), `3` (29), `2.5` (3). The catalog has `packCode`+`unit` for most of these but nothing in `sku_master_v2` distinguishes Drum from Bag — see the Check D finding in the 2026-08-09 discovery. Add them to §8.2's lists once the depot confirms.
 - **Old SAP layout shim** if SAP ever ships the old layout again (e.g. depot-level legacy). Not built today.
-- **Auto-Import patch path.** Today Auto-Import is create-only. If Auto-Import ever needs to patch existing OBDs (e.g. for late-update detection), the path needs to go through `upsertObd` like manual SAP does, with `LINE_AUTHORITY['auto-import'] = 'authoritative'`. Big change — full re-audit needed.
+- **Auto-Import patch path.** Today Auto-Import is create-only. If Auto-Import ever needs to patch existing OBDs (e.g. for late-update detection), the path needs to go through `upsertObd` like manual SAP does, with `LINE_AUTHORITY['auto-import'] = true` (a boolean map — §6). Big change — full re-audit needed.
 - ~~Auto-Import v2 — steps 4–10 not yet built~~ — **SHIPPED, see §10.1** (corrected 2026-08-04). Design doc now at `docs/prompts/archive/2026-06/web-update-2026-06-20-auto-import-v2-pure-json.md` (was in drafts/).
 - **`IMPORT_HMAC_SECRET_JSON`** is in Vercel and working (live auto-json batches authenticate daily). `IMPORT_HMAC_SECRET` (v1 var) stays until the v1 `?action=auto` handler is retired — which is now a real candidate: zero batch evidence ever (§9/§10). Retiring it is an owner decision, not a cleanup.
 - **lineId semantic change in v2.** v1 used ordinal positions (10/20/30); v2 uses real SAP item numbers. This means composite key `lineId|skuCodeRaw` will NOT match between a v1 create and a v2 patch. Create-only policy makes this safe, but if patch path ever becomes needed for Auto-Import, re-audit the key strategy.
 - **The new same-day/different-day arrival-slot rule is designed but NOT built** (§12.2). The live fork in `applyMailOrderEnrichment` still uses the old `receivedAt` vs `punchedAt` comparison. Building it is a single-site edit once picked up — see §12.2 for the full rule and the acceptance check (OBD `9108192224`).
+
+---
+
+## Change log — v1.10 (2026-09-14, four false claims corrected during the SAP paste build)
+
+Not a reconciliation pass — the schema stamp is deliberately NOT bumped (CLAUDE.md §4). Each claim was
+verified in code during the paste-import build (commit `37ceb57a`), and every canonical `docs/CLAUDE_*.md`
+plus the router was swept for the stale phrasing first; all copies were in this file.
+
+- §4 `import_batches`: the listed `source` column does not exist (nor `fileName`, `fileSize`,
+  `uploadedById`, `errorMessage`, `completedAt`, nor statuses `success`/`error`). Real columns from
+  `schema.prisma:783-799`; source lives only in the `headerFile` prefix (`[auto-import]` / `[manual-sap]` /
+  `[sap-paste]`). Status values re-verified by live SELECT.
+- §5: "pure synchronous module, no DB access" false since 2026-08-09 — `buildObds` reads the catalog, so
+  `parseSapFile` is async. Pure vs impure stages now tabled.
+- §6 + §14: there are THREE `ImportSource` values and `LINE_AUTHORITY` is a boolean map
+  (`lib/import-upsert/types.ts:10`, `:256-260`); no `ObdSource` type exists. Landmine caution kept. The §15
+  "Auto-Import patch path" item's string-map wording fixed to match. §6's "until Auto-Import resumes" corrected
+  in passing (live since 2026-06-20).
+- §9: `?action=day-obds` added to the snippet and the action table; the snippet's other lag (role list,
+  admin short-circuit, the two sap-paste actions) flagged under it, not rewritten.
+- NOT fixed here, recorded for consolidation in `docs/prompts/drafts/code-update-2026-09-14-sap-paste-import.md`:
+  further false claims in §5 (`cells.ts` helper names, `COL` shape) and §6's file list (`upsertObd`
+  signature, `UpsertOutcome` values, `loadExistingState`, `dispatchEffects` + effect-kind names,
+  `recordAuditEntry` / `import_shadow_log`, `makeKey` omits `.trim()`).
 
 ---
 
@@ -889,4 +968,4 @@ Evidence: `import_batches` SELECTs (timestamps naive-UTC-corrected), the repo sc
 
 ---
 
-*Import v1.9 · Schema v27.15 · OrbitOMS · updated 2026-08-09 — §8.2 completed from the full session record: SIZE_OVERRIDES rationale (incl. the deliberate 3.7 L Wanda blanket call), the deliberately-untagged table, the `computeArticleTag()` dead-code warning, and the multi-group roll-up bug written up as its own find. Four-SKU `piecesPerCarton` re-verified against live data (still 9 — a draft claim that it had been changed to 6 is contradicted by the rows). §15 backfill item split into null vs wrongly-tagged. Schema stamp realigned v27.14 → v27.15 to match CORE v94. Prior: v1.8, same day — §8.2 first added with commit `9de0c55b`*
+*Import v1.10 · Schema v27.15 · OrbitOMS · updated 2026-09-14 — four FALSE claims corrected (§4 `import_batches` has no `source` column — source is the `headerFile` prefix; §5 the parser is not pure, `buildObds` reads the catalog; §6/§14 `ImportSource` has three values and `LINE_AUTHORITY` is a boolean map; §9 `day-obds` was missing). The SAP clipboard-paste source and the header import pill (commit `37ceb57a`) are documented in `docs/prompts/drafts/code-update-2026-09-14-sap-paste-import.md`, NOT yet here. Schema stamp deliberately not bumped. Prior: v1.9, 2026-08-09 — §8.2 completed from the full session record: SIZE_OVERRIDES rationale (incl. the deliberate 3.7 L Wanda blanket call), the deliberately-untagged table, the `computeArticleTag()` dead-code warning, and the multi-group roll-up bug written up as its own find. Four-SKU `piecesPerCarton` re-verified against live data (still 9 — a draft claim that it had been changed to 6 is contradicted by the rows). §15 backfill item split into null vs wrongly-tagged. Schema stamp realigned v27.14 → v27.15 to match CORE v94. Prior: v1.8, same day — §8.2 first added with commit `9de0c55b`*

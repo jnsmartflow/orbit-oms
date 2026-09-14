@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   Eye,
   Download as DownloadIcon,
-  ExternalLink,
 } from "lucide-react";
 import { getTodayIST } from "@/lib/dates";
 import type {
@@ -1044,16 +1043,9 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 ))}
               </div>
               <div className="flex items-center gap-3">
-                {/* TODO Phase 4+ — point at a real audit destination. Per-OBD audit
-                    lives in the order detail panel; there is no batch-level page yet. */}
-                <button
-                  type="button"
-                  className="text-[11px] text-gray-600 hover:text-gray-900 underline-offset-2 hover:underline cursor-pointer flex items-center gap-1"
-                >
-                  View Audit
-                  <ExternalLink size={11} />
-                </button>
-                <span className="text-gray-300">·</span>
+                {/* No "View Audit" here on purpose — there is no batch-level
+                    audit page, and a button that goes nowhere is not kept.
+                    Per-OBD audit lives in each order's detail panel. */}
                 <button
                   type="button"
                   onClick={handleResultImportAnother}
