@@ -196,21 +196,46 @@ export async function logTripVehicleChanged(opts: {
   actorId: number;
   from: string | null;
   to: string | null;
+  /**
+   * The transporter the new vehicle brought with it, when that CHANGED the
+   * trip's transporter (2026-09-14).
+   *
+   * 🔴 PICKING A MASTER VEHICLE DEFAULTS THE TRANSPORTER FROM IT (PATCH, owner
+   * decision 7). Before this, that change was saved and never logged, so the
+   * header's transporter could move with no row saying so — a silent change to
+   * a field the header displays, which is the exact thing this table exists to
+   * stop. Same `field: "transporterId"` shape as details_changed, so a reader
+   * looking for transporter moves finds both.
+   */
+  transporter?: TripDetailChange;
 }): Promise<void> {
   const from = opts.from ?? "none";
   const to = opts.to ?? "none";
-  const summary =
+  const vehicleClause =
     opts.from === null
       ? `Vehicle set to ${to}`
       : opts.to === null
         ? `Vehicle ${from} removed`
         : `Vehicle changed ${from} → ${to}`;
+  const summary = opts.transporter
+    ? `${vehicleClause} · ${detailClause(opts.transporter)}`
+    : vehicleClause;
   await writeActivity({
     tripId: opts.tripId,
     action: TRIP_VEHICLE_CHANGED,
     actorId: opts.actorId,
     summary,
-    detail: { from: opts.from, to: opts.to },
+    detail: opts.transporter
+      ? {
+          from: opts.from,
+          to: opts.to,
+          transporter: {
+            field: opts.transporter.field,
+            from: opts.transporter.from,
+            to: opts.transporter.to,
+          },
+        }
+      : { from: opts.from, to: opts.to },
   });
 }
 

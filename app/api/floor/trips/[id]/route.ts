@@ -275,8 +275,26 @@ export async function PATCH(
     // changing the slot is two facts, and folding them into one row would make
     // one of them unfindable. Each writer returns early when its own side is
     // empty.
+    // ⚠ THE TRANSPORTER THE VEHICLE BROUGHT WITH IT. Picking a master vehicle
+    // defaults `transporterId` from it (above) whenever the body did not name
+    // one. That is a real change to a field the header shows, and until
+    // 2026-09-14 it was saved and never logged. Resolved here, attached to the
+    // vehicle row below — or, when the press did not actually change the plate,
+    // folded into details_changed so it is still recorded somewhere.
+    const defaultedTransporter = has(body, "vehicleId") && !has(body, "transporterId") && data.transporterId !== undefined;
+    let transporterChange: TripDetailChange | null = null;
+    if (defaultedTransporter && (data.transporterId ?? null) !== trip.transporterId) {
+      transporterChange = {
+        field: "transporterId",
+        from: trip.transporterId,
+        to: data.transporterId ?? null,
+      };
+    }
+
     const beforeVehicle = trip.vehicle?.vehicleNo ?? trip.adhocVehicleNo;
     const vehicleTouched = has(body, "vehicleId") || has(body, "adhocVehicleNo");
+    let vehicleRowWritten = false;
+    let afterVehicleResolved: string | null = null;
     if (vehicleTouched) {
       // The resulting plate, resolved the same way `nextVehicleId`/`nextAdhoc`
       // were for the CHECK above — an unmentioned column keeps its stored value.
@@ -295,12 +313,8 @@ export async function PATCH(
       // Not every PATCH that MENTIONS the vehicle CHANGES it. A no-op press
       // writes no row — the log is a record of change, not of intent.
       if (afterVehicle !== beforeVehicle) {
-        await logTripVehicleChanged({
-          tripId,
-          actorId: Number(session.user.id),
-          from: beforeVehicle,
-          to: afterVehicle,
-        });
+        vehicleRowWritten = true;
+        afterVehicleResolved = afterVehicle;
       }
     }
 
@@ -313,15 +327,19 @@ export async function PATCH(
       const to = data[field] ?? null;
       if (from !== to) changes.push({ field, from, to });
     }
+    // A defaulted transporter with no plate change to ride on (the same vehicle
+    // re-picked over a hand-set transporter) still changed the header.
+    if (transporterChange && !vehicleRowWritten) changes.push(transporterChange);
 
     // The summary names the NEW slot and transporter, in the header's own
     // words — resolved through the header's own resolver so the two never
     // disagree. At most two statements, and none on a press that touched
     // neither; skipped entirely when nothing changed.
-    const newWindowIds = changes
+    const labelled = transporterChange && vehicleRowWritten ? [...changes, transporterChange] : changes;
+    const newWindowIds = labelled
       .filter((c) => c.field === "dispatchWindowId" && typeof c.to === "number")
       .map((c) => c.to as number);
-    const newTransporterIds = changes
+    const newTransporterIds = labelled
       .filter((c) => c.field === "transporterId" && typeof c.to === "number")
       .map((c) => c.to as number);
     if (newWindowIds.length > 0 || newTransporterIds.length > 0) {
@@ -329,11 +347,22 @@ export async function PATCH(
         newWindowIds,
         newTransporterIds,
       );
-      for (const c of changes) {
+      for (const c of labelled) {
         if (typeof c.to !== "number") continue;
         if (c.field === "dispatchWindowId") c.toLabel = windowTimeById.get(c.to) ?? null;
         if (c.field === "transporterId") c.toLabel = transporterById.get(c.to) ?? null;
       }
+    }
+
+    // Vehicle row first, then details — the order the fields sit on the form.
+    if (vehicleRowWritten) {
+      await logTripVehicleChanged({
+        tripId,
+        actorId: Number(session.user.id),
+        from: beforeVehicle,
+        to: afterVehicleResolved,
+        ...(transporterChange ? { transporter: transporterChange } : {}),
+      });
     }
     await logTripDetailsChanged({ tripId, actorId: Number(session.user.id), changes });
 
