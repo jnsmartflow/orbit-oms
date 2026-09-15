@@ -571,6 +571,10 @@ body.focus .device{box-shadow:0 24px 60px rgba(27,24,38,.34)}
 .s1rule{position:relative;display:block;width:22vw;height:3px;border-radius:999px;margin-top:2.1vw}
 .s1desc{margin:clamp(40px,2.5vw,52px) 0 0;font-size:1.35vw;line-height:1.3;font-weight:600;letter-spacing:.19em;
   text-transform:uppercase;color:#74718A;animation:s1fade .5s ease-out .60s both}
+/* The gap between the rule and this line. Scoped under .s1in because the column's
+   `.copy p` rule outranks a bare .s1desc and had been zeroing its margin, which is
+   why the line sat almost on the rule. Font size is left as it has always rendered. */
+.s1in .s1desc{margin-top:clamp(36px,2.6vw,56px)}
 @keyframes s1fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 /* the dot runs the rule, so the run is a touch longer than the app's own */
 .s1rule .sp-tail{animation:spTail .54s cubic-bezier(.3,0,.25,1) .10s both,
@@ -703,6 +707,25 @@ body.focus .underphone{display:none}
 body.focus .device{pointer-events:auto}
 @media (prefers-reduced-motion: reduce){ .key3 li,.key3 li b{transition:none} }
 
+/* ══ THE PHONE SECTION'S THREE LAYOUTS ═══════════════════════════════════════
+   data-stage on the section, set once per beat:
+     hero   · beats 1-2   the two opening sentences at headline size, beside the phone
+     phone  · beats 3-8   a product is being added: the column goes, the phone is
+                          centred and as large as the stage allows, and ONE line
+                          under it tells the story a step at a time
+     normal · beats 9-11  review, dealer, sent — the layout as it was */
+.sec[data-stage="hero"] .copy{max-width:none}
+.sec[data-stage="hero"] .dcol .kicker{margin-top:auto}
+/* scoped this deep because the column's `.copy p` rule outranks a bare .leadcap
+   and was holding these sentences at body size */
+.sec[data-stage="hero"] .dcol .leadcap{font-size:clamp(40px,4vw,72px);line-height:1.08;letter-spacing:-.03em;
+  max-width:14ch;margin:0}
+.sec[data-stage="phone"]{grid-template-columns:1fr}
+.sec[data-stage="phone"] .copy{display:none}
+.sec[data-stage="phone"] .phoneslot{justify-self:stretch}
+.sec[data-stage="phone"] .subcap{width:auto;max-width:none;white-space:nowrap;
+  font-size:clamp(24px,2.1vw,38px);line-height:1.25;font-weight:600;letter-spacing:-.015em;color:var(--ink)}
+
 /* ══ THE DEPOT SIDE — the bridge, the billing desk, the close ══════════════════
    Everything below is prefixed dk- so nothing above it can be touched. The desk
    is drawn at 1680×680 — a desk monitor's working area — and scaled to the stage. */
@@ -719,7 +742,8 @@ body.focus .device{pointer-events:auto}
 /* ── the bridge ──────────────────────────────────────────────────────────────
    1 · the message is drawn in: it shrinks into the centre of the screen it is
        going to, while the phone shrinks away.
-   2 · Orbit opens: the app's own opening motion, "Trail", on white.
+   2 · the line travels: the dot and gradient tail of the app's opening motion,
+       alone on white — no wordmark, no rule, no name.
    3 · the desk is there. The app swaps its opening screen for the loaded screen
        with no transition — the loading branch simply stops rendering — so the
        desk replaces the splash the same way. */
@@ -743,31 +767,27 @@ body.focus .device{pointer-events:auto}
 .dk[data-bridge="run"][data-splash="off"] .dk-splash{display:flex;opacity:0;transition:opacity .24s ease-out}
 .dk-nomotion *{transition:none!important}
 
-/* Orbit's opening screen — white ground, the wordmark in brand violet, and the
-   three-layer strip beneath it. */
+/* The travelling line on white. In the app the strip runs the width of the
+   wordmark (102px at the splash's 33.8px ink); it keeps that length here, with
+   no wordmark over it. */
 .dk-splash{position:absolute;z-index:5;display:none;align-items:center;justify-content:center;
   background:#fff;border:1px solid #e5e7eb;overflow:hidden}
 .dk[data-bridge="run"][data-splash="on"] .dk-splash{display:flex}
 .dk-splash-scale{transform-origin:50% 50%}
-.dk-splash-cluster{position:relative;width:fit-content}
+.dk-splash-cluster{position:relative;width:102px;height:3px}
 
-/* 🔴 LIFTED VERBATIM from the app's opening motion ("Trail"): every keyframe,
-   duration, delay, easing and colour below is the app's. Only the identifiers
-   are renamed, to this deck's own prefix. */
-@keyframes dkSplashRise { from { opacity:0; transform:translateY(9px) } to { opacity:1; transform:none } }
+/* 🔴 LIFTED VERBATIM from the app's opening motion ("Trail"): the dot and the
+   tail — keyframes, durations, delays, easings, sizes and the gradient — are the
+   app's. The wordmark's rise and the solid rule are left out on purpose. Only
+   the identifiers are renamed, to this deck's own prefix. */
 @keyframes dkSplashRun  { 0%   { left:0;    opacity:0 }
                           12%  { opacity:1 }
                           88%  { opacity:1 }
                           100% { left:100%; opacity:0 } }
 @keyframes dkSplashTail { from { transform:scaleX(0) } to { transform:scaleX(1) } }
 @keyframes dkSplashFade { to   { opacity:0 } }
-@keyframes dkSplashRule { from { opacity:0 } to { opacity:1 } }
 
-.dk-splash-mark { animation: dkSplashRise .38s cubic-bezier(.2,.85,.25,1) both }
-.dk-splash-fx   { position:absolute; left:0; right:0; bottom:-13px; height:3px }
-.dk-splash-rule { position:absolute; inset:0; border-radius:999px;
-                  background:#7C3AED;
-                  animation: dkSplashRule .18s ease-out .46s both }
+.dk-splash-fx   { position:absolute; left:0; right:0; top:0; height:3px }
 .dk-splash-tail { position:absolute; inset:0; border-radius:999px;
                   transform-origin:left center;
                   background:linear-gradient(90deg, rgba(124,58,237,0) 0%, #7C3AED 100%);
@@ -777,7 +797,7 @@ body.focus .device{pointer-events:auto}
                   margin-left:-6px; border-radius:999px; background:#7C3AED; opacity:0;
                   animation: dkSplashRun .42s cubic-bezier(.3,0,.25,1) .10s both }
 @media (prefers-reduced-motion: reduce) {
-  .dk-splash-mark, .dk-splash-dot, .dk-splash-tail, .dk-splash-rule { animation: none }
+  .dk-splash-dot, .dk-splash-tail { animation: none }
   .dk-splash-dot, .dk-splash-tail { opacity: 0 }
 }
 
@@ -996,7 +1016,7 @@ body.focus .device{pointer-events:auto}
 <div class="deck">
 
   <header class="top">
-    <span class="mark"><svg class="wm" viewBox="0 0 2316 769" height="19" width="57" fill="currentColor" role="img" aria-label="Orbit"><path fill-rule="nonzero" d="M389 769L389 769Q306 769 235.5 740Q165 711 112 659Q59 607 29.5 537Q0 467 0 384L0 384Q0 301 29 231Q58 161 111 109Q164 57 235 28.5Q306 0 389 0L389 0Q472 0 543 29Q614 58 667 109.5Q720 161 749.5 231Q779 301 779 384L779 384Q779 467 749 537Q719 607 666 659Q613 711 542.5 740Q472 769 389 769M389 645L389 645Q462 645 519 611Q576 577 609 518Q642 459 642 384L642 384Q642 309 609 250Q576 191 519 157.5Q462 124 389 124L389 124Q316 124 259 157.5Q202 191 169 250Q136 309 136 384L136 384Q136 459 169 518Q202 577 259.5 611Q317 645 389 645M974 757L843 757L843 213L966 213L966 289Q987 244 1025 225.5Q1063 207 1113 207L1113 207L1145 207L1145 323L1098 323Q1043 323 1008.5 357.5Q974 392 974 454L974 454L974 757M1468 769L1468 769Q1415 769 1369.5 750.5Q1324 732 1294 696L1294 696L1294 757L1171 757L1171 0L1302 0L1302 268Q1331 236 1373.5 218.5Q1416 201 1469 201L1469 201Q1546 201 1608 239Q1670 277 1706.5 341Q1743 405 1743 485L1743 485Q1743 565 1707 629.5Q1671 694 1609 731.5Q1547 769 1468 769M1453 649L1453 649Q1498 649 1532.5 628Q1567 607 1587 570Q1607 533 1607 485L1607 485Q1607 438 1587 401Q1567 364 1532.5 342.5Q1498 321 1453 321L1453 321Q1409 321 1375 342.5Q1341 364 1321.5 401Q1302 438 1302 485L1302 485Q1302 533 1321.5 570Q1341 607 1375 628Q1409 649 1453 649M1928 152L1797 152L1797 12L1928 12L1928 152M1928 757L1797 757L1797 213L1928 213L1928 757M2251 763L2251 763Q2159 763 2108.5 712.5Q2058 662 2058 570L2058 570L2058 330L1964 330L1964 213L1974 213Q2014 213 2036 192Q2058 171 2058 131L2058 131L2058 89L2189 89L2189 213L2314 213L2314 330L2189 330L2189 563Q2189 604 2211 626Q2233 648 2281 648L2281 648Q2296 648 2316 645L2316 645L2316 757Q2302 759 2284 761Q2266 763 2251 763"/></svg><span>Placing a depot order</span></span>
+    <span class="mark"><svg class="wm" viewBox="0 0 2316 769" height="19" width="57" fill="currentColor" role="img" aria-label="Orbit"><path fill-rule="nonzero" d="M389 769L389 769Q306 769 235.5 740Q165 711 112 659Q59 607 29.5 537Q0 467 0 384L0 384Q0 301 29 231Q58 161 111 109Q164 57 235 28.5Q306 0 389 0L389 0Q472 0 543 29Q614 58 667 109.5Q720 161 749.5 231Q779 301 779 384L779 384Q779 467 749 537Q719 607 666 659Q613 711 542.5 740Q472 769 389 769M389 645L389 645Q462 645 519 611Q576 577 609 518Q642 459 642 384L642 384Q642 309 609 250Q576 191 519 157.5Q462 124 389 124L389 124Q316 124 259 157.5Q202 191 169 250Q136 309 136 384L136 384Q136 459 169 518Q202 577 259.5 611Q317 645 389 645M974 757L843 757L843 213L966 213L966 289Q987 244 1025 225.5Q1063 207 1113 207L1113 207L1145 207L1145 323L1098 323Q1043 323 1008.5 357.5Q974 392 974 454L974 454L974 757M1468 769L1468 769Q1415 769 1369.5 750.5Q1324 732 1294 696L1294 696L1294 757L1171 757L1171 0L1302 0L1302 268Q1331 236 1373.5 218.5Q1416 201 1469 201L1469 201Q1546 201 1608 239Q1670 277 1706.5 341Q1743 405 1743 485L1743 485Q1743 565 1707 629.5Q1671 694 1609 731.5Q1547 769 1468 769M1453 649L1453 649Q1498 649 1532.5 628Q1567 607 1587 570Q1607 533 1607 485L1607 485Q1607 438 1587 401Q1567 364 1532.5 342.5Q1498 321 1453 321L1453 321Q1409 321 1375 342.5Q1341 364 1321.5 401Q1302 438 1302 485L1302 485Q1302 533 1321.5 570Q1341 607 1375 628Q1409 649 1453 649M1928 152L1797 152L1797 12L1928 12L1928 152M1928 757L1797 757L1797 213L1928 213L1928 757M2251 763L2251 763Q2159 763 2108.5 712.5Q2058 662 2058 570L2058 570L2058 330L1964 330L1964 213L1974 213Q2014 213 2036 192Q2058 171 2058 131L2058 131L2058 89L2189 89L2189 213L2314 213L2314 330L2189 330L2189 563Q2189 604 2211 626Q2233 648 2281 648L2281 648Q2296 648 2316 645L2316 645L2316 757Q2302 759 2284 761Q2266 763 2251 763"/></svg></span>
     <span class="count" id="count"></span>
   </header>
 
@@ -1100,8 +1120,7 @@ body.focus .device{pointer-events:auto}
       <div class="dk-splash" id="dkSplash" aria-hidden="true">
         <div class="dk-splash-scale" id="dkSplashScale">
           <div class="dk-splash-cluster">
-            <div class="dk-splash-mark" id="dkSplashMark" style="color:#7C3AED"></div>
-            <div class="dk-splash-fx"><span class="dk-splash-rule"></span><span class="dk-splash-tail"></span><span class="dk-splash-dot"></span></div>
+            <div class="dk-splash-fx"><span class="dk-splash-tail"></span><span class="dk-splash-dot"></span></div>
           </div>
         </div>
       </div>
@@ -2291,6 +2310,38 @@ var CAPS = ["",
 /** Where each sentence goes: the column, under the phone, or nowhere. */
 var CAPWHERE = ["", "lead", "lead", "", "mech", "sub", "", "sub", "sub", "", "lead", "lead"];
 var BEATS = 11;
+
+/** Which of the section's three layouts a beat uses. */
+function stageOf(n) { return n <= 2 ? "hero" : n <= 8 ? "phone" : "normal"; }
+/** Returns true when the layout changed, so the caller can re-size the phone. */
+function setStage(n) {
+  var sec = document.querySelector('.sec[data-beats="1"]');
+  if (!sec || sec.getAttribute("data-stage") === stageOf(n)) return false;
+  sec.setAttribute("data-stage", stageOf(n));
+  return true;
+}
+/** The finished quantity of a product, from the order data — never typed. */
+function finalLine(d) {
+  var q = packText(makeLine(d.key, d.sap, d.opt, demoQtys(d)));
+  return d.shade ? d.shade + " \u00b7 " + q : q;
+}
+/* THE LINE UNDER THE PHONE on beats 3-8, step by step. Every name and quantity
+   is read from DEMO, so the words cannot drift from what the phone does.
+   start · the beat begins   pick · the option is chosen   tick · boxes going in
+   final · the finished quantity (never an in-between one)   add · the line lands
+   rest  · what the line says once the beat is over (Back, or a jump) */
+var TAP_LINE = "One tap of + adds a full box.";
+var PHONE_LINES = {
+  3: { start: "Find it \u2014 " + DEMO[0].name },
+  4: { start: "Choose it \u2014 " + DEMO[0].shade, tick: TAP_LINE, final: finalLine(DEMO[0]) },
+  5: { start: "Same screen \u2014 " + DEMO[1].shade, tick: TAP_LINE, final: finalLine(DEMO[1]) },
+  6: { start: "Add it", add: "Added \u2014 " + DEMO[0].name + " " + DEMO[0].shade + " and " + DEMO[1].shade },
+  7: { start: "Find it \u2014 " + DEMO[2].name, pick: "Choose it \u2014 " + DEMO[2].shade, tick: TAP_LINE,
+       final: finalLine(DEMO[2]), add: "Added \u2014 " + DEMO[2].name + " " + DEMO[2].shade },
+  8: { start: "Find it \u2014 " + DEMO[3].name, pick: "Choose it \u2014 " + DEMO[3].shade, tick: TAP_LINE,
+       final: finalLine(DEMO[3]), add: "That is the whole order." }
+};
+function restLine(n) { var p = PHONE_LINES[n]; return p.add || p.final || p.start; }
 var NOTE_TEXT = "Pls send shade card";
 
 /* ═══ THE BEATS ════════════════════════════════════════════════════════════
@@ -2600,7 +2651,22 @@ function keyRest(n) {
    column it moves under the phone. Six beats say nothing at all — a sentence
    on every beat is how a room learns to stop reading them. */
 var capFlip = false, subFlip = false;
-function setCap(n) {
+/** The single line under the phone. One line at a time; the lead sentence is cleared. */
+function setLine(text) {
+  var lead = document.getElementById("leadcap");
+  var sub = document.getElementById("subcap");
+  if (lead && lead.textContent !== "") {
+    lead.textContent = ""; capFlip = !capFlip; lead.setAttribute("data-f", capFlip ? "1" : "0");
+  }
+  if (sub) {
+    if (sub.textContent !== text) {
+      sub.textContent = text; subFlip = !subFlip; sub.setAttribute("data-f", subFlip ? "1" : "0");
+    }
+    sub.setAttribute("data-m", "0");
+  }
+}
+function setCap(n, rest) {
+  if (PHONE_LINES[n]) { setLine(rest ? restLine(n) : PHONE_LINES[n].start); return; }
   var lead = document.getElementById("leadcap");
   var sub = document.getElementById("subcap");
   var text = CAPS[n] || "", where = CAPWHERE[n] || "";
@@ -2737,12 +2803,12 @@ function tickQtys(d, at, gap) {
 /* ── one product, found, chosen and added — the shape of beats 7 and 8 ──── */
 function runProduct(i, capIndex) {
   var d = DEMO[i];
-  /* The LAST product's sentence says the order is complete, so it must not be
-     on screen while that product is still being added: it arrives with the add.
-     Every other product's sentence starts with its beat, as before. */
-  var closesOrder = i === DEMO.length - 1;
+  /* One line under the phone, moved on at each step. The last product's "add"
+     line is "That is the whole order.", so it arrives with the add and never
+     while the product is still going in. */
+  var L = PHONE_LINES[capIndex];
   setKey(3, 1);
-  setCap(closesOrder ? 0 : capIndex);
+  setLine(L.start);
   setProduct(null);
   tweenScroll(famTop(d.fam), SCROLL_MS);
   var t = SCROLL_MS + PAUSE_MS;
@@ -2758,13 +2824,17 @@ function runProduct(i, capIndex) {
        these did not. */
     if (d.opt) { doOpt(d.opt); repaintDrawerBody(); }
     addOption(d);
+    setLine(L.pick);
   });
   t += PICK_MS;
-  t = tickQtys(d, t, TICK_MS) + TICK_MS;
+  later(t - 250, function () { setLine(L.tick); });
+  var fin = tickQtys(d, t, TICK_MS);
+  later(fin, function () { setLine(L.final); });
+  t = fin + TICK_MS;
   later(t, function () { setKey(3, 3); markAt('[data-act="add"]'); });
   later(t + Math.round(ADD_MS / 2), function () {
     commitDrawer(d.key);
-    if (closesOrder) setCap(capIndex);
+    setLine(L.add);
   });
 }
 function placeProduct(i) {
@@ -2845,7 +2915,9 @@ function runBeat(n, anim) {
       repaintDrawerBody(); setChipInPlace("tab", "shade");
       addOption(g0);
     });
-    tickQtys(g0, 500 + PICK_MS, TICK_MS);
+    later(500 + PICK_MS - 250, function () { setLine(PHONE_LINES[4].tick); });
+    var fin4 = tickQtys(g0, 500 + PICK_MS, TICK_MS);
+    later(fin4, function () { setLine(PHONE_LINES[4].final); });
     return;
   }
 
@@ -2858,7 +2930,9 @@ function runBeat(n, anim) {
       repaintDrawerBody(); setChipInPlace("tab", "base");
       addOption(g1);
     });
-    tickQtys(g1, 500 + PICK_MS, TICK_MS);
+    later(500 + PICK_MS - 250, function () { setLine(PHONE_LINES[5].tick); });
+    var fin5 = tickQtys(g1, 500 + PICK_MS, TICK_MS);
+    later(fin5, function () { setLine(PHONE_LINES[5].final); });
     return;
   }
 
@@ -2867,7 +2941,7 @@ function runBeat(n, anim) {
     S.drawerStage = "open"; render();
     setKey(3, 3); setCap(6);
     later(700, function () { markAt('[data-act="add"]'); });
-    later(700 + Math.round(ADD_MS / 2), function () { commitDrawer(g0.key); });
+    later(700 + Math.round(ADD_MS / 2), function () { commitDrawer(g0.key); setLine(PHONE_LINES[6].add); });
     return;
   }
 
@@ -2940,6 +3014,7 @@ function gotoBeat(n) {
   n = Math.max(1, Math.min(BEATS, n));
   if (n === beat + 1 && !handedOver) {
     beat = n;
+    if (setStage(n)) fitNow();
     frozen = true;
     runBeat(n, true);
     paintBeat();
@@ -2949,10 +3024,11 @@ function gotoBeat(n) {
   reset();
   for (var i = 1; i <= n; i++) runBeat(i, false);
   beat = n; handedOver = false;
+  setStage(n); fitNow();
   render();
   var k = keyRest(n);
   setKey(k[0], k[1]);
-  setCap(n);
+  setCap(n, true);
   productRest(n);
 }
 
@@ -3098,7 +3174,9 @@ function fit() {
   var gap = 48;
   /* 2px of slack: zoom lays the device out on whole pixels and can round up */
   var byH = (stage.clientHeight - padV - underH() - 2) / DEVICE_H;
-  var byW = (stage.clientWidth - padH - gap - COPY_MIN) / DEVICE_W;
+  /* with the column gone (product beats) the phone may take the whole width */
+  var solo = sec.getAttribute("data-stage") === "phone";
+  var byW = (stage.clientWidth - padH - (solo ? 0 : gap + COPY_MIN)) / DEVICE_W;
   var f = Math.min(byH, byW);
   if (!isFinite(f) || f <= 0) f = 1;
   /* No floor above what fits: a floor of 0.62 made the phone taller than a
@@ -3154,6 +3232,7 @@ var dkStep = 0;
 var dkEnterAt = 0;          /* Back from the close lands on the last step, not the bridge */
 var dkFrom = null;          /* where the message and the phone were, when Next was pressed */
 var dkBridge = "done";
+var dkScale = 1;          /* the desk canvas scale, kept by dkFit */
 var dkSplash = "off";      /* the opening screen: wait (not up yet) | on | off */
 var dkFlip = 1;
 
@@ -3214,28 +3293,35 @@ function dkLitres(pack) {
   return m ? Number(m[1]) / (m[2] === "ML" ? 1000 : 1) : 0;
 }
 
-/* RAW TEXT IS THE EMAIL. Every numbered line of the message the phone sends
-   loses its serial and the space after it, is split at each comma, and each
-   piece is trimmed — so a cell reads, character for character, what the message
-   slide shows. The code, description and pack come from the depot's SKU table;
-   the quantity is read back out of the same piece of text. */
+/* RAW TEXT, AS THE PARSER STORES IT FOR AN APP ORDER. The parser recognises a
+   message whose first line is "Bill To:" as an app order, strips each numbered
+   line's "1. ", takes the text LEFT OF THE FIRST " - " as the product name, and
+   pins that name on every row the line splits into; that name is what lands in
+   rawText. The packs after the " - " are split at the commas into their own rows,
+   and only pack and quantity differ between them. So a two-pack line gives two
+   rows with the SAME raw text. Everything is read out of the message the phone
+   sends: name from the left of " - ", pack and quantity from each comma piece. */
 var DK_MAIL = buildMessage({ dealer: DEALERS[0], shipTo: null, lines: demoLines(), order: PRESET_ORDER });
 var DK_LINES = [];
 (function () {
   var demo = demoLines();
   DK_MAIL.body.split("\n").filter(function (s) { return /^\s*\d+\. /.test(s); }).forEach(function (s, li) {
     var l = demo[li];
-    s.replace(/^\s*\d+\. /, "").split(",").map(function (c) { return c.trim(); }).forEach(function (cell) {
+    var body = s.replace(/^\s*\d+\. /, "");
+    var dash = body.indexOf(" - ");
+    var name = dash >= 0 ? body.slice(0, dash).trim() : body.trim();
+    var packs = dash >= 0 ? body.slice(dash + 3) : "";
+    packs.split(",").map(function (c) { return c.trim(); }).forEach(function (cell) {
       var m = /(\d+(?:ML|L))\*(\d+)$/.exec(cell);
       var pack = m ? m[1] : "", qty = m ? Number(m[2]) : 0;
       var sku = l ? DK_SKU[l.key + "|" + (l.option === null ? "" : l.option) + "|" + pack] : null;
-      DK_LINES.push({ raw: cell, sku: sku ? sku[0] : null, desc: sku ? sku[1] : "",
+      DK_LINES.push({ raw: name, sku: sku ? sku[0] : null, desc: sku ? sku[1] : "",
         pk: sku ? sku[2] : pack, qty: qty, vol: dkLitres(pack) * qty });
     });
   });
 })();
 if (DK_LINES.length !== 6) {
-  console.warn("RAW TEXT: expected 6 cells from the email, derived " + DK_LINES.length + ":",
+  console.warn("RAW TEXT: expected 6 rows from the email, derived " + DK_LINES.length + ":",
     DK_LINES.map(function (x) { return x.raw; }).join(" | "));
 }
 var DK_COPIED = DK_LINES.filter(function (l) { return l.sku; });
@@ -3294,9 +3380,6 @@ document.getElementById("dkTotal").textContent = DK_TOTAL + " orders";
   el.setAttribute("data-full", x[1] === DK_TOTAL ? "1" : "0");
 });
 
-/* Orbit's wordmark for the opening screen, at the app's own ink height. */
-var DK_SPLASH_INK = 33.8;
-document.getElementById("dkSplashMark").innerHTML = WORDMARK(DK_SPLASH_INK);
 
 var dkTbody = document.getElementById("dkTbody");
 DK_LINES.forEach(function (l, i) {
@@ -3396,8 +3479,6 @@ function dkCapture(nextIdx) {
 
 /* Called at the end of show(). */
 function dkShown() {
-  var label = document.querySelector(".top .mark span");
-  if (label) label.textContent = idx >= dkIdx ? "At the depot" : "Placing a depot order";
   if (secs[idx] !== dkSec) { dkFrom = null; dkEnterAt = 0; return; }
   dkStep = dkEnterAt; dkEnterAt = 0;
   dkFit();
@@ -3406,9 +3487,9 @@ function dkShown() {
     mail.style.left = dkFrom.ml + "px"; mail.style.top = dkFrom.mt + "px"; mail.style.width = dkFrom.mw + "px";
     ph.style.left = dkFrom.pl + "px"; ph.style.top = dkFrom.pt + "px";
     dkFrom = null;
-    /* where the message is drawn in to: the centre of the screen it arrives on */
+    /* where the message is drawn in to: the start of the line it then travels as */
     var wr = document.getElementById("dkWrap");
-    var cx = wr.offsetLeft + wr.offsetWidth / 2, cy = wr.offsetTop + wr.offsetHeight / 2;
+    var cx = wr.offsetLeft + wr.offsetWidth / 2 - (102 * 4 * dkScale) / 2, cy = wr.offsetTop + wr.offsetHeight / 2;
     mail.style.setProperty("--dk-dx", Math.round(cx - (mail.offsetLeft + mail.offsetWidth / 2)) + "px");
     mail.style.setProperty("--dk-dy", Math.round(cy - (mail.offsetTop + mail.offsetHeight / 2)) + "px");
     dkSec.classList.add("dk-nomotion");
@@ -3420,10 +3501,11 @@ function dkShown() {
     dkSec.classList.remove("dk-nomotion");
     dkBridge = "run"; dkSplash = "wait";   /* the desk stays hidden until the splash has played */
     dkRender();
-    /* The opening screen goes up once the message is in (450ms), plays the
-       app's 640ms, holds for a breath, and gives way to the desk. */
+    /* The line starts once the message is in (450ms). The dot and tail are done
+       by 600ms (the tail's fade ends at .44s + .16s); a short beat after, the
+       white fades off onto the desk. */
     later(450, function () { dkSplash = "on"; dkRender(); });
-    later(450 + 640 + 520, function () { dkSplash = "off"; dkRender(); });
+    later(450 + 600 + 250, function () { dkSplash = "off"; dkRender(); });
     return;
   }
   dkFrom = null;
@@ -3443,8 +3525,9 @@ function dkFit() {
   wrapEl.style.width = Math.round(w) + "px"; wrapEl.style.height = Math.round(DK_H * sc) + "px";
   document.getElementById("dkCanvas").style.transform = "scale(" + sc + ")";
   document.getElementById("dkHead").style.left = x + "px";
-  /* the opening screen covers exactly the desk's screen; its mark is four times
-     the phone's size on this canvas, so it takes the same share of the width */
+  /* the white covers exactly the desk's screen; the line is drawn four times the
+     phone's size on this canvas, so it takes the share of the width it has there */
+  dkScale = sc;
   var sp = document.getElementById("dkSplash");
   sp.style.left = x + "px"; sp.style.top = DK_TOP + "px";
   sp.style.width = Math.round(w) + "px"; sp.style.height = Math.round(DK_H * sc) + "px";
