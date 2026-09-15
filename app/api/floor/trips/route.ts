@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { allocateTripNumberWithRetry, typeCodeForDeliveryType } from "@/lib/trips/number";
+import { allocateTripNumberWithRetry, findPreviousHolders, typeCodeForDeliveryType } from "@/lib/trips/number";
 import { getTripsForDate, parseTripDate } from "@/lib/trips/queries";
 import { logTripCreated } from "@/lib/trips/activity";
 
@@ -264,6 +264,12 @@ export async function POST(req: Request): Promise<NextResponse> {
             select: { windowTime: true },
           })
         : null;
+    // 🔴 A REUSED NUMBER SAYS SO (slice 5, 2026-09-15). The allocator hands out
+    // the lowest free seq, which may be one a cancelled trip gave back — and a
+    // sheet printed for that cancelled trip reads the same number as this one.
+    // One read of the cancelled holders, after the insert (the seq is only
+    // final once the retry is behind us), so the created row can name them.
+    const reusedFrom = await findPreviousHolders(tripDate, trip.typeCode, trip.seq);
     await logTripCreated({
       tripId: trip.id,
       actorId: createdById,
@@ -271,6 +277,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       tripDate: trip.tripDate.toISOString().slice(0, 10),
       vehicleLabel,
       windowLabel: createdWindow?.windowTime ?? null,
+      reusedFrom,
     });
 
     return NextResponse.json(
@@ -288,8 +295,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   } catch (err) {
     // A collision that survived the retry, or a CHECK the validation above did
-    // not pre-empt (chk_trips_type_code refuses 'C' today — Cross has no letter
-    // in the format yet, trip-schema draft §E). Surfaced as a 400 with the real
+    // not pre-empt. (This comment used to say chk_trips_type_code refuses 'C';
+    // it does not — the live CHECK admits L, U, I and C, verified 2026-09-15,
+    // and production holds a Cross trip.) Surfaced as a 400 with the real
     // message rather than a 500: every one of these is something the caller can
     // act on.
     return NextResponse.json(

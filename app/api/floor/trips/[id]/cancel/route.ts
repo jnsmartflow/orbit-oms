@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { logTripCancelled } from "@/lib/trips/activity";
+import { cancelledTripNumber, isTripNumberCollision } from "@/lib/trips/number";
 import { prisma } from "@/lib/prisma";
 import { DISPATCHED } from "@/lib/workflow-stages";
 
@@ -15,16 +16,28 @@ interface Failed {
 /**
  * POST /api/floor/trips/[id]/cancel — call off a trip.
  *
- * 🔴 A TRIP IS CANCELLED, NEVER DELETED, AND THE REASON IS THE NUMBER.
- * `allocateTripNumber` reads MAX(seq)+1 for the (tripDate, typeCode) pair. Delete
- * a row and its seq becomes reachable again — the next trip built that day gets a
- * number that may already be on a printed sheet in a driver's hand, and the two
- * loads are indistinguishable afterwards. `trips_date_type_seq_key` would not
- * catch it either: the old row is gone, so there is nothing left to collide with.
- * The row and its number are retained precisely so that can never happen.
+ * 🔴 A CANCELLED TRIP GIVES ITS NUMBER BACK, DELIBERATELY (slice 5, 2026-09-15).
+ * Cancel L-260914-03 and the trip is renamed L-260914-03-C (then -C2, -C3 if
+ * that is taken — cancelledTripNumber, lib/trips/number.ts), and the next trip
+ * built that day and type takes 03 again. WHY: the day's numbers are how the
+ * floor reads the day's loads, and a run of 01, 02, 04, 05, 07 left behind by
+ * cancelled drafts read as missing loads rather than as plans that changed.
  *
- * (CORE §3 forbids deleting files; this is the same instinct applied to a row
- * whose identity is load-bearing outside the database.)
+ * ⚠ THE COST, ACCEPTED BY THE OWNER: a sheet printed for the cancelled trip
+ * carries the same number as its successor. The safeguard is on the successor —
+ * its `created` activity row says "number reused, previously held by
+ * L-260914-03-C" — so two sheets with one number can always be traced.
+ *
+ * 🔴 THE RENAME IS NOT COSMETIC. trips_date_type_seq_live_key excludes cancelled
+ * trips, which frees the SEQ; `trips_tripNumber_key` still covers every row, so
+ * a cancelled trip left named L-260914-03 would refuse every attempt to reuse
+ * 03. chk_trips_number_shape now admits the -C suffix on a cancelled trip only,
+ * and the status and the new name go in ONE `trips.update` below.
+ *
+ * 🔴 AND IT IS STILL CANCELLED, NEVER DELETED. The row keeps its history, its
+ * drops and its stamps under the new name; `trip_activity` is ON DELETE
+ * RESTRICT, so a trip with history cannot be deleted at all. (CORE §3 forbids
+ * deleting files; this is the same instinct applied to a row.)
  *
  * 🔴 THE DROP ROWS STAY. Only `orders.tripDropId` is cleared. The drops are the
  * record of what was PLANNED — which stops, in which order — and a cancelled
@@ -161,6 +174,20 @@ export async function POST(
         })
       : [];
 
+  // ── THE NAME IT WILL CARRY (slice 5, 2026-09-15) ──────────────────────────
+  // Every name already taken under this number's -C family, read BEFORE the
+  // log so the log can say both names. `startsWith` cannot over-match another
+  // number: every base is {T}-{YYMMDD}-{two or more digits}, so
+  // "L-260914-10-C…" never starts with "L-260914-1-C".
+  const takenCancelNames = await prisma.trips.findMany({
+    where: { tripNumber: { startsWith: `${trip.tripNumber}-C` } },
+    select: { tripNumber: true },
+  });
+  const renamedTo = cancelledTripNumber(
+    trip.tripNumber,
+    takenCancelNames.map((t) => t.tripNumber),
+  );
+
   // ── THE RECORD, WRITTEN BEFORE THE ERASURE (2026-09-14, slice 2) ─────────
   // Deliberately ahead of the detach loop rather than after it. Written even
   // when the trip carried nothing: an empty load being called off is still a
@@ -174,6 +201,7 @@ export async function POST(
     tripId,
     actorId: cancelledById,
     tripNumber: trip.tripNumber,
+    renamedTo,
     orderIds: orders.map((o) => o.id),
     obdNumbers: orders.map((o) => o.obdNumber),
     // ⚠ NO REASON IS PASSED, because this route does not take one — it reads
@@ -214,12 +242,41 @@ export async function POST(
     );
   }
 
-  const updated = await prisma.trips.update({
-    where: { id: tripId },
-    // chk_trips_cancelled_complete requires BOTH stamps alongside the status.
-    data: { status: "cancelled", cancelledAt: new Date(), cancelledById },
-    select: { id: true, tripNumber: true, status: true, cancelledAt: true },
-  });
+  // chk_trips_cancelled_complete requires BOTH stamps alongside the status, and
+  // chk_trips_number_shape requires the -C name alongside it too — so all four
+  // go in this ONE update, never two.
+  //
+  // ⚠ A P2002 HERE HAS ONE REAL CAUSE: the same trip cancelled by two presses at
+  // once, the first having already taken the -C name. No two LIVE trips can
+  // share a number (trips_date_type_seq_live_key), so no other trip can race for
+  // this -C family. Re-read and answer as the already-cancelled skip; anything
+  // else is a genuine fault and says so rather than renaming a second time.
+  let updated;
+  try {
+    updated = await prisma.trips.update({
+      where: { id: tripId },
+      data: { status: "cancelled", cancelledAt: new Date(), cancelledById, tripNumber: renamedTo },
+      select: { id: true, tripNumber: true, status: true, cancelledAt: true },
+    });
+  } catch (err) {
+    if (!isTripNumberCollision(err)) throw err;
+    const now = await prisma.trips.findUnique({
+      where: { id: tripId },
+      select: { id: true, tripNumber: true, status: true },
+    });
+    if (now?.status === "cancelled") {
+      return NextResponse.json({
+        trip: { id: now.id, tripNumber: now.tripNumber, status: now.status },
+        detached,
+        failed,
+        alreadyCancelled: true,
+      });
+    }
+    return NextResponse.json(
+      { error: `Could not rename the cancelled trip to ${renamedTo} — that name is taken. Try again.`, detached, failed },
+      { status: 409 },
+    );
+  }
 
   return NextResponse.json({
     trip: {

@@ -91,7 +91,8 @@ function optionalText(value: unknown): { ok: true; value: string | null } | { ok
  *
  * 🔴 DELIVERY TYPE IS NOT CHANGEABLE, and the refusal is deliberate rather than
  * an omission. `chk_trips_number_shape` proves
- *   tripNumber = typeCode || '-' || to_char(tripDate,'YYMMDD') || '-' || lpad(seq,2,'0')
+ *   tripNumber = typeCode || '-' || to_char(tripDate,'YYMMDD') || '-'
+ *                || lpad(seq, greatest(2, length(seq)), '0')   (+ '-C…' once cancelled)
  * so a new delivery type means a new `typeCode`, which means a new `tripNumber`,
  * which means a new `seq` allocated against a different (date, type) pair. That
  * is a RE-NUMBER, not an edit — and the old number may already be on a printed

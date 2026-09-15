@@ -50,6 +50,20 @@ export const TRIP_DETAILS_CHANGED = "details_changed";
 export const TRIP_CANCELLED_ACTION = "cancelled";
 
 /**
+ * The trip's NUMBER changed without anybody cancelling it at that moment
+ * (slice 5, 2026-09-15).
+ *
+ * ⚠ WRITTEN BY SQL, NOT BY THIS FILE. Its only writer is the one-off migration
+ * that renamed every already-cancelled trip to <number>-C, run in the Supabase
+ * SQL Editor as user 1 and saying so in its summary. A cancel from the app today
+ * renames the trip inside its own `cancelled` row — which is why there is no
+ * logTripRenamed below, and why reusing `cancelled` for the migration would have
+ * read as a second cancel. The constant exists so the vocabulary stays complete
+ * and chk_trip_activity_action has a TypeScript twin.
+ */
+export const TRIP_RENAMED = "renamed";
+
+/**
  * ⚠ `dispatched` IS A TEMPORARY WRITER; `released` NO LONGER IS.
  *
  * Slice 4 deletes Mark dispatched, and the `dispatched` writer vanishes with
@@ -74,6 +88,7 @@ export const TRIP_ACTIONS = [
   TRIP_VEHICLE_CHANGED,
   TRIP_DETAILS_CHANGED,
   TRIP_CANCELLED_ACTION,
+  TRIP_RENAMED,
   TRIP_RELEASED,
   TRIP_DISPATCHED,
 ] as const;
@@ -144,19 +159,34 @@ export async function logTripCreated(opts: {
   tripDate: string;
   vehicleLabel: string | null;
   windowLabel: string | null;
+  /**
+   * Cancelled trips that once held this number, newest cancel first
+   * (slice 5, 2026-09-15 — findPreviousHolders, lib/trips/number.ts).
+   *
+   * 🔴 THE PAPER SAFEGUARD. A cancelled trip gives its number back, and a sheet
+   * printed for it carries the same number as this trip. One clause here makes
+   * that traceable: whoever finds two sheets reading L-260915-03 can open this
+   * trip and read which cancelled trip held the number first. Empty or absent
+   * on a number used for the first time, and then the summary says nothing.
+   */
+  reusedFrom?: string[];
 }): Promise<void> {
   const where = opts.vehicleLabel ? ` · ${opts.vehicleLabel}` : " · no vehicle yet";
   const when = opts.windowLabel ? ` · ${opts.windowLabel}` : " · no slot yet";
+  const reusedFrom = opts.reusedFrom ?? [];
+  const reused =
+    reusedFrom.length > 0 ? ` · number reused, previously held by ${reusedFrom.join(", ")}` : "";
   await writeActivity({
     tripId: opts.tripId,
     action: TRIP_CREATED,
     actorId: opts.actorId,
-    summary: `Trip ${opts.tripNumber} created${where}${when}`,
+    summary: `Trip ${opts.tripNumber} created${where}${when}${reused}`,
     detail: {
       tripNumber: opts.tripNumber,
       tripDate: opts.tripDate,
       vehicleLabel: opts.vehicleLabel,
       windowLabel: opts.windowLabel,
+      ...(reusedFrom.length > 0 ? { reusedFrom } : {}),
     },
   });
 }
@@ -321,11 +351,21 @@ export async function logTripDetailsChanged(opts: {
  *
  * ⚠ IT IS CALLED EVEN WHEN THE TRIP CARRIED NOTHING. An empty load being called
  * off is still a thing that happened, and `obdNumbers: []` says so precisely.
+ *
+ * 🔴 BOTH NAMES, BECAUSE CANCELLING RENAMES THE TRIP (slice 5, 2026-09-15).
+ * "Trip L-260914-03 cancelled, now L-260914-03-C, 2 bills detached". The panel
+ * already prints who and when from `actorId` and `createdAt`, so the summary
+ * does not repeat them. `detail.was` / `detail.now` carry the two names as
+ * facts; `detail.tripNumber` keeps its pre-slice-5 meaning — the number the
+ * trip had when it was cancelled — so old and new rows read the same key.
  */
 export async function logTripCancelled(opts: {
   tripId: number;
   actorId: number;
+  /** The number the trip carried until this cancel. */
   tripNumber: string;
+  /** The number it carries from now on — `<tripNumber>-C`, `-C2` … */
+  renamedTo: string;
   orderIds: number[];
   obdNumbers: string[];
   reason?: string | null;
@@ -339,8 +379,10 @@ export async function logTripCancelled(opts: {
     tripId: opts.tripId,
     action: TRIP_CANCELLED_ACTION,
     actorId: opts.actorId,
-    summary: `Trip ${opts.tripNumber} cancelled, ${carried}${why}`,
+    summary: `Trip ${opts.tripNumber} cancelled, now ${opts.renamedTo}, ${carried}${why}`,
     detail: {
+      was: opts.tripNumber,
+      now: opts.renamedTo,
       tripNumber: opts.tripNumber,
       orderIds: opts.orderIds,
       obdNumbers: opts.obdNumbers,

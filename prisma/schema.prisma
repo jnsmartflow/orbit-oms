@@ -3149,7 +3149,10 @@ model ci_return_lines {
 //     ⚠ 'loading' was REMOVED from this CHECK on 2026-09-14. Nothing had ever
 //       written it and production held zero rows at it. It comes back only
 //       alongside the loading screen, by ALTER, never by code assuming it.
-//   chk_trips_type_code  CHECK ("typeCode" IN ('L','U','I'))
+//   chk_trips_type_code  CHECK ("typeCode" IN ('L','U','I','C'))
+//     ⚠ This line read ('L','U','I') until 2026-09-15. The LIVE constraint has
+//       admitted 'C' all along (pg_constraint, verified) and production holds a
+//       Cross trip, C-260911-01.
 //   chk_trips_seq_positive        CHECK (seq >= 1)
 //   chk_trips_vehicle_one_of
 //     CHECK (NOT ("vehicleId" IS NOT NULL AND "adhocVehicleNo" IS NOT NULL))
@@ -3159,9 +3162,24 @@ model ci_return_lines {
 //   chk_trips_cancelled_complete
 //     CHECK (status <> 'cancelled'
 //            OR ("cancelledAt" IS NOT NULL AND "cancelledById" IS NOT NULL))
-//   chk_trips_number_shape
-//     CHECK ("tripNumber" = "typeCode" || '-' || to_char("tripDate",'YYMMDD')
-//            || '-' || lpad(seq::text, 2, '0'))
+//   chk_trips_number_shape   (rewritten slice 5, 2026-09-15)
+//     base = "typeCode" || '-' || to_char("tripDate",'YYMMDD') || '-'
+//            || lpad(seq::text, greatest(2, length(seq::text)), '0')
+//     CHECK (CASE WHEN status = 'cancelled'
+//              THEN "tripNumber" ~ ('^' || base || '-C([2-9]|[1-9][0-9]+)?$')
+//              ELSE "tripNumber" = base END)
+//     A live trip carries its number exactly; a cancelled trip carries it with
+//     -C, -C2, -C3 … (lib/trips/number.ts cancelledTripNumber). The original
+//     read `lpad(seq::text, 2, '0')`, and Postgres lpad TRUNCATES — seq 100
+//     rendered '10' and the 100th trip of a day would have been refused.
+//
+// 🔴 A PARTIAL UNIQUE INDEX — NOT EXPRESSIBLE IN PRISMA, recorded by hand:
+//   trips_date_type_seq_live_key
+//     UNIQUE ("tripDate","typeCode",seq) WHERE status <> 'cancelled'
+//   It REPLACED the full UNIQUE trips_date_type_seq_key on 2026-09-15, so a
+//   cancelled trip no longer holds its seq and the next trip can reuse it. Do
+//   NOT model it as @@unique — Prisma would describe a full unique that does not
+//   exist. Same class as orders_billing_pending_idx (CORE §7).
 //
 // 🔴 A SIXTH STATUS VALUE NEEDS A SQL ALTER ON chk_trips_status FIRST — never
 // just a new string in application code. Same trap chk_pick_assignments_status
@@ -3176,12 +3194,15 @@ model ci_return_lines {
 // nothing would correct it. Owner decision, 2026-09-09.
 //
 // ⚠ chk_trips_number_shape IS WHAT KEEPS THE TWO UNIQUES HONEST. `tripNumber`
-// is UNIQUE and so is (tripDate, typeCode, seq) — not redundant, because they
-// fail differently: the text catches the allocator's P2002 race, the triple
-// catches a duplicate seq that a mis-formatted number would let through. The
-// CHECK is what stops those two ever disagreeing about the same row.
-// lpad PADS and never truncates, so a 100th trip in one day renders '100' and
-// stays valid. Do not reimplement the formatter as a two-character slice.
+// is UNIQUE over every row and (tripDate, typeCode, seq) is UNIQUE over the
+// trips that are not cancelled — not redundant, because they fail differently:
+// the text catches the allocator's P2002 race, the triple catches a duplicate
+// seq that a mis-formatted number would let through. The CHECK is what stops
+// those two ever disagreeing about the same row, and it is why cancelling
+// RENAMES the trip: the text unique still covers a cancelled row.
+// ⚠ Postgres lpad TRUNCATES to its width ('100' padded to 2 is '10'), which is
+// why the CHECK pads to greatest(2, length). Do not reimplement the formatter
+// as a two-character slice, and do not narrow the CHECK back to a bare 2.
 //
 // 🔴 FOUR FKs TO `users` — createdById / releasedById / dispatchedById /
 // cancelledById. All four carry an explicitly NAMED @relation on BOTH sides
@@ -3201,10 +3222,10 @@ model ci_return_lines {
 // delivery_type_master. The FK carries the classification; typeCode carries the
 // number's own component, and chk_trips_number_shape ties them together.
 //
-// ⚠ `Cross` HAS NO LETTER. delivery_type_master holds Local / Upcountry / IGT /
-// Cross and chk_trips_type_code admits three. A Cross trip cannot be numbered
-// today and the CHECK will refuse it outright rather than degrade. Open owner
-// question — §E of the trip-schema draft.
+// ⚠ `Cross` IS 'C'. delivery_type_master holds Local / Upcountry / IGT / Cross
+// and chk_trips_type_code admits all four letters. (This note said Cross had no
+// letter and the CHECK refused it; the live constraint never did — corrected
+// 2026-09-15.)
 //
 // ⚠ `transporterId` is the TRIP'S OWN, nullable, defaulted from the vehicle
 // when one is chosen but overridable. Do not derive it from `vehicleId` at read
@@ -3253,9 +3274,10 @@ model trips {
   drops    trip_drops[]
   activity trip_activity[]
 
-  // Live name trips_date_type_seq_key. Prisma's default for this triple is
-  // trips_tripDate_typeCode_seq_key, so the `map:` is REQUIRED.
-  @@unique([tripDate, typeCode, seq], map: "trips_date_type_seq_key")
+  // ⚠ NO @@unique ON (tripDate, typeCode, seq) SINCE 2026-09-15. The live
+  // uniqueness is the PARTIAL index trips_date_type_seq_live_key (see the header
+  // above), which Prisma cannot express. It replaced the full
+  // trips_date_type_seq_key.
   // Three hand-made index names, none of which is what Prisma would generate,
   // so every one carries an explicit `map:` — same rule admin_audit_log follows
   // (CORE §7.13).
@@ -3382,6 +3404,11 @@ model trip_drops {
 // status-string rule) — a typo'd action passes every type check and is refused
 // by the database, which is the failure you want, but the constant is why it
 // never gets that far.
+//   chk_trip_activity_action CHECK (action IN ('created','bills_added',
+//     'bills_removed','vehicle_changed','details_changed','cancelled',
+//     'released','dispatched','renamed'))
+//   'renamed' added 2026-09-15 (slice 5) for the one-off migration that renamed
+//   already-cancelled trips to <number>-C.
 //
 // ⚠ 'dispatched' IS A TEMPORARY WRITER; 'released' NO LONGER IS. Slice 4
 // deletes Mark dispatched and its writer goes with it. Slice 3 (2026-09-14)
