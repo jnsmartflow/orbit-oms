@@ -141,6 +141,23 @@ export interface TripSummary {
    * and saying it twice is noise.
    */
   areaLabel: string | null;
+  /**
+   * The ROUTE the load mostly runs, and how many other routes it touches
+   * (floor redesign, 2026-09-15). `deriveRouteLabel` — the area label's rule.
+   * Null / 0 when no stop with a bill has a route; the screen says "No route".
+   */
+  routeName: string | null;
+  routeExtraCount: number;
+  /** `vehicle_master.category` ("Tata 407") for a master vehicle; null for a typed plate or none. */
+  vehicleCategory: string | null;
+  /**
+   * Total weight of the trip's non-removed bills, kg, from the same
+   * import_obd_query_summary read as the litres. A bill with no snapshot row adds
+   * nothing and is counted in `weightUnknownCount`, so the screen can tell a
+   * true total from a partial one.
+   */
+  totalWeightKg: number;
+  weightUnknownCount: number;
   releasedAt: string | null;
   dispatchedAt: string | null;
   cancelledAt: string | null;
@@ -254,6 +271,8 @@ interface TripBillRow {
    */
   dispatchStatus: string | null;
   litres: number;
+  /** kg from the snapshot; null when the bill has no snapshot row. */
+  weightKg: number | null;
 }
 
 /**
@@ -286,8 +305,14 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
 
   const snapshots = await prisma.import_obd_query_summary.findMany({
     where: { orderId: { in: orders.map((o) => o.id) } },
-    select: { orderId: true, totalVolume: true },
+    // totalWeight rides the same read as the litres — one more column, no
+    // extra statement (floor redesign, 2026-09-15).
+    select: { orderId: true, totalVolume: true, totalWeight: true },
   });
+  const weightByOrderId = new Map<number, number>();
+  for (const s of snapshots) {
+    if (s.orderId !== null) weightByOrderId.set(s.orderId, s.totalWeight);
+  }
   const litresByOrderId = new Map<number, number>();
   for (const s of snapshots) {
     if (s.orderId !== null) litresByOrderId.set(s.orderId, s.totalVolume);
@@ -301,6 +326,8 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
     // A bill with no snapshot row contributes 0, never null — the same choice
     // lib/floor/queries.ts makes for `volumeLitres` on its own rows.
     litres: litresByOrderId.get(o.id) ?? 0,
+    // NULL, not 0, when there is no snapshot — the summary counts it as unknown.
+    weightKg: weightByOrderId.get(o.id) ?? null,
   }));
 }
 
@@ -386,7 +413,8 @@ async function loadTripLabels(trips: TripRow[]) {
   const vehicles = vehicleIds.length
     ? await prisma.vehicle_master.findMany({
         where: { id: { in: vehicleIds } },
-        select: { id: true, vehicleNo: true },
+        // `category` rides the same read (floor redesign, 2026-09-15).
+        select: { id: true, vehicleNo: true, category: true },
       })
     : [];
 
@@ -395,6 +423,7 @@ async function loadTripLabels(trips: TripRow[]) {
     windowTimeById,
     transporterById,
     vehicleNoById: new Map(vehicles.map((r) => [r.id, r.vehicleNo])),
+    vehicleCategoryById: new Map(vehicles.map((r) => [r.id, r.category])),
   };
 }
 
@@ -435,6 +464,8 @@ export async function loadSlotAndTransporterNames(
 /** One stop, as much of it as the area label needs. */
 interface AreaStop {
   areaName: string | null;
+  /** `trip_drops.routeName`, a snapshot like `areaName`. */
+  routeName: string | null;
   dropSeq: number;
   /** Does at least one live bill sit on this stop? */
   hasBills: boolean;
@@ -458,25 +489,49 @@ interface AreaStop {
  * PURE — exported so a test can check the rule without a database.
  */
 export function deriveAreaLabel(stops: readonly AreaStop[]): string | null {
-  const byArea = new Map<string, { stops: number; firstSeq: number }>();
+  const ranked = rankStopNames(stops, (s) => s.areaName);
+  if (!ranked) return null;
+  return ranked.others > 0 ? `${ranked.name} +${ranked.others}` : ranked.name;
+}
+
+/**
+ * The trip's ROUTE, from its stops (floor redesign, 2026-09-15 — owner's rule).
+ *
+ * 🔴 THE SAME RULE AS THE AREA, ON PURPOSE (owner): most stops wins, the first
+ * stop reached breaks a tie, stops with no bill or no route are skipped, every
+ * other distinct route is counted. Two different rules for area and route on one
+ * trip would eventually disagree and read as a bug. Returned as two parts because
+ * the screen greys the "+N".
+ *
+ * PURE — exported so a test can check the rule without a database.
+ */
+export function deriveRouteLabel(stops: readonly AreaStop[]): { name: string; others: number } | null {
+  return rankStopNames(stops, (s) => s.routeName);
+}
+
+/** The shared ranking behind deriveAreaLabel and deriveRouteLabel. */
+function rankStopNames(
+  stops: readonly AreaStop[],
+  pick: (s: AreaStop) => string | null,
+): { name: string; others: number } | null {
+  const byName = new Map<string, { stops: number; firstSeq: number }>();
   for (const s of stops) {
     if (!s.hasBills) continue;
-    const name = s.areaName?.trim();
+    const name = pick(s)?.trim();
     if (!name) continue;
-    const cur = byArea.get(name);
+    const cur = byName.get(name);
     if (cur) {
       cur.stops += 1;
       cur.firstSeq = Math.min(cur.firstSeq, s.dropSeq);
     } else {
-      byArea.set(name, { stops: 1, firstSeq: s.dropSeq });
+      byName.set(name, { stops: 1, firstSeq: s.dropSeq });
     }
   }
-  if (byArea.size === 0) return null;
-  const ranked = Array.from(byArea.entries()).sort(
+  if (byName.size === 0) return null;
+  const ranked = Array.from(byName.entries()).sort(
     (a, b) => b[1].stops - a[1].stops || a[1].firstSeq - b[1].firstSeq,
   );
-  const others = ranked.length - 1;
-  return others > 0 ? `${ranked[0][0]} +${others}` : ranked[0][0];
+  return { name: ranked[0][0], others: ranked.length - 1 };
 }
 
 /** Assemble one summary from a row plus the resolved maps and its own bills. */
@@ -493,12 +548,17 @@ function toSummary(
   // query, no extra column fetched. See `dispatchedCount` on TripSummary for why
   // it rides beside `counts` instead of inside it.
   let dispatchedCount = 0;
+  let totalWeightKg = 0;
+  let weightUnknownCount = 0;
   for (const b of bills) {
     counts[bucketFor(b.workflowStage, b.dispatchStatus)] += 1;
     counts.total += 1;
     if (b.workflowStage === DISPATCHED) dispatchedCount += 1;
     totalLitres += b.litres;
+    if (b.weightKg === null) weightUnknownCount += 1;
+    else totalWeightKg += b.weightKg;
   }
+  const route = deriveRouteLabel(areaStops);
 
   return {
     id: t.id,
@@ -539,6 +599,11 @@ function toSummary(
     totalLitres,
     dropCount,
     areaLabel: deriveAreaLabel(areaStops),
+    routeName: route?.name ?? null,
+    routeExtraCount: route?.others ?? 0,
+    vehicleCategory: t.vehicleId !== null ? (labels.vehicleCategoryById.get(t.vehicleId) ?? null) : null,
+    totalWeightKg,
+    weightUnknownCount,
     releasedAt: t.releasedAt?.toISOString() ?? null,
     dispatchedAt: t.dispatchedAt?.toISOString() ?? null,
     cancelledAt: t.cancelledAt?.toISOString() ?? null,
@@ -598,7 +663,7 @@ export async function getTripsForDate(tripDate: Date, todayDate: Date): Promise<
   // two more columns, no extra statement on the board's feed.
   const drops = await prisma.trip_drops.findMany({
     where: { tripId: { in: trips.map((t) => t.id) } },
-    select: { id: true, tripId: true, areaName: true, dropSeq: true },
+    select: { id: true, tripId: true, areaName: true, routeName: true, dropSeq: true },
   });
 
   const bills = await loadTripBills(drops.map((d) => d.id));
@@ -620,7 +685,12 @@ export async function getTripsForDate(tripDate: Date, todayDate: Date): Promise<
   for (const d of drops) {
     dropCountByTripId.set(d.tripId, (dropCountByTripId.get(d.tripId) ?? 0) + 1);
     const arr = areaStopsByTripId.get(d.tripId) ?? [];
-    arr.push({ areaName: d.areaName, dropSeq: d.dropSeq, hasBills: dropIdsWithBills.has(d.id) });
+    arr.push({
+      areaName: d.areaName,
+      routeName: d.routeName,
+      dropSeq: d.dropSeq,
+      hasBills: dropIdsWithBills.has(d.id),
+    });
     areaStopsByTripId.set(d.tripId, arr);
   }
 
@@ -710,6 +780,7 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
       drops.length,
       drops.map((d) => ({
         areaName: d.areaName,
+        routeName: d.routeName,
         dropSeq: d.dropSeq,
         hasBills: (billsByDropId.get(d.id)?.length ?? 0) > 0,
       })),
