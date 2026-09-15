@@ -103,25 +103,6 @@ const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
 // request legible in the network tab and the server logs.
 const UNSCOPED_QS = "scope=All";
 
-/**
- * Stage → the words an operator uses, for the "not dispatched" toast.
- *
- * ⚠ PLAIN ENGLISH, NOT `STAGE_LADDER`'s labels. The ladder's are written for a
- * developer reading a registry ("Assigned to Picker"); this reads inside a
- * sentence about what did not go on the truck. Only the stages a bill can
- * actually be left behind at are here — anything else falls back to the raw
- * value rather than being silently renamed into something friendlier.
- */
-const STAGE_WORDS: Record<string, string> = {
-  pending_support: "not yet on the floor",
-  pending_picking: "waiting for a picker",
-  pick_assigned: "with a picker",
-  pick_done: "picked, awaiting check",
-  pending_tint_assignment: "waiting for tinting",
-  tint_assigned: "with the operator",
-  tinting_in_progress: "still tinting",
-  cancelled: "cancelled",
-};
 
 // The FOUR top tabs (design §3, plus Tinting on 2026-09-14).
 //
@@ -629,95 +610,12 @@ export function FloorPage() {
   // (app/api/floor/trips/route.ts, …/[id]/route.ts). POST …/[id]/confirm still
   // exists and has no caller on this screen.
 
-  /**
-   * Mark an open trip's CHECKED bills dispatched. Repeatable through the day.
-   *
-   * 🔴 THE PRESS RELEASE USED TO DO, SEPARATED OUT (2026-09-14). This says the
-   * goods have gone. Since slice 6 it is offered on EVERY open trip, draft or
-   * not — a trip that never gets a vehicle still has to be able to record its
-   * load leaving.
-   *
-   * ⚠ THE window.confirm STAYS HERE. This is the terminal
-   * one — the only undo is hand-written SQL — and a prompt in front of an
-   * ordinary press is a prompt the hand learns to dismiss. It names the count and
-   * the consequence, never "are you sure" (the house pattern:
-   * components/admin/access-manager.tsx, hide-settings-content.tsx ×3,
-   * import/import-modal.tsx).
-   */
-  const dispatchTrip = useCallback(
-    async (tripId: number) => {
-      const t = (tripsRef.current ?? []).find((x) => x.id === tripId);
-      const willGo = t ? Math.max(0, t.counts.checked - t.dispatchedCount) : 0;
-      const label = t?.tripNumber ?? "this trip";
-      const heldN = t?.counts.held ?? 0;
-      const stillGoing = t ? Math.max(0, t.counts.total - t.dispatchedCount - heldN - willGo) : 0;
-      if (willGo === 0) {
-        toast.info(`Nothing on ${label} is checked and waiting to go.`);
-        return;
-      }
-      const prompt =
-        `Mark ${willGo} bill${willGo === 1 ? "" : "s"} dispatched on ${label}?` +
-        (stillGoing > 0
-          ? `\n\n${stillGoing} more ${stillGoing === 1 ? "is" : "are"} still being picked and will be left alone.`
-          : "") +
-        (heldN > 0 ? `\n\n${heldN} on hold — holds never dispatch.` : "") +
-        `\n\nThis is the end of the line for those bills — undoing it needs a developer.`;
-      if (!window.confirm(prompt)) return;
-
-      setTripBusyId(tripId);
-      try {
-        const res = await fetch(`/api/floor/trips/${tripId}/dispatch`, { method: "POST" });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error(`Could not dispatch — ${body?.error ?? `HTTP ${res.status}`}`);
-        } else {
-          const dispatched: number[] = body?.dispatched ?? [];
-          const already: number[] = body?.alreadyDispatched ?? [];
-          const notDispatched: Array<{ orderId: number; workflowStage: string }> =
-            body?.notDispatched ?? [];
-          const held: number[] = body?.held ?? [];
-          const parts: string[] = [];
-          if (dispatched.length > 0) parts.push(`${dispatched.length} dispatched`);
-          if (already.length > 0) parts.push(`${already.length} already gone`);
-          // TRUE AT ZERO — a press that moved nothing must say so rather than
-          // show a bare trip number that reads as a full success.
-          if (parts.length === 0) parts.push("nothing dispatched");
-          if (body?.closed) parts.push("trip closed");
-          toast.success(`${body?.trip?.tripNumber ?? "Trip"} · ${parts.join(" · ")}`);
-
-          // 🔴 NEVER SWALLOWED, AND ITS OWN TOAST. A bill left in the building is
-          // the one thing to come back to, and the trip carries the count
-          // afterwards (trip-detail-header.tsx) so this is the prompt, not the
-          // record.
-          if (notDispatched.length > 0) {
-            const byStage = new Map<string, number>();
-            for (const b of notDispatched) byStage.set(b.workflowStage, (byStage.get(b.workflowStage) ?? 0) + 1);
-            const detail = Array.from(byStage.entries())
-              .map(([s, n]) => `${n} ${STAGE_WORDS[s] ?? s}`)
-              .join(", ");
-            toast.info(
-              `${notDispatched.length} bill${notDispatched.length === 1 ? "" : "s"} NOT dispatched — ${detail}. ` +
-                `Press again once checked.`,
-            );
-          }
-          if (held.length > 0) {
-            toast.info(
-              `${held.length} bill${held.length === 1 ? " is" : "s are"} on hold and ${held.length === 1 ? "was" : "were"} not dispatched.`,
-            );
-          }
-          const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
-          if (failed.length > 0) toast.error(`${failed.length} bill(s) failed — ${failed[0].error}`);
-        }
-      } catch {
-        toast.error("Could not dispatch — check your connection.");
-      } finally {
-        setTripBusyId(null);
-      }
-      setSelection(new Set());
-      await load();
-    },
-    [load],
-  );
+  // ⚠ THE MARK DISPATCHED HANDLER WENT IN SLICE 7 (2026-09-15). The planner at
+  // this desk cannot see whether a truck left; the supervisor standing next to
+  // it can. Finishing the loading on the supervisor's future loading screen is
+  // what will mark the bills dispatched, through the SAME route this called —
+  // POST /api/floor/trips/[id]/dispatch, kept on purpose. Until that screen
+  // exists nothing on the floor writes the stage and no trip closes.
 
   /** Cancel a trip. NEVER a delete — the number stays claimed (see the route). */
   const cancelTrip = useCallback(
@@ -1693,7 +1591,6 @@ export function FloorPage() {
               scope={scope}
               onChangeVehicle={(id) => void openVehicleEditor(id)}
               onCancelTrip={(id) => void cancelTrip(id)}
-              onDispatchTrip={(id) => void dispatchTrip(id)}
               // 🔴 RENDERED ON ALL FOUR TABS (2026-09-14). The desk owns the
               // rail, and the rail must not move when the tab changes — so the
               // desk is the shell for every tab and swaps only what is in the

@@ -116,7 +116,6 @@ export function TripDesk({
   scope,
   onChangeVehicle,
   onCancelTrip,
-  onDispatchTrip,
   activeTab,
   tabs,
   sideBody,
@@ -145,8 +144,6 @@ export function TripDesk({
   scope: FloorScope;
   onChangeVehicle: (tripId: number) => void;
   onCancelTrip: (tripId: number) => void;
-  /** Mark an open trip's checked bills dispatched. Repeatable through the day. */
-  onDispatchTrip: (tripId: number) => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
   activeTab: "floor" | "tinting" | "hold" | "cancelled";
   /** The tab pills + their counts + New trip, built by floor-page and rendered
@@ -554,10 +551,6 @@ export function TripDesk({
           onAddBills={() => onSelectRail({ kind: "pool" })}
           onChangeVehicle={() => onChangeVehicle(selectedTrip.id)}
           onCancelTrip={() => onCancelTrip(selectedTrip.id)}
-          // Absent in History — a past day is a record, and `readOnly` already
-          // suppresses the whole action row there. Passing it anyway would be
-          // wiring a button nothing renders.
-          onDispatch={isHistory ? undefined : () => onDispatchTrip(selectedTrip.id)}
           // The last two or three lines, under the action row. Renders nothing
           // at all when the trip has no history — see TripRecentActivity.
           recent={<TripRecentActivity rows={activity} />}

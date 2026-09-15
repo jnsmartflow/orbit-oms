@@ -11,6 +11,16 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/floor/trips/[id]/dispatch — the goods on this trip have gone.
  *
+ * 🔴 NO CALLER SINCE SLICE 7 (2026-09-15), AND KEPT ON PURPOSE. The Mark
+ * dispatched button came off the planning screen: the planner at the desk
+ * cannot see whether a truck left, and the supervisor standing next to it can.
+ * The supervisor's future loading screen — loading start, loading end — will
+ * call THIS route when loading ends, so finishing the loading is what marks the
+ * bills dispatched. Do not delete it as dead code. Until that screen exists,
+ * nothing on the floor writes `dispatched` and no trip closes; the trip's own
+ * bills and vehicle are the record of what went on which truck, and the NTS
+ * trip_report mirror is the record of the truck leaving.
+ *
  * 🔴 THE THIRD PRESS, AND IT EXISTS BECAUSE THERE WERE ONLY TWO. The depot's day
  * is: build a draft, RELEASE it so pickers can see it, pick and check through
  * the morning, and DISPATCH bills as they become ready. Until today the app had

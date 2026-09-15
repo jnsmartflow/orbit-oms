@@ -1,6 +1,7 @@
 "use client";
 
-// Floor Control — the small editor behind a trip band's "Change vehicle".
+// Floor Control — the small editor behind the trip header's "Set vehicle" (called
+// "Change vehicle" until slice 7, 2026-09-15).
 //
 // Vehicle or ad-hoc plate, transporter, slot, note, and the carrier's own docket
 // number. Calls PATCH /api/floor/trips/[id].
