@@ -29,6 +29,7 @@ import {
   useBillingPrintMarkerSubscription,
   useBillingPrintMarkerPause,
 } from "@/components/billing/billing-marker-provider";
+import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type { PrintTrip } from "@/lib/billing/print";
@@ -118,6 +119,15 @@ function copyPlan(trip: PrintTrip, canEdit: boolean): {
     primary: true,
     reason: null,
   };
+}
+
+/** The Ctrl+C toast on a trip that cannot be copied — "3 bills have no invoice number yet". */
+function shortcutRefusal(trip: PrintTrip): string {
+  if (trip.eligible === 0) {
+    return trip.held > 0 ? `${trip.tripNumber}: every bill is on hold — nothing to copy` : `${trip.tripNumber} has no bills to copy`;
+  }
+  const missing = trip.eligible - trip.invoiced;
+  return `${missing} bill${missing === 1 ? " has" : "s have"} no invoice number yet`;
 }
 
 function readinessReason(trip: PrintTrip): string {
@@ -231,14 +241,24 @@ export function BillingPrintTab({
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if ((window.getSelection()?.toString() ?? "").length > 0) return;
-      if (!plan || !plan.enabled) return;
+      if (!selected || !plan) return;
+      // 🔴 NEVER SILENT (owner). A greyed button explains itself with its
+      // caption; a shortcut that does nothing reads as a broken shortcut. So a
+      // press on a trip that cannot be copied says WHY, briefly.
+      if (!plan.enabled) {
+        e.preventDefault();
+        e.stopPropagation();
+        // One toast per press — a held key's auto-repeat must not stack them.
+        if (!e.repeat) toast.info(shortcutRefusal(selected));
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       void runCopy();
     }
     document.addEventListener("keydown", onKey, { capture: true });
     return () => document.removeEventListener("keydown", onKey, { capture: true });
-  }, [plan, runCopy]);
+  }, [selected, plan, runCopy]);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-white">

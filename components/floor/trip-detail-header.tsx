@@ -336,7 +336,7 @@ export function TripDetailHeader({
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <div
                   role="menu"
-                  className="absolute left-0 z-20 mt-1 w-[180px] overflow-hidden rounded-[8px] border border-gray-200 bg-white shadow-lg"
+                  className="absolute left-0 z-20 mt-1 w-[230px] overflow-hidden rounded-[8px] border border-gray-200 bg-white shadow-lg"
                 >
                   {/* TAKE BACK (slice 8). Only where it can do something: desk
                       control on and the trip shown. NON-DESTRUCTIVE by the locked
@@ -386,7 +386,11 @@ export function TripDetailHeader({
                     }}
                     className="block w-full px-3 py-2 text-left text-[11.5px] text-[#b91c1c] hover:bg-[#fef2f2] disabled:opacity-40"
                   >
-                    Cancel trip
+                    {/* 🔴 STILL ALLOWED ONCE BILLING HAS COPIED (owner, slice 9):
+                        blocking it would leave a planner with a load he cannot
+                        cancel. The label is the warning — no prompt — and the
+                        activity log records the cancel. */}
+                    {trip.billingCopiedAt ? "Cancel trip · billing already copied" : "Cancel trip"}
                   </button>
                 </div>
               </>

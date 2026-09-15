@@ -91,9 +91,20 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
   Before it, in its own commit (`5ec6d65c`): the Orders tab's keyboard shortcuts (Ctrl+C smart
   copy, F, R, N, P, S, Space) stand down on every other billing tab — on Picking they acted on a
   hidden order. SQL: `sql/2026-09-15-slice9-print-tab.sql`, every step before the deploy.
-  ⚠ **Known, not fixed:** a planner's floor rail does not see billing's copy until the board
-  reloads (same marker limit as slice 8). Cancelling a trip that billing has already copied is
-  still allowed — owner to decide.
+  **Owner decisions after the build:** cancelling a trip billing has already copied STAYS
+  ALLOWED — blocking it would leave a planner with a load he cannot cancel — but the ··· entry
+  reads "Cancel trip · billing already copied" (no prompt; the activity log records it). Ctrl+C on
+  a trip that cannot be copied is never silent: a brief toast says why ("3 bills have no invoice
+  number yet").
+  ⚠ **Known, accepted, not fixed:** a planner's floor rail does not see billing's copy until the
+  board reloads. It is the SAME limit as slice 8's shown/taken-back gap (the /floor marker keys on
+  `orders.updatedAt` and never sees a trip-only write) — to be fixed together one day, not
+  piecemeal.
+  ⚠ **Stale canon, for the canon pass that follows this slice:** `lib/permissions.ts` still says
+  `billing_picking` is "REGISTERED ONLY — NOTHING READS IT YET" (on the PageKey entry and in
+  ACTION_PAGES), but five routes and the layout read it. `docs/CLAUDE_MAIL_ORDERS.md` §23 still
+  describes billing v2 as a test-user pilot (live `rolloutStage` is ALL_USERS) and its Picking
+  routes as gated on `mail_orders` (they gate on `billing_picking`), and has no Print tab.
 - **Settle-drafts SQL — RUN by the owner before slice 7.** A returned L-260915-01, -03, -04; C read
   `drafts_with_vehicle` 2 (`L-260912-08`, `U-260914-03`, deliberately left as drafts) and
   `migration_rows` 3.
