@@ -268,6 +268,9 @@ export function BillingPrintTab({
           <span className="text-[12.5px] font-bold text-gray-800">
             {loading ? "Loading…" : `${plural(pending.length, "trip")} to copy`}
           </span>
+          {/* The header date moves the Copied section, NEVER this list (owner) —
+              without the note, stepping back a day looks like a stuck screen. */}
+          {!loading && <span className="-ml-1 text-[11px] text-gray-400">· any date</span>}
           <span className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-ok-text">
             <span className="h-[7px] w-[7px] rounded-full bg-ok ring-[3px] ring-ok/15" />
             live
@@ -323,12 +326,9 @@ export function BillingPrintTab({
                 <span className="rounded-[6px] bg-gray-900 px-2.5 py-[3px] font-mono text-[12px] font-semibold tracking-[0.02em] text-white">
                   {selected.tripNumber}
                 </span>
-                <div className="mt-2 text-[12px] tabular-nums text-gray-600">
-                  {plural(selected.bills, "bill")} · {plural(selected.stops, "stop")} ·{" "}
-                  {Math.round(selected.litres).toLocaleString("en-US")} L
-                  {selected.held > 0 && <span className="text-[#475569]"> · {selected.held} on hold, not copied</span>}
-                </div>
-                <div className="mt-0.5 text-[11.5px] text-gray-500">
+                {/* No counts line here (owner): the selected card beside it
+                    already says bills · stops · litres. */}
+                <div className="mt-2 text-[11.5px] text-gray-500">
                   <ReadinessText trip={selected} />
                 </div>
               </div>
@@ -447,6 +447,8 @@ function ReadinessText({ trip }: { trip: PrintTrip }) {
         {counted}
         {trip.ready ? " · ready" : ""}
       </span>
+      {/* Moved here from the deleted counts line, so a hold is still said out loud. */}
+      {trip.held > 0 && <span className="text-[#475569]"> · {trip.held} on hold, not copied</span>}
       {trip.billingCopiedAt && (
         <span>
           {" "}

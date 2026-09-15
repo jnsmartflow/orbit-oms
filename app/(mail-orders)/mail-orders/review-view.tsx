@@ -2784,7 +2784,17 @@ export function ReviewView({
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* LEFT PANEL — 320px */}
-      <div data-tutorial="order-list" className="w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col">
+      {/* HIDDEN ON THE PRINT TAB (slice 9, 2026-09-15, owner). The order inbox has
+          nothing to do with copying invoice numbers and took a quarter of the
+          screen from the Print table. CSS-hidden, NOT unmounted, so its scroll
+          position and selection survive a trip to Print and back. Orders and
+          Picking get the identical class string they always had. */}
+      <div
+        data-tutorial="order-list"
+        className={`w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col${
+          billingV2 && billingTab === "print" ? " hidden" : ""
+        }`}
+      >
         {/* Rail head. On the BILLING face this slot carries the rail title; on
             every other face it carries the filter input, exactly as before.
             Same wrapper padding and the same 28px inner height in both, so the

@@ -1200,20 +1200,28 @@ export default function MailOrdersPage() {
   const billingHeaderSlot = billingV2 ? (
     <>
       <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
-      <div className="w-px h-4 bg-gray-200" />
-      <HeaderFilter
-        groups={MO_FILTER_GROUPS}
-        activeFilters={headerFilters}
-        onFilterChange={setHeaderFilters}
-      />
-      <div className="w-px h-4 bg-gray-200" />
-      {/* The shortcuts popover the header no longer shows on this face. SAME
-          component, UNCONTROLLED: no `open`/`onOpenChange`, so it manages its
-          own state and installs its own Escape listener — safe here because
-          this row has no Escape priority chain to order. `segmentCount` is
-          deliberately omitted: the billing face passes `segments={undefined}`
-          to the header, so there is no slot row and no "Jump to slot" to list. */}
-      <HeaderShortcuts shortcuts={MO_SHORTCUTS} variant="row" />
+      {/* PRINT TAB: the date stays — it picks the day of the Copied section —
+          but Filter and the shortcuts popover go (slice 9, owner, option B).
+          Both are Orders controls that do nothing on Print. A fragment adds no
+          DOM, so Orders and Picking render exactly the same elements. */}
+      {effectiveBillingTab !== "print" && (
+        <>
+          <div className="w-px h-4 bg-gray-200" />
+          <HeaderFilter
+            groups={MO_FILTER_GROUPS}
+            activeFilters={headerFilters}
+            onFilterChange={setHeaderFilters}
+          />
+          <div className="w-px h-4 bg-gray-200" />
+          {/* The shortcuts popover the header no longer shows on this face. SAME
+              component, UNCONTROLLED: no `open`/`onOpenChange`, so it manages its
+              own state and installs its own Escape listener — safe here because
+              this row has no Escape priority chain to order. `segmentCount` is
+              deliberately omitted: the billing face passes `segments={undefined}`
+              to the header, so there is no slot row and no "Jump to slot" to list. */}
+          <HeaderShortcuts shortcuts={MO_SHORTCUTS} variant="row" />
+        </>
+      )}
     </>
   ) : undefined;
 
