@@ -18,8 +18,8 @@
 // ⚠ THE STOPS ARE RENDERED AS ONE FloorTable PER STOP, with a header row above
 // each. The mockup draws one table with colspan separator rows; a table per stop
 // is the same thing on screen — every FloorTable shares the one colgroup, so the
-// columns line up across them — and it is the pattern SlotBand and RouteRow
-// already use. It also keeps `toggleAll` per group, which is the contract
+// columns line up across them — and it is the pattern RouteRow already uses
+// (and SlotBand did, until slot-band.tsx was deleted as an orphan, 2026-09-15). It also keeps `toggleAll` per group, which is the contract
 // lib/floor/selection.ts documents.
 //
 // ⚠ NO WINDOW-LEVEL KEY LISTENER ANYWHERE UNDER HERE. floor-page.tsx is the

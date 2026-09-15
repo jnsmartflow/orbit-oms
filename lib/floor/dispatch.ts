@@ -38,9 +38,11 @@
 // "Confirm & mark dispatched" was considered and rejected on exactly this
 // ground: a button named after a side effect that is scheduled to be taken away
 // teaches a word with an expiry date, and confirming the plan is the button's
-// real job either way. The consequence is told in the caption and in the
-// confirmation prompt instead (lib/floor/trip-wording.ts, and `releaseTrip` in
-// components/floor/floor-page.tsx). Owner decision — do not "tidy" the label.
+// real job either way. The consequence was told in the caption and in the
+// confirmation prompt instead. (Both are gone: lib/floor/trip-wording.ts was
+// deleted on 2026-09-15 after slice 6 removed the Draft / Confirmed words, and
+// `releaseTrip` left floor-page.tsx in the same slice.) Owner decision — do not
+// "tidy" the label.
 //
 // A future session must not read the confirm→dispatch wiring as the permanent
 // design. The rules in this file are; the call site is a stopgap with a date.
