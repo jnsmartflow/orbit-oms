@@ -417,6 +417,12 @@ async function loadTripLabels(trips: TripRow[]) {
         select: { id: true, vehicleNo: true, category: true },
       })
     : [];
+  // The current names of the placeholder routes (PLACEHOLDER_ROUTE_IDS). One
+  // primary-key read on a ~25-row table, per feed.
+  const placeholderRoutes = await prisma.route_master.findMany({
+    where: { id: { in: [...PLACEHOLDER_ROUTE_IDS] } },
+    select: { name: true },
+  });
 
   return {
     deliveryTypeById: new Map(deliveryTypes.map((r) => [r.id, r.name])),
@@ -424,6 +430,7 @@ async function loadTripLabels(trips: TripRow[]) {
     transporterById,
     vehicleNoById: new Map(vehicles.map((r) => [r.id, r.vehicleNo])),
     vehicleCategoryById: new Map(vehicles.map((r) => [r.id, r.category])),
+    placeholderRouteNames: new Set(placeholderRoutes.map((r) => r.name.trim())),
   };
 }
 
@@ -505,9 +512,29 @@ export function deriveAreaLabel(stops: readonly AreaStop[]): string | null {
  *
  * PURE — exported so a test can check the rule without a database.
  */
-export function deriveRouteLabel(stops: readonly AreaStop[]): { name: string; others: number } | null {
-  return rankStopNames(stops, (s) => s.routeName);
+export function deriveRouteLabel(
+  stops: readonly AreaStop[],
+  placeholderNames: ReadonlySet<string> = new Set(),
+): { name: string; others: number } | null {
+  return rankStopNames(stops, (s) => (s.routeName !== null && placeholderNames.has(s.routeName.trim()) ? null : s.routeName));
 }
+
+/**
+ * route_master rows that NAME NOTHING (owner, 2026-09-15): id 20 "No Route" and
+ * id 25 "TEST R". A stop on one of these is skipped by deriveRouteLabel exactly
+ * as a stop with no route is — it never wins, and it never counts into "+N".
+ *
+ * 🔴 BY ID, NOT BY TEXT. `trip_drops.routeName` is a name snapshot with no route
+ * id, so the ids are resolved to their CURRENT names at read time
+ * (loadTripLabels) and stops are matched against those. route_master.name is
+ * unique, so no real route can be caught by it. If one of these rows is ever
+ * renamed, older stops keep the old text, no longer match, and SHOW as a route —
+ * failing towards showing, never towards hiding (owner).
+ *
+ * ⚠ HAND (23), Transport (22) and IGT / CROSS (18) are NOT here, on purpose:
+ * they say how the load moves, and the team named them (owner).
+ */
+export const PLACEHOLDER_ROUTE_IDS: readonly number[] = [20, 25];
 
 /** The shared ranking behind deriveAreaLabel and deriveRouteLabel. */
 function rankStopNames(
@@ -558,7 +585,7 @@ function toSummary(
     if (b.weightKg === null) weightUnknownCount += 1;
     else totalWeightKg += b.weightKg;
   }
-  const route = deriveRouteLabel(areaStops);
+  const route = deriveRouteLabel(areaStops, labels.placeholderRouteNames);
 
   return {
     id: t.id,

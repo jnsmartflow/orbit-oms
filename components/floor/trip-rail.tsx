@@ -376,9 +376,10 @@ function TripCard({
  *
  *   DISPATCHED — every bill dispatched
  *   PICKING    — at least one bill with a picker, or picked and not checked
+ *   HELD       — at least one bill on hold (added by the owner the same day)
  *   READY      — every bill done: nothing waiting, picking or on hold
  *   SHOWN      — shown to the floor, nothing picked yet (desk control on only)
- *   none       — the bar already says everything is waiting
+ *   none       — anything else
  *
  * Picking beats Shown: once picking has started, the trip was obviously shown.
  *
@@ -391,6 +392,11 @@ export function tripBadge(trip: TripSummary, gateOn: boolean): TripChip | null {
   const b = tripBarCounts(trip.counts);
   if (b.total > 0 && trip.dispatchedCount === b.total) return BADGE_DISPATCHED;
   if (b.picking > 0) return BADGE_PICKING;
+  // HELD (owner, 2026-09-15) — closes the gap where done bills plus a hold
+  // matched nothing. Below Picking (live picking is the more useful fact, and
+  // the bar's amber segment still shows the hold); above Ready (a trip with a
+  // hold is not ready).
+  if (b.held > 0) return BADGE_HELD;
   if (b.total > 0 && b.done === b.total) return BADGE_READY;
   if (gateOn && trip.shownAt && b.picking === 0 && b.done === 0) return BADGE_SHOWN;
   return null;
@@ -398,5 +404,7 @@ export function tripBadge(trip: TripSummary, gateOn: boolean): TripChip | null {
 
 const BADGE_DISPATCHED: TripChip = { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" };
 const BADGE_PICKING: TripChip = { label: "Picking", cls: "bg-[#e0f2fe] text-[#0369a1]" };
-const BADGE_READY: TripChip = { label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
+// Amber: the bar's hold segment and "No driver yet" — someone has to act.
+const BADGE_HELD: TripChip = { label: "Held", cls: "bg-[#fef3c7] text-[#b45309]" };
+const BADGE_READY: TripChip ={ label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
 const BADGE_SHOWN: TripChip = { label: "Shown", cls: "bg-[#ecfdf5] text-[#047857]" };
