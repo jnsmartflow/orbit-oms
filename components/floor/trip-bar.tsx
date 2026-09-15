@@ -44,25 +44,28 @@ export function tripBarCounts(c: TripSummary["counts"]): TripBarCounts {
   };
 }
 
+// Exact colours from the locked design file (owner, 2026-09-15).
 const SEGMENTS: Array<{ key: keyof Omit<TripBarCounts, "total">; color: string; label: string }> = [
-  { key: "done", color: "#22c55e", label: "done" },
-  { key: "picking", color: "#0284C7", label: "being picked" },
-  { key: "waiting", color: "#d1d5db", label: "waiting" },
-  { key: "held", color: "#fbbf24", label: "on hold" },
+  { key: "done", color: "#2eb862", label: "done" },
+  { key: "picking", color: "#5b8ded", label: "being picked" },
+  { key: "waiting", color: "#d3d3dd", label: "waiting" },
+  { key: "held", color: "#e0a832", label: "on hold" },
 ];
 
-/** The segmented bar, full width of its container. Nothing on an empty trip. */
+/**
+ * The segmented bar, full width of its container. Nothing on an empty trip.
+ *
+ * ONE SIZE EVERYWHERE — the rail card and the detail panel use it unchanged
+ * (owner): 7px tall, 4px radius, a 1.5px gap BETWEEN segments so they never fuse
+ * into one solid block, and a light #f1f1f5 track behind them.
+ */
 export function TripBar({ counts, className = "" }: { counts: TripBarCounts; className?: string }) {
   if (counts.total === 0) return null;
   return (
-    <span className={`flex h-[6px] w-full gap-[2px] overflow-hidden rounded-[3px] ${className}`}>
+    <span className={`flex h-[7px] w-full gap-[1.5px] overflow-hidden rounded-[4px] bg-[#f1f1f5] ${className}`}>
       {SEGMENTS.map((s) =>
         counts[s.key] > 0 ? (
-          <span
-            key={s.key}
-            className="h-full first:rounded-l-[3px] last:rounded-r-[3px]"
-            style={{ flexGrow: counts[s.key], flexBasis: 0, background: s.color }}
-          />
+          <span key={s.key} className="h-full" style={{ flexGrow: counts[s.key], flexBasis: 0, background: s.color }} />
         ) : null,
       )}
     </span>

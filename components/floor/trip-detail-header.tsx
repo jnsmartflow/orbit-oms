@@ -4,7 +4,7 @@
 //
 // 🔴 REDESIGNED 2026-09-15 TO THE OWNER'S LOCKED DESIGN. Six rows:
 //
-//   1  the trip number, big          [Send to billing] [Show to floor] [···]
+//   1  the trip number chip          [Send to billing] [Show to floor] [···]
 //   2  the ROUTE, large, "+N" grey — route only, never the area
 //   3  plate (mono) · vehicle type · transporter #their-no   driver · phone  ✎  🕒3
 //      (the note, italic, on its own line when set)
@@ -121,13 +121,18 @@ export function TripDetailHeader({
   const canTakeBackBilling = trip.sentToBillingAt !== null && trip.billingCopiedAt === null;
 
   return (
-    <div className="border-b border-gray-200">
-      <div className="px-4 pb-3 pt-3.5">
+    <div>
+      {/* Panel padding 16px 18px 22px (owner's design file). */}
+      <div className="px-[18px] pb-[22px] pt-4">
         {/* ── Row 1 — the number, and the three buttons ─────────────────── */}
-        <div className="flex items-start gap-3">
-          <h2 className="m-0 font-mono text-[22px] font-bold leading-[32px] tracking-[-0.01em] text-gray-900">
+        {/* min-h: the row keeps the buttons' 32px even on a trip that shows none, so
+            the route never sits higher on a past day or a dispatched trip. */}
+        <div className="flex min-h-[32px] items-center gap-3">
+          {/* A SMALL MONO CHIP, the rail card's family one step larger (owner):
+              it leads the row; the route below is the headline. */}
+          <span className="shrink-0 rounded-[6px] border border-[#e6e6ee] bg-[#f1f1f5] px-[9px] py-[3px] font-mono text-[14px] font-semibold text-ink-900">
             {trip.tripNumber}
-          </h2>
+          </span>
 
           {canWrite && (
             <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -237,14 +242,14 @@ export function TripDetailHeader({
         </div>
 
         {/* ── Row 2 — the ROUTE (owner: route only, never the area) ──────── */}
-        <div className="mt-0.5 text-[17px] font-semibold leading-snug text-gray-900">
+        <div className="mt-[11px] text-[23px] font-bold leading-tight tracking-[-0.02em] text-ink-900">
           {trip.routeName ? (
             <>
               {trip.routeName}
-              {trip.routeExtraCount > 0 && <span className="font-normal text-gray-400"> +{trip.routeExtraCount}</span>}
+              {trip.routeExtraCount > 0 && <span className="font-medium text-gray-400"> +{trip.routeExtraCount}</span>}
             </>
           ) : (
-            <span className="font-normal text-gray-400">No route</span>
+            <span className="font-medium text-gray-400">No route</span>
           )}
         </div>
 
@@ -253,14 +258,14 @@ export function TripDetailHeader({
             then the driver in FULL and the phone. The slot is NOT here — the
             pencil edits it (owner). A missing vehicle says "Vehicle not set" in
             amber; a vehicle with no driver (a typed plate) says "No driver yet". */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px] text-gray-500">
+        <div className="mt-[6px] flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-gray-500">
           <span className="inline-flex flex-wrap items-center gap-x-1.5">
             {plate ? (
-              <span className="font-mono font-medium text-gray-800">{plate}</span>
+              <span className="font-mono font-semibold text-gray-800">{plate}</span>
             ) : (
               <span className="font-medium text-[#b45309]">Vehicle not set</span>
             )}
-            {trip.vehicleCategory && <span>· {trip.vehicleCategory}</span>}
+            {trip.vehicleCategory && <span className="text-gray-400">· {trip.vehicleCategory}</span>}
             {(trip.transporterName || trip.transporterTripNo) && (
               <span>
                 · {trip.transporterName}
@@ -310,19 +315,19 @@ export function TripDetailHeader({
         </div>
 
         {/* The note — someone typed it on purpose (owner). Only when set. */}
-        {trip.note && <div className="mt-1 text-[12px] italic text-gray-500">{trip.note}</div>}
+        {trip.note && <div className="mt-[6px] text-[12.5px] italic text-gray-500">{trip.note}</div>}
 
-        {/* ── Rows 4 and 5 — the bar and its legend ─────────────────────── */}
+        {/* ── Rows 4 and 5 — the bar and its legend, 7px apart ──────────── */}
         {!isEmpty && (
-          <>
-            <TripBar counts={bar} className="mt-3 !h-2" />
-            <TripBarLegend counts={bar} className="mt-2" />
-          </>
+          <div className="mt-[14px] flex flex-col gap-[7px]">
+            <TripBar counts={bar} />
+            <TripBarLegend counts={bar} />
+          </div>
         )}
 
         {/* The full history, in place, when the clock is on. */}
         {historyOpen && (
-          <div className="mt-3 border-t border-[#f0f0f0] pt-3">
+          <div className="mt-[14px] border-t border-[#f0f0f0] pt-3">
             {activity === null ? (
               <div className="text-[11.5px] text-gray-400">Loading history…</div>
             ) : (
@@ -330,26 +335,32 @@ export function TripDetailHeader({
             )}
           </div>
         )}
-      </div>
 
-      {/* ── Row 6 — the stops bar ─────────────────────────────────────────── */}
-      <div className="flex min-h-[40px] items-center gap-3 border-t border-gray-200 bg-[#fbfaff] px-4 py-1.5">
-        <span className="text-[12.5px] tabular-nums text-gray-600">
-          {isEmpty
-            ? "No bills yet"
-            : [
-                `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
-                `${bar.total} bill${bar.total === 1 ? "" : "s"}`,
-                `${formatLitres(trip.totalLitres)} L`,
-                ...(kg ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
-              ].join(" · ")}
-        </span>
-        {canWrite && (
-          <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} ml-auto gap-1.5 !h-[28px] !text-[12.5px]`}>
-            <Plus size={14} strokeWidth={2.2} />
-            Add bills
-          </button>
-        )}
+        {/* ── Row 6 — the stops bar: 20px below the legend, 8px padding under
+            its line, a 1px bottom border (exact values, owner's design file) ── */}
+        <div className="mt-[20px] flex items-center gap-3 border-b border-[#e6e6ee] pb-2">
+          <span className="text-[13.5px] font-semibold tabular-nums text-gray-800">
+            {isEmpty
+              ? "No bills yet"
+              : [
+                  `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
+                  `${bar.total} bill${bar.total === 1 ? "" : "s"}`,
+                  `${formatLitres(trip.totalLitres)} L`,
+                  ...(kg ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
+                ].map((part, i) => (
+                  <span key={i}>
+                    {i > 0 && <span className="font-normal text-[#c9c9d4]"> · </span>}
+                    {part}
+                  </span>
+                ))}
+          </span>
+          {canWrite && (
+            <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} ml-auto gap-1.5 !h-[28px] !text-[12.5px]`}>
+              <Plus size={14} strokeWidth={2.2} />
+              Add bills
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -230,8 +230,8 @@ function TripCard({
     <button
       type="button"
       onClick={onSelect}
-      className={`mb-1.5 w-full rounded-[10px] border px-2.5 py-2 text-left ${
-        selected ? "border-brand-600 bg-brand-50" : "border-gray-200 bg-white hover:bg-[#fafafa]"
+      className={`mb-2 flex w-full flex-col gap-[6px] rounded-[9px] border px-3 pb-3 pt-[11px] text-left ${
+        selected ? "border-brand-600 bg-brand-50" : "border-[#e6e6ee] bg-white hover:bg-[#fafafa]"
       }`}
     >
       <div className="flex items-center gap-1.5">
@@ -246,8 +246,8 @@ function TripCard({
               ? `Planned for ${fmtTripDay(trip.tripDate)} — it follows you forward until every bill on it is checked or on hold, or it is cancelled`
               : undefined
           }
-          className={`shrink-0 rounded-[5px] px-1.5 py-px font-mono text-[11px] font-semibold ${
-            isCarried ? "bg-[#fdf3e3] text-[#b45309] ring-1 ring-inset ring-[#f5d9a8]" : "bg-gray-900 text-white"
+          className={`shrink-0 rounded-[5px] border px-[6px] py-px font-mono text-[11.5px] font-semibold ${
+            isCarried ? "border-[#f5d9a8] bg-[#fdf3e3] text-[#b45309]" : "border-[#e6e6ee] bg-[#f1f1f5] text-ink-900"
           }`}
         >
           {trip.tripNumber}
@@ -255,13 +255,13 @@ function TripCard({
         {/* The slot — a small chip when set, ABSENT when not (slice 6; kept by
             the owner in the redesign — 34 of 74 trips carry one). */}
         {trip.windowTime && (
-          <span className="shrink-0 rounded-[4px] border border-gray-200 bg-white px-[5px] py-px text-[10px] font-semibold tabular-nums text-gray-600">
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400">
             {trip.windowTime}
           </span>
         )}
         {badge && (
           <span
-            className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[9.5px] font-bold uppercase tracking-[0.06em] ${badge.cls}`}
+            className={`ml-auto shrink-0 rounded-[20px] px-2 py-[2px] text-[10.5px] font-bold uppercase tracking-[0.05em] ${badge.cls}`}
           >
             {badge.label}
           </span>
@@ -270,7 +270,7 @@ function TripCard({
 
       {/* ROUTE, not area (owner). The name the most stops run on, "+N" greyed
           for the others (lib/trips/queries.ts deriveRouteLabel). */}
-      <div className="mt-1 truncate text-[12.5px] font-semibold text-gray-900">
+      <div className="truncate text-[16.5px] font-semibold leading-[1.22] text-ink-900">
         {trip.routeName ? (
           <>
             {trip.routeName}
@@ -286,9 +286,9 @@ function TripCard({
       {/* ⚠ AN EMPTY TRIP SAYS SO (2026-09-10 c) rather than "0 stops · 0 bills ·
           0 L" — an empty trip is a normal morning state (owner, slice 6). */}
       {bar.total === 0 ? (
-        <div className="text-[11px] text-gray-400">No bills yet</div>
+        <div className="text-[12.5px] text-gray-400">No bills yet</div>
       ) : (
-        <div className="text-[11px] tabular-nums text-gray-500">
+        <div className="text-[12.5px] tabular-nums text-gray-500">
           {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {bar.total} bill
           {bar.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
         </div>
@@ -298,11 +298,11 @@ function TripCard({
           wrap. No driver is amber: on this screen amber means someone has to do
           something. A typed plate never brings a driver, so those trips read
           "No driver yet" until a master vehicle is chosen (owner, accepted). */}
-      <div className="truncate text-[11.5px] text-gray-700" title={trip.driverName ?? undefined}>
-        {trip.driverName ?? <span className="font-medium text-[#b45309]">No driver yet</span>}
+      <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-gray-500" title={trip.driverName ?? undefined}>
+        {trip.driverName ?? <span className="font-semibold text-amber-600">No driver yet</span>}
       </div>
 
-      <TripBar counts={bar} className="mt-1.5" />
+      <TripBar counts={bar} className="mt-[2px]" />
     </button>
   );
 }
@@ -340,8 +340,8 @@ export function tripBadge(trip: TripSummary, gateOn: boolean): TripChip | null {
 }
 
 const BADGE_DISPATCHED: TripChip = { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" };
-const BADGE_PICKING: TripChip = { label: "Picking", cls: "bg-[#e0f2fe] text-[#0369a1]" };
+const BADGE_PICKING: TripChip = { label: "Picking", cls: "bg-[#e4ecfd] text-[#1d4ed8]" };
 // Amber: the bar's hold segment and "No driver yet" — someone has to act.
-const BADGE_HELD: TripChip = { label: "Held", cls: "bg-[#fef3c7] text-[#b45309]" };
-const BADGE_READY: TripChip ={ label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
-const BADGE_SHOWN: TripChip = { label: "Shown", cls: "bg-[#ecfdf5] text-[#047857]" };
+const BADGE_HELD: TripChip = { label: "Held", cls: "bg-[#fdf2d9] text-[#8a5d0c]" };
+const BADGE_READY: TripChip = { label: "Ready", cls: "bg-[#e2f6e9] text-[#15773a]" };
+const BADGE_SHOWN: TripChip = { label: "Shown", cls: "bg-[#fdf2d9] text-[#8a5d0c]" };
