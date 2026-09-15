@@ -672,6 +672,9 @@ export function ReviewView({
   // resolves, so anything keyed on focus would wrongly redisplay it — this stays
   // null and the pane flips to "All caught up", exactly as before.
   const [reopenedPunchedId, setReopenedPunchedId] = useState<number | null>(null);
+  // The Print tab's left-column slot — a DOM node, held in state so the Print tab
+  // re-renders into it once it exists (slice 9). See the slot beside the rail.
+  const [printRailSlot, setPrintRailSlot] = useState<HTMLDivElement | null>(null);
 
   // ── Selected order ──────────────────────────────────────────────
   const selectedOrder = useMemo(() => {
@@ -2897,6 +2900,23 @@ export function ReviewView({
         </div>
       </div>
 
+      {/* PRINT TAB'S LEFT COLUMN (slice 9, 2026-09-15, owner). The page is
+          [320px left column][right pane] on EVERY tab, so the right pane — tab
+          bar, date, table — never moves when the tab changes. On Print the inbox
+          rail above is hidden and this slot takes its place: the SAME width and
+          border classes. BillingPrintTab portals its trip list in here.
+          ⚠ ALWAYS MOUNTED on the billing face (display:none off Print, so zero
+          pixels on Orders and Picking), so the node exists before Print can be
+          opened and the list never paints a frame late. */}
+      {billingV2 && (
+        <div
+          ref={setPrintRailSlot}
+          className={`w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col${
+            billingTab === "print" ? "" : " hidden"
+          }`}
+        />
+      )}
+
       {/* RIGHT PANEL */}
       <div id="mo-print-area" className="flex-1 flex flex-col overflow-hidden bg-gray-50">
         {/* Billing v2 — Orders | Picking, at the TOP OF THIS PANE. Same position
@@ -2935,7 +2955,7 @@ export function ReviewView({
         ) : billingV2 && billingPrintCanView && billingTab === "print" ? (
           /* The Print BODY (slice 9) — carries its own permission term for the
              same belt-and-braces reason as Picking above. */
-          <BillingPrintTab date={selectedDate} canEdit={billingPrintCanEdit} />
+          <BillingPrintTab date={selectedDate} canEdit={billingPrintCanEdit} railSlot={printRailSlot} />
         ) :billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing

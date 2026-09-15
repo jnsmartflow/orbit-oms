@@ -25,6 +25,7 @@
 // alike. TEAL is the primary Copy and the live dot only (CLAUDE_UI §1/§10).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   useBillingPrintMarkerSubscription,
   useBillingPrintMarkerPause,
@@ -138,8 +139,15 @@ function readinessReason(trip: PrintTrip): string {
 export function BillingPrintTab({
   date,
   canEdit = false,
+  railSlot = null,
 }: {
   date?: string;
+  /**
+   * The page's 320px left-column slot (review-view.tsx), where the trip list is
+   * drawn. Null → no list is drawn; ReviewView always provides it on the billing
+   * face, mounted before this tab can be opened.
+   */
+  railSlot?: HTMLElement | null;
   /**
    * Does this viewer hold `billing_print`/canEdit? FALSE → the button is a plain
    * Copy that records nothing. ⚠ NOT AUTHORISATION — the copy route re-checks.
@@ -260,11 +268,22 @@ export function BillingPrintTab({
     return () => document.removeEventListener("keydown", onKey, { capture: true });
   }, [selected, plan, runCopy]);
 
-  return (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
-      {/* ── Rail ─────────────────────────────────────────────────────────── */}
-      <div className="flex w-[264px] flex-shrink-0 flex-col border-r border-gray-200 bg-gray-50/60">
-        <div className="flex items-center gap-2 border-b border-[#f0f0f0] px-3.5 py-[11px]">
+  // ── Rail ───────────────────────────────────────────────────────────────
+  // 🔴 DRAWN INTO THE PAGE'S LEFT COLUMN, NOT BESIDE THE DETAIL (owner). On
+  // Orders and Picking the page is [320px inbox rail][right pane]; drawn in here
+  // this list pushed the tab bar 320px left on Print and back on leaving it.
+  // ReviewView owns a 320px slot with the inbox rail's exact classes (width,
+  // border) and hands it over as `railSlot`; this list is portalled into it, so
+  // its state, selection and copy wiring stay in this one component and only
+  // its DOM moves. No width, border or tint of its own — the slot owns those.
+  const rail = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* The inbox rail head's classes, exactly (review-view.tsx: px-3 py-2
+          border-b around an h-[28px] row), so the two bottom borders land on
+          the same line — only one is ever on screen, and a few pixels of
+          difference would read as the page moving. */}
+      <div className="px-3 py-2 border-b border-gray-200">
+        <div className="flex h-[28px] items-center gap-2">
           <span className="text-[12.5px] font-bold text-gray-800">
             {loading ? "Loading…" : `${plural(pending.length, "trip")} to copy`}
           </span>
@@ -276,7 +295,8 @@ export function BillingPrintTab({
             live
           </span>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {error ? (
             <div className="px-2 py-8 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load. {error}</div>
           ) : loading ? null : (
@@ -302,8 +322,13 @@ export function BillingPrintTab({
               ))}
             </>
           )}
-        </div>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
+      {railSlot ? createPortal(rail, railSlot) : null}
 
       {/* ── Detail ───────────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
