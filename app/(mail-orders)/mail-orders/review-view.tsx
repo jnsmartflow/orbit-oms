@@ -1308,6 +1308,10 @@ export function ReviewView({
   // ── Line-level keyboard navigation (review mode only) ─────────────
   useEffect(() => {
     function handleReviewKeys(e: KeyboardEvent) {
+      // 🔴 Orders tab only on the billing face (2026-09-15). The order the
+      // Orders tab had selected stays selected while Picking/Print is on screen,
+      // so without this Space toggled found/not-found on a line nobody could see.
+      if (billingV2 && billingTab !== "orders") return;
       if (!selectedOrder) return;
 
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
@@ -1369,7 +1373,7 @@ export function ReviewView({
     window.addEventListener("keydown", handleReviewKeys, { capture: true });
     return () => window.removeEventListener("keydown", handleReviewKeys, { capture: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedOrder, activeLineIndex, currentIndex, navigationList, onFocusChange, reasonDropdownLineId]);
+  }, [selectedOrder, activeLineIndex, currentIndex, navigationList, onFocusChange, reasonDropdownLineId, billingV2, billingTab]);
 
   // ── Detail header (right panel) ──────────────────────────────────
   // Print. Component-scope because BOTH renderDetailHeader (the OFF actions

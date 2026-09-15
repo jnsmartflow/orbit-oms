@@ -853,6 +853,17 @@ export default function MailOrdersPage() {
     function onCtrlKey(e: KeyboardEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
       if (viewMode !== "table" && viewMode !== "focus") return;
+      // 🔴 THE ORDERS TAB ONLY, ON THE BILLING FACE (2026-09-15). This listener
+      // is document-level and capture-phase, and it used to ask only about the
+      // VIEW, never the TAB — so with an order still selected from the Orders
+      // tab, Ctrl+C on Picking (or Print) ran the Orders smart copy and put a
+      // customer code on the clipboard, then swallowed the key so nothing else
+      // could answer it. A shortcut that copies the wrong thing depending on the
+      // tab is worse than no shortcut (owner). Returning here does NOT
+      // preventDefault, so the browser's own copy still works on other tabs, and
+      // a tab that wants Ctrl+C registers its own listener. Non-billing users
+      // (billingV2 false) have no tabs and are unaffected.
+      if (billingV2 && effectiveBillingTab !== "orders") return;
 
       const key = e.key.toLowerCase();
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
@@ -944,13 +955,17 @@ export default function MailOrdersPage() {
 
     document.addEventListener("keydown", onCtrlKey, { capture: true });
     return () => document.removeEventListener("keydown", onCtrlKey, { capture: true });
-  }, [viewMode, focusedId, flatOrders, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell, handleCopy, handleAdvanceBatch]);
+  }, [viewMode, focusedId, flatOrders, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell, handleCopy, handleAdvanceBatch, billingV2, effectiveBillingTab]);
 
   // ── Keyboard: single-key navigation (table mode only) ───────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Ctrl/Meta combos handled by separate effect above
       if (e.ctrlKey || e.metaKey) return;
+      // 🔴 Orders tab only on the billing face — same reason as onCtrlKey above:
+      // F (flag/lock), R, N, P, S and Esc all act on the Orders tab's focused
+      // order, which stays focused while Picking/Print is on screen.
+      if (billingV2 && effectiveBillingTab !== "orders") return;
 
       // Esc — cascading close (works even when input focused)
       // (The first rung used to be `completedSlot` → close the slot modal. Both
@@ -1126,7 +1141,7 @@ export default function MailOrdersPage() {
     // `completedSlot` / `handleDismissCompletion` / `slotCutoffs` left this list
     // with the `E` shortcut and the Esc rung above (2026-08-10). `activeSlot` and
     // `orders` stay — other branches still read them.
-  }, [flatOrders, focusedId, expandedId, handleExpand, handleFlag, openCodePopoverId, viewMode, smartCopyOrderId, smartCopyLineIdx, activeSlot, orders]);
+  }, [flatOrders, focusedId, expandedId, handleExpand, handleFlag, openCodePopoverId, viewMode, smartCopyOrderId, smartCopyLineIdx, activeSlot, orders, billingV2, effectiveBillingTab]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
