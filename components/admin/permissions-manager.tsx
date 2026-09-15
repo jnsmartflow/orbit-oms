@@ -56,6 +56,10 @@ const PAGES_CONFIG = [
   // operations / operation_manager, so none of THEM can be granted here either.
   // Fixing that is separate work, deliberately not done in this commit.
   { key: "billing_picking", label: "Billing · Picking", path: "/mail-orders",     section: "Operations" },
+  // billing_print — the BILLING Print tab (slice 9, 2026-09-15). Same caveats as
+  // the row above: a tab with no address of its own, and this screen is only the
+  // ACCESS_SOURCE=role rollback editor.
+  { key: "billing_print",   label: "Billing · Print",   path: "/mail-orders",     section: "Operations" },
   // The four Billing action ticks — Hold / Slot / Urgent / ship-to pencil on the
   // Orders tab (2026-09-11, registered with the keys themselves). `canEdit` is
   // their only meaning; this screen's View column is inert for them, exactly as

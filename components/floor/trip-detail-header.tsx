@@ -10,8 +10,9 @@
 // card because the card is a summary the operator scans and this is the thing he
 // is working on.
 //
-// 🔴 THE ROW IS  Add bills | Set vehicle | Hand off: Show to floor | ···
-// (slice 7, 2026-09-15; Hand off added in slice 8 the same day).
+// 🔴 THE ROW IS  Add bills | Set vehicle | Hand off: Show to floor · Send to billing | ···
+// (slice 7, 2026-09-15; Hand off added in slice 8, Send to billing in slice 9,
+// both the same day).
 //   - MARK DISPATCHED IS NOT HERE. The planner at this desk cannot see whether a
 //     truck left; the supervisor standing next to it can. Finishing the loading
 //     on the supervisor's future loading screen is what will mark the bills
@@ -23,7 +24,8 @@
 //   - CANCEL TRIP IS BEHIND ···. A destructive action does not belong one button
 //     away from Add bills.
 //   - THE "Hand off" GROUP appeared in slice 8 with its first member, Show to
-//     floor; its take-back lives in ···. Send to billing joins it in slice 9.
+//     floor; its take-back lives in ···. Send to billing joined it in slice 9,
+//     with its own take-back in ··· — offered only until billing has copied.
 //
 // ⚠ KNOWN AND ACCEPTED UNTIL THE LOADING SCREEN (owner, slice 7): with nothing on
 // the floor writing the dispatch, no trip closes. So the Dispatched chip does
@@ -50,6 +52,13 @@ import type { TripSummary } from "@/lib/trips/queries";
 
 const PRIMARY =
   "inline-flex h-[28px] items-center rounded-[7px] bg-brand-600 px-3.5 text-[11.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400";
+/** "10:42" in IST, or null. */
+function istTime(iso: string | null): string | null {
+  return iso
+    ? new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false })
+    : null;
+}
+
 const ACTION =
   "inline-flex h-[28px] items-center rounded-[7px] border border-gray-300 bg-white px-3 text-[11.5px] font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -63,6 +72,8 @@ export function TripDetailHeader({
   onCancelTrip,
   onShowToFloor,
   onTakeBackFromFloor,
+  onSendToBilling,
+  onTakeBackFromBilling,
   recent,
 }: {
   trip: TripSummary;
@@ -80,6 +91,10 @@ export function TripDetailHeader({
   onShowToFloor: () => void;
   /** POST …/show { shown: false } — the ··· menu's take-back. */
   onTakeBackFromFloor: () => void;
+  /** POST …/billing { sent: true } — slice 9. */
+  onSendToBilling: () => void;
+  /** POST …/billing { sent: false } — the ··· menu, refused once billing has copied. */
+  onTakeBackFromBilling: () => void;
   /**
    * The trip's last two or three activity lines (2026-09-14, slice 2).
    *
@@ -103,6 +118,8 @@ export function TripDetailHeader({
         hour12: false,
       })
     : null;
+  const sentTime = istTime(trip.sentToBillingAt);
+  const copiedTime = istTime(trip.billingCopiedAt);
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
   const chip = tripStateMeta(trip);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
@@ -273,6 +290,28 @@ export function TripDetailHeader({
                 {!gateOn && <span className="mt-0.5 text-[10.5px] text-gray-400">Desk control is off</span>}
               </div>
             )}
+            {/* SEND TO BILLING (slice 9). Secondary, never a second primary —
+                Show to floor keeps the row's one primary. Once sent it becomes a
+                plain fact, and once billing has copied it says THAT, because the
+                take-back is gone from that moment. An empty trip has nothing for
+                billing to copy: greyed, with the reason as TEXT (a disabled
+                button shows no tooltip). */}
+            {trip.billingCopiedAt ? (
+              <span className="inline-flex h-[28px] items-center rounded-[7px] border border-gray-200 bg-gray-50 px-3 text-[11.5px] font-semibold text-gray-700">
+                Billing copied{copiedTime ? ` · ${copiedTime}` : ""}
+              </span>
+            ) : trip.sentToBillingAt ? (
+              <span className="inline-flex h-[28px] items-center rounded-[7px] border border-gray-200 bg-gray-50 px-3 text-[11.5px] font-semibold text-gray-700">
+                Sent to billing{sentTime ? ` · ${sentTime}` : ""}
+              </span>
+            ) : (
+              <div className="flex flex-col">
+                <button type="button" onClick={onSendToBilling} disabled={busy || isEmpty} className={ACTION}>
+                  Send to billing
+                </button>
+                {isEmpty && <span className="mt-0.5 text-[10.5px] text-gray-400">No bills yet</span>}
+              </div>
+            )}
           </div>
           {/* ··· — Cancel trip lives here, one deliberate step away from the
               everyday buttons. 🔴 NO CONFIRMATION PROMPT, BY OWNER DECISION
@@ -318,6 +357,23 @@ export function TripDetailHeader({
                       className="block w-full px-3 py-2 text-left text-[11.5px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
                     >
                       Take back from floor
+                    </button>
+                  )}
+                  {/* TAKE BACK FROM BILLING (slice 9). Only while sent and not yet
+                      copied — once billing has copied, the numbers are in SAP and
+                      the server refuses it (lib/trips/billing.ts). */}
+                  {trip.sentToBillingAt && !trip.billingCopiedAt && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={busy}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onTakeBackFromBilling();
+                      }}
+                      className="block w-full px-3 py-2 text-left text-[11.5px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                    >
+                      Take back from billing
                     </button>
                   )}
                   <button

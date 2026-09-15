@@ -117,6 +117,7 @@ export function TripDesk({
   onChangeVehicle,
   onCancelTrip,
   onSetTripShown,
+  onSetTripSentToBilling,
   activeTab,
   tabs,
   sideBody,
@@ -147,6 +148,8 @@ export function TripDesk({
   onCancelTrip: (tripId: number) => void;
   /** Show to floor (`shown: true`) or take back (`false`) — slice 8. */
   onSetTripShown: (tripId: number, shown: boolean) => void;
+  /** Send to billing (`sent: true`) or take back (`false`) — slice 9. */
+  onSetTripSentToBilling: (tripId: number, sent: boolean) => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
   activeTab: "floor" | "tinting" | "hold" | "cancelled";
   /** The tab pills + their counts + New trip, built by floor-page and rendered
@@ -557,6 +560,8 @@ export function TripDesk({
           gateOn={gateOn}
           onShowToFloor={() => onSetTripShown(selectedTrip.id, true)}
           onTakeBackFromFloor={() => onSetTripShown(selectedTrip.id, false)}
+          onSendToBilling={() => onSetTripSentToBilling(selectedTrip.id, true)}
+          onTakeBackFromBilling={() => onSetTripSentToBilling(selectedTrip.id, false)}
           // The last two or three lines, under the action row. Renders nothing
           // at all when the trip has no history — see TripRecentActivity.
           recent={<TripRecentActivity rows={activity} />}

@@ -16,7 +16,8 @@ import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
 import { useBillingPickingAccess } from "@/components/billing/billing-picking-access-provider";
-import { BillingMarkerProvider } from "@/components/billing/billing-marker-provider";
+import { BillingMarkerProvider, BillingPrintMarkerProvider } from "@/components/billing/billing-marker-provider";
+import { useBillingPrintAccess } from "@/components/billing/billing-print-access-provider";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useInitialNotesFontSize } from "@/components/mail-orders/notes-font-size-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
@@ -224,6 +225,8 @@ export default function MailOrdersPage() {
   // and couriered down — no fetch here. 🔴 `billing_picking`, the BILLING tab;
   // NOT the floor board's `picking` key.
   const { canView: canViewPicking, canEdit: canEditPicking } = useBillingPickingAccess();
+  // ── Billing Print tab access (slice 9, 2026-09-15) — `billing_print`. ───────
+  const { canView: canViewPrint, canEdit: canEditPrint } = useBillingPrintAccess();
   const [billingTab, setBillingTab] = useState<BillingTab>("orders");
   // The tab actually rendered. A viewer without the key can never be on Picking,
   // whatever `billingTab` holds — derived rather than corrected in an effect, so
@@ -231,7 +234,9 @@ export default function MailOrdersPage() {
   // see it, and no setState-during-render. State itself is left alone: if the
   // grant is restored the operator lands back where they were.
   const effectiveBillingTab: BillingTab =
-    billingTab === "picking" && !canViewPicking ? "orders" : billingTab;
+    (billingTab === "picking" && !canViewPicking) || (billingTab === "print" && !canViewPrint)
+      ? "orders"
+      : billingTab;
   // ── Notes-band text size (per user, px) ─────────────────────────────────────
   // Seeded from the value the layout resolved server-side for THIS user, so the
   // band paints at the stored size on first frame — no default-then-snap flash.
@@ -1386,6 +1391,9 @@ export default function MailOrdersPage() {
         // count fetch on mount, outside this provider. It is gated separately
         // on the same fact (billing-tab-bar.tsx). Both, or neither works.
         <BillingMarkerProvider enabled={billingV2 && canViewPicking} date={selectedDate}>
+        {/* The Print tab's own poll (slice 9) — on only for `billing_print`
+            holders, for the same no-403-polling reason as the one above. */}
+        <BillingPrintMarkerProvider enabled={billingV2 && canViewPrint} date={selectedDate}>
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1418,6 +1426,8 @@ export default function MailOrdersPage() {
           // face is unchanged by construction.
           billingPickingCanView={canViewPicking}
           billingPickingCanEdit={canEditPicking}
+          billingPrintCanView={canViewPrint}
+          billingPrintCanEdit={canEditPrint}
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
           hasHeaderFilter={hasHeaderFilter}
@@ -1432,6 +1442,7 @@ export default function MailOrdersPage() {
           notesFontSize={notesFontSize}
           onNotesFontSizeChange={handleNotesFontSizeChange}
         />
+        </BillingPrintMarkerProvider>
         </BillingMarkerProvider>
       )}
 

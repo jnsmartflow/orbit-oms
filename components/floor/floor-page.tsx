@@ -750,6 +750,47 @@ export function FloorPage() {
     [load],
   );
 
+  // ── Send to billing, PER TRIP (slice 9, 2026-09-15) ───────────────────────
+  // Puts the trip on the Billing screen's Print tab. Posts to
+  // POST /api/floor/trips/[id]/billing, which writes the TRIP and never an order
+  // row. Take-back is refused by the server once billing has copied; the ···
+  // menu stops offering it at the same moment. Explicit refetch, as above.
+  const setTripSentToBilling = useCallback(
+    async (tripId: number, sent: boolean) => {
+      setTripBusyId(tripId);
+      try {
+        const res = await fetch(`/api/floor/trips/${tripId}/billing`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sent }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          changed?: boolean;
+          tripNumber?: string;
+          eligible?: number;
+          invoiced?: number;
+          error?: string;
+        };
+        const label = body?.tripNumber ?? "Trip";
+        if (!res.ok) {
+          toast.error(`Could not ${sent ? "send to billing" : "take back"} — ${body?.error ?? `HTTP ${res.status}`}`);
+        } else if (!body.changed) {
+          toast.info(`${label} was already ${sent ? "sent to billing" : "taken back from billing"}.`);
+        } else if (sent) {
+          toast.success(`${label} sent to billing · ${body.invoiced ?? 0} of ${body.eligible ?? 0} invoiced`);
+        } else {
+          toast.success(`${label} taken back from billing`);
+        }
+      } catch {
+        toast.error(`Could not ${sent ? "send to billing" : "take back"} — check your connection.`);
+      } finally {
+        setTripBusyId(null);
+      }
+      await load();
+    },
+    [load],
+  );
+
   // ⚠ THREE BULK HANDLERS WENT WITH THE BARS THAT CALLED THEM (2026-09-10):
   // `bulkChangeSlot` (the assign bar's Change slot), `bulkAssign` (its Assign /
   // Reassign) and `assignGroup` (the By-group header's one-press assign).
@@ -1544,6 +1585,7 @@ export function FloorPage() {
               onChangeVehicle={(id) => void openVehicleEditor(id)}
               onCancelTrip={(id) => void cancelTrip(id)}
               onSetTripShown={(id, shown) => void setTripShown(id, shown)}
+              onSetTripSentToBilling={(id, sent) => void setTripSentToBilling(id, sent)}
               // 🔴 RENDERED ON ALL FOUR TABS (2026-09-14). The desk owns the
               // rail, and the rail must not move when the tab changes — so the
               // desk is the shell for every tab and swaps only what is in the

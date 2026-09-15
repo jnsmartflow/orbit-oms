@@ -191,6 +191,16 @@ async function main() {
     { roleSlug: "operation_manager", pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "tint_manager",      pageKey: "billing_picking", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
 
+    // ── billing_print — the BILLING Print tab, slice 9, 2026-09-15 ────────
+    // Trips sent to billing; billing copies their invoice numbers into SAP.
+    // FLAGS MIRROR billing_picking EXACTLY (owner): the same people work both
+    // tabs. Role TEMPLATE only — live access is user_page_access (CORE §5),
+    // granted by sql/2026-09-15-slice9-print-tab.sql.
+    { roleSlug: "billing_operator",  pageKey: "billing_print",   canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",        pageKey: "billing_print",   canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "billing_print",   canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "billing_print",   canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+
     // ── Billing action ticks — Hold / Slot / Urgent / ship-to pencil ─────────
     // Registered 2026-09-11 alongside the keys. One key per button so that Slot
     // can be granted without Hold.

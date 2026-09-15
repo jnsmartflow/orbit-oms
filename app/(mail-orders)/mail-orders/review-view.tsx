@@ -29,6 +29,7 @@ import { MO_TAG } from "@/lib/hide/tag-catalog";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } from "@/lib/mail-orders/api";
 import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
+import { BillingPrintTab } from "@/components/billing/billing-print-tab";
 import { BillingActionRibbon, BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
 import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
 import { useBillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
@@ -114,6 +115,14 @@ interface ReviewViewProps {
    * billing_picking/canEdit on mark-done and undo, server-side.
    */
   billingPickingCanEdit?: boolean;
+  /**
+   * The Print tab's permission (slice 9, 2026-09-15) — `billing_print`. Same two
+   * gates as Picking (the pill with its count, and the body) and the same
+   * fail-closed FALSE default. `billingPrintCanEdit` = the Copy that records
+   * itself; without it the tab offers only a plain Copy that records nothing.
+   */
+  billingPrintCanView?: boolean;
+  billingPrintCanEdit?: boolean;
   /** Phase 2 — reload the order list after a billing action writes mo_orders. */
   onBillingActionSaved?: () => void;
   /**
@@ -562,6 +571,8 @@ export function ReviewView({
   onBillingTabChange,
   billingPickingCanView = false,
   billingPickingCanEdit = false,
+  billingPrintCanView = false,
+  billingPrintCanEdit = false,
   onBillingActionSaved,
   billingHeaderSlot,
   hasHeaderFilter = false,
@@ -2898,6 +2909,8 @@ export function ReviewView({
               // pane the viewer may not see, and a body can never mount without
               // a pill to reach it.
               showPicking={billingPickingCanView}
+              // The Print pill and its count fetch — `billing_print` (slice 9).
+              showPrint={billingPrintCanView}
             />
           </div>
         )}
@@ -2909,7 +2922,11 @@ export function ReviewView({
              the list and renders the bills, so it carries its own check rather
              than trusting a prop computed a file away. */
           <BillingPickingTab date={selectedDate} canEdit={billingPickingCanEdit} />
-        ) : billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
+        ) : billingV2 && billingPrintCanView && billingTab === "print" ? (
+          /* The Print BODY (slice 9) — carries its own permission term for the
+             same belt-and-braces reason as Picking above. */
+          <BillingPrintTab date={selectedDate} canEdit={billingPrintCanEdit} />
+        ) :billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing
              clears focusedId), so without this the pane would keep showing the

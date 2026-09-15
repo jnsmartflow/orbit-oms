@@ -266,7 +266,9 @@ model users {
   tripsDispatched             trips[]                  @relation("TripDispatchedBy")
   tripsCancelled              trips[]                  @relation("TripCancelledBy")
   tripsShown                  trips[]                  @relation("TripShownBy")
-  tripActivity                trip_activity[]          @relation("TripActivityActor")
+  tripsSentToBilling          trips[]                  @relation("TripSentToBillingBy")
+  tripsBillingCopied          trips[]                  @relation("TripBillingCopiedBy")
+  tripActivity               trip_activity[]          @relation("TripActivityActor")
   billingSettingsUpdated      billing_settings[]       @relation("BillingSettingsUpdatedBy")
   appSettingsUpdated          app_settings[]           @relation("AppSettingsUpdatedBy")
   tintSkipsAsActor            tint_skip_events[]       @relation("SkipActor")
@@ -3205,11 +3207,12 @@ model ci_return_lines {
 // why the CHECK pads to greatest(2, length). Do not reimplement the formatter
 // as a two-character slice, and do not narrow the CHECK back to a bare 2.
 //
-// 🔴 FIVE FKs TO `users` — createdById / releasedById / dispatchedById /
-// cancelledById / shownById (the fifth added 2026-09-15, slice 8). All five
-// carry an explicitly NAMED @relation on BOTH sides (back-relations
-// tripsCreated / tripsReleased / tripsDispatched / tripsCancelled / tripsShown
-// on the users model). An unnamed one is a Prisma ambiguity
+// 🔴 SEVEN FKs TO `users` — createdById / releasedById / dispatchedById /
+// cancelledById / shownById (slice 8) / sentToBillingById / billingCopiedById
+// (both slice 9, 2026-09-15). All seven carry an explicitly NAMED @relation on
+// BOTH sides (back-relations tripsCreated / tripsReleased / tripsDispatched /
+// tripsCancelled / tripsShown / tripsSentToBilling / tripsBillingCopied on the
+// users model). An unnamed one is a Prisma ambiguity
 // ERROR at generate time, not a warning — CORE §7.3. Same discipline as the
 // Mrn* / PickFinding* / CiReturn* clusters.
 //
@@ -3277,7 +3280,21 @@ model trips {
   shownAt           DateTime?             @db.Timestamptz(6)
   shownById         Int?
   shownBy           users?                @relation("TripShownBy", fields: [shownById], references: [id], onDelete: SetNull)
-  createdAt         DateTime              @default(now()) @db.Timestamptz(6)
+  // SENT TO BILLING (slice 9, 2026-09-15). The planner's Send to billing puts the
+  // trip on the Billing screen's Print tab. Null = not sent. Written by
+  // POST /api/floor/trips/[id]/billing (lib/trips/billing.ts). The SIXTH FK to
+  // `users`, named on both sides like its siblings.
+  sentToBillingAt   DateTime?             @db.Timestamptz(6)
+  sentToBillingById Int?
+  sentToBillingBy   users?                @relation("TripSentToBillingBy", fields: [sentToBillingById], references: [id], onDelete: SetNull)
+  // THE LATEST COPY on the Print tab (slice 9). Copy stamps it; a copy of the
+  // numbers that arrived since moves it again. The NUMBERS copied live in each
+  // `invoices_copied` activity row's detail, never here — a trip can be copied
+  // more than once (lib/billing/print.ts). The SEVENTH FK to `users`.
+  billingCopiedAt   DateTime?             @db.Timestamptz(6)
+  billingCopiedById Int?
+  billingCopiedBy   users?                @relation("TripBillingCopiedBy", fields: [billingCopiedById], references: [id], onDelete: SetNull)
+  createdAt        DateTime              @default(now()) @db.Timestamptz(6)
   createdById       Int
   createdBy         users                 @relation("TripCreatedBy", fields: [createdById], references: [id])
   updatedAt         DateTime              @default(now()) @updatedAt @db.Timestamptz(6)

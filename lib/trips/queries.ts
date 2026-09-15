@@ -151,6 +151,13 @@ export interface TripSummary {
    * is visible then — so screens read it together with the switch.
    */
   shownAt: string | null;
+  /**
+   * When the planner sent this trip to billing's Print tab (slice 9), or null.
+   * `billingCopiedAt` is billing's latest Copy there. Take-back is refused once
+   * it is set (lib/trips/billing.ts).
+   */
+  sentToBillingAt: string | null;
+  billingCopiedAt: string | null;
   createdAt: string;
 }
 
@@ -318,6 +325,8 @@ const TRIP_SELECT = {
   dispatchedAt: true,
   cancelledAt: true,
   shownAt: true,
+  sentToBillingAt: true,
+  billingCopiedAt: true,
   createdAt: true,
 } as const;
 
@@ -341,6 +350,8 @@ type TripRow = {
   dispatchedAt: Date | null;
   cancelledAt: Date | null;
   shownAt: Date | null;
+  sentToBillingAt: Date | null;
+  billingCopiedAt: Date | null;
   createdAt: Date;
 };
 
@@ -532,6 +543,8 @@ function toSummary(
     dispatchedAt: t.dispatchedAt?.toISOString() ?? null,
     cancelledAt: t.cancelledAt?.toISOString() ?? null,
     shownAt: t.shownAt?.toISOString() ?? null,
+    sentToBillingAt: t.sentToBillingAt?.toISOString() ?? null,
+    billingCopiedAt: t.billingCopiedAt?.toISOString() ?? null,
     createdAt: t.createdAt.toISOString(),
   };
 }

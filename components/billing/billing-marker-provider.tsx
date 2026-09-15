@@ -90,9 +90,14 @@ export function useBillingMarkerPause(key: string, paused: boolean): void {
 
 function ActiveBillingMarkerProvider({
   date,
+  url = MARKER_URL,
+  context: Context = BillingMarkerContext,
   children,
 }: {
   date?: string;
+  /** The Print tab's twin points this at its own marker (slice 9). */
+  url?: string;
+  context?: React.Context<BillingMarkerApi>;
   children: React.ReactNode;
 }) {
   const subsRef = useRef(new Set<() => void>());
@@ -123,7 +128,7 @@ function ActiveBillingMarkerProvider({
   // its own marker, now shared.
   usePickingMarker({
     scope: "openPending",
-    url: MARKER_URL,
+    url,
     date,
     pollMs: BILLING_MARKER_POLL_MS,
     paused: pauseCount > 0,
@@ -134,7 +139,7 @@ function ActiveBillingMarkerProvider({
     },
   });
 
-  return <BillingMarkerContext.Provider value={api}>{children}</BillingMarkerContext.Provider>;
+  return <Context.Provider value={api}>{children}</Context.Provider>;
 }
 
 /**
@@ -155,4 +160,57 @@ export function BillingMarkerProvider({
     return <BillingMarkerContext.Provider value={INERT}>{children}</BillingMarkerContext.Provider>;
   }
   return <ActiveBillingMarkerProvider date={date}>{children}</ActiveBillingMarkerProvider>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE PRINT TAB'S MARKER (slice 9, 2026-09-15)
+//
+// A SECOND poll, on its own context, against /api/billing/print/marker — the
+// Print pill's count and the Print tab's refetch. Separate from the Picking poll
+// above because the two are different keys with different holders: a viewer
+// with Print but not Picking must not poll Picking's route (403s all day), and
+// the reverse. Same cadence, same pause contract, same pass-through when off.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PRINT_MARKER_URL = "/api/billing/print/marker";
+
+const BillingPrintMarkerContext = createContext<BillingMarkerApi>(INERT);
+
+/** Subscribe to the Print marker. `onChange` fires once per detected change. */
+export function useBillingPrintMarkerSubscription(onChange: () => void): void {
+  const { subscribe } = useContext(BillingPrintMarkerContext);
+  const ref = useRef(onChange);
+  useEffect(() => {
+    ref.current = onChange;
+  }, [onChange]);
+  useEffect(() => subscribe(() => ref.current()), [subscribe]);
+}
+
+/** Hold the Print marker paused while `paused` is true, under a stable key. */
+export function useBillingPrintMarkerPause(key: string, paused: boolean): void {
+  const { setPaused } = useContext(BillingPrintMarkerContext);
+  useEffect(() => {
+    setPaused(key, paused);
+    return () => setPaused(key, false);
+  }, [key, paused, setPaused]);
+}
+
+/** Mount around the billing face for viewers holding `billing_print`/canView. */
+export function BillingPrintMarkerProvider({
+  enabled,
+  date,
+  children,
+}: {
+  enabled: boolean;
+  date?: string;
+  children: React.ReactNode;
+}) {
+  if (!enabled) {
+    return <BillingPrintMarkerContext.Provider value={INERT}>{children}</BillingPrintMarkerContext.Provider>;
+  }
+  return (
+    <ActiveBillingMarkerProvider date={date} url={PRINT_MARKER_URL} context={BillingPrintMarkerContext}>
+      {children}
+    </ActiveBillingMarkerProvider>
+  );
 }

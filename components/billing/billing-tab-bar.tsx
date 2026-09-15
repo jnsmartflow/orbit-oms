@@ -12,11 +12,16 @@
 // badge. TEAL: the live dot is the ONLY teal element on this bar (CLAUDE_UI §1).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBillingMarkerSubscription } from "@/components/billing/billing-marker-provider";
+import {
+  useBillingMarkerSubscription,
+  useBillingPrintMarkerSubscription,
+} from "@/components/billing/billing-marker-provider";
 
-export type BillingTab = "orders" | "picking";
+export type BillingTab = "orders" | "picking" | "print";
 
 const MARKER_URL = "/api/billing/picking/marker";
+/** The Print pill's count (slice 9) — trips with copy work outstanding. */
+const PRINT_MARKER_URL = "/api/billing/print/marker";
 
 export function BillingTabBar({
   active,
@@ -24,6 +29,7 @@ export function BillingTabBar({
   ordersCount,
   rightSlot,
   showPicking = true,
+  showPrint = false,
 }: {
   active: BillingTab;
   onChange: (tab: BillingTab) => void;
@@ -63,8 +69,38 @@ export function BillingTabBar({
    * always passes it explicitly.
    */
   showPicking?: boolean;
+  /**
+   * Does this viewer hold `billing_print`/canView? (Slice 9, 2026-09-15.) The
+   * same two meanings as `showPicking`: no Print pill, and NO request to the
+   * Print marker. Defaults FALSE — unlike `showPicking` — because a new tab must
+   * be granted to appear, never appear by default.
+   */
+  showPrint?: boolean;
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [printCount, setPrintCount] = useState<number | null>(null);
+  const printReqRef = useRef(0);
+
+  // The Print count — the same shape as refreshCount below, on its own marker.
+  const refreshPrintCount = useCallback(async () => {
+    if (!showPrint) return;
+    const seq = ++printReqRef.current;
+    try {
+      const res = await fetch(PRINT_MARKER_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { count?: number };
+      if (seq !== printReqRef.current) return;
+      if (typeof body.count === "number") setPrintCount(body.count);
+    } catch {
+      // Silent, like refreshCount.
+    }
+  }, [showPrint]);
+
+  useEffect(() => {
+    void refreshPrintCount();
+  }, [refreshPrintCount]);
+
+  useBillingPrintMarkerSubscription(refreshPrintCount);
   // Guards against a late response from a superseded request overwriting a
   // newer count (the poll and a manual refresh can overlap).
   const reqRef = useRef(0);
@@ -143,6 +179,9 @@ export function BillingTabBar({
           ⚠ The pill is a SIBLING inside the existing flex row, not wrapped in a
           new div (§23.1), so the granted layout is byte-identical. */}
       {showPicking && pill("picking", "Picking", pendingCount, true)}
+      {/* Print (slice 9) — gated on `billing_print`/canView, a sibling in the
+          same row like Picking. Its count is trips with copy work outstanding. */}
+      {showPrint && pill("print", "Print", printCount, true)}
       {/* ⚠ `ml-auto` lives HERE now. It used to sit on a caption span that ran
           between the pills and this slot; removing that span without moving the
           class would have left the controls butted against the Picking pill

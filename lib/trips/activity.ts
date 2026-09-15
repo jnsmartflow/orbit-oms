@@ -74,6 +74,22 @@ export const TRIP_SHOWN = "shown";
 export const TRIP_TAKEN_BACK = "taken_back";
 
 /**
+ * Send to billing, its take-back, and the Print tab's copy (slice 9,
+ * 2026-09-15). The planner's Send to billing puts the trip on the Billing
+ * screen's Print tab; billing's Copy puts the trip's invoice numbers on the
+ * clipboard for SAP and records that it happened.
+ *
+ * 🔴 `invoices_copied` CARRIES THE NUMBERS, AND THAT IS LOAD-BEARING. Its
+ * `detail.invoiceNos` is the ONLY record of which numbers billing has taken.
+ * "New since copy" is the trip's current numbers minus the union of every
+ * such row's list (lib/billing/print.ts) — so a number is never offered twice.
+ * Never rewrite or delete these rows.
+ */
+export const TRIP_SENT_TO_BILLING = "sent_to_billing";
+export const TRIP_TAKEN_BACK_FROM_BILLING = "taken_back_from_billing";
+export const TRIP_INVOICES_COPIED = "invoices_copied";
+
+/**
  * ⚠ BOTH ARE STILL WRITTEN, AND THIS NOTE WAS WRONG TWICE BEFORE.
  *
  * `dispatched` — Mark dispatched STAYS (the owner dropped slice 4 on
@@ -103,6 +119,9 @@ export const TRIP_ACTIONS = [
   TRIP_RENAMED,
   TRIP_SHOWN,
   TRIP_TAKEN_BACK,
+  TRIP_SENT_TO_BILLING,
+  TRIP_TAKEN_BACK_FROM_BILLING,
+  TRIP_INVOICES_COPIED,
   TRIP_RELEASED,
   TRIP_DISPATCHED,
 ] as const;
@@ -474,6 +493,78 @@ export async function logTripTakenBack(opts: {
     actorId: opts.actorId,
     summary: `Trip ${opts.tripNumber} taken back from the floor, ${bills(opts.hiddenCount)} waiting hidden again${stayed}`,
     detail: { hiddenCount: opts.hiddenCount, stayedCount: opts.stayedCount },
+  });
+}
+
+/**
+ * The planner sent the trip to billing (slice 9). The counts are the trip as
+ * billing will first see it — how many of its bills already carry an invoice
+ * number — so a later "why was nothing copyable" has its answer here.
+ */
+export async function logTripSentToBilling(opts: {
+  tripId: number;
+  actorId: number;
+  tripNumber: string;
+  /** Bills on the trip that are not on hold — the ones billing will copy. */
+  billCount: number;
+  /** Of those, how many already carry an invoice number. */
+  invoicedCount: number;
+}): Promise<void> {
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_SENT_TO_BILLING,
+    actorId: opts.actorId,
+    summary: `Trip ${opts.tripNumber} sent to billing, ${opts.invoicedCount} of ${bills(opts.billCount)} invoiced`,
+    detail: { billCount: opts.billCount, invoicedCount: opts.invoicedCount },
+  });
+}
+
+/**
+ * The planner took the trip back from billing (slice 9). Only possible before
+ * billing has copied anything — the route refuses it after — so this row never
+ * sits after an `invoices_copied` row on the same trip.
+ */
+export async function logTripTakenBackFromBilling(opts: {
+  tripId: number;
+  actorId: number;
+  tripNumber: string;
+}): Promise<void> {
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_TAKEN_BACK_FROM_BILLING,
+    actorId: opts.actorId,
+    summary: `Trip ${opts.tripNumber} taken back from billing`,
+    detail: {},
+  });
+}
+
+/**
+ * Billing copied the trip's invoice numbers on the Print tab (slice 9).
+ *
+ * 🔴 `invoiceNos` IS EXACTLY WHAT THIS PRESS PUT ON THE CLIPBOARD — distinct,
+ * in table order. On a first copy that is every number on the trip; on a copy
+ * after new bills arrived it is ONLY the new ones. The union across rows is
+ * what lib/billing/print.ts subtracts to find "new since copy". A re-copy of a
+ * finished trip writes no row at all.
+ */
+export async function logTripInvoicesCopied(opts: {
+  tripId: number;
+  actorId: number;
+  tripNumber: string;
+  invoiceNos: string[];
+  /** Bills behind those numbers — more than the numbers when bills share one. */
+  billCount: number;
+  kind: "first" | "new_since";
+}): Promise<void> {
+  const n = opts.invoiceNos.length;
+  const nos = `${n} ${opts.kind === "new_since" ? "new " : ""}invoice no${n === 1 ? "" : "s"}`;
+  const shared = opts.billCount !== n ? ` (${bills(opts.billCount)})` : "";
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_INVOICES_COPIED,
+    actorId: opts.actorId,
+    summary: `Billing copied ${nos}${shared} for trip ${opts.tripNumber}`,
+    detail: { invoiceNos: opts.invoiceNos, billCount: opts.billCount, kind: opts.kind },
   });
 }
 

@@ -15,6 +15,10 @@ Read-only. No code was changed to produce this. Every claim below cites a file a
 | 4 — remove `dispatchStatus` + Mark dispatched | **DROPPED** by the owner, 2026-09-15. Scope is trip PLANNING, not truck movement: Mark dispatched records goods leaving and stays; `orders.dispatchStatus` carries hold, undecided and billing reads and stays. Only the not-dispatched banner's miscount was fixed | `0b9f7a2d` |
 | 5 — a cancelled trip gives its number back (`-C`, `-C2`…), seq 100 | done, verified | `62ea5f1b` + `sql/2026-09-15-trip-number-reuse.sql` |
 | 6 — the trip card and the rail | built | this commit + `sql/2026-09-15-slice6-settle-drafts.sql` |
+| 7 — planning row, Mark dispatched off the screen | done | `3b9d1ab4` |
+| 8 — Show to floor is per trip | done | `791a2cd6` + `sql/2026-09-15-slice8-show-per-trip.sql` |
+| 9 — Send to billing, the Print tab | built | `5ec6d65c` (keyboard fix) + this commit + `sql/2026-09-15-slice9-print-tab.sql` |
+| 10 — trips stay by the bills inside, not the date | done | `175c83fd` |
 
 The rule since slice 3: **no trip action may change a bill's status or its hold.** Confirm and
 PATCH touch no order row; Add, Remove and Cancel write `tripDropId` and nothing else.
@@ -69,6 +73,27 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
   ⚠ **Known, not fixed:** the /floor board's own 15s marker keys on `orders.updatedAt`, so a trip
   shown or taken back by ANOTHER planner does not refresh this planner's pills until something
   else reloads the board. The supervisor's marker does see it (its held-back count moves).
+- **Slice 9 (2026-09-15) — Send to billing and the Print tab.** The planner's Send to billing
+  (Hand off group, secondary; greyed "No bills yet" on an empty trip; take-back in ···, refused
+  once billing has copied) stamps `trips.sentToBillingAt`. Billing's `/mail-orders` gains a third
+  tab, **Print**, on a new key `billing_print` ("Billing · Print", same five holders as Billing ·
+  Picking). Left: one card per trip, TRIP NUMBER ONLY, with bills / stops / litres / "8 of 8
+  invoiced · ready". Right: the trip, ONE button, and the OBD / invoice / ship-to / route / vol
+  table. The button copies the distinct invoice numbers AND records the copy
+  (`trips.billingCopiedAt`, an `invoices_copied` activity row carrying the numbers); a finished
+  trip keeps a plain Copy that records nothing; Ctrl+C does the same as the button. Rules
+  (`lib/billing/print.ts`): held bills out of the count and the copy; distinct numbers, with
+  "9 bills · 8 invoice nos" said when bills share one; never a partial set (greyed with the count
+  as the reason, missing numbers marked in amber); a copied trip that gains numbers REOPENS and
+  copies only the new ones ("copied 11:42 · 1 new since"); outstanding trips from every date,
+  finished ones on the day they were copied. The server records a copy only if the numbers the
+  client put on the clipboard still equal the trip's copy set. Orbit prints nothing.
+  Before it, in its own commit (`5ec6d65c`): the Orders tab's keyboard shortcuts (Ctrl+C smart
+  copy, F, R, N, P, S, Space) stand down on every other billing tab — on Picking they acted on a
+  hidden order. SQL: `sql/2026-09-15-slice9-print-tab.sql`, every step before the deploy.
+  ⚠ **Known, not fixed:** a planner's floor rail does not see billing's copy until the board
+  reloads (same marker limit as slice 8). Cancelling a trip that billing has already copied is
+  still allowed — owner to decide.
 - **Settle-drafts SQL — RUN by the owner before slice 7.** A returned L-260915-01, -03, -04; C read
   `drafts_with_vehicle` 2 (`L-260912-08`, `U-260914-03`, deliberately left as drafts) and
   `migration_rows` 3.

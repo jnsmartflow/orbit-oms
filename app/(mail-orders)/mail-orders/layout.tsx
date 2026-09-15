@@ -7,6 +7,7 @@ import { isBillingV2Enabled } from "@/lib/billing/flag";
 import { BillingV2Provider } from "@/components/billing/billing-v2-provider";
 import { BillingPickingAccessProvider } from "@/components/billing/billing-picking-access-provider";
 import { BillingActionsAccessProvider } from "@/components/billing/billing-actions-access-provider";
+import { BillingPrintAccessProvider } from "@/components/billing/billing-print-access-provider";
 import { getNotesFontSize } from "@/lib/mail-orders/notes-font-size";
 import { NotesFontSizeProvider } from "@/components/mail-orders/notes-font-size-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -69,6 +70,13 @@ export default async function MailOrdersLayout({
   const pickingPerms = allPerms["billing_picking"];
   const canViewBillingPicking = pickingPerms?.canView ?? false;
   const canEditBillingPicking = pickingPerms?.canEdit ?? false;
+
+  // ── Billing Print tab access (slice 9, 2026-09-15) ──────────────────────────
+  // Same map, same absent-means-false rule, same known limit as Picking above
+  // (a Print-only grant without mail_orders has nowhere to render).
+  const printPerms = allPerms["billing_print"];
+  const canViewBillingPrint = printPerms?.canView ?? false;
+  const canEditBillingPrint = printPerms?.canEdit ?? false;
 
   // ── Billing ACTION ticks (2026-09-11) ───────────────────────────────────────
   // The four dispatch decisions on the Orders tab — Hold, Slot, Urgent and the ✎
@@ -139,7 +147,12 @@ export default async function MailOrdersLayout({
               urgent={canUrgent}
               shipTo={canShipTo}
             >
-              <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+              {/* The Print tab's grant (slice 9) — its own provider for the same
+                  reason Picking has one: a different key, granted and revoked
+                  on its own. */}
+              <BillingPrintAccessProvider canView={canViewBillingPrint} canEdit={canEditBillingPrint}>
+                <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+              </BillingPrintAccessProvider>
             </BillingActionsAccessProvider>
           </BillingPickingAccessProvider>
         </BillingV2Provider>
