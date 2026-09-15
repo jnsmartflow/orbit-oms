@@ -25,12 +25,15 @@
 // board rows use (lib/floor/scope.ts). A Cross trip shows under All only, because
 // there is no Cross scope.
 //
-// 🔴 NO "Draft" AND NO "Confirmed" ANYWHERE (slice 6). A trip with no vehicle
-// says "Vehicle not set" in amber where the plate would go — a blank field says
-// what is missing better than a status word. The stored status still exists and
-// still drives two things (the carry-forward rule and the dispatch close); it is
-// simply not a thing the floor reads. The only chips left are the ones that say
-// something the floor acts on: Ready, and Dispatched.
+// 🔴 NO "Draft" AND NO "Confirmed" ANYWHERE (slice 6). The stored status still
+// exists and still drives two things (the carry-forward rule and the dispatch
+// close); it is simply not a thing the floor reads.
+//
+// 🔴 THE CARD WAS REDESIGNED 2026-09-15 (owner, locked): number · slot · ONE
+// badge (Dispatched / Picking / Ready / Shown — see `tripBadge`), then the
+// ROUTE, then stops · bills · litres, then the DRIVER ("No driver yet" in
+// amber), then the four-colour trip bar (trip-bar.tsx). The vehicle and the area
+// moved to the detail panel.
 //
 // ⚠ CANCELLED TRIPS ARE NOT ON THIS RAIL AT ALL (2026-09-11). They are still in
 // the database — renamed <number>-C since slice 5 — and still reachable in
@@ -38,12 +41,12 @@
 // DISPLAY ONLY: nothing here deletes or hides a row, and the header counts
 // describe exactly what is rendered.
 //
-// ⚠ A CARRIED TRIP SHOWS ITS REAL DATE. lib/trips/live-trips.ts follows a trip
-// from an earlier day forward while it still holds a bill that is not done
-// (slice 10 — done = checked, or on hold), and this rail prints the date it
-// actually carries rather than implying it is today's.
+// ⚠ A CARRIED TRIP LOOKS OLD. lib/trips/live-trips.ts follows a trip from an
+// earlier day forward while it still holds a bill that is not done (slice 10 —
+// done = checked, or on hold). Its number chip turns amber (redesign) — the
+// number already carries the real date — rather than implying it is today's.
 
-import { ProgressBar } from "./progress-bar";
+import { TripBar, tripBarCounts } from "./trip-bar";
 import { formatLitres, type StatusCounts } from "./status-pill";
 import { inScope } from "@/lib/floor/scope";
 import type { FloorScope } from "@/lib/floor/types";
@@ -280,10 +283,12 @@ function TripCard({
   // A plain string compare is exact on zero-padded "YYYY-MM-DD" and needs no
   // Date at all.
   const isCarried = trip.tripDate < anchorIso;
-  const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
-  const chip = tripStateMeta(trip);
-  const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
+  const bar = tripBarCounts(trip.counts);
+  const badge = tripBadge(trip, gateOn);
 
+  // 🔴 THE CARD IS FOUR LINES AND A BAR (floor redesign, 2026-09-15, owner):
+  //   number · slot · badge / route / stops · bills · litres / driver / bar.
+  // The vehicle and the area are off the card — the detail panel carries both.
   return (
     <button
       type="button"
@@ -293,71 +298,105 @@ function TripCard({
       }`}
     >
       <div className="flex items-center gap-1.5">
-        {isCarried && (
-          <span
-            title={`Planned for ${fmtTripDay(trip.tripDate)} — it follows you forward until every bill on it is checked or on hold, or it is cancelled`}
-            className="shrink-0 rounded-[4px] bg-[#fdf3e3] px-[5px] py-px text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#b45309]"
-          >
-            {fmtTripDay(trip.tripDate)}
-          </span>
-        )}
-        <span className="shrink-0 rounded-[5px] bg-gray-900 px-1.5 py-px font-mono text-[11px] font-semibold text-white">
+        {/* 🔴 A CARRIED TRIP'S NUMBER CHIP IS AMBER (owner). The separate date
+            chip is gone: it did not fit, and the number already carries its
+            date — L-260914-24 seen on the 15th IS the carry signal. Amber, not
+            a new word, so it costs no width. The tooltip keeps the old
+            explanation for anyone who hovers. */}
+        <span
+          title={
+            isCarried
+              ? `Planned for ${fmtTripDay(trip.tripDate)} — it follows you forward until every bill on it is checked or on hold, or it is cancelled`
+              : undefined
+          }
+          className={`shrink-0 rounded-[5px] px-1.5 py-px font-mono text-[11px] font-semibold ${
+            isCarried ? "bg-[#fdf3e3] text-[#b45309] ring-1 ring-inset ring-[#f5d9a8]" : "bg-gray-900 text-white"
+          }`}
+        >
           {trip.tripNumber}
         </span>
-        {/* The slot — a small chip when set, ABSENT when not (slice 6). There is
-            no "No slot yet" anywhere: an unset slot is not a state to announce. */}
+        {/* The slot — a small chip when set, ABSENT when not (slice 6; kept by
+            the owner in the redesign — 34 of 74 trips carry one). */}
         {trip.windowTime && (
           <span className="shrink-0 rounded-[4px] border border-gray-200 bg-white px-[5px] py-px text-[10px] font-semibold tabular-nums text-gray-600">
             {trip.windowTime}
           </span>
         )}
-        {/* SHOWN (slice 8, 2026-09-15) — a small, NON-CLICKABLE marker. The card
-            is itself a <button>, so it can hold no button of its own; Show to
-            floor lives in the trip header's Hand off group. Only while desk
-            control is on: with it off every waiting bill is visible, and a
-            "Shown" label would claim a distinction that does not exist. */}
-        {gateOn && trip.shownAt && (
-          <span className="shrink-0 rounded-[4px] bg-[#ecfdf5] px-[5px] py-px text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#047857]">
-            Shown
-          </span>
-        )}
-        {chip && (
+        {badge && (
           <span
-            className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[9.5px] font-bold uppercase tracking-[0.06em] ${chip.cls}`}
+            className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[9.5px] font-bold uppercase tracking-[0.06em] ${badge.cls}`}
           >
-            {chip.label}
+            {badge.label}
           </span>
         )}
       </div>
 
-      {/* The vehicle, or what is missing in its place (slice 6). */}
-      <div className="mb-px mt-1 truncate text-[12px] font-semibold text-gray-900">
-        {vehicle ?? <span className="text-[#b45309]">Vehicle not set</span>}
+      {/* ROUTE, not area (owner). The name the most stops run on, "+N" greyed
+          for the others (lib/trips/queries.ts deriveRouteLabel). */}
+      <div className="mt-1 truncate text-[12.5px] font-semibold text-gray-900">
+        {trip.routeName ? (
+          <>
+            {trip.routeName}
+            {trip.routeExtraCount > 0 && (
+              <span className="font-normal text-gray-400"> +{trip.routeExtraCount}</span>
+            )}
+          </>
+        ) : (
+          <span className="font-normal text-gray-400">No route</span>
+        )}
       </div>
 
-      {/* The area, DERIVED from the stops (lib/trips/queries.ts deriveAreaLabel).
-          ⚠ EMPTY ON AN EMPTY TRIP — the line below already says "No bills yet",
-          and saying it twice is noise. Also empty when no stop has an area. */}
-      {counts.total > 0 && trip.areaLabel && (
-        <div className="truncate text-[11.5px] text-gray-600">{trip.areaLabel}</div>
-      )}
-
-      {/* ⚠ AN EMPTY TRIP SAYS SO (2026-09-10 c). It used to read
-          "0 stops · 0 bills · 0 L" over an empty progress bar, which is three
-          true numbers arranged to look like a rendering fault. An empty trip is
-          a normal morning state — the floor plans trucks before the bills exist
-          (owner, slice 6). */}
-      {counts.total === 0 ? (
+      {/* ⚠ AN EMPTY TRIP SAYS SO (2026-09-10 c) rather than "0 stops · 0 bills ·
+          0 L" — an empty trip is a normal morning state (owner, slice 6). */}
+      {bar.total === 0 ? (
         <div className="text-[11px] text-gray-400">No bills yet</div>
       ) : (
-        <>
-          <div className="text-[11px] tabular-nums text-gray-500">
-            {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {counts.total} bill
-            {counts.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
-          </div>
-          <ProgressBar counts={counts} className="mt-1.5 !h-[5px]" />
-        </>
+        <div className="text-[11px] tabular-nums text-gray-500">
+          {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {bar.total} bill
+          {bar.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
+        </div>
       )}
+
+      {/* DRIVER, not vehicle (owner). ONE line, always — an ellipsis, never a
+          wrap. No driver is amber: on this screen amber means someone has to do
+          something. A typed plate never brings a driver, so those trips read
+          "No driver yet" until a master vehicle is chosen (owner, accepted). */}
+      <div className="truncate text-[11.5px] text-gray-700" title={trip.driverName ?? undefined}>
+        {trip.driverName ?? <span className="font-medium text-[#b45309]">No driver yet</span>}
+      </div>
+
+      <TripBar counts={bar} className="mt-1.5" />
     </button>
   );
 }
+
+/**
+ * The ONE badge a rail card wears (floor redesign, 2026-09-15, owner) — first
+ * match wins:
+ *
+ *   DISPATCHED — every bill dispatched
+ *   PICKING    — at least one bill with a picker, or picked and not checked
+ *   READY      — every bill done: nothing waiting, picking or on hold
+ *   SHOWN      — shown to the floor, nothing picked yet (desk control on only)
+ *   none       — the bar already says everything is waiting
+ *
+ * Picking beats Shown: once picking has started, the trip was obviously shown.
+ *
+ * ⚠ READY HERE IS STRICTER THAN `trip.isReady`. `isReady` leaves held bills out
+ * of the maths (a finished load with a hold is ready to go); this badge, by the
+ * owner's rule, shows READY only when no bill is on hold. `isReady` is untouched
+ * and still drives what it always drove.
+ */
+export function tripBadge(trip: TripSummary, gateOn: boolean): TripChip | null {
+  const b = tripBarCounts(trip.counts);
+  if (b.total > 0 && trip.dispatchedCount === b.total) return BADGE_DISPATCHED;
+  if (b.picking > 0) return BADGE_PICKING;
+  if (b.total > 0 && b.done === b.total) return BADGE_READY;
+  if (gateOn && trip.shownAt && b.picking === 0 && b.done === 0) return BADGE_SHOWN;
+  return null;
+}
+
+const BADGE_DISPATCHED: TripChip = { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" };
+const BADGE_PICKING: TripChip = { label: "Picking", cls: "bg-[#e0f2fe] text-[#0369a1]" };
+const BADGE_READY: TripChip = { label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
+const BADGE_SHOWN: TripChip = { label: "Shown", cls: "bg-[#ecfdf5] text-[#047857]" };
