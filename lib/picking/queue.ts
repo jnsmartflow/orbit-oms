@@ -22,7 +22,7 @@ import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
 import { isReleasableToday } from "./release-window";
 // The floor visibility gate. Read here and PASSED to buildPickingWhere, which
 // is synchronous and so cannot make the database call itself.
-import { isPickGateOn, countHeldBackWaiting } from "./visibility-gate";
+import { isPickGateOn, countHeldBackWaiting, waitingBranchWhere, type HeldBack } from "./visibility-gate";
 // Name → SAP code, the inverse of the importer's own DIVISION_TO_SMU. Imported
 // rather than re-declared so the picking board can never disagree with the
 // importer about which code a name means (the ONE OWNER PER BEHAVIOUR rule this
@@ -175,7 +175,9 @@ export interface PickingQueueOptions {
   pickerId?: number;
   /**
    * The floor visibility gate (2026-09-09). `true` narrows the WAITING branch
-   * to bills carrying `orders.pickVisibleAt`; `false` emits no term at all and
+   * to bills on no trip or on a SHOWN trip (per trip since slice 8, 2026-09-15 —
+   * it was a per-bill `orders.pickVisibleAt` stamp before; see
+   * waitingBranchWhere in ./visibility-gate); `false` emits no term at all and
    * the WHERE is byte-identical to what it was before the gate existed.
    *
    * 🔴 PASSED IN, NEVER READ HERE. The switch lives in `app_settings`, so
@@ -276,8 +278,14 @@ export interface PickingQueueResult {
    *
    * ALWAYS 0 for a `pickerId` request: a held-back bill is unassigned, so it can
    * belong to no picker. The picker's face reads nothing from this field.
+   *
+   * Bills. Since slice 8 the supervisor's band also names TRUCKS — see
+   * `heldBackTrucks`.
    */
   heldBack: number;
+  /** The distinct trips those held-back bills are on (slice 8). 0 whenever
+   *  `heldBack` is 0. */
+  heldBackTrucks: number;
 }
 
 // Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
@@ -375,12 +383,15 @@ export function buildPickingWhere(
             //
             // ⚠ THE GATE TERM GOES HERE AND NOWHERE ELSE (2026-09-09). With
             // `gateOn` false this is the bare stage clause and the WHERE is
-            // byte-identical to the pre-gate board. With it true the branch
-            // additionally requires `pickVisibleAt`, so a waiting bill nobody
-            // has released is not on the Assign tab.
-            gateOn
-              ? { workflowStage: SUPPORT_DONE_OUTPUT, pickVisibleAt: { not: null } }
-              : { workflowStage: SUPPORT_DONE_OUTPUT },
+            // byte-identical to the pre-gate board.
+            //
+            // 🔴 PER TRIP SINCE SLICE 8 (2026-09-15). With the gate ON a waiting
+            // bill is here when it is on NO trip, or on a trip the desk has
+            // SHOWN (`trips.shownAt`). It used to require a per-bill
+            // `pickVisibleAt` stamp; nothing reads that column now. The term is
+            // owned by waitingBranchWhere() in lib/picking/visibility-gate.ts,
+            // never spelled out here.
+            waitingBranchWhere(gateOn),
             // ── IN PROGRESS — a picker has it, or has finished picking it ──
             //
             // 🔴 NEVER GATED, IN ANY STATE OF THE SWITCH. A LOCKED OWNER RULE,
@@ -1002,19 +1013,20 @@ export async function getPickingQueue(
   //
   // Skipped for a per-picker fetch: a held-back bill is unassigned, so the
   // answer is 0 without a round trip. Sequential await, no $transaction.
-  const heldBack =
+  const held: HeldBack =
     options.pickerId === undefined
       ? await countHeldBackWaiting(
           buildPickingWhere({ date: options.date, scope: options.scope }).where,
           gateOn,
         )
-      : 0;
+      : { bills: 0, trucks: 0 };
 
   return {
     date: isoDate,
     rows: sortedRows,
     waitingSkus,
     oilSkus,
-    heldBack,
+    heldBack: held.bills,
+    heldBackTrucks: held.trucks,
   };
 }

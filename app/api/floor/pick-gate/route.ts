@@ -3,35 +3,46 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { isPickGateOn, PICK_VISIBILITY_GATE_KEY } from "@/lib/picking/visibility-gate";
+import { showTripsHoldingWaitingBills } from "@/lib/trips/show";
 
 export const dynamic = "force-dynamic";
 
 /**
- * GET / POST /api/floor/pick-gate — read and flip the picking visibility gate.
+ * GET / POST /api/floor/pick-gate — read and flip the picking visibility gate
+ * ("desk control").
  *
  * The switch is one `app_settings` row keyed by `PICK_VISIBILITY_GATE_KEY`.
- * ON, the supervisor's Assign tab shows only bills an operator has handed over
- * (`orders.pickVisibleAt`, stamped by `/api/floor/pick-visible`). OFF, it shows
- * every waiting bill, which is the board the floor has always had and the state
- * this ships in.
+ * ON, the supervisor's Assign tab shows a waiting bill only when it is on no
+ * trip or on a trip the desk has SHOWN (`trips.shownAt`, slice 8 — per trip
+ * since 2026-09-15; it was a per-bill `orders.pickVisibleAt` stamp before). OFF,
+ * it shows every waiting bill, which is the board the floor has always had.
  *
- * 🔴 THE SWITCH AND THE STAMPS ARE COMPLETELY INDEPENDENT, and nothing here may
- * ever couple them. Turning the gate ON writes no `pickVisibleAt`. Turning it
- * OFF clears none. The switch decides whether the FILTER RUNS; the stamps record
- * WHAT WAS HANDED OVER, and they outlive any number of toggles.
+ * 🔴 TURNING IT ON WRITES FIRST — THE NO-CLIFF RULE (slice 8, owner, a hard
+ * requirement). Turning the switch on must not remove anything already on the
+ * supervisor's screen. So an OFF → ON press first marks shown every trip that
+ * holds a waiting bill (lib/trips/show.ts showTripsHoldingWaitingBills), THEN
+ * flips the switch. Loose bills are always visible and in-progress bills are
+ * never gated, so that is the whole set that could have vanished.
  *
- * The failure this prevents is not hypothetical. If turning the gate off cleared
- * the stamps, an operator who flipped it off to unblock a busy hour would lose
- * every handover he made that afternoon, silently, and turning it back on would
- * empty the floor's board. Clearing a stamp is a per-BILL decision that belongs
- * to a per-bill route, not to a switch.
+ * 🔴 AND AN OFF → ON CYCLE RE-SHOWS A TRIP THE PLANNER HAD HELD BACK. That is
+ * DESIGNED, not a bug (owner, 2026-09-15): while the switch was off the
+ * supervisor could see that trip's bills anyway, so no-cliff requires showing
+ * them again. Nothing is lost — the planner can take the trip back.
  *
- * BOTH VERBS GATE ON `floor` canEdit — admin and operations, exactly who holds
- * the floor page key. `floor_supervisor` must NOT be able to flip it: he is the
- * person the gate is applied TO, and a switch its own subject can turn off is
- * not a control. The read is gated the same way deliberately — the answer is an
- * operations setting, not board data, and the supervisor's board already reflects
- * it without having to ask.
+ * ⚠ TURNING IT OFF WRITES NOTHING. The filter simply stops, so the supervisor
+ * gets everything back, and every trip's shown / not-shown record survives the
+ * toggle. (The old rule this replaces — "the switch and the stamps are completely
+ * independent" — was right about the off direction and still is: an off press
+ * that erased the desk's handovers would silently undo an afternoon's work.)
+ *
+ * BOTH VERBS GATE ON `floor` canEdit. Since per-user access (2026-09-04) that is
+ * ANYONE holding the floor Edit tick, not a pair of job titles — this comment
+ * named "admin and operations" until slice 8, and the switch was last flipped on
+ * 2026-09-14 by a billing operator holding the tick. `floor_supervisor` must NOT
+ * be granted that tick for this reason: he is the person the gate is applied TO,
+ * and a switch its own subject can turn off is not a control. The read is gated
+ * the same way deliberately — the answer is an operations setting, not board data,
+ * and the supervisor's board already reflects it without having to ask.
  */
 
 /** GET → the current state. `{ enabled: boolean }`. */
@@ -78,18 +89,28 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   const enabled = body.enabled;
 
+  // ── THE NO-CLIFF STEP — only on an OFF → ON press, and BEFORE the flip ──────
+  // See the header. The order is the safety: trips first, switch second. If the
+  // upsert below then failed, the trips carry a harmless shown record with the
+  // switch still off; the reverse order would let the supervisor's 15s poll land
+  // between the two writes and drop those bills off his screen.
+  //
+  // ⚠ TRIPS ONLY — never an order row (no trip action may change a bill).
+  let shownTrips: string[] = [];
+  if (enabled && !(await isPickGateOn())) {
+    shownTrips = await showTripsHoldingWaitingBills(updatedById);
+  }
+
   // Upsert on the settingKey unique constraint (app_settings_settingKey_key,
   // live — so this is safe). First flip creates the row, every later one updates
   // it. `updatedAt` is @updatedAt in the schema and stamps itself on both paths.
-  //
-  // ⚠ THIS TOUCHES `app_settings` AND NOTHING ELSE. No orders.update, no
-  // pickVisibleAt written or cleared — see the header. Sequential await, never
-  // prisma.$transaction (CORE §3).
+  // Sequential await, never prisma.$transaction (CORE §3).
   await prisma.app_settings.upsert({
     where: { settingKey: PICK_VISIBILITY_GATE_KEY },
     update: { isEnabled: enabled, updatedById },
     create: { settingKey: PICK_VISIBILITY_GATE_KEY, isEnabled: enabled, updatedById },
   });
 
-  return NextResponse.json({ enabled });
+  // `shownTrips` names what the no-cliff step showed, so the desk can say so.
+  return NextResponse.json({ enabled, shownTrips });
 }

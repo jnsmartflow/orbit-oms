@@ -141,6 +141,7 @@ export function TripRail({
   loading,
   anchorIso,
   scope,
+  gateOn,
   poolCount,
   poolLitres,
   selection,
@@ -159,6 +160,8 @@ export function TripRail({
   anchorIso: string;
   /** The page's All / Local / Upcountry / IGT scope. Filters trips by their own type. */
   scope: FloorScope;
+  /** Desk control. The card's "Shown" marker appears only while it is on. */
+  gateOn: boolean;
   poolCount: number;
   poolLitres: number;
   // ⚠ THE "IN TINTING" LINE WAS HERE AND WENT ON 2026-09-14. It counted the tint
@@ -248,6 +251,7 @@ export function TripRail({
           key={t.id}
           trip={t}
           anchorIso={anchorIso}
+          gateOn={gateOn}
           selected={selection.kind === "trip" && selection.tripId === t.id}
           onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
         />
@@ -261,11 +265,13 @@ function TripCard({
   selected,
   onSelect,
   anchorIso,
+  gateOn,
 }: {
   trip: TripSummary;
   selected: boolean;
   onSelect: () => void;
   anchorIso: string;
+  gateOn: boolean;
 }) {
   // 🔴 A CARRIED TRIP READS AS OLD, NOT AS TODAY'S (2026-09-11). Printing its REAL
   // date is the whole point of carrying it: a trip silently relabelled today
@@ -303,6 +309,16 @@ function TripCard({
         {trip.windowTime && (
           <span className="shrink-0 rounded-[4px] border border-gray-200 bg-white px-[5px] py-px text-[10px] font-semibold tabular-nums text-gray-600">
             {trip.windowTime}
+          </span>
+        )}
+        {/* SHOWN (slice 8, 2026-09-15) — a small, NON-CLICKABLE marker. The card
+            is itself a <button>, so it can hold no button of its own; Show to
+            floor lives in the trip header's Hand off group. Only while desk
+            control is on: with it off every waiting bill is visible, and a
+            "Shown" label would claim a distinction that does not exist. */}
+        {gateOn && trip.shownAt && (
+          <span className="shrink-0 rounded-[4px] bg-[#ecfdf5] px-[5px] py-px text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#047857]">
+            Shown
           </span>
         )}
         {chip && (

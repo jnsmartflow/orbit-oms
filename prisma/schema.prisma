@@ -265,6 +265,7 @@ model users {
   tripsReleased               trips[]                  @relation("TripReleasedBy")
   tripsDispatched             trips[]                  @relation("TripDispatchedBy")
   tripsCancelled              trips[]                  @relation("TripCancelledBy")
+  tripsShown                  trips[]                  @relation("TripShownBy")
   tripActivity                trip_activity[]          @relation("TripActivityActor")
   billingSettingsUpdated      billing_settings[]       @relation("BillingSettingsUpdatedBy")
   appSettingsUpdated          app_settings[]           @relation("AppSettingsUpdatedBy")
@@ -3204,10 +3205,11 @@ model ci_return_lines {
 // why the CHECK pads to greatest(2, length). Do not reimplement the formatter
 // as a two-character slice, and do not narrow the CHECK back to a bare 2.
 //
-// 🔴 FOUR FKs TO `users` — createdById / releasedById / dispatchedById /
-// cancelledById. All four carry an explicitly NAMED @relation on BOTH sides
-// (back-relations tripsCreated / tripsReleased / tripsDispatched /
-// tripsCancelled on the users model). An unnamed one is a Prisma ambiguity
+// 🔴 FIVE FKs TO `users` — createdById / releasedById / dispatchedById /
+// cancelledById / shownById (the fifth added 2026-09-15, slice 8). All five
+// carry an explicitly NAMED @relation on BOTH sides (back-relations
+// tripsCreated / tripsReleased / tripsDispatched / tripsCancelled / tripsShown
+// on the users model). An unnamed one is a Prisma ambiguity
 // ERROR at generate time, not a warning — CORE §7.3. Same discipline as the
 // Mrn* / PickFinding* / CiReturn* clusters.
 //
@@ -3266,6 +3268,15 @@ model trips {
   cancelledAt       DateTime?             @db.Timestamptz(6)
   cancelledById     Int?
   cancelledBy       users?                @relation("TripCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  // SHOWN TO THE FLOOR (slice 8, 2026-09-15). With desk control on, a WAITING
+  // bill on a trip reaches the supervisor's Assign tab only once its trip is
+  // shown; a bill on no trip is always visible. Null = not shown. Written by
+  // POST /api/floor/trips/[id]/show and by turning desk control on (the
+  // no-cliff rule, lib/trips/show.ts). The FIFTH FK to `users`, so it carries a
+  // named relation on both sides like its four siblings.
+  shownAt           DateTime?             @db.Timestamptz(6)
+  shownById         Int?
+  shownBy           users?                @relation("TripShownBy", fields: [shownById], references: [id], onDelete: SetNull)
   createdAt         DateTime              @default(now()) @db.Timestamptz(6)
   createdById       Int
   createdBy         users                 @relation("TripCreatedBy", fields: [createdById], references: [id])
@@ -3406,9 +3417,10 @@ model trip_drops {
 // never gets that far.
 //   chk_trip_activity_action CHECK (action IN ('created','bills_added',
 //     'bills_removed','vehicle_changed','details_changed','cancelled',
-//     'released','dispatched','renamed'))
+//     'released','dispatched','renamed','shown','taken_back'))
 //   'renamed' added 2026-09-15 (slice 5) for the one-off migration that renamed
-//   already-cancelled trips to <number>-C.
+//   already-cancelled trips to <number>-C. 'shown' and 'taken_back' added
+//   2026-09-15 (slice 8) for Show to floor and its take-back.
 //
 // ⚠ BOTH 'dispatched' AND 'released' ARE STILL WRITTEN. Slice 4 was dropped and
 // Mark dispatched stays. Since slice 6 (2026-09-15) 'released' comes from

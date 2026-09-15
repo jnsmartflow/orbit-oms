@@ -7,7 +7,8 @@
 //
 // ⚠ CONTROLLED, not self-fetching. floor-page.tsx owns `gateOn` because the same
 // fact drives three things — this switch, the held-back pills on every row, and
-// the Show strip — and a component holding its own copy would be a second state
+// the trip header's Show to floor (per trip since slice 8; the per-bill Show
+// strip was retired) — and a component holding its own copy would be a second state
 // that can disagree with the board it is describing. This one renders and writes;
 // the page reads and refetches.
 //
@@ -60,10 +61,24 @@ export function PickGateToggle({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: next }),
       });
-      const body = (await res.json().catch(() => ({}))) as { enabled?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        enabled?: boolean;
+        shownTrips?: string[];
+        error?: string;
+      };
       if (!res.ok) {
         toast.error(body.error ? `Could not change the gate — ${body.error}` : "Could not change the gate.");
         return;
+      }
+      // THE NO-CLIFF STEP, SAID OUT LOUD (slice 8). Turning desk control on marks
+      // shown every trip already holding a waiting bill, so nothing leaves the
+      // supervisor's screen. The planner should know which trips that was — they
+      // may include one he meant to hold back, which he can now take back.
+      const shownTrips = body.shownTrips ?? [];
+      if (next && shownTrips.length > 0) {
+        toast.info(
+          `Desk control on · ${shownTrips.length} trip${shownTrips.length === 1 ? "" : "s"} already on the floor's screen kept shown: ${shownTrips.join(", ")}`,
+        );
       }
       // Trust the SERVER's answer, never the optimistic one — a switch whose
       // displayed position does not match reality lies about what the floor sees.

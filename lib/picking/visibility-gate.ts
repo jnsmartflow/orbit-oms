@@ -3,19 +3,31 @@ import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The floor visibility gate — read-only helper.
+// The floor visibility gate ("desk control") — read-only helpers.
 //
 // One row in `app_settings` decides whether the supervisor's Assign tab shows
-// every waiting bill (the board as it has always been) or only the bills an
-// operator has explicitly made visible (`orders.pickVisibleAt`).
+// every waiting bill (the board as it has always been) or only the ones the desk
+// has let through.
+//
+// 🔴 PER TRIP SINCE SLICE 8 (2026-09-15). The decision moved from the BILL
+// (`orders.pickVisibleAt`, stamped one bill at a time by a Show strip) to the
+// TRIP (`trips.shownAt`). With the switch ON, a waiting bill is on the Assign tab
+// when it is on NO trip, or on a trip that has been SHOWN. The point, in the
+// owner's words: when volume is high the planner buckets orders into trucks
+// first, then shows one truck at a time, so the supervisor picks a load to
+// completion instead of 45 bills across six trucks and finishing none. A bill on
+// no trip is never hidden — the switch is about picking trucks in order, not
+// about hiding loose orders.
+//
+// `orders.pickVisibleAt` / `pickVisibleById` are no longer read or written. The
+// columns remain until a later drop; their 51 stale values were cleared by
+// sql/2026-09-15-slice8-show-per-trip.sql.
 //
 // ⚠ DEFAULT-OFF, the OPPOSITE of lib/hide/tag-settings.ts, and the asymmetry is
 // deliberate. A tag defaults ON because a missing row must not make a badge
 // disappear. This defaults OFF because a missing row must not make the floor's
-// WORK disappear: with the gate on and nothing marked visible, the Assign tab is
-// empty and three supervisors are standing at a screen that shows no bills. The
-// safe direction is always "show the supervisor his work", so every uncertain
-// answer here resolves to false.
+// WORK disappear. The safe direction is always "show the supervisor his work",
+// so every uncertain answer here resolves to false.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -54,191 +66,95 @@ export async function isPickGateOn(): Promise<boolean> {
 }
 
 /**
- * How many WAITING bills the gate is currently hiding from the picking board.
+ * A bill WAITING for a picker — the only kind the gate can ever hide.
  *
- * 🔴 THE ONE OWNER OF THIS COUNT. Both picking surfaces show the number — the
- * supervisor's Assign-tab band gets it on first paint from the queue payload
- * (`getPickingQueue`), and the 15s marker gets it from
- * `app/api/picking/marker/route.ts` — and two hand-written copies of a count is
- * two numbers that drift, on the same screen, in the same shift. Neither caller
- * writes these terms itself.
+ * 🔴 THE ONE OWNER OF "WAITING" FOR THE GATE. The supervisor's waiting branch
+ * (buildPickingWhere), the held-back count below, the no-cliff showing of trips
+ * (lib/trips/show.ts) and the floor row's `isAwaitingShow` (lib/floor/queries.ts)
+ * all mean exactly this. An assigned, picked or checked bill is never gated —
+ * the locked owner rule in lib/picking/queue.ts — so it is never "waiting" here.
+ */
+export const WAITING_FOR_PICKER: Prisma.ordersWhereInput = {
+  isRemoved: false,
+  dispatchStatus: "dispatch",
+  workflowStage: SUPPORT_DONE_OUTPUT,
+};
+
+/**
+ * The Assign tab's WAITING branch, as `buildPickingWhere` ORs it in.
+ *
+ *   gate OFF → every waiting bill. Byte-identical to the board before the gate.
+ *   gate ON  → a waiting bill on NO trip, or on a trip that has been SHOWN.
+ *
+ * ⚠ ONLY THE WAITING BRANCH. The in-progress and checked branches are never
+ * gated, in any state of the switch (queue.ts). Do not add this term anywhere
+ * else.
+ */
+export function waitingBranchWhere(gateOn: boolean): Prisma.ordersWhereInput {
+  if (!gateOn) return { workflowStage: SUPPORT_DONE_OUTPUT };
+  return {
+    workflowStage: SUPPORT_DONE_OUTPUT,
+    OR: [{ tripDropId: null }, { tripDrop: { trip: { shownAt: { not: null } } } }],
+  };
+}
+
+export interface HeldBack {
+  /** Waiting bills the gate is hiding. */
+  bills: number;
+  /** The distinct trips — trucks — those bills are on. */
+  trucks: number;
+}
+
+const NOTHING_HELD: HeldBack = { bills: 0, trucks: 0 };
+
+/**
+ * How much WAITING work the gate is hiding from the picking board, in bills and
+ * in trucks (slice 8: the supervisor's band reads "2 trucks with the planner ·
+ * 17 bills").
+ *
+ * 🔴 THE ONE OWNER OF THIS COUNT. The Assign-tab band gets it on first paint from
+ * the queue payload (`getPickingQueue`) and every 15s from
+ * `app/api/picking/marker/route.ts`; both call this, neither writes the terms.
+ *
+ * Under the per-trip gate every hidden bill is, by construction, on a trip that
+ * has not been shown — a bill on no trip is never hidden — so the trucks figure
+ * is simply the distinct trips of those bills.
  *
  * ⚠ `boardWhere` MUST BE THE UNGATED PREDICATE — `buildPickingWhere(...)` with
- * `gateOn` omitted or false. A gated where already excludes every row this
- * function is trying to count, so passing one returns 0. That is a wrong number
- * but the SAFE wrong number: the band simply does not render, which is the
- * screen as it was before the band existed, rather than a figure that overstates
- * what is at the desk.
+ * `gateOn` omitted or false. A gated where already excludes every row counted
+ * here, so passing one returns zero: the SAFE wrong answer (the band does not
+ * render), never an overstatement.
  *
- * The parameter exists rather than the options, deliberately: building the where
- * here would mean importing `buildPickingWhere` from lib/picking/queue.ts, which
- * already imports `isPickGateOn` from this file. That cycle resolves at runtime
- * but is exactly the kind of thing nobody should have to reason about to read a
- * count.
- *
- * WHY THE TOP-LEVEL `workflowStage` IS ENOUGH: Prisma ANDs top-level keys onto
- * the board predicate's `OR`, and `SUPPORT_DONE_OUTPUT` contradicts both the
- * in-progress branch and the checked branch — so only the waiting branch can
- * match, and no clock-fenced branch can influence the answer.
- *
- * Gate OFF → 0 with NO QUERY. Nothing is held back when the filter is not
+ * Gate OFF → zero with NO QUERY. Nothing is held back when the filter is not
  * running, so a poll costs exactly what it cost before the gate existed.
  *
- * Sequential await, never prisma.$transaction. SELECT only — no `orders.update`
+ * ONE query: the hidden bills are few (the ones on trucks not yet shown), so
+ * reading their trip ids and counting distinct values in memory is cheaper and
+ * simpler than two count() round trips. SELECT only — no `orders.update`
  * anywhere near this, or the marker would see a false "changed" (CORE §3).
  */
 export async function countHeldBackWaiting(
   boardWhere: Prisma.ordersWhereInput,
   gateOn: boolean,
-): Promise<number> {
-  if (!gateOn) return 0;
-  return prisma.orders.count({
+): Promise<HeldBack> {
+  if (!gateOn) return NOTHING_HELD;
+  const rows = await prisma.orders.findMany({
     where: {
       ...boardWhere,
       workflowStage: SUPPORT_DONE_OUTPUT,
-      pickVisibleAt: null,
+      tripDropId: { not: null },
+      tripDrop: { trip: { shownAt: null } },
     },
+    select: { tripDrop: { select: { tripId: true } } },
   });
+  const trucks = new Set(rows.map((r) => r.tripDrop?.tripId).filter((id): id is number => id != null));
+  return { bills: rows.length, trucks: trucks.size };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THE STAMPER — extracted 2026-09-09 from app/api/floor/pick-visible/route.ts
-// so the trip module's Release can hand bills over by the SAME rule instead of
-// a second copy of it.
-//
-// 🔴 ONE OWNER PER BEHAVIOUR. ONE caller stamps `orders.pickVisibleAt`:
-//   - app/api/floor/pick-visible/route.ts  (the operator's Show / Send back)
-// The second, app/api/floor/trips/[id]/release/route.ts, was DELETED in slice
-// 3 (2026-09-14): no trip action may change a bill's status or its hold, and
-// visibility went with it. Do not re-add a trip caller. The function stays
-// here rather than folding back into the route because the rule is still one
-// rule with one owner.
-//
-// EVERY GUARD BELOW IS THE ORIGINAL, MOVED VERBATIM.
+// ⚠ `stampPickVisibility()` WAS HERE AND WAS RETIRED IN SLICE 8 (2026-09-15),
+// with its only caller, POST /api/floor/pick-visible, and the per-bill Show strip
+// on /floor. Visibility is decided per TRIP now: lib/trips/show.ts owns showing
+// and taking back, and writes `trips` — never an order row, keeping the rule that
+// no trip action may change a bill's status or its hold.
 // ─────────────────────────────────────────────────────────────────────────────
-
-export interface PickVisibilityFailure {
-  orderId: number;
-  error: string;
-}
-
-export interface PickVisibilityResult {
-  /** Bills whose stamp actually moved. */
-  changed: number[];
-  /** Bills already in the requested state — a success, and NO write happened. */
-  skipped: number[];
-  /** Bills that could not be stamped, each with the reason. */
-  failed: PickVisibilityFailure[];
-}
-
-/**
- * Stamp or clear `orders.pickVisibleAt` / `pickVisibleById` for a set of bills.
- *
- * `visible: true` hands the bills to the picking floor; `false` pulls them back
- * to the desk. Returns three honest buckets — nothing is swallowed and a skip
- * is never reported as a write.
- *
- * ═══ 🔒 THE SERVER REFUSAL. THIS IS THE COPY THAT LASTS ═══
- *
- * Owner ruling: a bill that is with a picker, or already picked, or checked, can
- * NEVER be marked visible — there is nothing to hand over, the handover already
- * happened. Three layers enforce it: the button (which does not offer it), the
- * query (which never gates those stages), and THIS. The other two are UI and can
- * be changed by anyone in an afternoon; a direct POST bypasses both and lands
- * here. Do not remove this check as redundant — it is the only one that holds
- * when the other two are wrong.
- *
- * 🔒 AND IT APPLIES IN BOTH DIRECTIONS, WHICH IS WHAT MAKES PULL-BACK SAFE.
- * The dangerous case is a race, not a mistake: the operator ticks a bill to send
- * it back at the same moment a supervisor assigns it. By the time the request
- * lands the bill is `pick_assigned` — a picker is walking to the rack — and the
- * stage guard refuses it with a message naming the stage, instead of quietly
- * yanking the work out of his hands and leaving him holding a bill no screen
- * shows.
- *
- * ⚠ NO `order_status_logs` ROW IS WRITTEN, and that is deliberate.
- *   - The order already carries the whole record: `pickVisibleById` is who,
- *     `pickVisibleAt` is when. A log row would be a second copy of two columns.
- *   - Unlike hide (ORDER_HIDDEN) or early release (PICK_EARLY_RELEASED), this is
- *     a routine, high-frequency action — an operator works through a selection
- *     several times a day, and a trip release stamps a whole load at once. At
- *     100+ bills a day the log would bury the events somebody actually reads.
- *   - It would also be a SECOND write per bill. The live-sync markers key on
- *     `MAX(orders.updatedAt)`, so every extra write on a picking path fires a
- *     false "changed" on every board (FLOOR §4 / PICKING §10). One write per
- *     bill is the contract, and this function keeps it.
- *
- * Sequential awaits only, never prisma.$transaction (CORE §3).
- */
-export async function stampPickVisibility(opts: {
-  orderIds: number[];
-  visible: boolean;
-  /** The real session user. Never a body claim. */
-  actorId: number;
-}): Promise<PickVisibilityResult> {
-  const { orderIds, visible, actorId } = opts;
-
-  const changed: number[] = [];
-  const skipped: number[] = [];
-  const failed: PickVisibilityFailure[] = [];
-
-  for (const orderId of orderIds) {
-    try {
-      const order = await prisma.orders.findUnique({
-        where: { id: orderId },
-        select: { id: true, workflowStage: true, isRemoved: true, pickVisibleAt: true },
-      });
-      if (!order || order.isRemoved) {
-        failed.push({ orderId, error: "Order not found" });
-        continue;
-      }
-
-      // 🔒 THE LOCKED RULE. Only a WAITING bill can be handed over. A
-      // pick_assigned / pick_done / pick_checked bill is refused whatever the
-      // client sends, and the message names the stage so the refusal is
-      // diagnosable rather than mysterious.
-      if (order.workflowStage !== SUPPORT_DONE_OUTPUT) {
-        failed.push({
-          orderId,
-          error: visible
-            ? `Cannot show a bill at stage ${order.workflowStage} — only waiting bills can be shown.`
-            : `Cannot send back a bill at stage ${order.workflowStage} — a picker already has it.`,
-        });
-        continue;
-      }
-
-      // ALREADY IN THE REQUESTED STATE → a SKIP, not a failure, and NO WRITE.
-      // The test MIRRORS with the direction: showing skips an already-stamped
-      // bill, sending back skips an already-null one.
-      //
-      // ⚠ AND THE WRITE MUST NOT HAPPEN. A no-op re-write would still bump
-      // `orders.updatedAt` and fire a false "changed" on every board's marker
-      // (PICKING §10). On the forward path it would also overwrite the original
-      // actor and time with whoever fat-fingered the checkbox.
-      const alreadyThere = visible ? order.pickVisibleAt !== null : order.pickVisibleAt === null;
-      if (alreadyThere) {
-        skipped.push(orderId);
-        continue;
-      }
-
-      // EXACTLY ONE orders.update per bill, in either direction. Both columns
-      // land in the same row write, so the change is atomic on its own.
-      //
-      // The reverse clears BOTH columns. Leaving `pickVisibleById` behind would
-      // read as "this bill was released by Ashish" on a bill that is at the desk
-      // — a half-cleared record that says something untrue.
-      await prisma.orders.update({
-        where: { id: orderId },
-        data: visible
-          ? { pickVisibleAt: new Date(), pickVisibleById: actorId }
-          : { pickVisibleAt: null, pickVisibleById: null },
-      });
-
-      changed.push(orderId);
-    } catch (err) {
-      failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
-    }
-  }
-
-  return { changed, skipped, failed };
-}

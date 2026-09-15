@@ -22,6 +22,9 @@ interface MarkerResponse {
    * never make one of them refetch.
    */
   heldBack?: number;
+  /** The distinct trucks those held-back bills are on (slice 8). Optional for the
+   *  same reason `heldBack` is, and coalesced to 0 the same way. */
+  heldBackTrucks?: number;
   scope: string;
 }
 
@@ -166,6 +169,7 @@ export function usePickingMarker({
     count: number;
     latest: string | null;
     heldBack: number;
+    heldBackTrucks: number;
   } | null>(null);
   // The marker moved while paused → fire once on resume.
   const pendingChangeRef = useRef(false);
@@ -257,6 +261,7 @@ export function usePickingMarker({
           count: marker.count,
           latest: marker.latest,
           heldBack: marker.heldBack ?? 0,
+          heldBackTrucks: marker.heldBackTrucks ?? 0,
         };
         const prev = lastSeenRef.current;
         if (prev === null) {
@@ -269,7 +274,8 @@ export function usePickingMarker({
         const moved =
           prev.count !== next.count ||
           prev.latest !== next.latest ||
-          prev.heldBack !== next.heldBack;
+          prev.heldBack !== next.heldBack ||
+          prev.heldBackTrucks !== next.heldBackTrucks;
         if (!moved) return;
         lastSeenRef.current = next; // always advance the baseline
         if (pausedRef.current) {
@@ -357,6 +363,7 @@ export function usePickingMarker({
         count: marker.count,
         latest: marker.latest,
         heldBack: marker.heldBack ?? 0,
+        heldBackTrucks: marker.heldBackTrucks ?? 0,
       };
       // Any change deferred while paused is covered by the caller's own fresh
       // fetch — leaving it armed would fire on unpause for data already shown.

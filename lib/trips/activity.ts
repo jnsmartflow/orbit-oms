@@ -64,6 +64,16 @@ export const TRIP_CANCELLED_ACTION = "cancelled";
 export const TRIP_RENAMED = "renamed";
 
 /**
+ * Show to floor, and its take-back (slice 8, 2026-09-15). With desk control on,
+ * a trip's WAITING bills reach the supervisor's Assign tab only once the trip is
+ * shown. Written by POST /api/floor/trips/[id]/show and — for `shown` only — by
+ * turning desk control on, which shows every trip already holding a waiting
+ * bill so nothing leaves the supervisor's screen (lib/trips/show.ts).
+ */
+export const TRIP_SHOWN = "shown";
+export const TRIP_TAKEN_BACK = "taken_back";
+
+/**
  * ⚠ BOTH ARE STILL WRITTEN, AND THIS NOTE WAS WRONG TWICE BEFORE.
  *
  * `dispatched` — Mark dispatched STAYS (the owner dropped slice 4 on
@@ -91,6 +101,8 @@ export const TRIP_ACTIONS = [
   TRIP_DETAILS_CHANGED,
   TRIP_CANCELLED_ACTION,
   TRIP_RENAMED,
+  TRIP_SHOWN,
+  TRIP_TAKEN_BACK,
   TRIP_RELEASED,
   TRIP_DISPATCHED,
 ] as const;
@@ -406,6 +418,62 @@ export async function logTripCancelled(opts: {
       obdNumbers: opts.obdNumbers,
       reason: opts.reason ?? null,
     },
+  });
+}
+
+/**
+ * The trip was shown to the floor (slice 8).
+ *
+ * `via` records WHICH press did it: the planner's own Show to floor, or turning
+ * desk control on — which shows every trip already holding a waiting bill, so
+ * the supervisor loses nothing he could see (the no-cliff rule). The second is
+ * not a person choosing this trip, and the summary says so.
+ */
+export async function logTripShown(opts: {
+  tripId: number;
+  actorId: number;
+  tripNumber: string;
+  /** Waiting bills on the trip at that moment — what the supervisor now sees. */
+  waitingCount: number;
+  via: "button" | "desk_control_on";
+}): Promise<void> {
+  const tail =
+    opts.via === "desk_control_on"
+      ? " — shown automatically when desk control was turned on, so nothing left the floor's screen"
+      : "";
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_SHOWN,
+    actorId: opts.actorId,
+    summary: `Trip ${opts.tripNumber} shown to the floor, ${bills(opts.waitingCount)} waiting${tail}`,
+    detail: { waitingCount: opts.waitingCount, via: opts.via },
+  });
+}
+
+/**
+ * The trip was taken back from the floor (slice 8).
+ *
+ * ⚠ ONLY ITS STILL-WAITING BILLS LEAVE THE SUPERVISOR'S SCREEN. A bill already
+ * with a picker, picked or checked is never gated (lib/picking/queue.ts, the
+ * locked rule), so it stays exactly where it is — and the row names both counts
+ * so a reader can see that nothing was pulled out of anybody's hands.
+ */
+export async function logTripTakenBack(opts: {
+  tripId: number;
+  actorId: number;
+  tripNumber: string;
+  /** Waiting bills that are now hidden from the Assign tab again. */
+  hiddenCount: number;
+  /** Bills already with a picker or further on — unaffected. */
+  stayedCount: number;
+}): Promise<void> {
+  const stayed = opts.stayedCount > 0 ? `, ${bills(opts.stayedCount)} already with pickers stay` : "";
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_TAKEN_BACK,
+    actorId: opts.actorId,
+    summary: `Trip ${opts.tripNumber} taken back from the floor, ${bills(opts.hiddenCount)} waiting hidden again${stayed}`,
+    detail: { hiddenCount: opts.hiddenCount, stayedCount: opts.stayedCount },
   });
 }
 

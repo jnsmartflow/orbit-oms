@@ -53,6 +53,22 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
   every OBD on the trip, and a prompt on an action used as undo dozens of times a week is friction
   without safety. Accepted until the loading screen: no trip closes, so the Dispatched chip does
   not appear on new trips and Add bills / Cancel stay offered on a truck that has left.
+- **Slice 8 (2026-09-15) — Show to floor is per TRIP.** With desk control on, a waiting bill is on
+  the supervisor's Assign tab when it is on no trip, or on a trip the desk has shown
+  (`trips.shownAt`/`shownById`, `waitingBranchWhere` in `lib/picking/visibility-gate.ts`). Show to
+  floor is the first member of the header's Hand off group — greyed with "Desk control is off"
+  underneath while the switch is off — and Take back from floor sits in ···; take-back hides only
+  still-waiting bills. The rail card has a non-clickable "Shown" marker. **No-cliff:** turning desk
+  control on first marks shown every trip holding a waiting bill (`lib/trips/show.ts`), then flips
+  the switch; an off → on cycle therefore re-shows a trip the planner had held back, by design. The
+  supervisor's band reads "2 trucks with the planner · 17 bills" (no truck numbers, owner). The
+  per-bill Show strip, `POST /api/floor/pick-visible` and `stampPickVisibility()` are retired; the
+  51 stale `pickVisibleAt` stamps are cleared by `sql/2026-09-15-slice8-show-per-trip.sql`, and
+  the columns stay for a later drop. Fixed in the same slice: the §7.6 tint pill bug (the pill
+  now trusts `heldBack`), and `isHeldBack()` is stage-aware (server-computed `isAwaitingShow`).
+  ⚠ **Known, not fixed:** the /floor board's own 15s marker keys on `orders.updatedAt`, so a trip
+  shown or taken back by ANOTHER planner does not refresh this planner's pills until something
+  else reloads the board. The supervisor's marker does see it (its held-back count moves).
 - **Settle-drafts SQL — RUN by the owner before slice 7.** A returned L-260915-01, -03, -04; C read
   `drafts_with_vehicle` 2 (`L-260912-08`, `U-260914-03`, deliberately left as drafts) and
   `migration_rows` 3.

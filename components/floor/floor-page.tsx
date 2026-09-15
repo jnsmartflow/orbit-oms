@@ -50,7 +50,6 @@ import {
 } from "./status-pill";
 import { countArticles } from "@/lib/floor/format";
 import { PickGateToggle } from "./pick-gate-toggle";
-import { ShowStrip } from "./show-strip";
 import { FloorSkeleton } from "./floor-skeleton";
 import { HoldTab } from "./hold-tab";
 import { CancelledTab } from "./cancelled-tab";
@@ -197,7 +196,7 @@ export function FloorPage() {
   const [connected, setConnected] = useState(true);
   // The picking visibility gate (2026-09-09). Owned HERE, not by the switch,
   // because the same fact drives the switch, the held-back pills on every row
-  // and the Show strip — three readings that must never disagree.
+  // and the trip header's Show to floor — three readings that must never disagree.
   //
   // null = not known yet (the read has not landed, or it failed). Everything
   // downstream treats null as OFF for RENDERING (`gateOn === true` below), so an
@@ -706,87 +705,50 @@ export function FloorPage() {
   // Bulk mark-urgent + bulk hold were RETIRED with the bulk-bar v2 rebuild —
   // urgent is now the per-row ⚡ (rowMarkUrgent → floor-table); hold is the detail
   // panel's ⋯ menu. Do not re-add them to the bar.
-  // ── Show to the floor (2026-09-09) ────────────────────────────────────────
-  // POSTs ONLY the selected bills that are actually at the desk, then clears the
-  // selection and reloads.
+  // ── Show to floor, PER TRIP (slice 8, 2026-09-15) ─────────────────────────
+  // The per-BILL Show strip, its handler and POST /api/floor/pick-visible were
+  // retired: with desk control on, the desk now shows the supervisor one TRUCK
+  // at a time. This posts to POST /api/floor/trips/[id]/show, which writes the
+  // TRIP (trips.shownAt) and never an order row.
   //
-  // ⚠ THE REFETCH IS EXPLICIT AND MUST STAY EXPLICIT. This action happens WITH a
-  // selection up, and the floor's live-sync poll is PAUSED while a selection is
-  // up (FLOOR §5) — so nothing else is going to notice the write. Same reason
-  // every other write on this page ends in `await load()`.
-  //
-  // ⚠ NO RETRY, EVER. The route makes exactly one orders.update per bill; a
-  // client retry would make a second, and the markers key on
-  // MAX(orders.updatedAt) — a duplicate write fires a false "changed" on every
-  // board (FLOOR §10). A failure is reported and left to the operator.
-  const [showBusy, setShowBusy] = useState(false);
-  // ONE function, both directions — the request differs by a single boolean and
-  // the reporting by three nouns, so two copies would be two places to fix the
-  // day the wording or the bucket names change again.
-  const setDeskVisibility = async (rows: FloorBoardRow[], visible: boolean) => {
-    const ids = rows.map((r) => r.orderId);
-    if (ids.length === 0 || showBusy) return;
-    // Wording, chosen once so every branch below reads the same way.
-    const verbFail = visible ? "Show" : "Send back";
-    const didWord = visible ? "shown" : "sent back to desk";
-    const alreadyWord = visible ? "already visible" : "already at desk";
-
-    setShowBusy(true);
-    try {
-      const res = await fetch("/api/floor/pick-visible", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: ids, visible }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        changed?: number[];
-        skipped?: number[];
-        failed?: Array<{ error?: string }>;
-        error?: string;
-      };
-
-      // ⚠ NOT reportWrite(). That helper knows two buckets (ok / failed) and this
-      // route returns THREE, so it would have to call a skip a success with no
-      // detail — and the number on screen would then not match what happened.
-      // A skipped bill was already in the requested state: a success, but nothing
-      // was written to it, and saying "15 shown" when 3 were already shown is a
-      // lie the operator would only catch by counting rows himself.
-      const changed = body.changed?.length ?? 0;
-      const skipped = body.skipped?.length ?? 0;
-      const failed = body.failed ?? [];
-
-      if (!res.ok) {
-        // 422 = every bill was refused and nothing was written.
-        toast.error(
-          body.error
-            ? `${verbFail} failed — ${body.error}`
-            : `${verbFail} failed — none of the ${ids.length} bill${ids.length === 1 ? " was" : "s were"} changed.`,
-        );
-      } else {
-        const parts: string[] = [];
-        if (changed > 0) parts.push(`${changed} ${didWord}`);
-        if (skipped > 0) parts.push(`${skipped} ${alreadyWord}`);
-        if (parts.length > 0) toast.success(parts.join(", "));
-        // Surfaced separately and never swallowed — a partial success that
-        // reports only its successes is the swallowed-response bug FLOOR §6(b)
-        // closed on the release path. On the reverse path the usual cause is the
-        // race the route's stage guard exists for: a supervisor assigned the bill
-        // while the operator was ticking it.
-        if (failed.length > 0) {
-          const reason = failed[0]?.error ?? "not valid at its current state";
-          toast.error(
-            `${failed.length} bill${failed.length === 1 ? "" : "s"} not changed — ${reason}`,
-          );
+  // ⚠ THE REFETCH IS EXPLICIT, as on every write here — the live-sync poll may
+  // be paused, and nothing else would notice.
+  const setTripShown = useCallback(
+    async (tripId: number, shown: boolean) => {
+      setTripBusyId(tripId);
+      try {
+        const res = await fetch(`/api/floor/trips/${tripId}/show`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ shown }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          changed?: boolean;
+          tripNumber?: string;
+          waitingCount?: number;
+          error?: string;
+        };
+        const label = body?.tripNumber ?? "Trip";
+        if (!res.ok) {
+          toast.error(`Could not ${shown ? "show" : "take back"} — ${body?.error ?? `HTTP ${res.status}`}`);
+        } else if (!body.changed) {
+          // A skip, and SAID as one: nothing was written.
+          toast.info(`${label} was already ${shown ? "shown to the floor" : "taken back"}.`);
+        } else if (shown) {
+          const n = body.waitingCount ?? 0;
+          toast.success(`${label} shown to the floor · ${n} bill${n === 1 ? "" : "s"} waiting`);
+        } else {
+          toast.success(`${label} taken back from the floor — bills already with pickers stay with them`);
         }
+      } catch {
+        toast.error(`Could not ${shown ? "show" : "take back"} — check your connection.`);
+      } finally {
+        setTripBusyId(null);
       }
-    } catch {
-      toast.error(`${verbFail} failed — check your connection.`);
-    } finally {
-      setShowBusy(false);
-    }
-    clearSelection();
-    await load();
-  };
+      await load();
+    },
+    [load],
+  );
 
   // ⚠ THREE BULK HANDLERS WENT WITH THE BARS THAT CALLED THEM (2026-09-10):
   // `bulkChangeSlot` (the assign bar's Change slot), `bulkAssign` (its Assign /
@@ -1360,7 +1322,7 @@ export function FloorPage() {
   // "N not shown" for the header switch, counted off the rows this screen
   // ALREADY has. Same slice `waitingCount` above uses (due rows of the filtered
   // floor) so the two numbers describe the same board, and through isHeldBack()
-  // rather than a hand-written `!isAssigned && pickVisibleAt === null` — that
+  // rather than a hand-written held-back test (per trip since slice 8) — that
   // shape is the exact bug class CLAUDE_PICKING §7's standing rule warns about.
   //
   // ⚠ NOT the picking marker's own held-back number. Floor must never call the
@@ -1374,27 +1336,6 @@ export function FloorPage() {
     [filteredFloor],
   );
 
-  // The two groups inside the selection the desk strip acts on. Each button
-  // sends ONLY its own ids — never the whole selection: an already-visible bill
-  // on the Show path would come back under `skipped` and inflate the number
-  // reported to the operator, and an assigned one would come back under `failed`
-  // for a request nobody made.
-  //
-  // BOTH are computed on every render because a selection routinely spans both
-  // states — the operator ticks by eye, in bulk — and the strip offers whichever
-  // actions apply, including both at once.
-  const selectedHeldBack = useMemo(
-    () => selectedRows.filter((r) => isHeldBack(r)),
-    [selectedRows],
-  );
-  // Waiting AND already handed over: the reverse group. `rowStatus === "waiting"`
-  // is the same half of isHeldBack()'s rule, negated on the stamp only — an
-  // assigned or picked bill belongs to neither group, because the route refuses
-  // it in both directions and offering it would be offering a guaranteed error.
-  const selectedShown = useMemo(
-    () => selectedRows.filter((r) => rowStatus(r) === "waiting" && r.pickVisibleAt !== null),
-    [selectedRows],
-  );
 
   // Tab pill (Floor / On hold / Cancelled) — active is dark-underlined; the count
   // badge is dark on the active tab, grey otherwise.
@@ -1490,7 +1431,18 @@ export function FloorPage() {
             cases. Only /floor canEdit holders reach this screen, so the control
             needs no permission test of its own, and it must not grow one that
             would let a viewer flip it. */}
-        <PickGateToggle enabled={gateEnabled} heldBackCount={heldBackCount} onChanged={setGateEnabled} />
+        <PickGateToggle
+          enabled={gateEnabled}
+          heldBackCount={heldBackCount}
+          // ⚠ REFETCH ON A FLIP (slice 8). Turning desk control on can mark trips
+          // shown server-side (the no-cliff step), which changes every affected
+          // row's `isAwaitingShow` — and a trip write moves no orders.updatedAt,
+          // so the floor's own marker would never notice.
+          onChanged={(v) => {
+            setGateEnabled(v);
+            void load();
+          }}
+        />
         <span suppressHydrationWarning className="ml-auto text-[11px] text-gray-400" style={{ fontVariantNumeric: "tabular-nums" }}>
           {dateStr} &middot; {timeStr}
         </span>
@@ -1591,6 +1543,7 @@ export function FloorPage() {
               scope={scope}
               onChangeVehicle={(id) => void openVehicleEditor(id)}
               onCancelTrip={(id) => void cancelTrip(id)}
+              onSetTripShown={(id, shown) => void setTripShown(id, shown)}
               // 🔴 RENDERED ON ALL FOUR TABS (2026-09-14). The desk owns the
               // rail, and the rail must not move when the tab changes — so the
               // desk is the shell for every tab and swaps only what is in the
@@ -1635,32 +1588,6 @@ export function FloorPage() {
               onOpenDetail={(id) => openDetail(id, isLive ? "floor" : "history")}
             />
           ) : null}
-
-          {/* The Show strip (2026-09-09) — ABOVE the bottom bar, never inside
-              it. It is a different job: the bar moves bills between the pool and
-              a trip, this hands them to the floor's PICKERS.
-
-              THREE conditions, all required: the gate is on, the selection holds
-              at least one bill EITHER direction can act on, and `barVisible` —
-              the SAME flag the bottom bar uses. Reusing that flag is load-bearing
-              twice: the strip is positioned off the bar's 60px, so a strip
-              without a bar would float over the last table row; and barVisible
-              already carries the live/history and tab rules, which the strip
-              needs identically and must not restate.
-
-              Gate off → `gateOn` is false → nothing renders and this subtree
-              does not exist. */}
-          {gateOn && barVisible && selectedHeldBack.length + selectedShown.length > 0 && (
-            <div className="absolute inset-x-0 bottom-[60px] z-20">
-              <ShowStrip
-                notShownCount={selectedHeldBack.length}
-                shownCount={selectedShown.length}
-                busy={showBusy}
-                onShow={() => void setDeskVisibility(selectedHeldBack, true)}
-                onSendBack={() => void setDeskVisibility(selectedShown, false)}
-              />
-            </div>
-          )}
 
           {/* ONE BAR. The assign bar (Change slot · Choose picker · Assign) and
               the trip selection bar (Remove from trip) were two components at

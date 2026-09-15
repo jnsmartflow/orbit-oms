@@ -23,8 +23,15 @@ interface Failed {
  * decision (floor-trip-module §2: *"A bill can be added to a trip while already
  * assigned or picked; it just cannot be HIDDEN again"*), and it is the whole
  * reason membership and VISIBILITY are separate facts on separate columns.
- * Do not add a stage guard here. The stage guard belongs to release, where it
- * already lives, in `stampPickVisibility()`.
+ * Do not add a stage guard here.
+ *
+ * ⚠ BUT MEMBERSHIP NOW MOVES VISIBILITY (slice 8, 2026-09-15). With desk control
+ * on, a WAITING bill on a trip that has not been shown is off the supervisor's
+ * Assign tab — so ADDING a waiting bill to an unshown trip takes it off his
+ * screen at once, and REMOVING it brings it straight back. That is the bucketing
+ * the owner asked for, and this route writes nothing for it: the picking query
+ * reads the trip (lib/picking/visibility-gate.ts waitingBranchWhere). A bill
+ * already with a picker is never hidden by it.
  *
  * ⚠ EXACTLY ONE `orders.update` PER BILL. The live-sync markers key on
  * `MAX(orders.updatedAt)`, so a second write fires a false "changed" on every
@@ -32,12 +39,11 @@ interface Failed {
  *
  * ⚠ NO `order_status_logs` ROW, for attach OR detach. The trips table carries
  * its own audit stamps and this is a high-frequency action — a planner moves
- * bills between trips repeatedly while building a load. Same reasoning recorded
- * at pick-visible/route.ts and now in `stampPickVisibility()`'s header: a log
- * row per bill would be noise that buries the events somebody reads back, and it
- * would be the second write the marker landmine warns about.
+ * bills between trips repeatedly while building a load. A log row per bill would
+ * be noise that buries the events somebody reads back, and it would be the
+ * second write the marker landmine warns about.
  *
- * Same 422/partial contract as /api/floor/release and /api/floor/pick-visible.
+ * Same 422/partial contract as /api/floor/release.
  * Sequential awaits, never prisma.$transaction (CORE §3).
  */
 export async function POST(

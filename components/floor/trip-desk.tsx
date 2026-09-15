@@ -116,6 +116,7 @@ export function TripDesk({
   scope,
   onChangeVehicle,
   onCancelTrip,
+  onSetTripShown,
   activeTab,
   tabs,
   sideBody,
@@ -144,6 +145,8 @@ export function TripDesk({
   scope: FloorScope;
   onChangeVehicle: (tripId: number) => void;
   onCancelTrip: (tripId: number) => void;
+  /** Show to floor (`shown: true`) or take back (`false`) — slice 8. */
+  onSetTripShown: (tripId: number, shown: boolean) => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
   activeTab: "floor" | "tinting" | "hold" | "cancelled";
   /** The tab pills + their counts + New trip, built by floor-page and rendered
@@ -551,6 +554,9 @@ export function TripDesk({
           onAddBills={() => onSelectRail({ kind: "pool" })}
           onChangeVehicle={() => onChangeVehicle(selectedTrip.id)}
           onCancelTrip={() => onCancelTrip(selectedTrip.id)}
+          gateOn={gateOn}
+          onShowToFloor={() => onSetTripShown(selectedTrip.id, true)}
+          onTakeBackFromFloor={() => onSetTripShown(selectedTrip.id, false)}
           // The last two or three lines, under the action row. Renders nothing
           // at all when the trip has no history — see TripRecentActivity.
           recent={<TripRecentActivity rows={activity} />}
@@ -647,6 +653,7 @@ export function TripDesk({
         loading={tripsLoading}
         anchorIso={floor.date}
         scope={scope}
+        gateOn={gateOn}
         poolCount={poolRows.length + poolUpcoming.length}
         poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
         selection={railSelection}

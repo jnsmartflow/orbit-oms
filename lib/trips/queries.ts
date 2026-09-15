@@ -144,6 +144,13 @@ export interface TripSummary {
   releasedAt: string | null;
   dispatchedAt: string | null;
   cancelledAt: string | null;
+  /**
+   * When the desk showed this trip to the floor (slice 8), or null. With desk
+   * control on, the trip's WAITING bills are on the supervisor's Assign tab only
+   * once this is set. Meaningless while desk control is off — every waiting bill
+   * is visible then — so screens read it together with the switch.
+   */
+  shownAt: string | null;
   createdAt: string;
 }
 
@@ -310,6 +317,7 @@ const TRIP_SELECT = {
   releasedAt: true,
   dispatchedAt: true,
   cancelledAt: true,
+  shownAt: true,
   createdAt: true,
 } as const;
 
@@ -332,6 +340,7 @@ type TripRow = {
   releasedAt: Date | null;
   dispatchedAt: Date | null;
   cancelledAt: Date | null;
+  shownAt: Date | null;
   createdAt: Date;
 };
 
@@ -522,6 +531,7 @@ function toSummary(
     releasedAt: t.releasedAt?.toISOString() ?? null,
     dispatchedAt: t.dispatchedAt?.toISOString() ?? null,
     cancelledAt: t.cancelledAt?.toISOString() ?? null,
+    shownAt: t.shownAt?.toISOString() ?? null,
     createdAt: t.createdAt.toISOString(),
   };
 }

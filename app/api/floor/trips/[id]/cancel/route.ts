@@ -54,12 +54,11 @@ interface Failed {
  * own stage is untouched by all of this. Same reasoning as attach/detach and the
  * visibility stamp.
  *
- * ⚠ THE BILLS' `pickVisibleAt` IS NOT CLEARED. Cancelling a trip does not
- * un-hand-over its bills: a picker may already be holding one, and the stage
- * guard in `stampPickVisibility` would refuse to pull it back anyway. The switch
- * and the stamps stay independent (the gate build's own locked rule), and so do
- * the trip and the stamps. A cancelled trip's waiting bills return to the At-desk
- * pool still visible to the floor, which is the truthful state.
+ * ⚠ VISIBILITY IS PER TRIP SINCE SLICE 8 (2026-09-15), AND CANCEL NEEDS NOTHING
+ * FOR IT. Detaching the bills puts them on no trip, and a bill on no trip is
+ * always visible to the floor whatever desk control says — so a cancelled trip's
+ * waiting bills return to To plan visible, which is the truthful state, and a
+ * bill a picker is already holding stays with him (never gated).
  *
  * Sequential awaits, never prisma.$transaction (CORE §3).
  */

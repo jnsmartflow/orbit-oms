@@ -59,7 +59,8 @@
 //   tripDropId     — the bill stays on its trip. That pointer is how the desk
 //                    still shows it under its stop, and how the trip's counts
 //                    stay whole after the load leaves.
-//   pickVisibleAt  — untouched, same reason the cancel route leaves it alone.
+//   (pickVisibleAt — no longer read or written since slice 8; visibility is per
+//                    trip, trips.shownAt.)
 //
 // ⚠ EXACTLY ONE `orders.update` PER BILL. The live-sync markers key on
 // MAX(orders.updatedAt), so a second write fires a false "changed" on every

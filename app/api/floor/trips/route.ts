@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  *
  * `/api/floor/*` is also where this belongs on its own merits — Floor Control is
  * the screen that becomes the trip board, and every sibling route under it
- * (release, actions, pick-visible, pick-gate) is gated exactly this way.
+ * (release, actions, trips/[id]/show, pick-gate) is gated exactly this way.
  *
  * Gate: `floor` canEdit on BOTH verbs, matching /api/floor/pick-gate. The read
  * is gated the same way as the write deliberately — a trip is an operations

@@ -159,18 +159,22 @@ export async function GET(req: Request): Promise<NextResponse> {
     // It needs its own count(): an aggregate cannot carry two different filters.
     // The where passed in is deliberately the UNGATED one (no `gateOn`), which
     // is what that function documents and requires.
-    const heldBack =
+    const held =
       pickerId === undefined
         ? await countHeldBackWaiting(
             buildPickingWhere({ date: dateParam, scope: scopeParam }).where,
             gateOn,
           )
-        : 0;
+        : { bills: 0, trucks: 0 };
 
     const body = {
       count: agg._count,
       latest: agg._max.updatedAt ? agg._max.updatedAt.toISOString() : null,
-      heldBack,
+      heldBack: held.bills,
+      // Slice 8: the distinct trucks those bills are on, for the band's
+      // "2 trucks with the planner · 17 bills". Compared by the hook like
+      // heldBack, so a truck shown or taken back refreshes the band.
+      heldBackTrucks: held.trucks,
       scope: scopeParam ?? "single",
       // Echoed back so a debugger can see which question was asked (null =
       // board-wide). Not read by the client.

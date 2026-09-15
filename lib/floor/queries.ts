@@ -25,6 +25,7 @@ import {
   STAGE_LADDER,
   PICKING_OPEN_STAGES,
   PICKING_ACTIVE_STAGES,
+  SUPPORT_DONE_OUTPUT,
   PICK_ASSIGNED,
   PICK_DONE,
   PICK_CHECKED,
@@ -876,7 +877,9 @@ export async function getFloorBoard(
     tripIds.length > 0
       ? await prisma.trips.findMany({
           where: { id: { in: tripIds } },
-          select: { id: true, tripNumber: true, status: true },
+          // `shownAt` rides the same read (slice 8) — the per-trip visibility flag
+          // the row's isAwaitingShow below is derived from. No extra query.
+          select: { id: true, tripNumber: true, status: true, shownAt: true },
         })
       : [];
   const tripById = new Map(tripRows.map((t) => [t.id, t]));
@@ -1038,16 +1041,9 @@ export async function getFloorBoard(
       // date-only in practice (all values 00:00:00 UTC, verified live
       // 2026-08-31) — formatting is the renderer's job, not this feed's.
       invoiceDate: order.invoiceDate ? order.invoiceDate.toISOString() : null,
-      // The picking visibility handover (2026-09-09). FREE for the third time on
-      // this row builder and for the same reason as the ship-to pair and the
-      // invoice pair above: FLOOR_BOARD_INCLUDE is an `include`, so this scalar
-      // was already fetched and simply discarded. No query, no await, no write.
-      //
-      // Floor is the surface that WRITES this (POST /api/floor/pick-visible) and
-      // now the surface that reads back what it wrote — the pill and the Show
-      // strip both key on it. Picking is the surface it FILTERS, through
-      // buildPickingWhere's waiting branch; the two never share a predicate here.
-      pickVisibleAt: order.pickVisibleAt ? order.pickVisibleAt.toISOString() : null,
+      // ⚠ `pickVisibleAt` WAS ON THIS PAYLOAD UNTIL SLICE 8 (2026-09-15). Visibility
+      // is decided per TRIP now — see `isAwaitingShow` below — and nothing reads
+      // the per-bill column.
       // The bill's trip (2026-09-09) — resolved through the batched maps above,
       // never a relation. All three are null on a bill that is on no trip, which
       // is the normal state for most of the board.
@@ -1061,6 +1057,25 @@ export async function getFloorBoard(
         order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.tripNumber ?? null) : null,
       tripStatus:
         order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.status ?? null) : null,
+      // ── SHOW TO FLOOR, PER TRIP (slice 8, 2026-09-15) ──────────────────────
+      // `isAwaitingShow` is THE held-back fact, decided here because only the
+      // server has the stage and the dispatch status: a WAITING bill
+      // (pending_picking, dispatch — WAITING_FOR_PICKER) on a trip that has NOT
+      // been shown. Exactly the bills the supervisor's Assign tab leaves out
+      // when desk control is on. A bill on no trip is never awaiting a show.
+      // The client pairs it with the switch (status-pill.tsx isHeldBack).
+      // A pointer that resolves to no trip reads as NOT awaiting. It cannot
+      // persist — orders.tripDropId is ON DELETE SET NULL — so it is only ever a
+      // read race between the two batched lookups above, and "at desk" about a
+      // trip this read could not find would be a guess.
+      isAwaitingShow:
+        order.workflowStage === SUPPORT_DONE_OUTPUT &&
+        order.dispatchStatus === "dispatch" &&
+        order.tripDropId !== null &&
+        (() => {
+          const trip = tripByDropId.get(order.tripDropId);
+          return trip != null && trip.shownAt === null;
+        })(),
     });
   }
 

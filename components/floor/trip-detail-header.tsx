@@ -10,7 +10,8 @@
 // card because the card is a summary the operator scans and this is the thing he
 // is working on.
 //
-// 🔴 THE ROW IS  Add bills | Set vehicle | ···  (slice 7, 2026-09-15).
+// 🔴 THE ROW IS  Add bills | Set vehicle | Hand off: Show to floor | ···
+// (slice 7, 2026-09-15; Hand off added in slice 8 the same day).
 //   - MARK DISPATCHED IS NOT HERE. The planner at this desk cannot see whether a
 //     truck left; the supervisor standing next to it can. Finishing the loading
 //     on the supervisor's future loading screen is what will mark the bills
@@ -21,8 +22,8 @@
 //     sets a missing vehicle and changes a present one.
 //   - CANCEL TRIP IS BEHIND ···. A destructive action does not belong one button
 //     away from Add bills.
-//   - NO "Hand off" GROUP YET. Show to floor is slice 8 and Send to billing is
-//     slice 9; the group appears when it has something in it.
+//   - THE "Hand off" GROUP appeared in slice 8 with its first member, Show to
+//     floor; its take-back lives in ···. Send to billing joins it in slice 9.
 //
 // ⚠ KNOWN AND ACCEPTED UNTIL THE LOADING SCREEN (owner, slice 7): with nothing on
 // the floor writing the dispatch, no trip closes. So the Dispatched chip does
@@ -47,6 +48,8 @@ import { formatLitres } from "./status-pill";
 import { toStatusCounts, tripStateMeta } from "./trip-rail";
 import type { TripSummary } from "@/lib/trips/queries";
 
+const PRIMARY =
+  "inline-flex h-[28px] items-center rounded-[7px] bg-brand-600 px-3.5 text-[11.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400";
 const ACTION =
   "inline-flex h-[28px] items-center rounded-[7px] border border-gray-300 bg-white px-3 text-[11.5px] font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -54,9 +57,12 @@ export function TripDetailHeader({
   trip,
   busy,
   readOnly,
+  gateOn,
   onAddBills,
   onChangeVehicle,
   onCancelTrip,
+  onShowToFloor,
+  onTakeBackFromFloor,
   recent,
 }: {
   trip: TripSummary;
@@ -68,6 +74,12 @@ export function TripDetailHeader({
   /** Opens the vehicle editor — labelled "Set vehicle" (slice 7). */
   onChangeVehicle: () => void;
   onCancelTrip: () => void;
+  /** Desk control (the picking visibility gate). Show to floor is greyed while off. */
+  gateOn: boolean;
+  /** POST …/show { shown: true } — slice 8. */
+  onShowToFloor: () => void;
+  /** POST …/show { shown: false } — the ··· menu's take-back. */
+  onTakeBackFromFloor: () => void;
   /**
    * The trip's last two or three activity lines (2026-09-14, slice 2).
    *
@@ -81,6 +93,16 @@ export function TripDetailHeader({
   recent?: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Shown, as far as the FLOOR is concerned: only while desk control is on does
+  // a trip's shown record decide anything (lib/picking/visibility-gate.ts).
+  const shownTime = trip.shownAt
+    ? new Date(trip.shownAt).toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+    : null;
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
   const chip = tripStateMeta(trip);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
@@ -216,6 +238,42 @@ export function TripDetailHeader({
           <button type="button" onClick={onChangeVehicle} disabled={busy} className={ACTION}>
             Set vehicle
           </button>
+          {/* ── HAND OFF (slice 8, 2026-09-15) ──────────────────────────────
+              The group slice 7 anticipated, with its first member. Send to
+              billing joins it in slice 9.
+
+              🔴 SHOW TO FLOOR IS HERE IN BOTH SWITCH POSITIONS (owner). With desk
+              control OFF it is greyed, with "Desk control is off" written
+              underneath — a button greyed for a reason the user can act on, with
+              the switch at the top of the same screen, teaches the switch instead
+              of hiding it. The reason is TEXT, not a tooltip: a disabled button
+              fires no mouse events, so its title never shows.
+
+              Switch ON: "Show to floor" is this row's one primary (CLAUDE_UI §1 —
+              it is the state's real job). Once shown it becomes a plain fact,
+              "Shown to floor · 10:42", and the way back is Take back in ···. */}
+          <div className="flex items-start gap-2 border-l border-gray-200 pl-2">
+            <span className="pt-[7px] text-[9.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
+              Hand off
+            </span>
+            {gateOn && trip.shownAt ? (
+              <span className="inline-flex h-[28px] items-center rounded-[7px] border border-gray-200 bg-gray-50 px-3 text-[11.5px] font-semibold text-gray-700">
+                Shown to floor{shownTime ? ` · ${shownTime}` : ""}
+              </span>
+            ) : (
+              <div className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={onShowToFloor}
+                  disabled={busy || !gateOn}
+                  className={PRIMARY}
+                >
+                  Show to floor
+                </button>
+                {!gateOn && <span className="mt-0.5 text-[10.5px] text-gray-400">Desk control is off</span>}
+              </div>
+            )}
+          </div>
           {/* ··· — Cancel trip lives here, one deliberate step away from the
               everyday buttons. 🔴 NO CONFIRMATION PROMPT, BY OWNER DECISION
               (2026-09-15) — do not add one. The menu IS the deliberate step;
@@ -239,8 +297,29 @@ export function TripDetailHeader({
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <div
                   role="menu"
-                  className="absolute left-0 z-20 mt-1 w-[150px] overflow-hidden rounded-[8px] border border-gray-200 bg-white shadow-lg"
+                  className="absolute left-0 z-20 mt-1 w-[180px] overflow-hidden rounded-[8px] border border-gray-200 bg-white shadow-lg"
                 >
+                  {/* TAKE BACK (slice 8). Only where it can do something: desk
+                      control on and the trip shown. NON-DESTRUCTIVE by the locked
+                      rule — only the trip's still-WAITING bills leave the
+                      supervisor's screen; a bill already with a picker stays with
+                      him. That is why it is safe to offer at all: a Show pressed by
+                      mistake with no way back is what makes people distrust a
+                      control (owner). */}
+                  {gateOn && trip.shownAt && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={busy}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onTakeBackFromFloor();
+                      }}
+                      className="block w-full px-3 py-2 text-left text-[11.5px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                    >
+                      Take back from floor
+                    </button>
+                  )}
                   <button
                     type="button"
                     role="menuitem"

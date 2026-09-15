@@ -144,32 +144,36 @@ export function rowStatus(row: StatusInput): FloorStatus {
 }
 
 /**
- * Is this bill still at the desk — waiting, and not yet handed to the floor?
+ * Is this bill held back at the desk — waiting, on a trip the desk has not shown?
  *
- * 🔴 THE ONE OWNER OF THIS RULE. The pill, the header's "N not shown" count and
- * the Show strip all ask this function; none of them re-derives it. Two halves,
- * and BOTH are load-bearing:
- *   - `rowStatus(row) === "waiting"` — only a waiting bill can be held back. An
- *     assigned, picked or checked bill is with a picker whatever its stamp says,
- *     and `buildPickingWhere` never gates those stages (the locked owner rule
- *     that /api/floor/pick-visible also enforces server-side).
- *   - `pickVisibleAt === null` — nobody has handed it over.
+ * 🔴 THE ONE OWNER OF THIS RULE. The pill and the header's "N not shown" count
+ * both ask this function; neither re-derives it.
  *
- * ⚠ SAYS NOTHING ABOUT THE GATE. A held-back bill with the gate OFF is on the
- * picking board like any other, because the filter is not running. Every caller
- * pairs this with the gate state; this function answers only "is it stamped".
+ * 🔴 PER TRIP SINCE SLICE 8 (2026-09-15), AND STAGE-AWARE. It read "waiting-ish
+ * status AND no per-bill `pickVisibleAt` stamp", which had two faults:
+ *   - it ignored the STAGE: a bill at a waiting-looking status that was not at
+ *     `pending_picking` with `dispatch` counted as held back, though the
+ *     supervisor never sees such a bill whatever the switch says (0 rows on
+ *     2026-09-15 — a test that can be wrong should not ship, owner);
+ *   - it asked about the bill, and the desk now decides by TRUCK.
+ * `row.isAwaitingShow` is computed on the SERVER, which has the stage and the
+ * dispatch status: a waiting bill (pending_picking, dispatch) on a trip that has
+ * not been shown. A bill on no trip is never held back — the switch is about
+ * picking trucks in order, not about hiding loose orders.
+ *
+ * The status half stays as a second guard: a bill somebody is already holding
+ * (with picker, needs check, done) is never gated, whatever a stale payload says.
+ *
+ * ⚠ SAYS NOTHING ABOUT THE GATE. With desk control OFF nothing is held back,
+ * because the filter is not running. Every caller pairs this with the switch.
  */
 export function isHeldBack(
-  row: StatusInput & Pick<FloorBoardRow, "pickVisibleAt">,
+  row: StatusInput & Pick<FloorBoardRow, "isAwaitingShow">,
 ): boolean {
-  // ⚠ `PICKABLE_WAITING`, NOT `=== "waiting"` (2026-09-13). A tint bill whose
-  // shades are finished is on the picking board like any other and CAN be held
-  // back; it just wears "Tint done" instead of "Waiting" now. Testing the
-  // literal would have silently dropped every tinted bill out of the "N not
-  // shown" count and off the Show strip the moment the pills landed — the count
-  // would have been wrong in the safe-looking direction, which is the hardest
-  // kind to notice.
-  return PICKABLE_WAITING.includes(rowStatus(row)) && row.pickVisibleAt === null;
+  // `PICKABLE_WAITING`, not `=== "waiting"` (2026-09-13): a tint bill whose
+  // shades are finished is "Tint done" and is exactly as holdable as a waiting
+  // one.
+  return row.isAwaitingShow && PICKABLE_WAITING.includes(rowStatus(row));
 }
 
 const META: Record<FloorStatus, { label: string; cls: string }> = {
@@ -308,7 +312,14 @@ export function StatusPill({
    */
   heldBack?: boolean;
 }) {
-  const m = heldBack && status === "waiting" ? HELD_BACK_META : META[status];
+  // 🔴 TRUST `heldBack`, DO NOT RE-TEST THE STATUS (slice 8, 2026-09-15 — the
+  // §7.6 tint pill bug). This read `heldBack && status === "waiting"`, while
+  // isHeldBack() — which decides `heldBack` — admits "Tint done" too. So a
+  // finished tint bill held back at the desk was counted as "not shown" by the
+  // header yet kept its "Tint done" pill: the header said one thing, the row
+  // another. The caller has already asked isHeldBack(); a second, narrower test
+  // here is the drift. One rule, one place.
+  const m = heldBack ? HELD_BACK_META : META[status];
   return (
     <span
       className={`inline-flex items-center rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${

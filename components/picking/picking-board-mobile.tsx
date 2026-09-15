@@ -2903,11 +2903,20 @@ export function PickingBoardMobile(): React.JSX.Element {
             would be worse than no button.
 
             GATE OFF → `heldBack` is 0 (the server returns it without even
-            querying) → this element does not exist. */}
+            querying) → this element does not exist.
+
+            🔴 TRUCKS FIRST, THEN BILLS, AND NO TRUCK NUMBERS (slice 8,
+            2026-09-15). The desk now shows work to the floor one TRUCK at a
+            time, so the supervisor reads "2 trucks with the planner · 17
+            bills". The trip numbers are deliberately absent (owner): the band
+            tells him work is coming, and a list of numbers would be a to-do
+            list he cannot action. Easy to add later if he asks for it. */}
         {(data?.heldBack ?? 0) > 0 && (
-          <div className="mb-2.5 flex items-center gap-2 rounded-[7px] border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#92400e]">
+          <div className="mb-2.5 flex items-center gap-1.5 rounded-[7px] border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#92400e]">
+            <span className="font-semibold tabular-nums">{data!.heldBackTrucks}</span>
+            <span>{data!.heldBackTrucks === 1 ? "truck" : "trucks"} with the planner ·</span>
             <span className="font-semibold tabular-nums">{data!.heldBack}</span>
-            <span>more with the planner</span>
+            <span>{data!.heldBack === 1 ? "bill" : "bills"}</span>
           </div>
         )}
 

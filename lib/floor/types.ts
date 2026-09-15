@@ -238,27 +238,20 @@ export interface FloorBoardRow extends PickingQueueRow {
   // 6,962 rows, zero exceptions), so an IST render lands on the same calendar
   // day and there is no midnight-rollover class here.
   invoiceDate: string | null;
-  // The picking visibility handover (2026-09-09) — `orders.pickVisibleAt`, set
-  // by POST /api/floor/pick-visible. Non-null means an operator has handed this
-  // bill to the floor; null on a waiting bill means it is still at the desk.
+  // ── Show to floor, PER TRIP (slice 8, 2026-09-15) ─────────────────────────
+  // `pickVisibleAt` (the per-bill handover stamp) was here until slice 8 and is
+  // gone: the desk shows the supervisor one TRUCK at a time now.
   //
-  // ⚠ ONLY MEANINGFUL ON A WAITING ROW. Once a bill is assigned it is with a
-  // picker whatever this says, and the gate never filters those stages — so no
-  // reader may treat null as "held back" without ALSO checking the row is
-  // waiting. `isHeldBack()` in components/floor/status-pill.tsx is the ONE place
-  // that pairing is written down — the pill, the header count and the Show strip
-  // all ask it rather than re-deriving the rule.
-  //
-  // ⚠ ALSO FREE, exactly like invoiceNo/invoiceDate above: FLOOR_BOARD_INCLUDE
-  // is an `include`, not a `select`, so this scalar is already on the fetched
-  // row and was simply being discarded. No extra findMany, no extra await, and
-  // no write (FLOOR §5/§10 — the marker keys on MAX(orders.updatedAt)).
+  // TRUE for a WAITING bill (pending_picking, dispatch) on a trip that has NOT
+  // been shown — exactly what the supervisor's Assign tab leaves out while desk
+  // control is on. Computed server-side (lib/floor/queries.ts), because the row
+  // carries neither the stage nor the dispatch status. A bill on no trip is never
+  // awaiting a show. `isHeldBack()` in components/floor/status-pill.tsx is the
+  // ONE reader; the pill and the header count both ask it.
   //
   // ⚠ DECLARED HERE, NOT ON PickingQueueRow — same boundary as `smu`,
   // `billToName`, the ship-to pair and the invoice pair above (FLOOR §1).
-  //
-  // ISO string, like every other date on this payload.
-  pickVisibleAt: string | null;
+  isAwaitingShow: boolean;
   // ── The bill's TRIP (2026-09-09) ─────────────────────────────────────────
   //
   // `tripDropId` is the ONE pointer on `orders`; the trip itself is reached
@@ -278,7 +271,7 @@ export interface FloorBoardRow extends PickingQueueRow {
   // (the route).
   //
   // ⚠ DECLARED HERE, NOT ON PickingQueueRow — same boundary as `smu`,
-  // `billToName`, the ship-to pair, the invoice pair and `pickVisibleAt` above
+  // `billToName`, the ship-to pair, the invoice pair and `isAwaitingShow` above
   // (FLOOR §1: Floor is a CALLER of Picking; widen the Floor type, never the
   // Picking one).
   tripDropId: number | null;
