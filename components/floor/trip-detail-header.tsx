@@ -217,8 +217,11 @@ export function TripDetailHeader({
             Set vehicle
           </button>
           {/* ··· — Cancel trip lives here, one deliberate step away from the
-              everyday buttons. ⚠ THIS MENU IS THE ONLY STEP: cancelTrip in
-              floor-page.tsx posts straight away, with no confirmation prompt. */}
+              everyday buttons. 🔴 NO CONFIRMATION PROMPT, BY OWNER DECISION
+              (2026-09-15) — do not add one. The menu IS the deliberate step;
+              the activity log records who cancelled, when, and every OBD that
+              was on the trip; and cancel is used as an undo dozens of times a
+              week, where a prompt is friction without safety. */}
           <div className="relative">
             <button
               type="button"

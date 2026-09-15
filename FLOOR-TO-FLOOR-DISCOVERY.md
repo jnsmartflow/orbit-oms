@@ -42,9 +42,20 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
 - **Vehicle type** — a possible later addition, not built. No trip column holds one;
   `vehicle_master.category` (Tempo, Three Wheeler, Tata 407, Tata Ace, Eicher 14ft) exists. The
   request came from a mock, not a field.
-- **Orphaned by the slice 6 deletions, not deleted:** `group-row.tsx`, `picker-card.tsx`,
-  `upcoming-strip.tsx`, `carryover-banner.tsx`, `slot-band.tsx`, `floor-tabs.tsx` (their only
-  importer was `floor-board.tsx`), and `lib/floor/trip-wording.ts` (no importer since slice 6).
+- ~~**Orphaned by the slice 6 deletions**~~ — **DELETED 2026-09-15 in their own commit**, after
+  slice 6 was verified live and importers were re-checked: `group-row.tsx`, `picker-card.tsx`,
+  `upcoming-strip.tsx`, `carryover-banner.tsx`, `slot-band.tsx`, `floor-tabs.tsx` and
+  `lib/floor/trip-wording.ts`.
+- **Slice 7 (2026-09-15, `3b9d1ab4`)** — the row is Add bills | Set vehicle | ···. Mark dispatched
+  and the not-dispatched banner are off the planning screen; the dispatch route is KEPT for the
+  future loading screen. Cancel trip sits behind ··· with **no confirmation prompt, by owner
+  decision**: the menu is the deliberate step, the activity log records who cancelled, when and
+  every OBD on the trip, and a prompt on an action used as undo dozens of times a week is friction
+  without safety. Accepted until the loading screen: no trip closes, so the Dispatched chip does
+  not appear on new trips and Add bills / Cancel stay offered on a truck that has left.
+- **Settle-drafts SQL — RUN by the owner before slice 7.** A returned L-260915-01, -03, -04; C read
+  `drafts_with_vehicle` 2 (`L-260912-08`, `U-260914-03`, deliberately left as drafts) and
+  `migration_rows` 3.
 
 **Slice 10 — recorded, not fixed.** The carry-forward rule (`lib/trips/live-trips.ts`) carries
 only a `draft`, and since slice 6 a trip leaves draft the moment it has a vehicle. Read
