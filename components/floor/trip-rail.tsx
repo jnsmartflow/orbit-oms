@@ -47,7 +47,7 @@
 // number already carries the real date — rather than implying it is today's.
 
 import { TripBar, tripBarCounts } from "./trip-bar";
-import { formatLitres, type StatusCounts } from "./status-pill";
+import { formatLitres } from "./status-pill";
 import { inScope } from "@/lib/floor/scope";
 import type { FloorScope } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
@@ -74,69 +74,6 @@ export type RailSelection = { kind: "pool" } | { kind: "trip"; tripId: number };
 export interface TripChip {
   label: string;
   cls: string;
-}
-
-// ⚠ ONLY THE TWO STORED STATES THE FLOOR STILL READS. `draft` and `released`
-// had entries here ("Draft", "Confirmed") until slice 6 removed both words from
-// the screen. A status this map does not carry gets NO chip — never a raw
-// status string, which is how "released" would otherwise leak onto a card.
-const CLOSED_CHIP: Record<string, TripChip> = {
-  dispatched: { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
-  cancelled: { label: "Cancelled", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
-};
-const READY: TripChip = { label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
-
-/**
- * The API's five buckets folded into the four the shared bar and pill speak.
- *
- * ⚠ `other` FOLDS INTO `waiting`. Trip membership is not stage-gated, so a trip
- * can hold a bill outside the four picking stages; `StatusCounts` has four, and
- * widening it would change what "waiting" means on every other surface that
- * counts through it. The band's own legend names the remainder; a rail card is
- * too small for that, so here it simply reads as waiting.
- */
-export function toStatusCounts(c: TripSummary["counts"], dispatchedCount = 0): StatusCounts {
-  return {
-    waiting: c.waiting + c.other,
-    withPicker: c.withPicker,
-    needsCheck: c.picked,
-    // ⚠ SPLIT SINCE 2026-09-14, AND THE SUBTRACTION IS THE WHOLE FIX.
-    // `bucketFor` folds `dispatched` INTO `checked` on purpose — `isReady`
-    // depends on it — so `counts.checked` is "finished", both still-here and
-    // gone. The bar was reading that as "8 done" while two of those bills wore a
-    // Dispatched pill one column over: one word for two states, on live, in
-    // front of the operator. `dispatchedCount` is the separate figure the
-    // payload already carries for exactly this.
-    done: Math.max(0, c.checked - dispatchedCount),
-    dispatched: dispatchedCount,
-    // `dispatched` is set in the fold above — the caller passes the count.
-    // ⚠ ALWAYS 0 HERE TOO, and required for the same reason `dispatched` is:
-    // StatusCounts needs a key per status or the bar renders short. A TRIP is
-    // counted by TripBillCounts (lib/trips/queries.ts), whose `bucketFor` has no
-    // tint bucket — a mid-tint bill lands in `other` and is folded into
-    // `waiting` above. Splitting the trip buckets to match the pills is a
-    // separate decision: a trip asks "can this load go", and the answer for an
-    // untinted bill is no, the same no as any other unfinished bill.
-    tintPending: 0,
-    tintAssigned: 0,
-    tinting: 0,
-    tintDone: 0,
-    total: c.total,
-  };
-}
-
-/**
- * The chip a trip wears, or NULL for none (slice 6).
- *
- * A closed trip keeps its own chip — it has left, or was called off, and
- * "Ready" would be a lie. An open trip wears "Ready" when every bill that is
- * going is checked (`isReady`, derived at read time) and NOTHING otherwise.
- */
-export function tripStateMeta(trip: TripSummary): TripChip | null {
-  const closed = CLOSED_CHIP[trip.status];
-  if (closed) return closed;
-  if (trip.isReady) return READY;
-  return null;
 }
 
 export function TripRail({

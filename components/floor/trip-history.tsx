@@ -7,11 +7,9 @@
 // dispatched / cancelled and nothing else — not who swapped the van, not when a
 // bill joined the load, and after a cancel not even which bills had been on it.
 //
-// Two faces of one list, deliberately:
-//   - RECENT — the last two or three lines, under the action buttons, always
-//     visible. It answers "what just happened here" without a click.
-//   - FULL — every row, oldest first, behind a toggle. It answers "what happened
-//     to this trip" and is the reason the table exists.
+// ONE face since the floor redesign (2026-09-15): the full list, oldest first,
+// opened by the clock in the trip header. The "recent lines" strip and the
+// bottom toggle were retired by the owner's design.
 //
 // ⚠ THE SUMMARY IS NOT WRITTEN HERE. Every line comes from `trip_activity.summary`,
 // composed at the source in lib/trips/activity.ts, so this file cannot make a row
@@ -24,7 +22,6 @@
 // newest-first, because "what just happened" reads backwards. Neither view
 // re-sorts by anything else.
 
-import { useState } from "react";
 import type { TripActivityRow } from "@/lib/trips/activity";
 
 // ⚠ A DOT PER ACTION, and the palette is the one the rest of the desk already
@@ -73,55 +70,17 @@ function obdsOf(detail: unknown): string[] {
 }
 
 /**
- * The last few lines, under the buttons. Newest first.
+ * Every row, oldest first (floor redesign, 2026-09-15).
  *
- * ⚠ RENDERS NOTHING AT ALL WHEN THE TRIP HAS NO HISTORY, which every trip built
- * before today has. An empty strip saying "no history" would put a permanent
- * apology on 94 existing trips; nothing was backfilled, and silence is the
- * honest rendering of that.
+ * 🔴 OPENED BY THE CLOCK in the trip header, in place under the header — not from
+ * the ··· menu (owner): ··· holds destructive actions and people learn to avoid
+ * opening it; history is a view, not an action. The collapsed "Full history"
+ * toggle that sat at the bottom of the panel, and the three recent lines under
+ * the buttons, both went with the redesign.
  */
-export function TripRecentActivity({ rows }: { rows: TripActivityRow[] }) {
-  if (rows.length === 0) return null;
-  const recent = rows.slice(-3).reverse();
+export function TripHistoryList({ rows }: { rows: TripActivityRow[] }) {
   return (
-    <div className="mt-2.5 flex flex-col gap-1 border-t border-[#f0f0f0] pt-2">
-      {recent.map((r) => (
-        <div key={r.id} className="flex items-baseline gap-2 text-[11px] leading-[1.5] text-gray-500">
-          <span className={`mt-[5px] h-[5px] w-[5px] shrink-0 rounded-full ${dotFor(r.action)}`} />
-          <span className="text-gray-700">{r.summary}</span>
-          <span className="ml-auto shrink-0 tabular-nums text-gray-400">{fmt(r.createdAt)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Every row, oldest first, behind a toggle.
- *
- * ⚠ COLLAPSED BY DEFAULT. The detail panel's job is the bills on the load; the
- * history is what you open when a question has already been asked. Rendering it
- * expanded would push the drops below the fold on every trip.
- */
-export function TripFullHistory({ rows }: { rows: TripActivityRow[] }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="border-t border-gray-200">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-      >
-        <span className={`text-[9px] text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
-        Full history
-        <span className="tabular-nums font-normal text-gray-400">
-          {rows.length === 0 ? "nothing recorded" : rows.length}
-        </span>
-      </button>
-
-      {open && (
-        <div className="px-3.5 pb-3.5">
+        <div className="pb-1">
           {rows.length === 0 ? (
             /* ⚠ SAYS WHY, NOT JUST "EMPTY". Every trip built before 2026-09-14
                has no history and never will — nothing was backfilled. A planner
@@ -175,7 +134,5 @@ export function TripFullHistory({ rows }: { rows: TripActivityRow[] }) {
             </ol>
           )}
         </div>
-      )}
-    </div>
   );
 }

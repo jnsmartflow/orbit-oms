@@ -32,7 +32,6 @@ import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
-import { TripFullHistory, TripRecentActivity } from "./trip-history";
 import {
   rowStatus,
   isTintRoomRow,
@@ -546,12 +545,18 @@ export function TripDesk({
     // fetch when the planner clicks between trips, and showing the PREVIOUS
     // trip's history under this trip's buttons would be worse than showing none
     // — a confident line about the wrong load.
-    const activity = tripDetail?.id === selectedTrip.id ? tripDetail.activity : [];
+    // NULL, not [], while the detail is still for another trip: the header's
+    // clock then shows no count rather than the previous trip's.
+    const activity = tripDetail?.id === selectedTrip.id ? tripDetail.activity : null;
 
     middle = (
       <>
         <TripDetailHeader
+          // Keyed by trip, so the ··· menu and the history toggle close when the
+          // planner picks another trip.
+          key={selectedTrip.id}
           trip={selectedTrip}
+          activity={activity}
           busy={tripBusyId === selectedTrip.id}
           readOnly={isHistory}
           onAddBills={() => onSelectRail({ kind: "pool" })}
@@ -562,9 +567,6 @@ export function TripDesk({
           onTakeBackFromFloor={() => onSetTripShown(selectedTrip.id, false)}
           onSendToBilling={() => onSetTripSentToBilling(selectedTrip.id, true)}
           onTakeBackFromBilling={() => onSetTripSentToBilling(selectedTrip.id, false)}
-          // The last two or three lines, under the action row. Renders nothing
-          // at all when the trip has no history — see TripRecentActivity.
-          recent={<TripRecentActivity rows={activity} />}
         />
 
         {tripDetail === null || tripDetail.id !== selectedTrip.id ? (
@@ -621,17 +623,8 @@ export function TripDesk({
           })
         )}
 
-        {/* ── FULL HISTORY (2026-09-14, slice 2) ──────────────────────────
-            LAST, and collapsed. The detail panel's job is the bills on the
-            load; the history is what you open once a question has already been
-            asked. Above the stops it would push them below the fold on every
-            trip, and expanded by default it would do the same.
-
-            ⚠ RENDERED EVEN WHEN THERE IS NOTHING TO SHOW. The toggle says
-            "nothing recorded" rather than vanishing, so a planner on an older
-            trip is never left wondering whether the panel is missing or the
-            trip simply has no story. Nothing was backfilled. */}
-        <TripFullHistory rows={activity} />
+        {/* The full history is no longer down here: the clock in the trip
+            header opens it in place (floor redesign, 2026-09-15, owner). */}
       </>
     );
   }
