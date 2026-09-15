@@ -57,9 +57,36 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
   `drafts_with_vehicle` 2 (`L-260912-08`, `U-260914-03`, deliberately left as drafts) and
   `migration_rows` 3.
 
-**Slice 10 — recorded, not fixed.** The carry-forward rule (`lib/trips/live-trips.ts`) carries
-only a `draft`, and since slice 6 a trip leaves draft the moment it has a vehicle. Read
-2026-09-15:
+**Slice 10 — DONE 2026-09-15, brought forward ahead of slices 8 and 9.** The premise was
+corrected first: trips never left the desk by closing, they left by DATE — the calendar was the
+bug, not the missing closer. The rule is now about the bills inside (`tripsOnDeskWhere`,
+`lib/trips/live-trips.ts`), and status plays no part:
+
+- **Live desk** = the day's own trips, plus any trip from an earlier day that still holds a bill
+  that is **not done**. Done = checked (or dispatched, or cancelled), or on hold. Revisit when the
+  loading screen ships: dispatched may replace checked then.
+- **An empty trip from an earlier day** leaves at midnight and stays in History.
+- **History rail** = trips dated D only. The old carried arm leaked today's drafts into every past
+  day (L-260912-08 was on 2026-09-14's history).
+- **History stops** pull a trip's bills BY TRIP (`floorHistoryTripBillsWhere`), not by day. Measured
+  with the app's own predicate: the old History query was missing **10** of 135 stop bills on
+  2026-09-14 and **3** of 143 on 2026-09-12; the new one finds all of them.
+- **Proof case, as expected:** U-260912-05 does NOT come back — both bills are checked, so it is
+  done. L-260912-08 and U-260914-03 (15 checked bills) left the desk and are in History on their own
+  days (owner's option (c)). Live rail after the change: 14 trips, none carried.
+- **EXPLAIN ANALYZE against live data, warm, 2026-09-15:**
+
+  | Query | Before | After | Plan |
+  |---|---|---|---|
+  | 15s marker / board (`floorBoardWhere`) | 3.2 ms | 3.9 ms | bitmap union on `orders` kept; the new EXISTS runs once as a hashed subplan, 0.4 ms, on `orders_tripDropId_idx`; seq scans only on `pick_assignments` / `trip_drops` / `trips`, exactly as before |
+  | Rail feed (`trips`, `tripsOnDeskWhere`) | 0.4 ms | 0.55 ms | seq scan on a 121-row `trips`, same as before |
+  | History board (one day) | ~11 ms | ~15 ms | +10 rows; not polled — only on opening a past day |
+
+- **The To plan pool is out of scope** (owner): 18 bills on 2026-09-15 — 5 checked today, 11
+  yesterday, 2 older — so it drains as bills get planned. **Loading-screen item:** once loading end
+  marks bills dispatched, the pool clears by itself.
+
+**What slice 10 addressed, as recorded before it was built.** Read 2026-09-15:
 
 - **U-260912-05** is released with **2 bills not dispatched**, and is off the desk.
 - **27 released trips from 2026-09-12 never closed** — every bill on them is dispatched, but their

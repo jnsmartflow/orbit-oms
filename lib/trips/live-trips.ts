@@ -16,75 +16,118 @@
 // kind of divergence that hand-syncing does not fix: it looks correct on the
 // day you check it and breaks on the day you do not.
 //
-// So neither caller carries the rule any more. Both derive from here. Adding a
-// day to the desk's reach is now ONE edit, by construction, and there is no
-// second place to remember.
+// So neither caller carries the rule any more. Both derive from here. Changing
+// the desk's reach is ONE edit, by construction, and there is no second place to
+// remember — and the live-sync marker follows too, through the board's arm.
 //
-// PURE. No prisma, no clock — the day is passed in. `Prisma` is imported for its
-// types only, so this module can be read by a server feed and a predicate
-// builder alike without dragging a client anywhere.
+// PURE. No prisma, no clock — the days are passed in. `Prisma` is imported for
+// its types only, and lib/workflow-stages.ts is itself pure, so this module can
+// be read by a server feed and a predicate builder alike without dragging a
+// client anywhere.
 
 import type { Prisma } from "@prisma/client";
+import { DISPATCHED, PICK_CHECKED } from "@/lib/workflow-stages";
 
 /**
- * `chk_trips_status`'s five values. Named here rather than retyped at each use,
- * per CORE §3: a status STRING is not an enum, so a wrong literal is never
- * rejected — it silently matches nothing, and the filter written on it looks
- * like it works forever.
+ * `chk_trips_status` values this module names. Named here rather than retyped
+ * at each use, per CORE §3: a status STRING is not an enum, so a wrong literal is
+ * never rejected — it silently matches nothing.
  *
- * ⚠ ONLY THE TWO THIS MODULE ACTUALLY TESTS are exported as constants. The
- * others (`released`, `loading`, `dispatched`) are still hand-typed at their own
- * call sites; giving the whole vocabulary one owner is a worthwhile job and a
- * separate one, and half-migrating it would leave two sources of truth, which is
- * the failure this file exists to remove.
+ * ⚠ `TRIP_DRAFT` NO LONGER DECIDES ANYTHING HERE (slice 10). It stays exported
+ * because the value still exists in the CHECK and a future caller should import
+ * it rather than retype it.
  */
 export const TRIP_DRAFT = "draft";
 export const TRIP_CANCELLED = "cancelled";
 
+/** `cancelled` is a workflowStage value as well; lib/workflow-stages.ts exports
+ *  no constant for it, so it is named once here. */
+const STAGE_CANCELLED = "cancelled";
+
 /**
- * THE DATE RULE — which days' trips a desk dated `deskDate` is about.
+ * The stages at which a bill on a trip is DONE for the desk: checked, gone, or
+ * called off. A HOLD is done too, and is tested separately because it is a
+ * status, not a stage. Owner's rule, slice 10 (2026-09-15): "Done = checked, or
+ * on hold". `dispatched` is here because a shipped bill passed through checking;
+ * `cancelled` because a cancelled bill will never be checked and must not pin a
+ * trip to the desk forever.
  *
- * Two arms:
- *   1. the day's own trips — `tripDate = deskDate`.
- *   2. the CARRIED arm — an open draft from any earlier day. A trip nobody
- *      finished planning does not stop existing at midnight; it is still the
- *      planner's to settle or cancel, so it follows him forward.
- *
- * 🔴 WHAT "DRAFT" MEANS SINCE SLICE 6 (2026-09-15): a trip with NO VEHICLE that
- * has not been dispatched or cancelled. Setting a vehicle moves a trip out of
- * draft on the server (create and PATCH routes); there is no Confirm press any
- * more. A BRIDGE — slice 10 replaces this arm with a rule based on the bills
- * inside. Known gaps recorded for it in FLOOR-TO-FLOOR-DISCOVERY.md: a released
- * trip with bills still to go drops off (U-260912-05), 27 released trips from
- * 2026-09-12 never closed, and an EMPTY old trip gives a bill-based rule
- * nothing to test.
- *
- * ⚠ `draft` BY NAME, never `status NOT IN (...)`. A sixth value added to
- * `chk_trips_status` must be an explicit decision to carry or not to carry,
- * never something this predicate inherits by accident. (This sentence is the
- * original author's, moved here with the rule it guards.)
- *
- * ⚠ CANCELLED IS NOT EXCLUDED HERE, deliberately — see `liveTripsOnDeskWhere`
- * below for the arm that does exclude it, and why the two are different
- * questions rather than one rule written twice.
- *
- * ⚠ HISTORY IS UNAFFECTED. A past day asked for its own date still gets its own
- * trips; arm 2 only ADDS open drafts, and a day in the past has none older than
- * itself and still open unless they are genuinely stale — in which case the
- * planner should see them there too.
+ * ⚠ REVISIT WHEN THE LOADING SCREEN SHIPS. Once loading end writes `dispatched`,
+ * the owner decides whether "done" becomes dispatched instead of checked. Until
+ * then nothing writes `dispatched` (slice 7), and a dispatched-only rule would
+ * keep every trip on the desk forever.
  */
-export function tripsOnDeskWhere(deskDate: Date): Prisma.tripsWhereInput {
+const DESK_DONE_STAGES: string[] = [PICK_CHECKED, DISPATCHED, STAGE_CANCELLED];
+
+/**
+ * A bill that still needs the floor — what the CARRIED arm tests for.
+ * Not removed, not at a done stage, not held. `dispatchStatus` is nullable, so
+ * "not held" is written NULL-safe: `NOT { field: value }` on a nullable column
+ * drops the NULL rows (CORE §13), and an undecided bill is not a held one.
+ */
+const BILL_NOT_DONE: Prisma.ordersWhereInput = {
+  isRemoved: false,
+  workflowStage: { notIn: DESK_DONE_STAGES },
+  OR: [{ dispatchStatus: null }, { dispatchStatus: { not: "hold" } }],
+};
+
+/**
+ * THE DESK RULE — which trips a desk dated `deskDate` is about, when today is
+ * `todayDate`. Both UTC-midnight, the `@db.Date` shape `trips.tripDate` has.
+ *
+ * 🔴 SLICE 10 (2026-09-15) — THE CALENDAR WAS THE BUG, NOT THE MISSING CLOSER.
+ * Closing a trip never cleared the desk; trips left by DATE, and an open draft
+ * was the only thing carried forward. That dropped work (a released trip with a
+ * bill still being picked vanished at midnight) and kept non-work (a
+ * vehicle-less trip followed the planner forever). The rule is now about the
+ * bills inside, and status plays no part:
+ *
+ *   LIVE — deskDate is today (or later):
+ *     1. the day's own trips — `tripDate = deskDate`, whatever is inside, empty
+ *        ones included. Today's desk is today's plan.
+ *     2. CARRIED — a trip from an EARLIER day that still holds at least one bill
+ *        that is NOT DONE (BILL_NOT_DONE above). A draft whose bills are all
+ *        checked leaves; a released trip with a bill still with a picker stays.
+ *
+ *   HISTORY — deskDate is before today:
+ *     trips dated `deskDate` ONLY. The old carried arm ran on past days too, so
+ *     a trip still a draft TODAY appeared on every earlier day's history — a
+ *     present-day fact leaking into a past day. Owner: a bug, not a feature.
+ *
+ * Consequences, each an owner decision:
+ *   - an EMPTY trip from an earlier day has no bill to keep it, so it leaves at
+ *     midnight and stays in History on its own day;
+ *   - a trip whose remaining bills are all ON HOLD leaves too — a hold is a
+ *     human saying not this one;
+ *   - U-260912-05 (released, 2 bills checked, never dispatched) does NOT come
+ *     back: both bills are checked, so it is done for the desk. So do
+ *     L-260912-08 and U-260914-03, whose 15 bills are all checked.
+ *
+ * ⚠ CANCELLED IS NOT EXCLUDED HERE, deliberately — see `liveTripsOnDeskWhere`.
+ * A cancelled trip from an earlier day holds no bills (cancel detaches them), so
+ * the carried arm cannot pick one up.
+ *
+ * ⚠ SPEED. The carried arm is a trips → trip_drops → orders EXISTS, and it runs
+ * in the rail feed, in the board's fourth arm and in the 15-second marker. The
+ * EXPLAIN ANALYZE taken against live data before it shipped is recorded in
+ * FLOOR-TO-FLOOR-DISCOVERY.md.
+ */
+export function tripsOnDeskWhere(deskDate: Date, todayDate: Date): Prisma.tripsWhereInput {
+  if (deskDate.getTime() < todayDate.getTime()) return { tripDate: deskDate };
   return {
-    OR: [{ tripDate: deskDate }, { status: TRIP_DRAFT, tripDate: { lt: deskDate } }],
+    OR: [
+      { tripDate: deskDate },
+      { tripDate: { lt: deskDate }, drops: { some: { orders: { some: BILL_NOT_DONE } } } },
+    ],
   };
 }
 
 /**
- * The same set with CANCELLED removed — the trips that can legitimately be
- * holding a bill.
+ * The LIVE desk with CANCELLED removed — the trips that can legitimately be
+ * holding a bill. The board's fourth arm, which always asks about TODAY.
  *
  * 🔴 WHY THIS IS A SECOND FUNCTION AND NOT A SECOND COPY. It is built from
- * `tripsOnDeskWhere` above, so the date rule still has exactly one definition
+ * `tripsOnDeskWhere` above, so the desk rule still has exactly one definition
  * and this cannot drift from it. What differs is a genuinely different
  * question, and the two callers really do ask different ones:
  *
@@ -104,6 +147,6 @@ export function tripsOnDeskWhere(deskDate: Date): Prisma.tripsWhereInput {
  * without this term the stragglers would ride onto the live board tagged to a
  * trip the rail refuses to show.
  */
-export function liveTripsOnDeskWhere(deskDate: Date): Prisma.tripsWhereInput {
-  return { AND: [tripsOnDeskWhere(deskDate), { status: { not: TRIP_CANCELLED } }] };
+export function liveTripsOnDeskWhere(todayDate: Date): Prisma.tripsWhereInput {
+  return { AND: [tripsOnDeskWhere(todayDate, todayDate), { status: { not: TRIP_CANCELLED } }] };
 }

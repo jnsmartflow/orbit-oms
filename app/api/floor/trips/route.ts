@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { allocateTripNumberWithRetry, findPreviousHolders, typeCodeForDeliveryType } from "@/lib/trips/number";
 import { getTripsForDate, parseTripDate } from "@/lib/trips/queries";
 import { logTripCreated } from "@/lib/trips/activity";
+import { getTodayIST } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +86,11 @@ export async function GET(req: Request): Promise<NextResponse> {
     );
   }
 
-  const trips = await getTripsForDate(tripDate);
+  // TODAY in IST, as the same UTC-midnight shape. It is what tells the desk rule
+  // a LIVE desk (carries earlier trips with work left) from a HISTORY desk
+  // (that day's trips only) — slice 10, lib/trips/live-trips.ts. Read from the
+  // server clock, never from the request.
+  const trips = await getTripsForDate(tripDate, parseTripDate(getTodayIST()));
   return NextResponse.json({ date: dateParam, trips });
 }
 

@@ -274,6 +274,38 @@ export function floorCarriedPoolWhere(): Prisma.ordersWhereInput {
  * `trips.tripDate` is stored in) so this stays pure and clock-free, the same
  * contract `floorLiveBaseWhere` keeps.
  */
+/**
+ * A PAST DAY'S TRIPS, BY TRIP (slice 10, 2026-09-15) — every bill on a trip
+ * dated `dayDateOnly`, whatever day it was checked, promised or picked.
+ *
+ * 🔴 WHY HISTORY NEEDS IT. History's own arms pick bills by DAY: promised for D,
+ * or checked on D. A bill on D's trip that was checked on D-1 matched neither,
+ * so it was absent from the history payload, and its stop — which looks its
+ * bills up in that payload — printed "not on today's board". The message was
+ * wrong because the DATA was wrong (owner): a trip's bills are its bills
+ * whatever day they were checked. So the History board unions this in, and
+ * every stop on a History trip finds its rows.
+ *
+ * ⚠ A COMPLETE SET OF TERMS, NO STAGE AND NO dispatchStatus PIN, deliberately —
+ * the same reasoning `floorTripBillsWhere` above gives for its own arm: trip
+ * membership is not gated by stage, and a HELD bill on a trip is still on that
+ * trip. It cannot flood the day: it is bounded by trips dated D, and a cancelled
+ * trip holds no bills (cancel detaches them) and is excluded by name anyway.
+ *
+ * ⚠ HISTORY ONLY. The live board's trip arm is `floorTripBillsWhere`; this one
+ * never reaches the marker, which is live-only (FLOOR §5).
+ *
+ * `tripDropId: { not: null }` is kept for the same query-plan reason as in
+ * `floorTripBillsWhere`: it hands Postgres `orders_tripDropId_idx`.
+ */
+export function floorHistoryTripBillsWhere(dayDateOnly: Date): Prisma.ordersWhereInput {
+  return {
+    isRemoved: false,
+    tripDropId: { not: null },
+    tripDrop: { trip: { tripDate: dayDateOnly, status: { not: "cancelled" } } },
+  };
+}
+
 export function floorTripBillsWhere(todayDateOnly: Date): Prisma.ordersWhereInput {
   return {
     dispatchStatus: "dispatch",
@@ -684,6 +716,13 @@ export async function getFloorBoard(
   const base: Prisma.ordersWhereInput =
     mode === "history"
       ? {
+          // 🔴 SLICE 10 (2026-09-15): THE DAY'S RECORD, OR THE DAY'S TRIPS' BILLS.
+          // The first member is History's original day-based predicate, byte
+          // for byte. The second pulls every bill on a trip dated D BY TRIP, so a
+          // History stop finds all of its bills — see floorHistoryTripBillsWhere.
+          // Unioned, never merged: each member keeps its own complete terms.
+          OR: [
+            {
           // What HAPPENED on that day (design §4.4): read-only in the UI, any
           // active stage. Excludes legacy 'closed' (PICKING_ACTIVE_STAGES omits
           // it — workflow-stages.ts). TWO date anchors under one OR:
@@ -747,6 +786,9 @@ export async function getFloorBoard(
                 checkedAt: { gte: anchorRange.start, lt: anchorRange.end },
               },
             },
+          ],
+            },
+            floorHistoryTripBillsWhere(anchorDate),
           ],
         }
       : // Live: everything still open, whatever day it was due (carry-over —

@@ -597,7 +597,12 @@ export function TripDesk({
                   />
                 ) : (
                   <div className="px-3.5 py-2.5 pl-[34px] text-[11px] text-gray-400">
-                    {d.bills} bill{d.bills === 1 ? " is" : "s are"} on this stop, not on today&rsquo;s board.
+                    {/* Slice 10 (2026-09-15): History now pulls a trip's bills BY
+                        TRIP (floorHistoryTripBillsWhere), so on either desk this
+                        line is reached only by a bill the view itself leaves out
+                        — the page's delivery-type scope, or the admin Hide
+                        filter. It says only that, and never names a day. */}
+                    {d.bills} bill{d.bills === 1 ? " is" : "s are"} on this stop, not in this view.
                   </div>
                 )}
               </div>

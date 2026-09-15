@@ -38,9 +38,10 @@
 // DISPLAY ONLY: nothing here deletes or hides a row, and the header counts
 // describe exactly what is rendered.
 //
-// ⚠ A CARRIED TRIP SHOWS ITS REAL DATE. lib/trips/live-trips.ts follows an open
-// draft forward off its own day so it can never become unreachable, and this
-// rail prints the date it actually carries rather than implying it is today's.
+// ⚠ A CARRIED TRIP SHOWS ITS REAL DATE. lib/trips/live-trips.ts follows a trip
+// from an earlier day forward while it still holds a bill that is not done
+// (slice 10 — done = checked, or on hold), and this rail prints the date it
+// actually carries rather than implying it is today's.
 
 import { ProgressBar } from "./progress-bar";
 import { formatLitres, type StatusCounts } from "./status-pill";
@@ -150,10 +151,10 @@ export function TripRail({
   /**
    * The day the board is anchored on, "YYYY-MM-DD".
    *
-   * A trip whose own `tripDate` is EARLIER than this was CARRIED —
-   * lib/trips/live-trips.ts follows an open draft forward so it can never become
-   * unreachable — and its card says so with its real date. Nothing else reads
-   * this.
+   * A trip whose own `tripDate` is EARLIER than this was CARRIED — it still holds
+   * a bill that is not done (lib/trips/live-trips.ts, slice 10) — and its card
+   * says so with its real date. On a History day nothing is carried. Nothing else
+   * reads this.
    */
   anchorIso: string;
   /** The page's All / Local / Upcountry / IGT scope. Filters trips by their own type. */
@@ -288,7 +289,7 @@ function TripCard({
       <div className="flex items-center gap-1.5">
         {isCarried && (
           <span
-            title={`Planned for ${fmtTripDay(trip.tripDate)} and still open — it follows you forward until it has a vehicle, is dispatched, or is cancelled`}
+            title={`Planned for ${fmtTripDay(trip.tripDate)} — it follows you forward until every bill on it is checked or on hold, or it is cancelled`}
             className="shrink-0 rounded-[4px] bg-[#fdf3e3] px-[5px] py-px text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#b45309]"
           >
             {fmtTripDay(trip.tripDate)}

@@ -527,52 +527,39 @@ function toSummary(
 }
 
 /**
- * Every trip on one day, PLUS every still-open draft from an earlier one.
+ * The trips a desk dated `tripDate` shows, when today is `todayDate` (both
+ * UTC-midnight). THE RULE IS NOT HERE — it is `tripsOnDeskWhere`
+ * (lib/trips/live-trips.ts), shared with the board's fourth arm and, through it,
+ * the 15-second marker.
  *
- * Ordered by (typeCode, seq) — the order the numbers were handed out, which is
- * the order a planner thinks in. Not by status: a board that re-sorts itself as
- * trips progress moves the ground under the operator's hand, which is the same
- * defect FLOOR_SPINE drops `byAssigned` to avoid (FLOOR §3).
+ *   - a LIVE desk (today): the day's own trips, plus any trip from an earlier
+ *     day that still holds a bill that is not done (done = checked, or on hold).
+ *   - a HISTORY desk (a past day): trips dated that day ONLY.
  *
- * ── 🔴 THE TRAPPED-DRAFT BUG, FIXED 2026-09-11 ─────────────────────────────
+ * 🔴 SLICE 10 (2026-09-15) REPLACED THE DRAFT-CARRY RULE. This used to carry
+ * every still-open DRAFT onto every later day and drop everything else at
+ * midnight. The trapped-draft bug of 2026-09-11 (a past-dated draft was
+ * unreachable, its bills stranded off the pool and off every sweep) stays
+ * closed: a trip with work left on it follows the planner forward. What changed
+ * is what counts as work — the bills inside, never the trip's status.
  *
- * This read `where: { tripDate }` alone, and a draft dated in the past was
- * UNREACHABLE. Past days are read-only on the floor board, so such a trip could
- * never be cancelled, edited or confirmed — and its bills were stranded twice
- * over: off the pool (they carry a `tripDropId`) and off every sweep (they are
- * on a trip). Four of them had to be cleared by raw SQL on 2026-09-11.
- *
- * An OPEN DRAFT therefore follows the planner forward. It is unfinished work and
- * unfinished work carries — the same rule `floorCarriedPoolWhere` applies to
- * bills (lib/floor/queries.ts). A RELEASED trip does NOT: it is a decision that
- * was made, it belongs to the day it was made on, and it drops off after it.
- *
- * ⚠ THE OLD DRAFT KEEPS ITS REAL `tripDate`. Nothing here rewrites it, and the
+ * ⚠ A CARRIED TRIP KEEPS ITS REAL `tripDate`. Nothing here rewrites it, and the
  * rail renders it, so it reads as old rather than as today's — which is the
  * point. A trip silently relabelled today would hide exactly the staleness the
  * planner needs to see.
  *
- * ⚠ CANCELLED AND DISPATCHED ARE NOT CARRIED. Both are finished states. A
- * cancelled trip keeps its number so the allocator can never reissue it, but it
- * is not work and does not follow anyone forward.
- *
- * ⚠ HISTORY IS UNAFFECTED. A past day asked for its own date still gets its own
- * trips; this arm only ADDS open drafts, and by definition a day in the past
- * has none that are older than itself and still open unless they are genuinely
- * stale — in which case the planner should see them there too.
+ * ⚠ CANCELLED trips ARE in the payload for the day they are dated (the rail
+ * drops them at render; see liveTripsOnDeskWhere for why), and a cancelled trip
+ * from an earlier day is never carried — cancel detaches its bills.
  *
  * Sequential awaits, never $transaction. SELECT-only.
  */
-export async function getTripsForDate(tripDate: Date): Promise<TripSummary[]> {
+export async function getTripsForDate(tripDate: Date, todayDate: Date): Promise<TripSummary[]> {
   const trips = (await prisma.trips.findMany({
-    // 🔴 THE RULE MOVED OUT, IT DID NOT CHANGE (2026-09-13). This used to spell
-    // out "tripDate = D, OR an open draft older than D" inline. It now comes
-    // from lib/trips/live-trips.ts, because the board's trip arm needs the SAME
-    // answer and the two spellings had already drifted: the board said
-    // `tripDate >= today`, so it refused the bills of every carried draft this
-    // feed was busy putting on the rail. 22 trips and 105 bills on the morning
-    // of 2026-09-13. Same set as before, one owner now.
-    where: tripsOnDeskWhere(tripDate),
+    // 🔴 THE RULE LIVES IN lib/trips/live-trips.ts (2026-09-13), shared with the
+    // board's trip arm so the rail and the board can never disagree about which
+    // trips are on the desk. Slice 10 changed the rule there, not here.
+    where: tripsOnDeskWhere(tripDate, todayDate),
     select: TRIP_SELECT,
     // 🔴 NEWEST CREATED FIRST (slice 6, 2026-09-15). The rail and the Add-to-trip
     // list both read this order. NOT the trip number: since slice 5 a cancelled
