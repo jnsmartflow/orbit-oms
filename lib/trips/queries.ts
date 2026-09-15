@@ -131,6 +131,16 @@ export interface TripSummary {
   dispatchedCount: number;
   totalLitres: number;
   dropCount: number;
+  /**
+   * Where the load is going, DERIVED from its stops — "Katargam", or
+   * "Katargam +2" when they span three areas (slice 6, 2026-09-15). Nobody types
+   * it. See `deriveAreaLabel` for the rule.
+   *
+   * ⚠ NULL ON AN EMPTY TRIP, and on a trip whose every stop lacks an area. The
+   * card shows nothing in that slot: an empty trip already says "No bills yet",
+   * and saying it twice is noise.
+   */
+  areaLabel: string | null;
   releasedAt: string | null;
   dispatchedAt: string | null;
   cancelledAt: string | null;
@@ -402,12 +412,60 @@ export async function loadSlotAndTransporterNames(
   };
 }
 
+/** One stop, as much of it as the area label needs. */
+interface AreaStop {
+  areaName: string | null;
+  dropSeq: number;
+  /** Does at least one live bill sit on this stop? */
+  hasBills: boolean;
+}
+
+/**
+ * The trip's area, from its stops (slice 6, 2026-09-15 — owner's rule).
+ *
+ *   - only stops that CARRY A BILL count: the area is derived from the orders
+ *     inside, and an empty trip has none
+ *   - blank areas are ignored
+ *   - the area with the MOST STOPS is named; a tie goes to the one reached
+ *     first (lowest dropSeq)
+ *   - every other distinct area is counted into "+N"
+ *   - null when nothing is left to name
+ *
+ * ⚠ `trip_drops.areaName` IS A SNAPSHOT taken when the stop was created
+ * (bills/route.ts). Measured 2026-09-15: 0 of 228 stops differ from their
+ * customer's current area, so it is safe to read without a join.
+ *
+ * PURE — exported so a test can check the rule without a database.
+ */
+export function deriveAreaLabel(stops: readonly AreaStop[]): string | null {
+  const byArea = new Map<string, { stops: number; firstSeq: number }>();
+  for (const s of stops) {
+    if (!s.hasBills) continue;
+    const name = s.areaName?.trim();
+    if (!name) continue;
+    const cur = byArea.get(name);
+    if (cur) {
+      cur.stops += 1;
+      cur.firstSeq = Math.min(cur.firstSeq, s.dropSeq);
+    } else {
+      byArea.set(name, { stops: 1, firstSeq: s.dropSeq });
+    }
+  }
+  if (byArea.size === 0) return null;
+  const ranked = Array.from(byArea.entries()).sort(
+    (a, b) => b[1].stops - a[1].stops || a[1].firstSeq - b[1].firstSeq,
+  );
+  const others = ranked.length - 1;
+  return others > 0 ? `${ranked[0][0]} +${others}` : ranked[0][0];
+}
+
 /** Assemble one summary from a row plus the resolved maps and its own bills. */
 function toSummary(
   t: TripRow,
   labels: Awaited<ReturnType<typeof loadTripLabels>>,
   bills: TripBillRow[],
   dropCount: number,
+  areaStops: readonly AreaStop[],
 ): TripSummary {
   const counts: TripBillCounts = { ...EMPTY_COUNTS };
   let totalLitres = 0;
@@ -460,6 +518,7 @@ function toSummary(
     dispatchedCount,
     totalLitres,
     dropCount,
+    areaLabel: deriveAreaLabel(areaStops),
     releasedAt: t.releasedAt?.toISOString() ?? null,
     dispatchedAt: t.dispatchedAt?.toISOString() ?? null,
     cancelledAt: t.cancelledAt?.toISOString() ?? null,
@@ -515,15 +574,21 @@ export async function getTripsForDate(tripDate: Date): Promise<TripSummary[]> {
     // of 2026-09-13. Same set as before, one owner now.
     where: tripsOnDeskWhere(tripDate),
     select: TRIP_SELECT,
-    // tripDate leads so a carried draft sorts ABOVE the day's own trips rather
-    // than interleaving with them by type — it is older, and it reads as older.
-    orderBy: [{ tripDate: "asc" }, { typeCode: "asc" }, { seq: "asc" }],
+    // 🔴 NEWEST CREATED FIRST (slice 6, 2026-09-15). The rail and the Add-to-trip
+    // list both read this order. NOT the trip number: since slice 5 a cancelled
+    // trip gives its number back, so a trip made at 3pm can hold seq 5 and
+    // number order no longer matches creation order. `id` breaks a same-instant
+    // tie so the order is stable across reloads. A carried draft was created
+    // earliest, so it now sits at the BOTTOM — its date chip still says so.
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   })) as TripRow[];
   if (trips.length === 0) return [];
 
+  // `areaName` and `dropSeq` ride this same read for the derived area label —
+  // two more columns, no extra statement on the board's feed.
   const drops = await prisma.trip_drops.findMany({
     where: { tripId: { in: trips.map((t) => t.id) } },
-    select: { id: true, tripId: true },
+    select: { id: true, tripId: true, areaName: true, dropSeq: true },
   });
 
   const bills = await loadTripBills(drops.map((d) => d.id));
@@ -540,12 +605,23 @@ export async function getTripsForDate(tripDate: Date): Promise<TripSummary[]> {
     billsByTripId.set(tripId, arr);
   }
   const dropCountByTripId = new Map<number, number>();
+  const dropIdsWithBills = new Set(bills.map((b) => b.tripDropId));
+  const areaStopsByTripId = new Map<number, AreaStop[]>();
   for (const d of drops) {
     dropCountByTripId.set(d.tripId, (dropCountByTripId.get(d.tripId) ?? 0) + 1);
+    const arr = areaStopsByTripId.get(d.tripId) ?? [];
+    arr.push({ areaName: d.areaName, dropSeq: d.dropSeq, hasBills: dropIdsWithBills.has(d.id) });
+    areaStopsByTripId.set(d.tripId, arr);
   }
 
   return trips.map((t) =>
-    toSummary(t, labels, billsByTripId.get(t.id) ?? [], dropCountByTripId.get(t.id) ?? 0),
+    toSummary(
+      t,
+      labels,
+      billsByTripId.get(t.id) ?? [],
+      dropCountByTripId.get(t.id) ?? 0,
+      areaStopsByTripId.get(t.id) ?? [],
+    ),
   );
 }
 
@@ -617,7 +693,17 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
   });
 
   return {
-    ...toSummary(trip, labels, bills, drops.length),
+    ...toSummary(
+      trip,
+      labels,
+      bills,
+      drops.length,
+      drops.map((d) => ({
+        areaName: d.areaName,
+        dropSeq: d.dropSeq,
+        hasBills: (billsByDropId.get(d.id)?.length ?? 0) > 0,
+      })),
+    ),
     drops: dropSummaries,
     activity,
   };

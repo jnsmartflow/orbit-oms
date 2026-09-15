@@ -25,17 +25,25 @@ export const dynamic = "force-dynamic";
  * from here. Do not put a call to lib/floor/release.ts or
  * lib/picking/visibility-gate.ts back in this file.
  *
- * ⚠ THE ONE READ OF `orders` IS A COUNT, and it exists for the empty-trip
- * refusal below. Reads are not writes; the live-sync markers cannot see it.
+ * ⚠ THE ONE READ OF `orders` IS A COUNT, for the activity row's bill count.
+ * Reads are not writes; the live-sync markers cannot see it.
  *
  * ⚠ `trips.dispatchWindowId` IS NOT READ. The old route branched on it
  * (`hasSlot` → `needsSlot`); nothing does now, and the slot is display-only.
  *
- * ⚠ A BRIDGE, AND KNOWN TO BE ONE. Slice 6 removes the Draft / Confirmed words
- * and slice 10 replaces the draft carry-forward rule (lib/trips/live-trips.ts)
- * with one based on the bills inside. Until then this press is what stops a
- * finished draft following the planner onto every later day's desk, and what
- * puts Mark dispatched on the header (it renders on a non-draft trip only).
+ * 🔴 NO CALLER ON THE FLOOR SCREEN SINCE SLICE 6 (2026-09-15). The Confirm plan
+ * button went with the Draft / Confirmed words. Its job moved onto the vehicle:
+ * a trip created with one is born `released` (POST /api/floor/trips), and a
+ * PATCH that sets one on a draft writes `released` and the stamps in the same
+ * update (PATCH /api/floor/trips/[id]). Mark dispatched renders on every open
+ * trip, draft or not. This route is kept as the plain API for the same move.
+ * Slice 10 replaces the draft carry-forward rule (lib/trips/live-trips.ts) that
+ * all of this still feeds.
+ *
+ * ⚠ AN EMPTY TRIP CONFIRMS (slice 6). This refused a trip with no bills with a
+ * 422 until the owner ruled an empty trip valid: the floor plans trucks before
+ * the bills exist, and an empty confirmed trip is a truck with nothing on it
+ * yet.
  *
  * Idempotent: an already-`released` trip answers 200 and writes nothing — no
  * status write, no stamp, no activity row.
@@ -90,10 +98,8 @@ export async function POST(
   // Already confirmed — nothing to say and nothing to write.
   if (trip.status !== "draft") return respond(trip);
 
-  // An EMPTY trip cannot be confirmed — the rule the old route kept. A
-  // confirmed trip with no bills is indistinguishable on the board from one
-  // whose bills were all removed afterwards. The button is disabled at zero
-  // too; this is the server's half.
+  // The bill count, for the activity row. ⚠ NOT A GATE: the 422 that refused an
+  // empty trip here was removed in slice 6 — see the header.
   const drops = await prisma.trip_drops.findMany({ where: { tripId }, select: { id: true } });
   const billCount =
     drops.length > 0
@@ -101,12 +107,6 @@ export async function POST(
           where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
         })
       : 0;
-  if (billCount === 0) {
-    return NextResponse.json(
-      { error: "This trip has no bills — add bills before confirming it." },
-      { status: 422 },
-    );
-  }
 
   // The stamps are written once. A trip only reaches this line from `draft`,
   // but `releasedAt` is still tested so a draft that was once released (none

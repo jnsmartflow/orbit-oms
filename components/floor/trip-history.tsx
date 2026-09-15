@@ -130,7 +130,7 @@ export function TripFullHistory({ rows }: { rows: TripActivityRow[] }) {
             <p className="m-0 text-[11.5px] leading-[1.6] text-gray-400">
               Nothing recorded. Trip history started on 14 Sep 2026 and was not
               backfilled, so trips built before then carry only their original
-              created, confirmed and cancelled stamps.
+              created, dispatched and cancelled stamps.
             </p>
           ) : (
             <ol className="m-0 flex list-none flex-col gap-0 p-0">

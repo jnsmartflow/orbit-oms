@@ -5,34 +5,47 @@
 // 🔴 IT REPLACES THE DECISION RAIL ENTIRELY. What used to live here was a stack
 // of cards for bills the dispatch engine could not slot, each with a slot picker
 // and a "Why no slot?" link. Those bills are now rows on the board itself,
-// marked with a quiet `no slot` chip, and the rail holds TRIPS instead. Putting
-// a bill on a trip is what gives it a slot — so the picker, the suggestion layer
-// and the whole card have nothing left to do.
+// marked with a quiet `no slot` chip, and the rail holds TRIPS instead.
 //
 // Two kinds of entry, and only one is selected at a time:
 //   - "To plan" — the pool. The default.
-//   - one card per trip, grouped under its slot label.
+//   - one card per trip.
 //
-// ⚠ GROUPED BY SLOT LABEL, NOT BY SLOT ID. A trip with no window sits under
-// "No slot yet" rather than being hidden — it is a real trip the planner is
-// still assembling, and a trip cannot be released without a window, so this is
-// the group he has to come back to.
+// 🔴 ONE FLAT LIST, NEWEST CREATED FIRST, NO GROUP HEADERS (slice 6, 2026-09-15).
+// The rail used to group trips under their slot, with a "No slot yet" group
+// last. It no longer groups at all: the slot is a small chip on the card when
+// set, and absent when not. The order is CREATED TIME, not trip number — since
+// slice 5 a cancelled trip gives its number back, so a trip made at 3pm can hold
+// seq 5. The order is set once, by getTripsForDate (lib/trips/queries.ts), so
+// this rail and the Add-to-trip list cannot disagree about it.
 //
-// ⚠ CANCELLED TRIPS ARE NOT ON THIS RAIL AT ALL (2026-09-11). They used to sink
-// to the bottom, greyed. They are still kept in the database — a cancelled trip
-// retains its number so the allocator can never reissue it — and they are still
-// reachable in history. They are simply not work, and the live rail is a list of
-// work. DISPLAY ONLY: nothing here deletes or hides a row, and the summary
-// counts below describe exactly what is rendered.
+// 🔴 THE PAGE'S SCOPE FILTERS IT; IT HAS NO TABS OF ITS OWN. All / Local /
+// Upcountry / IGT is the page's own control. A trip is in scope by its OWN
+// delivery type — the letter in its number — through the same `inScope` the
+// board rows use (lib/floor/scope.ts). A Cross trip shows under All only, because
+// there is no Cross scope.
 //
-// ⚠ A CARRIED DRAFT SHOWS ITS REAL DATE. lib/trips/queries.ts follows an open
+// 🔴 NO "Draft" AND NO "Confirmed" ANYWHERE (slice 6). A trip with no vehicle
+// says "Vehicle not set" in amber where the plate would go — a blank field says
+// what is missing better than a status word. The stored status still exists and
+// still drives two things (the carry-forward rule and the dispatch close); it is
+// simply not a thing the floor reads. The only chips left are the ones that say
+// something the floor acts on: Ready, and Dispatched.
+//
+// ⚠ CANCELLED TRIPS ARE NOT ON THIS RAIL AT ALL (2026-09-11). They are still in
+// the database — renamed <number>-C since slice 5 — and still reachable in
+// history. They are simply not work, and the live rail is a list of work.
+// DISPLAY ONLY: nothing here deletes or hides a row, and the header counts
+// describe exactly what is rendered.
+//
+// ⚠ A CARRIED TRIP SHOWS ITS REAL DATE. lib/trips/live-trips.ts follows an open
 // draft forward off its own day so it can never become unreachable, and this
 // rail prints the date it actually carries rather than implying it is today's.
-// Reading as old is the point — see the date chip on the card.
 
 import { ProgressBar } from "./progress-bar";
 import { formatLitres, type StatusCounts } from "./status-pill";
-import { tripWording } from "@/lib/floor/trip-wording";
+import { inScope } from "@/lib/floor/scope";
+import type { FloorScope } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -54,28 +67,20 @@ function fmtTripDay(dateOnly: string): string {
 /** The rail's selection: the pool, or one trip. */
 export type RailSelection = { kind: "pool" } | { kind: "trip"; tripId: number };
 
-// ⚠ EVERY KEY HERE IS A VALUE `chk_trips_status` ADMITS, AND THAT IS THE WHOLE
-// LIST. A `loading` entry sat here until 2026-09-14 wearing an amber "Loading"
-// chip; no route ever wrote that status, production never held a row at it, and
-// the constraint dropped it in the same slice. If the loading screen is ever
-// built, the value comes back to the CHECK and to this map together.
-//
-// 🔴 A MISS MUST NEVER REACH THE DOM AS `undefined`. Read this map through
-// `stateMetaFor` below and never by direct index — a status the map has not been
-// taught then renders as itself in the neutral draft wash, instead of putting
-// `undefined.label` on the rail.
-const STATE_META: Record<string, { label: string; cls: string }> = {
-  draft: { label: "Draft", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
-  released: { label: "Confirmed", cls: "bg-[#e8effd] text-[#2563eb]" },
+export interface TripChip {
+  label: string;
+  cls: string;
+}
+
+// ⚠ ONLY THE TWO STORED STATES THE FLOOR STILL READS. `draft` and `released`
+// had entries here ("Draft", "Confirmed") until slice 6 removed both words from
+// the screen. A status this map does not carry gets NO chip — never a raw
+// status string, which is how "released" would otherwise leak onto a card.
+const CLOSED_CHIP: Record<string, TripChip> = {
   dispatched: { label: "Dispatched", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
   cancelled: { label: "Cancelled", cls: "bg-[#f1f0f5] text-[#6f6d7d]" },
 };
-
-/** The safe answer for a status STATE_META does not carry. Never undefined. */
-function stateMetaFor(status: string): { label: string; cls: string } {
-  return STATE_META[status] ?? { label: status, cls: STATE_META.draft.cls };
-}
-const READY = { label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
+const READY: TripChip = { label: "Ready", cls: "bg-[#eaf7ee] text-[#15803d]" };
 
 /**
  * The API's five buckets folded into the four the shared bar and pill speak.
@@ -116,26 +121,25 @@ export function toStatusCounts(c: TripSummary["counts"], dispatchedCount = 0): S
   };
 }
 
-/** The chip a trip wears. `ready` is DERIVED and outranks the stored status. */
-export function tripStateMeta(trip: TripSummary) {
-  if (trip.status === "cancelled" || trip.status === "dispatched") {
-    return stateMetaFor(trip.status);
-  }
+/**
+ * The chip a trip wears, or NULL for none (slice 6).
+ *
+ * A closed trip keeps its own chip — it has left, or was called off, and
+ * "Ready" would be a lie. An open trip wears "Ready" when every bill that is
+ * going is checked (`isReady`, derived at read time) and NOTHING otherwise.
+ */
+export function tripStateMeta(trip: TripSummary): TripChip | null {
+  const closed = CLOSED_CHIP[trip.status];
+  if (closed) return closed;
   if (trip.isReady) return READY;
-  if (trip.status === "released") {
-    // ⚠ THE LABEL NO LONGER DEPENDS ON THE DESK-CONTROL SWITCH (2026-09-14).
-    // This read `tripWording(gateOn).releasedLabel` and said "Released" with the
-    // gate on, "Confirmed" with it off. One fixed word now — see
-    // lib/floor/trip-wording.ts. The stored status is still `released`.
-    return { label: tripWording().releasedLabel, cls: STATE_META.released.cls };
-  }
-  return stateMetaFor(trip.status);
+  return null;
 }
 
 export function TripRail({
   trips,
   loading,
   anchorIso,
+  scope,
   poolCount,
   poolLitres,
   selection,
@@ -146,12 +150,14 @@ export function TripRail({
   /**
    * The day the board is anchored on, "YYYY-MM-DD".
    *
-   * A trip whose own `tripDate` is EARLIER than this is a CARRIED DRAFT —
-   * lib/trips/queries.ts follows an open draft forward so it can never become
-   * unreachable on a read-only past day — and its card says so with its real
-   * date. Nothing else reads this.
+   * A trip whose own `tripDate` is EARLIER than this was CARRIED —
+   * lib/trips/live-trips.ts follows an open draft forward so it can never become
+   * unreachable — and its card says so with its real date. Nothing else reads
+   * this.
    */
   anchorIso: string;
+  /** The page's All / Local / Upcountry / IGT scope. Filters trips by their own type. */
+  scope: FloorScope;
   poolCount: number;
   poolLitres: number;
   // ⚠ THE "IN TINTING" LINE WAS HERE AND WENT ON 2026-09-14. It counted the tint
@@ -162,30 +168,15 @@ export function TripRail({
   onSelect: (sel: RailSelection) => void;
 }) {
   const all = trips ?? [];
-  // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11). One filter, applied once,
-  // so no group below can reintroduce them.
-  const live = all.filter((t) => t.status !== "cancelled");
+  // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11), and a trip outside the
+  // page's scope does not either (slice 6). One filter, applied once, in the
+  // server's order — newest created first.
+  const live = all.filter((t) => t.status !== "cancelled" && inScope(t.deliveryTypeName, scope));
 
   // The header's two numbers. Both describe the LIVE list — what is actually on
   // the rail — so the count and the cards can never disagree.
   const tripCount = live.length;
   const billCount = live.reduce((sum, t) => sum + t.counts.total, 0);
-
-  // Group by slot LABEL. Order: the windows the trips actually use, ascending by
-  // time string (the labels are HH:MM, so a plain sort is the clock order), then
-  // "No slot yet" last — it is the group still needing a decision.
-  const groups = new Map<string, TripSummary[]>();
-  for (const t of live) {
-    const key = t.windowTime ?? "No slot yet";
-    const arr = groups.get(key) ?? [];
-    arr.push(t);
-    groups.set(key, arr);
-  }
-  const orderedKeys = Array.from(groups.keys()).sort((a, b) => {
-    if (a === "No slot yet") return 1;
-    if (b === "No slot yet") return -1;
-    return a.localeCompare(b, "en");
-  });
 
   const poolOn = selection.kind === "pool";
 
@@ -193,16 +184,8 @@ export function TripRail({
     <div className="flex min-h-0 flex-col overflow-y-auto border-r border-gray-200 bg-[#fcfbfe] px-2.5 py-2.5">
       {/* ── The rail's own count (2026-09-11) ─────────────────────────────
           Smart Flow had to scroll the rail to know what was on it. Two numbers,
-          one line, above everything.
-
-          Typography is the rail's existing pair, not a new style: the group
-          headings below use 10.5px bold uppercase at 0.1em in gray-400, and the
-          card sub-lines use 11px tabular-nums in gray-500. This reuses both —
-          the label from the first, the figures from the second — so it reads as
-          part of the rail rather than as a banner on top of it.
-
-          It counts the LIVE list, which is what is rendered. Cancelled trips are
-          not on the rail and are not in this number. */}
+          one line, above everything. It counts the LIVE, in-scope list, which
+          is what is rendered. */}
       <div className="flex items-baseline gap-2 px-1 pb-2">
         <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
           Trips
@@ -251,29 +234,23 @@ export function TripRail({
         <div className="px-1 py-4 text-center text-[11px] text-gray-400">Loading trips…</div>
       )}
 
-      {trips !== null && all.length === 0 && (
+      {trips !== null && live.length === 0 && (
         <div className="px-1 py-4 text-[11px] leading-relaxed text-gray-400">
-          No trips today. Tick bills in the pool and press Add to trip, or start one with New trip.
+          {scope === "All" || all.every((t) => t.status === "cancelled")
+            ? "No trips today. Start one with New trip — it can be empty, and bills can be added later."
+            : `No ${scope} trips today.`}
         </div>
       )}
 
-      {orderedKeys.map((key) => (
-        <div key={key}>
-          <div className="px-1 pb-1 pt-2.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
-            {key}
-          </div>
-          {groups.get(key)!.map((t) => (
-            <TripCard
-              key={t.id}
-              trip={t}
-              anchorIso={anchorIso}
-              selected={selection.kind === "trip" && selection.tripId === t.id}
-              onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
-            />
-          ))}
-        </div>
+      {live.map((t) => (
+        <TripCard
+          key={t.id}
+          trip={t}
+          anchorIso={anchorIso}
+          selected={selection.kind === "trip" && selection.tripId === t.id}
+          onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
+        />
       ))}
-
     </div>
   );
 }
@@ -289,69 +266,70 @@ function TripCard({
   onSelect: () => void;
   anchorIso: string;
 }) {
-  // 🔴 A CARRIED DRAFT READS AS OLD, NOT AS TODAY'S (2026-09-11). An open draft
-  // dated before the board's anchor now follows the planner forward rather than
-  // staying stranded on an unreachable past day. Printing its REAL date is the
-  // whole point of carrying it: a trip silently relabelled today would hide
-  // exactly the staleness the planner has to act on.
+  // 🔴 A CARRIED TRIP READS AS OLD, NOT AS TODAY'S (2026-09-11). Printing its REAL
+  // date is the whole point of carrying it: a trip silently relabelled today
+  // would hide exactly the staleness the planner has to act on.
   //
   // A plain string compare is exact on zero-padded "YYYY-MM-DD" and needs no
-  // Date at all. Only a draft is ever carried (see getTripsForDate), so only a
-  // draft can show this chip.
+  // Date at all.
   const isCarried = trip.tripDate < anchorIso;
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
-  const meta = tripStateMeta(trip);
+  const chip = tripStateMeta(trip);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
-  const isDraft = trip.status === "draft";
-  const isCancelled = trip.status === "cancelled";
 
   return (
     <button
       type="button"
       onClick={onSelect}
       className={`mb-1.5 w-full rounded-[10px] border px-2.5 py-2 text-left ${
-        selected
-          ? "border-brand-600 bg-brand-50"
-          : isDraft
-            ? "border-dashed border-[#d6d3e2] bg-white hover:bg-[#fafafa]"
-            : "border-gray-200 bg-white hover:bg-[#fafafa]"
-      } ${isCancelled ? "opacity-60" : ""}`}
+        selected ? "border-brand-600 bg-brand-50" : "border-gray-200 bg-white hover:bg-[#fafafa]"
+      }`}
     >
       <div className="flex items-center gap-1.5">
         {isCarried && (
           <span
-            title={`Still a draft from ${fmtTripDay(trip.tripDate)} — it follows you forward until it is confirmed or cancelled`}
+            title={`Planned for ${fmtTripDay(trip.tripDate)} and still open — it follows you forward until it has a vehicle, is dispatched, or is cancelled`}
             className="shrink-0 rounded-[4px] bg-[#fdf3e3] px-[5px] py-px text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#b45309]"
           >
             {fmtTripDay(trip.tripDate)}
           </span>
         )}
-        <span
-          className={`shrink-0 rounded-[5px] px-1.5 py-px font-mono text-[11px] font-semibold ${
-            isDraft || isCancelled
-              ? "border border-gray-200 bg-white text-gray-600"
-              : "bg-gray-900 text-white"
-          }`}
-        >
+        <span className="shrink-0 rounded-[5px] bg-gray-900 px-1.5 py-px font-mono text-[11px] font-semibold text-white">
           {trip.tripNumber}
         </span>
-        <span
-          className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[9.5px] font-bold uppercase tracking-[0.06em] ${meta.cls}`}
-        >
-          {meta.label}
-        </span>
+        {/* The slot — a small chip when set, ABSENT when not (slice 6). There is
+            no "No slot yet" anywhere: an unset slot is not a state to announce. */}
+        {trip.windowTime && (
+          <span className="shrink-0 rounded-[4px] border border-gray-200 bg-white px-[5px] py-px text-[10px] font-semibold tabular-nums text-gray-600">
+            {trip.windowTime}
+          </span>
+        )}
+        {chip && (
+          <span
+            className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[9.5px] font-bold uppercase tracking-[0.06em] ${chip.cls}`}
+          >
+            {chip.label}
+          </span>
+        )}
       </div>
 
+      {/* The vehicle, or what is missing in its place (slice 6). */}
       <div className="mb-px mt-1 truncate text-[12px] font-semibold text-gray-900">
-        {vehicle ?? <span className="text-[#b45309]">Draft vehicle {trip.seq}</span>}
+        {vehicle ?? <span className="text-[#b45309]">Vehicle not set</span>}
       </div>
+
+      {/* The area, DERIVED from the stops (lib/trips/queries.ts deriveAreaLabel).
+          ⚠ EMPTY ON AN EMPTY TRIP — the line below already says "No bills yet",
+          and saying it twice is noise. Also empty when no stop has an area. */}
+      {counts.total > 0 && trip.areaLabel && (
+        <div className="truncate text-[11.5px] text-gray-600">{trip.areaLabel}</div>
+      )}
 
       {/* ⚠ AN EMPTY TRIP SAYS SO (2026-09-10 c). It used to read
           "0 stops · 0 bills · 0 L" over an empty progress bar, which is three
-          true numbers arranged to look like a rendering fault. A brand-new draft
-          is the state this card is in most often — the planner creates the trip
-          and then goes to find bills for it — so the ordinary case was the one
-          that looked broken. */}
+          true numbers arranged to look like a rendering fault. An empty trip is
+          a normal morning state — the floor plans trucks before the bills exist
+          (owner, slice 6). */}
       {counts.total === 0 ? (
         <div className="text-[11px] text-gray-400">No bills yet</div>
       ) : (

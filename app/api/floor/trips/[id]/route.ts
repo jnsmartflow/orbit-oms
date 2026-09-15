@@ -159,6 +159,7 @@ export async function PATCH(
       dispatchWindowId: true,
       note: true,
       transporterTripNo: true,
+      releasedAt: true,
       vehicle: { select: { vehicleNo: true } },
     },
   });
@@ -177,6 +178,9 @@ export async function PATCH(
     transporterTripNo?: string | null;
     driverName?: string | null;
     driverPhone?: string | null;
+    status?: string;
+    releasedAt?: Date;
+    releasedById?: number;
   } = {};
 
   if (has(body, "vehicleId")) {
@@ -253,6 +257,36 @@ export async function PATCH(
   if (has(body, "vehicleId") && data.vehicleId === null) {
     data.driverName = null;
     data.driverPhone = null;
+  }
+
+  // ── SETTING A VEHICLE ON A DRAFT MOVES IT OUT OF DRAFT (slice 6) ───────────
+  //
+  // 🔴 A BRIDGE UNTIL SLICE 10, AND IT LIVES HERE, NOT IN THE CLIENT. The Confirm
+  // plan press is gone from the screen; this is what does its job. In the SAME
+  // `trips.update` as the vehicle — one write, nothing for a second call to race
+  // or quietly miss. `releasedAt`/`releasedById` are written the first time
+  // only, the rule POST …/confirm keeps.
+  //
+  // ⚠ ONE-WAY. Clearing the vehicle on a released trip does NOT put it back in
+  // draft — nothing here writes `draft`, and `settles` needs a vehicle.
+  // ⚠ AN EMPTY TRIP SETTLES TOO. The floor plans trucks before the bills exist;
+  // no bill count is read.
+  // ⚠ ONLY WHEN THIS PRESS TOUCHES THE VEHICLE. Editing the note of a draft that
+  // somehow already carries a vehicle does not move it — the slice 6 migration
+  // settles those five by SQL, with their own history rows.
+  const vehicleTouchedForStatus = has(body, "vehicleId") || has(body, "adhocVehicleNo");
+  const settles =
+    trip.status === "draft" && vehicleTouchedForStatus && (nextVehicleId !== null || nextAdhoc !== null);
+  if (settles) {
+    const actorId = Number(session.user.id);
+    if (!Number.isInteger(actorId) || actorId <= 0) {
+      return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
+    }
+    data.status = "released";
+    if (trip.releasedAt === null) {
+      data.releasedAt = new Date();
+      data.releasedById = actorId;
+    }
   }
 
   try {
@@ -363,6 +397,9 @@ export async function PATCH(
         from: beforeVehicle,
         to: afterVehicleResolved,
         ...(transporterChange ? { transporter: transporterChange } : {}),
+        // `confirmed: true` in THIS row's detail, and no separate line — the
+        // owner's wording rule for slice 6.
+        confirmed: settles,
       });
     }
     await logTripDetailsChanged({ tripId, actorId: Number(session.user.id), changes });

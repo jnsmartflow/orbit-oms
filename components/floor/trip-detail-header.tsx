@@ -2,14 +2,18 @@
 
 // Floor Control — the trip header in the MIDDLE, above its bills (v3 mockup §02).
 //
-// Number · type · slot · state chip on line one; vehicle / transporter / driver
-// and the totals on line two; the four-colour bar with its legend; then the
-// action row.
+// Number · type · slot · Ready/Dispatched chip on line one; vehicle /
+// transporter / driver and the totals on line two; the four-colour bar with its
+// legend; then the action row.
 //
 // ⚠ THE ACTIONS ARE THE WHOLE TRIP'S, and they live here rather than on the rail
 // card because the card is a summary the operator scans and this is the thing he
-// is working on. One primary at most — Confirm/Release on a draft — and it is
-// the state's real job (CLAUDE_UI §1's one-teal rule).
+// is working on. One primary at most — Mark dispatched — and it is the state's
+// real job (CLAUDE_UI §1's one-teal rule).
+//
+// 🔴 NO CONFIRM PLAN BUTTON, NO "Draft", NO "Confirmed" (slice 6, 2026-09-15).
+// Entering a vehicle is what moves a trip out of draft now, on the server. A
+// trip with no vehicle says "Vehicle not set" in amber on line two.
 //
 // ⚠ A CANCELLED OR DISPATCHED TRIP OFFERS NOTHING. Every write path refuses both
 // server-side; showing buttons that will 409 is worse than showing none.
@@ -18,7 +22,6 @@ import type { ReactNode } from "react";
 import { ProgressBar } from "./progress-bar";
 import { formatLitres } from "./status-pill";
 import { toStatusCounts, tripStateMeta } from "./trip-rail";
-import { tripWording } from "@/lib/floor/trip-wording";
 import type { TripSummary } from "@/lib/trips/queries";
 
 const ACTION =
@@ -30,7 +33,6 @@ export function TripDetailHeader({
   trip,
   busy,
   readOnly,
-  onRelease,
   onDispatch,
   onAddBills,
   onChangeVehicle,
@@ -41,8 +43,7 @@ export function TripDetailHeader({
   busy: boolean;
   /** History — a past day is a record, not a thing to edit. */
   readOnly: boolean;
-  onRelease: () => void;
-  /** Mark this released trip’s checked bills dispatched. Absent on a History
+  /** Mark this open trip’s checked bills dispatched. Absent on a History
    *  band — a past day is a record, and the button is suppressed with every
    *  other write by `readOnly`. */
   onDispatch?: () => void;
@@ -63,11 +64,9 @@ export function TripDetailHeader({
   recent?: ReactNode;
 }) {
   const counts = toStatusCounts(trip.counts, trip.dispatchedCount);
-  const meta = tripStateMeta(trip);
-  const wording = tripWording();
+  const chip = tripStateMeta(trip);
   const vehicle = trip.vehicleNo ?? trip.adhocVehicleNo;
   const isClosed = trip.status === "cancelled" || trip.status === "dispatched";
-  const isDraft = trip.status === "draft";
   // What a Mark-dispatched press would actually move, right now. `counts.checked`
   // folds `dispatched` into `checked` (bucketFor, lib/trips/queries.ts), so the
   // subtraction is what separates “finished” from “finished and still here”.
@@ -90,8 +89,11 @@ export function TripDetailHeader({
   // `dispatchedCount` is the figure that separates them. A held bill is never in
   // `checked` — `bucketFor` tests the hold first, whatever the stage.
   //
-  // ⚠ ONLY AFTER A CONFIRM. On a draft every bill is undispatched and saying so
-  // would be noise on the one state where it means nothing.
+  // ⚠ ONLY ONCE SOMETHING HAS GONE (slice 6, 2026-09-15). This read `!isDraft`
+  // — "after a confirm" — and the draft state is no longer a thing the screen
+  // knows about. What the banner reports is a SKIP: a press of Mark dispatched
+  // that left bills behind. Before the first press nothing has been skipped, and
+  // "5 of 5 not dispatched" on a trip still being planned would be noise.
   //
   // 🔴 THREE PARTS, EACH COUNTED FROM ITS OWN BUCKET, NEVER BY SUBTRACTION
   // (2026-09-15). This read `total - dispatchedCount - held` and called the
@@ -107,7 +109,7 @@ export function TripDetailHeader({
   const heldCount = trip.counts.held;
   const pickingCount = trip.counts.waiting + trip.counts.withPicker + trip.counts.picked + trip.counts.other;
   const notDispatched = readyToDispatch + pickingCount + heldCount;
-  const showNotDispatched = !isDraft && trip.counts.total > 0 && notDispatched > 0;
+  const showNotDispatched = trip.dispatchedCount > 0 && notDispatched > 0;
   const notDispatchedParts = [
     readyToDispatch > 0 ? `${readyToDispatch} checked and ready` : null,
     pickingCount > 0 ? `${pickingCount} still being picked` : null,
@@ -115,15 +117,14 @@ export function TripDetailHeader({
   ].filter(Boolean) as string[];
 
   // Line two — everything known about who is carrying it, then the totals.
-  // Blanks are dropped rather than rendered as dashes: a trip with no vehicle
-  // yet is normal, and four em dashes in a row reads as missing data.
-  const whoBits = [vehicle, trip.transporterName, trip.driverName].filter(Boolean) as string[];
+  // Blanks are dropped rather than rendered as dashes, EXCEPT the vehicle: since
+  // slice 6 a missing vehicle is said out loud, "Vehicle not set" in amber, the
+  // same words the rail card uses. The transporter and driver stay silent.
+  const whoBits = [trip.transporterName, trip.driverName].filter(Boolean) as string[];
   // ⚠ AN EMPTY TRIP SAYS SO, here as on the rail card (2026-09-10 c). Three
   // zeroes in a row read as a rendering fault rather than as a fact, and an
-  // empty draft is the state a trip is in for as long as it takes the planner
-  // to go and tick its bills. The Release button below is already disabled and
-  // already explains itself ("Add bills to this trip first"), so this line only
-  // has to stop contradicting it.
+  // empty trip is a normal morning state — the floor plans trucks before the
+  // bills exist.
   const isEmpty = counts.total === 0;
   const totalBits = isEmpty
     ? ["No bills yet"]
@@ -141,23 +142,27 @@ export function TripDetailHeader({
         </span>
         <span className="text-[12.5px] text-gray-500">
           {trip.deliveryTypeName ?? trip.typeCode}
-          {trip.windowTime ? ` · ${trip.windowTime}` : " · no slot yet"}
+          {/* The slot when set, and nothing when not (slice 6) — no "no slot yet". */}
+          {trip.windowTime ? ` · ${trip.windowTime}` : ""}
         </span>
-        <span
-          className={`rounded-full px-2.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.07em] ${meta.cls}`}
-        >
-          {meta.label}
-        </span>
+        {chip && (
+          <span
+            className={`rounded-full px-2.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.07em] ${chip.cls}`}
+          >
+            {chip.label}
+          </span>
+        )}
       </div>
 
       <div className="mt-1.5 text-[12px] text-gray-600">
-        {whoBits.length > 0 && (
-          <>
-            {whoBits.join(" · ")}
-            {trip.driverPhone ? ` ${trip.driverPhone}` : ""}
-            <span className="mx-1.5 text-gray-300">·</span>
-          </>
+        {vehicle ? (
+          <span className="font-semibold text-gray-900">{vehicle}</span>
+        ) : (
+          <span className="font-semibold text-[#b45309]">Vehicle not set</span>
         )}
+        {whoBits.length > 0 && <>{" · "}{whoBits.join(" · ")}</>}
+        {trip.driverPhone ? ` ${trip.driverPhone}` : ""}
+        <span className="mx-1.5 text-gray-300">·</span>
         <span className="tabular-nums">{totalBits.join(" · ")}</span>
         {trip.transporterTripNo && (
           <>
@@ -229,7 +234,7 @@ export function TripDetailHeader({
 
       {/* The skip, stated on the trip and not only in a toast. Amber, because
           it is something to come back to rather than something that went wrong
-          — a red band on a correct confirm would teach the operator to ignore
+          — a red band on a correct press would teach the operator to ignore
           it, which is the opposite of the point. */}
       {showNotDispatched && (
         <div className="mt-2 rounded-[7px] border border-[#fde3b4] bg-[#fffaf0] px-2.5 py-1.5 text-[11.5px] text-[#92400e]">
@@ -242,32 +247,22 @@ export function TripDetailHeader({
 
       {!isClosed && !readOnly && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {isDraft && (
-            <button
-              type="button"
-              onClick={onRelease}
-              // 🔴 THE SLOT GATE IS GONE (2026-09-13). This read
-              // `|| trip.dispatchWindowId === null` and stranded 104 bills
-              // across 19 slot-less trips with no way forward. The slot only
-              // ever mattered to the RELEASE write, which a checked bill never
-              // receives, so the gate moved into the route and onto that write
-              // alone. Slice 3 (2026-09-14) deleted that route: the trip's slot
-              // is now DISPLAY-ONLY and nothing branches on it. The rail groups
-              // by it, and "No slot yet" is a fine group to sit in.
-              disabled={busy || counts.total === 0}
-              title={counts.total === 0 ? "Add bills to this trip first" : wording.releaseButton}
-              className={PRIMARY}
-            >
-              {busy ? "Working…" : wording.releaseButton}
-            </button>
-          )}
+          {/* ⚠ THE CONFIRM PLAN BUTTON WAS HERE UNTIL SLICE 6 (2026-09-15). A
+              vehicle moves a trip out of draft now, on the server; there is no
+              press for it and no word for it on this screen. */}
           {/* ── MARK DISPATCHED (2026-09-14) ──────────────────────────────
-              🔴 THE PRESS THAT USED TO BE PART OF RELEASE. Confirm plan
-              settles the trip; THIS says the goods have gone. They were one
-              button until today, so the single morning press shipped whatever
-              was already checked and nothing could ship afterwards.
+              🔴 THE PRESS THAT USED TO BE PART OF RELEASE. THIS says the goods
+              have gone. It and the release were one button until 2026-09-14, so
+              the single morning press shipped whatever was already checked and
+              nothing could ship afterwards.
 
-              ⚠ ALWAYS RENDERED ON A RELEASED TRIP, DISABLED AT ZERO, NEVER
+              🔴 ON EVERY OPEN TRIP, DRAFT OR NOT (slice 6, 2026-09-15). It was
+              gated on `!isDraft`, and with the Confirm button gone a trip that
+              never gets a vehicle stays a draft — so the gate would have left it
+              no way to record its load leaving. The dispatch route never refused
+              a draft; the gate was only ever here.
+
+              ⚠ ALWAYS RENDERED, DISABLED AT ZERO, NEVER
               HIDDEN. It is pressed repeatedly through the day as bills become
               checked, so it has to be in the same place every time the operator
               looks. A button that vanishes when idle is one he stops looking
@@ -278,7 +273,7 @@ export function TripDetailHeader({
               `dispatched` into `checked` (lib/trips/queries.ts), so the
               subtraction is what turns "finished" into "finished and still
               here". A held bill is not in it — holds never dispatch. */}
-          {!isDraft && onDispatch && (
+          {onDispatch && (
             <button
               type="button"
               onClick={onDispatch}

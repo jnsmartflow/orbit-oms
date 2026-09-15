@@ -4,7 +4,7 @@ Read-only. No code was changed to produce this. Every claim below cites a file a
 
 ---
 
-## Where we are — 2026-09-14
+## Where we are — 2026-09-15
 
 | Slice | State | Commits |
 |---|---|---|
@@ -12,10 +12,21 @@ Read-only. No code was changed to produce this. Every claim below cites a file a
 | 2 — `trip_activity`, a trip's own history | done | `c84f8faa`, fixes `aef342a1` (slot/transporter named), `b15b337b` (vehicle logs its transporter) |
 | 3 — trip release route deleted, trips-only `POST .../confirm` | done, deployed, acceptance-tested on L-260914-28 | `8eaa4663` |
 | 3b — Clear hold | **parked — groundwork only**, nothing wired | `82b25ce0` |
-| 4 — Mark dispatched | **next** | — |
+| 4 — remove `dispatchStatus` + Mark dispatched | **DROPPED** by the owner, 2026-09-15. Scope is trip PLANNING, not truck movement: Mark dispatched records goods leaving and stays; `orders.dispatchStatus` carries hold, undecided and billing reads and stays. Only the not-dispatched banner's miscount was fixed | `0b9f7a2d` |
+| 5 — a cancelled trip gives its number back (`-C`, `-C2`…), seq 100 | done, verified | `62ea5f1b` + `sql/2026-09-15-trip-number-reuse.sql` |
+| 6 — the trip card and the rail | built | this commit + `sql/2026-09-15-slice6-settle-drafts.sql` |
 
 The rule since slice 3: **no trip action may change a bill's status or its hold.** Confirm and
 PATCH touch no order row; Add, Remove and Cancel write `tripDropId` and nothing else.
+
+**Slice 6, in one paragraph.** No "Draft" or "Confirmed" on the floor screen; a trip with no
+vehicle says "Vehicle not set" in amber. The rail is one flat list, newest created first, filtered
+by the page's All / Local / Upcountry / IGT scope, with the slot as a chip and the area derived
+from the stops ("Katargam +2"). An EMPTY trip is valid. The Confirm press is gone: a vehicle
+moves a trip out of draft on the server (born `released` on create, `released` + stamps on a
+PATCH that sets one; one-way), Mark dispatched renders on every open trip, and `/confirm` no longer
+refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.tsx` and
+`desk-pool.tsx` were deleted.
 
 **Parked, each waiting on its own decision:**
 
@@ -26,8 +37,25 @@ PATCH touch no order row; Add, Remove and Cancel write `tripDropId` and nothing 
   same conversation as Clear hold.
 - **Orphan `trip_drops`** — cancel leaves empty stops behind (104 on 2026-09-14, plus one from the
   slice 3 test). See §9.4.
-- **Slice 8 — the band's "at desk, floor cannot see" text** — true only for drafts since slice 3
-  removed the visibility stamp. See §9.5.
+- ~~**Slice 8 — the band's "at desk, floor cannot see" text**~~ — **CLOSED by slice 6.** The text
+  lived only in `trip-band.tsx`, which was not rendered anywhere and was deleted.
+- **Vehicle type** — a possible later addition, not built. No trip column holds one;
+  `vehicle_master.category` (Tempo, Three Wheeler, Tata 407, Tata Ace, Eicher 14ft) exists. The
+  request came from a mock, not a field.
+- **Orphaned by the slice 6 deletions, not deleted:** `group-row.tsx`, `picker-card.tsx`,
+  `upcoming-strip.tsx`, `carryover-banner.tsx`, `slot-band.tsx`, `floor-tabs.tsx` (their only
+  importer was `floor-board.tsx`), and `lib/floor/trip-wording.ts` (no importer since slice 6).
+
+**Slice 10 — recorded, not fixed.** The carry-forward rule (`lib/trips/live-trips.ts`) carries
+only a `draft`, and since slice 6 a trip leaves draft the moment it has a vehicle. Read
+2026-09-15:
+
+- **U-260912-05** is released with **2 bills not dispatched**, and is off the desk.
+- **27 released trips from 2026-09-12 never closed** — every bill on them is dispatched, but their
+  bills left through the old release route, and only a Mark dispatched press closes a trip.
+- **Empty old trips** have no orders, so a rule of "any order not Done keeps it on the board" has
+  nothing to test. An empty draft today carries forever; an empty trip with a vehicle drops off the
+  next day. Slice 10 needs an explicit rule for empty trips older than today.
 
 Sections 0–9 below are the record of the tree as found; later slices annotate them in blockquotes.
 

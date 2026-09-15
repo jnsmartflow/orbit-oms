@@ -22,9 +22,10 @@
 //   assign-context-banner.tsx  unreachable once By picker went — it was the only
 //                         way into an assign context.
 //
-// ⚠ NONE OF THOSE FILES IS DELETED. They are simply no longer rendered;
-// archiving them is its own step, with its own README (archive/RETIREMENT-
-// PLAYBOOK.md).
+// ⚠ FOUR OF THOSE WERE DELETED IN SLICE 6 (2026-09-15), on the owner's
+// instruction: floor-board.tsx, trip-band.tsx, build-trip-drawer.tsx and
+// desk-pool.tsx. They are in git history. The rest are still on disk, simply
+// not rendered; archiving them is its own step (archive/RETIREMENT-PLAYBOOK.md).
 //
 // The five state actions (mark-urgent · change-slot · hold · cancel · restore)
 // still go through /api/floor/actions, and the row ⚡ is still wired here.
@@ -75,7 +76,7 @@ import type {
   VehicleOption,
   TransporterOption,
   DispatchWindowOption,
-} from "./build-trip-drawer";
+} from "./trip-options";
 
 /** The four dropdown lists the Build trip drawer needs, from /api/floor/trips/options. */
 interface TripOptions {
@@ -622,54 +623,21 @@ export function FloorPage() {
     [load],
   );
 
-  /** Confirm plan on a draft trip. The stored value is 'released'. */
-  const releaseTrip = useCallback(
-    async (tripId: number) => {
-      // ⚠ NO CONFIRMATION STEP, AND THAT IS THE POINT OF THE CHANGE
-      // (2026-09-14). This press used to mark bills dispatched, so it was
-      // terminal and carried a window.confirm naming the count. It now moves
-      // the trip out of draft and touches no bill at all (slice 3), which puts
-      // nothing on a truck. A prompt in front of an ordinary
-      // press is a prompt the hand learns to dismiss, which is exactly what
-      // would blunt the one on `dispatchTrip` below, where it is earned.
-
-      setTripBusyId(tripId);
-      try {
-        // 🔴 A TRIPS-ONLY WRITE SINCE SLICE 3 (2026-09-14). This called
-        // /api/floor/trips/[id]/release, which ran the floor release over the
-        // trip's bills and answered with per-bill buckets (released, already
-        // visible, waiting for tint, needs slot, already finished) that this
-        // handler turned into four different toasts. On the trips this desk
-        // builds every one of those buckets described a bill the press did not
-        // touch. /confirm moves the trip out of draft and touches no order, so
-        // there is one thing to report: that it did.
-        const res = await fetch(`/api/floor/trips/${tripId}/confirm`, { method: "POST" });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error(`Could not confirm — ${body?.error ?? `HTTP ${res.status}`}`);
-        } else {
-          toast.success(`${body?.trip?.tripNumber ?? "Trip"} confirmed`);
-        }
-      } catch {
-        toast.error("Could not confirm — check your connection.");
-      } finally {
-        setTripBusyId(null);
-      }
-      setSelection(new Set());
-      await load();
-    },
-    [load],
-  );
+  // ⚠ THE CONFIRM PLAN HANDLER WENT IN SLICE 6 (2026-09-15). The button is gone
+  // with the Draft / Confirmed words: entering a vehicle is what moves a trip out
+  // of draft now, on the SERVER, inside the create and PATCH routes
+  // (app/api/floor/trips/route.ts, …/[id]/route.ts). POST …/[id]/confirm still
+  // exists and has no caller on this screen.
 
   /**
-   * Mark a released trip's CHECKED bills dispatched. Repeatable through the day.
+   * Mark an open trip's CHECKED bills dispatched. Repeatable through the day.
    *
-   * 🔴 THE PRESS RELEASE USED TO DO, SEPARATED OUT (2026-09-14). Confirm plan
-   * settles the trip; this says the goods have gone. They were one
-   * button until today, so the single morning press shipped whatever was already
-   * checked and nothing could ship afterwards.
+   * 🔴 THE PRESS RELEASE USED TO DO, SEPARATED OUT (2026-09-14). This says the
+   * goods have gone. Since slice 6 it is offered on EVERY open trip, draft or
+   * not — a trip that never gets a vehicle still has to be able to record its
+   * load leaving.
    *
-   * ⚠ THE CONFIRM STAYS HERE AND CAME OFF `releaseTrip`. This is the terminal
+   * ⚠ THE window.confirm STAYS HERE. This is the terminal
    * one — the only undo is hand-written SQL — and a prompt in front of an
    * ordinary press is a prompt the hand learns to dismiss. It names the count and
    * the consequence, never "are you sure" (the house pattern:
@@ -1719,7 +1687,10 @@ export function FloorPage() {
               onToggleAll={onToggleAll}
               onMarkUrgent={rowMarkUrgent}
               tripBusyId={tripBusyId}
-              onReleaseTrip={(id) => void releaseTrip(id)}
+              // The page's All / Local / Upcountry / IGT scope, for the RAIL
+              // (slice 6). The rail filters trips by their own delivery type;
+              // it adds no tabs of its own.
+              scope={scope}
               onChangeVehicle={(id) => void openVehicleEditor(id)}
               onCancelTrip={(id) => void cancelTrip(id)}
               onDispatchTrip={(id) => void dispatchTrip(id)}

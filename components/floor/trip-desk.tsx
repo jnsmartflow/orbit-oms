@@ -3,10 +3,10 @@
 // Floor Control — THE TRIP DESK. The whole Floor tab: rail on the left, bills in
 // the middle (v3 mockup).
 //
-// 🔴 IT REPLACES floor-board.tsx's Floor-tab rendering. That file is NOT deleted
-// — archiving is a later step — it simply stops being rendered. What went with
-// it, and why (v3 §04): the slot tabs (the trips are already grouped by slot on
-// the rail), By picker (unreachable since 2026-08-27 anyway), By group, the
+// 🔴 IT REPLACED floor-board.tsx's Floor-tab rendering, and that file was
+// deleted in slice 6 (2026-09-15). What went with it, and why (v3 §04): the
+// slot tabs (the slot is a chip on each rail card since slice 6), By picker
+// (unreachable since 2026-08-27 anyway), By group, the
 // At-desk pool block, and the decision rail with its cards, slot picker and
 // suggestion layer. All of them existed because the desk used to assign pickers
 // and choose slots by hand. It does neither now.
@@ -44,7 +44,7 @@ import {
   sumWeightKg,
 } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
-import type { FloorBoardResult, FloorBoardRow } from "@/lib/floor/types";
+import type { FloorBoardResult, FloorBoardRow, FloorScope } from "@/lib/floor/types";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -113,7 +113,7 @@ export function TripDesk({
   onMarkUrgent,
   onOpenDetail,
   tripBusyId,
-  onReleaseTrip,
+  scope,
   onChangeVehicle,
   onCancelTrip,
   onDispatchTrip,
@@ -141,10 +141,11 @@ export function TripDesk({
   onMarkUrgent: (id: number) => void;
   onOpenDetail: (id: number) => void;
   tripBusyId: number | null;
-  onReleaseTrip: (tripId: number) => void;
+  /** The page's delivery-type scope. The rail filters trips by it (slice 6). */
+  scope: FloorScope;
   onChangeVehicle: (tripId: number) => void;
   onCancelTrip: (tripId: number) => void;
-  /** Mark a released trip's checked bills dispatched. Repeatable through the day. */
+  /** Mark an open trip's checked bills dispatched. Repeatable through the day. */
   onDispatchTrip: (tripId: number) => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
   activeTab: "floor" | "tinting" | "hold" | "cancelled";
@@ -550,7 +551,6 @@ export function TripDesk({
           trip={selectedTrip}
           busy={tripBusyId === selectedTrip.id}
           readOnly={isHistory}
-          onRelease={() => onReleaseTrip(selectedTrip.id)}
           onAddBills={() => onSelectRail({ kind: "pool" })}
           onChangeVehicle={() => onChangeVehicle(selectedTrip.id)}
           onCancelTrip={() => onCancelTrip(selectedTrip.id)}
@@ -648,6 +648,7 @@ export function TripDesk({
         trips={trips}
         loading={tripsLoading}
         anchorIso={floor.date}
+        scope={scope}
         poolCount={poolRows.length + poolUpcoming.length}
         poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
         selection={railSelection}

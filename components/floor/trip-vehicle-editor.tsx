@@ -26,7 +26,7 @@ import type {
   DispatchWindowOption,
   TransporterOption,
   VehicleOption,
-} from "./build-trip-drawer";
+} from "./trip-options";
 import type { TripSummary } from "@/lib/trips/queries";
 
 const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-1.5";
@@ -155,7 +155,7 @@ export function TripVehicleEditor({
                 if (v !== "adhoc") setAdhocVehicleNo("");
               }}
             >
-              <option value="">Not known yet — draft vehicle</option>
+              <option value="">Not set</option>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.vehicleNo}

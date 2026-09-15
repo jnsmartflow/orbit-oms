@@ -3410,13 +3410,13 @@ model trip_drops {
 //   'renamed' added 2026-09-15 (slice 5) for the one-off migration that renamed
 //   already-cancelled trips to <number>-C.
 //
-// ⚠ 'dispatched' IS A TEMPORARY WRITER; 'released' NO LONGER IS. Slice 4
-// deletes Mark dispatched and its writer goes with it. Slice 3 (2026-09-14)
-// deleted the release route but kept the press: Confirm plan
-// (POST /api/floor/trips/[id]/confirm) still writes 'released' until slice 6.
-// Every ACTION stays in the vocabulary so historic rows keep rendering — a log
-// that stops explaining its own old rows is worse than one that carries retired
-// verbs.
+// ⚠ BOTH 'dispatched' AND 'released' ARE STILL WRITTEN. Slice 4 was dropped and
+// Mark dispatched stays. Since slice 6 (2026-09-15) 'released' comes from
+// POST …/confirm (no floor caller) and the slice 6 migration; a vehicle set in
+// the create / PATCH routes records the move as `confirmed: true` in its own
+// row's detail. Every ACTION stays in the vocabulary so historic rows keep
+// rendering — a log that stops explaining its own old rows is worse than one
+// that carries retired verbs.
 // ─────────────────────────────────────────────────────────────────────────────
 model trip_activity {
   id        Int      @id @default(autoincrement())

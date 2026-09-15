@@ -48,7 +48,16 @@ export const TRIP_CANCELLED = "cancelled";
  *   1. the day's own trips — `tripDate = deskDate`.
  *   2. the CARRIED arm — an open draft from any earlier day. A trip nobody
  *      finished planning does not stop existing at midnight; it is still the
- *      planner's to confirm or cancel, so it follows him forward.
+ *      planner's to settle or cancel, so it follows him forward.
+ *
+ * 🔴 WHAT "DRAFT" MEANS SINCE SLICE 6 (2026-09-15): a trip with NO VEHICLE that
+ * has not been dispatched or cancelled. Setting a vehicle moves a trip out of
+ * draft on the server (create and PATCH routes); there is no Confirm press any
+ * more. A BRIDGE — slice 10 replaces this arm with a rule based on the bills
+ * inside. Known gaps recorded for it in FLOOR-TO-FLOOR-DISCOVERY.md: a released
+ * trip with bills still to go drops off (U-260912-05), 27 released trips from
+ * 2026-09-12 never closed, and an EMPTY old trip gives a bill-based rule
+ * nothing to test.
  *
  * ⚠ `draft` BY NAME, never `status NOT IN (...)`. A sixth value added to
  * `chk_trips_status` must be an explicit decision to carry or not to carry,

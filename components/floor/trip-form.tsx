@@ -2,8 +2,18 @@
 
 // Floor Control — the small New trip form (v3 mockup §01, "New trip").
 //
-// Delivery type, slot, vehicle or ad-hoc plate, transporter, note. Creates an
-// EMPTY draft; bills are added from the pool afterwards.
+// Delivery type, slot, vehicle or ad-hoc plate, transporter, note. Delivery
+// type is the ONLY required field — it is the letter in the trip number — and it
+// is pre-filled when every ticked bill agrees. Everything else is optional, and
+// so are bills.
+//
+// 🔴 AN EMPTY TRIP IS VALID (owner, slice 6, 2026-09-15). The floor plans
+// trucks before the bills exist, so "+ New trip" with nothing ticked creates an
+// empty trip and bills are added later. Do NOT add an "at least one bill" rule
+// here or in POST /api/floor/trips.
+//
+// ⚠ A VEHICLE ON THE FORM MOVES THE TRIP OUT OF DRAFT, on the server (the create
+// route writes `released` and its stamps). Nothing on screen names that state.
 //
 // ⚠ IT REPLACES build-trip-drawer.tsx ON THIS SCREEN. That drawer was built
 // around a selection — it summarised the ticked bills by route and created the
@@ -29,7 +39,7 @@ import type {
   DispatchWindowOption,
   TransporterOption,
   VehicleOption,
-} from "./build-trip-drawer";
+} from "./trip-options";
 
 const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-1.5";
 const INPUT =
@@ -200,14 +210,14 @@ export function TripForm({
                 ))}
               </select>
               {/* ⚠ THIS SAID "A trip cannot be released without one" UNTIL
-                  2026-09-13, AND THAT IS NOW FALSE — the slot gate on Confirm
-                  is gone, and a slot-less trip confirms and dispatches like any
-                  other. The hint says what the slot IS for instead of what it
-                  used to block. The "Not set" default is deliberate and stays:
-                  the slot is optional. */}
+                  2026-09-13, and then "the rail groups trips by slot, so this
+                  one sits under No slot yet" until slice 6 (2026-09-15) — both
+                  now false. The rail has no groups; a set slot is a chip on the
+                  card. The "Not set" default is deliberate and stays: the slot
+                  is optional. */}
               {dispatchWindowId === "" && (
                 <p className="mt-1 text-[10.5px] text-gray-400">
-                  Optional — the rail groups trips by slot, so this one sits under &ldquo;No slot yet&rdquo;.
+                  Optional — shown as a chip on the trip card once set.
                 </p>
               )}
             </div>
@@ -225,7 +235,7 @@ export function TripForm({
                 if (v !== "adhoc") setAdhocVehicleNo("");
               }}
             >
-              <option value="">Not known yet — draft vehicle</option>
+              <option value="">Not set</option>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.vehicleNo}

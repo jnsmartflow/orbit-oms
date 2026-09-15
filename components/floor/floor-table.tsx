@@ -913,7 +913,10 @@ export function FloorTable({
               the board: no empty space, no dash, no placeholder. */}
           {row.tripNumber && (
             <span
-              title={`On trip ${row.tripNumber}${row.tripStatus ? ` · ${row.tripStatus}` : ""}`}
+              // Just the number (slice 6). This appended the RAW stored status —
+              // "· draft", "· released" — the one place the column's own word
+              // reached the floor. Those words are off the screen now.
+              title={`On trip ${row.tripNumber}`}
               className="ml-1.5 rounded-[3px] bg-gray-900 px-[5px] py-px align-[1px] font-mono text-[9.5px] font-semibold text-white"
             >
               {shortTripNumber(row.tripNumber)}

@@ -219,6 +219,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     transporterId = suppliedTransporterId.value ?? vehicle.transporterId;
   }
 
+  // ── A VEHICLE MOVES THE TRIP OUT OF DRAFT (slice 6, 2026-09-15) ───────────
+  //
+  // 🔴 A BRIDGE UNTIL SLICE 10. The Confirm plan press left the screen with the
+  // Draft / Confirmed words, and entering a vehicle is what does its job now: a
+  // trip created WITH a master vehicle or an ad-hoc plate is born `released`,
+  // with both stamps. The stored status still matters for exactly one rule —
+  // lib/trips/live-trips.ts carries a `draft` onto later days — and slice 10
+  // replaces that rule with one based on the bills inside.
+  //
+  // ⚠ AN EMPTY TRIP IS VALID, WITH OR WITHOUT A VEHICLE. No bill count is read
+  // here and none may be added: the floor plans trucks before the bills exist.
+  const bornWithVehicle = vehicleId.value !== null || adhoc.value !== null;
+
   // ── Allocate + insert, retrying once on the number race ───────────────────
   // The allocator owns the number and nothing else; this callback owns the row.
   // A P2002 on either unique is caught inside and retried once — see
@@ -240,9 +253,11 @@ export async function POST(req: Request): Promise<NextResponse> {
           driverPhone,
           transporterTripNo: transporterTripNo.value,
           note: note.value,
-          // chk_trips_status admits draft|released|loading|dispatched|cancelled.
-          // A trip always starts at the desk.
-          status: "draft",
+          // chk_trips_status admits draft|released|dispatched|cancelled. A trip
+          // with a vehicle starts `released`; without one, `draft` (see above).
+          ...(bornWithVehicle
+            ? { status: "released", releasedAt: new Date(), releasedById: createdById }
+            : { status: "draft" }),
           createdById,
         },
         select: { id: true, tripNumber: true, tripDate: true, typeCode: true, seq: true, status: true },
@@ -278,6 +293,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       vehicleLabel,
       windowLabel: createdWindow?.windowTime ?? null,
       reusedFrom,
+      confirmed: bornWithVehicle,
     });
 
     return NextResponse.json(

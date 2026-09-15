@@ -64,13 +64,15 @@ export const TRIP_CANCELLED_ACTION = "cancelled";
 export const TRIP_RENAMED = "renamed";
 
 /**
- * ⚠ `dispatched` IS A TEMPORARY WRITER; `released` NO LONGER IS.
+ * ⚠ BOTH ARE STILL WRITTEN, AND THIS NOTE WAS WRONG TWICE BEFORE.
  *
- * Slice 4 deletes Mark dispatched, and the `dispatched` writer vanishes with
- * the route it lives in. `released` was planned the same way, but slice 3
- * (2026-09-14) replaced the release route with a trips-only Confirm plan
- * (POST /api/floor/trips/[id]/confirm), which still writes it — until slice 6
- * retires the Draft / Confirmed words.
+ * `dispatched` — Mark dispatched STAYS (the owner dropped slice 4 on
+ * 2026-09-15: recording the truck leaving is out of this rebuild's scope).
+ * `released` — POST /api/floor/trips/[id]/confirm still writes it, but has no
+ * caller on the floor screen since slice 6: a vehicle now moves a trip out of
+ * draft inside the create and PATCH routes, which record it as
+ * `confirmed: true` in their own rows' detail rather than as a `released` row.
+ * The slice 6 migration's rows also use `released`.
  *
  * 🔴 THE ACTIONS STAY IN THIS LIST AFTERWARDS, and must stay in the CHECK too.
  * Rows written today outlive their writers, and a log that stops explaining its
@@ -170,6 +172,12 @@ export async function logTripCreated(opts: {
    * on a number used for the first time, and then the summary says nothing.
    */
   reusedFrom?: string[];
+  /**
+   * True when the trip was created with a vehicle and therefore born out of
+   * draft (slice 6). A FACT IN `detail`, never a word in the summary — the
+   * Draft / Confirmed vocabulary is off the screen.
+   */
+  confirmed?: boolean;
 }): Promise<void> {
   const where = opts.vehicleLabel ? ` · ${opts.vehicleLabel}` : " · no vehicle yet";
   const when = opts.windowLabel ? ` · ${opts.windowLabel}` : " · no slot yet";
@@ -187,6 +195,7 @@ export async function logTripCreated(opts: {
       vehicleLabel: opts.vehicleLabel,
       windowLabel: opts.windowLabel,
       ...(reusedFrom.length > 0 ? { reusedFrom } : {}),
+      ...(opts.confirmed ? { confirmed: true } : {}),
     },
   });
 }
@@ -240,6 +249,12 @@ export async function logTripVehicleChanged(opts: {
    * looking for transporter moves finds both.
    */
   transporter?: TripDetailChange;
+  /**
+   * True when THIS vehicle change moved the trip out of draft (slice 6,
+   * 2026-09-15). Owner's wording rule: `confirmed: true` in this row's detail,
+   * and NO separate "confirmed" line in the history.
+   */
+  confirmed?: boolean;
 }): Promise<void> {
   const from = opts.from ?? "none";
   const to = opts.to ?? "none";
@@ -257,17 +272,20 @@ export async function logTripVehicleChanged(opts: {
     action: TRIP_VEHICLE_CHANGED,
     actorId: opts.actorId,
     summary,
-    detail: opts.transporter
-      ? {
-          from: opts.from,
-          to: opts.to,
-          transporter: {
-            field: opts.transporter.field,
-            from: opts.transporter.from,
-            to: opts.transporter.to,
-          },
-        }
-      : { from: opts.from, to: opts.to },
+    detail: {
+      from: opts.from,
+      to: opts.to,
+      ...(opts.transporter
+        ? {
+            transporter: {
+              field: opts.transporter.field,
+              from: opts.transporter.from,
+              to: opts.transporter.to,
+            },
+          }
+        : {}),
+      ...(opts.confirmed ? { confirmed: true } : {}),
+    },
   });
 }
 
