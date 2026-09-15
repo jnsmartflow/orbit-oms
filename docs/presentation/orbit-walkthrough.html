@@ -666,7 +666,7 @@ body.focus .device{box-shadow:0 24px 60px rgba(27,24,38,.34)}
    The band is a FIXED height so the phone cannot move when a sentence arrives
    or leaves; the two lines inside it are absolutely placed. */
 .phoneslot{display:flex;flex-direction:column;align-items:center;justify-content:center}
-.underphone{position:relative;width:100%;flex:0 0 auto;height:calc(3.6vw + 26px)}
+.underphone{position:relative;width:100%;flex:0 0 auto;height:calc(2.6vw + 18px)}
 /* centred by margins, not a transform — the entrance animation owns transform */
 .subcap{position:absolute;left:0;right:0;top:.75vw;width:26ch;max-width:100%;margin:0 auto;
   font-size:1.36vw;line-height:1.3;font-weight:500;color:var(--ink);text-align:center}
@@ -739,67 +739,54 @@ body.focus .device{pointer-events:auto}
 .dk-h[data-f="1"],.dk-s[data-f="1"]{animation:capIn .3s ease-out both}
 .dk-h[data-f="0"],.dk-s[data-f="0"]{animation:capIn2 .3s ease-out both}
 
-/* ── the bridge ──────────────────────────────────────────────────────────────
-   1 · the message is drawn in: it shrinks into the centre of the screen it is
-       going to, while the phone shrinks away.
-   2 · the line travels: the dot and gradient tail of the app's opening motion,
-       alone on white — no wordmark, no rule, no name.
-   3 · the desk is there. The app swaps its opening screen for the loaded screen
-       with no transition — the loading branch simply stops rendering — so the
-       desk replaces the splash the same way. */
-.dk-mail{position:absolute;z-index:6;opacity:0;pointer-events:none;transform-origin:50% 50%;transition:opacity .3s ease}
+/* ── the bridge: the order arriving ──────────────────────────────────────────
+     0.00–0.30s  the message loses its card: border, shadow, fill and the
+                 To/Subject header go; only the text is left, where it was
+     0.35–1.15s  the text condenses into a point, turning brand violet as it goes
+     1.03–1.15s  the dot appears on that point while the last of the text is on it
+     1.15–1.85s  the dot runs to the desk's right edge, its gradient tail behind it;
+                 the headline lands as it sets off
+     1.85–2.75s  the dot's arrival turns the page: the desk swings in on that edge
+   2.75s in all. Dot size, easing and tail gradient are the app's opening motion's.
+   Nothing on this path has a border. */
+.dk-mail{position:absolute;z-index:6;opacity:0;pointer-events:none}
 .dk-mail .mail{max-width:none}
+.dk-mail .mb{transform-origin:50% 50%}
 .dk-phone{position:absolute;z-index:3;opacity:0;pointer-events:none;transform-origin:0 50%;transition:opacity .3s ease}
 .dk-phone .phoneslot{display:block}
 .dk[data-bridge="from"] .dk-mail,.dk[data-bridge="from"] .dk-phone{opacity:1;transform:none}
 .dk[data-bridge="run"] .dk-phone{opacity:0;transform:translate(-140px,24px) scale(.22);
   transition:transform .5s cubic-bezier(.4,0,.2,1),opacity .35s ease .15s}
-.dk[data-bridge="run"] .dk-mail{opacity:0;transform:translate(var(--dk-dx,0px),var(--dk-dy,0px)) scale(.04);
-  transition:transform .45s cubic-bezier(.4,0,.2,1),opacity .25s ease .2s}
-.dk-wrap{position:absolute;z-index:2;overflow:hidden;opacity:1;transition:opacity .35s ease}
-.dk[data-bridge="from"] .dk-wrap,
-.dk[data-bridge="run"]:not([data-splash="off"]) .dk-wrap{opacity:0;transition:none}
-.dk[data-bridge="run"][data-splash="off"] .dk-wrap{opacity:1;transition:none}
-/* The app itself swaps its loading screen for the loaded one with no transition.
-   On a projector that reads as a glitch, so the deck lays the desk down under the
-   opening screen and fades the opening screen off it: 240ms, and only on the way
-   in — arriving back on the bridge with Back shows the desk at once. */
-.dk[data-bridge="run"][data-splash="off"] .dk-splash{display:flex;opacity:0;transition:opacity .24s ease-out}
+.dk[data-bridge="run"] .dk-mail{opacity:1}
+.dk[data-bridge="run"] .dk-mail .mail{border-color:transparent;box-shadow:none;background-color:transparent;
+  transition:border-color .3s ease,box-shadow .3s ease,background-color .3s ease}
+.dk[data-bridge="run"] .dk-mail .mh{opacity:0;transition:opacity .25s ease}
+.dk[data-bridge="run"] .dk-mail .mb{transform:scale(.012);color:#7C3AED;opacity:0;
+  transition:transform .8s cubic-bezier(.6,0,.8,.25) .35s,color .45s ease .35s,opacity .12s linear 1.03s}
+
+.dk-trail{position:absolute;z-index:7;display:none;pointer-events:none}
+.dk[data-bridge="run"] .dk-trail{display:block}
+.dk-trail-tail{position:absolute;inset:0;border-radius:999px;transform-origin:left center;transform:scaleX(0);
+  background:linear-gradient(90deg, rgba(124,58,237,0) 0%, #7C3AED 100%)}
+.dk-trail-dot{position:absolute;left:0;border-radius:999px;background:#7C3AED;opacity:0}
+/* the app's dot keyframes, entered already visible so the text hands straight over */
+@keyframes dkDotIn  { from { opacity:0 } to { opacity:1 } }
+@keyframes dkDotRun { 0% { left:0; opacity:1 } 88% { opacity:1 } 100% { left:100%; opacity:0 } }
+@keyframes dkTailGrow { from { transform:scaleX(0) } to { transform:scaleX(1) } }
+@keyframes dkTailFade { to { opacity:0 } }
+.dk[data-bridge="run"] .dk-trail-dot{animation:dkDotIn .12s linear 1.03s both, dkDotRun .7s cubic-bezier(.3,0,.25,1) 1.15s forwards}
+.dk[data-bridge="run"] .dk-trail-tail{animation:dkTailGrow .7s cubic-bezier(.3,0,.25,1) 1.15s both, dkTailFade .16s ease-in 1.75s forwards}
+
+/* the page turn — hinged on the edge the dot arrives at, swinging in from edge-on */
+.dk-wrap{position:absolute;z-index:2;overflow:hidden;opacity:1;transform-origin:100% 50%}
+@keyframes dkTurn { 0% { opacity:0; transform:perspective(2200px) rotateY(-90deg) }
+                    2% { opacity:1; transform:perspective(2200px) rotateY(-88deg) }
+                    100% { opacity:1; transform:perspective(2200px) rotateY(0deg) } }
+.dk[data-bridge="from"] .dk-wrap{opacity:0}
+.dk[data-bridge="run"] .dk-wrap{animation:dkTurn .9s cubic-bezier(.2,.8,.2,1) 1.85s both}
+/* the headline lands as the dot sets off, not before */
+.dk[data-bridge="run"] .dk-h,.dk[data-bridge="run"] .dk-s{animation-delay:1.15s}
 .dk-nomotion *{transition:none!important}
-
-/* The travelling line on white. In the app the strip runs the width of the
-   wordmark (102px at the splash's 33.8px ink); it keeps that length here, with
-   no wordmark over it. */
-.dk-splash{position:absolute;z-index:5;display:none;align-items:center;justify-content:center;
-  background:#fff;border:1px solid #e5e7eb;overflow:hidden}
-.dk[data-bridge="run"][data-splash="on"] .dk-splash{display:flex}
-.dk-splash-scale{transform-origin:50% 50%}
-.dk-splash-cluster{position:relative;width:102px;height:3px}
-
-/* 🔴 LIFTED VERBATIM from the app's opening motion ("Trail"): the dot and the
-   tail — keyframes, durations, delays, easings, sizes and the gradient — are the
-   app's. The wordmark's rise and the solid rule are left out on purpose. Only
-   the identifiers are renamed, to this deck's own prefix. */
-@keyframes dkSplashRun  { 0%   { left:0;    opacity:0 }
-                          12%  { opacity:1 }
-                          88%  { opacity:1 }
-                          100% { left:100%; opacity:0 } }
-@keyframes dkSplashTail { from { transform:scaleX(0) } to { transform:scaleX(1) } }
-@keyframes dkSplashFade { to   { opacity:0 } }
-
-.dk-splash-fx   { position:absolute; left:0; right:0; top:0; height:3px }
-.dk-splash-tail { position:absolute; inset:0; border-radius:999px;
-                  transform-origin:left center;
-                  background:linear-gradient(90deg, rgba(124,58,237,0) 0%, #7C3AED 100%);
-                  animation: dkSplashTail .42s cubic-bezier(.3,0,.25,1) .10s both,
-                             dkSplashFade .16s ease-in .44s forwards }
-.dk-splash-dot  { position:absolute; top:-1.5px; left:100%; width:6px; height:6px;
-                  margin-left:-6px; border-radius:999px; background:#7C3AED; opacity:0;
-                  animation: dkSplashRun .42s cubic-bezier(.3,0,.25,1) .10s both }
-@media (prefers-reduced-motion: reduce) {
-  .dk-splash-dot, .dk-splash-tail { animation: none }
-  .dk-splash-dot, .dk-splash-tail { opacity: 0 }
-}
 
 /* ── the canvas ── */
 .dk-canvas{position:absolute;left:0;top:0;width:1680px;height:680px;transform-origin:0 0;
@@ -808,7 +795,8 @@ body.focus .device{pointer-events:auto}
 .dk-canvas button{cursor:default}
 .dk-desk{position:absolute;inset:0;display:flex;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;
   transform-origin:0 50%;transform:none;transition:transform .7s cubic-bezier(.2,.8,.2,1)}
-.dk[data-grid="1"] .dk-desk{transform:translateX(-337px) scale(.86)}
+/* the paste beats slide the desk aside WITHOUT shrinking it: the table keeps its size */
+.dk[data-grid="1"] .dk-desk{transform:translateX(-400px)}
 
 /* sidebar — collapsed, 72px */
 .dk-side{flex:0 0 72px;border-right:1px solid #e5e7eb;display:flex;flex-direction:column;background:#fff}
@@ -1007,6 +995,81 @@ body.focus .device{pointer-events:auto}
 .dk-closeline{margin:clamp(26px,2.4vw,40px) auto 0;max-width:34ch;font-size:clamp(20px,1.9vw,30px);line-height:1.35;
   font-weight:600;letter-spacing:-.015em;color:var(--ink)}
 
+/* ══ READABLE IN A LAPTOP WINDOW ══════════════════════════════════════════════
+   This deck is opened alone, in a browser window that is often not full screen.
+   The desk is therefore drawn at 1520×528 rather than a monitor's 1680×680, so it
+   scales close to 1:1 in a laptop window, and its type is set on a presentation
+   scale — larger than the live screen's 11px against the same row heights — so
+   the rendered text clears 11px in a 1280×600 content area. ALT SKU, empty on
+   every row, is dropped; its width goes to RAW TEXT and DESCRIPTION. */
+.dk-canvas{width:1520px;height:528px;font-size:15px}
+.dk-grid{width:400px;height:528px}
+.dk-card{min-height:100px}
+.dk-card .cap{font-size:11px}
+.dk-card .nm b{font-size:17px}
+.dk-card .dt{font-size:13.5px}
+.dk-card .dt .rg{font-size:13px}
+.dk-chip{font-size:13px}
+.dk-rhead .in{font-size:12px}
+.dk-orow .nm{font-size:16px}
+.dk-orow .tm,.dk-orow .so{font-size:13px}
+.dk-orow .pb{font-size:12px}
+.dk[data-punched="1"] .dk-orow .pb.live{max-height:20px}
+.dk-pdiv{font-size:12px}
+.dk-prov{font-size:13px}
+.dk-btn{height:30px;padding:0 10px;font-size:12.5px}
+.dk-so,.dk-soedit,.dk-sodone{height:34px}
+.dk-so{width:300px}
+.dk-sofield .cap{font-size:12px}
+.dk-sov{width:112px;height:32px}
+.dk-sov span{line-height:32px}
+.dk-sov .dk-ph{font-size:13px}
+.dk-sov .num{font-size:15px}
+.dk-punch{height:34px;font-size:13.5px}
+.dk-pill b{font-size:15px}
+.dk-tcap{font-size:13px;line-height:19px}
+.dk-ready{height:19px;font-size:12px}
+.dk-t th{font-size:12px}
+.dk-long b{font-size:10.5px}
+.dk-t td{font-size:14.5px}
+.dk-t th,.dk-t td{padding-left:10px;padding-right:10px}
+.dk-t td.pk,.dk-t td.q,.dk-t td.v,.dk-t th.c,.dk-t th.r{padding-left:6px;padding-right:6px}
+.dk-foot .nb,.dk-foot .pos{font-size:12.5px}
+.dk-foot .hints{font-size:11px}
+.dk-toast{font-size:15px}
+.dk-gbar .t{font-size:14px}
+.dk-gno{font-size:12.5px}
+.dk-gno .box{height:28px}
+.dk-gno .box span{font-size:14.5px;line-height:26px}
+.dk-gt th{font-size:12.5px;height:32px}
+.dk-gt td{font-size:14.5px;height:34px}
+.dk-gt th:first-child,.dk-gt td:first-child{font-size:12px}
+
+/* A very short window: slide 2's comparison rows close up so all three fit. */
+@media (max-height: 620px) {
+  .sec.s2 h1{font-size:clamp(24px,2.4vw,34px);margin-bottom:10px}
+  .cmp2{margin-top:6px}
+  .cmp2 .ch{padding-bottom:8px}
+  .cmp2 .cr{padding:14px 0}
+}
+
+/* A short window gives the chrome less of its height. */
+@media (max-height: 700px) {
+  .top{height:36px}
+  .bottom{height:44px}
+  .dk-head{top:12px}
+  .dk-head .accent{margin-bottom:8px}
+  .dk-h{font-size:clamp(22px,2vw,30px)}
+  .dk-s{margin-top:3px;font-size:15px}
+}
+
+/* Full screen, offered plainly — this viewer has nobody to tell them. */
+.fsbtn{display:inline-flex;align-items:center;gap:8px;margin-left:6px;padding:6px 12px;border-radius:10px;
+  border:1.5px solid var(--rule);font-size:13.5px;font-weight:600;color:var(--body);background:#fff}
+.fsbtn:hover{border-color:var(--brand);color:var(--violet)}
+.fsbtn kbd{font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 6px;border-radius:5px;
+  background:var(--fill);color:var(--muted);border:1px solid var(--rule)}
+
 @media (prefers-reduced-motion: reduce){
   .sec.dk *,.sec.dk *::before,.sec.dk *::after{transition:none!important;animation:none!important}
 }
@@ -1102,7 +1165,7 @@ body.focus .device{pointer-events:auto}
 
     <!-- 5 · the bridge, then the billing desk — one section, seven steps -->
     <section class="sec dk" id="dk" data-on="0" data-phone="1" data-small="1" data-scene="sent" data-desk="1"
-      data-step="0" data-bridge="done" data-splash="off" data-open="0" data-copied="0" data-toast="0" data-grid="0" data-num="0" data-punched="0">
+      data-step="0" data-bridge="done" data-open="0" data-copied="0" data-toast="0" data-grid="0" data-num="0" data-punched="0">
       <div class="dk-head" id="dkHead"><div class="accent"></div><p class="dk-h" id="dkH" data-f="1"></p><p class="dk-s" id="dkS" data-f="1"></p></div>
 
       <div class="dk-mail" id="dkMail" aria-hidden="true">
@@ -1117,13 +1180,7 @@ body.focus .device{pointer-events:auto}
 
       <div class="dk-phone" id="dkPhone"><div class="phoneslot"></div></div>
 
-      <div class="dk-splash" id="dkSplash" aria-hidden="true">
-        <div class="dk-splash-scale" id="dkSplashScale">
-          <div class="dk-splash-cluster">
-            <div class="dk-splash-fx"><span class="dk-splash-tail"></span><span class="dk-splash-dot"></span></div>
-          </div>
-        </div>
-      </div>
+      <div class="dk-trail" id="dkTrail" aria-hidden="true"><span class="dk-trail-tail"></span><span class="dk-trail-dot" id="dkTrailDot"></span></div>
 
       <div class="dk-wrap" id="dkWrap" aria-hidden="true">
         <div class="dk-canvas" id="dkCanvas">
@@ -1186,11 +1243,11 @@ body.focus .device{pointer-events:auto}
                   <div class="dk-tbox">
                     <table class="dk-t">
                       <colgroup>
-                        <col style="width:4%"><col style="width:20%"><col style="width:11%"><col style="width:8%"><col style="width:22%">
-                        <col style="width:5.5%"><col style="width:5.5%"><col style="width:5.5%"><col style="width:12%"><col style="width:6.5%">
+                        <col style="width:4%"><col style="width:24%"><col style="width:10%"><col style="width:32%">
+                        <col style="width:7%"><col style="width:5.5%"><col style="width:5%"><col style="width:6.5%"><col style="width:6%">
                       </colgroup>
                       <thead><tr>
-                        <th class="first">#</th><th>Raw Text</th><th class="wash">SKU Code</th><th class="alt">ALT SKU</th>
+                        <th class="first">#</th><th>Raw Text</th><th class="wash">SKU Code</th>
                         <th><span class="dk-long"><span>Description</span><b>long</b></span></th>
                         <th class="c">Pk</th><th class="r wash">Qty</th><th class="r">Vol</th><th class="c">Status</th><th class="last"></th>
                       </tr></thead>
@@ -1217,7 +1274,7 @@ body.focus .device{pointer-events:auto}
               <span class="dk-gno">Order no.<span class="box"><span class="dkSo"></span></span></span>
             </div>
             <table class="dk-gt">
-              <colgroup><col style="width:40px"><col><col style="width:170px"></colgroup>
+              <colgroup><col style="width:40px"><col><col style="width:130px"></colgroup>
               <thead><tr><th></th><th>Material</th><th class="r">Order quantity</th></tr></thead>
               <tbody id="dkGbody"></tbody>
             </table>
@@ -1238,6 +1295,7 @@ body.focus .device{pointer-events:auto}
   <footer class="bottom">
     <div style="display:flex;align-items:center;gap:6px">
       <button id="restart" class="ghost">Start over</button>
+      <button id="fsbtn" class="fsbtn" type="button"><span id="fslabel">Full screen</span><kbd>F</kbd></button>
     </div>
     <div class="dots" id="dots"></div>
     <div class="nav">
@@ -2424,6 +2482,11 @@ function render() { draw(); paintBeat(); }
 function clearBeatTimers() {
   beatTimers.forEach(function (t) { clearTimeout(t); });
   beatTimers = [];
+  /* The pink press marker is taken down by one of those timers. Cancelled, it
+     would stay on the phone for good, so it goes with them. */
+  var fx = document.getElementById("tapfx");
+  if (fx && fx.firstChild) fx.innerHTML = "";
+  Array.from(document.querySelectorAll("#ph .tapring")).forEach(function (el) { el.classList.remove("tapring"); });
   if (tweenId !== null) { cancelRaf(tweenId); tweenId = null; }
   if (paneId !== null) { cancelRaf(paneId); paneId = null; }
 }
@@ -2810,10 +2873,12 @@ function runProduct(i, capIndex) {
   setKey(3, 1);
   setLine(L.start);
   setProduct(null);
-  tweenScroll(famTop(d.fam), SCROLL_MS);
-  var t = SCROLL_MS + PAUSE_MS;
-  later(t, function () { revealDrawer(); setProduct(d, i); });
-  t += OPEN_MS;
+  /* find: the board scrolls to the product's family and its sheet rises */
+  later(PACE.LEAD, function () { tweenScroll(famTop(d.fam), SCROLL_MS); });
+  later(PACE.LEAD + SCROLL_MS + 100, function () { revealDrawer(); setProduct(d, i); });
+  /* choose: the line first, the option 0.4s later */
+  var t = PACE.LEAD + SCROLL_MS + 100 + OPEN_MS - PACE.LEAD;
+  later(t - PACE.LEAD, function () { setLine(L.pick); });
   later(t, function () {
     setKey(3, 2);
     /* 🔴 REPAINT, NOT JUST RE-TICK THE RAIL. selectOptInPlace only moves the
@@ -2824,18 +2889,18 @@ function runProduct(i, capIndex) {
        these did not. */
     if (d.opt) { doOpt(d.opt); repaintDrawerBody(); }
     addOption(d);
-    setLine(L.pick);
   });
-  t += PICK_MS;
-  later(t - 250, function () { setLine(L.tick); });
-  var fin = tickQtys(d, t, TICK_MS);
-  later(fin, function () { setLine(L.final); });
-  t = fin + TICK_MS;
-  later(t, function () { setKey(3, 3); markAt('[data-act="add"]'); });
-  later(t + Math.round(ADD_MS / 2), function () {
-    commitDrawer(d.key);
-    setLine(L.add);
-  });
+  /* the boxes: the tap line, then the presses */
+  var tTick = t - PACE.LEAD + PACE.READ;
+  later(tTick, function () { setLine(L.tick); });
+  tickQtys(d, tTick + PACE.LEAD, PACE.BOX);
+  /* the finished quantity holds, then the add */
+  var tFinal = tTick + PACE.READ;
+  later(tFinal, function () { setLine(L.final); });
+  var tAdd = tFinal + PACE.HOLD;
+  later(tAdd, function () { setLine(L.add); });
+  later(tAdd + PACE.LEAD - 100, function () { setKey(3, 3); markAt('[data-act="add"]'); });
+  later(tAdd + PACE.LEAD + 250, function () { commitDrawer(d.key); });
 }
 function placeProduct(i) {
   var d = DEMO[i];
@@ -2844,6 +2909,12 @@ function placeProduct(i) {
   fillSilently(d);
   doAdd();
 }
+
+/* ── the product beats' clock ────────────────────────────────────────────────
+   Paced for a viewer reading alone: every line of text stays at least ~2s, each
+   line arrives 0.4s BEFORE the thing it describes happens on the phone, boxes
+   land ~0.95s apart, and a finished quantity holds 2s before anything replaces it. */
+var PACE = { LEAD: 400, READ: 2200, BOX: 950, HOLD: 2000 };
 
 /* ── one beat ───────────────────────────────────────────────────────────── */
 function runBeat(n, anim) {
@@ -2862,7 +2933,7 @@ function runBeat(n, anim) {
     else if (n === 4) { doTab("shade"); doOpt(g0.opt); fillSilently(g0); }
     else if (n === 5) { doTab("base"); doOpt(g1.opt); fillSilently(g1); }
     else if (n === 6) { doAdd(); }
-    else if (n >= 7 && n <= 8) { placeProduct(n - 5); }
+    else if (n >= 7 && n <= 8) { placeProduct(n - 5); S.scroll = famTop(DEMO[n - 5].fam) || S.scroll; }
     else if (n === 9) { S.screen = "review"; S.scroll = 0; }
     else if (n === 10) {
       S.stars = toggleIn(S.stars, "347846");
@@ -2902,7 +2973,7 @@ function runBeat(n, anim) {
     S.screen = "board"; S.scroll = 0;
     stageDrawer(g0.key);
     render(); setKey(1, 1); setCap(3); setProduct(null);
-    press(900, function () { revealDrawer(); setProduct(g0, 0); });
+    press(PACE.LEAD, function () { revealDrawer(); setProduct(g0, 0); });
     return;
   }
 
@@ -2910,14 +2981,14 @@ function runBeat(n, anim) {
   if (n === 4) {
     S.drawerStage = "open"; render();
     setKey(2, 2); setCap(4);
-    later(500, function () {
+    later(PACE.LEAD, function () {
       doTab("shade"); doOpt(g0.opt);
       repaintDrawerBody(); setChipInPlace("tab", "shade");
       addOption(g0);
     });
-    later(500 + PICK_MS - 250, function () { setLine(PHONE_LINES[4].tick); });
-    var fin4 = tickQtys(g0, 500 + PICK_MS, TICK_MS);
-    later(fin4, function () { setLine(PHONE_LINES[4].final); });
+    later(PACE.READ, function () { setLine(PHONE_LINES[4].tick); });
+    var fin4 = tickQtys(g0, PACE.READ + PACE.LEAD, PACE.BOX);
+    later(PACE.READ * 2, function () { setLine(PHONE_LINES[4].final); });
     return;
   }
 
@@ -2925,14 +2996,14 @@ function runBeat(n, anim) {
   if (n === 5) {
     S.drawerStage = "open"; render();
     setKey(2, 2); setCap(5);
-    later(500, function () {
+    later(PACE.LEAD, function () {
       doTab("base"); doOpt(g1.opt);
       repaintDrawerBody(); setChipInPlace("tab", "base");
       addOption(g1);
     });
-    later(500 + PICK_MS - 250, function () { setLine(PHONE_LINES[5].tick); });
-    var fin5 = tickQtys(g1, 500 + PICK_MS, TICK_MS);
-    later(fin5, function () { setLine(PHONE_LINES[5].final); });
+    later(PACE.READ, function () { setLine(PHONE_LINES[5].tick); });
+    var fin5 = tickQtys(g1, PACE.READ + PACE.LEAD, PACE.BOX);
+    later(PACE.READ * 2, function () { setLine(PHONE_LINES[5].final); });
     return;
   }
 
@@ -2940,8 +3011,9 @@ function runBeat(n, anim) {
   if (n === 6) {
     S.drawerStage = "open"; render();
     setKey(3, 3); setCap(6);
-    later(700, function () { markAt('[data-act="add"]'); });
-    later(700 + Math.round(ADD_MS / 2), function () { commitDrawer(g0.key); setLine(PHONE_LINES[6].add); });
+    later(PACE.LEAD, function () { markAt('[data-act="add"]'); });
+    later(PACE.LEAD + Math.round(ADD_MS / 2), function () { commitDrawer(g0.key); });
+    later(PACE.READ, function () { setLine(PHONE_LINES[6].add); });
     return;
   }
 
@@ -3003,9 +3075,11 @@ function beatLength(n) {
   if (REDUCED) return 240;
   if (n === 1) return 1600;
   if (n === 2) return 2300 + SCROLL_MS + PAUSE_MS + SCROLL_MS;
-  if (n >= 3 && n <= 6) return 2800;
+  if (n === 3) return PACE.LEAD + OPEN_MS + 500;
+  if (n === 4 || n === 5) return PACE.READ * 2 + PACE.HOLD;
+  if (n === 6) return PACE.READ + PACE.HOLD;
   if (n >= 7 && n <= 8) {
-    return SCROLL_MS + PAUSE_MS + OPEN_MS + PICK_MS + TICK_MS * 2 + ADD_MS + SETTLE_MS;
+    return PACE.LEAD + SCROLL_MS + 100 + OPEN_MS + PACE.READ * 2 + PACE.HOLD + PACE.READ;
   }
   return 1800;
 }
@@ -3013,6 +3087,13 @@ function gotoBeat(n) {
   clearBeatTimers();
   n = Math.max(1, Math.min(BEATS, n));
   if (n === beat + 1 && !handedOver) {
+    /* 🔴 FINISH THE BEAT BEING LEFT, THEN START THIS ONE. The previous beat may
+       have been cut short — its pending steps were cancelled above — so its end
+       state is rebuilt synchronously from nothing, exactly as Back and a jump
+       rebuild it. Beat n therefore always starts from beat n-1 COMPLETED, whether
+       the viewer waited for the animation or pressed Next half way through it. */
+    reset();
+    for (var j = 1; j < n; j++) runBeat(j, false);
     beat = n;
     if (setStage(n)) fitNow();
     frozen = true;
@@ -3143,7 +3224,7 @@ function show(i) {
   if (name) scene(name); else paintMessage();
   if (idx === 0) replayOpening();
   var hn = document.querySelector(".hint");
-  if (hn) hn.textContent = sec.getAttribute("data-beats") ? "Press F for full screen." : "";
+  if (hn) hn.textContent = "";
   fitNow();
   dkShown();
 }
@@ -3154,7 +3235,7 @@ var DEVICE_W = 414;
 /* The band under the device — the sentence, then the hint. Fixed, so a
    sentence arriving or leaving can never move the phone. */
 /* Unrounded, so it is the same number the CSS band computes from calc(3.6vw + 26px). */
-function underH() { return window.innerWidth * 0.036 + 26; }
+function underH() { return window.innerWidth * 0.026 + 18; }
 var COPY_MIN = 420;
 /** Arriving on a slide measures once even though its first beat has begun. */
 function fitNow() { var f = frozen; frozen = false; fit(); frozen = f; }
@@ -3213,7 +3294,7 @@ document.addEventListener("keydown", function (e) {
   if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); goNext(); }
   else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); goPrev(); }
   else if (e.key === "n" || e.key === "N") { document.body.classList.toggle("notes"); fit(); }
-  else if (e.key === "f" || e.key === "F") { e.preventDefault(); setFocus(!inFocus()); }
+  else if (e.key === "f" || e.key === "F") { e.preventDefault(); toggleFullscreen(); }
   else if (e.key === "Escape") { if (inFocus()) setFocus(false); }
   else if (e.key === "Home") { e.preventDefault(); restart(); }
   else if (e.key === "End") show(secs.length - 1);
@@ -3225,15 +3306,13 @@ window.addEventListener("resize", fit);
    desk. The desk is built ONCE, below, from the very order the phone sends.
    dkRender() only sets attributes and text on nodes that already exist. */
 var DK_BEATS = 6;
-var DK_W = 1680, DK_H = 680, DK_TOP = 124;
+var DK_W = 1520, DK_H = 528;
 var dkSec = document.getElementById("dk");
 var dkIdx = secs.indexOf(dkSec);
 var dkStep = 0;
 var dkEnterAt = 0;          /* Back from the close lands on the last step, not the bridge */
 var dkFrom = null;          /* where the message and the phone were, when Next was pressed */
 var dkBridge = "done";
-var dkScale = 1;          /* the desk canvas scale, kept by dkFit */
-var dkSplash = "off";      /* the opening screen: wait (not up yet) | on | off */
 var dkFlip = 1;
 
 var DK_HEAD = [
@@ -3388,7 +3467,6 @@ DK_LINES.forEach(function (l, i) {
   tr.appendChild(dkEl("td", "first", String(i + 1)));
   tr.appendChild(dkEl("td", "raw", l.raw));
   tr.appendChild(dkEl("td", "sku wash", l.sku || "—"));
-  tr.appendChild(dkEl("td", "alt", "—"));
   tr.appendChild(dkEl("td", "ds", l.desc));
   tr.appendChild(dkEl("td", "pk", l.pk));
   tr.appendChild(dkEl("td", "q wash", String(l.qty)));
@@ -3402,7 +3480,7 @@ DK_LINES.forEach(function (l, i) {
 });
 
 var dkGbody = document.getElementById("dkGbody");
-for (var dkR = 0; dkR < 20; dkR++) {
+for (var dkR = 0; dkR < 14; dkR++) {
   var gtr = dkEl("tr"), gm = dkEl("td", "gm" + (dkR === 0 ? " cur" : "")), gq = dkEl("td", "gq");
   gtr.appendChild(dkEl("td", null, String(dkR + 1)));
   if (dkR < DK_COPIED.length) {
@@ -3441,7 +3519,6 @@ function dkRender() {
   s.setAttribute("data-num",     n >= 5 ? "1" : "0");
   s.setAttribute("data-punched", n >= 6 ? "1" : "0");
 
-  s.setAttribute("data-splash", n === 0 ? dkSplash : "off");
   /* Row 1 holds the focus through the punch, dims, then goes to done.
      Nothing else in the rail ever takes the focus. */
   dkRow1.setAttribute("data-state", n >= 6 ? "punched" : n >= 2 ? "focus" : "idle");
@@ -3459,7 +3536,7 @@ function dkRender() {
 function dkGo(n) {
   clearBeatTimers();
   dkStep = Math.max(0, Math.min(DK_BEATS, n));
-  dkBridge = "done"; dkSplash = "off";
+  dkBridge = "done";
   dkRender();
 }
 
@@ -3487,29 +3564,33 @@ function dkShown() {
     mail.style.left = dkFrom.ml + "px"; mail.style.top = dkFrom.mt + "px"; mail.style.width = dkFrom.mw + "px";
     ph.style.left = dkFrom.pl + "px"; ph.style.top = dkFrom.pt + "px";
     dkFrom = null;
-    /* where the message is drawn in to: the start of the line it then travels as */
-    var wr = document.getElementById("dkWrap");
-    var cx = wr.offsetLeft + wr.offsetWidth / 2 - (102 * 4 * dkScale) / 2, cy = wr.offsetTop + wr.offsetHeight / 2;
-    mail.style.setProperty("--dk-dx", Math.round(cx - (mail.offsetLeft + mail.offsetWidth / 2)) + "px");
-    mail.style.setProperty("--dk-dy", Math.round(cy - (mail.offsetTop + mail.offsetHeight / 2)) + "px");
+    /* the point the text condenses to is the centre of the text; the dot starts
+       there and runs to the desk's right edge, where the page is hinged */
+    var mb = mail.querySelector(".mb"), wr = document.getElementById("dkWrap");
+    var px0 = mail.offsetLeft + mb.offsetLeft + mb.offsetWidth / 2;
+    var py0 = mail.offsetTop + mb.offsetTop + mb.offsetHeight / 2;
+    var K = 2;                                           /* the app's 6px dot on a 3px strip, drawn at 2x */
+    var trail = document.getElementById("dkTrail"), dot = document.getElementById("dkTrailDot");
+    trail.style.left = Math.round(px0) + "px";
+    trail.style.top = Math.round(py0 - 1.5 * K) + "px";
+    trail.style.width = Math.max(40, Math.round(wr.offsetLeft + wr.offsetWidth - px0)) + "px";
+    trail.style.height = (3 * K) + "px";
+    dot.style.width = dot.style.height = (6 * K) + "px";
+    dot.style.top = (-1.5 * K) + "px";
+    dot.style.marginLeft = (-3 * K) + "px";
     dkSec.classList.add("dk-nomotion");
-    dkBridge = "from"; dkSplash = "wait";
+    dkBridge = "from";
     dkRender();
     /* One forced style read commits the start pose, so the run starts from it on
        the next line — no dependence on animation frames being delivered. */
     void dkSec.offsetWidth;
     dkSec.classList.remove("dk-nomotion");
-    dkBridge = "run"; dkSplash = "wait";   /* the desk stays hidden until the splash has played */
+    dkBridge = "run";      /* the whole 2.75s is CSS from here; nothing is timed in script */
     dkRender();
-    /* The line starts once the message is in (450ms). The dot and tail are done
-       by 600ms (the tail's fade ends at .44s + .16s); a short beat after, the
-       white fades off onto the desk. */
-    later(450, function () { dkSplash = "on"; dkRender(); });
-    later(450 + 600 + 250, function () { dkSplash = "off"; dkRender(); });
     return;
   }
   dkFrom = null;
-  dkBridge = "done"; dkSplash = "off";
+  dkBridge = "done";
   dkRender();
 }
 
@@ -3517,24 +3598,42 @@ function dkShown() {
 function dkFit() {
   if (secs[idx] !== dkSec) return;
   var W = dkSec.clientWidth, H = dkSec.clientHeight;
-  var sc = Math.min((W - 80) / DK_W, (H - DK_TOP - 14) / DK_H);
+  /* The desk takes everything under the headline. The band is measured, not
+     assumed, so a short laptop window loses no height to a fixed guess. */
+  var head = document.getElementById("dkHead");
+  var short = H < 600;
+  var top = head.offsetTop + head.offsetHeight + (short ? 8 : 14);
+  var side = W < 1400 ? 20 : 40, bottom = short ? 6 : 14;
+  var sc = Math.min((W - 2 * side) / DK_W, (H - top - bottom) / DK_H);
   if (!isFinite(sc) || sc <= 0) sc = 1;
   var w = DK_W * sc, x = Math.round((W - w) / 2);
   var wrapEl = document.getElementById("dkWrap");
-  wrapEl.style.left = x + "px"; wrapEl.style.top = DK_TOP + "px";
+  wrapEl.style.left = x + "px"; wrapEl.style.top = Math.round(top) + "px";
   wrapEl.style.width = Math.round(w) + "px"; wrapEl.style.height = Math.round(DK_H * sc) + "px";
   document.getElementById("dkCanvas").style.transform = "scale(" + sc + ")";
-  document.getElementById("dkHead").style.left = x + "px";
-  /* the white covers exactly the desk's screen; the line is drawn four times the
-     phone's size on this canvas, so it takes the share of the width it has there */
-  dkScale = sc;
-  var sp = document.getElementById("dkSplash");
-  sp.style.left = x + "px"; sp.style.top = DK_TOP + "px";
-  sp.style.width = Math.round(w) + "px"; sp.style.height = Math.round(DK_H * sc) + "px";
-  sp.style.borderRadius = Math.round(12 * sc) + "px";
-  document.getElementById("dkSplashScale").style.transform = "scale(" + (4 * sc) + ")";
+  head.style.left = x + "px";
 }
 window.addEventListener("resize", dkFit);
+
+/* ── full screen: the browser's own, from the button or F ── */
+function toggleFullscreen() {
+  var d = document, el = d.documentElement;
+  try {
+    if (d.fullscreenElement || d.webkitFullscreenElement) {
+      (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    } else {
+      var p = el.requestFullscreen ? el.requestFullscreen() : (el.webkitRequestFullscreen ? el.webkitRequestFullscreen() : null);
+      if (p && p.catch) p.catch(function () {});
+    }
+  } catch (e) {}
+}
+function paintFullscreen() {
+  var on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  document.getElementById("fslabel").textContent = on ? "Exit full screen" : "Full screen";
+}
+document.getElementById("fsbtn").addEventListener("click", function () { toggleFullscreen(); this.blur(); });
+document.addEventListener("fullscreenchange", paintFullscreen);
+document.addEventListener("webkitfullscreenchange", paintFullscreen);
 
 draw();
 show(0);
