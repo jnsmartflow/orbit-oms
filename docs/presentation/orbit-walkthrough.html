@@ -736,6 +736,11 @@ body.focus .device{pointer-events:auto}
 .dk[data-bridge="from"] .dk-wrap,
 .dk[data-bridge="run"]:not([data-splash="off"]) .dk-wrap{opacity:0;transition:none}
 .dk[data-bridge="run"][data-splash="off"] .dk-wrap{opacity:1;transition:none}
+/* The app itself swaps its loading screen for the loaded one with no transition.
+   On a projector that reads as a glitch, so the deck lays the desk down under the
+   opening screen and fades the opening screen off it: 240ms, and only on the way
+   in — arriving back on the bridge with Back shows the desk at once. */
+.dk[data-bridge="run"][data-splash="off"] .dk-splash{display:flex;opacity:0;transition:opacity .24s ease-out}
 .dk-nomotion *{transition:none!important}
 
 /* Orbit's opening screen — white ground, the wordmark in brand violet, and the
@@ -814,6 +819,12 @@ body.focus .device{pointer-events:auto}
 .dk-slot.in{max-height:0}
 .dk[data-punched="1"] .dk-slot.out{max-height:0;transition-delay:1.7s}
 .dk[data-punched="1"] .dk-slot.in{max-height:120px;transition-delay:1.95s}
+/* 🔴 DELIBERATELY OPEN — DO NOT "FIX" TO MATCH LIVE. Live renders this divider
+   collapsed ("▸ n punched") until the operator opens it (punchedVisible starts
+   false). The deck draws it open ("▾") because the viewer has to SEE the punched
+   order land in done; a collapsed list would hide the one thing the beat shows.
+   Owner ruling. Likewise the move into done takes ~2s here where live holds a
+   punched row in the pending list for 8s: right for an operator, wrong for a deck. */
 .dk-pdiv{font-size:10px;color:#9ca3af;padding:8px 14px;border-bottom:1px solid #f3f4f6;background:#f9fafb;display:grid}
 .dk-pdiv span{grid-area:1/1;transition:opacity .2s ease}
 .dk-pdiv .after{opacity:0}
@@ -2726,8 +2737,12 @@ function tickQtys(d, at, gap) {
 /* ── one product, found, chosen and added — the shape of beats 7 and 8 ──── */
 function runProduct(i, capIndex) {
   var d = DEMO[i];
+  /* The LAST product's sentence says the order is complete, so it must not be
+     on screen while that product is still being added: it arrives with the add.
+     Every other product's sentence starts with its beat, as before. */
+  var closesOrder = i === DEMO.length - 1;
   setKey(3, 1);
-  setCap(capIndex);
+  setCap(closesOrder ? 0 : capIndex);
   setProduct(null);
   tweenScroll(famTop(d.fam), SCROLL_MS);
   var t = SCROLL_MS + PAUSE_MS;
@@ -2747,7 +2762,10 @@ function runProduct(i, capIndex) {
   t += PICK_MS;
   t = tickQtys(d, t, TICK_MS) + TICK_MS;
   later(t, function () { setKey(3, 3); markAt('[data-act="add"]'); });
-  later(t + Math.round(ADD_MS / 2), function () { commitDrawer(d.key); });
+  later(t + Math.round(ADD_MS / 2), function () {
+    commitDrawer(d.key);
+    if (closesOrder) setCap(capIndex);
+  });
 }
 function placeProduct(i) {
   var d = DEMO[i];
