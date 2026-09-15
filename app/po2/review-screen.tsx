@@ -124,6 +124,7 @@ export default function ReviewScreen({
   onBack, onEdit, onRemoveLine, onOrderChange, onOpenDealer, onOpenShipTo, onSend,
   onSaveDraft, onClearOrder,
   reviewSheet, onReviewSheet, onCloseTop,
+  shipToEnabled,
 }: {
   /** NULL until he picks one — which he may leave until the last moment. */
   dealer: ApiCustomer | null;
@@ -152,6 +153,12 @@ export default function ReviewScreen({
    * state directly, so there is one place that decides what "close" means.
    */
   onCloseTop: () => void;
+  /**
+   * PoV2Page's flag, passed straight through. True on /po2: the ship-to row
+   * with its Change control, exactly as before. False on /po9: no control, and
+   * a read-only line ONLY when the order already carries a ship-to.
+   */
+  shipToEnabled: boolean;
 }): React.JSX.Element {
   const shipElsewhere = shipTo !== null && shipTo.code !== dealer?.code;
   const canSend = dealer !== null;
@@ -587,6 +594,7 @@ export default function ReviewScreen({
         {/* Ship-to is a WORD, not a pencil. Sending an order to the wrong
             address is expensive, so the control that changes it says what it
             does, and the row shouts when it is not the billing dealer. */}
+        {shipToEnabled ? (
         <button
           type="button" onClick={onOpenShipTo}
           className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left"
@@ -607,6 +615,36 @@ export default function ReviewScreen({
             Change
           </span>
         </button>
+        ) : shipElsewhere ? (
+          /* 🔴 SHIP-TO IS OFF HERE, AND THIS ORDER CARRIES ONE ANYWAY — SO IT IS
+             SHOWN, READ-ONLY, AND NEITHER HIDDEN NOR STRIPPED.
+
+             /po2 and /po9 are one origin and share every po2_* key, so a draft
+             or a "Send again" built on /po2 with a ship-to lands here with it,
+             and buildV2Email will put "Ship To:" on the wire. NOTHING THAT WILL
+             GO OUT ON THE ORDER MAY BE INVISIBLE ON THE SCREEN THAT SENDS IT.
+             Hiding the row would send a delivery address the salesman cannot
+             see; silently dropping the ship-to would change an order he saved
+             without telling him. Both are worse than a line he cannot edit.
+
+             The same row as /po2 minus the Change control: a <div>, not a
+             <button>, so there is nothing to tap and nothing to open. Clearing
+             the order (header X) or sending it are the ways it goes. */
+          <div
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left"
+            style={{ borderBottom: `1px solid ${DIVIDER}` }}
+          >
+            <MapPin className="h-4 w-4 shrink-0" strokeWidth={2.5} style={{ color: VIOLET }} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13.5px] font-bold" style={{ color: VIOLET }}>
+                {`Ship to · ${shipTo.name}`}
+              </span>
+              <span className="block truncate text-[12px]" style={{ color: MUTED }}>
+                {shipTo.area ?? shipTo.code}
+              </span>
+            </span>
+          </div>
+        ) : null}
 
         {/* ⚠ SAVE AND CLEAR ARE NOT HERE ANY MORE — they are in the header,
             as icons, and their note lives with them. The footer holds the

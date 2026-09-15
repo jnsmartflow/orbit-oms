@@ -353,7 +353,28 @@ function mergeLines(current: V2CartLine[], incoming: V2CartLine[]): {
   return { lines: out, merged };
 }
 
-export default function PoV2Page(): React.JSX.Element {
+export default function PoV2Page({
+  /**
+   * 🔴 THE SHIP-TO FEATURE, ON OR OFF. ON BY DEFAULT, so /po2 — which passes
+   * nothing — behaves exactly as it did before this prop existed.
+   *
+   * ONE COMPONENT, TWO MOUNTS. app/po2/page.tsx renders this bare; app/po9/
+   * page.tsx renders it with this false. Nothing in app/po9/ is a copy of
+   * anything here, and that is the point of a prop over a fork.
+   *
+   * OFF means: the checkout's ship-to CONTROL is not rendered, the ship-to
+   * picker cannot be opened, and a new order stores no ship-to and emails none
+   * — the same bytes as an order shipped to its billing dealer today.
+   *
+   * ⚠ OFF DOES NOT MEAN "NEVER A SHIP-TO". Both addresses share this origin's
+   * localStorage (every po2_* key), so a draft built on /po2 with a ship-to
+   * opens here with it. It is neither hidden nor stripped: review-screen shows
+   * it as a read-only line. See the note on that line for why.
+   */
+  shipToEnabled = true,
+}: {
+  shipToEnabled?: boolean;
+} = {}): React.JSX.Element {
   const [load, setLoad]       = useState<LoadState>({ kind: "loading" });
   const [screen, setScreen]   = useState<Screen>("order");
   const [dealer, setDealer]   = useState<ApiCustomer | null>(null);
@@ -1953,7 +1974,15 @@ export default function PoV2Page(): React.JSX.Element {
             setReviewSheet(next);
           }}
           onCloseTop={requestClose}
-          onOpenShipTo={() => { openLayer(); setQuery(""); setScreen("shipto"); }}
+          shipToEnabled={shipToEnabled}
+          // 🔴 A NO-OP WHEN SHIP-TO IS OFF, not merely an unrendered button.
+          // ReviewScreen draws no control that calls this on /po9, and this
+          // guard is what makes the picker unreachable rather than just
+          // unlinked: it is the ONLY place `screen` is ever set to "shipto".
+          onOpenShipTo={() => {
+            if (!shipToEnabled) return;
+            openLayer(); setQuery(""); setScreen("shipto");
+          }}
         />
         {/* ── CLEAR CONFIRM — asked once, and only from the review header ───
             🔴 THIS IS WHERE THE URGENT COLOUR LIVES. The trigger upstairs is

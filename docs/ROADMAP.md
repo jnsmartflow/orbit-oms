@@ -1530,6 +1530,8 @@ because `PUBLIC_PATHS` carries `"/po"` and the gate is a `startsWith` prefix mat
 
 `/po` is **still live and unchanged.** The two run side by side until the cutover below.
 
+**`/po9` exists (2026-09-15)** — the SAME `PoV2Page` component mounted with `shipToEnabled={false}` (`app/po9/page.tsx`, a mount not a fork; its own manifest, id `/po9`). ⚠ It shares phone storage with `/po2` — every `po2_*` key — so a `/po2` draft carrying a ship-to opens on `/po9` and shows it read-only.
+
 Record: **`docs/prompts/drafts/code-update-2026-09-08-po-v2-board.md`**. It is in no canonical
 file yet, and that record is the input to `CLAUDE_PLACE_ORDER.md` when v2 merges into `/po`. Its
 wire is guarded by **`scripts/po-v2-email-fixtures.ts`** — run it before any commit that touches
