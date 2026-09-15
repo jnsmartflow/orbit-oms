@@ -164,7 +164,7 @@ SELECT 1 AS sort_order, 'GRANTED' AS line_type, u.name AS person,
   FROM user_page_access p JOIN users u ON u.id = p."userId"
  WHERE p."pageKey" = 'billing_print' AND (p."canView" OR p."canEdit")
 UNION ALL
-SELECT 2, 'MISMATCH', u.name, p."canView"::text, COALESCE(bp."canView", false)::text
+SELECT 2, 'MISMATCH', u.name, p."canView"::text, p."canEdit"::text
   FROM user_page_access p
   JOIN users u ON u.id = p."userId"
   LEFT JOIN user_page_access bp ON bp."userId" = p."userId" AND bp."pageKey" = 'billing_picking'
