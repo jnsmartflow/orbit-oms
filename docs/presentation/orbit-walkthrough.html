@@ -716,22 +716,65 @@ body.focus .device{pointer-events:auto}
 .dk-h[data-f="1"],.dk-s[data-f="1"]{animation:capIn .3s ease-out both}
 .dk-h[data-f="0"],.dk-s[data-f="0"]{animation:capIn2 .3s ease-out both}
 
-/* the bridge: the message and the phone, exactly where the slide before left them */
-.dk-mail{position:absolute;z-index:4;opacity:0;pointer-events:none;transition:opacity .3s ease}
+/* ── the bridge ──────────────────────────────────────────────────────────────
+   1 · the message is drawn in: it shrinks into the centre of the screen it is
+       going to, while the phone shrinks away.
+   2 · Orbit opens: the app's own opening motion, "Trail", on white.
+   3 · the desk is there. The app swaps its opening screen for the loaded screen
+       with no transition — the loading branch simply stops rendering — so the
+       desk replaces the splash the same way. */
+.dk-mail{position:absolute;z-index:6;opacity:0;pointer-events:none;transform-origin:50% 50%;transition:opacity .3s ease}
 .dk-mail .mail{max-width:none}
 .dk-phone{position:absolute;z-index:3;opacity:0;pointer-events:none;transform-origin:0 50%;transition:opacity .3s ease}
 .dk-phone .phoneslot{display:block}
 .dk[data-bridge="from"] .dk-mail,.dk[data-bridge="from"] .dk-phone{opacity:1;transform:none}
 .dk[data-bridge="run"] .dk-phone{opacity:0;transform:translate(-140px,24px) scale(.22);
-  transition:transform 1s cubic-bezier(.4,0,.2,1) .15s,opacity .55s ease .6s}
-.dk[data-bridge="run"] .dk-mail{opacity:0;transform:translateY(-8px) scale(.985);
-  transition:opacity .5s ease 2.2s,transform .5s ease 2.2s}
-.dk-wrap{position:absolute;z-index:2;overflow:hidden;opacity:1;transform:none;transform-origin:50% 100%;
-  transition:opacity .35s ease,transform .5s cubic-bezier(.2,.8,.2,1)}
-/* the rise stays inside the stage: bottom edge moves 14px, exactly the margin below the desk */
-.dk[data-bridge="from"] .dk-wrap{opacity:0;transform:translateY(14px) scale(.96)}
-.dk[data-bridge="run"] .dk-wrap{transition:opacity .8s ease .75s,transform 1.1s cubic-bezier(.2,.8,.2,1) .75s}
+  transition:transform .5s cubic-bezier(.4,0,.2,1),opacity .35s ease .15s}
+.dk[data-bridge="run"] .dk-mail{opacity:0;transform:translate(var(--dk-dx,0px),var(--dk-dy,0px)) scale(.04);
+  transition:transform .45s cubic-bezier(.4,0,.2,1),opacity .25s ease .2s}
+.dk-wrap{position:absolute;z-index:2;overflow:hidden;opacity:1;transition:opacity .35s ease}
+.dk[data-bridge="from"] .dk-wrap,
+.dk[data-bridge="run"]:not([data-splash="off"]) .dk-wrap{opacity:0;transition:none}
+.dk[data-bridge="run"][data-splash="off"] .dk-wrap{opacity:1;transition:none}
 .dk-nomotion *{transition:none!important}
+
+/* Orbit's opening screen — white ground, the wordmark in brand violet, and the
+   three-layer strip beneath it. */
+.dk-splash{position:absolute;z-index:5;display:none;align-items:center;justify-content:center;
+  background:#fff;border:1px solid #e5e7eb;overflow:hidden}
+.dk[data-bridge="run"][data-splash="on"] .dk-splash{display:flex}
+.dk-splash-scale{transform-origin:50% 50%}
+.dk-splash-cluster{position:relative;width:fit-content}
+
+/* 🔴 LIFTED VERBATIM from the app's opening motion ("Trail"): every keyframe,
+   duration, delay, easing and colour below is the app's. Only the identifiers
+   are renamed, to this deck's own prefix. */
+@keyframes dkSplashRise { from { opacity:0; transform:translateY(9px) } to { opacity:1; transform:none } }
+@keyframes dkSplashRun  { 0%   { left:0;    opacity:0 }
+                          12%  { opacity:1 }
+                          88%  { opacity:1 }
+                          100% { left:100%; opacity:0 } }
+@keyframes dkSplashTail { from { transform:scaleX(0) } to { transform:scaleX(1) } }
+@keyframes dkSplashFade { to   { opacity:0 } }
+@keyframes dkSplashRule { from { opacity:0 } to { opacity:1 } }
+
+.dk-splash-mark { animation: dkSplashRise .38s cubic-bezier(.2,.85,.25,1) both }
+.dk-splash-fx   { position:absolute; left:0; right:0; bottom:-13px; height:3px }
+.dk-splash-rule { position:absolute; inset:0; border-radius:999px;
+                  background:#7C3AED;
+                  animation: dkSplashRule .18s ease-out .46s both }
+.dk-splash-tail { position:absolute; inset:0; border-radius:999px;
+                  transform-origin:left center;
+                  background:linear-gradient(90deg, rgba(124,58,237,0) 0%, #7C3AED 100%);
+                  animation: dkSplashTail .42s cubic-bezier(.3,0,.25,1) .10s both,
+                             dkSplashFade .16s ease-in .44s forwards }
+.dk-splash-dot  { position:absolute; top:-1.5px; left:100%; width:6px; height:6px;
+                  margin-left:-6px; border-radius:999px; background:#7C3AED; opacity:0;
+                  animation: dkSplashRun .42s cubic-bezier(.3,0,.25,1) .10s both }
+@media (prefers-reduced-motion: reduce) {
+  .dk-splash-mark, .dk-splash-dot, .dk-splash-tail, .dk-splash-rule { animation: none }
+  .dk-splash-dot, .dk-splash-tail { opacity: 0 }
+}
 
 /* ── the canvas ── */
 .dk-canvas{position:absolute;left:0;top:0;width:1680px;height:680px;transform-origin:0 0;
@@ -749,26 +792,41 @@ body.focus .device{pointer-events:auto}
   background:#F5F3FF;border-left:2px solid #7C3AED;color:#6D28D9}
 
 /* inbox rail — 320px */
-.dk-rail{flex:0 0 320px;border-right:1px solid #e5e7eb;display:flex;flex-direction:column;background:#fff}
+.dk-rail{flex:0 0 320px;border-right:1px solid #e5e7eb;display:flex;flex-direction:column;background:#fff;overflow:hidden}
 .dk-rhead{padding:8px 12px;border-bottom:1px solid #e5e7eb}
 .dk-rhead .in{height:28px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#9ca3af}
 .dk-rhead .l{display:flex;align-items:center;gap:6px}
 .dk-rhead .l span{text-transform:uppercase;letter-spacing:.025em}
-.dk-pct{margin-left:4px;font-weight:500;color:#2563eb}
-.dk-pct[data-full="1"]{color:#16a34a}
+.dk-pct{margin-left:4px;display:inline-grid;font-weight:500}
+.dk-pct span{grid-area:1/1;color:#2563eb;transition:opacity .25s ease}
+.dk-pct span[data-full="1"]{color:#16a34a}
+.dk-pct .after{opacity:0}
+.dk[data-punched="1"] .dk-pct .before{opacity:0;transition-delay:.45s}
+.dk[data-punched="1"] .dk-pct .after{opacity:1;transition-delay:.45s}
 .dk-orow{padding:10px 14px;border-bottom:1px solid #f3f4f6;border-left:3px solid transparent;background:#fff;opacity:1;
   transition:background-color .3s ease,border-color .3s ease,opacity .5s ease}
 .dk-orow[data-state="focus"]{background:#F5F3FF;border-left-color:#7C3AED}
 .dk-orow[data-state="punched"]{opacity:.4;border-left-color:transparent}
-.dk[data-punched="1"] .dk-orow[data-state="punched"]{transition-delay:1.9s}
+/* the punched order: its row dims first, then leaves the pending list and
+   arrives under the divider — live sorts done rows newest first, so on top */
+.dk[data-punched="1"] .dk-r1[data-state="punched"]{transition-delay:1s}
+.dk-slot{overflow:hidden;max-height:120px;transition:max-height .45s cubic-bezier(.4,0,.2,1)}
+.dk-slot.in{max-height:0}
+.dk[data-punched="1"] .dk-slot.out{max-height:0;transition-delay:1.7s}
+.dk[data-punched="1"] .dk-slot.in{max-height:120px;transition-delay:1.95s}
+.dk-pdiv{font-size:10px;color:#9ca3af;padding:8px 14px;border-bottom:1px solid #f3f4f6;background:#f9fafb;display:grid}
+.dk-pdiv span{grid-area:1/1;transition:opacity .2s ease}
+.dk-pdiv .after{opacity:0}
+.dk[data-punched="1"] .dk-pdiv .before{opacity:0;transition-delay:1.95s}
+.dk[data-punched="1"] .dk-pdiv .after{opacity:1;transition-delay:1.95s}
 .dk-orow .r1{display:flex;align-items:center;justify-content:space-between}
 .dk-orow .nm{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden}
 .dk-orow .dot{width:5px;height:5px;border-radius:999px;flex:0 0 auto}
 .dk-orow .tm{flex:0 0 auto;margin-left:8px;font-size:11px;color:#9ca3af;font-variant-numeric:tabular-nums}
 .dk-orow .so{margin-top:2px;font-size:11px;color:#9ca3af;white-space:nowrap;overflow:hidden}
-.dk-orow .pb{font-size:10px;color:#9ca3af;font-variant-numeric:tabular-nums;max-height:0;opacity:0;overflow:hidden;
-  transition:max-height .3s ease,opacity .3s ease}
-.dk[data-punched="1"] .dk-orow .pb{max-height:16px;margin-top:2px;opacity:1;transition-delay:.9s}
+.dk-orow .pb{margin-top:2px;font-size:10px;color:#9ca3af;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
+.dk-orow .pb.live{max-height:0;margin-top:0;opacity:0;transition:max-height .3s ease,opacity .3s ease}
+.dk[data-punched="1"] .dk-orow .pb.live{max-height:16px;margin-top:2px;opacity:1;transition-delay:.9s}
 
 /* right pane */
 .dk-pane{flex:1 1 auto;min-width:0;position:relative;display:flex;flex-direction:column;background:#f9fafb}
@@ -1013,7 +1071,7 @@ body.focus .device{pointer-events:auto}
 
     <!-- 5 · the bridge, then the billing desk — one section, seven steps -->
     <section class="sec dk" id="dk" data-on="0" data-phone="1" data-small="1" data-scene="sent" data-desk="1"
-      data-step="0" data-bridge="done" data-open="0" data-copied="0" data-toast="0" data-grid="0" data-num="0" data-punched="0">
+      data-step="0" data-bridge="done" data-splash="off" data-open="0" data-copied="0" data-toast="0" data-grid="0" data-num="0" data-punched="0">
       <div class="dk-head" id="dkHead"><div class="accent"></div><p class="dk-h" id="dkH" data-f="1"></p><p class="dk-s" id="dkS" data-f="1"></p></div>
 
       <div class="dk-mail" id="dkMail" aria-hidden="true">
@@ -1028,6 +1086,15 @@ body.focus .device{pointer-events:auto}
 
       <div class="dk-phone" id="dkPhone"><div class="phoneslot"></div></div>
 
+      <div class="dk-splash" id="dkSplash" aria-hidden="true">
+        <div class="dk-splash-scale" id="dkSplashScale">
+          <div class="dk-splash-cluster">
+            <div class="dk-splash-mark" id="dkSplashMark" style="color:#7C3AED"></div>
+            <div class="dk-splash-fx"><span class="dk-splash-rule"></span><span class="dk-splash-tail"></span><span class="dk-splash-dot"></span></div>
+          </div>
+        </div>
+      </div>
+
       <div class="dk-wrap" id="dkWrap" aria-hidden="true">
         <div class="dk-canvas" id="dkCanvas">
           <div class="dk-desk">
@@ -1040,7 +1107,7 @@ body.focus .device{pointer-events:auto}
             <div class="dk-rail">
               <div class="dk-rhead"><div class="in">
                 <span class="l"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span>Inbox</span></span>
-                <span><span id="dkTotal"></span><span class="dk-pct" id="dkPct" data-full="0"></span></span>
+                <span><span id="dkTotal"></span><span class="dk-pct" id="dkPct"><span class="before" id="dkPctBefore"></span><span class="after" id="dkPctAfter"></span></span></span>
               </div></div>
               <div id="dkRows"></div>
             </div>
@@ -2631,17 +2698,24 @@ function fillSilently(d) {
 /** One box a press, TICK_MS apart. Returns when the last one lands. */
 function tickQtys(d, at, gap) {
   var key = optKeyOf(d), last = at;
+  /* 🔴 THE PHONE COUNTS; THE COLUMN DOES NOT. Every press still lands on the
+     phone's stepper, box by box. The column beside it is read, not watched, so
+     it states the quantity the order ENDS with and nothing on the way there:
+     it fills in once, on the press that completes this product. A column that
+     read "1L ×6" for half a second was stating a quantity the order never had. */
+  var presses = d.packs.reduce(function (t, pk) { return t + pk[1]; }, 0), pressNo = 0;
   d.packs.forEach(function (pk) {
     for (var n = 0; n < pk[1]; n++) {
-      (function (label, when) {
+      pressNo++;
+      (function (label, when, final) {
         later(Math.max(0, when - 300), function () { revealRow(label); });
         later(Math.max(0, when - 110), function () { markAt('[data-plus="' + label + '"]'); });
         later(when, function () {
           doStep(label, key, 1);
           setQtyNode(label, qtyNow(d, label));
-          refreshOption(d);
+          if (final) refreshOption(d);
         });
-      })(pk[0], at);
+      })(pk[0], at, pressNo === presses);
       last = at;
       at += gap;
     }
@@ -3062,6 +3136,7 @@ var dkStep = 0;
 var dkEnterAt = 0;          /* Back from the close lands on the last step, not the bridge */
 var dkFrom = null;          /* where the message and the phone were, when Next was pressed */
 var dkBridge = "done";
+var dkSplash = "off";      /* the opening screen: wait (not up yet) | on | off */
 var dkFlip = 1;
 
 var DK_HEAD = [
@@ -3075,18 +3150,35 @@ var DK_HEAD = [
 ];
 
 /* The sales officer and the billing operator by name. The order number is invented. */
-var DK_SO = "(jsw) Jha Roopesh Ghanshyam";
 var DK_OPERATOR = "Bankim";
 var DK_RECEIVED = "10:25", DK_PUNCHED = "10:27";
 var DK_ORDER_NO = "4512890077";
 
-/* The five orders in the inbox. Order 1 is the phone's own dealer. */
+/* 🔴 THE FIVE SALESMEN — ONE PLACE. Index 0 is the phone's own order and is
+   the real sales officer; indices 1-4 are PLACEHOLDERS waiting for real names.
+   Swap them here and nowhere else. */
+var DK_SALESMEN = [
+  "(jsw) Jha Roopesh Ghanshyam",
+  "(jsw) Arjun Mehta",
+  "(jsw) Ravi Kulkarni",
+  "(jsw) Imran Sheikh",
+  "(jsw) Deepak Rana"
+];
+
+/* The five pending orders, earliest first as live sorts them. Order 1 is the phone's own. */
 var DK_ORDERS = [
-  { name: DEALERS[0].name, dot: "#2563eb", time: DK_RECEIVED, so: DK_SO },
-  { name: DEALERS[1].name, dot: "#2563eb", time: "10:31", so: DK_SO },
-  { name: DEALERS[2].name, dot: "#2563eb", time: "10:38", so: DK_SO },
-  { name: DEALERS[3].name, dot: "#ea580c", time: "10:44", so: DK_SO },
-  { name: DEALERS[4].name, dot: "#2563eb", time: "10:52", so: DK_SO }
+  { name: DEALERS[0].name, dot: "#2563eb", time: DK_RECEIVED, so: DK_SALESMEN[0] },
+  { name: DEALERS[1].name, dot: "#2563eb", time: "10:31", so: DK_SALESMEN[1] },
+  { name: DEALERS[2].name, dot: "#2563eb", time: "10:38", so: DK_SALESMEN[2] },
+  { name: DEALERS[3].name, dot: "#ea580c", time: "10:44", so: DK_SALESMEN[3] },
+  { name: DEALERS[4].name, dot: "#2563eb", time: "10:52", so: DK_SALESMEN[4] }
+];
+/* Three already punched this morning, newest first as live sorts the done list.
+   Dealer names invented. */
+var DK_DONE = [
+  { name: "Kesar Paints",     dot: "#2563eb", time: "10:05", so: DK_SALESMEN[2], punched: "10:14" },
+  { name: "Jalaram Hardware", dot: "#2563eb", time: "09:40", so: DK_SALESMEN[4], punched: "09:52" },
+  { name: "Parshwa Paints",   dot: "#ea580c", time: "09:12", so: DK_SALESMEN[1], punched: "09:20" }
 ];
 
 /* What each pack of the phone's six products resolves to, from the depot's SKU
@@ -3138,21 +3230,55 @@ function dkEl(tag, cls, text) {
   if (text != null) n.textContent = text;
   return n;
 }
-var dkRows = [];
-var dkRowPb = null;
-DK_ORDERS.forEach(function (o, i) {
+/* One rail row, the live row's shape: name and received time, the sales
+   officer, and — once punched — "✓ operator time". */
+function dkRow(o, state, pb) {
   var row = dkEl("div", "dk-orow");
-  row.setAttribute("data-state", "idle");
+  row.setAttribute("data-state", state);
   var r1 = dkEl("div", "r1"), nm = dkEl("span", "nm"), dot = dkEl("span", "dot");
   dot.style.background = o.dot;
   nm.appendChild(dot); nm.appendChild(dkEl("span", null, o.name));
   r1.appendChild(nm); r1.appendChild(dkEl("span", "tm", o.time));
   row.appendChild(r1);
   row.appendChild(dkEl("div", "so", o.so));
-  if (i === 0) { dkRowPb = dkEl("div", "pb", "✓ " + DK_OPERATOR + " " + DK_PUNCHED); row.appendChild(dkRowPb); }
-  document.getElementById("dkRows").appendChild(row);
-  dkRows.push(row);
+  if (pb) row.appendChild(dkEl("div", "pb" + (pb === "live" ? " live" : ""), "✓ " + DK_OPERATOR + " " + (o.punched || DK_PUNCHED)));
+  return row;
+}
+/* Built once. Order 1 exists twice — a slot in the pending list and a slot at
+   the head of the done list — and the beat hands it from one to the other by
+   closing the first slot and opening the second. Nothing is moved or rebuilt. */
+var dkRail = document.getElementById("dkRows");
+var dkRow1 = dkRow(DK_ORDERS[0], "idle", "live");
+dkRow1.classList.add("dk-r1");
+var dkOut = dkEl("div", "dk-slot out");
+dkOut.appendChild(dkRow1);
+dkRail.appendChild(dkOut);
+DK_ORDERS.slice(1).forEach(function (o) { dkRail.appendChild(dkRow(o, "idle", null)); });
+var dkDivider = dkEl("div", "dk-pdiv");
+dkDivider.appendChild(dkEl("span", "before", "▾ " + DK_DONE.length + " punched"));
+dkDivider.appendChild(dkEl("span", "after", "▾ " + (DK_DONE.length + 1) + " punched"));
+dkRail.parentNode.appendChild(dkDivider);
+var dkDoneList = dkEl("div");
+var dkIn = dkEl("div", "dk-slot in");
+dkIn.appendChild(dkRow(DK_ORDERS[0], "punched", "done"));
+dkDoneList.appendChild(dkIn);
+DK_DONE.forEach(function (o) { dkDoneList.appendChild(dkRow(o, "punched", "done")); });
+dkRail.parentNode.appendChild(dkDoneList);
+
+/* The head counts every order of the day, punched the moment it is punched —
+   live reads status, not which list the row is sitting in. */
+var DK_TOTAL = DK_ORDERS.length + DK_DONE.length;
+function dkPctText(p) { return "· " + Math.round(p / DK_TOTAL * 100) + "% punched"; }
+document.getElementById("dkTotal").textContent = DK_TOTAL + " orders";
+[["dkPctBefore", DK_DONE.length], ["dkPctAfter", DK_DONE.length + 1]].forEach(function (x) {
+  var el = document.getElementById(x[0]);
+  el.textContent = dkPctText(x[1]);
+  el.setAttribute("data-full", x[1] === DK_TOTAL ? "1" : "0");
 });
+
+/* Orbit's wordmark for the opening screen, at the app's own ink height. */
+var DK_SPLASH_INK = 33.8;
+document.getElementById("dkSplashMark").innerHTML = WORDMARK(DK_SPLASH_INK);
 
 var dkTbody = document.getElementById("dkTbody");
 DK_LINES.forEach(function (l, i) {
@@ -3193,7 +3319,7 @@ dkEach("dkCode", function (n) { n.textContent = DEALERS[0].code; });
 dkEach("dkArea", function (n) { n.textContent = DEALERS[0].area; });
 dkEach("dkType", function (n) { n.textContent = "LOCAL"; });
 dkEach("dkSo",   function (n) { n.textContent = DK_ORDER_NO; });
-document.getElementById("dkProv").textContent = DK_SO + " · " + DK_RECEIVED;
+document.getElementById("dkProv").textContent = DK_SALESMEN[0] + " · " + DK_RECEIVED;
 document.getElementById("dkProvPunched").textContent = " · punched by " + DK_OPERATOR + " " + DK_PUNCHED;
 document.getElementById("dkLines").textContent = DK_LINES.length + (DK_LINES.length === 1 ? " line" : " lines");
 document.getElementById("dkReady").textContent = "✓ " + DK_COPIED.length + "/" + DK_LINES.length;
@@ -3214,20 +3340,10 @@ function dkRender() {
   s.setAttribute("data-num",     n >= 5 ? "1" : "0");
   s.setAttribute("data-punched", n >= 6 ? "1" : "0");
 
-  var punched = n >= 6 ? 1 : 0;
-  var pct = Math.round(punched / DK_ORDERS.length * 100);
-  document.getElementById("dkTotal").textContent = DK_ORDERS.length + " orders";
-  var pc = document.getElementById("dkPct");
-  pc.textContent = "· " + pct + "% punched";
-  pc.setAttribute("data-full", pct === 100 ? "1" : "0");
-
-  /* Row 1 holds the focus through the punch and dims as the beat settles.
+  s.setAttribute("data-splash", n === 0 ? dkSplash : "off");
+  /* Row 1 holds the focus through the punch, dims, then goes to done.
      Nothing else in the rail ever takes the focus. */
-  dkRows.forEach(function (row, i) {
-    var st = "idle";
-    if (i === 0 && n >= 2) st = n >= 6 ? "punched" : "focus";
-    row.setAttribute("data-state", st);
-  });
+  dkRow1.setAttribute("data-state", n >= 6 ? "punched" : n >= 2 ? "focus" : "idle");
 
   var hd = DK_HEAD[n];
   var h = document.getElementById("dkH"), sb = document.getElementById("dkS");
@@ -3240,8 +3356,9 @@ function dkRender() {
 }
 
 function dkGo(n) {
+  clearBeatTimers();
   dkStep = Math.max(0, Math.min(DK_BEATS, n));
-  dkBridge = "done";
+  dkBridge = "done"; dkSplash = "off";
   dkRender();
 }
 
@@ -3271,19 +3388,28 @@ function dkShown() {
     mail.style.left = dkFrom.ml + "px"; mail.style.top = dkFrom.mt + "px"; mail.style.width = dkFrom.mw + "px";
     ph.style.left = dkFrom.pl + "px"; ph.style.top = dkFrom.pt + "px";
     dkFrom = null;
+    /* where the message is drawn in to: the centre of the screen it arrives on */
+    var wr = document.getElementById("dkWrap");
+    var cx = wr.offsetLeft + wr.offsetWidth / 2, cy = wr.offsetTop + wr.offsetHeight / 2;
+    mail.style.setProperty("--dk-dx", Math.round(cx - (mail.offsetLeft + mail.offsetWidth / 2)) + "px");
+    mail.style.setProperty("--dk-dy", Math.round(cy - (mail.offsetTop + mail.offsetHeight / 2)) + "px");
     dkSec.classList.add("dk-nomotion");
-    dkBridge = "from";
+    dkBridge = "from"; dkSplash = "wait";
     dkRender();
     /* One forced style read commits the start pose, so the run starts from it on
        the next line — no dependence on animation frames being delivered. */
     void dkSec.offsetWidth;
     dkSec.classList.remove("dk-nomotion");
-    dkBridge = "run";
+    dkBridge = "run"; dkSplash = "wait";   /* the desk stays hidden until the splash has played */
     dkRender();
+    /* The opening screen goes up once the message is in (450ms), plays the
+       app's 640ms, holds for a breath, and gives way to the desk. */
+    later(450, function () { dkSplash = "on"; dkRender(); });
+    later(450 + 640 + 520, function () { dkSplash = "off"; dkRender(); });
     return;
   }
   dkFrom = null;
-  dkBridge = "done";
+  dkBridge = "done"; dkSplash = "off";
   dkRender();
 }
 
@@ -3299,6 +3425,13 @@ function dkFit() {
   wrapEl.style.width = Math.round(w) + "px"; wrapEl.style.height = Math.round(DK_H * sc) + "px";
   document.getElementById("dkCanvas").style.transform = "scale(" + sc + ")";
   document.getElementById("dkHead").style.left = x + "px";
+  /* the opening screen covers exactly the desk's screen; its mark is four times
+     the phone's size on this canvas, so it takes the same share of the width */
+  var sp = document.getElementById("dkSplash");
+  sp.style.left = x + "px"; sp.style.top = DK_TOP + "px";
+  sp.style.width = Math.round(w) + "px"; sp.style.height = Math.round(DK_H * sc) + "px";
+  sp.style.borderRadius = Math.round(12 * sc) + "px";
+  document.getElementById("dkSplashScale").style.transform = "scale(" + (4 * sc) + ")";
 }
 window.addEventListener("resize", dkFit);
 
