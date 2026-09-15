@@ -85,21 +85,34 @@ export function TripDetailHeader({
   // dismissed. At that rate nobody is watching for it, and a trip that quietly
   // left two bills behind looks identical to one that did not.
   //
-  // ⚠ `dispatchedCount` IS THE REAL FIGURE, not `counts.total - counts.checked`.
-  // `counts` folds `dispatched` INTO `checked` (bucketFor, lib/trips/queries.ts)
-  // so the bucket cannot tell "checked and gone" from "checked and still here",
-  // and a HELD bill at pick_checked — never dispatched — sits in `checked` too.
-  // The payload carries the count for exactly this line.
+  // ⚠ `counts` folds `dispatched` INTO `checked` (bucketFor, lib/trips/queries.ts)
+  // so the bucket cannot tell "checked and gone" from "checked and still here";
+  // `dispatchedCount` is the figure that separates them. A held bill is never in
+  // `checked` — `bucketFor` tests the hold first, whatever the stage.
   //
   // ⚠ ONLY AFTER A CONFIRM. On a draft every bill is undispatched and saying so
   // would be noise on the one state where it means nothing.
-  // ⚠ HOLDS ARE COUNTED SEPARATELY, NOT AS "still being picked" (2026-09-14).
-  // The line used to sweep them in, which described a bill a human had
-  // deliberately stopped as one the floor was busy with. `stillGoing` is what is
-  // actually outstanding; `trip.counts.held` is named on its own.
+  //
+  // 🔴 THREE PARTS, EACH COUNTED FROM ITS OWN BUCKET, NEVER BY SUBTRACTION
+  // (2026-09-15). This read `total - dispatchedCount - held` and called the
+  // result "still being picked" — which swept in every bill that was CHECKED and
+  // waiting for the press. A trip whose bills all wore "Done" in the table got a
+  // banner saying "2 of 2 bills not dispatched — 2 still being picked" directly
+  // above them (L-260914-28, the slice 3 acceptance test).
+  //   · ready   — checked, not yet gone: the SAME figure the button counts, so
+  //               the banner and "Mark dispatched (N)" cannot disagree.
+  //   · picking — every bucket short of checked. `other` rides with them because
+  //               the legend above already folds it into "waiting".
+  //   · held    — a human said not this one; named on its own, never as work.
   const heldCount = trip.counts.held;
-  const stillGoing = Math.max(0, trip.counts.total - trip.dispatchedCount - heldCount);
-  const showNotDispatched = !isDraft && trip.counts.total > 0 && (stillGoing > 0 || heldCount > 0);
+  const pickingCount = trip.counts.waiting + trip.counts.withPicker + trip.counts.picked + trip.counts.other;
+  const notDispatched = readyToDispatch + pickingCount + heldCount;
+  const showNotDispatched = !isDraft && trip.counts.total > 0 && notDispatched > 0;
+  const notDispatchedParts = [
+    readyToDispatch > 0 ? `${readyToDispatch} checked and ready` : null,
+    pickingCount > 0 ? `${pickingCount} still being picked` : null,
+    heldCount > 0 ? `${heldCount} on hold` : null,
+  ].filter(Boolean) as string[];
 
   // Line two — everything known about who is carrying it, then the totals.
   // Blanks are dropped rather than rendered as dashes: a trip with no vehicle
@@ -220,12 +233,10 @@ export function TripDetailHeader({
           it, which is the opposite of the point. */}
       {showNotDispatched && (
         <div className="mt-2 rounded-[7px] border border-[#fde3b4] bg-[#fffaf0] px-2.5 py-1.5 text-[11.5px] text-[#92400e]">
-          <b className="font-bold tabular-nums">{stillGoing + heldCount}</b> of{" "}
+          <b className="font-bold tabular-nums">{notDispatched}</b> of{" "}
           <span className="tabular-nums">{trip.counts.total}</span> bill
-          {trip.counts.total === 1 ? "" : "s"} not dispatched
-          {stillGoing > 0 && <> — {stillGoing} still being picked</>}
-          {heldCount > 0 && <> — {heldCount} on hold</>}.
-          {stillGoing > 0 && <> Press Mark dispatched again once {stillGoing === 1 ? "it is" : "they are"} checked.</>}
+          {trip.counts.total === 1 ? "" : "s"} not dispatched — {notDispatchedParts.join(", ")}.
+          {pickingCount > 0 && <> Press Mark dispatched again once {pickingCount === 1 ? "it is" : "they are"} checked.</>}
         </div>
       )}
 
