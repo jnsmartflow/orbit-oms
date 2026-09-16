@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
+import { PlaceOrderAccessProvider } from "@/components/place-order/place-order-access-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 
 // Place Order layout — role-based sidebar + auth gate.
@@ -39,6 +40,12 @@ export default async function PlaceOrderLayout({
     rolloutStage:       session.user.rolloutStage,
   });
 
+  // Ship To block on the cart panel (2026-09-17). Read off the SAME `allPerms`
+  // map — no second query. Admin / superuser are all-true inside
+  // getAllPermissionsForRoles; everyone else needs a place_order_ship_to canEdit
+  // tick. Absent row reads as false. canEdit only — canView means nothing here.
+  const canShipTo = allPerms["place_order_ship_to"]?.canEdit ?? false;
+
   const seen = new Set<string>();
   const dedupedNavItems = navItems.filter(item => {
     if (seen.has(item.pageKey)) return false;
@@ -57,7 +64,7 @@ export default async function PlaceOrderLayout({
         userInitials={userInitials}
         navItems={dedupedNavItems}
       >
-        {children}
+        <PlaceOrderAccessProvider canShipTo={canShipTo}>{children}</PlaceOrderAccessProvider>
       </RoleLayoutClient>
     </RoleSidebarProvider>
   );

@@ -19,6 +19,7 @@ import { emailLineLabel } from "@/lib/place-order/email";
 interface CartPanelProps {
   customer:        Customer | null;
   customers:       Customer[];                   // for the ship-to autocomplete
+  canShipTo:       boolean;                      // place_order_ship_to canEdit — FALSE hides the Ship To block
   bills:           Bill[];
   activeBillId:    number;
   justAddedKeys:   Record<string, true>;        // key = `${billId}|||${subProduct}|||${baseColour ?? ""}`
@@ -89,7 +90,7 @@ const REMARKS: { value: EmailMarker; label: string; stroke: string; paths: React
 ];
 
 export default function CartPanel({
-  customer, customers, bills, activeBillId, justAddedKeys,
+  customer, customers, canShipTo, bills, activeBillId, justAddedKeys,
   shipTo, dispatch, callTarget, marker, crossDepot, notes,
   onSetActiveBill, onAddBill, onDuplicateBill, onDeleteBill,
   onShipToChange, onDispatchChange, onCallTargetChange,
@@ -386,7 +387,8 @@ export default function CartPanel({
         {/* ── Order options — always visible (no "More options" collapse) ── */}
         {customer && (
           <>
-            {/* Ship to */}
+            {/* Ship to — gated on place_order_ship_to canEdit (hidden → email omits it) */}
+            {canShipTo && (
             <div className="px-4 py-[13px] border-t border-gray-100">
               <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 mb-2">Ship to</p>
               <div className="relative">
@@ -426,6 +428,7 @@ export default function CartPanel({
                 )}
               </div>
             </div>
+            )}
 
             {/* Dispatch */}
             <div className="px-4 py-[13px] border-t border-gray-100">

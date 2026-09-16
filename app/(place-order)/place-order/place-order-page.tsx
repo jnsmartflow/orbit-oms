@@ -22,6 +22,7 @@ import type { QuickTile } from "@/lib/place-order/quick-tiles-config";
 import type { SearchResult } from "@/lib/place-order/queries";
 import { useKeyboardRouting, routeDigit } from "@/lib/place-order/use-keyboard-routing";
 import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
+import { usePlaceOrderAccess } from "@/components/place-order/place-order-access-provider";
 
 // /place-order — desktop phone-order entry surface for depot operators.
 //
@@ -75,6 +76,11 @@ function renumberBills(bills: Bill[]): Bill[] {
 }
 
 export default function PlaceOrderPage(): React.JSX.Element {
+  // `place_order_ship_to` canEdit, resolved in the layout. FALSE hides the Ship
+  // To block AND keeps any ship-to out of the email (see applyDraft + buildEmail
+  // below) — a draft restored from this browser can carry one the viewer
+  // cannot see.
+  const { canShipTo } = usePlaceOrderAccess();
   const [customers,   setCustomers]   = useState<Customer[]>([]);
   const [products,    setProducts]    = useState<Product[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -331,7 +337,9 @@ export default function PlaceOrderPage(): React.JSX.Element {
     setBills(restored);
     setActiveBillId(activeId);
     setBillCounter(restored.length);
-    setShipTo(snap.shipTo);
+    // Drafts are per browser + customer, not per user — drop a stored ship-to
+    // the viewer is not allowed to see.
+    setShipTo(canShipTo ? snap.shipTo : "");
     // Coerce any stale stored dispatch (e.g. the removed "Hold") to a valid value.
     setDispatch(snap.dispatch === "Urgent" || snap.dispatch === "Call" ? snap.dispatch : "Normal");
     setCallTarget(snap.callTarget);
@@ -614,14 +622,15 @@ export default function PlaceOrderPage(): React.JSX.Element {
         baseColour: l.baseColour,
         packQtys:   l.packQtys,
       }))),
-      shipTo,
+      // Belt and braces with applyDraft: a hidden Ship To never reaches the email.
+      shipTo:   canShipTo ? shipTo : "",
       dispatch,
       callTarget,
       marker,
       crossDepot,
       notes,
     });
-  }, [selectedCustomer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes]);
+  }, [selectedCustomer, bills, canShipTo, shipTo, dispatch, callTarget, marker, crossDepot, notes]);
 
   const canSend = emailOutput.valid;
 
@@ -870,6 +879,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
           activeBillId={activeBillId}
           justAddedKeys={justAddedKeys}
           customers={customers}
+          canShipTo={canShipTo}
           shipTo={shipTo}
           dispatch={dispatch}
           callTarget={callTarget}

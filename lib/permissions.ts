@@ -192,6 +192,14 @@ export type PageKey =
   | "tint_manager"
   | "tint_operator"
   | "place_order"
+  // place_order_ship_to — the Ship To block in the DESKTOP /place-order cart
+  // panel (2026-09-17). canEdit is its only meaning: "may set a ship-to on the
+  // order". Read once in app/(place-order)/layout.tsx. No grants by default, so
+  // only admin / superuser (all-true over ALL_PAGE_KEYS) see the block.
+  // ⚠ DESKTOP ONLY — /po is public and keeps its own Ship-to, untouched.
+  // ⚠ Deliberately NOT in PAGE_NAV_MAP (a control, not a route). It IS in
+  // ACTION_PAGES.canEdit, or /admin/access could not grant it.
+  | "place_order_ship_to"
   | "trip_report"
   | "mail_orders"
   // billing_picking — the BILLING Picking tab (bills checked on the floor and
@@ -296,7 +304,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // ⚠ `billing_picking` (the Billing Picking TAB) sits beside `mail_orders`,
   // its host screen. It is NOT `picking` on the line above — that is the floor
   // board. Keep them visually apart in this list, never adjacent.
-  "place_order", "trip_report", "mail_orders", "billing_picking", "billing_print", "mrn", "ci",
+  "place_order", "place_order_ship_to", "trip_report", "mail_orders", "billing_picking", "billing_print", "mrn", "ci",
   // The four Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
   // /mail-orders, not routes of their own.
@@ -361,6 +369,10 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // commit, inside POST /api/billing/mail-order/actions, one per action name.
     // Until then all four buttons still gate on `mail_orders` canEdit.
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
+    // place_order_ship_to (2026-09-17) — backed from day one: the desktop
+    // /place-order layout reads its canEdit to draw the Ship To block. Without
+    // this entry the Edit cell on /admin/access is a dash, i.e. ungrantable.
+    "place_order_ship_to",
   ],
   // Two helper call sites — import/obd:3796 and sampling-library:253 — plus the
   // CSV import buttons on the four master-data screens, which read canImport
@@ -407,10 +419,10 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. ELEVEN of
-// the 33 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. TWELVE of
+// the 34 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
-// billing_print, and the four billing action ticks.
+// billing_print, the four billing action ticks, and place_order_ship_to.
 // (`attendance` IS in PAGE_NAV_MAP — but it and `attendance_admin` both carry
 // the label "Attendance" there, which is fine in a sidebar where only one is
 // ever shown and useless in a list where both appear, so both are overridden.)
@@ -442,6 +454,10 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   billing_slot:     "Billing · Slot",
   billing_urgent:   "Billing · Urgent",
   billing_ship_to:  "Billing · Ship-to",
+  // Not in PAGE_NAV_MAP, so without this the row would read its raw key. The
+  // "Purchase Order ·" prefix keeps it apart from "Billing · Ship-to" above —
+  // a different screen and a different key.
+  place_order_ship_to: "Purchase Order · Ship-to",
   attendance:       "Attendance — their own",
   attendance_admin: "Attendance — everyone",
 };
@@ -454,7 +470,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 33 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 34 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -470,7 +486,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     "picking", "floor", "mrn", "ci", "mail_orders", "billing_picking",
     "billing_print",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
-    "place_order", "trip_report", "import_obd",
+    "place_order", "place_order_ship_to", "trip_report", "import_obd",
   ] },
   { label: "Tinting", keys: [
     "tint_manager", "tint_operator", "operations_tinting",
