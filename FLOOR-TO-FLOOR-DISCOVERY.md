@@ -39,6 +39,14 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
   at `pick_done` / `pick_checked` still cannot leave Hold. See §9.5.
 - **Held bills on trips** — whether a held bill may be added to a trip at all. To be decided in the
   same conversation as Clear hold.
+- **Open question: the add-bills route enforces no delivery type.** An Upcountry bill can be added to
+  a Local trip today, from the dropdown or a card click. Nothing has broken because of it, but
+  nothing prevents it either. Decide whether a trip should be one type only before the loading
+  screen is built.
+- **Open question: the remove-bills route clears whatever stop a bill is on** without checking the
+  bill belongs to the trip in the URL. "Remove from trip" never hits it because it groups by trip
+  first, and Undo now re-reads the trip before sending ids. But the guard belongs in the route, not
+  in its callers. Fix alongside the delivery-type decision.
 - **Orphan `trip_drops`** — cancel leaves empty stops behind (104 on 2026-09-14, plus one from the
   slice 3 test). See §9.4.
 - ~~**Slice 8 — the band's "at desk, floor cannot see" text**~~ — **CLOSED by slice 6.** The text
@@ -105,6 +113,9 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
   ACTION_PAGES), but five routes and the layout read it. `docs/CLAUDE_MAIL_ORDERS.md` §23 still
   describes billing v2 as a test-user pilot (live `rolloutStage` is ALL_USERS) and its Picking
   routes as gated on `mail_orders` (they gate on `billing_picking`), and has no Print tab.
+- **Considered and rejected (2026-09-16):** collapsing the per-stop column headers into one sticky
+  header above the first stop. It saves ~190px on a seven-stop trip but removes each stop's
+  select-all checkbox, which is worth more. The repeated headers are deliberate.
 - **Settle-drafts SQL — RUN by the owner before slice 7.** A returned L-260915-01, -03, -04; C read
   `drafts_with_vehicle` 2 (`L-260912-08`, `U-260914-03`, deliberately left as drafts) and
   `migration_rows` 3.
