@@ -34,6 +34,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { TripDesk } from "./trip-desk";
 import { TripForm } from "./trip-form";
+import { rankRouteName, formatRouteLabel } from "@/lib/trips/route-label";
 import { FloorBottomBar } from "./floor-bottom-bar";
 import { TripVehicleEditor } from "./trip-vehicle-editor";
 import {
@@ -271,6 +272,8 @@ export function FloorPage() {
    * Cleared by Done, by Escape, and by the trip leaving the board.
    */
   const [addingToTripId, setAddingToTripId] = useState<number | null>(null);
+  /** Placeholder route names from the trips feed — see the add hint below. */
+  const [placeholderRoutes, setPlaceholderRoutes] = useState<ReadonlySet<string>>(() => new Set<string>());
   /**
    * How many bills the last press added, for the band-s brief Undo — and the ids
    * to hand back. Cleared after ten seconds so the band goes quiet again.
@@ -369,7 +372,13 @@ export function FloorPage() {
       // for every operator on the floor.
       try {
         if (tripRes === null) { setTrips([]); setSideError((prev) => prev ?? "Trips feed unreachable"); }
-        else if (tripRes.ok) setTrips(((await tripRes.json()).trips ?? []) as TripSummary[]);
+        else if (tripRes.ok) {
+          const body = (await tripRes.json()) as { trips?: TripSummary[]; placeholderRoutes?: string[] };
+          setTrips(body.trips ?? []);
+          // The routes that name nothing, by their current names — the pool-s
+          // add hint skips exactly what the rail card-s label skips (2026-09-16).
+          setPlaceholderRoutes(new Set(body.placeholderRoutes ?? []));
+        }
         else { setTrips([]); setSideError((prev) => prev ?? `Trips feed HTTP ${tripRes.status}`); }
       } catch {
         setTrips([]);
@@ -1507,6 +1516,37 @@ export function FloorPage() {
   );
 
   /**
+   * THE SELECTION'S ROUTE, by the SAME rule the rail card's label uses
+   * (2026-09-16, owner): `rankRouteName` from lib/trips/route-label.ts, the one
+   * implementation both sides call. Most BILLS wins here — the trip ranks by
+   * stops — a tie goes to the first row on the board, placeholder routes are
+   * skipped, and the rest become "+N".
+   *
+   * `rank` is kept beside the label because the "Same route" hint needs to know
+   * whether the selection is a SINGLE route: with two or more there is no
+   * sensible match, and guessing at the biggest would mark cards that are only
+   * partly right.
+   */
+  const selectionRouteRank = useMemo(
+    () =>
+      rankRouteName(
+        selectedRows.map((r, i) => ({ name: r.route, order: i, hasBills: true })),
+        placeholderRoutes,
+      ),
+    [selectedRows, placeholderRoutes],
+  );
+  const selectionRouteLabel = useMemo(() => formatRouteLabel(selectionRouteRank), [selectionRouteRank]);
+  /**
+   * The label a card must match to earn its quiet "Same route" line: only when
+   * the selection is ONE route, and never in targeted add mode, where the trip
+   * has already been chosen and there is nothing to compare.
+   */
+  const sameRouteLabel =
+    addMode && selectionRouteRank !== null && selectionRouteRank.others === 0
+      ? selectionRouteRank.name
+      : null;
+
+  /**
    * The add hint's second line — the same facts the bar already prints, in the
    * same words, from the same helpers: litres, kilos (with the honest "+" when a
    * bill has no weight) and how many routes the selection spans.
@@ -1520,9 +1560,9 @@ export function FloorPage() {
     const bits = [`${formatLitres(sumLitres(selectedRows))} L`];
     const kg = formatWeightKg(selectionWeight.kg);
     if (kg !== null) bits.push(`${kg}${selectionWeight.unknown > 0 ? "+" : ""} kg`);
-    if (selectionRoutes > 0) bits.push(`${selectionRoutes} route${selectionRoutes === 1 ? "" : "s"}`);
+    bits.push(selectionRouteLabel ?? "No route");
     return bits.join(" · ");
-  }, [selectedRows, selectionWeight, selectionRoutes]);
+  }, [selectedRows, selectionWeight, selectionRouteLabel]);
 
   // A short reminder of what the selection is sitting on. Reads off the rail,
   // for the same reason `barMode` does.
@@ -1858,6 +1898,7 @@ export function FloorPage() {
               addMode={addMode}
               addCount={selectedRows.length}
               addSummary={addSummary}
+              sameRouteLabel={sameRouteLabel}
               onAddToTrip={(id) => void addSelectionToTrip(id)}
               // Targeted add — "+ Add bills" inside a trip (2026-09-16).
               addingToTripId={addingToTripId}

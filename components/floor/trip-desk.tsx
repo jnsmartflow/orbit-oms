@@ -121,6 +121,7 @@ export function TripDesk({
   addMode,
   addCount,
   addSummary,
+  sameRouteLabel,
   onAddToTrip,
   addingToTripId,
   lastAddCount,
@@ -168,6 +169,8 @@ export function TripDesk({
   addCount: number;
   /** "1,320 L · 1,822 kg · 1 route" — the hint line under the heading. */
   addSummary: string;
+  /** The selection-s route when it is a single one — cards matching it say so. */
+  sameRouteLabel: string | null;
   onAddToTrip: (tripId: number) => void;
   /**
    * TARGETED ADD MODE (2026-09-16): "+ Add bills" was pressed INSIDE a trip, so
@@ -723,6 +726,7 @@ export function TripDesk({
         addMode={addMode && addingToTripId === null}
         addCount={addCount}
         addSummary={addSummary}
+        sameRouteLabel={sameRouteLabel}
         onAddToTrip={onAddToTrip}
         anchorIso={floor.date}
         scope={scope}

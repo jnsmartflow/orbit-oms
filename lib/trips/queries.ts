@@ -33,6 +33,16 @@ import {
 // disagree about it again — read that module's header before changing the rule.
 import { tripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { getTripActivity, type TripActivityRow } from "@/lib/trips/activity";
+// 🔴 THE ROUTE/AREA RANKING LIVES IN ONE PLACE (2026-09-16) — a pure module the
+// CLIENT can import too, so the rail card-s label and the pool-s add hint cannot
+// drift apart. PLACEHOLDER_ROUTE_IDS moved there with it.
+import {
+  rankRouteName,
+  formatRouteLabel,
+  PLACEHOLDER_ROUTE_IDS,
+  type RouteRank,
+  type RouteRankItem,
+} from "@/lib/trips/route-label";
 
 /**
  * Per-trip bill counts by state.
@@ -496,9 +506,7 @@ interface AreaStop {
  * PURE — exported so a test can check the rule without a database.
  */
 export function deriveAreaLabel(stops: readonly AreaStop[]): string | null {
-  const ranked = rankStopNames(stops, (s) => s.areaName);
-  if (!ranked) return null;
-  return ranked.others > 0 ? `${ranked.name} +${ranked.others}` : ranked.name;
+  return formatRouteLabel(rankRouteName(toRankItems(stops, (s) => s.areaName)));
 }
 
 /**
@@ -515,50 +523,31 @@ export function deriveAreaLabel(stops: readonly AreaStop[]): string | null {
 export function deriveRouteLabel(
   stops: readonly AreaStop[],
   placeholderNames: ReadonlySet<string> = new Set(),
-): { name: string; others: number } | null {
-  return rankStopNames(stops, (s) => (s.routeName !== null && placeholderNames.has(s.routeName.trim()) ? null : s.routeName));
+): RouteRank | null {
+  return rankRouteName(toRankItems(stops, (s) => s.routeName), placeholderNames);
 }
 
 /**
- * route_master rows that NAME NOTHING (owner, 2026-09-15): id 20 "No Route" and
- * id 25 "TEST R". A stop on one of these is skipped by deriveRouteLabel exactly
- * as a stop with no route is — it never wins, and it never counts into "+N".
+ * The CURRENT names of the placeholder routes, for callers that rank bills
+ * rather than stops (2026-09-16).
  *
- * 🔴 BY ID, NOT BY TEXT. `trip_drops.routeName` is a name snapshot with no route
- * id, so the ids are resolved to their CURRENT names at read time
- * (loadTripLabels) and stops are matched against those. route_master.name is
- * unique, so no real route can be caught by it. If one of these rows is ever
- * renamed, older stops keep the old text, no longer match, and SHOW as a route —
- * failing towards showing, never towards hiding (owner).
- *
- * ⚠ HAND (23), Transport (22) and IGT / CROSS (18) are NOT here, on purpose:
- * they say how the load moves, and the team named them (owner).
+ * 🔴 THE CLIENT NEEDS THEM TOO. The pool's add hint ranks the SELECTED BILLS,
+ * client-side, and must skip exactly the routes the rail card's label skips —
+ * so the trips feed hands this set down with the trips and floor-page passes it
+ * into the same shared ranker. Resolving ids to names stays server-side, where
+ * the ids mean something.
  */
-export const PLACEHOLDER_ROUTE_IDS: readonly number[] = [20, 25];
+export async function getPlaceholderRouteNames(): Promise<string[]> {
+  const rows = await prisma.route_master.findMany({
+    where: { id: { in: [...PLACEHOLDER_ROUTE_IDS] } },
+    select: { name: true },
+  });
+  return rows.map((r) => r.name.trim());
+}
 
-/** The shared ranking behind deriveAreaLabel and deriveRouteLabel. */
-function rankStopNames(
-  stops: readonly AreaStop[],
-  pick: (s: AreaStop) => string | null,
-): { name: string; others: number } | null {
-  const byName = new Map<string, { stops: number; firstSeq: number }>();
-  for (const s of stops) {
-    if (!s.hasBills) continue;
-    const name = pick(s)?.trim();
-    if (!name) continue;
-    const cur = byName.get(name);
-    if (cur) {
-      cur.stops += 1;
-      cur.firstSeq = Math.min(cur.firstSeq, s.dropSeq);
-    } else {
-      byName.set(name, { stops: 1, firstSeq: s.dropSeq });
-    }
-  }
-  if (byName.size === 0) return null;
-  const ranked = Array.from(byName.entries()).sort(
-    (a, b) => b[1].stops - a[1].stops || a[1].firstSeq - b[1].firstSeq,
-  );
-  return { name: ranked[0][0], others: ranked.length - 1 };
+/** A trip-s stops as the shared ranker takes them: one item per stop, in visit order. */
+function toRankItems(stops: readonly AreaStop[], pick: (s: AreaStop) => string | null): RouteRankItem[] {
+  return stops.map((s) => ({ name: pick(s), order: s.dropSeq, hasBills: s.hasBills }));
 }
 
 /** Assemble one summary from a row plus the resolved maps and its own bills. */

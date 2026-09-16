@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { allocateTripNumberWithRetry, findPreviousHolders, typeCodeForDeliveryType } from "@/lib/trips/number";
-import { getTripsForDate, parseTripDate } from "@/lib/trips/queries";
+import { getPlaceholderRouteNames, getTripsForDate, parseTripDate } from "@/lib/trips/queries";
 import { logTripCreated } from "@/lib/trips/activity";
 import { getTodayIST } from "@/lib/dates";
 
@@ -91,7 +91,12 @@ export async function GET(req: Request): Promise<NextResponse> {
   // (that day's trips only) — slice 10, lib/trips/live-trips.ts. Read from the
   // server clock, never from the request.
   const trips = await getTripsForDate(tripDate, parseTripDate(getTodayIST()));
-  return NextResponse.json({ date: dateParam, trips });
+  // The placeholder routes by their CURRENT names (2026-09-16). The pool-s add
+  // hint ranks the selected BILLS client-side and has to skip exactly what the
+  // rail card-s label skips; resolving the ids stays here, where they mean
+  // something. ADDITIVE — every existing reader takes `trips` and ignores this.
+  const placeholderRoutes = await getPlaceholderRouteNames();
+  return NextResponse.json({ date: dateParam, trips, placeholderRoutes });
 }
 
 /**

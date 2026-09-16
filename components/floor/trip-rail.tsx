@@ -89,6 +89,7 @@ export function TripRail({
   addMode = false,
   addCount = 0,
   addSummary = "",
+  sameRouteLabel = null,
   onAddToTrip,
 }: {
   trips: TripSummary[] | null;
@@ -131,6 +132,15 @@ export function TripRail({
   addMode?: boolean;
   addCount?: number;
   addSummary?: string;
+  /**
+   * The selection-s route when it is a SINGLE one (floor-page). A trip whose own
+   * route label is exactly this gets a quiet green "Same route" line.
+   *
+   * ⚠ A HINT, NEVER A RESTRICTION (owner). Every card stays clickable; this only
+   * saves reading twenty of them. Null when the selection spans several routes —
+   * there is no sensible match then, and marking the biggest would be a guess.
+   */
+  sameRouteLabel?: string | null;
   onAddToTrip?: (tripId: number) => void;
 }) {
   const all = trips ?? [];
@@ -227,6 +237,9 @@ export function TripRail({
           // "+" on that card would offer a press that is guaranteed to fail.
           // (Cancelled trips never reach this rail at all.)
           addable={addMode && t.status !== "dispatched" && t.status !== "cancelled"}
+          // Its own label must match exactly: "Adajan" is the same route,
+          // "Adajan +1" is a load that also goes somewhere else.
+          sameRoute={sameRouteLabel !== null && t.routeName === sameRouteLabel && t.routeExtraCount === 0}
           addMode={addMode}
           onAdd={() => onAddToTrip?.(t.id)}
         />
@@ -243,6 +256,7 @@ function TripCard({
   gateOn,
   addMode = false,
   addable = false,
+  sameRoute = false,
   onAdd,
 }: {
   trip: TripSummary;
@@ -254,6 +268,8 @@ function TripCard({
   addMode?: boolean;
   /** This trip can take them. False on a dispatched trip: no "+", no click. */
   addable?: boolean;
+  /** This trip already runs the selection-s route. */
+  sameRoute?: boolean;
   onAdd?: () => void;
 }) {
   // 🔴 A CARRIED TRIP READS AS OLD, NOT AS TODAY'S (2026-09-11). Printing its REAL
@@ -366,6 +382,10 @@ function TripCard({
       <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-[#61616d]" title={trip.driverName ?? undefined}>
         {trip.driverName ?? <span className="font-semibold text-[#8a5d0c]">No driver yet</span>}
       </div>
+
+      {/* QUIET, and between the driver and the bar (owner-s design). A hint, not
+          a badge — it must not compete with the state badge above it. */}
+      {sameRoute && <div className="text-[11.5px] font-semibold text-[#15773a]">Same route</div>}
 
       <TripBar counts={bar} className="mt-[2px]" />
     </button>
