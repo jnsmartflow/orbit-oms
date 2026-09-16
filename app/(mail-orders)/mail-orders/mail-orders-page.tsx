@@ -10,7 +10,7 @@ import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
 import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
-import { useSession } from "next-auth/react";
+import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 import { ReviewView } from "./review-view";
 import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
@@ -207,9 +207,8 @@ function ColumnPicker({
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function MailOrdersPage() {
-  const { data: session } = useSession();
-  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager", "operation_manager", "operations"]
-    .includes(session?.user?.role ?? "");
+  // Import button: the Import OBDs tick, the same rule the import route enforces.
+  const canImportOBDs = useCanImportObds();
 
   // ── State ────────────────────────────────────────────────────────────────────
   const [orders, setOrders] = useState<MoOrder[]>([]);

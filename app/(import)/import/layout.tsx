@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
-import { getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
+import { redirect } from "next/navigation";
+import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -17,10 +17,18 @@ export default async function ImportLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT]);
+  if (!session?.user) redirect("/login");
 
-  const roles       = session!.user.roles ?? [session!.user.role];
-  const primaryRole = session!.user.role;
+  const roles       = session.user.roles ?? [session.user.role];
+  const primaryRole = session.user.role;
+
+  // ONE RULE (owner, 2026-09-16): the Import OBDs tick (import_obd canImport)
+  // decides who may open this page, exactly as it decides who may import
+  // (POST /api/import/obd) and who sees the Import button. No job-title list.
+  // All held roles, never the primary alone; admin / superuser bypass comes
+  // from the resolver.
+  const allowed = await checkAnyPermission(roles, "import_obd", "canImport");
+  if (!allowed) redirect("/unauthorized");
 
   const allPerms     = await getAllPermissionsForRoles(roles);
   const navItems     = buildNavItems(allPerms, undefined, {

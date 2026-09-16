@@ -34,6 +34,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 import { toast } from "sonner";
 import { AlertCircle, FileBarChart, Plus, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -79,8 +80,8 @@ const EMPTY_PAYLOAD: TintBoardPayload = {
 export function TintManagerContent() {
   const { data: session } = useSession();
 
-  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
-    .includes(session?.user?.role ?? "");
+  // Import button: the Import OBDs tick, the same rule the import route enforces.
+  const canImportOBDs = useCanImportObds();
 
   // Remove OBD — TM or admin. The server does the precise check
   // (/api/tint/manager/orders/[id]/remove), including the 409 outside

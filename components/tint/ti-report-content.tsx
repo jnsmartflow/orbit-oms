@@ -15,7 +15,7 @@ import {
   Inbox, ChevronDown, ChevronRight, ChevronLeft,
 } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
-import { useSession } from "next-auth/react";
+import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -358,9 +358,8 @@ function ShadeExpandRow({ row }: { row: TIRow }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function TIReportContent() {
-  const { data: session } = useSession();
-  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
-    .includes(session?.user?.role ?? "");
+  // Import button: the Import OBDs tick, the same rule the import route enforces.
+  const canImportOBDs = useCanImportObds();
 
   const today = todayISO();
 

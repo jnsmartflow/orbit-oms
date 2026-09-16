@@ -4,9 +4,8 @@ import type { Session } from "next-auth";
 import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { checkPermission } from "@/lib/permissions";
+import { checkAnyPermission } from "@/lib/permissions";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { IMPORT_TEMPLATES } from "@/lib/import-templates";
 import type { ImportTemplateId } from "@/lib/import-templates";
@@ -4586,6 +4585,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   const url = new URL(req.url, "http://localhost");
   const action = url.searchParams.get("action");
 
+  // 🔴 MACHINE PATHS — EXEMPT FROM THE TICK BELOW, AND THEY MUST STAY ABOVE IT.
+  // These six are called by the import PC's scheduled scripts, which carry no
+  // session. Each handler verifies its own HMAC signature. middleware.ts lets
+  // them through on the `x-import-key-id` header (auto-import-v1 /
+  // auto-import-json-v1). Moving any of these below the session gate — or
+  // "tidying" them into it — stops the automatic import for the whole depot:
+  //   auto · check · auto-json · patch-headers · pending-invoices · day-obds
   if (action === "auto")          return handleAutoImport(req);
   if (action === "check")         return handleAutoImportCheck(req);
   if (action === "auto-json")     return handleAutoImportJson(req);
@@ -4593,19 +4599,33 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "pending-invoices")  return handleAutoImportPendingInvoices(req);
   if (action === "day-obds")          return handleAutoImportDayObds(req);
 
-  // All other actions require session auth
+  // ── PEOPLE — one rule (owner, 2026-09-16) ──────────────────────────────────
+  // The Import OBDs tick (import_obd canImport, /admin/access) decides who may
+  // import. No job-title list. The same question, asked the same way, decides
+  // who SEES the Import button (GET /api/import/access) and who may open /import.
+  //
+  // checkAnyPermission over ALL held roles, never checkPermission(primary role):
+  // the latter would deny a grant held through a secondary role in role mode.
+  // The admin / superuser bypass lives inside the resolver — do not add a second
+  // rule here.
+  //
+  // JSON 401/403, not requireRole's redirect: a redirect answering a fetch()
+  // reaches the modal as an HTML page, which is a confusing failure.
   const session = await auth();
-  requireRole(session, [
-    ROLES.ADMIN,
-    ROLES.DISPATCHER,
-    ROLES.SUPPORT,
-    ROLES.BILLING_OPERATOR,
-    ROLES.TINT_MANAGER,
-    ROLES.OPERATION_MANAGER,
-    ROLES.OPERATIONS,
-  ]);
-  const allowed = await checkPermission(session!.user.role, "import_obd", "canImport");
-  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  if (!session?.user) {
+    return NextResponse.json({ error: "You are not signed in. Sign in again and retry the import." }, { status: 401 });
+  }
+  const allowed = await checkAnyPermission(
+    session.user.roles ?? [session.user.role],
+    "import_obd",
+    "canImport",
+  );
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "You don't have permission to import OBDs. Ask an admin to tick Import OBDs for you on the Access screen." },
+      { status: 403 },
+    );
+  }
 
   if (action === "preview") return handlePreview(req, session!);
   if (action === "confirm") return handleConfirm(req, session!);

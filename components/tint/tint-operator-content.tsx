@@ -7,7 +7,7 @@ import { HeaderDateStepper } from "@/components/header-date-stepper";
 import { HeaderViewToggle } from "@/components/shared/header-view-toggle";
 import { OperatorPartyCards } from "@/components/tint/operator/party-cards";
 import { HistoryPanel, type HistoryJob } from "@/components/tint/operator/history-panel";
-import { useSession } from "next-auth/react";
+import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 import { cn } from "@/lib/utils";
 import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
 import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
@@ -402,9 +402,8 @@ function formatTimeAgo(iso: string): string {
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintOperatorContent() {
-  const { data: session } = useSession();
-  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
-    .includes(session?.user?.role ?? "");
+  // Import button: the Import OBDs tick, the same rule the import route enforces.
+  const canImportOBDs = useCanImportObds();
 
   const { mode: skuDisplayMode } = useSkuDisplayMode();
 

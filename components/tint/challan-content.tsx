@@ -7,7 +7,7 @@ import {
   type ChallanApiResponse,
 } from "@/components/tint/challan-document";
 import { UniversalHeader } from "@/components/universal-header";
-import { useSession } from "next-auth/react";
+import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -59,9 +59,8 @@ function initFormulaValues(lineItems: ChallanApiResponse["order"]["lineItems"]):
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ChallanContent() {
-  const { data: session } = useSession();
-  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
-    .includes(session?.user?.role ?? "");
+  // Import button: the Import OBDs tick, the same rule the import route enforces.
+  const canImportOBDs = useCanImportObds();
 
   // ── List state ───────────────────────────────────────────────────────────────
   const [items,       setItems]       = useState<ChallanListItem[]>([]);

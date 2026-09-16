@@ -44,6 +44,10 @@ export default auth(function middleware(req) {
   }
 
   // Allow HMAC auto-import (v1: auto-import-v1, v2: auto-import-json-v1)
+  // 🔴 Machine path — the import PC's scheduled scripts carry no session. It must
+  // stay exempt from the Import OBDs tick; the six actions it reaches (auto,
+  // check, auto-json, patch-headers, pending-invoices, day-obds) are dispatched
+  // ABOVE the session gate in app/api/import/obd/route.ts and verify their own HMAC.
   const importKeyId = req.headers.get("x-import-key-id");
   if (
     pathname === "/api/import/obd" &&
