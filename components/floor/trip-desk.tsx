@@ -117,6 +117,10 @@ export function TripDesk({
   onCancelTrip,
   onSetTripShown,
   onSetTripSentToBilling,
+  addMode,
+  addCount,
+  addSummary,
+  onAddToTrip,
   activeTab,
   tabs,
   sideBody,
@@ -149,6 +153,16 @@ export function TripDesk({
   onSetTripShown: (tripId: number, shown: boolean) => void;
   /** Send to billing (`sent: true`) or take back (`false`) — slice 9. */
   onSetTripSentToBilling: (tripId: number, sent: boolean) => void;
+  /**
+   * ADD MODE (2026-09-16): pool bills are ticked and waiting to be placed, so the
+   * rail is the picker. Passed straight through to TripRail; the desk itself has
+   * no behaviour of its own here.
+   */
+  addMode: boolean;
+  addCount: number;
+  /** "1,320 L · 1,822 kg · 1 route" — the hint line under the heading. */
+  addSummary: string;
+  onAddToTrip: (tripId: number) => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
   activeTab: "floor" | "tinting" | "hold" | "cancelled";
   /** The tab pills + their counts + New trip, built by floor-page and rendered
@@ -667,6 +681,10 @@ export function TripDesk({
       <TripRail
         trips={trips}
         loading={tripsLoading}
+        addMode={addMode}
+        addCount={addCount}
+        addSummary={addSummary}
+        onAddToTrip={onAddToTrip}
         anchorIso={floor.date}
         scope={scope}
         gateOn={gateOn}

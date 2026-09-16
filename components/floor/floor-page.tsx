@@ -1201,6 +1201,16 @@ export function FloorPage() {
   // The trip mode's Remove posts per trip anyway (removeSelectionFromTrips
   // groups by tripNumber), so a selection spanning stops is ordinary.
   const barMode: "pool" | "trip" = railSelection.kind === "trip" ? "trip" : "pool";
+  /**
+   * THE RAIL IS THE PICKER while pool bills are ticked (2026-09-16, owner's
+   * add-to-trip design). Derived from the two things already on screen — no new
+   * state — so clearing the selection (✕, Escape, or the add itself) ends it.
+   *
+   * ⚠ POOL MODE ONLY. A selection made INSIDE a trip means "take these off",
+   * and its bar says so; turning the rail into a picker there would offer to
+   * add bills that are already on a trip.
+   */
+  const addMode = barMode === "pool" && selection.size > 0;
   // Only DRAFT and CONFIRMED trips can take bills — the routes refuse a
   // dispatched or cancelled one, and offering it would offer a guaranteed 409.
   const attachableTrips = useMemo(
@@ -1251,6 +1261,24 @@ export function FloorPage() {
     () => new Set(selectedRows.map((r) => r.route ?? "\u0000unrouted")).size,
     [selectedRows],
   );
+
+  /**
+   * The add hint's second line — the same facts the bar already prints, in the
+   * same words, from the same helpers: litres, kilos (with the honest "+" when a
+   * bill has no weight) and how many routes the selection spans.
+   *
+   * ⚠ ROUTES AS A COUNT, NOT A NAME, for now. The design shows the route's NAME
+   * here, and a "Same route" line on matching cards; both need the rail's
+   * most-stops ranking applied to the SELECTION, which is its own (fourth)
+   * commit. A count is true today and needs no new plumbing.
+   */
+  const addSummary = useMemo(() => {
+    const bits = [`${formatLitres(sumLitres(selectedRows))} L`];
+    const kg = formatWeightKg(selectionWeight.kg);
+    if (kg !== null) bits.push(`${kg}${selectionWeight.unknown > 0 ? "+" : ""} kg`);
+    if (selectionRoutes > 0) bits.push(`${selectionRoutes} route${selectionRoutes === 1 ? "" : "s"}`);
+    return bits.join(" · ");
+  }, [selectedRows, selectionWeight, selectionRoutes]);
 
   // A short reminder of what the selection is sitting on. Reads off the rail,
   // for the same reason `barMode` does.
@@ -1577,6 +1605,16 @@ export function FloorPage() {
               onToggleRow={onToggleRow}
               onToggleAll={onToggleAll}
               onMarkUrgent={rowMarkUrgent}
+              // ── ADD MODE (2026-09-16) ────────────────────────────────────
+              // Bills are ticked in the POOL and are waiting to be placed, so
+              // the rail stops being a list and becomes the picker. DERIVED,
+              // never stored: it is exactly "the bar is in pool mode and
+              // something is ticked", so Escape and ✕ — which clear the
+              // selection — end it with no second piece of state to go stale.
+              addMode={addMode}
+              addCount={selectedRows.length}
+              addSummary={addSummary}
+              onAddToTrip={(id) => void addSelectionToTrip(id)}
               tripBusyId={tripBusyId}
               // The page's All / Local / Upcountry / IGT scope, for the RAIL
               // (slice 6). The rail filters trips by their own delivery type;

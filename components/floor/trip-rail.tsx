@@ -86,6 +86,10 @@ export function TripRail({
   poolLitres,
   selection,
   onSelect,
+  addMode = false,
+  addCount = 0,
+  addSummary = "",
+  onAddToTrip,
 }: {
   trips: TripSummary[] | null;
   loading: boolean;
@@ -110,6 +114,24 @@ export function TripRail({
   // pile is one too many, and the tab is the one you can act on.
   selection: RailSelection;
   onSelect: (sel: RailSelection) => void;
+  /**
+   * 🔴 ADD MODE (2026-09-16, owner's add-to-trip design). Pool bills are ticked
+   * and waiting to be placed, so the rail stops being a list of trips and
+   * becomes the PICKER: a pink hint at the top, a "+" on every card that can
+   * take bills, and a click that ADDS instead of opening.
+   *
+   * ⚠ IT IS DERIVED UPSTREAM from "the bar is in pool mode and something is
+   * ticked" (floor-page.tsx), never stored here — clearing the selection ends
+   * it, which is what makes Escape and ✕ cancel with no extra wiring.
+   *
+   * ⚠ PINK, NEVER VIOLET. Violet already means SELECTED on this screen; add mode
+   * borrows the tint room's pink (#db2777 on #fce7f3, border #f9a8d4, text
+   * #be185d) and shows it only while bills are waiting to be placed.
+   */
+  addMode?: boolean;
+  addCount?: number;
+  addSummary?: string;
+  onAddToTrip?: (tripId: number) => void;
 }) {
   const all = trips ?? [];
   // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11), and a trip outside the
@@ -130,9 +152,21 @@ export function TripRail({
           Smart Flow had to scroll the rail to know what was on it. Two numbers,
           one line, above everything. It counts the LIVE, in-scope list, which
           is what is rendered. */}
-      <div className="mb-[9px] px-1 text-[11px] font-semibold uppercase tabular-nums tracking-[0.06em] text-[#96969f]">
-        {tripCount} trip{tripCount === 1 ? "" : "s"} · {billCount} bill{billCount === 1 ? "" : "s"}
-      </div>
+      {/* THE HINT, in place of the count while bills are waiting to be placed.
+          It replaces the head rather than joining it: the rail has one job at a
+          time, and "20 trips · 120 bills" is not the question being asked. */}
+      {addMode ? (
+        <div className="mb-[10px] rounded-[8px] border border-[#f9a8d4] bg-[#fce7f3] px-2.5 py-2">
+          <div className="text-[12.5px] font-bold text-[#be185d]">
+            Click a trip to add {addCount} bill{addCount === 1 ? "" : "s"}
+          </div>
+          <div className="mt-0.5 text-[11.5px] tabular-nums text-[#9d174d]">{addSummary}</div>
+        </div>
+      ) : (
+        <div className="mb-[9px] px-1 text-[11px] font-semibold uppercase tabular-nums tracking-[0.06em] text-[#96969f]">
+          {tripCount} trip{tripCount === 1 ? "" : "s"} · {billCount} bill{billCount === 1 ? "" : "s"}
+        </div>
+      )}
 
       {/* ── The pool ─────────────────────────────────────────────────────── */}
       <button
@@ -188,6 +222,13 @@ export function TripRail({
           gateOn={gateOn}
           selected={selection.kind === "trip" && selection.tripId === t.id}
           onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
+          // ⚠ A DISPATCHED TRIP IS NOT ADDABLE, and says so on hover. The bills
+          // route refuses one with a 409 (app/api/floor/trips/[id]/bills), so a
+          // "+" on that card would offer a press that is guaranteed to fail.
+          // (Cancelled trips never reach this rail at all.)
+          addable={addMode && t.status !== "dispatched" && t.status !== "cancelled"}
+          addMode={addMode}
+          onAdd={() => onAddToTrip?.(t.id)}
         />
       ))}
     </div>
@@ -200,12 +241,20 @@ function TripCard({
   onSelect,
   anchorIso,
   gateOn,
+  addMode = false,
+  addable = false,
+  onAdd,
 }: {
   trip: TripSummary;
   selected: boolean;
   onSelect: () => void;
   anchorIso: string;
   gateOn: boolean;
+  /** Bills are waiting to be placed — see TripRail's `addMode`. */
+  addMode?: boolean;
+  /** This trip can take them. False on a dispatched trip: no "+", no click. */
+  addable?: boolean;
+  onAdd?: () => void;
 }) {
   // 🔴 A CARRIED TRIP READS AS OLD, NOT AS TODAY'S (2026-09-11). Printing its REAL
   // date is the whole point of carrying it: a trip silently relabelled today
@@ -220,17 +269,37 @@ function TripCard({
   // 🔴 THE CARD IS FOUR LINES AND A BAR (floor redesign, 2026-09-15, owner):
   //   number · slot · badge / route / stops · bills · litres / driver / bar.
   // The vehicle and the area are off the card — the detail panel carries both.
+  // 🔴 THE WHOLE CARD IS THE TARGET IN ADD MODE (owner). The "+" marks that the
+  // rail has changed meaning; it is not a thing to aim at. A card that cannot
+  // take bills is inert — it neither adds nor opens, so a click during add mode
+  // can never do something the planner did not ask for.
+  const blocked = addMode && !addable;
   return (
     <button
       type="button"
-      onClick={onSelect}
-      className={`mb-2 flex w-full flex-col gap-[6px] rounded-[9px] border px-3 pb-3 pt-[11px] text-left ${
-        selected
-          ? "border-brand-600 bg-white shadow-[0_0_0_3px_#f2edfe]"
-          : "border-[#e7e7ee] bg-white hover:border-[#cfcfda]"
+      onClick={blocked ? undefined : addMode ? onAdd : onSelect}
+      disabled={blocked}
+      title={blocked ? `${trip.tripNumber} has been dispatched — it cannot take more bills` : undefined}
+      className={`relative mb-2 flex w-full flex-col gap-[6px] rounded-[9px] border px-3 pb-3 pt-[11px] text-left ${
+        blocked
+          ? "cursor-not-allowed border-[#e7e7ee] bg-white opacity-50"
+          : addable
+            ? "cursor-pointer border-[#cfcfda] bg-white hover:border-[#db2777] hover:bg-[#fce7f3]"
+            : selected
+              ? "border-brand-600 bg-white shadow-[0_0_0_3px_#f2edfe]"
+              : "border-[#e7e7ee] bg-white hover:border-[#cfcfda]"
       }`}
     >
-      <div className="flex items-center gap-[7px]">
+      {addable && (
+        <span
+          aria-hidden
+          className="absolute right-[11px] top-[10px] flex h-[19px] w-[19px] items-center justify-center rounded-full border border-[#f9a8d4] bg-[#fce7f3] text-[14px] font-bold leading-none text-[#db2777]"
+        >
+          +
+        </span>
+      )}
+      {/* The badge keeps clear of the "+" while it is there. */}
+      <div className={`flex items-center gap-[7px] ${addable ? "pr-[25px]" : ""}`}>
         {/* 🔴 A CARRIED TRIP'S NUMBER CHIP IS AMBER (owner). The separate date
             chip is gone: it did not fit, and the number already carries its
             date — L-260914-24 seen on the 15th IS the carry signal. Amber, not
