@@ -9,7 +9,8 @@
 // the detail panel). What is left is the one thing the planner actually does
 // with a selection — move it on or off a trip.
 //
-//   pool selected  → Add to trip ▾ , with New trip… at the bottom of the list
+//   pool selected  → + New trip   (an EXISTING trip is clicked on the rail —
+//                                  see trip-rail.tsx addMode, 2026-09-16)
 //   trip selected  → Remove from trip
 //
 // ⚠ THE ✕ GLOBAL CLEAR STAYS. `toggleAll()` is PER GROUP and selects-all on a
@@ -23,8 +24,6 @@
 // the bill's workflowStage. A dialog on an action repeated all afternoon is a
 // tax, not a safety net.
 
-import type { TripSummary } from "@/lib/trips/queries";
-
 export function FloorBottomBar({
   count,
   litres,
@@ -33,9 +32,8 @@ export function FloorBottomBar({
   articles,
   routes,
   mode,
-  trips,
   busy,
-  onAddToTrip,
+  newTripBlockedReason,
   onNewTripWithSelection,
   onRemoveFromTrip,
   onClear,
@@ -68,10 +66,17 @@ export function FloorBottomBar({
   routes: number;
   /** Which reading — decided by the rail's selection, not by the rows. */
   mode: "pool" | "trip";
-  /** Draft and confirmed trips only. Empty is fine — New trip… still shows. */
-  trips: TripSummary[];
   busy: boolean;
-  onAddToTrip: (tripId: number) => void;
+  /**
+   * Why "+ New trip" cannot be pressed, or null. The one case (owner): the
+   * selection MIXES delivery types, and a trip is Local or Upcountry or IGT,
+   * never a blend. Naming both types is the point — "a trip is one or the
+   * other" without saying which two would send the planner hunting.
+   *
+   * ⚠ NO FALLBACK TO THE FORM. Opening a form to ask which type is exactly the
+   * question this flow exists to remove, and any answer it gave would be a guess.
+   */
+  newTripBlockedReason: string | null;
   onNewTripWithSelection: () => void;
   onRemoveFromTrip: () => void;
   onClear: () => void;
@@ -125,41 +130,31 @@ export function FloorBottomBar({
 
       <div className="ml-auto flex items-center gap-2">
         {mode === "pool" ? (
-          // A <select> that fires on change and resets itself — an ACTION, not a
-          // stored choice. Leaving a trip selected in it would read as "these
-          // bills are on that trip" once the board refetches.
-          <select
-            aria-label="Add the selected bills to a trip"
-            disabled={busy}
-            value=""
-            onChange={(e) => {
-              const v = e.target.value;
-              e.currentTarget.value = "";
-              if (v === "__new__") onNewTripWithSelection();
-              else {
-                const id = Number(v);
-                if (Number.isInteger(id) && id > 0) onAddToTrip(id);
-              }
-            }}
-            className="h-[34px] cursor-pointer rounded-md border border-brand-600 bg-brand-600 px-3 text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
-          >
-            <option value="">{busy ? "Working…" : "Add to trip ▾"}</option>
-            {trips.map((t) => (
-              <option key={t.id} value={t.id} className="bg-white text-gray-900">
-                {t.tripNumber}
-                {t.windowTime ? ` · ${t.windowTime}` : ""}
-                {t.vehicleNo ?? t.adhocVehicleNo ? ` · ${t.vehicleNo ?? t.adhocVehicleNo}` : ""}
-                {` · ${t.counts.total} bill${t.counts.total === 1 ? "" : "s"}`}
-              </option>
-            ))}
-            {/* Last, deliberately — the common case is an existing trip, and a
-                planner reaching the end of the list is the one who needs a new
-                one. It opens the same form the New trip button does and adds the
-                selection when the trip is created. */}
-            <option value="__new__" className="bg-white text-gray-900">
-              New trip…
-            </option>
-          </select>
+          <>
+            {/* The reason, in the bar as well as on hover — a disabled button
+                fires no mouse events, so a tooltip alone can go unread. */}
+            {newTripBlockedReason && (
+              <span className="max-w-[420px] truncate text-[11.5px] text-[#8a5d0c]" title={newTripBlockedReason}>
+                {newTripBlockedReason}
+              </span>
+            )}
+            {/* 🔴 THE ONLY BUTTON LEFT ON THIS BAR (2026-09-16). "Add to trip ▾"
+                — a <select> listing every trip by number — is gone: the RAIL is
+                the picker now, and it shows the route, the load and the driver
+                that the menu never did. An existing trip is a card on the left; a
+                new one is this button. Two answers, two places, neither behind a
+                menu (owner's design). */}
+            <span title={newTripBlockedReason ?? undefined} className="inline-flex">
+              <button
+                type="button"
+                onClick={onNewTripWithSelection}
+                disabled={busy || newTripBlockedReason !== null}
+                className="inline-flex h-[34px] items-center rounded-md border border-brand-600 bg-brand-600 px-4 text-[12px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                {busy ? "Working…" : "+ New trip"}
+              </button>
+            </span>
+          </>
         ) : (
           <button
             type="button"

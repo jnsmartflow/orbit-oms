@@ -511,6 +511,68 @@ export function FloorPage() {
   // the refresh to it would leave the board stale until the operator clicked
   // something else. Same shape as the Show strip's handler and bulkAssign's.
 
+  /**
+   * Undo one add: take the bills THAT PRESS attached back off THAT trip
+   * (2026-09-16, owner's design).
+   *
+   * 🔴 IT CHECKS BEFORE IT REMOVES, and that is not belt-and-braces. The bills
+   * route's `remove` clears whatever stop a bill is on — it does not verify the
+   * stop belongs to the trip in the URL — so undoing blind could pull a bill off
+   * a DIFFERENT trip if another planner moved it in those ten seconds. The trip
+   * is read first and only ids still on it are sent; anything that moved is left
+   * exactly where it is and said out loud.
+   *
+   * ⚠ IT WORKS EVEN IF A BILL HAS SINCE BEEN PICKED OR HELD. Removing from a
+   * trip writes `tripDropId` and nothing else — no stage, no hold — so there is
+   * no state for the undo to fight. A picked bill simply returns to the pool
+   * still picked.
+   */
+  const undoAdd = useCallback(
+    async (tripId: number, orderIds: number[]) => {
+      if (orderIds.length === 0) return;
+      setTripBusyId(tripId);
+      try {
+        const detail = await fetch(`/api/floor/trips/${tripId}`, { cache: "no-store" })
+          .then((r) => (r.ok ? (r.json() as Promise<TripDetail>) : null))
+          .catch(() => null);
+        if (detail === null) {
+          toast.error("Could not undo — the trip could not be read.");
+          return;
+        }
+        const stillOn = new Set(detail.drops.flatMap((d) => d.orderIds));
+        const ids = orderIds.filter((id) => stillOn.has(id));
+        const moved = orderIds.length - ids.length;
+        if (ids.length === 0) {
+          toast.info("Nothing to undo — those bills are no longer on this trip.");
+          return;
+        }
+        const res = await fetch(`/api/floor/trips/${tripId}/bills`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderIds: ids, action: "remove" }),
+        });
+        const body = await res.json().catch(() => ({}));
+        const detached: number[] = body?.detached ?? [];
+        if (!res.ok && detached.length === 0) {
+          toast.error(`Could not undo — ${body?.failed?.[0]?.error ?? body?.error ?? `HTTP ${res.status}`}`);
+          return;
+        }
+        toast.success(
+          `Undone — ${detached.length} bill${detached.length === 1 ? "" : "s"} back in the pool` +
+            (moved > 0 ? `; ${moved} had already been moved elsewhere and ${moved === 1 ? "was" : "were"} left alone` : ""),
+        );
+      } catch {
+        toast.error("Could not undo — check your connection.");
+      } finally {
+        setTripBusyId(null);
+      }
+      // The live-sync poll may be paused, so the rail counts only come back
+      // right if we ask (FLOOR §5).
+      await load();
+    },
+    [load],
+  );
+
   /** Add the ticked bills to an existing trip. */
   const addSelectionToTrip = useCallback(
     async (tripId: number) => {
@@ -529,11 +591,40 @@ export function FloorPage() {
         const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
         if (!res.ok && attached.length === 0 && skipped.length === 0) {
           toast.error(`Could not add — ${failed[0]?.error ?? body?.error ?? `HTTP ${res.status}`}`);
-        } else {
-          const parts: string[] = [];
-          if (attached.length > 0) parts.push(`${attached.length} added`);
-          if (skipped.length > 0) parts.push(`${skipped.length} already on it`);
-          if (parts.length > 0) toast.success(parts.join(", "));
+        } else if (attached.length > 0 || skipped.length > 0) {
+          // 🔴 THE RECEIPT, WITH A WAY BACK (2026-09-16). "2 bills added to
+          // L-260916-04 · now 4 bills · 1,361 L" — what moved, where it went,
+          // and what that trip now holds. The counts are READ BACK from the trip
+          // itself rather than added up here: another planner may have been
+          // adding to the same load a second earlier, and a number this page
+          // computed would quietly disagree with the card beside it.
+          const after = await fetch(`/api/floor/trips/${tripId}`, { cache: "no-store" })
+            .then((r) => (r.ok ? (r.json() as Promise<TripDetail>) : null))
+            .catch(() => null);
+          const label = after?.tripNumber ?? "the trip";
+          const moved =
+            attached.length > 0
+              ? `${attached.length} bill${attached.length === 1 ? "" : "s"} added to ${label}`
+              : `${skipped.length} already on ${label}`;
+          const now =
+            after !== null
+              ? ` · now ${after.counts.total} bill${after.counts.total === 1 ? "" : "s"} · ${formatLitres(after.totalLitres)} L`
+              : "";
+          const extra =
+            attached.length > 0 && skipped.length > 0
+              ? ` (${skipped.length} already on it)`
+              : "";
+          toast.success(`${moved}${extra}${now}`, {
+            // Ten seconds: long enough to notice a wrong card and reach for it,
+            // short enough that it is gone before the next selection is made.
+            duration: 10_000,
+            // UNDO REVERSES THIS ADD AND NOTHING ELSE — the ids this press
+            // actually attached, off this trip. Nothing to undo when every bill
+            // was already there.
+            ...(attached.length > 0
+              ? { action: { label: "Undo", onClick: () => void undoAdd(tripId, attached) } }
+              : {}),
+          });
         }
         // Never swallowed, even beside a success — FLOOR §6(b).
         if (failed.length > 0) {
@@ -549,7 +640,7 @@ export function FloorPage() {
       setSelection(new Set());
       await load();
     },
-    [load],
+    [load, undoAdd],
   );
 
   /** Take the ticked bills off whatever trip they are on. */
@@ -1211,12 +1302,112 @@ export function FloorPage() {
    * add bills that are already on a trip.
    */
   const addMode = barMode === "pool" && selection.size > 0;
-  // Only DRAFT and CONFIRMED trips can take bills — the routes refuse a
-  // dispatched or cancelled one, and offering it would offer a guaranteed 409.
-  const attachableTrips = useMemo(
-    () => (trips ?? []).filter((t) => t.status === "draft" || t.status === "released"),
-    [trips],
+  /**
+   * The delivery types the selection actually spans, in the words the board
+   * prints. One is the normal case; two or more blocks "+ New trip" (owner).
+   */
+  const selectionTypeNames = useMemo(
+    () => Array.from(new Set(selectedRows.map((r) => r.deliveryType).filter((n): n is string => !!n))),
+    [selectedRows],
   );
+  /**
+   * 🔴 A TRIP IS ONE DELIVERY TYPE (owner, 2026-09-16). The trip NUMBER embeds
+   * the type's letter (chk_trips_number_shape), so a mixed selection has no
+   * honest answer — and asking in a form is the question this whole flow exists
+   * to delete. The reason names the types PRESENT, so the planner knows which
+   * ticks to drop.
+   */
+  const newTripBlockedReason = useMemo<string | null>(() => {
+    if (selectionTypeNames.length < 2) return null;
+    const names = [...selectionTypeNames].sort();
+    const list =
+      names.length === 2
+        ? `${names[0]} and ${names[1]}`
+        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    return `Selection mixes ${list} — a trip is one or the other.`;
+  }, [selectionTypeNames]);
+
+  /**
+   * "+ New trip" with bills ticked — CREATE DIRECTLY, no form (owner,
+   * 2026-09-16). The trip is born with the selection in it, appears on the rail
+   * and OPENS: it is the one place this flow moves the planner, because a trip
+   * one second old is one he will want to look at.
+   *
+   * ⚠ NO TOAST ON SUCCESS. Landing inside the new trip is the confirmation.
+   * Failures still speak.
+   *
+   * The delivery type comes from the bills themselves — the selection agrees on
+   * one, or the button was disabled (`newTripBlockedReason`). The options list
+   * is fetched lazily here for the name → id mapping, exactly as the form does;
+   * most sessions never press this.
+   */
+  const createTripWithSelection = useCallback(async () => {
+    const ids = selectedIdsRef.current;
+    if (ids.length === 0 || newTripBlockedReason !== null) return;
+    setTripBarBusy(true);
+    try {
+      let opts = tripOptions;
+      if (opts === null) {
+        const res = await fetch("/api/floor/trips/options", { cache: "no-store" });
+        if (!res.ok) {
+          toast.error(`Could not read the trip options — HTTP ${res.status}`);
+          return;
+        }
+        opts = (await res.json()) as TripOptions;
+        setTripOptions(opts);
+      }
+      const typeName = selectionTypeNames[0];
+      const deliveryType = opts.deliveryTypes.find((d) => d.name === typeName);
+      if (!deliveryType) {
+        toast.error(`Could not match the delivery type "${typeName ?? "unknown"}" — nothing was created.`);
+        return;
+      }
+
+      const createRes = await fetch("/api/floor/trips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deliveryTypeId: deliveryType.id,
+          // The board's own anchor day, never a clock read here — a trip built
+          // while looking at a past day carries that day, as the form does.
+          tripDate: viewMode === "history" && histDate ? histDate : istTodayIso(),
+        }),
+      });
+      const created = await createRes.json().catch(() => ({}));
+      if (!createRes.ok) {
+        toast.error(`Could not create the trip — ${created?.error ?? `HTTP ${createRes.status}`}`);
+        return;
+      }
+      const trip = created.trip as { id: number; tripNumber: string };
+
+      // ⚠ A FAILURE HERE LEAVES A REAL, EMPTY TRIP rather than rolling back —
+      // there is no transaction (CORE §3), and an empty trip is visible and
+      // fixable where a silently-deleted one is not. Same choice trip-form makes.
+      const billsRes = await fetch(`/api/floor/trips/${trip.id}/bills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: ids, action: "add" }),
+      });
+      const billsBody = await billsRes.json().catch(() => ({}));
+      const failed: Array<{ orderId: number; error: string }> = billsBody?.failed ?? [];
+      if (failed.length > 0) {
+        toast.error(
+          `${trip.tripNumber} created, but ${failed.length} bill${failed.length === 1 ? "" : "s"} did not go on — ${failed[0].error}`,
+        );
+      }
+      // Clears the selection, selects the new trip on the rail, refetches.
+      await onTripCreated(trip.id);
+    } catch {
+      toast.error("Could not create the trip — check your connection.");
+    } finally {
+      setTripBarBusy(false);
+    }
+  }, [newTripBlockedReason, selectionTypeNames, tripOptions, viewMode, histDate, onTripCreated]);
+
+  // ⚠ `attachableTrips` WENT WITH THE DROPDOWN (2026-09-16). The same rule — a
+  // dispatched or cancelled trip cannot take bills — now lives on the rail
+  // card, which renders those cards inert with the reason on hover
+  // (trip-rail.tsx, `addable`).
   // The delivery type every ticked bill agrees on, or null. Seeds the New trip
   // form so the common case — a planner ticking one route’s bills and pressing
   // New trip… — needs no answer to a question he has already answered.
@@ -1683,10 +1874,9 @@ export function FloorPage() {
               articles={selectionArticles}
               routes={selectionRoutes}
               mode={barMode}
-              trips={attachableTrips}
               busy={tripBarBusy || tripBusyId !== null}
-              onAddToTrip={(id) => void addSelectionToTrip(id)}
-              onNewTripWithSelection={() => void openTripForm(selectedIds)}
+              newTripBlockedReason={newTripBlockedReason}
+              onNewTripWithSelection={() => void createTripWithSelection()}
               onRemoveFromTrip={() => void removeSelectionFromTrips(selectedRows)}
               onClear={clearSelection}
               contextLabel={barContextLabel}
