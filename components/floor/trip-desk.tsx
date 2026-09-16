@@ -32,6 +32,7 @@ import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
+import { TripAddBand } from "./trip-add-band";
 import {
   rowStatus,
   isTintRoomRow,
@@ -121,6 +122,11 @@ export function TripDesk({
   addCount,
   addSummary,
   onAddToTrip,
+  addingToTripId,
+  lastAddCount,
+  onUndoLastAdd,
+  onStartAddingTo,
+  onDoneAdding,
   activeTab,
   tabs,
   sideBody,
@@ -163,6 +169,17 @@ export function TripDesk({
   /** "1,320 L · 1,822 kg · 1 route" — the hint line under the heading. */
   addSummary: string;
   onAddToTrip: (tripId: number) => void;
+  /**
+   * TARGETED ADD MODE (2026-09-16): "+ Add bills" was pressed INSIDE a trip, so
+   * the pool opens with that trip written across the top and the rail stops
+   * offering a choice. Null when not filling a named trip.
+   */
+  addingToTripId: number | null;
+  /** Bills the last press added — the band-s brief Undo. */
+  lastAddCount: number;
+  onUndoLastAdd: () => void;
+  onStartAddingTo: (tripId: number) => void;
+  onDoneAdding: () => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
   activeTab: "floor" | "tinting" | "hold" | "cancelled";
   /** The tab pills + their counts + New trip, built by floor-page and rendered
@@ -467,7 +484,12 @@ export function TripDesk({
   // ── The middle ───────────────────────────────────────────────────────────
   let middle: ReactNode;
 
-  if (railSelection.kind === "pool") {
+  // 🔴 TARGETED ADD SHOWS THE POOL WHILE THE TRIP STAYS SELECTED ON THE RAIL.
+  // The planner is filling that trip, so its card must stay lit; the middle is
+  // the pool because that is where the bills he is picking from live.
+  const targetTrip = addingToTripId !== null ? (trips ?? []).find((t) => t.id === addingToTripId) ?? null : null;
+
+  if (railSelection.kind === "pool" || addingToTripId !== null) {
     // The header describes the WHOLE pool, both halves, because that is what
     // the table below lists — a header that counted only the due half would not
     // add up to the rows on screen. The divider gives the upcoming subtotal.
@@ -477,6 +499,21 @@ export function TripDesk({
     const weightStr = formatWeightKg(weight.kg);
     middle = (
       <>
+        {/* The band — only while a named trip is being filled. It sits above the
+            pool header so the trip is the first thing read. */}
+        {targetTrip && (
+          <TripAddBand
+            tripNumber={targetTrip.tripNumber}
+            routeName={targetTrip.routeName}
+            routeExtraCount={targetTrip.routeExtraCount}
+            bills={targetTrip.counts.total}
+            litres={formatLitres(targetTrip.totalLitres)}
+            lastAddCount={lastAddCount}
+            busy={tripBusyId === targetTrip.id}
+            onUndo={onUndoLastAdd}
+            onDone={onDoneAdding}
+          />
+        )}
 
         {allPool.length === 0 ? (
           <div className="px-5 py-14 text-center">
@@ -573,7 +610,7 @@ export function TripDesk({
           activity={activity}
           busy={tripBusyId === selectedTrip.id}
           readOnly={isHistory}
-          onAddBills={() => onSelectRail({ kind: "pool" })}
+          onAddBills={() => onStartAddingTo(selectedTrip.id)}
           onChangeVehicle={() => onChangeVehicle(selectedTrip.id)}
           onCancelTrip={() => onCancelTrip(selectedTrip.id)}
           gateOn={gateOn}
@@ -681,7 +718,9 @@ export function TripDesk({
       <TripRail
         trips={trips}
         loading={tripsLoading}
-        addMode={addMode}
+        // ⚠ NOT A PICKER WHILE A NAMED TRIP IS BEING FILLED (owner): the trip is
+        // already decided, so the rail shows no hint and no "+".
+        addMode={addMode && addingToTripId === null}
         addCount={addCount}
         addSummary={addSummary}
         onAddToTrip={onAddToTrip}

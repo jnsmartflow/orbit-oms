@@ -262,6 +262,21 @@ export function FloorPage() {
   const [editingTripId, setEditingTripId] = useState<number | null>(null);
   const [tripBusyId, setTripBusyId] = useState<number | null>(null);
   const [tripBarBusy, setTripBarBusy] = useState(false);
+  /**
+   * TARGETED ADD (2026-09-16): the trip "+ Add bills" was pressed in, or null.
+   *
+   * 🔴 THE ONE PIECE OF STATE THIS FLOW ADDS. Pool add mode is derived (see
+   * `addMode`), but this cannot be: the planner has NAMED a trip and then walks
+   * away from its panel into the pool, so the answer has to be remembered.
+   * Cleared by Done, by Escape, and by the trip leaving the board.
+   */
+  const [addingToTripId, setAddingToTripId] = useState<number | null>(null);
+  /**
+   * How many bills the last press added, for the band-s brief Undo — and the ids
+   * to hand back. Cleared after ten seconds so the band goes quiet again.
+   */
+  const [lastAdd, setLastAdd] = useState<{ tripId: number; orderIds: number[] } | null>(null);
+  const lastAddTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ⚠ REFS, NOT DEPENDENCIES. `setSelection()` is asynchronous, so a handler
   // that closed over `selectedIds` would post the PREVIOUS selection if it fired
@@ -573,9 +588,26 @@ export function FloorPage() {
     [load],
   );
 
+  /**
+   * "+ Add bills" inside a trip (2026-09-16): remember the trip, send the
+   * planner to the pool. The trip's card STAYS selected on the rail — he is
+   * filling it and must be able to see it — which is why this does not touch
+   * `railSelection`; TripDesk shows the pool whenever this is set.
+   */
+  const startAddingTo = useCallback((tripId: number) => {
+    setAddingToTripId(tripId);
+    setLastAdd(null);
+  }, []);
+
+  /** Done, or Escape: close the band and leave the pool as it was. */
+  const stopAddingTo = useCallback(() => {
+    setAddingToTripId(null);
+    setLastAdd(null);
+  }, []);
+
   /** Add the ticked bills to an existing trip. */
   const addSelectionToTrip = useCallback(
-    async (tripId: number) => {
+    async (tripId: number, opts?: { quiet?: boolean }) => {
       const ids = selectedIdsRef.current;
       if (ids.length === 0) return;
       setTripBusyId(tripId);
@@ -591,6 +623,17 @@ export function FloorPage() {
         const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
         if (!res.ok && attached.length === 0 && skipped.length === 0) {
           toast.error(`Could not add — ${failed[0]?.error ?? body?.error ?? `HTTP ${res.status}`}`);
+        } else if (opts?.quiet) {
+          // 🔴 NO TOAST WHILE FILLING A NAMED TRIP (owner). The band across the
+          // pool is the receipt — its counts move with every press — and a popup
+          // every few seconds while bucketing is noise that also covers the bar
+          // being pressed. The one thing the toast carried is kept: the band
+          // shows "· N added · Undo" for ten seconds.
+          if (attached.length > 0) {
+            setLastAdd({ tripId, orderIds: attached });
+            if (lastAddTimer.current) clearTimeout(lastAddTimer.current);
+            lastAddTimer.current = setTimeout(() => setLastAdd(null), 10_000);
+          }
         } else if (attached.length > 0 || skipped.length > 0) {
           // 🔴 THE RECEIPT, WITH A WAY BACK (2026-09-16). "2 bills added to
           // L-260916-04 · now 4 bills · 1,361 L" — what moved, where it went,
@@ -1181,10 +1224,14 @@ export function FloorPage() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
       if (detailOpen) closeDetail();
       else if (selection.size > 0) clearSelection();
+      // Then the add band — the same thing Done does. A live selection is
+      // cleared first, so one Esc never both empties the ticks and closes the
+      // band the planner is still working in.
+      else if (addingToTripId !== null) stopAddingTo();
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [detailOpen, selection, closeDetail, clearSelection]);
+  }, [detailOpen, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -1301,7 +1348,13 @@ export function FloorPage() {
    * and its bar says so; turning the rail into a picker there would offer to
    * add bills that are already on a trip.
    */
-  const addMode = barMode === "pool" && selection.size > 0;
+  const addMode = barMode === "pool" && selection.size > 0 && addingToTripId === null;
+  /**
+   * The trip being filled, read off the live rail feed — so the band-s counts
+   * and the button-s name are the trip as it is now, not as it was when "+ Add
+   * bills" was pressed. Null (and the band closes) if it leaves the board.
+   */
+  const addTargetTrip = addingToTripId !== null ? (trips ?? []).find((t) => t.id === addingToTripId) ?? null : null;
   /**
    * The delivery types the selection actually spans, in the words the board
    * prints. One is the normal case; two or more blocks "+ New trip" (owner).
@@ -1806,6 +1859,12 @@ export function FloorPage() {
               addCount={selectedRows.length}
               addSummary={addSummary}
               onAddToTrip={(id) => void addSelectionToTrip(id)}
+              // Targeted add — "+ Add bills" inside a trip (2026-09-16).
+              addingToTripId={addingToTripId}
+              lastAddCount={lastAdd?.orderIds.length ?? 0}
+              onUndoLastAdd={() => { if (lastAdd) { const { tripId, orderIds } = lastAdd; setLastAdd(null); void undoAdd(tripId, orderIds); } }}
+              onStartAddingTo={startAddingTo}
+              onDoneAdding={stopAddingTo}
               tripBusyId={tripBusyId}
               // The page's All / Local / Upcountry / IGT scope, for the RAIL
               // (slice 6). The rail filters trips by their own delivery type;
@@ -1876,6 +1935,8 @@ export function FloorPage() {
               mode={barMode}
               busy={tripBarBusy || tripBusyId !== null}
               newTripBlockedReason={newTripBlockedReason}
+              addTargetLabel={addTargetTrip?.tripNumber ?? null}
+              onAddToTarget={() => { if (addingToTripId !== null) void addSelectionToTrip(addingToTripId, { quiet: true }); }}
               onNewTripWithSelection={() => void createTripWithSelection()}
               onRemoveFromTrip={() => void removeSelectionFromTrips(selectedRows)}
               onClear={clearSelection}

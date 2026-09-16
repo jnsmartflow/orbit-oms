@@ -34,6 +34,8 @@ export function FloorBottomBar({
   mode,
   busy,
   newTripBlockedReason,
+  addTargetLabel,
+  onAddToTarget,
   onNewTripWithSelection,
   onRemoveFromTrip,
   onClear,
@@ -77,6 +79,16 @@ export function FloorBottomBar({
    * question this flow exists to remove, and any answer it gave would be a guess.
    */
   newTripBlockedReason: string | null;
+  /**
+   * The trip number being FILLED — "+ Add bills" was pressed inside it, and the
+   * pool is open under its band (trip-add-band.tsx). Null in the ordinary pool.
+   *
+   * 🔴 IT REPLACES "+ New trip" RATHER THAN JOINING IT (owner): you are filling
+   * a trip, not starting one, and the button says exactly what will happen —
+   * "Add 2 bills to L-260916-04", with nothing to choose after pressing it.
+   */
+  addTargetLabel: string | null;
+  onAddToTarget: () => void;
   onNewTripWithSelection: () => void;
   onRemoveFromTrip: () => void;
   onClear: () => void;
@@ -129,7 +141,16 @@ export function FloorBottomBar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        {mode === "pool" ? (
+        {mode === "pool" && addTargetLabel !== null ? (
+          <button
+            type="button"
+            onClick={onAddToTarget}
+            disabled={busy}
+            className="inline-flex h-[34px] items-center rounded-md border border-brand-600 bg-brand-600 px-4 text-[12px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+          >
+            {busy ? "Working…" : `Add ${count} bill${count === 1 ? "" : "s"} to ${addTargetLabel}`}
+          </button>
+        ) : mode === "pool" ? (
           <>
             {/* The reason, in the bar as well as on hover — a disabled button
                 fires no mouse events, so a tooltip alone can go unread. */}
