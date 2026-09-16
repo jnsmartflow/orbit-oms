@@ -46,15 +46,31 @@ import { formatLitres, formatWeightKg } from "./status-pill";
 import type { TripSummary } from "@/lib/trips/queries";
 import type { TripActivityRow } from "@/lib/trips/activity";
 
-/** Separate white buttons, 32px, 1px #c6c6d4, radius 7px, 13px medium (owner). */
+/**
+ * Separate white buttons, 32px, 1px #c6c6d4, radius 7px, 13px medium, 14px of
+ * side padding — every value from the design spec, including the states: the
+ * border DARKENS on hover (not just a fill), a pressed fill, a purple
+ * focus-visible outline, and a disabled button whose BORDER goes pale too, so it
+ * stops looking pressable.
+ */
 const BUTTON =
-  "inline-flex h-[32px] items-center rounded-[7px] border border-[#c6c6d4] bg-white px-3 text-[13px] font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-white";
+  "inline-flex h-[32px] items-center rounded-[7px] border border-[#c6c6d4] bg-white px-[14px] text-[13px] font-medium text-[#1a1a22] transition-colors hover:border-[#a5a5ba] hover:bg-[#f5f5fa] active:bg-[#ececf4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6d3beb] disabled:cursor-not-allowed disabled:border-[#e2e2ea] disabled:bg-white disabled:text-[#adadb9] disabled:hover:border-[#e2e2ea] disabled:hover:bg-white";
+/**
+ * SHOW TO FLOOR WHILE DESK CONTROL IS ON AND THE TRIP IS NOT YET SHOWN (owner,
+ * design spec `.tb.amber`): the one thing on the panel waiting to be done, in
+ * the same amber as the SHOWN badge — on this screen amber means someone has to
+ * act. Disabled and already-shown keep their own looks.
+ */
+const BUTTON_AMBER =
+  "border-[#ddb156] bg-[#fff9ec] font-semibold text-[#8a5d0c] hover:border-[#c2952f] hover:bg-[#fdf2d9]";
 /** The pressed state: a grey label with the time, the SAME height as the button. */
 const PRESSED =
-  "inline-flex h-[32px] items-center rounded-[7px] border border-gray-200 bg-gray-50 px-3 text-[13px] font-medium text-gray-500";
-/** The small icon buttons on the metadata line. */
+  "inline-flex h-[32px] items-center rounded-[7px] border border-[#e7e7ee] bg-[#fafafc] px-[14px] text-[13px] font-medium text-[#61616d]";
+/** The pencil and the clock: 26px, quiet until hovered (spec `.pencil`). */
 const ICON_BUTTON =
-  "inline-flex h-[26px] items-center gap-1 rounded-[6px] border border-transparent px-1.5 text-gray-500 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-800";
+  "inline-flex h-[26px] min-w-[26px] items-center justify-center rounded-[6px] border border-transparent px-[6px] text-[#96969f] transition-colors hover:border-[#dcdce6] hover:bg-[#f1f1f7] hover:text-[#1a1a22] active:bg-[#ececf4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#6d3beb] disabled:cursor-not-allowed disabled:opacity-50";
+/** The "·" between metadata facts — lighter than the text it separates (spec). */
+const DOT = "text-[#ccccd6]";
 
 /** "10:42" in IST, or null. */
 function istTime(iso: string | null): string | null {
@@ -122,15 +138,16 @@ export function TripDetailHeader({
 
   return (
     <div>
-      {/* Panel padding 16px 18px 22px (owner's design file). */}
-      <div className="px-[18px] pb-[22px] pt-4">
+      {/* Panel padding 16px 18px (spec). The 22px bottom belongs AFTER the
+          stops, so trip-desk.tsx carries it — the stops are part of this panel. */}
+      <div className="px-[18px] pt-4">
         {/* ── Row 1 — the number, and the three buttons ─────────────────── */}
         {/* min-h: the row keeps the buttons' 32px even on a trip that shows none, so
             the route never sits higher on a past day or a dispatched trip. */}
-        <div className="flex min-h-[32px] items-center gap-3">
+        <div className="flex min-h-[32px] flex-wrap items-center gap-[9px]">
           {/* A SMALL MONO CHIP, the rail card's family one step larger (owner):
               it leads the row; the route below is the headline. */}
-          <span className="shrink-0 rounded-[6px] border border-[#e6e6ee] bg-[#f1f1f5] px-[9px] py-[3px] font-mono text-[14px] font-semibold text-ink-900">
+          <span className="shrink-0 rounded-[6px] border border-[#e7e7ee] bg-[#f1f1f6] px-[9px] py-[3px] font-mono text-[14px] font-semibold text-[#1a1a22]">
             {trip.tripNumber}
           </span>
 
@@ -158,7 +175,12 @@ export function TripDetailHeader({
                 <span className={PRESSED}>Shown to floor{shownTime ? ` · ${shownTime}` : ""}</span>
               ) : (
                 <span title={!gateOn ? "Desk control is off" : undefined} className="inline-flex">
-                  <button type="button" onClick={onShowToFloor} disabled={busy || !gateOn} className={BUTTON}>
+                  <button
+                    type="button"
+                    onClick={onShowToFloor}
+                    disabled={busy || !gateOn}
+                    className={`${BUTTON} ${gateOn ? BUTTON_AMBER : ""}`}
+                  >
                     Show to floor
                   </button>
                 </span>
@@ -242,14 +264,14 @@ export function TripDetailHeader({
         </div>
 
         {/* ── Row 2 — the ROUTE (owner: route only, never the area) ──────── */}
-        <div className="mt-[11px] text-[23px] font-bold leading-tight tracking-[-0.02em] text-ink-900">
+        <div className="mt-[11px] text-[23px] font-bold leading-tight tracking-[-0.02em] text-[#1a1a22]">
           {trip.routeName ? (
             <>
               {trip.routeName}
-              {trip.routeExtraCount > 0 && <span className="font-medium text-gray-400"> +{trip.routeExtraCount}</span>}
+              {trip.routeExtraCount > 0 && <span className="font-medium text-[#96969f]"> +{trip.routeExtraCount}</span>}
             </>
           ) : (
-            <span className="font-medium text-gray-400">No route</span>
+            <span className="font-medium text-[#96969f]">No route</span>
           )}
         </div>
 
@@ -258,38 +280,54 @@ export function TripDetailHeader({
             then the driver in FULL and the phone. The slot is NOT here — the
             pencil edits it (owner). A missing vehicle says "Vehicle not set" in
             amber; a vehicle with no driver (a typed plate) says "No driver yet". */}
-        <div className="mt-[6px] flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-gray-500">
-          <span className="inline-flex flex-wrap items-center gap-x-1.5">
-            {plate ? (
-              <span className="font-mono font-semibold text-gray-800">{plate}</span>
-            ) : (
-              <span className="font-medium text-[#b45309]">Vehicle not set</span>
-            )}
-            {trip.vehicleCategory && <span className="text-gray-400">· {trip.vehicleCategory}</span>}
-            {(trip.transporterName || trip.transporterTripNo) && (
+        <div className="mt-[6px] flex flex-wrap items-center gap-x-[7px] gap-y-[3px] text-[13px] text-[#61616d]">
+          {plate ? (
+            <span className="font-mono font-semibold text-[#1a1a22]">{plate}</span>
+          ) : (
+            <span className="font-medium text-[#8a5d0c]">Vehicle not set</span>
+          )}
+          {trip.vehicleCategory && (
+            <>
+              <span className={DOT}>·</span>
+              <span className="text-[#96969f]">{trip.vehicleCategory}</span>
+            </>
+          )}
+          {(trip.transporterName || trip.transporterTripNo) && (
+            <>
+              <span className={DOT}>·</span>
               <span>
-                · {trip.transporterName}
+                {trip.transporterName}
                 {trip.transporterTripNo && (
-                  <span className="tabular-nums text-gray-400">
+                  <span className="tabular-nums text-[#96969f]">
                     {trip.transporterName ? " " : ""}#{trip.transporterTripNo}
                   </span>
                 )}
               </span>
-            )}
-          </span>
-          {plate && (
-            <span className="inline-flex items-center gap-x-1.5">
-              {trip.driverName ? (
-                <>
-                  <span className="text-gray-700">{trip.driverName}</span>
-                  {trip.driverPhone && <span className="tabular-nums">· {trip.driverPhone}</span>}
-                </>
-              ) : (
-                <span className="font-medium text-[#b45309]">No driver yet</span>
-              )}
-            </span>
+            </>
           )}
-          <span className="inline-flex items-center gap-0.5">
+          {plate &&
+            (trip.driverName ? (
+              <>
+                {/* The driver sits a clear 16px off the truck facts (spec) — the
+                    plate is the only dark thing on this line. */}
+                <span className="ml-4">{trip.driverName}</span>
+                {trip.driverPhone && (
+                  <>
+                    <span className={DOT}>·</span>
+                    {/* A tappable number, not ten digits to copy out (spec note). */}
+                    <a
+                      href={`tel:${trip.driverPhone.replace(/[^+\d]/g, "")}`}
+                      className="tabular-nums text-[#96969f] hover:text-[#61616d] hover:underline"
+                    >
+                      {trip.driverPhone}
+                    </a>
+                  </>
+                )}
+              </>
+            ) : (
+              <span className="ml-4 font-medium text-[#8a5d0c]">No driver yet</span>
+            ))}
+          <span className="inline-flex items-center">
             <button
               type="button"
               onClick={onChangeVehicle}
@@ -298,24 +336,26 @@ export function TripDetailHeader({
               aria-label="Edit vehicle, transporter, slot and note"
               className={ICON_BUTTON}
             >
-              <Pencil size={14} strokeWidth={2} />
+              <Pencil size={14} strokeWidth={1.6} />
             </button>
             <button
               type="button"
               onClick={() => setHistoryOpen((v) => !v)}
               title="Trip history"
-              aria-label="Trip history"
+              aria-label={activity === null ? "Trip history" : `Full history, ${activity.length} entries`}
               aria-expanded={historyOpen}
-              className={`${ICON_BUTTON} ${historyOpen ? "!border-gray-200 !bg-gray-100 !text-gray-900" : ""}`}
+              className={`${ICON_BUTTON} ${historyOpen ? "!border-[#dcdce6] !bg-[#f1f1f7] !text-[#1a1a22]" : ""}`}
             >
-              <Clock size={14} strokeWidth={2} />
-              {activity !== null && <span className="text-[11.5px] font-semibold tabular-nums">{activity.length}</span>}
+              <Clock size={14} strokeWidth={1.5} />
+              {activity !== null && (
+                <span className="ml-[3px] text-[10.5px] font-semibold tabular-nums">{activity.length}</span>
+              )}
             </button>
           </span>
         </div>
 
         {/* The note — someone typed it on purpose (owner). Only when set. */}
-        {trip.note && <div className="mt-[6px] text-[12.5px] italic text-gray-500">{trip.note}</div>}
+        {trip.note && <div className="mt-[6px] text-[12.5px] italic text-[#61616d]">{trip.note}</div>}
 
         {/* ── Rows 4 and 5 — the bar and its legend, 7px apart ──────────── */}
         {!isEmpty && (
@@ -329,7 +369,7 @@ export function TripDetailHeader({
         {historyOpen && (
           <div className="mt-[14px] border-t border-[#f0f0f0] pt-3">
             {activity === null ? (
-              <div className="text-[11.5px] text-gray-400">Loading history…</div>
+              <div className="text-[11.5px] text-[#96969f]">Loading history…</div>
             ) : (
               <TripHistoryList rows={activity} />
             )}
@@ -338,8 +378,8 @@ export function TripDetailHeader({
 
         {/* ── Row 6 — the stops bar: 20px below the legend, 8px padding under
             its line, a 1px bottom border (exact values, owner's design file) ── */}
-        <div className="mt-[20px] flex items-center gap-3 border-b border-[#e6e6ee] pb-2">
-          <span className="text-[13.5px] font-semibold tabular-nums text-gray-800">
+        <div className="mt-[20px] flex items-center gap-2.5 border-b border-[#e7e7ee] pb-2">
+          <span className="text-[13.5px] font-semibold tabular-nums text-[#1a1a22]">
             {isEmpty
               ? "No bills yet"
               : [
@@ -349,14 +389,14 @@ export function TripDetailHeader({
                   ...(kg ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
                 ].map((part, i) => (
                   <span key={i}>
-                    {i > 0 && <span className="font-normal text-[#c9c9d4]"> · </span>}
+                    {i > 0 && <span className="px-px font-normal text-[#c9c9d4]"> · </span>}
                     {part}
                   </span>
                 ))}
           </span>
           {canWrite && (
-            <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} ml-auto gap-1.5 !h-[28px] !text-[12.5px]`}>
-              <Plus size={14} strokeWidth={2.2} />
+            <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} ml-auto gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
+              <Plus size={13} strokeWidth={2.2} />
               Add bills
             </button>
           )}

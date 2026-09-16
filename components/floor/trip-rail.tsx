@@ -125,27 +125,21 @@ export function TripRail({
   const poolOn = selection.kind === "pool";
 
   return (
-    <div className="flex min-h-0 flex-col overflow-y-auto border-r border-gray-200 bg-[#fcfbfe] px-2.5 py-2.5">
+    <div className="flex min-h-0 flex-col overflow-y-auto border-r border-[#e7e7ee] bg-[#fafafc] px-[11px] pb-4 pt-3">
       {/* ── The rail's own count (2026-09-11) ─────────────────────────────
           Smart Flow had to scroll the rail to know what was on it. Two numbers,
           one line, above everything. It counts the LIVE, in-scope list, which
           is what is rendered. */}
-      <div className="flex items-baseline gap-2 px-1 pb-2">
-        <span className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
-          Trips
-        </span>
-        <span className="text-[11px] tabular-nums text-gray-500">
-          {tripCount} trip{tripCount === 1 ? "" : "s"} · {billCount} bill
-          {billCount === 1 ? "" : "s"}
-        </span>
+      <div className="mb-[9px] px-1 text-[11px] font-semibold uppercase tabular-nums tracking-[0.06em] text-[#96969f]">
+        {tripCount} trip{tripCount === 1 ? "" : "s"} · {billCount} bill{billCount === 1 ? "" : "s"}
       </div>
 
       {/* ── The pool ─────────────────────────────────────────────────────── */}
       <button
         type="button"
         onClick={() => onSelect({ kind: "pool" })}
-        className={`mb-2 w-full rounded-[10px] border px-2.5 py-2 text-left ${
-          poolOn ? "border-brand-600 bg-brand-50" : "border-gray-200 bg-white hover:bg-[#fafafa]"
+        className={`mb-[14px] w-full rounded-[9px] border px-3 py-2.5 text-left ${
+          poolOn ? "border-brand-600 bg-brand-50" : "border-[#e7e7ee] bg-white hover:border-[#cfcfda]"
         }`}
       >
         {/* ── "To plan", RENAMED FROM "Not on a trip" (2026-09-14) ──────────
@@ -168,18 +162,18 @@ export function TripRail({
 
             Owner decision 2026-09-14. Do not "fix" this to match the Floor
             tab's row count. */}
-        <div className="text-[13px] font-bold tracking-[-0.008em] text-gray-900">To plan</div>
-        <div className="mt-px text-[11.5px] tabular-nums text-gray-500">
+        <div className="text-[14.5px] font-semibold tracking-[-0.008em] text-[#1a1a22]">To plan</div>
+        <div className="mt-px text-[12.5px] tabular-nums text-[#61616d]">
           {poolCount} bill{poolCount === 1 ? "" : "s"} · {formatLitres(poolLitres)} L
         </div>
       </button>
 
       {loading && trips === null && (
-        <div className="px-1 py-4 text-center text-[11px] text-gray-400">Loading trips…</div>
+        <div className="px-1 py-4 text-center text-[11px] text-[#96969f]">Loading trips…</div>
       )}
 
       {trips !== null && live.length === 0 && (
-        <div className="px-1 py-4 text-[11px] leading-relaxed text-gray-400">
+        <div className="px-1 py-4 text-[11px] leading-relaxed text-[#96969f]">
           {scope === "All" || all.every((t) => t.status === "cancelled")
             ? "No trips today. Start one with New trip — it can be empty, and bills can be added later."
             : `No ${scope} trips today.`}
@@ -231,10 +225,12 @@ function TripCard({
       type="button"
       onClick={onSelect}
       className={`mb-2 flex w-full flex-col gap-[6px] rounded-[9px] border px-3 pb-3 pt-[11px] text-left ${
-        selected ? "border-brand-600 bg-brand-50" : "border-[#e6e6ee] bg-white hover:bg-[#fafafa]"
+        selected
+          ? "border-brand-600 bg-white shadow-[0_0_0_3px_#f2edfe]"
+          : "border-[#e7e7ee] bg-white hover:border-[#cfcfda]"
       }`}
     >
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-[7px]">
         {/* 🔴 A CARRIED TRIP'S NUMBER CHIP IS AMBER (owner). The separate date
             chip is gone: it did not fit, and the number already carries its
             date — L-260914-24 seen on the 15th IS the carry signal. Amber, not
@@ -247,7 +243,7 @@ function TripCard({
               : undefined
           }
           className={`shrink-0 rounded-[5px] border px-[6px] py-px font-mono text-[11.5px] font-semibold ${
-            isCarried ? "border-[#f5d9a8] bg-[#fdf3e3] text-[#b45309]" : "border-[#e6e6ee] bg-[#f1f1f5] text-ink-900"
+            isCarried ? "border-[#f5d9a8] bg-[#fdf3e3] text-[#8a5d0c]" : "border-[#e7e7ee] bg-[#f1f1f6] text-[#61616d]"
           }`}
         >
           {trip.tripNumber}
@@ -255,7 +251,7 @@ function TripCard({
         {/* The slot — a small chip when set, ABSENT when not (slice 6; kept by
             the owner in the redesign — 34 of 74 trips carry one). */}
         {trip.windowTime && (
-          <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400">
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-[#96969f]">
             {trip.windowTime}
           </span>
         )}
@@ -270,25 +266,25 @@ function TripCard({
 
       {/* ROUTE, not area (owner). The name the most stops run on, "+N" greyed
           for the others (lib/trips/queries.ts deriveRouteLabel). */}
-      <div className="truncate text-[16.5px] font-semibold leading-[1.22] text-ink-900">
+      <div className="truncate text-[16.5px] font-semibold leading-[1.22] tracking-[-0.012em] text-[#1a1a22]">
         {trip.routeName ? (
           <>
             {trip.routeName}
             {trip.routeExtraCount > 0 && (
-              <span className="font-normal text-gray-400"> +{trip.routeExtraCount}</span>
+              <span className="font-medium text-[#96969f]"> +{trip.routeExtraCount}</span>
             )}
           </>
         ) : (
-          <span className="font-normal text-gray-400">No route</span>
+          <span className="font-medium text-[#96969f]">No route</span>
         )}
       </div>
 
       {/* ⚠ AN EMPTY TRIP SAYS SO (2026-09-10 c) rather than "0 stops · 0 bills ·
           0 L" — an empty trip is a normal morning state (owner, slice 6). */}
       {bar.total === 0 ? (
-        <div className="text-[12.5px] text-gray-400">No bills yet</div>
+        <div className="text-[12.5px] text-[#96969f]">No bills yet</div>
       ) : (
-        <div className="text-[12.5px] tabular-nums text-gray-500">
+        <div className="text-[12.5px] tabular-nums text-[#61616d]">
           {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {bar.total} bill
           {bar.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
         </div>
@@ -298,8 +294,8 @@ function TripCard({
           wrap. No driver is amber: on this screen amber means someone has to do
           something. A typed plate never brings a driver, so those trips read
           "No driver yet" until a master vehicle is chosen (owner, accepted). */}
-      <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-gray-500" title={trip.driverName ?? undefined}>
-        {trip.driverName ?? <span className="font-semibold text-amber-600">No driver yet</span>}
+      <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-[#61616d]" title={trip.driverName ?? undefined}>
+        {trip.driverName ?? <span className="font-semibold text-[#8a5d0c]">No driver yet</span>}
       </div>
 
       <TripBar counts={bar} className="mt-[2px]" />

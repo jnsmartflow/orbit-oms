@@ -282,10 +282,20 @@ export function FloorTable({
   anchorIso,
   chipFor,
   gateOn = false,
+  hideTripTag = false,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
   variant?: FloorTableVariant;
+  /**
+   * Drop the trip tag from the OBD cell (floor redesign, 2026-09-15, owner).
+   *
+   * TRUE only for the per-stop tables INSIDE a trip panel: every bill there is
+   * on that trip, so the tag repeats the heading on every row. The pool, the
+   * upcoming half and By route keep it — out there trips are mixed together and
+   * the tag is the only thing saying which load a bill belongs to.
+   */
+  hideTripTag?: boolean;
   // Wired only on the live variant; undefined on history/upcoming.
   selection?: FloorSelection;
   onToggleRow?: (id: number) => void;
@@ -911,7 +921,7 @@ export function FloorTable({
 
               Renders NOTHING when the bill is on no trip, which is most of
               the board: no empty space, no dash, no placeholder. */}
-          {row.tripNumber && (
+          {row.tripNumber && !hideTripTag && (
             <span
               // Just the number (slice 6). This appended the RAW stored status —
               // "· draft", "· released" — the one place the column's own word

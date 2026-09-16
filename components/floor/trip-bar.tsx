@@ -57,12 +57,12 @@ const SEGMENTS: Array<{ key: keyof Omit<TripBarCounts, "total">; color: string; 
  *
  * ONE SIZE EVERYWHERE — the rail card and the detail panel use it unchanged
  * (owner): 7px tall, 4px radius, a 1.5px gap BETWEEN segments so they never fuse
- * into one solid block, and a light #f1f1f5 track behind them.
+ * into one solid block, and a light #f1f1f6 track behind them.
  */
 export function TripBar({ counts, className = "" }: { counts: TripBarCounts; className?: string }) {
   if (counts.total === 0) return null;
   return (
-    <span className={`flex h-[7px] w-full gap-[1.5px] overflow-hidden rounded-[4px] bg-[#f1f1f5] ${className}`}>
+    <span className={`flex h-[7px] w-full gap-[1.5px] overflow-hidden rounded-[4px] bg-[#f1f1f6] ${className}`}>
       {SEGMENTS.map((s) =>
         counts[s.key] > 0 ? (
           <span key={s.key} className="h-full" style={{ flexGrow: counts[s.key], flexBasis: 0, background: s.color }} />
@@ -80,17 +80,17 @@ export function TripBar({ counts, className = "" }: { counts: TripBarCounts; cla
 export function TripBarLegend({ counts, className = "" }: { counts: TripBarCounts; className?: string }) {
   if (counts.total === 0) return null;
   return (
-    <div className={`flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[12px] tabular-nums text-gray-600 ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-[15px] gap-y-1 text-[12.5px] tabular-nums text-[#61616d] ${className}`}>
       {SEGMENTS.map((s) =>
         counts[s.key] > 0 ? (
           <span key={s.key} className="inline-flex items-center gap-1.5">
-            <i className="inline-block h-2 w-2 rounded-full" style={{ background: s.color }} />
-            <b className="font-bold text-gray-900">{counts[s.key]}</b>
+            <i className="inline-block h-2 w-2 rounded-[2px]" style={{ background: s.color }} />
+            <b className="font-semibold text-[#1a1a22]">{counts[s.key]}</b>
             {s.label}
           </span>
         ) : null,
       )}
-      {counts.picking === 0 && counts.waiting === 0 && <span className="text-gray-400">nothing pending</span>}
+      {counts.picking === 0 && counts.waiting === 0 && <span className="text-[#96969f]">nothing pending</span>}
     </div>
   );
 }

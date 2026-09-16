@@ -580,20 +580,33 @@ export function TripDesk({
             </p>
           </div>
         ) : (
-          drops.map((d) => {
+          // The panel's 22px bottom padding lives here, under the last stop —
+          // the stops are the bottom of the detail panel (design spec).
+          <div className="pb-[22px]">
+          {drops.map((d, i) => {
             const rows = d.orderIds
               .map((id) => rowById.get(id))
               .filter((r): r is FloorBoardRow => r !== undefined);
             return (
-              <div key={d.id}>
-                {/* The STOP row — a customer, numbered in visit order. */}
-                <div className="flex items-center gap-2 border-y border-[#f0eef5] bg-[#fbfaff] px-3.5 py-2">
-                  <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] bg-gray-900 text-[10.5px] font-bold text-white">
+              // 20px between stops, the first 6px under the stops bar (design
+              // spec, 2026-09-15). `i` is the stop's index in the trip's drops.
+              <div key={d.id} className={i === 0 ? "mt-1.5" : "mt-5"}>
+                {/* The STOP HEADER — a customer, numbered in visit order.
+                    🔴 NO BAND (owner, 2026-09-15): the tinted full-width strip
+                    with a border above and below is gone. The header now sits
+                    inside the panel's 18px side padding with ONE hairline under
+                    it, and the number is a plain grey mono figure rather than a
+                    black square — the customer's name is what a planner is
+                    looking for, so nothing else on the line may shout. */}
+                <div className="flex flex-wrap items-baseline gap-[9px] border-b border-[#e7e7ee] px-[18px] pb-[7px]">
+                  <span className="min-w-[15px] shrink-0 font-mono text-[11px] font-semibold text-[#96969f]">
                     {d.dropSeq}
                   </span>
-                  <span className="truncate text-[12px] font-semibold text-gray-900">{d.customerName}</span>
-                  <span className="truncate text-[11.5px] tabular-nums text-gray-500">
-                    {d.areaName ? `· ${d.areaName} ` : ""}· {d.bills} bill{d.bills === 1 ? "" : "s"} ·{" "}
+                  {/* NOT truncated (owner) — a customer name is the thing you
+                      came to read; the row wraps instead. */}
+                  <span className="text-[14.5px] font-semibold text-[#1a1a22]">{d.customerName}</span>
+                  <span className="text-[12.5px] tabular-nums text-[#96969f]">
+                    {d.areaName ? `${d.areaName} · ` : ""}{d.bills} bill{d.bills === 1 ? "" : "s"} ·{" "}
                     {formatLitres(d.litres)} L
                   </span>
                 </div>
@@ -606,6 +619,10 @@ export function TripDesk({
                     anchorIso={floor.date}
                     nowMs={nowMs}
                     variant={variant}
+                    // Every bill here is on THIS trip, so the tag would repeat
+                    // the heading on every row (owner). The pool and By route
+                    // keep it — out there the trips are mixed.
+                    hideTripTag
                     {...selProps}
                   />
                 ) : (
@@ -620,7 +637,8 @@ export function TripDesk({
                 )}
               </div>
             );
-          })
+          })}
+          </div>
         )}
 
         {/* The full history is no longer down here: the clock in the trip
