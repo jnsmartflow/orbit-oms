@@ -22,6 +22,10 @@ import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useInitialNotesFontSize } from "@/components/mail-orders/notes-font-size-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
 import { HeaderFilter } from "@/components/header-filter";
+import type { FilterGroup } from "@/components/header-filter";
+import { useBillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
+import type { BillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
+import { MO_TAG } from "@/lib/hide/tag-catalog";
 import { HeaderDateStepper } from "@/components/header-date-stepper";
 import { HeaderShortcuts } from "@/components/header-shortcuts";
 
@@ -36,6 +40,42 @@ const MO_FILTER_GROUPS = [
   { label: "Lock", key: "lock", options: [{ value: "locked", label: "Locked" }, { value: "unlocked", label: "Unlocked" }] },
   { label: "Dealer", key: "keyDealer", options: [{ value: "key", label: "Key" }] },
 ];
+
+/**
+ * BILLING FACE ONLY — the filter groups this person may see (owner, 2026-09-16).
+ *
+ * A chip is visible only if the person can see the thing it filters:
+ *   dispatch (Hold, Dispatch)  → the billing_hold tick    (the Hold button's own switch)
+ *   priority (Urgent, Normal)  → the billing_urgent tick  (the Urgent button's own switch)
+ *   keyDealer (Key)            → the mail_orders.key_customer tag (the ★ and "Key" pill)
+ *   status, matchStatus, lock  → always shown — no owner, and none is to be minted.
+ *
+ * ⚠ NOT the hold/urgent TAGS: on this face those control nothing — the card strips
+ * those chips at the call site (review-view.tsx), so the button is the only place
+ * the fact shows. ⚠ NOT match_chip for Match: that is SKU-line readiness, the
+ * filter is customer match.
+ *
+ * Bypass differs by system, deliberately: the ticks bypass for admin/superuser
+ * (resolved in the layout), the tags have NO bypass (lib/hide/tag-settings.ts).
+ * Each follows its own system — do not "fix" either.
+ *
+ * Whole groups are kept or dropped, so a pair (Hold+Dispatch, Urgent+Normal)
+ * always goes together and no empty group reaches HeaderFilter, which draws a
+ * heading for every group it is given.
+ *
+ * The flag-OFF face never calls this: it keeps MO_FILTER_GROUPS, all eleven chips.
+ */
+function billingFilterGroups(
+  access: BillingActionsAccess,
+  disabledTagKeys: Set<string>,
+): FilterGroup[] {
+  return MO_FILTER_GROUPS.filter((g) => {
+    if (g.key === "dispatch")  return access.hold;
+    if (g.key === "priority")  return access.urgent;
+    if (g.key === "keyDealer") return !disabledTagKeys.has(MO_TAG.keyCustomer);
+    return true;
+  }).filter((g) => g.options.length > 0);
+}
 
 /**
  * How often the board asks "has anything changed?" — the SAME 30s cadence the
@@ -421,27 +461,56 @@ export default function MailOrdersPage() {
     [orders],
   );
 
+  // ── Visible filter groups + EFFECTIVE filters (2026-09-16) ──────────────────
+  // Derived every render from current state — NEVER written back to it.
+  //
+  // The stuck-filter fix: tag settings refresh on the 30s poll, so a chip can
+  // vanish while it is applied. If the list kept reading raw `headerFilters`, it
+  // would stay narrowed with nothing on screen to clear. So every reader below —
+  // the list, `hasHeaderFilter`, and the Filter button's count (via the
+  // `activeFilters` prop) — reads `effectiveFilters`, which keeps only values
+  // whose chip is currently visible. If the chip comes back, so does the
+  // operator's own selection.
+  //
+  // Flag OFF: `visibleFilterGroups` is the shared constant and `effectiveFilters`
+  // IS `headerFilters` (same object), so the old face behaves exactly as before.
+  const billingActions = useBillingActionsAccess();
+  const visibleFilterGroups = useMemo(
+    () => (billingV2 ? billingFilterGroups(billingActions, disabledTagKeys) : MO_FILTER_GROUPS),
+    [billingV2, billingActions, disabledTagKeys],
+  );
+  const effectiveFilters = useMemo(() => {
+    if (!billingV2) return headerFilters;
+    const next: Record<string, string[]> = {};
+    for (const g of visibleFilterGroups) {
+      const allowed = new Set(g.options.map((o) => o.value));
+      next[g.key] = (headerFilters[g.key] ?? []).filter((v) => allowed.has(v));
+    }
+    return next;
+  }, [billingV2, headerFilters, visibleFilterGroups]);
+
   // ── Filtered orders ──────────────────────────────────────────────────────────
   const filteredOrders = useMemo(() => {
     let result = orders;
+    // Reads the EFFECTIVE filters, not raw state — see the block above.
 
-    const statusArr = headerFilters.status ?? [];
+    const statusArr = effectiveFilters.status ?? [];
     if (statusArr.length > 0) {
       result = result.filter((o) => statusArr.includes(o.status));
     }
 
-    const matchArr = headerFilters.matchStatus ?? [];
+    const matchArr = effectiveFilters.matchStatus ?? [];
     if (matchArr.length > 0) {
       result = result.filter((o) => matchArr.includes(o.customerMatchStatus ?? "unmatched"));
     }
 
-    const dispatchArr = headerFilters.dispatch ?? [];
+    const dispatchArr = effectiveFilters.dispatch ?? [];
     if (dispatchArr.length > 0) {
       result = result.filter((o) => dispatchArr.includes(o.dispatchStatus ?? "Dispatch"));
     }
 
     // Priority filter
-    const priorityArr = headerFilters.priority ?? [];
+    const priorityArr = effectiveFilters.priority ?? [];
     if (priorityArr.length > 0) {
       result = result.filter((o) => {
         const p = o.dispatchPriority ?? "Normal";
@@ -450,7 +519,7 @@ export default function MailOrdersPage() {
     }
 
     // Lock filter
-    const lockArr = headerFilters.lock ?? [];
+    const lockArr = effectiveFilters.lock ?? [];
     if (lockArr.length > 0) {
       result = result.filter((o) => {
         const locked = isOdCiFlagged(o) || !!o.isLocked;
@@ -460,7 +529,7 @@ export default function MailOrdersPage() {
     }
 
     // Key dealer filter
-    if (headerFilters.keyDealer?.includes("key")) {
+    if (effectiveFilters.keyDealer?.includes("key")) {
       result = result.filter((o) => o.isKeyCustomer);
     }
 
@@ -509,20 +578,20 @@ export default function MailOrdersPage() {
     }
 
     return result;
-  }, [orders, headerFilters, searchQuery, activeSlot, slotCutoffs, billingV2]);
+  }, [orders, effectiveFilters, searchQuery, activeSlot, slotCutoffs, billingV2]);
 
   const groupedOrders = useMemo(() => groupOrdersBySlot(filteredOrders, slotCutoffs), [filteredOrders, slotCutoffs]);
 
   // Is any header filter narrowing the list? Read-only derivation over the
-  // SAME `headerFilters` object the filter block above consumes, so the two
+  // SAME `effectiveFilters` object the filter block above consumes, so the two
   // cannot disagree about whether a filter is on. Sent to ReviewView, which
   // uses it (with `searchQuery`, which it already has) to tell "nothing came
   // in" apart from "your filter hid it" in the billing empty states.
   // `activeSlot` is deliberately NOT counted: on the billing face it is always
   // null and its row is not rendered, so it can never be the cause.
   const hasHeaderFilter = useMemo(
-    () => Object.values(headerFilters).some((vals) => (vals?.length ?? 0) > 0),
-    [headerFilters],
+    () => Object.values(effectiveFilters).some((vals) => (vals?.length ?? 0) > 0),
+    [effectiveFilters],
   );
 
   // ── Slot counts (from all orders, before slot filter) ───────────────────────
@@ -1204,9 +1273,12 @@ export default function MailOrdersPage() {
         const rowControls = (
           <>
             <div className="w-px h-4 bg-gray-200" />
+            {/* Billing face: the gated groups and the EFFECTIVE filters, so the
+                count badge never counts a chip that is not on screen. The
+                header mount below (flag OFF / Table) keeps the shared constant. */}
             <HeaderFilter
-              groups={MO_FILTER_GROUPS}
-              activeFilters={headerFilters}
+              groups={visibleFilterGroups}
+              activeFilters={effectiveFilters}
               onFilterChange={setHeaderFilters}
             />
             <div className="w-px h-4 bg-gray-200" />
