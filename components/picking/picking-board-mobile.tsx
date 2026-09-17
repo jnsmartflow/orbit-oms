@@ -3685,7 +3685,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 <span
                   aria-hidden="true"
                   className="shrink-0 w-px self-stretch my-[2px]"
-                  style={{ background: detailRow.hasDuplicateSo ? DUP_SO_DIVIDER : "rgba(255,255,255,0.25)" }}
+                  style={{ background: detailRow.hasDuplicateSo ? DUP_SO_DIVIDER : "#D6D3E0" /* ink-200 — a hairline ON the pale masthead */ }}
                 />
               )}
               {detailRow !== null && <BillSymbols row={detailRow} />}
@@ -3764,7 +3764,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     onClick={() => setCancelMenuOpen((v) => !v)}
                     aria-label="More actions"
                     aria-expanded={cancelMenuOpen}
-                    className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+                    className={"w-11 h-11 rounded-[10px] flex items-center justify-center shrink-0 " + (detailRow?.hasDuplicateSo ? "text-white active:bg-white/15" : "text-ink-600 active:bg-ink-100")}
                   >
                     <MoreVertical size={22} />
                   </button>
@@ -3802,7 +3802,7 @@ export function PickingBoardMobile(): React.JSX.Element {
               type="button"
               onClick={() => setDetailSearching((v) => !v)}
               aria-label="Search line items"
-              className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+              className={"w-11 h-11 rounded-[10px] flex items-center justify-center shrink-0 " + (detailRow?.hasDuplicateSo ? "text-white active:bg-white/15" : "text-ink-600 active:bg-ink-100")}
             >
               <Search size={22} />
             </button>

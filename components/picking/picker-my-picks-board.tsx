@@ -1799,7 +1799,7 @@ export function PickerMyPicksBoard({
                 <span
                   aria-hidden="true"
                   className="shrink-0 w-px self-stretch my-[2px]"
-                  style={{ background: detailRow.hasDuplicateSo ? DUP_SO_DIVIDER : "rgba(255,255,255,0.25)" }}
+                  style={{ background: detailRow.hasDuplicateSo ? DUP_SO_DIVIDER : "#D6D3E0" /* ink-200 — a hairline ON the pale masthead */ }}
                 />
               )}
               {/* ⚠ THIS FACE NOW SHOWS ALL FIVE FLAGS, where its old chip row

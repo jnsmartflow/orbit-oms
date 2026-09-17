@@ -444,9 +444,13 @@ export function CiSubmittedDetail({
 // ── Pieces ───────────────────────────────────────────────────────────────────
 
 function StatusChip({ status }: { status: CiDetail["status"] }): React.JSX.Element {
-  // ⚠ WHITE-ALPHA, NOT the card's amber/green pills — this one sits ON THE TEAL
-  // HEADER, where a coloured pill reads as a sticker. The WORD carries the
-  // status, as everywhere else in this module.
+  // ⚠ NEUTRAL, NOT the card's amber/green pills — this one sits ON THE HEADER,
+  // where a coloured pill reads as a sticker. The WORD carries the status, as
+  // everywhere else in this module.
+  // 🔴 WHITE FILL + ink-100 EDGE + ink-600 TEXT (2026-09-17). It was white-alpha
+  // with white text, left over from the filled band: on the pale masthead
+  // (CLAUDE_UI.md §59.8) that is white on near-white and the status vanished.
+  // White-with-a-hairline is §59.8's rule for a chip on this ground.
   const label =
     status === "closed"
       ? "Done"
@@ -454,7 +458,7 @@ function StatusChip({ status }: { status: CiDetail["status"] }): React.JSX.Eleme
         ? "Sent back"
         : "With billing";
   return (
-    <span className="shrink-0 rounded-full bg-white/[0.18] px-2 py-[2px] text-[10.5px] font-semibold text-white whitespace-nowrap">
+    <span className="shrink-0 rounded-full bg-white border border-ink-100 px-2 py-[2px] text-[10.5px] font-semibold text-ink-600 whitespace-nowrap">
       {label}
     </span>
   );

@@ -46,12 +46,20 @@ export function hasBillSymbols(row: BillSymbolSource): boolean {
   );
 }
 
-// Pastels chosen to sit on the teal header without competing with the white
-// dealer name above them.
-const KEY_COLOR   = "#fcd34d"; // ★ key dealer
-const URGENT_COLOR = "#fca5a5"; // ⚡ urgent
-const TINT_COLOR  = "#BAE6FD"; // 🎨 tint
-const SMU_COLOR   = "#c7d2fe"; // the bare SMU number
+// Picked for the PALE MASTHEAD (#F5F3FF, CLAUDE_UI.md §59.8) — repicked
+// 2026-09-17. Until then these were pastels chosen for the old filled violet
+// band (#fcd34d / #fca5a5 / #BAE6FD / #c7d2fe), which measure 1.2–1.7:1 on the
+// pale ground: glyphs you could not see. Each now clears 3:1 (non-text) on it.
+// Same MEANINGS as before — only lightness moved.
+const KEY_COLOR   = "#B45309"; // ★ key dealer — warn.text, 4.6:1
+// 🔴 URGENT STAYS RED. This is one of the protected urgent-red sites (the
+// red→amber migration is its own session, CLAUDE_UI.md §3). Darkened for
+// legibility only: #fca5a5 → #DC2626 (red-600), 4.4:1.
+const URGENT_COLOR = "#DC2626"; // ⚡ urgent
+const TINT_COLOR  = "#0284C7"; // 🎨 tint — tint.600, 3.7:1
+// Neutral, not indigo: a bare number is a fact, and the header's one violet is
+// its title. ink-600, 7.3:1.
+const SMU_COLOR   = "#514E63"; // the bare SMU number
 
 /**
  * ⚠ ON A DUPLICATE-SO BILL THE WHOLE RUN GOES #fecaca. The header is a solid
