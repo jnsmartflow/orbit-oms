@@ -84,12 +84,22 @@ export function MobileShell({ navItems, workflowTabs, activeTabKey, onTabChange,
             href={homeHref}
             onClick={closeAll}
             className={cn(
-              "flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold",
-              isHomeActive ? "text-brand-700" : "text-gray-400"
+              "relative flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold",
+              isHomeActive ? "text-ink-900" : "text-gray-400"
             )}
           >
             <Home className="h-6 w-6" />
             Home
+            {/* NAV: ink-900 label + brand-600 underline — the same treatment
+                as WorkflowTabBar's active tab (CLAUDE_UI.md §59.9). Absolute,
+                so it adds no height and the two bars stay equal by construction. */}
+            <span
+              aria-hidden="true"
+              className={cn(
+                "absolute left-1/2 -translate-x-1/2 bottom-0 h-[3px] w-8 rounded-full bg-brand-600",
+                isHomeActive ? "opacity-100" : "opacity-0"
+              )}
+            />
           </Link>
           <button
             type="button"

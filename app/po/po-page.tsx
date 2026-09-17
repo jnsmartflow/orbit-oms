@@ -229,10 +229,13 @@ function initials(name: string): string {
 // Shared pill shape for all three chip kinds below.
 const CHIP_CLASS = "inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]";
 
-// BILLS chip — always shown, teal. Reuses billsCountLabel's "N bills"/"1 bill".
+// Active-tab underline for the Home/Drafts/Sent bar. NAV = ink-900 label +
+// this brand-600 underline, the one violet in the bar (CLAUDE_UI.md §59.9).
+const PO_NAV_UNDERLINE = "absolute left-1/2 -translate-x-1/2 bottom-0 h-[3px] w-8 rounded-full bg-brand-600";
+// BILLS chip — always shown, neutral (a count, not brand — CLAUDE_UI.md §59.9). Reuses billsCountLabel's "N bills"/"1 bill".
 function billsChip(snapshot: Parameters<typeof draftSummary>[0]): React.JSX.Element {
   return (
-    <span className={CHIP_CLASS} style={{ background: "#F5F3FF", color: "#6D28D9" }}>
+    <span className={CHIP_CLASS} style={{ background: "#F4F3F8", color: "#74718A" }}>
       {billsCountLabel(snapshot)}
     </span>
   );
@@ -509,7 +512,7 @@ function PackRows({
               type="button"
               tabIndex={-1}
               onClick={() => onStep(key, label, -1)}
-              className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${qty === 0 ? "text-gray-300" : "text-brand-600"}`}
+              className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${qty === 0 ? "text-gray-300" : "text-brand-700"}`}
               aria-label={`Decrease ${label}`}
             >
               −
@@ -532,13 +535,13 @@ function PackRows({
               // flush against it. Bottom-margin only; does NOT affect the focusin
               // block:"start" scroll (that honors scroll-margin-TOP). §22-safe.
               className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none scroll-mb-[32px] ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
-              style={{ color: qty > 0 ? "#7C3AED" : "#111827" }}
+              style={{ color: "#1B1826" }}
             />
             <button
               type="button"
               tabIndex={-1}
               onClick={() => onStep(key, label, 1)}
-              className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-brand-600 bg-transparent border-none"
+              className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-brand-700 bg-transparent border-none"
               aria-label={`Increase ${label}`}
             >
               +
@@ -560,7 +563,7 @@ function PackRows({
               <div className="flex flex-col items-end gap-1 shrink-0">
                 {stepper}
                 {boxes != null && (
-                  <span className="text-[11px] text-brand-700 font-mono">{boxes} box</span>
+                  <span className="text-[11px] text-ink-500 font-mono">{boxes} box</span>
                 )}
               </div>
             ) : stepper}
@@ -2499,7 +2502,7 @@ export default function PoPage(): React.JSX.Element {
                   <span className="text-[15px] font-medium text-[#1d2939] truncate flex-1 min-w-0">
                     {receiptOrder.snapshot.customer.name}
                   </span>
-                  <span className="text-[11px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5 shrink-0">
+                  <span className="text-[11px] font-semibold text-ok-text bg-ok-bg border border-ok/30 rounded-full px-2 py-0.5 shrink-0">
                     Sent
                   </span>
                 </div>
@@ -2715,7 +2718,7 @@ export default function PoPage(): React.JSX.Element {
                     onClick={() => selectCustomer(c)}
                     className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
                   >
-                    <div className="w-1.5 h-1.5 rounded-full bg-brand-600 shrink-0" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-ink-400 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
                       <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
@@ -2796,7 +2799,7 @@ export default function PoPage(): React.JSX.Element {
                   </span>
                   <span className="text-[15px] font-semibold text-gray-900">Review &amp; send</span>
                 </span>
-                <span className="text-[12px] font-medium text-brand-600 shrink-0">Back to products</span>
+                <span className="text-[12px] font-medium text-brand-700 shrink-0">Back to products</span>
               </button>
             </div>
 
@@ -2841,7 +2844,7 @@ export default function PoPage(): React.JSX.Element {
                       </p>
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                         {lineChips(line).map((c) => (
-                          <span key={c.label} className="text-[12px] text-brand-700">
+                          <span key={c.label} className="text-[12px] text-ink-500">
                             {c.label} <span className="font-mono">×{c.units}</span>
                             {c.boxes != null && (
                               <span className="text-gray-400 font-normal"> · {c.boxes} box</span>
@@ -2915,7 +2918,7 @@ export default function PoPage(): React.JSX.Element {
                       onClick={() => selectShipTo(c)}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
                     >
-                      <div className="w-1.5 h-1.5 rounded-full bg-brand-600 shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-ink-400 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
                         <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
@@ -2978,7 +2981,7 @@ export default function PoPage(): React.JSX.Element {
                       onClick={() => (isCross ? openCrossSheet() : chooseMarker(on ? null : m.value))}
                       className={`h-[42px] rounded-[10px] border text-[13px] flex items-center justify-center ${
                         on
-                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                          ? "border-data-slate bg-ink-25 text-ink-900 font-semibold"
                           : "border-gray-200 bg-white text-gray-400 font-medium"
                       }`}
                     >
@@ -3103,7 +3106,7 @@ export default function PoPage(): React.JSX.Element {
                       return (
                         <div
                           key={b.id}
-                          className="shrink-0 flex items-center gap-1 text-[14px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-full pl-3 pr-1 py-[3px]"
+                          className="shrink-0 flex items-center gap-1 text-[14px] font-semibold text-ink-900 bg-ink-25 border border-data-slate rounded-full pl-3 pr-1 py-[3px]"
                         >
                           <button type="button" onClick={() => switchBill(b.id)} className="leading-none">
                             Bill {b.id}
@@ -3112,7 +3115,7 @@ export default function PoPage(): React.JSX.Element {
                             type="button"
                             aria-label={`Delete Bill ${b.id}`}
                             onClick={() => requestDeleteBill(idx)}
-                            className="w-[19px] h-[19px] rounded-full bg-brand-600 text-white flex items-center justify-center shrink-0 active:bg-brand-700"
+                            className="w-[19px] h-[19px] rounded-full text-ink-500 flex items-center justify-center shrink-0 active:bg-ink-100"
                           >
                             <span className="text-[13px] leading-none">×</span>
                           </button>
@@ -3141,7 +3144,7 @@ export default function PoPage(): React.JSX.Element {
                     aria-checked={multiSelect}
                     aria-label="Select multiple products"
                     onClick={toggleMultiSelect}
-                    className={`relative w-[46px] h-[26px] rounded-full transition-colors shrink-0 ${multiSelect ? "bg-brand-600" : "bg-gray-300"}`}
+                    className={`relative w-[46px] h-[26px] rounded-full transition-colors shrink-0 ${multiSelect ? "bg-data-slate" : "bg-gray-300"}`}
                   >
                     <span
                       className={`absolute top-[2px] left-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform ${multiSelect ? "translate-x-[20px]" : ""}`}
@@ -3264,7 +3267,7 @@ export default function PoPage(): React.JSX.Element {
                               onClick={() => toggleProductSelection(p)}
                               className="flex items-center gap-3 py-[13px] px-1 border-b border-gray-100 last:border-b-0 cursor-pointer active:bg-gray-50 touch-manipulation"
                             >
-                              <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 ${selected ? "bg-brand-600 border-brand-600" : "bg-white border-gray-300"}`}>
+                              <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 ${selected ? "bg-data-slate border-data-slate" : "bg-white border-gray-300"}`}>
                                 {selected && (
                                   <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
                                     <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -3297,7 +3300,7 @@ export default function PoPage(): React.JSX.Element {
                                 <p className="text-[12px] text-gray-400 truncate mt-0.5">{second}{aliasLabel && <span className="text-gray-300"> · {aliasLabel}</span>}</p>
                               )}
                             </div>
-                            <Plus className="w-[18px] h-[18px] text-brand-600 shrink-0" />
+                            <Plus className="w-[18px] h-[18px] text-brand-700 shrink-0" />
                           </button>
                         );
                       })
@@ -3449,7 +3452,7 @@ export default function PoPage(): React.JSX.Element {
                       onClick={() => confirmCross(d)}
                       className={`h-[48px] rounded-[10px] border text-[15px] ${
                         on
-                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                          ? "border-data-slate bg-ink-25 text-ink-900 font-semibold"
                           : "border-gray-200 bg-white text-gray-700 font-medium active:bg-gray-50"
                       }`}
                     >
@@ -3499,7 +3502,7 @@ export default function PoPage(): React.JSX.Element {
                       onClick={() => confirmCall(t)}
                       className={`h-[48px] rounded-[10px] border text-[15px] ${
                         on
-                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                          ? "border-data-slate bg-ink-25 text-ink-900 font-semibold"
                           : "border-gray-200 bg-white text-gray-700 font-medium active:bg-gray-50"
                       }`}
                     >
@@ -3666,8 +3669,8 @@ export default function PoPage(): React.JSX.Element {
             >
               <div className="relative w-16 h-16 flex items-center justify-center">
                 {/* Expanding pulse ring — one shot, behind the circle */}
-                <span className="po-save-ring absolute inset-0 rounded-full border-2 border-brand-600" aria-hidden="true" />
-                <div className="po-save-circle relative w-16 h-16 rounded-full bg-brand-600 flex items-center justify-center">
+                <span className="po-save-ring absolute inset-0 rounded-full border-2 border-ok" aria-hidden="true" />
+                <div className="po-save-circle relative w-16 h-16 rounded-full bg-ok flex items-center justify-center">
                   {overlayKind === "saved" ? (
                     <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
                       <polyline
@@ -3797,32 +3800,35 @@ export default function PoPage(): React.JSX.Element {
           <button
             type="button"
             onClick={goHome}
-            className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "home" ? "text-brand-700" : "text-ink-400"
+            className={`relative flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
+              browseScreen === "home" ? "text-ink-900" : "text-ink-400"
             }`}
           >
             <Home className="w-5 h-5" />
             Home
+            {browseScreen === "home" && <span aria-hidden="true" className={PO_NAV_UNDERLINE} />}
           </button>
           <button
             type="button"
             onClick={openDrafts}
-            className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "drafts" ? "text-brand-700" : "text-ink-400"
+            className={`relative flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
+              browseScreen === "drafts" ? "text-ink-900" : "text-ink-400"
             }`}
           >
             <Bookmark className="w-5 h-5" />
             Drafts
+            {browseScreen === "drafts" && <span aria-hidden="true" className={PO_NAV_UNDERLINE} />}
           </button>
           <button
             type="button"
             onClick={openSent}
-            className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              browseScreen === "sent" ? "text-brand-700" : "text-ink-400"
+            className={`relative flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
+              browseScreen === "sent" ? "text-ink-900" : "text-ink-400"
             }`}
           >
             <Send className="w-5 h-5" />
             Sent
+            {browseScreen === "sent" && <span aria-hidden="true" className={PO_NAV_UNDERLINE} />}
           </button>
         </div>
       )}

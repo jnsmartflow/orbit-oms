@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 // Stage 4/4: restyled to the SAME icon-on-top layout as mobile-shell.tsx's
 // default <nav> buttons — copy those classes exactly
 // (`flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold`
-// + `h-6 w-6` icon + `text-brand-700`/`text-gray-400` active/inactive) so the
+// + `h-6 w-6` icon + `text-ink-900`/`text-gray-400` active/inactive) so the
 // two bars are the same height BY CONSTRUCTION, not by a hand-tuned
 // min-height that could drift out of sync with the real content. Safe-area
 // treatment mirrors the default bar's bare `env(safe-area-inset-bottom)`
@@ -52,22 +52,23 @@ export function WorkflowTabBar({ tabs, activeKey, onChange }: WorkflowTabBarProp
             className="relative flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold"
           >
             <span className="relative flex items-center justify-center">
-              <Icon className={cn("h-6 w-6", active ? "text-brand-700" : "text-gray-400")} />
+              <Icon className={cn("h-6 w-6", active ? "text-ink-900" : "text-gray-400")} />
               {showBadge && (
                 <span
                   className={cn(
                     "absolute -top-1 -right-1.5 min-w-[16px] h-[16px] px-[3px] rounded-full flex items-center justify-center text-[9px] font-bold text-white tabular-nums leading-none",
-                    // One-teal (§1): only the ACTIVE tab's badge is teal —
-                    // an inactive tab's badge stays neutral gray, same as
-                    // its icon/label.
-                    active ? "bg-brand-600" : "bg-gray-400"
+                    // A count is information, not a call to action (colour spec
+                    // rule 4), so no badge is violet: ink-900 on the active tab,
+                    // ink-500 elsewhere. The one violet in this bar is the active
+                    // tab's underline — CLAUDE_UI.md §59.9, one violet per screen.
+                    active ? "bg-ink-900" : "bg-ink-500"
                   )}
                 >
                   {tab.count! > 99 ? "99+" : tab.count}
                 </span>
               )}
             </span>
-            <span className={cn("whitespace-nowrap", active ? "text-brand-700" : "text-gray-400")}>
+            <span className={cn("whitespace-nowrap", active ? "text-ink-900" : "text-gray-400")}>
               {tab.label}
             </span>
             <span

@@ -327,7 +327,7 @@ export function PhotoStrip({
                   (p.status === "failed"
                     ? "ring-2 ring-red-400"
                     : p.status === "saved"
-                      ? "ring-2 ring-brand-500"
+                      ? "ring-2 ring-ok"
                       : "ring-1 ring-gray-200")
                 }
               />
@@ -340,7 +340,7 @@ export function PhotoStrip({
                 </span>
               )}
               {p.status === "saved" && (
-                <span className="absolute bottom-0.5 left-0.5 flex h-[16px] w-[16px] items-center justify-center rounded-full bg-brand-600 text-white">
+                <span className="absolute bottom-0.5 left-0.5 flex h-[16px] w-[16px] items-center justify-center rounded-full bg-ok text-white">
                   <Check size={10} />
                 </span>
               )}

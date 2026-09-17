@@ -771,7 +771,7 @@ function TripDetailsView({
                   href={`/trips/${encodeURIComponent(detail.tripNo)}/sheet?date=${detail.disDate}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 inline-flex items-center justify-center bg-brand-600 hover:bg-brand-700 text-white text-[13px] font-semibold h-[44px] rounded-[12px] cursor-pointer"
+                  className="flex-1 inline-flex items-center justify-center bg-ink-900 hover:bg-ink-700 text-white text-[13px] font-semibold h-[44px] rounded-[12px] cursor-pointer"
                 >
                   Trip sheet
                 </a>
@@ -879,7 +879,7 @@ function MobileFilterPill({
       onClick={onClick}
       className={`text-[11px] px-3 py-[5px] rounded-full border cursor-pointer ${
         active
-          ? "bg-brand-600 text-white border-brand-600 font-medium"
+          ? "bg-data-slate text-white border-data-slate font-medium"
           : "bg-white text-gray-500 border-gray-200"
       }`}
     >

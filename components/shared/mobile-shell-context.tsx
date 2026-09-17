@@ -152,11 +152,13 @@ export function MobileShellProvider({
                     className={cn(
                       "flex items-center gap-3.5 rounded-[11px] border-l-2 px-3 py-3.5 text-[15px]",
                       active
-                        ? "bg-brand-50 text-brand-700 font-semibold border-l-brand-600"
+                        // NAV as a row: ink-900 label, ink icon, and the brand-600
+                        // left bar is the only violet (CLAUDE_UI.md §59.9).
+                        ? "bg-ink-25 text-ink-900 font-semibold border-l-brand-600"
                         : "text-gray-700 border-l-transparent"
                     )}
                   >
-                    <Icon className={cn("h-[21px] w-[21px] shrink-0", active ? "text-brand-600" : "text-gray-400")} />
+                    <Icon className={cn("h-[21px] w-[21px] shrink-0", active ? "text-ink-900" : "text-gray-400")} />
                     {item.label}
                   </Link>
                 );

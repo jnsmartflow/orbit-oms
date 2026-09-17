@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.29 · September 2026 · updated 2026-09-09 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.30 · September 2026 · updated 2026-09-17 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1429,7 +1429,7 @@ Branch 3 is unchanged from the original shell: **Home** → `navItems[0]?.href ?
 
 - Icon-on-top layout, count badge top-right of the icon, teal underline pill on the active tab.
 - **Count badge hides at 0** — a "0" badge is noise, not information. `>99` renders `99+`.
-- **One-teal (§1):** only the ACTIVE tab's badge is teal; an inactive tab's badge stays `bg-gray-400`, matching its icon and label.
+- **No badge is violet (§59.9, 2026-09-17):** active tab = `ink-900` icon, label and badge + the `brand-600` underline; inactive badge `ink-500`. (Was: the active badge brand, label brand-700.)
 
 **⚠️ LANDMINE — its height is copied from the default nav ON PURPOSE.** It reuses the default `<nav>`'s exact classes (`fixed bottom-0 … z-40`, `flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold`, `h-6 w-6` icon, bare `env(safe-area-inset-bottom)`) so the two bars are the same height **by construction**. An earlier `min-h-[58px]` guess was removed — **do not reintroduce a fixed height number**; it drifts out of sync with the real content and invalidates `MOBILE_NAV_CLEARANCE`.
 
@@ -1591,6 +1591,52 @@ screen that has a masthead becomes a second identical wash and reads as a second
 Picking's three filter summary strips hit exactly this and moved to `ink-50` on
 2026-09-09. Check for it before painting anything `brand-50` on a mobile screen.
 
+### 59.9 One violet per mobile screen — the buckets [2026-09-17]
+
+The one-brand-element rule was written for desktop and had never reached the phone, where
+violet had become the title, every selection ring, every tick, the active tab, the count
+badges AND the commit button. The rule exists so the commit is findable. **A mobile
+screen's violet budget is: its title, plus one commit.** The title is a NAMED brand element
+(§59.8's ruling — module and detail titles, and the `/po` and Trip Report wordmarks, stay
+`brand-600`), so it is never counted as a violation.
+
+| Bucket | What | Colour |
+|---|---|---|
+| **COMMIT** | the action that finishes the task — one per screen | `brand-600` fill, hover/pressed `brand-700` |
+| **TITLE** | masthead title / wordmark (§59.8) | `brand-600` text |
+| **SELECTION** | chosen state: card ring, check badge, chosen chip/row/option, switches, checkboxes | **`data.slate` `#475569`** (`bg-data-slate` / `border-data-slate`), tint `ink-25`, label `ink-900` |
+| **STATUS** | done, resolved, saved — incl. the supervisor's per-line "checked" tick | `ok` green |
+| **COUNT** | badges and numbers | `ink-500`, `ink-900` when active |
+| **NAV** | active tab / nav row | `ink-900` label and icon + `brand-600` underline (bars) or left bar (Menu sheet row) |
+| **TEXT ACTION** | tappable text: Cancel, New order, Add another bill, Quick add, More, steppers, Plus | `brand-700` — never `brand-600` |
+| **SURFACE** | the masthead ground (§59.8) | `#F5F3FF` |
+
+Left violet on purpose: focus rings (`brand-500`/`brand-600`, colour spec §1), and `/po`'s mic
+**listening** state and dots — the app doing something, which neither slate nor green means.
+A **utility** button (Trip sheet) is `ink-900`, not brand. A **destructive trigger inside a
+chip** (the × on `/po`'s active bill chip) is an outline glyph in `ink-500` with no fill.
+The Picking selection bar is an **`ink-25` panel with an `ink-100` border**, not a black
+pill; its Assign button is the commit and stays `brand-600`.
+
+🔴 **`data.slate` IS NOW SPOKEN FOR.** It is the mobile SELECTION colour (on top of the admin
+role colour and the unknown-category fallback it already carried in `tailwind.config.ts`).
+Colour spec v2 §1 lists it as "free" — **it is not free any more; do not assign it to a
+future data category.**
+
+**Two named exceptions:**
+
+1. **A sheet's commit takes over from the screen's commit.** While a bottom sheet or a
+   confirm dialog is open (Release, Start unloading, finding Save, CI quantity Save, the
+   sign-out and `/po` confirms), its button is the one commit; the screen's own commit is
+   behind the scrim and does not count as a second.
+2. **Read-only and list screens have NO commit — and none may be invented.** Every list tab
+   (Picking / Done, My Picks Pending / Done, CI Submitted, MRN's three tabs, `/po` Home /
+   Drafts / Sent), plus: Picking detail while the bill is **with the picker** or already
+   checked, MRN detail while **checking**, and Trip Report list and detail.
+
+⚠ **Standing question, not a ruling:** MRN's *End unloading* — the commit on the checking
+detail — is `bg-green-600`, not brand. Left as it is (2026-09-17) pending a decision.
+
 ---
 
 ## 60. Mobile card type scale + 390px viewport (reusable standard)
@@ -1661,7 +1707,7 @@ Behaviour, tab semantics and date-zone scope were always `CLAUDE_PICKING.md`'s, 
 
 **Visual treatment only** — the interaction behaviour (what a tap does, variant gating) lives in `CLAUDE_PICKING.md`. Shipped 2026-07-21. Type scale is §60.
 
-- **Selected (Assign card):** card teal tint (`bg-teal-50` / `border-teal-600`) + a small **teal check badge, top-left corner**, only when selected. Unselected = clean, no box, no placeholder.
+- **Selected (Assign card):** `ink-25` tint + `data.slate` border + a small **`data.slate` check badge, top-left corner**, only when selected (§59.9, 2026-09-17 — was teal, then brand). Unselected = clean, no box, no placeholder.
 - **Arrow-to-detail:** a **soft round arrow** to the right of the family chips — `~30px` circle, `bg #eceff3`, chevron `#8b93a0`. Pinned; families scroll to its left; **always rendered on Assign cards even with zero families** (detail is always reachable).
 - **One-teal on the card:** the only teal is the selected tint/check; the arrow and family chips are slate. (Locked/Upcoming + the `1d`/`{n}d` age treatment are stated directly in §62.1-§62.2 below — they used to be a pointer at §61.)
 
@@ -1803,4 +1849,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.29 · OrbitOMS · updated 2026-09-09 · No Schema stamp by design (see above) — **§59.8 extended to DETAIL and sub-screen headers.** The v5.28 pass reached the list screens through `ModuleMobileHeader` and missed every screen carrying a hand-rolled header, so opening a bill from Picking took you from a pale masthead to a filled brand-600 band — one flow, two headers. Seven more headers now take the same ground: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted detail, the MRN detail, and both Trip Report mobile headers. Title `brand-600` at unchanged size and weight, second line `ink-500`, back button white with an `ink-600` chevron and an `ink-100` border, white action chips given the same border. `/trips` gained the status-bar override alongside them. 🔴 Recorded so it is not flattened later: **the duplicate-SO branch keeps its red** — both picking detail headers swap the whole band to `#dc2626` when `hasDuplicateSo` and flip title, subtitle and back button back to white, and the pale ground is the ELSE arm of that condition, never a replacement for the warning. Prior, v5.28 (2026-09-09): §59.8 created — the pale masthead replaces the filled band on `/po` and across `ModuleMobileHeader`'s seven consumers, with the brand.600-over-brand.800 ruling, the white-avatar exception and the status-bar coupling. Prior, v5.27: §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back. Prior, v5.25: the rings removed from the login panel.*
+*UI v5.30 · OrbitOMS · updated 2026-09-17 · No Schema stamp by design (see above) — **§59.9 created: one violet per mobile screen.** A screen's budget is its title (§59.8's named brand element) plus one commit; selection moves to `data.slate` #475569 (now spoken for), status to `ok`, counts to ink, nav to ink-900 + a brand-600 underline, text actions to brand-700. Two named exceptions: a sheet's commit takes over from the screen's, and read-only/list screens have no commit. MRN's green End unloading recorded as a standing question. §59.3 and §62 updated to match. Prior, v5.29 (2026-09-09): **§59.8 extended to DETAIL and sub-screen headers.** The v5.28 pass reached the list screens through `ModuleMobileHeader` and missed every screen carrying a hand-rolled header, so opening a bill from Picking took you from a pale masthead to a filled brand-600 band — one flow, two headers. Seven more headers now take the same ground: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted detail, the MRN detail, and both Trip Report mobile headers. Title `brand-600` at unchanged size and weight, second line `ink-500`, back button white with an `ink-600` chevron and an `ink-100` border, white action chips given the same border. `/trips` gained the status-bar override alongside them. 🔴 Recorded so it is not flattened later: **the duplicate-SO branch keeps its red** — both picking detail headers swap the whole band to `#dc2626` when `hasDuplicateSo` and flip title, subtitle and back button back to white, and the pale ground is the ELSE arm of that condition, never a replacement for the warning. Prior, v5.28 (2026-09-09): §59.8 created — the pale masthead replaces the filled band on `/po` and across `ModuleMobileHeader`'s seven consumers, with the brand.600-over-brand.800 ruling, the white-avatar exception and the status-bar coupling. Prior, v5.27: §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back. Prior, v5.25: the rings removed from the login panel.*

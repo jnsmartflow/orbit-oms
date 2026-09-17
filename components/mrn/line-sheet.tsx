@@ -652,7 +652,7 @@ export function LineSheet({
             <span
               className={
                 "relative h-[28px] w-[48px] shrink-0 rounded-full transition-colors " +
-                (issueOpen ? "bg-brand-600" : "bg-gray-200")
+                (issueOpen ? "bg-data-slate" : "bg-gray-200")
               }
             >
               <span

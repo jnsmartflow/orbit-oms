@@ -141,7 +141,8 @@ const config: Config = {
           lime:   "#65A30D", // role: picker
           pink:   "#DB2777", // Decorative Projects SMU (moves off #4F46E5) · role: support
                              // · mail-order remark type "cross" (ruled 2026-09-09, applied in step 3)
-          slate:  "#475569", // role: admin · unknown-category fallback
+          slate:  "#475569", // role: admin · unknown-category fallback · mobile SELECTION
+                             // (CLAUDE_UI.md §59.9). Spoken for — NOT free for a new category.
         },
       },
       borderRadius: {

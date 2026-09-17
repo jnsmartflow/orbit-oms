@@ -659,7 +659,8 @@ function PickingCard({
     <div className="relative mb-[11px]">
       {/* Selected badge — floating teal check in the top-left corner, shown
           ONLY when this Assign card is selected. Replaces the old inline
-          checkbox: same brand-600 + white-tick language, now a ~20px round badge
+          checkbox: data.slate #475569 + white tick (SELECTION, not brand — CLAUDE_UI.md
+          §59.9), now a ~20px round badge
           overhanging the corner (white ring separates it from the card's teal
           tint). Sits on this overflow-visible wrapper (the card itself keeps
           overflow-hidden for its shelf), and is pointer-events-none so a tap
@@ -667,7 +668,7 @@ function PickingCard({
           locked/picking/done variants. */}
       {variant === "assign" && selected && (
         <span
-          className="absolute -top-[7px] -left-[7px] z-10 w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center pointer-events-none"
+          className="absolute -top-[7px] -left-[7px] z-10 w-5 h-5 rounded-full bg-data-slate flex items-center justify-center pointer-events-none"
           style={{ boxShadow: "0 0 0 2px #fff" }}
           aria-hidden="true"
         >
@@ -682,7 +683,7 @@ function PickingCard({
           // On a duplicate the fill/border come from the style object below, so
           // no colour class is emitted here at all — a `bg-*` class plus an
           // inline background is a fight nobody needs to read later.
-          (dup ? "" : selected ? "bg-brand-50 border-brand-600 " : "bg-white border-[#eceef2] ") +
+          (dup ? "" : selected ? "bg-ink-25 border-data-slate " : "bg-white border-[#eceef2] ") +
           // ⚠ doneChecked's opacity-75 is SUPPRESSED on a duplicate. Dimming is
           // "this one is settled, stop looking at it" — the exact opposite of
           // what a flagged card is for. Full strength, always.
@@ -698,7 +699,7 @@ function PickingCard({
           // px-4 padding leaves room for its 4px.
           boxShadow:
             dup && selected
-              ? `${CARD_SHADOW_V2}, 0 0 0 2px #ffffff, 0 0 0 4px #1B1826`
+              ? `${CARD_SHADOW_V2}, 0 0 0 2px #ffffff, 0 0 0 4px #475569`
               : CARD_SHADOW_V2,
           // ⚠ ORDER MATTERS. assignLocked sets an inline background of its own
           // (#fcfcfd); the duplicate spread comes AFTER it so the red wins, and
@@ -1171,10 +1172,10 @@ function FilterBottomSheet({
           <span
             className={
               "text-[14px] flex items-center gap-2 " +
-              (value === null ? "text-brand-700 font-semibold" : "text-gray-900 font-medium")
+              (value === null ? "text-ink-900 font-semibold" : "text-gray-900 font-medium")
             }
           >
-            {value === null && <Check size={16} className="text-brand-600" />}
+            {value === null && <Check size={16} className="text-data-slate" />}
             {allLabel}
           </span>
           <span className="text-[12px] text-gray-400">{allCount}</span>
@@ -1192,10 +1193,10 @@ function FilterBottomSheet({
             <span
               className={
                 "text-[14px] flex items-center gap-2 min-w-0 " +
-                (value === opt.value ? "text-brand-700 font-semibold" : "text-gray-900 font-medium")
+                (value === opt.value ? "text-ink-900 font-semibold" : "text-gray-900 font-medium")
               }
             >
-              {value === opt.value && <Check size={16} className="text-brand-600 shrink-0" />}
+              {value === opt.value && <Check size={16} className="text-data-slate shrink-0" />}
               <span className="truncate">{opt.label}</span>
             </span>
             <span className="text-[12px] text-gray-400 shrink-0">{opt.count}</span>
@@ -2722,7 +2723,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 className={
                   "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
                   (activeRoute !== null
-                    ? "border-brand-500 bg-brand-50 text-brand-700"
+                    ? "border-data-slate bg-ink-25 text-ink-900"
                     : "border-gray-200 bg-white text-gray-500")
                 }
               >
@@ -2842,7 +2843,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 className={
                   "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
                   (activeCheckedPicker !== null
-                    ? "border-brand-500 bg-brand-50 text-brand-700"
+                    ? "border-data-slate bg-ink-25 text-ink-900"
                     : "border-gray-200 bg-white text-gray-500")
                 }
               >
@@ -4162,7 +4163,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                       <span
                         className={
                           "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
-                          (isChecked ? "bg-brand-600 border-brand-600" : "bg-white border-gray-300")
+                          (isChecked ? "bg-ok border-ok" : "bg-white border-gray-300")
                         }
                       >
                         {isChecked && (
@@ -4446,23 +4447,27 @@ export function PickingBoardMobile(): React.JSX.Element {
       </div>
 
       {/* Floating assign bar — matches docs/mockups/picking/supervisor-assign-board.html's
-          .assignbar exactly (bg-gray-900 pill, teal Assign CTA), sitting just
-          above the fixed mobile shell (76px, per components/shared/mobile-shell.tsx). */}
+          .assignbar exactly (teal Assign CTA), sitting just
+          above the fixed mobile shell (76px, per components/shared/mobile-shell.tsx).
+          🔴 NOT A BLACK PILL (2026-09-17). It was bg-gray-900 — the only black
+          pill in the product, and heavier than the one thing on it that matters.
+          Now an ink-25 panel with an ink-100 edge; the Assign button inside stays
+          brand-600 because it is the COMMIT (CLAUDE_UI.md §59.9). */}
       {selectedRows.length > 0 && (
         <div
-          className="fixed left-3 right-3 z-30 bg-gray-900 rounded-2xl px-3.5 py-3 flex items-center justify-between gap-2.5 shadow-[0_10px_26px_rgba(0,0,0,0.28)]"
+          className="fixed left-3 right-3 z-30 bg-ink-25 border border-ink-100 rounded-2xl px-3.5 py-3 flex items-center justify-between gap-2.5 shadow-[0_10px_26px_rgba(27,24,38,0.12)]"
           style={{ bottom: "calc(76px + env(safe-area-inset-bottom, 0px) + 12px)" }}
         >
-          <div className="text-[13px] font-semibold text-white min-w-0 truncate">
+          <div className="text-[13px] font-semibold text-ink-900 min-w-0 truncate">
             {selectedRows.length} {selectedRows.length === 1 ? "bill" : "bills"}
-            <span className="text-gray-400 font-normal"> · {formatLitres(selectedLitres)} L selected</span>
+            <span className="text-ink-500 font-normal"> · {formatLitres(selectedLitres)} L selected</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setSelected(new Set())}
               disabled={assigning}
-              className="text-[12.5px] font-semibold text-gray-400 px-1 py-2 disabled:opacity-50"
+              className="text-[12.5px] font-semibold text-ink-500 px-1 py-2 disabled:opacity-50"
             >
               Clear
             </button>
