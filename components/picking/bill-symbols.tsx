@@ -128,9 +128,10 @@ export function BillSymbols({ row }: { row: BillSymbolSource }): React.JSX.Eleme
           It replaces a 🎨 in place, keeping the run's order, because the fact it
           carries is now a WORD: "tinted" and "base" cannot be told apart by one
           symbol, and the emoji claimed the first of them for both. Its colours
-          are fixed by lib/picking/colour-work's palette rather than following
-          `tone()` — see the note above about a duplicate-SO header. */}
-      <ColourWorkBadge work={row.colourWork} />
+          follow the same rule the glyphs beside them do on a duplicate-SO
+          header: `onRed` spends the pink and keeps the word, which is what
+          `tone()` does for every other item in this run. */}
+      <ColourWorkBadge work={row.colourWork} onRed={dup} />
       {/* ⚠ THE NUMBER, WITHOUT SmuBadge's PILL — and SmuBadge itself is NOT
           touched. It still renders its indigo/cyan pill on both CARD where-rows
           (picking-board-mobile.tsx + picker-my-picks-board.tsx), which is the

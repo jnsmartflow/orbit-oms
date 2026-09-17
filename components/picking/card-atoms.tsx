@@ -196,9 +196,11 @@ export function SmuBadge({ code }: { code: string | null }): React.JSX.Element |
 // tracking added, which is the one thing an all-caps word needs that a
 // two-digit number does not.
 //
-// ⚠ THE BASE VARIANT CARRIES A BORDER AND THE TINT VARIANT DOES NOT, exactly as
-// Floor's pills do: a pale fill needs an edge to read as a pill, a solid one
-// does not. AgeBadge already mixes bordered and borderless tiers the same way.
+// ⚠ NEITHER VARIANT CARRIES A BORDER, AND THAT IS THE POINT (2026-09-17). BASE
+// shipped with Floor's `tintDone` border for an afternoon; a 1px edge makes it
+// 2px taller than TINT, and the two sit in the same list one card apart, so the
+// words did not line up. The pale fill reads as a pill without help at this
+// size. The only bordered state is `onRed` below, where there is no fill to read.
 const COLOUR_WORK_STYLE: Record<ColourWork, { label: string; cls: string; title: string }> = {
   // Floor's `tinting` pill — the one solid fill.
   tint: {
@@ -206,14 +208,27 @@ const COLOUR_WORK_STYLE: Record<ColourWork, { label: string; cls: string; title:
     cls: "bg-[#db2777] text-white",
     title: "Tinted — colour mixed by an operator",
   },
-  // Floor's `tintAssigned` fill + `tintDone` border. Pale, quiet: nothing was
-  // mixed, and the word is here to stop a reader assuming otherwise.
+  // Floor's `tintAssigned` fill. Pale, quiet: nothing was mixed, and the word is
+  // here to stop a reader assuming otherwise.
   base: {
     label: "BASE",
-    cls: "bg-[#fce7f3] text-[#be185d] border border-[#fbcfe8]",
+    cls: "bg-[#fce7f3] text-[#be185d]",
     title: "Base — no tinting",
   },
 };
+
+// The duplicate-SO skin. Both pinks die on that card's solid #dc2626 fill —
+// #db2777 on red is barely a shape and #fce7f3 reads as a second, paler alarm —
+// so the badge spends its colour coding and keeps its WORD, which is the half
+// that carries the meaning. This is the treatment its siblings already use:
+// bill-symbols.tsx's `tone()` takes every glyph to one flat value, and AgeBadge
+// swaps its whole scale for one pill.
+//
+// ⚠ NO NEW COLOUR. White and transparent only — nothing is introduced that a
+// later pass would have to trace. TINT and BASE become indistinguishable by
+// colour here and identical in size, which is correct: on a flagged card the
+// instruction is "open both bills and check", and the word still says which.
+const COLOUR_WORK_ON_RED = "border border-white text-white";
 
 /**
  * Does this bill say anything about colour work? The gate, same shape as
@@ -225,14 +240,29 @@ export function isColourWorkBadged(work: ColourWork | null): boolean {
   return work !== null;
 }
 
-export function ColourWorkBadge({ work }: { work: ColourWork | null }): React.JSX.Element | null {
+export function ColourWorkBadge({
+  work,
+  onRed = false,
+}: {
+  work: ColourWork | null;
+  /**
+   * The card/header underneath is the duplicate-SO red fill — take the white
+   * outline instead of pink (see COLOUR_WORK_ON_RED).
+   *
+   * Optional and defaulted FALSE, exactly like AgeBadge's, so the Floor call
+   * sites render byte-identical DOM: Floor's duplicate treatment is `soft`
+   * (floor-table.tsx), which leaves every badge on a flagged row looking
+   * exactly as it does on an ordinary one, so there is nothing there to flip.
+   */
+  onRed?: boolean;
+}): React.JSX.Element | null {
   if (work === null) return null;
   const style = COLOUR_WORK_STYLE[work];
   return (
     <span
       className={
         "text-[11px] font-bold tracking-[0.04em] px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap " +
-        style.cls
+        (onRed ? COLOUR_WORK_ON_RED : style.cls)
       }
       aria-label={style.title}
       title={style.title}

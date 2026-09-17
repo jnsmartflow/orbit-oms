@@ -1561,7 +1561,7 @@ export function PickerMyPicksBoard({
                         same fact about the same bill. Renders null outside the
                         two project divisions, so every other card's caption row
                         is byte-identical DOM. */}
-                    <ColourWorkBadge work={row.colourWork} />
+                    <ColourWorkBadge work={row.colourWork} onRed={dup} />
                   </span>
                   {/* The tag LEADS the right cluster, so it is the first thing
                       read after the OBD — same order as the supervisor card.

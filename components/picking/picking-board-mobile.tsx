@@ -768,7 +768,7 @@ function PickingCard({
                   the same ordering `captionSmu` below relies on. Renders null
                   when the bill says nothing, so no wrapper and no gap is spent
                   on the ~93% of cards outside the two project divisions. */}
-              <ColourWorkBadge work={row.colourWork} />
+              <ColourWorkBadge work={row.colourWork} onRed={dup} />
               {/* The SMU as a BARE NUMBER — Done tab's checked band only.
                   ⚠ SmuBadge is NOT used here and NOT changed; its pill still
                   renders on every other card's where-row. Same 74/77 gate via
