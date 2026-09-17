@@ -104,7 +104,11 @@ export const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },
   // "Reports" hub (/reports) — holds Tint Summary + TI Report under one rail.
-  // Reuses the ti_report permission so the same roles that had TI Report keep access.
+  // ⚠ Since 2026-09-17 the `ti_report` pageKey here is only this row's IDENTITY
+  // (ICON_MAP, the admin app switcher and the layouts' dedupe all find the row by
+  // it). It no longer decides visibility: buildNavItems shows this row when the
+  // person holds canView on ANY of REPORT_PAGE_KEYS. The `ti_report` tick itself
+  // gates nothing.
   { pageKey: "ti_report",          label: "Reports",           href: "/reports" },
   { pageKey: "attendance",         label: "Attendance",        href: "/attendance" },
   { pageKey: "attendance_admin",   label: "Attendance",        href: "/admin/attendance" },
@@ -141,6 +145,27 @@ const ROLE_HREF_OVERRIDES: Record<string, Record<string, string>> = {
   },
 };
 
+// ── Reports — one tick per report ─────────────────────────────────────────────
+//
+// 🔴 THE ONE LIST OF REPORT KEYS (2026-09-17). The hub (app/reports/page.tsx),
+// the sidebar "Reports" row (buildNavItems below) and the Tint Manager header
+// pill all read it, so a new report is registered HERE and nowhere else.
+// canView on a key = may see that report in the hub. Holding ANY of them opens
+// the hub; holding none shuts it. There is no separate hub-door tick — the old
+// `ti_report` key gates nothing any more (kept, relabelled, retirement later).
+export const REPORT_PAGE_KEYS = [
+  "reports_tint_summary",
+  "reports_ti_report",
+] as const satisfies readonly PageKey[];
+
+/** The PAGE_NAV_MAP row that links to the Reports hub. Its identity only. */
+const REPORTS_NAV_PAGE_KEY = "ti_report";
+
+/** May this person open the Reports hub at all — canView on ANY report key. */
+export function canViewAnyReport(allPerms: Record<string, PagePermissions>): boolean {
+  return REPORT_PAGE_KEYS.some((k) => allPerms[k]?.canView === true);
+}
+
 export function buildNavItems(
   allPerms:   Record<string, PagePermissions>,
   roleSlug?:  string,
@@ -164,6 +189,8 @@ export function buildNavItems(
           userFlags?.rolloutStage === "ALL_USERS"
         );
       }
+      // Reports: one row for the hub, shown for ANY report tick (REPORT_PAGE_KEYS).
+      if (item.pageKey === REPORTS_NAV_PAGE_KEY) return canViewAnyReport(allPerms);
       return allPerms[item.pageKey]?.canView === true;
     })
     .map((item) =>
@@ -279,6 +306,15 @@ export type PageKey =
   | "shade_master"
   | "sampling_library"
   | "ti_report"
+  // One tick per REPORT inside the /reports hub (2026-09-17). canView = may see
+  // that report; holding ANY of them opens the hub and shows the sidebar row
+  // (REPORT_PAGE_KEYS / canViewAnyReport, above buildNavItems).
+  // reports_ti_report also answers canExport = the Download Excel button, which
+  // is UI-only: the rows are already in the browser when the button is drawn.
+  // ⚠ Deliberately NOT in PAGE_NAV_MAP or ICON_MAP — reports, not routes.
+  // ⚠ `ti_report` just above gates NOTHING since this change; kept, relabelled.
+  | "reports_tint_summary"
+  | "reports_ti_report"
   | "attendance"
   | "attendance_admin"
   | "settings_hide";
@@ -333,6 +369,8 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // /mail-orders, not routes of their own.
   "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
+  // The per-report ticks, beside the legacy hub key they replace.
+  "reports_tint_summary", "reports_ti_report",
   "settings_hide",
 ];
 
@@ -404,11 +442,15 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     "import_obd", "sampling_library",
     "customers", "skus", "routes_areas", "vehicles",
   ],
-  // MRN ONLY: api/mrn/[mrnId]/export:58 and mrn/[mrnId]/sheet/page:41.
+  // MRN: api/mrn/[mrnId]/export:58 and mrn/[mrnId]/sheet/page:41. Plus
+  // reports_ti_report (see its entry).
   // ⚠ The attendance CSV export does NOT read canExport — it is a hardcoded
   // admin role check (§5), so attendance_admin gets a dash here even though
   // ops_admin holds canExport = true live. The dash is telling the truth.
-  canExport: ["mrn"],
+  // reports_ti_report (2026-09-17): the TI Report Download Excel button, read in
+  // app/reports/page.tsx and passed to TIReportContent. UI-only (the XLSX is
+  // built in the browser from rows already fetched).
+  canExport: ["mrn", "reports_ti_report"],
   // MRN ONLY: api/mrn/[mrnId]/delete:53. Every other delete path uses a role
   // check instead (§5).
   canDelete: ["mrn"],
@@ -442,11 +484,13 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. FIFTEEN of
-// the 37 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. SEVENTEEN
+// of the 39 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
-// billing_print, the four billing action ticks, place_order_ship_to, and the
-// three Tint Manager panel tabs.
+// billing_print, the four billing action ticks, place_order_ship_to, the three
+// Tint Manager panel tabs, and the two report ticks.
+// (`ti_report` IS in PAGE_NAV_MAP as "Reports", but is overridden here because
+// since 2026-09-17 its tick gates nothing — see its label below.)
 // (`attendance` IS in PAGE_NAV_MAP — but it and `attendance_admin` both carry
 // the label "Attendance" there, which is fine in a sidebar where only one is
 // ever shown and useless in a list where both appear, so both are overridden.)
@@ -489,6 +533,13 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   tint_panel_activity: "Tint Manager · Panel: Activity",
   attendance:      "Attendance — their own",
   attendance_admin: "Attendance — everyone",
+  // The per-report ticks (2026-09-17). Not in PAGE_NAV_MAP.
+  reports_tint_summary: "Reports · Tint Summary",
+  reports_ti_report:    "Reports · TI Report",
+  // 🔴 Gates NOTHING since 2026-09-17 — the hub, sidebar row and routes read
+  // REPORT_PAGE_KEYS instead. Labelled so no admin ticks it expecting an effect.
+  // Retiring the key is a later job.
+  ti_report:            "Reports (legacy — no effect)",
 };
 
 /** Friendly name for a page key: PAGE_NAV_MAP first, override, then the key. */
@@ -499,7 +550,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 37 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 39 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -523,6 +574,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     "tint_operator", "operations_tinting",
     "operations_tint_operator", "delivery_challans", "shade_master",
     "sampling_library", "ti_report",
+    "reports_tint_summary", "reports_ti_report",
   ] },
   { label: "Master data", keys: ["customers", "skus", "routes_areas", "vehicles"] },
   { label: "Admin panel", keys: [

@@ -49,14 +49,15 @@ async function ReportBody({ params, hidden, generatedByName }: { params: TintSum
 }
 
 export default async function TintSummaryReportPage({ searchParams }: { searchParams: SP }) {
-  // ── Auth gate (mirrors the Tint Manager layout) ──────────────────────────
+  // ── Auth gate: the Tint Summary report tick (2026-09-17) ──────────────────
+  // Same key the hub uses to show this report, so the Generate PDF tab can never
+  // open for someone the hub would not show it to. No job-title bypass — the
+  // superuser / admin arm inside checkAnyPermission is the only one.
   const session = await auth();
   if (!session?.user) redirect("/login");
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin") && !roles.includes("operations")) {
-    const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allowed = await checkAnyPermission(roles, "reports_tint_summary", "canView");
+  if (!allowed) redirect("/unauthorized");
 
   // ── Parse searchParams → typed params ────────────────────────────────────
   const dateRaw = one(searchParams.date);

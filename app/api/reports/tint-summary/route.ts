@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
-import { checkPermission } from "@/lib/permissions";
+import { checkAnyPermission } from "@/lib/permissions";
 import { getTintSummaryData } from "@/lib/reports/tint-summary-data";
 
 export const dynamic = "force-dynamic";
@@ -28,12 +27,15 @@ function csvStrs(v: string | null): string[] {
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
+  // Gate (2026-09-17): the reports_tint_summary tick, the same key the hub and
+  // the print page use. Replaced a requireRole role list + a primary-role
+  // checkPermission. Checked before the try so a denial is a JSON 403, never a
+  // redirect swallowed by the catch.
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.OPERATION_MANAGER]);
-  if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
-    const allowed = await checkPermission(session!.user.role, "tint_manager", "canView");
-    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-  }
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "reports_tint_summary", "canView");
+  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   try {
     const url = new URL(req.url, "http://localhost");

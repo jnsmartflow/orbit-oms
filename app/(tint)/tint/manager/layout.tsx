@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
+import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems, canViewAnyReport } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { TintManagerAccessProvider } from "@/components/tint/manager/tint-manager-access-provider";
@@ -38,6 +38,8 @@ export default async function TintManagerLayout({
   const canPanelItems    = allPerms["tint_panel_items"]?.canView    ?? false;
   const canPanelDetails  = allPerms["tint_panel_details"]?.canView  ?? false;
   const canPanelActivity = allPerms["tint_panel_activity"]?.canView ?? false;
+  // Header "Reports" pill (2026-09-17): any report tick — the hub's own rule.
+  const canReports       = canViewAnyReport(allPerms);
 
   const seen = new Set<string>();
   const dedupedNavItems = navItems.filter(item => {
@@ -61,6 +63,7 @@ export default async function TintManagerLayout({
           canPanelItems={canPanelItems}
           canPanelDetails={canPanelDetails}
           canPanelActivity={canPanelActivity}
+          canReports={canReports}
         >
           {children}
         </TintManagerAccessProvider>

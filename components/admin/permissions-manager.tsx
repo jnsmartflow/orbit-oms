@@ -82,6 +82,11 @@ const PAGES_CONFIG = [
   // canEdit is its only meaning. Same ROLLBACK-editor caveat as the rows above.
   // ⚠ `place_order` itself has no row in this array (pre-existing gap).
   { key: "place_order_ship_to", label: "Purchase Order · Ship-to", path: "/place-order", section: "Operations" },
+  // One tick per report in the /reports hub (2026-09-17). canView = see that
+  // report; reports_ti_report canExport = its Download Excel button. Same
+  // ROLLBACK-editor caveat as the rows above.
+  { key: "reports_tint_summary", label: "Reports · Tint Summary", path: "/reports", section: "Operations" },
+  { key: "reports_ti_report",    label: "Reports · TI Report",    path: "/reports", section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [

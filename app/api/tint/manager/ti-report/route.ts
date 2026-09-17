@@ -16,11 +16,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Per-user tick, not a job title (2026-09-06). Reads were held back when the
-  // tint WRITES converted; this closes the split. Operations User loses these —
-  // he holds no tint_manager tick and both tint layouts already redirect him.
+  // The TI Report tick (2026-09-17), replacing tint_manager canView: this route
+  // serves ONLY the TI Report in the /reports hub, so a TI-Report-only holder
+  // without tint_manager must get data, and a tint_manager holder without the
+  // report tick must not.
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  const allowed = await checkAnyPermission(roles, "reports_ti_report", "canView");
   if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);

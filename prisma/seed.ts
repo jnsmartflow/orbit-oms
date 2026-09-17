@@ -258,6 +258,22 @@ async function main() {
     { roleSlug: "operation_manager", pageKey: "tint_panel_items",    canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operation_manager", pageKey: "tint_panel_details",  canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operation_manager", pageKey: "tint_panel_activity", canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+
+    // ── Reports — one tick per report ───────────────────────────────────────
+    // Registered 2026-09-17 (REPORT_PAGE_KEYS in lib/permissions.ts). canView =
+    // see that report in /reports; any one opens the hub. reports_ti_report
+    // canExport = the Download Excel button.
+    //
+    // FLAGS MIRROR THE LIVE `ti_report` TEMPLATES they replace: tint_manager and
+    // operation_manager held ti_report view + export, so they keep both reports
+    // and the Excel button. Admin needs no row (all-true).
+    //
+    // ⚠ SEED IS NOT LIVE (CORE §3). Live grants come from
+    // sql/2026-09-17-report-ticks.sql.
+    { roleSlug: "tint_manager",      pageKey: "reports_tint_summary", canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "reports_ti_report",    canView: true, canEdit: false, canImport: false, canExport: true,  canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "reports_tint_summary", canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "reports_ti_report",    canView: true, canEdit: false, canImport: false, canExport: true,  canDelete: false },
   ];
 
   for (const row of permRows) {

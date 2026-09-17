@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { checkAnyPermission } from "@/lib/permissions";
+import { getAllPermissionsForRoles, canViewAnyReport, type REPORT_PAGE_KEYS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { getTintSummaryData } from "@/lib/reports/tint-summary-data";
 import type { ReportParams } from "@/components/reports/report-params";
@@ -21,23 +21,34 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const todayIst = () => new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
 
 // Rail items — Option C. Single "TINT" group; no future/greyed groups (step 6).
+// Each carries the tick that shows it (lib/permissions.ts REPORT_PAGE_KEYS — a
+// new report is registered there AND here).
 const RAIL_ITEMS = [
-  { id: "tint-summary", label: "Tint Summary" },
-  { id: "ti-report", label: "TI Report" },
-] as const;
+  { id: "tint-summary", label: "Tint Summary", pageKey: "reports_tint_summary" },
+  { id: "ti-report",    label: "TI Report",    pageKey: "reports_ti_report" },
+] as const satisfies readonly { id: string; label: string; pageKey: (typeof REPORT_PAGE_KEYS)[number] }[];
 type ReportId = (typeof RAIL_ITEMS)[number]["id"];
 
 export default async function ReportsHubPage({ searchParams }: { searchParams: SP }) {
-  // ── Auth gate: tint_manager / admin / operations + ti_report perm ────────
+  // ── Auth gate: one tick per report (2026-09-17) ───────────────────────────
+  // The hub opens for canView on ANY report key; the rail shows only the
+  // permitted ones. No job-title bypass — the superuser / admin all-true arm
+  // inside getAllPermissionsForRoles is the only bypass. The old `ti_report`
+  // tick gates nothing any more.
   const session = await auth();
   if (!session?.user) redirect("/login");
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin") && !roles.includes("operations")) {
-    const allowed = await checkAnyPermission(roles, "ti_report", "canView");
-    if (!allowed) redirect("/unauthorized");
-  }
+  const allPerms = await getAllPermissionsForRoles(roles);
+  if (!canViewAnyReport(allPerms)) redirect("/unauthorized");
 
-  const r: ReportId = one(searchParams.r) === "ti-report" ? "ti-report" : "tint-summary";
+  const canTiReportExport = allPerms["reports_ti_report"]?.canExport ?? false;
+  const railItems = RAIL_ITEMS.filter((it) => allPerms[it.pageKey]?.canView === true);
+
+  // ?r= missing, unknown, or pointing at a report this person cannot see →
+  // the first permitted report. railItems is non-empty (gate above).
+  const requested = one(searchParams.r);
+  const r: ReportId = railItems.find((it) => it.id === requested)?.id ?? railItems[0].id;
+  const showTintSummary = r === "tint-summary";
   const dateRaw = one(searchParams.date);
   const date = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : todayIst();
 
@@ -55,7 +66,7 @@ export default async function ReportsHubPage({ searchParams }: { searchParams: S
 
   // Operator roster for the drawer (tint operators), only when the tab needs it.
   const operatorRoster =
-    r === "tint-summary"
+    showTintSummary
       ? await prisma.users.findMany({
           where: { isActive: true, userRoles: { some: { role: { name: "tint_operator" } } } },
           select: { id: true, name: true },
@@ -75,7 +86,7 @@ export default async function ReportsHubPage({ searchParams }: { searchParams: S
         </div>
         <nav className="px-2 pt-3">
           <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Tint</div>
-          {RAIL_ITEMS.map((it) => {
+          {railItems.map((it) => {
             const active = r === it.id;
             const href = it.id === "tint-summary" ? `/reports?r=tint-summary&date=${date}` : `/reports?r=${it.id}`;
             return (
@@ -98,7 +109,9 @@ export default async function ReportsHubPage({ searchParams }: { searchParams: S
 
       {/* ── Main ─────────────────────────────────────────────────────────── */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {r === "tint-summary" ? (
+        {/* r is always a permitted report, so getTintSummaryData() below only
+            ever runs for a reports_tint_summary holder. */}
+        {showTintSummary ? (
           <>
             <ReportsTopBar params={reportParams} roster={operatorRoster} />
             <div className="flex flex-1 justify-center overflow-auto bg-[#f1f3f5] py-6">
@@ -122,7 +135,7 @@ export default async function ReportsHubPage({ searchParams }: { searchParams: S
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
             {/* Relocated TI Report — unchanged behaviour (brings its own header). */}
-            <TIReportContent />
+            <TIReportContent canExport={canTiReportExport} />
           </div>
         )}
       </main>

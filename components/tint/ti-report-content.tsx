@@ -357,7 +357,13 @@ function ShadeExpandRow({ row }: { row: TIRow }) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function TIReportContent() {
+/**
+ * @param canExport the reports_ti_report canExport tick, resolved by the hub
+ *   (app/reports/page.tsx). Hides Download Excel when false. UI-only by
+ *   design: the rows are already in the browser. Defaults to false so a mount
+ *   that passes nothing offers no download (fail-closed).
+ */
+export function TIReportContent({ canExport = false }: { canExport?: boolean } = {}) {
   // Import button: the Import OBDs tick, the same rule the import route enforces.
   const canImportOBDs = useCanImportObds();
 
@@ -470,7 +476,7 @@ export function TIReportContent() {
           { label: "entries", value: summary?.totalEntries ?? 0 },
           { label: "tins", value: Math.round(summary?.totalTinQty ?? 0) },
         ]}
-        showDownload
+        showDownload={canExport}
         onDownload={() => exportXLSX(rows, tinterType, dateFrom, dateTo)}
         segments={[
           { id: "today", label: "Today" },

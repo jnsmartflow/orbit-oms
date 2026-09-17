@@ -53,6 +53,7 @@ import { BaseTiPanel } from "@/components/tint/manager/base-ti-panel";
 import { BoardTable } from "@/components/tint/manager/board-table";
 import { BoardAssignBar } from "@/components/tint/manager/board-assign-bar";
 import { BoardDetailPanel, type PanelTarget } from "@/components/tint/manager/board-detail-panel";
+import { useTintManagerAccess } from "@/components/tint/manager/tint-manager-access-provider";
 import { ConnectionStrip } from "@/components/tint/manager/board-bits";
 import { useTintManagerSync } from "@/components/tint/manager/use-tint-manager-sync";
 import { buildGroups, buildRail, panelSequence, queueSignature } from "@/components/tint/manager/rows";
@@ -79,6 +80,9 @@ const EMPTY_PAYLOAD: TintBoardPayload = {
 
 export function TintManagerContent() {
   const { data: session } = useSession();
+
+  // Header "Reports" pill — any report tick, resolved in the layout.
+  const { canReports } = useTintManagerAccess();
 
   // Import button: the Import OBDs tick, the same rule the import route enforces.
   const canImportOBDs = useCanImportObds();
@@ -884,14 +888,18 @@ export function TintManagerContent() {
                 )}
               </div>
             )}
-            <a
-              href="/reports?r=tint-summary"
-              className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-              title="Open Reports — Tint Summary (the full completion history; this board shows today only)"
-            >
-              <FileBarChart size={12} />
-              Reports
-            </a>
+            {/* Any report tick (REPORT_PAGE_KEYS), couriered by the layout. Links
+                to the bare hub, which opens the first report this person may see. */}
+            {canReports && (
+              <a
+                href="/reports"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                title="Open Reports (Tint Summary holds the full completion history; this board shows today only)"
+              >
+                <FileBarChart size={12} />
+                Reports
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setPullModalOpen(true)}

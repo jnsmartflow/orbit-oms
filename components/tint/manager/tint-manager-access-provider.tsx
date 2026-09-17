@@ -8,6 +8,10 @@
 //
 // Three, not one, so an admin can grant any combination per person.
 //
+// Plus canReports (2026-09-17): canView on ANY of REPORT_PAGE_KEYS, which
+// decides whether the header's "Reports" pill is drawn. Same rule as the hub
+// door and the sidebar row (canViewAnyReport in lib/permissions.ts).
+//
 // Resolved ONCE, server-side, in app/(tint)/tint/manager/layout.tsx, off the
 // SAME `allPerms` map that layout already computes for buildNavItems — no extra
 // query, no client fetch. This provider is only a courier, exactly like
@@ -37,10 +41,13 @@ export interface TintManagerAccess {
   canPanelDetails: boolean;
   /** May see the Activity tab (operator, pauses, skips). */
   canPanelActivity: boolean;
+  /** Holds canView on any report key — draws the header "Reports" pill. */
+  canReports: boolean;
 }
 
 const NONE: TintManagerAccess = {
   canPanelItems: false, canPanelDetails: false, canPanelActivity: false,
+  canReports: false,
 };
 
 const TintManagerAccessContext = createContext<TintManagerAccess>(NONE);
@@ -49,18 +56,20 @@ export function TintManagerAccessProvider({
   canPanelItems,
   canPanelDetails,
   canPanelActivity,
+  canReports,
   children,
 }: {
   canPanelItems: boolean;
   canPanelDetails: boolean;
   canPanelActivity: boolean;
+  canReports: boolean;
   children: React.ReactNode;
 }) {
   // Memoised on the primitives so a consumer does not re-render on every parent
   // render.
   const value = useMemo<TintManagerAccess>(
-    () => ({ canPanelItems, canPanelDetails, canPanelActivity }),
-    [canPanelItems, canPanelDetails, canPanelActivity],
+    () => ({ canPanelItems, canPanelDetails, canPanelActivity, canReports }),
+    [canPanelItems, canPanelDetails, canPanelActivity, canReports],
   );
   return (
     <TintManagerAccessContext.Provider value={value}>
