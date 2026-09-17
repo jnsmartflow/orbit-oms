@@ -167,8 +167,8 @@ export function TripDesk({
    */
   addMode: boolean;
   addCount: number;
-  /** "1,320 L · 1,822 kg · 1 route" — the hint line under the heading. */
-  addSummary: string;
+  /** "1,320 L · 1,822 kg · Adajan" — the hint line under the heading. */
+  addSummary: ReactNode;
   /** The selection-s route when it is a single one — cards matching it say so. */
   sameRouteLabel: string | null;
   onAddToTrip: (tripId: number) => void;

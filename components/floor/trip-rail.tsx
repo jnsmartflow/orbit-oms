@@ -46,6 +46,7 @@
 // done = checked, or on hold). Its number chip turns amber (redesign) — the
 // number already carries the real date — rather than implying it is today's.
 
+import type { ReactNode } from "react";
 import { TripBar, tripBarCounts } from "./trip-bar";
 import { formatLitres } from "./status-pill";
 import { inScope } from "@/lib/floor/scope";
@@ -88,7 +89,7 @@ export function TripRail({
   onSelect,
   addMode = false,
   addCount = 0,
-  addSummary = "",
+  addSummary = null,
   sameRouteLabel = null,
   onAddToTrip,
 }: {
@@ -131,7 +132,7 @@ export function TripRail({
    */
   addMode?: boolean;
   addCount?: number;
-  addSummary?: string;
+  addSummary?: ReactNode;
   /**
    * The selection-s route when it is a SINGLE one (floor-page). A trip whose own
    * route label is exactly this gets a quiet green "Same route" line.

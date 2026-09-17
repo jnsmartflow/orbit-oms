@@ -1549,19 +1549,21 @@ export function FloorPage() {
   /**
    * The add hint's second line — the same facts the bar already prints, in the
    * same words, from the same helpers: litres, kilos (with the honest "+" when a
-   * bill has no weight) and how many routes the selection spans.
+   * bill has no weight) and the selection's route label.
    *
-   * ⚠ ROUTES AS A COUNT, NOT A NAME, for now. The design shows the route's NAME
-   * here, and a "Same route" line on matching cards; both need the rail's
-   * most-stops ranking applied to the SELECTION, which is its own (fourth)
-   * commit. A count is true today and needs no new plumbing.
+   * "No route" is GREY, the same grey as the rail card's own "No route"
+   * (trip-rail.tsx) — so this is a node, not a joined string.
    */
   const addSummary = useMemo(() => {
     const bits = [`${formatLitres(sumLitres(selectedRows))} L`];
     const kg = formatWeightKg(selectionWeight.kg);
     if (kg !== null) bits.push(`${kg}${selectionWeight.unknown > 0 ? "+" : ""} kg`);
-    bits.push(selectionRouteLabel ?? "No route");
-    return bits.join(" · ");
+    return (
+      <>
+        {bits.join(" · ")} ·{" "}
+        {selectionRouteLabel ?? <span className="text-[#96969f]">No route</span>}
+      </>
+    );
   }, [selectedRows, selectionWeight, selectionRouteLabel]);
 
   // A short reminder of what the selection is sitting on. Reads off the rail,
