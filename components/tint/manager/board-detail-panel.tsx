@@ -19,6 +19,7 @@ import { ObdCode } from "@/components/shared/obd-code";
 import { OrderAuditHistory } from "@/components/shared/order-audit-history";
 import { humaniseReason } from "@/lib/tint/pause-reasons";
 import { OperatorAvatar, OperatorMenu, StatusPill, hhmm, istDateTime } from "./board-bits";
+import { useTintManagerAccess } from "./tint-manager-access-provider";
 import type { BoardRow, Operator, TintOrder } from "./types";
 
 export type PanelTarget =
@@ -26,6 +27,9 @@ export type PanelTarget =
   | { kind: "row"; row: BoardRow };
 
 type Tab = "items" | "details" | "activity";
+
+/** Display order. Only the tabs the person holds a tick for are drawn. */
+const TAB_ORDER: readonly Tab[] = ["items", "details", "activity"];
 
 export function BoardDetailPanel({
   target, operators, position, busy, error,
@@ -61,7 +65,19 @@ export function BoardDetailPanel({
   onOpenSkipHistory:   (orderId: number, obdNumber: string, siteName: string) => void;
   canRemove: boolean;
 }) {
-  const [tab, setTab] = useState<Tab>("items");
+  // One tick per tab (tint_panel_items / _details / _activity, 2026-09-17).
+  // A tab without its tick is never drawn AND never mounted, so its content
+  // (OrderAuditHistory, the pause / skip history buttons) never fetches.
+  const access = useTintManagerAccess();
+  const visibleTabs = TAB_ORDER.filter((t) =>
+    t === "items"   ? access.canPanelItems
+    : t === "details" ? access.canPanelDetails
+    : access.canPanelActivity,
+  );
+  const firstTab: Tab | null = visibleTabs[0] ?? null;
+  const [tab, setTab] = useState<Tab | null>(firstTab);
+  // Belt and braces: whatever the state holds, only a permitted tab renders.
+  const activeTab: Tab | null = tab !== null && visibleTabs.includes(tab) ? tab : firstTab;
   // Carries the trigger element, not a boolean: OperatorMenu is portalled and
   // measures from its anchor.
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -82,7 +98,9 @@ export function BoardDetailPanel({
   useEffect(() => {
     setConfirmSendBack(false);
     setMenuAnchor(null);
-  }, [targetKey]);
+    // Every job opens on the first tab this person may see.
+    setTab(firstTab);
+  }, [targetKey, firstTab]);
 
   const isPending = target.kind === "pending";
   const order     = isPending ? target.order : target.row.order;
@@ -313,26 +331,33 @@ export function BoardDetailPanel({
           )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-[18px] border-b border-gray-100">
-          {(["items", "details", "activity"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={cn(
-                "text-[11.5px] font-semibold px-2 py-[9px] border-b-2 transition-colors capitalize",
-                tab === t ? "text-gray-900 border-brand-600" : "text-gray-500 border-transparent hover:text-gray-700",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {/* Tabs — drawn only when there is a choice to make. One permitted tab
+            shows its content directly; none shows the muted line below. */}
+        {visibleTabs.length > 1 && (
+          <div className="flex gap-1 px-[18px] border-b border-gray-100">
+            {visibleTabs.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={cn(
+                  "text-[11.5px] font-semibold px-2 py-[9px] border-b-2 transition-colors capitalize",
+                  activeTab === t ? "text-gray-900 border-brand-600" : "text-gray-500 border-transparent hover:text-gray-700",
+                )}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-[18px] py-3.5 text-[12px] text-gray-600">
-          {tab === "items" && (
+          {activeTab === null && (
+            <p className="text-[11.5px] text-gray-400">No access to job details</p>
+          )}
+
+          {activeTab === "items" && (
             <table className="w-full border-collapse text-[11.5px]">
               <thead>
                 <tr>
@@ -356,7 +381,7 @@ export function BoardDetailPanel({
             </table>
           )}
 
-          {tab === "details" && (
+          {activeTab === "details" && (
             <>
               <p className="text-[10px] uppercase tracking-[.05em] text-gray-400 font-semibold mb-2">Reference</p>
               <dl className="grid grid-cols-2 gap-y-2.5 gap-x-4 mb-4">
@@ -374,7 +399,7 @@ export function BoardDetailPanel({
             </>
           )}
 
-          {tab === "activity" && (
+          {activeTab === "activity" && (
             <>
               <p className="text-[10px] uppercase tracking-[.05em] text-gray-400 font-semibold mb-2">Tint activity</p>
 

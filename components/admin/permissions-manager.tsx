@@ -36,6 +36,12 @@ const PAGES_CONFIG = [
   // Operations
   { key: "import_obd",    label: "Import OBD",     path: "/import",              section: "Operations" },
   { key: "tint_manager",  label: "Tint Manager",   path: "/tint/manager",        section: "Operations" },
+  // The three Tint Manager job-panel TABS (2026-09-17). canView is their only
+  // meaning. Same ROLLBACK-editor caveat as the billing rows below: nothing this
+  // screen writes is enforced while ACCESS_SOURCE is 'user'.
+  { key: "tint_panel_items",    label: "Tint Manager · Panel: Items",    path: "/tint/manager", section: "Operations" },
+  { key: "tint_panel_details",  label: "Tint Manager · Panel: Details",  path: "/tint/manager", section: "Operations" },
+  { key: "tint_panel_activity", label: "Tint Manager · Panel: Activity", path: "/tint/manager", section: "Operations" },
   { key: "tint_operator", label: "Tint Operator",  path: "/tint/operator",       section: "Operations" },
   { key: "dispatcher",    label: "Dispatcher",     path: "/dispatcher",          section: "Operations" },
   { key: "warehouse",     label: "Warehouse",      path: "/warehouse",           section: "Operations" },

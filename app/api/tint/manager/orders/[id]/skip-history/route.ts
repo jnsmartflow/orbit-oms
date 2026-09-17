@@ -22,6 +22,12 @@ export async function GET(
   if (!allowed) {
     return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
   }
+  // AND the Activity-tab tick (2026-09-17) — this history is only reachable from
+  // the job panel's Activity tab, so it follows that tab's grant.
+  const canActivity = await checkAnyPermission(roles, "tint_panel_activity", "canView");
+  if (!canActivity) {
+    return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
+  }
 
   // ── Validate id ────────────────────────────────────────────────────────────
   const orderId = parseInt(params.id, 10);

@@ -190,6 +190,26 @@ export type PageKey =
   | "vehicles"
   | "import_obd"
   | "tint_manager"
+  // The three TABS of the Tint Manager job panel (2026-09-17), one tick each so
+  // an admin can grant any combination: Items · Details · Activity.
+  //
+  // 🔴 canView IS THE ONLY MEANING: "may see that tab". All three are read-only
+  // tabs, so they are deliberately NOT in ACTION_PAGES — canView is available on
+  // every key and Import / Export / Edit / Delete dash on /admin/access.
+  //
+  // Read once in app/(tint)/tint/manager/layout.tsx and couriered by
+  // TintManagerAccessProvider. Server side: tint_panel_details gates
+  // /api/orders/[id]/audit-history; tint_panel_activity gates the pause-history
+  // and skip-history routes. tint_panel_items has no route of its own — the
+  // Items tab reads the board payload, so hiding it is UI-only.
+  //
+  // ⚠ NOT a replacement for `tint_manager`, which still decides whether the
+  // screen opens at all. ⚠ Deliberately NOT in PAGE_NAV_MAP or ICON_MAP (tabs,
+  // not routes). Absent row ≡ false: sql/2026-09-17-tint-panel-tabs.sql grants
+  // the people who saw the tabs before this change.
+  | "tint_panel_items"
+  | "tint_panel_details"
+  | "tint_panel_activity"
   | "tint_operator"
   | "place_order"
   // place_order_ship_to — the Ship To block in the DESKTOP /place-order cart
@@ -300,7 +320,10 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "picking", "floor",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
-  "import_obd", "tint_manager", "tint_operator",
+  "import_obd", "tint_manager",
+  // The three Tint Manager panel TABS sit beside their host screen.
+  "tint_panel_items", "tint_panel_details", "tint_panel_activity",
+  "tint_operator",
   // ⚠ `billing_picking` (the Billing Picking TAB) sits beside `mail_orders`,
   // its host screen. It is NOT `picking` on the line above — that is the floor
   // board. Keep them visually apart in this list, never adjacent.
@@ -419,10 +442,11 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. TWELVE of
-// the 34 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. FIFTEEN of
+// the 37 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
-// billing_print, the four billing action ticks, and place_order_ship_to.
+// billing_print, the four billing action ticks, place_order_ship_to, and the
+// three Tint Manager panel tabs.
 // (`attendance` IS in PAGE_NAV_MAP — but it and `attendance_admin` both carry
 // the label "Attendance" there, which is fine in a sidebar where only one is
 // ever shown and useless in a list where both appear, so both are overridden.)
@@ -458,7 +482,12 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   // "Purchase Order ·" prefix keeps it apart from "Billing · Ship-to" above —
   // a different screen and a different key.
   place_order_ship_to: "Purchase Order · Ship-to",
-  attendance:       "Attendance — their own",
+  // Not in PAGE_NAV_MAP. The "Tint Manager · Panel:" prefix keeps the three
+  // reading as tabs of that one screen, directly under its own row.
+  tint_panel_items:    "Tint Manager · Panel: Items",
+  tint_panel_details:  "Tint Manager · Panel: Details",
+  tint_panel_activity: "Tint Manager · Panel: Activity",
+  attendance:      "Attendance — their own",
   attendance_admin: "Attendance — everyone",
 };
 
@@ -470,7 +499,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 34 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 37 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -489,7 +518,9 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     "place_order", "place_order_ship_to", "trip_report", "import_obd",
   ] },
   { label: "Tinting", keys: [
-    "tint_manager", "tint_operator", "operations_tinting",
+    "tint_manager",
+    "tint_panel_items", "tint_panel_details", "tint_panel_activity",
+    "tint_operator", "operations_tinting",
     "operations_tint_operator", "delivery_challans", "shade_master",
     "sampling_library", "ti_report",
   ] },

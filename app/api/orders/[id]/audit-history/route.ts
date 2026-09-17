@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -13,19 +13,29 @@ const PAGE_SIZE = 100;
  * History section. When more than PAGE_SIZE rows exist, the response
  * includes `totalCount` so the UI can render "Showing recent 100 of N".
  *
- * Auth list mirrors /api/orders/[id]/detail (same panel surface).
+ * Gate (2026-09-17): the `tint_panel_details` canView tick — the Details tab of
+ * the Tint Manager job panel, which is this route's ONLY live caller (via
+ * components/shared/order-audit-history.tsx). It replaced a job-title
+ * requireRole([support, dispatcher, admin, operations, tint_manager]) that
+ * (a) ignored ACCESS_SOURCE and (b) called redirect() INSIDE the try below,
+ * where the catch swallowed it into a 500 — which is what operation_manager
+ * holders got. The check now sits OUTSIDE the try and answers with JSON.
  */
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
-  try {
-    const session = await auth();
-    requireRole(session, [
-      ROLES.SUPPORT, ROLES.DISPATCHER, ROLES.ADMIN,
-      ROLES.OPERATIONS, ROLES.TINT_MANAGER,
-    ]);
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "tint_panel_details", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
+  try {
     const orderId = parseInt(params.id, 10);
     if (isNaN(orderId)) {
       return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });

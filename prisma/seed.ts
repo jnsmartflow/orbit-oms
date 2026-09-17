@@ -240,6 +240,24 @@ async function main() {
     { roleSlug: "operations",        pageKey: "billing_ship_to", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operation_manager", pageKey: "billing_ship_to", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "tint_manager",      pageKey: "billing_ship_to", canView: true, canEdit: true, canImport: false, canExport: false, canDelete: false },
+
+    // ── Tint Manager job-panel TABS ─────────────────────────────────────────
+    // Registered 2026-09-17. One key per tab (Items / Details / Activity) so an
+    // admin can grant any combination. canView is the ONLY meaning — all three
+    // are read-only tabs; canEdit stays false.
+    //
+    // FLAGS MIRROR THE LIVE `tint_manager` TEMPLATES: the two role templates that
+    // open /tint/manager (`tint_manager`, `operation_manager`) saw all three tabs
+    // before the gate, so they keep all three. Admin needs no row (all-true).
+    //
+    // ⚠ SEED IS NOT LIVE (CORE §3). These are the role TEMPLATE. Live grants for
+    // real people come from sql/2026-09-17-tint-panel-tabs.sql.
+    { roleSlug: "tint_manager",      pageKey: "tint_panel_items",    canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "tint_panel_details",  canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",      pageKey: "tint_panel_activity", canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "tint_panel_items",    canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "tint_panel_details",  canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operation_manager", pageKey: "tint_panel_activity", canView: true, canEdit: false, canImport: false, canExport: false, canDelete: false },
   ];
 
   for (const row of permRows) {
