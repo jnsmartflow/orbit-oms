@@ -2,6 +2,9 @@
 
 import { ChevronRight } from "lucide-react";
 import type { PickingQueueRow } from "@/lib/picking/types";
+// The two project-division codes and their gate, owned by one PURE module so
+// the server's colour-work classifier and this badge cannot drift apart.
+import { isProjectSmu, type ProjectSmuCode } from "@/lib/picking/colour-work";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // These atoms only need to know how to survive ON that fill, which is what the
 // `onRed` prop below does.
@@ -133,7 +136,12 @@ export function AgeBadge({
 // specified: this is a rare accent (≈19% of cards), not a per-card chip, and
 // the weight is what separates a two-digit code from the 12px/500 area text
 // beside it. If the board ever reads heavy, this is a documented place to look.
-const SMU_BADGE_STYLE: Record<string, { bg: string; fg: string }> = {
+// ⚠ TYPED ON `ProjectSmuCode`, NOT `string` (2026-09-17). The two codes now
+// have ONE owner — `PROJECT_SMU_CODES` in lib/picking/colour-work.ts, which the
+// server needs too and which cannot import this client file. Typing the map on
+// that union means a code added there without a colour here is a COMPILE error,
+// rather than a gate that says yes and a badge that renders null.
+const SMU_BADGE_STYLE: Record<ProjectSmuCode, { bg: string; fg: string }> = {
   "74": { bg: "#eef2ff", fg: "#4f46e5" }, // Decorative Projects — UI §1209 indigo
   "77": { bg: "#ecfeff", fg: "#0891b2" }, // Retail Offtake      — UI §1209 cyan
 };
@@ -143,15 +151,19 @@ const SMU_BADGE_STYLE: Record<string, { bg: string; fg: string }> = {
  * whether to render a wrapper/row at all without duplicating the "74"/"77"
  * literals. SmuBadge still self-guards, so a caller that skips this check gets
  * nothing rendered rather than something wrong.
+ *
+ * Delegates to `isProjectSmu` — same two codes, same answer, one list.
  */
 export function isSmuBadged(code: string | null): boolean {
-  return code !== null && code in SMU_BADGE_STYLE;
+  return isProjectSmu(code);
 }
 
 export function SmuBadge({ code }: { code: string | null }): React.JSX.Element | null {
-  if (code === null) return null;
+  // Self-guard, unchanged in OUTCOME: null and any unbadged code still render
+  // nothing. It is now one type-narrowing test instead of a null check plus an
+  // undefined-lookup check, because SMU_BADGE_STYLE is keyed on the union.
+  if (!isProjectSmu(code)) return null;
   const style = SMU_BADGE_STYLE[code];
-  if (style === undefined) return null;
   return (
     <span
       className="text-[11px] font-bold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums"

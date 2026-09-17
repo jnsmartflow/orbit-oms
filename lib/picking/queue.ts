@@ -34,6 +34,10 @@ import { buildOilSkuSet } from "./grouping";
 // Same-SO detection. One bounded groupBy per fetch; the module owns the rule.
 // Floor imports the same function, so the two boards cannot disagree.
 import { getDuplicateSoNumbers } from "./duplicate-so";
+// TINT vs BASE — whether the tint room actually mixed this bill's colour. Same
+// post-fetch, batched, predicate-free shape as getDuplicateSoNumbers above; the
+// rule lives in ./colour-work.ts and the read in ./colour-work-query.ts.
+import { getColourWorkByOrder } from "./colour-work-query";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -658,6 +662,17 @@ export async function getPickingQueue(
   // takes for smuCode. No select entry was added and no WHERE was touched.
   const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
 
+  // ── TINT vs BASE ──────────────────────────────────────────────────────────
+  // Same contract as the lookups above: a post-fetch enrichment of rows the
+  // predicate already returned, one batch for the page, never per row, and NO
+  // term added to buildPickingWhere — so the live-sync marker still watches
+  // exactly the set it watched before (PICKING §10). `smu` and `orderType` are
+  // already in memory: the findMany uses `include`, which returns every base
+  // scalar. Sequential await, never prisma.$transaction (CORE §3).
+  const colourWorkByOrder = await getColourWorkByOrder(
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+  );
+
   // (A dispatch_slot_master read used to sit here, purely to build the removed
   // `windows[]` counters. It went with them 2026-07-28 — one fewer round trip
   // per fetch. Each row still carries its own windowId/windowTime/windowSortOrder
@@ -872,7 +887,13 @@ export async function getPickingQueue(
       hasDuplicateSo: order.soNumber !== null && duplicateSoNumbers.has(order.soNumber),
       // Tint is order-level — orders.orderType is the canonical source (set at
       // import), already present via `include`. Never a tint skuId (§13).
+      //
+      // ⚠ `isTint` IS NOT WHAT THE CARD SAYS — see `colourWork` below. This flag
+      // stays true on a bill closed as "Base — No Tint", which is why the word
+      // on screen reads a different field.
       isTint: order.orderType === "tint",
+      // TINT / BASE / say nothing. Map lookup only — the query ran once above.
+      colourWork: colourWorkByOrder.get(order.id) ?? null,
       // Distinct families, display-resolved, stable alpha-sorted (locale "en"
       // — same depot-PC-vs-Vercel determinism basis as the sort spine). Empty
       // array when nothing resolved; never null.

@@ -1,6 +1,11 @@
 // Picking queue row shape — all fields already resolved upstream (route/area/
 // key-customer/dealer come from the effective ship-to dealer, per step 1
 // discovery). This module does no joining and no DB access.
+//
+// `import type` only — erased by isolatedModules, so this module stays the
+// emit-free pure-types file its own comments describe.
+import type { ColourWork } from "./colour-work";
+
 export interface PickingQueueRow {
   orderId: number;
   obdNumber: string;
@@ -98,6 +103,23 @@ export interface PickingQueueRow {
   // "worth a look", never "this is wrong". Do not add a suppression heuristic
   // without a decision.
   hasDuplicateSo: boolean;
+  /**
+   * Was this bill's colour MIXED here, or is it leaving as base? "tint" |
+   * "base" | null, decided by lib/picking/colour-work.ts and loaded in one
+   * batch by lib/picking/colour-work-query.ts.
+   *
+   * 🔴 THIS, NOT `isTint`, IS WHAT THE CARD SAYS. `isTint` is
+   * `orderType === "tint"` and stays true on a bill the Tint Manager closed
+   * through "Base — No Tint", so it calls a stock-colour bill tinted. Read this
+   * field for anything a human sees; `isTint` remains the honest answer to "did
+   * this bill go through the tint rail", which is a different question and is
+   * still what the tint filters ask.
+   *
+   * `null` means SAY NOTHING, and it covers two cases on purpose: a division
+   * that carries no such signal (Deco Retail, Distributor, the parked Deco),
+   * and a project-division tint bill nobody has finished yet.
+   */
+  colourWork: ColourWork | null;
   // ── Product-family fields (Picking card redesign, 2026-07-21) ──────────────
   // True when the whole OBD is a tint order. Sourced from orders.orderType
   // === 'tint' (the canonical order-type set at import) — NOT from any tint

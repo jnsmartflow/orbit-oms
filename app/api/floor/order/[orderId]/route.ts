@@ -3,6 +3,9 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { formatPack } from "@/lib/place-order/pack";
+// TINT vs BASE — the one owner, shared with the picking queue and Floor's three
+// feeds. Never re-derived from `tintAssignment` below (see the field's comment).
+import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailTint } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
@@ -176,6 +179,10 @@ export async function GET(
         })
       : [];
   const nonCancelledSplits = tintSplits.filter((s) => s.status !== "cancelled");
+  // One bill, the shared rule. Sequential await, SELECT-only.
+  const colourWorkByOrder = await getColourWorkByOrder([
+    { orderId: order.id, smu: order.smu, orderType: order.orderType },
+  ]);
   const tint: FloorDetailTint | null =
     order.orderType === "tint"
       ? {
@@ -206,6 +213,14 @@ export async function GET(
     isKeyCustomer: dealer?.isKeyCustomer ?? false,
     priorityLevel: order.priorityLevel,
     isTint: order.orderType === "tint",
+    // TINT / BASE / nothing — through the SHARED loader (lib/picking/
+    // colour-work-query.ts), not from `tintAssignment` above. That read is
+    // `findFirst` on createdAt desc, so a bill whose LATEST row is a skip or a
+    // cancellation would classify differently here than on the board, and one
+    // bill reading two ways across two screens is the defect the shared owner
+    // exists to prevent. A plain order still issues NOTHING: the helper returns
+    // before querying for any division that carries no word.
+    colourWork: colourWorkByOrder.get(order.id) ?? null,
     isSite,
     tint,
 

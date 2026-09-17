@@ -4,6 +4,7 @@
 // their own shapes. No component or DB code here — pure types.
 
 import type { PickingQueueRow, SortRule } from "@/lib/picking/types";
+import type { ColourWork } from "@/lib/picking/colour-work";
 import type { HeldSinceSource } from "./hold-log";
 
 export type { SortRule };
@@ -57,6 +58,15 @@ export interface FloorPartyFields {
   isKeyCustomer: boolean;
   priorityLevel: number;
   isTint: boolean;
+  /**
+   * TINT / BASE / say nothing — lib/picking/colour-work.ts owns the rule.
+   *
+   * ⚠ NOT `isTint`. That flag is `orderType === "tint"` and stays true on a bill
+   * the Tint Manager closed as "Base — No Tint", so it calls a stock-colour bill
+   * tinted. Anything a human READS comes from this field; `isTint` remains the
+   * answer to "did it go through the tint rail", which the filters still ask.
+   */
+  colourWork: ColourWork | null;
   volumeLitres: number | null;
   articleTag: string | null;
   obdDateTime: string | null; // ISO
@@ -490,6 +500,9 @@ export interface FloorDetail {
   isKeyCustomer: boolean;
   priorityLevel: number;
   isTint: boolean;
+  /** TINT / BASE / nothing — the same field, and the same warning, as
+   *  FloorPartyFields above. The panel's Details tab reads THIS, not `isTint`. */
+  colourWork: ColourWork | null;
   isSite: boolean;             // Retail Offtake / Decorative Projects, not overridden
 
   /**

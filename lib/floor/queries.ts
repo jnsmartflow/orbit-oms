@@ -49,6 +49,11 @@ import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 // behaviour: a second copy of "what counts as a duplicate" is how the phone and
 // the desk would come to flag different bills.
 import { getDuplicateSoNumbers } from "@/lib/picking/duplicate-so";
+// TINT vs BASE — also OWNED BY PICKING, and imported for the same reason. Floor
+// renders the word on four of its own surfaces (the board table, Hold,
+// Cancelled and the detail panel), and a second copy of "was this colour
+// actually mixed" is how the desk and the phone would label one bill two ways.
+import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // WHICH TRIPS A DAY'S DESK IS ABOUT — owned by lib/trips/live-trips.ts and
 // shared with getTripsForDate, the feed behind the rail. The board's trip arm
 // below must never spell this rule out for itself: the one day it did, the two
@@ -836,6 +841,14 @@ export async function getFloorBoard(
   // ONE shared predicate (FLOOR §3/§5).
   const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
 
+  // TINT vs BASE — same post-fetch contract as the line above: batched once for
+  // the page, and NO predicate touched, so board and marker stay on the one
+  // shared `floorLiveBaseWhere`. Costs nothing on a board with no
+  // project-division tint bill on it (the helper returns before querying).
+  const colourWorkByOrder = await getColourWorkByOrder(
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+  );
+
   // ── The bill's TRIP (2026-09-09) ─────────────────────────────────────────
   //
   // TWO batched reads, both keyed on an `id IN (…)` list — drops first, then the
@@ -966,6 +979,11 @@ export async function getFloorBoard(
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       weightKg: order.querySnapshot?.totalWeight ?? null,
       isTint: order.orderType === "tint",
+      // TINT / BASE / nothing. Map lookup only — the batch ran once above.
+      // ⚠ A DIFFERENT QUESTION FROM `tintPhase` BELOW: phase says where the
+      // bill is with the tint room, this says whether a colour was ever mixed.
+      // A bypassed bill reads phase "done" and colourWork "base".
+      colourWork: colourWorkByOrder.get(order.id) ?? null,
       // Which of the three tint pills this row wears, or null for a plain order.
       // Derived HERE and only here — see tintPhaseOf above and the field's own
       // contract on FloorBoardRow. No extra query: `orderType` and
@@ -1181,6 +1199,13 @@ export async function getFloorHold(
     if (!latestHoldLog.has(log.orderId)) latestHoldLog.set(log.orderId, log.createdAt);
   }
 
+  // TINT vs BASE — the Hold table wears the same word as the board (this feed's
+  // rows are their own type, so it fills the field itself). Batched once,
+  // predicate untouched, sequential await.
+  const colourWorkByOrder = await getColourWorkByOrder(
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+  );
+
   const rows: FloorHoldRow[] = [];
   for (const order of orders) {
     const dealer = order.shipToOverrideCustomer ?? order.customer;
@@ -1210,6 +1235,7 @@ export async function getFloorHold(
       isKeyCustomer: dealer?.isKeyCustomer ?? false,
       priorityLevel: order.priorityLevel,
       isTint: order.orderType === "tint",
+      colourWork: colourWorkByOrder.get(order.id) ?? null,
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       articleTag: order.querySnapshot?.articleTag ?? null,
       obdDateTime: (order.obdEmailDate ?? order.orderDateTime)?.toISOString() ?? null,
@@ -1266,6 +1292,12 @@ export async function getFloorCancelled(
     if (!latest.has(l.orderId)) latest.set(l.orderId, { createdAt: l.createdAt, note: l.note, name: l.changedBy?.name ?? null });
   }
 
+  // TINT vs BASE — see the Hold feed above. A cancelled bill keeps whatever was
+  // true of it: the record should read the same after cancellation as before.
+  const colourWorkByOrder = await getColourWorkByOrder(
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+  );
+
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
 
   const rows: FloorCancelledRow[] = [];
@@ -1292,6 +1324,7 @@ export async function getFloorCancelled(
       isKeyCustomer: dealer?.isKeyCustomer ?? false,
       priorityLevel: order.priorityLevel,
       isTint: order.orderType === "tint",
+      colourWork: colourWorkByOrder.get(order.id) ?? null,
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       articleTag: order.querySnapshot?.articleTag ?? null,
       obdDateTime: (order.obdEmailDate ?? order.orderDateTime)?.toISOString() ?? null,
