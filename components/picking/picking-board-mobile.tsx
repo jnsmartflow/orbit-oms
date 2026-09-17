@@ -31,7 +31,7 @@ import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 // FamilyChip joins the list 2026-08-22 — the picker card renders his ARTICLE
 // TOTALS in the same chip as a bill renders its own packs, so one man's
 // "12 Carton" and one bill's cannot drift apart in style.
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, FamilyChip, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, ColourWorkBadge, FamilyChip, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
 // Duplicate-SO red — tokens and tag from the ONE owner. Never re-type a hex.
 import {
   DuplicateSoTag,
@@ -512,9 +512,14 @@ function PickingCard({
       ? (row.windowTime ?? "no slot")
       : formatObdDateTime(row.obdDateTime);
 
-  // Caption-right cluster by variant. Tint reuses Support's exact indicator
-  // (🎨 in purple — components/support/shared/table-cells.tsx CustomerCell) so
-  // the two boards read identically; field is row.isTint (orders.orderType).
+  // Caption-right cluster by variant.
+  //
+  // ⚠ THE TINT INDICATOR LEFT THIS CLUSTER (2026-09-17). It was a 🎨 borrowed
+  // from the retired Support board and keyed on `row.isTint`, i.e. on
+  // `orderType`, so it called a bill closed as "Base — No Tint" tinted. It is
+  // now the TINT/BASE word in the LEFT caption, reading `row.colourWork`, on all
+  // five variants rather than these two. Nothing else in this cluster moved.
+  //
   // Urgent bolt stays AMBER (not the mockup's red) — red already means
   // "overdue" on the Picking elapsed badge; a second red would collide.
   //
@@ -534,7 +539,6 @@ function PickingCard({
         {row.priorityLevel === 1 && (
           <Zap size={14} className={dup ? "" : "text-amber-500 fill-amber-500"} style={iconOnRed} />
         )}
-        {row.isTint && <span className="text-[13px] text-tint-600 leading-none shrink-0">🎨</span>}
         {row.isEarlyReleased && (
           <span
             className={
@@ -555,7 +559,6 @@ function PickingCard({
         {row.isKeyCustomer && (
           <Star size={14} className={dup ? "" : "text-amber-500 fill-amber-500"} style={iconOnRed} />
         )}
-        {row.isTint && <span className="text-[13px] text-tint-600 leading-none shrink-0">🎨</span>}
         <UpcomingDayBadge row={row} onRed={dup} />
       </span>
     );
@@ -755,6 +758,17 @@ function PickingCard({
                   <span className="truncate">{secondary}</span>
                 </>
               )}
+              {/* TINT / BASE — ALL FIVE VARIANTS, because this caption block is
+                  variant-independent and the fact is too: a bill's colour was
+                  either mixed or it wasn't, whether it is waiting, locked, being
+                  picked or checked. Replaces the 🎨 that sat in captionRight on
+                  the two Assign variants only, and which read "tinted" on a bill
+                  closed as Base — No Tint.
+                  ⚠ `shrink-0`, so the time text truncates before the word does —
+                  the same ordering `captionSmu` below relies on. Renders null
+                  when the bill says nothing, so no wrapper and no gap is spent
+                  on the ~93% of cards outside the two project divisions. */}
+              <ColourWorkBadge work={row.colourWork} />
               {/* The SMU as a BARE NUMBER — Done tab's checked band only.
                   ⚠ SmuBadge is NOT used here and NOT changed; its pill still
                   renders on every other card's where-row. Same 74/77 gate via

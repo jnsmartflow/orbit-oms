@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import type { PickingQueueRow } from "@/lib/picking/types";
 // The two project-division codes and their gate, owned by one PURE module so
 // the server's colour-work classifier and this badge cannot drift apart.
-import { isProjectSmu, type ProjectSmuCode } from "@/lib/picking/colour-work";
+import { isProjectSmu, type ColourWork, type ProjectSmuCode } from "@/lib/picking/colour-work";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // These atoms only need to know how to survive ON that fill, which is what the
 // `onRed` prop below does.
@@ -170,6 +170,74 @@ export function SmuBadge({ code }: { code: string | null }): React.JSX.Element |
       style={{ background: style.bg, color: style.fg }}
     >
       {code}
+    </span>
+  );
+}
+
+// ── Colour-work badge ───────────────────────────────────────────────────────
+// The word TINT or BASE on a bill, for the two project divisions only.
+//
+// 🔴 IT READS `colourWork`, NEVER `isTint`. `isTint` is `orderType === "tint"`
+// and stays true on a bill the Tint Manager closed as "Base — No Tint", which is
+// what made the 🎨 this replaces call a stock-colour bill tinted. The field's
+// rule lives in lib/picking/colour-work.ts; this component only paints it.
+//
+// ⚠ PINK, AND THE HEXES ARE COPIED FROM components/floor/status-pill.tsx's META
+// — the four tint pills Floor has worn since 2026-09-13. Copied with the source
+// named rather than imported because those values live inside a Floor-private
+// `META` object keyed by Floor's own status union; nothing importable exists.
+// **If Floor's pinks change, re-copy these.** Violet is Orbit's action colour
+// and `tint-*` in tailwind.config.ts is a SKY BLUE family, so neither could be
+// used for the tint room (status-pill.tsx's own note explains both).
+//
+// ⚠ A SIBLING OF AgeBadge AND SmuBadge, NOT A NEW STYLE. Same geometry as
+// SmuBadge — `text-[11px] font-bold px-2 py-[3px] rounded-full shrink-0
+// whitespace-nowrap` — with `tabular-nums` dropped (there are no digits) and
+// tracking added, which is the one thing an all-caps word needs that a
+// two-digit number does not.
+//
+// ⚠ THE BASE VARIANT CARRIES A BORDER AND THE TINT VARIANT DOES NOT, exactly as
+// Floor's pills do: a pale fill needs an edge to read as a pill, a solid one
+// does not. AgeBadge already mixes bordered and borderless tiers the same way.
+const COLOUR_WORK_STYLE: Record<ColourWork, { label: string; cls: string; title: string }> = {
+  // Floor's `tinting` pill — the one solid fill.
+  tint: {
+    label: "TINT",
+    cls: "bg-[#db2777] text-white",
+    title: "Tinted — colour mixed by an operator",
+  },
+  // Floor's `tintAssigned` fill + `tintDone` border. Pale, quiet: nothing was
+  // mixed, and the word is here to stop a reader assuming otherwise.
+  base: {
+    label: "BASE",
+    cls: "bg-[#fce7f3] text-[#be185d] border border-[#fbcfe8]",
+    title: "Base — no tinting",
+  },
+};
+
+/**
+ * Does this bill say anything about colour work? The gate, same shape as
+ * `isSmuBadged` above, exported so a caller can decide whether to render a
+ * wrapper or a separator without testing the field's shape itself.
+ * `ColourWorkBadge` still self-guards.
+ */
+export function isColourWorkBadged(work: ColourWork | null): boolean {
+  return work !== null;
+}
+
+export function ColourWorkBadge({ work }: { work: ColourWork | null }): React.JSX.Element | null {
+  if (work === null) return null;
+  const style = COLOUR_WORK_STYLE[work];
+  return (
+    <span
+      className={
+        "text-[11px] font-bold tracking-[0.04em] px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap " +
+        style.cls
+      }
+      aria-label={style.title}
+      title={style.title}
+    >
+      {style.label}
     </span>
   );
 }

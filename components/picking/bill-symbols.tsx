@@ -23,14 +23,21 @@
 // cannot see is not.
 
 import { DUP_SO_MUTED, DuplicateSoTag } from "@/components/shared/duplicate-so-tag";
-import { isSmuBadged } from "./card-atoms";
+import { ColourWorkBadge, isColourWorkBadged, isSmuBadged } from "./card-atoms";
+import type { ColourWork } from "@/lib/picking/colour-work";
 
 /** The five fields the run reads — narrow, not the whole PickingQueueRow. */
 export interface BillSymbolSource {
   hasDuplicateSo: boolean;
   isKeyCustomer: boolean;
   priorityLevel: number | null;
-  isTint: boolean;
+  /**
+   * ⚠ WAS `isTint: boolean` UNTIL 2026-09-17. The run carried a 🎨 keyed on
+   * `orderType`, which calls a bill closed as "Base — No Tint" tinted; it now
+   * carries the TINT/BASE word off this field instead. Both detail headers pass
+   * a full row, so neither call site changed.
+   */
+  colourWork: ColourWork | null;
   smuCode: string | null;
 }
 
@@ -41,7 +48,12 @@ export function hasBillSymbols(row: BillSymbolSource): boolean {
     row.hasDuplicateSo ||
     row.isKeyCustomer ||
     row.priorityLevel === 1 ||
-    row.isTint ||
+    // ⚠ THIS TERM HAD TO MOVE WITH THE MARK, not just the render below. It read
+    // `row.isTint`, and a tint bill outside the two project divisions (there is
+    // one live: a Deco Retail bill imported as Z007) would otherwise make this
+    // gate TRUE while the badge renders nothing — leaving both callers drawing a
+    // separator in front of an empty run.
+    isColourWorkBadged(row.colourWork) ||
     isSmuBadged(row.smuCode)
   );
 }
@@ -56,7 +68,9 @@ const KEY_COLOR   = "#B45309"; // ★ key dealer — warn.text, 4.6:1
 // red→amber migration is its own session, CLAUDE_UI.md §3). Darkened for
 // legibility only: #fca5a5 → #DC2626 (red-600), 4.4:1.
 const URGENT_COLOR = "#DC2626"; // ⚡ urgent
-const TINT_COLOR  = "#0284C7"; // 🎨 tint — tint.600, 3.7:1
+// (TINT_COLOR "#0284C7" was here for the 🎨 and went with it — the word carries
+// its own palette. The same hex still means "With picker" on Floor's pills and
+// progress bar, which are untouched.)
 // Neutral, not indigo: a bare number is a fact, and the header's one violet is
 // its title. ink-600, 7.3:1.
 const SMU_COLOR   = "#514E63"; // the bare SMU number
@@ -110,17 +124,13 @@ export function BillSymbols({ row }: { row: BillSymbolSource }): React.JSX.Eleme
           </svg>
         </span>
       )}
-      {row.isTint && (
-        <span
-          role="img"
-          aria-label="Tint"
-          title="Tint"
-          className="text-[14px] leading-none"
-          style={{ color: tone(TINT_COLOR) }}
-        >
-          🎨
-        </span>
-      )}
+      {/* ⚠ THE ONE ITEM IN THIS RUN THAT IS A PILL, NOT A GLYPH (2026-09-17).
+          It replaces a 🎨 in place, keeping the run's order, because the fact it
+          carries is now a WORD: "tinted" and "base" cannot be told apart by one
+          symbol, and the emoji claimed the first of them for both. Its colours
+          are fixed by lib/picking/colour-work's palette rather than following
+          `tone()` — see the note above about a duplicate-SO header. */}
+      <ColourWorkBadge work={row.colourWork} />
       {/* ⚠ THE NUMBER, WITHOUT SmuBadge's PILL — and SmuBadge itself is NOT
           touched. It still renders its indigo/cyan pill on both CARD where-rows
           (picking-board-mobile.tsx + picker-my-picks-board.tsx), which is the

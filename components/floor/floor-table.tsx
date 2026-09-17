@@ -39,11 +39,14 @@
 //    entirely on the showSlot (By group) arms. See the cell and `showInvoice`.
 
 import type { ReactNode } from "react";
-import { Building2, Droplet, Mail, MoreHorizontal, Zap } from "lucide-react";
+import { Building2, Mail, MoreHorizontal, Zap } from "lucide-react";
 // formatDateIST is the SHARED date-only formatter — the same one the detail
 // panel's "Invoice date" cell reads (it used to be a private fmtDate in
 // detail-details.tsx). One formatter, so the two surfaces cannot disagree.
 import { formatArticleTag, formatDateIST } from "@/lib/floor/format";
+// TINT / BASE -- one owner for the word, shared with both picking boards. The
+// pinks it paints are copied FROM this module's neighbour status-pill.tsx.
+import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import {
   StatusPill,
   rowStatus,
@@ -1034,12 +1037,15 @@ export function FloorTable({
               style={{ color: "#475569" }}
             />
           )}
-          {row.isTint && (
-            <Droplet
-              size={12}
-              className="ml-1 inline-block align-[-1px]"
-              style={{ color: "#0284C7" }}
-            />
+          {/* TINT / BASE — the word, in place of a 🖜 droplet that keyed on
+              `orderType` and so called a bill closed as "Base — No Tint"
+              tinted. `ml-1` is the droplet's own spacing, kept. Renders null
+              outside the two project divisions, exactly as the droplet rendered
+              nothing on a plain bill. */}
+          {row.colourWork !== null && (
+            <span className="ml-1 inline-block align-[-1px]">
+              <ColourWorkBadge work={row.colourWork} />
+            </span>
           )}
           {isSite && (
             <div className="text-[10.5px] text-[#9ca3af]">

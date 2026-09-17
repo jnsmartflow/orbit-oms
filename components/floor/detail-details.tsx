@@ -76,7 +76,18 @@ export function DetailDetails({ d }: { d: FloorDetail }) {
         <Cell k="Slot" v={d.dispatchWindowTime} />
         <Cell k="Priority" v={d.priorityLevel === 1 ? "Urgent (P1)" : `P${d.priorityLevel}`} />
         <Cell k="Picker" v={d.pickerName} />
-        <Cell k="Tinting" v={d.isTint ? "Yes" : "No"} />
+        {/* ⚠ WAS `d.isTint ? "Yes" : "No"` UNTIL 2026-09-17, and "Yes" was a LIE
+            on a bill the Tint Manager closed as "Base — No Tint": that bill
+            keeps `orderType: "tint"` for ever, which is the same mistake the
+            emoji on the picking cards was making. The word now comes from
+            `colourWork`, so this cell and the badge beside it cannot disagree.
+            An em dash for a division that carries no answer, and for a project
+            tint bill still in the tint room — "No" would claim it will ship as
+            base, which nobody knows yet. */}
+        <Cell
+          k="Tinting"
+          v={d.colourWork === "tint" ? "Tinted" : d.colourWork === "base" ? "Base — no tint" : "—"}
+        />
         <Cell k="Material" v={d.materialType} />
       </div>
 

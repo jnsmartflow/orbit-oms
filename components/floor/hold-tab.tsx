@@ -16,9 +16,11 @@
 // never read as a recorded one.
 
 import { useMemo, useState } from "react";
-import { Building2, Droplet, FileText } from "lucide-react";
+import { Building2, FileText } from "lucide-react";
 import { FloorSkeleton } from "./floor-skeleton";
 import { HoldBar } from "./hold-bar";
+// TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
+import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { PdfPreview } from "./pdf-preview";
 import { shipMarkers } from "./floor-table";
 import { toggleOne, toggleAllIds, isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
@@ -107,7 +109,13 @@ function HoldRows({
                 {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
                 {row.priorityLevel === 1 && <span className="ml-1 text-[#ef4444]">⚡</span>}
                 {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}
-                {row.isTint && <Droplet size={12} className="ml-1 inline-block align-[-1px] text-tint-600" />}
+                {/* TINT / BASE -- the word, replacing a droplet keyed on `orderType`
+                    (which called a "Base -- No Tint" bill tinted). Same `ml-1`. */}
+                {row.colourWork !== null && (
+                  <span className="ml-1 inline-block align-[-1px]">
+                    <ColourWorkBadge work={row.colourWork} />
+                  </span>
+                )}
                 {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}
                 {isRedirect && <div className="text-[11px] text-brand-800">→ ship-to changed</div>}
               </td>

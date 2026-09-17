@@ -16,7 +16,7 @@ import { FindingTriangleButton } from "./finding-recorder";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, ColourWorkBadge, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
 import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
@@ -1554,6 +1554,14 @@ export function PickerMyPicksBoard({
                     <span className="font-mono shrink-0" style={{ color: dup ? DUP_SO_TEXT : "#98a0aa" }}>
                       {row.obdNumber}
                     </span>
+                    {/* TINT / BASE, straight after the OBD. This caption has no
+                        "· time" segment (DIVERGENCE 2 above), so the word
+                        follows the number directly. Same component and same
+                        field as the supervisor card — the picker must read the
+                        same fact about the same bill. Renders null outside the
+                        two project divisions, so every other card's caption row
+                        is byte-identical DOM. */}
+                    <ColourWorkBadge work={row.colourWork} />
                   </span>
                   {/* The tag LEADS the right cluster, so it is the first thing
                       read after the OBD — same order as the supervisor card.

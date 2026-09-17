@@ -18,7 +18,9 @@
 // surfaces — never a swallowed response.
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
-import { Building2, Droplet, X } from "lucide-react";
+import { Building2, X } from "lucide-react";
+// TINT / BASE -- one owner for the word (components/picking/card-atoms.tsx).
+import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
 import { DetailItems } from "./detail-items";
 import { DetailDetails } from "./detail-details";
@@ -543,11 +545,12 @@ function PanelBody({
               <Building2 size={11} /> Site
             </span>
           )}
-          {d.isTint && (
-            <span className="inline-flex items-center gap-1 rounded-[4px] bg-tint-bg px-2 py-[3px] text-[10px] font-semibold text-tint-700">
-              <Droplet size={11} /> Tint
-            </span>
-          )}
+          {/* TINT / BASE, replacing a "Droplet + Tint" chip that keyed on
+              `orderType` and so labelled a bill closed as "Base — No Tint" a
+              tint bill. Self-guarding: it renders nothing outside the two
+              project divisions, exactly as the chip rendered nothing on a plain
+              bill, so this row is unchanged on every other panel. */}
+          <ColourWorkBadge work={d.colourWork} />
         </div>
       </div>
 
