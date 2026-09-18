@@ -1,5 +1,5 @@
 # CLAUDE_MRN.md — MRN, Material Receipt Note
-# v1.1 · Schema v27.20 · September 2026 · updated 2026-09-04
+# v1.2 · Schema v27.24 · September 2026 · updated 2026-09-18
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -25,7 +25,7 @@ One route, `/mrn`, rendering two entirely different screens.
 | **Billing desk** | `billing_operator`, `operations`, `admin` | A date-fenced rail of the day's trucks + a working pane: header facts, delivery tabs, the line table, the reports |
 | **Supervisor phone** | `floor_supervisor` | Three tabs — To check · Checking · Done — and the line sheet he counts on |
 
-🔴 **THE BRANCH IS ON `primaryRole`, NEVER ON VIEWPORT.** `app/mrn/page.tsx:69`:
+🔴 **THE BRANCH IS ON `primaryRole`, NEVER ON VIEWPORT.** `app/mrn/page.tsx:95`:
 `showSupervisorFace = primaryRole === "floor_supervisor"`. There is no `md:`
 switch anywhere in this module and none may be added — `/picking` removed its
 width switch in July 2026 and MRN never had one. A billing operator on a phone
@@ -110,7 +110,8 @@ const CLOSE_ROLES: string[] = [ROLES.BILLING_OPERATOR, ROLES.ADMIN];
 if (!hasRole(session, CLOSE_ROLES)) return 403;
 ```
 
-The live grants give `mrn` canEdit to **three** roles (§9). `floor_supervisor`
+`mrn` canEdit is a per-user tick held by 13 users (live 2026-09-18, Q03a), and
+the seed grants it to three roles, `floor_supervisor` among them (§9). `floor_supervisor`
 needs it to START and END an unloading, so a canEdit gate would put a Close
 button on his phone where he has no OTR number to type into it. `operations` is
 excluded for the same reason, on the owner's instruction.
@@ -236,9 +237,10 @@ delete his own (the retake path); once `done`/`closed` it is `canDelete` only.
 ### 4.5 Billing's view
 
 A **Photos button in the pane's action row**, with a count badge on its top-right
-corner — `#f5f3ff` / `#5b21b6`, the notes/remark shade owned by
-`components/floor/tint-strip.tsx:30` and documented in `CLAUDE_UI.md §28`. Never
-a Tailwind `purple-*`.
+corner — ink tokens, `bg-ink-50` / `text-ink-600` with a white ring
+(`components/mrn/photos-button.tsx:146`, since `b585240f`). The comment above
+that line still credits a violet hex pair to a Floor file that no longer
+exists — a stale code comment (§12).
 
 🔴 **The control renders NOTHING at zero photos** — no greyed button, no "0". The
 thumbnail band that preceded it was removed 2026-09-01: the header must not grow
@@ -268,7 +270,7 @@ viewer shows a photo (plus a quiet prefetch of the next). Cached per tab in
 🔴 **ON THE LINES SINCE 2026-09-01 (v27.20). ONE STI CAN CARRY SEVERAL.**
 
 `mrn_lines.deliveryNo` — `text NOT NULL`, currently with a temporary
-`DEFAULT ''` (see §12). `''` is a real value meaning *no delivery number*, not a
+`DEFAULT ''` (still set, live 2026-09-18 Q06a — see §12). `''` is a real value meaning *no delivery number*, not a
 NULL: the column is NOT NULL precisely so the unique index works, because
 Postgres treats NULLs as DISTINCT from each other and a nullable column would
 silently permit duplicate line numbers on exactly those rows.
@@ -490,8 +492,14 @@ the heading, so every MRN reads the same way.
 
 ## 9. Permissions
 
-**No page key of its own beyond `mrn`.** Live grants, SELECT-verified 2026-09-01
-(seed is not live — always check):
+**No page key of its own beyond `mrn`.** Access is a **per-user tick**: the live
+`ACCESS_SOURCE` is `user` (live 2026-09-18, Q02), so `checkAnyPermission`
+(`lib/permissions.ts`) reads the logged-in user's `user_page_access` row, not the
+role table. Live `mrn` ticks (live 2026-09-18, Q03a): **39 rows · canView 13 ·
+canEdit 13 · canExport 6.**
+
+Seed says (`prisma/seed.ts:141-147` — the `role_permissions` rows role mode would
+read; seed is not live):
 
 | Role | canView | canEdit | canExport | canDelete |
 |---|---|---|---|---|
@@ -499,20 +507,22 @@ the heading, so every MRN reads the same way.
 | `floor_supervisor` | ✓ | ✓ | ✗ | ✗ |
 | `operations` | ✓ | ✓ | ✓ | ✗ |
 
-`admin` holds no `role_permissions` rows and is short-circuited to all-true.
+`admin` is short-circuited to all-true in either mode (`checkAnyPermission`,
+`lib/permissions.ts:795`).
 
 | Action | Requires |
 |---|---|
 | Create, paste, start, end, confirm a line, capture a photo | `canEdit` |
 | View, open a photo | `canView` |
-| Print / Download XLS | `canExport` — billing's alone (§11 OQ-11) |
+| Print / Download XLS | `canExport` — whoever holds the tick gets both links (`components/mrn/detail-pane.tsx`, `perms.canExport`), and both targets re-check it (`app/api/mrn/[mrnId]/export/route.ts:57`, `app/mrn/[mrnId]/sheet/page.tsx:40`) |
 | Delete the MRN; delete a photo after `done` | `canDelete` |
 | **Punch the OTR and close** | 🔴 **`billing_operator` or `admin`, explicit role check — NOT `canEdit`** |
 
 ⚠ **HIDDEN vs DISABLED** (UI §10) is load-bearing in this module. HIDDEN = "not
-yours", a ROLE thing. DISABLED = "not yet", a STATE thing. `operations` holds
-canEdit but canDelete FALSE, and once saw a Delete button that returned
-"Forbidden" — the route was right, offering the button was the bug.
+yours", a permission thing. DISABLED = "not yet", a STATE thing. The seed's
+`operations` row holds canEdit but canDelete FALSE, and an operations user once
+saw a Delete button that returned "Forbidden" — the route was right, offering
+the button was the bug.
 
 ---
 
@@ -527,6 +537,16 @@ canEdit but canDelete FALSE, and once saw a Delete button that returned
   comes out correctly cased. `mrn."closedById"`'s inline FK — never named —
   landed as `mrn_closedById_fkey`, correct, while the three that WERE named
   folded. **Quote it, or omit it. Never name it unquoted.**
+  The draft now carries the corrected, double-quoted names (its header records
+  the fold), so it is the DDL a fresh database should run, not a literal copy of
+  what ran on 2026-09-01. Live names (live 2026-09-18, Q06b):
+  `mrn_photos_pkey`, `mrn_photos_mrnId_fkey` (CASCADE), `mrn_photos_lineId_fkey`
+  (CASCADE), `mrn_photos_capturedById_fkey` (RESTRICT),
+  `mrn_photos_storagePath_key`, `chk_mrn_photo_kind`,
+  `chk_mrn_photo_lr_truck_level`; on `mrn`: `mrn_pkey`, `chk_mrn_status`,
+  `chk_mrn_received_from`, `mrn_createdById_fkey` (RESTRICT),
+  `mrn_closedById_fkey`, `mrn_removedById_fkey`, `mrn_unloadingStartById_fkey`,
+  `mrn_unloadingEndById_fkey` (all four SET NULL).
 
 - 🔴 **`mrn_photos.lineId` IS ON DELETE CASCADE, AND ONLY THE OPEN-ONLY PASTE
   GATE PROTECTS THE PHOTOS.** `lines` PUT does `deleteMany` + `createMany`, which
@@ -611,18 +631,28 @@ canEdit but canDelete FALSE, and once saw a Delete button that returned
 
 | File | Role |
 |---|---|
-| `app/mrn/page.tsx` | `/mrn` entry. Role branch (`primaryRole === "floor_supervisor"`), permission resolve, `canClose` |
+| `app/mrn/page.tsx` | `/mrn` entry. Role branch (`showSupervisorFace`, `:95`), permission resolve, `canClose` |
 | `app/mrn/[mrnId]/sheet/page.tsx` | A4 print route. 409-equivalent unless `done`/`closed` |
 | `components/mrn/mrn-shell.tsx` | Both shells in one file; `MrnPerms`; the marker poll; the one refetch path |
 | `components/mrn/billing-board.tsx` | Desk face: rail + pane + every modal |
 | `components/mrn/detail-pane.tsx` | Header block (title · action row · facts), Photos button, the lines table |
-| `components/mrn/lines-table.tsx` | Three column sets, the exhaustive status switch, delivery tabs, TOTAL row |
+| `components/mrn/lines-table.tsx` | Two column sets (`BILLING_COLUMNS` `:93`, `DONE_COLUMNS` `:102`) over three render arms, the exhaustive status switch, delivery tabs, TOTAL row |
 | `components/mrn/line-drawer.tsx` | Billing's per-line panel — condition counts, batches |
 | `components/mrn/supervisor-board.tsx` | Phone face: three tabs, START/END, the line band |
 | `components/mrn/line-list.tsx` / `line-sheet.tsx` | The supervisor's list and the sheet he counts on. `line-list.tsx` imports `sortPackLabels` from `lib/picking/pack-sort.ts` for its pack chips — Picking's rule, not MRN's (§10) |
 | `components/mrn/photo-capture.tsx` | Camera, review, staging strip, per-photo upload |
 | `components/mrn/photos-button.tsx` / `photo-lightbox.tsx` | Billing's entry point and full-screen viewer |
 | `components/mrn/print-sheet.tsx` | The A4 document (17 columns, widths sum to 100) |
+| `components/mrn/print-sheet-button.tsx` | The print control on the A4 sheet route |
+| `components/mrn/mrn-rail.tsx` / `rail-card.tsx` | The desk's date-fenced rail and its card |
+| `components/mrn/supervisor-card.tsx` | The phone's truck card on the three tabs |
+| `components/mrn/status-pill.tsx` | The one owner of the truck-state pill; the rail card and the pane header import it |
+| `components/mrn/end-sheet.tsx` | The END unloading sheet, with the optional LR photo step |
+| `components/mrn/new-mrn-modal.tsx` / `edit-header-modal.tsx` | Create an MRN; edit its header while `open` |
+| `components/mrn/paste-lines-modal.tsx` | The STI paste — preview through `resolve-skus`, save through `lines` PUT |
+| `components/mrn/close-mrn-modal.tsx` / `delete-mrn-modal.tsx` | The OTR punch (§3); the soft delete |
+| `components/mrn/modal-shell.tsx` | The shared modal frame and the one window-level Escape owner (§10) |
+| `components/mrn/format.ts` | Display formatters, incl. the date param the billing board sends |
 | `lib/mrn/types.ts` | Wire shapes; `MrnStatus`; `asMrnStatus()` which THROWS |
 | `lib/mrn/derive.ts` | Short/Excess/hasIssue, `formatBatchNo`, `formatMfgDate`, both validators |
 | `lib/mrn/delivery.ts` | The one owner of "what delivery numbers does this MRN have" |
@@ -639,8 +669,37 @@ canEdit but canDelete FALSE, and once saw a Delete button that returned
 | `app/api/mrn/photo/[photoId]/route.ts` | Signed URL (GET) and delete (DELETE) |
 | `lib/supabase.ts` | `getSupabaseAdmin()` — **server-only, service-role key** |
 | `prisma/schema.prisma` | `mrn` / `mrn_lines` / `mrn_line_batches` / `mrn_photos` headers carry the column-level rules |
-| `docs/prompts/drafts/sql-2026-08-31-mrn-photos-otr.sql` | Photos + `closed` DDL, as run |
-| `docs/prompts/drafts/sql-2026-09-01-mrn-delivery-split.sql` | Delivery split DDL. **Part 4 still commented — see §12** |
+| `docs/prompts/drafts/sql-2026-08-31-mrn-photos-otr.sql` | Photos + `closed` DDL, with the constraint names corrected to their quoted camelCase form (§10) — not a literal copy of what ran |
+| `docs/prompts/drafts/sql-2026-09-01-mrn-delivery-split.sql` | Delivery split DDL. **Part 4 still commented and still not run — see §12** |
+
+### 11.1 API routes
+
+Sixteen route files under `app/api/mrn/`, all `force-dynamic`. Every permission
+gate is `checkAnyPermission(roles, "mrn", …)`; the one exception is `close`.
+Callers are the client `fetch` / link sites.
+
+| Route | Method | Gate | Client caller |
+|---|---|---|---|
+| `create` | POST | canEdit | `components/mrn/new-mrn-modal.tsx:50` |
+| `board` | GET | canView · `?face=billing[&date]` or `?face=supervisor`, 400 on a missing or unknown face | `components/mrn/billing-board.tsx:103`, `components/mrn/mrn-shell.tsx:205` |
+| `marker` | GET | canView · `?tab=` required (`toCheck`/`checking`/`done`), 400 otherwise · `buildMrnSupervisorWhere` | `components/mrn/mrn-shell.tsx:265` (via `usePickingMarker`) |
+| `resolve-skus` | POST | canView · the paste preview's catalog lookup | `components/mrn/paste-lines-modal.tsx:84` |
+| `[mrnId]` | GET | canView | `components/mrn/billing-board.tsx:133`, `components/mrn/supervisor-board.tsx:109`, `:214` |
+| `[mrnId]/header` | PATCH | canEdit · 409 unless `open` | `components/mrn/edit-header-modal.tsx:75` |
+| `[mrnId]/lines` | PUT | canEdit · 409 unless `open` · scoped delete (§5.1) | `components/mrn/paste-lines-modal.tsx:107`, `components/mrn/lines-table.tsx:398` |
+| `[mrnId]/start` | POST | canEdit · 409 unless `open` · 409 on zero lines | `components/mrn/supervisor-board.tsx:325` |
+| `[mrnId]/line/[lineId]` | PUT | canEdit · 409 unless `checking` — the supervisor's per-line confirm | `components/mrn/line-sheet.tsx:344` |
+| `[mrnId]/end` | POST | canEdit · 409 unless `checking` · every line checked | `components/mrn/supervisor-board.tsx:278` |
+| `[mrnId]/photo` | POST | canEdit · 409 unless `checking` · server-side cap (§4.3) | `components/mrn/photo-capture.tsx:123` |
+| `[mrnId]/photos` | GET | canView · the list, no signed URLs | `components/mrn/photos-button.tsx:53`, `components/mrn/line-sheet.tsx:222`, `components/mrn/end-sheet.tsx:86` |
+| `photo/[photoId]` | GET | canView · one signed URL | `lib/mrn/signed-url.ts:38` |
+| `photo/[photoId]` | DELETE | canDelete, or the capturer while `checking` (`isOwnDuringChecking`) | `components/mrn/photo-lightbox.tsx:292` |
+| `[mrnId]/export` | GET | **canExport** · 409 unless `done`/`closed` | link, `components/mrn/detail-pane.tsx:338`, `app/mrn/[mrnId]/sheet/page.tsx:101` |
+| `[mrnId]/close` | POST | **no permission read** — `hasRole(session, CLOSE_ROLES)`, billing_operator + admin (`close/route.ts:62`) · 409 unless `done` | `components/mrn/close-mrn-modal.tsx:55` |
+| `[mrnId]/delete` | POST | **canDelete** · 409 unless `open` | `components/mrn/delete-mrn-modal.tsx:46` |
+
+⚠ The static siblings (`create`, `board`, `marker`, `resolve-skus`, `photo`)
+resolve to their own routes and never reach `[mrnId]`.
 
 ---
 
@@ -657,15 +716,16 @@ up. Treat any claim about how they behave at scale as untested.
 
 | Item | State |
 |---|---|
-| **`mrn_lines.deliveryNo` still has `DEFAULT ''`** | 🔴 **The one piece of unfinished work.** Part 4 of `sql-2026-09-01-mrn-delivery-split.sql` is commented out and drops it. Run that single ALTER **alone** — re-running the file would flatten real per-line delivery numbers back to the legacy header value. Until it runs, the route's 400 is the only guard against a caller filing lines under `''` |
+| **`mrn_lines.deliveryNo` still has `DEFAULT ''`** | 🔴 **The one piece of unfinished work — still open: the live default is `''::text` (live 2026-09-18, Q06a).** Part 4 of `sql-2026-09-01-mrn-delivery-split.sql` is commented out and drops it. Run that single ALTER **alone** — re-running the file would flatten real per-line delivery numbers back to the legacy header value. Until it runs, the route's 400 is the only guard against a caller filing lines under `''` |
 | **LR photo is optional, with no override** | Owner ruling, reversed from "mandatory" the same day. `/end` has no LR guard and must not grow one. The billing photo button makes an absent LR visible — that IS the enforcement |
 | **No retention cron, by decision** | Reversed from "90 days". Build no `mrn-photo-purge`, and do NOT widen `attendance-purge` to see this bucket. Storage grows without bound; revisit when it is large enough to notice |
 | **The tab pill exists in three copies** | Extracting a shared component is a three-caller refactor (Floor, Billing v2, MRN) and has not been done. `CLAUDE_UI.md` documents none of them |
 | **"N SKUs not in catalog" roll-up removed** | 2026-09-01, with the summary line. The PER-ROW "Not in catalog · UNKNOWN SKU" tag is untouched and names which code is missing |
 | **Unattributed write paths** | `header` PATCH and `lines` PUT record no actor (CORE §13, census D). ⚠ The photo DELETE also records nobody — it hard-deletes the row — and postdates that census |
+| **Stale code comments (claims, not facts)** | `app/api/mrn/[mrnId]/export/route.ts:21-22` says `operations` holds `mrn.canExport` FALSE — the seed row says TRUE (`prisma/seed.ts:147`) and in user mode it is a per-user tick (§9). `components/mrn/photos-button.tsx:132-140` credits the badge shade to `components/floor/tint-strip.tsx:30` — that file was deleted in `79bcc412` and the badge is ink tokens (§4.5). Neither comment changes behaviour; fix them in a code-comment pass |
 | **QTD's meaning is unknown** | Carried through schema, UI and report because the source workbook has it (design §4). Do not repurpose it |
 | **The condition columns are barely used** | Across the MRNs recorded before 2026-09-01, the six condition counts were filled on a handful of lines and `Short`/`Excess` were zero on every line ever recorded. Worth knowing before reading anything into a quiet photo panel |
 
 ---
 
-*MRN v1.1 · Schema v27.20 · OrbitOMS · updated 2026-09-04 — §10 gains a one-bullet cross-reference: MRN imports `sortPackLabels` at `components/mrn/line-list.tsx` and does NOT own it; the rule lives in `CLAUDE_PICKING.md §3.1` (v1.17). Records MRN's caller-side no-pack pinning and the chips-not-rows boundary, and nothing else — the tiers and the 2026-08-10 bug stay in Picking. §11 line-list row cites the import. ⚠ Schema stamp stays **v27.20** — it records the version this file was last RECONCILED against (router §4), and v27.21 (CI) touches no MRN table. Prior, v1.0 (2026-09-01): first canonical record; supersedes the 2026-08-20 design draft wherever the code disagrees*
+*MRN v1.2 · Schema v27.24 · OrbitOMS · updated 2026-09-18 — reconciled to code at HEAD 5ab9ee40 and the 2026-09-18 live SELECTs (canon sweep batch B1). §4.5 photo badge is ink tokens (`photos-button.tsx:146`), the deleted `tint-strip.tsx` reference gone. §9 rewritten: access is a per-user tick (live Q02/Q03a: mrn 39 rows · view 13 · edit 13 · export 6), the role table relabelled "seed says", and the "Print/XLS is billing's alone" line that contradicted it removed; §3's grant sentence follows. §10 case-folding bullet lists the live constraint names (Q06b). §11 `page.tsx` anchor → `:95`, `lines-table` row → two column sets, thirteen missing component files added, new §11.1 inventory of all sixteen route files with gate and client caller. §5/§12 DROP DEFAULT recorded as still not run (Q06a); §12 gains the two stale code comments. Schema stamp v27.20 → v27.24, earned by this pass. Prior, v1.1 (2026-09-04): §10 gains a one-bullet cross-reference: MRN imports `sortPackLabels` at `components/mrn/line-list.tsx` and does NOT own it; the rule lives in `CLAUDE_PICKING.md §3.1` (v1.17). Records MRN's caller-side no-pack pinning and the chips-not-rows boundary, and nothing else — the tiers and the 2026-08-10 bug stay in Picking. §11 line-list row cites the import. ⚠ Schema stamp stays **v27.20** — it records the version this file was last RECONCILED against (router §4), and v27.21 (CI) touches no MRN table. Prior, v1.0 (2026-09-01): first canonical record; supersedes the 2026-08-20 design draft wherever the code disagrees*

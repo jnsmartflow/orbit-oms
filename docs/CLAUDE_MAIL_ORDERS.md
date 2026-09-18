@@ -1,9 +1,9 @@
-# CLAUDE_MAIL_ORDERS.md — Mail Orders Module (+ Billing v2 pilot, §23)
-# v1.13 · Schema v27.15 · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · September 2026 · updated 2026-09-01
+# CLAUDE_MAIL_ORDERS.md — Mail Orders Module (parser → enrichment → matching → the Orders tab; Billing desk → CLAUDE_BILLING.md)
+# v1.14 · Schema v27.24 · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · September 2026 · updated 2026-09-18
 # Lives in: orbit-oms/docs/
-# Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
+# Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md (+ docs/CLAUDE_BILLING.md for the Billing desk)
 
-Primary user: Deepanshu Thakur (billing_operator id=25). Secondary: Bankim (id=26). Billing v2 pilot user: Operations User (id=20) — §23.
+Primary user: Deepanshu Thakur (billing_operator id=25). Secondary: Bankim (id=26). Every viewer of `/mail-orders` gets the Billing desk face: `billing_settings.rolloutStage = ALL_USERS` since 2026-08-06 (live 2026-09-18, Q01; `lib/billing/flag.ts:86`). That face is owned by `docs/CLAUDE_BILLING.md`; §23 here keeps only the Orders-tab internals.
 
 ---
 
@@ -44,10 +44,18 @@ mo_orders
   shipToOverride BOOLEAN, shipToOverrideCustomerId INT? (FK, v27.9 — §6),
   slotToOverride BOOLEAN, notes TEXT?,
   dispatchTargetDate DATE?, dispatchWindowId INT? (slot INTENT, 2026-07-30
-    v27.13 addition — CORE §7.6; written by the Billing v2 slot action, §23.3),
+    v27.13 addition — CORE §7.6; written by the Billing actions route,
+    CLAUDE_BILLING.md §5),
   isLocked BOOLEAN DEFAULT false,
   splitFromId INT, splitLabel TEXT,
-  createdAt
+  createdAt,
+  updatedAt TIMESTAMPTZ NOT NULL DEFAULT now() — owned by the DATABASE:
+    trigger trg_mo_orders_updated_at, BEFORE UPDATE → set_updated_at_mo_orders()
+    (live 2026-09-18, Q10a + Q11). Mirrored in Prisma as plain
+    @default(now()), deliberately NOT @updatedAt (71e7b53a;
+    prisma/schema.prisma model mo_orders) — the trigger is the single writer,
+    so add neither the directive nor manual writes. GET /api/mail-orders/marker
+    keys on it (§7).
 
 mo_order_lines
   id, moOrderId (FK CASCADE), lineNumber,
@@ -381,7 +389,7 @@ All 277 pre-deploy flagged rows are null, as expected — no backfill was run.
 
 **Backfill of historical overrides — DEFERRED, maybe never.** Old `mo_orders` rows only carry the redirect as `[→ Name (Code)]` text inside `deliveryRemarks`; recovering the id needs a parse-then-resolve one-off script (parse the suffix via `splitDeliveryRemarks()`, then resolve the recovered code against `delivery_point_master`). Not needed to proceed.
 
-**Ship-to override on other screens — where it stands (2026-08-04):** the desk surface is Floor's detail panel (`CLAUDE_FLOOR.md §4.4`); the Billing v2 face resolves the override via the FK relation and can SET it via the ✎ pencil (§23.3). The challan document does not render it. *(This line used to defer to "Support only" and name Planning/Warehouse as future screens — all three boards retired 2026-07-27/28.)*
+**Ship-to override on other screens — where it stands (2026-08-04):** the desk surface is Floor's detail panel (`CLAUDE_FLOOR.md §4.4`); the Billing desk resolves the override via the FK relation (§23.2) and can SET it via the ✎ pencil, shown only to holders of the `billing_ship_to` tick (`CLAUDE_BILLING.md §5`). The challan document does not render it. *(This line used to defer to "Support only" and name Planning/Warehouse as future screens — all three boards retired 2026-07-27/28.)*
 
 ### splitDeliveryRemarks helper (in lib/mail-orders/utils.ts)
 
@@ -422,23 +430,29 @@ if (shipToOverride && deliveryRemarks has "[→ Name (Code)]" suffix) {
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | /api/mail-orders/ingest | HMAC | Receives from PowerShell. Accepts `carryProduct?`, `bodyCustomerName?`, `bodyCustomerCode?`. No server-side auto-split. Calls `buildTableCContext()` once per request for Table C fast-path. |
-| GET | /api/mail-orders | Session | Fetches by date (IST) + status filter. Two-batch ship-to lookup against `mo_customer_keywords`. Response includes `shipToArea`, `shipToDeliveryType`. Each line includes `altSkus: string[]` from `mo_sku_lookup_v2` combo siblings (display-time, additive; `[]` on miss, ~99.7% v2 coverage). |
-| PATCH | /api/mail-orders/[id]/punch | Session | Mark punched. |
-| PATCH | /api/mail-orders/[id]/so-number | Session | Save soNumber, auto-punch. |
-| PATCH | /api/mail-orders/[id]/customer | Session | Manual customer pick. |
-| PATCH | /api/mail-orders/[id]/lock | Session | Toggle `isLocked`. |
-| POST | /api/mail-orders/[id]/split | Session | Manual split. |
+| GET | /api/mail-orders | Session | Fetches by date (IST) + status filter. Two-batch ship-to lookup against `mo_customer_keywords`. Response includes `shipToArea`, `shipToDeliveryType`, `isKeyCustomer` per order (from `delivery_point_master.isKeyCustomer`, `route.ts:225-260`) and `disabledTags` for the viewer (§21). Each line includes `altSkus: string[]` from `mo_sku_lookup_v2` combo siblings (display-time, additive; `[]` on miss, ~99.7% v2 coverage). The sibling maps come from a 5-minute in-process cache, per warm instance, with a single-flight guard (`getComboSiblings()`, `COMBO_CACHE_TTL_MS` at `route.ts:58`; `00cfac02`) — a catalog edit shows within 5 minutes, not instantly. |
+| GET | /api/mail-orders/marker | `mail_orders` canView (`marker/route.ts:87`) | The Orders tab's change probe (`0cbe73ef`): `count` = `mo_orders` in the IST day; `latest` = MAX(`mo_orders.updatedAt`) in that day OR MAX(`app_tag_settings.updatedAt`), not day-scoped. Two aggregates, read-only. Its header lists the accepted blind spots: `mo_line_status`, `isKeyCustomer`, `mo_customer_keywords`, `mo_sku_lookup_v2`. |
+| PATCH | /api/mail-orders/[id]/punch | `mail_orders` canEdit | Mark punched. |
+| PATCH | /api/mail-orders/[id]/so-number | `mail_orders` canEdit | Save soNumber, auto-punch. |
+| PATCH | /api/mail-orders/[id]/customer | `mail_orders` canEdit | Manual customer pick. |
+| PATCH | /api/mail-orders/[id]/lock | `mail_orders` canEdit | Toggle `isLocked`. |
+| PATCH | /api/mail-orders/[id]/note | `mail_orders` canEdit (`note/route.ts:28`) | Save `mo_orders.notes` (string or null, ≤5000 chars). |
+| POST | /api/mail-orders/[id]/split | `mail_orders` canEdit | Manual split. |
 | GET | /api/mail-orders/[id]/original-lines | Session | Fetch both halves for original view. |
-| POST | /api/mail-orders/lines/[lineId]/resolve | Session | Resolve unmatched line. |
-| PATCH | /api/mail-orders/lines/[lineId]/status | Session | Set found/not-found + reason. snake_case reasons. |
+| POST | /api/mail-orders/lines/[lineId]/resolve | `mail_orders` canEdit | Resolve unmatched line. |
+| PATCH | /api/mail-orders/lines/[lineId]/status | `mail_orders` canEdit | Set found/not-found + reason. snake_case reasons. |
 | GET | /api/mail-orders/skus | Session | Search `mo_sku_lookup`. |
 | GET | /api/mail-orders/customers/search | Session | Search `mo_customer_keywords`. |
 | GET | /api/mail-orders/keywords | **Public** | Parser consumes at startup. |
-| POST | /api/mail-orders/re-enrich | Session | Re-enrich last 2 days. Idempotent. |
+| POST | /api/mail-orders/re-enrich | `mail_orders` canEdit | Re-enrich last 2 days. Idempotent. |
+| POST | /api/mail-orders/backfill-customers | `mail_orders` canEdit (`backfill-customers/route.ts:18`) | Re-runs subject customer matching on every `mo_orders` row whose `customerMatchStatus` is null or `unmatched`. |
+| GET / POST | /api/mail-orders/backfill-enrich | GET: `requireRole(session, [ROLES.ADMIN])` (`backfill-enrich/route.ts:169`). POST: HMAC (`x-hmac-signature`, `:147-150`) — but middleware still demands a session first (§18) | `runBackfill()` bulk re-enrichment. Source still says `TEMPORARY — delete after backfill` (§18). |
 | GET | /api/mail-orders/debug-enrich | Session | Debug enrichment. |
-| POST | /api/mail-orders/learn-customer | Session | Upsert into `mo_learned_customers`. Fire-and-forget. |
+| POST | /api/mail-orders/learn-customer | `mail_orders` canEdit | Upsert into `mo_learned_customers`. Fire-and-forget. |
 
-**Middleware bypass:** `/api/mail-orders/ingest` bypasses session auth when `x-hmac-signature` header present. `/api/mail-orders/keywords` excluded entirely.
+**Middleware bypass:** `/api/mail-orders/ingest` bypasses session auth when `x-hmac-signature` header present. `/api/mail-orders/keywords` excluded entirely (`middleware.ts:59-67`). No other mail-orders path is bypassed.
+
+**Audit.** The customer, lock, note, split, line-resolve, re-enrich and backfill-customers routes each write an `entity: "mail_orders"` row through `logAdminAction()` (`c3cf726b`). The table and its rules are `CLAUDE_CORE.md §7.13`.
 
 ---
 
@@ -446,23 +460,29 @@ if (shipToOverride && deliveryRemarks has "[→ Name (Code)]" suffix) {
 
 ```
 app/(mail-orders)/mail-orders/
+  layout.tsx                   server: mail_orders canView gate + the provider stack (CLAUDE_BILLING.md §3)
   page.tsx                     bare wrapper, force-dynamic
-  mail-orders-page.tsx         main client, viewMode switch (Table | Review)
-  mail-orders-table.tsx        12-column table with CodeCell + SignalPill
+  mail-orders-page.tsx         main client, viewMode switch (Table | Review), marker poll
+  mail-orders-table.tsx        12-column table with CodeCell + SignalPill (dormant face — §9)
+  line-status-panel.tsx        per-line found/not-found panel (imported by mail-orders-table.tsx)
   review-view.tsx              master-detail split. Primary punching view.
   resolve-line-panel.tsx       unmatched line resolver
-  slot-completion-modal.tsx    slot completion + SO email grouping
+  tutorial-overlay.tsx         step-by-step spotlight tutorial (rendered by mail-orders-page.tsx)
+  slot-completion-modal.tsx    ON DISK, NO IMPORTER — slot modal retired 2026-08-10 (§13)
 
 components/mail-orders/
   signal-pill.tsx              shared SignalPill component
-  bill-to-card.tsx             BillToCard with optional code-click + popover slot
-  ship-to-card.tsx             ShipToCard with isOverride amber-bar pattern
+  bill-to-card.tsx             BillToCard with optional code-click + popover slot + "Key" pill
+  ship-to-card.tsx             ShipToCard — override bar: brand/violet on the billing face, amber on the dormant face (§9.5)
   meta-ribbon.tsx              SO/time/vol/match/punched + action buttons + Punch slot
   instructions-strip.tsx       3-dot category strip (returns null when all empty)
+  notes-font-size-provider.tsx couriers the per-user notes size (CLAUDE_BILLING.md §9)
+  so-email-panel.tsx           ON DISK, NO IMPORTER
 
 lib/mail-orders/
   types.ts              MoOrderLine (isCarton, cartonCount), OrderSignal (with card field)
-  api.ts                client fetch helpers (learnCustomer fire-and-forget)
+  api.ts                client fetch helpers (learnCustomer fire-and-forget);
+                        fetchSlotCutoffs() still exported, no caller (§9.1)
   utils.ts              slot, clipboard, grouping, smartTitleCase, volume,
                         getOrderSignals(), getBillLabel(), getOrderFlags(),
                         getSplitDisplayLabel(), splitDeliveryRemarks()
@@ -473,8 +493,18 @@ lib/mail-orders/
   enrich.ts             enrichment engine v3 + carryProduct
   table-c.ts            buildTableC() exact-name map; tableCKey(); cleanPackCode(); buildComboSiblings() (→ altSkus)
   table-c-context.ts    buildTableCContext() — builds tableC + tableCResolver per ingest request (NEW, commit da219238)
-  email-template.ts     slot summary HTML builder
+  notes-font-size.ts    getNotesFontSize() + the 11–20 bounds (CLAUDE_BILLING.md §9)
+  email-template.ts     slot summary HTML builder — ORPHANED: its only importers are the two
+                        no-importer files above (§14)
+  enrich-v2.ts          ON DISK, NO IMPORTER anywhere in the repo
+  taxonomy-mapping.ts   no app importer; imported only by four one-off scripts under scripts/
+                        (v2-sku-seed-from-legacy.ts, preview-new-taxonomy*.ts, tmp/step1-missing-135.ts)
 ```
+
+Orphans verified 2026-09-18 two ways: an import grep over `app/ components/ lib/ scripts/`, then a
+name grep (`SlotCompletionModal`, `SoEmailPanel`, `enrich-v2`, `buildSlotSummaryHTML`) — every
+remaining hit is a comment or the file itself. Kept per the no-delete rule; removal needs an owner
+instruction.
 
 **`focus-mode-view.tsx` is deleted** (was orphan, removed 2026-05-20 in Review View redesign commit `6dafad8e`).
 
@@ -482,9 +512,13 @@ lib/mail-orders/
 
 ## 9. View modes — Table | Review
 
-Toggle in UniversalHeader title. Visual spec in `CLAUDE_UI.md §21, §28-32`.
+Visual spec in `CLAUDE_UI.md §21, §28-32`.
 
-### 9.1 Table View
+**Only Review is reachable.** With the rollout stage at `ALL_USERS` every viewer is on the billing face, which hides the Table/Focus toggle (the only writer of `viewMode`, default `"focus"`) and the slot sections — §9.1 is dormant code, listed in `CLAUDE_BILLING.md §2`.
+
+**Refresh is marker-gated** (`0cbe73ef`): the page polls `GET /api/mail-orders/marker` every 30s through `usePickingMarker` (`MAIL_ORDERS_MARKER_POLL_MS`, `mail-orders-page.tsx:90`, `:366-372`) and refetches `GET /api/mail-orders` only when `{count, latest}` moves. The hook does the tab-focus check; the page has no `visibilitychange` listener of its own.
+
+### 9.1 Table View [DORMANT — unreachable while ALL_USERS]
 
 12 parent columns. Column toggle via `ALL_COLUMNS` config, `localStorage "mo-column-visibility"`. Dispatch `defaultVisible: false`. 4 always-visible: Time, Customer, SKU, SO No.
 
@@ -498,15 +532,13 @@ Toggle in UniversalHeader title. Visual spec in `CLAUDE_UI.md §21, §28-32`.
 | 17:00 – before 20:00 | **Late Evening** (added 2026-06-18) |
 | 20:00 – 23:59 | Night |
 
-No data migration — slots are computed at render from `receivedAt`, so existing orders re-bucket automatically. Cutoffs are DB-configurable in `system_config` (`"HH:MM"` strings parsed by `parseHHMM()`): `slot_morning_cutoff` 10:30 · `slot_afternoon_cutoff` 12:30 · `slot_evening_cutoff` 17:00 (was 15:30) · `slot_late_evening_cutoff` 20:00 (new). Hardcoded fallbacks in `getSlotFromTime()`: 630/750/1020/1200.
+No data migration — slots are computed at render from `receivedAt`, so existing orders re-bucket automatically. This page uses the hardcoded cutoffs in `getSlotFromTime()` only: 630/750/1020/1200. `slotCutoffs` is declared and never populated (`mail-orders-page.tsx:238-245`), so an admin edit to the `system_config` keys (`slot_morning_cutoff` 10:30 · `slot_afternoon_cutoff` 12:30 · `slot_evening_cutoff` 17:00 · `slot_late_evening_cutoff` 20:00) no longer reaches this page. Was fetched from `system_config` via `fetchSlotCutoffs()` until 2026-08-10; now never fetched (`c103d5f4`). Do not revert. `GET /api/system-config/slot-cutoffs` is still on disk with 0 callers, and `fetchSlotCutoffs()` in `lib/mail-orders/api.ts:132` has no caller either.
 
 > **Separate system:** this mail-orders bucketing is NOT the depot-wide `slot_master` (CORE §9) — different boundaries, no stored slot column on `mo_orders` (`slotToOverride` is dead/write-only, no reader). The two never share numbers.
 >
 > ⚠ **Corrected 2026-07-28:** this used to say `slot_master` was "used by Support/Planning/Warehouse". **All three of those boards are now retired** (`archive/2026-07-support/`, `archive/2026-07-planning-board/`, `archive/2026-07-warehouse-board/`). `slot_master` itself is still live — its readers today are the admin Slots and Slot-Rules screens (`app/api/admin/slots/*`), the operations summary, Tint Manager's order list, and `lib/slots/slot-ruler.ts`, which stamps `arrivalSlotId` at import. The point of this note is unchanged: that table is not this bucketing.
 
 Punched orders: separated to bottom per slot. Collapsible divider. `T` toggles globally.
-
-Auto-refresh: 30s polling + `visibilitychange`.
 
 Search: 19 fields.
 
@@ -542,7 +574,7 @@ Page background: `bg-gray-50`. Cards + SKU table sit as white islands.
 
 **Auto-advance disabled.** Operators can navigate to punched orders.
 
-**ALT SKU column [Focus/Review mode only · LIVE 2026-06-19]:** In the SKU table, a rightmost "ALT SKU" column shows alternates for each line sourced from `mo_sku_lookup_v2` combo siblings. Operator clicks the chip to open a modal listing the billed (primary) SKU + all alternates, with per-row copy-to-clipboard. Chip recoloured to neutral grey (no teal/amber status colour). Data is display-time only — nothing is written back; the API attaches `altSkus: string[]` per line via `buildComboSiblings()` in `table-c.ts`. Mockup: `docs/mockups/mail-order/alt-sku-modal-mockup.html`. **Not available in Table mode** — see §18 landmine.
+**ALT SKU column [Focus/Review mode only · LIVE 2026-06-19]:** In the SKU table, a rightmost "ALT SKU" column shows alternates for each line sourced from `mo_sku_lookup_v2` combo siblings. Operator clicks the chip to open a modal listing the billed (primary) SKU + all alternates, with per-row copy-to-clipboard. Chip recoloured to neutral grey (no teal/amber status colour). Data is display-time only — nothing is written back; the API attaches `altSkus: string[]` per line via `buildComboSiblings()` in `table-c.ts`, from maps cached 5 minutes per warm instance (§7, `00cfac02`). Mockup: `docs/mockups/mail-order/alt-sku-modal-mockup.html`. **Not available in Table mode** — see §18 landmine.
 
 **Punched-by attribution:** `✓ {Name} {HH:MM}` prepended as first meta item on punched orders, and as third line in left panel.
 
@@ -593,7 +625,13 @@ The popover content lives in `review-view.tsx` and is passed verbatim as `popove
 ### 9.5 ShipToCard polish
 
 - `isOverride=false` → mirrors Bill-to fully (code chip gray default, NOT match-modulated). No italic tagline.
-- `isOverride=true` → 3px amber left bar via `before:` pseudo + amber `⚑ captured` pill + identity from `splitDeliveryRemarks(...)`
+- `isOverride=true`, billing face (`tone="notes"`, passed at `review-view.tsx:2266`) → brand/violet card: `bg-brand-50` + 3px `before:bg-brand-600` left bar + a solid brand `changed` pill, no ⚑ (that glyph means Hold on this face) (`ship-to-card.tsx:107-111`, `:129-139`). Identity comes from the FK relation (§23.2).
+- `isOverride=true`, dormant flag-OFF face (`tone="default"`) → 3px amber left bar via `before:` pseudo + amber `⚑ captured` pill + identity from `splitDeliveryRemarks(...)` (`ship-to-card.tsx:112`, `:141-146`).
+
+### 9.5.1 Inbox-row and Bill-To extras [LIVE]
+
+- **Key dealer.** `GET /api/mail-orders` returns `isKeyCustomer` per order from `delivery_point_master.isKeyCustomer` (`route.ts:225-260`). The inbox row shows an amber ★ (`review-view.tsx:1166`) and `BillToCard` a "Key" pill (`bill-to-card.tsx:90-95`, prop at `review-view.tsx:2219`). Both are switched off by the `MO_TAG.keyCustomer` tag (§21), and so is the "Key" filter chip on the billing face (`mail-orders-page.tsx` `billingFilterGroups()`). A change to `isKeyCustomer` does not move the marker; it shows on the next full refetch.
+- **Truck icon.** A Truck Order bill gets a truck glyph beside the dealer name on the inbox row (`aded19ed`; `TruckGlyph`, `review-view.tsx:196-197`, `:1126`, `:1167`). It is derived from the same tag-filtered signals, so the `truck_order` tag hides it too.
 
 ### 9.6 Loader extension
 
@@ -626,7 +664,6 @@ Ctrl+ shortcuts MUST be in a separate `useEffect` from single-key. Ctrl+ uses `d
 |---|---|
 | Ctrl+C | Smart copy (1st=customer code, 2nd+=batch SKUs, `BATCH_COPY_LIMIT=14`) |
 | Ctrl+V | Auto-focus SO Number input |
-| E | Open Slot Email modal |
 | R | Copy reply template |
 | F | Toggle lock/flag |
 | N | Jump to next unmatched |
@@ -643,6 +680,10 @@ Ctrl+ shortcuts MUST be in a separate `useEffect` from single-key. Ctrl+ uses `d
 | Esc | Cascading close |
 
 Review mode key ownership: ↑↓ handled by review-view.tsx. Ctrl+C/V handled by parent. Tab/Space/1-5 handled by review-view.tsx.
+
+- The Table-only rows and the 1-5 slot jumps belong to the dormant face (§9.1).
+- On the billing face these shortcuts act only while the Orders tab is open: both handlers return early on Picking/Print (`mail-orders-page.tsx:939`, `:1041`; `5ec6d65c`) — `CLAUDE_BILLING.md §3`.
+- The `E` key opened the slot-email modal until 2026-08-10; now there is no E handler (`c103d5f4`). Do not revert. ⚠ Known defect: `MO_SHORTCUTS` still lists `{ key: "E", label: "Slot email" }` (`mail-orders-page.tsx:99`), and the ⌨ popover renders it — recorded in `CLAUDE_BILLING.md §11`.
 
 ---
 
@@ -668,17 +709,15 @@ Server-side auto-split on ingest is removed.
 
 ---
 
-## 13. Slot completion + SO email
+## 13. Slot completion + SO email [RETIRED 2026-08-10]
 
-Auto-detect when all orders in slot are punched. Also auto-trigger 15min after slot cutoff. Guard: `triggered` flag. `localStorage` key `mo-slot-email-sent-{date}-{slotName}`.
-
-Modal: green check, slot stats, SO list grouped by soName. Per-SO "Send" copies HTML email via `ClipboardItem` + opens mailto. Auto/Manual toggle.
-
-> **Known gap (owner-deferred):** the `slotDefs` slot-email trigger array in `mail-orders-page.tsx` (~lines 269-273) has only 3 entries — Morning / Afternoon / Evening. It omits Night and now also **Late Evening**, so slot-summary emails do NOT auto-fire for those two slots. Fix tracked in ROADMAP.
+Was a slot-completion modal (auto-detect, a 15-minute post-cutoff auto-trigger, and the `E` shortcut) until 2026-08-10; now all three are removed from the page (`c103d5f4`; `mail-orders-page.tsx:391-412`). Do not revert. It never sent mail — "Send" copied HTML and opened an empty-To `mailto:` — so no outgoing email stopped. Leftovers: `slot-completion-modal.tsx` and the §14 builder stay on disk with no live importer (§8); `mo-slot-email-sent-*` localStorage keys in browsers have no reader.
 
 ---
 
-## 14. Slot summary email — email-template.ts
+## 14. Slot summary email — email-template.ts [ORPHANED CODE, kept on disk]
+
+⚠ Nothing live calls this. `buildSlotSummaryHTML` is imported only by `slot-completion-modal.tsx:8` and `components/mail-orders/so-email-panel.tsx:7`, and neither file has an importer (§8, §13). The spec below describes the file as it sits on disk.
 
 `buildSlotSummaryHTML(soName, orders, slotName, date, senderName, senderPhone?) → string`
 
@@ -704,9 +743,9 @@ Modal: green check, slot stats, SO list grouped by soName. Per-SO "Send" copies 
 ### Template design
 
 - 560px centred table, Outlook/OWA safe
-- Brand bar: 3px solid #0d9488 top
-- Header two-column: slot title/date left, teal order count panel right (110px)
-- Section headers: Processed (#0d9488), Not Available (#b45309), Pending (#334155)
+- Brand bar: 3px solid #7C3AED top (violet since the rebrand, `c96157ea`; `email-template.ts:144`)
+- Header two-column: slot title/date left, violet (#7C3AED) order count panel right (110px) (`:156-158`)
+- Section headers: Processed (#7C3AED, `:175`), Not Available (#b45309), Pending (#334155)
 - Three-column table: serial (24px) | content | right data (120px)
 - Processed: sorted `punchedAt DESC`. Hold orders: name `#cbd5e1` + " *". Always shown.
 - Not Available: only if `flaggedLines > 0`. Product·pack + reason.
@@ -781,8 +820,8 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 - **Table-mode parity gap.** `mail-orders-table.tsx` (§9.1) does NOT show the ALT SKU column. Only the Review View (§9.2) has it. Small/deferred per 2026-06-19 handoff.
 - **Bounce / DTS signal badges deferred.** Parser v7.2 delivers `Bounce` and `DTS` remark text from app-format emails, but badge wiring (meaning, colour, card routing) is not yet built. `Truck Order` is already in the signal catalog.
 - **`shipToOverrideCustomerId` can be null even when `shipToOverride` is true** (§6) — free-text redirects that never resolved to a real `delivery_point_master` row. Any code path reading the override must handle flag-true/id-null as valid, not treat it as a data-integrity error.
-- **~~Most `app/api/mail-orders/**` routes check session only, never role/permission~~ — FIXED 2026-09-01** (surfaced 2026-07-10; open for seven weeks). **The ELEVEN write routes now gate on `checkAnyPermission(roles, "mail_orders", "canEdit")`**, the same block as `app/api/billing/mail-order/actions/route.ts:66-77`: `[id]/customer`, `[id]/lock`, `[id]/note`, `[id]/punch`, `[id]/so-number`, `[id]/split`, `lines/[lineId]/resolve`, `lines/[lineId]/status`, `re-enrich`, `backfill-customers`, `learn-customer`. **`checkAnyPermission`, never `checkPermission`** — the latter reads only the primary role and would deny a grant held on a secondary one. The READ routes were deliberately left as they were (`route.ts` GET list, `[id]/original-lines`, `skus`, `customers/search`, `debug-enrich`) — the fix gated writes, not reads. (Still intentionally exempt: `ingest` = HMAC-authenticated; `keywords` = deliberately public for the parser.) ⚠ The gap was **no check at all**, not `canView` — `CORE §13` mis-stated it as `canView` the whole time it was open.
-- **~~`GET /api/mail-orders/backfill-enrich` is fully unauthenticated~~ — FIXED 2026-09-01** (surfaced 2026-07-10). The GET now runs `requireRole(session, [ROLES.ADMIN])` before `runBackfill()`. **The POST's HMAC path was left untouched** — that is the machine path and it works. The `TEMPORARY — delete after backfill` comment is still in its own source; retire-or-keep is a ROADMAP item.
+- **~~Most `app/api/mail-orders/**` routes check session only, never role/permission~~ — FIXED 2026-08-30 (`0f56eede`)** (surfaced 2026-07-10; open for seven weeks). **The ELEVEN write routes now gate on `checkAnyPermission(roles, "mail_orders", "canEdit")`**, the same block as `app/api/billing/mail-order/actions/route.ts:72-76`: `[id]/customer`, `[id]/lock`, `[id]/note`, `[id]/punch`, `[id]/so-number`, `[id]/split`, `lines/[lineId]/resolve`, `lines/[lineId]/status`, `re-enrich`, `backfill-customers`, `learn-customer`. **`checkAnyPermission`, never `checkPermission`** — the latter reads only the primary role and would deny a grant held on a secondary one. The READ routes were deliberately left as they were (`route.ts` GET list, `[id]/original-lines`, `skus`, `customers/search`, `debug-enrich`) — the fix gated writes, not reads. (Still intentionally exempt: `ingest` = HMAC-authenticated; `keywords` = deliberately public for the parser.) ⚠ The gap was **no check at all**, not `canView` — `CORE §13` mis-stated it as `canView` the whole time it was open.
+- **~~`GET /api/mail-orders/backfill-enrich` is fully unauthenticated~~ — FIXED 2026-08-30 (`0f56eede`)** (surfaced 2026-07-10). The GET now runs `requireRole(session, [ROLES.ADMIN])` before `runBackfill()` (`backfill-enrich/route.ts:169`). That is the ROLE only: `requireRole` (`lib/rbac.ts:58-66`) has no `isSuperuser` flag arm, so a flag-only superuser is redirected to `/unauthorized`. **The POST's HMAC path was left untouched.** ⚠ It is not reachable without a session: `middleware.ts` bypasses only `/api/mail-orders/ingest` and `/keywords` (`:59-67`), so a sessionless machine POST is redirected to `/login` (`:77-79`) before the route's own HMAC check (`:147-150`) runs. The `TEMPORARY — delete after backfill` comment is still in its own source; retire-or-keep is a ROADMAP item.
 
 ---
 
@@ -843,130 +882,166 @@ For mail-order sessions specifically: any new product keyword work (e.g. fixing 
 
 ## 21. Tag gating + ship-to fallback (Settings → Hide, v27.6)
 
-Admin "Settings → Hide → Tags" can switch any Mail Order badge off app-wide (data stays; only the badge render is suppressed). Feature/schema: `CLAUDE_CORE.md §7.10`; UI: `CLAUDE_UI.md §57`.
+Admin "Settings → Hide → Tags" can switch any Mail Order badge off for **everyone, one role, or one person** — the "Who sees it" picker (`abd495f4`; `components/admin/hide-settings-content.tsx`). Data stays; only the render is suppressed. Feature/schema: `CLAUDE_CORE.md §7.10`; UI: `CLAUDE_UI.md §57`.
 
-**`getOrderSignals()` is the SINGLE MO badge emitter** (`lib/mail-orders/utils.ts`) — each emitted signal carries a `tagKey`; the function accepts `opts.disabledTagKeys: Set<string>` and filters out disabled signals. **Default-ON** (no settings row = badge shows). Stable keys + the 16-entry catalog live in `lib/hide/tag-catalog.ts` (`MO_TAG.*` + `TAG_CATALOG`; important tags Hold/OD/CI confirm before disabling).
+**`getOrderSignals()` is the SINGLE MO badge emitter** (`lib/mail-orders/utils.ts`) — each emitted signal carries a `tagKey`; the function accepts `opts.disabledTagKeys: Set<string>` and filters out disabled signals. **Default-ON** (no row that applies to the viewer = badge shows). Stable keys + the catalog live in `lib/hide/tag-catalog.ts` (`MO_TAG.*` + `TAG_CATALOG`): **22 entries** — 19 in group "Mail Orders" (incl. `keyCustomer`, `matchChip`, `punchedBy`, added by `abd495f4`) and 3 in "Violet band (Billing)" (`notesBand`, `deliveryLine`, `billLine`). Important tags (Hold, OD, CI, Ship-to captured) confirm before disabling. Some switches gate a render outside `getOrderSignals` (the ★/Key pill, the match chip, the punched-by line, the band rows) — each at its call site in `review-view.tsx`.
 
-**Flow:** `/api/mail-orders` computes `disabledTags` (keys where `isEnabled === false`) via `getTagSettings()` → payload → `mail-orders-page.tsx` stores a `Set` → drills into `review-view.tsx` (2 `getOrderSignals` calls + ShipToCard) and `mail-orders-table.tsx` → `SlotGroup` → `OrderRow`.
+**Resolution — `getTagSettings(userId, roleSlugs)`** (`lib/hide/tag-settings.ts`), one query with three OR arms (everyone / the viewer's roles / the viewer), folded in memory:
+1. a **user** row for this viewer decides;
+2. else per held role, that role's row or the everyone value — **show wins**: a role-level hide bites only when every role the viewer holds hides it;
+3. a viewer with no roles falls to the everyone value;
+4. no row → shown. A failed read logs and shows every badge.
+
+**No admin / superuser bypass** — the switches apply to the admin exactly as written (file header of `tag-settings.ts`).
+
+**Schema (live 2026-09-18, Q05a/Q05b/Q10a):** `app_tag_settings.scope` (text NOT NULL default `'everyone'`), `roleSlug` (text), `userId` (int, FK → `users` ON DELETE CASCADE). `chk_app_tag_settings_scope` forces exactly one audience shape. `tagKey` is **no longer UNIQUE**: uniqueness is three partial unique indexes — `app_tag_settings_everyone_key (tagKey) WHERE scope='everyone'`, `_role_key (tagKey, roleSlug) WHERE scope='role'`, `_user_key (tagKey, userId) WHERE scope='user'`. Prisma cannot express partial indexes, so the model has no `@unique` (`prisma/schema.prisma` model `app_tag_settings`).
+
+**Writes — `PUT /api/admin/tag-settings`**, gated `isSuperuser(session)` (`lib/rbac.ts:104-111`: the flag OR the admin role). It reads the tag's rows, then per audience `findFirst` → `update` by id or `create`, and `deleteMany` for dropped exceptions — sequential awaits, never `upsert`, because the uniqueness lives in partial indexes (`tag-settings/route.ts:31-35`, `:205-300`). Each change is audited after the write via `logAdminAction` (`CLAUDE_CORE.md §7.13`). **`GET /api/admin/tag-audience`** (same gate) feeds the picker: the active people who can open Mail Orders under the live access source, and the roles they hold (`tag-audience/route.ts`).
+
+**Flow:** `/api/mail-orders` calls `getTagSettings()` with the session's id and roles and returns `disabledTags` → payload → `mail-orders-page.tsx` stores a `Set` → drills into `review-view.tsx` (2 `getOrderSignals` calls + ShipToCard) and `mail-orders-table.tsx` → `SlotGroup` → `OrderRow`. A tag write moves `GET /api/mail-orders/marker` (its `app_tag_settings.updatedAt` arm), so open boards refetch within one poll.
+
+**Filter chips.** On the billing face the "Key" dealer chip follows the `keyCustomer` tag; the Hold/Dispatch and Urgent/Normal chips follow the action ticks, not tags (`f1dcfa58`; `billingFilterGroups()`, `mail-orders-page.tsx:68`) — `CLAUDE_BILLING.md §5`.
+
+⚠ **Hold and Urgent tags do nothing on the billing face.** The Ship To card drops `type === "status"` signals and the urgent signal at the call site (`review-view.tsx:1505-1507`), and the inbox row shows only Bill/Split mini-badges (`:1172-1174`). The ⚑ Hold button is the only place a hold shows — and it is hidden without the `billing_hold` tick (`CLAUDE_BILLING.md §5`), so such a viewer sees no hold signal at all on this face.
 
 **Ship-to fallback:** `useBillToFallback = isOverride && disabledTagKeys.has(MO_TAG.captured)` → `ShipToCard` renders the **bill-to identity** (name/code/area/delivery type), dropping the amber bar + captured pill (bill-to fields threaded from review-view). Dispatch-status badges (Challan / Dispatch / Hold) are untouched. (Hiding MO *rows* — separate `mo_orders`, no hide column — is out of v1 scope; ROADMAP.)
 
 ---
 
-## 22. Access — role permission grants
+## 22. Access — per-user ticks (page key `mail_orders`)
 
-Access to `/mail-orders` is **entirely DB-driven** via `role_permissions` — not hardcoded to
-`billing_operator` anywhere. No code, no deploy needed to grant or revoke a role.
+Access to `/mail-orders` is **entirely DB-driven** — not hardcoded to `billing_operator` anywhere. No
+code, no deploy needed to grant or revoke. The live authority is **per-user ticks** in
+`user_page_access`: `system_config.ACCESS_SOURCE = "user"` (live 2026-09-18, Q02), read by
+`getAccessSource()` (`lib/access/source.ts`). In user mode `checkAnyPermission` returns the viewer's
+own `user_page_access` row for the page key (`lib/permissions.ts:789-807`); an absent row is all-false.
+`role_permissions` is read only in role mode — the fallback if `ACCESS_SOURCE` is anything but
+`"user"` or unreadable — and as the baseline. Per-user access is `CLAUDE_CORE.md §5` + `§7.14`.
 
 | Layer | File | Mechanism |
 |---|---|---|
-| Sidebar | `lib/permissions.ts` — `PAGE_NAV_MAP` + `buildNavItems()` | filters nav entries by `allPerms[pageKey]?.canView === true` |
-| Page guard | `app/(mail-orders)/mail-orders/layout.tsx` | `checkAnyPermission(roles, "mail_orders", "canView")` → redirect `/unauthorized` |
+| Sidebar | `lib/permissions.ts` — `PAGE_NAV_MAP` + `buildNavItems()` | filters nav entries by `allPerms[pageKey]?.canView === true`; the entry is labelled **Billing** (`lib/permissions.ts:65`, `bf218da8`) |
+| Page guard | `app/(mail-orders)/mail-orders/layout.tsx:31-32` | `checkAnyPermission(roles, "mail_orders", "canView")` → redirect `/unauthorized` |
 | `middleware.ts` | — | **no role check at all** for `/mail-orders`; only "has a session" |
-| API routes — WRITES | the eleven in §18 | `checkAnyPermission(roles, "mail_orders", "canEdit")` → 403 (*added 2026-09-01; previously "has a session" only*) |
-| API routes — READS | `route.ts` GET, `[id]/original-lines`, `skus`, `customers/search`, `debug-enrich` | **no role check** — only "has a session". Deliberately left; the 2026-09-01 fix gated writes, not reads |
+| API routes — WRITES | the eleven in §18 | `checkAnyPermission(roles, "mail_orders", "canEdit")` → 403 (`0f56eede`, 2026-08-30) |
+| API routes — READS | `route.ts` GET, `[id]/original-lines`, `skus`, `customers/search`, `debug-enrich` | **no role check** — only "has a session". Deliberately left; the 2026-08-30 fix gated writes, not reads. `marker` is the exception: `mail_orders` canView (§7) |
 
-`admin` bypasses the permission table entirely (hard-coded bypass in `lib/permissions.ts`). **Testing
-access while logged in as admin proves nothing** — always test as the actual role being granted.
+The billing tabs and buttons inside the page have their own page keys (`billing_picking`,
+`billing_print`, `billing_hold`, `billing_slot`, `billing_urgent`, `billing_ship_to`) — `CLAUDE_BILLING.md §4`.
 
-### Current `mail_orders` grants [LIVE — re-verified by SELECT 2026-09-01, CORE §5 owns the table]
+**Bypass = admin role OR the superuser flag.** `checkAnyPermission` returns true first for a held
+`admin` role (`lib/permissions.ts:795`), then for `users.isSuperuser` (`:799`), before any table is
+read (`CLAUDE_CORE.md §7.15`). **Testing access while logged in as admin or a superuser proves
+nothing** — always test as the actual person being granted.
+
+### `mail_orders` rows in `role_permissions` [role-mode baseline — SELECT recorded in the 2026-09-01 gate draft, committed 2026-08-30; CORE §5 owns the table]
 
 | roleSlug | canView | canEdit |
 |---|---|---|
 | `billing_operator` | true | true |
 | `operations` | true | true — **granted 2026-07-10**, one additive `role_permissions` row, applied directly to production DB (no code deploy) |
 | `operation_manager` | true | true |
-| `tint_manager` | true | **true** (*corrected 2026-09-01 — this row read `false` (view-only); live SELECT shows `canEdit=true`*) |
+| `tint_manager` | true | **true** (*corrected 2026-08-30, `158f64b2` — this row read `false` (view-only); the SELECT showed `canEdit=true`*) |
 
 **All four rows are View+Edit.** There is no view-only grant on this page key, so the
-`canView`-without-`canEdit` population is empty — which is why gating the eleven write routes
-(§18) blocked nobody. The six people who reach this screen all hold `canEdit`: Harsh (admin
+`canView`-without-`canEdit` population was empty — which is why gating the eleven write routes
+(§18) blocked nobody. At that reading the six people who reach this screen all held `canEdit`: Harsh (admin
 bypass), Operations User, Chandresh Kolgha, Deepanshu Thakur, Bankim, Prakash. Evidence:
-`docs/prompts/drafts/code-discovery-2026-09-01-mail-orders-gate.md §1-2`.
+`docs/prompts/drafts/code-discovery-2026-09-01-mail-orders-gate.md §1-2`. ⚠ That was a role-mode
+reading. Who holds `mail_orders` in `user_page_access` today was not in the 2026-09-18 query set.
 
 **Facts this grant surfaced (both since settled):**
 - **`operation_manager` — RESOLVED 2026-08-04:** a real role, `role_master` id 15, one active user
   (Prakash, id 32) — `CORE §5` now owns it. The "legacy slug?" question is closed.
-- **`tint_manager` — CORRECTED 2026-09-01.** This bullet said he holds a **view-only** grant, and
-  `CORE §5` said the same. **Live says `canEdit=true`.** Both were stamped against a SELECT of
+- **`tint_manager` — CORRECTED 2026-08-30 (`158f64b2`).** This bullet said he holds a **view-only** grant, and
+  `CORE §5` said the same. **Live said `canEdit=true`.** Both were stamped against a SELECT of
   2026-08-04, so either the row was flipped after that date or the 08-04 reading was wrong —
   unrecoverable, and `admin/permissions` POST records no actor (`code-discovery-2026-08-31-role-census.md
-  §6c`). ⚠ **Do not "fix" the live row back to match the old prose without deciding out loud whether
-  Chandresh keeps editing Mail Orders** — since 2026-09-01 the routes enforce `canEdit`, so flipping
-  that row now genuinely revokes his writes instead of changing nothing.
+  §6c`). ⚠ Under user mode this role row no longer decides what Chandresh can do — his own
+  `user_page_access` row does. **Do not flip either without deciding out loud whether Chandresh keeps
+  editing Mail Orders** — the routes enforce `canEdit`, so a flip genuinely revokes his writes.
 
 ### Two authorization systems coexist
 
-- `lib/rbac.ts` — `requireRole()` / `hasRole()`.
+- `lib/rbac.ts` — `requireRole()` / `hasRole()` / `isSuperuser()`.
 - `lib/permissions.ts` — `checkAnyPermission()` / `getAllPermissionsForRole(s)`, DB-backed.
 
-Mail Orders uses **only** the second. `requireRole`/`hasRole` are unused by this module. Which one is
-canonical for future modules is an open decision, not made here.
+Mail Orders routes use the second, with one exception: `GET /api/mail-orders/backfill-enrich` uses
+`requireRole(session, [ROLES.ADMIN])` (§18). The admin tag routes (§21) use `isSuperuser()`. Which
+system is canonical for future modules is an open decision, not made here.
 
 ### Seed-is-source-of-truth gap [LANDMINE]
 
-`prisma/seed.ts` contains **zero** rows for `pageKey='mail_orders'` — every grant above, including
-`billing_operator`'s original one, lives **only in the live DB**. A wipe-and-reseed silently removes
-Mail Orders access for everyone except `admin`. All four rows above should be added to
-`prisma/seed.ts` (ROADMAP).
+`prisma/seed.ts` contains **zero** rows for `pageKey='mail_orders'` and writes no `user_page_access`
+rows at all — every grant lives **only in the live DB**. A wipe-and-reseed silently removes
+Mail Orders access for everyone except `admin` and superusers. The seed does write `role_permissions`
+template rows for all six `billing_*` keys (four roles each, `prisma/seed.ts:189-242`), which open no
+page without `mail_orders`.
+The four `role_permissions` rows above should be added to `prisma/seed.ts` (ROADMAP).
 
 ---
 
-## 23. Billing v2 [PILOT — flag-gated] (2026-07-30 → 08-02 build; documented 2026-08-04)
+## 23. The Billing desk — owned by `CLAUDE_BILLING.md`; the Orders-tab internals stay here
 
-The Mail Orders screen's next generation, built INSIDE this module — **no `CLAUDE_BILLING.md` exists
-and none is created while pilot-gated** (locked decision; the router gets a billing trigger row at
-full rollout). Sources: five drafts (FINDINGS · phase-2 build-decisions · code-resume 07-31 ·
-code-update 08-01 · web-update 08-02), all commits git-verified 2026-08-04. UI design-system rules
-are in `CLAUDE_UI.md v5.17` (§6 neutral header props, §10 action-surface rules, §28 tone) — this
-section owns BEHAVIOUR.
+**Billing is the face `/mail-orders` shows every viewer.** `billing_settings.rolloutStage = ALL_USERS`
+(live 2026-09-18, Q01), and on that stage `isBillingV2Enabled()` returns true for everyone who passes
+the layout gate (`lib/billing/flag.ts:86`). Was a pilot limited to Operations User (id 20) under
+`TEST_USERS_ONLY` until 2026-08-06; now `ALL_USERS` (Q01 `updatedAt 2026-08-06 10:41`). Do not revert
+by accident — `OFF` is the kill switch and puts every viewer back on the dormant face
+(`CLAUDE_BILLING.md §2`).
 
-**PILOT SCOPE (live state, SELECT 2026-08-04):** `billing_settings.rolloutStage =
-'TEST_USERS_ONLY'`; exactly ONE flagged user — Operations User (id 20, `users.billingV2TestUser`).
-Deepanshu (25) + Bankim (26) are the rollout target. **Fail-closed:** `isBillingV2Enabled()`
-(`lib/billing/flag.ts`) is read fresh per page load server-side in the mail-orders layout
-(deliberately NOT JWT-cached), couriered by `BillingV2Provider`, context default `false`. 22 orders
-already carry `invoicedAt` (the tab is in real pilot use); 4 mail orders carry slot intent.
+**Read `docs/CLAUDE_BILLING.md` for:** the rollout flag, its fail-closed read and the dormant flag-OFF
+face (§2); the route gate, provider stack and tab bar (§3); the six `billing_*` page keys (§4); the
+four action ticks and the dual-write actions route — the `soNumber`-blank guard, the per-table Hold
+case, Urgent 1/3, slot set/clear and `dispatchSlotSource`, `heldAt` not written, 409 `LOCKED`, and
+billing's own read routes (§5); the Picking tab — pending and info predicates, no date fence, mark
+done / undo, the confirmed-findings predicate, the detail panel and its `billing_picking` gate (§6);
+the Print tab (§7); the marker providers (§8); the notes font size (§9); schema (§10); landmines and
+known defects (§11); open items (§12). None of that is restated here.
 
-### 23.1 Flag mechanics + gating pattern [LIVE — the top constraint]
+**What stays here:** the Orders-tab face of `review-view.tsx` (`CLAUDE_BILLING.md §1` hands the Review
+view internals to this file), plus facts no other canon file holds. Subsection numbers are kept
+because code comments cite them.
 
-- The **page** reads the flag; **`UniversalHeader` takes only NEUTRAL props** (`searchLayout`,
-  `showClock`, `suppressFilterBar`, `showShortcutsButton`, `importVariant`) and must NEVER import
-  from `components/billing/` or call `useBillingV2()`. New header behaviour = optional prop,
-  default = today's behaviour, other consumers byte-identical by construction.
+### 23.1 Building on the billing face [coding rules]
+
+- **`UniversalHeader` takes only NEUTRAL props** and never imports from `components/billing/` or calls
+  `useBillingV2()` — `CLAUDE_UI.md §6`.
 - New nodes are siblings gated `{billingV2 && …}` — **no wrapper divs**; optional slot props use
-  `undefined`, never `null`/`<></>`; no existing className/grid edited. OFF path byte-identical,
-  verified by mechanical diff (last full audit passed through the 08-01 batch).
-- Key files: `lib/billing/flag.ts` · `components/billing/*` (`billing-v2-provider`,
-  `billing-tab-bar` (`rightSlot`), `billing-action-ribbon` (exports `BTN_BASE`/`BTN_OFF`),
-  `billing-ship-to-pencil`, `billing-picking-tab`; `billing-order-info` is ORPHANED — §23.6) ·
-  `mail-orders-page.tsx` (owns the flag + composes header) · `review-view.tsx` (the billing face) ·
-  `meta-ribbon.tsx` (`contentOverride?: ReactNode`, undefined → original) ·
-  `components/header-filter.tsx` / `header-date-stepper.tsx` / `header-shortcuts.tsx` (extracted
-  from UniversalHeader so the tab row can reuse them).
+  `undefined`, never `null`/`<></>`; no existing className/grid edited. The OFF path this protects is
+  dormant (`CLAUDE_BILLING.md §2`), but it is still where the kill switch lands, so keep it
+  byte-identical.
+- `meta-ribbon.tsx` takes `contentOverride?: ReactNode` (undefined → original; `meta-ribbon.tsx:30`,
+  `:123`). The tab row reuses `components/header-filter.tsx` / `header-date-stepper.tsx` /
+  `header-shortcuts.tsx`, extracted from UniversalHeader so the tab row can reuse them.
 
-### 23.2 The billing face (Focus view, flag-ON) [LIVE on the pilot]
+### 23.2 The Orders tab face (`review-view.tsx`, `billingV2` on) [LIVE]
 
 Built across `8b2d9553`→`3b678ad3` (07-31 batch) then `d08f3870`→`06a5c904` + `ce1212d3` (08-01/02):
 
-- **Flat order list** — the Morning/Afternoon slot filter and auto-select-first-slot are bypassed;
-  the Orders tab counts **PENDING** (`status !== "punched"`), not total.
-- **Header:** title "Billing" · Import (teal, `importVariant="primary"`) + pearl `w-[240px]` search
-  at the far right (`searchLayout="wide-right"`); clock and header stats dropped; Table/Focus
-  toggle hidden (**Table code fully intact for non-billing users** — retirement is its own future
-  session per the playbook); keyboard-shortcuts button lives on the control row (Orders·Picking ·
-  date · Filter · ⌨).
+- **Flat order list** — the slot filter and auto-select-first-slot are bypassed, and the Orders tab
+  badge counts PENDING (`CLAUDE_BILLING.md §2`, `§3`).
+- **Header:** no title node (`title={billingV2 ? undefined : …}`, `mail-orders-page.tsx:1356`) ·
+  Import as the brand-filled primary (`importVariant="primary"`, `:1342`) + pearl `w-[240px]` search
+  at the far right (`searchLayout="wide-right"`, `:1430`); clock, header stats and the header
+  shortcuts button are off (`:1431`, `:1437`). The date stepper, Filter and ⌨ sit on the tab row
+  (`CLAUDE_BILLING.md §3`).
 - **Inbox rail:** mail icon + "Inbox" label (left), `N orders · X% punched` (right — % blue <100,
-  green at 100); rail's own search box hidden.
-- **Ribbon row:** sales officer name + received + `punched by {op} {time}` on the LEFT; all actions
-  RIGHT — `Urgent · Hold · Slot · Notes │ [Order No + Punch]` pre-punch, or `│ [✓ green SO pill] ✎`
-  post-punch. Punch is rightmost; future buttons insert left of the punch group. Editing a punched
-  SO number uses a compact inline editor and does NOT re-punch (keeps `punchedAt`, no
-  pending-bounce — `a64c7935`). ⚠ Auto-punch sets `status:"punched"` with NO soNumber — any
-  "is-edit?" detector must include `&& !!soNumber` (§23.6).
-- **Notes:** violet band (`instructions-strip` `tone="violet"`) + violet left-accent; the Notes
-  button tints violet when a note exists. Urgent/Hold/Dispatch chips removed from the ship card
-  (call-site filter — the CTA buttons carry the state); Challan chip kept.
+  green at 100; `review-view.tsx:2834-2846`); rail's own search box hidden.
+- **Ribbon row** (`review-view.tsx:1886-1960`): sales officer name + received + `punched by {op}
+  {time}` on the LEFT (the punched-by half has its own tag, §21); all actions RIGHT —
+  `Urgent · Hold · Slot · Notes · Copy │ [Order No + Punch]` pre-punch, or `│ [✓ green SO pill] ✎`
+  post-punch. Urgent, Hold and Slot each render only for a holder of its tick — hidden, never
+  disabled (`CLAUDE_BILLING.md §5`). **Copy** was re-added 2026-08-06 (`44813cf9`, `63a323db`): one
+  click copies every matched SKU line, unbatched — not the two-state Ctrl+C machine. Punch is
+  rightmost; future buttons insert left of the punch group. Editing a punched SO number uses a compact
+  inline editor and does NOT re-punch (keeps `punchedAt`, no pending-bounce — `a64c7935`). ⚠
+  Auto-punch sets `status:"punched"` with NO soNumber — any "is-edit?" detector must include
+  `&& !!soNumber` (§23.6).
+- **Notes:** violet band (`instructions-strip` `tone="notes"`, `review-view.tsx:2302`) + violet
+  left-accent; the Notes button tints violet when a note exists. Its three rows each have a tag (§21).
+  Urgent/Hold/Dispatch chips removed from the ship card (call-site filter, `review-view.tsx:1505-1507`
+  — the CTA buttons carry the state); Challan chip kept.
 - **Empty states (copy locked, keep verbatim):** rail empty → "**No new orders**" / "New orders
   appear here on their own."; rail filtered → "No orders match."; right pane empty → green ✓
   "**All caught up**" / "Every order is punched. New ones show up here as they come in."; filtered →
@@ -975,136 +1050,66 @@ Built across `8b2d9553`→`3b678ad3` (07-31 batch) then `d08f3870`→`06a5c904` 
   back to "All caught up"); a zero-order day keeps the shell (`ce1212d3`).
 - **Ship-to via FK (`e545af29`):** the billing face resolves the override dealer through the
   `shipToOverrideCustomer` relation (like Floor), not by parsing `deliveryRemarks` text —
-  name/code/area/deliveryType all from master data. **Option-(a) caveat:** Table view still reads
-  the `mo_customer_keywords` cache (can disagree per dealer), and non-billing users still see a
-  blank ship-to name for pencil-set overrides until rollout (self-heals; Floor/dispatch already
-  correct). Ungating the fix for everyone belongs to the data-audit session.
+  name/code/area/deliveryType all from master data. The dormant Table view still reads the
+  `mo_customer_keywords` cache (can disagree per dealer).
 
-### 23.3 Billing actions — dual-write + slot intent [LIVE]
+### 23.3 Billing actions — owned by `CLAUDE_BILLING.md §5`
 
-`/api/billing/mail-order/actions` — Urgent / Hold / Slot / Ship-to all write **both tables,
-sequentially, never `$transaction`** (as-built record: `billing-phase-2-build-decisions.md`):
+Kept here because no other file holds it: the `orders` write is ONE update on a NEW path, so markers
+see a genuine change (CORE §3 rule respected). The slot-intent columns on `mo_orders` are in §2 above
+and `CLAUDE_CORE.md §7.6` (v27.13; lowercase FK name `mo_orders_dispatchwindowid_fkey`).
 
-1. `mo_orders` (the INTENT — carried by enrichment for a bill whose OBD doesn't exist yet);
-2. `orders` via `updateMany WHERE soNumber, isRemoved:false` — an existing OBD updated in place.
-   `orders` second ON PURPOSE (a failed second write leaves the intent recorded). Response
-   `ordersUpdated`: 0 pre-import, 1 normal, >1 split-bill fan-out (intended).
+### 23.4 The Billing Picking tab — owned by `CLAUDE_BILLING.md §6`
 
-- 🔴 **The `soNumber`-blank guard is LOAD-BEARING:** skipped entirely when soNumber is null/blank —
-  `where {soNumber: null}` would mass-rewrite every un-punched order from one click.
-- ⚠ **Field mapping DIFFERS per table:** Hold = `"Hold"`/`"Dispatch"` capitalised on `mo_orders` vs
-  lowercase on `orders` (wrong case silently drops the bill off Floor's live board); Urgent = word
-  vs `priorityLevel` 1/3; Slot set = both cols + `dispatchSlotSource:'manual'` on orders; Slot
-  clear = nulls + `dispatchSlotSource:null` (hands the bill back to the rules engine — leaving
-  `'manual'` would make the engine skip it forever).
-- `heldAt` is NOT written (v1 decision) → Floor's "held since" shows `heldSinceSource:"unknown"`
-  for billing holds. Display-only; do not add a per-row N-write loop for a timestamp.
-- The `orders` write is ONE update on a NEW path — markers see a genuine change (CORE §3 rule
-  respected).
-- **Billing's own read routes, deliberately not Floor's:** `GET /api/billing/ship-to-search` +
-  `GET /api/billing/dispatch-windows`, gated on `mail_orders/canView` — Floor's equivalents gate on
-  `floor`, which Deepanshu/Bankim don't hold (reusing them would 403 at rollout after a green
-  pilot).
-- Slot-intent columns on `mo_orders`: CORE §7.6 owns the schema (v27.13; lowercase FK
-  name `mo_orders_dispatchwindowid_fkey`).
+Kept here because no other file holds them:
 
-### 23.4 The Billing Picking tab [LIVE]
+- **Why the info ("Already invoiced") arm exists — the vanishing bill** (2026-08-02,
+  `b99a925d`/`71be9ff2`/`e7a2d6e5`): SAP same-day invoicing often lands BEFORE the supervisor checks,
+  which failed Pending (invoiceNo set) AND Done (invoicedAt null).
+- **"Awaiting SAP" is a real state, not a spinner.** invoiceNo arrives in sub-hourly batches through
+  the day (measured), not live — never render it as a spinner (`billing-picking-tab.tsx:803-809`).
+- The "Already invoiced" badge is neutral ink (`border-ink-200 bg-ink-100 text-ink-700`,
+  `billing-picking-tab.tsx:795`; `b585240f`), not violet.
+- The sibling Picking-board fix (`e37cbe74` — the supervisor Checked band now keys on `checkedAt`
+  IST, not `dispatchTargetDate`) is **CLAUDE_PICKING territory** — flagged there, not documented here.
 
-The desk list of checked-but-not-yet-invoiced bills. Predicates in `lib/billing/picking-where.ts`
-(shared by list + marker so they can never disagree); routes `/api/billing/picking/list` + `/marker`
-gated on `mail_orders/canView`.
+#### 23.4.1 Confirmed shortages reach Billing — predicate, read and detail panel in `CLAUDE_BILLING.md §6`
 
-- **Pending (actionable, all-dates backlog):** `pick_checked` + `invoiceNo IS NULL` +
-  `invoicedAt IS NULL` + `isRemoved:false` + `dispatchStatus:'dispatch'` + hide-exclusion.
-  🔴 **NEVER add a date fence** — measured 2026-07-30: all 11 then-pending bills were older than
-  that day; a today-fence renders an empty tab over a real backlog. Carry-over is the normal case.
-- **Mark done / Undo:** one `orders.update` writing `invoicedAt` + `invoicedById` (clearing = Undo);
-  the WHERE ANDs the pending predicate + `invoiceNo:null`, so an info row (below) matches 0 rows —
-  write-path safety holds by construction. Undo button hidden on past days (server window stays
-  today-only).
-- **"Done = CHECK date" (2026-08-02, `b99a925d`/`71be9ff2`/`e7a2d6e5`):** the Done area for a
-  selected IST day = (a) operator-marked-done that day (keyed on `invoicedAt`) PLUS (b)
-  **informational** rows — `pick_checked` + `invoiceNo IS NOT NULL` + `checkedAt` in that IST day.
-  Info rows are not selectable/markable; violet "Already invoiced" badge
-  (`bg-violet-50 text-violet-700 border-violet-200`) + invoiceNo + checker name. This fixed the
-  vanishing bill: SAP same-day invoicing often lands BEFORE the supervisor checks, which failed
-  Pending (invoiceNo set) AND Done (invoicedAt null).
-- **Owner decisions (Smart Flow, 2026-08-02):** hide filters APPLY to the info arm; NO
-  `dispatchStatus` pin on the info arm; Undo hidden on past days.
-- **Date stepper** drives the Done area; marker = `OR(pending, invoiced-info)` — count stays
-  pending-only, `latest` over the union. The Done strip says "awaiting SAP" semantics: invoiceNo
-  arrives in sub-hourly batches through the day (measured), not live — never render it as a
-  spinner.
-- The sibling Picking-board fix (`e37cbe74` — the supervisor Checked band now keys on
-  `checkedAt` IST, not `dispatchTargetDate`) is **CLAUDE_PICKING territory** — flagged there, not
-  documented here.
+The floor's findings flow is `CLAUDE_PICKING.md §11`. Kept here — the UI decisions no other file holds:
 
-#### 23.4.1 Confirmed shortages reach Billing [LIVE, 2026-08-08/09 — `42f14de4`, `bfff2400`]
-
-The floor's findings (`CLAUDE_PICKING.md §11` owns the recording flow) surface here in two places.
-
-🔴 **CONFIRMED ONLY, ON BOTH SURFACES — `pick_findings.recordedById IS NOT NULL`, and nothing else.**
-A picker's unconfirmed report is a claim awaiting a supervisor, and Billing invoices against
-confirmed fact. **Never** infer the state from `qtyFound` or `reason`: a supervisor may legitimately
-confirm a line at the full ordered quantity. The list flag and the panel apply the SAME predicate on
-purpose — if the two ever diverge, a row can carry the ⚠ and open onto a panel with nothing flagged,
-and the operator has no way to tell which surface is lying.
-
-**(a) The FLAGS column + row highlight.** `BillingPendingRow.hasConfirmedShortage` is computed in
-`/api/billing/picking/list` by ONE batched read over the visible ids —
-`pick_findings.findMany({ where: { orderId: { in: pendingIds }, recordedById: { not: null } }, select: { orderId } })`
-→ a `Set`, skipped entirely on an empty list. Never a query per row. Index-backed both ways
-(`pick_findings_order_idx`, and the partial `pick_findings_confirmed_idx`).
-- A flagged row takes a light red wash **on every `<td>`, not the `<tr>`** — each cell carries its
-  own `border-b`, so a row-level fill renders banded on this `table-fixed` table — plus a 3px red
-  left edge. Selection's teal wash still wins; the left edge survives both.
+- A flagged Pending row takes a light red wash **on every `<td>`, not the `<tr>`** — each cell carries
+  its own `border-b`, so a row-level fill renders banded on this `table-fixed` table — plus a 3px red
+  left edge (`billing-picking-tab.tsx:624`, `:646`). A flagged row has no checkbox
+  (`CLAUDE_BILLING.md §6`), so it is never also selected.
 - In FLAGS it is a **⚠ glyph, never a text pill**, rendered ALONGSIDE any TINT / STOCK TFR. That
   column is 11% of a fixed table and already holds up to two pills; a third would push one out
   through the cell's ellipsis and silently lose a flag.
 - ⚠ **Pending rows only.** Both Done arms are untouched and their wire shape is unchanged.
+- In the detail panel, **qty shown stays qty ORDERED on a short line**, and the total counts every
+  active line. What was found is stated in the note — **"Found 9 · Old MFG · Mar 2024 · <confirmer>"**,
+  the confirmer's name added because this reader did NOT confirm it
+  (`billing-order-detail-panel.tsx:370`, `:419`). Netting a short line out here would quietly disagree
+  with the SAP invoice the operator is about to raise.
+- **The checkbox cell stops the row click on a selectable row** (`billing-picking-tab.tsx:630`) —
+  ticking leads to a write (Copy OBDs → Mark done), opening does not.
 
-**(b) The read-only detail panel.** `components/billing/billing-order-detail-panel.tsx`, opened by
-clicking any Pending row, fed by **`GET /api/billing/picking/order/[orderId]`**. Shows OBD, date,
-dealer + code, the bill's active line items (product, SKU + pack, qty, litres) and a total row. A
-confirmed line takes the shortfall card treatment (`#fef2f2` / `#fca5a5`) plus the note
-**"Found 9 · Old MFG · Mar 2024 · <confirmer>"** — wording and formatter shared with the picking
-boards, with the confirmer's name added because this is the one screen whose reader did NOT confirm
-it. No ship-to, slot, reassign or edit controls: a close button, a backdrop and Esc.
+### 23.5 Deferred / open
 
-🔴 **GATED ON `mail_orders`/canView — NOT `floor`/canView, and that is the whole reason this route
-exists.** `GET /api/floor/order/[orderId]` returns very nearly the same payload, and reusing it would
-have sailed through the pilot (Operations User id 20 holds `floor`) and then **403'd for Deepanshu
-(25) and Bankim (26) on rollout** — neither holds `floor` (`CLAUDE_PICKING.md §1`). This is the third
-instance of the same call, not a new pattern: `/api/billing/ship-to-search` and
-`/api/billing/dispatch-windows` were carved out for exactly this (§23.3). Floor's panel is also an
-ACTION surface — ship-to, slot, assign, hold, cancel — where this one is read-only, so it is a
-structural reference, never an import.
+- **Done:** rollout widened to `ALL_USERS` (Q01). Sidebar label renamed to **Billing** (`bf218da8`,
+  `lib/permissions.ts:65`) — the route, the page key `mail_orders` and the folder keep their names.
+  Ungating the ship-to FK fix is moot: every viewer is on the billing face (`flag.ts:86`).
+- **Pointed elsewhere:** Table-view / flag-OFF retirement and flag cleanup → `CLAUDE_BILLING.md §12`;
+  the `billing-order-info.tsx` orphan → `CLAUDE_BILLING.md §11`.
+- **Still open, held here:** data-audit + plumbing session (dual-write end-to-end vs Floor) · clear
+  the test-marked done bills from the pilot (not re-checked since rollout) · UI polish of the info
+  row (its badge is neutral ink since `b585240f`) · billing edge case parked: bills invoiced days
+  before checking show on the check day (Smart Flow will flag if that needs more) · human
+  hand-checks outstanding (operations Import end-to-end; punch/edit/reopen in situ — Claude Code
+  cannot log in) · **notes plumbing open question** (from the FINDINGS diagnosis §3.5):
+  `mo_orders.notes` has NO enrichment carry line and Floor reads no `orders.remarks` at all — whether
+  billing notes should reach Floor is a product decision, not a gap to plug blindly.
 
-Two smaller decisions worth not re-litigating:
-- **The route carries no stage/invoice fence.** The list decides which bills are on screen; this
-  answers "show me this bill" for whatever the list handed over. Duplicating `buildBillingPendingWhere()`
-  would 404 a row that is legitimately rendered.
-- **Qty shown stays qty ORDERED on a short line**, and the total counts every active line. What was
-  found is stated in the note. Netting a short line out here would quietly disagree with the SAP
-  invoice the operator is about to raise.
-- **The checkbox cell stops the row click** — ticking leads to a write (Copy OBDs → Mark done),
-  opening does not; without the stop every tick would throw a panel over the list.
-
-### 23.5 Deferred / next (tracked — ROADMAP session must pick these up)
-
-Data-audit + plumbing session (dual-write end-to-end vs Floor; then widen rollout
-`TEST_USERS_ONLY → ALL_USERS`) · clear the test-marked done bills before real rollout · ungate the
-ship-to FK fix for everyone (after a legacy id/text agreement SELECT) · global rename Mail Orders →
-Billing · Table-view retirement (playbook session — currently hide-only) · post-rollout flag
-cleanup (collapse `billingV2 ?` forks, retire `billing-order-info.tsx`) · UI polish of the violet
-info row · billing edge case parked: bills invoiced days before checking show on the check day
-(Smart Flow will flag if that needs more) · human hand-checks outstanding (operations Import
-end-to-end; non-billing screens unregressed; punch/edit/reopen in situ — Claude Code cannot log
-in) · **notes plumbing open question** (from the FINDINGS diagnosis §3.5): `mo_orders.notes` has NO
-enrichment carry line and Floor reads no `orders.remarks` at all — whether billing notes should
-reach Floor is a product decision, not a gap to plug blindly.
-
-### 23.6 Billing landmines
+### 23.6 Landmines on the Orders tab face
 
 - **A `*Slot` prop renders in BOTH MetaRibbon branches** (`contentOverride ?? fallback` — slots
   appear in the fallback too). Slots are never automatically billing-only; gate INSIDE the slot
@@ -1112,11 +1117,9 @@ reach Floor is a product decision, not a gap to plug blindly.
 - **Shared cards render on both faces** (`ShipToCard`/`BillToCard` via review-view) — filter/gate
   at the CALL SITE, never restyle the card.
 - **`grid-cols-2` cards share a row height** (align-items: stretch) — floor BOTH children
-  (`[&>div]:min-h-[…]`); a `min-h` on one card alone does nothing.
+  (`[&>div]:min-h-[…]`, `review-view.tsx:2207`); a `min-h` on one card alone does nothing.
 - **Auto-punch sets `status:"punched"` with NO `soNumber`** — an is-edit detector without
   `&& !!soNumber` mis-flags a first punch as an edit and drops its grace (row vanishes).
-- **`billing-order-info.tsx` is ORPHANED** (the ⓘ was removed in `0a8582e3`) — kept per the
-  no-deletions rule; retire in the flag-cleanup pass.
 - **Local `tsc`/build validate the WORKING TREE, not the commit** — after committing, confirm
   `git diff HEAD --stat` is empty before pushing (an uncommitted `BTN_BASE` export once passed
   locally and broke the Vercel build — `1f589d51`).
@@ -1148,4 +1151,22 @@ Evidence: `42f14de4` + `bfff2400` confirmed on `main` by `git log` before either
 
 ---
 
-*Mail Orders v1.13 · Schema v27.15 · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-09-01 — the eleven write routes now gate on mail_orders/canEdit and backfill-enrich GET requires admin (§18 landmines closed); §22 tint_manager corrected to view+edit against live*
+## Change log — v1.14 (2026-09-18, canon sweep batch B1)
+
+Evidence: code at HEAD `5ab9ee40` (no code commits since `ec6343ba`), git log for every cited hash, and the live results of 2026-09-18 (`docs/prompts/drafts/sql-2026-09-18-canon-sweep-live-results.csv`, Q01/Q02/Q05a/Q05b/Q10a/Q11). Drafts read as history only.
+
+- MO-9 (header, line 6, §23): "pilot" / `TEST_USERS_ONLY` language removed — the stage is `ALL_USERS` since 2026-08-06 (Q01). §23 gated fact by fact against `CLAUDE_BILLING.md` v1.0: what that file owns became pointers (§2–§12 there); the Orders-tab face internals and the facts no other file holds stay, corrected (ribbon Copy + per-tick buttons, no header title, brand Import, `tone="notes"`, moot ship-to caveat, neutral "Already invoiced" badge, flagged rows unselectable). Subsection numbers 23.1–23.6 kept because code comments cite them.
+- MO-10 (§2): `mo_orders.updatedAt` added — DB-trigger owned (`trg_mo_orders_updated_at`, Q11), deliberately not `@updatedAt` (`71e7b53a`).
+- MO-11 (§7): write-route Auth column corrected to `mail_orders` canEdit; rows added for `PATCH [id]/note`, `GET marker`, `POST backfill-customers`, `backfill-enrich` (GET admin role / POST HMAC); alt-SKU 5-minute cache (`00cfac02`); audit pointer to CORE §7.13 (`c3cf726b`).
+- MO-12 (§8): missing live files added; orphans marked "on disk, no importer" after a two-way check (`slot-completion-modal.tsx`, `so-email-panel.tsx`, `enrich-v2.ts`, `email-template.ts`; `taxonomy-mapping.ts` is imported only by scripts).
+- MO-13 (§9, §9.1, §9.2, §9.5, new §9.5.1): Table view + slot sections marked dormant; refresh is marker-gated (`0cbe73ef`); slot cutoffs no longer fetched (`c103d5f4`); ship-to override tone is brand/violet on the billing face; key-dealer ★ / Key pill and the truck icon (`aded19ed`) documented.
+- MO-14 (§10, §13, §14): the `E` shortcut and the slot-completion modal retired (`c103d5f4`); the dead "E · Slot email" label pointed to `CLAUDE_BILLING.md §11`; Orders-tab-only shortcuts (`5ec6d65c`); §14 marked orphaned and its colours corrected to #7C3AED (`c96157ea`).
+- MO-15 (§18): gate-fix dates corrected to 2026-08-30 (`0f56eede`); `backfill-enrich` GET is admin-role only, and the POST HMAC path is blocked by middleware for a sessionless caller.
+- MO-16 (§21): scoped tags — everyone / role / user (`abd495f4`), 22 catalog entries, the user > role > everyone rule with show-wins across roles, no admin bypass, live partial unique indexes + `chk_app_tag_settings_scope`, `findFirst`-based writes, `tag-audience`, filter chips (`f1dcfa58`), and the no-hold-signal gap on the billing face.
+- MO-17 (§22): access is per-user ticks (`ACCESS_SOURCE = user`, Q02); bypass is admin role OR `isSuperuser`; `role_permissions` is the role-mode fallback and baseline.
+- v1.13's header said "updated 2026-09-01", but its only commit (`158f64b2`) and the code fix it described (`0f56eede`) are both dated 2026-08-30 — the file was forward-dated by two days.
+- Schema stamp -> **v27.24** (was v27.15; reconciled against `CLAUDE_CORE.md` v104 · Schema v27.24).
+
+---
+
+*Mail Orders v1.14 · Schema v27.24 · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-09-18 — Billing desk handed to CLAUDE_BILLING.md (§23 now pointers + Orders-tab internals); pilot language removed (ALL_USERS since 2026-08-06); scoped tags (§21) and per-user access (§22); slot modal, E shortcut and slot-cutoff fetch recorded as retired*

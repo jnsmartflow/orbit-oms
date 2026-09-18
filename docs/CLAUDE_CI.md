@@ -1,5 +1,5 @@
 # CLAUDE_CI.md — CI, Goods Return Note (CI Form)
-# v1.1 · Schema v27.21 · September 2026 · updated 2026-09-04
+# v1.2 · Schema v27.24 · September 2026 · updated 2026-09-18
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -50,7 +50,7 @@ that will disagree with itself inside a cycle.
 |---|---|---|
 | Pack ordering (`sortPackLabels`) | `CLAUDE_PICKING.md §3.1` — `lib/picking/pack-sort.ts` | imported, not copied. See §13 CI-7 |
 | The effective-dealer rule | `CLAUDE_PICKING.md` — `lib/picking/queue.ts` | **mirrored**, because Picking does not export it. §13 CI-6 |
-| `SMU_CODE_BY_NAME`, the division name↔code map | `CLAUDE_IMPORT.md` | imported. CI **diverges** on display — §5 |
+| `SMU_CODE_BY_NAME`, the division name↔code map | `CLAUDE_IMPORT.md §6` — `lib/import-upsert/types.ts:243` | imported. CI **diverges** on display — §5 |
 | The 74/77 SMU badge rule | `CLAUDE_PICKING.md §5.2` | CI deliberately does **not** follow it — §5 |
 | `formatPack` | `CLAUDE_PLACE_ORDER.md` — `lib/place-order/pack.ts` | imported |
 | The id-space landmine (`sku_master_v2.material` only) | `CLAUDE_CORE.md §13` | `lib/ci/resolve-lines.ts` carries the warning verbatim |
@@ -225,8 +225,9 @@ screens**, on **every CI**.
 `orders.smu` holds the **NAME** only ("Deco Retail"); the numeric code stops at
 `import_raw_summary.smuCode`, which CI does not join and must not start joining —
 the name determines the code, so it is derived in memory through
-`SMU_CODE_BY_NAME` (`CLAUDE_IMPORT.md` owns that map). CI is its third caller,
-after `lib/picking/queue.ts` and `lib/floor/queries.ts`.
+`SMU_CODE_BY_NAME` (`CLAUDE_IMPORT.md §6` owns that map). It has five
+importers: `lib/picking/queue.ts`, `lib/floor/queries.ts`, `lib/ci/queries.ts:30`,
+`lib/picking/colour-work-query.ts:4` and `lib/picking/tint-workload.ts:3`.
 
 ⚠ **CI shows it on every bill, including "70". `CLAUDE_PICKING.md §5.2`'s
 `SmuBadge` deliberately does not** — it renders for 74/77 only, because 82% of a
@@ -326,8 +327,8 @@ hand-rolled one — `CLAUDE_CORE.md §10`; `/floor` is the one named exception i
 `CLAUDE_UI.md §6` and CI does not earn a second), over a
 `344px minmax(0, 1fr)` two-track grid — the same geometry MRN and `/floor` use.
 
-**Row 1** carries the title, the counts in `stats` (the app's count idiom), and
-the search. **Row 2 LEFT** carries the register control (§10). **Row 2 RIGHT**
+**Row 1** carries the counts in `stats` (the app's count idiom — pending and
+closed), and the search. There is no page title (`b3896d30`). **Row 2 LEFT** carries the register control (§10). **Row 2 RIGHT**
 carries the date stepper.
 
 🔴 **The date stepper drives the CLOSED section ONLY. Pending is the whole
@@ -486,15 +487,21 @@ item, not a missing feature.
 ⚠ **Gated on `ci.canExport`, NOT the board's `canView`** — see §11.
 
 Cell types: dealer code, SAP CI number and DIV are **numbers**, except that a
-digit string with a **leading zero stays TEXT** (§13 CI-16). `CI Qty` is
+digit string with a **leading zero stays TEXT** (§13, the `digitsCell` note
+after CI-16). `CI Qty` is
 **LITRES**, not tins (§13 CI-9).
 
 ---
 
 ## 11. Permissions
 
-Page key **`ci`**. Live `role_permissions`, SELECT-verified 2026-09-03, and
-`prisma/seed.ts` **agrees row for row** — no drift in either direction:
+Page key **`ci`**. Access is a **per-user tick**: the live `ACCESS_SOURCE` is
+`user` (live 2026-09-18, Q02), so `checkAnyPermission` (`lib/permissions.ts`)
+reads the logged-in user's `user_page_access` row, not the role table. Live `ci`
+ticks (live 2026-09-18, Q03a): **39 rows · canView 13 · canEdit 12 · canExport 5.**
+
+Seed says (`prisma/seed.ts:162-164` — the `role_permissions` rows role mode would
+read; seed is not live):
 
 | Role | canView | canImport | canExport | canEdit | canDelete |
 |---|---|---|---|---|---|
@@ -502,8 +509,8 @@ Page key **`ci`**. Live `role_permissions`, SELECT-verified 2026-09-03, and
 | `operations` | ✅ | — | ✅ | ✅ | — |
 | `floor_supervisor` | ✅ | — | **❌** | ✅ | — |
 
-🔴 **`floor_supervisor` holds canView and canEdit but NOT canExport, and that is
-DESIGNED.** He raises the return; the REGISTER is billing's deliverable. It is
+🔴 **The seed's `floor_supervisor` row holds canView and canEdit but NOT
+canExport, and that is DESIGNED.** He raises the return; the REGISTER is billing's deliverable. It is
 the same split `app/api/mrn/[mrnId]/export/route.ts` documents. A future session
 tidying "why is the export route stricter than the board next door" is about to
 hand billing's outward-going document to the floor.
@@ -512,7 +519,18 @@ hand billing's outward-going document to the floor.
 `canView`, writes take `canEdit`, the export takes `canExport`, and `admin`
 bypasses all three.
 
-**Two routes carry a sharper gate on top of the permission.** `PUT /lines` on a
+**Four write routes carry a sharper gate on top of the permission.** The three
+role lists use `hasRole`, never `requireRole` (the latter redirects to an HTML
+page a `fetch()` cannot parse):
+
+| Route | Gate |
+|---|---|
+| `PATCH [ciId]/details` | canEdit + `EDIT_ROLES` = `floor_supervisor`, `operations`, `admin` (`details/route.ts:69`, `:92`) + ownership inside the guarded `updateMany` — `status: 'submitted'`, `supervisorId: viewerId` (`:215-219`) — with **no admin bypass** (`:51`). Billing holds canEdit to close; the role list is what stops it rewriting a supervisor's answers |
+| `POST [ciId]/submit` | canEdit + `SUBMIT_ROLES` = `floor_supervisor`, `operations`, `admin` (`submit/route.ts:61`, `:90`) + ownership, where `admin` and `operations` keep a bypass for support work (`:186-190`) |
+| `POST [ciId]/close` | canEdit + `CLOSE_ROLES` = `billing_operator`, `operations`, `admin` (`close/route.ts:49`, `:77`). `floor_supervisor` holds canEdit (he needs it to raise a return) and **cannot close** — 403 "Closing a return is the billing operator's step." |
+| `PUT [ciId]/lines` | canEdit + ownership, no role list (below) |
+
+`PUT /lines` on a
 **submitted** CI requires `ci.supervisorId === viewerId` with **no admin
 bypass** — the owner ruling names it "only by the supervisor who raised it" and
 the guard is written that way verbatim, because a submitted CI has a number, is
@@ -687,20 +705,12 @@ delete-all-and-recreate. `PUT /lines` may clear a draft to zero lines because a
 draft is invisible; doing that here would blank a **live** document, which
 billing may be reading, for the width of two statements.
 
-**CI-16 · `/ci` IS REACHABLE BY URL ONLY, AND THE REASON IS BEHAVIOURAL — NOT AN
-UNFINISHED TASK.**
-`ci` is in the `PageKey` union and in `ALL_PAGE_KEYS`, but deliberately **not in
-`PAGE_NAV_MAP`**. 🔴 `MobileShell`'s phone Home target is **`navItems[0]?.href`**,
-so a nav entry inserted at index ≤ 2 would **steal `floor_supervisor`'s Home
-button from `/picking`** — the screen he lands on at login and works from all
-day. Adding the row is not the fix on its own.
-**A correct fix must satisfy all three:** (a) CI's entry lands at an index that
-leaves `navItems[0]` as `/picking` for `floor_supervisor` specifically, after
-`buildNavItems` has filtered by permission — the index in `PAGE_NAV_MAP` is not
-the index in the built list; (b) it is verified on a real phone for that role,
-not only for admin, whose nav is longer and orders differently; (c) the desk
-roles get it too, since `billing_operator` reaches the same route. Until then the
-URL is the entry point, and that is a known state rather than an oversight.
+**CI-16 · CLOSED — `/ci` is in the sidebar.** `PAGE_NAV_MAP` carries
+`{ pageKey: "ci", label: "CI", href: "/ci" }` (`lib/permissions.ts:102`, placed
+after `mrn`; its comment warns that the position is behaviour, because
+`MobileShell`'s phone Home is `navItems[0]?.href`), and the sidebar icon is
+`ci: Undo2` (`components/shared/role-sidebar.tsx:76`).
+Was URL-only in canon until 2026-09-18; the nav entry has existed since 55c3cdc6 (2026-08-31).
 ⚠ **`digitsCell`'s leading-zero branch is the sixteenth-and-a-half:** a digit
 string writes as a NUMBER unless it starts with `0`, where it stays TEXT.
 `Number("0000000")` is `0` — a live `sapCiNumber` — and a register that silently
@@ -740,9 +750,11 @@ columns), `ci_return_lines`. The model headers carry the column-level reasoning.
 | `export` | GET | **canExport** |
 | `draft` | POST | canEdit |
 | `[ciId]/lines` | PUT | canEdit **+ ownership** |
-| `[ciId]/submit` | POST | canEdit **+ ownership** |
-| `[ciId]/details` | PATCH | canEdit |
-| `[ciId]/close` | POST | canEdit |
+| `[ciId]/submit` | POST | canEdit **+ `SUBMIT_ROLES` + ownership** (admin/operations bypass) |
+| `[ciId]/details` | PATCH | canEdit **+ `EDIT_ROLES` + ownership** (no admin bypass) |
+| `[ciId]/close` | POST | canEdit **+ `CLOSE_ROLES`** (billing_operator, operations, admin) |
+
+The role lists and their line anchors are in §11.
 
 ⚠ The static siblings win over the dynamic segment: `board`, `marker`, `search`,
 `bill` and `export` all resolve to their own routes and never reach `[ciId]`.
@@ -808,7 +820,11 @@ Four days from first table to register export: 19 CI commits, `e8695f40`
 - **`returned_to_floor` has no writer** (§2).
 - **No A4 print sheet.** MRN has one; CI does not. Route comments already
   anticipate it ("the eventual print sheet").
-- **`/ci` is not in the sidebar** (§13 CI-16).
+- **Stale code comments (claims, not facts).** `app/ci/page.tsx:57-62` ("⚠ NOT
+  IN THE SIDEBAR YET … Reach this page by URL until then") and
+  `lib/permissions.ts:300-303` (`ci` "DELIBERATELY NOT IN PAGE_NAV_MAP YET") are
+  both contradicted by `lib/permissions.ts:102` (§13 CI-16). Neither changes
+  behaviour; fix them in a code-comment pass.
 - **The old-MFG arm of the auto rule is provisional** (§9).
 - **A frozen auto-CI is reconciled by hand only** — the `console.error` is the
   entire alerting mechanism. If it fires, someone must read a Vercel log to know.
@@ -819,8 +835,20 @@ Four days from first table to register export: 19 CI commits, `e8695f40`
 
 ---
 
-*CLAUDE_CI.md v1.1 · Schema v27.21 · CI / Goods Return Note · September 2026 ·
-updated 2026-09-04 — §13 CI-7 REDUCED to a cross-reference: the pack-ordering
+*CLAUDE_CI.md v1.2 · Schema v27.24 · CI / Goods Return Note · September 2026 ·
+updated 2026-09-18 — reconciled to code at HEAD 5ab9ee40 and the 2026-09-18 live
+SELECTs (canon sweep batch B1). §13 CI-16 CLOSED: `/ci` has been in
+`PAGE_NAV_MAP` since `55c3cdc6` (2026-08-31) with the `Undo2` sidebar icon; the
+"URL only" / "not in the sidebar" claims are gone from §13 and §15, and §15
+records the two stale code comments that still say otherwise. §11 rewritten:
+access is a per-user tick (live Q02/Q03a: ci 39 rows · view 13 · edit 12 ·
+export 5), the role table relabelled "seed says", and the sharper gates now
+listed in full — details = canEdit + `EDIT_ROLES` + ownership (no admin bypass),
+submit = canEdit + `SUBMIT_ROLES` + ownership, close = canEdit + `CLOSE_ROLES`
+(`floor_supervisor` cannot close). §14 route table follows. §8 Row 1 has no title
+(`b3896d30`). §1/§5 `SMU_CODE_BY_NAME` points at `CLAUDE_IMPORT.md §6` and lists
+its five importers. Schema stamp v27.21 → v27.24, earned by this pass. Prior,
+v1.1 (2026-09-04): §13 CI-7 REDUCED to a cross-reference: the pack-ordering
 rule now lives where the code does, `CLAUDE_PICKING.md §3.1` (v1.17). CI-7 had
 been the only place in canon the rule was written down, which put a three-module
 rule in the file of a module that borrows it. CI keeps what is CI-specific — that
