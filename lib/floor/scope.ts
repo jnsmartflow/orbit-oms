@@ -38,7 +38,7 @@ export function rowsInScope<T extends { deliveryType: string | null }>(
 /** The two fields of a trip summary the trip rules below read. Structural, so
  *  this module stays free of lib/trips/queries.ts (which imports prisma). */
 interface TripTypes {
-  /** What the trip holds — its bills' types. May be empty. */
+  /** Its stored type UNIONED with its bills' types (lib/trips/queries.ts). */
   deliveryTypes: string[];
   /** What the trip was numbered under. */
   deliveryTypeName: string | null;
@@ -47,10 +47,12 @@ interface TripTypes {
 /**
  * The delivery types a TRIP belongs to (owner, 2026-09-18).
  *
- * 🔴 THE SET OF ITS BILLS' TYPES, NOT THE LETTER IN ITS NUMBER. A Local +
- * Upcountry load is both. Falls back to the type it was numbered under only
- * when it holds no typed bill — a trip built before its bills must not vanish
- * from every tab.
+ * 🔴 ITS STORED TYPE PLUS ITS BILLS' TYPES — a union built server-side, so a
+ * trip only ever GAINS tabs from its bills and never leaves the one it was
+ * numbered under. A Local + Upcountry load is both; an IGT transfer carrying
+ * Upcountry stock is both IGT and Upcountry. The fallback below only matters
+ * for a payload that lacks the list (the server always includes the stored
+ * type).
  */
 export function tripTypeNames(trip: TripTypes): string[] {
   if (trip.deliveryTypes.length > 0) return trip.deliveryTypes;
@@ -71,8 +73,9 @@ export function tripInScope(trip: TripTypes, scope: FloorScope): boolean {
 }
 
 /**
- * The quiet chip's words — "Local + Upcountry" — or null when the trip holds a
- * single type (or none). Actual type names joined with "+", nothing invented:
+ * The quiet chip's words — "Local + Upcountry", "IGT + Upcountry" — or null when
+ * the trip's type set (the same union the tab filter reads) has one type.
+ * Actual type names joined with "+", nothing invented:
  * "Cross" is a real delivery type (delivery_type_master id 6), so a mixed load
  * is never called a "cross" trip.
  */

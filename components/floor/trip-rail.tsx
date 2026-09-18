@@ -20,13 +20,14 @@
 // this rail and the Add-to-trip list cannot disagree about it.
 //
 // 🔴 THE PAGE'S SCOPE FILTERS IT; IT HAS NO TABS OF ITS OWN. All / Local /
-// Upcountry / IGT is the page's own control. A trip is in scope when ANY of the
-// types it HOLDS matches — the set of its bills' types, not the letter in its
-// number (owner, 2026-09-18; `tripInScope`, lib/floor/scope.ts). A Local +
-// Upcountry load is on Local, on Upcountry and on All, and wears a quiet
-// "Local + Upcountry" chip. An empty trip falls back to the type it was
-// numbered under, so it never vanishes from every tab. A trip holding only
-// Cross bills shows under All only, because there is no Cross scope.
+// Upcountry / IGT is the page's own control. A trip is in scope when ANY of its
+// types matches — its stored type UNIONED with its bills' types (owner,
+// 2026-09-18; `tripInScope`, lib/floor/scope.ts). A Local + Upcountry load is
+// on Local, on Upcountry and on All, and wears a quiet "Local + Upcountry" chip;
+// an IGT transfer carrying Upcountry stock stays on IGT and gains Upcountry. A
+// trip only ever GAINS tabs from its bills — it never leaves the one it was
+// numbered under. A Cross trip shows under All only, because there is no Cross
+// scope.
 //
 // 🔴 NO "Draft" AND NO "Confirmed" ANYWHERE (slice 6). The stored status still
 // exists and still drives two things (the carry-forward rule and the dispatch
@@ -150,8 +151,8 @@ export function TripRail({
   const all = trips ?? [];
   // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11), and a trip outside the
   // page's scope does not either (slice 6). One filter, applied once, in the
-  // server's order — newest created first. In scope = ANY type the trip holds
-  // (2026-09-18), falling back to its numbered type when it holds none.
+  // server's order — newest created first. In scope = ANY of the trip's types,
+  // stored ∪ bills (2026-09-18).
   const live = all.filter((t) => t.status !== "cancelled" && tripInScope(t, scope));
 
   // The header's two numbers. Both describe the LIVE list — what is actually on

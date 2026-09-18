@@ -107,14 +107,17 @@ export interface TripSummary {
    */
   deliveryTypeName: string | null;
   /**
-   * 🔴 WHAT THE TRIP ACTUALLY HOLDS (owner, 2026-09-18): the distinct delivery
-   * types of its non-removed bills, in delivery_type_master id order (Local,
-   * Upcountry, IGT, Cross). One entry on most trips; two on a load like
-   * Varachha + Kamrej. Untyped bills add nothing.
+   * 🔴 THE TRIP'S TYPES (owner, 2026-09-18): its STORED type UNIONED with the
+   * distinct delivery types of its non-removed bills, in delivery_type_master id
+   * order (Local, Upcountry, IGT, Cross) — the stored type first when no bill
+   * carries it (see toSummary). One entry on most trips; two on a load
+   * like Varachha + Kamrej ("Local + Upcountry"), or an IGT transfer carrying
+   * Upcountry stock ("IGT + Upcountry"). Untyped bills add nothing; a trip with
+   * no typed bill is just its stored type.
    *
-   * ⚠ EMPTY on a trip with no typed bill — including a trip built before its
-   * bills. Readers fall back to `deliveryTypeName` then; `tripTypeNames` in
-   * lib/floor/scope.ts is the one place that rule is written.
+   * ⚠ A UNION, NEVER A REPLACEMENT: the stored type is always in it, so no trip
+   * leaves a tab it was on before bill types were read. The rail's tab filter
+   * (`tripInScope`) and the chip (`tripMixLabel`) both read this list.
    */
   deliveryTypes: string[];
   seq: number;
@@ -324,8 +327,9 @@ interface TripBillRow {
  * 🔴 WHY THE TYPE IS READ OFF THE BILLS (owner, 2026-09-18). A trip may carry
  * more than one delivery type — Local and Upcountry bills share trucks — and the
  * letter in its number is only the majority at creation (lib/trips/type-choice
- * .ts). What the trip HOLDS is the set of its bills' types, and that is what the
- * rail's tab filter and the "Local + Upcountry" chip read.
+ * .ts). The trip's type set is its stored type UNIONED with its bills' types
+ * (toSummary), and that is what the rail's tab filter and the "Local +
+ * Upcountry" chip read.
  *
  * ⚠ THE SECOND READ IS A SEPARATE findMany, NOT `include: { querySnapshot }`.
  * A to-one include would work and would probably cost one statement today, but
@@ -662,15 +666,31 @@ function toSummary(
     else totalWeightKg += b.weightKg;
   }
   const route = deriveRouteLabel(areaStops, labels.placeholderRouteNames);
-  // The set of types the load holds, ordered by delivery_type_master id so the
-  // chip always reads "Local + Upcountry", never the other way round.
+  // The trip's types: its STORED type UNIONED with its bills' types, ordered by
+  // delivery_type_master id so the chip always reads "Local + Upcountry", never
+  // the other way round.
+  //
+  // 🔴 A UNION, NEVER A REPLACEMENT (owner, 2026-09-18). The stored type is a
+  // decision the planner made — IGT in particular describes the MOVEMENT (a
+  // godown transfer), not where the customers are, so an I- trip carrying
+  // Upcountry bills must stay on the IGT tab. With the union, no trip ever
+  // leaves a tab it was on before this change; it can only gain tabs.
+  //
+  // ⚠ ORDER: bill types by id — then the STORED type leads when no bill carries
+  // it. That case is the planner's own declaration rather than anything the
+  // bills explain (an IGT transfer, typically), so the chip names it first:
+  // I-260916-01 reads "IGT + Upcountry", while a U- trip with Local bills still
+  // reads "Local + Upcountry".
   const typeNameById = new Map<number, string>();
   for (const b of bills) {
     if (b.deliveryTypeId !== null && b.deliveryTypeName !== null) typeNameById.set(b.deliveryTypeId, b.deliveryTypeName);
   }
-  const deliveryTypes = Array.from(typeNameById.entries())
+  const billTypes = Array.from(typeNameById.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([, name]) => name);
+  const storedName = labels.deliveryTypeById.get(t.deliveryTypeId) ?? null;
+  const deliveryTypes =
+    storedName !== null && !typeNameById.has(t.deliveryTypeId) ? [storedName, ...billTypes] : billTypes;
 
   return {
     id: t.id,
