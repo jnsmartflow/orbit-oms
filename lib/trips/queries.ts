@@ -101,7 +101,22 @@ export interface TripSummary {
   tripDate: string; // YYYY-MM-DD
   typeCode: string;
   deliveryTypeId: number;
+  /**
+   * The type the trip was NUMBERED under — the letter in `tripNumber`. Fixed at
+   * creation. ⚠ Not what the trip holds: read `deliveryTypes` for that.
+   */
   deliveryTypeName: string | null;
+  /**
+   * 🔴 WHAT THE TRIP ACTUALLY HOLDS (owner, 2026-09-18): the distinct delivery
+   * types of its non-removed bills, in delivery_type_master id order (Local,
+   * Upcountry, IGT, Cross). One entry on most trips; two on a load like
+   * Varachha + Kamrej. Untyped bills add nothing.
+   *
+   * ⚠ EMPTY on a trip with no typed bill — including a trip built before its
+   * bills. Readers fall back to `deliveryTypeName` then; `tripTypeNames` in
+   * lib/floor/scope.ts is the one place that rule is written.
+   */
+  deliveryTypes: string[];
   seq: number;
   dispatchWindowId: number | null;
   windowTime: string | null;
@@ -283,14 +298,34 @@ interface TripBillRow {
   litres: number;
   /** kg from the snapshot; null when the bill has no snapshot row. */
   weightKg: number | null;
+  /**
+   * The bill's delivery type (2026-09-18), by the board's OWN rule — the
+   * effective dealer's area's type, `shipToOverrideCustomer ?? customer`
+   * (lib/floor/queries.ts, the `inScope` row loop). Null when the bill has no
+   * customer, or the customer has no type. Id kept beside the name so the trip's
+   * list can be ordered by delivery_type_master id (Local, Upcountry, IGT, Cross).
+   */
+  deliveryTypeId: number | null;
+  deliveryTypeName: string | null;
 }
 
 /**
- * Every non-removed bill attached to the given drops, with its litres.
+ * Every non-removed bill attached to the given drops, with its litres and its
+ * delivery type.
  *
- * TWO batched reads, both keyed on an `IN` list:
+ * FIVE batched reads, each keyed on an `IN` list:
  *   1. orders by `tripDropId IN (…)`
  *   2. import_obd_query_summary by `orderId IN (…)` — the litres
+ *   3. delivery_point_master by `id IN (…)` — the effective dealer's area
+ *   4. area_master by `id IN (…)` — the area's delivery type
+ *   5. delivery_type_master by `id IN (…)` — the type's name
+ * Reads 3-5 are skipped when there is nothing to look up.
+ *
+ * 🔴 WHY THE TYPE IS READ OFF THE BILLS (owner, 2026-09-18). A trip may carry
+ * more than one delivery type — Local and Upcountry bills share trucks — and the
+ * letter in its number is only the majority at creation (lib/trips/type-choice
+ * .ts). What the trip HOLDS is the set of its bills' types, and that is what the
+ * rail's tab filter and the "Local + Upcountry" chip read.
  *
  * ⚠ THE SECOND READ IS A SEPARATE findMany, NOT `include: { querySnapshot }`.
  * A to-one include would work and would probably cost one statement today, but
@@ -308,10 +343,57 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
 
   const orders = await prisma.orders.findMany({
     where: { tripDropId: { in: dropIds }, isRemoved: false },
-    select: { id: true, tripDropId: true, workflowStage: true, dispatchStatus: true },
+    select: {
+      id: true,
+      tripDropId: true,
+      workflowStage: true,
+      dispatchStatus: true,
+      // The effective dealer, for the delivery type — see TripBillRow.
+      customerId: true,
+      shipToOverrideCustomerId: true,
+    },
     orderBy: { id: "asc" },
   });
   if (orders.length === 0) return [];
+
+  // ── The delivery type of each bill (2026-09-18) ──────────────────────────
+  // `shipToOverrideCustomerId ?? customerId` is the id form of the board's
+  // `order.shipToOverrideCustomer ?? order.customer` (lib/floor/queries.ts), so
+  // a bill reads the same type on the rail as on its own board row.
+  const dealerIdOf = (o: { customerId: number | null; shipToOverrideCustomerId: number | null }) =>
+    o.shipToOverrideCustomerId ?? o.customerId;
+  const dealerIds = Array.from(
+    new Set(orders.map(dealerIdOf).filter((id): id is number => id !== null)),
+  );
+  const dealers = dealerIds.length
+    ? await prisma.delivery_point_master.findMany({
+        where: { id: { in: dealerIds } },
+        select: { id: true, areaId: true },
+      })
+    : [];
+  const areaIds = Array.from(new Set(dealers.map((d) => d.areaId)));
+  const areas = areaIds.length
+    ? await prisma.area_master.findMany({
+        where: { id: { in: areaIds } },
+        select: { id: true, deliveryTypeId: true },
+      })
+    : [];
+  const typeIds = Array.from(new Set(areas.map((a) => a.deliveryTypeId)));
+  const types = typeIds.length
+    ? await prisma.delivery_type_master.findMany({
+        where: { id: { in: typeIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const areaIdByDealer = new Map(dealers.map((d) => [d.id, d.areaId]));
+  const typeIdByArea = new Map(areas.map((a) => [a.id, a.deliveryTypeId]));
+  const typeNameById = new Map(types.map((t) => [t.id, t.name]));
+  const typeIdOf = (o: { customerId: number | null; shipToOverrideCustomerId: number | null }): number | null => {
+    const dealerId = dealerIdOf(o);
+    const areaId = dealerId !== null ? areaIdByDealer.get(dealerId) : undefined;
+    const typeId = areaId !== undefined ? typeIdByArea.get(areaId) : undefined;
+    return typeId !== undefined && typeNameById.has(typeId) ? typeId : null;
+  };
 
   const snapshots = await prisma.import_obd_query_summary.findMany({
     where: { orderId: { in: orders.map((o) => o.id) } },
@@ -328,17 +410,22 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
     if (s.orderId !== null) litresByOrderId.set(s.orderId, s.totalVolume);
   }
 
-  return orders.map((o) => ({
-    id: o.id,
-    tripDropId: o.tripDropId,
-    workflowStage: o.workflowStage,
-    dispatchStatus: o.dispatchStatus,
-    // A bill with no snapshot row contributes 0, never null — the same choice
-    // lib/floor/queries.ts makes for `volumeLitres` on its own rows.
-    litres: litresByOrderId.get(o.id) ?? 0,
-    // NULL, not 0, when there is no snapshot — the summary counts it as unknown.
-    weightKg: weightByOrderId.get(o.id) ?? null,
-  }));
+  return orders.map((o) => {
+    const deliveryTypeId = typeIdOf(o);
+    return {
+      id: o.id,
+      tripDropId: o.tripDropId,
+      workflowStage: o.workflowStage,
+      dispatchStatus: o.dispatchStatus,
+      // A bill with no snapshot row contributes 0, never null — the same choice
+      // lib/floor/queries.ts makes for `volumeLitres` on its own rows.
+      litres: litresByOrderId.get(o.id) ?? 0,
+      // NULL, not 0, when there is no snapshot — the summary counts it as unknown.
+      weightKg: weightByOrderId.get(o.id) ?? null,
+      deliveryTypeId,
+      deliveryTypeName: deliveryTypeId !== null ? (typeNameById.get(deliveryTypeId) ?? null) : null,
+    };
+  });
 }
 
 /** The trip row shape both readers select. Kept in one place so they cannot drift. */
@@ -575,6 +662,15 @@ function toSummary(
     else totalWeightKg += b.weightKg;
   }
   const route = deriveRouteLabel(areaStops, labels.placeholderRouteNames);
+  // The set of types the load holds, ordered by delivery_type_master id so the
+  // chip always reads "Local + Upcountry", never the other way round.
+  const typeNameById = new Map<number, string>();
+  for (const b of bills) {
+    if (b.deliveryTypeId !== null && b.deliveryTypeName !== null) typeNameById.set(b.deliveryTypeId, b.deliveryTypeName);
+  }
+  const deliveryTypes = Array.from(typeNameById.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([, name]) => name);
 
   return {
     id: t.id,
@@ -583,6 +679,7 @@ function toSummary(
     typeCode: t.typeCode,
     deliveryTypeId: t.deliveryTypeId,
     deliveryTypeName: labels.deliveryTypeById.get(t.deliveryTypeId) ?? null,
+    deliveryTypes,
     seq: t.seq,
     dispatchWindowId: t.dispatchWindowId,
     windowTime: t.dispatchWindowId !== null ? (labels.windowTimeById.get(t.dispatchWindowId) ?? null) : null,

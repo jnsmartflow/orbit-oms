@@ -198,7 +198,10 @@ export function TripDesk({
    *  so the Floor tab never asks (see /api/floor/tint-operators). */
   tintOperators: Map<number, string | null> | null;
   /**
-   * The board rows BEFORE search and the Status/Flags filter (2026-09-14).
+   * The board rows BEFORE search and the Status/Flags filter (2026-09-14), and
+   * BEFORE the delivery-type tab (2026-09-18) — a trip's stops show every bill
+   * on the trip whatever tab is open (owner; see floor-page.tsx where this is
+   * passed).
    *
    * 🔴 IT EXISTS SO A POOL FILTER CANNOT EMPTY THE TRIP PANE. The stop lookup
    * below used the filtered array, so ticking one Status chip blanked every stop
@@ -684,8 +687,11 @@ export function TripDesk({
                     {/* Slice 10 (2026-09-15): History now pulls a trip's bills BY
                         TRIP (floorHistoryTripBillsWhere), so on either desk this
                         line is reached only by a bill the view itself leaves out
-                        — the page's delivery-type scope, or the admin Hide
-                        filter. It says only that, and never names a day. */}
+                        — the admin Hide filter, or the day the board is anchored
+                        on. NEVER the delivery-type tab (owner, 2026-09-18): the
+                        stop lookup reads unscoped rows, so an opened trip shows
+                        every bill whatever tab is selected. It says only that,
+                        and never names a day. */}
                     {d.bills} bill{d.bills === 1 ? " is" : "s are"} on this stop, not in this view.
                   </div>
                 )}

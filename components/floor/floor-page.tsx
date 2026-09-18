@@ -1952,7 +1952,16 @@ export function FloorPage() {
               // still receives the FILTERED board as `floor`; this is the second
               // array, and TripDesk’s own comment says why a pool filter must not
               // decide what a stop contains.
-              unfilteredRows={scopedData?.floor.rows ?? []}
+              //
+              // 🔴 UNSCOPED TOO (owner, 2026-09-18): `data`, not `scopedData`. The
+              // delivery-type tab filters the POOL, never the contents of a truck
+              // the planner has deliberately opened — a Local + Upcountry trip
+              // opened on the Local tab shows its Upcountry stops in full. Hiding
+              // half a load behind a tab is how a truck leaves with 12 bills
+              // while the planner believes it has 8. Hide and the date anchor are
+              // applied server-side, so a bill they leave out is still absent
+              // here and still reads "not in this view".
+              unfilteredRows={data?.floor.rows ?? []}
               // The SAME desk renders live and history, so the source is
               // decided here by the view (2026-08-25). "history" is the
               // read-only source — it suppresses every action in the panel

@@ -35,6 +35,51 @@ export function rowsInScope<T extends { deliveryType: string | null }>(
   return scope === "All" ? rows : rows.filter((r) => inScope(r.deliveryType, scope));
 }
 
+/** The two fields of a trip summary the trip rules below read. Structural, so
+ *  this module stays free of lib/trips/queries.ts (which imports prisma). */
+interface TripTypes {
+  /** What the trip holds — its bills' types. May be empty. */
+  deliveryTypes: string[];
+  /** What the trip was numbered under. */
+  deliveryTypeName: string | null;
+}
+
+/**
+ * The delivery types a TRIP belongs to (owner, 2026-09-18).
+ *
+ * 🔴 THE SET OF ITS BILLS' TYPES, NOT THE LETTER IN ITS NUMBER. A Local +
+ * Upcountry load is both. Falls back to the type it was numbered under only
+ * when it holds no typed bill — a trip built before its bills must not vanish
+ * from every tab.
+ */
+export function tripTypeNames(trip: TripTypes): string[] {
+  if (trip.deliveryTypes.length > 0) return trip.deliveryTypes;
+  return trip.deliveryTypeName ? [trip.deliveryTypeName] : [];
+}
+
+/**
+ * Does a trip belong on this tab? True when ANY of its types matches, so a
+ * Local + Upcountry trip is on Local, on Upcountry and on All. `All` admits
+ * every trip, exactly as `inScope` admits every row.
+ *
+ * ⚠ A TRIP ON TWO TABS IS NOT COUNTED TWICE ANYWHERE: every count on the floor
+ * is taken within one tab, and All still lists each trip once.
+ */
+export function tripInScope(trip: TripTypes, scope: FloorScope): boolean {
+  if (scope === "All") return true;
+  return tripTypeNames(trip).some((name) => inScope(name, scope));
+}
+
+/**
+ * The quiet chip's words — "Local + Upcountry" — or null when the trip holds a
+ * single type (or none). Actual type names joined with "+", nothing invented:
+ * "Cross" is a real delivery type (delivery_type_master id 6), so a mixed load
+ * is never called a "cross" trip.
+ */
+export function tripMixLabel(trip: Pick<TripTypes, "deliveryTypes">): string | null {
+  return trip.deliveryTypes.length > 1 ? trip.deliveryTypes.join(" + ") : null;
+}
+
 // `railInScope` LIVED HERE UNTIL 2026-09-13 and went with the rail feed itself
 // (app/api/floor/board/route.ts). It was `rowsInScope` under another name, for a
 // payload nothing has rendered since 2026-09-10. `rowsInScope` above is the

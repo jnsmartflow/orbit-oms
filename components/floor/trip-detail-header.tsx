@@ -43,6 +43,7 @@ import { Clock, MoreHorizontal, Pencil, Plus } from "lucide-react";
 import { TripBar, TripBarLegend, tripBarCounts } from "./trip-bar";
 import { TripHistoryList } from "./trip-history";
 import { formatLitres, formatWeightKg } from "./status-pill";
+import { tripMixLabel } from "@/lib/floor/scope";
 import type { TripSummary } from "@/lib/trips/queries";
 import type { TripActivityRow } from "@/lib/trips/activity";
 
@@ -132,6 +133,7 @@ export function TripDetailHeader({
   // Whole kilos on a trip total ("412 kg", owner's design) — a decimal on a load
   // of hundreds of kilos is noise.
   const kg = formatWeightKg(Math.round(trip.totalWeightKg));
+  const mixLabel = tripMixLabel(trip);
 
   const canTakeBackFloor = gateOn && trip.shownAt !== null;
   const canTakeBackBilling = trip.sentToBillingAt !== null && trip.billingCopiedAt === null;
@@ -150,6 +152,14 @@ export function TripDetailHeader({
           <span className="shrink-0 rounded-[6px] border border-[#e7e7ee] bg-[#f1f1f6] px-[9px] py-[3px] font-mono text-[14px] font-semibold text-[#1a1a22]">
             {trip.tripNumber}
           </span>
+          {/* THE MIX CHIP (owner, 2026-09-18) — the rail card's, one step
+              larger: only on a load holding more than one delivery type. Real
+              type names joined with "+", never the word "cross". */}
+          {mixLabel && (
+            <span className="shrink-0 rounded-[6px] border border-[#e7e7ee] bg-[#f6f6f9] px-[8px] py-[3px] text-[12px] font-medium text-[#61616d]">
+              {mixLabel}
+            </span>
+          )}
 
           {canWrite && (
             <div className="ml-auto flex shrink-0 items-center gap-2">

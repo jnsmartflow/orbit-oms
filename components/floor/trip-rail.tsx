@@ -20,10 +20,13 @@
 // this rail and the Add-to-trip list cannot disagree about it.
 //
 // 🔴 THE PAGE'S SCOPE FILTERS IT; IT HAS NO TABS OF ITS OWN. All / Local /
-// Upcountry / IGT is the page's own control. A trip is in scope by its OWN
-// delivery type — the letter in its number — through the same `inScope` the
-// board rows use (lib/floor/scope.ts). A Cross trip shows under All only, because
-// there is no Cross scope.
+// Upcountry / IGT is the page's own control. A trip is in scope when ANY of the
+// types it HOLDS matches — the set of its bills' types, not the letter in its
+// number (owner, 2026-09-18; `tripInScope`, lib/floor/scope.ts). A Local +
+// Upcountry load is on Local, on Upcountry and on All, and wears a quiet
+// "Local + Upcountry" chip. An empty trip falls back to the type it was
+// numbered under, so it never vanishes from every tab. A trip holding only
+// Cross bills shows under All only, because there is no Cross scope.
 //
 // 🔴 NO "Draft" AND NO "Confirmed" ANYWHERE (slice 6). The stored status still
 // exists and still drives two things (the carry-forward rule and the dispatch
@@ -49,7 +52,7 @@
 import type { ReactNode } from "react";
 import { TripBar, tripBarCounts } from "./trip-bar";
 import { formatLitres } from "./status-pill";
-import { inScope } from "@/lib/floor/scope";
+import { tripInScope, tripMixLabel } from "@/lib/floor/scope";
 import type { FloorScope } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
 
@@ -147,8 +150,9 @@ export function TripRail({
   const all = trips ?? [];
   // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11), and a trip outside the
   // page's scope does not either (slice 6). One filter, applied once, in the
-  // server's order — newest created first.
-  const live = all.filter((t) => t.status !== "cancelled" && inScope(t.deliveryTypeName, scope));
+  // server's order — newest created first. In scope = ANY type the trip holds
+  // (2026-09-18), falling back to its numbered type when it holds none.
+  const live = all.filter((t) => t.status !== "cancelled" && tripInScope(t, scope));
 
   // The header's two numbers. Both describe the LIVE list — what is actually on
   // the rail — so the count and the cards can never disagree.
@@ -282,6 +286,7 @@ function TripCard({
   const isCarried = trip.tripDate < anchorIso;
   const bar = tripBarCounts(trip.counts);
   const badge = tripBadge(trip, gateOn);
+  const mixLabel = tripMixLabel(trip);
 
   // 🔴 THE CARD IS FOUR LINES AND A BAR (floor redesign, 2026-09-15, owner):
   //   number · slot · badge / route / stops · bills · litres / driver / bar.
@@ -373,6 +378,18 @@ function TripCard({
         <div className="text-[12.5px] tabular-nums text-[#61616d]">
           {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {bar.total} bill
           {bar.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
+        </div>
+      )}
+
+      {/* THE MIX CHIP (owner, 2026-09-18) — only when the load holds more than
+          one delivery type, so nobody is surprised by what is on the truck.
+          Quiet grey: a fact, not a warning. Real type names joined with "+";
+          never the word "cross" (Cross is its own delivery type). */}
+      {mixLabel && (
+        <div>
+          <span className="inline-block rounded-[5px] border border-[#e7e7ee] bg-[#f6f6f9] px-[6px] py-px text-[11px] font-medium text-[#61616d]">
+            {mixLabel}
+          </span>
         </div>
       )}
 
