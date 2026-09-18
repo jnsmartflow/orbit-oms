@@ -38,43 +38,38 @@ export function rowsInScope<T extends { deliveryType: string | null }>(
 /** The two fields of a trip summary the trip rules below read. Structural, so
  *  this module stays free of lib/trips/queries.ts (which imports prisma). */
 interface TripTypes {
-  /** Its stored type UNIONED with its bills' types (lib/trips/queries.ts). */
+  /** Its stored type UNIONED with its bills' types (lib/trips/queries.ts). The CHIP's list. */
   deliveryTypes: string[];
-  /** What the trip was numbered under. */
+  /** What the trip was numbered under — the letter. The TAB's answer. */
   deliveryTypeName: string | null;
 }
 
 /**
- * The delivery types a TRIP belongs to (owner, 2026-09-18).
+ * Does a trip belong on this tab? By the trip's OWN delivery type — the one it
+ * was numbered under, the letter in its number — and nothing else. `All` admits
+ * every trip, exactly as `inScope` admits every row. A Cross trip shows under
+ * All only, because there is no Cross tab.
  *
- * 🔴 ITS STORED TYPE PLUS ITS BILLS' TYPES — a union built server-side, so a
- * trip only ever GAINS tabs from its bills and never leaves the one it was
- * numbered under. A Local + Upcountry load is both; an IGT transfer carrying
- * Upcountry stock is both IGT and Upcountry. The fallback below only matters
- * for a payload that lacks the list (the server always includes the stored
- * type).
- */
-export function tripTypeNames(trip: TripTypes): string[] {
-  if (trip.deliveryTypes.length > 0) return trip.deliveryTypes;
-  return trip.deliveryTypeName ? [trip.deliveryTypeName] : [];
-}
-
-/**
- * Does a trip belong on this tab? True when ANY of its types matches, so a
- * Local + Upcountry trip is on Local, on Upcountry and on All. `All` admits
- * every trip, exactly as `inScope` admits every row.
+ * 🔴 NOT BY ITS BILLS' TYPES (owner, 2026-09-18, reversing 41c5dab8 the same
+ * day). The letter is what the planner DECLARED the trip to be. L-260918-03 is
+ * a Local trip that happens to carry one Kamrej drop; putting it on the
+ * Upcountry tab put a truck in front of the Upcountry planner that is not his.
+ * The "Local + Upcountry" chip (`tripMixLabel`) says what is on the truck
+ * without moving the truck anywhere — that is the whole of its job.
  *
- * ⚠ A TRIP ON TWO TABS IS NOT COUNTED TWICE ANYWHERE: every count on the floor
- * is taken within one tab, and All still lists each trip once.
+ * ⚠ THE TRIP PANEL IS A DIFFERENT RULE AND STAYS AS IT IS. An opened trip shows
+ * every bill on it whatever tab is selected (floor-page.tsx `unfilteredRows`).
+ * This function decides which trips the RAIL lists, never what a trip contains.
  */
 export function tripInScope(trip: TripTypes, scope: FloorScope): boolean {
-  if (scope === "All") return true;
-  return tripTypeNames(trip).some((name) => inScope(name, scope));
+  return inScope(trip.deliveryTypeName, scope);
 }
 
 /**
  * The quiet chip's words — "Local + Upcountry", "IGT + Upcountry" — or null when
- * the trip's type set (the same union the tab filter reads) has one type.
+ * the trip holds one type. Read from `deliveryTypes`, the stored type UNIONED
+ * with its bills' types — which is why that union is still built server-side
+ * although the tabs no longer read it.
  * Actual type names joined with "+", nothing invented:
  * "Cross" is a real delivery type (delivery_type_master id 6), so a mixed load
  * is never called a "cross" trip.

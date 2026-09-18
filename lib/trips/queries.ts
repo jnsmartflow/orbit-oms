@@ -115,9 +115,10 @@ export interface TripSummary {
    * Upcountry stock ("IGT + Upcountry"). Untyped bills add nothing; a trip with
    * no typed bill is just its stored type.
    *
-   * ⚠ A UNION, NEVER A REPLACEMENT: the stored type is always in it, so no trip
-   * leaves a tab it was on before bill types were read. The rail's tab filter
-   * (`tripInScope`) and the chip (`tripMixLabel`) both read this list.
+   * ⚠ THE CHIP'S LIST, NOT THE TAB'S. Only the "Local + Upcountry" chip
+   * (`tripMixLabel`) reads it. The rail's tab filter (`tripInScope`) reads
+   * `deliveryTypeName` — the trip's own type — since the owner reversed the
+   * bill-types tab rule on 2026-09-18.
    */
   deliveryTypes: string[];
   seq: number;
@@ -328,8 +329,8 @@ interface TripBillRow {
  * more than one delivery type — Local and Upcountry bills share trucks — and the
  * letter in its number is only the majority at creation (lib/trips/type-choice
  * .ts). The trip's type set is its stored type UNIONED with its bills' types
- * (toSummary), and that is what the rail's tab filter and the "Local +
- * Upcountry" chip read.
+ * (toSummary), and that is what the "Local + Upcountry" chip reads. The rail's
+ * tab filter does NOT read it — a trip is listed by its own type.
  *
  * ⚠ THE SECOND READ IS A SEPARATE findMany, NOT `include: { querySnapshot }`.
  * A to-one include would work and would probably cost one statement today, but
@@ -672,9 +673,10 @@ function toSummary(
   //
   // 🔴 A UNION, NEVER A REPLACEMENT (owner, 2026-09-18). The stored type is a
   // decision the planner made — IGT in particular describes the MOVEMENT (a
-  // godown transfer), not where the customers are, so an I- trip carrying
-  // Upcountry bills must stay on the IGT tab. With the union, no trip ever
-  // leaves a tab it was on before this change; it can only gain tabs.
+  // godown transfer), not where the customers are — so it is always named, and
+  // an IGT trip carrying Upcountry stock reads "IGT + Upcountry". This list
+  // feeds the CHIP only; the tabs read the stored type alone (lib/floor/scope.ts
+  // `tripInScope`).
   //
   // ⚠ ORDER: bill types by id — then the STORED type leads when no bill carries
   // it. That case is the planner's own declaration rather than anything the
