@@ -1,19 +1,23 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.4 · Schema v27.13 · August 2026 · updated 2026-08-04
+# v1.5 · Schema v27.24 · September 2026 · updated 2026-09-18
 # Lives in: orbit-oms/docs/
-# Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
+# Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md (+ docs/CLAUDE_FLOOR_TRIPS.md for anything trip-shaped)
 
-Covers `/floor` — the desk operator's unified board: decide which bills go to the floor, and watch what happens to them there.
+Covers `/floor` — the desk operator's trip desk: plan which bills go on which truck, and watch what happens to them on the floor.
 
 ---
 
 ## 1. What Floor Control is [LIVE]
 
-One desk screen for one person — the operator who releases bills to the floor and watches them get assigned, picked and checked. It was built to consolidate the **Support board** and the **Picking desktop board**; both have since been retired (2026-07-27 and 2026-07-28, §9 / §9b), so Floor is not "the merged view" any more — it is the only desk view.
+One desk screen for one person — the planner who puts bills on trucks and watches them get assigned, picked and checked. It was built to consolidate the **Support board** and the **Picking desktop board**; both have since been retired (2026-07-27 and 2026-07-28, §9 / §9b), so Floor is not "the merged view" any more — it is the only desk view. Since 2026-09-10 (`bbb9628c`) the Floor tab is the **trip desk**: trips on the left, bills on the right (§2).
 
 **Route:** `/floor` (`app/(floor)/floor/page.tsx`). Hand-rolled shell, NOT `UniversalHeader` (§10).
 
-**Access:** pageKey `"floor"` in `lib/permissions.ts` (in the `PageKey` union, `ALL_PAGE_KEYS`, and `PAGE_NAV_MAP` → `/floor`). v1 grant = **admin + operations only**, `canView`+`canEdit`, present in BOTH `prisma/seed.ts` and live `role_permissions` (SQL 2026-07-23, **re-confirmed live 2026-07-28** — still exactly those two roles). ⚠ **`floor_supervisor` and `picker` hold `picking` but NOT `floor`** (same 2026-07-28 SELECT) — so `/floor` is not a fallback for them; a redirect there would be a permission denial. That is why the Picking desktop retirement kept `/picking` live rather than redirecting (§9b). Grant table: `CLAUDE_CORE.md §5`. `dispatch planner` / `telecaller` (named in the design) are **[DEFERRED]** — `dispatch planner` has no matching slug, `telecaller` does not exist.
+**Access — name the union each time.** Two different things carry the word "floor":
+- **PageKey `floor`** (`lib/permissions.ts:209`, in `ALL_PAGE_KEYS` and `PAGE_NAV_MAP` → `/floor`). Every floor route gates on it through `checkAnyPermission(roles, "floor", …)`.
+- **Role slug `floor_access`** (`role_master` id 017, live 2026-09-18 Q07a) — a role, not a page key. 4 holders via `user_roles` (live 2026-09-18 Q07b: Ajay Vansiya #29, Dhanraj Shah #30, Prakash #32, Priya Chaudhari #31).
+
+**How access is decided today: per-user ticks.** Live `ACCESS_SOURCE = user` (live 2026-09-18 Q02). In user mode `checkAnyPermission` returns the user's own `user_page_access` row for the page (`userPagePerms`, `lib/permissions.ts:801-806`); role rows are not consulted, except that the `admin` role slug and the superuser flag short-circuit to true (`:795`, `:799`). Live `floor` ticks: rows=39 · canView=6 · canEdit=6 · canExport=1 (live 2026-09-18 Q03a); **0** users hold floor canView without canEdit (Q07c). So holding the `floor_access` role slug is not what grants the page in user mode — the ticks are. **Seed says** `admin` + `operations` only, `canView`+`canEdit` (`prisma/seed.ts:117-118`); that is the role-mode seed, not the live grant. ⚠ **`floor_supervisor` and `picker`** are the `/picking` roles; `/floor` is not a fallback for them, which is why the Picking desktop retirement kept `/picking` live rather than redirecting (§9b). Access model: `CLAUDE_CORE.md §5`.
 
 ### Ownership boundary — READ BEFORE EDITING ANYTHING FLOOR
 
@@ -21,12 +25,12 @@ Floor Control **reuses Picking as a CALLER**. It did NOT fork or modify it — n
 
 | This file OWNS | This file does NOT own — cross-reference only, never restate |
 |---|---|
-| the left/right split (§2) · Floor's `FLOOR_SPINE` sort LIST (`lib/floor/sort.ts`, §3) | assign / unassign + the sort rule OBJECTS + `sortPickingQueue` → **`CLAUDE_PICKING.md §3/§4`** |
-| the 4 read feeds (§3) | the dispatch engine (`evaluateDispatchSlot`) → **`CLAUDE_CORE.md §7.4`** |
-| floor routes: hold / cancel / release / change-slot (§4) | |
-| ship-to search + save (§4.4) · the dispatch-slot picker (`components/floor/dispatch-slot-picker.tsx`) · `formatArticleTag` (`lib/floor/format.ts`) | |
-| the action surfaces — assign bar / panel header / picker behaviour / selection+Esc (§4.6) | |
-| the detail panel (§4.7) | |
+| the screen shell: the four top tabs, `TripDesk`'s three states and layout, the bill table (§2, §4.9) · Floor's `FLOOR_SPINE` sort LIST (`lib/floor/sort.ts`, §3) | assign / unassign + the sort rule OBJECTS + `sortPickingQueue` → **`CLAUDE_PICKING.md §3/§4`** |
+| the read feeds and the board predicate `floorBoardWhere` + its four arms (§3) | the dispatch engine (`evaluateDispatchSlot`) → **`CLAUDE_CORE.md §7.4`** |
+| floor routes: hold / cancel / restore / release / change-slot / mark-urgent (§4) | **trips**: tables, `lib/trips/*`, `/api/floor/trips/*`, numbering, drops, which trips a desk shows, Show to floor / the pick gate, Send to billing, the "no trip action changes a bill" rule → **`CLAUDE_FLOOR_TRIPS.md`** |
+| ship-to search + save (§4.4) · the dispatch-slot picker (`components/floor/dispatch-slot-picker.tsx`) · `formatArticleTag` + `resolveFloorDisplayDate` (`lib/floor/format.ts`) | how a new bill reaches the floor without a release step → **`applyNoMailOrderFallback`** (`app/api/import/obd/route.ts`, `CLAUDE_IMPORT.md`) |
+| the action surfaces — bottom bar / panel header / slot picker / selection+Esc (§4.6) | the Billing Print tab that Send to billing feeds → **`CLAUDE_BILLING.md §7`** |
+| the detail panel, incl. the tint lock (§4.7) and tint on the floor (§4.8) | |
 | the held-since read-side rule (§4.5) | |
 | floor live-sync + `/api/floor/marker` (§5) | |
 | the hand-rolled header divergence (§10) | |
@@ -41,44 +45,61 @@ If you find yourself explaining borrowed behaviour here, replace it with a point
 
 ## 2. The screen [LIVE]
 
-One rule the operator learns: **left = not on the floor, right = on the floor.**
+`components/floor/floor-page.tsx` is the composition root; the Floor tab renders `<TripDesk>` (`components/floor/trip-desk.tsx`, since `bbb9628c`, 2026-09-10).
 
-- **Left rail (344px) — "Needs your decision".** Cards, one per bill. Holds ONLY bills the dispatch engine could not auto-slot (having no slot is *why* they are here). A bill the engine successfully slotted never appears on the rail — it is already on the right, carrying its stored `dispatchTargetDate`/`dispatchWindowId`. Oldest-first, always; never filtered by search/slot/route/date — only the header delivery-type scope narrows it (search only HIGHLIGHTS a matching rail card, never hides it). Each card: **with an engine suggestion** (live since 2026-08-03 — §8), a teal split-confirm button `[ ✓ Today 18:00 ▾ ]` + `Hold` + `✕`; **without one**, the original `[ pick slot ] [ Hold ] [ ✕ ]` plus a quiet grey "Why no slot?" link. Tint bills show a live tint strip and a slot picker disabled until all shades are done; a FINISHED full tint OBD gets a completion-anchored suggestion (§8).
-- **Right pane** — three top tabs: **Floor** / **On hold** / **Cancelled**, plus the slide-out **detail panel**.
-  - **Floor:** delivery-type scope chips (All/Local/Upcountry/IGT) · slot tabs `10:30 · 12:30 · 16:00 · 18:00 · All` · slot bands (All view) or Flat/By-route (a slot tab) · a fixed-layout table · four status pills (Waiting / With picker / Needs check / Done). Live vs History (History is read-only, dated).
-  - **On hold / Cancelled:** tables (§4).
-- **Header:** hand-rolled title + IST date/time; scope chips; one search box + one filter (§ CLAUDE_UI §5.2/§5.3-style, floor-only). No `UniversalHeader` (§10).
+- **Four top tabs** — `type TopTab = "floor" | "tinting" | "hold" | "cancelled"` (`floor-page.tsx:114`): **Floor** / **Tinting** / **On hold** / **Cancelled**, plus the slide-out **detail panel**. The tab row sits inside the table column (`143706be`). Tinting is a client-side VIEW of board rows, not a feed (`floor-page.tsx:108-113`, §4.8).
+- **Left: the trip rail** (`components/floor/trip-rail.tsx`). A "To plan" entry (the not-on-a-trip pool, the default) plus one card per trip, one flat list, newest-created first (`trip-rail.tsx:10-19`). What a trip card says and which trips are listed → `CLAUDE_FLOOR_TRIPS.md §6/§8`.
+- **Right: the bills, in one of three states** (`trip-desk.tsx:14-20`):
+  - **pool** — header + `Flat | By route` pivot + the table (the not-on-a-trip bills).
+  - **trip** — the selected trip's header + its bills grouped under STOPS, one `FloorTable` per stop.
+  - **add** — "+ Add bills" inside a trip: the trip unchanged, then a band, then the pool below it.
+  Rows sort with `FLOOR_SPINE`; bills with no slot are ordinary rows marked `no slot` (§3, §4.9).
+- **Bottom bar** (`components/floor/floor-bottom-bar.tsx`) — pool selected → `+ New trip` (an existing trip is picked by clicking it on the rail); trip selected → `Remove from trip`; plus the ✕ global clear (`floor-bottom-bar.tsx:12-20`). What those do to a trip → `CLAUDE_FLOOR_TRIPS.md §4/§7`.
+- **Live vs History** — History is read-only and dated (§3, §4.7).
+- **Header:** hand-rolled title + IST date/time; delivery-type scope chips (All/Local/Upcountry/IGT); one search box + one filter (§ CLAUDE_UI §5.2/§5.3-style, floor-only); the pick-gate switch (`pick-gate-toggle.tsx` → `CLAUDE_FLOOR_TRIPS.md §11`). No `UniversalHeader` (§10).
+
+**Retired from this screen** (one line each; do not rediscover):
+- The decision rail (left column of undecided bills, per-card Release / Hold / ✕, slot suggestion) — stopped rendering 2026-09-10 (`bbb9628c`), archived 2026-09-13 (`79bcc412`) → `archive/2026-09-floor-rail/README.md`.
+- Slot tabs (`10:30 · 12:30 · 16:00 · 18:00 · All`), slot bands and the By group view — stopped rendering 2026-09-10 (`bbb9628c`); `floor-board.tsx` deleted in `cdbf95b1`, `slot-band.tsx` / `floor-tabs.tsx` / `group-row.tsx` in `f41b52c9`.
+- By picker (`picker-card.tsx`) — deleted in `f41b52c9`.
+- The assign bar — replaced by the bottom bar in `bbb9628c`; `assign-bar.tsx` stays on disk with zero importers (§10b).
+- The upcoming strip (`upcoming-strip.tsx`) and `carryover-banner.tsx` — deleted in `f41b52c9`. Future-dated rows now sit below an upcoming divider row inside the table (`floor-table.tsx`).
 
 ---
 
 ## 3. Data feeds [LIVE]
 
-Four SELECT-only feeds, sequential awaits, never `prisma.$transaction` (CORE §3). All in `lib/floor/queries.ts`. Delivery-type scope is applied **client-side** in each feed loop (`inScope`), so the DB queries fetch all types. `getHideExclusion()` (CORE §7.10) is AND-merged into every feed.
+SELECT-only feeds, sequential awaits, never `prisma.$transaction` (CORE §3). All in `lib/floor/queries.ts`. The client fetches board, hold and cancelled once **unscoped** and filters scope client-side (`lib/floor/scope.ts`, `9c3b3cf5`); the server still honours `?scope=` via `inScope`. `getHideExclusion()` (CORE §7.10) is AND-merged into every feed.
 
 | Feed | Function | Route | Scope / anchor |
 |---|---|---|---|
-| Rail | `getFloorRail(scope)` | `GET /api/floor/board` | Pure open state — `workflowStage` rank < 60 AND `dispatchStatus IS NULL` AND `isRemoved=false`. No date anchor (yesterday's undecided bills stay). Oldest-first. |
-| Floor board | `getFloorBoard({mode,date,scope})` | `GET /api/floor/board` | **Live:** `floorLiveBaseWhere` (below). **History:** TWO arms under one `OR`, active stages, read-only — (a) bills **promised** for D (`dispatchTargetDate=D`) **OR** (b) bills **checked** on D (`pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange(D)`). See below. |
+| Floor board | `getFloorBoard({mode,date,scope})` | `GET /api/floor/board` | **Live:** `floorBoardWhere` (below). **History:** a two-member `OR` (below). |
 | Hold | `getFloorHold(scope)` | `GET /api/floor/hold` | `dispatchStatus="hold"`, all dates (pure open state), recent-held-first. |
 | Cancelled | `getFloorCancelled(scope)` | `GET /api/floor/cancelled` | `workflowStage="cancelled"`, **today only** (IST, by the cancel log's `createdAt`). |
 
-Also `getFloorPickers()` (active picker roster + on-hand load, for the assign bar). `GET /api/floor/board` returns `{ rail, floor, pickers }`; each route gates on `checkAnyPermission(roles,"floor","canView")`.
+`GET /api/floor/board` returns `{ scope, floor, pickers }` (`app/api/floor/board/route.ts:54`); `pickers` = `getFloorPickers()` (active roster + on-hand load), read by the detail panel's Assign/Reassign. Board, hold, cancelled, marker, order detail, ship-to search and tint-operators gate on `checkAnyPermission(roles,"floor","canView")`; actions, release, ship-to save and pick-gate on `canEdit`. `load()` also fetches `GET /api/floor/trips?date=` in the same batch (`floor-page.tsx:348-351`) — trip routes → `CLAUDE_FLOOR_TRIPS.md §10`.
 
-**`floorLiveBaseWhere(todayRange)` — the live predicate, SHARED by the board and the marker** (so they cannot drift, §5). Two arms:
-1. everything still OPEN — `workflowStage ∈ PICKING_OPEN_STAGES` (pending_picking / pick_assigned / pick_done), **any** dispatch date. Floor's carry-over arm (design §4.2).
-2. everything the floor **CHECKED TODAY** — `workflowStage=pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange()` (today, IST), whatever day it was due.
+**`floorBoardWhere(todayRange, todayDateOnly)` — the live predicate, SHARED by the board and the marker** (`lib/floor/queries.ts:475-490`; board `:829`, marker `getFloorLiveMarkerWhere` `:508`), so they cannot drift (§5). A union of **four named arms**, each a complete set of terms, never a term removed from another:
+1. **`floorLiveBaseWhere(todayRange)`** (`:421`) — `dispatchStatus="dispatch"`, and either still OPEN (`workflowStage ∈ PICKING_OPEN_STAGES` — pending_picking / pick_assigned / pick_done, **any** dispatch date; Floor's carry-over arm, design §4.2) or **CHECKED TODAY** (`workflowStage=pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange()`, today IST, whatever day it was due).
+2. **`floorUnslottedWhere()`** (`:160`) — rank < 60 AND `dispatchStatus IS NULL`, not removed: bills with no dispatch decision. The retired rail's own predicate; its feed went, this arm did not (`archive/2026-09-floor-rail/README.md`).
+3. **`floorCarriedPoolWhere()`** (`:198`) — `pick_checked`, `dispatchStatus="dispatch"`, `tripDropId IS NULL`: checked and on no truck, **whatever day it was checked** (`36a39ba7`).
+4. **`floorTripBillsWhere(todayDateOnly)`** (`:315`) — `dispatchStatus="dispatch"` and on a trip the desk is about (`liveTripsOnDeskWhere`, `lib/trips/live-trips.ts` → `CLAUDE_FLOOR_TRIPS.md §8`). Its `tripDropId: { not: null }` term is redundant by meaning and load-bearing by query plan (`:226-240`) — do not delete it.
 
-Plain English: everything still open whatever day it was due, plus everything the floor finished today whatever day it was due.
+Plain English: everything still open whatever day it was due, everything the floor finished today, everything nobody has decided on, everything checked but not yet on a truck, and everything on a live trip.
 
-**The HISTORY predicate (`mode="history"`) — two arms under one `OR`, added 2026-08-25.** Outer AND terms (`dispatchStatus="dispatch"`, `isRemoved=false`, `workflowStage ∈ PICKING_ACTIVE_STAGES`) are unchanged; only the date anchor grew:
-1. **promised for D** — `dispatchTargetDate = D`. The original and only arm until 2026-08-25.
-2. **checked on D** — `workflowStage=pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange(D)` (IST), whatever day it was promised. Same helper and same half-open shape as the live arm above, with the viewed day instead of today.
+**Why arm 2 has bills in it now.** Since 2026-09-11 every new non-tint bill with no mail order is released by the import itself — `applyNoMailOrderFallback` (`app/api/import/obd/route.ts:554`, `b3dfe5b8`; owner `CLAUDE_IMPORT.md`) writes `dispatchStatus="dispatch"` + `pending_picking` in one update, so those bills land in arm 1, not arm 2. The fallback skips `orderType='tint'` (`:571`), so tint bills in the tint room ride arm 2 (they are the Tinting tab's rows, §4.8). A Restore writes `pending_support` + null status, so a restored bill also lands in arm 2 as a `no slot` row (§4.1). **The SMU gate:** the fallback calls `evaluateDispatchSlot`, which declines any bill whose `smu` is not `Deco Retail` (`route.ts:520-528`); those bills are still released but carry no slot — arm 1 rows showing `no slot`. The comment there records about 12.5 such bills a day over the 30 days to 2026-09-10, and calls it a business rule.
 
-Plain English: what was owed that day, plus what was finished that day. A bill matching both appears **once**; a bill finished early appears under **two** days (its promise day and its check day) — both statements are true, and that is the owner decision, not a predicate accident. ⚠ This is the **same promise-vs-completion anchor class** as §6c / the 2026-08-02 picking `checkedAt` fix: a completion belongs to the day it happened. Arm 2 exists because without it a bill promised for D+1 but checked on D was on **no reachable screen at all** — live had dropped it, D's history never had it, and D+1's history is unreachable behind the stepper clamp (§10). The marker does **not** consume this predicate (§5 — it is live-only).
+**The HISTORY predicate (`mode="history"`)** (`queries.ts:727-804`) — two members under one `OR`:
+- **The day's record.** Outer AND terms `dispatchStatus="dispatch"`, `isRemoved=false`, `workflowStage ∈ FLOOR_HISTORY_STAGES` (`= [...PICKING_ACTIVE_STAGES, DISPATCHED]`, `:101`, `551069aa`), with two date anchors:
+  1. **promised for D** — `dispatchTargetDate = D`.
+  2. **checked on D** — `workflowStage ∈ [pick_checked, dispatched]` AND `pick_assignments.checkedAt ∈ getISTDayRange(D)` (`:796`), whatever day it was promised. Same helper and same half-open shape as the live arm, with the viewed day instead of today.
+- **The day's trips' bills** — `floorHistoryTripBillsWhere(D)` (`:307`, `:803`, `175c83fd`): every bill on a non-cancelled trip dated D, no stage and no status pin, so a History stop finds all its bills.
+
+Plain English: what was owed that day, plus what was finished that day, plus what rode that day's trucks. A bill matching more than one appears **once**; a bill finished early appears under **two** days (its promise day and its check day) — both statements are true, and that is the owner decision, not a predicate accident. ⚠ This is the **same promise-vs-completion anchor class** as §6c / the 2026-08-02 picking `checkedAt` fix: a completion belongs to the day it happened. The checked-on-D anchor exists because without it a bill promised for D+1 but checked on D was on **no reachable screen at all** — live had dropped it, D's history never had it, and D+1's history is unreachable behind the stepper clamp (`floor-page.tsx:1283-1284`). The marker does **not** consume this predicate (§5 — it is live-only).
 
 ⚠ **Floor's carry-over is its OWN scope — NOT `lib/picking/queue.ts`'s WHERE.** Picking's carry-over deliberately excludes `pick_done`/`pick_checked` (a documented "workaround, not a fix"). Floor's arm 1 keeps anything not-yet-checked. Do not "align" the two.
 
-Per row: `zone` (`due` | `upcoming`, from `dispatchTargetDate` vs today) and `ageDays`. Rows are sorted with Floor's OWN **`FLOOR_SPINE`** (`lib/floor/sort.ts`) = the picking spine **minus `byAssigned`**, so Assigned/Done rows HOLD their position instead of sinking on assign and rising on done (a convention Floor shared with the Picking desktop board, retired 2026-07-28 — §9b; Floor is now its only implementation). ⚠ **Ownership boundary:** the rule OBJECTS (`byWindow`/`byDeliveryType`/`byKeyCustomer`/`byPriority`/`byFifo`) and `sortPickingQueue()` are IMPORTED from `lib/picking/sort.ts` (never copied — that file stays owned by `CLAUDE_PICKING.md §3`); only the Floor rule LIST is Floor's own. `FLOOR_SPINE` is applied in the TWO places that sort and must stay identical or the board flickers on refetch — the server sort (`getFloorBoard`, `lib/floor/queries.ts`) and the client re-sort helper (`components/floor/floor-board.tsx`), both importing the one constant. Shipped commit `661e4e61`.
+Per row: `zone` (`due` | `upcoming`, from `dispatchTargetDate` vs today) and `ageDays`. Rows are sorted with Floor's OWN **`FLOOR_SPINE`** (`lib/floor/sort.ts`) = the picking spine **minus `byAssigned`**, so Assigned/Done rows HOLD their position instead of sinking on assign and rising on done (a convention Floor shared with the Picking desktop board, retired 2026-07-28 — §9b; Floor is now its only implementation). ⚠ **Ownership boundary:** the rule OBJECTS (`byWindow`/`byDeliveryType`/`byKeyCustomer`/`byPriority`/`byFifo`) and `sortPickingQueue()` are IMPORTED from `lib/picking/sort.ts` (never copied — that file stays owned by `CLAUDE_PICKING.md §3`); only the Floor rule LIST is Floor's own. `FLOOR_SPINE` is applied in the TWO places that sort and must stay identical or the board flickers on refetch — the server sort (`getFloorBoard`, `lib/floor/queries.ts:1108`) and the client sort (`components/floor/trip-desk.tsx:104`), both importing the one constant. Shipped commit `661e4e61`.
 
 ---
 
@@ -88,24 +109,24 @@ Every write path: sequential awaits, **exactly ONE `orders.update` per bill**, *
 
 ### 4.1 `POST /api/floor/actions` — mark-urgent · change-slot · hold · cancel · restore
 
-Batch `{ action, orderIds[], … }`. Per bill:
+Batch `{ action, orderIds[], … }`. `ACTIONS` is exactly these five (`app/api/floor/actions/route.ts:21-22`). Per bill:
 - **mark-urgent** — set/toggle `priorityLevel` (1 ↔ 3).
-- **change-slot** — write `dispatchTargetDate`+`dispatchWindowId`+`dispatchSlotSource="manual"`, no stage change (a pre-set; also re-slots a floor bill).
+- **change-slot** — write `dispatchTargetDate`+`dispatchWindowId`+`dispatchSlotSource="manual"`, no stage change and no status change (a pre-set; also re-slots a floor bill).
 - **hold** — `dispatchStatus="hold"`, `heldAt = obdEmailDate ?? now` (arrival anchor, §4.5). Log note = `FLOOR_HOLD_NOTE`.
-- **cancel** — `workflowStage="cancelled"`, `dispatchStatus=null`.
-- **restore** — cancelled → `workflowStage="pending_support"`, `dispatchStatus=null` → back onto the left rail.
+- **cancel** — `workflowStage="cancelled"`, `dispatchStatus=null`. Not stage-gated. **Also deletes the bill's `pick_assignments` row** after the stage write (`deleteMany`, `route.ts:157`, `:185`; `00d7da22`) — a surviving row made a restored bill permanently un-assignable. That is a write to a second table, not a second `orders.update`, so the one-update / one-log contract holds.
+- **restore** — cancelled → `workflowStage="pending_support"`, `dispatchStatus=null` (`route.ts:167-168`). The bill comes back as a `no slot` row on the board through arm 2 (`floorUnslottedWhere`, §3).
 
 Returns **422 when nothing was written** (every requested bill failed); a partial success stays 200 but always carries `failed[]`.
 
-### 4.2 `POST /api/floor/release` — rail Release AND Hold-tab bulk release
+### 4.2 `POST /api/floor/release` — Hold-tab bulk release AND the panel's Release
 
-Body `{ releases: [{ orderId, dispatchTargetDate, dispatchWindowId }] }`. Writes the slot, `dispatchStatus="dispatch"`, `workflowStage=SUPPORT_DONE_OUTPUT` (pending_picking), `dispatchSlotSource="manual"`. Log `fromStage` = the bill's **real** prior stage.
+Body `{ releases: [{ orderId, dispatchTargetDate, dispatchWindowId }] }`. The write lives in `releaseBillsToFloor()` (`lib/floor/release.ts`), called once per bill by the route (`app/api/floor/release/route.ts:104`): the slot, `dispatchStatus="dispatch"`, `workflowStage=SUPPORT_DONE_OUTPUT` (pending_picking), `dispatchSlotSource="manual"`, in one update. Log `fromStage` = the bill's **real** prior stage. A bill still in the tint room (`pending_tint_assignment` / `tint_assigned` / `tinting_in_progress`) is skipped as `waitingForTint` (`release.ts:75-79`, `:125`), which the route folds back into `failed[]`. Client callers: the Hold tab's bulk bar (`floor-page.tsx:1010`) and the detail panel's Release, which renders for `source === "hold"` only (`detail-panel.tsx:583`, §4.7). No trip route calls it (`CLAUDE_FLOOR_TRIPS.md §13`).
 
-**Releasable stages — `FLOOR_RELEASABLE_STAGES = ["pending_support","pending_picking"]`** (`lib/floor/release-stages.ts`). Floor's own explicit list, deliberately **NOT** `supportMayEdit()` (`lib/workflow-stages.ts`) — that predicate encoded Support's permission model, and Floor's release gate answers a different question. It is now dead code with zero callers, kept pending a ROADMAP cleanup; do not wire it back in here. `pending_support` = a rail bill (the stage name is historical — nothing named Support writes it any more); `pending_picking` = a bill held after auto-dispatch (hold flips status only, never stage). Same 422/partial contract as §4.1.
+**Releasable stages — `FLOOR_RELEASABLE_STAGES = ["pending_support","pending_picking"]`** (`lib/floor/release-stages.ts`). Floor's own explicit list, deliberately **NOT** `supportMayEdit()` (`lib/workflow-stages.ts`) — that predicate encoded Support's permission model, and Floor's release gate answers a different question. It is now dead code with zero callers, kept pending a ROADMAP cleanup; do not wire it back in here. `pending_support` = a bill with no dispatch decision (the stage name is historical — nothing named Support writes it any more); `pending_picking` = a bill held after auto-dispatch (hold flips status only, never stage). Same 422/partial contract as §4.1.
 
 ### 4.3 Assign / unassign
 
-**Reused from Picking, unchanged** — Floor calls `POST /api/picking/assign` and `/api/picking/unassign` as a caller. Reassign = unassign (only if already assigned) then assign. → behaviour owned by **`CLAUDE_PICKING.md §4`**.
+**Reused from Picking, unchanged** — the detail panel's Assign/Reassign and ⋯ Unassign call `POST /api/picking/assign` and `/api/picking/unassign` as a caller (`floor-page.tsx:1241-1267`). Reassign = unassign (only if already assigned) then assign. Nothing on the desk assigns in bulk any more (`floor-page.tsx:995-1000`); that is the supervisor's job on `/picking`. → behaviour owned by **`CLAUDE_PICKING.md §4`**.
 
 ### 4.4 Ship-to change (detail panel) [LIVE] — Floor's OWN routes
 
@@ -121,40 +142,28 @@ The **save is a rewrite, not a copy**. Support's PATCH handled four unrelated fi
 - Take the hold **event's** wall-clock `order_status_logs.createdAt`, identified by the log **NOTE** via the shared constant `HOLD_LOG_NOTES` (`lib/floor/hold-log.ts`) — never a sentinel `toStage` (which would pollute the stage ladder). Matches the Floor note AND the two historical Support notes (`"Placed on hold by support"`, `"Placed on hold by support (bulk)"`). ⚠ **Keep both Support strings** — Support no longer writes them, but bills it held are still on hold today and would otherwise fall to the `~approximate` fallback.
 - Fallback ladder: hold log → `orders.heldAt` (rendered with a leading `~` + "approximate" tooltip; enrichment holds write no log) → unknown (banded separately under "Held date unknown"). Nothing can silently read as "held today".
 
-### 4.6 Action surfaces — assign bar · panel header · slot picker · selection/Esc [LIVE since 2026-07-27]
+### 4.6 Action surfaces — bottom bar · panel header · slot picker · selection/Esc [LIVE]
 
-The 2026-07-26 redesign (draft `web-update-2026-07-26-floor-action-surfaces.md`; committed with the
-Support-retirement step 1). The five general DESIGN rules it minted are owned by
-**`CLAUDE_UI.md §10`**; this section owns the floor-specific SPECS. *(The draft's §8 routing table
-sent four items to `CLAUDE_SUPPORT.md §4.10/§4.18` — that file is retired; the picker and the
-ship-to routes are Floor's own since `316eec6b`, so those items land HERE.)*
+The 2026-07-26 redesign (draft `web-update-2026-07-26-floor-action-surfaces.md`) minted five general DESIGN rules, owned by **`CLAUDE_UI.md §10`**; this section owns the floor-specific SPECS.
 
-- **Assign bar** (`assign-bar.tsx`) — four controls:
-  `[ N selected ][✕] summary … [Change slot] │ [picker ▾][Assign]`. Summary: 1 row →
-  `{customer} · {vol} L`; 2+ → `{total} L · {n} routes`; `· {n} already assigned` appended when
-  applicable. Assign label flips to `Reassign all {n}` when every ticked row has a picker; Assign is
-  the bar's only teal, grey when disabled. Renders nothing when nothing is selected.
-  **Deliberately REMOVED capabilities** (do not rediscover as bugs): bulk mark-urgent (per-row ⚡
-  covers it) · bulk hold (per-bill ⋯ menu) · bulk unassign (weakest removal — fell out of the
-  four-control layout, accepted; the lost case is "pull N bills back with nobody to hand them to").
-  Handlers were deleted from `floor-page.tsx` with explanatory comments left in place.
+- **Bottom bar** (`floor-bottom-bar.tsx`) — replaced the assign bar and `trip-selection-bar.tsx` on 2026-09-10 (`bbb9628c`). Pool selection → `+ New trip`; trip selection → `Remove from trip`; ✕ clears everything. No confirm on either action (both reversible in one press, neither touches `workflowStage`; `floor-bottom-bar.tsx:22-25`). Change slot and bulk Assign are not on it: the slot is changed per bill in the panel header, and assigning is `/picking`'s job.
 - **Detail-panel header** — slot lives on the IDENTITY line as a clickable pencil chip
   (`DD-MM · HH:MM`, dashed "No slot" when unset, hidden on cancelled); the action row holds only
-  jobs. **Exactly one teal per state, on the state's real job:** Waiting/Assigned/Done → Ship-to;
-  Held/Rail → Release; Cancelled → Restore. The ⋯ menu contents are unchanged from the redesign.
+  jobs. **Exactly one filled brand (`brand-600`) button per state, on the state's real job:** Floor → Ship-to;
+  Held → Release; Cancelled → Restore (`detail-panel.tsx:580-632`). The ⋯ menu contents are unchanged from the redesign.
 - **Slot picker behaviour** (`dispatch-slot-picker.tsx` — Floor-owned): commit-on-tap, **no confirm
-  button** (a confirm would tax the most frequent action) → hence NO teal anywhere in the popover;
+  button** (a confirm would tax the most frequent action) → hence no filled brand button anywhere in the popover;
   near-black selection on a neutral strip; month tag only on tiles crossing a month. **Honest
   highlight:** opens on the bill's OWN day if visible, else highlights NOTHING (never claims today).
   **Consequence: tapping only a time keeps the bill on its own day** — it no longer silently drags
   the date to today. Auto-flip positioning: preferred direction if it fits, flips, else caps+scrolls;
-  repositions on scroll/resize; already portalled. Plus the §8 `suggested`/`hideTrigger` props.
-- **Selection + Esc — THE spec (flagged in every pass since 2026-08-04 step 2; lands here):**
+  repositions on scroll/resize; already portalled. It also serves the Hold bar and the billing ribbon. The `suggested`/`hideTrigger` props stay (§8); no live caller passes them.
+- **Selection + Esc — THE spec:**
   `lib/floor/selection.ts` `toggleAll()` on a PARTIAL selection **selects all, it does not clear**,
-  and it is per-GROUP (one per slot band / route group) — so a cross-group or search-auto-ticked
+  and it is per-GROUP (one per route group / stop) — so a cross-group or search-auto-ticked
   selection cannot be cleared by any header checkbox. That is WHY the bar's ✕ global-clear exists —
   any proposal to remove it must solve this first. **`floor-page.tsx` is the SINGLE window-level Esc
-  owner** for the floor tree. Guard order, exactly one branch per keypress: slot popover open
+  owner** for the floor tree (`floor-page.tsx:1293-1314`). Guard order, exactly one branch per keypress: slot popover open
   (`[data-slot-popover="open"]` — the marker the picker carries for exactly this) → nothing · focus
   in input/textarea/select/contentEditable → nothing · panel open → close panel · rows selected →
   clear selection · else nothing. **Never add a second Esc keydown listener under
@@ -164,23 +173,41 @@ ship-to routes are Floor's own since `316eec6b`, so those items land HERE.)*
 
 ### 4.7 Detail panel [LIVE]
 
-`GET /api/floor/order/[orderId]` (floor `canView`) returns one payload: header + Details + Items + Activity. Items resolve via `sku_master_v2` on `material === skuCodeRaw` (CORE §13 — never a sku id), raw-text fallback preserved, gift lines out of scope. Activity = `order_status_logs` + ONE synthetic "auto-slot" line derived from `dispatchSlotSource`/`dispatchSlotRuleId` and labelled "enrichment" (the engine writes no log — do not add one; §5). 472px slide-in; primary action + Change ship-to + Update slot + ⋯ ; Prev/Next walks the source list.
+`GET /api/floor/order/[orderId]` (floor `canView`) returns one payload: header + Details + Items + Activity, plus tint-room facts for a tint bill (operator, assignment status, assigned/started/completed times, shades done/total — `app/api/floor/order/[orderId]/route.ts:160-198`, `6b315729`). Items resolve via `sku_master_v2` on `material === skuCodeRaw` (CORE §13 — never a sku id), raw-text fallback preserved, gift lines out of scope. Activity = `order_status_logs` + ONE synthetic "auto-slot" line derived from `dispatchSlotSource`/`dispatchSlotRuleId` and labelled "enrichment" (the engine writes no log — do not add one; §5). 472px slide-in; primary action + Change ship-to + Update slot + ⋯ ; Prev/Next walks the source list. The panel's date is `obdEmailDate ?? orderDateTime` (`route.ts:205`).
 
-**Sources** (`FloorDetailSource`, `lib/floor/types.ts`): `rail` · `floor` · `hold` · `cancelled` · **`history` — READ-ONLY, the only one that is** (2026-08-25). A history-sourced panel reaches **zero write endpoints**: the whole action row is suppressed (it hosts Release, Restore, Ship-to, Assign/Reassign and the ⋯ Hold/Cancel/Unassign menu, and the only `setEditingShipTo(true)` trigger, so the ship-to editor is unreachable too), and the header slot chip — which writes `change-slot` — is gated off. Everything else excludes `history` **by default**, because each gate is written `source === "floor" | "rail" | "hold" | "cancelled"` and a new member matches none of them; that default-closed property is why this is a member of the existing union and not a separate `readOnly` prop. The one derived boolean is `readOnly` in `detail-panel.tsx`, mirroring `interactive` in `floor-table.tsx` — do not add a third read-only concept. Opened by a ⋯ on history rows (⋯ only — the live arm's ⚡ is `mark-urgent`, a write). `headerStatus` has an explicit `history` case placed **above** the `d.dispatchStatus === "hold"` term, so a bill held later cannot rewrite a past day's record. Prev/Next walks the history payload (`filteredFloor` IS the history rows in history mode) and cannot reach a live row.
+**Sources** (`FloorDetailSource`, `lib/floor/types.ts:422`): `floor` · `hold` · `cancelled` · **`history` — READ-ONLY, the only one that is** (2026-08-25). Openers pass only these four (`floor-page.tsx:2015`, `:2024`, `:2050`); the union's `rail` member is vestigial (§10b). A history-sourced panel reaches **zero write endpoints**: the whole action row is suppressed (it hosts Release, Restore, Ship-to, Assign/Reassign and the ⋯ Hold/Cancel/Unassign menu, and the only `setEditingShipTo(true)` trigger, so the ship-to editor is unreachable too), and the header slot chip — which writes `change-slot` — is gated off. Everything else excludes `history` **by default**, because each gate is written `source === "floor" | "rail" | "hold" | "cancelled"` and a new member matches none of them; that default-closed property is why this is a member of the existing union and not a separate `readOnly` prop. The one derived boolean is `readOnly` in `detail-panel.tsx`, mirroring `interactive` in `floor-table.tsx` — do not add a third read-only concept. Opened by a ⋯ on history rows (⋯ only — the live arm's ⚡ is `mark-urgent`, a write). `headerStatus` has an explicit `history` case placed **above** the `d.dispatchStatus === "hold"` term, so a bill held later cannot rewrite a past day's record. Prev/Next walks the history payload (`filteredFloor` IS the history rows in history mode) and cannot reach a live row.
+
+**Tint lock** (`56db79b8`, `4af18cc8`, 2026-09-08). Rule: a tint bill whose tinting is NOT FINISHED (`pending_tint_assignment` / `tint_assigned` / `tinting_in_progress`) cannot be held or cancelled from Floor — the ⋯ Hold and Cancel render greyed with a reason ("… cancel from Tint Manager") (`detail-panel.tsx:413-434`). ⚠ **The lock is coded against `source === "rail"`** (`:414`), and no opener passes `"rail"` since the rail retired — so today it never fires, and a tint-room bill opened from the board (`source "floor"`) shows Hold and Cancel enabled. `POST /api/floor/actions` has no tint guard of its own. Recorded in §10b.
+
+### 4.8 Tint on the floor [LIVE]
+
+- **Pills** (`components/floor/status-pill.tsx`, `79bcc412`, `6b315729`): a tint bill's phase comes from `tintPhaseOf` (`lib/floor/queries.ts:132`) → pink Waiting / With operator / Tinting / Tint done (`status-pill.tsx:139-142`, `:225-260`). Built from `orders.workflowStage` alone; the board query does not read `tint_assignments`.
+- **Tinting tab** (`143706be`) — tint bills not yet being mixed, split from the Floor tab by one predicate, `isTintRoomRow` (`status-pill.tsx:101`), so the two tabs are exact complements and the badges cannot disagree (`floor-page.tsx:1700-1710`). On this tab the Invoice column becomes **Operator** (`floor-table.tsx:556`).
+- **`GET /api/floor/tint-operators`** (floor `canView`) — who holds each `tint_assigned` bill (`tint_assignments`, `splitId: null`, latest row wins). Fetched only while the Tinting tab is open and on refresh (`floor-page.tsx:1735-1751`), never by the board or the poll.
+
+### 4.9 The bill table [LIVE]
+
+`components/floor/floor-table.tsx`. Columns: ☐ · OBD (+date) · Invoice|Operator · Ship to · Route · Due · Vol / KG · Article · Status (`floor-table.tsx:555-563`). No `#` and no Picker column since 2026-09-10 (`floor-table.tsx:14-15`).
+- **Invoice** (`697b193b`) — SAP `invoiceNo` over `invoiceDate`, right after OBD; blank until SAP stamps it.
+- **Due** (`e656ad80`) — the date leads, "Today" spelled out, future blue, overdue red, age chip beside it; `no slot` chip when the bill has no date (`floor-table.tsx:686-697`).
+- **Duplicate SO** (`bc232f72`) — SOFT treatment: a `DuplicateSoTag variant="soft"` and a thin bar on rows whose `hasDuplicateSo` is true (`floor-table.tsx:654`, `:927`); the solid red is Picking's.
+- **TINT / BASE word** (`0841b5c9`) — `ColourWorkBadge` from `components/picking/card-atoms` (`floor-table.tsx:1062`).
+- **Ship-to redirect** — the ORIGINAL → REDIRECT pair (`floor-table.tsx:1070`).
+- **Display date** — the OBD cell shows `resolveFloorDisplayDate(orderDateTime, obdEmailDate)` (`lib/floor/format.ts:176`, `8a4c1973`; called at `queries.ts:929`): `obdEmailDate` (the SAP punch) by default; when a mail match overwrote `orderDateTime` with the email time **on the same IST day**, the email time, flagged `isEmailTime`. Hold and Cancelled show `obdEmailDate ?? orderDateTime` (`queries.ts:1247`, `:1336`).
 
 ---
 
 ## 5. Live sync [LIVE]
 
 **Two DIFFERENT mechanisms, no shared abstraction** (design §13):
-- **Rail** → Mail Orders pattern: a **30s full refetch** (`lib/floor/use-floor-rail-poll.ts`). A new import appears on its own.
+- **Whole desk** → Mail Orders pattern: a **30s full refetch** via `useFloorRailPoll` (`lib/floor/use-floor-rail-poll.ts`, `FLOOR_RAIL_POLL_MS = 30_000`) calling `load()` — board, hold, cancelled and trips (`floor-page.tsx:1388-1391`). The hook name is historical; there is no rail.
 - **Floor** → Picking pattern: a **15s marker probe** (`lib/hooks/use-picking-marker`, reused with its optional `url` param → `/api/floor/marker`). Refetch only when the cheap `{count, latest}` moved.
 
-`GET /api/floor/marker` aggregates `{count, latest}` over `getFloorLiveMarkerWhere()` = `floorLiveBaseWhere(getISTDayRange())` AND hide — the **same predicate the board renders** (§3), so marker and board cannot drift. It is the floor's OWN exact set, not picking's superset. The marker hook's `onProbe` drives the connection strip off the **same poll** — one probe, not two.
+`GET /api/floor/marker` aggregates `{count, latest}` over `getFloorLiveMarkerWhere()` = `floorBoardWhere(getISTDayRange(), getISTTodayDateOnly())` AND hide (`lib/floor/queries.ts:508`) — the **same predicate the board renders** (§3), so marker and board cannot drift. It is the floor's OWN exact set, not picking's superset. The marker hook's `onProbe` drives the connection strip off the **same poll** — one probe, not two. Trip-only writes do not move it → `CLAUDE_FLOOR_TRIPS.md §17`.
 
 The marker's `{count, latest}` semantics + the `orders_updatedAt_idx` behaviour are **owned by `CLAUDE_PICKING.md §10`** — not restated here. Difference from Picking: Floor watches its own set via the `url` param; the connection strip (`components/floor/connection-strip.tsx`) shows a grey "not connected — showing last update HH:MM" (a strip, never a modal; live mode only).
 
-**Pause rules** (both mechanisms): the detail panel is open, a selection is up, History mode, or the tab is hidden. A **selected** row changed by someone else is **reconciled** — its tick is cleared and a toast shown — **without moving the visible board** (rule: never move the ground under a hand). READ-ONLY throughout: the marker adds no write.
+**Pause rules:** the 30s refetch pauses while the detail panel is open, a selection is up, or in History; the 15s marker pauses while the panel is open or in History (`floor-page.tsx:1375`, `:1389`). A **selected** row changed by someone else is **reconciled** — its tick is cleared and a toast shown — **without moving the visible board** (rule: never move the ground under a hand). READ-ONLY throughout: the marker adds no write.
 
 ---
 
@@ -190,7 +217,7 @@ Each with the one-line root cause so the class is recognisable again.
 
 - **(a) Auto-slot scheduled Saturday-evening bills into Sunday** (depot closed). *Root cause:* `evaluateDispatchSlot()` rolled a late bill to the next **calendar** day. *Fix:* `nextWorkingDateOnlyUTC()` in `lib/dispatch/dispatch-engine.ts` skips Sunday only (Saturday is a working day; holidays not modelled). This was a **live enrichment bug independent of Floor Control**. Engine owned by CORE §7.4.
 - **(b) Releasing a held bill was a silent no-op** (UI said OK, wrote nothing). *Root cause:* the release route required `workflowStage === "pending_support"`, but a floor-held bill sits at `pending_picking`; it was pushed to `failed[]`, the route returned **200**, and the client discarded the response. *Fix:* `FLOOR_RELEASABLE_STAGES` (§4.2) admits `pending_picking`; routes return 422 when nothing was written; the client now reads the response and `reportWrite()` surfaces every non-2xx / hard error / non-empty `failed[]` (the rail release path had the same swallow).
-- **(c) A carried-over bill vanished the instant it was checked.** *Root cause:* the live "checked" arm fenced on `dispatchTargetDate = today`, so a bill due earlier failed both arms the moment it reached `pick_checked`. *Fix:* the checked arm now fences on `pick_assignments.checkedAt` within today's IST range (§3) — a bill can never disappear at completion. **This "done = check date" convention now has three implementations:** Floor (here, the original), the Billing Picking tab (`CLAUDE_MAIL_ORDERS.md §23.4`), and the Picking supervisor board (`e37cbe74`, 2026-08-02 — documented in the PICKING pass, pending).
+- **(c) A carried-over bill vanished the instant it was checked.** *Root cause:* the live "checked" arm fenced on `dispatchTargetDate = today`, so a bill due earlier failed both arms the moment it reached `pick_checked`. *Fix:* the checked arm now fences on `pick_assignments.checkedAt` within today's IST range (§3) — a bill can never disappear at completion. **This "done = check date" convention now has three implementations:** Floor (here, the original), the Billing Picking tab (`CLAUDE_MAIL_ORDERS.md §23.4`), and the Picking supervisor board (`e37cbe74`, 2026-08-02 — documented in the PICKING pass, pending). On the live board it applies to arm 1 only: arm 3 keeps a checked bill that is on no truck **whatever day it was checked** (`floorCarriedPoolWhere`, `36a39ba7`).
 
 ---
 
@@ -202,63 +229,15 @@ This is a **completed one-off**, not a runbook. (It is also the source of the `d
 
 ---
 
-## 8. Rail slot suggestion [LIVE — shipped 2026-08-03; hand-verification PENDING]
+## 8. Rail slot suggestion [DORMANT]
 
-**Status:** `RAIL_SUGGESTIONS_ENABLED = true` (`lib/floor/queries.ts:70`) since the 2026-08-03 session
-(commits `30226144` → `dee603dc` + `ab70c826`; draft record
-`docs/prompts/drafts/code-update-2026-08-03-floor-slot-suggestion.md`). Both prior blockers were
-fixed at source: the staleness check is now one closed-batch MOMENT test (below), and the suggestion
-carries date AND time. ⚠ **Smart Flow's five manual hand-checks (rail→auto-slot round trip, human
-slot survives repair, re-slot log lines, no marker flash, morning-rail eyeball) are still pending** —
-treat behaviour as shipped-but-not-hand-verified until they run.
-
-**What it is:** `lib/floor/suggest.ts` — a render-time NUDGE on each rail card, computed in
-`getFloorRail` per card. It reuses the LIVE `evaluateDispatchSlot` (engine owned by **CORE §7.4** —
-never re-implemented, so the hint and the auto-enrich path cannot disagree) with two gates
-deliberately neutralised via literals: `smu: "Deco Retail"` and `dispatchStatus: "dispatch"` — the
-engine's gates answer "may I slot this WITHOUT a human?", the rail hint answers "if I release this
-now, which slot?", which the operator asks of every SMU. `input.smu` stays on `SuggestInput` for
-future "why this slot" copy — input, not a gate.
-
-- **Clock discipline:** arrival clocks go through `resolveArrivalClocks()`
-  (`lib/dispatch/punch-clock.ts` — single owner, **CLAUDE_IMPORT.md §12.1b**; the import auto-slot
-  call site uses the SAME function). This matters MOST here: the rail renders every bill, and 1,854
-  of 9,521 orders carry a date-only `orderDateTime` (audit 2026-08-03) — without the guard, each was
-  eligible for a confident teal one-click button built on a fake 05:30.
-- **Tint, full OBD only:** a finished full tint OBD anchors on `tint_assignments.completedAt`,
-  which **REPLACES both arrival clocks** (passed as the single clock; punchDateTime null — the
-  engine's single-clock path). Feeding completion ALONGSIDE the punch would invoke the dual-clock
-  merge and could hand back the punch on a cross-day bill. Replace, never add. Splits → no
-  suggestion (v1 scope). Mid-tint → no suggestion (arrival clock would offer 12:30 to a bill still
-  on the mixer).
-- **60-minute grace (`SUGGESTION_GRACE_MINUTES`):** a batch stays OPEN for one hour past its window
-  time; past that → no suggestion, operator decides — **deliberately NO roll-forward** to a later
-  window. Why 60: (a) import lag (~15-20 min measured) means near-cutoff bills arrive pre-expired —
-  without grace they could never show a suggestion; (b) **safety proof: the smallest inter-window
-  gap is 10:30→12:30 = 120 min, so 60 can never overlap the next window. Do not raise past 120.**
-- **The closed-batch test** is epoch arithmetic on absolute instants (window minutes − IST offset +
-  grace, on `r.targetDate`'s UTC-midnight epoch) — it replaced the two old arms (past-date string
-  compare + minutes-since-IST-midnight), whose within-a-day blindness was the original 23-Jul
-  "Release to Wed 16:00 on a Thursday" bug. Never reintroduce a per-day arm, and never
-  `Date.parse` an offset-less string here (CORE §3).
-- **UI (`rail-card.tsx`, commit `dd871c41`):** teal split button — body tap = release with that slot
-  via the existing `POST /api/floor/release` (writes `dispatchSlotSource='manual'`); `▾` opens the
-  existing picker pre-highlighted on the suggested day+window. Without a suggestion: unchanged
-  controls + grey "Why no slot?" reveal (neutral copy, **no red/amber** — a missing suggestion is a
-  "you decide", not an error). Teal is the only filled element on the row; green stays "Done".
-- **Design principle — a nudge, never a lock.** Nothing is written until the operator clicks. A
-  completed tint bill is deliberately NOT given a window at completion: `hasPresetSlot` in both tint
-  "done" routes would flip it to `dispatchStatus='dispatch'` and it would **leave the rail
-  entirely**, robbing the operator of the confirm step.
-- **Picker props (additive, `dispatch-slot-picker.tsx`):** `suggested` (highlight only — `value`
-  always wins; a committed slot is never visually overridden by a proposal) + `hideTrigger`. Every
-  other call site omits both and is byte-identical.
+`lib/floor/suggest.ts` has no importer since the rail's retirement (`79bcc412`; `RAIL_SUGGESTIONS_ENABLED` removed, `lib/floor/queries.ts:326-332`); it stays on disk, pure and unchanged — full story in `archive/2026-09-floor-rail/README.md`.
 
 ## 8b. Deferred / not built [DEFERRED]
 
-- **`byAssigned` on Floor — RESOLVED + SHIPPED (commit `661e4e61`, this session).** Formerly an open question ("decide whether `byAssigned` is right for this screen"). Decided: it is deliberately **excluded** from Floor's sort — Floor sorts with `FLOOR_SPINE` (the picking spine **minus `byAssigned`**, `lib/floor/sort.ts`), so Assigned/Done rows hold their place instead of sinking/rising on each status change, and the `#` column now numbers **every** row, not just Waiting. Full detail: §3.
-- **§7-gap follow-ups:** `Waiting` pills show no elapsed time (needs `releasedAt` on the floor payload); the ship-to original→redirect name pair is missing on the floor table (rail already has it); rail button reads lowercase "pick slot" vs mockup "Set slot"; assign bar reads "Change slot" beside a "pick slot" button; no picker search (matches customer/route/OBD only); detail-panel header pill shows no elapsed time (not a live surface).
-- **Out of scope for v1 (deliberate):** gift lines (no identifier exists anywhere in the codebase — no heuristic invented); free-text ship-to (needs a schema decision); a per-row Slot column on the All view (the band header carries it); the stats line / "pickers free" tile / floor-idle alarm (removed per design §7.13).
+- **`byAssigned` on Floor — RESOLVED + SHIPPED (commit `661e4e61`).** Decided: it is deliberately **excluded** from Floor's sort — Floor sorts with `FLOOR_SPINE` (the picking spine **minus `byAssigned`**, `lib/floor/sort.ts`), so Assigned/Done rows hold their place instead of sinking/rising on each status change. Full detail: §3.
+- **§7-gap follow-ups:** `Waiting` pills show no elapsed time (needs `releasedAt` on the floor payload); detail-panel header pill shows no elapsed time (not a live surface). The ship-to original→redirect pair on the floor table is built (`floor-table.tsx:1070`, `07bc5104`).
+- **Out of scope for v1 (deliberate):** gift lines (no identifier exists anywhere in the codebase — no heuristic invented); free-text ship-to (needs a schema decision); the stats line / "pickers free" tile / floor-idle alarm (removed per design §7.13).
 
 ---
 
@@ -291,58 +270,101 @@ Nothing had to move: all three survived and Floor still imports them.**
 | Dependency | What happened |
 |---|---|
 | `POST /api/picking/assign` · `/unassign` | **Untouched, still called by Floor** (§4.3) and by the surviving supervisor board |
-| The sort rule objects + `sortPickingQueue()` (`lib/picking/sort.ts`) | **Untouched.** Still imported by `lib/floor/sort.ts` → `FLOOR_SPINE`, `lib/floor/queries.ts` and `components/floor/floor-board.tsx` |
+| The sort rule objects + `sortPickingQueue()` (`lib/picking/sort.ts`) | **Untouched.** Still imported by `lib/floor/sort.ts` → `FLOOR_SPINE`, `lib/floor/queries.ts` and `components/floor/trip-desk.tsx` |
 | `lib/hooks/use-picking-marker.ts` | **Untouched behaviourally.** Four call sites became three; Floor's (`floor-page.tsx`, via the `url` param) is one of them. Only the dead `"rolling"` value left its `MarkerScope` union |
 
 ⚠ Two things DID go, and neither was Floor's: the `rolling` queue scope and the four payload
 counters (`windows[]`/`totalCount`/`unmatchedCount`/`assignedCount` + `isStillWaiting`). Floor never
-read either — it has its own predicate (`floorLiveBaseWhere`, §3) and counts off its own rows.
+read either — it has its own predicate (`floorBoardWhere`, §3) and counts off its own rows.
+
+## 9c. Floor decision rail retirement — DONE 2026-09-13 [LIVE]
+
+Stopped rendering 2026-09-10 (`bbb9628c`), archived 2026-09-13 (`79bcc412`) → `archive/2026-09-floor-rail/README.md`. Its predicate `floorUnslottedWhere` is still live as board arm 2 (§3).
 
 ---
 
 ## 10. Landmines [LANDMINE]
 
-- **`RAIL_SUGGESTIONS_ENABLED = true` since 2026-08-03** (`lib/floor/queries.ts`) — the suggestion layer is LIVE (§8). The staleness protection is the single closed-batch MOMENT test in `suggest.ts`; **never reintroduce a per-day arm** (minutes-since-midnight was the original bug), and the 60-min grace must never exceed 120 (§8's proof).
-- **Slot tabs group by `windowTime` ALONE, ignoring `dispatchTargetDate`** (the `tabRows` filter in `floor-board.tsx` — verified 2026-08-04). Bills due on different DATES stack under one tab, separated only by the age chip — a real "wrong slot?" illusion generator, distinct from the fixed clock bug.
-- **The floor row displays `orderDateTime` while the slot was decided by `obdEmailDate`** (via `pickEffectiveClock`) — the operator sees two numbers that cannot be reconciled from anything on screen. Display gap, not a data bug.
-- **`change-slot` never clears `dispatchSlotRuleId`** (`app/api/floor/actions/route.ts` — write verified 2026-08-04: sets date+window+`source:'manual'` only). 6 live rows (2026-08-03 count) carry an engine rule id beside a human-picked window — harmless today, misleading in any future audit. One-line fix, owner decision (ROADMAP).
 - **Picker `suggested` prop is highlight-ONLY** — `value ?? suggested` precedence in `dispatch-slot-picker.tsx`; wiring `suggested` into the trigger's committed/filled look would make a proposal read as a decision.
+- **`change-slot` never clears `dispatchSlotRuleId`** (`app/api/floor/actions/route.ts` — write verified 2026-09-18: sets date+window+`source:'manual'` only). 6 live rows (2026-08-03 count) carry an engine rule id beside a human-picked window — harmless today, misleading in any future audit. One-line fix, owner decision (ROADMAP).
 - **The import-side twins of the clock bug live in IMPORT, not here:** `obdEmailDate` fake-midnight population + the `arrivalSlotId` Morning defect + `import_raw_summary.obdEmailTime` not-source-of-truth → `CLAUDE_IMPORT.md §12.1b`/`§12`/landmines. Cross-ref only.
 - **`heldAt` is the ARRIVAL date, not the hold time** — the write is intentional and inherited from Support (§4.5); thousands of historical rows depend on it. Do NOT "fix" it to wall-clock; the Hold tab already handles it on the read side. Reading `heldAt` as "held since" shows a 3-week-old bill held 5 min ago as "21 days".
-- **The board and the marker MUST stay on the one shared predicate** `floorLiveBaseWhere` (§3/§5). Re-declaring the WHERE in either place reintroduces the marker/queue drift the Picking §10 landmine warns about.
+- **The board and the marker MUST stay on the one shared predicate** `floorBoardWhere` (§3/§5). Re-declaring the WHERE in either place reintroduces the marker/queue drift the Picking §10 landmine warns about. Widen it only by adding a named arm; never by dropping `dispatchStatus: "dispatch"` from an arm (measured at 2,545 finished bills onto a 40-row board, `queries.ts:436-449`).
+- **`floorUnslottedWhere` is not dead code.** It was the rail's predicate and is board arm 2; removing it drops every undecided bill off the screen (`archive/2026-09-floor-rail/README.md`).
+- **`floorTripBillsWhere`'s `tripDropId: { not: null }` is load-bearing** — deleting it turns the whole `OR` into a sequential scan (`queries.ts:226-240`).
 - **Never add a second `orders.update` (or a log write to the dispatch engine)** in any floor path — the marker keys on `MAX(orders.updatedAt)`; a second write fires a false "changed" on every board.
-- **Delivery-type scope is applied CLIENT-SIDE in the feeds** — the DB queries return all types. A future "just filter in SQL" change would desync the marker (which watches all types) from the board.
-- **`dispatched`-stage rows exist** — SELECT 2026-07-24: 1,051 at `workflowStage='dispatched'` (662 `dispatchSlotSource='auto'`), 195 at `pick_checked`; `dispatched` stops 21 Jul while `pick_checked` keeps growing. The §7 backfill (238 rows) was a one-time manual sweep, not a code path. The surviving gap — **no automatic drain `pick_checked` → `dispatched`** — is owned by `CLAUDE_PICKING.md §7` (it moved out of that file's §9 on 2026-07-28 when §9 collapsed; the gap is unrelated to the desktop board and is still open).
-- **Parked data issues (not Floor bugs):** `Deco` (9 rows) — un-mapped raw XLS SMU value that should be `Deco Retail`, so those bills silently never auto-slot; **103 Deco Retail bills reached `pending_support` with `dispatchStatus` NULL** (engine fires only on `='dispatch'` — something upstream isn't setting it; worth a diagnosis session); four identical `Shree Rang Sarita` bills (22 Jul 18:31, 140 L, different OBDs — dup import unconfirmed); a `SAT FIN 93 BASE 3.7L` line carries pack chip `4L` so litres compute 16 vs 14.8 (a catalog value, Chandresh's cleanup list); three test bills marked urgent 23 Jul (clear unless genuine).
+- **Delivery-type scope is applied CLIENT-SIDE** — the DB queries return all types. A future "just filter in SQL" change would desync the marker (which watches all types) from the board.
+- **`dispatched`-stage rows exist** — live 2026-09-18: **7,330** at `workflowStage='dispatched'` (Q09). The §7 backfill (238 rows) was a one-time manual sweep, not a code path. Who writes `dispatched` today, and why no trip closes → `CLAUDE_FLOOR_TRIPS.md §14`.
+- **Parked data issues (not Floor bugs):** `Deco` (9 rows) — un-mapped raw XLS SMU value that should be `Deco Retail`, so those bills silently never auto-slot; the 103 Deco Retail bills that reached `pending_support` with `dispatchStatus` NULL are the class `applyNoMailOrderFallback` now releases at import (`b3dfe5b8`); four identical `Shree Rang Sarita` bills (22 Jul 18:31, 140 L, different OBDs — dup import unconfirmed); a `SAT FIN 93 BASE 3.7L` line carries pack chip `4L` so litres compute 16 vs 14.8 (a catalog value, Chandresh's cleanup list); three test bills marked urgent 23 Jul (clear unless genuine).
+
+## 10b. Known issues [OPEN] — recorded, not fixed
+
+- **Tint lock is inert** (§4.7): `tintLocked` requires `source === "rail"` (`detail-panel.tsx:413-418`), a source nothing opens since the rail retired; the server route has no tint guard.
+- **A `pending_support` row has no Release on the desk.** Release renders for `source === "hold"` only (`detail-panel.tsx:583`) and is posted only by the Hold bar and that button (`floor-page.tsx:1010`, `:1221`); trips never write a bill's status or slot (`CLAUDE_FLOOR_TRIPS.md §13`). A restored bill therefore stays at `pending_support` unless it is held and released from the Hold tab. The `no slot` tooltip says "putting this bill on a trip gives it one" (`floor-table.tsx:693`), which no trip route does.
+- **Dead payload:** `getFloorBoard` still computes `waitingSkus` and `oilSkus` (`lib/floor/queries.ts:1143-1165`, one extra `import_raw_line_items` read and, with `RULE2_ENABLED = true` at `:352`, one extra `sku_master_v2` read). No file under `components/floor/` reads either (grep); only `lib/floor/scope.ts:126-128` passes them through. Their only reader was the By group view.
+- **Orphan components with zero importers** (two greps, 2026-09-18): `components/floor/assign-bar.tsx`, `assign-context-banner.tsx`, `trip-selection-bar.tsx`, and `lib/floor/suggest.ts`. Kept per the no-delete rule; owner instruction needed.
+- **`FloorDetailSource` still lists `"rail"`** (`lib/floor/types.ts:422`); no opener passes it.
+- **`GET /api/floor/trips/[id]` response shape** — `floor-page.tsx` `undoAdd` (`:572`) and the add receipt (`:707`) read the body as the trip, but the route returns `{ trip }`. Owned by `CLAUDE_FLOOR_TRIPS.md §17` (open item 13).
+- **Stale code comments** (claims, for a later code-comment pass):
+  - `lib/floor/queries.ts:6-14` (header describes a "Left rail"), `:151-153` ("the rail feed (which still exists)"), `:622` ("drives the assign-bar dropdown"), `:704` / `:844` / `:1172` ("See getFloorRail above"), `:818-819` ("putting one on a trip is what releases it").
+  - `app/api/floor/actions/route.ts:10` ("floor/rail bills"), `:159-161` (restore → "back onto the left rail … getFloorRail").
+  - `lib/floor/release.ts:5` ("the rail" as a caller). `lib/floor/hold-log.ts:27-28` (`FLOOR_CLEAR_HOLD_NOTE` "written by … action \"clear-hold\"" — no such action, `actions/route.ts:21-22`). `lib/floor/use-floor-rail-poll.ts:3-5` ("The RAIL's live-sync").
+  - `components/floor/floor-page.tsx:13-14` ("Putting a bill on a trip is what gives it a slot"), `:24-27` (floor-rail "still on disk" — archived), `:878-886` ("per-bill release is what putting the bill on a trip does now … Nothing on this screen posts to it"), `:1017` ("back to the left rail").
+  - `components/floor/floor-table.tsx:3-10` (slot-tab / Upcoming-strip render sites; "⋯ stays INERT"), `:34-35` ("# columns"), `:687-688` (a trip gives a bill its date).
+  - `components/floor/detail-panel.tsx:391-409` (points at `rail-card.tsx` and `getFloorRail`), `:580`, `:603`, `:615-617` ("teal"; ship-to "owned by Support").
+  - `app/api/floor/order/[orderId]/route.ts:142` ("the only place on the floor that reads `tint_assignments`" — `/api/floor/tint-operators` reads it too).
 
 ---
 
 ## 11. Key files index
 
+Trip files are listed for completeness; their trip behaviour is **owned by `CLAUDE_FLOOR_TRIPS.md`** (marked ✈).
+
 | File | Role |
 |---|---|
 | `app/(floor)/floor/page.tsx`, `layout.tsx` | Route shell |
-| `components/floor/floor-page.tsx` | Composition root — state, search/filter, live-sync mounts, detail wiring |
-| `components/floor/floor-rail.tsx`, `rail-card.tsx`, `tint-strip.tsx`, `rail-empty.tsx` | Left rail |
-| `components/floor/floor-board.tsx`, `floor-tabs.tsx`, `slot-band.tsx`, `route-row.tsx`, `floor-table.tsx`, `status-pill.tsx`, `progress-bar.tsx`, `carryover-banner.tsx`, `upcoming-strip.tsx` | Floor pane |
-| `components/floor/picker-card.tsx` | **By picker** — the third view pivot beside Flat / By route (2026-08-11), and **the view `/floor` LANDS on** (`mode` defaults to `"picker"`): the operator's first question is "who is free", not "what is in the 10:30 window". One card per active picker, seeded from the roster so a picker with nothing on him still shows "Free". Its article figure is a TYPED breakdown ("18 D · 14 C") via `formatArticleBreakdown()` (`lib/floor/format.ts`) — which is why `parseArticleTag`/`aggregateArticleTags`/`TYPE_ORDER` were moved out of `lib/article-tag.ts` into the dependency-free **`lib/article-tag-parse.ts`** (that module imports prisma, and `lib/prisma.ts` constructs a client at module scope, so a `"use client"` file could not reach them without pulling PrismaClient into the browser bundle); `lib/article-tag.ts` re-exports them, so its four existing callers are untouched and the RULE still lives there. ⚠ A short-lived `FloorBoardRow.totalArticle` (added and removed the same day) was superseded by that breakdown — see `lib/floor/types.ts`. ⚠ **This view reads `dueRows`, NOT `tabRows` — it ignores the slot tab ON PURPOSE**, because a picker's load spans every window and scoping his card to the open tab would understate what is on him; the branch sits ABOVE `floor-board.tsx`'s `slotTab === "all"` check to keep that true. Busy tiers read `pick_assignments.assignedAt` (30m amber / 60m red), never `ageDays` — that is day-granular and anchored on `dispatchTargetDate`, i.e. how overdue the BILL is, not how long the PERSON has held it. Cards are fixed alphabetical, not worst-first (same reason `FLOOR_SPINE` drops `byAssigned`, §3). |
-| `components/floor/assign-context-banner.tsx` | The "Assigning to {name}" band shown while a picker card is open (2026-08-11) — pending-vs-current toggle + cancel. Floor's OWN component: `components/mail-orders/instructions-strip.tsx` was evaluated and rejected (its per-row caption is derived from the prop name and cannot be suppressed, and it belongs to Mail Orders / the Billing v2 face). It reuses `tint-strip.tsx`'s violet tokens rather than new ones, so the shade still has one owner. |
-| `components/floor/assign-bar.tsx` | Bulk assignment bar (calls Picking assign/unassign). Optional `lockedPicker` skips the "which picker" dropdown when the operator arrived from a picker card. |
+| `components/floor/floor-page.tsx` | Composition root — tabs, state, feeds, write handlers, live-sync mounts, the single Esc listener, detail wiring |
+| `components/floor/trip-desk.tsx` | The Floor tab: pool / trip / add states, client `FLOOR_SPINE` sort |
+| `components/floor/floor-table.tsx`, `route-row.tsx`, `status-pill.tsx`, `progress-bar.tsx` | Bill table, By-route groups, status + tint pills |
+| `components/floor/floor-bottom-bar.tsx` | Bottom bar (Add to / Remove from trip, ✕ clear) — ✈ for what it does to a trip |
+| ✈ `components/floor/trip-rail.tsx`, `trip-bar.tsx`, `trip-detail-header.tsx`, `trip-add-band.tsx`, `trip-form.tsx`, `trip-vehicle-editor.tsx`, `trip-history.tsx`, `trip-options.ts`, `pick-gate-toggle.tsx` | Trip rail, trip header, add band, create form, vehicle editor, trip history, option lists, desk-control switch |
 | `components/floor/hold-tab.tsx`, `hold-bar.tsx`, `cancelled-tab.tsx`, `pdf-preview.tsx` | Hold + Cancelled tabs, Hold-report PDF |
 | `components/floor/detail-panel.tsx`, `detail-items.tsx`, `detail-details.tsx`, `detail-activity.tsx` | Detail panel |
+| `components/floor/dispatch-slot-picker.tsx` | Slot picker (panel header, Hold bar, billing ribbon) |
 | `components/floor/search-box.tsx`, `filter-sheet.tsx`, `connection-strip.tsx`, `floor-skeleton.tsx` | Search/filter, connection strip, skeleton |
-| `lib/floor/queries.ts` | The 4 feeds + `floorLiveBaseWhere` / `getFloorLiveMarkerWhere` + `RAIL_SUGGESTIONS_ENABLED` |
-| `lib/floor/types.ts`, `selection.ts`, `search.ts`, `filter.ts`, `hold-log.ts`, `hold-pdf.ts`, `release-stages.ts`, `suggest.ts` | Types, selection, search/filter, hold notes + PDF, releasable stages, **slot suggestion (LIVE — §8)** |
-| `lib/dispatch/punch-clock.ts` | `hasClockTime` + `resolveArrivalClocks` — which clocks the engine may see (owned by `CLAUDE_IMPORT.md §12.1b`; suggest.ts is its second consumer) |
-| `lib/floor/use-floor-rail-poll.ts` | Rail 30s poll |
-| `app/api/floor/board/route.ts` | Rail + floor board + pickers |
+| `components/floor/assign-bar.tsx`, `assign-context-banner.tsx`, `trip-selection-bar.tsx` | **Orphans** — zero importers (§10b) |
+| `lib/floor/queries.ts` | Board / hold / cancelled / pickers feeds + `floorBoardWhere` and its four arms + `floorHistoryTripBillsWhere` + `getFloorLiveMarkerWhere` |
+| `lib/floor/types.ts`, `selection.ts`, `search.ts`, `filter.ts`, `sort.ts`, `scope.ts`, `format.ts` | Types, selection, search/filter, `FLOOR_SPINE`, scope (incl. ✈ `tripInScope`/`tripMixLabel`), formatters incl. `resolveFloorDisplayDate` |
+| `lib/floor/hold-log.ts`, `hold-pdf.ts`, `release.ts`, `release-stages.ts` | Hold notes + PDF, `releaseBillsToFloor`, releasable stages |
+| ✈ `lib/floor/dispatch.ts` | `markBillsDispatched` (→ `CLAUDE_FLOOR_TRIPS.md §14`) |
+| `lib/floor/suggest.ts` | **Dormant** — zero importers (§8) |
+| `lib/floor/use-floor-rail-poll.ts` | Whole-desk 30s poll |
+| `lib/dispatch/punch-clock.ts` | `hasClockTime` + `resolveArrivalClocks` (owned by `CLAUDE_IMPORT.md §12.1b`) |
+| `app/api/floor/board/route.ts` | Board + pickers |
 | `app/api/floor/hold/route.ts`, `cancelled/route.ts` | Hold / Cancelled feeds |
 | `app/api/floor/release/route.ts`, `actions/route.ts` | Release / state actions (422-on-total-failure) |
 | `app/api/floor/order/[orderId]/route.ts` | Detail payload |
+| `app/api/floor/ship-to/route.ts`, `ship-to-search/route.ts` | Ship-to save + search |
+| `app/api/floor/tint-operators/route.ts` | Tinting tab operator names |
 | `app/api/floor/marker/route.ts` | Live-sync marker (floor-exact set) |
+| ✈ `app/api/floor/pick-gate/route.ts`, `app/api/floor/trips/**` (9 route files) | Desk control + trips API |
 | `lib/dispatch/dispatch-engine.ts` | Auto-slot engine (reused; **owned by CORE §7.4**) |
 
 ---
+
+## Change log — v1.5 (2026-09-18 reconciliation pass)
+
+Evidence: code at HEAD `cc1e721a` (no code change after `ec6343ba`), the 2026-09-18 canon-sweep report, live results 2026-09-18 (Q02, Q03a, Q07a-c, Q09), `git show --stat` for every retirement commit, two-method importer greps.
+
+- §1: rewritten around the trip desk; Access now names the PageKey `floor` vs role slug `floor_access` union, records user-mode access (live ACCESS_SOURCE=user, floor ticks 39/6/6/1, `floor_access` 4 holders) and marks the seed as seed; ownership table points trips at `CLAUDE_FLOOR_TRIPS.md`, auto-release at `applyNoMailOrderFallback`, Print tab at `CLAUDE_BILLING.md §7`.
+- §2: the screen rewritten — four tabs, trip rail, pool/trip/add states, bottom bar; one retirement line each for the rail (`79bcc412`), slot tabs + By group (`bbb9628c`/`cdbf95b1`/`f41b52c9`), By picker, assign bar, upcoming strip.
+- §3: board predicate is `floorBoardWhere` with four arms; rail feed removed; why arm 2 has bills (fallback + SMU gate + restore); history gains `FLOOR_HISTORY_STAGES` (`551069aa`) and the by-trip arm (`175c83fd`); client sort moved to `trip-desk.tsx`.
+- §4: cancel deletes `pick_assignments` (`00d7da22`); restore lands as a `no slot` row; release goes through `releaseBillsToFloor` with the tint skip; assign is panel-only; §4.6 assign bar → bottom bar, "teal" → brand; §4.7 tint facts + tint lock (and that it is inert); new §4.8 Tint on the floor, new §4.9 the bill table (Invoice, Due, soft duplicate-SO, TINT/BASE, display date).
+- §5: the 30s poll refetches the whole desk; marker shares `floorBoardWhere`.
+- §6c: arm 3 note. §8 → DORMANT (one line). §8b trimmed. New §9c (rail retirement).
+- §10: removed the RAIL_SUGGESTIONS, slot-tab and orderDateTime-display landmines (code gone or corrected in §4.9); predicate landmines renamed to `floorBoardWhere`; dispatched count → live 7,330 with pointer to FLOOR_TRIPS §14. New §10b known issues and stale code comments.
+- §11: rebuilt from `ls components/floor lib/floor app/api/floor`; trip files marked ✈.
+- Schema stamp v27.13 → v27.24 (reconciled against CORE v27.24 in this pass).
 
 ## Change log — v1.4 (2026-08-04 reconciliation pass, method v1.1)
 
@@ -359,4 +381,4 @@ Evidence: 12 commits git-verified, suggest.ts/queries.ts/rail-card/picker/action
 
 ---
 
-*CLAUDE_FLOOR.md v1.4 · Schema v27.13 · OrbitOMS · updated 2026-08-04*
+*CLAUDE_FLOOR.md v1.5 · Schema v27.24 · OrbitOMS · updated 2026-09-18*

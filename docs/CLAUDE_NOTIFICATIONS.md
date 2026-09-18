@@ -1,5 +1,5 @@
 # CLAUDE_NOTIFICATIONS.md — Push Notifications
-# v1.3 · Schema v27.13 · August 2026 · updated 2026-08-12
+# v1.4 · Schema v27.24 · September 2026 · updated 2026-09-18
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -16,42 +16,51 @@ above live sync: live sync (`CLAUDE_PICKING.md §10`) only refreshes a screen so
 looking at; push reaches a phone in a pocket.
 
 **User-visible behaviour:** assign a bill → that picker's phone buzzes; a picker marks a pick done →
-supervisors' phones buzz. Each person controls it with an on/off switch in the mobile avatar menu (§3).
+supervisors' phones buzz; a supervisor cancels a bill → the picker holding it buzzes. Each person controls it with an on/off switch in the mobile avatar menu (§3).
 
 **Event-driven only** — every notification fires *inside the existing API route the moment the action
-happens*. No scheduled job, no polling, no infrastructure dependency for the two live triggers.
+happens*. No scheduled job, no polling, no infrastructure dependency for the three live triggers.
 
 ---
 
 ## 2. Triggers [LIVE]
 
-Two, both fired from the existing picking write routes (no new routes, no new `orders.update` — see the
-marker landmine, §8). **Caller sweep 2026-08-04: `sendToUser` has exactly three callers** — the two
-trigger routes below + the `test-saved` diagnostic. Nothing else pushes: not the approve route, not any
-Floor route, not the Billing mark-done. **Floor DOES fire the assign trigger indirectly** — its assign
-bar calls the same `POST /api/picking/assign` (the trigger is route-level, caller-agnostic), so an
-assign from `/floor` buzzes the picker exactly like one from the supervisor board.
+Three, all fired from picking write routes (no new `orders.update` — see the marker landmine, §8).
+**Caller sweep 2026-09-18: `sendToUser` has exactly four callers** — the three trigger routes below
+(`assign/route.ts:208`, `done/route.ts:177`, `cancel/route.ts:266`) + the `test-saved` diagnostic.
+Nothing else calls it: not the approve route, not any Floor route (Floor's own cancel,
+`/api/floor/actions`, does NOT push — only `/api/picking/cancel` does), not the Billing mark-done.
+⚠ A caller sweep on `sendToUser` alone misses one more sending path: `POST /api/picking/push-test`
+calls `web-push`'s `sendNotification` directly (§9). **Floor DOES fire the assign trigger
+indirectly** — its detail panel's reassign (`onReassign`, `components/floor/floor-page.tsx:1241-1251`)
+calls the same `POST /api/picking/assign` (the trigger is route-level, caller-agnostic), so an assign
+from `/floor` buzzes the picker exactly like one from the supervisor board.
 
 | Trigger | Fires from | Recipient(s) | Text | Verified? |
 |---|---|---|---|---|
 | **Assign a bill** | `app/api/picking/assign/route.ts` (after both writes per bill) | that **picker** (`pickerId`) | `New pick assigned` / `{customer} · {obdNumber}` | not yet on device (§6) |
 | **Mark a pick done** | `app/api/picking/done/route.ts` (after the writes) | **all supervisors** (`getPickingSupervisorUserIds()`) | `Pick completed` / `{picker} finished {customer} · {obdNumber}` | ✅ on device |
+| **Cancel a bill** | `app/api/picking/cancel/route.ts` (after the writes; 00d7da22 / af075572, 2026-08-20) | the **picker holding the bill** (`pickAssignment.pickerId`); skipped when nobody held it | `Bill cancelled` / `{customer} · {obdNumber} — stop picking this bill` | not recorded on device |
 
-- **Customer** = the effective dealer (`shipToOverrideCustomer ?? customer`, `.customerName`); **bill
-  number** = `orders.obdNumber`. Assign is **one notification per bill** (its own tag), never batched.
-- **The one rule that matters — a push must NEVER break the action it hangs off.** Both triggers are
+- **Customer** = the effective dealer, same fallback chain in all three bodies:
+  `shipToOverrideCustomer?.customerName ?? customer?.customerName ?? shipToCustomerName ?? "(Unmatched)"`
+  (`assign/route.ts:203-207`, `done/route.ts:169-173`, `cancel/route.ts:261-265`). No data-quality
+  marker in a push body (`assign/route.ts:201`). **Bill number** = `orders.obdNumber`. Assign is **one notification per bill** (its own tag), never batched.
+- **The one rule that matters — a push must NEVER break the action it hangs off.** All three triggers are
   fully wrapped in try/catch and swallowed (log only); the API response body + status are
   **byte-identical** whether push succeeds, fails, or is skipped. Any future trigger must do the same.
-- **Response timing:** both `await` before responding (Vercel freezes the function once it returns, so
+- **Response timing:** all three `await` before responding (Vercel freezes the function once it returns, so
   un-awaited pushes are unreliable). Assign sends in parallel (`Promise.allSettled`); done sends
-  **sequentially** over the small supervisor list.
+  **sequentially** over the small supervisor list; cancel sends one.
 
 **Self-suppression rule [LIVE] — never notify the person who performed the action.** The actor
 (`session.user.id` → `changedById`/`assignedById`) is skipped: assign skips when the assigner *is* the
-picker; done skips the acting user from the supervisor recipient list. Nobody is ever notified about
+picker; done skips the acting user from the supervisor recipient list; cancel skips when the
+cancelling supervisor is the picker holding the bill (`heldByPickerId !== changedById`,
+`cancel/route.ts:259`). Nobody is ever notified about
 their own tap.
 
-**Quiet hours — REMOVED 2026-08-12. There is NO time-of-day gate.** Both triggers now send **at any
+**Quiet hours — REMOVED 2026-08-12. There is NO time-of-day gate.** Every trigger sends **at any
 hour**, every day. Until 2026-08-12 both gated on `isWithinDepotHours(new Date())` (09:00–20:00 IST,
 `lib/push/quiet-hours.ts`), dropping anything outside the window; that check, its two call sites and
 the whole file are **gone** — the file was deleted once the grep showed nothing else referenced it.
@@ -67,7 +76,7 @@ new time-of-day rule on the server — it survives as landmine 4 (§8).
 A single **"Notifications"** on/off row directly **above Sign out** in the **"You" sheet** that the
 mobile header avatar opens (`components/push/push-toggle.tsx`, mounted in
 `components/shared/mobile-shell-context.tsx`). Two taps to reach, a third to toggle. The sheet mechanics
-are the shared mobile shell — see **`CLAUDE_UI.md §59`** (and §62 for the toggle's one-teal styling);
+are the shared mobile shell — see **`CLAUDE_UI.md §59`** (and §62 for the toggle's single-accent styling — `bg-brand-600`, `push-toggle.tsx:156`, violet since c96157ea);
 not re-documented here.
 
 - **State reflects the TRUTH, never an optimistic guess** — on open it re-probes OS permission AND the
@@ -102,6 +111,10 @@ not re-documented here.
   **reassigns to the current session user** so the previous owner stops receiving on that device.
 - **Multi-device reality:** one user → many endpoints (phone + tablet + reinstall). `sendToUser(userId, …)`
   (`lib/push/send.ts`) loads **all `isActive` rows for that user** and sends to each, sequentially.
+- **`urgency: "high"` on every send** (`lib/push/send.ts:78-87`, 1448c7e6, 2026-08-14) — the options
+  argument to `sendNotification`, asking the push service to deliver now rather than batch behind the
+  phone's power saving (the budget-Android problem, landmine 9). A delivery hint only: payload, hygiene
+  and error swallowing are unchanged.
 - **Dead-endpoint hygiene** (in `sendToUser`): on push-service **HTTP 404 / 410** the phone is gone for
   good → `isActive = false` immediately; on any other failure → `failureCount + 1`, and at **5** →
   `isActive = false`; on success → `failureCount` reset to 0 and `lastSeenAt` stamped. Every write sets
@@ -191,12 +204,16 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
 
 ## 8. Landmines
 
-1. **[LANDMINE] A caching service worker would silently break live sync.** `use-picking-marker.ts`
-   polls `/api/picking/marker` every 15s and depends on `Cache-Control: no-store` freshness. `sw.js`
+1. **[LANDMINE] A caching service worker would silently break live sync.** `lib/hooks/use-picking-marker.ts`
+   polls `/api/picking/marker` every 15s and depends on `Cache-Control: no-store` freshness. The same
+   hook now also polls other boards' markers (callers: `components/floor/floor-page.tsx:1372`,
+   `components/billing/billing-marker-provider.tsx:129`, `components/ci/billing-board.tsx:156`,
+   `components/mrn/mrn-shell.tsx:263`, `components/tint/manager/use-tint-manager-sync.ts:56`,
+   `app/(mail-orders)/mail-orders/mail-orders-page.tsx:366`), so the rule protects all of them. `sw.js`
    has **zero fetch listeners and zero Cache-API calls** — keep it that way. Never add caching.
 2. **[LANDMINE] Never add a second `orders.update` in a notification trigger.** The live-sync marker
    keys on `MAX(orders.updatedAt)`; an extra write fires a false change on every board. (This is why
-   both triggers only READ for names.)
+   every trigger only READS for names.)
 3. **[LANDMINE] `push_subscriptions.updatedAt` has a DB default but NO trigger.** It is a plain
    `@default(now())`, **NOT `@updatedAt`**. Every write must set `updatedAt: new Date()` explicitly, or
    updates carry a stale timestamp.
@@ -207,11 +224,12 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
    applies to the next server-side time-of-day rule anyone writes (e.g. the deferred supervisor timer,
    §7). Shift the instant by the IST offset and read the hour off that; IST has no DST, so it is exact
    year-round. Related and still live: CORE §3's `Date.parse()` offset-less-string landmine.
-5. **[LANDMINE] Push must never break the action it hangs off.** Both triggers swallow all errors; any
+5. **[LANDMINE] Push must never break the action it hangs off.** All three triggers swallow all errors; any
    future trigger must too (§2).
 6. **[LANDMINE] Counts are derivable by READING `buildPickingWhere()` — never modify it.** "Ready to
    check" = rows where `isDone`. For "waiting to assign", `getPickingQueue()` no longer hands you a
-   number: it returns `{ date, rows }` and the four aggregate counters it used to carry
+   number: its payload is `PickingQueueResult` (`lib/picking/queue.ts:255`), documented in
+   `CLAUDE_PICKING.md` and not restated here; the four aggregate counters it used to carry
    (`windows[]`/`totalCount`/`unmatchedCount`/`assignedCount`) plus the `isStillWaiting` predicate
    were removed on 2026-07-28 with the Picking desktop board, their only consumer.
    **The rule itself was deliberately preserved, verbatim, as a tombstone comment above
@@ -222,11 +240,8 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
 7. **[LANDMINE] Cron routes authenticate via `lib/cron-auth.ts`** — `Authorization: Bearer
    ${CRON_SECRET}`, **fail-closed** when the env var is unset. The future timer route MUST reuse
    `isCronAuthorized`, or it is an open public endpoint.
-8. **[LANDMINE — unfinished experiment] `manifest.json` `name` is `"Orbit"` with `short_name` still
-   `"OrbitOMS"`.** An experiment to see whether iOS reads the two separately (so a notification's
-   "from …" could read *Orbit* while the icon stays *OrbitOMS*). **Result never observed** — it only
-   shows after deleting and re-adding the home-screen icon; notifications still display "from OrbitOMS".
-   Either finish the check or revert. (Do NOT change manifest `start_url`/`display`/`icons`/`theme`.)
+8. ✅ **RESOLVED — manifest name.** `public/manifest.json` `name` and `short_name` are both `"Orbit"`
+   (4a2f763f, 2026-08-12); `theme_color` is `#7C3AED` (740a9a21, rebrand 2026-09-09).
 9. **[LANDMINE] iOS install is mandatory; budget hand-holding.** No home-screen install → no push,
    ever. Indian budget Androids (Xiaomi/Vivo/Oppo/Realme) aggressively kill background notifications —
    expect per-device battery-saver exceptions during rollout. **Keep the push-test page** — it's the
@@ -237,12 +252,19 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
 
 ## 9. Temporary scaffolding [DEFERRED — remove after rollout]
 
-Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-04):
+Only the mobile link carries a `⚠ TEMPORARY SCAFFOLDING` comment in code
+(`picking-mobile-shell.tsx:227`); the page says "Throwaway test" on screen (`push-test-client.tsx:179`)
+and its API route calls itself a "THROWAWAY proof" (`app/api/picking/push-test/route.ts:9`):
 - `app/picking/push-test/page.tsx` — the diagnostic page (subscribe state, saved-device count, "Send to
   saved phone"). Earns its place during rollout.
-- The **"Push test (temporary)"** link in `picking-mobile-shell.tsx` (~:165) — its own comment says
-  **admin-only, mobile-only**; per that comment it is also the ONLY way to reach `/picking/push-test`
-  from an installed PWA (manifest `start_url` is `/`). ⚠ The old DESKTOP pill this section used to
+- `POST /api/picking/push-test` (`app/api/picking/push-test/route.ts`, 7f041c95) — called by
+  `push-test-client.tsx:155`. Gated picking `canView`; sends one push to the subscription **in the
+  request body** via `web-push`'s `sendNotification` directly, **not** `sendToUser`; stores nothing and
+  surfaces errors verbatim. The one sending path a `sendToUser` caller sweep does not see (§2).
+- The **"Push test (temporary)"** link in `picking-mobile-shell.tsx` (`:233-241`) — **mobile-only**,
+  shown to **admin OR operations** (`canSeePushTest`, `app/picking/page.tsx:73`; the shell's own
+  comment at `:228` still says "Admin-only" and is stale). It is also the ONLY way to reach
+  `/picking/push-test` from an installed PWA (manifest `start_url` is `/`). ⚠ The old DESKTOP pill this section used to
   describe went with the desktop board (archived 2026-07-28) — only this mobile link survives.
 
 ---
@@ -259,11 +281,22 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-
 | `app/api/push/test-saved/route.ts` | Sends to the session user's saved devices (diagnostic) |
 | `app/api/picking/assign/route.ts` | Assign trigger (§2) — after both writes, per bill |
 | `app/api/picking/done/route.ts` | Done trigger (§2) — after the writes, to supervisors |
+| `app/api/picking/cancel/route.ts` | Cancel trigger (§2) — after the writes, to the picker holding the bill |
+| `app/api/picking/push-test/route.ts` | Throwaway proof endpoint — direct `sendNotification`, body-supplied subscription (§9) |
 | `components/push/push-toggle.tsx` | The Notifications on/off row in the You sheet (§3) |
 | `components/shared/mobile-shell-context.tsx` | Hosts the toggle above Sign out (`CLAUDE_UI.md §59`) |
 | `app/picking/push-test/page.tsx` + `push-test-client.tsx` | Diagnostic page (§9) |
 
 ---
+
+## Change log — v1.4 (2026-09-18, canon sweep reconciliation)
+
+- §1/§2: **three triggers, four `sendToUser` callers** — "Bill cancelled" (`app/api/picking/cancel/route.ts`, 00d7da22/af075572) added to the trigger table: held-by picker, self-cancel skipped, awaited + swallowed, no `orders` write; Floor's own cancel does not push. Dealer fallback chain now includes `shipToCustomerName → "(Unmatched)"` in all three bodies. Floor's assign path re-pointed to the detail panel's `onReassign`.
+- §3: toggle styling cited as `bg-brand-600` (violet) instead of "one-teal".
+- §4: `urgency: "high"` on every send (1448c7e6).
+- §8: landmine 1 lists the other marker callers of the shared hook; landmine 6 points at `PickingQueueResult` / `CLAUDE_PICKING.md` instead of restating the payload; landmine 8 (manifest name) RESOLVED (4a2f763f; theme `#7C3AED`, 740a9a21).
+- §9/§10: `POST /api/picking/push-test` recorded (direct `sendNotification`, the fifth sending path); push-test link visible to admin OR operations (`app/picking/page.tsx:73`); scaffolding-comment claim corrected (only the mobile link carries one); cancel + push-test routes added to the key-files index.
+- Schema stamp v27.13 → v27.24 — reconciled against CORE v27.24 in this pass (no table this module owns changed).
 
 ## Change log — v1.3 (2026-08-12, quiet-hours removal)
 
@@ -286,4 +319,4 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-
 
 ---
 
-*CLAUDE_NOTIFICATIONS.md v1.3 · Schema v27.13 · Push Notifications · OrbitOMS · updated 2026-08-12*
+*CLAUDE_NOTIFICATIONS.md v1.4 · Schema v27.24 · Push Notifications · OrbitOMS · updated 2026-09-18*
