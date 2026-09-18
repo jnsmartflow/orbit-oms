@@ -511,8 +511,14 @@ export async function getFloorLiveMarkerWhere(): Promise<Prisma.ordersWhereInput
 // ── Shared per-obd lookups ───────────────────────────────────────────────────
 
 /** Bill-to dealer name per OBD, from import_raw_summary (latest row wins). Used
- *  for the "billed to {dealer}" sub-line on site bills (design §7.5 / §6.2). */
-async function billToByObd(obdNumbers: string[]): Promise<Map<string, string | null>> {
+ *  for the "billed to {dealer}" sub-line on site bills (design §7.5 / §6.2).
+ *
+ *  ⚠ NOW EXPORTED (2026-09-18) — it was module-private while Floor was its only
+ *  caller, though the note at the end of the rail section already claimed it was
+ *  exported. `lib/picking/tint-workload.ts` shows the same "billed to {dealer}"
+ *  line on the Tinting section's bills, and one mechanical read of the same
+ *  column beats a second copy of it. The body is untouched. */
+export async function billToByObd(obdNumbers: string[]): Promise<Map<string, string | null>> {
   const map = new Map<string, string | null>();
   if (obdNumbers.length === 0) return map;
   const rows = await prisma.import_raw_summary.findMany({
