@@ -8,6 +8,10 @@ import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
+// The tint room's wire shape. A TYPE-only import — the module it comes from is
+// server-side (prisma), and this file is a client component; `import type` is
+// erased by isolatedModules, so nothing follows it into the browser bundle.
+import type { TintWorkloadResult } from "@/lib/picking/tint-workload";
 import { splitPickerRows } from "@/lib/picking/picker-split";
 import { usePickingMarker, type MarkerResync } from "@/lib/hooks/use-picking-marker";
 
@@ -63,6 +67,29 @@ interface PickingBoardContextValue {
   // cover (a sheet over the detail screen is already covered by detailOpen).
   // Same lift-to-shell pattern as detailOpen above.
   setOverlayBusy: (busy: boolean) => void;
+  /**
+   * The tint room — the read-only Tinting section on the Picking tab
+   * (2026-09-18). `null` until its first fetch lands, and null FOR EVER if that
+   * fetch fails: the section simply does not render, which is the right failure
+   * for a panel the supervisor cannot act on anyway.
+   *
+   * 🔴 A SEPARATE PIECE OF STATE, FED BY A SEPARATE ROUTE AND A SEPARATE
+   * MARKER. It is deliberately NOT merged into `data` (PickingQueueResult):
+   * every count on this board — the three tab badges, the Assign badge, the
+   * held-back band, every rowStatus — is derived from `data.rows`, and a tint
+   * bill has no business in that array. Nothing here can move any of them.
+   */
+  tintWork: TintWorkloadResult | null;
+  /**
+   * The Assign tab's pink strip asking to be taken to the section: switch to the
+   * Picking tab and scroll it into view. The tab switch happens HERE (the shell
+   * owns activeTab); the scroll is the board's, which is why this also bumps a
+   * nonce the board watches — the section does not exist in the DOM until the
+   * tab has changed, so the two halves cannot be one call.
+   */
+  goToTinting: () => void;
+  /** Bumped by `goToTinting`. The board scrolls when it changes. */
+  tintJumpNonce: number;
 }
 
 const PickingBoardContext = createContext<PickingBoardContextValue | null>(null);
@@ -381,6 +408,13 @@ function SupervisorPickingShell({
   // Reported up by the board (picker sheet / release confirm over the LIST) —
   // see PickingBoardContextValue.setOverlayBusy. Feeds the live-sync pause.
   const [overlayBusy, setOverlayBusy] = useState(false);
+  // ── The tint room (2026-09-18) ────────────────────────────────────────────
+  // Its own state, its own fetch, its own marker. SUPERVISOR SHELL ONLY:
+  // PickerPickingShell does not have any of this and must not — the picker's
+  // face has no Picking tab to put the section on (PICKER_TAB_KEYS above), so a
+  // fetch there would be a request nothing renders.
+  const [tintWork, setTintWork] = useState<TintWorkloadResult | null>(null);
+  const [tintJumpNonce, setTintJumpNonce] = useState(0);
 
   // scope=openPending (2026-07-20 date-zones redesign) — pending and
   // in-progress bills across ALL dates, plus today's checked band. Replaces
@@ -473,6 +507,59 @@ function SupervisorPickingShell({
     markerResyncRef.current = markerResync;
   }, [markerResync]);
 
+  // ── The tint room's own fetch ─────────────────────────────────────────────
+  // Silent on failure, deliberately: `tintWork` stays null, the section does not
+  // render, and the board the supervisor actually works is untouched. There is
+  // no error screen for it and there should not be — a panel he cannot act on
+  // must never be able to take the Assign list down with it.
+  const refetchTint = useCallback(async () => {
+    try {
+      const res = await fetch("/api/picking/tint-workload", { cache: "no-store" });
+      if (!res.ok) return;
+      setTintWork((await res.json()) as TintWorkloadResult);
+    } catch {
+      // keep whatever was last good (or nothing at all)
+    }
+  }, []);
+
+  useEffect(() => {
+    void refetchTint();
+  }, [refetchTint]);
+
+  // A SECOND marker instance, on its own url and its own state.
+  //
+  // 🔴 IT WATCHES A DIFFERENT SET AND MUST STAY SEPARATE. The queue's marker
+  // above aggregates over `buildPickingWhere` — the predicate the Assign list
+  // and its badge are built from — and this one aggregates over the tint room,
+  // including MAX(tint_assignments.updatedAt), because PAUSE AND RESUME NEVER
+  // TOUCH THE ORDER ROW. Folding the two would mean either the queue refetching
+  // on a pause (a rebuild for a change its own board cannot show) or the tint
+  // section missing one, which is the whole reason the second route exists.
+  //
+  // Safe by construction: every piece of state in `usePickingMarker` is a
+  // per-instance ref, so two instances on one screen share nothing. `scope` is
+  // required by the hook's type and is appended to the query; the tint marker
+  // route ignores it.
+  //
+  // PAUSED ON THE SAME TWO FLAGS as the queue's marker. A background refetch
+  // while the supervisor is inside a detail screen or a sheet would move the
+  // ground under him — and while a tint operator's bills are open, the section
+  // he is reading is exactly what would be replaced.
+  usePickingMarker({
+    scope: "openPending",
+    url: "/api/picking/tint-workload/marker",
+    onChange: () => {
+      void refetchTint();
+    },
+    paused: detailOpen || overlayBusy,
+  });
+
+  // The Assign strip's "View ›" — switch tab here, then let the board scroll.
+  const goToTinting = useCallback(() => {
+    setActiveTab("picking");
+    setTintJumpNonce((n) => n + 1);
+  }, []);
+
   // Tab counts — same filter semantics as PickingBoardMobile's own
   // waitingRows/assignedRows/doneRows/checkedRows memos (§ that file), just
   // re-derived here from the same shared `data` for the bottom-bar labels.
@@ -516,8 +603,11 @@ function SupervisorPickingShell({
   }, [data]);
 
   const contextValue = useMemo<PickingBoardContextValue>(
-    () => ({ data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy }),
-    [data, loading, error, activeTab, refetchQueue, detailOpen],
+    () => ({
+      data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy,
+      tintWork, goToTinting, tintJumpNonce,
+    }),
+    [data, loading, error, activeTab, refetchQueue, detailOpen, tintWork, goToTinting, tintJumpNonce],
   );
 
   return (

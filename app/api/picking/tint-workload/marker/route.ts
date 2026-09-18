@@ -13,6 +13,12 @@ export const dynamic = "force-dynamic";
  * with nothing new to learn: a cheap probe whose value the client compares, and
  * a real refetch only when it moves.
  *
+ * ⚠ `latest` IS THE FIELD THE HOOK ACTUALLY COMPARES — it carries the LATER of
+ * the two clocks. `latestOrder` and `latestAssignment` ride along for a human
+ * reading the response and are ignored by the client. Renaming `latest` away, or
+ * splitting it back into two fields, silently disables this marker: the hook
+ * compares `count`/`latest` and nothing else.
+ *
  * 🔴 IT WATCHES TWO TABLES, AND THE SECOND ONE IS THE POINT.
  * `latestAssignment` is MAX(`tint_assignments.updatedAt`) over the bills still in
  * the room, beside `latestOrder`'s MAX(`orders.updatedAt`) and a count. PAUSE AND

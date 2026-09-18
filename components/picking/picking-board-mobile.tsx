@@ -88,6 +88,9 @@ import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
+// The tint room's wire shapes. TYPE-only — the module is server-side (prisma),
+// and `import type` is erased, so nothing follows it into the browser bundle.
+import type { TintWorkloadBill, TintWorkloadOperator } from "@/lib/picking/tint-workload";
 // LABEL ONLY — see formatReleaseOpensDay below. The releasability DECISION is
 // the server's (`row.releasableToday`); this import renders the day that
 // decision implies and is never used to compute one on the client.
@@ -964,6 +967,192 @@ function PickingCard({
 // under it are countable and few), a "saves N trips" figure (Rule 2 has no such
 // number and showing one only for Rule 1 would make the two kinds read as
 // different sorts of thing), and any button — this is a hint, not a control.
+// ── The Tinting section's three pieces (2026-09-18) ─────────────────────────
+//
+// 🔴 THE CARD IS THE PICKER CARD. `TintCard` below is the level-1 picker card's
+// markup with different words in it: the same `<button>` classes, the same
+// `CARD_SHADOW_V2`, the same 16.5px/600 name, the same 13px/600 tabular counts
+// row with its muted units and `·` separators, the same 12.5px third line the
+// picker card gives its routes. Nothing was restyled, no size or colour was
+// taken from the mockup, and no variant was added to `PickingCard`.
+//
+// ⚠ WHY NOT `PickingCard` ITSELF for the bills. It takes a full
+// `PickingQueueRow` — forty fields, a required `onOpen`, and five variants each
+// of which either selects or opens a detail screen — and the tint feed returns
+// `TintWorkloadBill`, a different shape by design. Passing one would mean
+// fabricating a row (with a fake id in the same key space as real orders) or
+// widening the card, and both were ruled out. `TintBillRow` therefore reuses the
+// card's SHELL and its type tokens (CLAUDE_UI.md §60) and renders the tint
+// bill's own four lines, with no tap target anywhere on it.
+
+/** 1st / 2nd / 3rd / 4th — for "in queue · 2nd". */
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+/**
+ * One bill's state line, composed from the feed's OWN fields.
+ *
+ * ⚠ NOTHING IS RECOMPUTED HERE. The minutes come from `computeElapsedMs`
+ * server-side (which folds `accumulatedMinutes` back in, because resume resets
+ * `startedAt`), the rank is the per-operator rank the feed ranked, and the hours
+ * are the feed's. This function only chooses the words — which is also why
+ * "paused · N min so far" says *so far*: it is time spent, never progress.
+ */
+function tintBillState(row: TintWorkloadBill): string {
+  switch (row.state) {
+    case "tinting":
+      return row.minutes === null ? "tinting" : `tinting · ${row.minutes} min`;
+    case "paused":
+      return row.minutes === null ? "paused" : `paused · ${row.minutes} min so far`;
+    case "queued":
+      return row.queueRank === null ? "in queue" : `in queue · ${ordinal(row.queueRank)}`;
+    case "waiting":
+      return row.waitingHours === null ? "waiting" : `waiting · ${row.waitingHours}h`;
+  }
+}
+
+/** An operator's headline state, from the feed's own `state`/`minutes`/`queued`. */
+function tintOperatorState(op: TintWorkloadOperator): string | null {
+  if (op.state === "tinting") {
+    const head = op.minutes === null ? "tinting" : `tinting · ${op.minutes} min`;
+    return op.queued > 0 ? `${head} · ${op.queued} in queue` : head;
+  }
+  if (op.state === "paused") {
+    const head = op.minutes === null ? "paused" : `paused · ${op.minutes} min so far`;
+    return op.queued > 0 ? `${head} · ${op.queued} in queue` : head;
+  }
+  if (op.state === "queued") return `${op.queued} in queue`;
+  return null;
+}
+
+function TintCard({
+  title,
+  counts,
+  drums,
+  litres,
+  state,
+  onOpen,
+}: {
+  title: string;
+  counts: string;
+  drums: number | null;
+  litres: number | null;
+  state: string | null;
+  /** null → the card is not tappable (a free operator has nothing to open), so
+   *  it renders as a div rather than a button that would do nothing. */
+  onOpen: (() => void) | null;
+}): React.JSX.Element {
+  const body = (
+    <div className="px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2.5">
+        <span className="text-[16.5px] font-semibold text-[#1d2939] truncate min-w-0">{title}</span>
+      </div>
+      <div className="text-[13px] font-semibold text-[#2a323c] mt-[3px] tabular-nums">
+        {counts}
+        {drums !== null && (
+          <>
+            <span className="font-medium text-[#c3c9d0]">{" · "}</span>
+            {drums}
+            <span className="font-medium text-[#8a929c]">{" D"}</span>
+          </>
+        )}
+        {litres !== null && (
+          <>
+            <span className="font-medium text-[#c3c9d0]">{" · "}</span>
+            {formatLitres(litres)}
+            <span className="font-medium text-[#8a929c]">{" L"}</span>
+          </>
+        )}
+      </div>
+      {state !== null && (
+        <div className="text-[12.5px] font-medium text-[#98a2b3] mt-1.5 truncate">{state}</div>
+      )}
+    </div>
+  );
+  const shell = "w-full text-left bg-white border border-gray-200 rounded-[16px] overflow-hidden mb-2.5";
+  if (onOpen === null) {
+    return (
+      <div className={shell} style={{ boxShadow: CARD_SHADOW_V2 }}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={shell + " active:opacity-70"}
+      style={{ boxShadow: CARD_SHADOW_V2 }}
+    >
+      {body}
+    </button>
+  );
+}
+
+/** One bill inside the Tinting section's level 2. READ-ONLY — a `div`, no
+ *  handler, no chevron, no checkbox. No TINT word either: every bill in this
+ *  section is a tint bill, so the word would be on all of them. */
+function TintBillRow({ row }: { row: TintWorkloadBill }): React.JSX.Element {
+  return (
+    <div
+      className="bg-white border border-gray-200 rounded-[16px] overflow-hidden mb-2.5"
+      style={{ boxShadow: CARD_SHADOW_V2 }}
+    >
+      <div className="px-3.5 py-3">
+        {/* Caption — OBD · time, with the SMU badge where the cards put it. */}
+        <div className="flex items-center justify-between gap-2.5 mb-1.5">
+          <span className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap text-[#98a2b3]">
+            <span className="font-mono shrink-0 text-[#98a0aa]">{row.obdNumber}</span>
+            {row.obdDateTime !== null && (
+              <>
+                <span className="shrink-0 text-[#d8dce1]">&middot;</span>
+                <span className="truncate">{formatObdDateTime(row.obdDateTime)}</span>
+              </>
+            )}
+          </span>
+          {isSmuBadged(row.smuCode) && <SmuBadge code={row.smuCode} />}
+        </div>
+        {/* The site. */}
+        <div className="text-[16px] font-semibold leading-[1.25] truncate text-[#1d2939]">
+          {row.siteName}
+        </div>
+        {/* Where + volume, the card's own where-row tokens. */}
+        <div className="flex items-center justify-between gap-2.5 mt-1.5">
+          <span className="text-[12px] font-medium truncate min-w-0 text-[#667085]">
+            {row.route ?? row.area ?? "—"}
+          </span>
+          {row.litres !== null && (
+            <span className="text-[12px] font-semibold tabular-nums shrink-0 text-[#667085]">
+              {formatLitres(row.litres)}
+              <span className="text-[10.5px] font-medium text-[#98a2b3]">{" L"}</span>
+            </span>
+          )}
+        </div>
+        {/* The ordering dealer, in the caption's own token. */}
+        {row.billToName !== null && (
+          <div className="text-[11.5px] text-[#98a2b3] mt-1 truncate">billed to {row.billToName}</div>
+        )}
+        {/* Drums left, state right — the state is the one thing this screen is
+            for, so it sits at the end of the row the eye finishes on. */}
+        <div className="flex items-center justify-between gap-2.5 mt-1.5">
+          <span className="text-[12px] font-medium tabular-nums text-[#667085]">
+            {row.drums === null ? "—" : `${row.drums} D`}
+          </span>
+          <span className="text-[12px] font-medium text-[#98a2b3] shrink-0">{tintBillState(row)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BundleHeading({
   label,
   tone,
@@ -1232,7 +1421,10 @@ export function PickingBoardMobile(): React.JSX.Element {
   // from context (lifted up to SupervisorPickingShell, which needs the
   // boolean to drive RoleLayoutClient's hideBar). Same identifier names as
   // before, so every existing usage below is unchanged.
-  const { data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy } = usePickingBoard();
+  const {
+    data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy,
+    tintWork, goToTinting, tintJumpNonce,
+  } = usePickingBoard();
   // Direction-A header (avatar/grid/search) reaches the shared Menu/You
   // sheets + the signed-in user's initials via the Stage-1 provider —
   // userInitials is a Stage-3/4 addition to that context's value.
@@ -1323,6 +1515,36 @@ export function PickingBoardMobile(): React.JSX.Element {
   // sheets — this picker level was ADDED to that entry in the same commit that
   // created it, named explicitly, so the shared fix covers it when built.
   const [openPickerId, setOpenPickerId] = useState<number | null>(null);
+  // ── The Tinting section's own level 2 (2026-09-18) ────────────────────────
+  // The SAME in-place swap `openPickerId` above performs, one state apart:
+  // `"pool"` for the waiting card, an operator id for a person, null for the
+  // card list. No history entry and no router push — Android back therefore
+  // leaves the module from here exactly as it does from a picker's level 2,
+  // which is the existing behaviour this mirrors rather than an oversight.
+  //
+  // 🔴 THE TWO LEVEL-2s ARE MUTUALLY EXCLUSIVE. Opening one hides the other's
+  // whole section (see the render gates below and the filter row above them):
+  // a tab-wide section under a one-man header answers a question nobody asked.
+  const [openTintId, setOpenTintId] = useState<number | "pool" | null>(null);
+  // The section's anchor, for the Assign strip's "View ›". The shell switches
+  // the tab and bumps a nonce; the scroll can only happen here, because the
+  // section does not exist in the DOM until that tab change has rendered.
+  const tintSectionRef = useRef<HTMLDivElement | null>(null);
+  // The second half of the Assign strip's jump. Fires only when the nonce
+  // MOVES, so it can never scroll on an ordinary tab change, and only once the
+  // Picking tab is actually showing. `openTintId`/`openPickerId` are reset so
+  // the jump always lands on the card list rather than inside whoever was open.
+  useEffect(() => {
+    if (tintJumpNonce === 0 || activeTab !== "picking") return;
+    setOpenTintId(null);
+    setOpenPickerId(null);
+    // A frame later: the tab's content has just mounted, so the node does not
+    // exist yet on the tick the nonce changes.
+    const id = window.setTimeout(() => {
+      tintSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [tintJumpNonce, activeTab]);
   // Leaving the Picking tab drops the open picker, so switching away and back
   // lands on level 1 rather than inside whoever you were reading three tabs
   // ago. Keyed on `activeTab` only — NOT on the row data, because an effect
@@ -2759,6 +2981,42 @@ export function PickingBoardMobile(): React.JSX.Element {
                 &nbsp;·&nbsp;{filteredWaitingDue.length} due&nbsp;·&nbsp;{formatLitres(totalLitres)} L ready to load
               </span>
             </div>
+            {/* ── THE TINT ROOM, ONE LINE (2026-09-18) ──────────────────────
+                Work that is COMING to this tab but is not on it yet: a tint
+                bill reaches Assign only when the tint room finishes it. Without
+                this line the Assign tab is simply short, with nothing on screen
+                saying that four bills are on a mixer — the same argument the
+                held-back band above it makes for bills sitting at the desk.
+
+                Its own strip BELOW the summary, never folded into it: the
+                summary is "what the filters currently show", and these bills are
+                not in that list at all (they are not in `data.rows`).
+
+                Same strip shape as the one above — `mx-[-16px]`, the `border-t`
+                pattern, the same padding and type — in the tint room's own
+                pink. The two hexes are the pair components/picking/card-atoms
+                .tsx already copied from components/floor/status-pill.tsx for the
+                BASE badge (#fce7f3 ground, #be185d text); no new colour, and no
+                token invented for one strip.
+
+                HIDDEN WHEN THE ROOM IS EMPTY. `tintWork` is null until its
+                fetch lands and stays null if that fetch fails, so this line is
+                additive in every failure mode. */}
+            {tintWork !== null && tintWork.totals.bills > 0 && (
+              <button
+                type="button"
+                onClick={goToTinting}
+                className="mx-[-16px] w-[calc(100%+32px)] border-t px-4 py-2 text-[12px] font-medium flex items-center gap-1 text-left"
+                style={{ background: "#fce7f3", borderColor: "#fbcfe8", color: "#be185d" }}
+              >
+                <span className="tabular-nums">
+                  <b className="font-bold">Tinting now</b>
+                  &nbsp;·&nbsp;{tintWork.totals.bills} {tintWork.totals.bills === 1 ? "bill" : "bills"}
+                  &nbsp;·&nbsp;{tintWork.totals.drums} D&nbsp;·&nbsp;{formatLitres(tintWork.totals.litres)} L
+                </span>
+                <span className="ml-auto shrink-0 font-semibold">View &rsaquo;</span>
+              </button>
+            )}
           </>
         ) : activeTab === "picking" ? (
           // ⚠ HIDDEN AT LEVEL 2, NOT CLEARED (2026-08-22). Inside one picker's
@@ -2774,7 +3032,15 @@ export function PickingBoardMobile(): React.JSX.Element {
           // control that silently resets when it scrolls out of view is a far
           // worse bug than one that is briefly out of reach — do not "clean
           // this up" by resetting either one here.
-          openPickerId !== null ? null : (
+          // ⚠ THE SAME HIDE NOW COVERS THE TINT SECTION'S LEVEL 2 (2026-09-18).
+          // One clause added, for the identical reason the picker clause exists:
+          // inside one operator's bills the sub-header carries his own numbers,
+          // and the tab-wide row and strip above it would answer the same
+          // question with a different right answer. THE FILTER STATE IS STILL
+          // UNTOUCHED WHILE HIDDEN — checkTypeFilter and pickingView keep their
+          // values and come back exactly as they were, which is the rule the
+          // note above this one records.
+          openPickerId !== null || openTintId !== null ? null : (
           <>
             {/* Type pills left (own independent state, same component Assign
                 uses), and the Picker | Bill view toggle right — occupying the
@@ -3108,7 +3374,12 @@ export function PickingBoardMobile(): React.JSX.Element {
             The empty-state copy is UNCHANGED and still reads off BILLS: zero
             groups and zero bills are the same condition (a group exists only
             because a bill put it there), so the two can never disagree. */}
-        {!loading && !error && data && pickingView === "picker" && openPickerId === null &&
+        {/* ⚠ `openTintId === null` ADDED 2026-09-18 — the other half of the
+            mutual exclusion the tint section's own gate carries. The picker
+            list is tab-wide; inside one tint operator's bills it would sit
+            under his header saying nothing about him. Its markup, its
+            `pickerGroups` memo and its empty-state copy are untouched. */}
+        {!loading && !error && data && pickingView === "picker" && openPickerId === null && openTintId === null &&
           (pickerGroups.length === 0 ? (
             <p className="text-[13px] text-gray-400 text-center py-16">
               {assignedRows.length === 0 ? "Nobody is picking right now." : "No bills match."}
@@ -3215,6 +3486,144 @@ export function PickingBoardMobile(): React.JSX.Element {
               );
             })
           ))}
+
+        {/* ── THE TINT ROOM — READ-ONLY (2026-09-18) ─────────────────────────
+            A second section under the picker list, on the same tab, because a
+            tint bill is work the supervisor is WAITING FOR: it reaches his
+            Assign tab only when the tint room finishes it and a done route
+            moves its stage. He cannot act on anything in here, and nothing in
+            here is tappable except the cards that open their own bill list.
+
+            🔴 GATED ON BOTH LEVEL-2s BEING CLOSED. Inside one picker's bills the
+            sub-header above says "Ravi · 3 bills", and a tab-wide tint section
+            under it would answer a question nobody asked; inside a tint
+            operator's bills the same applies in reverse (that gate is on the
+            picker list itself, above).
+
+            ⚠ HIDDEN ENTIRELY WHEN THE ROOM IS EMPTY — no heading, no "nothing
+            in the tint room" line. The section is a report on work that exists;
+            with none, the Picking tab is the board it has always been. Same
+            reasoning as the Due header that only renders when Upcoming does.
+
+            ⚠ THE LOCAL / UPC PILLS DO NOT FILTER THIS SECTION, deliberately.
+            The feed's per-operator bills, drums and litres are server-computed
+            (drums skip an untagged bill rather than counting it as zero), so
+            filtering here would mean re-aggregating all three client-side —
+            recomputing figures the feed exists to own, and the one thing the
+            build spec says not to do. The pills keep narrowing the picker list
+            above, which is what they have always done.
+
+            ⚠ THE FEED IS NOT `data`. It arrives on its own state from its own
+            route and its own marker (picking-mobile-shell.tsx), so nothing in
+            it reaches rowStatus, the three tab badges, the Assign badge or the
+            held-back band — every one of which is derived from `data.rows`. */}
+        {!loading && !error && tintWork !== null && tintWork.totals.bills > 0 &&
+          pickingView === "picker" && openPickerId === null && openTintId === null && (
+          <div ref={tintSectionRef}>
+            {/* The Upcoming-zone heading, verbatim — same classes, same
+                spacing, same border-t separator. Only the words differ. */}
+            <div className="flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-gray-400 mt-[22px] mb-2 px-[2px] pt-[14px] border-t border-gray-200">
+              Tinting
+              <span className="tabular-nums ml-1.5">{tintWork.totals.bills}</span>
+              <span className="tabular-nums">
+                &nbsp;·&nbsp;{tintWork.totals.drums} D&nbsp;·&nbsp;{formatLitres(tintWork.totals.litres)} L
+              </span>
+            </div>
+
+            {/* The waiting pool, first — it is the only thing here a supervisor
+                might chase somebody about. Hidden when nothing is waiting. */}
+            {tintWork.pool.bills > 0 && (
+              <TintCard
+                title="Waiting for operator"
+                counts={`${tintWork.pool.bills} ${tintWork.pool.bills === 1 ? "bill" : "bills"}`}
+                drums={tintWork.pool.drums}
+                litres={tintWork.pool.litres}
+                state={
+                  tintWork.pool.oldestWaitHours === null
+                    ? null
+                    : `oldest waiting ${tintWork.pool.oldestWaitHours}h`
+                }
+                onOpen={() => setOpenTintId("pool")}
+              />
+            )}
+
+            {/* One card per operator, in the feed's order — the roster's own
+                alphabetical order, so a card never jumps as work moves (the
+                same reason Floor's picker cards are alphabetical). ROSTER-
+                SEEDED: an operator with nothing on him is still here, reading
+                "Free", which the picker list above deliberately does not do. */}
+            {tintWork.operators.map((op) => (
+              <TintCard
+                key={op.id}
+                title={op.name}
+                counts={op.bills === 0 ? "Free" : `${op.bills} ${op.bills === 1 ? "bill" : "bills"}`}
+                drums={op.bills === 0 ? null : op.drums}
+                litres={op.bills === 0 ? null : op.litres}
+                state={tintOperatorState(op)}
+                onOpen={op.bills === 0 ? null : () => setOpenTintId(op.id)}
+              />
+            ))}
+
+            <p className="text-[11.5px] text-gray-400 mt-2.5 px-[2px]">
+              Read only — these bills reach Assign when tinting is finished.
+            </p>
+          </div>
+        )}
+
+        {/* ── THE TINT ROOM, LEVEL 2 — one operator's bills, or the pool ─────
+            The same shape the picker's level 2 has: a chevron back control, the
+            name, one numbers line, then the bills. NOTHING inside is tappable —
+            no checkbox, no arrow, no assign, no detail. A supervisor reading
+            this is finding out when he can expect the work, not doing it.
+
+            ⚠ RESOLVED LIVE OFF `tintWork`, never snapshotted at tap time, so a
+            refetch that empties an operator renders the empty line with the
+            back control still live rather than navigating out from under a
+            thumb — the rule the picker's level 2 already documents. */}
+        {!loading && !error && tintWork !== null && openTintId !== null && (() => {
+          const bucket =
+            openTintId === "pool"
+              ? { name: "Waiting for operator", bills: tintWork.pool.bills, drums: tintWork.pool.drums, litres: tintWork.pool.litres, rows: tintWork.pool.rows, state: null as string | null }
+              : (() => {
+                  const op = tintWork.operators.find((o) => o.id === openTintId);
+                  return op === undefined
+                    ? null
+                    : { name: op.name, bills: op.bills, drums: op.drums, litres: op.litres, rows: op.rows, state: tintOperatorState(op) };
+                })();
+          return (
+            <>
+              <div className="flex items-center gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setOpenTintId(null)}
+                  aria-label="Back to the tint room"
+                  className="w-11 h-11 -ml-2.5 shrink-0 flex items-center justify-center rounded-[10px] text-gray-500 active:bg-gray-100"
+                >
+                  <ChevronLeft size={22} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[16px] font-semibold text-[#1d2939] truncate">
+                    {bucket?.name ?? "—"}
+                  </div>
+                  <div className="text-[12px] font-medium text-[#667085] tabular-nums">
+                    {bucket === null
+                      ? "0 bills"
+                      : `${bucket.bills} ${bucket.bills === 1 ? "bill" : "bills"}` +
+                        ` · ${bucket.drums} D · ${formatLitres(bucket.litres)} L` +
+                        (bucket.state !== null ? ` · ${bucket.state}` : "")}
+                  </div>
+                </div>
+              </div>
+              {bucket === null || bucket.rows.length === 0 ? (
+                <p className="text-[13px] text-gray-400 text-center py-16">
+                  Nothing in the tint room for this card.
+                </p>
+              ) : (
+                bucket.rows.map((row) => <TintBillRow key={row.orderId} row={row} />)
+              )}
+            </>
+          );
+        })()}
 
         {/* ── BILL VIEW — today's flat list, unchanged ────────────────────
             The list this tab showed before it grew levels: every assigned bill,

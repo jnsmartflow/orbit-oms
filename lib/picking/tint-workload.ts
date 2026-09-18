@@ -511,6 +511,7 @@ export async function getTintWorkload(nowMs: number = Date.now()): Promise<TintW
  */
 export async function getTintWorkloadMarker(): Promise<{
   count: number;
+  latest: string | null;
   latestOrder: string | null;
   latestAssignment: string | null;
 }> {
@@ -527,9 +528,28 @@ export async function getTintWorkloadMarker(): Promise<{
     },
     _max: { updatedAt: true },
   });
+  const latestOrder = orderAgg._max.updatedAt?.toISOString() ?? null;
+  const latestAssignment = assignmentAgg._max.updatedAt?.toISOString() ?? null;
+
   return {
     count: orderAgg._count,
-    latestOrder: orderAgg._max.updatedAt?.toISOString() ?? null,
-    latestAssignment: assignmentAgg._max.updatedAt?.toISOString() ?? null,
+    // 🔴 `latest` IS THE LATER OF THE TWO, AND IT HAS TO EXIST UNDER THIS NAME.
+    // `lib/hooks/use-picking-marker.ts` compares exactly `count`, `latest`,
+    // `heldBack` and `heldBackTrucks` — a field it does not read cannot make it
+    // refetch. Shipping the two clocks as `latestOrder`/`latestAssignment`
+    // alone (as this function first did, 2026-09-18) left `latest` undefined on
+    // every probe, so the two sides of the comparison were equal and a PAUSE —
+    // which moves only the assignment clock — fired nothing. The bug the second
+    // clock exists to prevent, reintroduced one field name later.
+    //
+    // ISO-8601 UTC strings sort lexicographically, so `>` is a real comparison
+    // here and no Date is constructed.
+    latest:
+      latestOrder === null || (latestAssignment !== null && latestAssignment > latestOrder)
+        ? latestAssignment
+        : latestOrder,
+    // Echoed for a human reading the response; the hook ignores both.
+    latestOrder,
+    latestAssignment,
   };
 }
