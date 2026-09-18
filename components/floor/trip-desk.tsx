@@ -29,7 +29,7 @@
 // ⚠ NO WINDOW-LEVEL KEY LISTENER ANYWHERE UNDER HERE. floor-page.tsx is the
 // single Esc owner for the floor tree (FLOOR §4.6).
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
@@ -95,6 +95,10 @@ type LeafProps = {
   onOpenDetail: (id: number) => void;
   gateOn: boolean;
 };
+
+/** Gap above the pink band when "+ Add bills" scrolls to it — the band near the
+ *  top of the column, not flush against it, with pool rows readable below. */
+const BAND_TOP_GAP = 12;
 
 // FLOOR_SPINE, imported and never re-implemented (FLOOR §3).
 const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
@@ -236,24 +240,43 @@ export function TripDesk({
 }) {
   const [pivot, setPivot] = useState<"flat" | "route">("flat");
 
-  // ── Where the trip was scrolled when "+ Add bills" was pressed ────────────
+  // ── Scrolling in and out of a targeted add (owner, 2026-09-18) ────────────
   //
-  // 🔴 DONE PUTS THE TRIP BACK WHERE IT WAS (owner, 2026-09-18). While adding,
-  // the planner scrolls DOWN into the pool; when the pool half closes the
-  // browser can only clamp to what is left, which lands somewhere arbitrary in
-  // the trip. So the position is saved as the add opens (this effect runs after
-  // the render that added the pool, before any scrolling, so scrollTop is still
-  // the trip's own) and restored when it ends.
+  // 🔴 "+ Add bills" TAKES THE PLANNER TO THE POOL. The press is a request to go
+  // and choose bills; on a trip longer than the screen the band opens below the
+  // last stop, off screen, and a button that appears to do nothing is the worst
+  // outcome there is. So the column scrolls until the band sits just under its
+  // top edge (BAND_TOP_GAP), with pool rows readable beneath it. Smooth, unless
+  // the viewer asked for reduced motion. On a short trip where nothing can
+  // scroll, the browser clamps and nothing moves — the band is already in view.
+  //
+  // 🔴 DONE PUTS THE TRIP BACK WHERE IT WAS. The position is saved as the add
+  // opens — before the scroll above, so it is the trip's own — and restored
+  // when the add ends. Without this the browser can only clamp to what is left
+  // when the pool half closes, landing somewhere arbitrary in the trip.
+  //
+  // ⚠ A LAYOUT EFFECT, SO THE RESTORE LANDS BEFORE PAINT. With a plain effect
+  // the pool-less trip painted once at the clamped position and then jumped.
+  // Safe here: TripDesk renders only once the board's data has loaded in the
+  // browser (floor-page shows the skeleton until then), never on the server —
+  // the same footing components/tint/manager/board-bits.tsx uses it on.
   //
   // ⚠ ONLY WHEN THE SAME TRIP IS STILL OPEN. A rail click ends the add AND opens
   // a different trip (floor-page `selectRail`); restoring the old trip's offset
   // onto another trip would be a jump for no reason, so it is dropped instead.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const poolHalfRef = useRef<HTMLDivElement>(null);
   const savedScroll = useRef<{ tripId: number; top: number } | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (addingToTripId !== null) {
-      if (savedScroll.current === null && el) savedScroll.current = { tripId: addingToTripId, top: el.scrollTop };
+      if (savedScroll.current !== null || !el) return;
+      savedScroll.current = { tripId: addingToTripId, top: el.scrollTop };
+      const band = poolHalfRef.current;
+      if (!band) return;
+      const top = el.scrollTop + band.getBoundingClientRect().top - el.getBoundingClientRect().top - BAND_TOP_GAP;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollTo({ top: Math.max(0, top), behavior: reduce ? "auto" : "smooth" });
       return;
     }
     const saved = savedScroll.current;
@@ -769,7 +792,7 @@ export function TripDesk({
     middle = (
       <>
         <div key="trip">{renderTripPanel(targetTrip, true)}</div>
-        <div key="pool">
+        <div key="pool" ref={poolHalfRef}>
           {/* THE DIVIDER. The band that used to head the pool now separates the
               truck from what can go on it. */}
           <TripAddBand
