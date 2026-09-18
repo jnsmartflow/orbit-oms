@@ -33,7 +33,6 @@ export function FloorBottomBar({
   routes,
   mode,
   busy,
-  newTripBlockedReason,
   addTargetLabel,
   onAddToTarget,
   onNewTripWithSelection,
@@ -69,16 +68,6 @@ export function FloorBottomBar({
   /** Which reading — decided by the rail's selection, not by the rows. */
   mode: "pool" | "trip";
   busy: boolean;
-  /**
-   * Why "+ New trip" cannot be pressed, or null. The one case (owner): the
-   * selection MIXES delivery types, and a trip is Local or Upcountry or IGT,
-   * never a blend. Naming both types is the point — "a trip is one or the
-   * other" without saying which two would send the planner hunting.
-   *
-   * ⚠ NO FALLBACK TO THE FORM. Opening a form to ask which type is exactly the
-   * question this flow exists to remove, and any answer it gave would be a guess.
-   */
-  newTripBlockedReason: string | null;
   /**
    * The trip number being FILLED — "+ Add bills" was pressed inside it, and the
    * pool is open under its band (trip-add-band.tsx). Null in the ordinary pool.
@@ -152,29 +141,25 @@ export function FloorBottomBar({
           </button>
         ) : mode === "pool" ? (
           <>
-            {/* The reason, in the bar as well as on hover — a disabled button
-                fires no mouse events, so a tooltip alone can go unread. */}
-            {newTripBlockedReason && (
-              <span className="max-w-[420px] truncate text-[11.5px] text-[#8a5d0c]" title={newTripBlockedReason}>
-                {newTripBlockedReason}
-              </span>
-            )}
             {/* 🔴 THE ONLY BUTTON LEFT ON THIS BAR (2026-09-16). "Add to trip ▾"
                 — a <select> listing every trip by number — is gone: the RAIL is
                 the picker now, and it shows the route, the load and the driver
                 that the menu never did. An existing trip is a card on the left; a
                 new one is this button. Two answers, two places, neither behind a
-                menu (owner's design). */}
-            <span title={newTripBlockedReason ?? undefined} className="inline-flex">
-              <button
-                type="button"
-                onClick={onNewTripWithSelection}
-                disabled={busy || newTripBlockedReason !== null}
-                className="inline-flex h-[34px] items-center rounded-md border border-brand-600 bg-brand-600 px-4 text-[12px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
-              >
-                {busy ? "Working…" : "+ New trip"}
-              </button>
-            </span>
+                menu (owner's design).
+
+                ⚠ NEVER DISABLED BY A MIXED SELECTION (owner, 2026-09-18). A trip
+                may carry Local and Upcountry bills on one truck; the number takes
+                the majority type's letter (lib/trips/type-choice.ts). The amber
+                "Selection mixes …" block that stood here was wrong and is gone. */}
+            <button
+              type="button"
+              onClick={onNewTripWithSelection}
+              disabled={busy}
+              className="inline-flex h-[34px] items-center rounded-md border border-brand-600 bg-brand-600 px-4 text-[12px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              {busy ? "Working…" : "+ New trip"}
+            </button>
           </>
         ) : (
           <button

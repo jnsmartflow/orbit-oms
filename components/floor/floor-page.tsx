@@ -71,6 +71,7 @@ import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
 import type { RailSelection } from "./trip-rail";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
+import { chooseTripTypeName } from "@/lib/trips/type-choice";
 import type {
   DeliveryTypeOption,
   VehicleOption,
@@ -1365,29 +1366,26 @@ export function FloorPage() {
    */
   const addTargetTrip = addingToTripId !== null ? (trips ?? []).find((t) => t.id === addingToTripId) ?? null : null;
   /**
-   * The delivery types the selection actually spans, in the words the board
-   * prints. One is the normal case; two or more blocks "+ New trip" (owner).
+   * The delivery type "+ New trip" numbers the trip under — the one with the
+   * most ticked bills, a tie broken by the active tab, then by the first bill
+   * ticked (lib/trips/type-choice.ts). Null only when no ticked bill has a type.
+   *
+   * 🔴 A MIXED SELECTION IS NOT AN ERROR (owner, 2026-09-18). A trip can carry
+   * more than one delivery type — Varachha (Local) and Kamrej (Upcountry) share
+   * a truck. The number keeps one letter because the number is an identifier;
+   * what the trip holds is read off its bills. This replaced a block that
+   * refused a mixed selection outright (8e1551a0).
+   *
+   * Walked in `selection`'s own order — a Set keeps insertion order, which is
+   * the order the bills were TICKED — not `selectedRows`, which is board order.
    */
-  const selectionTypeNames = useMemo(
-    () => Array.from(new Set(selectedRows.map((r) => r.deliveryType).filter((n): n is string => !!n))),
-    [selectedRows],
-  );
-  /**
-   * 🔴 A TRIP IS ONE DELIVERY TYPE (owner, 2026-09-16). The trip NUMBER embeds
-   * the type's letter (chk_trips_number_shape), so a mixed selection has no
-   * honest answer — and asking in a form is the question this whole flow exists
-   * to delete. The reason names the types PRESENT, so the planner knows which
-   * ticks to drop.
-   */
-  const newTripBlockedReason = useMemo<string | null>(() => {
-    if (selectionTypeNames.length < 2) return null;
-    const names = [...selectionTypeNames].sort();
-    const list =
-      names.length === 2
-        ? `${names[0]} and ${names[1]}`
-        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-    return `Selection mixes ${list} — a trip is one or the other.`;
-  }, [selectionTypeNames]);
+  const newTripTypeName = useMemo<string | null>(() => {
+    const typeById = new Map(selectedRows.map((r) => [r.orderId, r.deliveryType]));
+    const inTickOrder = Array.from(selection)
+      .filter((id) => typeById.has(id))
+      .map((id) => typeById.get(id) ?? null);
+    return chooseTripTypeName(inTickOrder, scope);
+  }, [selection, selectedRows, scope]);
 
   /**
    * "+ New trip" with bills ticked — CREATE DIRECTLY, no form (owner,
@@ -1398,14 +1396,14 @@ export function FloorPage() {
    * ⚠ NO TOAST ON SUCCESS. Landing inside the new trip is the confirmation.
    * Failures still speak.
    *
-   * The delivery type comes from the bills themselves — the selection agrees on
-   * one, or the button was disabled (`newTripBlockedReason`). The options list
-   * is fetched lazily here for the name → id mapping, exactly as the form does;
-   * most sessions never press this.
+   * The delivery type comes from the bills themselves (`newTripTypeName` — the
+   * majority, never a question). The options list is fetched lazily here for
+   * the name → id mapping, exactly as the form does; most sessions never press
+   * this.
    */
   const createTripWithSelection = useCallback(async () => {
     const ids = selectedIdsRef.current;
-    if (ids.length === 0 || newTripBlockedReason !== null) return;
+    if (ids.length === 0) return;
     setTripBarBusy(true);
     try {
       let opts = tripOptions;
@@ -1418,7 +1416,9 @@ export function FloorPage() {
         opts = (await res.json()) as TripOptions;
         setTripOptions(opts);
       }
-      const typeName = selectionTypeNames[0];
+      // Null when every ticked bill is untyped — refused below exactly as
+      // before, since there is no letter to number the trip with.
+      const typeName = newTripTypeName;
       const deliveryType = opts.deliveryTypes.find((d) => d.name === typeName);
       if (!deliveryType) {
         toast.error(`Could not match the delivery type "${typeName ?? "unknown"}" — nothing was created.`);
@@ -1464,7 +1464,7 @@ export function FloorPage() {
     } finally {
       setTripBarBusy(false);
     }
-  }, [newTripBlockedReason, selectionTypeNames, tripOptions, viewMode, histDate, onTripCreated]);
+  }, [newTripTypeName, tripOptions, viewMode, histDate, onTripCreated]);
 
   // ⚠ `attachableTrips` WENT WITH THE DROPDOWN (2026-09-16). The same rule — a
   // dispatched or cancelled trip cannot take bills — now lives on the rail
@@ -1474,9 +1474,11 @@ export function FloorPage() {
   // form so the common case — a planner ticking one route’s bills and pressing
   // New trip… — needs no answer to a question he has already answered.
   //
-  // ⚠ NULL ON A MIXED SELECTION, deliberately. There is no majority rule here:
-  // an Upcountry bill on a Local trip is a real dispatch error, and a form that
-  // guessed would make it silently.
+  // ⚠ NULL ON A MIXED SELECTION — the form is left blank for the planner to
+  // choose. A mixed load is NOT an error (owner, 2026-09-18: Local and Upcountry
+  // bills share trucks), but the form is the path where the planner states the
+  // type himself, so it does not pre-pick one for him. The direct "+ New trip"
+  // path picks by majority instead (`newTripTypeName`).
   const seedDeliveryTypeId = useMemo<number | null>(() => {
     const names = new Set(selectedRows.map((r) => r.deliveryType));
     if (names.size !== 1) return null;
@@ -1977,7 +1979,6 @@ export function FloorPage() {
               routes={selectionRoutes}
               mode={barMode}
               busy={tripBarBusy || tripBusyId !== null}
-              newTripBlockedReason={newTripBlockedReason}
               addTargetLabel={addTargetTrip?.tripNumber ?? null}
               onAddToTarget={() => { if (addingToTripId !== null) void addSelectionToTrip(addingToTripId, { quiet: true }); }}
               onNewTripWithSelection={() => void createTripWithSelection()}
