@@ -1,7 +1,12 @@
 "use client";
 
-// Floor Control — the band across the top of the pool while bills are being
+// Floor Control — the band between a trip and the pool while bills are being
 // added to ONE named trip (2026-09-16, owner's add-to-trip design).
+//
+// 🔴 A DIVIDER SINCE 2026-09-18. It used to head a pool that had REPLACED the
+// trip. Now the trip stays on screen above it (trip-desk.tsx) and the pool
+// opens below it, so it carries a border on BOTH edges: it separates the truck
+// from what can go on it.
 //
 // 🔴 IT EXISTS SO THE SCREEN NEVER ASKS AGAIN. Pressing "+ Add bills" inside a
 // trip used to drop the planner in the pool with no memory of what he had come
@@ -48,7 +53,7 @@ export function TripAddBand({
   onDone: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-[#f9a8d4] bg-[#fce7f3] px-4 py-2.5">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-y border-[#f9a8d4] bg-[#fce7f3] px-4 py-2.5">
       <span className="text-[13px] font-bold text-[#be185d]">Adding bills to</span>
       {/* The number on WHITE, so it reads as the label it is even on pink. */}
       <span className="rounded-[5px] border border-[#f9a8d4] bg-white px-[6px] py-px font-mono text-[11.5px] font-semibold text-[#be185d]">

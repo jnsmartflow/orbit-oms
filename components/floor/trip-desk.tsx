@@ -11,9 +11,13 @@
 // suggestion layer. All of them existed because the desk used to assign pickers
 // and choose slots by hand. It does neither now.
 //
-// TWO STATES, decided by the rail's selection and nothing else:
+// THREE STATES, decided by the rail's selection and the targeted add:
 //   pool  → header + Flat | By route pivot + the table
 //   trip  → trip header + the bills grouped under STOPS
+//   add   → the trip, UNCHANGED, then the pink band, then the pool below it
+//           ("+ Add bills" inside a trip — 2026-09-18, owner). The trip being
+//           filled never leaves the screen; scroll down to choose, look up to
+//           see what the truck already holds.
 //
 // ⚠ THE STOPS ARE RENDERED AS ONE FloorTable PER STOP, with a header row above
 // each. The mockup draws one table with colspan separator rows; a table per stop
@@ -25,7 +29,7 @@
 // ⚠ NO WINDOW-LEVEL KEY LISTENER ANYWHERE UNDER HERE. floor-page.tsx is the
 // single Esc owner for the floor tree (FLOOR §4.6).
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
@@ -231,6 +235,33 @@ export function TripDesk({
   unfilteredRows: FloorBoardRow[];
 }) {
   const [pivot, setPivot] = useState<"flat" | "route">("flat");
+
+  // ── Where the trip was scrolled when "+ Add bills" was pressed ────────────
+  //
+  // 🔴 DONE PUTS THE TRIP BACK WHERE IT WAS (owner, 2026-09-18). While adding,
+  // the planner scrolls DOWN into the pool; when the pool half closes the
+  // browser can only clamp to what is left, which lands somewhere arbitrary in
+  // the trip. So the position is saved as the add opens (this effect runs after
+  // the render that added the pool, before any scrolling, so scrollTop is still
+  // the trip's own) and restored when it ends.
+  //
+  // ⚠ ONLY WHEN THE SAME TRIP IS STILL OPEN. A rail click ends the add AND opens
+  // a different trip (floor-page `selectRail`); restoring the old trip's offset
+  // onto another trip would be a jump for no reason, so it is dropped instead.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef<{ tripId: number; top: number } | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (addingToTripId !== null) {
+      if (savedScroll.current === null && el) savedScroll.current = { tripId: addingToTripId, top: el.scrollTop };
+      return;
+    }
+    const saved = savedScroll.current;
+    savedScroll.current = null;
+    if (saved && el && railSelection.kind === "trip" && railSelection.tripId === saved.tripId) {
+      el.scrollTop = saved.top;
+    }
+  }, [addingToTripId, railSelection]);
   const [openRoute, setOpenRoute] = useState<string | null>(null);
 
   const isHistory = floor.mode === "history";
@@ -356,7 +387,8 @@ export function TripDesk({
   // control that renders and then does nothing when pressed is worse than one
   // that is absent, so it is absent there.
   const showPivot =
-    (activeTab === "floor" && railSelection.kind === "pool") || activeTab === "tinting";
+    (activeTab === "floor" && (railSelection.kind === "pool" || addingToTripId !== null)) ||
+    activeTab === "tinting";
   const pivotToggle = showPivot ? (
     <span className="inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[2px]">
       {(["flat", "route"] as const).map((p) => (
@@ -504,14 +536,21 @@ export function TripDesk({
   );
 
   // ── The middle ───────────────────────────────────────────────────────────
-  let middle: ReactNode;
 
-  // 🔴 TARGETED ADD SHOWS THE POOL WHILE THE TRIP STAYS SELECTED ON THE RAIL.
-  // The planner is filling that trip, so its card must stay lit; the middle is
-  // the pool because that is where the bills he is picking from live.
+  // 🔴 TARGETED ADD STACKS, IT DOES NOT SWAP (owner, 2026-09-18). It used to
+  // replace the trip with the pool, so the load being filled vanished and only
+  // the band's text was left of it. Now the trip panel renders exactly as it
+  // does on its own, the band sits under it as the divider, and the pool opens
+  // below. The trip panel is built ONCE (`renderTripPanel`) and placed first in
+  // both layouts, so React keeps the same nodes when the pool half opens and
+  // closes — Done takes the pool away and leaves the trip where it was.
   const targetTrip = addingToTripId !== null ? (trips ?? []).find((t) => t.id === addingToTripId) ?? null : null;
 
-  if (railSelection.kind === "pool" || addingToTripId !== null) {
+  // ── The POOL half — the "To plan" list, with its empty state ─────────────
+  // Built unconditionally (cheap: already-derived rows) and placed by the
+  // branches below.
+  let poolContent: ReactNode;
+  {
     // The header describes the WHOLE pool, both halves, because that is what
     // the table below lists — a header that counted only the due half would not
     // add up to the rows on screen. The divider gives the upcoming subtotal.
@@ -519,24 +558,8 @@ export function TripDesk({
     const litres = sumLitres(allPool);
     const weight = sumWeightKg(allPool);
     const weightStr = formatWeightKg(weight.kg);
-    middle = (
+    poolContent = (
       <>
-        {/* The band — only while a named trip is being filled. It sits above the
-            pool header so the trip is the first thing read. */}
-        {targetTrip && (
-          <TripAddBand
-            tripNumber={targetTrip.tripNumber}
-            routeName={targetTrip.routeName}
-            routeExtraCount={targetTrip.routeExtraCount}
-            bills={targetTrip.counts.total}
-            litres={formatLitres(targetTrip.totalLitres)}
-            lastAddCount={lastAddCount}
-            busy={tripBusyId === targetTrip.id}
-            onUndo={onUndoLastAdd}
-            onDone={onDoneAdding}
-          />
-        )}
-
         {allPool.length === 0 ? (
           <div className="px-5 py-14 text-center">
             <div className="text-[28px] leading-none text-gray-300">○</div>
@@ -576,13 +599,20 @@ export function TripDesk({
         )}
       </>
     );
-  } else if (!selectedTrip) {
-    middle = (
-      <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">
-        That trip is no longer on this day&rsquo;s board.
-      </div>
-    );
-  } else {
+  }
+
+  // ── The TRIP panel — header, bar, legend, stops ───────────────────────────
+  // `adding` is true only while THIS trip is being filled with the pool open
+  // below it. It changes exactly two things, both so the panel stays put and
+  // cannot be acted on by accident:
+  //   - the header hides its "+ Add bills" (already open) and keeps the row's
+  //     height, so the stops do not jump;
+  //   - the stop tables keep their tick column but render NO boxes
+  //     (`selectionLocked`). There is ONE selection for the whole screen, and a
+  //     trip row ticked in the middle of an add would mix "take this off" into
+  //     the add. Dropping the column instead would slide every column sideways.
+  //     ⚡ and ⋯ still work.
+  const renderTripPanel = (trip: TripSummary, adding: boolean): ReactNode => {
     // The trip's bills, grouped under its stops. `tripDetail` carries the drops
     // in dropSeq order and which orders sit on each; the board carries the rows.
     //
@@ -613,36 +643,37 @@ export function TripDesk({
     // here too: a trip can carry a tint bill, and the Tinting TAB is a view of
     // the pool, never a rule about what a stop may contain.
     const rowById = new Map(unfilteredRows.map((r) => [r.orderId, r] as const));
-    const drops = tripDetail?.id === selectedTrip.id ? tripDetail.drops : [];
+    const drops = tripDetail?.id === trip.id ? tripDetail.drops : [];
     // ⚠ THE SAME FRESHNESS TEST AS `drops`. tripDetail lags the rail by one
     // fetch when the planner clicks between trips, and showing the PREVIOUS
     // trip's history under this trip's buttons would be worse than showing none
     // — a confident line about the wrong load.
     // NULL, not [], while the detail is still for another trip: the header's
     // clock then shows no count rather than the previous trip's.
-    const activity = tripDetail?.id === selectedTrip.id ? tripDetail.activity : null;
+    const activity = tripDetail?.id === trip.id ? tripDetail.activity : null;
 
-    middle = (
+    return (
       <>
         <TripDetailHeader
           // Keyed by trip, so the ··· menu and the history toggle close when the
           // planner picks another trip.
-          key={selectedTrip.id}
-          trip={selectedTrip}
+          key={trip.id}
+          trip={trip}
           activity={activity}
-          busy={tripBusyId === selectedTrip.id}
+          busy={tripBusyId === trip.id}
           readOnly={isHistory}
-          onAddBills={() => onStartAddingTo(selectedTrip.id)}
-          onChangeVehicle={() => onChangeVehicle(selectedTrip.id)}
-          onCancelTrip={() => onCancelTrip(selectedTrip.id)}
+          adding={adding}
+          onAddBills={() => onStartAddingTo(trip.id)}
+          onChangeVehicle={() => onChangeVehicle(trip.id)}
+          onCancelTrip={() => onCancelTrip(trip.id)}
           gateOn={gateOn}
-          onShowToFloor={() => onSetTripShown(selectedTrip.id, true)}
-          onTakeBackFromFloor={() => onSetTripShown(selectedTrip.id, false)}
-          onSendToBilling={() => onSetTripSentToBilling(selectedTrip.id, true)}
-          onTakeBackFromBilling={() => onSetTripSentToBilling(selectedTrip.id, false)}
+          onShowToFloor={() => onSetTripShown(trip.id, true)}
+          onTakeBackFromFloor={() => onSetTripShown(trip.id, false)}
+          onSendToBilling={() => onSetTripSentToBilling(trip.id, true)}
+          onTakeBackFromBilling={() => onSetTripSentToBilling(trip.id, false)}
         />
 
-        {tripDetail === null || tripDetail.id !== selectedTrip.id ? (
+        {tripDetail === null || tripDetail.id !== trip.id ? (
           <div className="px-5 py-10 text-center text-[11.5px] text-gray-400">Loading stops…</div>
         ) : drops.length === 0 ? (
           <div className="px-5 py-14 text-center">
@@ -696,6 +727,7 @@ export function TripDesk({
                     // the heading on every row (owner). The pool and By route
                     // keep it — out there the trips are mixed.
                     hideTripTag
+                    selectionLocked={adding}
                     {...selProps}
                   />
                 ) : (
@@ -719,6 +751,54 @@ export function TripDesk({
 
         {/* The full history is no longer down here: the clock in the trip
             header opens it in place (floor redesign, 2026-09-15, owner). */}
+      </>
+    );
+  };
+
+  // ── Placing the pieces ────────────────────────────────────────────────────
+  //
+  // ⚠ THE TRIP PANEL IS ALWAYS THE FIRST CHILD, in a slot keyed "trip", so that
+  // opening and closing the pool half below it never remounts it: the header's
+  // history toggle stays as it was. The scroll position is handled separately
+  // (`scrollRef` below) — it is saved when the add opens and put back on Done.
+  //
+  // If the target trip is not in the loaded list, floor-page ends the add
+  // (1bfa0db9) — the pool renders alone for that one frame.
+  let middle: ReactNode;
+  if (targetTrip) {
+    middle = (
+      <>
+        <div key="trip">{renderTripPanel(targetTrip, true)}</div>
+        <div key="pool">
+          {/* THE DIVIDER. The band that used to head the pool now separates the
+              truck from what can go on it. */}
+          <TripAddBand
+            tripNumber={targetTrip.tripNumber}
+            routeName={targetTrip.routeName}
+            routeExtraCount={targetTrip.routeExtraCount}
+            bills={targetTrip.counts.total}
+            litres={formatLitres(targetTrip.totalLitres)}
+            lastAddCount={lastAddCount}
+            busy={tripBusyId === targetTrip.id}
+            onUndo={onUndoLastAdd}
+            onDone={onDoneAdding}
+          />
+          {poolContent}
+        </div>
+      </>
+    );
+  } else if (railSelection.kind === "pool" || addingToTripId !== null) {
+    middle = poolContent;
+  } else if (!selectedTrip) {
+    middle = (
+      <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">
+        That trip is no longer on this day&rsquo;s board.
+      </div>
+    );
+  } else {
+    middle = (
+      <>
+        <div key="trip">{renderTripPanel(selectedTrip, false)}</div>
       </>
     );
   }
@@ -769,7 +849,7 @@ export function TripDesk({
           {tabs}
         </div>
         {liveBar}
-        <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">{body}</div>
       </div>
     </div>
   );

@@ -84,6 +84,7 @@ export function TripDetailHeader({
   trip,
   busy,
   readOnly,
+  adding = false,
   gateOn,
   activity,
   onAddBills,
@@ -98,6 +99,12 @@ export function TripDetailHeader({
   busy: boolean;
   /** History — a past day is a record, not a thing to add to. */
   readOnly: boolean;
+  /**
+   * Bills are being added to THIS trip right now (2026-09-18) — the pool is
+   * open below the trip panel under the pink band. Hides "+ Add bills": it is
+   * already open, and a second press would do nothing visible.
+   */
+  adding?: boolean;
   /** Desk control (the picking visibility gate). Show to floor is disabled while off. */
   gateOn: boolean;
   /**
@@ -105,7 +112,7 @@ export function TripDetailHeader({
    * trip is still on its way, so the clock never shows the previous trip's count.
    */
   activity: TripActivityRow[] | null;
-  /** + Add bills — switches the rail back to the pool, where bills are ticked. */
+  /** + Add bills — opens the pool BELOW this trip, under the pink band. */
   onAddBills: () => void;
   /** The pencil — opens the vehicle / transporter / slot / note editor. */
   onChangeVehicle: () => void;
@@ -388,7 +395,11 @@ export function TripDetailHeader({
 
         {/* ── Row 6 — the stops bar: 20px below the legend, 8px padding under
             its line, a 1px bottom border (exact values, owner's design file) ── */}
-        <div className="mt-[20px] flex items-center gap-2.5 border-b border-[#e7e7ee] pb-2">
+        {/* ⚠ min-h WHILE ADDING ONLY: the hidden "+ Add bills" button is what
+            gave this row its height (32px button + 8px padding + 1px border = 41px,
+            border-box), and without the floor the stops below would
+            jump up the moment it is pressed. Other views keep their height. */}
+        <div className={`mt-[20px] flex items-center gap-2.5 border-b border-[#e7e7ee] pb-2 ${adding ? "min-h-[41px]" : ""}`}>
           <span className="text-[13.5px] font-semibold tabular-nums text-[#1a1a22]">
             {isEmpty
               ? "No bills yet"
@@ -404,7 +415,7 @@ export function TripDetailHeader({
                   </span>
                 ))}
           </span>
-          {canWrite && (
+          {canWrite && !adding && (
             <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} ml-auto gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
               <Plus size={13} strokeWidth={2.2} />
               Add bills

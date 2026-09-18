@@ -286,6 +286,7 @@ export function FloorTable({
   chipFor,
   gateOn = false,
   hideTripTag = false,
+  selectionLocked = false,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
@@ -299,6 +300,17 @@ export function FloorTable({
    * the tag is the only thing saying which load a bill belongs to.
    */
   hideTripTag?: boolean;
+  /**
+   * Keep the tick column but render NO tick boxes in it (2026-09-18).
+   *
+   * TRUE only for the trip panel while bills are being ADDED to it: the trip
+   * sits above the pool, and one shared selection means a ticked trip row
+   * would mix "take this off" into an add. The column itself stays — dropping
+   * it (by omitting the selection handlers, as the read-only views do) would
+   * change `widths` and slide every column of the trip sideways the moment
+   * "+ Add bills" is pressed, which is exactly the movement this avoids.
+   */
+  selectionLocked?: boolean;
   // Wired only on the live variant; undefined on history/upcoming.
   selection?: FloorSelection;
   onToggleRow?: (id: number) => void;
@@ -529,6 +541,7 @@ export function FloorTable({
         <tr>
           {interactive && (
             <th className={HEAD_TH_NARROW}>
+              {!selectionLocked && (
               <input
                 type="checkbox"
                 aria-label="Select all rows in this group"
@@ -536,6 +549,7 @@ export function FloorTable({
                 checked={allOn}
                 onChange={() => onToggleAll?.(tableRows)}
               />
+              )}
             </th>
           )}
           <th className={HEAD_TH}>OBD</th>
@@ -620,7 +634,8 @@ export function FloorTable({
     // render no checkbox column at all, which is a different question and is
     // unchanged — see `widths`. This only decides whether the input renders
     // INSIDE a column that already exists, so no cell count moves.
-    const selectable = true;
+    // `selectionLocked` (2026-09-18) is the one exception — see the prop.
+    const selectable = !selectionLocked;
     const { isSite, isRedirect } = shipInfo(row);
     const obd = asStr(row.obdDateTime);
     const target = row.dispatchTargetDate;

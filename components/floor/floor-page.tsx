@@ -611,18 +611,26 @@ export function FloorPage() {
   );
 
   /**
-   * "+ Add bills" inside a trip (2026-09-16): remember the trip, send the
-   * planner to the pool. The trip's card STAYS selected on the rail — he is
-   * filling it and must be able to see it — which is why this does not touch
-   * `railSelection`; TripDesk shows the pool whenever this is set.
+   * "+ Add bills" inside a trip (2026-09-16): remember the trip and open the
+   * pool BELOW it (2026-09-18 — TripDesk stacks trip, band, pool; it used to
+   * swap the trip out). The trip's card STAYS selected on the rail, which is
+   * why this does not touch `railSelection`.
+   *
+   * ⚠ THE SELECTION IS CLEARED, on the way in and on the way out. A tick made
+   * on the trip's own rows means "take this off"; carried into the add it would
+   * be posted as an add. Ticks made in the pool mean "put this on"; carried out
+   * by Done they would sit under a trip bar offering Remove. There is one
+   * selection for the screen, so the mode change empties it.
    */
   const startAddingTo = useCallback((tripId: number) => {
+    setSelection(new Set());
     setAddingToTripId(tripId);
     setLastAdd(null);
   }, []);
 
-  /** Done, or Escape: close the band and leave the pool as it was. */
+  /** Done, Escape, or a rail click: close the pool half and leave the trip. */
   const stopAddingTo = useCallback(() => {
+    setSelection(new Set());
     setAddingToTripId(null);
     setLastAdd(null);
   }, []);

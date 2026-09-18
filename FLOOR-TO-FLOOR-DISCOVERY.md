@@ -47,6 +47,10 @@ refuses an empty trip. `floor-board.tsx`, `trip-band.tsx`, `build-trip-drawer.ts
   bill belongs to the trip in the URL. "Remove from trip" never hits it because it groups by trip
   first, and Undo now re-reads the trip before sending ids. But the guard belongs in the route, not
   in its callers. Fix alongside the delivery-type decision.
+- **Parked (2026-09-18): moving a bill from one trip to another.** The pool never lists bills on
+  other trips and the add route refuses them on purpose. A Move needs its own list section and
+  either a move action on that route or a remove-then-add — the latter leaves a moment where the
+  bill is on neither trip. Decide the transaction question before building.
 - **Orphan `trip_drops`** — cancel leaves empty stops behind (104 on 2026-09-14, plus one from the
   slice 3 test). See §9.4.
 - ~~**Slice 8 — the band's "at desk, floor cannot see" text**~~ — **CLOSED by slice 6.** The text
