@@ -95,6 +95,20 @@ type LeafProps = {
 // FLOOR_SPINE, imported and never re-implemented (FLOOR §3).
 const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
 
+/**
+ * Is this row in the POOL — the "To plan" list the Floor tab shows? On no trip,
+ * and not in the tint room (that is the Tinting tab's). Both zones.
+ *
+ * 🔴 EXPORTED SO THE SEARCH AUTO-TICK USES THE SAME TEST (2026-09-18).
+ * floor-page.tsx ticks a pasted OBD's rows; it used to tick every match on the
+ * board, including bills on trips the pool never shows, so a bill could be
+ * ticked where nobody could see it. One predicate, so what is ticked and what is
+ * listed cannot disagree.
+ */
+export function isPoolRow(r: FloorBoardRow): boolean {
+  return r.tripDropId === null && !isTintRoomRow(r);
+}
+
 export function TripDesk({
   floor,
   trips,
@@ -264,8 +278,10 @@ export function TripDesk({
   // `targetDate > today` gets wrong: a NULL date is "due", never "upcoming", and
   // a bill a supervisor released early stays "due" for good.
   const upcomingAll = floorTabRows.filter((r) => r.zone === "upcoming");
-  const poolRows = dueRows.filter((r) => r.tripDropId === null);
-  const poolUpcoming = upcomingAll.filter((r) => r.tripDropId === null);
+  // `isPoolRow` restates the tint exclusion `floorTabRows` already applied —
+  // harmless here, and it is the one test the search auto-tick shares.
+  const poolRows = dueRows.filter(isPoolRow);
+  const poolUpcoming = upcomingAll.filter(isPoolRow);
 
   const selectedTrip =
     railSelection.kind === "trip"

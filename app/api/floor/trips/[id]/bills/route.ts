@@ -178,7 +178,9 @@ export async function POST(
         // short, and "move" is a different action the caller should ask for.
         const current = await prisma.trip_drops.findUnique({
           where: { id: order.tripDropId },
-          select: { id: true, tripId: true, dropKey: true },
+          // The trip NUMBER rides this same read (2026-09-18): the refusal is
+          // read by a planner, and an internal id is nothing he can act on.
+          select: { id: true, tripId: true, dropKey: true, trip: { select: { tripNumber: true } } },
         });
         if (current && current.tripId === tripId && current.dropKey === dropKey) {
           skipped.push(orderId);
@@ -188,7 +190,7 @@ export async function POST(
           orderId,
           error:
             current && current.tripId !== tripId
-              ? `Already on trip ${current.tripId} — remove it from that trip first.`
+              ? `Already on ${current.trip.tripNumber} — remove it from that trip first.`
               : "Already attached to a different stop on this trip.",
         });
         continue;

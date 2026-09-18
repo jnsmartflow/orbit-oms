@@ -32,7 +32,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { TripDesk } from "./trip-desk";
+import { TripDesk, isPoolRow } from "./trip-desk";
 import { TripForm } from "./trip-form";
 import { rankRouteName, formatRouteLabel } from "@/lib/trips/route-label";
 import { FloorBottomBar } from "./floor-bottom-bar";
@@ -270,7 +270,15 @@ export function FloorPage() {
    * 🔴 THE ONE PIECE OF STATE THIS FLOW ADDS. Pool add mode is derived (see
    * `addMode`), but this cannot be: the planner has NAMED a trip and then walks
    * away from its panel into the pool, so the answer has to be remembered.
-   * Cleared by Done, by Escape, and by the trip leaving the board.
+   * Cleared by Done, by Escape, by any click on the rail (`selectRail`), and by
+   * the trip leaving the loaded list or being cancelled (the effect beside
+   * `selectRail`). Nothing else clears it — search, tab changes and the live
+   * refetch leave it alone.
+   *
+   * 🔴 THE BAR READS THIS, NOT THE RAIL (2026-09-18). The rail stays on the
+   * trip throughout, so anything that asks the rail "pool or trip?" gets "trip"
+   * and offers Remove. `addTargetLabel` is checked first in the bottom bar, and
+   * the bar's context text says "adding to X" off this same id.
    */
   const [addingToTripId, setAddingToTripId] = useState<number | null>(null);
   /** Placeholder route names from the trips feed — see the add hint below. */
@@ -487,6 +495,10 @@ export function FloorPage() {
     async (tripId: number) => {
       setTripFormSeed(null);
       setSelection(new Set());
+      // Opening the new trip ends any targeted add, for the reason `selectRail`
+      // gives: the rail moves, so the add must not stay pointed elsewhere.
+      setAddingToTripId(null);
+      setLastAdd(null);
       setRailSelection({ kind: "trip", tripId });
       await load();
     },
@@ -614,6 +626,39 @@ export function FloorPage() {
     setAddingToTripId(null);
     setLastAdd(null);
   }, []);
+
+  /**
+   * A click on the rail — "To plan" or a trip card. The rail's ONLY caller.
+   *
+   * 🔴 IT ENDS A TARGETED ADD (owner, 2026-09-18). A click on a card is a plain
+   * request to look at that trip. Before this, the rail moved and the add did
+   * not: the rail lit trip B while the band still said "Adding bills to A" and
+   * the pane still showed the pool. Silently retargeting the add to B would be
+   * the opposite surprise, so the click simply opens what was clicked.
+   */
+  const selectRail = useCallback(
+    (sel: RailSelection) => {
+      stopAddingTo();
+      setRailSelection(sel);
+    },
+    [stopAddingTo],
+  );
+
+  /**
+   * 🔴 THE ADD ENDS WHEN ITS TRIP LEAVES THE LOADED LIST (owner, 2026-09-18) —
+   * a History day that does not include it, or a trip cancelled by someone
+   * else. The band is drawn only when the trip is found, so without this the
+   * band vanished while the mode stayed on, and the pane kept showing a pool
+   * with no trip named anywhere. Same class as the bar reading the wrong state:
+   * the band and the mode must never disagree.
+   *
+   * `trips === null` is a load in flight, not an answer — left alone.
+   */
+  useEffect(() => {
+    if (addingToTripId === null || trips === null) return;
+    const target = trips.find((t) => t.id === addingToTripId);
+    if (!target || target.status === "cancelled") stopAddingTo();
+  }, [addingToTripId, trips, stopAddingTo]);
 
   /** Add the ticked bills to an existing trip. */
   const addSelectionToTrip = useCallback(
@@ -1068,13 +1113,32 @@ export function FloorPage() {
         // No eligibility filter (2026-09-10 d). A pasted OBD that turns out to
         // be a finished bill is exactly the one a planner is looking for when he
         // is building a load, and it used to be found and then not ticked.
-        const ids = applySearch(scopedData.floor.rows, p).map((r) => r.orderId);
+        //
+        // 🔴 ONLY ROWS THE PANE IS SHOWING (owner, 2026-09-18). This used to
+        // tick every match on the board, so a pasted OBD for a bill already on
+        // a trip was ticked in the pool where nobody could see it — and a
+        // pressed button then acted on it. A bill ticked out of sight is how a
+        // van leaves short. So:
+        //   - the pool (or a targeted add, which shows the pool): pool rows
+        //     only, by the pool's own test (`isPoolRow`, trip-desk.tsx);
+        //   - an open trip: that trip's own bills only, read off the stops the
+        //     panel renders (unscoped, as the panel is).
+        let visible: FloorBoardRow[];
+        if (railSelection.kind === "pool" || addingToTripId !== null) {
+          visible = scopedData.floor.rows.filter(isPoolRow);
+        } else if (tripDetail !== null && tripDetail.id === railSelection.tripId) {
+          const onTrip = new Set(tripDetail.drops.flatMap((d) => d.orderIds));
+          visible = (data?.floor.rows ?? []).filter((r) => onTrip.has(r.orderId));
+        } else {
+          visible = [];
+        }
+        const ids = applySearch(visible, p).map((r) => r.orderId);
         setSelection(new Set(ids));
       } else {
         setSelection(new Set());
       }
     },
-    [topTab, scopedData],
+    [topTab, scopedData, data, railSelection, addingToTripId, tripDetail],
   );
   const clearSearch = useCallback(() => {
     setSearchQuery("");
@@ -1570,11 +1634,17 @@ export function FloorPage() {
 
   // A short reminder of what the selection is sitting on. Reads off the rail,
   // for the same reason `barMode` does.
+  //
+  // ⚠ A TARGETED ADD SPEAKS FIRST (2026-09-18). The rail is still on the trip
+  // being filled, and "on L-260918-03" read as a claim about the TICKED BILLS —
+  // which were pool bills on no trip at all. While adding it says where they are
+  // going instead.
   const barContextLabel = useMemo(() => {
+    if (addTargetTrip) return `adding to ${addTargetTrip.tripNumber}`;
     if (railSelection.kind !== "trip") return null;
     const t = (trips ?? []).find((x) => x.id === railSelection.tripId);
     return t ? `on ${t.tripNumber}` : null;
-  }, [railSelection, trips]);
+  }, [addTargetTrip, railSelection, trips]);
 
   // Tab counts reflect the searched/filtered set of each surface (they equal the
   // full totals when no search/filter is active).
@@ -1884,7 +1954,7 @@ export function FloorPage() {
               tripsLoading={loading}
               tripDetail={tripDetail}
               selection={railSelection}
-              onSelectRail={setRailSelection}
+              onSelectRail={selectRail}
               histDate={histDate}
               onEnterHistory={enterHistory}
               onExitHistory={exitHistory}

@@ -75,6 +75,10 @@ export function FloorBottomBar({
    * 🔴 IT REPLACES "+ New trip" RATHER THAN JOINING IT (owner): you are filling
    * a trip, not starting one, and the button says exactly what will happen —
    * "Add 2 bills to L-260916-04", with nothing to choose after pressing it.
+   *
+   * ⚠ IT ALSO REPLACES "Remove from trip", AND IT IS READ BEFORE `mode`. The
+   * rail stays on the trip being filled, so `mode` says "trip" throughout;
+   * Remove must never appear under the add band (owner, 2026-09-18).
    */
   addTargetLabel: string | null;
   onAddToTarget: () => void;
@@ -130,7 +134,12 @@ export function FloorBottomBar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        {mode === "pool" && addTargetLabel !== null ? (
+        {/* 🔴 THE TARGET WINS OVER THE MODE (2026-09-18). "+ Add bills" keeps the
+            rail on the trip, so `mode` is "trip" for the whole of targeted add —
+            and this branch used to require "pool", which put "Remove from trip"
+            under the pink band from the day it shipped (6136b423). While a named
+            trip is being filled the bar ADDS, and nothing else. */}
+        {addTargetLabel !== null ? (
           <button
             type="button"
             onClick={onAddToTarget}
