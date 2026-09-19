@@ -147,7 +147,7 @@ export function LoadPlanView({
         ) : (
           <>
             <b className="font-bold text-[#1a1a22]">{kgText(s.kg, unknown)} kg</b> pending &middot;{" "}
-            {plural(s.trucks, "truck", "trucks")} suggested
+            <b className="font-bold text-[#1a1a22]">{s.trucks.toLocaleString("en-US")}</b> {s.trucks === 1 ? "truck" : "trucks"} suggested
             {sizes && <> &middot; {sizes}</>}
             {s.bulk > 0 && <> &middot; {s.bulk} bulk</>}
           </>
@@ -232,7 +232,7 @@ function TruckCard({
           <small className="ml-[3px] text-[13px] font-semibold tracking-normal text-[#96969f]">kg</small>
         </span>
         <span className="mt-[5px] block whitespace-nowrap text-[12.5px] tabular-nums text-[#96969f]">
-          {KIND_LABEL[t.kind]} &middot; {plural(t.stopCount, "stop", "stops")}
+          <b className="font-semibold text-[#61616d]">{KIND_LABEL[t.kind]}</b> &middot; {plural(t.stopCount, "stop", "stops")}
         </span>
         <span className="mt-3 flex h-4 items-end">
           {t.kind === "bulk" ? (
@@ -295,25 +295,25 @@ function TruckPanel({
 
   return (
     <div className="mt-3 overflow-hidden rounded-[11px] border border-[#e7e7ee] bg-white">
-      <div className="flex items-start gap-4 border-b border-[#e7e7ee] px-3.5 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-bold text-[#1a1a22]">{t.routeNames.join(" + ")}</div>
-          <div className="mt-0.5 text-[12.5px] tabular-nums text-[#61616d]">
-            {kgLine} &middot; {KIND_LABEL[t.kind]} &middot; {plural(t.stopCount, "stop", "stops")} &middot;{" "}
-            {plural(t.orderIds.length, "bill", "bills")}
-          </div>
-          <div className="mt-1 text-[12px] text-[#96969f]">{t.reason}</div>
-        </div>
+      {/* The mock's panel head: a pale band — routes and figures on one line,
+          Make trip at its right end, the reason on a line of its own. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#e7e7ee] bg-[#fafafc] px-3.5 py-[11px]">
+        <span className="text-[14px] font-bold text-[#1a1a22]">{t.routeNames.join(" + ")}</span>
+        <span className="text-[12.5px] tabular-nums text-[#96969f]">
+          {kgLine} &middot; {KIND_LABEL[t.kind]} &middot; {plural(t.stopCount, "stop", "stops")} &middot;{" "}
+          {plural(t.orderIds.length, "bill", "bills")}
+        </span>
         {onMakeTrip && (
           <button
             type="button"
             disabled={makeTripBusy}
             onClick={() => onMakeTrip(t.orderIds)}
-            className="h-[30px] shrink-0 rounded-[7px] bg-brand-600 px-3.5 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="ml-auto shrink-0 rounded-[8px] bg-brand-600 px-4 py-[7px] text-[12.5px] font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {makeTripBusy ? "Making…" : "Make trip"}
           </button>
         )}
+        <p className="m-0 basis-full text-[12px] text-[#61616d]">{t.reason}</p>
       </div>
       {groups.map((g) => {
         const w = sumWeightKg(g.rows);
