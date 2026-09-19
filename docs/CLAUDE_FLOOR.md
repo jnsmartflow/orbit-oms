@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.6 · Schema v27.24 · September 2026 · updated 2026-09-19
+# v1.7 · Schema v27.24 · September 2026 · updated 2026-09-19
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md (+ docs/CLAUDE_FLOOR_TRIPS.md for anything trip-shaped)
 
@@ -75,6 +75,25 @@ If you find yourself explaining borrowed behaviour here, replace it with a point
 - **Placeholder routes.** Route 20 "No Route" folds into the **No route** line of Other routes together with bills whose area has no route. Route 25 "TEST R" is hidden (inactive, no areas).
 - **Tab rules.** A trip shows on the rail only under its own stored delivery type — the letter it was numbered under (`tripInScope`, `lib/floor/scope.ts`); All shows every trip; an opened trip still shows every bill on it whatever tab is selected. **A planned bill leaves the pool on every tab at once**: the pool test is `tripDropId === null` (`isPoolRow`), the tab only filters one unscoped payload in the browser, and every trip write reloads the whole board.
 
+### 2.2 Load plan — suggested truckloads (Upcountry) [LIVE 2026-09-19]
+
+`components/floor/load-plan.tsx` (the view) on `lib/trips/load-plan.ts` (the engine, PURE — no DB, no clock; tests `lib/trips/load-plan.test.ts`, `npm run test:load-plan`). **A suggestion screen: it never creates anything by itself**, and no trip action changes a bill's status or hold.
+
+- **Where.** The Upcountry pool switch is **Flat · By route · Load plan**, and **Load plan is Upcountry's default** (`LOAD_PLAN_SCOPES`, `trip-desk.tsx`). **Each tab remembers its own view** (`poolViews`); By route stays the default on Local, and All / IGT are unchanged. A search shows Flat (By route and Load plan disabled, with the reason).
+- **What it plans.** The tab's **due** pool — today's and overdue bills on no trip, the set the route cards count (held bills are never on the board; tint-room bills are the Tinting tab's). Upcoming bills are not planned; the summary adds "· N upcoming not planned". It **regroups on every render**, so a planned, released or re-weighed bill moves the cards on the next board load.
+- **The rules — in config, not code.** `load_plan_config` (CORE §7.18), one row per delivery type, **route IDs never names**; read by `getLoadPlanPayload()` (`lib/floor/load-plan-config.ts`) and carried on `GET /api/floor/board` as `loadPlan` with every route's name. Upcountry: Small ≤ 2,000 kg, Big ≤ 3,000 kg; main routes **Navsari, Vapi, Bharuch**; partners **Chikhli → Vapi or Navsari, whichever has more free space (a tie → list order, Vapi first)** · **Vansda → Navsari, then Vapi** · **Bardoli → Navsari** · **Kamrej → Bharuch**. A missing table or row, or malformed jsonb, reads **"Load plan not set up"** — the reader never throws, so the floor loads whatever state the table is in.
+- **The algorithm** (`planLoads`):
+  1. Pack by **stop** (`stopKey`), never by bill — a stop's bills are never split. Largest stops first.
+  2. A single stop over 3,000 kg is its own **Bulk** truck — no size, no fill bar, "Over 3,000 kg — hire as needed", not counted as small or big ("· 1 bulk").
+  3. Every route, partners included: while it has more than 3,000 kg left, fill one **full Big** truck first-fit by stop. What remains is its **leftover** (so a main route with any bills always has one).
+  4. A main route's leftover is its **open truck — the only truck a partner may join**; a full truck never takes a partner.
+  5. Each partner, in config order: its whole leftover joins an allowed open truck if the total stays ≤ 3,000 (`most_space` or `in_order`); otherwise it gets its own truck.
+  6. Any other Upcountry route (Adajan, Varachha, Udhana, Transport, …) and route-less bills: their own truck(s), never mixed.
+  7. Size from the final load: ≤ 2,000 Small, else Big. One plain-English reason per truck ("Vansda and Bardoli fit on the Navsari truck." · "No room on the Vapi truck, so Chikhli goes on its own." · "Full load of Navsari."). Cards by kg, highest first; the same pool always gives the same cards in the same order. An unknown weight packs as 0 and shows the floor's "+".
+- **The view.** Summary "9,600 kg pending · 4 trucks suggested · 3 big, 1 small". Cards on the route cards' equal-size grid (4/3/2 at 1470/1100px): routes joined " + ", big kg, grey "Big truck · 12 stops", a 4px fill bar at the bottom — **green at ≥ 50% of that truck's size, amber below**. A card whose bills changed after a regroup **flashes a violet border** (never on the first plan). **One panel**, full width under its card's row; clicking again closes it; it closes by itself if its truck is gone after a regroup. Panel header: routes, "2,635 of 3,000 kg · Big truck · 12 stops · 13 bills", the reason, **Make trip**. Below: the truck's bills grouped by route (heading: name · stops · kg) in the floor's own `FloorTable` with **Area** (`showArea`) and **no tick boxes** — the card is the unit, so no tick can sit inside a closed panel. ⚡ and ⋯ still work.
+- **Make trip** = the existing **New trip** flow (`createTripWithSelection`) given the card's bill ids — the same two API calls, **no new write path**. The card's bills replace any ticks; the delivery type comes from those bills (`chooseTripTypeName`); afterwards it **stays on the load plan**: ticks cleared, the board reloads so the plan regroups, and a toast "Trip U-… made · Open" (Open selects the trip on the rail as a rail click does). Hidden in History.
+- **Kamrej** is in Local's "Varachha + Kamrej" card (§2.1, the reach) AND in Upcountry's load plan — expected; planning it from either removes it from both.
+
 **Retired from this screen** (one line each; do not rediscover):
 - The decision rail (left column of undecided bills, per-card Release / Hold / ✕, slot suggestion) — stopped rendering 2026-09-10 (`bbb9628c`), archived 2026-09-13 (`79bcc412`) → `archive/2026-09-floor-rail/README.md`.
 - Slot tabs (`10:30 · 12:30 · 16:00 · 18:00 · All`), slot bands and the By group view — stopped rendering 2026-09-10 (`bbb9628c`); `floor-board.tsx` deleted in `cdbf95b1`, `slot-band.tsx` / `floor-tabs.tsx` / `group-row.tsx` in `f41b52c9`.
@@ -94,7 +113,7 @@ SELECT-only feeds, sequential awaits, never `prisma.$transaction` (CORE §3). Al
 | Hold | `getFloorHold(scope)` | `GET /api/floor/hold` | `dispatchStatus="hold"`, all dates (pure open state), recent-held-first. |
 | Cancelled | `getFloorCancelled(scope)` | `GET /api/floor/cancelled` | `workflowStage="cancelled"`, **today only** (IST, by the cancel log's `createdAt`). |
 
-`GET /api/floor/board` returns `{ scope, floor, pickers, routeClubs }` (`app/api/floor/board/route.ts`); `pickers` = `getFloorPickers()` (active roster + on-hand load), read by the detail panel's Assign/Reassign; `routeClubs` = `getRouteClubs()` (2026-09-19, §2.1 — config, every delivery type, one small read). Each board row also carries `routeId` (the id of the route `route` names, `area.primaryRoute`) and `stopKey` (`computeDropKey`) for the route cards. Board, hold, cancelled, marker, order detail, ship-to search and tint-operators gate on `checkAnyPermission(roles,"floor","canView")`; actions, release, ship-to save and pick-gate on `canEdit`. `load()` also fetches `GET /api/floor/trips?date=` in the same batch (`floor-page.tsx:348-351`) — trip routes → `CLAUDE_FLOOR_TRIPS.md §10`.
+`GET /api/floor/board` returns `{ scope, floor, pickers, routeClubs, loadPlan }` (`app/api/floor/board/route.ts`); `pickers` = `getFloorPickers()` (active roster + on-hand load), read by the detail panel's Assign/Reassign; `routeClubs` = `getRouteClubs()` (2026-09-19, §2.1 — config, every delivery type, one small read); `loadPlan` = `getLoadPlanPayload()` (2026-09-19, §2.2 — the load-plan rules by delivery type plus every route's name; never throws). Each board row also carries `routeId` (the id of the route `route` names, `area.primaryRoute`) and `stopKey` (`computeDropKey`) for the route cards. Board, hold, cancelled, marker, order detail, ship-to search and tint-operators gate on `checkAnyPermission(roles,"floor","canView")`; actions, release, ship-to save and pick-gate on `canEdit`. `load()` also fetches `GET /api/floor/trips?date=` in the same batch (`floor-page.tsx:348-351`) — trip routes → `CLAUDE_FLOOR_TRIPS.md §10`.
 
 **`floorBoardWhere(todayRange, todayDateOnly)` — the live predicate, SHARED by the board and the marker** (`lib/floor/queries.ts:475-490`; board `:829`, marker `getFloorLiveMarkerWhere` `:508`), so they cannot drift (§5). A union of **four named arms**, each a complete set of terms, never a term removed from another:
 1. **`floorLiveBaseWhere(todayRange)`** (`:421`) — `dispatchStatus="dispatch"`, and either still OPEN (`workflowStage ∈ PICKING_OPEN_STAGES` — pending_picking / pick_assigned / pick_done, **any** dispatch date; Floor's carry-over arm, design §4.2) or **CHECKED TODAY** (`workflowStage=pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange()`, today IST, whatever day it was due).
@@ -346,6 +365,9 @@ Trip files are listed for completeness; their trip behaviour is **owned by `CLAU
 | `components/floor/floor-table.tsx`, `route-row.tsx`, `status-pill.tsx`, `progress-bar.tsx` | Bill table, By-route groups (tabs without clubs), status + tint pills |
 | `components/floor/route-cards.tsx` | By route cards on a tab with clubs — model (`buildRouteCards`, `cardsHoldingTicks`), grid (`useCardColumns`), cards and panels (§2.1) |
 | `lib/floor/route-clubs.ts` | `getRouteClubs()` — the clubs + each member's `reachFrom`, read for `GET /api/floor/board` (§2.1) |
+| `components/floor/load-plan.tsx` | The Load plan view — summary, truck cards, the one panel, Make trip (§2.2) |
+| `lib/trips/load-plan.ts`, `load-plan.test.ts` | `planLoads` / `parseLoadPlanConfig` / `summarisePlan` — the pure engine, and its tests (§2.2) |
+| `lib/floor/load-plan-config.ts` | `getLoadPlanPayload()` — `load_plan_config` + route names for `GET /api/floor/board`; never throws (§2.2) |
 | `components/floor/floor-bottom-bar.tsx` | Bottom bar (Add to / Remove from trip, ✕ clear) — ✈ for what it does to a trip |
 | ✈ `components/floor/trip-rail.tsx`, `trip-bar.tsx`, `trip-detail-header.tsx`, `trip-add-band.tsx`, `trip-form.tsx`, `trip-vehicle-editor.tsx`, `trip-history.tsx`, `trip-options.ts`, `pick-gate-toggle.tsx` | Trip rail, trip header, add band, create form, vehicle editor, trip history, option lists, desk-control switch |
 | `components/floor/hold-tab.tsx`, `hold-bar.tsx`, `cancelled-tab.tsx`, `pdf-preview.tsx` | Hold + Cancelled tabs, Hold-report PDF |
@@ -371,6 +393,14 @@ Trip files are listed for completeness; their trip behaviour is **owned by `CLAU
 | `lib/dispatch/dispatch-engine.ts` | Auto-slot engine (reused; **owned by CORE §7.4**) |
 
 ---
+
+## Change log — v1.7 (2026-09-19, the Upcountry load plan)
+
+Evidence: the code as committed — `ce10bfb1` (config SQL, engine, 12 tests), `a034709e` (view + panel + config read), `6fc2fb42` (Make trip through the New trip flow). `sql/2026-09-19-load-plan-config.sql` is NOT yet run live at this entry.
+
+- New **§2.2 Load plan**: where it shows, what it plans (due only), the rules and their config, the algorithm, the view, Make trip, Kamrej in both views.
+- §3: the board payload gains `loadPlan`. §11: `load-plan.tsx`, `lib/trips/load-plan.ts` (+ tests), `lib/floor/load-plan-config.ts`.
+- Schema stamp left at v27.24 on purpose (as v1.6). The table is CORE §7.18.
 
 ## Change log — v1.6 (2026-09-19, route clubs + route cards)
 
@@ -412,4 +442,4 @@ Evidence: 12 commits git-verified, suggest.ts/queries.ts/rail-card/picker/action
 
 ---
 
-*CLAUDE_FLOOR.md v1.6 · Schema v27.24 · OrbitOMS · updated 2026-09-19*
+*CLAUDE_FLOOR.md v1.7 · Schema v27.24 · OrbitOMS · updated 2026-09-19*
