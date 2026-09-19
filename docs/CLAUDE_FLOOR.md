@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.5 · Schema v27.24 · September 2026 · updated 2026-09-18
+# v1.6 · Schema v27.24 · September 2026 · updated 2026-09-19
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md (+ docs/CLAUDE_FLOOR_TRIPS.md for anything trip-shaped)
 
@@ -50,13 +50,29 @@ If you find yourself explaining borrowed behaviour here, replace it with a point
 - **Four top tabs** — `type TopTab = "floor" | "tinting" | "hold" | "cancelled"` (`floor-page.tsx:114`): **Floor** / **Tinting** / **On hold** / **Cancelled**, plus the slide-out **detail panel**. The tab row sits inside the table column (`143706be`). Tinting is a client-side VIEW of board rows, not a feed (`floor-page.tsx:108-113`, §4.8).
 - **Left: the trip rail** (`components/floor/trip-rail.tsx`). A "To plan" entry (the not-on-a-trip pool, the default) plus one card per trip, one flat list, newest-created first (`trip-rail.tsx:10-19`). What a trip card says and which trips are listed → `CLAUDE_FLOOR_TRIPS.md §6/§8`.
 - **Right: the bills, in one of three states** (`trip-desk.tsx:14-20`):
-  - **pool** — header + `Flat | By route` pivot + the table (the not-on-a-trip bills).
+  - **pool** — header + `Flat | By route` pivot + the table (the not-on-a-trip bills). **By route is the pool's default** (2026-09-19); on a tab with route clubs (Local today) it draws the route cards below.
   - **trip** — the selected trip's header + its bills grouped under STOPS, one `FloorTable` per stop.
   - **add** — "+ Add bills" inside a trip: the trip unchanged, then a band, then the pool below it.
   Rows sort with `FLOOR_SPINE`; bills with no slot are ordinary rows marked `no slot` (§3, §4.9).
 - **Bottom bar** (`components/floor/floor-bottom-bar.tsx`) — pool selected → `+ New trip` (an existing trip is picked by clicking it on the rail); trip selected → `Remove from trip`; plus the ✕ global clear (`floor-bottom-bar.tsx:12-20`). What those do to a trip → `CLAUDE_FLOOR_TRIPS.md §4/§7`.
 - **Live vs History** — History is read-only and dated (§3, §4.7).
 - **Header:** hand-rolled title + IST date/time; delivery-type scope chips (All/Local/Upcountry/IGT); one search box + one filter (`CLAUDE_UI.md §6` filter-dropdown style, floor-only); the pick-gate switch (`pick-gate-toggle.tsx` → `CLAUDE_FLOOR_TRIPS.md §11`). No `UniversalHeader` (§10).
+
+### 2.1 By route — the route cards [LIVE 2026-09-19]
+
+`components/floor/route-cards.tsx`, built and placed by `trip-desk.tsx`. Display only — nothing here writes, and no card or panel changes a bill's status or hold.
+
+- **Where it shows.** The pool's By route view on a tab that HAS route clubs (`tabHasClubs`) — **Local** today. All / Upcountry / IGT keep the older route rows (`ByRoute` → `route-row.tsx`) and their Upcoming block. **By route is the pool's default** (`poolPivot`, `trip-desk.tsx`); Flat is one click away. **The Tinting tab has its own view state** (`tintPivot`, default Flat) and keeps the route rows. **A search shows the pool Flat** — By route is disabled with the reason in its tooltip, and clearing the search restores the choice — so the search auto-tick never ticks a bill inside a closed card.
+- **Clubs.** Routes that share a truck on a light day, one card per club. Read from `route_clubs` / `route_club_members` (CORE §7.17) by `getRouteClubs()` (`lib/floor/route-clubs.ts`), carried on `GET /api/floor/board` as the sibling key `routeClubs`. Local today: 1 Adajan + Olpad · 2 Ghod Dod + Udhana · 3 Varachha + Kamrej (first member = main). **Adding a club or a member is a SQL insert only** — no code, no deploy; it shows on the next board load.
+- **The grid.** One grid of equal cards that flow in order: **4 per row at ≥1470px, 3 at 1100–1469px, 2 below** (`useCardColumns`, `matchMedia` change events — not a key listener). Order: **clubs by `sortOrder`, then single-route cards by kilos due (highest first, name breaks ties), "No route" always last.** An empty club keeps its place, dimmed, reading "No bills". The column count is known to JS because a panel opens under its card's ROW. ⚠ 1470, not 1400: four columns at 1440px cut "Kamrej" to "Ka…" (the line needs 225px; measured in Chrome with the app's font).
+- **Same size.** Every card is the same width and the **same height across the whole board**: the head (name, big kilos, "N stops · L") plus as many equal line slots as the card with the most routes. Spare slots are invisible spacers between the head and the card's own lines, so the head stays at the top and the last bar sits on the bottom edge. A single-route card is the same card with one line. Text never wraps; at worst a route name ellipsises.
+- **The numbers.** Kilos = `querySnapshot.totalWeight` (the trip weight's source), whole kg, with a "+" when a bill has no weight. **Stops = distinct `stopKey`** (`computeDropKey`, `lib/trips/drop-key.ts` — the same identity `trip_drops` uses). Card numbers count only bills **due today or overdue** (the row's own `zone`); upcoming bills are never counted on a card.
+- **The bar** (4px, colour is the status, no words): green = done + dispatched · blue = with picker + picked-not-checked · grey = waiting + tint done · pink = tinting. **No amber**: held bills are never in the pool (every board arm pins `dispatchStatus`), and the card counts only what the pool holds.
+- **Click a card** → violet ring, other cards dim, and its panel opens **full width directly under its own row**. **Open = every card holding a ticked bill + the one card last clicked** (derived, not stored): a card with ticks stays open, clicking another card opens it too, an unticked card closes when another is clicked, and returning from Flat or a search opens every card that holds a tick. A ticked card closes only when its ticks go (✕ / Esc, or onto a trip). The rail picker, `+ New trip` and the add band read the one selection unchanged.
+- **The panel** — one section per route with bills, main first: a heading (name · stops · kg, due bills only), then that route's own `FloorTable` with **Area in the Route column** (§4.9). Today's and overdue bills first, then **upcoming bills by due date** — no "Upcoming" divider (the blue Due date says it). A route whose only bills are upcoming reads "No bills" on the card but still opens. The panel keeps its natural height.
+- **The reach (Kamrej).** A club route with **no area on the club's own tab** draws its bills from the one other tab its areas are on, and its line carries that tab's name in grey ("Upcountry"). `reachFrom` is worked out from `area_master` by `getRouteClubs`; today only Kamrej qualifies (all 10 of its areas are Upcountry). A club route with ANY area on the tab — Adajan has Upcountry areas too — shows that tab's bills only.
+- **Placeholder routes.** Route 20 "No Route" folds into the **No route** card together with bills whose area has no route. Route 25 "TEST R" is hidden (inactive, no areas).
+- **Tab rules.** A trip shows on the rail only under its own stored delivery type — the letter it was numbered under (`tripInScope`, `lib/floor/scope.ts`); All shows every trip; an opened trip still shows every bill on it whatever tab is selected. **A planned bill leaves the pool on every tab at once**: the pool test is `tripDropId === null` (`isPoolRow`), the tab only filters one unscoped payload in the browser, and every trip write reloads the whole board.
 
 **Retired from this screen** (one line each; do not rediscover):
 - The decision rail (left column of undecided bills, per-card Release / Hold / ✕, slot suggestion) — stopped rendering 2026-09-10 (`bbb9628c`), archived 2026-09-13 (`79bcc412`) → `archive/2026-09-floor-rail/README.md`.
@@ -77,7 +93,7 @@ SELECT-only feeds, sequential awaits, never `prisma.$transaction` (CORE §3). Al
 | Hold | `getFloorHold(scope)` | `GET /api/floor/hold` | `dispatchStatus="hold"`, all dates (pure open state), recent-held-first. |
 | Cancelled | `getFloorCancelled(scope)` | `GET /api/floor/cancelled` | `workflowStage="cancelled"`, **today only** (IST, by the cancel log's `createdAt`). |
 
-`GET /api/floor/board` returns `{ scope, floor, pickers }` (`app/api/floor/board/route.ts:54`); `pickers` = `getFloorPickers()` (active roster + on-hand load), read by the detail panel's Assign/Reassign. Board, hold, cancelled, marker, order detail, ship-to search and tint-operators gate on `checkAnyPermission(roles,"floor","canView")`; actions, release, ship-to save and pick-gate on `canEdit`. `load()` also fetches `GET /api/floor/trips?date=` in the same batch (`floor-page.tsx:348-351`) — trip routes → `CLAUDE_FLOOR_TRIPS.md §10`.
+`GET /api/floor/board` returns `{ scope, floor, pickers, routeClubs }` (`app/api/floor/board/route.ts`); `pickers` = `getFloorPickers()` (active roster + on-hand load), read by the detail panel's Assign/Reassign; `routeClubs` = `getRouteClubs()` (2026-09-19, §2.1 — config, every delivery type, one small read). Each board row also carries `routeId` (the id of the route `route` names, `area.primaryRoute`) and `stopKey` (`computeDropKey`) for the route cards. Board, hold, cancelled, marker, order detail, ship-to search and tint-operators gate on `checkAnyPermission(roles,"floor","canView")`; actions, release, ship-to save and pick-gate on `canEdit`. `load()` also fetches `GET /api/floor/trips?date=` in the same batch (`floor-page.tsx:348-351`) — trip routes → `CLAUDE_FLOOR_TRIPS.md §10`.
 
 **`floorBoardWhere(todayRange, todayDateOnly)` — the live predicate, SHARED by the board and the marker** (`lib/floor/queries.ts:475-490`; board `:829`, marker `getFloorLiveMarkerWhere` `:508`), so they cannot drift (§5). A union of **four named arms**, each a complete set of terms, never a term removed from another:
 1. **`floorLiveBaseWhere(todayRange)`** (`:421`) — `dispatchStatus="dispatch"`, and either still OPEN (`workflowStage ∈ PICKING_OPEN_STAGES` — pending_picking / pick_assigned / pick_done, **any** dispatch date; Floor's carry-over arm, design §4.2) or **CHECKED TODAY** (`workflowStage=pick_checked` AND `pick_assignments.checkedAt ∈ getISTDayRange()`, today IST, whatever day it was due).
@@ -188,6 +204,7 @@ The 2026-07-26 redesign (draft `web-update-2026-07-26-floor-action-surfaces.md`)
 ### 4.9 The bill table [LIVE]
 
 `components/floor/floor-table.tsx`. Columns: ☐ · OBD (+date) · Invoice|Operator · Ship to · Route · Due · Vol / KG · Article · Status (`floor-table.tsx:555-563`). No `#` and no Picker column since 2026-09-10 (`floor-table.tsx:14-15`).
+- **Area in place of Route** (`showArea`, 2026-09-19) — the tables a route CARD opens (§2.1) pass it: every bill there is on the route in its heading, so the column shows `area` instead. Same slot and width, header reads "Area". Flat, the route rows and the trip panel keep Route. Same pattern as `hideTripTag`.
 - **Invoice** (`697b193b`) — SAP `invoiceNo` over `invoiceDate`, right after OBD; blank until SAP stamps it.
 - **Due** (`e656ad80`) — the date leads, "Today" spelled out, future blue, overdue red, age chip beside it; `no slot` chip when the bill has no date (`floor-table.tsx:686-697`).
 - **Duplicate SO** (`bc232f72`) — SOFT treatment: a `DuplicateSoTag variant="soft"` and a thin bar on rows whose `hasDuplicateSo` is true (`floor-table.tsx:654`, `:927`); the solid red is Picking's.
@@ -325,7 +342,9 @@ Trip files are listed for completeness; their trip behaviour is **owned by `CLAU
 | `app/(floor)/floor/page.tsx`, `layout.tsx` | Route shell |
 | `components/floor/floor-page.tsx` | Composition root — tabs, state, feeds, write handlers, live-sync mounts, the single Esc listener, detail wiring |
 | `components/floor/trip-desk.tsx` | The Floor tab: pool / trip / add states, client `FLOOR_SPINE` sort |
-| `components/floor/floor-table.tsx`, `route-row.tsx`, `status-pill.tsx`, `progress-bar.tsx` | Bill table, By-route groups, status + tint pills |
+| `components/floor/floor-table.tsx`, `route-row.tsx`, `status-pill.tsx`, `progress-bar.tsx` | Bill table, By-route groups (tabs without clubs), status + tint pills |
+| `components/floor/route-cards.tsx` | By route cards on a tab with clubs — model (`buildRouteCards`, `cardsHoldingTicks`), grid (`useCardColumns`), cards and panels (§2.1) |
+| `lib/floor/route-clubs.ts` | `getRouteClubs()` — the clubs + each member's `reachFrom`, read for `GET /api/floor/board` (§2.1) |
 | `components/floor/floor-bottom-bar.tsx` | Bottom bar (Add to / Remove from trip, ✕ clear) — ✈ for what it does to a trip |
 | ✈ `components/floor/trip-rail.tsx`, `trip-bar.tsx`, `trip-detail-header.tsx`, `trip-add-band.tsx`, `trip-form.tsx`, `trip-vehicle-editor.tsx`, `trip-history.tsx`, `trip-options.ts`, `pick-gate-toggle.tsx` | Trip rail, trip header, add band, create form, vehicle editor, trip history, option lists, desk-control switch |
 | `components/floor/hold-tab.tsx`, `hold-bar.tsx`, `cancelled-tab.tsx`, `pdf-preview.tsx` | Hold + Cancelled tabs, Hold-report PDF |
@@ -351,6 +370,16 @@ Trip files are listed for completeness; their trip behaviour is **owned by `CLAU
 | `lib/dispatch/dispatch-engine.ts` | Auto-slot engine (reused; **owned by CORE §7.4**) |
 
 ---
+
+## Change log — v1.6 (2026-09-19, route clubs + route cards)
+
+Evidence: the code as pushed — `f8647a6b` → `9c584a24` (tables, data, cards, click-to-open, multi-open, upcoming-in-route, the equal grid, the 1470px breakpoint); the two SQL files run live 2026-09-19 with their checks returned; `lib/floor/scope.ts:62-64` read for the trip tab rule.
+
+- §2: the pool bullet says By route is the default; new **§2.1 By route — the route cards** (where they show, clubs, the 4/3/2 grid and its 1470/1100 breakpoints, order, equal size, the numbers, the bar, click-to-open and multi-open, the panel, the Kamrej reach, placeholder routes 20/25, the tab rules).
+- §3: the board payload gains `routeClubs`; rows gain `routeId` and `stopKey`.
+- §4.9: `showArea` — Area in the Route column in a card's panel.
+- §11: `route-cards.tsx` and `lib/floor/route-clubs.ts` added.
+- Schema stamp **left at v27.24 on purpose.** This entry documents how Floor uses the route-club tables, but the file has not been reconciled against CORE v27.36 as a whole; per `CLAUDE.md §4` item 4 a stamp is the output of a reconciliation pass, never a tidy-up. The tables themselves are CORE §7.17.
 
 ## Change log — v1.5 (2026-09-18 reconciliation pass)
 
@@ -381,4 +410,4 @@ Evidence: 12 commits git-verified, suggest.ts/queries.ts/rail-card/picker/action
 
 ---
 
-*CLAUDE_FLOOR.md v1.5 · Schema v27.24 · OrbitOMS · updated 2026-09-18*
+*CLAUDE_FLOOR.md v1.6 · Schema v27.24 · OrbitOMS · updated 2026-09-19*
