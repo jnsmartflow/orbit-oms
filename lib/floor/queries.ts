@@ -61,6 +61,7 @@ import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // prisma, no clock, so importing it here is one-directional and safe — the same
 // argument grouping.ts and release-window.ts carry above.
 import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
+import { computeDropKey } from "@/lib/trips/drop-key";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -363,7 +364,8 @@ const FLOOR_DEALER_SELECT = {
       // `bayNumber` rides the relation already being selected (2026-08-21) — no
       // new query, no new join. FloorBoardRow extends PickingQueueRow, which now
       // carries the field, so it has to be fetched here too.
-      primaryRoute: { select: { name: true, bayNumber: true } },
+      // `id` added 2026-09-19 for the By route cards (FloorBoardRow.routeId).
+      primaryRoute: { select: { id: true, name: true, bayNumber: true } },
       deliveryType: { select: { name: true } },
     },
   },
@@ -1076,6 +1078,12 @@ export async function getFloorBoard(
       // desk); `tripNumber` and `tripStatus` are what the row's trip TAG reads.
       // A dangling pointer — a drop deleted between the two reads — yields nulls
       // for the pair rather than throwing, and the row simply shows no tag.
+      // By route cards (2026-09-19). Both off data this query already holds — no
+      // extra read. `routeId` is the route `route` above names; `stopKey` is the
+      // trip module's own stop identity, so a card's "N stops" counts exactly
+      // what trip_drops would (FloorBoardRow).
+      routeId: dealer?.area?.primaryRoute?.id ?? null,
+      stopKey: computeDropKey(order),
       tripDropId: order.tripDropId,
       tripNumber:
         order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.tripNumber ?? null) : null,

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getFloorBoard, getFloorPickers } from "@/lib/floor/queries";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { getRouteClubs } from "@/lib/floor/route-clubs";
 import type { FloorScope } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +52,10 @@ export async function GET(req: Request) {
     const hideExclusion = await getHideExclusion();
     const floor = await getFloorBoard({ mode, date, scope, hideExclusion });
     const pickers = await getFloorPickers();
-    return NextResponse.json({ scope, floor, pickers });
+    // The By route cards' clubs (2026-09-19) — config, every delivery type,
+    // one small read. ADDITIVE: a reader that ignores it is unaffected.
+    const routeClubs = await getRouteClubs();
+    return NextResponse.json({ scope, floor, pickers, routeClubs });
   } catch (e) {
     // parseFloorDate throws on a malformed/impossible history date.
     return NextResponse.json({ error: e instanceof Error ? e.message : "Bad request" }, { status: 400 });

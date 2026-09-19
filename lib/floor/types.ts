@@ -288,6 +288,22 @@ export interface FloorBoardRow extends PickingQueueRow {
   tripNumber: string | null;
   /** draft | released | loading | dispatched | cancelled — chk_trips_status. */
   tripStatus: string | null;
+  // ── Route id + stop key, for the By route cards (2026-09-19) ─────────────
+  //
+  // `routeId` is the id of the SAME route `route` names — `area.primaryRoute`
+  // of the effective ship-to, never delivery_point_master.primaryRouteId (the
+  // `bayNumber` rule above). NULL exactly when `route` is null. The cards match
+  // routes to clubs BY ID (route_club_members.routeId), never by name, so a
+  // renamed route cannot silently fall out of its club.
+  routeId: number | null;
+  // `stopKey` is the bill's STOP: `computeDropKey` (lib/trips/drop-key.ts), the
+  // one definition of "which customer does this bill go to" that trip_drops is
+  // built on. A route card's "N stops" is the count of distinct keys, so a pool
+  // card and the trip those bills later join can never count stops differently.
+  //
+  // ⚠ OPAQUE. Compare it for equality only — never parse the `c:`/`s:` prefix
+  // or read an id out of it (drop-key.ts explains the two id spaces).
+  stopKey: string;
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()
@@ -295,6 +311,34 @@ export interface FloorBoardRow extends PickingQueueRow {
   // the number once the breakdown landed, and a payload field with no reader is
   // the `orders.mailMatched` shape CORE §7.3 flags. Re-add it — one extra key
   // in the querySnapshot select — if a caller ever wants to sort or total by it.
+}
+
+// ── Route clubs (2026-09-19) ─────────────────────────────────────────────────
+// Routes that share one truck on a light day, shown as one card on By route.
+// Read from route_clubs / route_club_members (lib/floor/route-clubs.ts) and
+// carried on GET /api/floor/board as the sibling key `routeClubs`.
+//
+// ⚠ A CLUB BELONGS TO ONE DELIVERY TYPE, and a route is in at most one club per
+// type (enforced in the database). Club membership says nothing about where a
+// route's AREAS are: Kamrej has no Local area and still sits in a Local club.
+
+export interface FloorRouteClubMember {
+  routeId: number;
+  /** route_master.name as it reads today. Display only — match on `routeId`. */
+  routeName: string;
+  /** 1 = the main route, 2 = the sub. Members arrive in this order. */
+  sortOrder: number;
+}
+
+export interface FloorRouteClub {
+  id: number;
+  /** delivery_type_master.name — the same string a row's `deliveryType` holds. */
+  deliveryType: string;
+  /** The card heading, e.g. "Adajan + Olpad". */
+  name: string;
+  /** The card's fixed place for its delivery type, 1 = leftmost. */
+  sortOrder: number;
+  members: FloorRouteClubMember[];
 }
 
 export interface FloorWindowCount {
