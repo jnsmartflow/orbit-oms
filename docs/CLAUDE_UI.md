@@ -347,7 +347,7 @@ Age badge (1+ days old, on the Tint Manager rail — `components/tint/manager/bo
 - 2+ days: red pill "Nd" (`bg-red-50 text-red-700 border-red-200`)
 - IST-aware from `orderDateTime`.
 
-**Route cards** — `components/floor/route-cards.tsx` (2026-09-19): Floor's By route view on a tab with route clubs — one grid of equal-size cards (4/3/2 per row at 1470/1100px), each a button showing name, big kilos, stops · litres and one line per route with a 4px status bar, opening its bills full width under its row. Behaviour → `CLAUDE_FLOOR.md §2.1`.
+**Route cards** — `components/floor/route-cards.tsx` (2026-09-19): Floor's By route view on a tab with route clubs — one grid of equal-size cards (4/3/2 per row at 1470/1100px) — the clubs, then one display-only "Other routes" card for every unclubbed route and No route — each a button showing name, big kilos, stops · litres and one line per route with a 4px status bar, opening its bills full width under its row. Behaviour → `CLAUDE_FLOOR.md §2.1`.
 
 ---
 
