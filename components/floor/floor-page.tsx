@@ -69,6 +69,7 @@ import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/f
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub } from "@/lib/floor/types";
+import type { FloorLoadPlanPayload } from "@/lib/floor/load-plan-config";
 import type { RailSelection } from "./trip-rail";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 import { chooseTripTypeName } from "@/lib/trips/type-choice";
@@ -186,6 +187,10 @@ export function FloorPage() {
   // response as `routeClubs`; kept beside `data` rather than in it, because
   // BoardData is what the scope/search memos rebuild and clubs are neither.
   const [routeClubs, setRouteClubs] = useState<FloorRouteClub[]>([]);
+  // The Load plan rules + route names (2026-09-19), beside `routeClubs` for the
+  // same reason. Empty until the board answers; a tab with no rules reads
+  // "Load plan not set up".
+  const [loadPlan, setLoadPlan] = useState<FloorLoadPlanPayload>({ configs: {}, routeNames: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -358,6 +363,7 @@ export function FloorPage() {
       const board = await boardRes.json();
       setData({ floor: board.floor, pickers: board.pickers ?? [] });
       setRouteClubs((board.routeClubs ?? []) as FloorRouteClub[]);
+      setLoadPlan((board.loadPlan ?? { configs: {}, routeNames: {} }) as FloorLoadPlanPayload);
 
       // A failed side feed must not blank the board — surface its own error and
       // leave the tab empty rather than throwing the whole page away.
@@ -2058,6 +2064,8 @@ export function FloorPage() {
               routeClubs={routeClubs}
               clubReachRows={clubReachRows}
               searchActive={searchQuery.trim() !== ""}
+              loadPlanConfigs={loadPlan.configs}
+              routeNames={loadPlan.routeNames}
               // The SAME desk renders live and history, so the source is
               // decided here by the view (2026-08-25). "history" is the
               // read-only source — it suppresses every action in the panel

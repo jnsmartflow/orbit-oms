@@ -522,6 +522,8 @@ model delivery_type_master {
   // Route clubs (2026-09-19) — a club belongs to ONE delivery type. One FK from
   // route_clubs, so unnamed.
   routeClubs              route_clubs[]
+  // Load plan rules (2026-09-19) — one row per delivery type, PK = this FK.
+  loadPlanConfig          load_plan_config?
 }
 
 model slot_master {
@@ -631,6 +633,27 @@ model route_clubs {
   @@unique([id, deliveryTypeId], map: "route_clubs_id_type_key")
   @@unique([deliveryTypeId, name], map: "route_clubs_type_name_key")
   @@unique([deliveryTypeId, sortOrder], map: "route_clubs_type_sort_key")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOAD PLAN CONFIG (2026-09-19) — the rules the Upcountry "Load plan" view packs
+// suggested truckloads by (lib/trips/load-plan.ts). One row per delivery type.
+// Created by sql/2026-09-19-load-plan-config.sql in the Supabase SQL Editor and
+// hand-mirrored here (CORE §3 — never db push, never db pull).
+//
+// `config` jsonb: { smallMaxKg, bigMaxKg, mainRouteIds, partners: [{ routeId,
+// joins, pick }] } — route IDS, never names. Validated on read by
+// parseLoadPlanConfig; a missing or malformed row reads as "not set up".
+// The live CHECK chk_load_plan_config_object (jsonb_typeof = 'object') is not
+// expressible in Prisma. `updatedAt` is a plain @default(now()) — the table is
+// written by SQL only, so there is no app write for @updatedAt to stamp.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model load_plan_config {
+  deliveryTypeId Int                  @id
+  deliveryType   delivery_type_master @relation(fields: [deliveryTypeId], references: [id], onDelete: Restrict, map: "load_plan_config_delivery_type_fkey")
+  config         Json
+  updatedAt      DateTime             @default(now()) @db.Timestamptz(6)
 }
 
 model route_club_members {

@@ -35,6 +35,8 @@ import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs, useCardColumns } from "./route-cards";
+import { LoadPlanView } from "./load-plan";
+import type { LoadPlanConfig } from "@/lib/trips/load-plan";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
@@ -101,6 +103,12 @@ type LeafProps = {
  *  top of the column, not flush against it, with pool rows readable below. */
 const BAND_TOP_GAP = 12;
 
+/** The pool's three views. "plan" is offered only on LOAD_PLAN_SCOPES. */
+type PoolView = "flat" | "route" | "plan";
+/** Tabs with a Load plan view — Upcountry, where it is also the default. */
+const LOAD_PLAN_SCOPES: FloorScope[] = ["Upcountry"];
+const defaultPoolView = (scope: FloorScope): PoolView => (LOAD_PLAN_SCOPES.includes(scope) ? "plan" : "route");
+
 // FLOOR_SPINE, imported and never re-implemented (FLOOR §3).
 const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
 
@@ -159,6 +167,10 @@ export function TripDesk({
   routeClubs,
   clubReachRows,
   searchActive,
+  loadPlanConfigs,
+  routeNames,
+  onMakeTrip,
+  makeTripBusy,
 }: {
   floor: FloorBoardResult;
   trips: TripSummary[] | null;
@@ -251,6 +263,13 @@ export function TripDesk({
   clubReachRows: FloorBoardRow[];
   /** A search is up — the pool shows Flat until it is cleared (2026-09-19). */
   searchActive: boolean;
+  /** Load plan rules by delivery type name (GET /api/floor/board `loadPlan`). */
+  loadPlanConfigs: Record<string, LoadPlanConfig>;
+  /** route_master id → name, for the plan's reasons. */
+  routeNames: Record<number, string>;
+  /** Make trip on a load-plan card — the New trip flow with these bills. */
+  onMakeTrip?: (orderIds: number[]) => void;
+  makeTripBusy?: boolean;
 }) {
   // ── TWO VIEW STATES, ONE PER LIST (2026-09-19) ───────────────────────────
   //
@@ -265,9 +284,17 @@ export function TripDesk({
   // case floor-page's auto-tick comment warns about. Flat lists every tick.
   // Clearing the search puts back whatever the planner had, because the saved
   // choice was never overwritten.
-  const [poolPivot, setPoolPivot] = useState<"flat" | "route">("route");
+  //
+  // ── EACH TAB REMEMBERS ITS OWN POOL VIEW (Load plan, 2026-09-19, owner) ──
+  // Load plan is the default on Upcountry (LOAD_PLAN_SCOPES); By route
+  // everywhere else, exactly as before. A choice made on one tab never
+  // carries to another — `poolViews` holds one entry per tab the planner has
+  // actually switched, and the default fills the rest.
+  const [poolViews, setPoolViews] = useState<Partial<Record<FloorScope, PoolView>>>({});
+  const poolPivot: PoolView = poolViews[scope] ?? defaultPoolView(scope);
+  const setPoolPivot = (v: PoolView) => setPoolViews((cur) => ({ ...cur, [scope]: v }));
   const [tintPivot, setTintPivot] = useState<"flat" | "route">("flat");
-  const effectivePoolPivot = searchActive ? "flat" : poolPivot;
+  const effectivePoolPivot: PoolView = searchActive ? "flat" : poolPivot;
 
   // ── Scrolling in and out of a targeted add (owner, 2026-09-18) ────────────
   //
@@ -495,25 +522,29 @@ export function TripDesk({
     activeTab === "tinting";
   // Which of the two states this toggle drives — the open tab's own.
   const onTinting = activeTab === "tinting";
-  const shownPivot = onTinting ? tintPivot : effectivePoolPivot;
-  const setShownPivot = onTinting ? setTintPivot : setPoolPivot;
-  // While a search is up the pool is Flat and By route cannot be chosen; the
-  // button says why rather than doing nothing when pressed.
+  const shownPivot: PoolView = onTinting ? tintPivot : effectivePoolPivot;
+  const setShownPivot = (v: PoolView) => (onTinting ? setTintPivot(v === "flat" ? "flat" : "route") : setPoolPivot(v));
+  // While a search is up the pool is Flat and neither By route nor Load plan
+  // can be chosen; the button says why rather than doing nothing when pressed.
   const routeLocked = !onTinting && searchActive;
+  // Load plan is offered on the POOL of a tab that plans loads — never on
+  // the Tinting tab, whose bills are not in the pool.
+  const pivotOptions: PoolView[] =
+    !onTinting && LOAD_PLAN_SCOPES.includes(scope) ? ["flat", "route", "plan"] : ["flat", "route"];
   const pivotToggle = showPivot ? (
     <span className="inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[2px]">
-      {(["flat", "route"] as const).map((p) => (
+      {pivotOptions.map((p) => (
         <button
           key={p}
           type="button"
           onClick={() => setShownPivot(p)}
-          disabled={p === "route" && routeLocked}
-          title={p === "route" && routeLocked ? "Clear the search to group by route" : undefined}
+          disabled={p !== "flat" && routeLocked}
+          title={p !== "flat" && routeLocked ? `Clear the search to ${p === "plan" ? "see the load plan" : "group by route"}` : undefined}
           className={`rounded-[5px] px-3 py-[3px] text-[11px] disabled:cursor-not-allowed disabled:opacity-50 ${
             shownPivot === p ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
           }`}
         >
-          {p === "flat" ? "Flat" : "By route"}
+          {p === "flat" ? "Flat" : p === "route" ? "By route" : "Load plan"}
         </button>
       ))}
     </span>
@@ -689,6 +720,25 @@ export function TripDesk({
             nowMs={nowMs}
             variant={variant}
             {...selProps}
+          />
+        ) : effectivePoolPivot === "plan" ? (
+          // THE LOAD PLAN (2026-09-19) — the due pool as suggested trucks.
+          // Upcoming bills are not planned, only counted. No Make trip in
+          // History: a past day is a record.
+          <LoadPlanView
+            rows={poolRows}
+            upcomingCount={poolUpcoming.length}
+            config={loadPlanConfigs[scope] ?? null}
+            routeNames={routeNames}
+            columns={cardColumns}
+            nowMs={nowMs}
+            anchorIso={floor.date}
+            variant={variant}
+            onMarkUrgent={onMarkUrgent}
+            onOpenDetail={onOpenDetail}
+            gateOn={gateOn}
+            onMakeTrip={isHistory ? undefined : onMakeTrip}
+            makeTripBusy={makeTripBusy}
           />
         ) : (
           <>
