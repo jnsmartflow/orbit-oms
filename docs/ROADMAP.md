@@ -1,9 +1,218 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-09-06 (tint + master-data access conversion — `## User-based access` gains six new items and closes one that was stale within hours: the "every tint GET still gates on a job title" bullet was overtaken by `fbbe30bd` the same day. New: 🔴 P0 `prisma/seed.ts` has never heard of `user_page_access`, so a wipe-and-reseed leaves live access EMPTY and looks like it succeeded; 🔴 P1 the SILENT-403 pattern as ONE systemic issue — `fetchAll` returns `[]` on any failure and `requireRole` fails with a 307 into an HTML page that arrives 200, which produced three separate silent failures in one week; 🔴 P1 `requireRole` has no admin arm, and the fix is NOT to add one; P1 the two unswept bypasses, which are not the same kind — `mrn/photo:167-168` is harmless, `reports/tint-summary:33` is a multi-clause GRANT that still admits Operations User to a report every other tint endpoint refuses him; P2 retire the four `/dispatcher/*` screens, reachable by nobody including all three holders of the `dispatcher` role, which also collapses `ROLE_HREF_OVERRIDES` for master data; P2 `sub-areas` CREATE now looser than its own EDIT, a parked decision whose fix is to bring PATCH and import forward; P3 the router has no `/admin/access` row; and `operator/skip`, ownership-scoped by design, recorded so nobody "fixes" it into a tick. The board-rebuild P0 QA block gains manual tint entry, whose button is **"Add to Tint"** — the rebuild renamed it, which is why the flow went untested. Record: `code-update-2026-09-06-tint-and-master-data.md`) · Prior: 2026-09-06 (Tint Manager board rebuild — new `## Tint Manager board rebuild` section: a P0 QA block for the five flows that shipped without ever being click-tested, the 8 old-Kanban capabilities with no home in the new design (the per-row StatusPopover is the significant one, and Create Split's removal means new splits cannot be created anywhere), the two cancel routes still on `prisma.$transaction`, and the Floor-vs-UI§27 row-height disagreement between two canon files) · Prior: 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-09-19 (canon sweep batch C — every item re-checked against code at `b574cecc` and the live results of 2026-09-18; see "Change log — canon sweep pass 2026-09-19" at the foot for what closed, re-scoped and opened. New section `## Opened by the 2026-09-18 canon sweep`, led by a 🔴 P0 credential file) · Prior: 2026-09-06 (tint + master-data access conversion — `## User-based access` gains six new items and closes one that was stale within hours: the "every tint GET still gates on a job title" bullet was overtaken by `fbbe30bd` the same day. New: 🔴 P0 `prisma/seed.ts` has never heard of `user_page_access`, so a wipe-and-reseed leaves live access EMPTY and looks like it succeeded; 🔴 P1 the SILENT-403 pattern as ONE systemic issue — `fetchAll` returns `[]` on any failure and `requireRole` fails with a 307 into an HTML page that arrives 200, which produced three separate silent failures in one week; 🔴 P1 `requireRole` has no admin arm, and the fix is NOT to add one; P1 the two unswept bypasses, which are not the same kind — `mrn/photo:167-168` is harmless, `reports/tint-summary:33` is a multi-clause GRANT that still admits Operations User to a report every other tint endpoint refuses him; P2 retire the four `/dispatcher/*` screens, reachable by nobody including all three holders of the `dispatcher` role, which also collapses `ROLE_HREF_OVERRIDES` for master data; P2 `sub-areas` CREATE now looser than its own EDIT, a parked decision whose fix is to bring PATCH and import forward; P3 the router has no `/admin/access` row; and `operator/skip`, ownership-scoped by design, recorded so nobody "fixes" it into a tick. The board-rebuild P0 QA block gains manual tint entry, whose button is **"Add to Tint"** — the rebuild renamed it, which is why the flow went untested. Record: `code-update-2026-09-06-tint-and-master-data.md`) · Prior: 2026-09-06 (Tint Manager board rebuild — new `## Tint Manager board rebuild` section: a P0 QA block for the five flows that shipped without ever being click-tested, the 8 old-Kanban capabilities with no home in the new design (the per-row StatusPopover is the significant one, and Create Split's removal means new splits cannot be created anywhere), the two cancel routes still on `prisma.$transaction`, and the Floor-vs-UI§27 row-height disagreement between two canon files) · Prior: 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
 Items grouped by module. Within each module: SHIPPED → P0 (blocking) → P1 (next up) → P2+ (later).
+
+---
+
+## Opened by the 2026-09-18 canon sweep
+
+Found while reconciling every canon file to code at `ec6343ba`/`b574cecc` and the live SELECTs of
+2026-09-18 (`docs/prompts/drafts/sql-2026-09-18-canon-sweep-live-results.csv`, cited as "live Qnn").
+Each line names the canon file that describes it; read the detail there, not here. **Nothing below
+is fixed.** Source report: `docs/prompts/drafts/code-discovery-2026-09-18-canon-sweep.md` §4 and §8.
+
+### 🔴 P0 — Security: a production DB password in a synced, un-ignored file
+
+- [ ] A 2026-09-08 draft (`docs/prompts/drafts/code-discovery-2026-09-08-trip-mirror.md:181-182`, `:521-522`)
+      records that `-Dhruv.env` holds a **plaintext production DB password**. On 2026-09-19
+      `docs/dhruv-review/` is no longer on disk, but its twin is:
+      `docs/_backup_2026-08-04/dhruv-review/-Dhruv.env` (and `.env-Dhruv.local` beside it) —
+      **untracked and NOT git-ignored** (`git check-ignore` returns nothing; `.gitignore` covers only
+      `.env*` names at their usual spelling), inside a OneDrive-synced folder. One `git add .` commits
+      it; OneDrive already syncs it. **Action: rotate the DB password first** (it has left the machine
+      whatever happens to the file), then move both files out of the repo, then add an ignore rule.
+      The file was deliberately not opened by this pass.
+
+### Floor / trips — `CLAUDE_FLOOR.md`, `CLAUDE_FLOOR_TRIPS.md`
+
+- [ ] **Undo-add reads the wrong response shape.** `GET /api/floor/trips/[id]` returns `{ trip }`
+      (`[id]/route.ts:48`); `floor-page.tsx` `undoAdd` (`:573`) and the add receipt (`:708`) cast the
+      body itself as `TripDetail`, so Undo always fails into its catch. `CLAUDE_FLOOR_TRIPS.md §17`
+      open item 13.
+- [ ] **The tint lock never fires.** `tintLocked` requires `source === "rail"`
+      (`components/floor/detail-panel.tsx:414`), a source nothing opens since the rail retired; a
+      tint-room bill opened from the board shows Hold and Cancel enabled, and `POST /api/floor/actions`
+      has no tint guard. `CLAUDE_FLOOR.md §4.7`, §10b.
+- [ ] **Release is unreachable from the board.** It renders for `source === "rail" || "hold"` only
+      (`detail-panel.tsx:583`), so a `pending_support` row (e.g. a restored bill) has no Release on the
+      desk unless it is held first. `CLAUDE_FLOOR.md §4.2`, §10b.
+- [ ] **False tooltip.** The `no slot` chip says "putting this bill on a trip gives it one"
+      (`components/floor/floor-table.tsx:693`); no trip route writes a bill's slot
+      (`CLAUDE_FLOOR_TRIPS.md §13`). `CLAUDE_FLOOR.md §10b`.
+- [ ] **Who is writing `workflowStage = 'dispatched'`?** No reachable in-repo writer since
+      2026-09-15; live count 7,330 (Q09). Investigation, not a fix. `CLAUDE_FLOOR_TRIPS.md §14`, §17
+      open item 1 (and the "NO AUTOMATIC DRAIN" item under Consolidation 2026-07-16 → Picking).
+
+### Access — `CLAUDE_CORE.md §5`, `§7.14`, and each module's permissions section
+
+- [ ] `GET /api/warehouse/pickers` still checks job titles —
+      `requireRole([FLOOR_SUPERVISOR, ADMIN, OPERATIONS])` (`app/api/warehouse/pickers/route.ts:49`).
+      `CLAUDE_PICKING.md §4`.
+- [ ] **Remove OBD** is drawn by job title (`canRemoveObd`, `components/tint/tint-manager-content.tsx:93-98`:
+      primary `admin` or `tint_manager` in roles) but the route gates on the `tint_manager` canEdit
+      tick — so Prakash (`operation_manager`, tick holder) is allowed by the server and shown no
+      button. `CLAUDE_TINT.md §8`.
+- [ ] **MRN close is role-only** — `hasRole(session, CLOSE_ROLES)` with
+      `[BILLING_OPERATOR, ADMIN]` (`app/api/mrn/[mrnId]/close/route.ts:75`), no tick. Deliberate
+      (`CLAUDE_MRN.md §3`), but it sits outside per-user access; decide whether it becomes a tick of
+      its own.
+- [ ] The **Import OBDs** sidebar link shows on `import_obd` canView (`lib/permissions.ts:43`) but
+      the page and route need the import tick, so a view-only holder sees a link that redirects to
+      `/unauthorized`. `CLAUDE_IMPORT.md §9.1`.
+- [ ] `backfill-enrich`: the POST's HMAC path is unreachable — middleware lets only
+      `/api/mail-orders/ingest` through on a signature (`middleware.ts:60`), so a sessionless
+      machine call never reaches `verifyHmac`; and the GET's `requireRole([ADMIN])` (`route.ts:169`)
+      refuses a superuser-flag-only user (no admin arm, User-based access → P1). Fold into the
+      retire-or-keep item in "Mail Orders cleanup". `CLAUDE_MAIL_ORDERS.md §7`, §22.
+
+### Tint — `CLAUDE_TINT.md`
+
+- [ ] **Base bypass Undo refuses most bypasses since the completion-slot change.** Guard 4 refuses
+      any non-null `dispatchSlotSource` (`base-bypass/undo/route.ts:140-149`), and the bypass writes
+      `"auto"` on every bill the engine slots (`resolveCompletionSlot`, `lib/dispatch/completion-slot.ts`);
+      a successful Undo also leaves `dispatchTargetDate` / `dispatchWindowId` in place.
+      `CLAUDE_TINT.md §1.12`.
+- [ ] **Live oddity — `reports_tint_summary` is held by Operations User (#20) alone** (live Q03b,
+      canView 1 of 3 rows), while `reports_ti_report` is held by Chandresh, Deepanshu and Prakash.
+      Check whether the tint team was meant to hold both. `CLAUDE_TINT.md §12`, §13.1.
+
+### Import — `CLAUDE_IMPORT.md`
+
+- [ ] Manual SAP (.xlsx) and paste still create **tint bills with no arrival slot** — `createPath`
+      keeps the tint guard (`lib/import-upsert.ts:160`). `CLAUDE_IMPORT.md §12`.
+- [ ] Auto-imported bills get **no batch code** (`Build-LineRow` always sends `batch_code` null),
+      **no line weights** and **no `itemCategory`** (`app/api/import/obd/route.ts:3585-3606`).
+      Weights are the existing P1 "Line weights are not populated" item under Import Pipeline.
+      `CLAUDE_IMPORT.md §10.1`.
+- [ ] **Defect B** — header totals are never recomputed on the patch path; the rebuild trigger in
+      `lib/import-upsert/effects.ts` (`query-summary-rebuild`, `:74`) is wired but never fires because
+      `patchHeader` emits none of its fields. Gated on the nineteen short/zero-line bills (Import
+      Pipeline → 🔴 P1). `CLAUDE_IMPORT.md §15`.
+
+### Billing / Mail Orders — `CLAUDE_BILLING.md`, `CLAUDE_MAIL_ORDERS.md`
+
+- [ ] A person **without the `billing_hold` tick sees no hold signal at all** on the Billing face:
+      the Hold button is hidden, and the ship card drops status chips at the call site
+      (`review-view.tsx:1505-1507`). `CLAUDE_MAIL_ORDERS.md §23.2`, `CLAUDE_BILLING.md §5`.
+- [ ] The dead **"E · Slot email"** shortcut label — `MO_SHORTCUTS` in `mail-orders-page.tsx:99`
+      advertises a key removed in `c103d5f4`. `CLAUDE_BILLING.md §11`, `CLAUDE_MAIL_ORDERS.md §10`.
+
+### Attendance — `CLAUDE_ATTENDANCE.md`
+
+- [ ] `/api/attendance/check-in` and `check-out` **never verify consent** — session only; the consent
+      redirect is page-level. `CLAUDE_ATTENDANCE.md §4`.
+- [ ] The purge cron selects by `createdAt` (`app/api/cron/attendance-purge/route.ts:54`), not the
+      date in the photo path. `CLAUDE_ATTENDANCE.md §11`, §15.
+- [ ] The rollover cron writes `ABSENT` on Sundays and while `rolloutStage` is OFF — its only filter
+      is `isActive` + `attendanceExempt`. `CLAUDE_ATTENDANCE.md §17` (pairs with the Holidays item
+      under Attendance + OT).
+
+### Sampling Library — `CLAUDE_SAMPLING_LIBRARY.md`
+
+- [ ] Edit / Deactivate / Mark-for-review are `console.log` stubs; no client calls any of the four
+      write routes. `CLAUDE_SAMPLING_LIBRARY.md §4` item 8, §5.
+- [ ] `PATCH /api/sampling-library/[samplingNo]` accepts a `siteId` (`route.ts:92-95`) that the
+      route table does not list. `CLAUDE_SAMPLING_LIBRARY.md §5`.
+
+### Place Order — `CLAUDE_PLACE_ORDER.md`
+
+- [ ] `/api/order/data` is public and returns customer names and codes — **already tracked** as the
+      `/po2` P0 below; `CLAUDE_PLACE_ORDER.md §16` records it too.
+- [ ] `GET /api/place-order/last-order/[customerCode]` has **no auth of its own** — middleware's
+      session check is its only gate. `CLAUDE_PLACE_ORDER.md §20`.
+
+### MRN — `CLAUDE_MRN.md`
+
+- [ ] The deferred `DROP DEFAULT` on `mrn_lines."deliveryNo"` was never run — the live default is
+      still `''` (live Q06a). Run that one ALTER alone, never the whole file. `CLAUDE_MRN.md §12`.
+
+### UI — `CLAUDE_UI.md`
+
+- [ ] `@page mo-landscape` is **nested inside `@media print`** (`app/globals.css:630`), against router
+      rule §1 (`@page` top-level only). Whether Billing still prints A4 landscape needs a real print
+      (verification question below). `CLAUDE_UI.md` "Review View — layout" → Print;
+      `CLAUDE_BILLING.md §11`.
+
+### Clean-up — stale code comments (one pass, code only)
+
+Comments that state something false about the code. None changes behaviour; each has been believed by
+a later session before. One code-comment pass, not a doc batch. Anchors re-checked 2026-09-19.
+
+- `lib/permissions.ts` — `:39` ("/planning and /warehouse … stay live"); `:127` ("richer split
+  view" — the retired Support copies); `:258`, `:284`, `:429` ("nothing reads it yet" / "checks …
+  do not exist yet" — all read now, `CLAUDE_BILLING.md §11`); `:300-303` (`ci` "not in PAGE_NAV_MAP
+  yet").
+- `app/ci/page.tsx:57-62` ("NOT IN THE SIDEBAR YET") — `CLAUDE_CI.md §15`.
+- `prisma/schema.prisma:1211` (`app_settings` "NOTHING CONSUMES THIS YET") — `CLAUDE_FLOOR_TRIPS.md §15`.
+- `middleware.ts:20` ("the check at line 26" — it is `:36`).
+- `lib/floor/queries.ts` — `:6-14`, `:151-153`, `:622`, `:704`, `:844`, `:1172` (rail / `getFloorRail`
+  / assign-bar); `lib/floor/release.ts:5`; `lib/floor/hold-log.ts:27-28` (a "clear-hold" action that
+  does not exist); `lib/floor/use-floor-rail-poll.ts:3-5`; `app/api/floor/actions/route.ts:10`,
+  `:159-161` — `CLAUDE_FLOOR.md §10b`.
+- `components/floor/floor-page.tsx:9-14`, `:878-886`; `floor-table.tsx:3-10`, `:34-35`, `:687-688`;
+  `detail-panel.tsx:391-409` (points at the deleted `rail-card.tsx`) — `CLAUDE_FLOOR.md §10b`.
+- Trips — `app/api/floor/trips/[id]/confirm/route.ts:38-39`; `lib/trips/queries.ts:151`;
+  `lib/floor/dispatch.ts:6`, `:18` and `lib/workflow-stages.ts:98` (conflicting `dispatched` counts,
+  4,137 vs 7,067 — live is 7,330); `app/api/floor/pick-gate/route.ts:40-41` —
+  `CLAUDE_FLOOR_TRIPS.md §15`.
+- `lib/billing/flag.ts:18-20` (describes `TEST_USERS_ONLY` as live; live is `ALL_USERS`, Q01) —
+  `CLAUDE_BILLING.md §11`.
+- `app/api/mrn/[mrnId]/export/route.ts:21-22`; `components/mrn/photos-button.tsx:132-140` —
+  `CLAUDE_MRN.md §12`.
+- `app/api/tint/operator/split/done/route.ts:175-176` (un-preset bill "lands in pending_support",
+  stale since `b3dfe5b8`); `app/api/tint/manager/base-bypass/undo/route.ts:19` (bypass "writes
+  pending_support") — `CLAUDE_TINT.md §2`, §1.12.
+- `components/picking/picking-mobile-shell.tsx:228`, `:232` ("Admin-only", "one-teal rule");
+  `public/sw.js:10` ("three picking surfaces"); `lib/picking/queue.ts:462`, `:571`, `:904` (cite the
+  retired `CLAUDE_SUPPORT.md`) — `CLAUDE_NOTIFICATIONS.md §9`, `CLAUDE_PICKING.md`.
+- `lib/place-order/saved-drafts.ts:1-2` and `sent-orders.ts:1-2` ("feature-flagged behind
+  ?draft=on") — `CLAUDE_PLACE_ORDER.md §25`.
+- `app/po2/*` — eleven rows, `CLAUDE_PO2.md §13` (includes the three under `/po2` → P2 below).
+- `components/admin/admin-sidebar.tsx:65-66` ("switcher … not built"); `tailwind.config.ts:54` ("NOTHING reads these yet");
+  `app/(admin)/admin/roles/page.tsx:14` ("7 system roles" — live `role_master` has 13, Q07a).
+
+### Decision — orphan files with no importer (keep or cut is the owner's call)
+
+Zero importers at HEAD (grep of `app`, `components`, `lib`, 2026-09-19; comment mentions only). Kept per
+the no-delete rule. **Do not delete anything on this item's say-so** — each needs an explicit owner
+instruction and `archive/RETIREMENT-PLAYBOOK.md`.
+
+- `components/floor/assign-bar.tsx`, `assign-context-banner.tsx`, `trip-selection-bar.tsx`;
+  `lib/floor/suggest.ts` (used only by the scratch `scripts/_floor-suggest-check.ts`) —
+  `CLAUDE_FLOOR.md §8`, §10b.
+- `app/(mail-orders)/mail-orders/slot-completion-modal.tsx`, `components/mail-orders/so-email-panel.tsx`
+  — `CLAUDE_MAIL_ORDERS.md §13`, §14.
+- `lib/mail-orders/enrich-v2.ts` (also in "Five pre-existing unused files" below);
+  `lib/mail-orders/taxonomy-mapping.ts` (script-only: four `scripts/` importers, no app importer).
+- `components/tint/tint-table-view.tsx`, `components/tint/split-builder-modal.tsx` (listed "RETIRED,
+  NOT DELETED" at `tint-manager-content.tsx:24-30`) — `CLAUDE_TINT.md §1.11`.
+- `fetchSlotCutoffs` (`lib/mail-orders/api.ts:132`) and its only target
+  `app/api/system-config/slot-cutoffs/route.ts` — no caller since `c103d5f4`.
+
+### Owner decisions pending (sweep §8 Q13)
+
+- [ ] May pickers reach `/api/picking/tint-workload` (gated `picking` canView today)?
+      `CLAUDE_PICKING.md §5.6`.
+- [ ] Keep, cut or document the Floor board's `waitingSkus` / `oilSkus` payload — computed by
+      `getFloorBoard`, read by no Floor component. `CLAUDE_FLOOR.md §10b`.
+- [ ] Add the 6 missing role slugs to `RoleSidebarRole`? `CLAUDE_CORE.md §5`.
+- [ ] The SMU gate for Offtake / Projects / Distributor under import auto-release.
+      `CLAUDE_IMPORT.md §2.1`.
+- [ ] Defect B — the narrowed recompute, and when (Import above). `CLAUDE_IMPORT.md §15`.
+
+### Verification questions — need logs or a machine, not code
+
+- [ ] Which PowerShell script does the import PC actually run, `Auto-Import-v2.ps1` or `-v3.ps1`?
+      (Import Pipeline → "Canon is stale on the auto-import cadence"; `CLAUDE_IMPORT.md §10`.)
+- [ ] Does anything external call `/api/tint/operator/shades` (POST, PUT)? Vercel logs. Decides the
+      retire-or-convert item under User-based access.
+- [ ] Does Billing still print A4 landscape with `@page mo-landscape` nested? A real print from the
+      Billing screen. `CLAUDE_BILLING.md §11`.
+- [ ] Which machine runs the live NTS puller? Blocks trip-mirror Phase B and every `.ps1` change.
+      `CLAUDE_TRIP_REPORT.md §2.3`, §7.
 
 ---
 
@@ -38,11 +247,16 @@ quietly rewritten.
 
 ### P1 — Step 6: the rest of the role checks
 
-- [ ] **58 `requireRole` calls whose array names roles beyond ADMIN**, in 12 distinct shapes — the
-      biggest being 18× `[TINT_MANAGER, ADMIN, OPERATIONS, OPERATION_MANAGER]` and 13×
-      `[ADMIN, DISPATCHER, SUPPORT, TINT_MANAGER, TINT_OPERATOR, FLOOR_SUPERVISOR]`. Each is a
-      PERMISSION question — "may this person" — which is what a tick already answers. 48 of the 58
-      include ADMIN alongside others; 10 name no admin at all.
+- [ ] **19 `requireRole` calls whose array names roles beyond ADMIN.** Re-counted 2026-09-19:
+      `grep -rn "requireRole(" app lib components` (excluding the definition in `lib/rbac.ts`) finds
+      23 hits, of which 3 are comments (`app/api/floor/trips/options/route.ts:19`,
+      `app/api/orders/[id]/audit-history/route.ts:19`, `app/api/tint/manager/manual-entry/lookup/route.ts:33`),
+      so **20 real call sites**. One is `[ADMIN]` alone (`app/api/mail-orders/backfill-enrich/route.ts:169`);
+      the other **19** name a role beyond ADMIN. The largest shape is now 4×
+      `[ADMIN, DISPATCHER, SUPPORT, TINT_MANAGER, TINT_OPERATOR, FLOOR_SUPERVISOR]` (contact-roles,
+      delivery-types, sales-officers, so-groups); the old 4-role tint shape survives once
+      (`app/(tint)/tint/manager/ti-report/page.tsx:9`). All 20 include ADMIN. Each is a PERMISSION
+      question — "may this person" — which is what a tick already answers.
 - [x] ~~**22 inline `session.user.role !== "admin"` BYPASS sites**~~ **DONE 2026-09-06 — and there
       were 57, not 22.** All one-clause wrappers removed; the check they wrapped now runs
       unconditionally. Provably behaviour-neutral: the resolvers test the same value on their own
@@ -62,8 +276,11 @@ quietly rewritten.
       are retirement candidates, not conversion ones. **Decide retire-or-convert before converting.**
       If converted, the key choice is not cosmetic: `shade_master`/`canEdit` is held by Harsh and
       Chandresh only, so it would revoke shade writes from **Deepak Vasava and Chandrasing Valvi**,
-      the two active operators whose screen it is; `tint_operator`/`canEdit` would keep them. Prior
-      question nobody has answered: **does anything still call these two routes?**
+      the two active operators whose screen it is; `tint_operator`/`canEdit` would keep them.
+      **Nothing in the app calls either route** (2026-09-19 grep of `app`, `components`, `lib` outside
+      `app/api/tint/operator/shades`: the only hit is a comment, `tint-operator-content.tsx:886`),
+      which leans the decision toward retire. An external caller is still possible — check Vercel
+      logs first (verification question under `## Opened by the 2026-09-18 canon sweep`).
 - [x] ~~**Every tint GET still gates on a job title.** Reads were out of scope on 2026-09-06, so
       nine manager GETs plus the GET halves of `challans/[orderId]`, `tinter-issue/[id]` and
       `tinter-issue-b/[id]` keep `requireRole`/`hasRole`.~~ **DONE the same day — this bullet was
@@ -88,9 +305,10 @@ quietly rewritten.
       ever rewritten. `CLAUDE_TINT.md §13.2`.
 - [ ] 🔴 **`requireRole` has no admin arm** (`lib/rbac.ts`) — it is a plain set-intersection with no
       superuser short-circuit, unlike both resolvers. **An admin-only account is excluded from every
-      gate whose array does not spell `admin`**, and 10 of the 58 above name none. It was
+      gate whose array does not spell `admin`** — none of today's 20 call sites omits it (grep
+      2026-09-19), but a superuser-flag-only account is still refused by every one of them. It was
       redirecting the owner off the four tint operator writes until `64f897a9` converted them.
-      ⚠ **Do not "fix" this by adding an arm to `requireRole`** — that silently widens ~58 gates in
+      ⚠ **Do not "fix" this by adding an arm to `requireRole`** — that silently widens 20 gates in
       one commit. Convert the call sites instead; the hole closes as they go. `CLAUDE_CORE.md §13`.
 
 ### P1 — Two bypasses `65fd0e10` did not sweep, and they are not the same kind
@@ -99,13 +317,11 @@ quietly rewritten.
       isAdmin || (await checkAnyPermission(…))`. The same redundancy in **expression** form, so the
       wrapper sweep did not match it. **Harmless**, for the same reason as the 57. *(CORE §13 said
       `:169-170` until 2026-09-06 — read the lines, do not trust the anchor.)*
-- [ ] 🔴 `app/api/reports/tint-summary/route.ts:33` — **not harmless, and not a bypass.** It is a
-      **MULTI-clause** condition, `role !== "admin" && role !== OPERATIONS`, in front of
-      `checkPermission(role, "tint_manager", "canView")` and behind a four-role `requireRole`. That
-      is a permission **grant written as a role name**: it is the last of the 9 multi-clause
-      survivors still standing after `d3211766` converted three and `fbbe30bd` five, and it **still
-      admits Operations User to the Tint Summary report** while every other tint endpoint now
-      refuses him. It survived only because `/api/reports/` is not `/api/tint/`.
+- [x] ~~`app/api/reports/tint-summary/route.ts:33` — a MULTI-clause role grant that still admitted
+      Operations User to the Tint Summary report.~~ **DONE 2026-09-17 (`6f628b05`).** The route now
+      gates on `checkAnyPermission(roles, "reports_tint_summary", "canView")` (`route.ts:37`), one
+      tick per report (`CLAUDE_TINT.md §12`). The live holder list that followed is its own item under
+      `## Opened by the 2026-09-18 canon sweep` → Tint.
 
 ### P1 — 🔴 THE SILENT-403 PATTERN: one systemic issue, not three bugs
 
@@ -129,6 +345,8 @@ into each module's own conversion so the same files are not edited twice — an 
 looks identical whether it was missed or parked, and these were parked (`CLAUDE_CORE.md §13`).
 
 - [ ] Sampling Library 3 · ~~Tint 5~~ **Tint 1** · MRN 2 · Billing 1 · backfill 2.
+      ⚠ 49 `logAdminAction(` call sites exist at HEAD (grep 2026-09-19); the per-route breakdown
+      above was not re-derived against them.
 
 **Tint: 4 of its 5 wired on 2026-09-06**, inside the conversion commit so those files were not
 opened twice — `manager/reorder`, `manager/challans/[orderId]` PATCH, `operator/tinter-issue/[id]`
@@ -156,7 +374,7 @@ attributable to whoever first raised the entry rather than to whoever changed it
       master-data pages render the **same component** (`/tint/manager/customers` uses
       `CustomersSplitView` exactly as `/admin/customers` does); `/dispatcher/customers`'s
       `CustomersTable` is the override list's only real variation. Method:
-      `archive/RETIREMENT-PLAYBOOK.md`. ⚠ Fix the stale comment at `lib/permissions.ts:117` in the
+      `archive/RETIREMENT-PLAYBOOK.md`. ⚠ Fix the stale comment at `lib/permissions.ts:127` in the
       same pass — *"/admin/customers uses the richer split view, the other three the same tables"*
       describes the **retired Support** copies and reads forward as a claim about the live tree.
 
@@ -199,7 +417,7 @@ Remove the switch first, then the tables.
 - [ ] Retire `/admin/permissions` and `components/admin/permissions-manager.tsx`. It writes
       `role_permissions`, which no longer grants anything, and it re-posts all ~78 rows on every
       save — the habit that resurrects retired page keys.
-- [ ] ⚠ It carries `NA_IMPORT` / `NA_DELETE` / `isNA()` at `:52-64` — an **older, wrong duplicate**
+- [ ] ⚠ It carries `NA_IMPORT` / `NA_DELETE` / `isNA()` at `:100-110` — an **older, wrong duplicate**
       of `ACTION_PAGES` in `lib/permissions.ts`. It covers only import and delete, marks
       `tint_manager` import-NA against the verified census, and still lists the **retired**
       `dispatcher` and `warehouse` page keys. Delete it with the screen; do not sync it.
@@ -362,16 +580,15 @@ Also: **add `@deprecated` JSDoc** to `delivery_point_master.salesOfficerId` in P
 
 ### P1 — Surface partial-qty Done to TM
 
-`tint_assignments.currentProgress` is stored on every Done event with per-SKU actual qty, but no TM screen reads it. Add:
-- Badge on Completed Today section of Kanban: `Short by N tins`
+`tint_assignments.currentProgress` is stored on every Done event with per-SKU actual qty, but no TM screen reads it. **Re-scoped 2026-09-19 against the rebuilt board:** the Completed Today Kanban section this item targeted is gone (`components/tint/tint-table-view.tsx` has no importer; board is `CLAUDE_TINT.md §1`), and nothing under `components/tint/manager/` reads `currentProgress` (grep). Where a short done should show — the board row, or the detail panel (`board-detail-panel.tsx`) — is an owner call. Then:
 - Read `currentProgress` in TM consumers
 - Optionally extend `PauseHistoryModal` into a "Job Lifecycle Modal" showing pauses + done event side-by-side
 
 **Open question:** does the delivery challan auto-fill from assigned qty? If yes, partial-done jobs could print challans with wrong qty. Needs verification before partial-done is considered production-safe.
 
-### P1 — Pause kebab on non-pending Table sections
+### ~~P1 — Pause kebab on non-pending Table sections~~ — CLOSED 2026-09-19 (premise gone)
 
-Today the pause kebab item only renders in the pending-stage Table view. In Progress and Completed Today have the pause **badge** but no kebab. Four other entry points cover the gap. Add kebab to other sections if Chandresh asks.
+The Table view this item extended is retired with the Kanban: `components/tint/tint-table-view.tsx` is unimported (`tint-manager-content.tsx:24-30` lists it "RETIRED, NOT DELETED"), and the rebuilt board has no kebab (`CLAUDE_TINT.md §1.11`). If Chandresh wants a pause entry on the new board, open it fresh against `CLAUDE_TINT.md §1`.
 
 ### P2 — Material picking workflow
 
@@ -384,19 +601,23 @@ Useful for inventory planning, not blocking.
 
 ### P2 — Challan PATCH `$transaction` refactor
 
-`app/api/tint/manager/challans/[orderId]/route.ts:527` — formula upsert wrapped in `$transaction`. Pre-existing, violates CORE §3, low-concurrency so safe today. Refactor in a dedicated session.
+`app/api/tint/manager/challans/[orderId]/route.ts:551` — formula upsert wrapped in `$transaction`. Pre-existing, violates CORE §3, low-concurrency so safe today. Refactor in a dedicated session.
 
 ### P2 — Challan cell-clear UX fix
 
 `components/tint/challan-content.tsx:211-213` filters empty strings out of PATCH body. Server has no delete branch. Clearing a cell does NOT clear the DB row, so a TM can't "unlock" a manually-overridden formula by clearing it. Build a proper "Reset to auto" button when this becomes needed.
 
-### P2 — TM reorder `$transaction` refactor
+### ~~P2 — TM reorder `$transaction` refactor~~ — DONE (`a0f9378b`, 2026-09-05)
 
-`/api/tint/manager/reorder/route.ts` ~line 429 uses `prisma.$transaction`. Two-update swap so partial-failure semantics are acceptable. Refactor when convenient.
+`app/api/tint/manager/reorder/route.ts` holds no `$transaction` call; `:102` reads "Sequential awaits — never prisma.$transaction". The refactor landed in the board rebuild. It has still never been click-tested — that is the Reorder line of the board-rebuild P0 QA block below.
 
 ### P2 — Pre-existing `$transaction` in admin customer routes
 
-`app/api/admin/customers/route.ts` lines 133 + 186. Left untouched in multi-SO commit. Refactor when convenient.
+`app/api/admin/customers/route.ts` lines 137 + 194. Left untouched in multi-SO commit. Refactor when convenient.
+
+### P2 — Seven more `$transaction` sites this file never listed (opened 2026-09-19)
+
+Grep of `app` + `lib` 2026-09-19, beyond the challan, admin-customers and two cancel-route items: `app/api/admin/areas/[id]/route.ts:43` · `app/api/admin/permissions/route.ts:83` · `app/api/admin/shades/route.ts:40` · `app/api/admin/skus/route.ts:64` · `app/api/tint/manager/splits/create/route.ts:150` (no caller — Create Split was dropped, `CLAUDE_TINT.md §1.11`) · `app/api/tint/manager/splits/reassign/route.ts:50` (live caller `tint-manager-content.tsx`) · `app/api/tint/operator/split/done/route.ts:56`. Each violates CORE §3; same "its own task" rule as the others (`CLAUDE_TINT.md §14`).
 
 ### P2 — Cosmetic cleanups
 
@@ -599,11 +820,11 @@ deliberate depot rule.** That commit makes `?action=auto-json` drop any OBD arri
 which is precisely v3's header-only case. Consequence: a volume-zero OBD no longer enters OrbitOMS
 from auto-import at all. If manual SAP later covers it the bill appears complete — better than
 today. **If manual SAP never covers it, the bill never appears at all — and for an invoiced,
-dispatched bill, invisible is worse than visible-but-empty, which is what the ten are.** Needs an
-owner decision between: (a) revert `a11bf7ee`, (b) carve out volume-zero so header-only still
-imports while genuinely-empty volume>0 payloads are skipped, or (c) keep the skip and accept that
-volume-zero OBDs depend entirely on manual SAP. **(b) is the recommendation** — it preserves both
-intents — but it is a behaviour decision, not a cleanup.
+dispatched bill, invisible is worse than visible-but-empty, which is what the ten are.** **DECIDED
+and shipped: the volume-zero carve-out** (`d8fcf1ed`, 2026-09-08) — header-only still imports and is
+traced as `header_only_allowed` in `import_shadow_log`, while a genuinely empty volume>0 payload is
+skipped (`CLAUDE_IMPORT.md §8.3`). The open work is the visibility item in the one-line correction
+above.
 
 #### The depot-side birthplace of an EMPTY (volume > 0) payload — fixed in the repo copies only
 
@@ -700,7 +921,7 @@ category, ZINR included. The rule now lives in `lib/article-tag.ts` and applies 
 `CLAUDE_IMPORT.md §8.2`. One crumb left: the `zinr-article-tag-pending` warning text still says
 "needs articleTag rule (deferred)". It gates nothing (preview-only, never reaches confirm), so it was
 left rather than removed inside a change about the tag rule. **Retiring that one string is a P2
-one-liner** — `lib/sap-parser/apply-rules.ts:144-151`.
+one-liner** — `lib/sap-parser/apply-rules.ts:241`.
 
 ### P1 — Backfill historically wrong / null `articleTag`
 
@@ -765,7 +986,7 @@ disappoints.
 
 ### P1 — OneDrive dev-machine sync risk
 
-`orbit-oms` is OneDrive-synced and shared between the depot/server PC and the (returning) laptop. Two machines two-way-syncing one git folder risks `.git` corruption mid-sync and propagates deletions both ways — the 3 stale deletions currently sitting in `git status` (`docs/CLAUDE_IMPORT V1.md`, two `.xlsx` files under `docs/plans/sampling-register/`) may already be a symptom of this. Decide a single-primary-dev-machine policy before it causes real data loss.
+`orbit-oms` is OneDrive-synced and shared between the depot/server PC and the (returning) laptop. Two machines two-way-syncing one git folder risks `.git` corruption mid-sync and propagates deletions both ways. `git status --porcelain` shows no deletions on 2026-09-19, so the evidence once cited here is gone; the risk is not. Decide a single-primary-dev-machine policy before it causes real data loss.
 
 ### P2 — `trip_report` field meanings (reworded 2026-08-05)
 
@@ -790,7 +1011,7 @@ New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
 - **Smoothover EXTERIORS→UTILITY + 96/97 YOX-vs-Yellow alias standardisation** — the deferred "final CORE section pass" (do the UTILITY/INTERIORS/EXTERIORS relabel together, not piecemeal).
 - **Order email line-item reformat** — see the existing deferred bullet under "Place Order — email + catalog".
 
-### /po (going-forward mobile)
+### /po (v1 public mobile page — its successor is `/po2`, `CLAUDE_PO2.md`)
 - **`/po` → `/order` cutover rename — NOW UNBLOCKED (2026-07-27).** `/order` was retired
   (`de48357d`, `archive/2026-07-order/`) with **no redirect**, and the address was deliberately
   **parked for exactly this rename** — nothing occupies it. The middleware `"/order"` public-path
@@ -809,7 +1030,7 @@ New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
 - **Operator card: tinting time + utilisation** — needs attendance present-hours + handling that stored tinting time includes paused minutes.
 
 ### Mail Orders
-- **Late-Evening / Night slot-summary auto-email gap** — `slotDefs` trigger array has only 3 entries (Morning/Afternoon/Evening); Night and the new Late Evening don't auto-fire. Add them if auto-emails for those slots are wanted (`CLAUDE_MAIL_ORDERS.md §13`).
+- ~~**Late-Evening / Night slot-summary auto-email gap**~~ — **CLOSED (`c103d5f4`, 2026-08-10):** the slot-summary modal and its auto-trigger were retired, and the commit records that nothing was ever sent by any of it. `slotDefs` no longer exists in `app`, `components` or `lib` (grep 2026-09-19). (`CLAUDE_MAIL_ORDERS.md §13`)
 - **Dispatch cutoffs "Change-2"** — Local vs Upcountry dispatch cutoffs. Latent infra exists (`delivery_type_master`, `delivery_type_slot_config` UNUSED, `orders.dispatchSlotDeadline`, `delivery_point_master.dispatchDeliveryTypeId`/`reportingDeliveryTypeId` — corrected 2026-07-16, no `deliveryTypeOverride` column exists). Recommend a dedicated discovery session before building.
 
 ### Hide feature (Settings → Hide) — v1 deferreds
@@ -829,8 +1050,8 @@ New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
 New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into canonical docs (Place Order, Support, UI, new `CLAUDE_PICKING.md`, Mail Orders, Import, CORE).
 
 ### Security (P1)
-- **`GET /api/mail-orders/backfill-enrich` fully unauthenticated** — no session, no HMAC; still live despite being marked TEMPORARY in its own source; performs a bulk write on `mo_order_lines`. Remove or gate it. (`CLAUDE_MAIL_ORDERS.md §18`, `CLAUDE_CORE.md §13`)
-- **Mail Orders routes are session-only, no role check** — most of `app/api/mail-orders/**` never checks role/permission; write routes gate on `canView`, not `canEdit`. (`CLAUDE_MAIL_ORDERS.md §18`, `CLAUDE_CORE.md §13`)
+- ~~**`GET /api/mail-orders/backfill-enrich` fully unauthenticated**~~ — **DONE (`0f56eede`, 2026-08-30).** The GET runs `requireRole(session, [ROLES.ADMIN])` (`backfill-enrich/route.ts:169`). Its two remaining gaps (the HMAC POST unreachable through middleware; a superuser-flag-only user refused) are under `## Opened by the 2026-09-18 canon sweep` → Access. Retiring the route stays in "Mail Orders cleanup" below. (`CLAUDE_MAIL_ORDERS.md §18`)
+- ~~**Mail Orders routes are session-only, no role check**~~ — **DONE (`0f56eede`, 2026-08-30):** the 11 write routes gate on `mail_orders` canEdit via `checkAnyPermission`. Leftovers are in "Mail Orders cleanup" below. (`CLAUDE_MAIL_ORDERS.md §22`)
 
 ### Bugs (P1)
 - **App-format orders lose product lines before enrichment — STATUS UNCLEAR, re-test (reworded 2026-08-05).** Surfaced 2026-07-15 — the same day v7.2 was confirmed live and parsing (`CLAUDE_MAIL_ORDERS.md §3.1`), so the original "zero lines" observation may have been the pre-deploy copy. One specific line-loss class (TOOLS `"1 pc*12"` piece packs) was definitively fixed in parser **v7.3** (repo copy; deploy unverified). Before treating this as open OR closed: place one real app order and check its lines reached enrichment.
@@ -860,16 +1081,12 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **Supervisor 10-min "N picks waiting" reminder — DEFERRED.** Not event-driven; Vercel Hobby crons are
   once-per-day (CADENCE, not count — CORE §4). Planned trigger: a small depot-PC PowerShell "doorbell"
   (committed to `scripts/`) hitting a cron-auth'd route. (`CLAUDE_NOTIFICATIONS.md §7`)
-- **🔴 LOOK UP A DISPATCHED BILL — no screen can (P2, owner-stated 2026-07-28).** All **1,546**
-  orders at `workflowStage 'dispatched'` are **invisible in every screen in the app**. Verified
-  2026-07-28 against every surface that reads `orders`: `/floor` and `/picking` filter to stage
-  sets that stop at `pick_checked`; `/trips` reads a different table; Tint Manager, Tint Summary
-  and the admin dashboard filter to their own stages; Mail Orders reads `mo_orders`. The only
-  surfaces without a stage filter reach them by accident — Hidden Orders (only if hidden),
-  Removed Orders (only if removed), and the order-detail panel (only if something links to it,
-  and nothing does).
-  **The data is intact — only the view is missing.** Nothing was deleted; this is a gap, not a loss.
-  The owner intends a proper **REPORT** feature, built once the workflow is complete end to end.
+- **LOOK UP A DISPATCHED BILL — PARTLY DONE (P2, owner-stated 2026-07-28).** **7,330** orders sit at
+  `workflowStage 'dispatched'` (live 2026-09-18, Q09). `551069aa` (2026-09-11, "history surfaces
+  recognise 'dispatched'") made Floor History, Billing's invoiced-info arm and the trip buckets read
+  the stage; the Floor detail panel reports it (`app/api/floor/order/[orderId]/route.ts:234`,
+  `isDispatched`). Per that commit's message some bills are still reachable from no screen. What
+  remains is the owner's proper **REPORT** feature, built once the workflow is complete end to end.
   Deliberately deferred, not urgent.
   ⚠ `/planning`'s `showDispatched` branch was **never** a substitute: no client ever set the
   parameter, so that board always rendered empty (`archive/2026-07-planning-board/README.md`).
@@ -884,11 +1101,15 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   was a ONE-TIME manual sweep (Floor build, 23 Jul), NOT a code path. It also forced the desktop
   board's carry-over exclusion — **that workaround is gone (the board was retired 2026-07-28), the
   HOLE it worked around is not.** Needs a real design session.
-  ⚠ **Changed 2026-07-28: nothing in the app reads or writes `dispatched` on a board any more.**
-  `/planning` and `/warehouse` — the only two surfaces that queried that stage — are both retired
-  (`639f8139`, `207e2a5c`). The ~500-row movement is **still unexplained**, and there is now one
-  less place to observe it from. Priority unchanged. Pairs with the dispatched-bill lookup item
-  above. (`CLAUDE_PICKING.md §7`, `CLAUDE_FLOOR.md §7`)
+  **State at 2026-09-19.** A write path exists and has **no caller**: `markBillsDispatched`
+  (`lib/floor/dispatch.ts`) is imported only by `POST /api/floor/trips/[id]/dispatch`, which no
+  client and no cron calls since its button left in `3b9d1ab4` (2026-09-15); the route waits on a
+  future supervisor loading screen. Live count **7,330** (2026-09-18, Q09). Most rows came from
+  hand-run SQL, per the code's own records (a 2026-09-11 cutover of 2,624 bills,
+  `scripts/backfill-nts-trips-2026-09-11.ts:9`; a 2026-09-13 UPDATE of 136, `lib/floor/dispatch.ts:5-11`)
+  — no SQL for either is in the repo. Whether anything outside the repo is still writing the stage is
+  the open investigation: **`CLAUDE_FLOOR_TRIPS.md §14`**, tracked at its §17 open item 1. Priority
+  unchanged. (`CLAUDE_PICKING.md §7`)
 - **Verify "New pick assigned" push on a real device.** Code is live; **the blocker changed shape
   2026-08-04**: real picker test accounts now EXIST (ids 35/36) and the 2026-07-29 first-login test
   plan's Round 4 covers exactly this — but no result was recorded. Run it (or report it ran).
@@ -910,14 +1131,17 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   `floor_supervisor` and `picker` hold `picking` but **NOT** `floor` (live SELECT 2026-07-28), so a
   redirect today lands both roles — including both `/picking` login destinations — on
   `/unauthorized`. That is the same dead end that ruled the redirect out at the time. Granting `floor`
-  to `floor_supervisor` hands the floor team Hold / Cancel / Release over the gatekeeper rail — an
-  authority decision, not a layout one. It would also break testing the card board by narrowing a
+  hands the floor team Hold / Cancel and the trip desk (`CLAUDE_FLOOR_TRIPS.md`) — an authority
+  decision, not a layout one, and since 2026-09-04 a per-person tick rather than a role grant
+  (`CLAUDE_CORE.md §7.14`). It would also break testing the card board by narrowing a
   desktop window. (`CLAUDE_FLOOR.md §9b`, `CLAUDE_CORE.md §5`)
-- **Unmatched bills have no desktop home (P2).** The archived desktop board had an "Unmatched" header
-  segment listing bills whose customer never resolved. `/floor` shows "(Unmatched)" on a row but
-  offers no way to filter or find them, and the card boards have no equivalent. Tint Manager's
-  resolver can still FIX one — nothing now LISTS them. Pairs with the existing "missing-customer
-  resolver has no Floor entry point" item below. (`CLAUDE_FLOOR.md §9b`)
+- **Unmatched bills have no desktop home (P2) — RE-SCOPED 2026-09-19.** The archived desktop board had
+  an "Unmatched" header segment listing bills whose customer never resolved. The trip desk changed the
+  premise: undecided bills now sit on the board itself (arm 2, `floorUnslottedWhere`,
+  `CLAUDE_FLOOR.md §3`), and since `b3dfe5b8` import releases every non-tint bill on its own
+  (`CLAUDE_IMPORT.md §2.1`). What is left is narrower: `/floor` still offers no filter for
+  "(Unmatched)" rows. Owner question — is a filter wanted on the trip desk? Pairs with the
+  "missing-customer resolver has no Floor entry point" item below.
 - **Approve is phone-only — a STANDING gap, not a new loss (P2).** There is no way to approve a picked
   bill from a PC. This was already true before the desktop retirement (that board never had Approve
   either, and `/floor` has none — verified by a whole-folder search of `components/floor`,
@@ -934,9 +1158,9 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   `app/api/picking/marker/route.ts`) — removing it changes a live API contract for no benefit. The
   only thing that ever exercised it was the untracked scratch script deleted at `b51cd14f`. The
   reasoning is also recorded as a comment at the scope itself; read that before acting.
-- **Manifest name experiment — finish or revert.** `manifest.json` `name="Orbit"` / `short_name="OrbitOMS"`
-  is an in-flight test (does iOS read them separately for the notification "from …" line?). Result
-  visible only after reinstall. (`CLAUDE_NOTIFICATIONS.md §8`, `CLAUDE_ATTENDANCE.md §14`)
+- ~~**Manifest name experiment — finish or revert.**~~ **DONE (`4a2f763f`, 2026-08-12):**
+  `public/manifest.json:2-3` is `"name": "Orbit"`, `"short_name": "Orbit"`.
+  (`CLAUDE_NOTIFICATIONS.md §8`, `CLAUDE_ATTENDANCE.md §14`)
 
 ### Floor Control
 - **RETIREMENT DEPENDENCY LIST — ✅ FULLY CLOSED. Both halves done.** `/support` retired 2026-07-27
@@ -953,19 +1177,20 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   operator can change a ship-to but never remove one. No backend work. Deferred to the post-testing
   polish round. (`CLAUDE_FLOOR.md §4.4`)
 - **Missing-customer resolver has no Floor entry point (P2).** `components/shared/customer-missing-sheet.tsx`
-  opened from the Support board and the Tint Manager Kanban; with Support retired, only Tint Manager
-  can resolve an unmatched customer. Decide whether Floor's detail panel should surface it.
+  opened from the Support board and the Tint Manager board (its assign interceptor,
+  `CLAUDE_TINT.md §1.5`); with Support retired, only Tint Manager can resolve an unmatched customer. Decide whether Floor's detail panel should surface it.
   (`CLAUDE_MAIL_ORDERS.md §19`)
 - **Floor Control v2 — slot suggestion — ✅ SHIPPED 2026-08-03** (commits `30226144` → `dee603dc` +
   `ab70c826`). Both preconditions this item set were built exactly as specified: the staleness check
   is now one closed-batch MOMENT test, and the suggestion carries date AND time. Layer spec:
-  `CLAUDE_FLOOR.md §8` (hand-verification of five checks still pending there). Follow-ups it opened
-  are below under **"Floor Control — slot-suggestion follow-ups (opened 2026-08-03)"**.
+  `CLAUDE_FLOOR.md §8`. **Dormant since the rail retired** (`79bcc412`, 2026-09-13): `lib/floor/suggest.ts`
+  has no importer (`CLAUDE_FLOOR.md §8`). Follow-ups it opened are below under **"Floor Control —
+  slot-suggestion follow-ups (opened 2026-08-03)"**.
 - **v1 gaps (P2 — from the build draft §7; carried across individually):**
   - `Waiting` pills show no elapsed time — needs a `releasedAt` on the floor payload.
-  - Ship-to original→redirect name pair missing on the floor table — needs the original name on the floor feed (the rail already has it).
+  - ~~Ship-to original→redirect name pair missing on the floor table~~ — **✅ BUILT (`07bc5104`):** the ORIGINAL → REDIRECT pair renders at `floor-table.tsx:1070` (`CLAUDE_FLOOR.md §4.9`).
   - Assigned rows sink to the bottom of the board — **✅ RESOLVED + SHIPPED (`661e4e61`, 2026-07-25):** `byAssigned` excluded from Floor's sort (Floor now uses `FLOOR_SPINE` = spine minus `byAssigned`, `lib/floor/sort.ts`), so Assigned/Done rows hold their place. The residual new/urgent-bill slide above a picker's row is parked separately → **"Floor Control — carry-over + stable positions (opened 2026-07-25)"** below.
-  - Rail button reads lowercase "pick slot"; mockup says "Set slot" — copy fix; the picker is Floor's own now (`components/floor/dispatch-slot-picker.tsx`), nothing to fork around. *(Still true 2026-08-05 — the 08-03 suggestion redesign kept shape B's `[pick slot]` label.)*
+  - **Re-scoped 2026-09-19 (the rail is gone):** the slot picker's empty-state button still reads lowercase "pick slot" (`components/floor/dispatch-slot-picker.tsx:390`) wherever it is still drawn (`hold-bar.tsx`, `detail-panel.tsx`, and Billing's `billing-action-ribbon.tsx`); mockup says "Set slot". Copy fix; the picker is Floor's own, nothing to fork around.
   - ~~Assign bar reads "Change slot" beside a "pick slot" button~~ — **✅ RESOLVED by the 2026-07-26 action-surfaces redesign**: the duplication collapsed to ONE proper "Change slot" button (`CLAUDE_FLOOR.md §4.6`).
   - No picker search — search matches customer / route / OBD only.
   - Detail-panel header pill shows no elapsed time — the panel is not a live surface.
@@ -1046,7 +1271,8 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
   before it by choice). Replace the detail screen's **Approve** button with a drag-to-confirm control
   firing the *same* `handleApprove(detailRow)` → `POST /api/picking/approve` `{orderId}`. The
   `allLinesChecked` gate and the API are unchanged — only the input mechanism changes. **Green**, not
-  teal (separates "finish" from teal "assign").
+  the brand colour (separates "finish" from the brand-coloured "assign"; the brand is violet since
+  `c96157ea` — `CLAUDE_UI.md` "Orbit colour tokens — the brand system").
 - [ ] **FIVE in-app depths on the supervisor board ship with no Back affordance** *(was four — the
   fifth was added 2026-08-22, see below)*. They push no history entry, so Android hardware back /
   iOS edge-swipe navigates the *browser* instead of closing them. Same gap class the detail screen
@@ -1095,11 +1321,9 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
 
 ### Code cleanup (P2 — one line)
 
-- [ ] **Stale comment in `prisma/schema.prisma`** above `model sku_master_v2`: it ends
-  `// No readers repointed yet — that is a separate session.` — true when `916fcd39` landed, but
-  three later commits (`8f606a88`, `a227fb13`, `b91b7381`) repointed every operational reader. A
-  future reader taking it at face value would conclude the migration never happened. Fix the line
-  next time `schema.prisma` is edited — not worth its own commit.
+- [x] ~~**Stale comment in `prisma/schema.prisma`** above `model sku_master_v2`~~ — **DONE
+  (`6f1e35a8`, 2026-08-05).** `schema.prisma:2129` now records that the line said "No readers
+  repointed yet" until 2026-08-05.
 
 ---
 
@@ -1142,7 +1366,7 @@ is done and recorded in `archive/2026-07-support/README.md` — these are the lo
   Reports hub landed. Confirm in the browser, then either delete the two files (the hub is the
   intended surface) or drop the redirects if direct access was meant to survive. **Do not leave
   both** — a page that cannot render is invisible dead code no link-search will find.
-  Found during the step-8 playbook write, 2026-07-27. (`CLAUDE_CORE.md §12`, `next.config.mjs:24-27`)
+  Found during the step-8 playbook write, 2026-07-27. (`CLAUDE_CORE.md §12`, `next.config.mjs:33-34`)
 - [ ] **Five pre-existing unused files (P3 — NOT caused by the retirement).** Verified dead before it
   began (`d08681e9`) and never referenced by Support: `components/shared/role-nav.tsx`,
   `components/shared/sign-out-button.tsx`, `lib/mail-orders/enrich-v2.ts`,
@@ -1166,6 +1390,13 @@ session builds without re-deciding anything.
 (`CLAUDE_FLOOR.md §4` / `CLAUDE_CORE.md §3` / `CLAUDE_PICKING.md §10`).
 
 ### P1 — Floor carry-over (LOCAL only) — DESIGNED, NOT BUILT
+
+⚠ **Check the premise before any Session B (2026-09-19).** This design assumes a person releases a
+bill to a dispatch slot and the slot then goes stale. Since `b3dfe5b8` (2026-09-11) import releases
+every non-tint bill itself (`CLAUDE_IMPORT.md §2.1`), loads are planned on the trip desk
+(`bbb9628c`, `CLAUDE_FLOOR_TRIPS.md`), and `36a39ba7` added a carried-forward pool arm to the board
+(`floorCarriedPoolWhere`, `CLAUDE_FLOOR.md §3`). No carry-over cron exists (`vercel.json` holds the
+two attendance crons only) and `schema.prisma` has no `originalDispatch*` column.
 
 **The problem.** A local bill left unpicked/unchecked at day's end stays filed under yesterday's dead
 dispatch slot (e.g. 16:00 Thursday). Come the new day that slot's vehicle is gone, so the bill should
@@ -1233,21 +1464,28 @@ screenshot — needs a few days watching a real end-of-day board. Answer this be
 
 ## Billing v2 (opened 2026-08-04, from `CLAUDE_MAIL_ORDERS.md §23.5`)
 
-Pilot is flag-gated (`billingV2`, `TEST_USERS_ONLY`, operations id 20 only). Ordered:
+**The pilot is over.** `billing_settings.rolloutStage = ALL_USERS` since 2026-08-06 (live 2026-09-18,
+Q01), so every holder of `mail_orders` gets the billing face. Canon: **`docs/CLAUDE_BILLING.md`**
+(v1.0) — its §12 lists the desk's own open items; the Orders-tab internals stay in
+`CLAUDE_MAIL_ORDERS.md §23`. Ordered:
 
-- **P1 — Data-audit + plumbing session, THEN widen rollout.** Verify the dual-write lands end-to-end
-  (orders → Floor; Floor → Picking), the known billing-face Picking data issue, then flip
-  `billing_settings.rolloutStage` → `ALL_USERS` (must reach Deepanshu 25 + Bankim 26). Smart Flow
-  wants this as its own session.
-- **P1 — Clear the test-marked "done" bills** created during the pilot before real rollout (22 rows
-  carried `invoicedAt` as of 2026-08-04 — re-SELECT).
+- ~~**P1 — Data-audit + plumbing session, THEN widen rollout.**~~ **The rollout half is DONE**
+  (ALL_USERS, above). Whether the dual-write audit (orders → Floor; Floor → Picking) ran first is
+  not recorded anywhere; if it matters, run it now as its own session.
+- **P1 — Clear the test-marked "done" bills** created during the pilot (22 rows carried
+  `invoicedAt` as of 2026-08-04 — re-SELECT). The rollout went ahead without this; the rows may
+  still sit in real history.
 - **P1 — Ship-to option-(a) ungating** — billing face reads master data, Table view reads the
   keyword cache; ungate the FK fix for everyone AFTER a legacy id/text agreement SELECT.
-- **P2 — Global rename Mail Orders → Billing** (currently billing-face only).
-- **P2 — Table-view retirement** — per `archive/RETIREMENT-PLAYBOOK.md`, its own careful session;
-  currently hide-only, code intact for non-billing users.
-- **P2 — `billingV2` flag cleanup at full rollout** — collapse the `billingV2 ?` forks, delete the
-  OFF paths, retire the orphaned `billing-order-info.tsx`.
+- **P2 — Global rename Mail Orders → Billing — RE-SCOPED.** The sidebar label reads "Billing" for
+  everyone since `bf218da8` (2026-08-06; `lib/permissions.ts:65`). Only the route (`/mail-orders`)
+  and the page key (`mail_orders`) still say mail-orders, and renaming a page key rewrites live
+  `user_page_access` rows — owner decision.
+- **P2 — Table-view retirement** — per `archive/RETIREMENT-PLAYBOOK.md`, its own careful session.
+  Under ALL_USERS the Table view is unreachable (`CLAUDE_MAIL_ORDERS.md §9.1`); the code is intact.
+- **P2 — Retire the dormant flag-OFF face** — collapse the `billingV2 ?` forks, delete the OFF
+  paths, retire the orphaned `components/billing/billing-order-info.tsx` (no importer,
+  `CLAUDE_BILLING.md §11`). Owner decision (`CLAUDE_BILLING.md §2`, §12).
 - **P2 — Violet "Already invoiced" info-row UI polish** (deferred by Smart Flow 2026-08-02).
 - **OPEN QUESTION — notes plumbing:** `mo_orders.notes` has no enrichment carry line and Floor reads
   no `orders.remarks`; whether billing notes should reach Floor is a product decision
@@ -1269,13 +1507,13 @@ before acting on any of them**:
   (`CLAUDE_IMPORT.md §12` / landmines).
 - **P2 — `dispatchSlotRuleId` clear-on-manual** — one-line fix: Floor's change-slot writes
   date+window+`source:'manual'` but leaves the engine's rule id (6 contradicting rows as of 08-03).
-- **P2 — Auto-confirm for HIGH-confidence suggestions** — deliberately deferred until v1 has been
-  used on the rail.
-- **P2 — Tint split-OBD suggestions** — out of v1 scope (full-OBD only today).
-- **P2 — `card.tint.completedAt` IST render** — it is an ISO UTC string on the payload; convert at
-  render when something finally displays it.
-- **P2 — Mixed-slot amber warning** on the assign bar ("these 3 bills are not all on one slot") —
-  dropped from the 2026-07-26 redesign as needing new data threading; revisit on demand.
+- ~~**P2 — Auto-confirm for HIGH-confidence suggestions**~~ · ~~**P2 — Tint split-OBD suggestions**~~ ·
+  ~~**P2 — `card.tint.completedAt` IST render**~~ · ~~**P2 — Mixed-slot amber warning** on the assign
+  bar~~ — **CLOSED 2026-09-19, premise gone.** All four lived on the rail or the assign bar. The rail
+  retired (`79bcc412`, `CLAUDE_FLOOR.md §9c`), the suggestion layer has no importer
+  (`CLAUDE_FLOOR.md §8`), and `components/floor/assign-bar.tsx` is an orphan (orphan item under
+  `## Opened by the 2026-09-18 canon sweep`). Reopen against the trip desk only if suggestions come
+  back.
 
 ---
 
@@ -1285,11 +1523,16 @@ From the 2026-07-27 parity discovery (G-list), each re-checked against today's F
 the resolved ones (tint pre-set G2, carry-over G5-old, priority G17, resolver G7 = tracked above) are
 NOT repeated:
 
-- **P1 — No undo of a release (G1).** Floor's action set is mark-urgent / change-slot / hold /
-  cancel / restore — nothing pulls a released bill back to the rail; the workaround (Cancel→Restore)
-  lies in the audit trail. Support's old write shows the shape.
-- **P1 — No bulk release/hold from the rail (G3).** The rail has no checkboxes; a 40-bill morning is
-  40 individual slot picks. Floor's release route already accepts a list.
+- **P2 — No undo of a release (G1) — RE-SCOPED 2026-09-19.** The rail it assumed is gone
+  (`CLAUDE_FLOOR.md §9c`), and since `b3dfe5b8` most bills are released by import, not by a person
+  (`CLAUDE_IMPORT.md §2.1`). Still true: Floor's action set is mark-urgent / change-slot / hold /
+  cancel / restore (`CLAUDE_FLOOR.md §4.1`), and nothing returns a released bill to `pending_support`
+  except Cancel→Restore, which lies in the audit trail. Owner question: does the trip desk need an
+  "un-release" at all?
+- ~~**P1 — No bulk release/hold from the rail (G3).**~~ **CLOSED 2026-09-19, premise gone.** The rail
+  retired; held bills have a bulk release on the Hold tab's bar (`floor-page.tsx:1010`,
+  `CLAUDE_FLOOR.md §4.2`). The live gap is different — a `pending_support` row has no Release on the
+  desk at all — and is its own item under `## Opened by the 2026-09-18 canon sweep` → Floor.
 - **P2 — Cancel records no reason (G4).** `/api/floor/actions` accepts a `reason`; the UI never
   sends one — every cancellation logs "Cancelled from floor". Support had a six-reason dialog.
 - **P2 — Cancelled tab is today-only (G5)** — yesterday's cancellation can never be un-cancelled
@@ -1299,8 +1542,10 @@ NOT repeated:
   Morning/Afternoon arrival slots and "% done today"? If no, close as a deliberate drop; if yes,
   Floor needs an arrival view.
 - **DIAGNOSE — contradictory-state bills (G9).** `pending_support` WITH `dispatchStatus='dispatch'`
-  matches NEITHER Floor feed (rail wants status null; board wants a later stage) — the mirror image
-  of the 103-NULL parked issue. Run the count; fold into that diagnosis session.
+  — the mirror image of the 103-NULL parked issue. Re-check it against `floorBoardWhere`'s arms
+  (`CLAUDE_FLOOR.md §3`): the old rail feed is now board arm 2 (`floorUnslottedWhere`, which wants
+  `dispatchStatus: null`, `lib/floor/queries.ts:160-161`). Run the count; fold into that diagnosis
+  session.
 
 ---
 
@@ -1313,8 +1558,10 @@ NOT repeated:
 - **P2 — Real pick durations** — the 30m/60m elapsed thresholds are still a guess; the 2026-07-29
   test plan asked the floor to time 3-4 real picks and no numbers came back.
 - **P1 — Bring the two picking PHONE boards onto the SOFT duplicate-SO treatment** (opened
-  2026-08-25). Floor moved its three surfaces (`floor-table.tsx`, `rail-card.tsx`,
-  `detail-panel.tsx`) from the solid red fill to the soft treatment — a `#fef2f2` ground with a
+  2026-08-25). Floor moved its surfaces (`floor-table.tsx`, `detail-panel.tsx`; the third,
+  `rail-card.tsx`, was deleted with the rail in `79bcc412`, and the same commit turned Floor's
+  row wash off — `floor-table.tsx` keeps the soft tag and a thin bar, `CLAUDE_FLOOR.md §4.9`)
+  from the solid red fill to the soft treatment — a `#fef2f2` ground with a
   3px `#ef4444` inset left bar, all text and badges at their ordinary tokens, and the tag reading
   **"SAME"**. **`components/picking/picking-board-mobile.tsx`, `picker-my-picks-board.tsx`,
   `card-atoms.tsx` and `bill-symbols.tsx` were deliberately left on the SOLID fill**, so today a
@@ -1389,16 +1636,12 @@ export in four days and nineteen commits (`e8695f40` 2026-08-31 → `3b0d04b7`
 - The division number on both detail screens, every bill (`bf3e59bf`).
 - The 17-column register export as .xlsx (`3b0d04b7`).
 
-### P1 — `/ci` into `PAGE_NAV_MAP`
-The module is reachable **by URL only**. `ci` is in the `PageKey` union and
-`ALL_PAGE_KEYS` but not in the nav map, and adding the row is not the whole fix:
-`MobileShell`'s phone Home target is `navItems[0]?.href`, so an entry at index ≤ 2
-steals `floor_supervisor`'s Home button from `/picking`. A correct fix must (a)
-land at an index that leaves `navItems[0]` as `/picking` for that role **after**
-`buildNavItems` has filtered by permission — the map index is not the built-list
-index; (b) be verified on a real phone for `floor_supervisor`, not only for admin,
-whose nav is longer and orders differently; (c) still surface for the desk roles.
-Detail: `CLAUDE_CI.md §13 CI-16`.
+### ~~P1 — `/ci` into `PAGE_NAV_MAP`~~ — DONE (`55c3cdc6`, 2026-08-31)
+`lib/permissions.ts:102` carries `{ pageKey: "ci", label: "CI", href: "/ci" }`, added by
+`55c3cdc6` ("ci: billing desk face + nav entry") — before this item was written. Two code
+comments still say otherwise (`app/ci/page.tsx:57-62`, `lib/permissions.ts:300-303`); they are
+in the stale-comment clean-up under `## Opened by the 2026-09-18 canon sweep`. Detail:
+`CLAUDE_CI.md §13 CI-16`.
 
 ### P1 — Abandoned-draft sweep
 **17 drafts against 14 real CIs** (live, 2026-09-03) — more abandoned drafts than
@@ -1532,8 +1775,8 @@ because `PUBLIC_PATHS` carries `"/po"` and the gate is a `startsWith` prefix mat
 
 **`/po9` exists (2026-09-15)** — the SAME `PoV2Page` component mounted with `shipToEnabled={false}` (`app/po9/page.tsx`, a mount not a fork; its own manifest, id `/po9`). ⚠ It shares phone storage with `/po2` — every `po2_*` key — so a `/po2` draft carrying a ship-to opens on `/po9` and shows it read-only.
 
-Record: **`docs/prompts/drafts/code-update-2026-09-08-po-v2-board.md`**. It is in no canonical
-file yet, and that record is the input to `CLAUDE_PLACE_ORDER.md` when v2 merges into `/po`. Its
+Canon: **`docs/CLAUDE_PO2.md`** (v1.0, 2026-09-18) owns `/po2` and `/po9`; its §16 points back at
+the items below. Build record (history): `docs/prompts/drafts/code-update-2026-09-08-po-v2-board.md`. Its
 wire is guarded by **`scripts/po-v2-email-fixtures.ts`** — run it before any commit that touches
 the send path.
 
@@ -1562,18 +1805,17 @@ installed PWA — `/po2`'s manifest `id` is `"/po2"`, so the old shortcut stays 
 which is why the rollout instruction is "delete the old Orbit app first". Remove this once the
 team has moved. (Unlike `/order`, which was parked with a 404 because it had no successor.)
 
-### P2 — Fav block on the board — BLOCKED on the storage decision below
-A favourites block as the **first** block on the board, **max 8 slots**, filled by a gear
-control. A favourited product appears in BOTH the Fav block and its own family tile — it is a
-shortcut, not a move. 🔴 **Do not start it before the storage model is settled** (the DECISION
-item below): where the eight live decides whether the block is per-phone or per-salesman, and
-building it against `localStorage` first means building it twice.
+### ~~P2 — Fav block on the board~~ — SHIPPED (`a988ab41` + `f4c0444c`, 2026-09-09)
+The Favourites block and its gear control are live (`po-v2-page.tsx`, "THE FAVOURITES BLOCK";
+key `po2_fav_products`, `v2-storage.ts:36`). It was built on `localStorage`, so favourites are
+per phone. `CLAUDE_PO2.md §9`.
 
-### P2 — Ten board tiles still have no tin photograph
-Verified against `boardTileArtFor` on 2026-09-09: **27 of 37 tiles resolve a picture, 10 do
-not** — More Interior, VT Specialty, Acotone, Uni Stainer, Machine Tinter, GVA, Coats &
-Additives, Luxurio, Hydro PU, Thinner & More. A tile with no art shows the family wash, which is
+### P2 — Three board tiles still have no tin photograph
+**GVA, Hydro PU and Thinner & More** (`TILE_IMAGES`, `app/po2/v2-data.ts:393-420`, re-checked
+2026-09-19). Thinner's file is on disk but deliberately undeclared — the picture is not of the
+product (`v2-data.ts:397-403`). A tile with no art shows the family wash, which is
 the board's own treatment for a photo that has not arrived, so this is a gap and not a defect.
+`CLAUDE_PO2.md §6`.
 ⚠ A tile borrows art by **alias, never by copy** (`TILE_ART_ALIAS`), and the alias redirects the
 FILE and never the SLUG — a slug is also the stem `variantImage()` builds variant tins from.
 
@@ -1582,22 +1824,27 @@ Individual products will move between tiles as real use shows what is wrong. Re-
 **deliberately, never on every deploy**: the board must not reshuffle under a salesman who has
 learned where things are.
 
-### P1 — DECISION OPEN: the storage model, local or database
-Everything lives in one phone's `localStorage` today, under the `po2_*` keys — the live draft,
-saved drafts, sent orders, favourite customers, my dealers and starred dealers. **Nothing is
-shared between devices and nothing survives a cleared browser or a new handset.** Settle this
-before the Fav block is built; it is the blocker on that item.
+### ~~P1 — DECISION OPEN: the storage model, local or database~~ — DECIDED IN PRACTICE: per phone
+The favourites block shipped on `localStorage` (`a988ab41`, `f4c0444c`), so the question this item
+held open was answered by the build: every `po2_*` key — live draft, saved drafts, sent orders,
+favourite customers, my dealers, starred dealers, favourite products — lives in one phone's
+`localStorage` and is shared by `/po2` and `/po9` (`CLAUDE_PO2.md §8`). Nothing is shared between
+devices and nothing survives a cleared browser or a new handset. Moving to server storage would now
+be a new item, not this decision.
 
-### P3 — Three buttons still at font-weight 800
-Outside the type-weight pass that took the route's other 25 sites to zero: **Send order** in
-`review-screen.tsx`, and **Cancel** and **Add** in `product-drawer.tsx`. Left because those two
-files were outside that step's containment. T11 in the type scale.
+### P3 — Fourteen `font-extrabold` (800) sites left in `app/po2`
+Re-derived 2026-09-19: `grep font-extrabold app/po2` finds 14 — `product-drawer.tsx` 8,
+`review-screen.tsx` 5, `product-search.tsx` 1 — and zero inline `fontWeight: 800`. They include
+**Send order** (`review-screen.tsx:666`) and the drawer's **Cancel** / **Add** (`product-drawer.tsx:1024`,
+`:1034`). T11 in the type scale.
 
-### P3 — Three manifests exist; consolidate now that v2 has launched
-`public/manifest.json` (the app, `background_color` `#f9fafb`), `public/po.webmanifest` (`/po`)
-and `app/po2/manifest.webmanifest/route.ts` (v2). The last two are near-identical apart
-from scope and `id`. ⚠ Do NOT merge them while `/po2` and `/po` are both installable: the separate
-`id`/`scope`/`start_url` is what keeps the two home-screen apps from folding into one.
+### P3 — Four manifests exist; consolidate once `/po` retires
+`public/manifest.json` (the app, `background_color` `#f9fafb`), `public/po.webmanifest` (`/po`),
+`app/po2/manifest.webmanifest/route.ts` (`/po2`) and `app/po9/manifest.webmanifest/route.ts`
+(`/po9`, added `23804504`); the two v2 handlers build from `app/po2/v2-manifest.ts`. ⚠ Do NOT
+merge them while more than one of `/po`, `/po2` and `/po9` is installable: the separate
+`id`/`scope`/`start_url` is what keeps the home-screen apps from folding into one
+(`CLAUDE_PO2.md §13` landmine 5).
 
 ### P3 — `public/brand/` is an unreferenced icon set with superseded letterforms
 Three PNGs (`apple-touch-icon`, `icon-192`, `icon-512`) plus `orbit-wordmark.svg` and
@@ -1607,8 +1854,9 @@ Three PNGs (`apple-touch-icon`, `icon-192`, `icon-512`) plus `orbit-wordmark.svg
 `components/` or `lib/` references any of the five now.** Clear in a cleanup pass — not urgent,
 and they are the only copy of that drawing.
 
-### P3 — `CROSS_DEPOTS` exists twice and the two copies must be edited together
-`app/po/po-page.tsx:89` and `app/po2/v2-data.ts` now each hold their own
+### P3 — `CROSS_DEPOTS` exists three times and the copies must be edited together
+`app/po/po-page.tsx:89`, `app/po2/v2-data.ts:1818` (exported) and
+`app/(place-order)/place-order/components/cart-panel.tsx:76` each hold their own
 `["Dahisar", "Ahmedabad", "Rajkot", "Pune"]`. v2 got a copy rather than an import because it
 modifies nothing outside its own folder and `/po` is live; unify them into one shared const when
 the containment fence comes down at cutover. ⚠ Neither copy validates a stored `crossDepot` —
@@ -1656,14 +1904,15 @@ same shape as the step table that `e16f7a59`/this commit just retired.
 That commit corrected five lying comments in `v2-data.ts` and reported three more it did not own.
 Each states something false about the code; none breaks anything, and comments of exactly this
 kind have already been believed by a later session twice in this folder.
-- 🔴 **First, and the loudest.** `v2-data.ts` ~`:1508`, the `BOARD` section header: it says BOARD
-  is *"additive, and not yet consumed by anything"* and that *"FAMILIES still holds the live
-  32-tile board"*. Both are false — BOARD **is** the live board.
-- `po-v2-page.tsx` ~`:609`, ~`:635`, ~`:655` — three *"Step 4"* notes describing tile-wide
-  replace as future work. It is done: both `addLines` call sites (~`:1645`, ~`:1660`) already
-  pass `memberSap: null`.
-- `po-v2-page.tsx` ~`:1444` says *"all 36"* twice and ~`:112` says *"the 9x4 board"*. It is
+- 🔴 **First, and the loudest.** `v2-data.ts:1961-1964`, the `BOARD` section header: it says BOARD
+  is *"ADDITIVE, AND NOT YET CONSUMED BY ANYTHING"* and that *"FAMILIES still holds the live"*
+  board. Both are false — BOARD **is** the live board.
+- `po-v2-page.tsx:964`, `:990`, `:1011` — three *"Step 4"* notes describing tile-wide
+  replace as future work. It is done: both `addLines` call sites already pass `memberSap: null`.
+- `po-v2-page.tsx:2319-2321` says *"all 36"* twice and `:309` says *"the 9x4 board"*. It is
   **37 tiles across nine families**, and Wood holds five.
+- The full table of `/po2` stale comments (eleven rows) is `CLAUDE_PO2.md §13`; this item and the
+  consolidated stale-comment clean-up under `## Opened by the 2026-09-18 canon sweep` are one pass.
 
 ---
 
@@ -1672,13 +1921,54 @@ kind have already been believed by a later session twice in this folder.
 ### Schema docs consolidation cadence
 Every 2-3 weeks: consolidate `docs/prompts/drafts/` into canonical files using the consolidation prompt. Archive consumed drafts to `docs/prompts/archive/YYYY-MM/`.
 
-Last cycle: **2026-08-04/05 — the full reconciliation cycle** (method v1.1, 12 canonical files verified claim-by-claim against code + live DB + git; 11 drafts archived to `docs/prompts/archive/2026-08/`; this status pass is its final step before 12b's router/CORE finish). Prior cycles: 2026-06-18 (29 drafts), 2026-06-02.
+Last cycle: **2026-09-18/19 — the canon sweep** (report `docs/prompts/drafts/code-discovery-2026-09-18-canon-sweep.md`; batches N → A/B1/B2 → C; three new canon files, `CLAUDE_FLOOR_TRIPS.md`, `CLAUDE_PO2.md`, `CLAUDE_BILLING.md`). `FLOOR-TO-FLOOR-DISCOVERY.md` still sits at the repo root, outside the drafts convention; `CLAUDE_FLOOR_TRIPS.md` now holds its facts and names it history. Cycle before: **2026-08-04/05 — the full reconciliation cycle** (method v1.1, 12 canonical files verified claim-by-claim against code + live DB + git; 11 drafts archived to `docs/prompts/archive/2026-08/`; this status pass is its final step before 12b's router/CORE finish). Prior cycles: 2026-06-18 (29 drafts), 2026-06-02.
 
 ### `taxonomy-preview.json` path
 
 Lives at `docs/prompts/archive/drafts/2026-04-to-05/taxonomy-preview.json`. The seed reads from this path — DO NOT move it without updating the seed.
 
 ---
+
+## Change log — canon sweep pass 2026-09-19 (batch C)
+
+Every item re-checked against code at `b574cecc` (grep / `git show`), the live results of 2026-09-18,
+and the canon files as reconciled by batches N, A, B1 and B2. Closed items keep a struck-through
+record in place. **19 closed · 13 re-scoped · 38 added.**
+
+- **Stamps.** Header and footer both read 2026-09-19. They had disagreed (header 2026-09-06, footer
+  2026-08-09), and twelve commits after `fd2c7249` touched this file without bumping either:
+  `54714f72`, `eb34532c`, `d8fcf1ed`, `7cb2074e`, `aa525bd4`, `ebc54c38`, `fdf31da8`, `c4a4eb90`,
+  `120cc5a3`, `d17354ce`, `145b5f32`, `23804504`.
+- **CLOSED (19):** `/ci` nav entry (`55c3cdc6`) · tint-summary role grant (`6f628b05`) · TM reorder
+  `$transaction` (`a0f9378b`) · `/po2` Fav block (`a988ab41`, `f4c0444c`) · `/po2` storage decision
+  (per phone, by the build) · manifest name experiment (`4a2f763f`) · `schema.prisma` stale comment
+  (`6f1e35a8`) · the two Mail Orders security bullets (`0f56eede`) · the `slotDefs` email gap
+  (`c103d5f4` — nothing was ever sent) · pause kebab (Table view retired) · ship-to name pair on the
+  floor table (`07bc5104`) · G3 bulk release from the rail · four slot-suggestion follow-ups
+  (auto-confirm, tint split-OBD, `completedAt` render, mixed-slot warning — rail and assign bar gone) ·
+  Billing rollout (ALL_USERS, Q01) · the import a/b/c decision (`d8fcf1ed`).
+- **RE-SCOPED (13):** partial-qty Done (Kanban gone → new board) · G1 undo release · "pick slot"
+  string · unmatched bills' desktop home · G9 contradictory-state bills · desktop supervisor → `/floor`
+  redirect · Mail Orders → Billing rename (label done, route + key left) · `billingV2` cleanup → retire
+  the dormant flag-OFF face · dispatched-bill lookup (partly done, `551069aa`) · the `dispatched` drain
+  (writer with no caller; → `CLAUDE_FLOOR_TRIPS.md §14`) · Floor carry-over (premise check) · soft
+  duplicate-SO (`rail-card.tsx` deleted) · `operator/shades` (no in-app caller).
+- **CORRECTED counts and anchors:** `requireRole` (20 call sites / 19 beyond ADMIN; all include
+  ADMIN) · tiles without art (3) · `CROSS_DEPOTS` (3 copies) · manifests (4) · `font-extrabold` (14) ·
+  `logAdminAction` sites (49) · anchors for challan `$transaction`, admin customers, `permissions.ts:127`,
+  `NA_IMPORT`, `apply-rules.ts:241`, `next.config.mjs:33-34`, the `/po2` stale comments · the OneDrive
+  item's `git status` evidence (gone) · Billing v2 intro (pilot over) · `/po2` canon pointer · the
+  `/po` heading (no longer "going-forward") · slide-to-done's colour note (brand is violet) · the
+  missing-customer resolver's "Kanban" wording · the slot suggestion marked dormant.
+- **ADDED (38):** new section `## Opened by the 2026-09-18 canon sweep` — 🔴 P0 credential file (1),
+  Floor/trips (5), Access (5), Tint (2), Import (3), Billing/Mail Orders (2), Attendance (3), Sampling
+  (2), Place Order (1, plus a pointer to the existing `/api/order/data` P0), MRN (1), UI (1), one
+  consolidated stale-comment clean-up, one orphan-files decision, owner decisions (5), verification
+  questions (4); plus "Seven more `$transaction` sites" under Tint Module.
+- **New canon now exists:** `CLAUDE_FLOOR_TRIPS.md`, `CLAUDE_PO2.md`, `CLAUDE_BILLING.md` (all v1.0,
+  2026-09-18). Items that said trips, `/po2` or Billing had no canonical file now point at them.
+- ⚠ `CLAUDE_PO2.md §15`/`§16` cite ROADMAP by line number (`:1531`, `:1540-1667`); this pass moved
+  those lines. Its owner should re-point them by heading.
 
 ## Change log — status pass 2026-08-05 (reconciliation cycle, method v1.1)
 
@@ -1693,4 +1983,4 @@ Every existing item verified against the reconciled canon (CORE v91 · UI v5.17 
 
 ---
 
-*Updated 2026-08-09 — **articleTag rule shipped** (`9de0c55b`): the pack rule moved off the depot PC into `lib/article-tag.ts`, catalog-first; ZINR roadmap item superseded, two new Import items opened (backfill of 138 wrongly-tagged + ~19,200 null lines · a `containerType` column for the Drum-vs-Bag blind spot) — detail in `CLAUDE_IMPORT.md §8.2`. Picking **Stage 3 closed**: floor findings shipped (`cd27c976`→`0df656ef`), Billing flag + detail panel with them; the picker's third "Combined" tab (`1ad903ef`/`733fcd6b`) documented at the same time. Prior: 2026-08-05 (full status pass — see change log above); 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`) + canon pass; 2026-07-28 — Picking DESKTOP board retired; 2026-06-19 — full catalog restructure, `/po` build, Hide feature, Tint Summary, parser v7.2 + Table C. Schema counter: `CLAUDE_CORE.md §7` (not tracked here).*
+*Updated 2026-09-19 — **canon sweep pass (batch C):** 19 closed, 13 re-scoped, 38 added; new section `## Opened by the 2026-09-18 canon sweep` led by a 🔴 P0 credential file; header and footer stamps reconciled (see "Change log — canon sweep pass 2026-09-19"). Prior: 2026-08-09 — **articleTag rule shipped** (`9de0c55b`): the pack rule moved off the depot PC into `lib/article-tag.ts`, catalog-first; ZINR roadmap item superseded, two new Import items opened (backfill of 138 wrongly-tagged + ~19,200 null lines · a `containerType` column for the Drum-vs-Bag blind spot) — detail in `CLAUDE_IMPORT.md §8.2`. Picking **Stage 3 closed**: floor findings shipped (`cd27c976`→`0df656ef`), Billing flag + detail panel with them; the picker's third "Combined" tab (`1ad903ef`/`733fcd6b`) documented at the same time. Prior: 2026-08-05 (full status pass — see change log above); 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`) + canon pass; 2026-07-28 — Picking DESKTOP board retired; 2026-06-19 — full catalog restructure, `/po` build, Hide feature, Tint Summary, parser v7.2 + Table C. Schema counter: `CLAUDE_CORE.md §7` (not tracked here).*

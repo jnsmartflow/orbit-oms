@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.30 · September 2026 · updated 2026-09-17 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.31 · September 2026 · updated 2026-09-19 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -9,11 +9,13 @@ Single source of truth for visual styling across all screens.
 ## 1. Design philosophy
 
 - **Neutral first.** White bg, gray borders, minimal colour.
-- **Teal is the brand.** `teal-600` (#0d9488) is the single brand accent.
+- **Orbit violet is the brand.** `brand-600` (#7C3AED) is the single brand accent. The token
+  families are defined in §2. Teal is not a brand colour: `data.teal` #0D9488 is the IGT
+  delivery-type identity and nothing else (§2.1).
 - **Three colour roles:**
-  - Teal = brand action (CTAs, focus, toggles ON, nav active, avatars, logo, active slot segment)
-  - Gray = structure (borders, text hierarchy, slot pills, filter chips)
-  - Semantic = status only (green=done, **red=ERROR AND DESTRUCTIVE ONLY**, amber=urgent/waiting/timing)
+  - Brand = brand action (commit button, focus, toggles ON, nav active, wordmark, active slot segment)
+  - Gray / `ink` = structure (borders, text hierarchy, slot pills, filter chips) — avatars are identity and take `ink`, never brand (§10.1)
+  - Semantic = status only (green=done, **red=ERROR AND DESTRUCTIVE ONLY**, amber=urgent/waiting/timing). A status pill is never brand.
 - 🔴 **Red is for something being WRONG, or about to be undone — a failed send, a bounced
   order, a blocked dealer, a Delete/Clear button. Never for a PRIORITY.** *(Corrected
   2026-09-08. This line read `red=urgent/error/blocker` and contradicted §12's attention chip,
@@ -22,42 +24,90 @@ Single source of truth for visual styling across all screens.
   priority, red has nothing left to say when something actually breaks, and a list of red
   chips on a busy morning stops registering at all. **`/po2` ships this** — its
   Urgent chip is amber-700 on amber-50 and the only red left on the route is on Delete, Clear
-  and "Replace what is here". ⚠ **Three components still ship Urgent in red and are the
-  migration list, not counter-examples** — see the note under §3's Semantic table.
+  and "Replace what is here". ⚠ **Ten rendered elements in eight live files still ship Urgent
+  in red and are the migration list, not counter-examples** — see the note under §3's
+  Semantic table.
 - **Minimal chrome.** Header + controls in 2 rows max.
 - **Smart Title Case for display.** All DB text rendered with `smartTitleCase()` (§19).
-- **One teal element rule** — except Sampling Library (§22), which is exempted.
+- **One brand element rule** — except Sampling Library (§22), which is exempted. Mobile
+  screens have their own budget (§59.9).
 - **Universal header on ALL boards** (§6).
 
 ---
 
-## 2. Teal brand system
+## 2. Orbit colour tokens — the brand system
 
-| Token | Tailwind | Hex | Usage |
+**Source of truth: `tailwind.config.ts`, `theme.extend.colors`, the "Orbit palette" block.**
+The design rationale is `docs/prompts/drafts/web-update-2026-09-06-orbit-colour-spec-v2.md`
+(history only — where it and the config disagree, the config and this section win; two
+spec lines are already overruled, §59.8 and §59.9). Rebrand commits: `5daa58fc` (2026-09-09,
+57 non-brand teals reassigned to ok/warn/ink/tint/data) and `c96157ea` (2026-09-09, the
+teal brand colour becomes violet). **The code has zero `teal-<n>` classes** — `grep -rE
+"teal-[0-9]"` over `components/ app/ lib/` returns nothing (re-checked with the Grep tool;
+the only hits are under `archive/` and `docs/`). **146 `.tsx` files use `brand-<n>`.** ⚠ The
+config's own block comment still says "Added 2026-09-08 (rebrand step 1). NOTHING reads these
+yet" — a stale claim; do not read it as current.
+
+### 2.1 The families
+
+| Family | Steps | Hex anchors | Rule |
 |---|---|---|---|
-| Brand | `teal-600` | #0d9488 | CTAs, focus borders, active nav, sidebar accent, logo, avatars, active slot segment, IosToggle ON |
-| Brand dark | `teal-700` | #0f766e | Hover on brand elements |
-| Brand tint bg | `teal-50` | #f0fdfa | Active nav bg, input focus ring wash |
-| Brand tint border | `teal-200` | #99f6e4 | Active nav border accent |
-| Brand text | `teal-700` | #0f766e | Active nav text, active tab text |
+| **`brand`** (violet) | 50 · 100 · 200 · 300 · 400 · 500 · 600 · 700 · 800 · 900 | 50 `#F5F3FF` · 600 **`#7C3AED`** · 700 `#6D28D9` · 800 `#5B21B6` · 900 `#43168B` | The brand. `brand-600` = commit button, active tab underline, focus, `themeColor`; `brand-700` = hover and tappable text; `brand-800` = the desk wordmark. ⚠ `brand-50` is the mobile masthead's hex (§59.8). |
+| **`ink`** (violet-tinted neutral) | 0 · 25 · 50 · 100 · 200 · 400 · 500 · 600 · 700 · 900 — **no 300, no 800** | 25 `#FAFAFC` · 50 `#F4F3F8` · 100 `#E9E7F0` · 400 `#9C99AC` · 900 `#1B1826` | "Deliberately has no 300 and no 800 … do not invent the gaps" (config comment). Utility buttons are `ink-900` (primary Import, Download, New MRN, Generate PDF). |
+| **`tint`** (sky) | `bg` `#F0F9FF` · `bd` `#BAE6FD` · 600 `#0284C7` · 700 `#0369A1` | — | **"Nothing but tint may use this family."** Tint strips, chips, the operator progress mid-range (`tint-operator-content.tsx` `progressColor`). 13 files. |
+| **`ok`** | `DEFAULT` `#059669` · `bg` · `text` | — | Status: done, live, punched (e.g. the punched Mail Orders row §23, the /admin/access live banner §63, the attendance "Rollout activated" toast §50). Never brand, never tint. 14 files. |
+| **`warn`** | `DEFAULT` `#D97706` · `bg` · `text` | — | Status: attention (e.g. the Tint Manager "Split" tag, `board-table.tsx:263`). 10 files. |
+| **`danger`** | `DEFAULT` `#E11D48` · `bg` · `text` · `bd` | — | **NAMED `danger`, NOT `urgent`, and the name is the rule** — error and destructive only (§1). Only reader today: `app/login/login-form.tsx` (`border-danger`, `text-danger-text`). |
+| **`fav`** | one value, `#F59E0B` | — | "The favourite star, and nothing else." No class reads it yet (`grep` for `-fav` in components/app/lib: 0). |
+| **`data.*`** | `teal` `#0D9488` · `blue` `#2563EB` · `orange` `#EA580C` · `rose` `#E11D48` · `cyan` `#0891B2` · `lime` `#65A30D` · `pink` `#DB2777` · `slate` `#475569` | — | **IDENTITIES, never states. Never reassign a shipped data colour.** `data.rose` shares `danger`'s hex by a recorded decision — do not "resolve" it. `data.slate` is spoken for (§59.9). |
 
-### Logo mark — Orbit symbol
+🔴 **`data.teal` is the IGT delivery type, not the brand.** It keeps the exact hex teal
+carried before the rebrand, so its users never moved: `bg-data-teal` in
+`components/mail-orders/bill-to-card.tsx:26`, `ship-to-card.tsx:62`,
+`components/tint/operator/party-cards.tsx:23`, `app/(mail-orders)/mail-orders/mail-orders-table.tsx:100`
+and `review-view.tsx:186`, plus the hex `#0d9488` for IGT in
+`components/reports/report-params.ts:35`. Any other teal in new code is a bug.
 
-```
-White (on teal bg): circle r=7 stroke, circle r=2.2 fill centre, circle r=2 fill at cx=18
-Teal (on white bg): same shapes, stroke/fill="#0d9488"
-ViewBox: 0 0 22 22. Size: 22×22 (sidebar) or 18×18 (mobile).
-```
+⚠ **Nothing in the config ENFORCES the `ink`-not-`gray` rule.** The Orbit families sit under
+`theme.extend`, so Tailwind's own `gray-*`, `neutral-*`, `teal-*`, `red-*` and `amber-*` scales
+still compile. The rule lives in comments: the neutral family is named `ink` so that a
+collision cannot happen silently (`bg-gray-100` keeps meaning Tailwind's gray). Today 244
+`.tsx` files still use `gray-*` and 76 use `ink-*`; `neutral-*` has no users.
 
-### Brand rules
+### 2.2 Brand rules
 
-- ONE primary CTA per screen — teal-600
-- Focus ring: `focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10`
-- IosToggle ON: `bg-teal-600`
-- Operator avatars: **no longer teal — see §10.1.** State-encoding ones are `bg-ink-400` / `bg-ink-900` with done = `bg-green-600`; user-identity ones are pale `ink-50`.
-- Sidebar logo: `bg-teal-600 hover:bg-teal-700` with orbit SVG
-- Sidebar accent: `borderLeft: "3px solid #0d9488"`
-- OBD numbers: `text-gray-800 font-mono` (NOT teal)
+- ONE primary CTA per screen — `brand-600`, hover `brand-700`
+- Focus ring: `focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10` (50 / 41 sites)
+- IosToggle ON: `bg-brand-600`
+- Operator avatars: **not brand — see §10.1.** State-encoding ones are `bg-ink-400` / `bg-ink-900` with done = `bg-green-600`; user-identity ones are pale `ink-50`.
+- Sidebar logo: the `OrbitWordmark` in `text-brand-800`, no tile (§2.3, §7)
+- Sidebar accent: `borderLeft: "3px solid #7C3AED"` (`components/shared/role-sidebar.tsx:196`)
+- OBD numbers: `text-gray-800 font-mono` (NOT brand)
+
+### 2.3 The logo — `OrbitWordmark`, and there is no symbol
+
+**The logo is the word.** `components/shared/orbit-wordmark.tsx` exports `OrbitWordmark
+({ height, className })` — the letters "Orbit" as OUTLINED PATHS cut from Plus Jakarta Sans
+Bold, viewBox `0 0 2316 769`, `ORBIT_WORDMARK_ASPECT = 3.0117`. "There is no symbol and no
+tile baked in here — callers own both" (`orbit-wordmark.tsx:9-11`). Was a drawn orbit symbol
+(circles r=7 / r=2.2 / cx=18) on a teal tile until 2026-09-09; now the wordmark alone
+(`de7453bb`, "wordmark replaces the orbit mark at every site"). Do not revert.
+
+- 🔴 **GENERATED — do not hand-edit.** `node scripts/generate-wordmark.mjs` writes
+  `components/shared/orbit-wordmark.tsx`, `public/orbit-wordmark.svg` and
+  `public/icon-source.svg`; `scripts/generate-icons.mjs` then renders the PNGs (§48).
+- **Colour contract: `fill="currentColor"`.** Set the colour with a text class on the
+  element or a parent — `text-brand-800` on the desk rail, `text-white` on a violet tile,
+  `text-brand-600` on a pale masthead.
+- **`height` is INK height**, not a font size (§12.2).
+- **Call sites — 11 renders in 10 files** (import sweep, 2026-09-19):
+  `components/shared/role-sidebar.tsx` (19/14px, `text-brand-800`) ·
+  `components/admin/admin-sidebar.tsx` ×2 (rail 19/14px, and 11px `text-white` on a
+  `bg-brand-600` tile in the phone top bar) · `app/login/page.tsx` ·
+  `app/(place-order)/place-order/place-order-page.tsx` · `app/po/splash-screen.tsx` ·
+  `app/po2/po-v2-page.tsx` · `components/trip-report/trip-report-page.tsx` ·
+  `components/attendance/attendance-home.tsx` · `components/attendance/history-calendar.tsx`
+  · `app/attendance/consent/consent-form.tsx`.
 
 ---
 
@@ -88,17 +138,31 @@ ViewBox: 0 0 22 22. Size: 22×22 (sidebar) or 18×18 (mobile).
 
 🔴 **The `Urgent` row above is a RECORD OF SHIPPED CODE, NOT THE RULE, and the two now
 disagree.** §1's palette rule changed on 2026-09-08 — red is error and destructive only, urgency
-is amber — but this table describes what three live components actually render, and canon must
-never claim a colour a screen does not paint:
+is amber — but this table describes what live components actually render, and canon must
+never claim a colour a screen does not paint. Recounted 2026-09-19 at HEAD: **ten rendered
+elements in eight live files** paint Urgent red:
 
 | still red | what it draws |
 |---|---|
-| `components/shared/status-badge.tsx` — the `urgent` badge | `bg-red-50 text-red-700 border-red-200` |
-| `components/floor/floor-table.tsx` — the ⚡ mark-urgent button | `border-red-200 bg-red-50 text-red-500` |
-| `components/shared/duplicate-so-tag.tsx` | cites this row by name for its own red |
+| `components/shared/status-badge.tsx:31` + `:70` — the `urgent` badge and its default dot | `bg-red-50 text-red-700 border-red-200` · `bg-red-500` |
+| `components/floor/floor-table.tsx:867` — the ⚡ mark-urgent toggle, ON | `border-red-200 bg-red-50 text-red-500` |
+| `components/floor/floor-table.tsx:1044` — the ⚡ glyph in the row | `#ef4444` |
+| `components/floor/hold-tab.tsx:110` · `cancelled-tab.tsx:139` — ⚡ glyph | `text-[#ef4444]` |
+| `components/floor/detail-panel.tsx:542` — "⚡ Urgent" pill | `bg-[#fef2f2] text-[#b91c1c]` |
+| `components/tint/manager/board-table.tsx:303` — ⚡ glyph | `#ef4444` |
+| `components/tint/manager/board-rail.tsx:188` — "⚡ Urgent" pill | `bg-red-50 text-red-700 border-red-200` |
+| `components/picking/bill-symbols.tsx:70` — `URGENT_COLOR` ⚡ glyph | `#DC2626` |
+
+(`components/tint/tint-table-view.tsx:174` also paints a red "🚨 Urgent" badge, but that file
+has no importer. `components/shared/duplicate-so-tag.tsx` cites this row for its own red — it
+marks a duplicate SO, not urgency. The full inventory, and why the migration is deferred by
+decision, is `docs/prompts/drafts/code-discovery-2026-09-08-urgent-red-migration.md`.)
+⚠ **The `danger` block comment in `tailwind.config.ts` says "Twelve live sites" — a stale
+claim:** it counted `components/floor/rail-card.tsx` (deleted in `79bcc412`) and the
+orphaned `tint-table-view.tsx`. Ten is the live figure.
 
 **That is a migration list.** `/po2` already ships Urgent in amber-700 on amber-50.
-Move these three to the `Waiting` row's amber and this row becomes `bg-amber-50 /
+Move these to the `Waiting` row's amber and this row becomes `bg-amber-50 /
 border-amber-200 / text-amber-700`; until somebody does, the row stays red because the pixels
 are red. **Do not flip it to amber ahead of the code** — a stamp nobody earned is the failure
 `CLAUDE.md §4` exists to prevent. `Hold` and `Voided / Removed` keep their red under the new
@@ -109,7 +173,7 @@ rule: both are a thing being stopped or undone.
 |---|---|
 | Local | `bg-blue-600` |
 | UPC (Upcountry) | `bg-orange-600` |
-| IGT | `bg-teal-600` |
+| IGT | `bg-data-teal` (#0D9488 — the IGT identity, §2.1; `bill-to-card.tsx:26`) |
 | Cross | `bg-rose-600` |
 
 Dot: `w-[5px] h-[5px] rounded-full flex-shrink-0`.
@@ -163,7 +227,7 @@ TINTER = `bg-blue-600`. ACOTONE = `bg-orange-500`.
 | Card | `border border-gray-200 rounded-lg`, hover `border-gray-300` |
 | Table wrapper | `rounded-lg border border-gray-200 overflow-hidden` with `px-4 py-3` |
 | Table row | `border-b border-gray-50 hover:bg-gray-50/50` |
-| Sidebar | `bg-white` + `borderLeft: "3px solid #0d9488"` + right `border-gray-200` |
+| Sidebar | `bg-white` + `borderLeft: "3px solid #7C3AED"` + right `border-gray-200` (`role-sidebar.tsx:196`) |
 
 No accent bars on cards. No zebra striping.
 
@@ -182,9 +246,24 @@ If either layer is missing, scroll breaks. Took 2 iterations to land — don't t
 
 Desk boards use `<UniversalHeader />` from `components/universal-header.tsx`. Never hand-roll a new one.
 
-**Live consumers (import sweep 2026-08-04) — 8 boards:** Mail Orders (`mail-orders-page.tsx` + `review-view.tsx`, one board), Tint Manager, Tint Operator, TI Report, Shade Master, Delivery Challan (`challan-content.tsx`), Sampling Library, Trip Report. **No longer consumers:** the attendance admin pages (own two-strip `components/admin/attendance/attendance-page-header.tsx` — "replaces the per-page UniversalHeader chrome", per `docs/mockups/attendance/admin-redesign.html`; detail belongs to `CLAUDE_ATTENDANCE.md`) and Admin Import (`import-page-content.tsx` renders no UniversalHeader). The code-update-2026-08-01 audit's "7 shared-header consumers" = these 8 minus the Mail Orders board it was editing.
+**Live consumers (import sweep 2026-09-19) — 10 files:** Mail Orders / Billing (`app/(mail-orders)/mail-orders/mail-orders-page.tsx`), Tint Manager, Tint Operator, TI Report, Shade Master, Delivery Challan (`challan-content.tsx`), Sampling Library, Trip Report, **the CI desk** (`components/ci/billing-board.tsx`) and **the MRN desk** (`components/mrn/billing-board.tsx`). `review-view.tsx` does not render it — the header belongs to `mail-orders-page.tsx` alone. **Not consumers:** the attendance admin pages (own two-strip `components/admin/attendance/attendance-page-header.tsx` — "replaces the per-page UniversalHeader chrome", per `docs/mockups/attendance/admin-redesign.html`; detail belongs to `CLAUDE_ATTENDANCE.md §9.0`) and Admin Import (`import-page-content.tsx` renders no UniversalHeader).
 
-**Neutral props added for the Billing v2 face (2026-08-01, commits `d08f3870`/`15e87e2b`/`f76b4c86`):** `searchLayout?: "compact" | "wide" | "wide-right"` (default compact, the 180→260px grow), `showShortcutsButton?: boolean` (default true — billing hides it in the header and renders the extracted **`components/header-shortcuts.tsx`** on its own control row), `importVariant?: "default" | "primary"` (primary = teal Import). The component imports nothing from `components/billing/` and never calls `useBillingV2()` — callers opt in; every non-billing board is byte-identical by default.
+**Neutral props added for the Billing v2 face (2026-08-01, commits `d08f3870`/`15e87e2b`/`f76b4c86`):** `searchLayout?: "compact" | "wide" | "wide-right"` (default compact, the 180→260px grow), `showShortcutsButton?: boolean` (default true — billing hides it in the header and renders the extracted **`components/header-shortcuts.tsx`** on its own control row), `importVariant?: "default" | "primary"` (primary = a 36px **`bg-ink-900 hover:bg-ink-700`** utility Import, `universal-header.tsx:433` — not brand; the prop's JSDoc at `:158-166` still says "brand-600" and is stale). The component imports nothing from `components/billing/` and never calls `useBillingV2()` — callers opt in; every non-billing board is byte-identical by default. Only `mail-orders-page.tsx` passes these (`:1342`, `:1430`); the Billing face itself → `CLAUDE_BILLING.md §3`.
+
+### Shared pieces the header mounts
+
+- **`ImportProgressPill`** (`components/import/import-progress-pill.tsx`, `37ceb57a`) —
+  rendered by `UniversalHeader` immediately left of the Import button (`universal-header.tsx:422`),
+  reading `ImportProgressProvider` from the root layout (`app/layout.tsx:90`). Returns `null`
+  when idle, so an idle header's DOM is unchanged. Running = grey + spinner, done = green, failed
+  = red with no ✕ (the panel must be opened). **Import is disabled while a run is running or a
+  failure is unread** (`importBlockedReason`, `universal-header.tsx:416`). No percentage,
+  nothing auto-hides. Behaviour → `CLAUDE_IMPORT.md §11`.
+- **`useCanImportObds()`** (`lib/hooks/use-can-import-obds.ts`) — drives `showImport` on Mail
+  Orders / Billing and the five tint screens (Manager, Operator, TI Report, Shade Master,
+  Challan). "ONE helper for all of them; never a per-screen role list." Defaults to false and
+  fails closed. Who may import → `CLAUDE_IMPORT.md §9.1`.
+- **`HeaderViewToggle`** — the §21 view-toggle look as a shared component (§21).
 
 ⚠ **Tint Manager stayed a consumer through its 2026-09-06 board rebuild — it did NOT become a second exception.** The Kanban became a rail + one grouped table, and the only header prop dropped was the operator-workload segment group (`segments`/`activeSegment`/`onSegmentChange`); Import, the three filter groups, the shortcuts panel and `rightExtra` are wired exactly as before. Screen itself: `CLAUDE_TINT.md §1`.
 
@@ -202,7 +281,7 @@ Segmented control [+ leftExtra] — left.
 ### Segmented control
 Container: `inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px]`
 Inactive: `text-gray-500`, hover `bg-white/60`
-Active: `bg-teal-600 text-white font-medium`
+Active: `bg-brand-600 text-white font-medium` (`universal-header.tsx:609`)
 Click active → deselects. No "All" button. 4 slots max.
 
 ### Filter dropdown
@@ -222,31 +301,35 @@ behaviour reference is archived at `archive/2026-07-support/docs/CLAUDE_SUPPORT.
 Click-to-open calendar popover. Format `‹ Today · 04 Apr ›`. Right arrow disabled when viewing today.
 
 ### Colour rule
-**ONE teal element: active slot segment.** Sampling Library exempted (§22).
+**ONE brand element: active slot segment.** Sampling Library exempted (§22).
 
 Per-board wiring summary:
 
 | Board | Segments | Filters | Date | Extras |
 |---|---|---|---|---|
 | Tint Manager | **None** — segments removed 2026-09-06 | Del Type, Priority, Type | None | Missing-customer badge · Add to Tint · Reports link. **No view toggle** — one board now |
-| Mail Orders | Slots (5) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle. ⚠ The flag-gated Billing v2 face rewires this header (`searchLayout="wide-right"`, teal Import, shortcuts moved to the control row) — spec belongs to the MAIL_ORDERS session, not here |
-| Tint Operator | Job pill (teal, dropdown) | — | None | Progress bar (rightExtra) |
+| Mail Orders | Slots (5) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle. ⚠ The Billing face rewires this header (`searchLayout="wide-right"`, the `ink-900` primary Import, shortcuts moved to the control row) — spec → `CLAUDE_BILLING.md §3` |
+| Tint Operator | Job pill (`bg-brand-600`; amber when only paused work is left — `tint-operator-content.tsx:1649/1660`), dropdown, in `leftExtra` | — | None | Title = Jobs/History `HeaderViewToggle` · Progress bar (rightExtra) · behaviour → `CLAUDE_TINT.md §3.1`/`§3.13` |
+| **CI desk** | — (counts in Row-1 `stats`, never `segments`) | — | Stepper (drives the Closed section only) | Register export (`leftExtra`) · Search · → `CLAUDE_CI.md §8` |
+| **MRN desk** | — (counts in `stats`) | — | Stepper | New MRN `ink-900` utility (`leftExtra`) · Search · → `CLAUDE_MRN.md §1` |
 | TI Report | Date presets | Tinter Type, Operator | None | Date range, Download |
 | Shade Master | — | Tinter Type, Status | None | — |
 | Delivery Challan | — | SMU, Route | Stepper | Search |
 | Sampling Library | Type (TINTER/ACOTONE) | Pack, Status | None | Month picker |
 | Trip Report | Local/Up-Country segment | — | Date filter | → `CLAUDE_TRIP_REPORT.md §1` |
-| **Floor Control** | Scope chips (+ slot tabs in body) | Status / Flags | None | Search · **⚠ HAND-ROLLED, NOT `<UniversalHeader />`** — named exception above; → `CLAUDE_FLOOR.md` |
+| **Floor Control** | Scope chips | Status / Flags | None | Search · pick-gate switch · **⚠ HAND-ROLLED, NOT `<UniversalHeader />`** — named exception above; → `CLAUDE_FLOOR.md §2` |
 
 *(Rows removed 2026-08-04: Support / Planning / Warehouse — boards retired 2026-07-27/28, wiring archived with them; Admin Import + OT Pending + OT Audit — no longer UniversalHeader consumers, see the roster above.)*
 
 ---
 
-## 7. Sidebar — white + teal accent
+## 7. Sidebar — white + brand accent
 
-Shell: `bg-white` + 3px teal left accent + right gray-200 border.
-Logo button: `bg-teal-600 hover:bg-teal-700` with orbit SVG.
-Active nav: `bg-teal-50 text-teal-700 font-semibold border-l-2 border-teal-600`.
+`components/shared/role-sidebar.tsx`. The admin shell has its own sidebar — §64.
+
+Shell: `bg-white` + 3px `#7C3AED` left accent + right gray-200 border (`:196`); 220px expanded, 72px collapsed.
+Logo: `<OrbitWordmark height={isExpanded ? 19 : 14} className="text-brand-800" />` (`:213-215`) — no tile, and nothing beside it (§2.3).
+Active nav: `bg-brand-50 text-brand-700 font-semibold border-l-2 border-brand-600` (`:143`); collapsed active icon `bg-brand-50 text-brand-600` (`:170`).
 Inactive: `text-gray-500 hover:bg-gray-50 hover:text-gray-900`.
 User avatar: **`bg-ink-50` · `text-ink-600` · 1px `border-ink-100`, hover `bg-ink-100`** — see §10.1. (Was `bg-teal-600`, then a solid `ink-900` disc.)
 
@@ -259,7 +342,7 @@ Behaviour spec: `CLAUDE_CORE.md §11`.
 Structure: Icon row → Badge row → Customer name → OBD row → Info grid → Operator row.
 No accent bars. Customer missing: inline ⚠ (AlertCircle 14px amber).
 
-Age badge (1+ days old, on tint manager card + table):
+Age badge (1+ days old, on the Tint Manager rail — `components/tint/manager/board-rail.tsx:197-204`):
 - 1 day: amber pill "1d" (`bg-amber-50 text-amber-700 border-amber-200`)
 - 2+ days: red pill "Nd" (`bg-red-50 text-red-700 border-red-200`)
 - IST-aware from `orderDateTime`.
@@ -269,7 +352,7 @@ Age badge (1+ days old, on tint manager card + table):
 ## 9. Form inputs
 
 Default: `h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg`
-Focus: `focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10`
+Focus: `focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10`
 Error: `border-red-300 ring-2 ring-red-500/6`
 
 **Mobile rule:** all `<input>` elements that may surface a keyboard must be `text-[16px]` minimum on EVERY mobile surface (`/po`, and any future mobile page). iOS WebKit auto-zooms anything smaller. Android Chrome does not, but the rule applies for consistency. (Written as an `/order` rule until 2026-07-27; it was never specific to that page.)
@@ -278,9 +361,10 @@ Error: `border-red-300 ring-2 ring-red-500/6`
 
 ## 10. Buttons
 
-Primary CTA: `bg-teal-600 hover:bg-teal-700 text-white h-[38px] rounded-lg`
+Primary CTA: `bg-brand-600 hover:bg-brand-700 text-white h-[38px] rounded-lg` (the `bg-brand-600 hover:bg-brand-700` pair: 42 sites)
+Utility: `bg-ink-900 hover:bg-ink-700 text-white` — a tool, not a decision (Import primary, Download, New MRN, Generate PDF)
 Secondary: `bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 h-7 rounded-md`
-Modal save (gray): `bg-gray-900 hover:bg-gray-800 text-white` (NOT teal)
+Modal save (gray): `bg-gray-900 hover:bg-gray-800 text-white` (NOT brand)
 Tint Operator save CTAs: `bg-gray-900 text-white`
 Tint Operator workflow CTAs: `bg-green-600 text-white`
 Operator Pause CTA: `bg-amber-600 hover:bg-amber-700 text-white`
@@ -289,8 +373,8 @@ Remove OBD destructive confirm: `bg-red-600 hover:bg-red-700 text-white`
 
 ### Action-surface rules (general canon — established 2026-07-26 on the Floor action-surfaces redesign, `drafts/web-update-2026-07-26-floor-action-surfaces.md` §2; shipped 2026-07-27)
 
-- **One teal per surface, and it goes to the state's REAL job — not to a fixed button.** Exactly one teal button per state, never zero, never two; which button is teal may change with the bill's state (Floor's detail panel: Ship-to in most states, Release on a held bill).
-- **Disabled buttons are grey, never faded primary** — `bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed`. A faded teal button reads as broken, not waiting. Box model identical in both states (border present even when invisible) so nothing shifts on enable.
+- **One brand button per surface, and it goes to the state's REAL job — not to a fixed button.** Exactly one brand button per state, never zero, never two; which button is brand may change with the bill's state (Floor's detail panel: Ship-to in most states, Release on a held bill).
+- **Disabled buttons are grey, never faded primary** — `bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed`. A faded brand button reads as broken, not waiting. Box model identical in both states (border present even when invisible) so nothing shifts on enable.
 - **An editable value gets a pencil, not a label.** A grey caption + chip reads as display-only; a chip carrying a small pencil is unambiguous.
 - **Facts live in the header, jobs live in the action row.** A property of the record (slot, date, number) belongs on the identity line; the action row holds only things the operator *does*.
 - **Selection summaries name what was selected** — one row shows the name; multiple show totals (volume, route count), derived from data already in the component.
@@ -311,12 +395,15 @@ visual weight spent on something nobody is making a decision about, that people 
 twice a day. Identity should be legible and quiet. It is neither brand nor emphasis.
 
 🔴 **An avatar whose colour encodes a STATE is a different thing and keeps its colour.**
-Two live examples, both deliberately untouched:
+The live example, deliberately untouched:
 
 | | not-done | done |
 |---|---|---|
-| `OperatorAvatar` — `components/tint/manager/board-bits.tsx` | `bg-ink-400` | `bg-green-600` |
-| `OperatorTd` — `components/tint/tint-table-view.tsx`, its `avatarColor` prop | `bg-ink-900` (Assigned section) | `bg-green-600` (Completed Today section) |
+| `OperatorAvatar` — `components/tint/manager/board-bits.tsx:147` | `bg-ink-400` | `bg-green-600` |
+
+(`OperatorTd` in `components/tint/tint-table-view.tsx` follows the same pair, `bg-ink-900` /
+`bg-green-600`, but that file has no importer since the 2026-09-06 Tint Manager rebuild —
+retired, not deleted, per `tint-manager-content.tsx:24-30`.)
 
 Those discs answer "is this finished?", not "who is this?". Recolouring only their dark
 half would break the pair and delete a status signal.
@@ -330,7 +417,10 @@ text treatment of the same shape.
 
 ## 11. IosToggle
 
-ON: `bg-teal-600`. OFF: `bg-gray-300`. Sizes: 36×20px compact, 46×26px large.
+ON: `bg-brand-600`. OFF: `bg-gray-300`. Sizes: 36×20px compact, 46×26px large. Live copies:
+`IosToggle` in `components/tint/shade-master-content.tsx:102` (36×20), `Toggle` in
+`components/reports/customise-drawer.tsx:18` (`h-5 w-9`), and the 46×26 Notifications switch
+in `components/push/push-toggle.tsx:152` (§59.1).
 
 ---
 
@@ -443,7 +533,7 @@ red.
 
 ## 13. Modal pattern
 
-Backdrop: `bg-black/40`. Panel: `bg-white rounded-lg shadow-xl w-[400px]`. Confirm button: `bg-gray-900` (not teal). Destructive confirm: `bg-red-600`.
+Backdrop: `bg-black/40`. Panel: `bg-white rounded-lg shadow-xl w-[400px]`. Confirm button: `bg-gray-900` (not brand). Destructive confirm: `bg-red-600`.
 
 ### Two-stage confirm (used by Mark Done partial qty, Remove OBD)
 
@@ -454,7 +544,7 @@ Stage 2 (only if partial/risky): amber banner explains consequence → `[Back] [
 
 ## 14. Date range picker
 
-Used in TI Report. Presets: Today/Yesterday/This Week/This Month with `bg-teal-600` active. Calendar: `bg-teal-600` selected, `bg-teal-50` range. Download: `bg-teal-600`.
+Used in TI Report (`components/tint/ti-report-content.tsx`). Presets: Today/Yesterday/This Week/This Month with `bg-brand-600` active (`:249`). Calendar: `bg-brand-600` selected, `bg-brand-50 text-brand-700` range (`:304-305`). Download: the UniversalHeader download button, an `ink-900` utility (`universal-header.tsx:567`). The shared single-date `components/ui/date-picker-popover.tsx` marks the selected day `bg-brand-600` (`:183`).
 
 ---
 
@@ -480,7 +570,7 @@ Auto-locks on OD, CI, Bill Tomorrow. Persisted via `isLocked` on `mo_orders`.
 
 ## 17. Mail Orders — code column
 
-Exact: mono badge `text-gray-800 bg-gray-50 border-gray-200`. Click copies, teal flash 1.5s.
+Exact: mono badge `text-gray-800 bg-gray-50 border-gray-200`. Click copies, flash `bg-brand-50 border-brand-200 text-brand-700` 1.5s (`mail-orders-table.tsx:547`).
 Multiple: `text-amber-700 bg-amber-50 border-amber-200` "N found". Click → picker.
 Unmatched: `text-gray-400` "Search". Click → search popover.
 
@@ -543,18 +633,26 @@ Routing rules — every signal carries `card: "bill" | "ship"`:
 Rendered inside UniversalHeader title (ReactNode).
 
 Container: `border border-gray-300 rounded-[5px] overflow-hidden`
-Active: `bg-gray-800 text-white` (DARK — navigation, NOT teal)
+Active: `bg-gray-800 text-white` (DARK — navigation, NOT brand)
 Inactive: `bg-white text-gray-500 hover:bg-gray-50`
 % badge after separator: ≥50% `bg-green-50 text-green-600`, <50% `bg-amber-50 text-amber-600`
 Completed slots: "✓ Morning" prefix.
 
+**Shared component: `HeaderViewToggle`** (`components/shared/header-view-toggle.tsx`) — this
+section's look, class strings lifted verbatim from the Mail Orders inline toggle, generic over
+`options: {value, label}[]` + `value` + `onChange` (+ optional `dataTutorial`, `ariaLabel`).
+Consumer today: Tint Operator's Jobs/History toggle in its header title
+(`tint-operator-content.tsx:1601`). Mail Orders still renders its own inline copy and is not
+yet a consumer (the component's header says so). Use it for any new board view toggle —
+never a third hand-rolled copy.
+
 ---
 
-## 22. Per-screen teal exemption — Sampling Library
+## 22. Per-screen brand exemption — Sampling Library
 
-The "one teal element" rule (§6) does NOT apply on `/tint/sampling-library`. Teal is used intentionally across multiple elements for visual hierarchy: segment pill (TINTER/ACOTONE), variant tabs, PRIMARY pill, pack pill, Export links, recipe-history active row.
+The "one brand element" rule (§6) does NOT apply on `/tint/sampling-library`. Brand is used on more than one element: the shared header's TINTER/ACOTONE segment, the active status pill (`sampling-library-detail-pane.tsx:395`, `bg-brand-50 text-brand-700`) and the active list row (`sampling-library-list-pane.tsx:254`, `bg-brand-50 border-l-brand-700`). That is every brand use in `components/sampling-library/` today; the per-element list is `CLAUDE_SAMPLING_LIBRARY.md §4` "Visual style — exemption".
 
-Reason: Sampling Library is a deep-domain page (not a depot ops board). The teal density signals "this is a curated reference workspace" vs operational boards. No other page has the same exemption today.
+Reason: Sampling Library is a deep-domain page (not a depot ops board). The accent density signals "this is a curated reference workspace" vs operational boards. No other page has the same exemption today.
 
 Other Sampling Library deviations:
 - Status pills, variant tabs, large tabular numerals: `font-semibold` or `font-medium` (drops one weight from `font-bold` originally specced) to match cousin convention.
@@ -563,7 +661,7 @@ Other Sampling Library deviations:
 
 ## 23. Mail Orders — table row states
 
-Normal pending: white. Focused: amber left border + bg-amber-50/70. Locked: red left border. Punched: teal left border + bg-teal-50/40 + opacity-75.
+Normal pending: white. Focused: `#1B1826` (ink-900) left border + `bg-ink-25`. Flagged (manual flag, or auto on OD/CI): `#f87171` red left border. Punched: `#059669` (`ok`) left border + `bg-ok-bg/40` + opacity 0.75. Split: `#D6D3E0` (ink-200) left border. All 3px; source is the `borderLeft` chain in `app/(mail-orders)/mail-orders/mail-orders-table.tsx:851-865`. (Table View is dormant while Billing is on for all users — `CLAUDE_MAIL_ORDERS.md §9.1`.)
 
 Punched orders separated to bottom per slot when slot selected. Collapsible "N punched ▸/▾" divider. `T` toggles globally.
 
@@ -634,7 +732,7 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths.
 ### Applies to
 - Review View SKU table: 4/24/11/26/5.5/5.5/5.5/12/6.5%
 - Mail Orders expanded table
-- TM table view: 4/13/10/18/7/9/6/15/10/8%
+- Tint Manager board table (`components/tint/manager/board-table.tsx`; widths owned by `CLAUDE_TINT.md §1.3`)
 - Challan line items: 5/13/35/15/8/12/12%
 - Admin attendance roster
 - Admin OT pending queue
@@ -705,7 +803,7 @@ Page background: `bg-gray-50`. Cards + SKU table sit as white islands.
 
 - Search input: 28px height, 11px font
 - Order rows: `px-3.5 py-2.5`, border-bottom gray-100, border-left 3px
-- States: selected (`bg-teal-50 border-l-teal-600`), flagged (`border-l-amber-600`), punched (`opacity-40`), default (`border-l-transparent`)
+- States: selected (`bg-brand-50 border-l-brand-600`, `review-view.tsx:1129`), flagged (`border-l-amber-600`), punched (`opacity-40`), default (`border-l-transparent`)
 - Line 1: delivery dot + customer name (13px semibold) + time (right, tabular-nums)
 - Line 2: SO name (11px muted)
 - Punched orders: third line `✓ {Name} {HH:MM}` (text-gray-400)
@@ -754,9 +852,11 @@ Props:
 
 ### InstructionsStrip component
 
-`bg-gray-50`, `border-top: 1px solid gray-200`, padding 8px 20px. Returns null when all three values are null/empty.
+`components/mail-orders/instructions-strip.tsx`. Default tone: `bg-gray-200`, `border-t border-gray-100`, `pt-3 pb-3`, rows `px-5` (`:101`). Returns null when all three values are null/empty.
 
-**`tone?: "default" | "violet"` prop (2026-08-01, commits `471e6808` + `e309ac37`):** default = the gray strip above, unchanged. `violet` = the Billing v2 notes band (Floor's tint-strip palette `#f5f3ff`/`#5b21b6`/`#7c3aed` + 3px violet left-accent bar); the three dots keep their own colours in both tones. Only the flag-gated billing face passes `violet` — its spec belongs to the MAIL_ORDERS session.
+**`tone?: "default" | "notes"` prop (`:19`):** default = the gray strip above. `notes` = the Billing notes band: `bg-brand-50` + 3px `border-l-brand-600`, text `brand-800`, captions `brand-600`, and the notes dot `bg-brand-600` (`NOTES_DOT`, `:54`); the delivery (amber) and bill (blue) dots keep their colours in both tones. Only `review-view.tsx:2302` passes it, on the Billing face. The file's own comments still say "violet" and cite `components/floor/tint-strip.tsx`, which was archived to `archive/2026-09-floor-rail/` in `79bcc412` — stale comments.
+
+**`fontSize?: number`** (default 11) sizes the remark text on all three rows in both tones; **`controlsSlot?: ReactNode`** renders top-right inside the band. The Billing face drives both from the per-user notes size and its −/+ stepper → `CLAUDE_BILLING.md §9`.
 
 ```
 ● delivery (amber dot)  — from deliveryRemarks minus [→ Name (Code)] suffix
@@ -776,6 +876,13 @@ Amber banner between detail header and SKU table when `!splitLabel && (totalVol 
 
 4th icon-only action button (Printer, 28×28). Calls `window.print()`. Print CSS scoped under `#mo-print-area`. Nav footer + action buttons + SkuToggle hidden via `.mo-print-hide`. Print: A4 landscape, 10px base, footer `OrbitOMS · JSW Dulux Surat Depot · Printed {IST date time}`.
 
+🔴 **DEFECT — recorded, not fixed.** The landscape rule is `@page mo-landscape` at
+`app/globals.css:630`, and it sits **inside** the `@media print` block opened at `:422` (brace
+depth 2 at `:630`). That breaks `CLAUDE.md §1` and §32's "`@page` rules MUST be top-level" —
+the file's own comment at `globals.css:33-35` calls it "a pre-existing violation … Do not copy
+it." Whether the mail-order print actually comes out landscape has not been tested; it needs a
+real print test before anyone relies on "A4 landscape" above or moves the rule.
+
 ---
 
 ## 29. Review View — SKU row states
@@ -786,7 +893,7 @@ Amber banner between detail header and SKU table when `!splitLabel && (totalVol 
 
 **Not-found (toggle OFF):** all text #d1d5db EXCEPT qty stays #374151. Status cell shows reason label.
 
-**Unmatched:** description italic #9ca3af "No match found". UNMATCHED tag. "Resolve →" link: `10px teal-600 font-medium`.
+**Unmatched:** description italic #9ca3af "No match found". UNMATCHED tag. "Resolve →" link: 10px `#7C3AED` (brand-600) weight 500, underline on hover (`review-view.tsx:2636`).
 
 ---
 
@@ -800,7 +907,7 @@ Amber banner between detail header and SKU table when `!splitLabel && (totalVol 
 
 ## 31. Delivery Challan — split view
 
-Left panel (320px): compact 3-line rows: OBD mono + challan badge / customer name / SMU dot + route + articles. Selected: `bg-teal-50 + border-l-teal-600`. No search in panel.
+Left panel (320px): compact 3-line rows: OBD mono + challan badge / customer name / SMU dot + route + articles. Selected: `#F5F3FF` (brand-50) background + 3px `#7C3AED` (brand-600) left border (`challan-content.tsx:386-387`). No search in panel.
 
 Right panel: action bar (challan ID mono + OBD + customer gray-400 | Edit outline + Print dark) + challan document on `#f9fafb`.
 
@@ -818,7 +925,7 @@ When `delivery_challans.isVoided === true`:
 
 ## 32. Delivery Challan — document (B&W print)
 
-**Palette (document only):** #111827, #374151, #6b7280, #9ca3af, #d1d5db, #e5e7eb, #f0f0f0, #f9fafb, #fff. **NO teal. NO blue.**
+**Palette (document only):** #111827, #374151, #6b7280, #9ca3af, #d1d5db, #e5e7eb, #f0f0f0, #f9fafb, #fff. **NO brand violet. NO blue.**
 
 **Logo:** `/jsw-dulux-logo.png` (800×193, 101 KB, transparent PNG-24). Height 34px on web AND print. Container `paddingRight: 24px`. **Web view: NO inline filter (full colour).** **Print view: `filter: grayscale(100%) brightness(0) !important` via `@media print`.**
 
@@ -838,15 +945,7 @@ When `delivery_challans.isVoided === true`:
 
 ## 33. TM table
 
-Columns: # / OBD / SMU / Site Name / Priority / Articles / Volume / Operator-Action / Time / Actions.
-Widths: 4/13/10/18/7/9/6/15/10/8%.
-
-First column `#`: 4% width, 1-based counter per section.
-Column header pills (all 4 kanban columns): neutral `bg-gray-100 text-gray-700 border-gray-200`.
-
-Soft-removed OBD pills (when admin views removed-orders list): red `Removed · {reason}`.
-Paused OBD pill (stage-agnostic, both kanban + table): amber `⏸ Paused (N/3)`.
-Skipped OBD pill (pending stage only): gray `↩ Skipped {N}×`.
+The Tint Manager board is a rail + ONE grouped fixed table (`components/tint/manager/board-table.tsx`, §27 standard). Columns, widths, grouping and the `#` rank rule are owned by `CLAUDE_TINT.md §1.3`; statuses by `§1.4`. Was a four-column Kanban with a card/table toggle until 2026-09-06; now the rail + table (`a0f9378b` → `082eb92e`). Do not revert — `components/tint/tint-table-view.tsx` is retired with no importer.
 
 ---
 
@@ -854,13 +953,13 @@ Skipped OBD pill (pending stage only): gray `↩ Skipped {N}×`.
 
 Business behaviour: `CLAUDE_TINT.md §3`.
 
-- Row 1: UniversalHeader — title "My Jobs", stats, clock, search
-- Row 2: Job filter as **teal-600 segment pill** (leftExtra). Click opens 400px dropdown with 3 labelled sections: CURRENT / PAUSED / UP NEXT. Progress bar (rightExtra): amber <25%, teal 25-75%, green >75%.
+- Row 1: UniversalHeader — title is the Jobs/History `HeaderViewToggle` (§21; the words "My Jobs" are gone), stats, clock, search
+- Row 2: Job filter as a **`bg-brand-600` segment pill** (leftExtra; `tint-operator-content.tsx:1649`), amber `bg-amber-50 border-amber-200` when only paused work is left (`:1660`). Click opens 400px dropdown with 3 labelled sections: CURRENT / PAUSED / UP NEXT. Progress bar (rightExtra): amber <25%, `tint-600` 25-75%, green ≥75% (`progressColor`, `:1551`). The History face → `CLAUDE_TINT.md §3.13`.
 - Below Row 2: Bill To / Ship To as equal-width cards (`grid-cols-2`)
 - Main: 320px SKU left panel + flex TI form right. Mobile: left hidden below md.
 
 **Colour budget:**
-- Teal: sidebar + job pill segment ONLY (shared universal-header segmented control stays teal)
+- Brand: sidebar + job pill segment ONLY (shared universal-header segmented control stays brand)
 - Gray-900: save CTAs + selected card border
 - Green-600: workflow CTAs (start, done)
 - Amber-600: Pause CTA + paused-card amber accents
@@ -947,7 +1046,7 @@ Both use same shell: chronological list (oldest first), one row per event.
 
 **SkipHistoryModal row:** date+time · skipped-by name · reason chip · tinter-type (if `TINTER_FINISHED`) · out-of-stock colours (chips) · remark · "Reassigned by {name} at {time}" trailing line if applicable.
 
-Modal trigger from 5 entry points: Kanban PAUSED pill, "View full pause history" link, Kanban kebab item, Table badge click, Table kebab item.
+Modal trigger: the Tint Manager detail panel's "View full pause history →" and skip-history links (`components/tint/manager/board-detail-panel.tsx:430`, `:448`, wired in `tint-manager-content.tsx:1020-1021`). The Kanban's five entry points went with the Kanban (§33).
 
 ---
 
@@ -980,7 +1079,7 @@ Used in `/attendance/check-out` flow when current IST time >= `otTriggerTime` (�
 
 ### Choice screen
 "Were you doing overtime work?" + amber callout with current time + trigger time.
-Two buttons: "Yes, claim OT" (teal `bg-teal-600`) / "No, just clocking out" (white outline).
+Two buttons: "Yes, claim OT" (`bg-brand-600 hover:bg-brand-700`, `components/attendance/check-out-flow.tsx:492`) / "No, just clocking out" (white outline).
 "Cancel and go back" link returns to camera (photo discarded).
 
 ### Reason screen
@@ -1011,7 +1110,7 @@ Some tiles are multi-family (one card, several families' tabs): "Satin & PU", "P
 
 Two render modes:
 - **Browse mode** (`activeState.kind === "idle"`): full 9-tile grid
-- **Work mode** (sub-product active): compact horizontal pill strip (~40px). Active pill teal-bordered + ▸ marker. Tabs never wrap (`whitespace-nowrap shrink-0` button + `overflow-x-auto` row).
+- **Work mode** (sub-product active): compact horizontal pill strip (~40px). Active pill `bg-brand-50 border-brand-600 text-brand-700` + `brand-500` ▸ marker (`speed-dial-grid.tsx:52`, `:60`). Tabs never wrap (`whitespace-nowrap shrink-0` button + `overflow-x-auto` row).
 
 Digit shortcuts 1-9. No Tab cycle.
 
@@ -1073,7 +1172,7 @@ Cell stores **UNITS** in `cart.packQtys[pack]`.
 
 - **Bill bar always visible** once a customer is selected — Add / Duplicate / Delete + inline delete-confirm reachable from the single-bill state. `id === index+1` enforced by `renumberBills()` after every add/delete/duplicate AND on draft restore; `activeBillId` never dangling. Delete-confirm only when the bill has lines; empty deletes immediately; disabled at 1 bill. Duplicate deep-copies lines + nested `packQtys`.
 - **Options always open** (no "More options" collapse): Ship-to / Dispatch / Remarks / Notes.
-  - **Dispatch dots** Normal / Urgent / Call (teal / amber / red); clicking Call opens an SO/Dealer picker.
+  - **Dispatch dots** Normal / Urgent / Call (`#9C99AC` ink-400 / `#f59e0b` amber / `#ef4444` red — `app/(place-order)/place-order/components/cart-panel.tsx:438-440`); clicking Call opens an SO/Dealer picker.
   - **Remarks** 2×2 Truck / Cross / Bounce / DTS (re-tap clears, no "None"); Cross opens a depot picker (Dahisar/Ahmedabad/Rajkot/Pune). Pickers render only while their parent option is active.
   - **Notes** free text + Quick-add presets. **Ship-to** autocompletes; omitted from email when "same as billing".
 - **Landing recents grid** (desktop): 2-col, borderless soft-fill rows, neutral gray avatars, medium-weight names, relative recency; shows only when no customer selected AND search empty AND recents non-empty (else the "Type a customer name… N loaded" hint). `area` shown when present, code-only when null.
@@ -1120,7 +1219,7 @@ Full-screen, no sidebar. 480px max column, centred on tablet/desktop.
 
 **Admin photo viewer:** lazy fetch signed URL (5min expiry) from `GET /api/admin/attendance/photo?recordId=N`.
 
-**PWA manifest:** start_url `/` (the real `public/manifest.json` says `/`, NOT `/attendance` — corrected 2026-07-22; the installed app launches at root and the auth/role redirect takes over. `CLAUDE_ATTENDANCE.md §14`). Icons: orbit logo on teal-600 bg, 192/512px PNG + apple-touch-icon.
+**PWA manifest:** start_url `/` (the real `public/manifest.json` says `/`, NOT `/attendance` — corrected 2026-07-22; the installed app launches at root and the auth/role redirect takes over. `CLAUDE_ATTENDANCE.md §14`). `theme_color` `#7C3AED`. Icons: the white outlined wordmark on a five-stop violet radial tile (`#8460EF` → `#7C3AED` → `#4C1D95`, `public/icon-source.svg`, generated by `scripts/generate-wordmark.mjs` — §2.3, §12.1.1), rendered by `scripts/generate-icons.mjs` to `icon-192.png`, `icon-512.png` (also the maskable entry) and the 180px `apple-touch-icon.png` (`3b0490e6`, `67d734e2`).
 
 ---
 
@@ -1152,7 +1251,7 @@ Dirty detection: only changed keys are sent in PATCH body.
 
 Toast variants:
 - 200 + `willForceReconsent: true` → amber "Re-consent triggered"
-- 200 + `rolloutActivated: true` → teal "Rollout activated"
+- 200 + `rolloutActivated: true` → green `ok` "Rollout activated" (`components/admin/attendance/settings-toast.tsx:26-29`)
 - 200 → gray-900 "Settings saved"
 - 400 with errors → red, distribute errors to fields/sections
 - 403/401 → "Session expired — refresh and re-login"
@@ -1192,33 +1291,36 @@ Component: `components/admin/contact-card.tsx`. Renders a single contact (Bill-t
 ### Layout
 
 Three rows:
-1. Avatar (40×40 circular, top-left) · name (13.5px semibold) · role chip · "Primary" toggle (right)
-2. Phone (11px gray-500, mono) · Email (if present, 11px gray-500)
-3. Auto/manual badge row (only when `linkedSalesOfficerId` is set)
+1. Avatar (32×32 circular initials, `w-8 h-8`, `contact-card.tsx:90`) · name · phone · remove
+2. Email · contact-role select
+3. Auto badge (auto contacts only) + "Primary" checkbox (`accent-brand-600`)
+
+**Avatar colour** (`contact-card.tsx:76-78`): role-tinted from `SO_ROLE_AVATAR_CLASSES`
+(`components/admin/customer-sheet.tsx:71-73`) when the contact is linked to an SO — PRIMARY
+`bg-brand-100 text-brand-700`, BACKUP `bg-blue-50 text-blue-700`, JUNIOR `bg-amber-50
+text-amber-700` (§10.1); otherwise `bg-gray-100 text-gray-700`.
 
 ### Auto-managed contact
 
 When `contact.linkedSalesOfficerId` is non-null:
-- Avatar background: teal-50, ring `teal-200`, icon teal-600
-- Badge: `bg-teal-50 text-teal-700 border-teal-200`, label `Auto · {Role} SO` where Role is the SO's role on this customer (Primary / Backup / Junior). e.g. "Auto · Primary SO".
+- Avatar: role-tinted, above
+- Badge: `bg-brand-50 text-brand-700 border-brand-200` pill with a link icon (`contact-card.tsx:175`), label `Auto · {Role} SO` where Role is the SO's role on this customer (Primary / Backup / Junior). e.g. "Auto · Primary SO".
 - Delete (×) button:
   - **Admin Customer Master** form: enabled, opens AutoContactDeleteDialog confirm modal
-  - **Missing Customer Sheet** (TM Kanban resolver — its Support mount retired 2026-07-27): DISABLED with tooltip "Remove via Sales Officers tab" (create-only flow)
+  - **Missing Customer Sheet** (`components/shared/customer-missing-sheet.tsx`, mounted by Tint Manager's customer-missing interceptor — `CLAUDE_TINT.md §1.5`; its Support mount retired 2026-07-27): DISABLED with tooltip "Remove via Sales Officers tab" (create-only flow)
 - Name + phone are NOT editable inline — single source is the SO master record. Refreshed on every save via the SoSync backend stages.
 
 ### Manual contact
 
 When `linkedSalesOfficerId` is null:
-- Avatar background: blue-50, ring `blue-200`, icon blue-600
+- Avatar: `bg-gray-100 text-gray-700` initials
 - No badge in row 3
 - Delete (×) button always enabled
 - Name + phone editable inline
 
-### Newly-converted (transient state — operator-typed contact that just got linked)
-
-When a manual contact's phone matches a newly-added SO during reconcile (case-insensitive exact name + same phone):
-- Avatar background: amber-50, ring `amber-200`, icon amber-600
-- Badge: `bg-amber-50 text-amber-700 border-amber-200`, label `Auto · Linked` (transient, persists for that save cycle then becomes teal on next reload)
+There is no separate "newly-converted" look: `contact-card.tsx` renders only the two states
+above (no `Auto · Linked` label and no amber avatar in the file). A contact linked during
+reconcile renders as auto-managed.
 
 ### Modal — AutoContactDeleteDialog
 
@@ -1238,12 +1340,11 @@ When a manual contact's phone matches a newly-added SO during reconcile (case-in
 ### Row anatomy (per assigned SO)
 
 ```
-[avatar 32]  {SO Name}                    [Primary | Backup | Junior]  [×]
-             {SO Phone — 11px gray-500}
+[ {SO Name} · {SO Phone}          ]  [Primary | Backup | Junior]  [×]
 ```
 
-- Avatar: teal-50, ring teal-200
-- Role chip: segmented control. Active value highlighted `bg-teal-50 text-teal-700 border-teal-200`; inactive `text-gray-400 border-gray-200`. Tap to cycle PRIMARY → BACKUP → JUNIOR.
+- No avatar on this row: a locked 34px name box (`{name} · {phone}`, phone `text-gray-400 text-[11px]`), then the role pill-group (`sales-officers-list.tsx:103-131`).
+- Role pill-group: three joined 28px buttons. Active value is role-tinted (`ROLE_PILL_ACTIVE`, `:35-39`) — PRIMARY `border-brand-300 bg-brand-50 text-brand-700`, BACKUP `border-blue-300 bg-blue-50 text-blue-700`, JUNIOR `border-amber-300 bg-amber-50 text-amber-700`; inactive `border-gray-200 bg-white text-gray-400` (`:41`). Tap a value to set it.
 - `×` removes the SO (cascades: deletes the matching auto-contact unless `contactDismissed`).
 - Exactly one Primary allowed at a time. Promoting a second SO to PRIMARY demotes the previous Primary to BACKUP (per the §3 reconcile pattern).
 
@@ -1257,15 +1358,17 @@ Search box + result list filtered against `sales_officer_master`. Active SOs onl
 
 ---
 
-## 55. Place Order — /po mobile (going-forward PO)
+## 55. Place Order — /po mobile
 
-Behaviour + architecture: `CLAUDE_PLACE_ORDER.md §25`. Visual specifics:
+Behaviour + architecture: `CLAUDE_PLACE_ORDER.md §25`. `/po` is live and runs alongside `/po2`
+(+ its `/po9` mount); its retirement is planned but not scheduled — `/po2` and that
+relationship are owned by `CLAUDE_PO2.md` (§2, §15). Visual specifics of `/po`:
 
 - **Landing:** one elevated shadowed search field (rounded-16, shadow `0 8px 28px rgba(17,24,39,.09)`, `pt-8`) under the "Purchase Order" banner. No label/heading/recent list on the fresh page. Top gap (2026-07-14) tuned for taller phones (S20 Ultra, iPhone 12 Pro) to breathe under the header; on the shortest phones (Galaxy S8+, 740px) the 8th Favourites card needs a small scroll — accepted tradeoff, not a bug. Favourites cards themselves are unchanged.
-- **Merged customer header:** once selected, the customer **name becomes the page title** (~16px), `code · area` below, single "New order" button (refresh icon + text, teal) top-right. The "Purchase Order" banner + gray customer block + "Change" button are gone (New order = full reset).
+- **Merged customer header:** once selected, the customer **name becomes the page title** (~16px), `code · area` below, single "New order" button (refresh icon + text, `text-brand-700` — a TEXT ACTION, §59.9; `po-page.tsx:2342`) top-right. The "Purchase Order" banner + gray customer block + "Change" button are gone (New order = full reset).
 - **Bill + Multi:** one row — left `Bill {n}` + "+ Add bill" (collapses to "+" at 2+ bills); right "Multi" + switch.
-- **Floating CTA pill** (`footerPill`): teal, rounded-full, padding ~`15px 34px`, white 15px bold, shadow `0 8px 22px rgba(13,148,136,.42)`, safe-area inset `max(env(safe-area-inset-bottom),16px)`. Renders "Review order" / "Send order" / "Set quantities (N)" / "Add N products" by state. **All floating footers gate on `keyboardOpen`** (real keyboard), never `inputFocused`.
-- **Selected bill chip:** teal pill = label + 19px `bg-teal-600` circle with white ×. Inactive chips plain (no ×). × only renders at 2+ bills (last bill never shows one).
+- **Floating CTA pill** (`footerPill`): `bg-brand-600 active:bg-brand-700`, rounded-full, padding ~`15px 34px`, white 15px bold, shadow `0 8px 22px rgba(124,58,237,0.42)` (`po-page.tsx:2098-2102`); disabled `bg-gray-200 text-gray-400`, no shadow; safe-area inset `max(env(safe-area-inset-bottom),16px)`. Renders "Review order" / "Send order" / "Set quantities (N)" / "Add N products" by state. **All floating footers gate on `keyboardOpen`** (real keyboard), never `inputFocused`.
+- **Selected bill chip:** a SELECTION pill (§59.9) — `bg-ink-25 border border-data-slate text-ink-900 font-semibold` + a 19px outline `×` in `text-ink-500`, no fill (`po-page.tsx:3109`, `:3118`). Inactive chips plain `text-gray-500` (no ×). × only renders at 2+ bills (last bill never shows one).
 - **Bottom sheets** (Cross depot, Delete-bill confirm, Call SO/Dealer) share one pattern: `fixed inset-0 flex items-end`, `bg-black/40` backdrop, `max-w-[480px] bg-white rounded-t-[18px] p-5`, safe-area `paddingBottom`. The **Call sheet is a 1:1 clone of the Cross-depot sheet** (SO / Dealer buttons + × close).
 - **Delete-bill confirm:** title "Delete Bill {n}?", body "{count} product(s)…", `[Cancel]` (`bg-gray-100 text-gray-700`) + `[Delete]` (`bg-red-600 text-white`). Empty bill → instant delete, no sheet.
 - **Duplicate control:** quiet grey button in the review per-bill card header beside Edit (`<Copy 15px> Duplicate`, `text-[14px] text-gray-500`).
@@ -1289,11 +1392,20 @@ visualViewport mount-effect; the consumer is `<main>`'s `style={{ height: "var(-
 (the single `flex-1 min-h-0` scroll area, the `keyboardOpen` gate, the resize+scroll
 double listener) are in `CLAUDE_PLACE_ORDER.md §25` — not restated here.
 
+**`useKeyboardOpen()` — the `keyboardOpen` gate as a shared hook** (`lib/hooks/use-keyboard-open.ts`).
+The same mechanism extracted: the tallest `visualViewport` height seen is "no keyboard", a drop
+of more than 120px counts as open, debounced ~100ms, listening to both `resize` and `scroll`;
+returns false without `visualViewport` and during SSR. It reads height only and never writes
+`--vvh`. Consumers: `components/mrn/line-sheet.tsx`, `app/po2/product-drawer.tsx`,
+`app/po2/v2-sheet.tsx`. `/po` keeps its own inline copy, fused with its `--vvh` writer
+(`po-page.tsx` `keyboardOpen` state). **A new mobile footer imports the hook — never a
+third derivation.**
+
 **`app/layout.tsx` viewport export — app-wide, not per-page:**
 
 ```ts
 export const viewport: Viewport = {
-  themeColor: "#0d9488",
+  themeColor: "#7C3AED",
   viewportFit: "cover",
   width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false,
   interactiveWidget: "resizes-content",
@@ -1332,14 +1444,15 @@ zero-match query shows an italic `"No products match {query}"` row rather than n
 - **Cap 8.** A 9th add is BLOCKED, not silently evicted — calm amber "Favourites full (8 of 8) —
   remove one first" message near the header, auto-dismiss.
 - Favourites card: neutral grey **rounded-square initials avatar** (not a circle — businesses, not
-  people; not teal), name + `code · area`, chevron. Customer name `15px / 500 / #1d2939`.
+  people; not brand), name + `code · area`, chevron. Customer name `15px / 500 / #1d2939`.
 - Empty state: soft icon + "No favourites yet" + prompt.
 
 ### Visual polish pass — palette discipline [LIVE, 2026-07-14]
 
 Overall direction: soft and light (Things / Apple Notes feel), not bold or hard.
-- **Teal = actions only** — primary buttons, active tab, the favourite star. NOT used for
-  avatars/chips/decoration (was diluting the brand colour).
+- **Brand = actions only** — the commit pill, text actions (`brand-700`), the active tab. NOT
+  used for avatars/chips/decoration (was diluting the brand colour). The favourite star is
+  amber, not brand. The full mobile budget is §59.9.
 - Primary text `#1d2939` (softened from pure black `#111827`). Greys `#667085` / `#98a2b3` /
   `#d0d5dd` for everything secondary.
 - Cards: soft two-layer low-opacity shadow, no hard border, radius 14, roomier padding, subtle
@@ -1347,7 +1460,7 @@ Overall direction: soft and light (Things / Apple Notes feel), not bold or hard.
 
 ### Review & send — back affordance [LIVE, 2026-07-14]
 
-Soft-grey rounded back arrow + "Review & send" label (left) · "Back to products" teal hint (right)
+Soft-grey rounded back arrow + "Review & send" label (left) · "Back to products" `text-brand-700` hint (right; `po-page.tsx:2802`)
 on the Review section row. Pure restyle of the existing back control — funnels through the same
 `history.back()` → popstate → close-review flow as before (§25-safe, no new nav path).
 
@@ -1361,12 +1474,12 @@ query params) now show the full set automatically without a reinstall.
 
 ## 56. Reports hub + print (`/reports`)
 
-**Reports hub (Option C):** left rail (TINT group → Tint Summary + TI Report) · large live preview · top bar (date control + **Generate PDF** teal CTA) + Customise right-drawer. Generate opens `/reports/tint-summary?…&print=1` (auto-print); print route honours `hide` + filters so the PDF matches the preview. **Customise drawer:** 10 section IosToggles (teal ON), operator chips, Show Hold toggle, SMU chips, Area chips (dot colours), 7/14/30 trend; Done button = `bg-gray-900` (modal CTA rule). URL params (only non-defaults written): `r, date, hide(csv), operators, includeHold, smu, area, trendDays`.
+**Reports hub (Option C):** left rail (TINT group → Tint Summary + TI Report) · large live preview · top bar (date control + **Generate PDF**, an `ink-900` utility button — `components/reports/reports-top-bar.tsx:49`) + Customise right-drawer. Generate opens `/reports/tint-summary?…&print=1` (auto-print); print route honours `hide` + filters so the PDF matches the preview. **Customise drawer:** 10 section toggles (`bg-brand-600` ON, `customise-drawer.tsx:24`), operator chips, Show Hold toggle, SMU chips, Area chips (dot colours), 7/14/30 trend; Done button = `bg-gray-900` (modal CTA rule). URL params (only non-defaults written): `r, date, hide(csv), operators, includeHold, smu, area, trendDays`.
 
 **Print document (`tint-summary-document.tsx`):** 4-page A4 portrait, today-only, litres. Inter via `next/font`.
-- **Brand blue `#1c3f93` accent — the one-teal rule does NOT apply to this print document** (a per-document exemption, like Sampling Library §22).
+- **Brand blue `#1c3f93` accent — the one-brand-element rule does NOT apply to this print document** (a per-document exemption, like Sampling Library §22).
 - **Progress-bar boards** (SMU / Area): grey track `#d1d5db` (width = litres/maxLitres), green fill `#16a34a` (width = completedCount/count), category dot, "N done" green `#15803d` (grey if 0). Count = full workload (open + completed).
-- **Category dot colours** — Area: Local `#2563eb`, Upcountry `#ea580c`, IGT `#0d9488`, Cross `#e11d48`. SMU: Decorative Projects `#4f46e5`, Retail Offtake `#0891b2`, other → slate `#64748b`.
+- **Category dot colours** — Area: Local `#2563eb`, Upcountry `#ea580c`, IGT `#0d9488` (`data.teal`, the IGT identity — `report-params.ts:35`), Cross `#e11d48`. SMU: Decorative Projects `#4f46e5`, Retail Offtake `#0891b2`, other → slate `#64748b` (`tint-summary-document.tsx:331-336`). ⚠ The `data.pink` comment in `tailwind.config.ts` says Decorative Projects "moves off #4F46E5"; this document has not moved — the comment is ahead of the code.
 - **Print CSS:** `@page tint-report` (A4) rules **top-level in `globals.css`** (never nested in `@media print`); `visibility:hidden` isolation via `#tint-report-print-area`; `print-color-adjust: exact` so colours survive the PDF.
 
 ---
@@ -1377,9 +1490,9 @@ New admin area under a **Settings** section in `components/admin/admin-sidebar.t
 
 - **Rules** — list + "Add Rule" modal (HOLD, or older-than-N-days); toggle / edit / delete.
 - **Hidden Orders** — every hidden order with *why*; manual hides get an **Un-hide** button; rule-hidden rows show **"Managed by rule"** (no per-order un-hide in v1).
-- **Tags** — grouped on/off switches for Mail Order badges (app-wide); important tags (Hold / OD / CI) open a confirm before turning off.
+- **Tags** — one row per tag, each with a **"Who sees it"** select (`abd495f4`, 2026-09-11). Four modes (`type TagMode`, `hide-settings-content.tsx:113`; labels `:115-120`): **Everyone** · **Nobody** · **Everyone except…** · **Only…**. The two exception modes carry **chips** under the select — each tagged ROLE or PERSON, `bg-brand-50 text-brand-800 border-brand-200` with an × — added through a `+ Exception` button that opens an audience picker of roles and people. A plain sentence under the row restates the choice ("Everyone sees it, except …", `audienceSentence`, `:174`). Important tags carry an amber `Important` chip and ask `window.confirm` whenever the choice hides the badge from anyone (`hidesFromSomeone`, `:190`; confirm at `:250-252`); dropping back to Everyone/Nobody with exceptions set asks too (`:376`). The picker's people and roles come from **`GET /api/admin/tag-audience`** (`:216`). What a tag suppresses, how the three audience rows resolve, and the write route → `CLAUDE_MAIL_ORDERS.md §21` (schema: `CLAUDE_CORE.md §7.10`).
 
-**Manual hide:** admin-only "Hide OBD…" action on Tint Manager rows (card + table) via `HideObdModal.tsx` → reason required; order drops off all boards, appears in Hidden Orders. Default state (no rules, nothing hidden, all tags on) = app looks exactly as before. Backend/schema: later batch (CORE / MAIL_ORDERS).
+**Manual hide:** admin-only (`canHideObd`, `tint-manager-content.tsx:101-104`). A **"Hide an OBD…"** select in the Tint Manager rail's "Pending bill actions" strip, below the list (`tint-manager-content.tsx:1025-1047`), opens `HideObdModal.tsx` → reason required; the order drops off all boards and appears in Hidden Orders. There is no row menu — the flat table has none. The routes are live: `app/api/admin/hide/rules`, `rules/[id]`, `hidden-orders`, `orders/[id]/hide`, `orders/[id]/unhide`. Default state (no rules, nothing hidden, every tag Everyone) = app looks exactly as before.
 
 ---
 
@@ -1401,8 +1514,11 @@ The mobile shell is **three separable pieces**, not one welded block (rebuilt 20
 
 `components/shared/mobile-shell-context.tsx`. Owns the **Menu sheet, You sheet, sign-out confirm, and scrim**, plus their state (`sheet` / `confirmOpen` / `filter`). Mounted **once**, in `role-layout-client.tsx`, wrapping the whole role-shelled subtree.
 
-- **Menu sheet** — `z-[60]`, `rounded-t-[22px]`, slides via `translate-y-full`→`translate-y-0`. Lists every page the user can view + a "Find a page…" filter (`text-[16px]`, iOS zoom guard). Active row `bg-teal-50 text-teal-700 border-l-teal-600`. Reuses the **exact same** `ICON_MAP` / `DEFAULT_ICON` (keyed by `pageKey`, exported from `role-sidebar.tsx`) as the desktop sidebar (§7) — icons always match between the two.
-- **You sheet** — same `z-[60]` shape: teal avatar (initials) + userName + role label + red Sign out row → confirm dialog (`z-[70]`) → `signOut({ callbackUrl: "/login" })`.
+- **Menu sheet** — `z-[60]`, `rounded-t-[22px]`, slides via `translate-y-full`→`translate-y-0`. Lists every page the user can view + a "Find a page…" filter (`text-[16px]`, iOS zoom guard). Active row `bg-ink-25 text-ink-900 font-semibold border-l-brand-600`, icon `text-ink-900` — the brand-600 left bar is the only violet (NAV bucket, §59.9; `mobile-shell-context.tsx:157-161`). Reuses the **exact same** `ICON_MAP` / `DEFAULT_ICON` (keyed by `pageKey`, exported from `role-sidebar.tsx`) as the desktop sidebar (§7) — icons always match between the two.
+- **You sheet** — same `z-[60]` shape, top to bottom:
+  - identity row: 46px avatar `border-ink-100 bg-ink-50 text-ink-600` (an identity avatar, §10.1; `mobile-shell-context.tsx:185`) + userName (16px bold) + role label (`formatRoleLabel`);
+  - **Notifications** — `<PushToggle />` (`:196`), the per-device push switch (46×26, `bg-brand-600` when on — `components/push/push-toggle.tsx:156`). Behaviour → `CLAUDE_NOTIFICATIONS.md §3`. ⚠ Open question, not a ruling: §59.9 buckets switches as SELECTION (`data.slate`); this one is still brand;
+  - **Sign out** — `text-ink-500 hover:text-ink-700` with a `LogOut` icon (`:200`). **Not red**: it is not destructive, and the confirm dialog (`z-[70]`) → `signOut({ callbackUrl: "/login" })` is where the decision is made.
 - **Scrim** — `z-50`, closes whatever is open. One sheet open at a time.
 
 **The point of the lift:** `useMobileShell()` exposes `openMenu()` / `openYou()` / `closeAll()` **to any descendant**, so a module's own header can open the same sheet instances without re-mounting a second copy of the markup. The context also carries read-only `role` / `userName` / `userInitials` so a module-native header can render the signed-in avatar with no new prop-drilling.
@@ -1417,7 +1533,7 @@ The mobile shell is **three separable pieces**, not one welded block (rebuilt 20
 | 2 | **Module tabs** | `workflowTabs` supplied AND non-empty | that module's `<WorkflowTabBar>` |
 | 3 | **Default** | neither of the above | the standard **Home · Menu · You** `<nav>` |
 
-Branch 3 is unchanged from the original shell: **Home** → `navItems[0]?.href ?? "/"` (active-teal when `pathname === that href`), **Menu** → `openMenu()`, **You** → `openYou()`.
+Branch 3 is unchanged from the original shell: **Home** → `navItems[0]?.href ?? "/"` (active when `pathname === that href`: `text-ink-900` label + a 3px `bg-brand-600` underline, inactive `text-gray-400` — `mobile-shell.tsx:88`, `:99`), **Menu** → `openMenu()`, **You** → `openYou()`.
 
 **Threading:** all four props (`workflowTabs`, `activeTabKey`, `onTabChange`, `hideBar`) are optional pass-throughs on `<RoleLayoutClient>` — the same shape `navItems` already uses. Undefined on every call site that hasn't opted in, so **every existing page is pixel-identical by construction**.
 
@@ -1427,7 +1543,7 @@ Branch 3 is unchanged from the original shell: **Home** → `navItems[0]?.href ?
 
 `components/shared/workflow-tab-bar.tsx`. Generic and module-agnostic: `tabs: {key, label, count?, icon}[]` + `activeKey` + `onChange`.
 
-- Icon-on-top layout, count badge top-right of the icon, teal underline pill on the active tab.
+- Icon-on-top layout, count badge top-right of the icon, `bg-brand-600` underline pill (`h-[3px] w-8`) on the active tab (`workflow-tab-bar.tsx:77`).
 - **Count badge hides at 0** — a "0" badge is noise, not information. `>99` renders `99+`.
 - **No badge is violet (§59.9, 2026-09-17):** active tab = `ink-900` icon, label and badge + the `brand-600` underline; inactive badge `ink-500`. (Was: the active badge brand, label brand-700.)
 
@@ -1441,7 +1557,7 @@ Every future module (**Tint Operator, Trip Report** — this list named Support 
 2. For a Direction-A header, call `openMenu()` / `openYou()` from `useMobileShell()` on the header's grid icon / avatar.
 3. Pass `hideBar` when a full-screen sub-view (e.g. a detail screen) should own the whole viewport.
 
-**Picking is the first consumer** — `components/picking/picking-mobile-shell.tsx`. Its `SupervisorPickingShell` is the reference implementation and the pattern to copy: tab state and the queue fetch that drives the live counts are **owned one level above the board** (they must reach `RoleLayoutClient`, which renders above the board in the tree), and are handed back down to the page via the module's own context. One fetch, so the cards and the tab counts can never drift. Picking's screen-level detail is `CLAUDE_PICKING.md §5` — not repeated here.
+**Three consumers pass `workflowTabs` today** (grep of `workflowTabs=`, 2026-09-19): Picking (`components/picking/picking-mobile-shell.tsx`), CI (`components/ci/ci-shell.tsx`) and MRN (`components/mrn/mrn-shell.tsx`). **Picking was the first** — its `SupervisorPickingShell` is the reference implementation and the pattern to copy: tab state and the queue fetch that drives the live counts are **owned one level above the board** (they must reach `RoleLayoutClient`, which renders above the board in the tree), and are handed back down to the page via the module's own context. One fetch, so the cards and the tab counts can never drift. Picking's screen-level detail is `CLAUDE_PICKING.md §5` — not repeated here.
 
 **⚠️ Label and key — CORRECTED 2026-07-30.** This warning used to read *"Picking's third tab reads **"Done"** but its key stays `"checked"`."* **That is false.** The live union is `"assign" | "picking" | "done"` (`components/picking/picking-mobile-shell.tsx`) — label == key on all three.
 
@@ -1462,7 +1578,7 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 
 ### 59.6 Mounting, clearance, and mechanics
 
-**One global insertion point:** `components/shared/role-layout-client.tsx` mounts `<MobileShellProvider>` around `<RoleSidebar>` + `<MobileShell>` + the page content. Every page that wraps itself in it inherits the shell with no per-page work — live on `/trips`, `/place-order`, `/picking`. **✅ Verified 2026-07-30** by reading the three call sites: `app/trips/page.tsx` and `app/(place-order)/layout.tsx` render `RoleLayoutClient` and pass **no** `workflowTabs`, so both take the default Home/Menu/You bar (branch 3); `/picking` supplies its own tabs through `picking-mobile-shell.tsx` (branch 2). Inheriting the shell and replacing the bar are different things — this list means the former.
+**One global insertion point:** `components/shared/role-layout-client.tsx` mounts `<MobileShellProvider>` around `<RoleSidebar>` + `<MobileShell>` + the page content. Every page that wraps itself in it inherits the shell with no per-page work. **Mounted by 12 app files** (import sweep 2026-09-19): `app/(floor)/floor/layout.tsx`, `app/(import)/import/layout.tsx`, `app/(mail-orders)/mail-orders/layout.tsx`, `app/(operations)/operations/layout.tsx`, `app/(ops)/layout.tsx`, `app/(place-order)/layout.tsx`, the three `app/(tint)/tint/{manager,operator,sampling-library}/layout.tsx`, `app/ci/page.tsx`, `app/mrn/page.tsx`, `app/trips/page.tsx` — plus `/picking` through `components/picking/picking-mobile-shell.tsx`. Those that pass no `workflowTabs` take the default Home/Menu/You bar (branch 3); Picking, CI and MRN supply their own tabs (branch 2, §59.4). Inheriting the shell and replacing the bar are different things — this list means the former.
 
 - The page content wrapper carries `pb-[76px] md:pb-0` so mobile content clears the fixed bar; no effect on desktop.
 - **Pages that don't route through `role-layout-client.tsx` don't inherit the shell.** Attendance has its own full-screen wrapper with no sidebar (`app/attendance/layout.tsx`, `CLAUDE_ATTENDANCE.md §13`) and is unaffected.
@@ -1482,7 +1598,7 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 **[DEFERRED]**
 - **~~Shared minimal header — extraction~~ — DONE 2026-07-29, see §59.7.** Realized as Picking's Direction-A header, then extracted verbatim to `components/shared/module-mobile-header.tsx` (`a2fb6889`) when the picker face needed the same one. **The other half of this item survives and is still true:** every page outside Picking keeps its own header, which is why `/trips` still looks right and was never disturbed. Adopting the shared one elsewhere is opt-in, module by module — candidates in §59.7. The "big search" half was never built and is not part of §59.7.
 - Shell rollout/polish across the other role pages.
-- PWA install (add-to-home-screen). Manifest + icons + root-layout metadata already exist (`public/manifest.json`, `app/layout.tsx` metadata + `appleWebApp` + viewport); **no service worker exists** (never built). Do NOT reintroduce a middleware-level redirect toward `/attendance` (the retired attendance auto-check-in gate — see `CLAUDE_TRIP_REPORT.md §7`) when building this.
+- PWA install (add-to-home-screen). Manifest + icons + root-layout metadata already exist (`public/manifest.json`, `app/layout.tsx` metadata + `appleWebApp` + viewport). **A service worker exists and is live:** `public/sw.js` (push + notificationclick only — no fetch handler, no cache), registered by `components/push/push-toggle.tsx:67` (`7f041c95`, 2026-07-22) → `CLAUDE_NOTIFICATIONS.md §5`. An install prompt is what is not built. Do NOT reintroduce a middleware-level redirect toward `/attendance` (the retired attendance auto-check-in gate — see `CLAUDE_TRIP_REPORT.md §7`) when building this.
 
 ### 59.7 `ModuleMobileHeader` — the shared Direction-A header [LIVE, 2026-07-29]
 
@@ -1493,6 +1609,7 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 | Prop | | Notes |
 |---|---|---|
 | `title` | `string` | The 19px extrabold centre label |
+| `subtitle?` | `string` | Additive, default-off (`module-mobile-header.tsx:53`, `1ad903ef`). Undefined → the bare `<h1>` exactly as before; set → title + an `ink-500` 11.5px truncated line beneath (`:101-106`). Its one caller is the picker's My Picks header, for the Combined tab (`picker-my-picks-board.tsx:1259`) |
 | `avatarInitials` | `string` | Rendered in the left circle |
 | `onAvatarClick` | `() => void` | Required |
 | `onMenuClick` | `() => void` | Required — the grid icon |
@@ -1692,7 +1809,7 @@ for it here:
 | Locked / Upcoming visual treatment | **§62.2** |
 | Route as plain text, no route dot, and why (`RouteDot` keys on `deliveryType`) | **§62.3** |
 | The rejected-feature list + its reason | **§62.4** |
-| "Status pill is never teal" | **§1** |
+| "Status pill is never brand" | **§1** |
 
 What collapsed with the section was genuinely desktop-only: the 8-column
 `4/3/19/27/14/7/9/17%` table layout, the four status-pill hex values, the List ⇄ By Route toggle
@@ -1707,9 +1824,9 @@ Behaviour, tab semantics and date-zone scope were always `CLAUDE_PICKING.md`'s, 
 
 **Visual treatment only** — the interaction behaviour (what a tap does, variant gating) lives in `CLAUDE_PICKING.md`. Shipped 2026-07-21. Type scale is §60.
 
-- **Selected (Assign card):** `ink-25` tint + `data.slate` border + a small **`data.slate` check badge, top-left corner**, only when selected (§59.9, 2026-09-17 — was teal, then brand). Unselected = clean, no box, no placeholder.
+- **Selected (Assign card):** `ink-25` tint + `data.slate` border + a small **`data.slate` check badge, top-left corner**, only when selected (§59.9, 2026-09-17; `picking-board-mobile.tsx:677`, `:692`). Unselected = clean, no box, no placeholder.
 - **Arrow-to-detail:** a **soft round arrow** to the right of the family chips — `~30px` circle, `bg #eceff3`, chevron `#8b93a0`. Pinned; families scroll to its left; **always rendered on Assign cards even with zero families** (detail is always reachable).
-- **One-teal on the card:** the only teal is the selected tint/check; the arrow and family chips are slate. (Locked/Upcoming + the `1d`/`{n}d` age treatment are stated directly in §62.1-§62.2 below — they used to be a pointer at §61.)
+- **No brand on the card:** selection is `data.slate` (above); the arrow and family chips are slate. (Locked/Upcoming + the `1d`/`{n}d` age treatment are stated directly in §62.1-§62.2 below — they used to be a pointer at §61.)
 
 ### 62.1 Age tags — `1d` / `{n}d` [module-wide]
 
@@ -1737,7 +1854,8 @@ the `assignLocked` card variant and its `UpcomingDayBadge`, both in
 
 Rows muted, **lock glyph instead of checkbox**, `—` for `#`, and a `for {Day} {DD} {Mon} · {time}`
 chip in the Status cell. ⚠ The **time** half of that chip is a desktop detail — the mobile
-`UpcomingDayBadge` and Floor's Upcoming strip both render the day only.
+`UpcomingDayBadge` renders the day only. (Floor's Upcoming strip was deleted in `f41b52c9`;
+Floor's future-dated rows now sit below an upcoming divider inside its table — `CLAUDE_FLOOR.md §2`.)
 
 ### 62.3 Route renders as plain text — no route dot
 
@@ -1757,9 +1875,10 @@ header status-count stats. **Reason:** loading depends on vehicle/space, which t
 know.
 
 ⚠ **Scoped to PICKING deliberately — Floor is NOT bound by it, and on one item Floor went the other
-way.** Floor Control ships a four-segment per-route/per-band progress roll-up
-(`components/floor/progress-bar.tsx`, used by `route-row.tsx` and `slot-band.tsx`) and sorts routes
-worst-first by completion (`components/floor/floor-board.tsx:201-208`). Only the last item —
+way.** Floor Control ships a four-segment per-route progress roll-up
+(`components/floor/progress-bar.tsx`, used by `route-row.tsx`, whose `RouteRow` is rendered by
+`components/floor/trip-desk.tsx:36`) and sorts routes worst-first by completion (`ByRoute`,
+`trip-desk.tsx:881-923`). Only the last item —
 header status-count stats — matches Floor's own removal of the stats line (`CLAUDE_FLOOR.md §8`).
 Do not read this list as an app-wide ban.
 
@@ -1782,30 +1901,36 @@ Superuser-only. **The screen that decides what everybody can do** since 2026-09-
 
 - Search box at the top (name / email / job title), then every user, active first then by name.
 - Each row: 26px circular avatar with initials, name at 12.5px semibold, job title at 10px `text-gray-400` beneath, `· +N` when they hold secondary roles, `· inactive` when they do not.
-- Selected row: `bg-teal-50`, `border-l-2 border-teal-600`, teal avatar, teal name.
+- Selected row: `border-l-2 border-brand-600 bg-brand-50`, avatar `bg-brand-600 text-white`, name `text-brand-700` (`components/admin/access-manager.tsx:292`, `:300`, `:309`). This filled avatar marks the SELECTED row, not a person's identity, so §10.1's pale-avatar rule does not govern it.
 - **Inactive people are shown, muted to `opacity-55`** — never hidden. A deactivated person keeps their ticks so reactivating restores what they had, and a row you cannot see is a permission nobody can audit.
 - **The amber dot** (`h-1.5 w-1.5 rounded-full bg-amber-500`, right-aligned) marks a person whose stored ticks differ from what their job title would grant. Above the list, a one-line count: *"N people differ from their role access"*.
 
 ### Right pane — the selected person
 
-Header block: name at 16px bold, an `Inactive` chip when relevant, then a meta row — **Role**, **lands on `<route>` at login** (from `ROLE_REDIRECTS`, keyed on the PRIMARY role), and **N pages set differently from their role**. Beneath it one banner, teal when the person matches their role exactly and amber when they do not, naming every differing page.
+Header block: name at 16px bold, an `Inactive` chip when relevant, then a meta row — **Role**, **lands on `<route>` at login** (from `ROLE_REDIRECTS`, keyed on the PRIMARY role), and **N pages set differently from their role**. Beneath it one banner — `border-brand-100 bg-brand-50 text-brand-700` when the person matches their role exactly (`access-manager.tsx:393`), `border-amber-200 bg-amber-50 text-amber-800` when they do not, naming every differing page (`:380`).
 
 ### The table — `§27` fixed standard
 
 ```
 colgroup: 40% | 12% | 12% | 12% | 12% | 12%
 columns:  Page | View | Edit | Import | Export | Delete
-rows:     all 27 ALL_PAGE_KEYS, in five sections
-          Operations · Tinting · Master data · Admin panel · Attendance
+rows:     all 39 ALL_PAGE_KEYS, in five sections (ACCESS_SECTIONS)
+          Operations (15) · Tinting (13) · Master data (4) · Admin panel (5) · Attendance (2)
 ```
+
+Source: `ACCESS_SECTIONS` in `lib/permissions.ts:558-584` ("The 39 keys grouped for display").
+Every key in `ALL_PAGE_KEYS` appears exactly once, and the access page asserts it, so a key added
+to one list and not the other is caught rather than silently dropped. What each key gates →
+`CLAUDE_CORE.md §5`; the Billing family (`billing_picking`, `billing_print`, the four action
+ticks) → `CLAUDE_BILLING.md §4`.
 
 Header row 32px, data rows 36px, section rows 28px on `bg-[#fbfbfc]`. The Page cell is two lines: friendly label at 12.5px semibold over the raw page key in 10px mono `text-gray-400` — the key is always shown, so no label choice can mislead.
 
-A checkbox is a 17px `rounded-[5px]` box, teal filled when on, `border-gray-300` when off, with an amber ring when the value differs from the role baseline and a stronger amber ring while the change is unsaved. Rows with unsaved changes tint `bg-amber-50/60`.
+A checkbox is a 17px `rounded-[5px]` box, `border-brand-600 bg-brand-600` when on (`access-manager.tsx:611`), `border-gray-300` when off, with an amber ring when the value differs from the role baseline and a stronger amber ring while the change is unsaved. Rows with unsaved changes tint `bg-amber-50/60`.
 
 ### 🔴 The dash rule
 
-A cell renders as a **dash (`–`, `text-gray-200`) instead of a checkbox where the app has no such check for that page.** Export and Delete are asked on MRN and nowhere else; Import on Import OBDs, Sampling Library and the four master-data CSV buttons; Edit on eleven pages; View everywhere.
+A cell renders as a **dash (`–`, `text-gray-200`) instead of a checkbox where the app has no such check for that page.** Delete is asked on MRN and nowhere else; Export on MRN and `reports_ti_report` (the TI Report Download Excel button) — 2 keys; Import on Import OBDs, Sampling Library and the four master-data CSV buttons — 6 keys; Edit on **18** keys (`mrn`, `picking`, `tint_manager`, `tint_operator`, `mail_orders`, `floor`, `sampling_library`, `routes_areas`, `customers`, `skus`, `vehicles`, `billing_picking`, `billing_print`, `billing_hold`, `billing_slot`, `billing_urgent`, `billing_ship_to`, `place_order_ship_to`); View everywhere. Counted from `ACTION_PAGES`, `lib/permissions.ts:406-457`.
 
 Source of truth: **`ACTION_PAGES` in `lib/permissions.ts`**, exposed as `isActionAvailable(pageKey, action)`. Its header cites the call-site census it was derived from and instructs any session adding or removing a permission check to update it.
 
@@ -1817,19 +1942,86 @@ Why it exists at all: without it an admin can switch on flags that gate nothing,
 
 Directly under the page title, and **it must never be softened into one hedged sentence** — being wrong in either direction is dangerous:
 
-- **Live** (`ACCESS_SOURCE = user`): teal, `ShieldCheck`, chip *"Live — per-person ticks"* — *"The app is reading the ticks on this screen."*
+- **Live** (`ACCESS_SOURCE = user`): green `ok` — `border-ok/30 bg-ok-bg text-ok-text`, chip `bg-ok` (`access-manager.tsx:210`, `:222`) — **not brand**, `ShieldCheck`, chip *"Live — per-person ticks"* — *"The app is reading the ticks on this screen."*
 - **Not live** (`role`): amber, `ShieldAlert`, chip *"Not live — job titles"* — *"a tick on this screen changes nothing yet"*, plus how to go live.
 
 Both carry the raw value in mono and say a flip lands in ~30 seconds. It is driven by the **same cached value the resolvers read** (`lib/access/source.ts`), never a second query with its own opinion.
 
 ### Save bar
 
-Sticky at the pane foot, shown only when there are pending changes: *Discard changes* on the left, *N changes* in amber and a teal **Save changes** on the right. **Only the flags that actually moved are sent**; a toggle-and-toggle-back removes its own pending entry and never reaches the API. Switching person with unsaved edits asks first. After a save the server returns the recomputed `stored` and `differs`, and the banner updates from that answer rather than a client estimate.
+Sticky at the pane foot, shown only when there are pending changes: *Discard changes* on the left, *N changes* in amber and a `bg-brand-600 hover:bg-brand-700` **Save changes** on the right (`access-manager.tsx:485`). **Only the flags that actually moved are sent**; a toggle-and-toggle-back removes its own pending entry and never reaches the API. Switching person with unsaved edits asks first. After a save the server returns the recomputed `stored` and `differs`, and the banner updates from that answer rather than a client estimate.
 
 ### Legend
 On · Off · *"The app has no such action on that page — nothing to switch"* · *"Set differently from their role"*.
 
 ---
+
+## 64. Admin shell — `AdminSidebar` (rebuilt 2026-09-06)
+
+`components/admin/admin-sidebar.tsx`, mounted through `components/admin/admin-layout-client.tsx`
+by `app/(admin)/admin/layout.tsx:44` and by the admin path of `app/(ops)/layout.tsx:62`. The
+role pages' sidebar is §7; this is the admin frame's own. Commits: `0fc145bb` (20 items in 5
+groups), `8d7a3bef` (app switcher), `44125138` (visibility asks `isSuperuser`, not the job title),
+`95b24352` (no content offset below md).
+
+**Menu — `NAV_SECTIONS`, 20 items in five groups** (`admin-sidebar.tsx:70-129`):
+
+| Group | Items |
+|---|---|
+| Overview | Dashboard |
+| People & Access | Users · Access · **Job Titles** · Attendance |
+| Customers | Customers · Sales Officers · SO Groups · Contact Roles |
+| Depot Master | Routes · Areas · Sub-areas · Delivery Types · Slot Master · Slot Rules · Transporters · Vehicles |
+| Settings | System Config · Hide · Removed Orders |
+
+- **"Job Titles"** is the old "Roles" item, same href `/admin/roles`. 🔴 The `ICONS` map is
+  keyed on the LABEL, so relabelling an item orphans its icon unless the key is renamed in the
+  same edit (the file's own warning above `ICONS`).
+- **Nothing was deleted to get from 28 to 20.** Eight items left the array only — Permissions,
+  SKUs, Product Categories, Product Names, Base Colours, Import Orders, Tint Manager, Shade
+  Master — and every page is still live by URL (`admin-sidebar.tsx:38-68`). `/admin/permissions`
+  is the `ACCESS_SOURCE='role'` rollback editor: do not "finish the job" by removing it.
+- **Visibility:** an item with a `pageKey` shows to a superuser or to anyone with that key's
+  `canView`; a keyless item shows to a superuser only (`visibleItems`, `:289-296`, `44125138`).
+- **My Attendance** is a footer link below the user block, not a menu item (`FOOTER_LINK`).
+- **Active item:** `bg-brand-50 text-brand-700 font-semibold border-l-2 border-brand-600`, the
+  same as §7.
+
+**Chrome.** 240px expanded / 72px collapsed, 3px `#7C3AED` left accent (`:571-572`). The
+brand block is `<OrbitWordmark height={collapsed ? 14 : 19} />` in `text-brand-800 hover:text-brand-600`,
+and it IS the collapse toggle (`:525-532`); nothing sits beside it. The user-block avatar is
+the §10.1 identity avatar (`bg-ink-50 text-ink-600 border-ink-100`). Below md: a 52px top bar
+with a menu button and an 11px white wordmark on a 28px `bg-brand-600` tile (`:592-593`), and a
+drawer that renders the menu, the footer link and the switcher.
+
+**App switcher — "Open Orbit".** A button at the foot of the rail (a `Grid3x3` icon in
+`text-brand-600`) opening an upward menu of **nine** destinations, in fixed order: Floor ·
+Picking · Tint Manager · Billing · Import OBDs · Reports · MRN · CI · Trip Report
+(`APP_SWITCHER_KEYS`, `lib/admin/app-switcher.ts:36-46`). Labels and hrefs are read from
+`PAGE_NAV_MAP`, never hardcoded; the list is curated by key and **deliberately not
+permission-filtered**. Rendered only for a superuser (`appSwitcher`, `admin-sidebar.tsx:450-451`).
+Closes on outside click, Escape, or navigation. ⚠ The comment at `admin-sidebar.tsx:65-66`
+("NO LINK OUT … deliberately not built here") is stale — the switcher is built.
+
+---
+
+## Change log — v5.31 (2026-09-19, canon sweep batch C1)
+
+Evidence: `tailwind.config.ts`, import/grep sweeps over `components/ app/ lib/` at HEAD `b574cecc`, the sweep report `docs/prompts/drafts/code-discovery-2026-09-18-canon-sweep.md` (UI worker section), every changed claim re-read in code. No schema stamp, by design.
+
+- §1, §2 (rewritten as **the Orbit token system** — `brand` / `ink` / `tint` / `ok` / `warn` / `danger` / `fav` / `data.*` from `tailwind.config.ts`; `data.teal` = IGT identity; the config enforces nothing about `gray`), §2.3 **`OrbitWordmark`** (generated, `currentColor`, 11 renders in 10 files; the orbit symbol retired in `de7453bb`).
+- Teal → brand, checked against code, in §3 (IGT dot), §5, §6, §7, §9, §10, §11, §13, §14, §17, §21, §22, §23, §28, §29, §31, §32, §34, §40, §42, §45, §48, §50, §53, §54, §55, §56, §59.1, §59.2, §59.3, §61, §62, §63. Zero `teal-<n>` classes remain in code.
+- §3: the red-Urgent migration list recounted — 10 rendered elements in 8 live files; the config's "Twelve" is stale.
+- §6: roster recounted to 10 (CI and MRN desks added, `review-view.tsx` removed); primary Import is `ink-900`; new "Shared pieces the header mounts" — `ImportProgressPill`, `useCanImportObds`; CI/MRN wiring rows; Floor row loses the slot tabs.
+- §21 `HeaderViewToggle`; §55 `useKeyboardOpen` and the `/po`–`/po2` pointer; §59.7 `subtitle` prop.
+- §28: `InstructionsStrip` tone is `"notes"`, plus `fontSize` / `controlsSlot`; 🔴 `@page mo-landscape` nested in `@media print` recorded as a defect.
+- §8, §10.1, §27, §33, §37, §53: the Tint Manager Kanban and `tint-table-view.tsx` no longer presented as live.
+- §53/§54: ContactCard and the SO list re-described from code (32px role-tinted avatar; no newly-converted state; no avatar on the SO row).
+- §57: Tags is the four-mode "Who sees it" picker (`abd495f4`); manual hide moved to the rail's "Hide an OBD…" select; the hide API exists.
+- §59.1 You sheet (identity avatar, PushToggle row, Sign out not red); §59.4/§59.6 consumer lists recounted; §59.6 the service worker exists.
+- §62.2/§62.4: dead Floor anchors (`floor-board.tsx`, `slot-band.tsx`, the upcoming strip) repointed to `trip-desk.tsx` / `CLAUDE_FLOOR.md §2`.
+- §63: 39 keys in five sections; Edit on 18 keys, Export on 2; the live banner is green `ok`.
+- §64 NEW: the admin shell — 20 items in 5 groups, "Job Titles", the "Open Orbit" app switcher, `OrbitWordmark`.
 
 ## Change log — v5.17 (2026-08-04 reconciliation pass, method v1.1)
 
@@ -1849,4 +2041,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.30 · OrbitOMS · updated 2026-09-17 · No Schema stamp by design (see above) — **§59.9 created: one violet per mobile screen.** A screen's budget is its title (§59.8's named brand element) plus one commit; selection moves to `data.slate` #475569 (now spoken for), status to `ok`, counts to ink, nav to ink-900 + a brand-600 underline, text actions to brand-700. Two named exceptions: a sheet's commit takes over from the screen's, and read-only/list screens have no commit. MRN's green End unloading recorded as a standing question. §59.3 and §62 updated to match. Prior, v5.29 (2026-09-09): **§59.8 extended to DETAIL and sub-screen headers.** The v5.28 pass reached the list screens through `ModuleMobileHeader` and missed every screen carrying a hand-rolled header, so opening a bill from Picking took you from a pale masthead to a filled brand-600 band — one flow, two headers. Seven more headers now take the same ground: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted detail, the MRN detail, and both Trip Report mobile headers. Title `brand-600` at unchanged size and weight, second line `ink-500`, back button white with an `ink-600` chevron and an `ink-100` border, white action chips given the same border. `/trips` gained the status-bar override alongside them. 🔴 Recorded so it is not flattened later: **the duplicate-SO branch keeps its red** — both picking detail headers swap the whole band to `#dc2626` when `hasDuplicateSo` and flip title, subtitle and back button back to white, and the pale ground is the ELSE arm of that condition, never a replacement for the warning. Prior, v5.28 (2026-09-09): §59.8 created — the pale masthead replaces the filled band on `/po` and across `ModuleMobileHeader`'s seven consumers, with the brand.600-over-brand.800 ruling, the white-avatar exception and the status-bar coupling. Prior, v5.27: §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back. Prior, v5.25: the rings removed from the login panel.*
+*UI v5.31 · OrbitOMS · updated 2026-09-19 · No Schema stamp by design (see above) — **canon sweep C1: the file no longer says teal is the brand.** §2 is now the Orbit token system from `tailwind.config.ts` (`data.teal` = IGT only) plus `OrbitWordmark`; ~30 sections re-coloured against code; §57 Tags, §63 Access (39 keys) and the header roster recounted; §64 admin shell added; the nested `@page mo-landscape` recorded as a defect. Full list: the v5.31 change log above. Prior, v5.30 (2026-09-17): **§59.9 created: one violet per mobile screen.** A screen's budget is its title (§59.8's named brand element) plus one commit; selection moves to `data.slate` #475569 (now spoken for), status to `ok`, counts to ink, nav to ink-900 + a brand-600 underline, text actions to brand-700. Two named exceptions: a sheet's commit takes over from the screen's, and read-only/list screens have no commit. MRN's green End unloading recorded as a standing question. §59.3 and §62 updated to match. Prior, v5.29 (2026-09-09): **§59.8 extended to DETAIL and sub-screen headers.** The v5.28 pass reached the list screens through `ModuleMobileHeader` and missed every screen carrying a hand-rolled header, so opening a bill from Picking took you from a pale masthead to a filled brand-600 band — one flow, two headers. Seven more headers now take the same ground: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted detail, the MRN detail, and both Trip Report mobile headers. Title `brand-600` at unchanged size and weight, second line `ink-500`, back button white with an `ink-600` chevron and an `ink-100` border, white action chips given the same border. `/trips` gained the status-bar override alongside them. 🔴 Recorded so it is not flattened later: **the duplicate-SO branch keeps its red** — both picking detail headers swap the whole band to `#dc2626` when `hasDuplicateSo` and flip title, subtitle and back button back to white, and the pale ground is the ELSE arm of that condition, never a replacement for the warning. Prior, v5.28 (2026-09-09): §59.8 created — the pale masthead replaces the filled band on `/po` and across `ModuleMobileHeader`'s seven consumers, with the brand.600-over-brand.800 ruling, the white-avatar exception and the status-bar coupling. Prior, v5.27: §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back. Prior, v5.25: the rings removed from the login panel.*
