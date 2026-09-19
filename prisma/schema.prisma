@@ -519,6 +519,9 @@ model delivery_type_master {
   // unlike the two above, which are named because delivery_point_master carries
   // TWO FKs here and would otherwise be ambiguous (CORE §7.3).
   trips                   trips[]
+  // Route clubs (2026-09-19) — a club belongs to ONE delivery type. One FK from
+  // route_clubs, so unnamed.
+  routeClubs              route_clubs[]
 }
 
 model slot_master {
@@ -591,6 +594,58 @@ model route_master {
   areaRoutes            area_route_map[]
   primaryAreas          area_master[]           @relation("AreaPrimaryRoute")
   customerPrimaryRoutes delivery_point_master[] @relation("CustomerPrimaryRoute")
+  /// Route clubs this route belongs to — at most one per delivery type (2026-09-19).
+  clubMemberships       route_club_members[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE CLUBS (2026-09-19) — routes that share one truck on a light day, shown
+// as one card on the floor's By route view. Created by
+// sql/2026-09-19-route-clubs.sql in the Supabase SQL Editor and hand-mirrored
+// here (CORE §3 — never db push, never db pull).
+//
+// 🔴 THE RULE: a route is in AT MOST ONE club PER DELIVERY TYPE. A route has no
+// delivery type of its own (it lives on area_master), so the type is on the
+// club — and COPIED onto each member, because a unique can only see its own
+// table's columns. The composite FK (clubId, deliveryTypeId) → route_clubs(id,
+// deliveryTypeId) stops the copy ever disagreeing with the club, and with that
+// in place UNIQUE (deliveryTypeId, routeId) IS the rule.
+//
+// ⚠ MEMBERSHIP IS NOT CHECKED AGAINST AREAS, deliberately: Kamrej has no Local
+// area and still sits in a Local club (owner, 2026-09-19).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model route_clubs {
+  id             Int                  @id @default(autoincrement())
+  deliveryTypeId Int
+  deliveryType   delivery_type_master @relation(fields: [deliveryTypeId], references: [id], onDelete: Restrict, map: "route_clubs_delivery_type_fkey")
+  /// The card heading, e.g. "Adajan + Olpad".
+  name           String
+  /// The card's fixed place in row 1 for its delivery type, 1 = leftmost.
+  sortOrder      Int
+  createdAt      DateTime             @default(now()) @db.Timestamptz(6)
+  members        route_club_members[]
+
+  // Looks redundant beside `id`, and is load-bearing: the TARGET of the members'
+  // composite FK. Do not drop it.
+  @@unique([id, deliveryTypeId], map: "route_clubs_id_type_key")
+  @@unique([deliveryTypeId, name], map: "route_clubs_type_name_key")
+  @@unique([deliveryTypeId, sortOrder], map: "route_clubs_type_sort_key")
+}
+
+model route_club_members {
+  id             Int          @id @default(autoincrement())
+  clubId         Int
+  /// A COPY of the club's type, held equal to it by the composite FK below.
+  deliveryTypeId Int
+  routeId        Int
+  /// 1 = the main route, 2 = the sub. The card lists routes in this order.
+  sortOrder      Int
+  club           route_clubs  @relation(fields: [clubId, deliveryTypeId], references: [id, deliveryTypeId], onDelete: Cascade, map: "route_club_members_club_fkey")
+  route          route_master @relation(fields: [routeId], references: [id], onDelete: Restrict, map: "route_club_members_route_fkey")
+
+  @@unique([deliveryTypeId, routeId], map: "route_club_members_type_route_key")
+  @@unique([clubId, sortOrder], map: "route_club_members_club_sort_key")
 }
 
 model area_master {
