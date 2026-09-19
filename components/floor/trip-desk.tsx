@@ -373,16 +373,15 @@ export function TripDesk({
   // ── THE ROUTE CARDS (2026-09-19) ─────────────────────────────────────────
   //
   // Built here, once, only on a tab that has clubs (Local today); every other
-  // tab keeps the route rows. The reach rows are the same due-half + pool test
-  // as `poolRows`, just not scoped — RouteCards reads them for Kamrej alone.
+  // tab keeps the route rows. The reach rows are the same pool test as
+  // `poolRows`, just not scoped — RouteCards reads them for Kamrej alone.
+  //
+  // ⚠ BOTH HALVES GO IN (2026-09-19): upcoming bills sit inside their own
+  // route now, not in a block below. The cards split them off by `zone` and
+  // count the due half only — see RouteLine.upcoming.
   const cardModel =
     scope !== "All" && tabHasClubs(routeClubs, scope)
-      ? buildRouteCards(
-          scope,
-          routeClubs,
-          poolRows,
-          clubReachRows.filter((r) => r.zone !== "upcoming" && isPoolRow(r)),
-        )
+      ? buildRouteCards(scope, routeClubs, [...poolRows, ...poolUpcoming], clubReachRows.filter(isPoolRow))
       : null;
   // 🔴 NO TICK IS EVER INSIDE A CLOSED CARD (owner, 2026-09-19).
   //
@@ -711,7 +710,11 @@ export function TripDesk({
             ) : (
               <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
             )}
-            {poolUpcoming.length > 0 && (
+            {/* The Upcoming block stays for the ROUTE ROWS only. On the cards
+                every upcoming bill is inside its own route's panel instead
+                (owner, 2026-09-19) — rendering it here too would list those
+                bills twice. Flat keeps its block untouched. */}
+            {cardModel === null && poolUpcoming.length > 0 && (
               <FloorTable
                 rows={[]}
                 upcomingRows={sort(poolUpcoming)}

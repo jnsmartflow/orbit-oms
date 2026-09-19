@@ -136,7 +136,14 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export interface RouteLine {
   key: string;
   name: string;
+  /** Bills due today or overdue — the ONLY bills any card number counts. */
   rows: FloorBoardRow[];
+  /**
+   * Bills promised for a later date (2026-09-19). Listed in the open panel,
+   * after today's, and NEVER counted on the card: the kilos a planner loads
+   * today's truck against must not include Sunday's bills (owner).
+   */
+  upcoming: FloorBoardRow[];
   /** The other tab this line's bills come from (Kamrej: "Upcountry"), or null. */
   reachLabel: string | null;
 }
@@ -148,8 +155,10 @@ export interface RouteCard {
   name: string;
   /** Club: its members, main first. Single: its one route. */
   lines: RouteLine[];
-  /** Every bill on the card — the lines' rows together. */
+  /** Every DUE bill on the card — the lines' rows together. What it counts. */
   rows: FloorBoardRow[];
+  /** Every upcoming bill on the card — listed when open, never counted. */
+  upcoming: FloorBoardRow[];
 }
 
 export interface RouteCardModel {
@@ -158,6 +167,13 @@ export interface RouteCardModel {
   /** Row 2 — the tab's other routes with bills; by name, "No route" last. */
   singleCards: RouteCard[];
 }
+
+/**
+ * Due today or overdue — the row's OWN `zone`, computed server-side by the one
+ * expression the board shares (lib/floor/queries.ts), never a date compare
+ * here: a null date is due, and a bill released early stays due.
+ */
+const isDue = (r: FloorBoardRow) => r.zone !== "upcoming";
 
 /** Row 2's key for a row: its route id, or the one shared "No route" key. */
 function singleKey(r: FloorBoardRow): string {
@@ -172,10 +188,12 @@ export function tabHasClubs(clubs: FloorRouteClub[], deliveryType: string): bool
 /**
  * The cards for one tab.
  *
- * @param rows      the tab's pool rows, due half — exactly what the pool lists.
- * @param reachRows pool rows from EVERY tab, due half, same filters — read only
- *                  for a club member with `reachFrom`, and only its rows of that
- *                  one other type.
+ * @param rows      the tab's pool rows, BOTH halves — due and upcoming. Split
+ *                  here by the row's own `zone` (never a date compare): due
+ *                  rows are counted, upcoming ones only listed (2026-09-19).
+ * @param reachRows pool rows from EVERY tab, both halves, same filters — read
+ *                  only for a club member with `reachFrom`, and only its rows
+ *                  of that one other type.
  */
 export function buildRouteCards(
   deliveryType: string,
@@ -192,19 +210,33 @@ export function buildRouteCards(
   const clubCards: RouteCard[] = tabClubs.map((c) => {
     const lines: RouteLine[] = [...c.members]
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((m) => ({
-        key: `r:${m.routeId}`,
-        name: m.routeName,
-        rows:
+      .map((m) => {
+        const all =
           m.reachFrom === null
             ? rows.filter((r) => r.routeId === m.routeId)
-            : reachRows.filter((r) => r.routeId === m.routeId && r.deliveryType === m.reachFrom),
-        reachLabel: m.reachFrom,
-      }));
-    return { key: `club:${c.id}`, kind: "club", name: c.name, lines, rows: lines.flatMap((l) => l.rows) };
+            : reachRows.filter((r) => r.routeId === m.routeId && r.deliveryType === m.reachFrom);
+        return {
+          key: `r:${m.routeId}`,
+          name: m.routeName,
+          rows: all.filter(isDue),
+          upcoming: all.filter((r) => !isDue(r)),
+          reachLabel: m.reachFrom,
+        };
+      });
+    return {
+      key: `club:${c.id}`,
+      kind: "club",
+      name: c.name,
+      lines,
+      rows: lines.flatMap((l) => l.rows),
+      upcoming: lines.flatMap((l) => l.upcoming),
+    };
   });
 
   // Row 2 — this tab's other routes with bills. By name, "No route" last.
+  // A route whose only bills are upcoming still gets a card (it reads "No
+  // bills" and opens to list them) — upcoming bills with no route land in the
+  // "No route" card, like every other route-less bill (owner, 2026-09-19).
   const singles = new Map<string, RouteLine>();
   for (const r of rows) {
     if (r.routeId !== null && (clubRouteIds.has(r.routeId) || HIDDEN_ROUTE_IDS.includes(r.routeId))) continue;
@@ -213,9 +245,10 @@ export function buildRouteCards(
       key,
       name: key === "none" ? NO_ROUTE_LABEL : r.route ?? NO_ROUTE_LABEL,
       rows: [],
+      upcoming: [],
       reachLabel: null,
     };
-    line.rows.push(r);
+    (isDue(r) ? line.rows : line.upcoming).push(r);
     singles.set(key, line);
   }
   const singleCards: RouteCard[] = Array.from(singles.values())
@@ -224,7 +257,7 @@ export function buildRouteCards(
       if (b.key === "none") return -1;
       return a.name.localeCompare(b.name);
     })
-    .map((l) => ({ key: `single:${l.key}`, kind: "single", name: l.name, lines: [l], rows: l.rows }));
+    .map((l) => ({ key: `single:${l.key}`, kind: "single", name: l.name, lines: [l], rows: l.rows, upcoming: l.upcoming }));
 
   return { clubCards, singleCards };
 }
@@ -236,7 +269,9 @@ export function buildRouteCards(
 export function cardsHoldingTicks(model: RouteCardModel, selection: ReadonlySet<number>): string[] {
   if (selection.size === 0) return [];
   return [...model.clubCards, ...model.singleCards]
-    .filter((c) => c.rows.some((r) => selection.has(r.orderId)))
+    // BOTH halves: a ticked upcoming bill is a tick like any other, and must
+    // never sit inside a closed card either.
+    .filter((c) => [...c.rows, ...c.upcoming].some((r) => selection.has(r.orderId)))
     .map((c) => c.key);
 }
 
@@ -245,6 +280,18 @@ export function cardsHoldingTicks(model: RouteCardModel, selection: ReadonlySet<
 // FLOOR_SPINE, imported and never re-implemented (FLOOR §3) — the same sort
 // every other floor table uses, so a bill sits in the same order as in Flat.
 const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
+
+/**
+ * Upcoming bills by due date, earliest first (owner). FLOOR_SPINE first, then a
+ * STABLE sort on the date, so bills due the same day keep the spine's order.
+ * `dispatchTargetDate` is the row's "YYYY-MM-DD" string, so text order is date
+ * order; an upcoming row always has one (a null date is never upcoming).
+ */
+const sortUpcoming = (rows: FloorBoardRow[]) =>
+  sort(rows).sort((a, b) => (a.dispatchTargetDate ?? "").localeCompare(b.dispatchTargetDate ?? ""));
+
+/** Anything to open — today's bills or later ones. */
+const openable = (c: RouteCard) => c.rows.length > 0 || c.upcoming.length > 0;
 
 /** What each route's FloorTable needs beyond its rows — trip-desk's LeafProps. */
 interface LeafWiring {
@@ -279,7 +326,7 @@ export function RouteCards({
   // A key that no longer names a card with bills (its last bill went onto a
   // trip, or its single card is gone) counts as closed: nothing to show, and
   // nothing else dims for it.
-  const isOpen = (c: RouteCard) => c.rows.length > 0 && openKeys.includes(c.key);
+  const isOpen = (c: RouteCard) => openable(c) && openKeys.includes(c.key);
   const anyOpen = [...clubCards, ...singleCards].some(isOpen);
 
   const renderRow = (cards: RouteCard[], gapCls: string) => (
@@ -345,14 +392,17 @@ function CardButton({
   dimmed: boolean;
   onToggle: () => void;
 }) {
+  // EMPTY = nothing due today or overdue: the card reads "No bills", dimmed.
+  // It can still OPEN when it holds upcoming bills (owner, 2026-09-19) — only a
+  // card with nothing at all is inert.
   const empty = card.rows.length === 0;
-  // Open: the violet ring (brand, CLAUDE_UI §2). An empty club is always dimmed
-  // and cannot be opened — there is nothing under it.
+  const canOpen = openable(card);
+  // Open: the violet ring (brand, CLAUDE_UI §2).
   const cls = [
     CARD,
     isOpen ? "border-brand-600 ring-[3px] ring-brand-100" : "border-[#e7e7ee] hover:border-[#cfcfda]",
-    empty || dimmed ? "opacity-[.45]" : "",
-    empty ? "cursor-default" : "cursor-pointer",
+    (empty && !isOpen) || dimmed ? "opacity-[.45]" : "",
+    canOpen ? "cursor-pointer" : "cursor-default",
   ].join(" ");
 
   return (
@@ -360,11 +410,12 @@ function CardButton({
       type="button"
       className={cls}
       onClick={onToggle}
-      disabled={empty}
-      aria-expanded={empty ? undefined : isOpen}
+      disabled={!canOpen}
+      aria-expanded={canOpen ? isOpen : undefined}
     >
       {empty ? (
-        // An empty club keeps its place, dimmed, and says so (owner).
+        // Nothing due: an empty club keeps its place, dimmed, and says so
+        // (owner) — and so does a card whose only bills are upcoming.
         <span className="block px-3.5 pb-3 pt-3.5">
           <span className="mb-1 block text-[13px] font-semibold text-[#61616d]">{card.name}</span>
           <span className="block text-[12.5px] text-[#96969f]">No bills</span>
@@ -434,8 +485,15 @@ function CardButton({
 // ⚠ AREA, NOT ROUTE (`showArea`, owner): every bill in a section is on the
 // route its heading names.
 //
-// A club route with no bills gets no section — the card already says "No
-// bills", and there is nothing here to tick.
+// A route with nothing at all gets no section. A route whose only bills are
+// upcoming DOES — its heading says "No bills" (nothing due) and its table
+// lists them.
+//
+// ⚠ ONE TABLE PER ROUTE, TODAY'S FIRST, THEN UPCOMING BY DATE — and no
+// "Upcoming" divider (owner, 2026-09-19): the blue date in each row's Due
+// cell is the explanation. So they go in as plain `rows`, NOT through
+// FloorTable's `upcomingRows`, which is what draws the divider. The heading
+// counts today's bills only, like the card.
 
 function OpenPanel({
   card,
@@ -450,7 +508,7 @@ function OpenPanel({
   variant: FloorTableVariant;
   leaf: LeafWiring;
 }) {
-  const sections = card.lines.filter((l) => l.rows.length > 0);
+  const sections = card.lines.filter((l) => l.rows.length > 0 || l.upcoming.length > 0);
   return (
     <div className="mt-3 overflow-hidden rounded-[11px] border border-[#e7e7ee] bg-white">
       {sections.map((l, i) => (
@@ -459,11 +517,17 @@ function OpenPanel({
             <span className="text-[13.5px] font-bold text-[#1a1a22]">{l.name}</span>
             {l.reachLabel && <span className="text-[11px] text-[#96969f]">{l.reachLabel}</span>}
             <span className="text-[12px] tabular-nums text-[#96969f]">
-              {plural(stopCount(l.rows), "stop", "stops")} &middot; {kgText(l.rows)} kg
+              {l.rows.length > 0 ? (
+                <>
+                  {plural(stopCount(l.rows), "stop", "stops")} &middot; {kgText(l.rows)} kg
+                </>
+              ) : (
+                "No bills"
+              )}
             </span>
           </div>
           <FloorTable
-            rows={sort(l.rows)}
+            rows={[...sort(l.rows), ...sortUpcoming(l.upcoming)]}
             nowMs={nowMs}
             anchorIso={anchorIso}
             variant={variant}
