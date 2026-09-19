@@ -29,13 +29,12 @@
 // ⚠ NO WINDOW-LEVEL KEY LISTENER ANYWHERE UNDER HERE. floor-page.tsx is the
 // single Esc owner for the floor tree (FLOOR §4.6).
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs } from "./route-cards";
-import { toast } from "sonner";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
@@ -316,9 +315,10 @@ export function TripDesk({
     }
   }, [addingToTripId, railSelection]);
   const [openRoute, setOpenRoute] = useState<string | null>(null);
-  // The open route CARD (By route on a tab with clubs), by its model key —
-  // `club:<id>` or `single:<route key>`. At most one.
-  const [openCard, setOpenCard] = useState<string | null>(null);
+  // The route CARD last clicked open (By route on a tab with clubs), by its
+  // model key — `club:<id>` or `single:<route key>`. Not the open list: that
+  // also holds every card with a tick, and is derived below (`openCards`).
+  const [clickedCard, setClickedCard] = useState<string | null>(null);
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
@@ -384,48 +384,37 @@ export function TripDesk({
           clubReachRows.filter((r) => r.zone !== "upcoming" && isPoolRow(r)),
         )
       : null;
-  // Are the cards what the planner is looking at right now?
-  const cardsOnScreen =
-    cardModel !== null &&
-    activeTab === "floor" &&
-    (railSelection.kind === "pool" || addingToTripId !== null) &&
-    effectivePoolPivot === "route";
-
-  // 🔴 NO TICK IS EVER INSIDE A CLOSED CARD (owner, 2026-09-19). Two halves:
+  // 🔴 NO TICK IS EVER INSIDE A CLOSED CARD (owner, 2026-09-19).
   //
-  //   1. OPEN IT. Whenever the cards come on screen with ticks up — Flat →
-  //      By route, a search cleared, a trip closed back to the pool — and the
-  //      open card holds none of them, the FIRST card holding a tick (row 1
-  //      left to right, then row 2) opens.
-  //   2. KEEP IT OPEN. While the open card holds a tick, clicking it or
-  //      another card does not close it; a toast says why. The ticks go when
-  //      the bills go onto a trip, or with ✕ / Esc.
+  // WHICH CARDS ARE OPEN IS DERIVED, NOT STORED:
   //
-  // ⚠ ONE CARD AT A TIME. Ticks made in Flat can span two cards; the first
-  // opens and the rest stay inside closed cards. Showing all of them needs
-  // more than one card open, which the owner has not decided on yet — so it is
-  // not invented here.
+  //     open  =  every card holding a ticked bill  +  the one card last clicked
+  //
+  // and that single line is the whole rule set (commit 4b):
+  //   - a card holding ticks stays open — nothing can close it but its ticks
+  //     going (✕ / Esc, or the bills onto a trip);
+  //   - clicking another card OPENS it too: the ticked card is open by the
+  //     first half, the clicked one by the second — the Parvat case, where a
+  //     planner ticks Adajan, then opens Parvat to put its bill on the same
+  //     truck;
+  //   - a card with no ticks is open only as "the one last clicked", so it
+  //     closes when another card is clicked, or when it is clicked again;
+  //   - when the cards come on screen with ticks up (from Flat, or after a
+  //     search) every card holding a tick is already open — no effect, no
+  //     first-one-only.
+  //
+  // ⚠ NO TOAST AND NO REFUSAL. Clicking a card that holds ticks simply leaves
+  // it open (owner). And no effect keeps anything in step: a stored "open" list
+  // would need one, and would be a second answer to "which cards hold ticks"
+  // that could lag the selection by a render.
   const tickedCards = cardModel !== null ? cardsHoldingTicks(cardModel, rowSelection) : [];
-  const tickedCardsSig = tickedCards.join("|");
-  useEffect(() => {
-    if (!cardsOnScreen || tickedCardsSig === "") return;
-    const holding = tickedCardsSig.split("|");
-    if (openCard !== null && holding.includes(openCard)) return;
-    setOpenCard(holding[0]);
-  }, [cardsOnScreen, tickedCardsSig, openCard]);
+  const openCards = clickedCard !== null && !tickedCards.includes(clickedCard) ? [...tickedCards, clickedCard] : tickedCards;
 
   const toggleCard = (key: string) => {
-    // Closing the open card, or switching away from it, would put its ticks
-    // out of sight — refused while it holds any (half 2 above).
-    if (openCard !== null && tickedCards.includes(openCard)) {
-      const open = cardModel ? [...cardModel.clubCards, ...cardModel.singleCards].find((c) => c.key === openCard) : undefined;
-      const n = open ? open.rows.filter((r) => rowSelection.has(r.orderId)).length : 0;
-      toast(`${n} ticked bill${n === 1 ? " is" : "s are"} in ${open?.name ?? "this card"}`, {
-        description: "Put them on a trip, or clear the ticks (✕ or Esc), before closing it.",
-      });
-      return;
-    }
-    setOpenCard(openCard === key ? null : key);
+    // A ticked card is open whatever happens here, so clicking it changes
+    // nothing it shows. An unticked one toggles as "the card last clicked".
+    if (tickedCards.includes(key)) return;
+    setClickedCard(clickedCard === key ? null : key);
   };
 
   const selectedTrip =
@@ -712,7 +701,7 @@ export function TripDesk({
             {cardModel !== null ? (
               <RouteCards
                 model={cardModel}
-                openKey={openCard}
+                openKeys={openCards}
                 onToggleCard={toggleCard}
                 nowMs={nowMs}
                 anchorIso={floor.date}

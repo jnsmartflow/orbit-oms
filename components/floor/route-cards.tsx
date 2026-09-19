@@ -26,9 +26,10 @@
 // built from this tab's rows alone (owner, 2026-09-19).
 //
 // CLICK A CARD and the bills of all its routes open full width under its row,
-// one FloorTable per route (commit 4, 2026-09-19). Which card is open is
-// TripDesk's state, not this file's: TripDesk also opens the card holding the
-// planner's ticked bills, so no tick is ever inside a closed card.
+// one FloorTable per route (commit 4, 2026-09-19). WHICH cards are open is
+// TripDesk's to decide, not this file's: every card holding a ticked bill,
+// plus the one last clicked (commit 4b), so no tick is ever inside a closed
+// card. Several can be open; each panel sits under its own card's row.
 
 import {
   countByStatus,
@@ -230,7 +231,7 @@ export function buildRouteCards(
 
 /**
  * The cards holding at least one ticked bill, in board order (row 1 left to
- * right, then row 2). TripDesk opens the first of them and will not close it.
+ * right, then row 2). TripDesk keeps every one of them open (commit 4b).
  */
 export function cardsHoldingTicks(model: RouteCardModel, selection: ReadonlySet<number>): string[] {
   if (selection.size === 0) return [];
@@ -257,7 +258,7 @@ interface LeafWiring {
 
 export function RouteCards({
   model,
-  openKey,
+  openKeys,
   onToggleCard,
   nowMs,
   anchorIso,
@@ -265,8 +266,8 @@ export function RouteCards({
   leaf,
 }: {
   model: RouteCardModel;
-  /** The open card's key, or null. At most one is open. */
-  openKey: string | null;
+  /** The open cards' keys — any number (TripDesk `openCards`). */
+  openKeys: readonly string[];
   onToggleCard: (key: string) => void;
   nowMs: number;
   anchorIso: string;
@@ -278,7 +279,8 @@ export function RouteCards({
   // A key that no longer names a card with bills (its last bill went onto a
   // trip, or its single card is gone) counts as closed: nothing to show, and
   // nothing else dims for it.
-  const open = [...clubCards, ...singleCards].find((c) => c.key === openKey && c.rows.length > 0) ?? null;
+  const isOpen = (c: RouteCard) => c.rows.length > 0 && openKeys.includes(c.key);
+  const anyOpen = [...clubCards, ...singleCards].some(isOpen);
 
   const renderRow = (cards: RouteCard[], gapCls: string) => (
     <>
@@ -287,16 +289,18 @@ export function RouteCards({
           <CardButton
             key={c.key}
             card={c}
-            isOpen={open?.key === c.key}
-            dimmed={open !== null && open.key !== c.key}
+            isOpen={isOpen(c)}
+            dimmed={anyOpen && !isOpen(c)}
             onToggle={() => onToggleCard(c.key)}
           />
         ))}
       </div>
-      {/* THE PANEL OPENS UNDER THE ROW ITS CARD IS IN, full width (design). */}
-      {open && cards.some((c) => c.key === open.key) && (
-        <OpenPanel card={open} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
-      )}
+      {/* THE PANELS OPEN UNDER THE ROW THEIR CARD IS IN, full width (design) —
+          one per open card in this row, in the cards' own left-to-right order,
+          so two open clubs stack in the order their cards stand. */}
+      {cards.filter(isOpen).map((c) => (
+        <OpenPanel key={c.key} card={c} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
+      ))}
     </>
   );
 
@@ -312,7 +316,8 @@ export function RouteCards({
 //
 // 🔴 THE CARD IS THE BUTTON (owner): no "Take both", no chevron. Click opens
 // the bills of every route on it; click again, or another card, closes or
-// switches — unless the open card holds ticked bills (see trip-desk.tsx).
+// switches — except a card holding ticked bills, which stays open beside the
+// new one until its ticks go (see trip-desk.tsx).
 //
 // ⚠ A real <button>, so Tab and Enter/Space work with no key listener of ours:
 // the floor has ONE window-level key listener and it is floor-page's (FLOOR
