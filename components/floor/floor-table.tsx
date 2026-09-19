@@ -286,6 +286,7 @@ export function FloorTable({
   chipFor,
   gateOn = false,
   hideTripTag = false,
+  showArea = false,
   selectionLocked = false,
 }: {
   rows: FloorBoardRow[];
@@ -300,6 +301,18 @@ export function FloorTable({
    * the tag is the only thing saying which load a bill belongs to.
    */
   hideTripTag?: boolean;
+  /**
+   * Show the bill's AREA in the Route column's place (2026-09-19, owner).
+   *
+   * TRUE only for the tables a By route CARD opens: every bill there is on the
+   * route the planner clicked, so Route would repeat its heading on every row,
+   * and Area is what varies. Flat keeps Route, and so does the trip panel.
+   *
+   * ⚠ IT CHANGES A CELL AND ITS HEADER, NEVER A COLUMN — the same slot, the
+   * same width entry, so the cards' tables line up with every other table on
+   * the screen (see the ROUTE cell below for what a missing cell does).
+   */
+  showArea?: boolean;
   /**
    * Keep the tick column but render NO tick boxes in it (2026-09-18).
    *
@@ -555,7 +568,7 @@ export function FloorTable({
           <th className={HEAD_TH}>OBD</th>
           {hasExtra && <th className={HEAD_TH}>{operatorByOrderId ? "Operator" : "Invoice"}</th>}
           <th className={HEAD_TH}>Ship to</th>
-          <th className={HEAD_TH}>Route</th>
+          <th className={HEAD_TH}>{showArea ? "Area" : "Route"}</th>
           <th className={HEAD_TH}>Due</th>
           <th className={`${HEAD_TH} text-right`}>Vol / KG</th>
           <th className={HEAD_TH}>Article</th>
@@ -1119,7 +1132,7 @@ export function FloorTable({
             real cells plus one commented one read as nine. Count the cells
             against the list in the widths block above, by eye, and never
             trust a regex that has not been made comment-blind. */}
-        <td className={TD}>{row.route ?? "—"}</td>
+        <td className={TD}>{(showArea ? row.area : row.route) ?? "—"}</td>
         <td className={`${TD} whitespace-nowrap tabular-nums`}>{dueCell}</td>
         {/* ── VOL / KG, ONE STACKED CELL (2026-09-10 c) ──────────────────
             Litres on line one, kilos underneath, both right-aligned and

@@ -29,12 +29,13 @@
 // ⚠ NO WINDOW-LEVEL KEY LISTENER ANYWHERE UNDER HERE. floor-page.tsx is the
 // single Esc owner for the floor tree (FLOOR §4.6).
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
-import { RouteCards } from "./route-cards";
+import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs } from "./route-cards";
+import { toast } from "sonner";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
@@ -315,6 +316,9 @@ export function TripDesk({
     }
   }, [addingToTripId, railSelection]);
   const [openRoute, setOpenRoute] = useState<string | null>(null);
+  // The open route CARD (By route on a tab with clubs), by its model key —
+  // `club:<id>` or `single:<route key>`. At most one.
+  const [openCard, setOpenCard] = useState<string | null>(null);
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
@@ -365,6 +369,64 @@ export function TripDesk({
   // harmless here, and it is the one test the search auto-tick shares.
   const poolRows = dueRows.filter(isPoolRow);
   const poolUpcoming = upcomingAll.filter(isPoolRow);
+
+  // ── THE ROUTE CARDS (2026-09-19) ─────────────────────────────────────────
+  //
+  // Built here, once, only on a tab that has clubs (Local today); every other
+  // tab keeps the route rows. The reach rows are the same due-half + pool test
+  // as `poolRows`, just not scoped — RouteCards reads them for Kamrej alone.
+  const cardModel =
+    scope !== "All" && tabHasClubs(routeClubs, scope)
+      ? buildRouteCards(
+          scope,
+          routeClubs,
+          poolRows,
+          clubReachRows.filter((r) => r.zone !== "upcoming" && isPoolRow(r)),
+        )
+      : null;
+  // Are the cards what the planner is looking at right now?
+  const cardsOnScreen =
+    cardModel !== null &&
+    activeTab === "floor" &&
+    (railSelection.kind === "pool" || addingToTripId !== null) &&
+    effectivePoolPivot === "route";
+
+  // 🔴 NO TICK IS EVER INSIDE A CLOSED CARD (owner, 2026-09-19). Two halves:
+  //
+  //   1. OPEN IT. Whenever the cards come on screen with ticks up — Flat →
+  //      By route, a search cleared, a trip closed back to the pool — and the
+  //      open card holds none of them, the FIRST card holding a tick (row 1
+  //      left to right, then row 2) opens.
+  //   2. KEEP IT OPEN. While the open card holds a tick, clicking it or
+  //      another card does not close it; a toast says why. The ticks go when
+  //      the bills go onto a trip, or with ✕ / Esc.
+  //
+  // ⚠ ONE CARD AT A TIME. Ticks made in Flat can span two cards; the first
+  // opens and the rest stay inside closed cards. Showing all of them needs
+  // more than one card open, which the owner has not decided on yet — so it is
+  // not invented here.
+  const tickedCards = cardModel !== null ? cardsHoldingTicks(cardModel, rowSelection) : [];
+  const tickedCardsSig = tickedCards.join("|");
+  useEffect(() => {
+    if (!cardsOnScreen || tickedCardsSig === "") return;
+    const holding = tickedCardsSig.split("|");
+    if (openCard !== null && holding.includes(openCard)) return;
+    setOpenCard(holding[0]);
+  }, [cardsOnScreen, tickedCardsSig, openCard]);
+
+  const toggleCard = (key: string) => {
+    // Closing the open card, or switching away from it, would put its ticks
+    // out of sight — refused while it holds any (half 2 above).
+    if (openCard !== null && tickedCards.includes(openCard)) {
+      const open = cardModel ? [...cardModel.clubCards, ...cardModel.singleCards].find((c) => c.key === openCard) : undefined;
+      const n = open ? open.rows.filter((r) => rowSelection.has(r.orderId)).length : 0;
+      toast(`${n} ticked bill${n === 1 ? " is" : "s are"} in ${open?.name ?? "this card"}`, {
+        description: "Put them on a trip, or clear the ticks (✕ or Esc), before closing it.",
+      });
+      return;
+    }
+    setOpenCard(openCard === key ? null : key);
+  };
 
   const selectedTrip =
     railSelection.kind === "trip"
@@ -647,14 +709,15 @@ export function TripDesk({
                 with the same divider the flat view uses. */}
             {/* CARDS ON A TAB WITH CLUBS (Local today, 2026-09-19); every other
                 tab keeps the route rows exactly as they were. */}
-            {scope !== "All" && routeClubs.some((c) => c.deliveryType === scope) ? (
+            {cardModel !== null ? (
               <RouteCards
-                deliveryType={scope}
-                clubs={routeClubs}
-                rows={poolRows}
-                // The one reach across the tab filter — see RouteCards. Same
-                // due-half and pool test as `poolRows`, just not scoped.
-                reachRows={clubReachRows.filter((r) => r.zone !== "upcoming" && isPoolRow(r))}
+                model={cardModel}
+                openKey={openCard}
+                onToggleCard={toggleCard}
+                nowMs={nowMs}
+                anchorIso={floor.date}
+                variant={variant}
+                leaf={selProps}
               />
             ) : (
               <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
