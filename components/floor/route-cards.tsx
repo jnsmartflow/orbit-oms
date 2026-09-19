@@ -7,8 +7,10 @@
 // of card:
 //   club    one per CLUB, in the club's fixed order — never re-sorted, and an
 //           empty club stays in its place, dimmed, reading "No bills";
-//   single  every other route of the tab that has bills, one COMPACT card
-//           each, by name, with "No route" last.
+//   other   ONE "Other routes" card, always last: every route of the tab in
+//           no club, plus the route-less bills, one line each — lines by
+//           kilos, "No route" always the last line. Display-only: nothing is
+//           written for it (owner, 2026-09-19).
 // All the same size, in one grid — see "The layout" below.
 // A tab with no clubs (All, Upcountry, IGT today) keeps the old route rows
 // (ByRoute in trip-desk.tsx) — this component is not rendered there.
@@ -58,6 +60,8 @@ import type { FloorBoardRow, FloorRouteClub } from "@/lib/floor/types";
 const NO_ROUTE_IDS: readonly number[] = [20];
 const HIDDEN_ROUTE_IDS: readonly number[] = [25];
 const NO_ROUTE_LABEL = "No route";
+/** The display-only card that gathers every unclubbed route (see RouteCardModel). */
+const OTHER_ROUTES_LABEL = "Other routes";
 
 // ── The bar ─────────────────────────────────────────────────────────────────
 // The trip bar's colours (trip-bar.tsx, owner 2026-09-15) plus the tint pink.
@@ -151,11 +155,11 @@ export interface RouteLine {
 }
 
 export interface RouteCard {
-  /** Stable across reloads: `club:<id>` or `single:<route key>`. */
+  /** Stable across reloads: `club:<id>`, or `other` for the Other routes card. */
   key: string;
-  kind: "club" | "single";
+  kind: "club" | "other";
   name: string;
-  /** Club: its members, main first. Single: its one route. */
+  /** Club: its members, main first. Other routes: by kilos, No route last. */
   lines: RouteLine[];
   /** Every DUE bill on the card — the lines' rows together. What it counts. */
   rows: FloorBoardRow[];
@@ -166,8 +170,16 @@ export interface RouteCard {
 export interface RouteCardModel {
   /** First, the tab's clubs in their fixed order, empty ones included. */
   clubCards: RouteCard[];
-  /** Then the tab's other routes with bills; by kilos due, "No route" last. */
-  singleCards: RouteCard[];
+  /**
+   * Then ONE "Other routes" card (owner, 2026-09-19): every route of the tab
+   * that is in no club and has bills, plus the route-less bills, one LINE each.
+   * Always the last card. Null when there is nothing unclubbed at all.
+   *
+   * ⚠ DISPLAY-ONLY GROUPING. It is not a club and nothing is written for it:
+   * Parvat stays unclubbed in route_club_members. It is built here, from the
+   * rows, every render.
+   */
+  otherCard: RouteCard | null;
 }
 
 /**
@@ -177,9 +189,14 @@ export interface RouteCardModel {
  */
 const isDue = (r: FloorBoardRow) => r.zone !== "upcoming";
 
-/** Row 2's key for a row: its route id, or the one shared "No route" key. */
-function singleKey(r: FloorBoardRow): string {
+/** A line of Other routes: its route id, or the one shared "No route" key. */
+function otherLineKey(r: FloorBoardRow): string {
   return r.routeId === null || NO_ROUTE_IDS.includes(r.routeId) ? "none" : `r:${r.routeId}`;
+}
+
+/** Every card in board order: the clubs, then Other routes when there is one. */
+function allCards(model: RouteCardModel): RouteCard[] {
+  return model.otherCard ? [...model.clubCards, model.otherCard] : model.clubCards;
 }
 
 /** Does this tab draw cards at all? Only when it has at least one club. */
@@ -208,7 +225,7 @@ export function buildRouteCards(
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const clubRouteIds = new Set(tabClubs.flatMap((c) => c.members.map((m) => m.routeId)));
 
-  // Row 1 — the clubs, members main first.
+  // The clubs, in sortOrder, members main first.
   const clubCards: RouteCard[] = tabClubs.map((c) => {
     const lines: RouteLine[] = [...c.members]
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -235,15 +252,15 @@ export function buildRouteCards(
     };
   });
 
-  // Row 2 — this tab's other routes with bills. By name, "No route" last.
-  // A route whose only bills are upcoming still gets a card (it reads "No
-  // bills" and opens to list them) — upcoming bills with no route land in the
-  // "No route" card, like every other route-less bill (owner, 2026-09-19).
-  const singles = new Map<string, RouteLine>();
+  // OTHER ROUTES — every route of this tab in no club, plus the route-less
+  // bills, one line each on ONE card. A route whose only bills are upcoming
+  // still gets its line (it reads "No bills" and its bills open with the card);
+  // upcoming bills with no route land on the "No route" line.
+  const others = new Map<string, RouteLine>();
   for (const r of rows) {
     if (r.routeId !== null && (clubRouteIds.has(r.routeId) || HIDDEN_ROUTE_IDS.includes(r.routeId))) continue;
-    const key = singleKey(r);
-    const line = singles.get(key) ?? {
+    const key = otherLineKey(r);
+    const line = others.get(key) ?? {
       key,
       name: key === "none" ? NO_ROUTE_LABEL : r.route ?? NO_ROUTE_LABEL,
       rows: [],
@@ -251,29 +268,38 @@ export function buildRouteCards(
       reachLabel: null,
     };
     (isDue(r) ? line.rows : line.upcoming).push(r);
-    singles.set(key, line);
+    others.set(key, line);
   }
-  // By kilos due, highest first (owner, 2026-09-19); name breaks a tie so the
-  // order never flickers between refreshes. "No route" is ALWAYS last.
+  // Lines by kilos due, highest first (owner, 2026-09-19); name breaks a tie so
+  // the order never flickers between refreshes. "No route" is ALWAYS the last.
   const dueKg = (l: RouteLine) => sumWeightKg(l.rows).kg;
-  const singleCards: RouteCard[] = Array.from(singles.values())
-    .sort((a, b) => {
-      if (a.key === "none") return 1;
-      if (b.key === "none") return -1;
-      return dueKg(b) - dueKg(a) || a.name.localeCompare(b.name);
-    })
-    .map((l) => ({ key: `single:${l.key}`, kind: "single", name: l.name, lines: [l], rows: l.rows, upcoming: l.upcoming }));
+  const otherLines = Array.from(others.values()).sort((a, b) => {
+    if (a.key === "none") return 1;
+    if (b.key === "none") return -1;
+    return dueKg(b) - dueKg(a) || a.name.localeCompare(b.name);
+  });
+  const otherCard: RouteCard | null =
+    otherLines.length === 0
+      ? null
+      : {
+          key: "other",
+          kind: "other",
+          name: OTHER_ROUTES_LABEL,
+          lines: otherLines,
+          rows: otherLines.flatMap((l) => l.rows),
+          upcoming: otherLines.flatMap((l) => l.upcoming),
+        };
 
-  return { clubCards, singleCards };
+  return { clubCards, otherCard };
 }
 
 /**
- * The cards holding at least one ticked bill, in board order (row 1 left to
- * right, then row 2). TripDesk keeps every one of them open (commit 4b).
+ * The cards holding at least one ticked bill, in board order (clubs, then
+ * Other routes). TripDesk keeps every one of them open (commit 4b).
  */
 export function cardsHoldingTicks(model: RouteCardModel, selection: ReadonlySet<number>): string[] {
   if (selection.size === 0) return [];
-  return [...model.clubCards, ...model.singleCards]
+  return allCards(model)
     // BOTH halves: a ticked upcoming bill is a tick like any other, and must
     // never sit inside a closed card either.
     .filter((c) => [...c.rows, ...c.upcoming].some((r) => selection.has(r.orderId)))
@@ -311,7 +337,7 @@ interface LeafWiring {
 // ── The layout (2026-09-19, owner) ──────────────────────────────────────────
 //
 // ONE GRID OF EQUAL CARDS that flow in order — clubs first by sortOrder, then
-// the single-route cards by kilos, "No route" always last (buildRouteCards).
+// the one Other routes card, always last (buildRouteCards).
 // Columns by screen width: 4 at ≥1470px, 3 at 1100–1469px, 2 below.
 //
 // ⚠ 1470, NOT 1400 (owner, 2026-09-19). Four equal columns at 1440px leave a
@@ -389,10 +415,10 @@ export function RouteCards({
   /** Forwarded unchanged to each route's FloorTable. No selection in History. */
   leaf: LeafWiring;
 }) {
-  // Clubs, then singles: buildRouteCards already put each list in its order.
-  const cards = [...model.clubCards, ...model.singleCards];
+  // Clubs in sortOrder, then Other routes — always last.
+  const cards = allCards(model);
   // A key that no longer names a card with anything in it (its last bill went
-  // onto a trip, or its single card is gone) counts as closed: nothing to show,
+  // onto a trip, or Other routes has emptied) counts as closed: nothing to show,
   // and nothing else dims for it.
   const isOpen = (c: RouteCard) => openable(c) && openKeys.includes(c.key);
   const anyOpen = cards.some(isOpen);
@@ -400,8 +426,9 @@ export function RouteCards({
   // 🔴 EVERY CARD THE SAME HEIGHT, ACROSS THE WHOLE BOARD (owner). The height
   // is the card with the MOST route lines — worked out from the data, never a
   // pixel number: every card is the same head plus `lineSlots` equal-height
-  // line slots, so they come out identical. Today that is 2 (the clubs); a club
-  // of 3 routes makes every card, singles included, grow by one line.
+  // line slots, so they come out identical. Today that is 2 (the clubs, and
+  // Other routes with Parvat + No route); a club — or an Other routes card —
+  // of 3 lines makes every card grow by one line.
   const lineSlots = Math.max(1, ...cards.map((c) => c.lines.length));
   const tracks = `repeat(${columns}, minmax(0, 1fr))`;
 
@@ -440,9 +467,9 @@ export function RouteCards({
 // switches — except a card holding ticked bills, which stays open beside the
 // new one until its ticks go (see trip-desk.tsx).
 //
-// ONE SHAPE FOR EVERY CARD, club or single (owner, 2026-09-19): the head —
-// name, big kilos, "N stops · L" — then one line per route with its bar. A
-// single-route card is the same card with one line.
+// ONE SHAPE FOR EVERY CARD, club or Other routes (owner, 2026-09-19): the
+// head — name, big kilos, "N stops · L" — then one line per route with its
+// bar.
 //
 // ⚠ EQUAL HEIGHT IS BUILT, NOT STRETCHED. Each card is:
 //     head  (always three rows: name, big figure, summary)

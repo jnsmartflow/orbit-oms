@@ -316,7 +316,7 @@ export function TripDesk({
   }, [addingToTripId, railSelection]);
   const [openRoute, setOpenRoute] = useState<string | null>(null);
   // The route CARD last clicked open (By route on a tab with clubs), by its
-  // model key — `club:<id>` or `single:<route key>`. Not the open list: that
+  // model key — `club:<id>` or `other`. Not the open list: that
   // also holds every card with a tick, and is derived below (`openCards`).
   const [clickedCard, setClickedCard] = useState<string | null>(null);
   // Cards per row for the route cards, by screen width (route-cards.tsx).
