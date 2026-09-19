@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.12 · Entry point · Read this first · September 2026 · updated 2026-09-04 · Lives in: repo root (auto-loaded by Claude Code)
+# v1.13 · Entry point · Read this first · September 2026 · updated 2026-09-19 · Lives in: repo root (auto-loaded by Claude Code)
 
 **OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.**
 
@@ -43,28 +43,32 @@ All context files live in `docs/` relative to repo root.
 | You are working on | Also load |
 |---|---|
 | `/mail-orders`, `mo_*` tables, parser, enrichment, customer matching, learned keywords, email template, signal badges, Table/Review views, 5-slot bucketing, tag-gating | `docs/CLAUDE_MAIL_ORDERS.md` |
-| **Billing** / `billingV2` / the "Billing" screen / the Billing Picking tab / `billing_settings` / `invoicedAt` mark-done / `components/billing/*` — **PILOT, flag-gated** (operations id 20 only until rollout) | `docs/CLAUDE_MAIL_ORDERS.md §23` (no separate CLAUDE_BILLING.md exists while pilot-gated — locked decision) |
+| **Billing** desk — the face `/mail-orders` shows every viewer: `billingV2` / the rollout flag (`billing_settings`, `lib/billing/flag.ts`) / the tab bar / the **Picking** tab (`invoicedAt` mark-done) / the **Print** tab (trips Floor sent to billing) / the `billing_*` action ticks / the marker providers / notes-band font size / `/api/billing/**` / `components/billing/*` / `lib/billing/*`. Parser, enrichment, matching and the Orders-tab/Review internals stay in MAIL_ORDERS | `docs/CLAUDE_BILLING.md` (+ `docs/CLAUDE_MAIL_ORDERS.md` for the Orders-tab internals, §23 lists them). The pilot ended 2026-08-06 (`rolloutStage = ALL_USERS`, live 2026-09-18 Q01), so the old "no CLAUDE_BILLING.md while pilot-gated" lock no longer applies |
 | `/tint/manager`, `/tint/operator`, challans, shades, TI report, **Tint Summary report / `/reports` hub**, operator sequence, pigment shade grid, slot-at-completion, sampling reuse + pack scaling | `docs/CLAUDE_TINT.md` |
 | `/tint/sampling-library`, `sampling_register`/`sampling_recipes`/`sampling_usage_log`, suggestion engine, duplicate merge | `docs/CLAUDE_SAMPLING_LIBRARY.md` |
 | `/place-order`, `/po` (`/order` retired 2026-07-27 — address parked, see below), `mo_order_form_index_v2`, `mo_sku_lookup_v2`, speed dial, cart, pack buckets, base aliases, catalog families, email builder | `docs/CLAUDE_PLACE_ORDER.md` |
+| `/po2` (public v2 salesman order page, live 2026-09-10), `/po9` (the same page with ship-to off), the `/po-v2-8f4kd2` redirect to `/po2`, the two v2 manifests (`app/po2/v2-manifest.ts`), `po2_*` localStorage keys | `docs/CLAUDE_PO2.md` (+ `docs/CLAUDE_PLACE_ORDER.md` for the email builder, pack rules and catalogue tables it imports) |
 | `/attendance`, OT, `attendance_*`, admin OT pending/settings/audit | `docs/CLAUDE_ATTENDANCE.md` |
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, `import_*` tables | `docs/CLAUDE_IMPORT.md` |
-| `/floor` — Floor Control: unified desk screen consolidating the Support board + Picking DESKTOP board; left rail (undecided bills) / right pane (Floor / On-hold / Cancelled + detail panel); floor actions (hold/cancel/release/change-slot); live sync + `/api/floor/marker` | `docs/CLAUDE_FLOOR.md` |
+| `/floor` — Floor Control, the one desk screen (Support board and Picking DESKTOP board both retired into it). The Floor tab is the **trip desk** (`components/floor/trip-desk.tsx`, `bbb9628c`): trip rail on the left (`trip-rail.tsx`), bills on the right; four top tabs Floor / Tinting / On hold / Cancelled + detail panel; the board predicate `floorBoardWhere`; floor actions (hold/cancel/release/change-slot); live sync + `/api/floor/marker`. The decision rail is retired (see below). `/orders` is a redirect to `/floor` (`app/orders/page.tsx`) | `docs/CLAUDE_FLOOR.md` (+ `docs/CLAUDE_FLOOR_TRIPS.md` whenever you touch a trip) |
+| **Floor trips** — Orbit's own truck plan, NOT the NTS mirror: `trips` / `trip_drops` / `trip_activity`, `lib/trips/*`, `/api/floor/trips/*`, trip numbering and drops, the pick visibility gate (`/api/floor/pick-gate`, desk control) and **Show to floor**, **Send to billing** (the trip side), the rule that no trip action changes a bill's status or hold | `docs/CLAUDE_FLOOR_TRIPS.md` (+ `docs/CLAUDE_FLOOR.md` for the screen shell; `docs/CLAUDE_BILLING.md §7` for the Print tab it feeds; `docs/CLAUDE_PICKING.md` for where the gate is applied) |
 | `/trips`, `trip_report`, NTS trip mirror, puller/mirror function, A4 trip sheet, WhatsApp share, logistics role | `docs/CLAUDE_TRIP_REPORT.md` |
 | `/picking`, picking queue, mobile supervisor board (Assign/Picking/Done tabs), picker "My Picks" (Pending/Done), `pick_assignments`, stage ladder, sort spine, live-sync marker · **The DESKTOP board was RETIRED 2026-07-28** → `archive/2026-07-picking-desktop/`; `/floor` is the desk screen. `/picking` itself stays live and renders the card board at every width — the two MOBILE faces are the only live ones | `docs/CLAUDE_PICKING.md` |
 | `/mrn` — **MRN, Material Receipt Note**: stock coming IN off a depot truck. `mrn` / `mrn_lines` / `mrn_line_batches` / `mrn_photos`, `lib/mrn/*`, `/api/mrn/*`. TWO faces on one route, branched by ROLE never viewport: floor_supervisor's phone (To check / Checking / Done → line sheet → END) and billing's desk (date rail → pane → delivery tabs → the XLS and A4 sheet). Status ladder open → checking → done → **closed** (the OTR punch, 2026-09-01). Photos in the private `mrn-photos` bucket; delivery numbers on the LINES, not the header | `docs/CLAUDE_MRN.md` |
-| `/ci` — **CI, Goods Return Note (CI Form)**: stock coming BACK from a customer, the return counterpart to MRN. `ci_returns` / `ci_return_lines` / `ci_reason_master`, `lib/ci/*`, `/api/ci/*`. TWO faces on one route, branched by ROLE never viewport: floor_supervisor's phone (search a bill → Full bill/Part → lines → details → submit) and billing's desk (one rail, pending above closed → Close CI). Status ladder draft → submitted → closed (`returned_to_floor` is allowed by the CHECK and written by nothing). Also raised **automatically** from a confirmed picking finding on an invoiced bill (`lib/ci/auto.ts`), and exports billing's 17-column register as .xlsx. ⚠ Reachable by URL only — not in the sidebar yet, and the reason is behavioural (CORE §12) | `docs/CLAUDE_CI.md` |
+| `/ci` — **CI, Goods Return Note (CI Form)**: stock coming BACK from a customer, the return counterpart to MRN. `ci_returns` / `ci_return_lines` / `ci_reason_master`, `lib/ci/*`, `/api/ci/*`. TWO faces on one route, branched by ROLE never viewport: floor_supervisor's phone (search a bill → Full bill/Part → lines → details → submit) and billing's desk (one rail, pending above closed → Close CI). Status ladder draft → submitted → closed (`returned_to_floor` is allowed by the CHECK and written by nothing). Also raised **automatically** from a confirmed picking finding on an invoiced bill (`lib/ci/auto.ts`), and exports billing's 17-column register as .xlsx. In the sidebar since `55c3cdc6` (2026-08-31, `PAGE_NAV_MAP` in `lib/permissions.ts`) | `docs/CLAUDE_CI.md` |
 | Push notifications — Web Push, `/api/push/*`, `public/sw.js`, `push_subscriptions`, quiet hours (IST), the device on/off toggle, assign/done buzz triggers, VAPID | `docs/CLAUDE_NOTIFICATIONS.md` |
 | `/admin` **Settings → Hide** (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, `orders.isHidden` | `docs/CLAUDE_CORE.md §7.10` + `docs/CLAUDE_UI.md §57` (+ `docs/CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
 | SKU catalog — `sku_master_v2`, old `sku_master`, which of the THREE sku-ish tables you actually mean | `docs/CLAUDE_CORE.md §7.1.c` (+ the id-space landmine in `§13` — read it before any repoint) |
+| `/admin/access` — per-user page ticks (superuser only, via `app/(admin)/admin/layout.tsx`), the `ACCESS_SOURCE` banner, `user_page_access` | `docs/CLAUDE_CORE.md §5` + `§7.14` |
 | `/admin` (other), `/dispatcher/*` master data (Customers / SKUs / Routes / Vehicles — **live**) | Core only — stubs in `docs/CLAUDE_CORE.md §11-§12` |
 
 ### Retired — do not go looking for these
 
-Five SCREENS were retired in July 2026, plus one BOARD inside a route that stayed live.
-**The five screens are gone from the live tree**, so no domain file covers them and none of
-their addresses resolve. **The sixth row is the exception and is marked as such** — its route
-is still live and still has a domain file; only the wide-screen board inside it went. Each has
+Five SCREENS were retired in July 2026, plus two BOARDS inside routes that stayed live (one in
+July 2026, one in September 2026). **The five screens are gone from the live tree**, so no
+domain file covers them and none of their addresses resolve. **The last two rows are the
+exception and are marked as such** — their routes are still live and still have a domain file;
+only a board inside each went. Each has
 a plain-English README in its archive folder; the index is `archive/README.md`, the method is
 `archive/RETIREMENT-PLAYBOOK.md`.
 
@@ -76,6 +80,7 @@ a plain-English README in its archive folder; the index is `archive/README.md`, 
 | `/warehouse` + 2 stubs + board API | 2026-07-28 | nothing — it always rendered empty | `archive/2026-07-warehouse-board/` |
 | `/planning` + `/dispatcher` index stub + 8 `/api/planning/*` routes | 2026-07-28 | nothing — never used end to end | `archive/2026-07-planning-board/` |
 | ⚠ **NOT a screen — a BOARD.** `/picking`'s desktop table (`components/picking/picking-queue.tsx`). **The `/picking` ROUTE stays live**, still resolves, still has a domain file | 2026-07-28 | `/floor` for a desk screen; `/picking` itself renders the mobile card board at every width — see its §3 row above | `archive/2026-07-picking-desktop/` |
+| ⚠ **NOT a screen — a BOARD.** `/floor`'s decision rail (the left column of undecided bills: `floor-rail.tsx`, `rail-card.tsx`, `rail-empty.tsx`, `tint-strip.tsx`, and the `getFloorRail` feed). Stopped rendering 2026-09-10 (`bbb9628c`). **The `/floor` ROUTE stays live**; `floorUnslottedWhere` did NOT go — it is arm 2 of `floorBoardWhere` | 2026-09-13 (`79bcc412`) | the trip desk on `/floor` — see its §3 row above | `archive/2026-09-floor-rail/` (not yet indexed in `archive/README.md`) |
 
 🔴 **Two survivors that look retired but are not.** `app/api/warehouse/pickers/route.ts`
 is **live** — the two Picking boards call it, and it is the only file left under
@@ -126,6 +131,13 @@ canonical file.
    > scroll past it, and it takes the two checks that DO matter down with it. (`CLAUDE_UI.md` has no
    > schema stamp at all, by a 2026-08-04 decision — it tracks components, not tables. That is not a
    > twelfth lag.)
+   > **As read on 2026-09-19** (a snapshot for orientation — still read the headers live): there
+   > are **17** `docs/CLAUDE_*.md` files — CORE + UI + **15 domain files** (ATTENDANCE, BILLING,
+   > CI, FLOOR, FLOOR_TRIPS, IMPORT, MAIL_ORDERS, MRN, NOTIFICATIONS, PICKING, PLACE_ORDER, PO2,
+   > SAMPLING_LIBRARY, TINT, TRIP_REPORT — BILLING, FLOOR_TRIPS and PO2 are new on 2026-09-18).
+   > `CLAUDE_CORE.md` is the schema authority at **v27.35** (CORE v105); all 15 domain files carry
+   > **v27.24**, the version the 2026-09-18 canon sweep reconciled them against. That lag is normal
+   > (item 4) — none is newer than CORE, so nothing here is a stop condition.
 5. Wait for the task instruction before generating any code.
 
 ---
@@ -146,4 +158,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.12 · Orbit OMS · September 2026 · updated 2026-09-04 — **§4 rewritten.** The old item 4 said to STOP and ask whenever a domain file's header disagreed with `CLAUDE_CORE.md`'s schema stamp; on the day this was written eleven of the twelve domain files disagreed and not one was a defect. The stamp records the version a file was last RECONCILED against, never a claim about the live schema, so lagging CORE is normal. Stopping is now reserved for what actually indicates a fault — a missing file, a domain file claiming a schema version NEWER than CORE's, or content that contradicts the live schema — and item 4 states explicitly that a lagging stamp must NOT be bumped to silence it, because a bump nobody earned by reading the file is the failure, not the cure. Item 3's "the domain files carry the same stamp" corrected in the same pass. Prior, v1.11 (2026-09-03): the `/ci` row now points at **`docs/CLAUDE_CI.md` (v1.0)**, the module's first canonical file; its "no CLAUDE_CI.md exists yet / a §7 block in CORE is still owed" clause is retired, the second half by CORE v98's ruling that CI's tables are documented in their own file exactly as MRN's are. Prior, v1.10 (2026-08-05): added the Billing pilot row (→ MAIL_ORDERS §23); all other rows re-verified against the 2026-08-04/05 reconciliation cycle (method: `docs/runbooks/reconciliation-method.md`)*
+*Router v1.13 · Orbit OMS · September 2026 · updated 2026-09-19 — **canon sweep C1: §3 indexes the three new domain files.** New rows route to `docs/CLAUDE_FLOOR_TRIPS.md`, `docs/CLAUDE_PO2.md` and `docs/CLAUDE_BILLING.md` (the "no CLAUDE_BILLING.md while pilot-gated" lock is gone — `rolloutStage = ALL_USERS` since 2026-08-06, live 2026-09-18 Q01); the `/floor` row describes the trip desk; the `/ci` row drops the false "URL only" line (`55c3cdc6`); `/admin/access` and the `/orders` redirect are routed; the Retired table gains the Floor decision rail (`79bcc412`); §4 gains a dated stamp snapshot (17 files, CORE at v27.35, 15 domain files at v27.24). Prior, v1.12 (2026-09-04): **§4 rewritten.** The old item 4 said to STOP and ask whenever a domain file's header disagreed with `CLAUDE_CORE.md`'s schema stamp; on the day this was written eleven of the twelve domain files disagreed and not one was a defect. The stamp records the version a file was last RECONCILED against, never a claim about the live schema, so lagging CORE is normal. Stopping is now reserved for what actually indicates a fault — a missing file, a domain file claiming a schema version NEWER than CORE's, or content that contradicts the live schema — and item 4 states explicitly that a lagging stamp must NOT be bumped to silence it, because a bump nobody earned by reading the file is the failure, not the cure. Item 3's "the domain files carry the same stamp" corrected in the same pass. Prior, v1.11 (2026-09-03): the `/ci` row now points at **`docs/CLAUDE_CI.md` (v1.0)**, the module's first canonical file; its "no CLAUDE_CI.md exists yet / a §7 block in CORE is still owed" clause is retired, the second half by CORE v98's ruling that CI's tables are documented in their own file exactly as MRN's are. Prior, v1.10 (2026-08-05): added the Billing pilot row (→ MAIL_ORDERS §23); all other rows re-verified against the 2026-08-04/05 reconciliation cycle (method: `docs/runbooks/reconciliation-method.md`)*
