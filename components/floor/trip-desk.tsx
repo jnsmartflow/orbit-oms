@@ -34,6 +34,7 @@ import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
+import { RouteCards } from "./route-cards";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
@@ -48,7 +49,7 @@ import {
   sumWeightKg,
 } from "./status-pill";
 import type { FloorSelection } from "@/lib/floor/selection";
-import type { FloorBoardResult, FloorBoardRow, FloorScope } from "@/lib/floor/types";
+import type { FloorBoardResult, FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -155,6 +156,9 @@ export function TripDesk({
   sideBody,
   tintOperators,
   unfilteredRows,
+  routeClubs,
+  clubReachRows,
+  searchActive,
 }: {
   floor: FloorBoardResult;
   trips: TripSummary[] | null;
@@ -237,8 +241,33 @@ export function TripDesk({
    * component still reads the FILTERED `floor` — only the lookup changed.
    */
   unfilteredRows: FloorBoardRow[];
+  /** Every route club, all delivery types (GET /api/floor/board `routeClubs`). */
+  routeClubs: FloorRouteClub[];
+  /**
+   * The board rows after search and the Status/Flags filter but BEFORE the
+   * delivery-type tab. Read by the route cards for one thing only: a club
+   * member whose route has no area on this tab (Kamrej on Local).
+   */
+  clubReachRows: FloorBoardRow[];
+  /** A search is up — the pool shows Flat until it is cleared (2026-09-19). */
+  searchActive: boolean;
 }) {
-  const [pivot, setPivot] = useState<"flat" | "route">("flat");
+  // ── TWO VIEW STATES, ONE PER LIST (2026-09-19) ───────────────────────────
+  //
+  // 🔴 THE POOL OPENS ON BY ROUTE (owner). The Tinting tab keeps its own switch,
+  // on Flat as before, and today's route rows — it used to share this one
+  // state, so making By route the pool's default would have flipped the
+  // Tinting tab into cards too.
+  //
+  // ⚠ A SEARCH SHOWS THE POOL FLAT, WITHOUT TOUCHING `poolPivot`. The search
+  // auto-ticks the bills it finds (floor-page.tsx), and a tick inside a card
+  // nobody has opened is a bill ticked out of sight — the "van leaves short"
+  // case floor-page's auto-tick comment warns about. Flat lists every tick.
+  // Clearing the search puts back whatever the planner had, because the saved
+  // choice was never overwritten.
+  const [poolPivot, setPoolPivot] = useState<"flat" | "route">("route");
+  const [tintPivot, setTintPivot] = useState<"flat" | "route">("flat");
+  const effectivePoolPivot = searchActive ? "flat" : poolPivot;
 
   // ── Scrolling in and out of a targeted add (owner, 2026-09-18) ────────────
   //
@@ -412,15 +441,24 @@ export function TripDesk({
   const showPivot =
     (activeTab === "floor" && (railSelection.kind === "pool" || addingToTripId !== null)) ||
     activeTab === "tinting";
+  // Which of the two states this toggle drives — the open tab's own.
+  const onTinting = activeTab === "tinting";
+  const shownPivot = onTinting ? tintPivot : effectivePoolPivot;
+  const setShownPivot = onTinting ? setTintPivot : setPoolPivot;
+  // While a search is up the pool is Flat and By route cannot be chosen; the
+  // button says why rather than doing nothing when pressed.
+  const routeLocked = !onTinting && searchActive;
   const pivotToggle = showPivot ? (
     <span className="inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[2px]">
       {(["flat", "route"] as const).map((p) => (
         <button
           key={p}
           type="button"
-          onClick={() => setPivot(p)}
-          className={`rounded-[5px] px-3 py-[3px] text-[11px] ${
-            pivot === p ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          onClick={() => setShownPivot(p)}
+          disabled={p === "route" && routeLocked}
+          title={p === "route" && routeLocked ? "Clear the search to group by route" : undefined}
+          className={`rounded-[5px] px-3 py-[3px] text-[11px] disabled:cursor-not-allowed disabled:opacity-50 ${
+            shownPivot === p ? "bg-white font-semibold text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
           }`}
         >
           {p === "flat" ? "Flat" : "By route"}
@@ -530,7 +568,7 @@ export function TripDesk({
             Every tint bill is either being mixed or finished. Both are on the Floor tab.
           </p>
         </div>
-      ) : pivot === "route" ? (
+      ) : tintPivot === "route" ? (
         // The pivot lives on the Live row now and that row renders on every tab,
         // so this tab has to honour it too — a toggle that moved but only worked
         // on one of the two views it is shown above would be worse than the
@@ -591,7 +629,7 @@ export function TripDesk({
               Nothing is waiting to be planned. New bills land here as they arrive.
             </p>
           </div>
-        ) : pivot === "flat" ? (
+        ) : effectivePoolPivot === "flat" ? (
           <FloorTable
             rows={sort(poolRows)}
             upcomingRows={sort(poolUpcoming)}
@@ -607,7 +645,20 @@ export function TripDesk({
                 "Adajan is 2 of 9" would change a number the operator already
                 reads. The upcoming half follows the route rows as one block,
                 with the same divider the flat view uses. */}
-            <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
+            {/* CARDS ON A TAB WITH CLUBS (Local today, 2026-09-19); every other
+                tab keeps the route rows exactly as they were. */}
+            {scope !== "All" && routeClubs.some((c) => c.deliveryType === scope) ? (
+              <RouteCards
+                deliveryType={scope}
+                clubs={routeClubs}
+                rows={poolRows}
+                // The one reach across the tab filter — see RouteCards. Same
+                // due-half and pool test as `poolRows`, just not scoped.
+                reachRows={clubReachRows.filter((r) => r.zone !== "upcoming" && isPoolRow(r))}
+              />
+            ) : (
+              <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
+            )}
             {poolUpcoming.length > 0 && (
               <FloorTable
                 rows={[]}

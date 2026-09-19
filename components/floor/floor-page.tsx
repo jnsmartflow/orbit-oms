@@ -68,7 +68,7 @@ import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
-import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
+import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub } from "@/lib/floor/types";
 import type { RailSelection } from "./trip-rail";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 import { chooseTripTypeName } from "@/lib/trips/type-choice";
@@ -182,6 +182,10 @@ export function FloorPage() {
 
   const [scope, setScope] = useState<FloorScope>("All");
   const [data, setData] = useState<BoardData | null>(null);
+  // The route clubs for the By route cards (2026-09-19). Rides the board
+  // response as `routeClubs`; kept beside `data` rather than in it, because
+  // BoardData is what the scope/search memos rebuild and clubs are neither.
+  const [routeClubs, setRouteClubs] = useState<FloorRouteClub[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -353,6 +357,7 @@ export function FloorPage() {
       if (!boardRes.ok) throw new Error(`HTTP ${boardRes.status}`);
       const board = await boardRes.json();
       setData({ floor: board.floor, pickers: board.pickers ?? [] });
+      setRouteClubs((board.routeClubs ?? []) as FloorRouteClub[]);
 
       // A failed side feed must not blank the board — surface its own error and
       // leave the tab empty rather than throwing the whole page away.
@@ -1077,6 +1082,16 @@ export function FloorPage() {
     const windows = scopedData.floor.windows.map((w) => ({ ...w, count: due.filter((r) => r.windowId === w.id).length }));
     return { ...scopedData.floor, rows: fRows, windows, total: due.length };
   }, [scopedData, parsed, filters]);
+
+  // The board after search + Status/Flags, but NOT scoped (2026-09-19). The
+  // route cards read it for one thing: a club member whose route has no area
+  // on the open tab (Kamrej on Local) — see components/floor/route-cards.tsx.
+  // Same two filters as `filteredFloor`, so a Status chip narrows that line
+  // exactly as it narrows every other.
+  const clubReachRows = useMemo<FloorBoardRow[]>(
+    () => (data ? applyFloorFilters(applySearch(data.floor.rows, parsed), filters) : []),
+    [data, parsed, filters],
+  );
 
   // Hold / Cancelled: search + Flags only (Status is a floor-only concept).
   const filteredHold = useMemo<FloorHoldRow[] | null>(
@@ -2040,6 +2055,9 @@ export function FloorPage() {
               // applied server-side, so a bill they leave out is still absent
               // here and still reads "not in this view".
               unfilteredRows={data?.floor.rows ?? []}
+              routeClubs={routeClubs}
+              clubReachRows={clubReachRows}
+              searchActive={searchQuery.trim() !== ""}
               // The SAME desk renders live and history, so the source is
               // decided here by the view (2026-08-25). "history" is the
               // read-only source — it suppresses every action in the panel

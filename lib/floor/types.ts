@@ -328,6 +328,18 @@ export interface FloorRouteClubMember {
   routeName: string;
   /** 1 = the main route, 2 = the sub. Members arrive in this order. */
   sortOrder: number;
+  /**
+   * The ONE other delivery type this route's bills are drawn from, or null.
+   *
+   * Non-null only when the route has NO area of the club's own type — so none of
+   * its bills can ever be on the club's tab — and its areas are all in one other
+   * type (Kamrej in the Local club: "Upcountry"). The card then shows that
+   * type's pool bills for this route, and labels the line with this name.
+   * Null for every route with an area on the club's tab: those show that tab's
+   * bills only (owner, 2026-09-19). Worked out by getRouteClubs from
+   * area_master, never configured by hand.
+   */
+  reachFrom: string | null;
 }
 
 export interface FloorRouteClub {
