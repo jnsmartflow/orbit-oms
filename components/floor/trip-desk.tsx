@@ -34,7 +34,7 @@ import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
-import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs, useCardLayout } from "./route-cards";
+import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs, useCardColumns } from "./route-cards";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
@@ -319,8 +319,8 @@ export function TripDesk({
   // model key — `club:<id>` or `single:<route key>`. Not the open list: that
   // also holds every card with a tick, and is derived below (`openCards`).
   const [clickedCard, setClickedCard] = useState<string | null>(null);
-  // Which of the cards' three width layouts to draw (route-cards.tsx).
-  const cardLayout = useCardLayout();
+  // Cards per row for the route cards, by screen width (route-cards.tsx).
+  const cardColumns = useCardColumns();
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
@@ -702,7 +702,7 @@ export function TripDesk({
             {cardModel !== null ? (
               <RouteCards
                 model={cardModel}
-                layout={cardLayout}
+                columns={cardColumns}
                 openKeys={openCards}
                 onToggleCard={toggleCard}
                 nowMs={nowMs}
