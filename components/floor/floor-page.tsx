@@ -1494,9 +1494,21 @@ export function FloorPage() {
    * the name → id mapping, exactly as the form does; most sessions never press
    * this.
    */
-  const createTripWithSelection = useCallback(async () => {
-    const ids = selectedIdsRef.current;
+  //
+  // ── MAKE TRIP FROM A LOAD-PLAN CARD (2026-09-19, owner) ──────────────────
+  // `fromPlan` = the card's bill ids. It is THIS flow — the same two API
+  // calls, the same checks, no new write path — with three differences the
+  // owner asked for, and nothing else:
+  //   - the card's bills REPLACE any ticks (the bar shows them while it runs);
+  //   - the delivery type is chosen from THOSE bills, by the same rule
+  //     (`chooseTripTypeName`), not from whatever was ticked before;
+  //   - it STAYS on the load plan: the ticks are cleared, the board reloads so
+  //     the plan regroups, and a toast offers "Open" (which selects the trip
+  //     on the rail exactly as a rail click does) instead of opening it.
+  const createTripWithSelection = useCallback(async (fromPlan?: { orderIds: number[] }) => {
+    const ids = fromPlan ? fromPlan.orderIds : selectedIdsRef.current;
     if (ids.length === 0) return;
+    if (fromPlan) setSelection(new Set(ids));
     setTripBarBusy(true);
     try {
       let opts = tripOptions;
@@ -1510,8 +1522,17 @@ export function FloorPage() {
         setTripOptions(opts);
       }
       // Null when every ticked bill is untyped — refused below exactly as
-      // before, since there is no letter to number the trip with.
-      const typeName = newTripTypeName;
+      // before, since there is no letter to number the trip with. From a plan
+      // card, the same rule over the card's own bills (in plan order).
+      const typeName = fromPlan
+        ? chooseTripTypeName(
+            (() => {
+              const typeById = new Map((data?.floor.rows ?? []).map((r) => [r.orderId, r.deliveryType] as const));
+              return ids.filter((id) => typeById.has(id)).map((id) => typeById.get(id) ?? null);
+            })(),
+            scope,
+          )
+        : newTripTypeName;
       const deliveryType = opts.deliveryTypes.find((d) => d.name === typeName);
       if (!deliveryType) {
         toast.error(`Could not match the delivery type "${typeName ?? "unknown"}" — nothing was created.`);
@@ -1550,6 +1571,16 @@ export function FloorPage() {
           `${trip.tripNumber} created, but ${failed.length} bill${failed.length === 1 ? "" : "s"} did not go on — ${failed[0].error}`,
         );
       }
+      if (fromPlan) {
+        // STAY on the plan (owner): clear the ticks, reload so the plan
+        // regroups without these bills, and offer the trip rather than open it.
+        setSelection(new Set());
+        await load();
+        toast.success(`Trip ${trip.tripNumber} made`, {
+          action: { label: "Open", onClick: () => selectRail({ kind: "trip", tripId: trip.id }) },
+        });
+        return;
+      }
       // Clears the selection, selects the new trip on the rail, refetches.
       await onTripCreated(trip.id);
     } catch {
@@ -1557,7 +1588,7 @@ export function FloorPage() {
     } finally {
       setTripBarBusy(false);
     }
-  }, [newTripTypeName, tripOptions, viewMode, histDate, onTripCreated]);
+  }, [newTripTypeName, tripOptions, viewMode, histDate, onTripCreated, data, scope, load, selectRail]);
 
   // ⚠ `attachableTrips` WENT WITH THE DROPDOWN (2026-09-16). The same rule — a
   // dispatched or cancelled trip cannot take bills — now lives on the rail
@@ -2066,6 +2097,8 @@ export function FloorPage() {
               searchActive={searchQuery.trim() !== ""}
               loadPlanConfigs={loadPlan.configs}
               routeNames={loadPlan.routeNames}
+              onMakeTrip={(orderIds) => void createTripWithSelection({ orderIds })}
+              makeTripBusy={tripBarBusy}
               // The SAME desk renders live and history, so the source is
               // decided here by the view (2026-08-25). "history" is the
               // read-only source — it suppresses every action in the panel
