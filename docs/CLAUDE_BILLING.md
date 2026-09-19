@@ -15,9 +15,9 @@ and the folder `app/(mail-orders)/` keep their old names. It has three tabs: **O
 invoiced) and **Print** (trips Floor sent to billing, whose invoice numbers billing copies
 into SAP).
 
-**This file replaces the router's old rule.** The router (`CLAUDE.md §3`) and
-`CLAUDE_MAIL_ORDERS.md §23` say no billing file exists "while pilot-gated". That rule no
-longer applies: the live `billing_settings` row reads `rolloutStage = ALL_USERS`,
+**This file replaces the router's old rule.** Was "no billing file while pilot-gated" (router
+`CLAUDE.md §3`, `CLAUDE_MAIL_ORDERS.md §23`) until 2026-09-19; now both point here (MAIL_ORDERS
+v1.14 `915f46f2`, router v1.13 `349c6929`). Do not revert. The pilot is over: the live `billing_settings` row reads `rolloutStage = ALL_USERS`,
 `updatedAt 2026-08-06 10:41` (live 2026-09-18, Q01).
 
 ### What this file owns
@@ -433,7 +433,7 @@ A per-user size, in px, for the remark text in the Orders tab's notes band.
 - Retiring the dormant flag-OFF face (§2) is an owner decision; method in
   `archive/RETIREMENT-PLAYBOOK.md`.
 - Stale code comments (§11) belong to the code-comment pass in sweep report §4.
-- `CLAUDE_MAIL_ORDERS.md §23` and the router's billing row need pointing here — batches B and C.
+- ~~`CLAUDE_MAIL_ORDERS.md §23` and the router's billing row need pointing here~~ — DONE: MAIL_ORDERS v1.14 (`915f46f2`), router v1.13 (`349c6929`).
 
 ---
 

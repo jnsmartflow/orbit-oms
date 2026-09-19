@@ -371,7 +371,7 @@ Operator Pause CTA: `bg-amber-600 hover:bg-amber-700 text-white`
 Skip CTA: `bg-gray-100 hover:bg-gray-200 text-gray-700` (passive — never primary)
 Remove OBD destructive confirm: `bg-red-600 hover:bg-red-700 text-white`
 
-### Action-surface rules (general canon — established 2026-07-26 on the Floor action-surfaces redesign, `drafts/web-update-2026-07-26-floor-action-surfaces.md` §2; shipped 2026-07-27)
+### Action-surface rules (general canon — established 2026-07-26 on the Floor action-surfaces redesign, `docs/prompts/archive/2026-08/web-update-2026-07-26-floor-action-surfaces.md` §2; shipped 2026-07-27)
 
 - **One brand button per surface, and it goes to the state's REAL job — not to a fixed button.** Exactly one brand button per state, never zero, never two; which button is brand may change with the bill's state (Floor's detail panel: Ship-to in most states, Release on a held bill).
 - **Disabled buttons are grey, never faded primary** — `bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed`. A faded brand button reads as broken, not waiting. Box model identical in both states (border present even when invisible) so nothing shifts on enable.
@@ -1793,7 +1793,7 @@ The desktop `/picking` table no longer exists. `components/picking/picking-queue
 `archive/2026-07-picking-desktop/`; **`/picking` itself STAYS LIVE** and renders the mobile card
 board (§62) at every screen width. Its story — why it went, what replaced it, what moved out first —
 belongs to that folder's `README.md` *(exists — verified 2026-08-04; the discovery report
-`docs/prompts/drafts/code-discovery-2026-07-28-picking-desktop-retirement.md` remains the dated
+`docs/prompts/archive/2026-08/code-discovery-2026-07-28-picking-desktop-retirement.md` remains the dated
 working record behind it)*.
 
 **Why:** Floor Control (`/floor`) was built to replace it, the floor team works on Android phones

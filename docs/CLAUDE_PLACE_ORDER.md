@@ -779,7 +779,7 @@ that here.
 | GET | `/api/place-order/data` | Returns same shape (used by `/place-order` desktop only). Session-auth'd. **Also filters `isPrimary = true`** on SKU lookup as of commit `46b500fb` (2026-07-15) — `app/api/place-order/data/route.ts:97-98`. |
 | GET | `/api/place-order/last-order/[customerCode]` | Most recent `mo_orders` row for that code **within the last 30 days**, with its lines (§20). `app/api/place-order/last-order/[customerCode]/route.ts:41`; caller `last-order-recall.tsx:154` |
 
-🔴 **OPEN security item — `/api/order/data` is public and unauthenticated.** It has no auth of its own (its header calls it a "Public, unauthenticated endpoint", `app/api/order/data/route.ts:6-8`), and every call returns every customer name, code and area from `mo_customer_keywords` (`route.ts:33-36`) plus the active catalogue. Tracked as P0 at `docs/ROADMAP.md:1540` ("`/api/order/data` is an unauthenticated full-catalogue dump"); `CLAUDE_PO2.md §12` records the /po2 side. No fix is proposed here.
+🔴 **OPEN security item — `/api/order/data` is public and unauthenticated.** It has no auth of its own (its header calls it a "Public, unauthenticated endpoint", `app/api/order/data/route.ts:6-8`), and every call returns every customer name, code and area from `mo_customer_keywords` (`route.ts:33-36`) plus the active catalogue. Tracked as P0 at `docs/ROADMAP.md` section "`/po2` — the v2 order page" → "P0 — 🔴 `/api/order/data` is an unauthenticated full-catalogue dump"; `CLAUDE_PO2.md §12` records the /po2 side. No fix is proposed here.
 
 All routes: `export const dynamic = 'force-dynamic'`.
 

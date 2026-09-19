@@ -209,7 +209,7 @@ Note: {free text}                       ← optional
 
 **Test harness:** `docs/Parser/test-app-parser.ps1` — 21/21 assertions pass. Re-run after any edit to the parser.
 
-**New remark types from app-format:** `Bounce` and `DTS` (from `Remark:` / `Note:` fields). Signal badges for these are deferred — parser delivers the text; badge wiring needs meaning clarification first. `Truck Order` already handled by existing signal catalog.
+**New remark types from app-format:** `Bounce` and `DTS` (from `Remark:` / `Note:` fields). `Bounce` already raises the red **Bounce** blocker badge on the bill card — `getOrderSignals()` matches `\bbounce\b` over the remark text (`lib/mail-orders/utils.ts:739-740`, since `761eec06`; §9.3). `DTS` has no badge — no `getOrderSignals()` arm matches it; its wiring needs meaning clarification first. `Truck Order` already handled by existing signal catalog.
 
 ---
 
@@ -818,7 +818,7 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 - **`CATEGORY_KEYWORDS`** in `enrich.ts` — dead code.
 - **`mo_sku_lookup` GLOSS Brilliant White state:** 3 IN28301xxx Fini rows still have null `refMaterial` (10L IN28301082, 100ML IN28301098, 200ML IN28301074) — Generic codes not yet supplied.
 - **Table-mode parity gap.** `mail-orders-table.tsx` (§9.1) does NOT show the ALT SKU column. Only the Review View (§9.2) has it. Small/deferred per 2026-06-19 handoff.
-- **Bounce / DTS signal badges deferred.** Parser v7.2 delivers `Bounce` and `DTS` remark text from app-format emails, but badge wiring (meaning, colour, card routing) is not yet built. `Truck Order` is already in the signal catalog.
+- **DTS signal badge deferred.** Parser v7.2 delivers `Bounce` and `DTS` remark text from app-format emails. `Bounce` is wired (red blocker, bill card — `lib/mail-orders/utils.ts:739-740`, §9.3); `DTS` badge wiring (meaning, colour, card routing) is not built — no arm in `getOrderSignals()` matches it. `Truck Order` is already in the signal catalog.
 - **`shipToOverrideCustomerId` can be null even when `shipToOverride` is true** (§6) — free-text redirects that never resolved to a real `delivery_point_master` row. Any code path reading the override must handle flag-true/id-null as valid, not treat it as a data-integrity error.
 - **~~Most `app/api/mail-orders/**` routes check session only, never role/permission~~ — FIXED 2026-08-30 (`0f56eede`)** (surfaced 2026-07-10; open for seven weeks). **The ELEVEN write routes now gate on `checkAnyPermission(roles, "mail_orders", "canEdit")`**, the same block as `app/api/billing/mail-order/actions/route.ts:72-76`: `[id]/customer`, `[id]/lock`, `[id]/note`, `[id]/punch`, `[id]/so-number`, `[id]/split`, `lines/[lineId]/resolve`, `lines/[lineId]/status`, `re-enrich`, `backfill-customers`, `learn-customer`. **`checkAnyPermission`, never `checkPermission`** — the latter reads only the primary role and would deny a grant held on a secondary one. The READ routes were deliberately left as they were (`route.ts` GET list, `[id]/original-lines`, `skus`, `customers/search`, `debug-enrich`) — the fix gated writes, not reads. (Still intentionally exempt: `ingest` = HMAC-authenticated; `keywords` = deliberately public for the parser.) ⚠ The gap was **no check at all**, not `canView` — `CORE §13` mis-stated it as `canView` the whole time it was open.
 - **~~`GET /api/mail-orders/backfill-enrich` is fully unauthenticated~~ — FIXED 2026-08-30 (`0f56eede`)** (surfaced 2026-07-10). The GET now runs `requireRole(session, [ROLES.ADMIN])` before `runBackfill()` (`backfill-enrich/route.ts:169`). That is the ROLE only: `requireRole` (`lib/rbac.ts:58-66`) has no `isSuperuser` flag arm, so a flag-only superuser is redirected to `/unauthorized`. **The POST's HMAC path was left untouched.** ⚠ It is not reachable without a session: `middleware.ts` bypasses only `/api/mail-orders/ingest` and `/keywords` (`:59-67`), so a sessionless machine POST is redirected to `/login` (`:77-79`) before the route's own HMAC check (`:147-150`) runs. The `TEMPORARY — delete after backfill` comment is still in its own source; retire-or-keep is a ROADMAP item.
@@ -827,7 +827,7 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 
 ## 19. Missing customer resolver (multi-SO aware)
 
-Component: `components/shared/customer-missing-sheet.tsx`. Opens from the missing-customer badge on the Tint Manager Kanban. ⚠ It also opened from the Support board until that board was retired 2026-07-27 — **Floor has no equivalent entry point**, so an unmatched customer can currently only be resolved from Tint Manager. Gap, not a decision → ROADMAP.
+Component: `components/shared/customer-missing-sheet.tsx`. Opens on Tint Manager from the header's amber "N missing" badge (`components/tint/tint-manager-content.tsx:846-866`), and as the interceptor when Assign or "Base — No Tint" is tried on a `customerMissing` bill (`:488-495`; `CLAUDE_TINT.md §1.12`). The header badge dates from `081b0a63` (2026-04-13) and survived the 2026-09-06 retirement of the Kanban (`CLAUDE_TINT.md §1`). ⚠ It also opened from the Support board until that board was retired 2026-07-27 — **Floor has no equivalent entry point**, so an unmatched customer can currently only be resolved from Tint Manager. Gap, not a decision → ROADMAP.
 
 ### What it does
 
@@ -911,12 +911,9 @@ Admin "Settings → Hide → Tags" can switch any Mail Order badge off for **eve
 ## 22. Access — per-user ticks (page key `mail_orders`)
 
 Access to `/mail-orders` is **entirely DB-driven** — not hardcoded to `billing_operator` anywhere. No
-code, no deploy needed to grant or revoke. The live authority is **per-user ticks** in
-`user_page_access`: `system_config.ACCESS_SOURCE = "user"` (live 2026-09-18, Q02), read by
-`getAccessSource()` (`lib/access/source.ts`). In user mode `checkAnyPermission` returns the viewer's
-own `user_page_access` row for the page key (`lib/permissions.ts:789-807`); an absent row is all-false.
-`role_permissions` is read only in role mode — the fallback if `ACCESS_SOURCE` is anything but
-`"user"` or unreadable — and as the baseline. Per-user access is `CLAUDE_CORE.md §5` + `§7.14`.
+code, no deploy needed to grant or revoke. The live authority is **per-user ticks** on page key
+`mail_orders` (`ACCESS_SOURCE = "user"`, live 2026-09-18, Q02); the resolver, the role-mode fallback
+and `role_permissions` as baseline are owned by `CLAUDE_CORE.md §5` + `§7.14`.
 
 | Layer | File | Mechanism |
 |---|---|---|

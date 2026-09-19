@@ -68,12 +68,11 @@ its `md:hidden` breakpoint, so the same board renders on a phone and on a PC.
   per-module bottom-tab slot (`CLAUDE_UI.md §59`).
 
 **Who can use it — access reality:** page + every API route gate on `checkAnyPermission(roles,
-"picking", …)` — `"picking"` is a **`PageKey`** (`lib/permissions.ts`), not a role slug. The function
-(`lib/permissions.ts:789-814`) returns true for, in order: **(1)** the `admin` ROLE, **(2)** the
-`users.isSuperuser` FLAG, then **(3)** in user mode the person's own `user_page_access` row for
-`picking`; `role_permissions` is read only in role mode. Live mode is **`user`** (`ACCESS_SOURCE`,
-live 2026-09-18, Q02), so who holds `picking` is a **per-user tick**, not a per-role fact. "The admin
-bypass" anywhere in this file means that admin-role-OR-superuser-flag pair. The SEED baseline
+"picking", …)` — `"picking"` is a **`PageKey`** (`lib/permissions.ts`), not a role slug. Live mode is
+**`user`** (`ACCESS_SOURCE`, live 2026-09-18, Q02), so who holds `picking` is a **per-user tick**, not a
+per-role fact; the resolver order (admin role, superuser flag, then the user's row) is owned by
+`CLAUDE_CORE.md §5` + `§7.14`/`§7.15`. "The admin bypass" anywhere in this file means that
+admin-role-OR-superuser-flag pair. The SEED baseline
 (`prisma/seed.ts:108-110`) is `floor_supervisor` (canView + canEdit), `picker` (canView **only** —
 his board renders but he cannot assign/approve by API), `operations` (canView + canEdit).
 > **Per-user reality, SELECT-verified 2026-09-18 (commit `aeed851c`):** all 6 active floor
@@ -414,7 +413,7 @@ So waiting / picking / needs-check never drop off by date; only the Checked band
 > (caller-less but a public API contract). No stale-badge risk: `AgeBadge` renders only under
 > `variant==="assign"`. Live-verified on the pilot 2026-08-02. **This "done = check date" convention
 > now has three implementations** — Floor (the original), the Billing Picking tab
-> (`CLAUDE_MAIL_ORDERS.md §23.4`), and this board. Each
+> (`CLAUDE_BILLING.md §6`), and this board. Each
 row's `zone` (`due` | `upcoming`) is computed from `dispatchTargetDate` vs today in `lib/picking/queue.ts`
 (future date ⇒ `upcoming`; ≤ today or NULL ⇒ `due`; an early-released bill is forced `due`), with a
 `ageDays` for the age tag.
@@ -511,8 +510,8 @@ One shared component — **`SmuBadge` in `components/picking/card-atoms.tsx`**, 
   ~78% of cards and bury the ~19% worth seeing — the same reasoning that keeps `0d` off `AgeBadge`.
   **The gate lives in that one component**; never re-test the codes at a call site. `isSmuBadged()`
   is exported for callers that must decide whether to render a *wrapper* (see the two notes below).
-- **Colours are `CLAUDE_UI.md §1209`'s SMU palette** — Decorative Projects indigo `#4f46e5` on
-  `#eef2ff`, Retail Offtake cyan `#0891b2` on `#ecfeff`. §1209 is the source of truth for these two
+- **Colours are `CLAUDE_UI.md §56`'s SMU palette** — Decorative Projects indigo `#4f46e5` on
+  `#eef2ff`, Retail Offtake cyan `#0891b2` on `#ecfeff`. UI §56 is the source of truth for these two
   SMUs app-wide; never invent one. They are hardcoded rather than imported because the only other
   implementation (`SMU_DOT`, `components/reports/tint-summary-document.tsx`) is a module-private
   const keyed by SMU *name* holding a single dot colour — nothing importable exists. If it is ever
@@ -529,7 +528,7 @@ One shared component — **`SmuBadge` in `components/picking/card-atoms.tsx`**, 
   `import_raw_summary.smu` disagree.
 - **⚠ The "Deco"/"10" caveat.** `SMU_CODE_BY_NAME` contains a fifth entry, `"Deco" → "10"`, that
   `DIVISION_TO_SMU` does NOT: 18 live orders carry that name, written by the legacy XLS path, which
-  copies `summary.smu` verbatim instead of resolving through the map. `CLAUDE_CORE.md §618` records
+  copies `summary.smu` verbatim instead of resolving through the map. `CLAUDE_CORE.md §7.4` records
   the division as parked/un-mapped, and `components/floor/floor-table.tsx` says the same. The
   reverse entry exists so the lookup is total over what production actually holds — it does **not**
   mean the forward map should learn `"10"`, which would change what the importer writes. `10` is
@@ -550,7 +549,7 @@ One shared component — **`SmuBadge` in `components/picking/card-atoms.tsx`**, 
   or a tint bill outside 74/77 draws a separator in front of an empty run.
 - **Floor fills the field but renders no badge.** `FloorBoardRow extends PickingQueueRow`, so
   `lib/floor/queries.ts` supplies `smuCode` the same derived way. Floor's own SMU treatment is
-  unchanged (the `shipMarkers` site icon, `CLAUDE_FLOOR.md §7.5`).
+  unchanged (the `shipMarkers` site icon, `components/floor/floor-table.tsx:81-89`).
 
 **Colour work — the word TINT or BASE [LIVE, 2026-09-17].** `PickingQueueRow.colourWork: "tint" |
 "base" | null` answers "did the tint room actually mix this bill's colour?" — decided in ONE place,
@@ -1540,7 +1539,7 @@ Three UI rules that came from live testing on 2026-08-08 and should not be undon
 
 ### 11.5 What Billing sees
 
-Owned by `CLAUDE_MAIL_ORDERS.md §23.4`; the picking-side contract is just this: **Billing reads
+Owned by `CLAUDE_BILLING.md §6`; the picking-side contract is just this: **Billing reads
 CONFIRMED findings only** (`recordedById IS NOT NULL`), the same predicate on both its surfaces —
 the Picking-list ⚠ flag and the detail panel. A picker's unconfirmed report is a claim, not a fact,
 and must never reach a billing screen. If that predicate ever diverges between the two, a row can
@@ -1655,7 +1654,7 @@ Evidence: all nine commits confirmed present on `main` by `git log` before anyth
 - PCK-11 (§5.2, NEW block): **the SMU badge shipped** — shared `SmuBadge` + `isSmuBadged` in
   `card-atoms.tsx`, on both cards' where-rows and both detail headers, rendering for `smuCode`
   **74/77 only** and silent for 70/76/10/null by design (70 is ~78% of a live board). Colours are
-  `CLAUDE_UI.md §1209`'s palette, hardcoded with a citation because the only other implementation
+  `CLAUDE_UI.md §56`'s palette, hardcoded with a citation because the only other implementation
   is module-private. `PickingQueueRow.smuCode` is **derived in memory** from `orders.smu` via
   `SMU_CODE_BY_NAME` — **no schema change, no migration, no extra query.** Records the
   name↔code bijection evidence, the `"Deco"`/`"10"` parked-division caveat, and the two placement

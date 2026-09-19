@@ -338,7 +338,7 @@ catalogue with its packs. On any error it answers 200 with empty arrays
 Its callers at HEAD are `app/po/po-page.tsx:763` and `app/po2/po-v2-page.tsx:557`, and
 through the latter, /po9.
 
-**This is OPEN.** It is tracked as a P0 at `docs/ROADMAP.md:1540-1550`. This file
+**This is OPEN.** It is tracked as a P0 at `docs/ROADMAP.md` → section "`/po2` — the v2 order page" → "P0 — 🔴 `/api/order/data` is an unauthenticated full-catalogue dump". This file
 proposes no fix.
 
 ---
@@ -402,34 +402,29 @@ proposes no fix.
 ## 15. Relationship to /po's retirement
 
 `/po` is still live and unchanged, and it runs alongside /po2
-(`docs/ROADMAP.md:1531`). The direction is to retire `/po` through the playbook, after a
+(`docs/ROADMAP.md` → section "`/po2` — the v2 order page", intro). The direction is to retire `/po` through the playbook, after a
 feature-for-feature parity check against /po2. That item is **not scheduled**
-(`docs/ROADMAP.md:1552-1556`). Known v2 gaps the parity check will raise:
+(same section → "P2 — Retire `/po`, per the playbook — NOT SCHEDULED"). Known v2 gaps the parity check will raise:
 - no multi-bill (§7)
-- tools step by 1 (`docs/ROADMAP.md:1640-1653`)
+- tools step by 1 (same section → "P2 — v2 tools step by 1 where v1 steps by 25 / 12 / 500")
 
 ---
 
 ## 16. Open items (ROADMAP pointers only)
 
-| Item | ROADMAP |
+| Item | ROADMAP heading (all under section "`/po2` — the v2 order page" in `docs/ROADMAP.md`) |
 |---|---|
-| P0: `/api/order/data` is unauthenticated | `docs/ROADMAP.md:1540-1550` |
-| P2: retire `/po` (not scheduled) | `:1552-1556` |
-| P3: remove the `/po-v2-8f4kd2` redirect | `:1558-1563` |
-| P1: decide whether storage is local or in the database | `:1585-1589` |
-| P3: consolidate the manifests | `:1596-1600` |
-| P3: `CROSS_DEPOTS` is duplicated in /po and /po2 | `:1610-1615` |
-| P2: v2 tools step by 1 | `:1640-1653` |
-| P2: stale comments from `23a4a502` | `:1655-1667` |
+| P0: `/api/order/data` is unauthenticated | "P0 — 🔴 `/api/order/data` is an unauthenticated full-catalogue dump" |
+| P2: retire `/po` (not scheduled) | "P2 — Retire `/po`, per the playbook — NOT SCHEDULED" |
+| P3: remove the `/po-v2-8f4kd2` redirect | "P3 — Remove the `/po-v2-8f4kd2` redirect" |
+| P1: decide whether storage is local or in the database | "~~P1 — DECISION OPEN: the storage model, local or database~~ — DECIDED IN PRACTICE: per phone" (closed in the ROADMAP) |
+| P3: consolidate the manifests | "P3 — Four manifests exist; consolidate once `/po` retires" |
+| P3: `CROSS_DEPOTS` is duplicated in /po and /po2 | "P3 — `CROSS_DEPOTS` exists three times and the copies must be edited together" |
+| P2: v2 tools step by 1 | "P2 — v2 tools step by 1 where v1 steps by 25 / 12 / 500" |
+| P2: stale comments from `23a4a502` | "P2 — Three stale comments left over from `23a4a502`" |
 
-⚠ **Two ROADMAP entries disagree with the code at `ec6343ba`.**
-- "Fav block on the board — BLOCKED" (`:1565-1570`): the Favourites card and picker are
-  live (§9).
-- "Ten board tiles still have no tin photograph" (`:1572-1578`): three tiles lack art,
-  and the ten tile names it lists are no longer all on the board (§6).
-
-Fixing those entries belongs to the ROADMAP pass.
+The two ROADMAP entries that disagreed with the code at `ec6343ba` were corrected in the ROADMAP pass of 2026-09-19 (`856d0e71`): the Fav block is now "~~P2 — Fav block on the board~~ — SHIPPED" (the Favourites card and picker are
+live, §9), and the art item is "P2 — Three board tiles still have no tin photograph" (§6).
 
 ---
 
