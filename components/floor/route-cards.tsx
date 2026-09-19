@@ -312,7 +312,12 @@ interface LeafWiring {
 //
 // ONE GRID OF EQUAL CARDS that flow in order — clubs first by sortOrder, then
 // the single-route cards by kilos, "No route" always last (buildRouteCards).
-// Columns by screen width: 4 at ≥1400px, 3 at 1100–1399px, 2 below.
+// Columns by screen width: 4 at ≥1470px, 3 at 1100–1469px, 2 below.
+//
+// ⚠ 1470, NOT 1400 (owner, 2026-09-19). Four equal columns at 1440px leave a
+// card ~215px of text, and "Kamrej · Upcountry · 3 stops · 1,174 kg" needs
+// 225px (measured in Chrome with the app's font) — the name was cut to
+// "Ka…". From 1470px it fits whole.
 //
 // 🔴 THE COLUMN COUNT IS KNOWN TO JS, NOT LEFT TO CSS. A card's panel opens
 // full width directly under the ROW that card is in, and which row that is
@@ -324,7 +329,7 @@ interface LeafWiring {
 // ⚠ NOTHING COUNTS CARDS BY HAND. A new club or a new route with bills takes
 // the next slot; see RouteCards for how every card gets the same height.
 
-const FOUR_MIN = 1400;
+const FOUR_MIN = 1470;
 const THREE_MIN = 1100;
 
 function columnsFor(width: number): number {
