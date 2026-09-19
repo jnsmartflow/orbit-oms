@@ -1,16 +1,17 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.8 · Schema v27.13 · August 2026 · updated 2026-08-04
+# v1.9 · Schema v27.24 · September 2026 · updated 2026-09-19
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Depot-facing phone-order entry (desktop + going-forward mobile) + public mobile equivalent. Both surfaces output a `mailto:` link with the order body — same email path back to the mail order pipeline. No DB writes on submit.
+Depot-facing phone-order entry: desktop `/place-order` (session) plus the public mobile pages `/po` and `/po2` (`/po9`). Every surface outputs a `mailto:` link with the order body — same email path back to the mail order pipeline. No DB writes on submit.
 
 Routes:
 - **`/place-order`** — desktop, auth'd. Sidebar nav label: "Purchase Order (PO)". Brought to full `/po` feature parity 2026-06-09 (recents, multi-bill, options panel, unified email).
-- **`/po`** — **going-forward** depot mobile PO page, **public (no login)** (Orbit bar, multi-bill, recents, browser-history back-nav). See §25.
+- **`/po`** — v1 depot mobile PO page, **public (no login)** (Orbit bar, multi-bill, recents, browser-history back-nav). Still live; its retirement is planned but not scheduled (`docs/ROADMAP.md` "P2 — Retire `/po`"). See §25.
+- **`/po2`** — the v2 public order page and `/po`'s successor, live since 2026-09-10 (`app/po2/page.tsx:4`, `145b5f32`). **`/po9`** mounts the same component with ship-to off (`app/po9/page.tsx:47`, `23804504`). **`/po-v2-8f4kd2`** is a server `redirect("/po2")` stub (`app/po-v2-8f4kd2/page.tsx:32`). All three are owned by **`docs/CLAUDE_PO2.md`** (§1 ownership, §3 routes, §15 `/po` retirement) — not described here.
 - ~~**`/order`**~~ — **RETIRED 2026-07-27** (commit `de48357d`). Was the public no-login mobile page; `/po` supersedes it and is also public. Full story: **`archive/2026-07-order/README.md`** — read that before touching anything named `/order`.
 
-**Order recipient (live):** `/po` and `/place-order` send to **`surat.depot@akzonobel.com`** (AkzoNobel inbox auto-forwards to `surat.order@outlook.com`, which the Mail Orders parser still watches). `/order` sent to the old `surat.order@outlook.com` directly until its retirement — that is why the parser inbox is configured the way it is. See §11.
+**Order recipient (live):** `/place-order`, `/po`, `/po2` and `/po9` all send to **`surat.depot@akzonobel.com`** (AkzoNobel inbox auto-forwards to `surat.order@outlook.com`, which the Mail Orders parser still watches). Only desktop `/place-order` also CCs `surat.order@outlook.com` (§11). `/order` sent to the old `surat.order@outlook.com` directly until its retirement — that is why the parser inbox is configured the way it is. See §11.
 
 DB `pageKey` stays `place_order`.
 
@@ -21,6 +22,8 @@ Primary users: admin, billing_operator, tint_manager. Restricted-view users: sup
 ## 1. What this page is
 
 Operator types a phone order quickly while a dealer is on the line. Output is a `mailto:` link. Desktop `/place-order` emits the plain order body; `/po` intentionally diverges (carries Dispatch / Remark / Note / conditional Ship-to lines — §25), though a plain `/po` order is byte-identical to it. The retired `/order` shared that same plain body. The email lands back in OrbitOMS and is parsed by the Mail Orders parser (**V7 line — version ruling + repo/live split owned by `CLAUDE_MAIL_ORDERS.md §3`**, do not restate numbers here; this line named "v6_5" until 2026-08-04). App-format `/po`/`/place-order` emails route through its `Parse-AppBody` path (`CLAUDE_MAIL_ORDERS.md §3.1`).
+
+`/po2` and `/po9` build their body through the same shared `renderOrderBody` (§11); everything else about them is `CLAUDE_PO2.md` (§2 compares the three order pages).
 
 Keep the page fast — no scroll, no nested popovers, keyboard-first on desktop, thumb-first on mobile.
 
@@ -87,7 +90,8 @@ isPrimary       BOOLEAN NOT NULL DEFAULT true  — v27.5. False on confirmed dup
                                                   /api/place-order/data filter
                                                   WHERE isPrimary = true on this table
                                                   (confirmed live 2026-07-16 against
-                                                  route.ts:92-93 — `skuRows` query).
+                                                  `app/api/place-order/data/route.ts:97-98`
+                                                  — `skuRows` query).
                                                   Desktop was fixed to match mobile in
                                                   commit `46b500fb` (2026-07-15). An
                                                   intervening draft claimed this route was
@@ -138,6 +142,13 @@ SET "canView" = EXCLUDED."canView", "canEdit" = EXCLUDED."canEdit";
 ```
 
 Login redirect (`lib/rbac.ts`): support → `/place-order`. dispatcher → `/place-order`.
+
+**`place_order_ship_to` — the desktop Ship To tick (PageKey, `lib/permissions.ts:249`; label "Purchase Order · Ship-to", `:528`; added `650f4b1e`, 2026-09-17).** Only `canEdit` is read. `app/(place-order)/layout.tsx:47` resolves `canShipTo = allPerms["place_order_ship_to"]?.canEdit ?? false` off the same `allPerms` map as the sidebar, and `PlaceOrderAccessProvider` (`components/place-order/place-order-access-provider.tsx`) carries it to the page, defaulting to false outside the provider. Without it, `/place-order`:
+- draws no Ship To block in the cart panel (`cart-panel.tsx:391`),
+- restores a draft with ship-to forced to `""` (`place-order-page.tsx:342`),
+- builds the email with ship-to forced to `""` (`place-order-page.tsx:626`).
+
+The admin role and the superuser flag short-circuit to the full admin grant set (`getAllPermissionsForRoles`, `lib/permissions.ts:894-901`); everyone else needs a tick. The key is in `ACTION_PAGES.canEdit` (`lib/permissions.ts:433-436`) so `/admin/access` can grant it. Live 2026-09-18 (Q03a, `user_page_access`): rows=5, canView=5, **canEdit=4**. ⚠ The provider's own header says it draws the screen and is **not a security boundary**: the send is a `mailto:` with no server re-check, and the public mobile pages keep their own ship-to (`/po` §25; `/po2` vs `/po9` → `CLAUDE_PO2.md §10`).
 
 ⚠ **Role vs page key — `dispatcher` is BOTH words, only one survives.** Everything in this section is about the `dispatcher` **ROLE** (live, 3 active users incl. Ajay + Dhanraj — CORE §5, grants re-SELECTed 2026-08-04: `place_order` canView only, everything else all-false; the seed still wrongly grants more). The `dispatcher` **PAGE KEY** was retired 2026-07-28 with the Planning board (CORE §12) — same word, different union. Say which is meant whenever editing anything named "dispatcher".
 
@@ -196,7 +207,7 @@ Sub-product tabs (top) → pack header row → base × pack matrix.
 
 **Tab list and order come from menu rows + `sortOrder`** (NOT from a `WITHIN_SECTION_ORDER` constant — that file does not exist; an earlier doc reference was stale).
 
-**Tab label** = `uiGroup ?? subProduct` in `family-nav-with-tabs.tsx`, then run through an optional **`TAB_DISPLAY` render-map** that merges/relabels tabs at the render layer (no `uiGroup` change, no reseed, search/mobile untouched). Used to merge **WS Tile + WS Metallic → one "Tile & Metallic" tab** (the Set dedups) and drop "Protect" → Dustproof / Rainproof / Hi-Sheen. Tabs never wrap: `whitespace-nowrap shrink-0` on the button + `overflow-x-auto` on the row (scroll if needed). One-teal rule intact.
+**Tab label** = `uiGroup ?? subProduct` in `family-nav-with-tabs.tsx`, then run through an optional **`TAB_DISPLAY` render-map** that merges/relabels tabs at the render layer (no `uiGroup` change, no reseed, search/mobile untouched). Used to merge **WS Tile + WS Metallic → one "Tile & Metallic" tab** (the Set dedups) and drop "Protect" → Dustproof / Rainproof / Hi-Sheen. Tabs never wrap: `whitespace-nowrap shrink-0` on the button + `overflow-x-auto` on the row (scroll if needed). One-brand-colour rule intact (the `brand-*` accent, violet since `c96157ea`; colours are `CLAUDE_UI.md`'s).
 
 **Flat-list families (no tab bar):** a family with exactly one `uiGroup` auto-hides the tab strip — `showTabs = subProductNames.length > 1` in `family-nav-with-tabs.tsx`. No grid change needed (e.g. PRIMER flat list).
 
@@ -247,7 +258,7 @@ This is a **separate join mechanism from the pack join above** — noted here be
 other half of "how order entry finds things." All three order surfaces read their **customer**
 list from **`mo_customer_keywords`**, NOT `delivery_point_master`:
 
-- Desktop `/api/place-order/data/route.ts` (55-62) and mobile `/api/order/data/route.ts` (33-36)
+- Desktop `/api/place-order/data/route.ts` (60-67) and mobile `/api/order/data/route.ts` (33-36)
   both run `prisma.mo_customer_keywords.findMany(...)`, dedup to one entry per `customerCode`.
 - Neither route touches `delivery_point_master` at all.
 
@@ -298,7 +309,7 @@ Distinguishable visually. NA cells have different bg + `cursor: not-allowed`.
 
 ### Pack step map — CORRECTED 2026-07-16
 
-`PACK_STEP_MAP` in `lib/place-order/pack.ts:108-123`. **The 1L and 4L values below were wrong in
+`PACK_STEP_MAP` in `lib/place-order/pack.ts:111-126`. **The 1L and 4L values below were wrong in
 earlier docs (1L was documented as step 12, 4L as step 6) — the live code is 6 and 4.** Full table,
 verified live 2026-07-16:
 
@@ -314,20 +325,20 @@ verified live 2026-07-16:
 
 Unlisted pack label → `?? 1` default.
 
-`PACK_CONTAINER_MAP` (`pack.ts:183-200`): `50ML`→"box 12", `100ML`→"box 24", `200ML`→"box 12",
+`PACK_CONTAINER_MAP` (`pack.ts:208-225`): `50ML`→"box 12", `100ML`→"box 24", `200ML`→"box 12",
 `500ML`→"box 12", `1L`→"box 6", `4L`→"box 4", `10L`/`20L`/`30L`→"drum", `40KG`/`25KG`/`30KG`→"bag",
 `25PC`→"box of 25", `12PC`→"box of 12", `500PC`→"pack of 500", `400ML`→"can". Helper
 `packContainerLabel(pack, productKey?)` returns one of these or `null`.
 
-`formatPack`, `packToMl`, `packStep`, `sortPacksForDisplay` are all in `lib/place-order/pack.ts`. The mobile `/po` page imports from there too (the retired `/order` did the same — in-page copies removed in the 2026-05-29 v2 migration).
+`formatPack`, `packToMl`, `packStep`, `sortPacks` are all in `lib/place-order/pack.ts`. The mobile `/po` page imports from there too (the retired `/order` did the same — in-page copies removed in the 2026-05-29 v2 migration).
 
 **Step and container label are deliberately decoupled** — `5KG` has step 1 but no
 `PACK_CONTAINER_MAP` key (no header suffix); the KG columns (1/2/5/10/15/20 KG) likewise have none.
 
 ### Carton is now product-scoped, not just pack-label-scoped — CORRECTED 2026-07-16
 
-Outdated since 2026-06-11. `PRODUCT_CARTON_OVERRIDES` (`pack.ts:139-141`) is a **product-scoped
-override**, checked via `cartonOverride()` (`pack.ts:146-149`) **before** the global maps, inside
+Outdated since 2026-06-11. `PRODUCT_CARTON_OVERRIDES` (`pack.ts:158-166`) is a **product-scoped
+override**, checked via `cartonOverride()` (`pack.ts:171-174`) **before** the global maps, inside
 **both** `packStep` and `packContainerLabel` — one table drives both so they can't drift. Keyed by
 `product ?? subProduct` (already threaded at every call site — desktop grid/header/cart, `/po`
 PackRows/step closures/cart chips). Mirrors the `FAMILY_BUCKET_OVERRIDES` precedent (§24).
@@ -355,13 +366,15 @@ any disagree or any is null, the header shows the bucket label alone with no suf
 itself moved **per-row** onto the existing grey pack hint under each cell (`{rawPack} · box {n}`,
 suffix omitted at step 1).
 
-**⚠️ Landmine — override key shape diverges between step and header.** `packStepForPack` receives
-the RAW pack label (a 1KG SKU → `"1KG"`). The desktop header's `packContainerLabel` call receives
-the BUCKET label (`variant-grid.tsx:233`) — for most families these coincide, but AQUATECH folds
-KG/GM into litre buckets (§24: `400GM`/`500GM`→`500ML`, `1KG`→`1L`, `5KG`→`4L`), so a bucket-keyed
-override lookup (`"1L"`) **misses** a raw-keyed override (`"1KG"`) and silently falls through to
-the global map. **Rule: `PRODUCT_CARTON_OVERRIDES` keys must always be RAW pack labels
-(`formatPack` output), never bucket labels.**
+**⚠️ Landmine — override keys are RAW pack labels, never bucket labels.** `packStepForPack` receives
+the RAW pack label (a 1KG SKU → `"1KG"`), and so does the desktop grid's `packContainerLabel` call —
+each cell passes `formatPack(canonical.packCode, canonical.unit)`, its own raw pack
+(`variant-grid.tsx:103`, inside `cellMatrix`). AQUATECH folds KG/GM into litre buckets
+(§24: `400GM`/`500GM`→`500ML`, `1KG`→`1L`, `5KG`→`4L`), so an override keyed on the bucket (`"1L"`)
+would never match a 1KG SKU and would silently fall through to the global map. Was a
+bucket-keyed header lookup (`packContainerLabel(bucket, …)`) until 2026-07-16; now per-row raw
+labels (`babb0942`). Do not revert. **Rule: `PRODUCT_CARTON_OVERRIDES` keys must always be RAW pack
+labels (`formatPack` output), never bucket labels.**
 
 **`piecesPerCarton` current state (703/1,743 primary rows populated, 1,040 blank):** still read by
 **no route** — dead weight stands. The parked "Option B" (prefer `piecesPerCarton`, map as
@@ -416,11 +429,13 @@ Cart lines keyed by **v2 row `id`** (was `subProduct + baseColour` composite). v
 
 ## 11. Email builder
 
-Plain-text body, units written directly (no box conversion). Send opens `mailto:{recipient}?subject=...&body=...` (URL-encoded). No POST, no DB row.
+Plain-text body, units written directly (no box conversion). Send opens `mailto:{recipient}?subject=...&body=...` (URL-encoded); desktop adds `&cc=` (below). No POST, no DB row.
 
-**Recipient (live constants `ORDER_TO`):** `/po` (`app/po/po-page.tsx`) and `/place-order` (`lib/place-order/email.ts`) → **`surat.depot@akzonobel.com`** (AkzoNobel auto-forwards to the `surat.order@outlook.com` parser inbox — the parser `OutlookAccount` is unchanged). The retired `/order` sent to `surat.order@outlook.com` directly. No env/config indirection.
+**Recipient (live constants `ORDER_TO`):** `/po` (`app/po/po-page.tsx:96`, its own local const), `/place-order` (`lib/place-order/email.ts:61`) and `/po2`/`/po9` (import the `email.ts` const, `app/po2/v2-email.ts:13`) → **`surat.depot@akzonobel.com`** (AkzoNobel auto-forwards to the `surat.order@outlook.com` parser inbox — the parser `OutlookAccount` is unchanged). The retired `/order` sent to `surat.order@outlook.com` directly. No env/config indirection.
 
-**TWO builders, ONE name source.** `lib/place-order/email.ts` (desktop) and `app/po/po-page.tsx` (inline) both route the product-line NAME through the shared exported helper **`emailLineLabel(product, baseColour, subProduct)`** for byte-parity. Edit the name once. (The pack/qty suffix is built per-surface.)
+**CC — desktop only.** `ORDER_CC = "surat.order@outlook.com"` (`lib/place-order/email.ts:66`) is added only by `buildMailtoUrl` (`email.ts:282-287`), which only `/place-order` calls (`place-order-page.tsx:644`). `/po` builds its mailto inline with no CC (`po-page.tsx:1959`, and the Resend path `:2034`); `/po2`/`/po9` do the same on purpose (`buildV2MailtoUrl`, `app/po2/v2-email.ts:108-110`).
+
+**THREE builders, ONE name source.** `lib/place-order/email.ts` (desktop), `app/po/po-page.tsx` (inline `buildEmailParts`) and `app/po2/v2-email.ts` (`buildV2Email`, `/po2` + `/po9`) all route the product-line NAME through the shared exported helper **`emailLineLabel(product, baseColour, subProduct)`** for byte-parity. Edit the name once. (The pack/qty suffix is built per-surface — and pack ORDER differs on `/po`, §22.)
 
 `emailLineLabel` rules, in order:
 1. **PROMISE PRIMER special-case:** `product==="PROMISE PRIMER" && baseColour` → `baseColour.startsWith("Promise") ? baseColour : "Promise "+baseColour"` (avoids "PROMISE PRIMER Promise Primer"; grid still labels by baseColour so a data rename was rejected).
@@ -453,7 +468,7 @@ padWidth = String(bill.lines.length).length
 - Serial number restarts per bill; `padWidth` is per-bill (its own line count). ≤9 lines → no pad; 10+ → pads to 2; 100+ → 3.
 - **Pad character MUST be ` ` (FIGURE SPACE), NOT a regular space.** A regular space lines up in the in-app preview (monospace font) but fails in the actual mail client — email bodies render in a proportional font (Outlook/Gmail) where a space is narrower than a digit, so ` 9.` never reaches the `10.` column. Figure space is exactly one digit wide and non-collapsing. **Always test column alignment in a real mail client, not the preview.** All three mailto builders URL-encode the body so ` ` → `%E2%80%87` and survives the handoff.
 
-**`renderOrderBody` is the single builder for both surfaces:** `emailCase` + figure-space padding apply uniformly. Desktop `/place-order` goes via `buildEmail` → `renderOrderBody` → `buildMailtoUrl`; mobile `/po` goes via `buildEmailParts` → `renderOrderBody`. (The retired `/order` was the third caller, via its own local `buildEmail` closure.) If `/po` looks unchanged after an email-format deploy, suspect **PWA cache** (force-close / reinstall), not the code.
+**`renderOrderBody` is the single body builder, with three callers:** `emailCase` + figure-space padding apply uniformly. Desktop `/place-order` goes via `buildEmail` → `renderOrderBody` (`lib/place-order/email.ts:267`) → `buildMailtoUrl`; mobile `/po` goes via `buildEmailParts` → `renderOrderBody` (`app/po/po-page.tsx:182`); `/po2`/`/po9` go via `buildV2Email` → `renderOrderBody` (`app/po2/v2-email.ts:94`). (The retired `/order` had its own local `buildEmail` closure.) If `/po` looks unchanged after an email-format deploy, suspect **PWA cache** (force-close / reinstall), not the code.
 
 **Two ways to fix an email name — pick by side-effect:**
 - **Product rename (structural):** bakes the name everywhere (email, recall, search subtitle, alias key). Needs the rename on **both** join sides (stock source CSV/overrides + `CONFIRMED_SUBPRODUCT_MAP`) **+ paired reseed**; and if the product carries numeric-base aliases, **re-key its `base-aliases.ts` block in the same change** (aliases are keyed on `product`) or the friendly names silently vanish. Use when the new name is the real product name (WS Tile/Metallic, VT ranges, Interior WBC).
@@ -467,7 +482,7 @@ padWidth = String(bill.lines.length).length
 
 The mailto **subject line** changes based on the selected Order Remark chip, so the depot inbox is
 scannable at a glance without opening each mail. Shared helper **`buildSubject()`** in
-`lib/place-order/email.ts`; both `/po` and `/place-order` call it (only one remark can be selected
+`lib/place-order/email.ts`; `/po`, `/place-order` and `/po2` (`v2-email.ts:97`) all call it (only one remark can be selected
 at a time — no combine/priority logic; no date in the subject).
 
 | Remark | Subject |
@@ -749,6 +764,8 @@ retirement story** — why it went, the accepted capability loss, why the middle
 and the KEEP list of shared modules that must never be archived with it. Do not restate any of
 that here.
 
+`/order` stays parked with no redirect (`archive/2026-07-order/`); `/po`'s successor is `/po2` (`CLAUDE_PO2.md §1, §15`), not a rename back to `/order` (§25).
+
 `/po`'s own spec is **§25**. Its visual patterns are `CLAUDE_UI.md §55` — **not §47**, which is now a retirement stub; the live material moved to §55 on 2026-07-27.
 
 ---
@@ -758,13 +775,15 @@ that here.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/place-order/quick-tiles` | Returns 9-tile config + counts (desktop) |
-| GET | `/api/order/data` | Returns hydrated v2 form index + SKU lookup — **serves `/po`** (`app/po/po-page.tsx`; the retired `/order` was its original consumer, which is why the route keeps that name — a SURVIVOR, CORE §12). Public (`middleware.ts` keeps `/api/order` in the public list). Filters `isPrimary = true` on SKU lookup. |
-| GET | `/api/place-order/data` | Returns same shape (used by `/place-order` desktop only). Session-auth'd. **Also filters `isPrimary = true`** on SKU lookup as of commit `46b500fb` (2026-07-15) — confirmed live 2026-07-16, `route.ts:92-93`. |
-| POST | `/api/place-order/last-order` | Returns last order normalised to units for given customerCode |
+| GET | `/api/order/data` | Returns hydrated v2 form index + SKU lookup — **serves `/po`, `/po2` and `/po9`** (callers `app/po/po-page.tsx:763` and `app/po2/po-v2-page.tsx:557`, which `/po9` mounts; the retired `/order` was its original consumer, which is why the route keeps that name — a SURVIVOR, CORE §12). Public (`middleware.ts:25` keeps `/api/order` in the public list). Filters `isPrimary = true` on SKU lookup. |
+| GET | `/api/place-order/data` | Returns same shape (used by `/place-order` desktop only). Session-auth'd. **Also filters `isPrimary = true`** on SKU lookup as of commit `46b500fb` (2026-07-15) — `app/api/place-order/data/route.ts:97-98`. |
+| GET | `/api/place-order/last-order/[customerCode]` | Most recent `mo_orders` row for that code **within the last 30 days**, with its lines (§20). `app/api/place-order/last-order/[customerCode]/route.ts:41`; caller `last-order-recall.tsx:154` |
+
+🔴 **OPEN security item — `/api/order/data` is public and unauthenticated.** It has no auth of its own (its header calls it a "Public, unauthenticated endpoint", `app/api/order/data/route.ts:6-8`), and every call returns every customer name, code and area from `mo_customer_keywords` (`route.ts:33-36`) plus the active catalogue. Tracked as P0 at `docs/ROADMAP.md:1540` ("`/api/order/data` is an unauthenticated full-catalogue dump"); `CLAUDE_PO2.md §12` records the /po2 side. No fix is proposed here.
 
 All routes: `export const dynamic = 'force-dynamic'`.
 
-**Route sharing:** `/place-order` is the **only** surface with its own data route AND its own search matcher (`queries.ts`). `/po` uses `/api/order/data` and the mobile matcher (`rankProductsForQuery`, `mobile-search.ts`) — both were shared with `/order` until its 2026-07-27 retirement; the route and matcher survive as `/po`'s.
+**Route sharing:** `/place-order` is the **only** surface with its own data route AND its own search matcher (`queries.ts`). `/po` uses `/api/order/data` and the mobile matcher (`rankProductsForQuery`, `mobile-search.ts`) — both were shared with `/order` until its 2026-07-27 retirement; the route and matcher survive as `/po`'s, and `/po2` imports both too (`app/po2/product-search.tsx:7`, `product-drawer.tsx:6`).
 
 **Duplicated payload queries:** `/api/order/data` and `/api/place-order/data` both build the v2 payload via duplicated queries. No shared helper yet. If you edit the v2 payload shape, edit BOTH or extract a shared builder. CORE §13 landmine.
 
@@ -772,50 +791,74 @@ All routes: `export const dynamic = 'force-dynamic'`.
 
 ## 17. Files map
 
+Rebuilt from `ls` at HEAD, 2026-09-19. `/po2`, `/po9` and `/po-v2-8f4kd2` files are listed in `CLAUDE_PO2.md §14`, not here.
+
 ```
+app/(place-order)/
+  layout.tsx                        session + place_order canView gate, sidebar, canShipTo (§3)
 app/(place-order)/place-order/
-  page.tsx                          force-dynamic, hydrates from /api/place-order/data
-  place-order-page.tsx              client root
-  speed-dial.tsx                    9-tile grid + pill strip
-  variant-grid.tsx                  base × pack matrix
-  variant-cell.tsx                  cell with hover/focus +/− buttons
-  cart-panel.tsx                    340px right column
-  recently-used.tsx                 browse-mode only panel
-  customer-search.tsx               pill + dropdown
-  family-nav-with-tabs.tsx          tabs + uiGroup rendering
-  big-search-bar.tsx                desktop search results
-  send-button.tsx                   builds mailto
+  page.tsx                          force-dynamic server wrapper — renders PlaceOrderPage
+  place-order-page.tsx              client root; fetches /api/place-order/data + /quick-tiles
+  types.ts                          payload + CartLine types
+  components/
+    _shared.ts                      shared style constants
+    active-product-panel.tsx        centre-panel state machine (routes on activeState.kind)
+    big-search-bar.tsx              desktop search input + results
+    browse-all-families.tsx         all families by section (disclosure)
+    cart-panel.tsx                  340px right column, bill tabs, options, Ship To (§3)
+    customer-search.tsx             pill + dropdown
+    family-nav-with-tabs.tsx        tabs + uiGroup rendering
+    keyboard-help-overlay.tsx       `?` keymap modal
+    last-order-recall.tsx           last-order card + Repeat order (§20)
+    recent-customers.tsx            landing recent-dealers grid
+    recently-used.tsx               browse-mode only panel
+    section-landing.tsx             section-type tile landing
+    send-confirm-overlay.tsx        email preview before send
+    speed-dial-grid.tsx             9-tile grid + pill strip
+    speed-dial-tile.tsx             one tile
+    sub-product-direct.tsx          single-sub-product view (no tab bar)
+    sub-product-tab-bar.tsx         sub-product tabs
+    variant-cell.tsx                cell with hover/focus +/− buttons
+    variant-grid.tsx                base × pack matrix
+
+components/place-order/
+  place-order-access-provider.tsx   carries canShipTo to the client tree (§3)
 
 archive/2026-07-order/app/order/
   page.tsx                          RETIRED 2026-07-27 — was the public mobile route (single-file)
 app/po/
-  po-page.tsx                       going-forward depot mobile PO (§25) — single-file
+  page.tsx                          force-dynamic server wrapper, metadata, manifest link
+  po-page.tsx                       v1 depot mobile PO (§25) — single-file
+  splash-screen.tsx                 opening splash
 
 lib/place-order/
-  constants.ts
   quick-tiles-config.ts             9-tile config (+ optional familyNames multi-family tile)
   pack.ts                           PACK_STEP_MAP, PACK_CONTAINER_MAP, packToLitres,
-                                    formatPack, packToMl, sortPacksForDisplay,
+                                    formatPack, packToMl, packKey/parsePackKey, sortPacks,
                                     packStepForPack/PIECE_BOX_STEP (PC packs)
   pack-buckets.ts                   desktop column buckets — STANDARD_COLUMNS,
                                     PACK_TO_BUCKET, FAMILY_BUCKET_OVERRIDES,
                                     packToBucket, bucketColumnsForTab/ForRows (§24)
-  cart.ts                           CartLine type, setQty, volume reducer, touchedAt
-  draft.ts / draft-storage.ts       localStorage hydrate/save, TTL, DraftSnapshot
-  email.ts                          buildEmail + renderOrderBody + emailLineLabel (shared name source) + emailCase()
+  draft-storage.ts                  desktop draft localStorage, TTL, DraftSnapshot (§21)
+  email.ts                          buildEmail + renderOrderBody + emailLineLabel (shared name source)
+                                    + emailCase() + buildSubject + ORDER_TO/ORDER_CC + buildMailtoUrl (§11)
   recents.ts                        desktop device-local recent customers (§25)
-  search.ts                         legacy multi-token scoring (still used in places)
   queries.ts                        searchProducts (desktop) — reads searchTokens
   base-aliases.ts                   single source: display + search + label aliases
-  mobile-search.ts                  rankProductsForQuery scoring
+  mobile-search.ts                  rankProductsForQuery scoring (/po; /po2 imports it)
   keyword-family-map.ts             whole-query word→family promotion (shared) (§13)
   sub-product-descriptors.ts        two-line descriptors + isVariantQualifierTab +
                                     getSecondLine / isVariantQualifierTab (§UI)
+  monogram.ts                       two-letter fallback chip text
+  use-keyboard-routing.ts           desktop page-level keyboard router
+  fav-customers.ts                  /po Favourites, key po_fav_customers (§25)
+  saved-drafts.ts                   /po named drafts, key po_saved_drafts (§25)
+  sent-orders.ts                    /po Sent log, key po_sent_orders (§25)
 
-api/place-order/quick-tiles/route.ts
-api/place-order/data/route.ts       desktop catalog payload
-api/place-order/last-order/route.ts
-api/order/data/route.ts             public catalog payload (serves `/po`) — reads v2, isPrimary filter
+app/api/place-order/quick-tiles/route.ts
+app/api/place-order/data/route.ts                   desktop catalog payload
+app/api/place-order/last-order/[customerCode]/route.ts   GET, 30-day last order (§20)
+app/api/order/data/route.ts         public catalog payload (serves `/po`, `/po2`, `/po9`) — reads v2, isPrimary filter
 
 scripts/
   v2-catalog-seed-from-preview.ts   menu reseed (wipe-and-reseed from taxonomy-preview.json)
@@ -895,9 +938,9 @@ Build everything the parser will eventually need, without switching it over:
 
 ## 20. Last-order recall
 
-`POST /api/place-order/last-order?customerCode=...` returns the most recent mail order for that customer, normalised into units.
+`GET /api/place-order/last-order/[customerCode]` (`app/api/place-order/last-order/[customerCode]/route.ts:41`) returns the most recent `mo_orders` row for that customer **received in the last 30 days** (`THIRTY_DAYS_MS`, `receivedAt >= cutoff`), with its `mo_order_lines` in line order. No order in the window is a 200 with `{ lastOrder: null }`. The only caller is desktop `last-order-recall.tsx:154` (`/api/place-order/last-order/${encodeURIComponent(customerCode)}`); the route has no auth of its own, so the middleware session check is its only gate.
 
-Shape per entry: `RepeatOrderEntry { product, base, pack, units }`.
+Shape per entry: `RepeatOrderEntry { productName, baseColour, packCode, units }` (`last-order-recall.tsx:33-38`); `units` is the line's `quantity`, and lines with 0 units are dropped.
 
 **Units-based.** Earlier `unitsToBoxes` helper deleted. Cart imports recall entries directly as units.
 
@@ -911,7 +954,7 @@ TTL: 24h. Drafts older than 24h discarded silently on next mount.
 
 On every cart change: full cart object serialised. On mount: deserialise + validate TTL + hydrate state.
 
-**One-shot cleanup:** on first load after deploy, old v1 key (`orbitoms_place_order_draft`) read, ignored, removed.
+**One-shot cleanup:** the old v1 key `orbitoms_place_order_draft_v1` is only removed, never read — `window.localStorage.removeItem("orbitoms_place_order_draft_v1")` at module load (`lib/place-order/draft-storage.ts:22`); a no-op after the first run on each browser.
 
 ---
 
@@ -924,7 +967,7 @@ On every cart change: full cart object serialised. On mount: deserialise + valid
 - **Cart volume total uses units × packToLitres, NOT × packStep.** Earlier bug double-counted boxes-and-units. Don't reintroduce a `packStep` multiplier.
 - **`PACK_STEP_MAP[10L] = 1`.** Drums ship as singles. Don't change to 2.
 - **Path A is tactical.** Stage E migration (proper `subVariant` column) was planned in earlier roadmap; superseded by the 3-stage v2 single-source plan (§19) which goes farther.
-- **CORRECTED 2026-07-16 — both routes now filter `isPrimary = true`.** `/api/place-order/data` was fixed to match `/api/order/data` in commit `46b500fb` (2026-07-15), confirmed live against `route.ts:92-93`. The earlier "desktop is unfiltered" claim is retired — do not reintroduce it without re-checking the live route first (an intervening draft claimed it had regressed; that claim did not match the code).
+- **CORRECTED 2026-07-16 — both routes now filter `isPrimary = true`.** `/api/place-order/data` was fixed to match `/api/order/data` in commit `46b500fb` (2026-07-15), confirmed against `app/api/place-order/data/route.ts:97-98`. The earlier "desktop is unfiltered" claim is retired — do not reintroduce it without re-checking the live route first (an intervening draft claimed it had regressed; that claim did not match the code).
 - **Residual dedupe-collision risk (unrelated to isPrimary), both routes.** `addToPackMap`'s dedup key is `` `${key}|||${formatPack(pack.packCode, pack.unit)}` `` — first row in wins, rest silently dropped — and the `skuRows` query carries **no `orderBy`**, so if two `isPrimary=true` rows ever collide on the same rendered pack, which one wins is unspecified (Prisma row order without `orderBy`).
 - **`mo_order_form_index_v2`'s real unique key is `(family, subProduct, baseColour)`, NOT `(family, product, baseColour)`.** `product` is nullable; guard inserts (`WHERE NOT EXISTS`, `ON CONFLICT`) on `subProduct` or they silently fail to catch duplicates on null-`product` rows.
 - **`mo_sku_lookup_v2.packCode` is TEXT, not the `PackCode` enum** earlier docs claimed — bare numeric strings (`"1"`, `"4"`, `"10"`…). `unit` is the separate type discriminator. `description` is NOT NULL with no db default — every insert must supply it.
@@ -934,7 +977,8 @@ On every cart change: full cart object serialised. On mount: deserialise + valid
 - **Promise cross-listing risk** — if a product appears under both family `PROMISE` and `PROMISE INTERIOR/EXTERIOR/ENAMEL`, surfaces as a near-duplicate in flat mobile search. Family chip distinguishes.
 - **Phase 3 `visualViewport` JS fight failed** on the qty card sticky bar. Don't fight iOS's sticky-position quirks with JS math. Move the bar to a place that doesn't need lifting (skip auto-focus on mobile is the right pattern).
 - **Working-tree clutter risk** — pre-existing uncommitted drafts/SQL/scripts can sit in the working tree for days. Always `git status` at session start; commit clean before pushing the actual feature.
-- **TWO order pages — change both relevant ones.** `/po` (going-forward depot mobile, own `PackRows`, no buckets) and `/place-order` (desktop, bucket columns). Each has its OWN `PackRows` + step call sites; a pack/render change must be repeated on every live surface. Mobile renders every pack straight from the API (no buckets); buckets are desktop-only. (Was three until `/order` retired 2026-07-27 — if you find a third `PackRows` in an old draft, that is why.)
+- **THREE order codebases — change every relevant one.** `/place-order` (desktop, `app/(place-order)/`, bucket columns), `/po` (v1 mobile, `app/po/po-page.tsx`, own `PackRows`, no buckets) and `/po2` (`app/po2/`, which `/po9` mounts — own pack pipeline `sortedPacks`, `app/po2/v2-data.ts:1732`; owned by `CLAUDE_PO2.md`). Each has its OWN pack rows + step call sites; a pack/render change must be repeated on every live surface. Mobile renders every pack straight from the API (no buckets); buckets are desktop-only. (The retired `/order` was a separate codebase until 2026-07-27 — if you find an extra `PackRows` in an old draft, that is why.)
+- **KG pack order differs on `/po` only.** Desktop `buildEmail` orders each line's packs with `sortPacks` (`lib/place-order/email.ts:246`), and `/po2`'s `sortedPacks` wraps the same `sortPacks` (`app/po2/v2-data.ts:1732-1738`); its KG branch puts KG packs smallest first (`lib/place-order/pack.ts:91-105`). `/po` sorts with its own `sortPackEntries` (`app/po/po-page.tsx:101-108`), which compares `packToMl`, and that returns 0 for every KG pack, so on `/po` KG packs keep the order the API sends. The same order can therefore email `5KG*1, 10KG*2` from desktop or `/po2` and a different KG order from `/po` (products named in `CLAUDE_PO2.md §11`). `/po2` was aligned in `4e8ca379` (2026-09-10).
 - **Desktop columns are a fixed bucket set, not the pack union** (§24). A pack whose `packCode+unit` key is missing from `PACK_TO_BUCKET` is **silently dropped on desktop only** — looks like "works on phone, blank on desktop". Two packs on one product that map to the same bucket **collide** (one hidden).
 - **Base aliases / shade codes / token-bake are gated on non-null `product`** (§12). Null-product families (join via `subProduct`) show no aliases until given a `CONFIRMED_SUBPRODUCT_MAP` identity key.
 - **Aliases are keyed on `product`.** A product rename that carries numeric-base aliases must re-key the `base-aliases.ts` block in the same change, or the friendly names silently vanish.
@@ -989,11 +1033,11 @@ The desktop variant grid builds columns from a **fixed bucket set**, not the raw
 
 ---
 
-## 25. `/po` — going-forward depot mobile PO
+## 25. `/po` — v1 depot mobile PO (public)
 
-All work in **`app/po/po-page.tsx`** (single file). `/po` email intentionally diverges (§11). The archived `/order` page (`archive/2026-07-order/`) is the historical reference `/po` was modelled on — read-only, never a rollback.
+All work in **`app/po/po-page.tsx`** (single file; `page.tsx` is the server wrapper, `splash-screen.tsx` the opening splash). `/po` email intentionally diverges (§11). The archived `/order` page (`archive/2026-07-order/`) is the historical reference `/po` was modelled on — read-only, never a rollback.
 
-**Eventual cutover: rename `/po` → `/order` — now UNBLOCKED.** `/order` retired 2026-07-27 with **no redirect**, and the address was deliberately **parked for exactly this rename**. Nothing occupies it.
+**Successor: `/po2`** (live 2026-09-10; `CLAUDE_PO2.md §15` holds the parity-then-retire direction, ROADMAP "P2 — Retire `/po`", not scheduled). Was a planned rename `/po` → `/order` until 2026-09-10; now superseded by `/po2` (`145b5f32`). Do not revert — `/order` stays parked with no redirect (`archive/2026-07-order/`).
 
 ### Bills model
 `bills: Bill[]` where `Bill = { id, lines }`; `activeBillId`; `billCounter`. **Invariant: `id === position + 1`.** Anything touching the bills array must preserve it.
@@ -1036,11 +1080,17 @@ lost on browsing-data clear or a new phone; moving to server/DB is deferred unti
 Visual polish (cards, chips, colour palette, unified footer buttons) → `CLAUDE_UI.md` §55; not
 duplicated here (docs-scope: this file owns behaviour, UI owns pixels).
 
-**⚠️ Gap — Drafts/Sent behaviour is NOT documented here.** This session's draft references a
-companion draft (`po-save-draft-sent-feature.md`, covering the Save-Draft/Sent/receipt build) that
-is **not present in `docs/prompts/drafts/`**. Do not infer Drafts/Sent behaviour from this section
-— only Favourites (above) is sourced from an actual draft. Locate or re-author that companion draft
-before documenting Drafts/Sent.
+### Drafts, Sent and crash recovery — three separate stores (from code, 2026-09-19)
+
+All per-phone/per-browser `localStorage`, like Favourites. The three keys never read, write or clear each other (`lib/place-order/saved-drafts.ts:4-6`, `sent-orders.ts:6-8`) — do not merge them.
+
+| Key | What | Rules | Code |
+|---|---|---|---|
+| `orbitoms_po_draft` | Crash-recovery auto-save of the live order (customer, bills, ship-to, dispatch, call target, marker, cross depot, notes, multi-select) | Written on every change (`savePoDraft`); discarded and removed past 24 h on load; restored on mount straight into build; removed by `clearCustomer` (every reset, incl. after Send) | `app/po/po-page.tsx:302-303, 327-382, 773-791, 1208` |
+| `po_saved_drafts` | Named drafts ("Save draft") | Upsert by id, newest first, cap `MAX_DRAFTS = 20`. Saving a reopened draft overwrites it in place (`openedDraftId`); `reopenDraft` rehydrates it and lands on Review; a Send of a reopened draft removes it | `saved-drafts.ts:10-11, 62-67`; `po-page.tsx:1283-1296, 1359-1376, 1986` |
+| `po_sent_orders` | Sent log, one entry per Send | Append-only (never upsert); kept only while `sentAt` is **today or yesterday by IST calendar day**, pruned on load (and written back) and before every write. A Sent row opens a read-only receipt: **Resend** rebuilds the email via the same `buildEmailParts` and appends a fresh entry; **Edit order** (`reopenSent`) reopens it as a NEW order (`openedDraftId` null) | `sent-orders.ts:10-17, 83-100`; `po-page.tsx:1387-1406, 1971-1987, 2027-2044` |
+
+All Drafts/Sent UI is gated on `draftsEnabled`, which is the constant `true` (`po-page.tsx:590`, `5b520304`). ⚠ The headers of `saved-drafts.ts:1-2` and `sent-orders.ts:1-2` still say "feature-flagged behind ?draft=on" — a stale comment, not a fact.
 
 ### Launch — full /po feature set live [2026-07-14]
 
@@ -1048,7 +1098,7 @@ The `?draft=on` gate was removed (commit `5b520304`): `draftsEnabled` changed fr
 `window.location.search`-reading `useState` to a plain `const draftsEnabled = true`; the
 query-reading effect deleted. Single-point flip — all `draftsEnabled &&` call sites still gate on
 the one constant, no call-site churn. Plain `/po` now shows the full feature set (Favourites +
-whatever the missing companion draft's Drafts/Sent build covers) to all users, including installed
+Drafts/Sent, above) to all users, including installed
 PWAs (the "Add to Home Screen" icon strips query params, so it always opened plain `/po` even
 during testing).
 
@@ -1059,6 +1109,20 @@ Device-local localStorage, saved **on Send** (not on select), dedupe by code, ne
 Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: none }` (kills pull-to-refresh); scroll container `overscroll-behavior: contain`; reset scroll on `[mode, view]` change; `.po-page` scoped `touch-action: manipulation` (tap-delay, scoped so the rest of the app is untouched). Android "browser-feel/zoom" was a stale-install symptom — a clean PWA reinstall fixed it, not config.
 
 ---
+
+## Change log — v1.9 (2026-09-19 canon sweep batch B2, targeted — not a rewrite)
+
+Evidence: code at HEAD 915f46f2 (no code commits since ec6343ba), live 2026-09-18 (Q03a), `docs/CLAUDE_PO2.md` v1.0 as owner of /po2 + /po9. Sections changed:
+- Header + §1 + §15 + §25: `/po2`, `/po9` and the `/po-v2-8f4kd2` redirect added as pointers to `CLAUDE_PO2.md`; `/po` is v1 and still live, successor `/po2`; the `/po` → `/order` rename plan retired in one dated line; "going-forward" wording removed. Recipient line now names all four addresses and the desktop-only CC.
+- §3: PageKey `place_order_ship_to` (`650f4b1e`) — desktop Ship To hidden and forced empty without canEdit; live canEdit=4.
+- §11: desktop-only `ORDER_CC`; THREE builders / three `renderOrderBody` callers (desktop, `/po`, `/po2`); `buildSubject` third caller.
+- §16 + §20: last-order is `GET /api/place-order/last-order/[customerCode]` with a 30-day cutoff; `RepeatOrderEntry` field names corrected. `/api/order/data` serves `/po`, `/po2`, `/po9`; its public, unauthenticated exposure recorded as an OPEN item pointing at ROADMAP P0.
+- §17: files map rebuilt from `ls` (the listed `constants.ts`, `cart.ts`, `draft.ts`, `search.ts`, `speed-dial.tsx`, `send-button.tsx` never existed — no git history); `sortPacksForDisplay` → `sortPacks` (also §9).
+- §21: the removed legacy key is `orbitoms_place_order_draft_v1`, removed only, never read.
+- §22: TWO pages → THREE codebases; the `/po`-only KG pack-order divergence (`4e8ca379`).
+- §25: the Drafts/Sent "gap" replaced with the three stores documented from code.
+- Anchors: `pack.ts` step/container/override/cartonOverride lines, `app/api/place-order/data/route.ts:97-98` (§2, §16, §22), §8 desktop customer query 60-67; §9 carton landmine corrected — the header lookup has keyed by raw pack since `babb0942`; §7 "one-teal" → brand colour (violet since `c96157ea`).
+- Schema stamp v27.13 → v27.24 (reconciled against CORE v27.24 for the tables this file names; no Place Order table changed in v27.14–v27.24).
 
 ## Change log — v1.8 (2026-08-04 reconciliation pass, method v1.1)
 
@@ -1076,4 +1140,4 @@ Evidence: po-page.tsx / place-order-page.tsx / email.ts / pack.ts / fav-customer
 
 ---
 
-*Place Order v1.8 · Schema v27.13 · OrbitOMS · updated 2026-08-04*
+*Place Order v1.9 · Schema v27.24 · OrbitOMS · updated 2026-09-19*

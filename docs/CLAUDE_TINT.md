@@ -1,9 +1,9 @@
 # CLAUDE_TINT.md — Tint Module
-# v2.1 · Schema v27.13 · September 2026 · updated 2026-09-06
+# v2.2 · Schema v27.24 · September 2026 · updated 2026-09-19
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Covers Tint Manager (BOARD REBUILT 2026-09-05/06 — §1), Tint Operator (incl. skip, pause/resume, partial done, sampling reuse + pack scaling), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Tint Summary report, Remove OBD.
+Covers Tint Manager (BOARD REBUILT 2026-09-05/06 — §1), the "Base — No Tint" bypass (§1.12), Tint Operator (incl. History, skip, pause/resume, partial done, sampling reuse + pack scaling), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Tint Summary report, Remove OBD.
 
 Users: Chandresh Kolgha (tint_manager), Deepak Vasava + Chandrasing Valvi (tint_operator). Prakash (operation_manager, id 32) also LANDS on `/tint/manager` at login (`lib/rbac.ts`; role confirmed real 2026-08-04 — `CLAUDE_CORE.md §5`).
 
@@ -24,19 +24,28 @@ what went with them.
   window-level Esc owner
 - `components/tint/manager/` — `types.ts` · `rows.ts` (pure shaping) · `board-rail.tsx` ·
   `board-table.tsx` · `board-detail-panel.tsx` · `board-assign-bar.tsx` · `board-bits.tsx` ·
-  `use-tint-manager-sync.ts`
+  `use-tint-manager-sync.ts` · `base-ti-panel.tsx` (§1.12) · `tint-manager-access-provider.tsx` (§1.2)
 - `lib/tint/assignment-status.ts` — **the status vocabulary owner (§1.4)**
+- `lib/tint/base-operator.ts` — the "Base — No Tint" placeholder worker's identity (§1.12)
 - `app/api/tint/manager/`: `orders/` · `assign/` · `reorder/` · **`marker/` (new)** ·
   `cancel-assignment/` · `splits/reassign/` · `splits/cancel/` · `missing-customers/` ·
-  `operators/` · `orders/[id]/{remove,pause-history,skip-history}`
+  `operators/` · `orders/[id]/{remove,pause-history,skip-history}` ·
+  `base-bypass/` · `base-bypass/undo/` · `base-pending/` (§1.12)
 
 **RETIRED, NOT DELETED** (CORE §3 forbids deleting): `components/tint/tint-table-view.tsx`,
 `components/shared/order-detail-panel.tsx` (this screen was its only live importer), and
 `components/tint/split-builder-modal.tsx`. All three still type-check; they lost their import
-only. ⚠ `tint-table-view.tsx` still imports `TintOrder`/`SplitCard`/`CompletedAssignment` from
+only (still on disk, zero importers — grep 2026-09-19). ⚠ `tint-table-view.tsx` still imports `TintOrder`/`SplitCard`/`CompletedAssignment` from
 `tint-manager-content.tsx`, which re-exports them from `manager/types.ts` — **do not remove those
 re-exports**, and any new field on those payload types must also be added to that file's synthetic
 `assignmentAsOrder()` object or `tsc` breaks.
+
+**Second mount — `/admin/tint-manager`** (`app/(admin)/admin/tint-manager/page.tsx`, superuser-only
+via the admin layout's `requireSuperuser`; URL-only, off the admin sidebar per
+`components/admin/admin-sidebar.tsx:62`). It renders `<TintManagerContent />` **outside** the manager
+layout, so no `TintManagerAccessProvider` wraps it and the context default (all false,
+`tint-manager-access-provider.tsx:48-53`) applies: **every panel tab and the Reports pill are hidden
+there, even for the superuser.** Use `/tint/manager`.
 
 ### 1.1 Header — still `<UniversalHeader />`
 
@@ -49,6 +58,10 @@ and show the work instead of counting it. Everything else is wired as before —
 `showImport`, the three filter groups (Delivery Type / Priority / Type), "Add to Tint" (`M`), the
 Reports link, the shortcuts panel, and the missing-customer badge in `rightExtra`.
 
+The **Reports** pill is drawn only when the viewer holds `canView` on any report key —
+`canReports` from `TintManagerAccessProvider` (§1.2), resolved by `canViewAnyReport` in the manager
+layout (`tint-manager-content.tsx:893` `{canReports && (`; `0fbcd4be`, `6f628b05`).
+
 ### 1.2 The shell — rail + one grouped table
 
 Same **structural pattern** as Floor Control (a composition root owning state and every write,
@@ -57,11 +70,28 @@ components.
 
 - **Left rail, 344px — "Needs assignment".** Cards, one per bill, **oldest first**. Strictly
   `workflowStage === "pending_tint_assignment"`. Assign happens here, and it is the ONLY place
-  Remove OBD is offered — matching the server rule that removal is blocked once assigned (`§8`,
-  409 outside that stage).
+  Remove OBD is offered (the rail card, and the detail panel opened on a rail bill —
+  `board-rail.tsx:163`, `board-detail-panel.tsx:149`) — matching the server rule that removal is
+  blocked once assigned (`§8`, 409 outside that stage).
+- **Rail, second list — "Tinter Issue pending".** Below the pending cards: the bills a "Base — No
+  Tint" bypass sent out that still owe their TI (`board-rail.tsx:255-317`, fed by `GET
+  /api/tint/manager/base-pending`). Clicking a card swaps the rail to that bill's lines (covered /
+  pending, "← Back to queue"); clicking a line opens `base-ti-panel.tsx` on the right. Each card
+  carries an **Undo** (`onUndoBase`). Detail: `§1.12`.
 - **Right pane — ONE flat table.** No tabs, no operator filter chip.
 - **Detail panel, 480px** — Items / Details / Activity tabs, Prev/Next walking rail cards first
   then table rows without closing. Supersedes both old panels (see the retired list above).
+  **Each tab is its own per-user tick** — `tint_panel_items` / `tint_panel_details` /
+  `tint_panel_activity`, `canView` only (`0fbcd4be`). `app/(tint)/tint/manager/layout.tsx` reads
+  them off the same `allPerms` map it builds the nav from and hands them down through
+  `TintManagerAccessProvider` (`components/tint/manager/tint-manager-access-provider.tsx`), whose
+  default is all-false. **A tab without its tick is never drawn and never mounted**, so its content
+  never fetches (`board-detail-panel.tsx` `visibleTabs`); with no tick at all the panel has no tab.
+  The routes re-check: `/api/orders/[id]/audit-history` needs `tint_panel_details`
+  (`route.ts:33`); `pause-history` and `skip-history` need `tint_manager` canView **AND**
+  `tint_panel_activity` canView (`pause-history/route.ts:20,26`, `skip-history/route.ts:21,27`).
+  The Items tab has no route of its own — hiding it is UI-only. Live holders of all three:
+  Chandresh Kolgha (#21), Deepanshu Thakur (#25), Prakash (#32) (live 2026-09-18, Q03b).
 
 ### 1.3 Table — grouping, columns, sequence
 
@@ -75,7 +105,7 @@ resume it — so it must not head the list the manager reads to decide what to h
 grouping is a **sort, not a filter**; nothing is hidden by it.
 
 **Done is TODAY ONLY.** A finished job leaves the tint stages entirely (`done/route.ts` writes
-`pending_support`, or `pending_picking` on a pre-set slot), so Completed rows come from
+`pending_picking`, or `pending_support` when the bill is held — `§2`), so Completed rows come from
 `tint_assignments.completedAt >= start of today`, not from a stage. The full history is the Tint
 Summary report (`§12`) — the board says so in a subtitle and a tooltip.
 
@@ -86,7 +116,7 @@ Summary report (`§12`) — the board says so in a subtitle and a tooltip.
 |---|---|---|---|
 | 1 | ☐ | — | Blank on non-selectable rows. No lock icon — it read "forbidden" on 3 of the 4 statuses. |
 | 2 | **#** | computed | See the rank rule below. |
-| 3 | OBD | `obdNumber` | Split rows carry a violet "Split" tag. |
+| 3 | OBD | `obdNumber` | Split rows carry a "Split" tag in the warn tokens, `bg-warn-bg text-warn-text` (`board-table.tsx:263`, `b585240f`). |
 | 4 | **SMU** | `import_raw_summary.smuCode` | The SHORT code, full name on hover. 926/926 live coverage: **74** Decorative Projects · **77** Retail Offtake · **70** Deco Retail. ⚠ `smuNumber` on the same table is NOT it — 0/926, always null. |
 | 5 | **Bill To** | `import_raw_summary.billToCustomerName` | The ORDERING DEALER. Same source Floor uses (`billToByObd`). Differs from Ship To on **873 of 926** live tint OBDs, which is why both columns exist. |
 | 6 | **Ship To** | `orders.customer.customerName` | The SITE. Carries ★ key-customer and ⚡ urgent. |
@@ -111,10 +141,12 @@ order can never swap with a split.** So the `#` is ranked per operator **AND per
 someone holding 2 orders and 1 split sees the orders as 1–2 and the split as its own 1, not a
 merged 1–3. A merged rank would draw arrows that cannot do what they promise.
 
-**Typography and status-pill colours are Floor's**, copied hex-for-hex from
+**Typography and status-pill colours are Floor's**, copied from
 `components/floor/floor-table.tsx` and `components/floor/status-pill.tsx`. ⚠ Floor OWNS those
-values (`CLAUDE_FLOOR.md §1`) and they are not exported as tokens, so this is a deliberate copy
-with the source named in `board-bits.tsx`. **If Floor's four washes change, these must be
+values (`CLAUDE_FLOOR.md §1`). Three of the four washes are hex, not exported as tokens, so this is
+a deliberate copy with the source named in `board-bits.tsx`; the fourth (`tinting_in_progress` ↔
+Floor's `withPicker`) is the **tint token pair `bg-tint-bg text-tint-700`** on both boards
+(`board-bits.tsx:95`, `status-pill.tsx:181`; `73a762e8`). **If Floor's washes change, these must be
 re-copied** — nothing enforces it.
 
 ### 1.4 Status vocabulary — ONE owner
@@ -143,18 +175,25 @@ reorder queues at once. The `cancel-assignment` copy was the worst: it drove an 
 overwrote `skipped` rows to `cancelled`, destroying the assignment-side record of the skip.
 
 **Board statuses map onto Floor's four washes** so a colour means the same on both boards:
-`assigned` → grey (waiting) · `tinting_in_progress` → violet (with picker) · `paused` → amber
+`assigned` → grey (waiting) · `tinting_in_progress` → tint/sky token (with picker) · `paused` → amber
 (needs check) · `tinting_done` → green (done).
 
 ### 1.5 Assign — and the customer-missing interceptor
 
 Single-operator only, from the rail card's popover or the panel.
 
+The Assign menu lists the active operators and then **a third kind of choice, "Base — No Tint"**
+("No tinting needed — close this bill without an operator"), passed to `OperatorMenu` as its
+`extraAction` on both pending surfaces (`board-rail.tsx:243-245`, `board-detail-panel.tsx:169-171`).
+It is not an assignment — it is the bypass in `§1.12`.
+
 **The interceptor is preserved and must stay.** A `customerMissing` order never reaches the assign
 call: it opens `CustomerMissingSheet` with an amber warning, and the intent is remembered so the
 assign **re-fires by itself** once the flag flips false. It now remembers the OPERATOR too, so the
 interrupted assign completes rather than re-opening a picker. `assign/route.ts` refuses it
-server-side as well (400), so the UI is the affordance, not the rule.
+server-side as well (400), so the UI is the affordance, not the rule. "Base — No Tint" goes through
+the same interceptor (`handleBaseBypass` in `tint-manager-content.tsx`, `99175a99`), and
+`base-bypass/route.ts` refuses a `customerMissing` bill with the same 400.
 
 The rail's Assign menu and the panel's operator picker are **portalled to `document.body`** with
 fixed positioning measured from the trigger, preferring to open downward
@@ -234,7 +273,8 @@ because those are two independent sources; here the rail and the table both rend
 
 ⚠ **The marker is a UNION APPROXIMATION of the board's six feeds**, because unlike Floor there is
 no single shared `orders` WHERE to lend — the board renders six separate queries. Its three arms:
-the open stages · whole-OBD completions today · split completions today. **If any feed gains or
+the open stages · whole-OBD completions today · split completions today. Arms 2 and 3 exclude the
+"Base — No Tint" placeholder's rows, mirroring Set E (`marker/route.ts:109,124`; `§1.12`). **If any feed gains or
 loses a stage this predicate must move with it**, or the board stops refreshing on a change it
 displays. `startOfToday` is copied from the board's expression verbatim (server-local, not IST —
 pre-existing; fix both together or neither).
@@ -259,6 +299,71 @@ settled decisions** — see ROADMAP § "Tint Manager board rebuild". The signifi
 per-row **StatusPopover** (set priority Urgent/Normal and dispatch status), whose removal leaves
 `/api/tint/manager/orders/[id]/status` and `/splits/[id]/status` with no caller.
 
+### 1.12 "Base — No Tint" bypass [LIVE, 2026-09-06, `c9ef1c31` → `e12ce9e9`]
+
+A bill import classified `orderType="tint"` that is entirely base/stock colour leaves the tint rail
+with **no operator and no TI**: the bypass writes a completed assignment attributed to a
+placeholder worker, then moves the bill exactly as a finished job moves (`§2`).
+
+**`POST /api/tint/manager/base-bypass`** `{ orderId }` — `tint_manager` canEdit (`route.ts:70`).
+Refuses with a 400 written to be shown verbatim when the bill is `customerMissing` (`:120`) or is
+not at `pending_tint_assignment` (`:130`) — narrower than Assign, which also accepts
+`tint_assigned`, on purpose: a second, already-finished assignment must never sit beside an
+operator's live one. A missing placeholder row is a 500 (`:147-154`), never a fall-back to a real
+person. Sequential awaits, each step with its own catch and message:
+1. a `tint_assignments` row — `assignedToId` = the placeholder, `assignedById` = the manager,
+   `status: "tinting_done"`, `startedAt = completedAt = now`, `accumulatedMinutes` left at 0
+   (`:195-203`);
+2. the same single `orders.update` the done route writes — `pending_picking` + `dispatch` + the
+   completion slot, or `pending_support` when held (`:219-236`; `§2`);
+3. `tint_logs.action = "base_no_tint_bypass"` (`:254`) and an `order_status_logs` row
+   ("Base — No Tint (no tinting required)").
+
+No TI rows and no `sampling_usage_log` rows are written.
+
+**The placeholder worker — `lib/tint/base-operator.ts`.** `BASE_OPERATOR_EMAIL =
+"base-notint@system.invalid"` is the only place that string exists; `getBaseOperatorId()` looks it
+up **by email, never by id**, uncached, and deliberately without an `isActive` filter. The row is
+`isActive=false` so it stays out of the Assign dropdown and every roster of people, while remaining
+a valid `assignedToId` (the file header records the live row's shape, SELECT-verified 2026-09-06).
+Do not retype the email anywhere else.
+
+**Where it is excluded:** board Set E (`orders/route.ts:460`) — so a bypass never appears in the
+table as an operator section — marker arms 2 and 3 (`marker/route.ts:109,124`, `§1.9`), and the
+Tint Summary's trend query and `realCompletedObds` (`lib/reports/tint-summary-data.ts:264`, `:460`;
+`e12ce9e9`) — see `§12`.
+
+**Where it is admitted:** `tinter-issue` POST (`route.ts:126-127`) and `tinter-issue-b` POST
+(`route.ts:114-115`) accept `assignedToId: { in: [userId, baseOperatorId] }`, so a manager can write
+the TI a bypass still owes. The `[id]` PATCH routes do not. Picking reads the split too —
+`lib/picking/colour-work-query.ts:112` (→ `CLAUDE_PICKING.md §5.6`).
+
+**`GET /api/tint/manager/base-pending`** — `tint_manager` canView (`route.ts:88`), read-only. One
+entry per placeholder-owned `tinting_done` assignment whose active tinting lines are not all
+covered by a TI row, newest first, no date fence. Coverage is keyed on `tintAssignmentId`, not
+`orderId`. It feeds the rail's "Tinter Issue pending" list (`§1.2`).
+
+**`components/tint/manager/base-ti-panel.tsx`** — the operator screen's TI-saving core for ONE line
+of ONE bypassed bill: suggest / operator-search / formula-match / the save POST. It deliberately has
+no Start, Pause, Resume, Skip, Mark Done, timer, queue, or `andStart`. Saving the last owed line
+drops the bill out of base-pending.
+
+**`POST /api/tint/manager/base-bypass/undo`** `{ orderId }` — `tint_manager` canEdit
+(`undo/route.ts:63`). Refusals, in order, each `{ ok: false, errorCode, message }`:
+`NOT_A_BYPASS` 404 (no placeholder-owned `tinting_done` row) · `TI_ALREADY_RECORDED` 400 (any TI row
+on the assignment — deleting it would cascade them away) · `ALREADY_PICKED` 400 (any
+`pick_assignments` row) · `ALREADY_ON_FLOOR` 400 (`orders.dispatchSlotSource !== null`). On success:
+stage back to `pending_tint_assignment`, `slotId`/`originalSlotId` null, `dispatchStatus` cleared only
+if it reads `"dispatch"`; the assignment row is deleted; `order_status_logs` + `tint_logs`
+`"base_no_tint_undone"` are written.
+
+🔴 **Undo refuses most bypasses since 2026-09-11.** `resolveCompletionSlot` returns
+`dispatchSlotSource: "auto"` (`lib/dispatch/completion-slot.ts`), which the bypass writes on every
+un-held bill the engine slots — and Guard 4 refuses any non-null `dispatchSlotSource`
+(`undo/route.ts:140-149`). So Undo succeeds only where the engine declined the slot, or the bill was
+held — and in both cases only if nothing else had set a slot source. The undo also leaves `dispatchTargetDate`/`dispatchWindowId` in place. The route's header
+comment still describes the bypass as writing `pending_support`; it predates `b3dfe5b8`.
+
 ---
 
 ## 2. Slot assignment for tint orders
@@ -267,10 +372,15 @@ See `CLAUDE_CORE.md §9` (⚠ CORE §9 has a pending update from this section �
 
 - At import: `orderType === "tint"` → `slotId = null`, `originalSlotId = null`
 - **`arrivalSlotId` — now stamped at import for tint orders too (2026-06-29) [LIVE].** Previously tint orders got `arrivalSlotId = null` at import (the `orderType !== "tint"` guard). That guard was removed from both import paths (`handleManualSapConfirm` and the auto-import confirm path in `app/api/import/obd/route.ts`) — tint orders now get `arrivalSlotId = resolveArrivalSlotId(emailDateTime)` (the 5-slot ruler), exactly like non-tint orders. This is separate from `slotId`/`originalSlotId`, which remain null until completion (unchanged, see below). No backfill was run — applies to NEW orders only. See CLAUDE_IMPORT.md §12 for the import-side detail.
-- At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order using `resolveSlot()` thresholds on current IST time
-- **Completion branches on a pre-set dispatch slot (2026-06-29) [LIVE — stage value CORRECTED 2026-08-04].** If `order.dispatchWindowId != null && order.dispatchTargetDate != null` (an operator pre-set a slot at the desk while the order was still tinting — today via Floor's **change-slot**, `CLAUDE_FLOOR.md §4.1`; until 2026-07-27 via the Support board), completion additionally writes **`workflowStage: SUPPORT_DONE_OUTPUT` (= `"pending_picking"`)** + `dispatchStatus: "dispatch"` — the order auto-flips to Dispatch and lands on Floor's board as a released bill instead of returning to the rail. If no slot was pre-set: `workflowStage: "pending_support"` (the rail). ⚠ **This bullet said `workflowStage: "closed"` until 2026-08-04 — wrong per the code** (`done/route.ts:183-191`, `split/done/route.ts:191-193` both write `SUPPORT_DONE_OUTPUT`; nothing writes `closed` any more — `CLAUDE_PICKING.md §2`). **A stale code COMMENT still says "closed+dispatch"** at `split/done/route.ts:169`, directly above code that does otherwise — flagged, not edited here; do not quote it.
-- At split completion (`/api/tint/operator/split/done`): sets slot on **parent** order. Latest completion wins. The same pre-set/auto-flip branch applies to the parent-bubble update (runs after the `$transaction`, not inside it — no new landmine interaction).
-- **Parent auto-advance (2026-06-25 fix):** after setting the slot, the route checks whether all non-cancelled splits are now `tinting_done`. If yes AND parent is still `tinting_in_progress`, it advances the parent to `workflowStage = "pending_support"` and writes an `order_status_logs` entry (`changedById: 1`, note `"Auto-advanced: all splits tinting_done"`). Guard is idempotent (`workflowStage === "tinting_in_progress"`). **Cancelled splits are excluded from the count — non-negotiable for correctness.**
+- At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order from an inline IST cut-off ladder — before 10:30 → 1, before 12:30 → 2, before 15:30 → 3, else 4 (`done/route.ts:171-182`; `resolveSlot()` is not imported by either done route)
+- **Completion releases the bill straight to picking [LIVE, `b3dfe5b8`, 2026-09-11].** ONE `orders.update` (`done/route.ts:214-230`), three outcomes:
+  - **Held** (`order.dispatchStatus === "hold"`, `:196`) → `workflowStage: "pending_support"`, `dispatchStatus` untouched. **This is the only case that writes `pending_support`.** A completion never releases a held bill.
+  - **Pre-set slot** (`dispatchWindowId != null && dispatchTargetDate != null` — set at the desk while the bill was still tinting, today via Floor's **change-slot**, `CLAUDE_FLOOR.md §4.1`) → **`workflowStage: SUPPORT_DONE_OUTPUT` (= `"pending_picking"`)** + `dispatchStatus: "dispatch"`, slot kept.
+  - **Otherwise** → the same `pending_picking` + `"dispatch"`, plus the slot from **`resolveCompletionSlot(orderId, now)`** (`lib/dispatch/completion-slot.ts`) spread into the same update: `dispatchTargetDate`, `dispatchWindowId`, `dispatchSlotRuleId`, `dispatchSlotSource: "auto"`. The engine runs on the **completion** time, not arrival. If it declines, it returns null, the slot stays NULL and the bill still goes. `resolveCompletionSlot` returns data and never writes — the caller folds it into its one update (the markers key on `MAX(orders.updatedAt)`).
+  - The `order_status_logs` note names which outcome happened (`done/route.ts:250-256`). The same three-way rule runs in the split/done parent bubble (`split/done/route.ts:197-213`) and in the Base bypass (`§1.12`) — `resolveCompletionSlot` is the one owner of all three.
+  - The import side of the same decision (every non-tint bill released on import): `CLAUDE_IMPORT.md §2.1`. Nothing writes `closed` (`CLAUDE_PICKING.md §2`). ⚠ The code comment at `split/done/route.ts:173-177` still says an un-preset bill "lands in pending_support" — stale since `b3dfe5b8`; do not quote it.
+- At split completion (`/api/tint/operator/split/done`): sets `slotId`/`originalSlotId` on the **parent** order inside the split's `$transaction` (`split/done/route.ts:133-151`). Latest completion wins. The release rule above applies to the parent-bubble update, which runs after the `$transaction`, not inside it.
+- **Parent auto-advance (2026-06-25 fix):** after the split commits, the route checks whether all non-cancelled splits are now `tinting_done`. If yes AND parent is still `tinting_in_progress`, it releases the parent per the rule above (`pending_picking`, or `pending_support` when held) and writes an `order_status_logs` entry (`changedById: 1`, note naming the outcome). Guard is idempotent (`workflowStage === "tinting_in_progress"`). **Cancelled splits are excluded from the count — non-negotiable for correctness.**
 - No buffer before cutoff
 - `applyMailOrderEnrichment()` skips recalculation of **`slotId`/`originalSlotId` only** for tint orders. It does **not** skip `arrivalSlotId` — that field is stamped for every mail-matched order regardless of `orderType` (not tint-guarded), and always has been.
 
@@ -278,17 +388,15 @@ See `CLAUDE_CORE.md §9` (⚠ CORE §9 has a pending update from this section �
 
 ### 2.1 Tint-side facts for the Floor rail suggestion (2026-08-03) — read-only for this module
 
-`CLAUDE_FLOOR.md §8` owns the suggestion layer; these are the TINT-side facts it depends on:
+`CLAUDE_FLOOR.md §8` owns the suggestion layer (DORMANT since the rail retired); these are the TINT-side facts it depends on:
 
 - **`tint_assignments.completedAt` is the suggestion anchor** for a finished FULL tint OBD. Written
-  by `done/route.ts:159` (whole-OBD) and `split/done/route.ts:100` (per split, `status:
+  by `done/route.ts:164` (whole-OBD) and `split/done/route.ts:105` (per split, `status:
   "tinting_done"`). It replaces both arrival clocks in the suggestion — arrival says when the paper
   landed; completion is the first moment the bill could physically go on a vehicle.
-- **Completion deliberately does NOT pre-set a dispatch slot.** Neither done route writes
-  `dispatchTargetDate`/`dispatchWindowId` — they only READ a pre-set (the `hasPresetSlot` branch
-  above). Writing one at completion would trip that very branch, flip the bill to
-  `dispatchStatus='dispatch'`, and it would **leave the Floor rail entirely**, robbing the operator
-  of the confirm step. The suggestion is a nudge on the rail, never a write from here.
+- **Completion writes the dispatch slot itself** — `resolveCompletionSlot` on the same completion
+  moment (`§2`).
+  Was: completion wrote no slot and left an un-preset bill at `pending_support` on the Floor rail for a confirm step until 2026-09-11; now every un-held completion goes to `pending_picking` with a completion slot (`b3dfe5b8`). Do not revert.
 - **On the Floor card payload, `tint.completedAt` is an ISO UTC STRING, not a Date** (re-typed
   2026-08-03, commit `7e466776` — a JSON payload cannot carry a Date). Convert to IST at render
   time. This module's own uses (`§12`'s date axes) read the DB column server-side as a real Date —
@@ -305,20 +413,25 @@ Primary users: Deepak, Chandrasing.
 - `components/tint/PauseJobModal.tsx`
 - `components/tint/SkipJobModal.tsx`
 - `components/tint/MarkDoneConfirmModal.tsx`
-- `components/tint/ResumeBlockedTooltip.tsx`
 - `app/api/tint/operator/my-orders/route.ts`
 - `app/api/tint/operator/done/route.ts`
 - `app/api/tint/operator/start/route.ts`
 - `app/api/tint/operator/pause/route.ts`
 - `app/api/tint/operator/resume/route.ts`
 - `app/api/tint/operator/skip/route.ts`
+- `app/api/tint/operator/history/route.ts` + `components/tint/operator/history-panel.tsx` (§3.13)
 
 Visual spec: `CLAUDE_UI.md §34-38`.
 
+**Second mount — `/operations/tint-operator`** (`app/(operations)/operations/tint-operator/page.tsx`)
+renders the same `TintOperatorContent`, gated by job title: the operations layout admits roles
+containing `operations`/`admin` (`app/(operations)/operations/layout.tsx:25`) and the page requires the
+primary role to be one of them.
+
 ### 3.1 Layout
 
-- Row 1: UniversalHeader title "My Jobs", stats (queue/active/done/paused)
-- Row 2: Job filter as teal-600 segment pill (leftExtra). Click opens 400px dropdown with **3 sections: CURRENT / PAUSED / UP NEXT**. Progress bar (rightExtra)
+- Row 1: UniversalHeader title is a **Jobs / History toggle** (the words "My Jobs" are gone — `tint-operator-content.tsx:1595-1607`), stats (queue/active/done/paused)
+- Row 2: Job filter as a `bg-brand-600` segment pill (leftExtra, `tint-operator-content.tsx:1649`). Click opens 400px dropdown with **3 sections: CURRENT / PAUSED / UP NEXT**. Progress bar (rightExtra). On the History face a date stepper and the day's job/tin totals replace the pill (§3.13)
 - Below Row 2: Bill To / Ship To equal-width cards (`grid-cols-2`)
 - Main: 320px SKU left panel + flex TI form right
 
@@ -372,7 +485,7 @@ Three branches:
 - `paused` → `accumulated × 60000` (frozen)
 - otherwise → null
 
-Both operator card (1s tick) and table view (60s tick) delegate to this helper. `TintAssignmentInfo` TS interface gained `accumulatedMinutes`.
+The operator card (1s tick) delegates to this helper; the retired `tint-table-view.tsx` still imports it but is mounted nowhere (§1). `TintAssignmentInfo` TS interface gained `accumulatedMinutes`.
 
 Bug pattern to remember: after resume, server resets `startedAt = now`, so a UI that reads `startedAt` alone drops elapsed back to 0. Always use the helper.
 
@@ -396,6 +509,8 @@ Current job ALWAYS shows `[Save TI]` + `[Save TI & Start]` regardless of how man
 
 `GET /api/tint/operator/my-orders` returns per order/split: `billToCustomerId`, `billToCustomerName`, `areaName`, `routeName`, `deliveryTypeName`. Top-level: `totalAssignedToday`, `totalDoneToday`. Per assignment: `pauseCount`, `lastPausedAt`, `currentProgress`, `accumulatedMinutes`.
 
+⚠ **Known defect — "today" is UTC midnight.** `my-orders/route.ts:27-28` builds `startOfToday` with `setUTCHours(0, 0, 0, 0)` = 05:30 IST, and the completed-today queries (`:146`, `:164`) and so `totalDoneToday` / `totalAssignedToday` (`:344-345`) count from there. A job finished between 00:00 and 05:30 IST lands in the wrong day. The History route names it and does not copy it (§3.13).
+
 ### 3.12 Sampling reuse — search-first flow + pack scaling
 
 The TI form's shade area is **search-first, one flat list** (the old exact/reference two-section split + caps are gone). UI spec: `CLAUDE_UI.md §34`. Suggestion-engine + pack-scaling model: `CLAUDE_SAMPLING_LIBRARY.md`.
@@ -416,7 +531,30 @@ The TI form's shade area is **search-first, one flat list** (the old exact/refer
 - **formula-match** (`/api/sampling-library/formula-match`) is **per-litre for TINTER** (2-dp tolerance — catches a typed-fresh 4 L formula matching an existing 20 L recipe of the same shade) and **exact 27-value for ACOTONE**; active/zero pre-filter both.
 - **Reuse / "Same shade found" modal:** Cancel / Esc / backdrop aborts the save with **no** new number; only **Use** (reuse, scaled) and **Create new** mint/save.
 
+**Other packs of the same shade — "+N packs".** A reuse row carries `otherVariants`, every other pack/SKU variant of that shade (`c5b2e783`). The PACK cell shows a collapsed "+N packs" disclosure; opened, it lists each variant's nominal pack and its recipe's own `lastUsedAt`. **View-only** — no pigments and no Use: applying goes through the representative row so pack scaling still runs (`components/tint/operator/flat-suggestion-list.tsx:169`, `:245-296`). The payload side: `CLAUDE_SAMPLING_LIBRARY.md`.
+
 > ⚠️ Superseded (do not reintroduce): the earlier flat list that auto-scaled every row to the line pack with ✓ (exact) / ×N (scaled) markers + the `scalingEnabled` prop. Replaced by the pack-filter list above.
+
+### 3.13 History face [LIVE, `dfd9b669` · `b2e7c78a` · `5ce8d8ec`, 2026-08-11]
+
+The header's Jobs / History toggle (§3.1) swaps the screen to **one IST day of completed jobs**,
+rendered by `components/tint/operator/history-panel.tsx`; the Bill To / Ship To cards and the SKU
+toggle are Jobs-only.
+
+`GET /api/tint/operator/history?date=YYYY-MM-DD` — `tint_operator` canView (`history/route.ts:116`),
+read-only.
+- **Window: today + the 6 days before it** (`HISTORY_DAYS = 7`, route and client both). A malformed
+  date is a 400; an out-of-window date is **clamped**, not rejected, and the response's `date` is
+  the effective day. Default today.
+- **IST day bounds** via `istDayBounds()` (`T00:00:00+05:30`), copied from
+  `lib/reports/tint-summary-data.ts` — not the `setUTCHours` form in `my-orders` (§3.11).
+- **Grouped by JOB** (a whole-OBD `tint_assignments` row or one `order_splits` row), only jobs at
+  `tinting_done` whose `completedAt` falls in the day, each carrying the TI lines on it.
+- **"My" means `tinter_issue_entries.submittedById`** — the person who typed the TI — not
+  `assignedToId`.
+- Split TI rows carry `tintAssignmentId = null`, so the job filter is an OR across both relations;
+  do not collapse it to one.
+- Removed and hidden orders are excluded (`isRemoved: false` + `getHideExclusion()`).
 
 ---
 
@@ -441,7 +579,7 @@ Soft-removes a top assigned job from operator's queue back into TM pool.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/tint/operator/skip` | Operator (owner) | Skip top assigned job |
-| GET | `/api/tint/manager/orders/[id]/skip-history` | TM/Admin | Full skip history modal |
+| GET | `/api/tint/manager/orders/[id]/skip-history` | `tint_manager` canView AND `tint_panel_activity` canView (`route.ts:21,27`) | Full skip history modal |
 
 **Skip logic (sequential awaits):**
 1. Assert ownership + top-of-queue + status='assigned'
@@ -479,7 +617,7 @@ Pauses an in-progress job mid-tinting with per-SKU progress snapshot.
 |---|---|---|---|
 | POST | `/api/tint/operator/pause` | Operator (owner) | Pause in-progress whole-OBD |
 | POST | `/api/tint/operator/resume` | Operator (owner) | Resume paused job |
-| GET | `/api/tint/manager/orders/[id]/pause-history` | TM/Admin | Chronological list, oldest first |
+| GET | `/api/tint/manager/orders/[id]/pause-history` | `tint_manager` canView AND `tint_panel_activity` canView (`route.ts:20,26`) | Chronological list, oldest first. Opened from the detail panel's Activity tab ("View full pause history →", `board-detail-panel.tsx:430`) |
 
 **Pause logic:**
 1. Assert ownership + status='tinting_in_progress' + startedAt non-null
@@ -567,10 +705,10 @@ The modal is `components/tint/manual-tint-entry-modal.tsx`, opened from
 
 | Entry point | Where | Reads |
 |---|---|---|
-| The **"Add to Tint"** pill, a `+` icon in the board header | `tint-manager-content.tsx:715` | `title="Add OBD to Tint (M)"` |
-| The **`M`** keyboard shortcut | `tint-manager-content.tsx:322-324` | listed in the header's `shortcuts` strip as *"Add OBD to Tint"* |
+| The **"Add to Tint"** pill, a `+` icon in the board header | `tint-manager-content.tsx:907` | `title="Add OBD to Tint (M)"` |
+| The **`M`** keyboard shortcut | `tint-manager-content.tsx:345-347` | listed in the header's `shortcuts` strip as *"Add OBD to Tint"* |
 
-Both set the same `pullModalOpen` state (`:123`, `:869-873`). **Looking for "Manual Entry" on the
+Both set the same `pullModalOpen` state (`:131`, `:1099`). **Looking for "Manual Entry" on the
 screen and concluding the modal is unreachable is the expected mistake** — the owner made it on
 2026-09-06 and the flow went unverified for that reason. Derived from the tree 2026-09-06; the
 naming is the rebuild's, not this section's, and §7's own prose is the only place the words "Manual
@@ -587,6 +725,8 @@ manual_tint_entries
 
 **Behaviour:** Additive only — does not modify auto-classification at import. Adds OBD to tint workflow with chosen lines flagged.
 
+**Which bills can be pulled:** only those at `MANUAL_TINT_PULLABLE_STAGES = ["pending_support", "pending_picking"]` (`lib/workflow-stages.ts:84`, `b3dfe5b8`), tested by both `manual-entry/lookup` (`route.ts:87`) and `manual-entry` POST (`route.ts:151`) off the one constant. Anything past a picker's hands (`pick_assigned` onward), `cancelled` or legacy `closed` is refused.
+
 ---
 
 ## 8. Remove OBD (TM soft-delete)
@@ -596,7 +736,7 @@ Soft-delete OBD with audit trail. Voids linked challan.
 ### Locked behaviour
 
 - Soft delete only (no hard delete)
-- Removable by: users with TM-delete-right OR Admin
+- Removable by: holders of `tint_manager` canEdit (`orders/[id]/remove/route.ts:39`). ⚠ The button itself is drawn by a job-title check — primary role `admin`, or `tint_manager` among the roles (`canRemoveObd`, `tint-manager-content.tsx:93-98`) — so a `tint_manager` canEdit holder without that job title (e.g. Prakash, `operation_manager`) is allowed by the server but shown no button
 - Removable **only at `pending_tint_assignment` stage** — blocked after assignment (returns 409)
 - 2 predefined reasons: `CUSTOMER_CANCELLED`, `WRONG_ORDER`
 - Free-text remark **mandatory**
@@ -609,7 +749,7 @@ Soft-delete OBD with audit trail. Voids linked challan.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| POST | `/api/tint/manager/orders/[id]/remove` | TM-delete or Admin | Soft-remove + void challan |
+| POST | `/api/tint/manager/orders/[id]/remove` | `tint_manager` canEdit | Soft-remove + void challan |
 | POST | `/api/admin/removed-orders/[id]/restore` | Admin | Restore OBD, unvoid challan |
 | GET | `/api/admin/removed-orders` | Admin | List all removed (paginated) |
 
@@ -634,8 +774,7 @@ Every list endpoint adds `where: { isRemoved: false }` default. Every challan re
 
 ### UI
 
-- TM Kanban card → 3-dot menu → "Remove OBD" → `RemoveObdModal`
-- TM Table view → same 3-dot menu in row (primary use)
+- Rail card (and the detail panel opened on a rail bill) → "Remove OBD" → `RemoveObdModal` (`§1.2`). The Kanban and `tint-table-view.tsx` that used to offer it were retired 2026-09-05/06 (`§1`).
 - Modal: reason radios + mandatory remark + warning about challan void
 - Voided challan: diagonal red watermark + disabled Print/PDF + red banner with reason/remark/who/when
 - `/admin/removed-orders` — table with Restore action
@@ -648,9 +787,13 @@ Every list endpoint adds `where: { isRemoved: false }` default. Every challan re
 
 ---
 
-## 9. Delivery Challan — /tint/manager/challans
+## 9. Delivery Challan — /tint/manager/challan
 
-TM screen.
+TM screen. The live page is `app/(tint)/tint/manager/challan/page.tsx` (singular — the sidebar row
+`delivery_challans` points at `/tint/manager/challan`, `lib/permissions.ts:103`), gated by the
+manager layout's `tint_manager` canView plus `requireRole([TINT_MANAGER, ADMIN,
+OPERATION_MANAGER])`. A second, narrower mount of the same `ChallanContent` sits at **`/challan`**
+(`app/(tint)/challan/page.tsx`, `requireRole([TINT_MANAGER, ADMIN])`).
 
 **Key files:**
 - `components/tint/challan-content.tsx`
@@ -672,7 +815,7 @@ Sort: `orderBy: { orderDateTime: "asc" }`.
 
 See `CLAUDE_UI.md §31`.
 
-- 320px left panel: compact 3-line rows. Selected: `bg-teal-50 + border-l-teal-600`
+- 320px left panel: compact 3-line rows. Selected: brand violet — inline `borderLeft: 3px solid #7C3AED` + `background: #F5F3FF` (`challan-content.tsx:386-387`)
 - Right panel: action bar + challan document on `#f9fafb` bg
 - UniversalHeader: no segments. Filter groups: SMU + Route. Date stepper. Search.
 
@@ -788,6 +931,7 @@ SQL file: `sql/2026-05-26-add-formula-override-tracking.sql`.
 
 DEPRECATED. Sampling Library Phase 4 shipped 2026-05-25 — operator screen no longer reads `shade_master`. Page still exists for now (historical data viewing); table scheduled for deletion after retention window. All new shade saves write to `sampling_register` + `sampling_recipes` + `sampling_usage_log` (`CLAUDE_SAMPLING_LIBRARY.md`).
 
+- Second mount: **`/tint/shades`** (`app/(tint)/tint/shades/page.tsx`, `requireRole([ADMIN, TINT_MANAGER, TINT_OPERATOR])`) — the operator sidebar always adds a "Shade Master" row pointing here (`app/(tint)/tint/operator/layout.tsx:35`). Both mounts render `ShadeMasterContent`, which reads and writes through `/api/admin/shades` (`shade-master-content.tsx:167,191`).
 - 2-row UniversalHeader
 - IosToggle, type filter (TINTER/ACOTONE), pack filter, pagination
 - Columns: # | Shade Name | Customer ID | Type | SKU Code | Pack | Status | Active | Added By | Added At
@@ -796,11 +940,18 @@ DEPRECATED. Sampling Library Phase 4 shipped 2026-05-25 — operator screen no l
 
 ## 11. TI Report — /reports?r=ti-report
 
-**Folded into the Reports hub** (2026-06-17). No longer a standalone sidebar item — old URLs `/tint/manager/ti-report` and `/ti-report` redirect to `/reports?r=ti-report`; the `ti_report` permission gates the hub. Hub layout + the new Tint Summary report: `CLAUDE_UI.md §56` + §12 below. Report content itself unchanged:
+**Folded into the Reports hub** (2026-06-17). No longer a standalone sidebar item — old URLs `/tint/manager/ti-report` and `/ti-report` redirect to `/reports?r=ti-report` (`next.config.mjs:33-34`). Hub layout + the new Tint Summary report: `CLAUDE_UI.md §56` + §12 below.
+
+**Gates — one tick per report (`6f628b05`, 2026-09-17).** `REPORT_PAGE_KEYS = ["reports_tint_summary", "reports_ti_report"]` (`lib/permissions.ts:156`). The hub `/reports` opens for `canView` on ANY of them — `canViewAnyReport` (`app/reports/page.tsx:42`) — and its rail shows only the reports the viewer holds (`:45`). The same predicate draws the sidebar's "Reports" row and the Tint Manager's Reports pill (`§1.1`).
+- **TI report:** `reports_ti_report` canView — the rail item, and `GET /api/tint/manager/ti-report` (`route.ts:24`). **`canExport` on the same key draws Download Excel** (`app/reports/page.tsx:44` → `TIReportContent canExport` → `showDownload={canExport}`, `ti-report-content.tsx:479`). `GET /api/tint/manager/operators` (the operator filter) admits `tint_manager` canView OR `reports_ti_report` canView (`operators/route.ts:22-23`).
+- **`ti_report` gates nothing.** Its `PAGE_NAV_MAP` row survives only as the sidebar row's identity, and the admin label reads "Reports (legacy — no effect)" (`PAGE_LABEL_OVERRIDES`, `lib/permissions.ts:542`).
+- Live holders of `reports_ti_report` canView: Chandresh Kolgha (#21), Deepanshu Thakur (#25), Prakash (#32); canExport on all 3 rows (live 2026-09-18, Q03a/Q03b).
+
+Report content itself unchanged:
 
 - `DateRangePicker` with presets (leftExtra)
 - Inline shade expand
-- Download Excel button
+- Download Excel button (`reports_ti_report` canExport only)
 - Filter: operator + type
 - Columns: chevron | Date | OBD No. | Dealer | Site | Base | Pack | Tins | Operator | Time
 
@@ -810,7 +961,11 @@ DEPRECATED. Sampling Library Phase 4 shipped 2026-05-25 — operator screen no l
 
 ## 12. Tint Summary report — /reports/tint-summary
 
-Read-only daily MIS report (no DB writes). Data source-of-truth: `lib/reports/tint-summary-data.ts` (`getTintSummaryData(params)`), used by both the JSON API (`GET /api/reports/tint-summary`, auth tint_manager/admin/operations) and the page. Print document visual spec + Reports hub: `CLAUDE_UI.md §56`.
+Read-only daily MIS report (no DB writes). Data source-of-truth: `lib/reports/tint-summary-data.ts` (`getTintSummaryData(params)`), used by both the JSON API (`GET /api/reports/tint-summary`) and the page. Print document visual spec + Reports hub: `CLAUDE_UI.md §56`.
+
+**Gate:** `reports_tint_summary` canView — the API (`app/api/reports/tint-summary/route.ts:37`), the standalone page (`app/reports/tint-summary/page.tsx:59`) and the hub's rail item (`§11`). ⚠ **Live oddity:** `reports_tint_summary` canView is held by **Operations User (#20) only** — 3 rows, 1 true (live 2026-09-18, Q03a/Q03b). Chandresh Kolgha, Deepanshu Thakur and Prakash hold `reports_ti_report` but not this, so they see the TI report and **not** Tint Summary.
+
+**Base — No Tint bills (`e12ce9e9`, `§1.12`):** the KPIs, pace and trend use `realCompletedObds` (Base excluded, `tint-summary-data.ts:460`), while the operator cards and the Completed register still list "Base / No Tint" by name (`isBase`, `:407`). The two can legitimately disagree — by design.
 
 **Date axes (today boundaries, all IST):**
 - Intake / aging / open-age / top-customers / SMU / Area → `orders.orderDateTime` (OBD date).
@@ -843,7 +998,7 @@ Read-only daily MIS report (no DB writes). Data source-of-truth: `lib/reports/ti
 > **Access comes from `user_page_access`, one row per (user, page key)** — not from a job title and
 > not from `role_permissions`. `CLAUDE_CORE.md §5` owns the model and the `ACCESS_SOURCE` panic
 > switch; §7.14/§7.15 own the schema. **Live value: `user`** (SELECT-verified again 2026-09-06,
-> 1,053 rows).
+> 1,053 rows; still `user`, live 2026-09-18, Q02).
 >
 > The `role_permissions` INSERT further down is **the FALLBACK, not the access model.** It is what a
 > job title *would* grant, it is what `/admin/access` compares a person against, and it is what the
@@ -853,18 +1008,23 @@ Read-only daily MIS report (no DB writes). Data source-of-truth: `lib/reports/ti
 
 ### 13.1 Page keys
 
-Three TM page keys in `lib/permissions.ts`:
+TM page keys in the `PageKey` union, `lib/permissions.ts`:
 - `delivery_challans`
 - `shade_master`
-- `ti_report`
+- `ti_report` — **gates nothing** since `6f628b05` (`§11`)
+- `tint_panel_items` · `tint_panel_details` · `tint_panel_activity` (`:237-239`) — the detail panel's tabs, canView only (`§1.2`)
+- `reports_tint_summary` · `reports_ti_report` (`:316-317`) — `REPORT_PAGE_KEYS` (`§11`, `§12`)
 
 `sampling_library` is shared with operators — see `CLAUDE_SAMPLING_LIBRARY.md`.
 `removed_orders` is superuser-only.
 
-⚠ **The two keys the API routes actually gate on are `tint_manager` and `tint_operator`** (§13.2),
-neither of which is in the list above — that list is the three keys this module *owns*, not the keys
-that decide its access. `delivery_challans` and `ti_report` gate their *screens*; the challan and
-TI-report **APIs** gate on `tint_manager`. Live holders, SELECT-verified 2026-09-06:
+⚠ **The two keys most API routes gate on are `tint_manager` and `tint_operator`** (§13.2),
+neither of which is in the list above. `delivery_challans` only decides whether the sidebar row
+shows — the challan screen is gated by the manager layout's `tint_manager` canView
+(`app/(tint)/tint/manager/layout.tsx:26`) plus a `requireRole` (`§9`), and the challan APIs gate on
+`tint_manager`. The TI-report API gates on `reports_ti_report` (`§11`). Live holders of the panel
+and report keys: `§1.2`, `§11`, `§12` (live 2026-09-18). Live holders of the older keys,
+SELECT-verified 2026-09-06:
 
 | Key | `canView` | `canEdit` |
 |---|---|---|
@@ -872,23 +1032,33 @@ TI-report **APIs** gate on `tint_manager`. Live holders, SELECT-verified 2026-09
 | `tint_operator` | Harsh · Chandresh Kolgha · Deepak Vasava · Chandrasing Valvi | the same four |
 | `delivery_challans` | Harsh · Chandresh Kolgha · Prakash | the same three |
 | `shade_master` | Harsh · Chandresh Kolgha | the same two |
-| `ti_report` | Harsh · Chandresh Kolgha · Prakash | Harsh |
+| `ti_report` *(gates nothing since `6f628b05`)* | Harsh · Chandresh Kolgha · Prakash | Harsh |
 
 🔴 **`canView` and `canEdit` are the same set on both tint keys — by accident of how the ticks were
 seeded, not by rule.** Since 2026-09-04 an admin sets the two independently, per person, from a
 screen. Every "harmless today" claim about a `canView`-gated write in this module rested on that
 coincidence, which is why the three that existed were closed on 2026-09-06 (§13.3).
 
-### 13.2 The API gates — derived from the tree 2026-09-06, not quoted
+### 13.2 The API gates — derived from the tree 2026-09-19, not quoted
 
-`app/api/tint/**` holds **37 route files and 41 exported handlers.** **37 of the 41 now gate on a
-per-user tick**, across 35 files:
+`app/api/tint/**` holds **40 route files and 44 exported handlers.** **40 of the 44 gate on a
+per-user tick** (`checkAnyPermission`), across 37 files (counted 2026-09-19: `find app/api/tint -name
+route.ts`, exported GET/POST/PATCH/PUT/DELETE per file, and the key each handler's gate names):
 
-| Key | canView | canEdit | Total |
+| Key (the handler's primary gate) | canView | canEdit | Total |
 |---|---|---|---|
-| `tint_manager` | 11 | 12 | **23** |
+| `tint_manager` | 11 | 14 | **25** |
+| `reports_ti_report` | 1 | — | **1** |
 | `tint_operator` | 4 | 10 | **14** |
-| **All** | **15** | **22** | **37** |
+| **All** | **16** | **24** | **40** |
+
+Since 2026-09-06: `base-pending` adds a `tint_manager` canView, `base-bypass` and
+`base-bypass/undo` add two `tint_manager` canEdit (`§1.12`), and `ti-report` moved off
+`tint_manager` onto `reports_ti_report` (`6f628b05`). Three handlers carry a second tick:
+`pause-history` and `skip-history` also require `tint_panel_activity` canView (AND), and `operators`
+admits `tint_manager` canView OR `reports_ti_report` canView (`§11`). ⚠ `app/api/tint/manager/splits/[id]/status/route (1).ts`
+is **not a route** — a 3-line `export {}` stub ("duplicate artifact … kept to satisfy TypeScript
+compilation"); Next.js serves only `route.ts`.
 
 **The four that do not, and why:**
 
@@ -907,8 +1077,11 @@ work thrown away if the answer is "retire".
 ⚠ If they are ever converted, **the key choice is not cosmetic**: `shade_master`/`canEdit` is held
 by Harsh and Chandresh only, so it would revoke shade writes from **Deepak Vasava and Chandrasing
 Valvi — the two active operators whose screen it is**; `tint_operator`/`canEdit` keeps them. The
-prior question nobody has answered: **does anything still call these two routes?** ROADMAP owns the
-decision. Their siblings `/api/admin/shades` GET and `/api/admin/shades/[id]` PATCH sit on the same
+prior question — **does anything still call these routes?** — has an in-app answer: **nothing in
+the tree calls `/api/tint/operator/shades*`** (grep 2026-09-19, by path and by the `operator/shades`
+fragment: the only hit outside the route files is the comment at `tint-operator-content.tsx:886`
+saying the legacy preload is gone; the Shade Master screen uses `/api/admin/shades`). An external
+caller is not ruled out — that needs the Vercel logs. ROADMAP owns the decision. Their siblings `/api/admin/shades` GET and `/api/admin/shades/[id]` PATCH sit on the same
 `requireRole([ADMIN, TINT_MANAGER, TINT_OPERATOR])` array and belong to the same decision.
 
 **What moved on 2026-09-06.** Before that day **24 mutating handlers** here decided access from a
@@ -1011,10 +1184,16 @@ ticks. The role that 15 of the 24 converted handlers named by hand was never gra
 either access system; only the role arrays granted it. That is the whole of why the 2026-09-06
 conversion moved exactly one person.
 
-⚠ **`tint_manager` holds no `tint_operator` grant in the fallback, yet Chandresh Kolgha holds
-`tint_operator` ticks.** Not a fill error — he carries `tint_operator` as a **secondary role** in
-`user_roles`, and the 2026-09-04 fill reproduced the OR-merge across all of a person's roles. A
-reader comparing the two tables column by column will think they disagree. They do not.
+⚠ **`tint_manager` holds no `tint_operator` grant in the fallback, yet the 2026-09-06 holder table
+(§13.1) lists Chandresh Kolgha on `tint_operator`.** That came from the 2026-09-04 fill, which
+reproduced the OR-merge across all of a person's roles while he still carried `tint_operator` as a
+secondary role. **That secondary role is gone:** his primary role and his only `user_roles` row are
+both `tint_manager` (live 2026-09-18, Q08; removed 2026-09-06 when "Base — No Tint" replaced his
+self-assign workaround — `docs/prompts/drafts/code-update-2026-09-06-tint-base-no-tint.md`). In user
+mode `checkAnyPermission` reads the person's own `user_page_access` row, not their roles
+(`lib/permissions.ts:801-806`), so the removal did not by itself change his `tint_operator` ticks —
+and a rollback to `ACCESS_SOURCE = role` would no
+longer grant him `tint_operator` at all.
 
 Layout uses `buildNavItems()` only.
 
@@ -1024,12 +1203,19 @@ Layout uses `buildNavItems()` only.
 
 - **Split/done parent auto-advance — RESOLVED 2026-06-25.** `app/api/tint/operator/split/done` previously never advanced the parent OBD after all splits finished — it marked the split done and walked away. Fixed: bubble block added (after the split update, outside any transaction, sequential awaits). Live OBD id=6478 (Pramukh Yogiwood · Silvassa) was the only stuck instance; repaired manually via SQL. **Distinct from the usage-log gap below.**
 - **Split-done sampling-usage-log gap — STILL OPEN.** `split/done` does not write a `sampling_usage_log` row. Split-completed tints remain absent from Sampling Library usage history and same-site suggestions. ROADMAP item (also in CORE §13).
+- **Base-bill sampling-usage-log gap — OPEN (the second one).** TIs saved on a "Base — No Tint" bill through `base-ti-panel.tsx` (`§1.12`) write no `sampling_usage_log` rows: `writeUsageLogsForAssignment` has exactly one caller, `done/route.ts:265`, and neither `tinter-issue` route writes usage. Base-bill shades are invisible to same-site suggestions, like split-done ones.
 - **Schema confirmations from 06-25 session:** `order_status_logs` uses `fromStage`/`toStage` columns (NOT `previousStage`/`newStage`). `order_splits` has `totalQty` (not `skuCode`). `orders` has no `isTinting` column — tinting is determined by `orderType`.
 - **~~TM reorder API uses `prisma.$transaction`~~ — ✅ FIXED 2026-09-05** (`a0f9378b`). Both
   branches are sequential awaits; arithmetic and tie-break unchanged. Detail: `§1.7`.
-- **⚠ STILL OPEN, and this is where the `$transaction` debt moved:**
-  `app/api/tint/manager/cancel-assignment/route.ts` and `app/api/tint/manager/splits/cancel/route.ts`
-  both wrap their whole sequence in an interactive `prisma.$transaction`. Deferred on purpose —
+- **⚠ STILL OPEN — every live `prisma.$transaction` under `app/api/tint/` (grep 2026-09-19), six:**
+  - `operator/split/done/route.ts:56` — the split update, logs and parent slot (`§2`)
+  - `manager/splits/reassign/route.ts:50` — called by the board (`tint-manager-content.tsx:614`)
+  - `manager/splits/create/route.ts:150` — no caller (`§1.11`)
+  - `manager/cancel-assignment/route.ts:28`
+  - `manager/splits/cancel/route.ts:43`
+  - `manager/challans/[orderId]/route.ts:551` — the challan PATCH (entry below)
+
+  The two cancel routes wrap their whole sequence in an interactive `prisma.$transaction`. Deferred on purpose —
   converting trades a pooler-timeout risk for a partial-state one (a bill reverted to Pending with
   its assignment still live, or reverted with no audit line), which is an owner decision, not a
   drive-by. Same rule as the challan PATCH entry below. ROADMAP.
@@ -1052,12 +1238,12 @@ Layout uses `buildNavItems()` only.
 - **Customer master gaps:** Bill-To customers missing contacts → challan S5 CUSTOMER blanks.
 - **SKU master gap:** unknown SKUs (e.g. `5888558` DP M900 Gloss Enamel BW 20L) land but enrichment is null. Add via SKU master.
 - **Splits never get pause/resume.** Server rejects `splitId !== null` with 400. Acceptable for v1. Revisit if depot reality changes.
-- **Pause kebab on Table is pending-stage only.** In Progress and Completed Today sections have no kebab columns. Pause **badge** works everywhere; kebab entry is pending-only. Four other entry points cover the gap.
+- **Pause history opens from the detail panel only** — the Activity tab's "View full pause history →" (`board-detail-panel.tsx:430`), shown when the order has pauses and the viewer holds `tint_panel_activity` (`§1.2`). The Table view whose kebab this entry used to describe was retired 2026-09-05/06 (`§1`).
 - **Static `title=` tooltip on Resume (mobile).** `components/ui/tooltip.tsx` uses hover events. Touch devices won't fire (non-issue today — depot is desktop). If mobile app ever built, touch fallback needed.
 - **Partial-qty done not surfaced anywhere.** `currentProgress` is stored on done but no TM screen reads it. "Short by N tins" badge not built. Decision: deferred. Open question: does challan auto-fill from assigned qty? If yes, partial-done could print wrong qty. Needs verification before partial-done is considered production-safe.
 - **`shade_master` deprecated 2026-05-25.** Sampling Library Phase 4 shipped. Operator screen no longer reads `shade_master`. Table still exists with historical data, scheduled for deletion after retention window. Do not write to it. ⚠ **Two routes still write it** — `operator/shades` POST and `operator/shades/[id]` PUT — and they are the *only* job-title gates left under `app/api/tint/**` after the 2026-09-06 conversion. Held out deliberately: retire-or-convert is an owner decision, and the key choice is not cosmetic. `§13.2`.
 - 🔴 **`canSeeAllOperatorRows` is a FACE branch and must never become a tick — `§13.4`.** It was `isOpsOrAdmin` until `cd0ed055`, one letter from `isAdminOrOps`, which means the opposite and *did* convert. Converting the FACE one lets any `tint_operator`/`canEdit` holder finish another operator's job, and it **fails open**, so nobody would report it.
-- **Challan PATCH `prisma.$transaction` landmine** — `app/api/tint/manager/challans/[orderId]/route.ts:527`. The formula-save path is wrapped in `$transaction`. Do not extend this block — add new logic outside it or refactor to sequential awaits as a separate task. Pre-existing.
+- **Challan PATCH `prisma.$transaction` landmine** — `app/api/tint/manager/challans/[orderId]/route.ts:551`. The formula-save path is wrapped in `$transaction`. Do not extend this block — add new logic outside it or refactor to sequential awaits as a separate task. Pre-existing.
 - **Challan cell-clear UX bug** — `components/tint/challan-content.tsx:211-213` filters empty strings out of PATCH body. Server has no delete branch. Clearing a cell in the UI does NOT clear the DB row, so a TM can't "unlock" a manually-overridden formula by clearing it. Mitigation if unlock is ever needed: build a proper "Reset to auto" button. (CORE §13 also lists this.)
 - **Tint sampling siteId bug — FIXED 2026-06-01** (commit `df7e61e9`). Mark-Done was writing `sampling_usage_log.siteId = null` since Phase 4 ship. Fixed by passing `orders.customerId` (= ship-to FK) into the writer. Backfill applied via OBD→order link (preferred over name match). Lesson: `orders.customerId` IS the resolved ship-to site FK, NOT the bill-to dealer. The suggestion engine matches on `usage_log.siteId` STRICTLY — null rows are invisible to same-site suggestions.
 - **Pre-existing $transaction in admin customer routes** (lines 133 + 186) — left untouched in multi-SO commit. Refactor when convenient (CORE §13).
@@ -1066,6 +1252,19 @@ Layout uses `buildNavItems()` only.
 - **Scratch-file tsc noise.** Untracked `scripts/_*` scratch files (sampling/report seed helpers) throw ~24 `tsc --noEmit` errors; never committed. Exclude `scripts/_*` from tsconfig or delete so the tsc gate stays clean.
 
 ---
+
+## Change log — v2.2 (2026-09-19 canon sweep, batch B2)
+
+Evidence: code at HEAD `915f46f2` read at the call sites; live CSV `sql-2026-09-18-canon-sweep-live-results.csv` (Q02, Q03a/b, Q08); commits `b3dfe5b8`, `c9ef1c31` → `e12ce9e9`, `0fbcd4be`, `6f628b05`, `dfd9b669`, `c5b2e783`, `73a762e8`, `b585240f`.
+
+- §2 / §2.1 / §1.3 (REVERSAL): a finished tint bill goes to `pending_picking` + `dispatch` + `resolveCompletionSlot`; `pending_support` only when held — done, split/done bubble and base-bypass. §2.1's no-slot reasoning replaced by one "Was … Do not revert." line; inline IST ladder named in place of `resolveSlot()`; upstream → `CLAUDE_IMPORT.md §2.1`.
+- NEW §1.12 "Base — No Tint" bypass: bypass / undo / base-pending routes, placeholder worker, exclusions and admissions, `base-ti-panel.tsx`, and the Undo-vs-`dispatchSlotSource: "auto"` defect. §1 key files, §1.2 (second rail list, panel-tab ticks), §1.5 (third Assign choice), §1.9 (marker arms) follow.
+- §1.1 / §1.2 / §4 / §5 / §11 / §12 / §13.1: panel-tab and report ticks; `ti_report` gates nothing; Tint Summary live oddity (Operations User only).
+- §13.2 recounted (40 files / 44 handlers / 40 ticked); `route (1).ts` stub; shades callers answered. §13.5: Chandresh's secondary role gone (Q08).
+- §14: all six live `$transaction`s listed; Base usage-log gap; Table-kebab entry replaced.
+- §3 / §3.1 / §3.8 / §3.11 / NEW §3.13: operator History face, `my-orders` UTC-midnight defect, "+N packs"; §7 anchors + `MANUAL_TINT_PULLABLE_STAGES`; §8 Remove OBD surfaces + gate; §9 `/tint/manager/challan` + `/challan`; §10 `/tint/shades`; second mounts `/admin/tint-manager`, `/operations/tint-operator`; colours (tint token, warn Split tag, violet challan selection).
+- §3 key files: `components/tint/ResumeBlockedTooltip.tsx` dropped — `git log --all` has no history for it; it never existed.
+- Schema stamp v27.13 → v27.24 (read against CORE v27.24; no tint table changed).
 
 ## Change log — v1.9 (2026-08-04 reconciliation pass, method v1.1)
 
@@ -1082,4 +1281,4 @@ Evidence: done/split routes + challan routes + globals.css read at the call site
 
 ---
 
-*Tint v2.1 · Schema v27.13 · OrbitOMS · updated 2026-09-06 — **§13 rewritten end to end for the user-based access conversion** (`cd0ed055` → `fbbe30bd`, all pushed). The old §13 was nine lines that listed three page keys and reproduced a `role_permissions` INSERT **as if it were the access model**; under `ACCESS_SOURCE = 'user'` (live since 2026-09-04) that table is the FALLBACK a rollback reads, and it is now framed as one and kept, not deleted. What replaced it is derived from the tree rather than quoted: `app/api/tint/**` holds **37 route files and 41 handlers**, and **37 of the 41 gate on a `tint_manager`/`tint_operator` tick** — 23 manager (11 canView + 12 canEdit) and 14 operator (4 + 10). The four that do not are the **three `operator/shades` handlers**, excluded by owner decision because they write the deprecated `shade_master` and are retirement candidates, and **`operator/skip`**, which is ownership-scoped and has nothing to convert. §13.2 names who moved — Operations User lost 15 writes and 10 reads and held no tint tick under either access system; Prakash gained manual-entry; the superuser gained the four operator writes `requireRole`'s missing admin arm had been redirecting him out of — and records the lookup that shipped broken for half a day and **failed silently**, because a 307 into an HTML page is a 200 that `res.json()` throws on. §13.3 records the three `canView`-on-a-write routes moved to `canEdit`, and that **two code comments asserting "page access = full action authority" were corrected in place**. 🔴 §13.4 is new and is the one to read before touching an operator route: **`canSeeAllOperatorRows` is a FACE branch that must NEVER become a tick** — it decides whose rows may be touched, not whether the caller may act, and it fails **open**; it was `isOpsOrAdmin` until `cd0ed055` renamed it, one letter from `isAdminOrOps`, which means the opposite and did convert. §7 gains the answer to the question that left manual tint entry unverified: **there is no button labelled "Manual Entry"** — it is the **"Add to Tint"** pill at `tint-manager-content.tsx:715` and the **`M`** shortcut at `:322`. §14 gains two cross-references. Schema stamp UNCHANGED at v27.13 — the access conversion minted no schema version and touched no column. Prior, v2.0 (2026-09-06): **§1 rewritten end to end for the board rebuild** (`a0f9378b` → `082eb92e`, all pushed): the 4-column Kanban and its card/table view toggle are gone, replaced by a 344px pending-only rail + ONE operator-grouped table + a 480px detail panel. New subsections cover the 10 columns (SMU short code, Bill To vs Ship To as two real parties), the computed `#` rank and the fact that ORDERS AND SPLITS CARRY SEPARATE SEQUENCES, `lib/tint/assignment-status.ts` as the status-vocabulary owner, the `assigned`-only re-assign rule now enforced server-side with a 400, Send back to Pending, and the new 15s marker. §1.1 states plainly that this screen did NOT become a second UniversalHeader exception — only the operator segment pills were dropped — and points at `CLAUDE_UI.md §6` rather than restating the wiring. §14: the reorder `` landmine is CLOSED, and the two cancel routes are recorded as where that debt now sits; the `SlotSummaryItem` entry is superseded by a larger gap (`slotSummary` is returned and read by nothing). Schema stamp UNCHANGED at v27.13 — the rebuild minted no schema version, and every new payload field reads a column that already existed. Prior, v1.9 (2026-08-04 reconciliation pass, method v1.1) — change log below.*
+*Tint v2.2 · Schema v27.24 · OrbitOMS · updated 2026-09-19 — **reconciled to code + live (canon sweep B2).** A finished tint bill now goes straight to `pending_picking` with a completion slot (`b3dfe5b8`) — `pending_support` only when held; the "Base — No Tint" bypass gets its first canon (§1.12); panel-tab and report ticks documented; §13.2 recounted; operator History added. Full list: the v2.2 change-log entry. Prior, v2.1 (2026-09-06): **§13 rewritten end to end for the user-based access conversion** (`cd0ed055` → `fbbe30bd`, all pushed). The old §13 was nine lines that listed three page keys and reproduced a `role_permissions` INSERT **as if it were the access model**; under `ACCESS_SOURCE = 'user'` (live since 2026-09-04) that table is the FALLBACK a rollback reads, and it is now framed as one and kept, not deleted. What replaced it is derived from the tree rather than quoted: `app/api/tint/**` holds **37 route files and 41 handlers**, and **37 of the 41 gate on a `tint_manager`/`tint_operator` tick** — 23 manager (11 canView + 12 canEdit) and 14 operator (4 + 10). The four that do not are the **three `operator/shades` handlers**, excluded by owner decision because they write the deprecated `shade_master` and are retirement candidates, and **`operator/skip`**, which is ownership-scoped and has nothing to convert. §13.2 names who moved — Operations User lost 15 writes and 10 reads and held no tint tick under either access system; Prakash gained manual-entry; the superuser gained the four operator writes `requireRole`'s missing admin arm had been redirecting him out of — and records the lookup that shipped broken for half a day and **failed silently**, because a 307 into an HTML page is a 200 that `res.json()` throws on. §13.3 records the three `canView`-on-a-write routes moved to `canEdit`, and that **two code comments asserting "page access = full action authority" were corrected in place**. 🔴 §13.4 is new and is the one to read before touching an operator route: **`canSeeAllOperatorRows` is a FACE branch that must NEVER become a tick** — it decides whose rows may be touched, not whether the caller may act, and it fails **open**; it was `isOpsOrAdmin` until `cd0ed055` renamed it, one letter from `isAdminOrOps`, which means the opposite and did convert. §7 gains the answer to the question that left manual tint entry unverified: **there is no button labelled "Manual Entry"** — it is the **"Add to Tint"** pill at `tint-manager-content.tsx:715` and the **`M`** shortcut at `:322`. §14 gains two cross-references. Schema stamp UNCHANGED at v27.13 — the access conversion minted no schema version and touched no column. Prior, v2.0 (2026-09-06): **§1 rewritten end to end for the board rebuild** (`a0f9378b` → `082eb92e`, all pushed): the 4-column Kanban and its card/table view toggle are gone, replaced by a 344px pending-only rail + ONE operator-grouped table + a 480px detail panel. New subsections cover the 10 columns (SMU short code, Bill To vs Ship To as two real parties), the computed `#` rank and the fact that ORDERS AND SPLITS CARRY SEPARATE SEQUENCES, `lib/tint/assignment-status.ts` as the status-vocabulary owner, the `assigned`-only re-assign rule now enforced server-side with a 400, Send back to Pending, and the new 15s marker. §1.1 states plainly that this screen did NOT become a second UniversalHeader exception — only the operator segment pills were dropped — and points at `CLAUDE_UI.md §6` rather than restating the wiring. §14: the reorder `` landmine is CLOSED, and the two cancel routes are recorded as where that debt now sits; the `SlotSummaryItem` entry is superseded by a larger gap (`slotSummary` is returned and read by nothing). Schema stamp UNCHANGED at v27.13 — the rebuild minted no schema version, and every new payload field reads a column that already existed. Prior, v1.9 (2026-08-04 reconciliation pass, method v1.1) — change log below.*

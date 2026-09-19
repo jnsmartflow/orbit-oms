@@ -1,14 +1,16 @@
 # CLAUDE_SAMPLING_LIBRARY.md — Sampling Library Module
-# v1.6 · Schema v27.13 · August 2026 · updated 2026-08-04 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
+# v1.7 · Schema v27.24 · September 2026 · updated 2026-09-19 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Digital library for the depot's paper-based Sampling Register. Shade name + tinter recipes + usage history. Replaced `shade_master` (Phase 4 shipped 2026-05-25) as the depot's single source of truth for tinted shades.
 
 Page route: `/tint/sampling-library`
-Page key: `sampling_library`
+Page key: `sampling_library` (a `PageKey` in `lib/permissions.ts:307` — not a role slug, not a `RoleSidebarRole`)
 
-Roles granted — **LIVE, SELECT 2026-08-04** (this list previously understated three grants):
+**Who gets in is a per-user tick, not a role.** Access comes from `user_page_access` (one row per user × page key) because `ACCESS_SOURCE = user` (live 2026-09-18, Q02) — mechanism in `CLAUDE_CORE.md §5`. The page gate is `checkAnyPermission(roles, "sampling_library", "canView")` in `app/(tint)/tint/sampling-library/layout.tsx`. The table below is the **`role_permissions` fallback**, read only if `ACCESS_SOURCE` is flipped back to `role` — kept for rollback, not a list of who holds access today.
+
+`role_permissions` fallback grants — SELECT 2026-08-04:
 
 | roleSlug | canView | canEdit |
 |---|---|---|
@@ -18,7 +20,7 @@ Roles granted — **LIVE, SELECT 2026-08-04** (this list previously understated 
 | `ops_admin` | ✅ | **✅** (doc said view-only) |
 | `operation_manager` | ✅ | ✅ — was undocumented here entirely (role real since 2026-08-04's CORE confirmation, id 15) |
 
-⚠ `CLAUDE_CORE.md §5`'s `sampling_library` row still shows the OLD list — flagged for the final CORE pass, not fixed here.
+`sampling_library` canEdit has **no UI path in the library itself** — every write button on the page is a `console.log` stub (§4). Samplings are created through the TI routes (`app/api/tint/operator/tinter-issue/route.ts:37`, `tinter-issue-b/route.ts:36`, both `tint_operator` canEdit), which call `sampling-resolution.ts` (§6).
 
 Primary users: Chandresh (TM), Deepak + Chandrasing (operators reference past recipes).
 
@@ -32,6 +34,7 @@ This module digitises that register and surfaces it as:
 - A searchable, filterable browse page
 - A reference workspace for Chandresh when approving new shades
 - Live integration into Tint Operator's TI workflow — every TI Done auto-writes a `sampling_usage_log` row (shipped Phase 4, 2026-05-25)
+- A second consumer: the Tint Manager's Base-bypass panel, `components/tint/manager/base-ti-panel.tsx`. It calls `/suggest` (`:172`), `/operator-search` (`:198`) and `/formula-match` (`:296`), renders the same `FlatSuggestionList` / `FormulaMatchModal`, and saves through the operator TI routes (`:231-232`). Its TIs write **no** `sampling_usage_log` row (§9). The Base flow itself is owned by `CLAUDE_TINT.md`, Base — No Tint section.
 
 ---
 
@@ -40,7 +43,7 @@ This module digitises that register and surfaces it as:
 ### sampling_register (parent)
 
 ```
-samplingNo      TEXT PRIMARY KEY   — permanent natural key. Allocation = MAX(samplingNo) + 1.
+samplingNo      TEXT PRIMARY KEY   — permanent natural key. Allocation = next_sampling_no(yearPrefix) (§6).
 shadeName       TEXT NOT NULL      — permanent shade name (one register entry = one shade)
 tinterType      TinterType         — TINTER | ACOTONE
 siteId          INT FK → delivery_point_master.id (nullable)
@@ -121,6 +124,9 @@ INDEX (samplingNo)
 INDEX (samplingNo, usageDate DESC)
 INDEX (operatorId, usageDate)
 INDEX (siteNameRaw)
+INDEX (siteId)  idx_sampling_usage_log_site   — covers the column the strict-siteId
+                                                suggestion engine filters on (§9, §11)
+                                                (prisma/schema.prisma, model sampling_usage_log)
 ```
 
 ---
@@ -237,7 +243,7 @@ Imported the 4-year legacy REVIEW pile from `Tinting_data_Tracker_N_FINAL_REVIEW
 
 Two mirror-image gaps in legacy data fixed. Net result: **4,353 shades** in the library, every legacy TI from 2022 onward now visible in operator suggestion engine.
 
-**Cohort A — recipe restoration:** 3,566 sampling numbers had a register row + usage_log rows but NO recipes. Suggestion engine ignored them (`suggest.ts:133` short-circuits on `if (!row.recipe) continue`).
+**Cohort A — recipe restoration:** 3,566 sampling numbers had a register row + usage_log rows but NO recipes. Suggestion engine ignored them (`suggest.ts:351` short-circuits on `if (!row.recipe) continue`).
 - Derived recipe per parent by majority formula across its usage rows
 - 3-step SKU/pack lookup: Excel DESC → Alt SKU Master → existing recipes
 - Pack normalisation (18L→20L, 3.7L→4L, 0.9L→1L, 9L→10L, 3.6L→4L)
@@ -305,20 +311,19 @@ When a row is selected:
 5. **Used at** — list of sites where this shade has been tinted (derived from usage_log grouped by site)
 6. **SKUs used** — list of SKU codes that have been tinted under this shade (derived from usage_log grouped by skuCode)
 7. **Tinting history** — one row per `sampling_usage_log` row: date · operator · siteName · dealer · sku · pack · tinQty · deliveryNumber. Default sort lastUsedAt DESC.
-8. **Action buttons (3 icons in detail header strip):**
-   - Edit (pencil) → opens edit modal
-   - Deactivate (ban) → `PATCH { isActive: false }` confirm modal
-   - Mark for review (alert-triangle) → `POST /api/sampling-library/[samplingNo]/review`
+8. **Action buttons (3 icons in detail header strip) — 🔴 DEFECT: none is wired.** All three are `console.log` stubs in `components/sampling-library/sampling-library-detail-pane.tsx`:
+   - Edit (pencil) — `:414` `onClick={() => console.log("edit", detail.samplingNo)}`
+   - Deactivate / Reactivate (ban) — `:420` `console.log("deactivate", …)`
+   - Mark for review (alert-triangle) — `:426` `console.log("mark-review", …)`
+
+   No client anywhere calls `PATCH /[samplingNo]`, `POST /[samplingNo]/variants`, `POST /[samplingNo]/review` or `POST /api/sampling-library` — the page's only fetches are GETs (`sampling-library-content.tsx:70-71`, `-list-pane.tsx:98/126`, `-detail-pane.tsx:207-209/246`), and no `method:` appears anywhere under `components/sampling-library/`. The server routes exist (§5); the buttons do not reach them. Note also the review route **clears** `needsReview` (§5) — it is not a "mark for review" endpoint, so wiring the third button to it as labelled would do the opposite.
 
 ### Visual style — exemption
 
-Per `CLAUDE_UI.md §22`, this page uses teal across multiple elements intentionally:
-- Segment pill (TINTER/ACOTONE)
-- Variant tabs (active)
-- PRIMARY pill
-- Pack pill
-- Export links
-- Recipe-history active row
+Per `CLAUDE_UI.md §22`, this page carries more than one accent element. Since the rebrand (`5daa58fc`, `c96157ea`) the accent is the **brand** token (Orbit violet), not teal. The brand uses in `components/sampling-library/` are:
+- Active status pill — `sampling-library-detail-pane.tsx:395` `bg-brand-50 text-brand-700 border border-brand-200`
+- Active list row — `sampling-library-list-pane.tsx:254` `bg-brand-50 border-l-brand-700`
+- plus the shared `UniversalHeader` segment (TINTER/ACOTONE) — `sampling-library-content.tsx:122` `segments`, passed at `:172`; its colour is the header's, not this page's
 
 Typography drops one weight from spec (`font-bold` → `font-semibold` or `font-medium`) for cousin-page consistency.
 
@@ -335,25 +340,28 @@ All `export const dynamic = 'force-dynamic'`.
 | PATCH | `/api/sampling-library/[samplingNo]` | sampling_library canEdit | Update parent fields (shadeName, dealerName, salesOfficerId, isActive, notes) |
 | GET | `/api/sampling-library/[samplingNo]/variants` | sampling_library canView | List recipes (variants) — alternative to /detail when only variants needed |
 | POST | `/api/sampling-library/[samplingNo]/variants` | sampling_library canEdit | Add new variant (recipe) under existing parent |
-| POST | `/api/sampling-library/[samplingNo]/review` | sampling_library canEdit | Toggle `needsReview` |
+| POST | `/api/sampling-library/[samplingNo]/review` | sampling_library canEdit | **One-way: clears `needsReview`** (`review/route.ts:76` `data: { needsReview: false, … }`), optionally appending a `[Reviewed …]` line to `notes`. Returns **400 "Already reviewed"** if the flag is already false (`:62`). It never sets the flag |
 | GET | `/api/sampling-library/[samplingNo]/usage-log` | sampling_library canView | Paginated usage history |
-| POST | `/api/sampling-library` | sampling_library canEdit | Create new parent entry (allocates next samplingNo, inserts first variant + first usage_log row) |
+| POST | `/api/sampling-library` | sampling_library **canImport** (`route.ts:253`) | Create new parent entry — allocates the next samplingNo (§6), writes `sampling_register.create` (`:375`) then `sampling_recipes.create` (`:410`). Writes **no** `sampling_usage_log` row |
+| GET | `/api/sampling-library/suggest?siteId=&skuCode=&packCode=` | sampling_library canView (`suggest/route.ts:21`) | This-site suggestion payload (`buildSuggestPayload`, §11) — feeds the reuse list. Callers: `components/tint/tint-operator-content.tsx:986`, `components/tint/manager/base-ti-panel.tsx:172` |
 | GET | `/api/sampling-library/operator-search` | sampling_library canView | Global partial-match reuse search (§11) — ILIKE on samplingNo / shadeName / usage site name; optional `type`; `RESULT_LIMIT=50`; returns applyable `SuggestFlatRow` rows |
-| POST | `/api/sampling-library/formula-match` | operator | Issue-1 formula-match gate (§11) — per-litre for TINTER, exact 27-value for ACOTONE; active/zero pre-filter |
+| POST | `/api/sampling-library/formula-match` | sampling_library canView (`formula-match/route.ts:42`) | Issue-1 formula-match gate (§11) — per-litre for TINTER, exact 27-value for ACOTONE; active/zero pre-filter |
+
+Gates verified 2026-09-19 at each route's `checkAnyPermission` call. Of the four write routes (PATCH `[samplingNo]`, POST `variants`, POST `review`, POST `/`), **none has a client caller** (§4).
 
 ---
 
 ## 6. Sampling number allocation
 
-**`MAX(samplingNo) + 1`** — plain sequential, no year prefix.
+**`SELECT next_sampling_no(yearPrefix)`** — a Postgres function, called by `allocateNextSamplingNo(yearPrefix)` in `app/api/tint/operator/_lib/sampling-resolution.ts:19`. `yearPrefix` is the last two digits of the **IST** year, from `getIstYearPrefix()` (`:14`) — hence numbers like `26-0001`.
 
 **Allocated at the moment of save** (not at toggle, not at screen open).
 
-**Race-safe via P2002 retry pattern** (same as `import_batches.batchRef`):
-1. Read `MAX(samplingNo)` → compute `nextNo`
-2. INSERT with `nextNo`
-3. On P2002 (unique constraint violation) → re-read MAX → retry up to 5 times
-4. After 5 retries → 500 error
+**Race-safe via P2002 retry pattern** (mirrors `createBatchWithRetry` in `app/api/import/obd/route.ts`). Two allocators share the helper, and both retry **3 times**:
+1. `resolveSamplingForEntry` (Scenario 1, the TI save path) — `sampling-resolution.ts:159` `for (let attempt = 0; attempt < 3; …)`, rethrow at `:193` `attempt === 2`
+2. `POST /api/sampling-library` — `app/api/sampling-library/route.ts:372` `for (let attempt = 0; attempt < 3; …)`, give-up check at `:394`
+
+Each attempt calls `next_sampling_no` afresh, INSERTs the register row, and on P2002 tries again. Any other error, or a P2002 on the third attempt, fails: `resolveSamplingForEntry` rethrows it, the POST route returns 500 "Failed to create sampling" (`route.ts:396`).
 
 ---
 
@@ -378,44 +386,48 @@ These are non-obvious quirks from the historical Excel import worth remembering:
 
 ```
 app/(tint)/tint/sampling-library/
-  page.tsx                          server: roles + initial fetch
-  sampling-library-page.tsx         client root
-  sampling-list.tsx                 left pane list with filters
-  sampling-detail.tsx               right pane 8-section detail
-  edit-modal.tsx, deactivate-modal.tsx, review-modal.tsx, new-variant-modal.tsx
+  layout.tsx                        server: auth + sampling_library canView gate → /unauthorized;
+                                    builds nav, mounts RoleLayoutClient
+  page.tsx                          `return <SamplingLibraryContent />` — no server fetch
 
 components/sampling-library/
-  variant-tabs.tsx
-  recipe-table.tsx
-  usage-log-table.tsx
-  used-at-list.tsx
-  skus-used-list.tsx
-  action-buttons.tsx
-  sampling-library-list-pane.tsx    left-pane list (carries the tinter-type tag ~:263-269;
-                                    earlier docs wrongly cited status-pills.tsx/sampling-list.tsx)
+  sampling-library-content.tsx      client root: UniversalHeader (stats + TINTER/ACOTONE
+                                    segments), URL-synced filters, list + detail split
+  sampling-library-list-pane.tsx    left-pane list (tinter-type tag colour ~:265)
+  sampling-library-detail-pane.tsx  right-pane detail: fetches detail + variants + usage-log;
+                                    the three action icons are console.log stubs (:414/:420/:426, §4)
 
 components/tint/operator/
-  flat-suggestion-list.tsx          operator reuse list (§11; replaced retired suggestion-card.tsx)
+  flat-suggestion-list.tsx          operator reuse list (§11; replaced retired suggestion-card.tsx);
+                                    renders "+N packs" from otherVariants (:245-296)
   formula-match-modal.tsx           "Same shade found" reuse modal (Use / Create new / Cancel)
 
-lib/sampling-library/
-  types.ts
-  fetchers.ts                       client API helpers
-  filters.ts                        URL query → filter object
-  allocate-sampling-no.ts           P2002 retry pattern
+components/tint/manager/
+  base-ti-panel.tsx                 second consumer — Base-bypass TI panel (§1, §9)
+
 lib/sampling/
   pack-litres.ts                    dose-litres map + packDoseLitres / canScale /
                                     scalePigments(3dp) / perLitreFingerprint(2dp) (§11)
 
-api/sampling-library/
-  route.ts                          GET list, POST create
+app/api/sampling-library/
+  route.ts                          GET list (canView), POST create (canImport)
   [samplingNo]/route.ts             GET detail, PATCH parent
   [samplingNo]/variants/route.ts    GET variants, POST new variant
-  [samplingNo]/review/route.ts      POST toggle needsReview
+  [samplingNo]/review/route.ts      POST — clears needsReview (one-way, §5)
   [samplingNo]/usage-log/route.ts   GET paginated usage
+  suggest/route.ts                  GET this-site suggestion payload (§5, §11)
   operator-search/route.ts          global partial-match reuse search (§11)
   formula-match/route.ts            per-litre (TINTER) / exact (ACOTONE) match gate (§11)
-  _lib/suggest.ts                   flatSuggestions builder + otherSites grouping (§11)
+  _lib/suggest.ts                   buildSuggestPayload: flatSuggestions + otherSites +
+                                    otherVariants (§11)
+  _lib/detail.ts                    buildSamplingDetail — shared by GET [samplingNo] and POST review
+  _lib/validate.ts                  PIGMENT_CODES (27), decToNum, isValidPackCode
+
+app/api/tint/operator/_lib/
+  sampling-resolution.ts            getIstYearPrefix + allocateNextSamplingNo (§6) +
+                                    resolveSamplingForEntry (Scenarios 1/2/3); imported by
+                                    tinter-issue, tinter-issue-b and POST /api/sampling-library
+  usage-log-writer.ts               writeUsageLogsForAssignment — sole caller done/route.ts:265
 
 scripts/                            (outside docs index; reference scripts on depot PC)
   classify-sampling-excel.ts        Excel → review xlsx
@@ -424,6 +436,8 @@ scripts/                            (outside docs index; reference scripts on de
   repair-sampling-import.ts         Historical backfill
   lib/sampling-classifier.ts        Shared classifier
 ```
+
+⚠ Trap: there is no `lib/sampling-library/` folder, and `components/sampling-library/` holds only the three files above. Was a map of 17 files (`sampling-list.tsx`, `variant-tabs.tsx`, `allocate-sampling-no.ts`, edit/deactivate/review modals, …) until 2026-09-19; none ever existed in git (`git log --all` on each is empty). Do not go looking for them.
 
 ---
 
@@ -434,12 +448,13 @@ scripts/                            (outside docs index; reference scripts on de
 - **`packCode` is nullable since v27.5.** Both `sampling_recipes.packCode` and `sampling_usage_log.packCode` allow null. Legacy paper register entries from 2022-2026 often have no pack recorded; nullable lets the data land truthfully and operators identify by SKU code. Unique constraint uses `NULLS NOT DISTINCT` to prevent duplicate null-pack rows.
 - **`createdAt` backfill** — `createdAt` does NOT equal "row insertion time" for repaired parents. It equals "earliest historical Excel date for this samplingNo". For new entries created via live operator workflow, `createdAt = now()` as usual.
 - **`shade_master` retired.** Phase 4 shipped 2026-05-25. Operator screen no longer reads `shade_master`. Table still exists with historical data, scheduled for deletion after a retention window. Do not write to it.
-- **Sub-minute precision on usage_log timestamps** — `usageDate` is captured at minute granularity (matches paper register tradition). Don't surface seconds in UI.
-- **Per-screen teal exemption is unique to this page** (CLAUDE_UI.md §22). Don't propagate to cousin pages.
+- **`usageDate` is a DATE, not a timestamp** — `prisma/schema.prisma` `usageDate DateTime? @db.Date`; `usage-log-writer.ts:12` notes it "truncates to day on store". There is no time of day to surface.
+- **Per-screen accent exemption is unique to this page** (CLAUDE_UI.md §22). The accent is the brand token (`bg-brand-50` / `text-brand-700`, §4), not teal. Don't propagate to cousin pages.
 - **Suggestion engine matches siteId STRICTLY** — `suggest.ts` queries on `usage_log.siteId` numeric FK. There is NO `siteNameRaw` fallback. Null `siteId` rows are invisible to same-site suggestions. The Phase 4 siteId write bug (FIXED 2026-06-01) made every Mark-Done since launch invisible until backfill ran. New writes always set `siteId = orders.customerId`.
 - **`orders.customerId` IS the ship-to site FK** → `delivery_point_master.id`. It is NOT the bill-to dealer. Verified across multiple OBDs. Use this as the source of truth for any site-link backfill.
 - **Never auto-fuzzy-match site names.** Site name suffixes like "FACE" / phase numbers distinguish genuinely different sites. Stripping or fuzzy-matching risks linking the wrong site. Backfill must prefer OBD→order→customerId resolution over name match. CORE §3 rule.
 - **Split completion does NOT log sampling usage.** `app/api/tint/operator/split/done/route.ts` never writes a `sampling_usage_log` row. Split-completed tints never appear in usage history or same-site suggestions. Pre-existing, separate from any other bug. ROADMAP item.
+- **Base-bypass TIs do NOT log sampling usage either.** TIs saved from `components/tint/manager/base-ti-panel.tsx` go through `tinter-issue` / `tinter-issue-b` (`:231-232`), which write no usage; `writeUsageLogsForAssignment` has exactly one caller, `app/api/tint/operator/done/route.ts:265`. So Base-bill shades are invisible to usage history and same-site suggestions, the same way split-done ones are. Second usage-log gap; the Base flow is owned by `CLAUDE_TINT.md`, Base — No Tint section.
 - **Excel column 7 (TIN QTY) has a blank header** in the source tracker. Position-based reads must use column index 7 explicitly. Header-text-based parsers will silently miss this column. Lost data is invisible until visual inspection (rows appear with tinQty = 0).
 - **Excel column layout drift.** The 27 May tracker file dropped a duplicate "Site Name" column at col 9, shifting all pigment columns left by 1. New PIG_COLS = [9..21] vs old [10..22]. Future imports must re-verify column positions, not assume backward compat.
 - **Stale-CSV blast radius.** Don't trust CSV exports — automated background scripts may have written since export. Always run `SELECT COUNT(*) FROM ...` at session start. After any partial-commit failure, run a signature-based duplicate-detection scan BEFORE re-running.
@@ -497,7 +512,9 @@ FROM sampling_usage_log GROUP BY bucket ORDER BY bucket;
 
 The Tint Operator reuse area (UI: `CLAUDE_UI.md §34`; operator flow: `CLAUDE_TINT.md §3.12`) is fed by this module.
 
-**Flat suggestions (rewrite, 2026-06-16).** `_lib/suggest.ts` now emits **`flatSuggestions`** — an uncapped this-site list with `isExactMatch`, `primarySiteName`, `otherSites[]`. The old two-section exact/reference UI and its `exact.slice(0,3)` / `reference.slice(0,5)` caps are gone (`exactMatches`/`referenceList` still built but no longer consumed by the UI — remove in cleanup). **Consumer re-verified 2026-08-04:** `tint-operator-content.tsx` reads `flatSuggestions` only. ⚠ **The CODE COMMENT at `suggest.ts:51-52` says the opposite** ("The current UI still reads exactMatches + referenceList") — it is a STALE COMMENT from mid-transition; do not quote it. Flagged for the cleanup that removes the dead lists. Shared helpers `groupOtherSitesBySampling(samplingNos, excludeSiteId)` + `assembleFlatRow(...)`; exported `SuggestFlatRow`, `SuggestOtherSite`.
+**Flat suggestions (rewrite, 2026-06-16).** `_lib/suggest.ts` now emits **`flatSuggestions`** — an uncapped this-site list with `isExactMatch`, `primarySiteName`, `otherSites[]`. The old two-section exact/reference UI and its `exact.slice(0,3)` / `reference.slice(0,5)` caps are gone (`exactMatches`/`referenceList` still built but no longer consumed by the UI — remove in cleanup). **Consumer re-verified 2026-08-04:** `tint-operator-content.tsx` reads `flatSuggestions` only, and the code comment at `suggest.ts:51-54` now says the same (corrected in `6f1e35a8`). The endpoint is `GET /api/sampling-library/suggest` (§5), which returns `buildSuggestPayload(...)`. Shared helpers `groupOtherSitesBySampling(samplingNos, excludeSiteId)` + `assembleFlatRow(...)`; exported `SuggestFlatRow`, `SuggestOtherSite`.
+
+**`otherVariants` / `SuggestVariant` (`c5b2e783`).** Each `SuggestFlatRow` carries optional `otherVariants?: SuggestVariant[]` (`suggest.ts:105`) — every OTHER pack/SKU variant of the shade, excluding the representative row's own recipe. `SuggestVariant` (`suggest.ts:74`) is `{ recipeId, skuCode, packCode, lastUsedAt, usageCount }` — **view-only, no pigments**, so it is not applyable (a second "Use" path would bypass pack scaling). `lastUsedAt` is the recipe's own `sampling_recipes.lastUsedAt` column, never derived from the usage log. Built by `groupVariantsBySampling` + `buildOtherVariants` (`suggest.ts:197/230`, sorted lastUsedAt desc then usageCount), shared by both producers: `buildSuggestPayload` (one extra `sampling_recipes.findMany`, `suggest.ts:511`) and `operator-search` (reuses its existing recipe query, `operator-search/route.ts:108/134/166`). Absent — not `[]` — from any producer that has not populated it, so clients read `row.otherVariants ?? []`. Rendered as the "+N packs" disclosure in `components/tint/operator/flat-suggestion-list.tsx:245-296`, on both the operator screen and `base-ti-panel.tsx`.
 
 - **Search scope** (`operator-search`): all sites, partial (ILIKE contains) on `samplingNo` / `shadeName` / usage site name; optional `type`; `RESULT_LIMIT = 50`. No fuzzy (CORE §3 never-fuzzy-match-sites; `pg_trgm` deferred). No formula-value search.
 - **Exact match** = a sampling with a variant matching the current line's `skuCode` AND `packCode` (multiple possible). Pinned top.
@@ -546,6 +563,24 @@ Sampling Library is **operator-created runtime data, NOT CSV-seeded** — merges
 
 ---
 
+## Change log — v1.7 (2026-09-19 canon sweep batch B2)
+
+Evidence: code at HEAD `915f46f2` read at every call site; live 2026-09-18 (Q02); findings from the 2026-09-18 sweep (`code-discovery-2026-09-18-canon-sweep.md`, out-tint-sampling), each re-verified against code.
+
+- Header: grants table reframed as the `role_permissions` **fallback** (`ACCESS_SOURCE = user`, live Q02); `sampling_library` named as a `PageKey`; canEdit-has-no-UI-path note. The "CORE §5 row shows the OLD list" flag removed — verified fixed at `CLAUDE_CORE.md:269`.
+- §1: `base-ti-panel.tsx` added as the second consumer.
+- §2: `sampling_register.samplingNo` allocation line corrected; `sampling_usage_log` `idx_sampling_usage_log_site` index added.
+- §3: Phase 4.7 anchor `suggest.ts:133` → `:351`.
+- §4: Edit / Deactivate / Mark-for-review recorded as `console.log` stubs (defect, `sampling-library-detail-pane.tsx:414/420/426`); no client caller for any write route. Visual exemption rewritten from teal to the brand token.
+- §5: POST `/` gate canImport + no usage_log write; review is one-way clear with 400; formula-match gate canView; `GET /suggest` added with its two callers; gates verified per route.
+- §6: allocation rewritten — `next_sampling_no(yearPrefix)`, IST year prefix, both allocators retry 3 times. MAX+1 / 5-retry claim removed.
+- §8: files map rebuilt from the real tree (the 17 listed files never existed in git).
+- §9: `usageDate` is DATE (`@db.Date`); accent exemption is brand; Base-bypass usage-log gap added.
+- §11: stale-comment flag on `suggest.ts:51-54` removed (fixed in `6f1e35a8`); `otherVariants` / `SuggestVariant` documented.
+- Version v1.6 → v1.7; schema stamp v27.13 → v27.24; header and footer.
+
+---
+
 ## Change log — v1.6 (2026-08-04 reconciliation pass, method v1.1)
 
 Evidence: one read-only SELECT (grants), pack-litres/suggest/formula-match/operator-search + the operator consumer read at the call sites. Claim IDs from the session report.
@@ -561,4 +596,4 @@ Evidence: one read-only SELECT (grants), pack-litres/suggest/formula-match/opera
 
 ---
 
-*Sampling Library v1.6 · Schema v27.13 · August 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS · updated 2026-08-04*
+*Sampling Library v1.7 · Schema v27.24 · September 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS · updated 2026-09-19*

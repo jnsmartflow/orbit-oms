@@ -1,11 +1,11 @@
 # CLAUDE_ATTENDANCE.md — Attendance + OT Module
-# v1.3 · Schema v27.13 · August 2026 · updated 2026-08-04
+# v1.4 · Schema v27.24 · September 2026 · updated 2026-09-19
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Daily check-in/out with selfie + geofence + OT workflow. PWA UX on `/attendance` (end users) and admin dashboard at `/admin/attendance` (admin, ops_admin — the **`attendance_admin`** page key, live rows verified 2026-08-04 via `CLAUDE_CORE.md §5`; the end-user `attendance` key deliberately has NO role_permissions row — user-flag gated) with three sub-pages: OT pending queue, settings, OT audit.
+Daily check-in/out with selfie + geofence + OT workflow. PWA UX on `/attendance` (end users — any logged-in user, §3/§4) and admin dashboard at `/admin/attendance` (roles admin + ops_admin, by a hardcoded role check in `app/(ops)/layout.tsx` — §4; the **`attendance_admin`** page key gates no page or API) with three sub-pages: OT pending queue, settings, OT audit.
 
-Roles gated per rollout stage (see §3). Settings-driven thresholds. Pure decision helpers separated from DB-touching APIs.
+Rollout stage drives sidebar visibility only (see §3). Settings-driven thresholds. Pure decision helpers separated from DB-touching APIs.
 
 ---
 
@@ -16,7 +16,13 @@ Two pipelines:
 - **End user** (`/attendance`) — PWA-ish flow. Consent → check-in (camera + GPS) → check-out (camera + GPS + optional OT claim) → day summary.
 - **Admin** (`/admin/attendance` + sub-pages) — daily roster, OT pending queue, settings (replaces SQL edits), OT audit.
 
-Photo storage in Supabase private bucket. Signed URLs only.
+**Who reaches the admin side.** The four `/admin/attendance` pages sit under `app/(ops)/layout.tsx`, which redirects to `/unauthorized` unless the session's roles include `admin` or `ops_admin` (`if (!roles.some((r) => ["admin", "ops_admin"].includes(r)))`). That role check is the only gate. The PageKey `attendance_admin` is read only in `lib/permissions.ts` — its one effect is whether the sidebar shows the "Attendance" link (`PAGE_NAV_MAP` entry, filtered on `canView` by `buildNavItems`); it gates no page and no API. ⚠ The page comment `app/(ops)/admin/attendance/page.tsx:26-27` ("enforced by app/(admin)/admin/layout.tsx via requireSuperuser") is wrong on both file and mechanism.
+
+**The admin APIs split by role** (`hasRole` from `lib/rbac.ts`, role arrays only — the `isSuperuser` flag is not consulted):
+- `photo` (`app/api/admin/attendance/photo/route.ts:19`) and `export` (`export/route.ts:42`) accept **`[ADMIN]` only** — **ops_admin cannot view selfies or export the CSV**, although ops_admin can open the dashboard that offers both.
+- `settings`, `ot-pending`, `ot-pending/[recordId]`, `ot-audit` accept `[ADMIN, OPS_ADMIN]`.
+
+Photo storage in Supabase private bucket **`attendance-photos`** (`STORAGE_BUCKET` in the check-in, check-out, admin photo and purge routes, e.g. `app/api/cron/attendance-purge/route.ts:8`). Signed URLs only.
 
 ---
 
@@ -46,7 +52,11 @@ isLate, isOvertime, hasNoPhoto, hasNoLocation  BOOLEAN flags
 
 -- OT columns
 otClaimed BOOL?, otClaimReason TEXT?, otTotalLessThan95 BOOL?
-otApprovalStatus TEXT? (pending|approved|rejected|auto-approved)
+otApprovalStatus TEXT? — UPPERCASE, six values: NOT_CLAIMED | AUTO_CREDITED |
+                  AUTO_CREDITED_GRACE | PENDING (check-out route, via decideOtOutcome,
+                  lib/attendance/ot-logic.ts:40-44) | APPROVED | REJECTED (the PATCH route,
+                  app/api/admin/attendance/ot-pending/[recordId]/route.ts). No lowercase
+                  value is written anywhere.
 otMinutesCredited INT? (the credited figure — NOT "otApprovedAdjustedMinutes")
 otApprovedById FK?, otApprovedAt TIMESTAMPTZ?, otAdminNote TEXT?
 
@@ -111,34 +121,38 @@ All FKs to `users(id)` use `ON DELETE RESTRICT`. All timestamps `TIMESTAMPTZ`. A
 
 ## 3. Rollout stages
 
-`attendance_settings.rolloutStage` controls who is gated.
+`attendance_settings.rolloutStage` does **NOT** gate the pages or the APIs. **Any logged-in user can open `/attendance` and check in at any stage, OFF included.** The pages require a session only (`app/attendance/page.tsx:12-16`), the APIs return 401 only when unauthenticated (`app/api/attendance/check-in/route.ts:28-35`, `check-out/route.ts:44-51`), and nothing under `app/attendance/**` or `app/api/attendance/**` reads `rolloutStage` (grep = 0).
 
-| Stage | Gate behaviour |
-|---|---|
-| OFF | No user gated. `/attendance` accessible to no one operationally. |
-| TEST_USERS_ONLY | Gated iff `user.attendanceTestUser === true`. |
-| ALL_USERS | Gated for everyone EXCEPT `user.attendanceExempt === true`. |
+The stage drives exactly two things:
 
-**Admin recovery:** admin role is gated only if `attendanceTestUser === true`. This allows admins to bypass attendance during ALL_USERS rollout.
+1. **Sidebar visibility** of the end-user "Attendance" link — `buildNavItems` in `lib/permissions.ts:180-191`: admin always sees it; ops_admin never does (they get the `attendance_admin` link to `/admin/attendance` instead); everyone else sees it iff `attendanceTestUser === true` OR `rolloutStage === "ALL_USERS"`. (`attendanceExempt` is not consulted here.)
+2. **The JWT `lastCheckInDate` fetch** — `gateAppliesTo` in `lib/auth.ts:73-79` decides whether the jwt callback queries today's CHECK_IN: OFF → never; `attendanceExempt` → never; admin → iff `attendanceTestUser`; TEST_USERS_ONLY → iff `attendanceTestUser`; ALL_USERS → yes. ⚠ **`lastCheckInDate` is computed but nothing reads it** — its only non-`lib/auth.ts` appearances are the type + pass-through in `auth.config.ts:25,47,90` and stale comments (`components/attendance/check-in-flow.tsx:151-152`, `lib/attendance/date.ts:15`). The comment `lib/auth.ts:70` "Mirror of the middleware gate logic" describes a gate that no longer exists.
 
-**Stale window:** middleware reads `rolloutStage` from JWT with a 5-min stale window. After 5 min, next request re-reads from DB and refreshes JWT.
+**Stale window:** the **jwt callback** in `lib/auth.ts` (not middleware) re-reads `rolloutStage`, `attendanceTestUser`, `attendanceExempt` and `attendanceConsentVersion` from the DB once `rolloutStageStaleAt` has passed — `STALE_MS = 5 * 60 * 1000` (`lib/auth.ts:20`, refresh at `:151-167`).
 
 **Kill switch:** `PATCH /api/admin/attendance/settings { otPromptEnabled: false }` disables the OT prompt without affecting check-in/out.
 
 ---
 
-## 4. Gate logic (middleware.ts)
+## 4. Access flow — pages, not middleware
 
-Paths starting with `/api/cron/` skip session auth entirely — route handlers do bearer-token check via `lib/cron-auth.ts` (fail-closed if `CRON_SECRET` missing).
+`middleware.ts` has **no attendance logic** (`grep -n attendance middleware.ts` = 0). Its only attendance-adjacent rule: paths starting with `/api/cron/` skip session auth (`middleware.ts:42`) — the route handlers do the bearer-token check via `lib/cron-auth.ts` (fail-closed if `CRON_SECRET` missing). `/attendance` and `/api/attendance/*` get the ordinary logged-in check like every other route.
 
-For `/attendance` and `/api/attendance/*`:
-1. Resolve user from session
-2. Check gate per rollout stage
-3. If ungated → 404
-4. If gated and consent stale → redirect to `/attendance/consent`
-5. Otherwise → continue
+Was: a middleware gate redirecting gated users to `/attendance` until check-in, until 2026-07-04; now none (236f9743, 30 lines removed from `middleware.ts`; `CLAUDE_CORE.md §5` "Middleware — no forced attendance redirect"). Do not revert.
 
-JWT update trigger (`lib/auth.ts`): when client calls `useSession().update()`, jwt callback re-reads `attendanceConsentVersion` + `lastCheckInDate` from DB.
+**End-user pages** (`app/attendance/page.tsx`, `check-in/page.tsx`, `check-out/page.tsx`, `history/page.tsx`), each server-side:
+1. No session → `redirect("/login")`.
+2. Read `users.attendanceConsentVersion` and the GLOBAL settings row **fresh from the DB** (not from the JWT, so a stale claim cannot trap a freshly-consented user — `app/attendance/page.tsx:18-24`).
+3. `userVersion !== currentVersion` (settings `dpdpConsentVersion`, fallback `"v1.0"`) → `redirect("/attendance/consent")` (`page.tsx:37-38`, `check-in/page.tsx:40`, `check-out/page.tsx:45`, `history/page.tsx:42`).
+4. Otherwise render. `check-out/page.tsx:58` additionally redirects to `/attendance` when there is no open session.
+
+`consent/page.tsx:30-31` does the reverse: already on the current version → `redirect("/attendance")`.
+
+⚠ **The APIs do not check consent.** `/api/attendance/check-in` and `check-out` require a session only (§3); the consent redirect is a page-level behaviour.
+
+**Admin pages:** `app/(ops)/layout.tsx` role check (admin | ops_admin → else `/unauthorized`) — §1.
+
+JWT update trigger (`lib/auth.ts:100-114`): when the client calls `useSession().update()` (`consent-form.tsx:42`, `check-in-flow.tsx:153`), the jwt callback re-reads `attendanceConsentVersion` + `lastCheckInDate` from DB.
 
 ---
 
@@ -198,7 +212,7 @@ type FlowStep =
 
 **Flow:**
 1. User taps Check Out → camera → confirm selfie
-2. If current IST >= `otTriggerTime` AND `otPromptEnabled === true`:
+2. If current IST is strictly after `otTriggerTime` (`check-out-flow.tsx:282` skips at `nowMin <= triggerMin`) AND `otPromptEnabled === true`:
    - **OT choice screen** appears (CLAUDE_UI.md §40)
    - "Yes, claim OT" → reason screen
    - "No, just clocking out" → `submit("no")`
@@ -207,7 +221,7 @@ type FlowStep =
 4. Submit sends FormData with `otClaimed: "yes"|"no"` + `otClaimReason` when yes.
 5. Success screen (`DaySummaryView`) shows OT outcome banner based on `otOutcome.status` (CLAUDE_UI.md §3 OT outcome banners).
 
-If `otPromptEnabled === false` OR current IST < trigger → prompt skipped silently, submit sends `otClaimed: "no"`.
+If `otPromptEnabled === false` OR current IST <= trigger → prompt skipped silently, submit sends `otClaimed: "no"`.
 
 Phone hardware back exits the route (photo discarded, user retakes on return). In-flow controls are the back arrow and "Cancel and go back" link.
 
@@ -252,13 +266,13 @@ the pages render; `CLAUDE_UI.md §6/§49-51` own the roster fact and design rule
 
 **Layout:** roster table left + 340px sticky right detail panel.
 
-**Roster table:** fixed-layout per `CLAUDE_UI.md §27`. Columns: User · Role · Check In · Out · Worked · OT · Late · Status · Geo OK · Sessions · Device · IP.
+**Roster table:** fixed-layout per `CLAUDE_UI.md §27`. Columns (`components/admin/attendance/roster-table.tsx` `<thead>`): # · User · Role · In · Out · Worked · OT · Status · Flags.
 
 **Right panel:** selfie viewer + detail rows. Photo lazy-loaded via signed URL.
 
-**Photo viewer:** `GET /api/admin/attendance/photo?recordId=N` returns signed URL (5-min expiry). Never exposes the bucket publicly.
+**Photo viewer:** `GET /api/admin/attendance/photo?recordId=N` returns signed URL (5-min expiry). Never exposes the bucket publicly. Admin role only — ops_admin gets 403 (§1).
 
-**CSV export:** `GET /api/admin/attendance/export?date=YYYY-MM-DD` returns CSV with 12 columns.
+**CSV export:** `GET /api/admin/attendance/export?date=YYYY-MM-DD` returns CSV with 12 columns — `CSV_HEADERS` in `app/api/admin/attendance/export/route.ts:19-32`: User · Role · Check In · Check Out · Worked · Overtime · Late · Status · Geofence OK · Sessions · Device · IP. This is the export's header, not the on-screen roster. Admin role only (§1).
 
 ### 9.1 Sub-page: OT pending queue (`/admin/attendance/ot-pending`)
 
@@ -268,17 +282,17 @@ Header: `attendance-page-header.tsx` (§9.0 — NOT UniversalHeader; corrected 2
 
 Per row: user · date · claim reason · total worked · OT minutes raw · `[Approve]` · `[Reject]`.
 
-**Approve modal:** optional adjusted-minutes input + confirm.
+**Approve modal** (`ot-approve-modal.tsx`): confirm only — it sends `{ action: "approve" }` (`:48`) and has **no minutes input**. The backend recomputes the credit from the **live** `otTriggerTime` (check-out IST minutes − trigger) and applies exactly that; if the recomputed figure is 0 (trigger moved past the check-out clock) it refuses with **422** and the modal says "Trigger time moved past check-out. Reject this claim instead." (`app/api/admin/attendance/ot-pending/[recordId]/route.ts` approve branch; modal header comment `:14-24`).
 
 **Reject modal:** user/date/reason quote · amber warning "Rejected days still consume monthly grace" · optional admin note textarea (500-char limit, counter "{n} / 500").
 
-**On 409 (already actioned by other admin):** inline error "Already actioned. Closing…" + parent refetches list.
+**On 409 (already actioned by other admin):** inline error "Already actioned. Closing…" + parent refetches list, showing the banner "Already actioned by another admin. Refreshing list…" (`ot-pending-table.tsx:88`).
 
 **Empty state:** lucide CheckCircle2 in emerald circle, "Nothing pending" headline.
 
 Backend:
 - `GET /api/admin/attendance/ot-pending` (list)
-- `PATCH /api/admin/attendance/ot-pending/[recordId]` body `{ action: "approve" | "reject", note?: string | null, adjustedMinutes?: number }`
+- `PATCH /api/admin/attendance/ot-pending/[recordId]` body `{ action: "approve" | "reject", note?: string (≤500 chars) }` (route header comment `:34`). No minutes override exists. 409 if the record is no longer `PENDING`; writes `APPROVED`/`REJECTED` + an `ADMIN_APPROVE`/`ADMIN_REJECT` row in `attendance_ot_audit`.
 
 ### 9.2 Sub-page: Settings (`/admin/attendance/settings`)
 
@@ -305,13 +319,13 @@ Header: `attendance-page-header.tsx` (§9.0 — NOT UniversalHeader; corrected 2
 
 **Submit response handling:**
 - 200 with `willForceReconsent: true` → amber toast "Re-consent triggered"
-- 200 with `rolloutActivated: true` → teal toast "Rollout activated"
+- 200 with `rolloutActivated: true` → green `ok`-token toast "Rollout activated" (`settings-toast.tsx` `rollout` spec, `bg-ok-bg`)
 - 200 (neither flag) → gray-900 toast "Settings saved"
 - 400 with `errors[]` → distribute to field/section errors, scroll to first, red toast
 - 403 / 401 → "Session expired — refresh and re-login" (NOTE: 403 permission-denied also fires this — known mis-label)
 - 500 → red toast "Server error — try again"
 
-Backend: `GET /api/admin/attendance/settings`, `PATCH /api/admin/attendance/settings` (510 lines with full validation + cross-field rules + `willForceReconsent` / `rolloutActivated` flags).
+Backend: `GET /api/admin/attendance/settings`, `PATCH /api/admin/attendance/settings` (547 lines with full validation + cross-field rules + `willForceReconsent` / `rolloutActivated` flags).
 
 ### 9.3 Sub-page: OT audit (`/admin/attendance/ot-audit`)
 
@@ -331,7 +345,7 @@ Server component reads `?month=YYYY-MM` query param. Header: `attendance-page-he
 
 **Expand panel:** day-by-day rows with per-day breakdown (`ot-audit-day-breakdown.tsx`).
 
-Backend: `GET /api/admin/attendance/ot-audit?month=YYYY-MM` (289 lines).
+Backend: `GET /api/admin/attendance/ot-audit?month=YYYY-MM` (309 lines).
 
 Components:
 - `components/admin/attendance/ot-audit-view.tsx` — client shell, owns expandedUserId state
@@ -356,18 +370,29 @@ Month parsing + clamping in `lib/attendance/calendar.ts`.
 
 `vercel.json` configures 2 **daily** schedules (the binding Hobby limit is CADENCE — crons run at most once/day; the old "tier cap"/count framing is stale — see `CLAUDE_CORE.md §4`):
 
-| Path | Schedule (UTC) | Purpose |
-|---|---|---|
-| `/api/cron/attendance-rollover` | `35 18 * * *` (18:35 UTC daily) | Inserts ABSENT rows + flags INCOMPLETE summaries with `hasMissingCheckout` |
-| `/api/cron/attendance-purge` | `30 20 * * *` (20:30 UTC daily) | Deletes photos older than `photoRetentionDays` from Supabase Storage + clears `photoPath` in DB |
+| Path | Schedule (UTC) | IST | Purpose |
+|---|---|---|---|
+| `/api/cron/attendance-rollover` | `35 18 * * *` (18:35 UTC daily) | 00:05 | Inserts ABSENT rows + flags INCOMPLETE summaries with `hasMissingCheckout` |
+| `/api/cron/attendance-purge` | `30 20 * * *` (20:30 UTC daily) | 02:00 | Deletes photos older than `photoRetentionDays` from Supabase Storage + clears `photoPath` in DB |
 
-*(Schedule strings verified against `vercel.json` 2026-08-04. ⚠ Hobby guarantees firing only **within
-the scheduled hour**, not at the exact minute — an 18:35 job may fire any time before 19:35 UTC. Do
-not build anything minute-precise on these.)*
+UTC + 5:30 = IST; India has no DST, so the mapping is stable year-round. (Schedule strings re-read from `vercel.json` 2026-09-19; the IST times match each route's own header comment.)
 
-**Auth:** Bearer token via `CRON_SECRET`. Bypasses middleware session auth. `lib/cron-auth.ts` fails closed if env var missing.
+*(⚠ Hobby guarantees firing only **within the scheduled hour**, not at the exact minute — an 18:35 job
+may fire any time before 19:35 UTC. Do not build anything minute-precise on these.)*
 
-**Photo retention:** DPDP-compliant default 90 days. Settings-driven via `attendance_settings.photoRetentionDays`. Purge keys off the `photoPath` date prefix `${YYYY}/${MM}/${DD}/...`.
+**This section supersedes `docs/cron-notes.md`** (kept on disk, not edited). One correction to it: its "Hobby tier 2-cron cap — we are at the cap" section is wrong — the Hobby limit is **cadence** (at most once per day), not a 2-job count (`CLAUDE_CORE.md §4`).
+
+**Auth:** Bearer token via `CRON_SECRET`. Bypasses middleware session auth (`middleware.ts:42`). `lib/cron-auth.ts` `isCronAuthorized` fails closed if the env var is missing or empty — an undefined secret never authenticates as `Bearer undefined`. `CRON_SECRET` must be set in `.env.local` for dev and in Vercel env vars (§17).
+
+**Local test:** crons only fire on Vercel. Locally, send `Authorization: Bearer <CRON_SECRET>` to `http://localhost:3000/api/cron/attendance-rollover` (or `-purge`). Both return `{ ok: true, … }` with per-job counts (`attendance-rollover/route.ts:96`, `attendance-purge/route.ts:103`).
+
+**Failure handling:** per-item errors are `console.error`-logged and pushed to the response's `errors` array without aborting the run; a top-level failure returns 500 (`attendance-rollover/route.ts:106-109`, `attendance-purge/route.ts:112-113`). Vercel does not retry; there is no alerting layer — Vercel function logs are the record.
+
+**Jitter:** rollover computes `yesterdayIST` from `now + 1 hour` to absorb ±60 min of firing jitter (`attendance-rollover/route.ts:28-34`). Purge is jitter-insensitive (absolute cutoff).
+
+**Rollover scope:** every `isActive: true, attendanceExempt: false` user (`attendance-rollover/route.ts:38-40`) with no summary and no records for the IST day just ended gets an `ABSENT` summary — **every day including Sundays, regardless of `rolloutStage`** (no day-of-week or stage check in the route). Users with records but no summary are skipped as anomalies; existing INCOMPLETE summaries get `hasMissingCheckout = true`.
+
+**Photo retention:** DPDP-compliant default 90 days. Settings-driven via `attendance_settings.photoRetentionDays`. Purge selects `attendance_records` with `photoPath` not null and **`createdAt` older than the cutoff** (`attendance-purge/route.ts:51-60`), cursor-paginated in batches of 100 — it does not parse the `photoPath` date prefix.
 
 ---
 
@@ -376,15 +401,15 @@ not build anything minute-precise on these.)*
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/attendance/consent` | Session | Record consent, bump `attendanceConsentVersion` |
-| POST | `/api/attendance/check-in` | Session (gated) | Multipart (photo + lat/lng/accuracy) → upload + insert + upsert summary |
-| POST | `/api/attendance/check-out` | Session (gated) | Multipart + `otClaimed?` + `otClaimReason?` → close CHECK_IN + recompute summary |
-| GET | `/api/admin/attendance/photo?recordId=N` | Session + admin | Returns signed URL (5min) for the photo |
-| GET | `/api/admin/attendance/export?date=YYYY-MM-DD` | Session + admin | CSV download |
-| GET | `/api/admin/attendance/settings` | Session + admin | Read settings |
-| PATCH | `/api/admin/attendance/settings` | Session + admin | Update settings — replaces all SQL-edits |
-| GET | `/api/admin/attendance/ot-pending` | Session + admin | List records with `otApprovalStatus = pending` |
-| PATCH | `/api/admin/attendance/ot-pending/[recordId]` | Session + admin | Approve or reject (action in body) |
-| GET | `/api/admin/attendance/ot-audit?month=YYYY-MM` | Session + admin | Read-only monthly audit |
+| POST | `/api/attendance/check-in` | Session only (no rollout or consent check — §3/§4) | Multipart (photo + lat/lng/accuracy) → upload + insert + upsert summary |
+| POST | `/api/attendance/check-out` | Session only (no rollout or consent check — §3/§4) | Multipart + `otClaimed?` + `otClaimReason?` → close CHECK_IN + recompute summary |
+| GET | `/api/admin/attendance/photo?recordId=N` | Session + **admin only** | Returns signed URL (5min) for the photo |
+| GET | `/api/admin/attendance/export?date=YYYY-MM-DD` | Session + **admin only** | CSV download |
+| GET | `/api/admin/attendance/settings` | Session + admin \| ops_admin | Read settings |
+| PATCH | `/api/admin/attendance/settings` | Session + admin \| ops_admin | Update settings — replaces all SQL-edits |
+| GET | `/api/admin/attendance/ot-pending` | Session + admin \| ops_admin | List records with `otApprovalStatus = "PENDING"` (`ot-pending/route.ts:45`) |
+| PATCH | `/api/admin/attendance/ot-pending/[recordId]` | Session + admin \| ops_admin | Approve or reject — body `{ action, note? }`, no minutes override (§9.1) |
+| GET | `/api/admin/attendance/ot-audit?month=YYYY-MM` | Session + admin \| ops_admin | Read-only monthly audit |
 | GET | `/api/cron/attendance-rollover` | Bearer (CRON_SECRET) | Rollover ABSENT + INCOMPLETE flags |
 | GET | `/api/cron/attendance-purge` | Bearer (CRON_SECRET) | Photo retention purge |
 
@@ -403,10 +428,20 @@ app/attendance/
   history/page.tsx                    server: month parse + fetch
 
 components/attendance/
+  attendance-home.tsx                 home screen (rendered by app/attendance/page.tsx)
+  bottom-nav.tsx                      Today + History tabs
+  calendar-grid.tsx, history-calendar.tsx   history month grid
+  camera-view.tsx                     camera preview + capture — ⚠ SHARED with MRN (§17)
+  check-in-flow.tsx                   check-in flow (camera → confirm → submit)
   check-out-flow.tsx                  FlowStep state machine, OT prompt screens
+  confirm-view.tsx                    photo confirm step (check-in + check-out)
   day-summary-view.tsx                success screen + OT outcome banner
   day-detail-card.tsx                 detail rows for selected day
+  live-timer.tsx                      running worked-time clock
+  status-card.tsx, status-chip.tsx    home status card + status chip
+  success-view.tsx                    check-in success screen (check-out uses day-summary-view)
 
+app/(ops)/layout.tsx                  the admin|ops_admin role gate (§1)
 app/(ops)/admin/attendance/           ⚠ route group is (ops), NOT (admin) — corrected 2026-08-04
   page.tsx                            roster dashboard
   ot-pending/page.tsx                 OT approval queue
@@ -421,9 +456,8 @@ components/admin/attendance/
   user-detail-panel.tsx               340px sticky right panel
   photo-viewer.tsx                    lazy signed-URL fetch
   export-button.tsx                   CSV trigger
-  ot-pending-view.tsx                 ot-pending list shell
-  ot-pending-row.tsx                  approve/reject row
-  approve-modal.tsx, reject-modal.tsx
+  ot-pending-table.tsx                ot-pending list + rows + 409 refetch banner
+  ot-approve-modal.tsx, ot-reject-modal.tsx
   settings-form.tsx                   the big form
   settings-section.tsx                reusable card wrapper
   settings-toast.tsx                  top-right toast
@@ -438,8 +472,8 @@ lib/attendance/
   calendar.ts                         month grid + parse/clamp helpers
   admin-status.ts                     derive display status for admin roster
   geofence.ts                         haversine, isWithinGeofence
-  photo.ts                            client canvas compression (640px Q70)
-  ot-logic.ts                         pure OT decision helper (no Prisma)
+  photo.ts                            client canvas compression (640px Q70) — ⚠ reached by MRN via camera-view (§17)
+  ot-logic.ts                         pure OT decision helper (no Prisma) — decideOtOutcome
   date.ts                             istDateString helper
 
 lib/supabase.ts                       lazy singleton service-role client (server-only)
@@ -462,14 +496,16 @@ api/cron/attendance-purge/route.ts
 
 ## 14. PWA setup
 
-`public/manifest.json` — **start_url `/`** [CORRECTED 2026-07-22 — the real file says `/`, NOT `/attendance` (code wins)]. The installed app therefore launches at **root**, where the auth + role redirect takes over — it does **not** land straight on the punch screen. ⚠ **`name` is currently `"Orbit"`** (`short_name` still `"OrbitOMS"`) — a **deliberate in-flight experiment**, not a bug: does iOS read the two separately, so a push notification's "from …" line could read *Orbit* while the home-screen icon label stays *OrbitOMS*? **Do NOT "fix" it back** — result only shows after deleting + re-adding the icon; finish-or-revert is a ROADMAP item. Detail: `CLAUDE_NOTIFICATIONS.md §8`.
+`public/manifest.json` — **start_url `/`** [CORRECTED 2026-07-22 — the real file says `/`, NOT `/attendance` (code wins)]. The installed app therefore launches at **root**, where the auth + role redirect takes over — it does **not** land straight on the punch screen. `name` and `short_name` are both **`"Orbit"`** — the name/short_name experiment is settled (4a2f763f, 2026-08-12, "match manifest short_name to name").
 
-Icons generated from `public/icon-source.svg` (512×512 source: teal bg + scaled orbit composition):
+Icons: a two-step pipeline (`scripts/generate-wordmark.mjs:149` — `generate-wordmark.mjs → public/icon-source.svg → generate-icons.mjs → 3 PNGs`):
+1. `public/icon-source.svg` is **itself generated** — its line 2 reads `GENERATED by scripts/generate-wordmark.mjs — do not edit by hand.` (written at `generate-wordmark.mjs:210`). 512×512, **violet** radial-gradient tile (rebrand 3b0490e6 + 67d734e2, 2026-09-09).
+2. `scripts/generate-icons.mjs` (@resvg/resvg-js, idempotent, devDep) renders it to:
 - `public/icon-192.png`
 - `public/icon-512.png`
 - `public/apple-touch-icon.png`
 
-Generator: `scripts/generate-icons.mjs` (@resvg/resvg-js, idempotent, devDep).
+To change the mark, edit and re-run `generate-wordmark.mjs`, then `generate-icons.mjs` — never hand-edit the SVG.
 
 `app/layout.tsx` metadata: Manifest + Viewport + apple-touch-icon.
 
@@ -484,7 +520,7 @@ Generator: `scripts/generate-icons.mjs` (@resvg/resvg-js, idempotent, devDep).
 `${YYYY}/${MM}/${DD}/${userId}_${timestampMs}_${TYPE}.jpg`
 
 - Y/M/D from IST date parts
-- Enables retention purge by path date prefix
+- The purge does not read this prefix — it selects by `createdAt` (§11)
 - TYPE = `IN` or `OUT`
 
 Bucket is PRIVATE. Access only via signed URLs from admin photo endpoint.
@@ -493,14 +529,14 @@ Bucket is PRIVATE. Access only via signed URLs from admin photo endpoint.
 
 ## 16. OT workflow
 
-**OT prompt** triggers in check-out flow when current IST time >= `otTriggerTime` AND `otPromptEnabled === true`. *(This line referenced an `otCutoffHourIST` column until 2026-08-04 — that column does not exist; `otTriggerTime` is the only threshold.)*
+**OT prompt** triggers in check-out flow when current IST time is strictly after `otTriggerTime` AND `otPromptEnabled === true`. *(This line referenced an `otCutoffHourIST` column until 2026-08-04 — that column does not exist; `otTriggerTime` is the only threshold.)*
 
 ### Claim shape on attendance_records (column names corrected 2026-08-04 — §2)
 
 - `otClaimed: boolean`
 - `otClaimReason: TEXT` (free text, e.g. "Late delivery to S5 yard")
 - `otTotalLessThan95: BOOLEAN` (analytics flag)
-- `otApprovalStatus: pending | approved | rejected | auto-approved`
+- `otApprovalStatus: NOT_CLAIMED | AUTO_CREDITED | AUTO_CREDITED_GRACE | PENDING | APPROVED | REJECTED` — UPPERCASE; the first four from `decideOtOutcome` at check-out (`ot-logic.ts:40-44`), the last two from the admin PATCH (§2)
 - `otMinutesCredited` (the credited figure), `otApprovedById`, `otApprovedAt`, `otAdminNote` (set on action)
 
 ### otOutcome returned to client
@@ -536,13 +572,28 @@ a column that does not exist and inverted the shape of the rule.)*
 
 ### Manual approval
 
-Longer OT enters admin queue at `GET /api/admin/attendance/ot-pending`. Admin approves/rejects (action in PATCH body) with optional `adjustedMinutes` (approve) or `note` (reject).
+The admin queue (`GET /api/admin/attendance/ot-pending`, `otApprovalStatus = "PENDING"`) receives **claims made on days SHORTER than `depotWorkingMinutes`, once the month's grace is used up** (`decideOtOutcome` step 5f, `ot-logic.ts:151-162`). A claim on a full-length day never reaches it — it auto-credits (step 5d). Admin approves/rejects (action in PATCH body) with an optional `note`. **There is no minutes override:** approve recomputes the credit from the **live** `otTriggerTime` (check-out IST minutes − trigger, floored at 0) and refuses with 422 if that is 0; reject sets credit 0 and does not refund the grace counter (`app/api/admin/attendance/ot-pending/[recordId]/route.ts`, header comment + approve/reject branches).
 
-**attendance_summary.otClaimedMinutes** sums approved + auto-approved OT per day.
+**`attendance_summary.otMinutesCredited`** (`prisma/schema.prisma:2343`) is the sum of `otMinutesCredited` over the day's CHECK_OUT records, recomputed at check-out (`app/api/attendance/check-out/route.ts:354-361`). `attendance_summary.otApprovalState` is the worst case across those records — `PENDING` > `AUTO_CREDITED_GRACE` > `AUTO_CREDITED` > null (`:362-372`).
 
 ### Pure helper
 
-`lib/attendance/ot-logic.ts` — no Prisma, no side effects. Inputs: claim, reason, total worked minutes, settings. Output: `{ approvalStatus, adjustedMinutes }`.
+`lib/attendance/ot-logic.ts` — no Prisma, no I/O, no clock reads.
+
+```ts
+export function decideOtOutcome(input: OtDecisionInput): OtDecisionOutput   // ot-logic.ts:78
+
+OtDecisionInput  { checkOutTimestamp: Date; totalMinutesWorked: number;
+                   otClaimed: "yes" | "no" | null; otClaimReason: string | null;
+                   settings: { otTriggerTime; depotWorkingMinutes; otMonthlyGraceLimit; otPromptEnabled };
+                   currentGraceFlagCount: number }
+OtDecisionOutput { otMinutesRaw; otMinutesCredited; otTotalLessThan95;
+                   otApprovalStatus: "NOT_CLAIMED" | "AUTO_CREDITED" | "AUTO_CREDITED_GRACE" | "PENDING";
+                   incrementGraceCounter: boolean;
+                   auditAction: "CLAIM_YES" | "CLAIM_NO" | "CONFIRMED_UNDER_95" }
+```
+
+Decision order: `otPromptEnabled` false → NOT_CLAIMED, 0 · check-out at or before `otTriggerTime` → NOT_CLAIMED, 0 · `otMinutesRaw` = check-out IST minutes − trigger · claim not "yes" → NOT_CLAIMED, 0 credited · `totalMinutesWorked >= depotWorkingMinutes` → AUTO_CREDITED (credit = raw) · `currentGraceFlagCount < otMonthlyGraceLimit` → AUTO_CREDITED_GRACE (credit = raw, counter +1) · else PENDING (credit 0, counter +1). `otMinutesRaw` is not persisted; the caller (check-out route) writes the rest.
 
 ### Reason minimum: 1 character
 
@@ -555,10 +606,11 @@ Originally specced at 10 chars trimmed. Lowered after first depot test — too s
 - **OT prompt UI shipped 2026-05-14.** `check-out-flow.tsx` reads `otTriggerTime` + `otPromptEnabled` from page settings fetch. Kill switch via `otPromptEnabled = false` works as soft-cutover.
 - **Admin trio (ot-pending, settings, ot-audit) shipped 2026-05-14.** No SQL editing needed for normal config changes.
 - **Phase 2 admin writes NOT built:** Manual entry, edit existing record, mark exception — backend + frontend both missing.
-- **Holidays management NOT built:** No `holidays` table. Rollover cron treats every weekday as working day.
+- **Holidays management NOT built:** No `holidays` table. The rollover cron writes `ABSENT` for **every** active non-exempt user with no activity on **every** day, Sundays included, **regardless of `rolloutStage`** — its only filter is `where: { isActive: true, attendanceExempt: false }` (`app/api/cron/attendance-rollover/route.ts:38-40`), with no day-of-week or stage check (§11).
+- 🔴 **`components/attendance/camera-view.tsx` and `lib/attendance/photo.ts` are SHARED with MRN** (969d918f, 2026-09-01). `components/mrn/photo-capture.tsx:5` imports `CameraView`, which calls `captureFromVideo` from `lib/attendance/photo.ts` (`camera-view.tsx:5`). The optional props **`facingMode` (default `"user"`)**, **`showFaceGuide` (default `true`)** and `locationStatus` (default `null`, hides the pill) exist for MRN (`camera-view.tsx:26,42,48,54-59`); the defaults are what keep clock-in unchanged, and the selfie mirror is conditional on `facingMode === "user"` (`:174`). **Do not change the defaults.** `captureFromVideo`'s `jpegQuality` is **0–100, not 0–1** — it divides by 100 (`lib/attendance/photo.ts:45`; warned at `camera-view.tsx:29-30`), so passing 0.8 encodes at 0.008. MRN's side: `CLAUDE_MRN.md §10`.
 - **Depot geofence coords are placeholder** — currently Surat city centre `21.1702, 72.8311` with ±150m radius. Needs physical measurement.
 - **CRON_SECRET in production** — required, in Vercel env vars (all 3 environments).
-- **No offline support.** PWA service worker not present. Requires network for check-in/out.
+- **No offline support.** The only service worker, `public/sw.js`, handles push only — no `fetch` handler, no Cache API (`sw.js:5`). Requires network for check-in/out.
 - **No push notifications.** Settings/OT decisions don't notify users.
 - **Photo bucket private.** Direct `<img src>` to Supabase Storage URL will 403. Always use signed URL endpoint.
 - **Submitting state polish** on OT screen — after Submit OT claim is tapped, screen briefly renders ConfirmView ("Submitting…") instead of staying on OT screen. Reason text preserved in error state but invisible during submit moment. Minor — a dedicated "submitting OT claim" state on the OT screen itself would smooth this.
@@ -566,6 +618,19 @@ Originally specced at 10 chars trimmed. Lowered after first depot test — too s
 - **~~`otCutoffHourIST` vs `otTriggerTime`~~ — FALSE, retired 2026-08-04.** `otCutoffHourIST` does NOT exist on `attendance_settings` (live + Prisma agree); `otTriggerTime` is the only threshold. The "both fields exist / some paths still read the legacy one" claim survived at least one schema cleanup it never heard about.
 
 ---
+
+## Change log — v1.4 (2026-09-19 canon sweep batch B2)
+
+Evidence: code at HEAD 915f46f2 read directly (pages, APIs, `lib/auth.ts`, `lib/permissions.ts`, `app/(ops)/layout.tsx`, `ot-logic.ts`, both cron routes, `vercel.json`, `camera-view.tsx`, `photo.ts`, manifest + icon generators), git (`236f9743`, `969d918f`, `4a2f763f`, `3b0490e6`/`67d734e2`), sweep report `docs/prompts/drafts/code-discovery-2026-09-18-canon-sweep.md` (ATTENDANCE section). No live-DB fact changed (the 2026-09-18 live CSV has no attendance query).
+
+- ATT-9 (header, §1, §3, §4, §12): §4 REPLACED — middleware has no attendance logic since 236f9743; consent redirects live in the four pages; the APIs check session only. `rolloutStage` gates no page or API — it drives sidebar visibility and the JWT `lastCheckInDate` fetch, and that claim is read by nothing. Stale window is the jwt callback, not middleware. Admin gate = hardcoded admin|ops_admin check in `app/(ops)/layout.tsx`; `attendance_admin` gates nothing; photo + export are admin-only. Bucket `attendance-photos` named.
+- ATT-10 (§2, §12, §16): `otApprovalStatus` values are the six UPPERCASE tokens; `otClaimedMinutes` → `otMinutesCredited`; no `adjustedMinutes` override (approve recomputes from live `otTriggerTime`, 422 on 0); the manual queue gets SHORT days after grace (inversion fixed); `decideOtOutcome` signature + outputs corrected.
+- ATT-11 (§9, §9.1-9.3): roster columns from `roster-table.tsx`; the 12-column list is the CSV header; 409 refetch banner; route line counts 547/309.
+- ATT-12 (§11): `docs/cron-notes.md` folded in and superseded (IST times, auth, local test, failure handling, jitter, rollover scope); the Hobby "2-cron cap" corrected to cadence; purge selects by `createdAt`, not the path prefix (§15 bullet fixed too).
+- ATT-13 (§14): manifest experiment settled (4a2f763f); icons violet; `icon-source.svg` generated by `generate-wordmark.mjs`.
+- ATT-14 (§13, §17): files map fixed (ot-pending-table, ot-approve/reject-modal; 11 end-user components and `(ops)/layout.tsx` added); rollover-cron landmine corrected; NEW camera-view/photo.ts shared-with-MRN landmine; `sw.js` exists (push only).
+- ATT-15 (§7, §9.2, §16): OT prompt fires strictly after `otTriggerTime` (`check-out-flow.tsx:282`, `ot-logic.ts:101`); the "Rollout activated" toast is the green `ok` token, not teal.
+- Schema stamp v27.13 → v27.24.
 
 ## Change log — v1.3 (2026-08-04 reconciliation pass, method v1.1)
 
@@ -585,4 +650,4 @@ Evidence: `information_schema` SELECT on all three tables (live == Prisma; the d
 
 ---
 
-*Attendance v1.3 · Schema v27.13 · OrbitOMS · updated 2026-08-04*
+*Attendance v1.4 · Schema v27.24 · OrbitOMS · updated 2026-09-19*
