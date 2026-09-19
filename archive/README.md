@@ -14,10 +14,12 @@ do it in, the checks that stop you breaking the app, and the mistakes already ma
 | Warehouse board — `/warehouse` + 2 stubs + board API + components | 2026-07-28 | **none** — always rendered empty; Picking/Floor built on a different track | `2026-07-warehouse-board/` |
 | Planning board — `/planning` + `/dispatcher` stub + 8 API routes + components | 2026-07-28 | **none** — never used end to end; always rendered empty | `2026-07-planning-board/` |
 | **Picking DESKTOP board** — the wide-screen table only. 🔴 **NOT a route retirement:** `/picking` is STILL LIVE and renders the card board at every width. No page key removed, no permission row cleared, no SQL run | 2026-07-28 | Floor Control (`/floor`) | `2026-07-picking-desktop/` |
+| **Floor decision rail** — four components (`floor-rail`, `rail-card`, `rail-empty`, `tint-strip`) and the server feed behind them (`getFloorRail`, `buildTintState`, `RAIL_SUGGESTIONS_ENABLED`, `railInScope`, the board's `rail`/`railCount` keys). 🔴 **NOT a route retirement:** `/floor` is STILL LIVE. Stopped rendering 2026-09-10 when the trip desk replaced the board (`bbb9628c`); its feed ran on until this commit. `floorUnslottedWhere` is still live — it is arm 2 of `floorBoardWhere` | 2026-09-13 | The trip desk (`/floor`, `docs/CLAUDE_FLOOR_TRIPS.md`) | `2026-09-floor-rail/` |
 
 **Commits, in order.** `bc42a948`→`63164ed2` Support · `9dce858b`+`de48357d` `/order` ·
 `83ec3fc1` the two operations mounts · **`c4323cd4` login landings repointed to `/picking`** ·
-`207e2a5c` Warehouse · `639f8139` Planning · `90c9a865`→ Picking desktop (six steps).
+`207e2a5c` Warehouse · `639f8139` Planning · `90c9a865`→ Picking desktop (six steps) ·
+`79bcc412` Floor decision rail (2026-09-13).
 
 ⚠ **The last row is a different shape from the rest of this table.** Everything above it
 removed a whole screen at a whole address. The Picking desktop board was **one branch

@@ -259,6 +259,19 @@ proof that "small" retirements bite in their own ways.
   permission change from `prisma/seed.ts`. SELECT first, every time** — and when they
   disagree, say which one you are describing.
 
+### Added after the Floor decision rail retirement (2026-09-13)
+
+- **A UI THAT STOPS RENDERING IS NOT A FEED THAT STOPS RUNNING.** The rail stopped
+  rendering on 2026-09-10 when the trip desk replaced the board (`bbb9628c`), but its
+  **server feed** kept running for three more days: every `/api/floor/board` call built a
+  full rail payload and threw it away — **about 772 ms, roughly 28% of each board
+  request** (measured 2026-09-12, `archive/2026-09-floor-rail/README.md`). When you
+  remove a surface, trace its data source to the server and remove that too. And the
+  reverse trap in the same retirement: **removing a fetch is not removing an arm.**
+  `floorUnslottedWhere` was the rail's predicate *and* is arm 2 of `floorBoardWhere`, so
+  it is still live — tidying it away as "the unused rail predicate" would drop live bills
+  off the board.
+
 ---
 
 ## 5. Archive layout
@@ -357,6 +370,7 @@ Index only — `archive/README.md` carries the full table, each folder's README 
 | 2026-07-28 | Warehouse board — `/warehouse` + 2 stubs + board API + components | `207e2a5c` |
 | 2026-07-28 | Planning board — `/planning` + `/dispatcher` stub + 8 API routes + components | `639f8139` |
 | 2026-07-28 | **Picking DESKTOP board** — the wide-screen table only. **A branch removed from inside a LIVE route, not a route retirement:** `/picking` stays live and renders the card board at every width; no page key removed, no permission row cleared, no orphaned DB rows to clean, no SQL run at all. Six steps: extract live rules from the UI spec → track the discovery report → fix stale code comments → remove the face + archive the file → hide it from the desktop sidebar only → remove the dead scope, counters and docs | `90c9a865` → `561368da` |
+| 2026-09-13 | **Floor decision rail** — four components + the server feed behind them. **A board removed from inside a LIVE route**, like the Picking desktop row: `/floor` stays live as the trip desk; no page key removed, no permission row cleared, no SQL run. Stopped rendering 2026-09-10 (`bbb9628c`); feed removed here. `floorUnslottedWhere` stays — it is arm 2 of `floorBoardWhere` | `79bcc412` |
 
 ⚠ **The row in bold is the sequencing lesson.** Those two roles were moved onto `/picking`
 **before** the Warehouse board was archived — not after. Every login landing, redirect and
@@ -390,6 +404,6 @@ them, but they are the same family:
 
 ---
 
-*Written 2026-07-27, after the Support retirement; last updated 2026-07-28, after the Picking
-DESKTOP retirement. Update it after the next one —
+*Written 2026-07-27, after the Support retirement; last updated 2026-09-19, after indexing the
+2026-09-13 Floor decision rail retirement (§4, §7b). Update it after the next one —
 especially §4, which is only useful if it keeps growing.*
