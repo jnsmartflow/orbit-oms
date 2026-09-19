@@ -109,8 +109,8 @@ clock: measured 13,555 inserts / 13,438 deletes / **0 updates** on a ~100-row ta
 `CREATE TEMPORARY TABLE` built and dropped ~1,390 times a day. Over the first 8 live hours of the
 replacement: **+110 inserts, +63 updates, +32 deletes**, against roughly 46,500 / 46,500 for the old
 design. Steady state writes nothing. Schema version **v27.24**; plan of record
-`docs/prompts/drafts/code-resume-2026-09-08-trip-mirror-rewrite.md`, evidence
-`docs/prompts/drafts/code-discovery-2026-09-08-trip-mirror.md`.
+`docs/prompts/archive/2026-09/code-resume-2026-09-08-trip-mirror-rewrite.md`, evidence
+`docs/prompts/archive/2026-09/code-discovery-2026-09-08-trip-mirror.md`.
 
 The same pass closed two edges that had been unguarded since July: a batch spanning IST midnight
 returns two dates, and the old `target_date := max("disDate")` cleared only the newer one while the
@@ -406,8 +406,8 @@ Renders `<TripSheetDocument>` into a hidden **same-document** div from in-memory
 
 ## Change log — v1.2 (2026-09-08, the v27.24 mirror rewrite + a machine-reality pass)
 
-Evidence: `docs/prompts/drafts/code-discovery-2026-09-08-trip-mirror.md` (machine sweep + read-only
-SELECTs) and `docs/prompts/drafts/code-resume-2026-09-08-trip-mirror-rewrite.md` (the plan, §8 of
+Evidence: `docs/prompts/archive/2026-09/code-discovery-2026-09-08-trip-mirror.md` (machine sweep + read-only
+SELECTs) and `docs/prompts/archive/2026-09/code-resume-2026-09-08-trip-mirror-rewrite.md` (the plan, §8 of
 which is the correction list this pass applies). Shipped as commit `88bf9926`.
 
 - 🔴 **TRP-6 (§2.1, §3): "`sourceId` changes on every pull" is FALSE and is now corrected in both

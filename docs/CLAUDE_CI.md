@@ -786,7 +786,7 @@ the tab bar is already hidden.
 `docs/mockups/ci/billing.html` (4 frames), committed 2026-09-03. Component
 headers cite frame numbers into these two files.
 
-**Design history** — `docs/prompts/drafts/web-update-2026-08-31-ci-module.md`
+**Design history** — `docs/prompts/archive/2026-09/web-update-2026-08-31-ci-module.md`
 (v3.3). ⚠ **HISTORY, NOT CANON.** It predates three days of change and is wrong
 in at least one countable way (it describes nine API routes; there are twelve).
 This file is the authority.

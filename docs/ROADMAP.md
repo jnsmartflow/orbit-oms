@@ -16,7 +16,7 @@ is fixed.** Source report: `docs/prompts/drafts/code-discovery-2026-09-18-canon-
 
 ### 🔴 P0 — Security: a production DB password in a synced, un-ignored file
 
-- [ ] A 2026-09-08 draft (`docs/prompts/drafts/code-discovery-2026-09-08-trip-mirror.md:181-182`, `:521-522`)
+- [ ] A 2026-09-08 draft (`docs/prompts/archive/2026-09/code-discovery-2026-09-08-trip-mirror.md:181-182`, `:521-522`)
       records that `-Dhruv.env` holds a **plaintext production DB password**. On 2026-09-19
       `docs/dhruv-review/` is no longer on disk, but its twin is:
       `docs/_backup_2026-08-04/dhruv-review/-Dhruv.env` (and `.env-Dhruv.local` beside it) —
@@ -220,12 +220,12 @@ instruction and `archive/RETIREMENT-PLAYBOOK.md`.
 
 Shipped 2026-09-04 in eight commits (`c3cf726b` → `b915c88e`). Access now comes from
 `user_page_access`; a job title is a label and a starting template. Record:
-`docs/prompts/drafts/code-update-2026-09-04-user-based-access.md`. Model: `CLAUDE_CORE.md §5`.
+`docs/prompts/archive/2026-09/code-update-2026-09-04-user-based-access.md`. Model: `CLAUDE_CORE.md §5`.
 
 **Step 6 continued 2026-09-06 in seven commits** (`cd0ed055` → `fbbe30bd`, all pushed): Tint
 converted (37 of its 41 handlers now gate on a tick), the master-data routes converted, and the 57
 redundant admin bypasses removed. Record:
-`docs/prompts/drafts/code-update-2026-09-06-tint-and-master-data.md`. Gates:
+`docs/prompts/archive/2026-09/code-update-2026-09-06-tint-and-master-data.md`. Gates:
 `code-discovery-2026-09-06-tint-conversion-gate.md` ·
 `code-discovery-2026-09-06-master-data-gate.md`. Canon: `CLAUDE_TINT.md §13`, `CLAUDE_CORE.md §5`/`§13`.
 
@@ -795,7 +795,7 @@ All nineteen OBD numbers, recorded here so they survive the report:
 
 ⚠ These nineteen are also the reason the Defect B header recompute must not be allowed to run on
 them: a recompute would overwrite the header with the short line sum and erase the only evidence the
-stock is missing. Full working — `docs/prompts/drafts/code-discovery-2026-09-08-import-qty-integrity.md`
+stock is missing. Full working — `docs/prompts/archive/2026-09/code-discovery-2026-09-08-import-qty-integrity.md`
 (§DEFECT B — GATE, Gates 2 and 3).
 
 > **ONE-LINE CORRECTION to the P1 above:** the ten zero-line bills are **header-only-by-design,
@@ -884,7 +884,7 @@ and 13 are mixed and silently undercount** (SQL `SUM` skips NULLs) — e.g. `910
 against a line sum of 145.3 with only 15 of its 21 lines weighed. This is why the Defect B header
 recompute had to drop `grossWeight`: the lines cannot support it. Fixing weight is its own change
 (three write sites plus the patch-path select) **plus its own backfill**, and it must land before any
-line-derived weight is trusted. Detail — `docs/prompts/drafts/code-discovery-2026-09-08-import-qty-integrity.md`
+line-derived weight is trusted. Detail — `docs/prompts/archive/2026-09/code-discovery-2026-09-08-import-qty-integrity.md`
 (§DEFECT B — GATE, Gate 2 condition 1).
 
 ### P3 — Three loose ends from the 2026-09-08 import work
@@ -1247,7 +1247,7 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
   stored column landed as `displayName`, built from `category` / `product` / `baseColour` with NO
   menu-table join, `emailCase()` not `smartTitleCase`, gentle de-double only, SKU code stays the
   hero and the name is a muted reference line):
-  `docs/prompts/drafts/web-update-2026-07-19-sku-master-v2-project-v2.md §5` + the per-family samples
+  `docs/prompts/archive/2026-07/web-update-2026-07-19-sku-master-v2-project-v2.md §5` + the per-family samples
   in `code-discovery-2026-07-19d-picking-name-samples.md`. **Resume order:** clean the catalog → re-run
   the 19d sampling to confirm zero misleading names → build in two steps (fill via reviewable SQL,
   then show on the card).
@@ -1595,7 +1595,7 @@ NOT repeated:
 ## Mail Orders cleanup (opened 2026-09-01, from the write-route permission fix)
 
 Left over from `mail-orders: gate 11 write routes on mail_orders/canEdit` — the guards shipped; these
-three did not. Evidence for all three: `docs/prompts/drafts/code-discovery-2026-09-01-mail-orders-gate.md`.
+three did not. Evidence for all three: `docs/prompts/archive/2026-09/code-discovery-2026-09-01-mail-orders-gate.md`.
 
 - **[P3] `[id]/punch` is a route with no button — wire it or remove it.** Its `onPunch` prop is
   threaded four component levels (`mail-orders-page.tsx:1465` → `mail-orders-table.tsx:49 → :118 →
@@ -1776,7 +1776,7 @@ because `PUBLIC_PATHS` carries `"/po"` and the gate is a `startsWith` prefix mat
 **`/po9` exists (2026-09-15)** — the SAME `PoV2Page` component mounted with `shipToEnabled={false}` (`app/po9/page.tsx`, a mount not a fork; its own manifest, id `/po9`). ⚠ It shares phone storage with `/po2` — every `po2_*` key — so a `/po2` draft carrying a ship-to opens on `/po9` and shows it read-only.
 
 Canon: **`docs/CLAUDE_PO2.md`** (v1.0, 2026-09-18) owns `/po2` and `/po9`; its §16 points back at
-the items below. Build record (history): `docs/prompts/drafts/code-update-2026-09-08-po-v2-board.md`. Its
+the items below. Build record (history): `docs/prompts/archive/2026-09/code-update-2026-09-08-po-v2-board.md`. Its
 wire is guarded by **`scripts/po-v2-email-fixtures.ts`** — run it before any commit that touches
 the send path.
 

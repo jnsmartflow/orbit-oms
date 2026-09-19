@@ -38,7 +38,7 @@ Single source of truth for visual styling across all screens.
 ## 2. Orbit colour tokens — the brand system
 
 **Source of truth: `tailwind.config.ts`, `theme.extend.colors`, the "Orbit palette" block.**
-The design rationale is `docs/prompts/drafts/web-update-2026-09-06-orbit-colour-spec-v2.md`
+The design rationale is `docs/prompts/archive/2026-09/web-update-2026-09-06-orbit-colour-spec-v2.md`
 (history only — where it and the config disagree, the config and this section win; two
 spec lines are already overruled, §59.8 and §59.9). Rebrand commits: `5daa58fc` (2026-09-09,
 57 non-brand teals reassigned to ok/warn/ink/tint/data) and `c96157ea` (2026-09-09, the
@@ -1648,7 +1648,7 @@ Applied to `app/po/po-page.tsx` and to `ModuleMobileHeader` (§59.7), which cove
 seven of its consumers at once.
 
 🔴 **The wordmark is `brand.600`, NOT the colour spec's `brand.800`, and that is a
-RULING not a drift.** `docs/prompts/drafts/web-update-2026-09-06-orbit-colour-spec-v2.md`
+RULING not a drift.** `docs/prompts/archive/2026-09/web-update-2026-09-06-orbit-colour-spec-v2.md`
 line 42 assigns `#5B21B6` to "wordmark on white". On a white or near-white working screen
 at header size that reads as a bruise; `#7C3AED` stays a brand colour. v2 diverged first
 and was right. **The spec line is wrong and is superseded by this section — do not

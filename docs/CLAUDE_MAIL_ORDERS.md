@@ -944,7 +944,7 @@ nothing** — always test as the actual person being granted.
 `canView`-without-`canEdit` population was empty — which is why gating the eleven write routes
 (§18) blocked nobody. At that reading the six people who reach this screen all held `canEdit`: Harsh (admin
 bypass), Operations User, Chandresh Kolgha, Deepanshu Thakur, Bankim, Prakash. Evidence:
-`docs/prompts/drafts/code-discovery-2026-09-01-mail-orders-gate.md §1-2`. ⚠ That was a role-mode
+`docs/prompts/archive/2026-09/code-discovery-2026-09-01-mail-orders-gate.md §1-2`. ⚠ That was a role-mode
 reading. Who holds `mail_orders` in `user_page_access` today was not in the 2026-09-18 query set.
 
 **Facts this grant surfaced (both since settled):**

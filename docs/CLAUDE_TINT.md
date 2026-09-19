@@ -1189,7 +1189,7 @@ conversion moved exactly one person.
 reproduced the OR-merge across all of a person's roles while he still carried `tint_operator` as a
 secondary role. **That secondary role is gone:** his primary role and his only `user_roles` row are
 both `tint_manager` (live 2026-09-18, Q08; removed 2026-09-06 when "Base — No Tint" replaced his
-self-assign workaround — `docs/prompts/drafts/code-update-2026-09-06-tint-base-no-tint.md`). In user
+self-assign workaround — `docs/prompts/archive/2026-09/code-update-2026-09-06-tint-base-no-tint.md`). In user
 mode `checkAnyPermission` reads the person's own `user_page_access` row, not their roles
 (`lib/permissions.ts:801-806`), so the removal did not by itself change his `tint_operator` ticks —
 and a rollback to `ACCESS_SOURCE = role` would no

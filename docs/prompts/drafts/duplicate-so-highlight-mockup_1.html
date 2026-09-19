@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duplicate SO Num — red card mockup</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#6b7280; --line:#eceef2; --page:#f5f6f8;
+    --red600:#dc2626; --red500:#ef4444; --red50:#fef2f2; --red100:#fee2e2; --red700:#b91c1c;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:22px;margin:0 0 6px}
+  .lede{color:var(--muted);font-size:14px;margin:0 0 26px;line-height:1.55;max-width:760px}
+  h2{font-size:15px;margin:34px 0 4px;letter-spacing:.01em}
+  .note{color:var(--muted);font-size:13px;margin:0 0 14px;line-height:1.5;max-width:760px}
+  .cols{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .col{flex:1 1 300px;min-width:290px}
+  .colhead{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+           color:var(--muted);margin:0 0 10px}
+  .phone{background:var(--page);border:1px solid #e5e7eb;border-radius:22px;padding:12px;}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  /* ---------- picking supervisor card ---------- */
+  .pcard{position:relative;border-radius:20px;border:1.5px solid var(--line);background:#fff;
+         box-shadow:var(--shadow);padding:12px 13px;margin-bottom:10px;overflow:hidden}
+  .prow1{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .obd{font-size:13px;letter-spacing:.01em;color:#374151}
+  .wtag{font-size:11px;color:var(--muted);background:#f3f4f6;border-radius:6px;padding:1px 6px}
+  .star{color:#f59e0b;font-size:13px}
+  .age{margin-left:auto;font-size:11px;font-weight:600;border-radius:999px;padding:2px 7px;
+       background:#fef3c7;color:#92400e}
+  .hero{font-size:16px;font-weight:650;line-height:1.25;margin:0 0 3px}
+  .sub{font-size:12.5px;color:var(--muted);margin:0 0 9px}
+  .chips{display:flex;align-items:center;gap:6px}
+  .chip{font-size:11px;background:#f3f4f6;color:#4b5563;border-radius:7px;padding:3px 8px;white-space:nowrap}
+  .arrow{margin-left:auto;width:30px;height:30px;border-radius:50%;background:#eceff3;
+         display:flex;align-items:center;justify-content:center;color:#8b93a0;font-size:14px;flex:none}
+
+  /* the duplicate tag */
+  .sotag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;
+         letter-spacing:.07em;text-transform:uppercase;border-radius:6px;padding:2px 7px}
+
+  /* --- version A: solid red fill --- */
+  .v-solid{background:var(--red600);border-color:var(--red700)}
+  .v-solid .hero{color:#fff}
+  .v-solid .obd{color:#fff}
+  .v-solid .sub{color:#fecaca}
+  .v-solid .wtag{background:rgba(255,255,255,.18);color:#fff}
+  .v-solid .chip{background:rgba(255,255,255,.16);color:#fff}
+  .v-solid .arrow{background:rgba(255,255,255,.22);color:#fff}
+  .v-solid .age{background:rgba(255,255,255,.9);color:var(--red700)}
+  .v-solid .sotag{background:#fff;color:var(--red700)}
+
+  /* --- version B: red wash fill --- */
+  .v-wash{background:var(--red50);border-color:var(--red600);border-width:2px}
+  .v-wash .sotag{background:var(--red600);color:#fff}
+
+  /* --- version C: red edge + pale tint --- */
+  .v-edge{background:#fff7f7;border-color:#fecaca}
+  .v-edge::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--red600)}
+  .v-edge .sotag{background:var(--red100);color:var(--red700)}
+
+  /* ---------- floor rail card ---------- */
+  .rail{width:330px}
+  .rcard{border:1px solid #e5e7eb;background:#fff;border-radius:8px;padding:11px 12px;margin-bottom:8px;
+         position:relative;overflow:hidden}
+  .rrow{display:flex;align-items:center;gap:7px}
+  .rname{font-size:14px;font-weight:600}
+  .rmeta{font-size:12px;color:var(--muted);margin-top:2px}
+  .rbtn{margin-top:9px;display:inline-block;font-size:12px;border:1px solid #d1d5db;border-radius:7px;
+        padding:4px 10px;color:#374151;background:#fff}
+  .bolt{color:var(--red500);font-size:13px}
+  .rcard.v-solid .rname,.rcard.v-solid .obd{color:#fff}
+  .rcard.v-solid .rmeta{color:#fecaca}
+  .rcard.v-solid .rbtn{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.45);color:#fff}
+  .rcard.v-solid .bolt{color:#fff}
+
+  /* ---------- floor board table ---------- */
+  table{border-collapse:collapse;width:100%;background:#fff;border-radius:10px;overflow:hidden;
+        box-shadow:var(--shadow);font-size:13px}
+  th{ text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+      font-weight:600;padding:9px 12px;background:#fafafa;border-bottom:1px solid #f0f0f0}
+  td{padding:10px 12px;border-bottom:1px solid #f0f0f0}
+  tr.dup-solid td{background:var(--red600);color:#fff;border-bottom-color:var(--red700)}
+  tr.dup-solid td .muted{color:#fecaca}
+  tr.dup-wash td{background:var(--red50)}
+  tr.dup-edge td{background:#fff7f7}
+  tr.dup-edge td:first-child{box-shadow:inset 5px 0 0 var(--red600)}
+  .pill{font-size:11px;border-radius:999px;padding:2px 9px;background:#f3f4f6;color:#4b5563;white-space:nowrap}
+  .pill.green{background:#dcfce7;color:#166534}
+  .pill.amber{background:#fef3c7;color:#92400e}
+  tr.dup-solid .pill{background:rgba(255,255,255,.9);color:#7f1d1d}
+  .muted{color:var(--muted)}
+  .legend{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .divider{height:1px;background:#e5e7eb;margin:38px 0 0}
+  .callout{background:#fff;border:1px solid #e5e7eb;border-left:4px solid var(--red600);
+           border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.6;max-width:780px;margin:16px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Duplicate SO Num — red card mockup</h1>
+  <p class="lede">
+    Real data from 20 Aug: <b>KRISHNA PAINTS</b> has three OBDs sharing SO <span class="mono">1046574001</span>,
+    and <b>MISTRY BROTHERS</b> has two sharing <span class="mono">1046573889</span>. The SO number itself is
+    <b>not</b> printed on any card — only the red and the two-word tag. Three strengths of red are drawn below
+    on the same cards. Pick one.
+  </p>
+
+  <h2>1 · Picking supervisor board (phone)</h2>
+  <p class="note">Normal cards stay white. The three KRISHNA cards and the two MISTRY cards go red together —
+     that is the whole point, the supervisor sees the set, not one card.</p>
+
+  <div class="cols">
+
+    <!-- ================= SOLID ================= -->
+    <div class="col">
+      <p class="colhead">A · Solid red fill</p>
+      <div class="phone">
+
+        <div class="pcard">
+          <div class="prow1"><span class="obd mono">9108986139</span><span class="wtag">2 PM</span>
+            <span class="age">1d</span></div>
+          <p class="hero">ASHAPURA COLOUR &amp; HARDWARE</p>
+          <p class="sub">VARACHHA · 34 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+2</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-solid">
+          <div class="prow1"><span class="obd mono">9108975467</span><span class="wtag">11:15</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 259 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">PROMISE</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-solid">
+          <div class="prow1"><span class="obd mono">9108990880</span><span class="wtag">10:41</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 259 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+3</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-solid">
+          <div class="prow1"><span class="obd mono">9109013523</span><span class="wtag">11:05</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 273 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+1</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard">
+          <div class="prow1"><span class="star">★</span><span class="obd mono">9108987840</span>
+            <span class="wtag">4 PM</span></div>
+          <p class="hero">SILVER PAINTS AND HARDWARE</p>
+          <p class="sub">ADAJAN · 55 units</p>
+          <div class="chips"><span class="chip">WEATHERSHIELD</span><span class="arrow">›</span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ================= WASH ================= -->
+    <div class="col">
+      <p class="colhead">B · Red wash + thick red border</p>
+      <div class="phone">
+
+        <div class="pcard">
+          <div class="prow1"><span class="obd mono">9108986139</span><span class="wtag">2 PM</span>
+            <span class="age">1d</span></div>
+          <p class="hero">ASHAPURA COLOUR &amp; HARDWARE</p>
+          <p class="sub">VARACHHA · 34 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+2</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-wash">
+          <div class="prow1"><span class="obd mono">9108975467</span><span class="wtag">11:15</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 259 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">PROMISE</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-wash">
+          <div class="prow1"><span class="obd mono">9108990880</span><span class="wtag">10:41</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 259 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+3</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-wash">
+          <div class="prow1"><span class="obd mono">9109013523</span><span class="wtag">11:05</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 273 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+1</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard">
+          <div class="prow1"><span class="star">★</span><span class="obd mono">9108987840</span>
+            <span class="wtag">4 PM</span></div>
+          <p class="hero">SILVER PAINTS AND HARDWARE</p>
+          <p class="sub">ADAJAN · 55 units</p>
+          <div class="chips"><span class="chip">WEATHERSHIELD</span><span class="arrow">›</span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ================= EDGE ================= -->
+    <div class="col">
+      <p class="colhead">C · Red edge + pale tint</p>
+      <div class="phone">
+
+        <div class="pcard">
+          <div class="prow1"><span class="obd mono">9108986139</span><span class="wtag">2 PM</span>
+            <span class="age">1d</span></div>
+          <p class="hero">ASHAPURA COLOUR &amp; HARDWARE</p>
+          <p class="sub">VARACHHA · 34 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+2</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-edge">
+          <div class="prow1"><span class="obd mono">9108975467</span><span class="wtag">11:15</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 259 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">PROMISE</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-edge">
+          <div class="prow1"><span class="obd mono">9108990880</span><span class="wtag">10:41</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 259 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+3</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard v-edge">
+          <div class="prow1"><span class="obd mono">9109013523</span><span class="wtag">11:05</span>
+            <span class="sotag">Same SO</span></div>
+          <p class="hero">KRISHNA PAINTS</p>
+          <p class="sub">KATARGAM · 273 units</p>
+          <div class="chips"><span class="chip">DULUX</span><span class="chip">+1</span>
+            <span class="arrow">›</span></div>
+        </div>
+
+        <div class="pcard">
+          <div class="prow1"><span class="star">★</span><span class="obd mono">9108987840</span>
+            <span class="wtag">4 PM</span></div>
+          <p class="hero">SILVER PAINTS AND HARDWARE</p>
+          <p class="sub">ADAJAN · 55 units</p>
+          <div class="chips"><span class="chip">WEATHERSHIELD</span><span class="arrow">›</span></div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    <b>What to look at:</b> hold the phone at arm's length. In A the dealer name is white on red — loud, but
+    thinner to read in bright light and the ⚡ urgent and age badges have to be re-coloured to stay visible.
+    In B and C the name stays black, and the red badges already on the card keep their normal meaning.
+  </div>
+
+  <div class="divider"></div>
+
+  <h2>2 · Floor Control — left rail</h2>
+  <p class="note">Same three strengths, on the rail card.</p>
+
+  <div class="cols">
+    <div class="col rail">
+      <p class="colhead">A · Solid</p>
+      <div class="rcard">
+        <div class="rrow"><span class="obd mono">9108986139</span><span class="wtag">2 PM</span></div>
+        <div class="rname">ASHAPURA COLOUR &amp; HARDWARE</div>
+        <div class="rmeta">VARACHHA · 224 L · 34 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+      <div class="rcard v-solid">
+        <div class="rrow"><span class="obd mono">9108975467</span><span class="sotag">Same SO</span></div>
+        <div class="rname">KRISHNA PAINTS</div>
+        <div class="rmeta">KATARGAM · 522 L · 259 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+      <div class="rcard v-solid">
+        <div class="rrow"><span class="bolt">⚡</span><span class="obd mono">9108990880</span>
+          <span class="sotag">Same SO</span></div>
+        <div class="rname">KRISHNA PAINTS</div>
+        <div class="rmeta">KATARGAM · 540 L · 259 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+    </div>
+
+    <div class="col rail">
+      <p class="colhead">B · Wash</p>
+      <div class="rcard">
+        <div class="rrow"><span class="obd mono">9108986139</span><span class="wtag">2 PM</span></div>
+        <div class="rname">ASHAPURA COLOUR &amp; HARDWARE</div>
+        <div class="rmeta">VARACHHA · 224 L · 34 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+      <div class="rcard v-wash">
+        <div class="rrow"><span class="obd mono">9108975467</span><span class="sotag">Same SO</span></div>
+        <div class="rname">KRISHNA PAINTS</div>
+        <div class="rmeta">KATARGAM · 522 L · 259 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+      <div class="rcard v-wash">
+        <div class="rrow"><span class="bolt">⚡</span><span class="obd mono">9108990880</span>
+          <span class="sotag">Same SO</span></div>
+        <div class="rname">KRISHNA PAINTS</div>
+        <div class="rmeta">KATARGAM · 540 L · 259 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+    </div>
+
+    <div class="col rail">
+      <p class="colhead">C · Edge</p>
+      <div class="rcard">
+        <div class="rrow"><span class="obd mono">9108986139</span><span class="wtag">2 PM</span></div>
+        <div class="rname">ASHAPURA COLOUR &amp; HARDWARE</div>
+        <div class="rmeta">VARACHHA · 224 L · 34 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+      <div class="rcard v-edge">
+        <div class="rrow"><span class="obd mono">9108975467</span><span class="sotag">Same SO</span></div>
+        <div class="rname">KRISHNA PAINTS</div>
+        <div class="rmeta">KATARGAM · 522 L · 259 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+      <div class="rcard v-edge">
+        <div class="rrow"><span class="bolt">⚡</span><span class="obd mono">9108990880</span>
+          <span class="sotag">Same SO</span></div>
+        <div class="rname">KRISHNA PAINTS</div>
+        <div class="rmeta">KATARGAM · 540 L · 259 units</div>
+        <span class="rbtn">pick slot</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <h2>3 · Floor Control — board rows</h2>
+  <p class="note">The board is a table, not cards. Same three strengths applied to the row.</p>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>OBD</th><th>Customer</th><th>Route</th><th>Qty</th><th>Status</th><th>Picker</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td><td class="mono">9108986139</td><td>ASHAPURA COLOUR &amp; HARDWARE</td>
+        <td class="muted">VARACHHA</td><td>34</td><td><span class="pill green">Done</span></td><td>Ramesh</td>
+      </tr>
+      <tr class="dup-solid">
+        <td>2</td><td class="mono">9108975467</td>
+        <td>KRISHNA PAINTS <span class="sotag" style="background:#fff;color:#b91c1c">Same SO</span></td>
+        <td class="muted">KATARGAM</td><td>259</td><td><span class="pill">Assigned</span></td><td>Suresh</td>
+      </tr>
+      <tr class="dup-solid">
+        <td>3</td><td class="mono">9108990880</td>
+        <td>KRISHNA PAINTS <span class="sotag" style="background:#fff;color:#b91c1c">Same SO</span></td>
+        <td class="muted">KATARGAM</td><td>259</td><td><span class="pill">Assigned</span></td><td>Suresh</td>
+      </tr>
+      <tr class="dup-wash">
+        <td>4</td><td class="mono">9108958581</td>
+        <td>MISTRY BROTHERS <span class="sotag" style="background:#dc2626;color:#fff">Same SO</span></td>
+        <td class="muted">UDHNA</td><td>290</td><td><span class="pill amber">Waiting</span></td><td class="muted">—</td>
+      </tr>
+      <tr class="dup-wash">
+        <td>5</td><td class="mono">9108992755</td>
+        <td>MISTRY BROTHERS <span class="sotag" style="background:#dc2626;color:#fff">Same SO</span></td>
+        <td class="muted">UDHNA</td><td>2</td><td><span class="pill amber">Waiting</span></td><td class="muted">—</td>
+      </tr>
+      <tr class="dup-edge">
+        <td>6</td><td class="mono">9108987840</td>
+        <td>SILVER PAINTS AND HARDWARE <span class="sotag" style="background:#fee2e2;color:#b91c1c">Same SO</span></td>
+        <td class="muted">ADAJAN</td><td>55</td><td><span class="pill green">Done</span></td><td>Kiran</td>
+      </tr>
+      <tr class="dup-edge">
+        <td>7</td><td class="mono">9109032100</td>
+        <td>SILVER PAINTS AND HARDWARE <span class="sotag" style="background:#fee2e2;color:#b91c1c">Same SO</span></td>
+        <td class="muted">ADAJAN</td><td>2</td><td><span class="pill">Assigned</span></td><td>Kiran</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="legend">Rows 2–3 solid · rows 4–5 wash · rows 6–7 edge. On a table the solid version is the
+     heaviest of the three by a wide margin, because a whole row of white text is a lot of red.</p>
+
+</div>
+</body>
+</html>

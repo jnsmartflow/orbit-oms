@@ -1,0 +1,148 @@
+section,label,value
+Q01 billing_settings,row count,1
+Q01 billing_settings,scope=GLOBAL,rolloutStage=ALL_USERS | updatedAt=2026-08-06 10:41:10.397392+00 | updatedById=null
+Q02 ACCESS_SOURCE,effective mode,user
+Q02 ACCESS_SOURCE,"system_config.value (raw, quoted)","""user"""
+Q03a user_page_access counts,billing_hold,rows=40 | canView=5 | canEdit=5 | canExport=0
+Q03a user_page_access counts,billing_picking,rows=5 | canView=5 | canEdit=5 | canExport=0
+Q03a user_page_access counts,billing_print,rows=40 | canView=5 | canEdit=5 | canExport=0
+Q03a user_page_access counts,billing_ship_to,rows=40 | canView=5 | canEdit=5 | canExport=0
+Q03a user_page_access counts,billing_slot,rows=40 | canView=5 | canEdit=5 | canExport=0
+Q03a user_page_access counts,billing_urgent,rows=40 | canView=5 | canEdit=5 | canExport=0
+Q03a user_page_access counts,ci,rows=39 | canView=13 | canEdit=12 | canExport=5
+Q03a user_page_access counts,floor,rows=39 | canView=6 | canEdit=6 | canExport=1
+Q03a user_page_access counts,mrn,rows=39 | canView=13 | canEdit=13 | canExport=6
+Q03a user_page_access counts,place_order_ship_to,rows=5 | canView=5 | canEdit=4 | canExport=0
+Q03a user_page_access counts,reports_ti_report,rows=3 | canView=3 | canEdit=0 | canExport=3
+Q03a user_page_access counts,reports_tint_summary,rows=3 | canView=1 | canEdit=0 | canExport=0
+Q03a user_page_access counts,tint_panel_activity,rows=3 | canView=3 | canEdit=0 | canExport=0
+Q03a user_page_access counts,tint_panel_details,rows=3 | canView=3 | canEdit=0 | canExport=0
+Q03a user_page_access counts,tint_panel_items,rows=3 | canView=3 | canEdit=0 | canExport=0
+Q03b holders (canView),reports_ti_report,"Chandresh Kolgha (#21), Deepanshu Thakur (#25), Prakash (#32)"
+Q03b holders (canView),reports_tint_summary,Operations User (#20)
+Q03b holders (canView),tint_panel_activity,"Chandresh Kolgha (#21), Deepanshu Thakur (#25), Prakash (#32)"
+Q03b holders (canView),tint_panel_details,"Chandresh Kolgha (#21), Deepanshu Thakur (#25), Prakash (#32)"
+Q03b holders (canView),tint_panel_items,"Chandresh Kolgha (#21), Deepanshu Thakur (#25), Prakash (#32)"
+Q04 app_settings,picking.visibilityGate,isEnabled=false | updatedAt=2026-09-16 09:07:27.202+00 | updatedBy=Harsh
+Q04 app_settings,picking.visibilityGate (effective),OFF
+Q05a constraints,app_tag_settings.app_tag_settings_pkey [p],PRIMARY KEY (id)
+Q05a constraints,app_tag_settings.app_tag_settings_userId_fkey [f],"FOREIGN KEY (""userId"") REFERENCES users(id) ON DELETE CASCADE"
+Q05a constraints,app_tag_settings.chk_app_tag_settings_scope [c],"CHECK ((((scope = 'everyone'::text) AND (""roleSlug"" IS NULL) AND (""userId"" IS NULL)) OR ((scope = 'role'::text) AND (""roleSlug"" IS NOT NULL) AND (""userId"" IS NULL)) OR ((scope = 'user'::text) AND (""roleSlug"" IS NULL) AND (""userId"" IS NOT NULL))))"
+Q05a constraints,trip_activity.chk_trip_activity_action [c],"CHECK ((action = ANY (ARRAY['created'::text, 'bills_added'::text, 'bills_removed'::text, 'vehicle_changed'::text, 'details_changed'::text, 'cancelled'::text, 'released'::text, 'dispatched'::text, 'renamed'::text, 'shown'::text, 'taken_back'::text, 'sent_to_billing'::text, 'taken_back_from_billing'::text, 'invoices_copied'::text])))"
+Q05a constraints,trip_activity.trip_activity_actor_fkey [f],"FOREIGN KEY (""actorId"") REFERENCES users(id)"
+Q05a constraints,trip_activity.trip_activity_pkey [p],PRIMARY KEY (id)
+Q05a constraints,trip_activity.trip_activity_trip_fkey [f],"FOREIGN KEY (""tripId"") REFERENCES trips(id) ON DELETE RESTRICT"
+Q05a constraints,trip_drops.chk_trip_drops_key [c],"CHECK ((""dropKey"" =
+CASE
+    WHEN (""customerId"" IS NOT NULL) THEN ('c:'::text || (""customerId"")::text)
+    ELSE ('s:'::text || ""shipToCode"")
+END))"
+Q05a constraints,trip_drops.chk_trip_drops_seq_positive [c],"CHECK ((""dropSeq"" >= 1))"
+Q05a constraints,trip_drops.trip_drops_customerId_fkey [f],"FOREIGN KEY (""customerId"") REFERENCES delivery_point_master(id)"
+Q05a constraints,trip_drops.trip_drops_pkey [p],PRIMARY KEY (id)
+Q05a constraints,trip_drops.trip_drops_tripId_fkey [f],"FOREIGN KEY (""tripId"") REFERENCES trips(id) ON DELETE CASCADE"
+Q05a constraints,trip_drops.trip_drops_trip_key_key [u],"UNIQUE (""tripId"", ""dropKey"")"
+Q05a constraints,trip_drops.trip_drops_trip_seq_key [u],"UNIQUE (""tripId"", ""dropSeq"")"
+Q05a constraints,trips.chk_trips_cancelled_complete [c],"CHECK (((status <> 'cancelled'::text) OR ((""cancelledAt"" IS NOT NULL) AND (""cancelledById"" IS NOT NULL))))"
+Q05a constraints,trips.chk_trips_dispatched_complete [c],"CHECK (((status <> 'dispatched'::text) OR ((""dispatchedAt"" IS NOT NULL) AND (""dispatchedById"" IS NOT NULL))))"
+Q05a constraints,trips.chk_trips_number_shape [c],"CHECK (
+CASE
+    WHEN (status = 'cancelled'::text) THEN (""tripNumber"" ~ (((((('^'::text || ""typeCode"") || '-'::text) || to_char((""tripDate"")::timestamp with time zone, 'YYMMDD'::text)) || '-'::text) || lpad((seq)::text, GREATEST(2, length((seq)::text)), '0'::text)) || '-C([2-9]|[1-9][0-9]+)?$'::text))
+    ELSE (""tripNumber"" = ((((""typeCode"" || '-'::text) || to_char((""tripDate"")::timestamp with time zone, 'YYMMDD'::text)) || '-'::text) || lpad((seq)::text, GREATEST(2, length((seq)::text)), '0'::text)))
+END)"
+Q05a constraints,trips.chk_trips_seq_positive [c],CHECK ((seq >= 1))
+Q05a constraints,trips.chk_trips_status [c],"CHECK ((status = ANY (ARRAY['draft'::text, 'released'::text, 'dispatched'::text, 'cancelled'::text])))"
+Q05a constraints,trips.chk_trips_type_code [c],"CHECK ((""typeCode"" = ANY (ARRAY['L'::text, 'U'::text, 'I'::text, 'C'::text])))"
+Q05a constraints,trips.chk_trips_vehicle_one_of [c],"CHECK ((NOT ((""vehicleId"" IS NOT NULL) AND (""adhocVehicleNo"" IS NOT NULL))))"
+Q05a constraints,trips.trips_billingCopiedById_fkey [f],"FOREIGN KEY (""billingCopiedById"") REFERENCES users(id) ON DELETE SET NULL"
+Q05a constraints,trips.trips_cancelledById_fkey [f],"FOREIGN KEY (""cancelledById"") REFERENCES users(id) ON DELETE SET NULL"
+Q05a constraints,trips.trips_createdById_fkey [f],"FOREIGN KEY (""createdById"") REFERENCES users(id)"
+Q05a constraints,trips.trips_deliveryTypeId_fkey [f],"FOREIGN KEY (""deliveryTypeId"") REFERENCES delivery_type_master(id)"
+Q05a constraints,trips.trips_dispatchWindowId_fkey [f],"FOREIGN KEY (""dispatchWindowId"") REFERENCES dispatch_slot_master(id)"
+Q05a constraints,trips.trips_dispatchedById_fkey [f],"FOREIGN KEY (""dispatchedById"") REFERENCES users(id) ON DELETE SET NULL"
+Q05a constraints,trips.trips_pkey [p],PRIMARY KEY (id)
+Q05a constraints,trips.trips_releasedById_fkey [f],"FOREIGN KEY (""releasedById"") REFERENCES users(id) ON DELETE SET NULL"
+Q05a constraints,trips.trips_sentToBillingById_fkey [f],"FOREIGN KEY (""sentToBillingById"") REFERENCES users(id) ON DELETE SET NULL"
+Q05a constraints,trips.trips_shownById_fkey [f],"FOREIGN KEY (""shownById"") REFERENCES users(id) ON DELETE SET NULL"
+Q05a constraints,trips.trips_transporterId_fkey [f],"FOREIGN KEY (""transporterId"") REFERENCES transporter_master(id)"
+Q05a constraints,trips.trips_tripNumber_key [u],"UNIQUE (""tripNumber"")"
+Q05a constraints,trips.trips_vehicleId_fkey [f],"FOREIGN KEY (""vehicleId"") REFERENCES vehicle_master(id)"
+Q05b indexes,app_tag_settings.app_tag_settings_everyone_key,"CREATE UNIQUE INDEX app_tag_settings_everyone_key ON public.app_tag_settings USING btree (""tagKey"") WHERE (scope = 'everyone'::text)"
+Q05b indexes,app_tag_settings.app_tag_settings_pkey,CREATE UNIQUE INDEX app_tag_settings_pkey ON public.app_tag_settings USING btree (id)
+Q05b indexes,app_tag_settings.app_tag_settings_role_idx,"CREATE INDEX app_tag_settings_role_idx ON public.app_tag_settings USING btree (""roleSlug"") WHERE (""roleSlug"" IS NOT NULL)"
+Q05b indexes,app_tag_settings.app_tag_settings_role_key,"CREATE UNIQUE INDEX app_tag_settings_role_key ON public.app_tag_settings USING btree (""tagKey"", ""roleSlug"") WHERE (scope = 'role'::text)"
+Q05b indexes,app_tag_settings.app_tag_settings_user_idx,"CREATE INDEX app_tag_settings_user_idx ON public.app_tag_settings USING btree (""userId"") WHERE (""userId"" IS NOT NULL)"
+Q05b indexes,app_tag_settings.app_tag_settings_user_key,"CREATE UNIQUE INDEX app_tag_settings_user_key ON public.app_tag_settings USING btree (""tagKey"", ""userId"") WHERE (scope = 'user'::text)"
+Q05b indexes,trip_activity.trip_activity_created_idx,"CREATE INDEX trip_activity_created_idx ON public.trip_activity USING btree (""createdAt"" DESC)"
+Q05b indexes,trip_activity.trip_activity_pkey,CREATE UNIQUE INDEX trip_activity_pkey ON public.trip_activity USING btree (id)
+Q05b indexes,trip_activity.trip_activity_trip_idx,"CREATE INDEX trip_activity_trip_idx ON public.trip_activity USING btree (""tripId"", ""createdAt"")"
+Q05b indexes,trip_drops.trip_drops_customer_idx,"CREATE INDEX trip_drops_customer_idx ON public.trip_drops USING btree (""customerId"")"
+Q05b indexes,trip_drops.trip_drops_pkey,CREATE UNIQUE INDEX trip_drops_pkey ON public.trip_drops USING btree (id)
+Q05b indexes,trip_drops.trip_drops_trip_idx,"CREATE INDEX trip_drops_trip_idx ON public.trip_drops USING btree (""tripId"")"
+Q05b indexes,trip_drops.trip_drops_trip_key_key,"CREATE UNIQUE INDEX trip_drops_trip_key_key ON public.trip_drops USING btree (""tripId"", ""dropKey"")"
+Q05b indexes,trip_drops.trip_drops_trip_seq_key,"CREATE UNIQUE INDEX trip_drops_trip_seq_key ON public.trip_drops USING btree (""tripId"", ""dropSeq"")"
+Q05b indexes,trips.trips_date_idx,"CREATE INDEX trips_date_idx ON public.trips USING btree (""tripDate"" DESC)"
+Q05b indexes,trips.trips_date_type_seq_live_key,"CREATE UNIQUE INDEX trips_date_type_seq_live_key ON public.trips USING btree (""tripDate"", ""typeCode"", seq) WHERE (status <> 'cancelled'::text)"
+Q05b indexes,trips.trips_pkey,CREATE UNIQUE INDEX trips_pkey ON public.trips USING btree (id)
+Q05b indexes,trips.trips_status_idx,CREATE INDEX trips_status_idx ON public.trips USING btree (status)
+Q05b indexes,trips.trips_tripNumber_key,"CREATE UNIQUE INDEX ""trips_tripNumber_key"" ON public.trips USING btree (""tripNumber"")"
+Q05b indexes,trips.trips_vehicle_idx,"CREATE INDEX trips_vehicle_idx ON public.trips USING btree (""vehicleId"")"
+Q06a mrn_lines.deliveryNo,column_default | is_nullable | data_type,''::text | NO | text
+Q06b mrn constraints,mrn.chk_mrn_received_from [c],"CHECK ((""receivedFrom"" = ANY (ARRAY['TPW'::text, 'CDC'::text])))"
+Q06b mrn constraints,mrn.chk_mrn_status [c],"CHECK ((status = ANY (ARRAY['open'::text, 'checking'::text, 'done'::text, 'closed'::text])))"
+Q06b mrn constraints,mrn.mrn_closedById_fkey [f],"FOREIGN KEY (""closedById"") REFERENCES users(id) ON DELETE SET NULL"
+Q06b mrn constraints,mrn.mrn_createdById_fkey [f],"FOREIGN KEY (""createdById"") REFERENCES users(id) ON DELETE RESTRICT"
+Q06b mrn constraints,mrn.mrn_pkey [p],PRIMARY KEY (id)
+Q06b mrn constraints,mrn.mrn_removedById_fkey [f],"FOREIGN KEY (""removedById"") REFERENCES users(id) ON DELETE SET NULL"
+Q06b mrn constraints,mrn.mrn_unloadingEndById_fkey [f],"FOREIGN KEY (""unloadingEndById"") REFERENCES users(id) ON DELETE SET NULL"
+Q06b mrn constraints,mrn.mrn_unloadingStartById_fkey [f],"FOREIGN KEY (""unloadingStartById"") REFERENCES users(id) ON DELETE SET NULL"
+Q06b mrn constraints,mrn_photos.chk_mrn_photo_kind [c],"CHECK ((kind = ANY (ARRAY['lr'::text, 'leaky'::text, 'damage'::text, 'other'::text])))"
+Q06b mrn constraints,mrn_photos.chk_mrn_photo_lr_truck_level [c],"CHECK (((kind <> 'lr'::text) OR (""lineId"" IS NULL)))"
+Q06b mrn constraints,mrn_photos.mrn_photos_capturedById_fkey [f],"FOREIGN KEY (""capturedById"") REFERENCES users(id) ON DELETE RESTRICT"
+Q06b mrn constraints,mrn_photos.mrn_photos_lineId_fkey [f],"FOREIGN KEY (""lineId"") REFERENCES mrn_lines(id) ON DELETE CASCADE"
+Q06b mrn constraints,mrn_photos.mrn_photos_mrnId_fkey [f],"FOREIGN KEY (""mrnId"") REFERENCES mrn(id) ON DELETE CASCADE"
+Q06b mrn constraints,mrn_photos.mrn_photos_pkey [p],PRIMARY KEY (id)
+Q06b mrn constraints,mrn_photos.mrn_photos_storagePath_key [u],"UNIQUE (""storagePath"")"
+Q07a role_master,id 001,admin  → slug admin
+Q07a role_master,id 002,dispatcher  → slug dispatcher
+Q07a role_master,id 003,support  → slug support
+Q07a role_master,id 004,tint_manager  → slug tint_manager
+Q07a role_master,id 005,tint_operator  → slug tint_operator
+Q07a role_master,id 006,floor_supervisor  → slug floor_supervisor
+Q07a role_master,id 007,picker  → slug picker
+Q07a role_master,id 012,operations  → slug operations
+Q07a role_master,id 013,billing_operator  → slug billing_operator
+Q07a role_master,id 014,ops_admin  → slug ops_admin
+Q07a role_master,id 015,operation_manager  → slug operation_manager
+Q07a role_master,id 016,logistics  → slug logistics
+Q07a role_master,id 017,floor_access  → slug floor_access
+Q07a role_master,row count,13
+Q07b floor_access holders,Ajay Vansiya (#29),via user_roles
+Q07b floor_access holders,Dhanraj Shah (#30),via user_roles
+Q07b floor_access holders,Prakash (#32),via user_roles
+Q07b floor_access holders,Priya Chaudhari (#31),via user_roles
+Q07b floor_access holders,total distinct users,4
+Q07c floor view-only,count,0
+Q08 Chandresh roles,Chandresh Kolgha (#21) primary,tint_manager
+Q08 Chandresh roles,Chandresh Kolgha (#21) user_roles,tint_manager
+Q08 Chandresh roles,users matched by name,1
+Q09 dispatched,orders.workflowStage = dispatched (all),7330
+Q09 dispatched,orders.workflowStage = dispatched AND NOT isRemoved,7330
+Q10a columns,app_tag_settings.roleSlug,text | nullable=YES | default=none
+Q10a columns,app_tag_settings.scope,text | nullable=NO | default='everyone'::text
+Q10a columns,app_tag_settings.userId,integer | nullable=YES | default=none
+Q10a columns,mo_orders.updatedAt,timestamp with time zone | nullable=NO | default=now()
+Q10a columns,orders.loadedAt,timestamp with time zone | nullable=YES | default=none
+Q10a columns,orders.loadedById,integer | nullable=YES | default=none
+Q10a columns,orders.pickVisibleAt,timestamp with time zone | nullable=YES | default=none
+Q10a columns,orders.pickVisibleById,integer | nullable=YES | default=none
+Q10a columns,orders.tripDropId,integer | nullable=YES | default=none
+Q10a columns,route_master.bayNumber,integer | nullable=YES | default=none
+Q10a columns,transporter_master.isRealTransporter,boolean | nullable=NO | default=false
+Q10a columns,users.notesFontSize,integer | nullable=NO | default=11
+Q10b tables,app_settings,exists (BASE TABLE)
+Q10b tables,trip_activity,exists (BASE TABLE)
+Q10b tables,trip_drops,exists (BASE TABLE)
+Q10b tables,trips,exists (BASE TABLE)
+Q11 mo_orders triggers,trg_mo_orders_updated_at,BEFORE UPDATE → EXECUTE FUNCTION set_updated_at_mo_orders()
+Q11 mo_orders triggers,trigger rows (0 = none),1

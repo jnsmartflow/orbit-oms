@@ -678,7 +678,7 @@ a trip never closes (`dispatch` unreachable); `isReady` and the carry rule treat
     (`:524`) reads `body.trip` correctly.
 14. **Transporter dropdown may be empty** until `isRealTransporter` is marked (§10).
 15. **Floor rows for later-dated bills on today's trip** get no explanation on screen
-    (`docs/prompts/drafts/web-update-2026-09-09-floor-trip-module.md:210-214`). Not re-verified.
+    (`docs/prompts/archive/2026-09/web-update-2026-09-09-floor-trip-module.md:210-214`). Not re-verified.
 
 ### Questions for Smart Flow (need a DB read)
 

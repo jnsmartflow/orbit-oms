@@ -243,7 +243,7 @@ label, many walk-in SAP names) renaming every counter sale — **do not hardcode
 needs none of this: `header.ts` only fills a NULL `shipToCustomerName` and never patches bill-to.
 
 Evidence for the conversion, the name rule and the fixture comparison:
-`docs/prompts/drafts/code-update-2026-09-14-sap-paste-import.md` §2, §3, §5.
+`docs/prompts/archive/2026-09/code-update-2026-09-14-sap-paste-import.md` §2, §3, §5.
 
 ---
 
@@ -1198,7 +1198,7 @@ flows through, as the acceptance check.
 - **Backfill of historical null AND wrong `articleTag` is NOT done — a separate decision.** This change fixes new imports only. `patchLines` (`lib/import-upsert/lines.ts`) never touches `articleTag` on an existing line, so even a manual-SAP re-upload of an old OBD will not fix it. Two distinct populations: ~19,200 historical **null** lines, and the **138 wrongly-tagged** lines on the four 9-per-carton SKUs (§8.2), which are worse than null because they read as authoritative. Needs an owner decision on whether to rewrite live picking data. Tracked in `docs/ROADMAP.md` → Import Pipeline.
 - **Pack sizes still deliberately untagged**, pending depot confirmation of the container word: `0.4` (400 ML sprays, 57 lines), `5` (221), `3` (29), `2.5` (3). The catalog has `packCode`+`unit` for most of these but nothing in `sku_master_v2` distinguishes Drum from Bag — see the Check D finding in the 2026-08-09 discovery. Add them to §8.2's lists once the depot confirms.
 - **Old SAP layout shim** if SAP ever ships the old layout again (e.g. depot-level legacy). Not built today.
-- **Defect B — header totals are never recomputed on the patch path.** `patchHeader` / `applyHeaderPatch` (`lib/import-upsert/header.ts`) contain no `totalUnitQty`, `grossWeight` or `volume` handling at all, so `orders` + `import_raw_summary` keep the totals written at create while a manual-SAP re-upload adds, removes or re-sizes lines. The rebuild effect is already wired and dead: `effects.ts:72` fires `query-summary-rebuild` on a change to exactly those three fields, which `patchHeader` never emits. The gated recommendation is a narrowed fix — recompute `totalUnitQty` only, skip bills with zero active lines, drop `grossWeight` (the line weights cannot support it, §10.1) — and **not before** the nineteen short/zero-line bills are recorded, since a recompute would erase the header that is the only evidence of their missing stock (`docs/ROADMAP.md` → Import Pipeline → 🔴 P1). Full gate: `docs/prompts/drafts/code-discovery-2026-09-08-import-qty-integrity.md` §DEFECT B — GATE. Owner decision; not built.
+- **Defect B — header totals are never recomputed on the patch path.** `patchHeader` / `applyHeaderPatch` (`lib/import-upsert/header.ts`) contain no `totalUnitQty`, `grossWeight` or `volume` handling at all, so `orders` + `import_raw_summary` keep the totals written at create while a manual-SAP re-upload adds, removes or re-sizes lines. The rebuild effect is already wired and dead: `effects.ts:72` fires `query-summary-rebuild` on a change to exactly those three fields, which `patchHeader` never emits. The gated recommendation is a narrowed fix — recompute `totalUnitQty` only, skip bills with zero active lines, drop `grossWeight` (the line weights cannot support it, §10.1) — and **not before** the nineteen short/zero-line bills are recorded, since a recompute would erase the header that is the only evidence of their missing stock (`docs/ROADMAP.md` → Import Pipeline → 🔴 P1). Full gate: `docs/prompts/archive/2026-09/code-discovery-2026-09-08-import-qty-integrity.md` §DEFECT B — GATE. Owner decision; not built.
 - **Header-only bills are invisible as "awaiting lines".** A volume-zero auto-json bill is imported header-only and traced only in `import_shadow_log` (`header_only_allowed`, §8.3); nothing surfaces it to an operator. Tracked in `docs/ROADMAP.md` → Import Pipeline.
 - **Auto-Import patch path.** Today Auto-Import is create-only. If Auto-Import ever needs to patch existing OBDs (e.g. for late-update detection), the path needs to go through `upsertObd` like manual SAP does, with `LINE_AUTHORITY['auto-import'] = true` (a boolean map — §6). Big change — full re-audit needed.
 - ~~Auto-Import v2 — steps 4–10 not yet built~~ — **SHIPPED, see §10.1** (corrected 2026-08-04). Design doc now at `docs/prompts/archive/2026-06/web-update-2026-06-20-auto-import-v2-pure-json.md` (was in drafts/).
@@ -1267,7 +1267,7 @@ plus the router was swept for the stale phrasing first; all copies were in this 
   in passing (live since 2026-06-20).
 - §9: `?action=day-obds` added to the snippet and the action table; the snippet's other lag (role list,
   admin short-circuit, the two sap-paste actions) flagged under it, not rewritten.
-- NOT fixed here, recorded for consolidation in `docs/prompts/drafts/code-update-2026-09-14-sap-paste-import.md`:
+- NOT fixed here, recorded for consolidation in `docs/prompts/archive/2026-09/code-update-2026-09-14-sap-paste-import.md`:
   further false claims in §5 (`cells.ts` helper names, `COL` shape) and §6's file list (`upsertObd`
   signature, `UpsertOutcome` values, `loadExistingState`, `dispatchEffects` + effect-kind names,
   `recordAuditEntry` / `import_shadow_log`, `makeKey` omits `.trim()`).
