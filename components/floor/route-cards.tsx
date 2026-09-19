@@ -3,12 +3,13 @@
 // Floor Control — BY ROUTE AS CARDS (2026-09-19, design:
 // docs/mockups/floor-trips/route-cards.html).
 //
-// The pool's By route view on a tab that HAS CLUBS (Local today). Two rows of
-// cards, three to a row:
-//   row 1  one card per CLUB, in the club's fixed order — never re-sorted, and
-//          an empty club stays in its place, dimmed, reading "No bills";
-//   row 2  every other route of the tab that has bills today, one card each,
-//          by name, with "No route" last.
+// The pool's By route view on a tab that HAS CLUBS (Local today). Two kinds
+// of card:
+//   club    one per CLUB, in the club's fixed order — never re-sorted, and an
+//           empty club stays in its place, dimmed, reading "No bills";
+//   single  every other route of the tab that has bills, one COMPACT card
+//           each, by name, with "No route" last.
+// Where they sit depends on the screen width — see "The layout" below.
 // A tab with no clubs (All, Upcountry, IGT today) keeps the old route rows
 // (ByRoute in trip-desk.tsx) — this component is not rendered there.
 //
@@ -31,6 +32,7 @@
 // plus the one last clicked (commit 4b), so no tick is ever inside a closed
 // card. Several can be open; each panel sits under its own card's row.
 
+import { useEffect, useState } from "react";
 import {
   countByStatus,
   formatLitres,
@@ -303,8 +305,79 @@ interface LeafWiring {
   gateOn: boolean;
 }
 
+// ── The layout (2026-09-19, owner) ──────────────────────────────────────────
+//
+// THREE LAYOUTS BY SCREEN WIDTH, and nothing shrinks to make one fit:
+//
+//   wide    ≥ 1400px  four columns — three club columns, then a narrower
+//                     column (0.7 of a club's) that STACKS the single cards.
+//                     The depot desk runs at ~1920px: this is the normal view.
+//   mid  1100–1399px  three club columns, then the single cards in a short
+//                     row beneath them, side by side.
+//   narrow  < 1100px  two club columns, the single cards under the clubs.
+//
+// 🔴 WHY THE BREAKPOINTS ARE WHERE THEY ARE. Measured in Chrome with the app's
+// font (2026-09-19): "Kamrej · Upcountry · 3 stops · 1,174 kg" is 225px wide
+// at the card's sizes, and ordinary lines run to ~207px. With the 72px sidebar
+// and the 298px trip rail, four columns leave a club column only ~196px of text
+// at 1280px — so four columns start at 1400px, where it is ~228px.
+//
+// 🔴 A JS WIDTH, NOT CSS ALONE. A card's panel opens under the ROW its card is
+// in, and the rows differ per layout (the single cards sit beside club row 1,
+// or under all of them). CSS can move boxes between columns but not decide
+// which row a panel follows, so the layout is chosen here and ONE is drawn.
+//
+// ⚠ NOTHING COUNTS TO THREE BY HAND. Clubs fill `clubCols` per row in their
+// sortOrder and wrap; a row with fewer clubs leaves its cells EMPTY rather than
+// stretching them (every row uses the same fixed track list). A club with more
+// routes simply grows a line per route; `items-start` keeps a tall card from
+// stretching its neighbours. Any number of single cards join the stack or the
+// row, and a tall stack only makes its row taller — the club tracks never give
+// up width to it.
+
+export type CardLayout = "wide" | "mid" | "narrow";
+
+const WIDE_MIN = 1400;
+const MID_MIN = 1100;
+
+function layoutFor(width: number): CardLayout {
+  return width >= WIDE_MIN ? "wide" : width >= MID_MIN ? "mid" : "narrow";
+}
+
+/**
+ * The layout for the current window, following resizes. `matchMedia` change
+ * events, never a key listener (floor-page owns the floor's only one).
+ *
+ * Starts at "wide" — the desk's own width — until the first effect reads the
+ * real window; TripDesk only ever renders in the browser, so that first read
+ * lands before anyone can click.
+ */
+export function useCardLayout(): CardLayout {
+  const [layout, setLayout] = useState<CardLayout>("wide");
+  useEffect(() => {
+    const wide = window.matchMedia(`(min-width: ${WIDE_MIN}px)`);
+    const mid = window.matchMedia(`(min-width: ${MID_MIN}px)`);
+    const read = () => setLayout(layoutFor(window.innerWidth));
+    read();
+    wide.addEventListener("change", read);
+    mid.addEventListener("change", read);
+    return () => {
+      wide.removeEventListener("change", read);
+      mid.removeEventListener("change", read);
+    };
+  }, []);
+  return layout;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 export function RouteCards({
   model,
+  layout,
   openKeys,
   onToggleCard,
   nowMs,
@@ -313,6 +386,8 @@ export function RouteCards({
   leaf,
 }: {
   model: RouteCardModel;
+  /** Which of the three layouts to draw — TripDesk passes `useCardLayout()`. */
+  layout: CardLayout;
   /** The open cards' keys — any number (TripDesk `openCards`). */
   openKeys: readonly string[];
   onToggleCard: (key: string) => void;
@@ -329,32 +404,78 @@ export function RouteCards({
   const isOpen = (c: RouteCard) => openable(c) && openKeys.includes(c.key);
   const anyOpen = [...clubCards, ...singleCards].some(isOpen);
 
-  const renderRow = (cards: RouteCard[], gapCls: string) => (
-    <>
-      <div className={`grid grid-cols-3 items-start gap-3 ${gapCls}`}>
-        {cards.map((c) => (
-          <CardButton
-            key={c.key}
-            card={c}
-            isOpen={isOpen(c)}
-            dimmed={anyOpen && !isOpen(c)}
-            onToggle={() => onToggleCard(c.key)}
-          />
+  const card = (c: RouteCard) => (
+    <CardButton
+      key={c.key}
+      card={c}
+      isOpen={isOpen(c)}
+      dimmed={anyOpen && !isOpen(c)}
+      onToggle={() => onToggleCard(c.key)}
+    />
+  );
+  // THE PANELS OPEN UNDER THE ROW THEIR CARD IS IN, full width (design) — one
+  // per open card, in the cards' own order, so two open cards in one row stack
+  // in the order they stand.
+  const panels = (cards: RouteCard[]) =>
+    cards.filter(isOpen).map((c) => (
+      <OpenPanel key={`panel:${c.key}`} card={c} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
+    ));
+
+  const clubCols = layout === "narrow" ? 2 : 3;
+  // Always at least one row, so the singles column has a row to sit in even if
+  // a tab's clubs were all removed while the cards were on screen.
+  const clubRows = clubCards.length > 0 ? chunk(clubCards, clubCols) : [[]];
+
+  if (layout === "wide") {
+    // ONE TRACK LIST FOR EVERY ROW, so the columns line up down the page. The
+    // stack is pinned to track 4 of row 1; later rows leave track 4 empty.
+    const tracks = "repeat(3, minmax(0, 1fr)) minmax(0, 0.7fr)";
+    return (
+      <div className="px-3.5 py-3.5">
+        {clubRows.map((row, i) => (
+          <div key={i} className={i === 0 ? "" : "mt-3"}>
+            <div className="grid items-start gap-3" style={{ gridTemplateColumns: tracks }}>
+              {row.map(card)}
+              {i === 0 && singleCards.length > 0 && (
+                <div className="flex flex-col gap-2" style={{ gridColumn: 4, gridRow: 1 }}>
+                  {singleCards.map(card)}
+                </div>
+              )}
+            </div>
+            {/* Row 1's panels include the stack's: it sits beside that row. */}
+            {panels(i === 0 ? [...row, ...singleCards] : row)}
+          </div>
         ))}
       </div>
-      {/* THE PANELS OPEN UNDER THE ROW THEIR CARD IS IN, full width (design) —
-          one per open card in this row, in the cards' own left-to-right order,
-          so two open clubs stack in the order their cards stand. */}
-      {cards.filter(isOpen).map((c) => (
-        <OpenPanel key={c.key} card={c} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
-      ))}
-    </>
-  );
+    );
+  }
 
+  // mid / narrow — club rows, then the single cards beneath them.
+  const clubTracks = `repeat(${clubCols}, minmax(0, 1fr))`;
+  // Mid: a short row of compact cards, as many as fit, never stretched to fill
+  // it (auto-fill keeps the empty tracks). Narrow: the same two columns as the
+  // clubs, so the singles stack under them.
+  const singleTracks = layout === "mid" ? "repeat(auto-fill, minmax(190px, 1fr))" : clubTracks;
   return (
     <div className="px-3.5 py-3.5">
-      {clubCards.length > 0 && renderRow(clubCards, "")}
-      {singleCards.length > 0 && renderRow(singleCards, clubCards.length > 0 ? "mt-3" : "")}
+      {clubRows.map((row, i) =>
+        row.length === 0 ? null : (
+          <div key={i} className={i === 0 ? "" : "mt-3"}>
+            <div className="grid items-start gap-3" style={{ gridTemplateColumns: clubTracks }}>
+              {row.map(card)}
+            </div>
+            {panels(row)}
+          </div>
+        ),
+      )}
+      {singleCards.length > 0 && (
+        <div className={clubCards.length > 0 ? "mt-3" : ""}>
+          <div className="grid items-start gap-3" style={{ gridTemplateColumns: singleTracks }}>
+            {singleCards.map(card)}
+          </div>
+          {panels(singleCards)}
+        </div>
+      )}
     </div>
   );
 }
@@ -369,12 +490,17 @@ export function RouteCards({
 // ⚠ A real <button>, so Tab and Enter/Space work with no key listener of ours:
 // the floor has ONE window-level key listener and it is floor-page's (FLOOR
 // §4.6). Its content is spans only — a <p> or <div> is not valid in a button.
+//
+// ⚠ CLUB TEXT NEVER WRAPS (owner). Every line is `whitespace-nowrap`; if a
+// line ever outgrows its card (a five-figure Kamrej near 1400px), the ROUTE
+// NAME gives way with an ellipsis and the numbers stay whole — the layout
+// breakpoints above are what keep that from happening in practice.
 
-const CARD = "block w-full rounded-[11px] border bg-white text-left transition-opacity";
+const CARD = "block w-full min-w-0 rounded-[11px] border bg-white text-left transition-opacity";
 
 function KgFigure({ rows }: { rows: FloorBoardRow[] }) {
   return (
-    <span className="block text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] tabular-nums text-[#1a1a22]">
+    <span className="block whitespace-nowrap text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] tabular-nums text-[#1a1a22]">
       {kgText(rows)}
       <small className="ml-[3px] text-[13px] font-semibold tracking-normal text-[#96969f]">kg</small>
     </span>
@@ -413,33 +539,35 @@ function CardButton({
       disabled={!canOpen}
       aria-expanded={canOpen ? isOpen : undefined}
     >
-      {empty ? (
+      {card.kind === "single" ? (
+        <CompactSingle card={card} />
+      ) : empty ? (
         // Nothing due: an empty club keeps its place, dimmed, and says so
-        // (owner) — and so does a card whose only bills are upcoming.
+        // (owner) — and so does a club whose only bills are upcoming.
         <span className="block px-3.5 pb-3 pt-3.5">
-          <span className="mb-1 block text-[13px] font-semibold text-[#61616d]">{card.name}</span>
+          <span className="mb-1 block truncate text-[13px] font-semibold text-[#61616d]">{card.name}</span>
           <span className="block text-[12.5px] text-[#96969f]">No bills</span>
         </span>
-      ) : card.kind === "club" ? (
+      ) : (
         <>
           <span className="block px-3.5 pb-3 pt-3.5">
-            <span className="mb-1 block text-[13px] font-semibold text-[#61616d]">{card.name}</span>
+            <span className="mb-1 block truncate text-[13px] font-semibold text-[#61616d]">{card.name}</span>
             <KgFigure rows={card.rows} />
-            <span className="mt-[5px] block text-[12.5px] tabular-nums text-[#96969f]">
+            <span className="mt-[5px] block whitespace-nowrap text-[12.5px] tabular-nums text-[#96969f]">
               {plural(stopCount(card.rows), "stop", "stops")} &middot; {formatLitres(sumLitres(card.rows))} L
             </span>
           </span>
           {card.lines.map((l) => (
             <span key={l.key} className="block border-t border-[#f1f1f6] px-3.5 pb-3 pt-[11px]">
-              <span className={`flex items-baseline gap-2 ${l.rows.length > 0 ? "mb-2" : ""}`}>
-                <span className="text-[14.5px] font-semibold text-[#1a1a22]">{l.name}</span>
-                {l.reachLabel && <span className="text-[11px] text-[#96969f]">{l.reachLabel}</span>}
+              <span className={`flex items-baseline gap-2 whitespace-nowrap ${l.rows.length > 0 ? "mb-2" : ""}`}>
+                <span className="min-w-0 truncate text-[14.5px] font-semibold text-[#1a1a22]">{l.name}</span>
+                {l.reachLabel && <span className="shrink-0 text-[11px] text-[#96969f]">{l.reachLabel}</span>}
                 {l.rows.length > 0 ? (
                   <>
-                    <span className="text-[12px] tabular-nums text-[#96969f]">
+                    <span className="shrink-0 text-[12px] tabular-nums text-[#96969f]">
                       {plural(stopCount(l.rows), "stop", "stops")}
                     </span>
-                    <span className="ml-auto text-[14px] font-bold tabular-nums text-[#1a1a22]">
+                    <span className="ml-auto shrink-0 text-[14px] font-bold tabular-nums text-[#1a1a22]">
                       {kgText(l.rows)}
                       <small className="ml-0.5 text-[11px] font-medium text-[#96969f]">kg</small>
                     </span>
@@ -447,28 +575,54 @@ function CardButton({
                 ) : (
                   // A club route with nothing today: the line stays so the
                   // card's shape never changes, and says so — no bar to draw.
-                  <span className="text-[12px] text-[#96969f]">No bills</span>
+                  <span className="shrink-0 text-[12px] text-[#96969f]">No bills</span>
                 )}
               </span>
               <StatusBar rows={l.rows} />
             </span>
           ))}
         </>
-      ) : (
-        <>
-          <span className="block px-3.5 pb-3 pt-3.5">
-            <span className="mb-1 block text-[13px] font-semibold text-[#61616d]">{card.name}</span>
-            <KgFigure rows={card.rows} />
-            <span className="mt-[5px] block text-[12.5px] tabular-nums text-[#96969f]">
-              {plural(stopCount(card.rows), "stop", "stops")} &middot; {plural(card.rows.length, "bill", "bills")}
-            </span>
-          </span>
-          <span className="block px-3.5 pb-3.5">
-            <StatusBar rows={card.rows} />
-          </span>
-        </>
       )}
     </button>
+  );
+}
+
+/**
+ * A single-route card, COMPACT (owner, 2026-09-19) — it lives in the narrow
+ * fourth column or a short row, and is the smallest thing on the board:
+ *   line 1  route name left, kilos right       "Parvat            4 kg"
+ *   line 2  "1 stop · 1 bill", small and grey  (or "No bills" when nothing
+ *           is due today — its upcoming bills still open with it)
+ *   then the bar. No big number: that stays on the club cards.
+ */
+function CompactSingle({ card }: { card: RouteCard }) {
+  const due = card.rows;
+  return (
+    <span className="block px-3 pb-2.5 pt-2.5">
+      <span className="flex items-baseline gap-2 whitespace-nowrap">
+        <span className="min-w-0 truncate text-[13.5px] font-semibold text-[#1a1a22]">{card.name}</span>
+        {due.length > 0 && (
+          <span className="ml-auto shrink-0 text-[13.5px] font-bold tabular-nums text-[#1a1a22]">
+            {kgText(due)}
+            <small className="ml-0.5 text-[11px] font-medium text-[#96969f]">kg</small>
+          </span>
+        )}
+      </span>
+      <span className="mt-0.5 block whitespace-nowrap text-[11.5px] tabular-nums text-[#96969f]">
+        {due.length > 0 ? (
+          <>
+            {plural(stopCount(due), "stop", "stops")} &middot; {plural(due.length, "bill", "bills")}
+          </>
+        ) : (
+          "No bills"
+        )}
+      </span>
+      {due.length > 0 && (
+        <span className="mt-2 block">
+          <StatusBar rows={due} />
+        </span>
+      )}
+    </span>
   );
 }
 
