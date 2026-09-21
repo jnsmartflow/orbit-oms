@@ -1,0 +1,239 @@
+// lib/trips/load-plan-v2.test.ts — Node's built-in runner through tsx:
+//   npx tsx --test lib/trips/load-plan-v2.test.ts
+//
+// 🔴 EVERY RATE HERE IS MADE UP. Real rates are secret and never go in a
+// committed file (CLAUDE_CORE.md §7.19). The fixture rates are odd numbers
+// (1437, 2213, …) so no kilo figure in a test can collide with one, which is
+// what lets the last test prove no rupee value reaches the output.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  planLoadsV2,
+  parseLoadPlanV2Config,
+  type AreaInfo,
+  type AreaRate,
+  type LoadPlanV2Config,
+  type LoadPlanV2Context,
+  type V2Bill,
+} from "./load-plan-v2";
+
+// Routes: South = Navsari 11, Vapi 12, Chikhli 21 · North = Bharuch 17,
+// Kamrej 19 · Surat = Adajan 9 · Direct = IGT 18.
+const ROUTES: Record<number, string> = { 11: "Navsari", 12: "Vapi", 21: "Chikhli", 17: "Bharuch", 19: "Kamrej", 9: "Adajan", 18: "IGT / CROSS" };
+
+const RAW_CONFIG = {
+  smallMaxKg: 2000, bigMaxKg: 3000, mainRouteIds: [11, 12, 17], partners: [], // v1 keys, ignored by v2
+  routeSides: { "11": "South", "12": "South", "21": "South", "17": "North", "19": "North", "9": "Surat", "18": "Direct" },
+  vehicles: {
+    ace: { maxKg: 2000, overKg: 50, idealStops: 6, maxStops: 8, dailyCount: 2, nearOnly: false, priority: 1 },
+    big: { maxKg: 3000, overKg: 50, idealStops: 5, maxStops: 6, dailyCount: null, nearOnly: false, priority: 2 },
+    gc: { maxKg: 1500, overKg: 50, idealStops: 4, maxStops: 4, dailyCount: 3, nearOnly: true, priority: 3 },
+  },
+  maxPlacesPerTruck: 5, pairMinTimes: 2, bulkKg: 3000, truckPenaltyRs: 613, holdSmallUnlessOverdue: true,
+  newArea: { rate: "route_typical", gcAllowed: false, pairs: "same_route" },
+};
+
+// Areas (id → name, route) and FAKE rates [gc, ace, big, gcExtra, aceExtra, bigExtra, gcAllowed].
+const AREA: Record<number, [string, number]> = {
+  101: ["Navsari Town", 11], 102: ["Bilimora", 21], 103: ["Vapi Town", 12], 104: ["Valsad", 12],
+  105: ["Bharuch Town", 17], 106: ["Kamrej Town", 19], 107: ["Adajan", 9], 108: ["IGT Area", 18],
+  109: ["New Navsari Area", 11], 110: ["Navsari East", 11],
+};
+const R: Record<number, [number, number, number, number, number, number, boolean]> = {
+  101: [811, 1037, 1437, 83, 107, 151, true],
+  102: [913, 1129, 1531, 87, 109, 157, true],
+  103: [1319, 1621, 2213, 91, 113, 163, false],
+  104: [1223, 1523, 2111, 89, 111, 159, false],
+  105: [1117, 1427, 1913, 93, 117, 167, false],
+  106: [607, 719, 1019, 71, 97, 131, true],
+  107: [409, 523, 811, 61, 79, 101, true],
+  108: [1709, 2017, 2719, 97, 127, 173, false],
+  110: [823, 1049, 1447, 83, 107, 151, true],
+  // 109 has NO rate row — a new area.
+};
+// Pairs seen together (a < b) → times.
+const PAIRS: Array<[number, number, number]> = [
+  [101, 102, 5], [101, 103, 3], [101, 104, 2], [103, 104, 6], [102, 103, 1], [101, 110, 4], [105, 106, 4],
+];
+
+function ctx(overrides: Partial<Record<keyof typeof RAW_CONFIG, unknown>> = {}): LoadPlanV2Context {
+  const config = parseLoadPlanV2Config({ ...RAW_CONFIG, ...overrides }) as LoadPlanV2Config;
+  assert.ok(config, "fixture config must parse");
+  const rates = new Map<number, AreaRate>();
+  Object.keys(R).forEach((k) => {
+    const [gc, ace, big, gcx, acex, bigx, ok] = R[Number(k)];
+    rates.set(Number(k), { gcRate: gc, aceRate: ace, bigRate: big, gcExtra: gcx, aceExtra: acex, bigExtra: bigx, gcAllowed: ok });
+  });
+  const pairs = new Map<string, number>();
+  PAIRS.forEach(([a, b, n]) => pairs.set(`${a}-${b}`, n));
+  const areas = new Map<number, AreaInfo>();
+  Object.keys(AREA).forEach((k) => areas.set(Number(k), { name: AREA[Number(k)][0], routeId: AREA[Number(k)][1] }));
+  return { config, rates, pairs, areas, routeNames: ROUTES };
+}
+
+let nextId = 1;
+/** A stop: `bills` bills of `kg` total in one area. */
+function stop(areaId: number, kg: number, opts: { bills?: number; overdue?: boolean; key?: string; ageDays?: number } = {}): V2Bill[] {
+  const n = opts.bills ?? 1;
+  const key = opts.key ?? `c:${areaId}-${nextId}`;
+  return Array.from({ length: n }, () => ({
+    orderId: nextId++, weightKg: kg / n, stopKey: key, areaId, routeId: AREA[areaId][1],
+    overdue: opts.overdue ?? false, ageDays: opts.ageDays ?? 0,
+  }));
+}
+const types = (p: ReturnType<typeof planLoadsV2>) => p.cards.map((c) => c.type);
+
+test("config: the v2 keys parse; a missing one → null", () => {
+  assert.ok(parseLoadPlanV2Config(RAW_CONFIG));
+  const { vehicles: _v, ...noVehicles } = RAW_CONFIG;
+  assert.equal(parseLoadPlanV2Config(noVehicles), null);
+  assert.equal(parseLoadPlanV2Config({ ...RAW_CONFIG, newArea: { rate: "x" } }), null);
+  assert.equal(parseLoadPlanV2Config(null), null);
+});
+
+test("bulk: a stop over 3,000 kg is its own Bulk card", () => {
+  const p = planLoadsV2([...stop(101, 3200, { bills: 2 }), ...stop(101, 900)], ctx());
+  const bulk = p.cards.find((c) => c.type === "bulk")!;
+  assert.equal(Math.round(bulk.kg), 3200);
+  assert.equal(bulk.orderIds.length, 2);
+  assert.match(bulk.reason, /over 3,000 kg — hire as needed/);
+  assert.equal(p.summary.bulk, 1);
+  assert.ok(!p.cards.some((c) => c.type !== "bulk" && c.orderIds.some((id) => bulk.orderIds.includes(id))));
+});
+
+test("direct: a Direct route gets one card of its own, never mixed", () => {
+  const p = planLoadsV2([...stop(108, 400), ...stop(108, 300), ...stop(101, 700), ...stop(102, 600)], ctx());
+  const direct = p.cards.filter((c) => c.type === "direct");
+  assert.equal(direct.length, 1);
+  assert.deepEqual(direct[0].areaNames, ["IGT Area"]);
+  assert.equal(direct[0].stopCount, 2);
+  assert.ok(p.cards.filter((c) => c.type !== "direct").every((c) => !c.areaNames.includes("IGT Area")));
+});
+
+test("a stop is never split across trucks", () => {
+  // One stop of 4 bills (2,400 kg) plus a 1,000 kg stop: together 3,400 — too
+  // heavy for one truck, so they must go separately, the 4 bills together.
+  const big = stop(101, 2400, { bills: 4 });
+  const p = planLoadsV2([...big, ...stop(110, 1000)], ctx());
+  const holder = p.cards.filter((c) => c.orderIds.some((id) => big.some((b) => b.orderId === id)));
+  assert.equal(holder.length, 1);
+  assert.equal(holder[0].orderIds.filter((id) => big.some((b) => b.orderId === id)).length, 4);
+});
+
+test("the pair rule blocks a join (Bilimora + Vapi together only once)", () => {
+  // 102–103 have timesTogether 1 < pairMinTimes 2 → they may not share a truck.
+  const p = planLoadsV2([...stop(102, 700), ...stop(103, 700)], ctx());
+  assert.equal(p.summary.trucks, 2);
+  assert.ok(p.cards.every((c) => c.areaNames.length === 1));
+  // With the rule relaxed (pairMinTimes 1) they join.
+  const q = planLoadsV2([...stop(102, 700), ...stop(103, 700)], ctx({ pairMinTimes: 1 }));
+  assert.equal(q.summary.trucks, 1);
+});
+
+test("a new area (no rate row, no pairs) may pair within its own route", () => {
+  const p = planLoadsV2([...stop(109, 500), ...stop(101, 700)], ctx());
+  assert.equal(p.summary.trucks, 1);
+  assert.equal(p.cards[0].flags.newArea, true);
+});
+
+test("GC is blocked on a far area (gcAllowed false) and used on a near one", () => {
+  // No Aces today. Vapi (far) small load → Big; Navsari (near) small load → GC.
+  // Different sides keep them apart: Vapi South, Kamrej North.
+  const p = planLoadsV2([...stop(103, 500), ...stop(106, 500)], ctx(), { ace: 0 });
+  const vapi = p.cards.find((c) => c.areaNames.includes("Vapi Town"))!;
+  const kamrej = p.cards.find((c) => c.areaNames.includes("Kamrej Town"))!;
+  assert.equal(vapi.type, "big");
+  assert.equal(kamrej.type, "gc");
+});
+
+test("an Ace-only load: 7 stops go on the Ace", () => {
+  const bills = Array.from({ length: 7 }, (_, i) => stop(101, 150, { key: `c:ace-${i}` })).flat();
+  const p = planLoadsV2(bills, ctx(), { ace: 1 });
+  assert.equal(p.summary.ace, 1);
+  const ace = p.cards.find((c) => c.type === "ace")!;
+  assert.equal(ace.stopCount, 7);
+  assert.equal(ace.flags.overIdealStops, true); // 7 > Ace ideal 6
+  assert.match(ace.reason, /only an Ace carries that many/);
+});
+
+test("no Ace left: the 7 stops are re-planned without an Ace, ≤ 6 stops each", () => {
+  const bills = Array.from({ length: 7 }, (_, i) => stop(101, 150, { key: `c:noace-${i}` })).flat();
+  const p = planLoadsV2(bills, ctx(), { ace: 0 });
+  assert.equal(p.summary.ace, 0);
+  const trucks = p.cards.filter((c) => c.type === "big" || c.type === "gc");
+  assert.ok(trucks.length >= 2);
+  assert.ok(trucks.every((c) => c.stopCount <= 6));
+  assert.equal(trucks.reduce((n, c) => n + c.stopCount, 0), 7);
+  assert.ok(trucks.some((c) => /Re-planned without an Ace/.test(c.reason)));
+});
+
+test("too few vehicles: the overdue load gets the truck, the rest wait", () => {
+  // Two loads on different sides (can never join), one Big and nothing else.
+  const onTime = stop(105, 1600, { key: "c:ontime" }); // North
+  const overdue = stop(103, 1600, { key: "c:overdue", overdue: true }); // South
+  const p = planLoadsV2([...onTime, ...overdue], ctx(), { ace: 0, gc: 0, big: 1 });
+  const truck = p.cards.find((c) => c.type === "big")!;
+  assert.deepEqual(truck.areaNames, ["Vapi Town"]);
+  const waiting = p.cards.find((c) => c.type === "waiting")!;
+  assert.deepEqual(waiting.areaNames, ["Bharuch Town"]);
+  // The Waiting card names the CHEAPEST vehicle that would carry what waits —
+  // 1,600 kg fits an Ace, which costs less than a Big here.
+  assert.match(waiting.reason, /needs 1 more Ace/);
+  assert.deepEqual(waiting.needs, { ace: 1 });
+  assert.equal(p.summary.waiting, 1);
+});
+
+test("hold: a light load alone on its side with nothing overdue — not a truck", () => {
+  const p = planLoadsV2([...stop(107, 150), ...stop(101, 900)], ctx());
+  const hold = p.cards.find((c) => c.type === "hold")!;
+  assert.deepEqual(hold.areaNames, ["Adajan"]);
+  assert.match(hold.reason, /hold for tomorrow/);
+  assert.equal(p.summary.trucks, 1);
+  // Overdue → it goes today.
+  const q = planLoadsV2([...stop(107, 150, { overdue: true }), ...stop(101, 900)], ctx());
+  assert.equal(q.summary.hold, 0);
+  assert.equal(q.summary.trucks, 2);
+});
+
+test("stop order: farthest first (highest Big rate), back toward Surat", () => {
+  // Navsari 101 (Big 1437) · Valsad 104 (2111) · Vapi 103 (2213): all pair ≥ 2.
+  const p = planLoadsV2([...stop(101, 400), ...stop(104, 400), ...stop(103, 400)], ctx());
+  assert.equal(p.summary.trucks, 1);
+  assert.deepEqual(p.cards[0].stops.map((s) => s.areaName), ["Vapi Town", "Valsad", "Navsari Town"]);
+});
+
+test("deterministic: the same pool in any order gives the same plan", () => {
+  const bills = [
+    ...stop(101, 700), ...stop(102, 500), ...stop(103, 900, { bills: 2 }), ...stop(104, 300),
+    ...stop(105, 1200), ...stop(106, 800), ...stop(107, 350), ...stop(108, 200), ...stop(110, 450),
+  ];
+  const a = planLoadsV2(bills, ctx());
+  const b = planLoadsV2(bills.slice().reverse(), ctx());
+  const c = planLoadsV2(bills.slice(3).concat(bills.slice(0, 3)), ctx());
+  assert.deepEqual(b, a);
+  assert.deepEqual(c, a);
+});
+
+test("no rupee value anywhere in the output", () => {
+  const bills = [
+    ...stop(101, 700), ...stop(102, 500), ...stop(103, 900), ...stop(104, 300), ...stop(105, 1200),
+    ...stop(106, 800), ...stop(107, 150), ...stop(108, 200), ...stop(109, 450), ...stop(110, 3100),
+  ];
+  const plan = planLoadsV2(bills, ctx(), { ace: 1, gc: 1 });
+  const json = JSON.stringify(plan);
+  // No field that sounds like money.
+  assert.doesNotMatch(json, /rate|cost|saving|penalty|rupee|₹|"rs"/i);
+  // No fixture rate, extra or penalty value appears as a number anywhere
+  // EXCEPT in the identity and weight fields — bill ids, area ids, stop keys,
+  // kilos and counts. Those are not money, and their small numbers can
+  // coincide with a made-up extra. Every other number is checked, including
+  // any digits inside a reason.
+  const secret = new Set<number>([613]);
+  Object.keys(R).forEach((k) => R[Number(k)].slice(0, 6).forEach((v) => secret.add(v as number)));
+  const SAFE = new Set(["orderIds", "areaId", "stopKey", "key", "kg", "stopCount", "totalKg", "ace", "big", "gc", "trucks", "bulk", "direct", "hold", "waiting"]);
+  const scanned = JSON.stringify(plan, (k, v) => (SAFE.has(k) ? undefined : v));
+  const numbers = (scanned.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+  const leaked = numbers.filter((n) => secret.has(n));
+  assert.deepEqual(leaked, [], `rate values in output: ${leaked.join(", ")}`);
+});
