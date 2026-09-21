@@ -858,7 +858,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
   function truckReason(l: Load): string {
     const parts: string[] = [];
     if (l.split) {
-      parts.push(`Part of a ${fmtKg(l.split.stopKg)} kg stop at ${l.split.area} — split by bill into full direct Bigs.`);
+      parts.push(`Part of a ${fmtKg(l.split.stopKg)} kg stop at ${l.split.area} — split by bill into full Big loads.`);
     }
     const core = l.stops.filter((s) => !s.rider);
     const riders = l.stops.filter((s) => s.rider);
