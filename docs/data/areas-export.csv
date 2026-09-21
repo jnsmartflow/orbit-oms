@@ -1,0 +1,391 @@
+areaId,areaName,deliveryTypeName,routeId,routeName,activeFlag
+5,TITHAL,Upcountry,12,Vapi,true
+6,Dehradun,Cross,18,IGT / CROSS,true
+7,Hazira Road,Upcountry,9,Adajan,true
+8,Bhubaneshwar,Cross,18,IGT / CROSS,true
+9,Tirunelvel,Cross,18,IGT / CROSS,true
+10,Khambhat,Cross,18,IGT / CROSS,true
+11,Porbandar,Cross,18,IGT / CROSS,true
+12,Morbi,Cross,18,IGT / CROSS,true
+13,Dabhel,Upcountry,11,Navsari,true
+14,A.K.Road,Local,8,Varachha,true
+15,VAV,Upcountry,19,Kamrej,true
+16,Adajan,Local,9,Adajan,true
+17,Ahmedabad,Cross,18,IGT / CROSS,true
+18,ATGAM,Upcountry,12,Vapi,true
+19,Ahwa,Upcountry,13,Vansda,true
+20,Althan,Local,6,Ghod Dod,true
+21,BHATHA,Upcountry,9,Adajan,true
+22,Sisodara - Navsari,Upcountry,11,Navsari,true
+23,Amalsad,Upcountry,21,Chikhli,true
+24,Amboli,Upcountry,17,Bharuch,true
+25,Amod,Upcountry,17,Bharuch,true
+26,Amravati,Cross,18,IGT / CROSS,true
+27,Amritsir,Cross,18,IGT / CROSS,true
+28,Amroli,Local,8,Varachha,true
+29,Sanvalla,Upcountry,13,Vansda,true
+30,Anaval,Upcountry,13,Vansda,true
+31,Ashtagam,Upcountry,21,Chikhli,true
+32,Ankleshwar,Upcountry,17,Bharuch,true
+33,Areth,Upcountry,14,Bardoli,true
+34,CHANDIGARH,Cross,18,IGT / CROSS,true
+35,KANDOLPADA,Upcountry,13,Vansda,true
+36,Atul,Upcountry,12,Vapi,true
+37,Aurangabad,Cross,18,IGT / CROSS,true
+38,Bajipura,Upcountry,14,Bardoli,true
+39,Balaghat,Cross,18,IGT / CROSS,true
+40,Bamroli,Local,6,Ghod Dod,true
+41,Bardoli,Upcountry,14,Bardoli,true
+42,VALIA,Upcountry,17,Bharuch,true
+43,Bestan,Local,7,Udhana,true
+44,Bhagal,Local,9,Adajan,true
+45,Bharuch,Upcountry,17,Bharuch,true
+46,Bhatar,Local,6,Ghod Dod,true
+47,Baghumra,Upcountry,14,Bardoli,true
+48,Bhavnagar,Cross,18,IGT / CROSS,true
+49,Bhestan,Local,7,Udhana,true
+50,Bhilad,Upcountry,12,Vapi,true
+51,Banglore,IGT,18,IGT / CROSS,true
+52,Bhimrad,Local,6,Ghod Dod,true
+53,Bengaluru,IGT,18,IGT / CROSS,true
+54,Anjar,Cross,18,IGT / CROSS,true
+55,Bhopal,Cross,18,IGT / CROSS,true
+56,Chennai,IGT,18,IGT / CROSS,true
+57,Bilaspur,Cross,18,IGT / CROSS,true
+58,Coimbtor,IGT,18,IGT / CROSS,true
+59,Bilimora,Upcountry,21,Chikhli,true
+60,Coimbtor RDC,IGT,18,IGT / CROSS,true
+61,Bombay Mkt,Local,8,Varachha,true
+62,Cuttack,IGT,18,IGT / CROSS,true
+63,Buhari,Upcountry,14,Bardoli,true
+64,Delhi,Cross,18,IGT / CROSS,true
+65,Chalthan,Upcountry,11,Navsari,true
+66,Ernakulam,IGT,18,IGT / CROSS,true
+67,Chhiri,Upcountry,12,Vapi,true
+68,Gaziyabad,IGT,18,IGT / CROSS,true
+69,KARANJ,Upcountry,17,Bharuch,true
+70,Chikhli,Upcountry,21,Chikhli,true
+71,Gurugram,IGT,18,IGT / CROSS,true
+72,Chowk,Local,9,Adajan,true
+73,Guwahati,Cross,18,IGT / CROSS,true
+74,City Light,Local,6,Ghod Dod,true
+75,Hapur-Uttar Pradesh,IGT,18,IGT / CROSS,true
+76,RANCHI,IGT,18,IGT / CROSS,true
+77,Dabholi,Local,8,Varachha,true
+78,Howrah,IGT,18,IGT / CROSS,true
+79,Dadra Nagar Haveli,Upcountry,12,Vapi,true
+80,Hyderabad,IGT,18,IGT / CROSS,true
+81,Daman,Upcountry,12,Vapi,true
+82,Jaipur,IGT,18,IGT / CROSS,true
+83,Delad,Upcountry,19,Kamrej,true
+84,Kalamboli,IGT,18,IGT / CROSS,true
+85,Dharampur,Upcountry,12,Vapi,true
+86,Kolkata,IGT,18,IGT / CROSS,true
+87,Dindoli,Local,7,Udhana,true
+88,Koparkhairane,IGT,18,IGT / CROSS,true
+89,Haladva,Upcountry,13,Vansda,true
+90,Dindoligam,Local,7,Udhana,true
+91,Limbayat,Local,7,Udhana,true
+92,Dumas,Local,6,Ghod Dod,true
+93,Lucknow,IGT,18,IGT / CROSS,true
+94,Dumbhal,Local,5,Parvat,true
+95,Madurai,IGT,18,IGT / CROSS,true
+96,SUNEVAKLLA,Upcountry,17,Bharuch,true
+97,Eru,Upcountry,11,Navsari,true
+98,Moragam,Upcountry,9,Adajan,true
+99,Dastan,Upcountry,14,Bardoli,true
+100,Gadhpur Road,Local,8,Varachha,true
+101,Navi Mumbai,IGT,18,IGT / CROSS,true
+102,Banaskantha,Cross,18,IGT / CROSS,true
+103,Gandevi,Upcountry,21,Chikhli,true
+104,Panta DC,IGT,18,IGT / CROSS,true
+105,Gandhidham,Cross,18,IGT / CROSS,true
+106,Punjab,IGT,18,IGT / CROSS,true
+107,Ghadat,Upcountry,21,Chikhli,true
+108,Ghod-Dod Road,Local,6,Ghod Dod,true
+109,Thane,IGT,18,IGT / CROSS,true
+110,Godadara,Local,7,Udhana,true
+111,Vijaywada,IGT,18,IGT / CROSS,true
+112,Godhra,Upcountry,18,IGT / CROSS,true
+113,Umbhel,Upcountry,14,Bardoli,true
+114,PATHANAMTHITTA-KERALA,Cross,18,IGT / CROSS,true
+115,Gopipura,Local,9,Adajan,true
+116,THIRUVANANTHAPURAM-KERALA,Cross,18,IGT / CROSS,true
+117,Greater Mumbai,Cross,18,IGT / CROSS,true
+118,OLLUR-KERALA,Cross,18,IGT / CROSS,true
+119,Gwalior,Cross,18,IGT / CROSS,true
+120,CALICUT-KERALA,Cross,18,IGT / CROSS,true
+121,Hansot,Upcountry,17,Bharuch,true
+122,MALAPPURAM-KERALA,Cross,18,IGT / CROSS,true
+123,Haryana,Cross,18,IGT / CROSS,true
+124,THRISSUR-KERALA,Cross,18,IGT / CROSS,true
+125,Hinglot,Upcountry,17,Bharuch,true
+126,Ugat,Upcountry,9,Adajan,true
+127,KERALA,Cross,18,IGT / CROSS,true
+128,Ichhapor,Upcountry,9,Adajan,true
+129,KALYAN-Maharashtra,Cross,18,IGT / CROSS,true
+130,Indore,IGT,18,IGT / CROSS,true
+131,Jabalpur,Cross,18,IGT / CROSS,true
+132,Jahagirabad,Local,9,Adajan,true
+133,Vallabhipur,Upcountry,22,Transport,true
+134,Jahangirpura,Local,9,Adajan,true
+135,Jalandhar,Cross,18,IGT / CROSS,true
+136,KOSMADA,Local,8,Varachha,true
+137,Jamalpore,Upcountry,11,Navsari,true
+138,KOSMADA,Local,,,true
+139,Valak Patia,Upcountry,19,Kamrej,true
+140,Jambusar,Upcountry,17,Bharuch,true
+141,Vaload,Upcountry,14,Bardoli,true
+142,Jamnagar,Cross,18,IGT / CROSS,true
+143,Khajod,Upcountry,6,Ghod Dod,true
+144,BALASINOR,Cross,18,IGT / CROSS,true
+145,Jodhpur,Cross,18,IGT / CROSS,true
+146,Poicha,Upcountry,17,Bharuch,true
+147,BOTAD,Cross,18,IGT / CROSS,true
+148,Jolva,Upcountry,14,Bardoli,true
+149,Chinchwad,Cross,18,IGT / CROSS,true
+150,Kholvad,Upcountry,19,Kamrej,true
+151,Junagadh,Cross,18,IGT / CROSS,true
+152,Rajula,Cross,18,IGT / CROSS,true
+153,Kachchh,Cross,18,IGT / CROSS,true
+154,Bhiwandi,Cross,18,IGT / CROSS,true
+155,Kadod,Upcountry,14,Bardoli,true
+156,himatnagar,Cross,18,IGT / CROSS,true
+157,AMBHETA,Upcountry,24,Olpad,true
+158,Kadodara,Upcountry,11,Navsari,true
+159,Pipodra,Upcountry,17,Bharuch,true
+160,Kamrej,Upcountry,19,Kamrej,true
+161,Hazira,Upcountry,9,Adajan,true
+162,Kaprada,Upcountry,12,Vapi,true
+163,Majura Gate,Local,5,Parvat,true
+164,Rajkot,IGT,18,IGT / CROSS,true
+165,Karcheliya,Upcountry,13,Vansda,true
+166,Sonari,Upcountry,7,Udhana,true
+167,Morbi,Cross,18,IGT / CROSS,true
+168,Katargam,Local,8,Varachha,true
+169,Baleshwar,Upcountry,11,Navsari,true
+170,Khambhda,Upcountry,13,Vansda,true
+171,Udwada,Upcountry,12,Vapi,true
+172,Kharvasa,Upcountry,7,Udhana,true
+173,Magdalla,Local,6,Ghod Dod,true
+174,Khergam,Upcountry,12,Vapi,true
+175,Gandhinagar,Cross,18,IGT / CROSS,true
+176,Satna,Cross,18,IGT / CROSS,true
+177,Killapardi,Upcountry,12,Vapi,true
+178,KHANPUR-VALSAD,Upcountry,12,Vapi,true
+179,Panchmahal,Cross,18,IGT / CROSS,true
+180,Kim,Upcountry,17,Bharuch,true
+181,Kolhapur,Cross,18,IGT / CROSS,true
+182,Kosad,Upcountry,8,Varachha,true
+183,Santroad,Cross,18,IGT / CROSS,true
+184,Kosamba,Upcountry,17,Bharuch,true
+185,Kotsafil Road,Local,9,Adajan,true
+186,Kunta,Upcountry,12,Vapi,true
+187,Anklas,Cross,12,Vapi,true
+188,L.H Road,Local,9,Adajan,true
+189,Laskana,Upcountry,19,Kamrej,true
+190,Limazar,Upcountry,13,Vansda,true
+191,Ludhiyana,Cross,18,IGT / CROSS,true
+192,Madhi,Upcountry,14,Bardoli,true
+193,Kapodra,Local,8,Varachha,true
+194,Madina Masjid,Local,7,Udhana,true
+195,Magob,Local,5,Parvat,true
+196,Gundlav,Upcountry,12,Vapi,true
+197,Mehsana,Cross,18,IGT / CROSS,true
+198,Kathodra Road,Local,8,Varachha,true
+199,Bedkipada,Upcountry,15,Vyara,true
+200,Mahuwa,Upcountry,14,Bardoli,true
+201,Ubhrat,Upcountry,11,Navsari,true
+202,Mandvi,Upcountry,14,Bardoli,true
+203,Khadsad,Upcountry,8,Varachha,true
+204,Mangrol,Upcountry,17,Bharuch,true
+205,VANESA,Upcountry,14,Bardoli,true
+206,Maroli,Upcountry,11,Navsari,true
+207,Buhari,Upcountry,14,Bardoli,true
+208,Tukwada,Upcountry,12,Vapi,true
+209,Khalal,Upcountry,22,Transport,true
+210,Mota Pondha,Upcountry,12,Vapi,true
+211,Mota Varachha,Local,8,Varachha,true
+212,Moti Valzar,Upcountry,13,Vansda,true
+213,Mumbai,Cross,18,IGT / CROSS,true
+214,PATNA-BIHAR,Cross,18,IGT / CROSS,true
+215,Wadala,Cross,18,IGT / CROSS,true
+216,Nana Pondha,Upcountry,12,Vapi,true
+217,Nana Varachha,Local,8,Varachha,true
+218,Mugali Sara,Local,9,Adajan,true
+219,Nanded,Cross,18,IGT / CROSS,true
+220,Dungri,Upcountry,12,Vapi,true
+221,Nani Daman,Upcountry,12,Vapi,true
+222,Nanpura,Local,9,Adajan,true
+223,Dahej,Upcountry,17,Bharuch,true
+224,Nashik,Cross,18,IGT / CROSS,true
+225,Navsari,Upcountry,11,Navsari,true
+226,Morabhagal,Local,9,Adajan,true
+227,Navsari Bazar,Local,9,Adajan,true
+228,Masma,Upcountry,9,Adajan,true
+229,Netrang,Upcountry,19,Kamrej,true
+230,New Civil Road,Local,9,Adajan,true
+231,New Varachha Road,Local,8,Varachha,true
+232,Alang,Cross,18,IGT / CROSS,true
+233,Nizar,Upcountry,14,Bardoli,true
+234,Panera,Upcountry,12,Vapi,true
+235,North Goa,Cross,18,IGT / CROSS,true
+236,Olpad,Local,24,Olpad,true
+237,Pal,Local,9,Adajan,true
+238,Siliguri,Cross,18,IGT / CROSS,true
+239,Pal Road,Local,9,Adajan,true
+240,Malda,Cross,18,IGT / CROSS,true
+241,Calcutta,Cross,18,IGT / CROSS,true
+242,Palanpore,Local,9,Adajan,true
+243,Hugli,Cross,18,IGT / CROSS,true
+244,Palanpur,Local,9,Adajan,true
+245,CHHAPRABHATHA,Local,8,Varachha,true
+246,Mogra,Cross,18,IGT / CROSS,true
+247,Palej,Upcountry,17,Bharuch,true
+248,DEVADHGAM,Upcountry,7,Udhana,true
+249,Burdwan,Cross,18,IGT / CROSS,true
+250,Palsana,Upcountry,11,Navsari,true
+251,Bhatpor,Upcountry,9,Adajan,true
+252,Panas,Local,6,Ghod Dod,true
+253,KALGAM,Upcountry,12,Vapi,true
+254,Pandesara,Local,7,Udhana,true
+255,Isroli,Upcountry,14,Bardoli,true
+256,Panikhadak,Upcountry,12,Vapi,true
+257,Pardi,Upcountry,12,Vapi,true
+258,Okha,Cross,18,IGT / CROSS,true
+259,Parle Point,Local,6,Ghod Dod,true
+260,Parvat,Local,5,Parvat,true
+261,JIAV BUDIYA,Upcountry,11,Navsari,true
+262,Parvat Patia,Local,5,Parvat,true
+263,BHATIYA,Cross,18,IGT / CROSS,true
+264,Pasodara,Upcountry,19,Kamrej,true
+265,Abrama,Upcountry,21,Chikhli,true
+266,Latur,Cross,18,IGT / CROSS,true
+267,Patiala,Cross,18,IGT / CROSS,true
+268,Khara Abrama,Upcountry,21,Chikhli,true
+269,Sikar,Cross,18,IGT / CROSS,true
+270,Piplod,Local,6,Ghod Dod,true
+271,Puna Jakat Naka,Local,8,Varachha,true
+272,Puna Patiya,Local,5,Parvat,true
+273,Punagam,Local,8,Varachha,true
+274,Ropar-Punjab,IGT,18,IGT / CROSS,true
+275,Raipur,Cross,18,IGT / CROSS,true
+276,ENA,Upcountry,14,Bardoli,true
+277,RajPardi,Upcountry,17,Bharuch,true
+278,Rajpipla,Upcountry,17,Bharuch,true
+279,DAHISAR,IGT,18,IGT / CROSS,true
+280,Rampura,Local,8,Varachha,true
+281,Rander,Local,9,Adajan,true
+282,Rankuva,Upcountry,13,Vansda,true
+283,Ring Road,Local,9,Adajan,true
+284,Antroli,Upcountry,14,Bardoli,true
+285,Paligam,Upcountry,11,Navsari,true
+286,Rohtak,Cross,18,IGT / CROSS,true
+287,Pune,Cross,18,IGT / CROSS,true
+288,Sachin,Upcountry,11,Navsari,true
+289,Amritsar,Cross,18,IGT / CROSS,true
+290,Sagar,Cross,18,IGT / CROSS,true
+291,Sagrampura,Local,9,Adajan,true
+292,KERALA,Cross,18,IGT / CROSS,true
+293,Athwalines,Local,6,Ghod Dod,true
+294,Sangrur,Cross,18,IGT / CROSS,true
+295,Bhathena,Local,7,Udhana,true
+296,Sarigam,Upcountry,12,Vapi,true
+297,Laldarwaja,Local,8,Varachha,true
+298,Saroli,Local,5,Parvat,true
+299,BARBODHAN,Upcountry,9,Adajan,true
+300,Vedchha Paita,Upcountry,11,Navsari,true
+301,Sarthana,Local,8,Varachha,true
+302,BHESAN,Local,9,Adajan,true
+303,Sayan,Upcountry,8,Varachha,true
+304,Sevni,Upcountry,14,Bardoli,true
+305,Silvassa,Upcountry,12,Vapi,true
+306,Bhinar,Upcountry,13,Vansda,true
+307,Simada,Local,8,Varachha,true
+308,Singanpor,Local,8,Varachha,true
+309,Valangam,Upcountry,14,Bardoli,true
+310,Bharthana,Local,6,Ghod Dod,true
+311,Solapur,Cross,18,IGT / CROSS,true
+312,Variav,Local,8,Varachha,true
+313,Songadh,Upcountry,14,Bardoli,true
+314,Surat,Local,20,No Route,true
+315,HALOL,Local,22,Transport,true
+316,Surkhai,Upcountry,13,Vansda,true
+317,KHANPUR-SEVNI,Upcountry,14,Bardoli,true
+318,Tankal,Upcountry,13,Vansda,true
+319,Parab,Upcountry,19,Kamrej,true
+320,Tatithaiya,Upcountry,14,Bardoli,true
+321,Tower Road,Local,9,Adajan,true
+322,Udaipur,Cross,18,IGT / CROSS,true
+323,Sahara Darwaja,Local,9,Adajan,true
+324,Udawada,Upcountry,12,Vapi,true
+325,KARADVA,Local,7,Udhana,true
+326,Udhana,Local,7,Udhana,true
+327,DHOLA PIPLA,Upcountry,11,Navsari,true
+328,Umala,Upcountry,17,Bharuch,true
+329,Wagalkhod,Upcountry,17,Bharuch,true
+330,Umargam,Upcountry,12,Vapi,true
+331,Transport,Local,22,Transport,true
+332,Umra,Local,6,Ghod Dod,true
+333,Murdad,Upcountry,12,Vapi,true
+334,Unai,Upcountry,13,Vansda,true
+335,BHUJ,Cross,18,IGT / CROSS,true
+336,Univercity Road,Local,6,Ghod Dod,true
+337,Unn,Local,7,Udhana,true
+338,Utran,Local,8,Varachha,true
+339,Vadod,Local,7,Udhana,true
+340,Vadodara,Cross,18,IGT / CROSS,true
+341,UGAT (VANSDA),Upcountry,13,Vansda,true
+342,Valsad,Upcountry,12,Vapi,true
+343,BHARAUNDIGAM,Local,8,Varachha,true
+344,VALVADA,Local,13,Vansda,true
+345,Sisodara - Kosamba,Upcountry,17,Bharuch,true
+346,Vandervela,Upcountry,13,Vansda,true
+347,SYADLA,Upcountry,17,Bharuch,true
+348,Vansda,Upcountry,13,Vansda,true
+349,Vanskui,Upcountry,13,Vansda,true
+350,KEVADIYA,Upcountry,17,Bharuch,true
+351,Vapi,Upcountry,12,Vapi,true
+352,Tarsadi,Upcountry,14,Bardoli,true
+353,Varachha,Local,8,Varachha,true
+354,Ved Road,Local,8,Varachha,true
+355,Velanja,Upcountry,8,Varachha,true
+356,Kumbharia,Local,5,Parvat,true
+357,Vesma,Upcountry,11,Navsari,true
+358,NARTHAN,Upcountry,9,Adajan,true
+359,Vesu,Local,6,Ghod Dod,true
+360,Nagpur,Cross,18,IGT / CROSS,true
+361,Vesugam,Local,6,Ghod Dod,true
+362,Karmali,Upcountry,17,Bharuch,true
+363,Vihan,Upcountry,11,Navsari,true
+364,Kanjanhari,Upcountry,12,Vapi,true
+365,Vijalpor,Upcountry,11,Navsari,true
+366,TUMBI,Upcountry,12,Vapi,true
+367,Vyara,Upcountry,14,Bardoli,true
+368,PANVEL,Cross,18,IGT / CROSS,true
+369,Waghai,Upcountry,13,Vansda,true
+370,KESHOD,Cross,18,IGT / CROSS,true
+371,Yogi Chowk,Local,8,Varachha,true
+372,SANIYA HEMAD,Local,5,Parvat,true
+373,DHANBAD,Cross,18,IGT / CROSS,true
+374,Zaghadiya,Upcountry,17,Bharuch,true
+375,Panoli,Upcountry,17,Bharuch,true
+376,DHAMROD,Upcountry,17,Bharuch,true
+377,Moti Tambdi,Upcountry,12,Vapi,true
+378,Dambher,Upcountry,11,Navsari,true
+379,Saputara,Upcountry,13,Vansda,true
+380,RAIGAD,Cross,18,IGT / CROSS,true
+381,Padgha,Upcountry,11,Navsari,true
+382,Dandi,Upcountry,9,Adajan,true
+383,Tamil Nadu,Cross,18,IGT / CROSS,true
+384,MANGLORE,Cross,18,IGT / CROSS,true
+385,Dholikui,Upcountry,14,Bardoli,true
+386,Syadla,Upcountry,17,Bharuch,true
+387,DADRA NAGAR HAWELI,Upcountry,12,Vapi,true
+388,Haldharu,Upcountry,14,Bardoli,true
+389,BHACHAU,Cross,18,IGT / CROSS,true
+390,Dabhel,Upcountry,11,Navsari,true
+391,Mundra,Cross,18,IGT / CROSS,true
+392,Dhaludi,Upcountry,19,Kamrej,true
+393,Kheda,Cross,18,IGT / CROSS,true
+394,Bilaspur,Cross,,,true
