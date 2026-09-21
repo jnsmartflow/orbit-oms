@@ -20,7 +20,7 @@
 // Every query is a fixed string with no user input.
 
 import { prisma } from "@/lib/prisma";
-import { parseLoadPlanV2Config, type AreaInfo, type AreaRate, type LoadPlanV2Context } from "@/lib/trips/load-plan-v2";
+import { lockV2Config, parseLoadPlanV2Config, type AreaInfo, type AreaRate, type LoadPlanV2Context } from "@/lib/trips/load-plan-v2";
 
 export async function loadPlanV2Context(deliveryTypeName = "Upcountry"): Promise<LoadPlanV2Context | null> {
   try {
@@ -28,8 +28,10 @@ export async function loadPlanV2Context(deliveryTypeName = "Upcountry"): Promise
       where: { deliveryType: { name: deliveryTypeName } },
       select: { config: true },
     });
-    const config = cfgRows.length === 1 ? parseLoadPlanV2Config(cfgRows[0].config) : null;
-    if (!config) return null;
+    const parsed = cfgRows.length === 1 ? parseLoadPlanV2Config(cfgRows[0].config) : null;
+    if (!parsed) return null;
+    // The locked Upcountry defaults (V2_LOCKED) win over the stored row.
+    const config = lockV2Config(parsed);
 
     const rateRows = await prisma.$queryRaw<
       Array<{ areaId: number; gcRate: number | null; aceRate: number | null; bigRate: number | null; gcExtra: number | null; aceExtra: number | null; bigExtra: number | null; gcAllowed: boolean }>
