@@ -11,28 +11,37 @@
 // 🔴 RATES ARE SECRET (CLAUDE_CORE.md §7.19). They are read inside this file to
 // choose loads and vehicles, and the OUTPUT CARRIES NO RUPEE VALUE — no rate,
 // no cost, no saving, no penalty. A card says which bills, which vehicle, in
-// what order, and why in words. `tripCostOf` is exported for the local backtest
-// (which prints percentages only); never send its result to a browser.
+// what order, and why in words. `tripCostOf` / `makePricer` are exported for
+// the local backtest (which prints percentages only); never send their result
+// to a browser.
 //
-// THE RULES, in the owner's order (step 3 prompt, 2026-09-21):
-//   1. Direct   — a route whose side is "Direct" (IGT / CROSS, Transport): one
-//                 Direct card per route, never mixed.
-//   2. Stops    — bills grouped by stopKey; a stop is never split.
-//   3. Bulk     — a stop over bulkKg: its own Bulk card.
+// THE RULES, in the owner's order (step 3, revised 2026-09-21):
+//   1. Direct    — a route whose side is "Direct" (IGT / CROSS, Transport): one
+//                  Direct card per route, never mixed.
+//   2. Stops     — bills grouped by stopKey. A stop of ≤ bulkKg is never split.
+//   3. Heavy     — a stop over bulkKg is split BY BILL into full Big loads
+//                  (≤ Big max + over) while more than bulkKg of it is left; the
+//                  leftover bills plan like any other stop. Only a single bill
+//                  heavier than a Big carries gets a Bulk card.
 //   4. Every other stop starts as its own load.
-//   5. Combine  — the savings method: join the pair of loads on the SAME side
-//                 that saves most (cost A + cost B − cost A∪B + truckPenaltyRs)
-//                 while the join is allowed; stop when nothing saves.
-//   6. Vehicles — Aces first (7–8-stop loads, then where Ace saves most vs Big),
-//                 then GCs (small, near, cheaper than Big), then Bigs; a 7–8-stop
-//                 load with no Ace left is re-planned without Aces (≤ 6 stops);
-//                 then one more combine pass on the assigned vehicles' costs.
-//   7. Limits   — loads left without a vehicle become ONE Waiting card per side;
-//                 overdue loads get vehicles first, then the oldest.
-//   8. Hold     — a load under holdBelowKg alone on its side with no overdue
-//                 bill: "Hold for tomorrow", not a truck.
-//   9. Order    — stops far first (highest Big rate), back toward Surat.
-//  10. Output   — cards + a summary, no rupees.
+//   5. Combine   — the savings method: join the pair of loads on the SAME side
+//                  that saves most (cost A + cost B − cost A∪B + truckPenaltyRs)
+//                  while the join is allowed; stop when nothing saves. Allowed:
+//                  a vehicle carries it, ≤ maxPlacesPerTruck places, and every
+//                  pair of places allowed (same route always; else seen together
+//                  ≥ pairMinTimes).
+//   5b. Ride-along — a load under rideAlongBelowKg may join ANY load on its
+//                  side, ignoring the pair rule and the places limit (kg and
+//                  stop limits still apply). If it can join nothing and has no
+//                  overdue bill → Hold ("Hold for tomorrow").
+//   6. Vehicles  — Aces first (7–8-stop loads, then where Ace saves most vs
+//                  Big), then GCs (small, near, cheaper than Big), then Bigs; a
+//                  7–8-stop load with no Ace left is re-planned without Aces;
+//                  then one more combine on the assigned vehicles' costs.
+//   7. Limits    — loads left without a vehicle become ONE Waiting card per
+//                  side; overdue loads get vehicles first, then the oldest.
+//   8. Order     — stops far first (highest Big rate), back toward Surat.
+//   9. Output    — cards + a summary, no rupees; reasons name the PLACES.
 //
 // ⚠ TARGET < ES2015: every Set/Map is iterated through Array.from (CLAUDE.md §1).
 
@@ -61,24 +70,35 @@ export interface LoadPlanV2Config {
   vehicles: Record<VehicleType, VehicleSpec>;
   maxPlacesPerTruck: number;
   pairMinTimes: number;
+  /** Two places on the same route may always share a truck. */
+  sameRoutePairsAlways: boolean;
+  /** A load lighter than this may ride along with any load on its side. */
+  rideAlongBelowKg: number;
   bulkKg: number;
   /** INTERNAL — the cost of one more truck, added to every saving. Never output. */
   truckPenaltyRs: number;
   holdSmallUnlessOverdue: boolean;
-  /** Code default (owner, 2026-09-21): 300 kg. */
-  holdBelowKg: number;
   newArea: { rate: "route_typical"; gcAllowed: boolean; pairs: "same_route" };
 }
 
-/** The Hold threshold — a code default, not a config key (owner). */
-export const HOLD_BELOW_KG = 300;
+/**
+ * CODE DEFAULTS (owner, 2026-09-21). A value set in the config row OVERRIDES
+ * its default; a key absent from the row takes the default.
+ */
+export const V2_DEFAULTS = {
+  pairMinTimes: 1,
+  sameRoutePairsAlways: true,
+  maxPlacesPerTruck: 6,
+  rideAlongBelowKg: 300,
+} as const;
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isPos = (v: unknown): v is number => isNum(v) && v > 0;
 
 /**
- * The stored Upcountry config → the v2 config, or null when any v2 key is
- * missing or malformed (the v1 keys are ignored here; v1 reads its own).
+ * The stored Upcountry config → the v2 config, or null when a REQUIRED v2 key
+ * is missing or malformed. Keys with a code default (V2_DEFAULTS) are optional;
+ * when present they must be valid and they win. The v1 keys are ignored here.
  */
 export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -106,15 +126,22 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
       dailyCount: s.dailyCount as number | null, nearOnly: s.nearOnly, priority: s.priority,
     };
   }
-  if (!isPos(o.maxPlacesPerTruck) || !isPos(o.pairMinTimes) || !isPos(o.bulkKg) || !isNum(o.truckPenaltyRs)) return null;
-  if (typeof o.holdSmallUnlessOverdue !== "boolean") return null;
+  if (!isPos(o.bulkKg) || !isNum(o.truckPenaltyRs) || typeof o.holdSmallUnlessOverdue !== "boolean") return null;
   const na = o.newArea as Record<string, unknown> | undefined;
   if (!na || na.rate !== "route_typical" || typeof na.gcAllowed !== "boolean" || na.pairs !== "same_route") return null;
+
+  // Keys with a code default: absent → default; present → must be valid.
+  const posOr = (k: string, d: number): number | null => (o[k] === undefined ? d : isPos(o[k]) ? (o[k] as number) : null);
+  const boolOr = (k: string, d: boolean): boolean | null => (o[k] === undefined ? d : typeof o[k] === "boolean" ? (o[k] as boolean) : null);
+  const pairMinTimes = posOr("pairMinTimes", V2_DEFAULTS.pairMinTimes);
+  const maxPlacesPerTruck = posOr("maxPlacesPerTruck", V2_DEFAULTS.maxPlacesPerTruck);
+  const rideAlongBelowKg = posOr("rideAlongBelowKg", V2_DEFAULTS.rideAlongBelowKg);
+  const sameRoutePairsAlways = boolOr("sameRoutePairsAlways", V2_DEFAULTS.sameRoutePairsAlways);
+  if (pairMinTimes === null || maxPlacesPerTruck === null || rideAlongBelowKg === null || sameRoutePairsAlways === null) return null;
+
   return {
-    routeSides, vehicles,
-    maxPlacesPerTruck: o.maxPlacesPerTruck, pairMinTimes: o.pairMinTimes, bulkKg: o.bulkKg,
-    truckPenaltyRs: o.truckPenaltyRs, holdSmallUnlessOverdue: o.holdSmallUnlessOverdue,
-    holdBelowKg: HOLD_BELOW_KG,
+    routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, sameRoutePairsAlways, rideAlongBelowKg,
+    bulkKg: o.bulkKg, truckPenaltyRs: o.truckPenaltyRs, holdSmallUnlessOverdue: o.holdSmallUnlessOverdue,
     newArea: { rate: "route_typical", gcAllowed: na.gcAllowed, pairs: "same_route" },
   };
 }
@@ -175,6 +202,8 @@ export interface V2Stop {
   areaName: string;
   kg: number;
   orderIds: number[];
+  /** Joined by the ride-along rule — exempt from the pair rule and the places limit. */
+  ridesAlong: boolean;
 }
 
 export interface V2Card {
@@ -183,7 +212,7 @@ export interface V2Card {
   /** The side the load travels ("South", "North", "Surat", "Direct", or "route:<id>"). */
   side: string;
   orderIds: number[];
-  /** Far first (rule 9). */
+  /** Far first. */
   stops: V2Stop[];
   kg: number;
   stopCount: number;
@@ -204,7 +233,7 @@ export interface V2Card {
 export interface V2Plan {
   cards: V2Card[];
   summary: {
-    /** Suggested trucks by type. */
+    /** Suggested trucks by type (split heavy-stop loads count as Bigs). */
     ace: number; big: number; gc: number;
     trucks: number;
     bulk: number; direct: number; hold: number; waiting: number;
@@ -307,14 +336,15 @@ class Areas {
     return facts;
   }
 
-  /** May these two areas share a truck? */
+  /** May these two places share a truck? */
   pairOk(a: AreaFacts, b: AreaFacts): boolean {
     if (a.id === b.id) return true;
+    const sameRoute = a.routeId !== null && a.routeId === b.routeId;
+    // Same route: always together (owner, 2026-09-21) — which also covers
+    // newArea.pairs = "same_route" for a place with no pair history.
+    if (sameRoute && (this.ctx.config.sameRoutePairsAlways || !a.hasPairs || !b.hasPairs)) return true;
     const key = a.id < b.id ? `${a.id}-${b.id}` : `${b.id}-${a.id}`;
-    if ((this.ctx.pairs.get(key) ?? 0) >= this.ctx.config.pairMinTimes) return true;
-    // newArea.pairs = "same_route": an area with no pair history may pair with
-    // any area on its own route.
-    return (!a.hasPairs || !b.hasPairs) && a.routeId !== null && a.routeId === b.routeId;
+    return (this.ctx.pairs.get(key) ?? 0) >= this.ctx.config.pairMinTimes;
   }
 }
 
@@ -327,6 +357,8 @@ interface StopRec {
   orderIds: number[];
   overdue: boolean;
   maxAge: number;
+  /** Joined by the ride-along rule: exempt from the pair rule and the places limit. */
+  rider?: boolean;
 }
 
 interface Load {
@@ -334,25 +366,35 @@ interface Load {
   side: string;
   stops: StopRec[];
   kg: number;
+  /** Every place on the load (prices it). */
   areas: AreaFacts[];
+  /** The places the pair rule and the places limit apply to — riders excluded. */
+  coreAreas: AreaFacts[];
   overdue: boolean;
   maxAge: number;
   /** Assigned vehicle, once step 6 runs. */
   vehicle?: VehicleType;
   replanned?: boolean;
   merged?: boolean;
+  /** A full Big load split off a heavy stop (rule 3): the stop's area and total kg. */
+  split?: { area: string; stopKg: number };
 }
 
 function makeLoad(stops: StopRec[], side: string): Load {
-  const byId = new Map<number, AreaFacts>();
-  stops.forEach((s) => byId.set(s.area.id, s.area));
+  const all = new Map<number, AreaFacts>();
+  const core = new Map<number, AreaFacts>();
+  stops.forEach((s) => {
+    all.set(s.area.id, s.area);
+    if (!s.rider) core.set(s.area.id, s.area);
+  });
   const sorted = stops.slice().sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   return {
     key: sorted.map((s) => s.key).join("|"),
     side,
     stops: sorted,
     kg: stops.reduce((n, s) => n + s.kg, 0),
-    areas: Array.from(byId.values()).sort((a, b) => a.id - b.id),
+    areas: Array.from(all.values()).sort((a, b) => a.id - b.id),
+    coreAreas: Array.from(core.values()).sort((a, b) => a.id - b.id),
     overdue: stops.some((s) => s.overdue),
     maxAge: stops.reduce((n, s) => Math.max(n, s.maxAge), 0),
   };
@@ -393,54 +435,92 @@ type Avail = Record<VehicleType, number>;
 export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: VehicleCounts = {}): V2Plan {
   const cfg = ctx.config;
   const V = cfg.vehicles;
+  const bigCap = V.big.maxKg + V.big.overKg;
   const areas = new Areas(ctx);
   const routeName = (id: number | null) => (id === null ? "No route" : ctx.routeNames[id]?.trim() || `Route ${id}`);
   const sideOf = (routeId: number | null) =>
     routeId !== null && cfg.routeSides[routeId] ? cfg.routeSides[routeId] : `route:${routeId ?? "none"}`;
   const cards: V2Card[] = [];
+  const avail: Avail = {
+    ace: counts.ace ?? V.ace.dailyCount ?? Infinity,
+    big: counts.big ?? V.big.dailyCount ?? Infinity,
+    gc: counts.gc ?? V.gc.dailyCount ?? Infinity,
+  };
 
-  // ── 2. Stops (per side and route; the stop key identifies the customer).
-  const stopMap = new Map<string, { stop: StopRec; routeId: number | null }>();
+  // ── 2. Stops. Each keeps its bills (weight per bill) for the heavy split.
+  interface RawStop { key: string; areaId: number; routeId: number | null; bills: Array<{ id: number; kg: number; overdue: boolean; age: number }> }
+  const raw = new Map<string, RawStop>();
   bills.forEach((b) => {
-    const areaId = b.areaId ?? syntheticArea(b.routeId);
-    const k = b.stopKey;
-    let e = stopMap.get(k);
-    if (!e) {
-      e = { stop: { key: k, area: areas.get(areaId, b.routeId), kg: 0, orderIds: [], overdue: false, maxAge: 0 }, routeId: b.routeId };
-      stopMap.set(k, e);
+    let s = raw.get(b.stopKey);
+    if (!s) {
+      s = { key: b.stopKey, areaId: b.areaId ?? syntheticArea(b.routeId), routeId: b.routeId, bills: [] };
+      raw.set(b.stopKey, s);
     }
-    const w = typeof b.weightKg === "number" && b.weightKg > 0 ? b.weightKg : 0;
-    e.stop.kg += w;
-    e.stop.orderIds.push(b.orderId);
-    if (b.overdue) e.stop.overdue = true;
-    e.stop.maxAge = Math.max(e.stop.maxAge, b.ageDays ?? 0);
+    const kg = typeof b.weightKg === "number" && b.weightKg > 0 ? b.weightKg : 0;
+    s.bills.push({ id: b.orderId, kg, overdue: b.overdue, age: b.ageDays ?? 0 });
   });
-  const allStops = Array.from(stopMap.values()).sort((a, b) => (a.stop.key < b.stop.key ? -1 : 1));
+  const rawStops = Array.from(raw.values()).sort((a, b) => (a.key < b.key ? -1 : 1));
+  const toStop = (s: RawStop, part: RawStop["bills"], keySuffix = ""): StopRec => ({
+    key: s.key + keySuffix,
+    area: areas.get(s.areaId, s.routeId),
+    kg: part.reduce((n, b) => n + b.kg, 0),
+    orderIds: part.map((b) => b.id).sort((a, b) => a - b),
+    overdue: part.some((b) => b.overdue),
+    maxAge: part.reduce((n, b) => Math.max(n, b.age), 0),
+  });
 
   // ── 1. Direct routes: one card per route, never mixed.
   const directByRoute = new Map<string, StopRec[]>();
-  const rest: Array<{ stop: StopRec; routeId: number | null }> = [];
-  allStops.forEach((e) => {
-    if (sideOf(e.routeId) === "Direct") {
-      const k = String(e.routeId);
-      directByRoute.set(k, [...(directByRoute.get(k) ?? []), e.stop]);
-    } else rest.push(e);
+  const planned: Array<{ stop: StopRec; side: string }> = [];
+  const preassigned: Load[] = [];
+  rawStops.forEach((s) => {
+    const side = sideOf(s.routeId);
+    if (side === "Direct") {
+      const k = String(s.routeId);
+      directByRoute.set(k, [...(directByRoute.get(k) ?? []), toStop(s, s.bills)]);
+      return;
+    }
+    const total = s.bills.reduce((n, b) => n + b.kg, 0);
+    if (total <= cfg.bulkKg) {
+      planned.push({ stop: toStop(s, s.bills), side });
+      return;
+    }
+    // ── 3. A heavy stop: a single bill a Big cannot carry → Bulk; the rest is
+    //    split BY BILL into full Big loads while more than bulkKg is left; the
+    //    leftover bills plan like any other stop.
+    let rest = s.bills.slice().sort((a, b) => b.kg - a.kg || a.id - b.id);
+    rest.filter((b) => b.kg > bigCap).forEach((b) => {
+      const load = makeLoad([toStop(s, [b], `#bill${b.id}`)], side);
+      cards.push(toCard(load, "bulk", `One bill over ${fmtKg(bigCap)} kg — hire as needed.`));
+    });
+    rest = rest.filter((b) => b.kg <= bigCap);
+    let part = 0;
+    while (rest.reduce((n, b) => n + b.kg, 0) > cfg.bulkKg) {
+      const take: typeof rest = [];
+      let kg = 0;
+      const keep: typeof rest = [];
+      rest.forEach((b) => {
+        if (kg + b.kg <= bigCap) {
+          take.push(b);
+          kg += b.kg;
+        } else keep.push(b);
+      });
+      if (take.length === 0) break; // cannot happen: every bill here ≤ bigCap
+      const load = makeLoad([toStop(s, take, `#part${++part}`)], side);
+      load.split = { area: load.areas[0].name, stopKg: total };
+      preassigned.push(load);
+      rest = keep;
+    }
+    if (rest.length > 0) planned.push({ stop: toStop(s, rest), side });
   });
   Array.from(directByRoute.entries())
     .sort((a, b) => Number(a[0]) - Number(b[0]))
     .forEach(([rk, stops]) => {
-      const load = makeLoad(stops, "Direct");
-      cards.push(toCard(load, "direct", `${routeName(Number(rk))} is a direct route — never mixed.`));
+      cards.push(toCard(makeLoad(stops, "Direct"), "direct", `${routeName(Number(rk))} is a direct route — never mixed.`));
     });
 
-  // ── 3. Bulk stops; 4. every other stop is its own load.
-  let loads: Load[] = [];
-  rest.forEach((e) => {
-    const side = sideOf(e.routeId);
-    if (e.stop.kg > cfg.bulkKg) {
-      cards.push(toCard(makeLoad([e.stop], side), "bulk", `One stop over ${fmtKg(cfg.bulkKg)} kg — hire as needed.`));
-    } else loads.push(makeLoad([e.stop], side));
-  });
+  // ── 4. Every other stop is its own load.
+  let loads: Load[] = planned.map((p) => makeLoad([p.stop], p.side));
 
   // ── Helpers over loads.
   const allowedTypes = (l: { kg: number; stops: StopRec[]; areas: AreaFacts[] }, exclude: ReadonlySet<VehicleType>): VehicleType[] =>
@@ -448,6 +528,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       if (exclude.has(t)) return false;
       const v = V[t];
       if (l.kg > v.maxKg + v.overKg || l.stops.length > v.maxStops) return false;
+      // Near-only applies to EVERY place, riders included.
       if (v.nearOnly && !l.areas.every((a) => a.gcAllowed)) return false;
       return true;
     });
@@ -459,16 +540,16 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     });
     return best;
   };
+  /** The pair rule and the places limit — over CORE places only (riders are exempt). */
   const joinable = (a: Load, b: Load): boolean => {
     if (a.side !== b.side) return false;
     const ids = new Set<number>();
-    a.areas.forEach((x) => ids.add(x.id));
-    b.areas.forEach((x) => ids.add(x.id));
+    a.coreAreas.forEach((x) => ids.add(x.id));
+    b.coreAreas.forEach((x) => ids.add(x.id));
     if (ids.size > cfg.maxPlacesPerTruck) return false;
-    return a.areas.every((x) => b.areas.every((y) => areas.pairOk(x, y)));
+    return a.coreAreas.every((x) => b.coreAreas.every((y) => areas.pairOk(x, y)));
   };
   const minAreaId = (l: Load) => l.areas.reduce((m, a) => Math.min(m, a.id), Infinity);
-  /** Deterministic tie-break between two candidate joins. */
   const tieKey = (a: Load, b: Load) => {
     const m = Math.min(minAreaId(a), minAreaId(b));
     const [x, y] = a.key < b.key ? [a.key, b.key] : [b.key, a.key];
@@ -477,8 +558,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
 
   /**
    * 5. THE SAVINGS METHOD. Repeatedly join the pair (same side, allowed) with
-   * the largest saving until none saves anything. `costOf` prices a load as it
-   * stands; `unionCost` prices a candidate union (null = not carriable).
+   * the largest saving until none saves anything.
    */
   const combine = (
     list: Load[],
@@ -499,11 +579,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
           const saving = costOf(a) + costOf(b) - uc + cfg.truckPenaltyRs;
           if (saving <= 0) continue;
           const tk = tieKey(a, b);
-          if (
-            !best ||
-            saving > best.saving ||
-            (saving === best.saving && (tk.m < best.tk.m || (tk.m === best.tk.m && tk.s < best.tk.s)))
-          ) {
+          if (!best || saving > best.saving || (saving === best.saving && (tk.m < best.tk.m || (tk.m === best.tk.m && tk.s < best.tk.s)))) {
             best = { i, j, u, saving, tk };
           }
         }
@@ -520,36 +596,56 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
   const NONE = new Set<VehicleType>();
   loads = combine(loads, planCost(NONE), planUnion(NONE));
 
-  // ── 8. Hold — alone on its side, light, not overdue: not a truck today.
-  if (cfg.holdSmallUnlessOverdue) {
-    const perSide = new Map<string, Load[]>();
-    loads.forEach((l) => perSide.set(l.side, [...(perSide.get(l.side) ?? []), l]));
-    Array.from(perSide.values()).forEach((ls) => {
-      if (ls.length !== 1) return;
-      const l = ls[0];
-      if (l.kg < cfg.holdBelowKg && !l.overdue) {
-        cards.push(toCard(l, "hold", `Under ${fmtKg(cfg.holdBelowKg)} kg and alone on its side — hold for tomorrow.`));
-        loads = loads.filter((x) => x !== l);
-      }
+  // ── 5b. RIDE-ALONG. A load under rideAlongBelowKg joins the load on its side
+  //    where it adds the least cost, ignoring the pair rule and the places
+  //    limit — only kg and stops must still fit a vehicle. Heaviest light load
+  //    first; the key breaks ties. What joins nothing and is not overdue waits
+  //    for tomorrow (Hold).
+  const light = loads
+    .filter((l) => l.kg < cfg.rideAlongBelowKg)
+    .sort((a, b) => b.kg - a.kg || (a.key < b.key ? -1 : 1));
+  light.forEach((small) => {
+    if (!loads.includes(small)) return; // already absorbed as a host's partner
+    let best: { host: Load; u: Load; add: number } | null = null;
+    loads.forEach((host) => {
+      if (host === small || host.side !== small.side) return;
+      const riders = small.stops.map((s) => ({ ...s, rider: true }));
+      const u = makeLoad(host.stops.concat(riders), host.side);
+      const uc = cheapest(u, allowedTypes(u, NONE));
+      if (!uc) return;
+      const add = uc.cost - (cheapest(host, allowedTypes(host, NONE))?.cost ?? Infinity);
+      if (!best || add < best.add || (add === best.add && host.key < best.host.key)) best = { host, u, add };
     });
-  }
+    if (best) {
+      const b: { host: Load; u: Load } = best;
+      loads = loads.filter((x) => x !== small && x !== b.host).concat([b.u]);
+    } else if (cfg.holdSmallUnlessOverdue && !small.overdue) {
+      cards.push(toCard(small, "hold", `Under ${fmtKg(cfg.rideAlongBelowKg)} kg with nothing on its side to ride along with — hold for tomorrow.`));
+      loads = loads.filter((x) => x !== small);
+    }
+  });
 
-  // ── 6 + 7. Vehicles.
-  const avail: Avail = {
-    ace: counts.ace ?? V.ace.dailyCount ?? Infinity,
-    big: counts.big ?? V.big.dailyCount ?? Infinity,
-    gc: counts.gc ?? V.gc.dailyCount ?? Infinity,
-  };
+  // ── 6 + 7. Vehicles. The split heavy-stop loads take their Bigs first.
+  let assigned: Load[] = [];
+  let unassigned: Load[] = [];
+  preassigned
+    .sort((a, b) => (a.key < b.key ? -1 : 1))
+    .forEach((l) => {
+      if (avail.big > 0) {
+        l.vehicle = "big";
+        avail.big -= 1;
+        assigned.push(l);
+      } else unassigned.push(l);
+    });
+
   const costAs = (l: Load, t: VehicleType) => tripCostOf(l.areas, t);
   const fits = (l: Load, t: VehicleType) => allowedTypes(l, NONE).includes(t);
-  // Overdue first, then the oldest — the rule-7 priority — then a stable key.
+  // Overdue first, then the oldest — the rule-7 priority.
   const urgency = (a: Load, b: Load) => Number(b.overdue) - Number(a.overdue) || b.maxAge - a.maxAge;
 
   const assignAll = (pool: Load[], aceAllowed: boolean): { done: Load[]; left: Load[] } => {
     let left = pool.slice();
     const done: Load[] = [];
-    // a) Aces: 7–8-stop loads (only an Ace carries them) first, then where an
-    //    Ace saves most against a Big.
     if (aceAllowed) {
       const onlyAce = (l: Load) => l.stops.length > V.big.maxStops;
       const aceGain = (l: Load) => (fits(l, "big") ? costAs(l, "big") : Infinity) - costAs(l, "ace");
@@ -564,7 +660,6 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       }
       left = left.filter((l) => !l.vehicle);
     }
-    // b) GCs: small, near loads where a GC is cheaper than a Big.
     const gcGain = (l: Load) => (fits(l, "big") ? costAs(l, "big") : Infinity) - costAs(l, "gc");
     const gcs = left
       .filter((l) => fits(l, "gc") && gcGain(l) > 0)
@@ -576,7 +671,6 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       done.push(l);
     }
     left = left.filter((l) => !l.vehicle);
-    // c) Bigs: everything else a Big can carry.
     const bigs = left.filter((l) => fits(l, "big")).sort((a, b) => urgency(a, b) || (a.key < b.key ? -1 : 1));
     for (const l of bigs) {
       if (avail.big <= 0) break;
@@ -588,10 +682,14 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     return { done, left };
   };
 
-  let { done: assigned, left: unassigned } = assignAll(loads, true);
+  {
+    const r = assignAll(loads, true);
+    assigned = assigned.concat(r.done);
+    unassigned = unassigned.concat(r.left);
+  }
 
   // d) 7–8-stop loads with no Ace left: re-plan just their stops without Aces.
-  const aceOnlyLeft = unassigned.filter((l) => l.stops.length > V.big.maxStops);
+  const aceOnlyLeft = unassigned.filter((l) => !l.split && l.stops.length > V.big.maxStops);
   if (aceOnlyLeft.length > 0) {
     unassigned = unassigned.filter((l) => !aceOnlyLeft.includes(l));
     const NO_ACE = new Set<VehicleType>(["ace"]);
@@ -625,6 +723,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       avail[u.vehicle!] -= 1;
       u.merged = true;
       u.replanned = a.replanned || b.replanned;
+      if (a.split || b.split) u.split = a.split ?? b.split;
     },
   );
 
@@ -638,7 +737,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     .forEach(([side, ls]) => {
       const needs: Partial<Record<VehicleType, number>> = {};
       ls.forEach((l) => {
-        const t = cheapest(l, allowedTypes(l, NONE))?.t ?? "big";
+        const t = l.split ? "big" : cheapest(l, allowedTypes(l, NONE))?.t ?? "big";
         needs[t] = (needs[t] ?? 0) + 1;
       });
       const words = VEHICLE_TYPES.filter((t) => needs[t])
@@ -667,20 +766,45 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
 
   // ── Card building (hoisted) ───────────────────────────────────────────────
 
-  /** Words for a truck: which routes joined, and anything unusual about it. */
+  /**
+   * Words for a truck, naming PLACES (owner): "Jolva, Kadodara joined Bardoli
+   * — saves a truck". The main place is the one carrying the most kg; the
+   * saving is claimed only when places from ANOTHER route joined.
+   */
   function truckReason(l: Load): string {
-    const byRoute = new Map<string, number>();
-    l.stops.forEach((s) => {
-      const k = String(s.area.routeId);
-      byRoute.set(k, (byRoute.get(k) ?? 0) + s.kg);
-    });
-    const routes = Array.from(byRoute.entries()).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-    const main = routeName(routes[0][0] === "null" ? null : Number(routes[0][0]));
-    const others = routes.slice(1).map(([k]) => routeName(k === "null" ? null : Number(k)));
     const parts: string[] = [];
-    if (others.length > 0) parts.push(`${others.join(", ")} joined ${main} — saves ${others.length === 1 ? "a truck" : `${others.length} trucks`}.`);
-    else if (l.areas.length > 1) parts.push(`${l.areas.length} places on ${main}.`);
-    else parts.push(`${l.areas[0].name} on its own.`);
+    if (l.split) {
+      parts.push(`Part of a ${fmtKg(l.split.stopKg)} kg stop at ${l.split.area} — split by bill into full Big loads.`);
+    }
+    const core = l.stops.filter((s) => !s.rider);
+    const riders = l.stops.filter((s) => s.rider);
+    const kgByArea = new Map<number, { a: AreaFacts; kg: number }>();
+    core.forEach((s) => {
+      const e = kgByArea.get(s.area.id) ?? { a: s.area, kg: 0 };
+      e.kg += s.kg;
+      kgByArea.set(s.area.id, e);
+    });
+    const places = Array.from(kgByArea.values()).sort((a, b) => b.kg - a.kg || a.a.id - b.a.id);
+    if (!l.split && places.length > 0) {
+      const main = places[0].a;
+      const others = places.slice(1).map((p) => p.a);
+      if (others.length === 0) {
+        parts.push(core.length > 1 ? `${core.length} stops in ${main.name}.` : `${main.name} on its own.`);
+      } else {
+        const otherRoutes = new Set(others.filter((o) => o.routeId !== main.routeId).map((o) => String(o.routeId)));
+        const joined = `${others.map((o) => o.name).join(", ")} joined ${main.name}`;
+        parts.push(
+          otherRoutes.size === 0
+            ? `${joined}.`
+            : `${joined} — saves ${otherRoutes.size === 1 ? "a truck" : `${otherRoutes.size} trucks`}.`,
+        );
+      }
+    }
+    if (riders.length > 0) {
+      const names: string[] = [];
+      riders.forEach((s) => { if (!names.includes(s.area.name)) names.push(s.area.name); });
+      parts.push(`${names.join(", ")} ${names.length === 1 ? "rides" : "ride"} along (under ${fmtKg(cfg.rideAlongBelowKg)} kg).`);
+    }
     if (l.vehicle === "ace" && l.stops.length > V.big.maxStops) parts.push(`${l.stops.length} stops — only an Ace carries that many.`);
     if (l.replanned) parts.push(`Re-planned without an Ace (max ${V.big.maxStops} stops).`);
     if (l.merged) parts.push(`Two loads going the same way merged.`);
@@ -688,7 +812,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
   }
 
   function toCard(l: Load, type: V2CardType, reason: string): V2Card {
-    // 9. Far first: the highest Big rate first, back toward Surat.
+    // Far first: the highest Big rate first, back toward Surat.
     const ordered = l.stops
       .slice()
       .sort((a, b) => b.area.rate.big - a.area.rate.big || a.area.id - b.area.id || (a.key < b.key ? -1 : 1));
@@ -703,11 +827,13 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       side: l.side,
       orderIds: ordered.flatMap((s) => s.orderIds).sort((a, b) => a - b),
       stops: ordered.map((s) => ({
-        stopKey: s.key,
+        // A split part keeps its stop's own key: "#part1" is internal only.
+        stopKey: s.key.replace(/#(part|bill)\d+$/, ""),
         areaId: s.area.id >= 0 ? s.area.id : null,
         areaName: s.area.name,
         kg: s.kg,
         orderIds: s.orderIds.slice().sort((a, b) => a - b),
+        ridesAlong: s.rider === true,
       })),
       kg: l.kg,
       stopCount: l.stops.length,

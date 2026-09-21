@@ -30,7 +30,9 @@ const RAW_CONFIG = {
     big: { maxKg: 3000, overKg: 50, idealStops: 5, maxStops: 6, dailyCount: null, nearOnly: false, priority: 2 },
     gc: { maxKg: 1500, overKg: 50, idealStops: 4, maxStops: 4, dailyCount: 3, nearOnly: true, priority: 3 },
   },
-  maxPlacesPerTruck: 5, pairMinTimes: 2, bulkKg: 3000, truckPenaltyRs: 613, holdSmallUnlessOverdue: true,
+  // pairMinTimes, maxPlacesPerTruck, rideAlongBelowKg and sameRoutePairsAlways
+  // are left OUT, so the code defaults (V2_DEFAULTS: 1, 6, 300, true) apply.
+  bulkKg: 3000, truckPenaltyRs: 613, holdSmallUnlessOverdue: true,
   newArea: { rate: "route_typical", gcAllowed: false, pairs: "same_route" },
 };
 
@@ -38,7 +40,7 @@ const RAW_CONFIG = {
 const AREA: Record<number, [string, number]> = {
   101: ["Navsari Town", 11], 102: ["Bilimora", 21], 103: ["Vapi Town", 12], 104: ["Valsad", 12],
   105: ["Bharuch Town", 17], 106: ["Kamrej Town", 19], 107: ["Adajan", 9], 108: ["IGT Area", 18],
-  109: ["New Navsari Area", 11], 110: ["Navsari East", 11],
+  109: ["New Navsari Area", 11], 110: ["Navsari East", 11], 111: ["Navsari West", 11],
 };
 const R: Record<number, [number, number, number, number, number, number, boolean]> = {
   101: [811, 1037, 1437, 83, 107, 151, true],
@@ -50,14 +52,17 @@ const R: Record<number, [number, number, number, number, number, number, boolean
   107: [409, 523, 811, 61, 79, 101, true],
   108: [1709, 2017, 2719, 97, 127, 173, false],
   110: [823, 1049, 1447, 83, 107, 151, true],
+  111: [827, 1051, 1451, 83, 107, 151, true],
   // 109 has NO rate row — a new area.
 };
 // Pairs seen together (a < b) → times.
 const PAIRS: Array<[number, number, number]> = [
   [101, 102, 5], [101, 103, 3], [101, 104, 2], [103, 104, 6], [102, 103, 1], [101, 110, 4], [105, 106, 4],
+  [101, 111, 3],
+  // Deliberately NO row for 110–111 (same route) or 102–104 (different routes).
 ];
 
-function ctx(overrides: Partial<Record<keyof typeof RAW_CONFIG, unknown>> = {}): LoadPlanV2Context {
+function ctx(overrides: Record<string, unknown> = {}): LoadPlanV2Context {
   const config = parseLoadPlanV2Config({ ...RAW_CONFIG, ...overrides }) as LoadPlanV2Config;
   assert.ok(config, "fixture config must parse");
   const rates = new Map<number, AreaRate>();
@@ -84,22 +89,50 @@ function stop(areaId: number, kg: number, opts: { bills?: number; overdue?: bool
 }
 const types = (p: ReturnType<typeof planLoadsV2>) => p.cards.map((c) => c.type);
 
-test("config: the v2 keys parse; a missing one → null", () => {
-  assert.ok(parseLoadPlanV2Config(RAW_CONFIG));
+test("config: the v2 keys parse; a missing required one → null; defaults fill the rest", () => {
+  const c = parseLoadPlanV2Config(RAW_CONFIG)!;
+  assert.ok(c);
+  // Code defaults when the row leaves them out …
+  assert.equal(c.pairMinTimes, 1);
+  assert.equal(c.maxPlacesPerTruck, 6);
+  assert.equal(c.rideAlongBelowKg, 300);
+  assert.equal(c.sameRoutePairsAlways, true);
+  // … and the row's own value wins when it sets one.
+  const o = parseLoadPlanV2Config({ ...RAW_CONFIG, pairMinTimes: 2, maxPlacesPerTruck: 5, rideAlongBelowKg: 200, sameRoutePairsAlways: false })!;
+  assert.deepEqual([o.pairMinTimes, o.maxPlacesPerTruck, o.rideAlongBelowKg, o.sameRoutePairsAlways], [2, 5, 200, false]);
+  assert.equal(parseLoadPlanV2Config({ ...RAW_CONFIG, pairMinTimes: "two" }), null);
   const { vehicles: _v, ...noVehicles } = RAW_CONFIG;
   assert.equal(parseLoadPlanV2Config(noVehicles), null);
   assert.equal(parseLoadPlanV2Config({ ...RAW_CONFIG, newArea: { rate: "x" } }), null);
   assert.equal(parseLoadPlanV2Config(null), null);
 });
 
-test("bulk: a stop over 3,000 kg is its own Bulk card", () => {
-  const p = planLoadsV2([...stop(101, 3200, { bills: 2 }), ...stop(101, 900)], ctx());
+test("a heavy stop is split BY BILL into full Big loads; the leftover plans normally", () => {
+  // One stop, three bills: 2,000 + 1,500 + 1,000 = 4,500 kg (> 3,000). First-fit,
+  // heaviest first, to ≤ 3,050: 2,000 → +1,500 = 3,500 ✗ → +1,000 = 3,000 ✓ →
+  // a full Big of 3,000. Left: 1,500 (≤ 3,000) → an ordinary stop.
+  const key = "c:heavy";
+  const bills: V2Bill[] = [2000, 1500, 1000].map((kg) => ({ orderId: nextId++, weightKg: kg, stopKey: key, areaId: 101, routeId: 11, overdue: false }));
+  const p = planLoadsV2(bills, ctx());
+  const split = p.cards.find((c) => /split by bill/.test(c.reason))!;
+  assert.equal(split.type, "big");
+  assert.equal(Math.round(split.kg), 3000);
+  assert.deepEqual(split.orderIds, [bills[0].orderId, bills[2].orderId].sort((a, b) => a - b));
+  assert.match(split.reason, /Part of a 4,500 kg stop at Navsari Town/);
+  assert.equal(split.stops[0].stopKey, key); // the internal part suffix never leaks
+  const rest = p.cards.find((c) => c.orderIds.includes(bills[1].orderId))!;
+  assert.notEqual(rest, split);
+  assert.equal(Math.round(rest.kg), 1500);
+  assert.equal(p.summary.bulk, 0);
+});
+
+test("bulk: only a single BILL heavier than a Big carries gets a Bulk card", () => {
+  const heavy = stop(101, 3200); // one bill of 3,200 > 3,050
+  const p = planLoadsV2([...heavy, ...stop(110, 900)], ctx());
   const bulk = p.cards.find((c) => c.type === "bulk")!;
-  assert.equal(Math.round(bulk.kg), 3200);
-  assert.equal(bulk.orderIds.length, 2);
-  assert.match(bulk.reason, /over 3,000 kg — hire as needed/);
+  assert.deepEqual(bulk.orderIds, [heavy[0].orderId]);
+  assert.match(bulk.reason, /One bill over 3,050 kg — hire as needed/);
   assert.equal(p.summary.bulk, 1);
-  assert.ok(!p.cards.some((c) => c.type !== "bulk" && c.orderIds.some((id) => bulk.orderIds.includes(id))));
 });
 
 test("direct: a Direct route gets one card of its own, never mixed", () => {
@@ -121,14 +154,52 @@ test("a stop is never split across trucks", () => {
   assert.equal(holder[0].orderIds.filter((id) => big.some((b) => b.orderId === id)).length, 4);
 });
 
-test("the pair rule blocks a join (Bilimora + Vapi together only once)", () => {
-  // 102–103 have timesTogether 1 < pairMinTimes 2 → they may not share a truck.
-  const p = planLoadsV2([...stop(102, 700), ...stop(103, 700)], ctx());
+test("the pair rule blocks a join: different routes, never seen together", () => {
+  // Bilimora (Chikhli) and Valsad (Vapi): no pair row, different routes.
+  const p = planLoadsV2([...stop(102, 700), ...stop(104, 700)], ctx());
   assert.equal(p.summary.trucks, 2);
   assert.ok(p.cards.every((c) => c.areaNames.length === 1));
-  // With the rule relaxed (pairMinTimes 1) they join.
-  const q = planLoadsV2([...stop(102, 700), ...stop(103, 700)], ctx({ pairMinTimes: 1 }));
+  // Seen together once is enough at the default pairMinTimes = 1 …
+  const q = planLoadsV2([...stop(102, 700), ...stop(103, 700)], ctx());
   assert.equal(q.summary.trucks, 1);
+  // … but not when the config sets it to 2.
+  const r = planLoadsV2([...stop(102, 700), ...stop(103, 700)], ctx({ pairMinTimes: 2 }));
+  assert.equal(r.summary.trucks, 2);
+});
+
+test("two places on the same route may always share a truck", () => {
+  // Navsari East 110 and Navsari West 111: both have pair history, but never
+  // with each other. Same route → allowed (default); switched off → not.
+  const p = planLoadsV2([...stop(110, 700), ...stop(111, 700)], ctx());
+  assert.equal(p.summary.trucks, 1);
+  const q = planLoadsV2([...stop(110, 700), ...stop(111, 700)], ctx({ sameRoutePairsAlways: false }));
+  assert.equal(q.summary.trucks, 2);
+});
+
+test("the places limit: no truck carries more places than maxPlacesPerTruck", () => {
+  // Three Navsari-route places of 400 kg (not light, so no ride-along); limit 2.
+  const p = planLoadsV2([...stop(101, 400), ...stop(110, 400), ...stop(111, 400)], ctx({ maxPlacesPerTruck: 2 }));
+  assert.ok(p.cards.every((c) => c.areaNames.length <= 2));
+  assert.equal(p.cards.reduce((n, c) => n + c.stopCount, 0), 3);
+});
+
+test("ride-along: a light load joins a load it could not pair with", () => {
+  // Valsad 150 kg (< 300) with Bilimora 900 kg: no pair row, different routes —
+  // but a light load rides along, ignoring the pair rule.
+  const p = planLoadsV2([...stop(102, 900), ...stop(104, 150)], ctx());
+  assert.equal(p.summary.trucks, 1);
+  assert.equal(p.summary.hold, 0);
+  assert.match(p.cards[0].reason, /Valsad rides along/);
+  // At 400 kg it is not light: the pair rule applies and they go apart.
+  const q = planLoadsV2([...stop(102, 900), ...stop(104, 400)], ctx());
+  assert.equal(q.summary.trucks, 2);
+});
+
+test("reasons name the PLACES, not the routes", () => {
+  // Bilimora (Chikhli route) carries the most; Navsari Town (Navsari route) joined.
+  const p = planLoadsV2([...stop(102, 900), ...stop(101, 400)], ctx());
+  assert.equal(p.summary.trucks, 1);
+  assert.equal(p.cards[0].reason, "Navsari Town joined Bilimora — saves a truck.");
 });
 
 test("a new area (no rate row, no pairs) may pair within its own route", () => {
@@ -184,7 +255,7 @@ test("too few vehicles: the overdue load gets the truck, the rest wait", () => {
   assert.equal(p.summary.waiting, 1);
 });
 
-test("hold: a light load alone on its side with nothing overdue — not a truck", () => {
+test("hold: a light load with nothing to ride along with, not overdue — not a truck", () => {
   const p = planLoadsV2([...stop(107, 150), ...stop(101, 900)], ctx());
   const hold = p.cards.find((c) => c.type === "hold")!;
   assert.deepEqual(hold.areaNames, ["Adajan"]);
