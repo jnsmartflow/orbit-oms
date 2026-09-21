@@ -1092,9 +1092,11 @@ export async function getFloorBoard(
       // ── SHOW TO FLOOR, PER TRIP (slice 8, 2026-09-15) ──────────────────────
       // `isAwaitingShow` is THE held-back fact, decided here because only the
       // server has the stage and the dispatch status: a WAITING bill
-      // (pending_picking, dispatch — WAITING_FOR_PICKER) on a trip that has NOT
-      // been shown. Exactly the bills the supervisor's Assign tab leaves out
-      // when desk control is on. A bill on no trip is never awaiting a show.
+      // (pending_picking, dispatch — WAITING_FOR_PICKER) that is on NO trip, or
+      // on a trip that has NOT been shown. Exactly the bills the supervisor's
+      // Assign tab leaves out when desk control is on (waitingBranchWhere,
+      // lib/picking/visibility-gate.ts — this is its mirror; change both or
+      // neither). Since 2026-09-21 a bill on no trip is held back too (owner).
       // The client pairs it with the switch (status-pill.tsx isHeldBack).
       // A pointer that resolves to no trip reads as NOT awaiting. It cannot
       // persist — orders.tripDropId is ON DELETE SET NULL — so it is only ever a
@@ -1103,11 +1105,11 @@ export async function getFloorBoard(
       isAwaitingShow:
         order.workflowStage === SUPPORT_DONE_OUTPUT &&
         order.dispatchStatus === "dispatch" &&
-        order.tripDropId !== null &&
-        (() => {
-          const trip = tripByDropId.get(order.tripDropId);
-          return trip != null && trip.shownAt === null;
-        })(),
+        (order.tripDropId === null ||
+          (() => {
+            const trip = tripByDropId.get(order.tripDropId);
+            return trip != null && trip.shownAt === null;
+          })()),
     });
   }
 

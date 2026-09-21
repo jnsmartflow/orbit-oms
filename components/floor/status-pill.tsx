@@ -144,7 +144,8 @@ export function rowStatus(row: StatusInput): FloorStatus {
 }
 
 /**
- * Is this bill held back at the desk — waiting, on a trip the desk has not shown?
+ * Is this bill held back at the desk — waiting, and on no trip or on a trip the
+ * desk has not shown?
  *
  * 🔴 THE ONE OWNER OF THIS RULE. The pill and the header's "N not shown" count
  * both ask this function; neither re-derives it.
@@ -157,9 +158,9 @@ export function rowStatus(row: StatusInput): FloorStatus {
  *     2026-09-15 — a test that can be wrong should not ship, owner);
  *   - it asked about the bill, and the desk now decides by TRUCK.
  * `row.isAwaitingShow` is computed on the SERVER, which has the stage and the
- * dispatch status: a waiting bill (pending_picking, dispatch) on a trip that has
- * not been shown. A bill on no trip is never held back — the switch is about
- * picking trucks in order, not about hiding loose orders.
+ * dispatch status: a waiting bill (pending_picking, dispatch) on no trip, or on a
+ * trip that has not been shown. Since 2026-09-21 a bill on no trip ("To plan") is
+ * held back too — with desk control on, the floor sees only shown trucks (owner).
  *
  * The status half stays as a second guard: a bill somebody is already holding
  * (with picker, needs check, done) is never gated, whatever a stale payload says.

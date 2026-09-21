@@ -1040,7 +1040,7 @@ export async function getPickingQueue(
           buildPickingWhere({ date: options.date, scope: options.scope }).where,
           gateOn,
         )
-      : { bills: 0, trucks: 0 };
+      : { bills: 0, trucks: 0, unplanned: 0 };
 
   return {
     date: isoDate,
