@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Form Mock</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand-50:#F5F3FF; --brand-100:#EDE9FE; --brand-500:#7C3AED; --brand-600:#6D28D9;
+  --ink-900:#14131A; --ink-700:#3F3D4A; --ink-500:#6B6878; --ink-400:#8E8B99; --ink-300:#C9C7D1;
+  --ink-200:#E4E2EA; --ink-100:#F1F0F4; --ink-50:#F8F7FA; --white:#fff;
+  --ok-50:#ECFDF3; --ok-700:#047857; --warn-50:#FFFBEB; --warn-700:#B45309;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink-50);font-family:Inter,system-ui,sans-serif;color:var(--ink-900);font-size:13px}
+.page{max-width:1100px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--ink-500);margin:0 0 18px}
+.notes{background:#fff;border:1px solid var(--ink-200);border-radius:10px;padding:14px 16px;margin-bottom:24px}
+.notes b{font-weight:600}
+.notes ol{margin:6px 0 0;padding-left:18px;line-height:1.65;color:var(--ink-700)}
+.row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.col-title{font-size:12px;font-weight:600;color:var(--ink-500);margin:0 0 8px}
+
+/* drawer */
+.drawer{width:420px;max-width:100%;background:#fff;border:1px solid var(--ink-200);border-radius:12px;display:flex;flex-direction:column;min-height:640px;box-shadow:0 1px 2px rgba(20,19,26,.06)}
+.dh{padding:16px 20px 14px;border-bottom:1px solid var(--ink-100)}
+.dh-top{display:flex;align-items:center;gap:8px}
+.dh-title{font-size:16px;font-weight:600}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+.x{margin-left:auto;color:var(--ink-400);cursor:pointer;font-size:18px;line-height:1}
+.lock{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-500);background:var(--ink-100);border-radius:6px;padding:2px 8px}
+.dh-meta{margin-top:6px;color:var(--ink-500);font-size:12.5px}
+.db{padding:18px 20px;display:flex;flex-direction:column;gap:18px;flex:1}
+.f label.l{display:block;font-size:12px;font-weight:500;color:var(--ink-500);margin-bottom:6px}
+.f .hint{font-size:12px;color:var(--ink-400);margin-top:5px}
+.opt{font-weight:400;color:var(--ink-400)}
+
+.seg{display:flex;background:var(--ink-100);border-radius:8px;padding:3px;gap:2px}
+.seg button{flex:1;height:32px;border:0;background:transparent;border-radius:6px;font:inherit;font-weight:500;color:var(--ink-700);cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink-900);box-shadow:0 1px 2px rgba(20,19,26,.12)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{height:32px;padding:0 12px;border:1px solid var(--ink-200);border-radius:8px;background:#fff;font:inherit;color:var(--ink-700);cursor:pointer}
+.chip.on{border-color:var(--brand-500);background:var(--brand-50);color:var(--brand-600);font-weight:600}
+
+.inp{width:100%;height:38px;border:1px solid var(--ink-200);border-radius:8px;padding:0 12px;font:inherit;color:var(--ink-900);background:#fff;outline:none}
+.inp:focus{border-color:var(--brand-500);box-shadow:0 0 0 3px rgba(124,58,237,.10)}
+textarea.inp{height:64px;padding:9px 12px;resize:none}
+
+/* combobox */
+.cb{position:relative}
+.cb-field{display:flex;align-items:center;height:38px;border:1px solid var(--ink-200);border-radius:8px;padding:0 10px 0 12px;background:#fff;cursor:text;gap:8px}
+.cb.open .cb-field,.cb-field:focus-within{border-color:var(--brand-500);box-shadow:0 0 0 3px rgba(124,58,237,.10)}
+.cb-field input{border:0;outline:none;flex:1;font:inherit;min-width:0;background:transparent}
+.cb-val{flex:1;display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden}
+.cb-val .d{color:var(--ink-500);overflow:hidden;text-overflow:ellipsis}
+.cb-empty{color:var(--ink-400)}
+.tag{font-size:11px;font-weight:600;border-radius:5px;padding:1px 6px;background:var(--brand-50);color:var(--brand-600)}
+.tag.grey{background:var(--ink-100);color:var(--ink-500)}
+.tag.warn{background:var(--warn-50);color:var(--warn-700)}
+.clr{color:var(--ink-400);cursor:pointer;font-size:15px;padding:0 2px}
+.chev{color:var(--ink-400);font-size:11px}
+.cb-pop{position:absolute;left:0;right:0;top:42px;background:#fff;border:1px solid var(--ink-200);border-radius:10px;box-shadow:0 12px 32px -12px rgba(20,19,26,.28);z-index:20;display:none;overflow:hidden}
+.cb.open .cb-pop{display:block}
+.cb-list{max-height:264px;overflow:auto;padding:4px}
+.cb-sec{font-size:11px;font-weight:600;color:var(--ink-400);padding:8px 10px 4px}
+.it{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;cursor:pointer}
+.it .d{color:var(--ink-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it .n{margin-left:auto;color:var(--ink-400);font-size:12px}
+.it.act{background:var(--brand-50)}
+.it.sel .mono,.it.sel .nm{color:var(--brand-600);font-weight:600}
+.it mark{background:#FEF3C7;color:inherit;border-radius:2px}
+.cb-foot{border-top:1px solid var(--ink-100);padding:6px 10px;font-size:11.5px;color:var(--ink-400);display:flex;justify-content:space-between}
+.none{padding:14px 12px;color:var(--ink-500)}
+.vt{flex:none;font-size:11.5px;font-weight:600;color:var(--ink-700);background:var(--ink-100);border-radius:5px;padding:1px 7px}
+.tf-row{display:flex;gap:5px;flex-wrap:wrap;padding:6px 6px 4px;border-bottom:1px solid var(--ink-100);margin-bottom:2px}
+.tf{height:26px;padding:0 9px;border:1px solid var(--ink-200);border-radius:13px;background:#fff;font:inherit;font-size:12px;color:var(--ink-700);cursor:pointer}
+.tf span{color:var(--ink-400);margin-left:2px}
+.tf.on{border-color:var(--brand-500);background:var(--brand-50);color:var(--brand-600);font-weight:600}
+.tf.on span{color:var(--brand-500)}
+
+.df{border-top:1px solid var(--ink-100);padding:14px 20px;display:flex;justify-content:flex-end;gap:8px}
+.btn{height:38px;padding:0 16px;border-radius:8px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--ink-200);background:#fff;color:var(--ink-700)}
+.btn.p{background:var(--brand-500);border-color:var(--brand-500);color:#fff}
+.btn.p:disabled{background:var(--ink-100);border-color:var(--ink-200);color:var(--ink-400);cursor:not-allowed}
+.why{font-size:12px;color:var(--ink-400);margin-right:auto;align-self:center}
+@media (max-width:480px){.drawer{width:100%}}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Trip form — v1 · LOCKED 21 Sept 2026</h1>
+  <p class="sub">docs/mockups/floor-trips/trip-form-v1.html · one shared form for New trip and Edit trip · click the fields, it works</p>
+
+  <div class="notes">
+    <b>What changed and why</b>
+    <ol>
+      <li><b>One form, one field order</b> for New and Edit: Type → Slot → Transporter → Vehicle → Docket → Note.</li>
+      <li><b>Transporter comes before Vehicle</b> and starts as <b>Nagadhiraj</b> (124 of the last 165 trips). The vehicle list only shows <i>that</i> transporter's fleet, so a vehicle can never quietly swap the transporter.</li>
+      <li><b>Vehicle is a search box.</b> Type any part of the plate or the driver's name — "4266", "gj05bu", "rajubhai" all work. Spaces and dashes ignored.</li>
+      <li><i>Vehicle model (Piaggio, Tata Ace…) parked for later — needs a new column + one-time fill.</i></li>
+      <li><b>No helper text</b> on the form — no "optional" labels, no hints, no "default" tags.</li>
+      <li><b>Typed plate moved up</b> from the bottom of the list: type a plate that isn't in the master and a <i>Use "…" as typed plate</i> row appears. Transporters with no fleet (DTDC, Diamond…) go straight to typing.</li>
+      <li><b>Delivery type and Slot are one-tap buttons</b>, not dropdowns. In Edit, the type sits locked in the header.</li>
+      <li><b>Docket field added to New trip</b> (the server already accepts it).</li>
+      <li>Fields, buttons and focus ring follow CLAUDE_UI §4 / §9 / §10 (38px, violet ring, no uppercase labels).</li>
+    </ol>
+  </div>
+
+  <div class="row">
+    <div>
+      <p class="col-title">NEW TRIP</p>
+      <div class="drawer" id="newTrip"></div>
+    </div>
+    <div>
+      <p class="col-title">EDIT TRIP</p>
+      <div class="drawer" id="editTrip"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const TYPES=["Local","Upcountry","IGT","Cross"];
+const SLOTS=["10:30","12:30","15:00","18:00"]; // placeholder times — real ones come from dispatch_slot_master
+const TRANSPORTERS=["Nagadhiraj","Dev Shri Roadlines","Diamond Logistics","DTDC Courier","Ghanshyam Roadways","Jahanvi Trans Logistics","Jay Yaha Mogi Roadlines","MUMBAI BARODA TRANSPORT","OM SAI RAM RAODWAYS","Safexpress","Sai Dev Roadlines","Sai Logistics","Sai Tempo Service","Shiv Logistics","Shri Lalitji Tempo Service","Shri Sai Dev Tempo","TEJASHVI ROADWAYS","V-TRANS"];
+const DEFAULT_T="Nagadhiraj";
+// vehicle types are PLACEHOLDERS — real values come from vehicle_master (column to be confirmed)
+const VEH={Nagadhiraj:[
+ ["GJ05BU4266","Rajubhai Ranabhai Vansfoda","Piaggio"],["GJ05BU9648","Rajubhai Ranabhai Vansfoda","Tata Ace"],["GJ05BV3710","Manish Narendra Vansfoda","Piaggio"],
+ ["GJ05BW0175","DHAVAL P VANSFODA","Eicher 14ft"],["GJ05BW1641","Vijaybhai Maganbhai Vansfoda","Tata Ace"],["GJ05BW3946","Jitu Kalidasbhai Vansfoda","Piaggio"],
+ ["GJ05BY0281","Prahalad Dadubhai Vansfoda","Bolero Pickup"],["GJ05BY6494","Akshay Vijaybhai Vansfoda","Tata Ace"],["GJ05BZ1119","Narendra Somabhai Vansfoda","Eicher 14ft"],
+ ["GJ05BZ5480","Dharmesh Shaileshbhai Rathod","Piaggio"],["GJ05BZ7605","Rakesh Nayka","Bolero Pickup"],["GJ05CT4488","SUNIL DIPAKBHAI VANSFODA","Tata 407"],
+ ["GJ05CU7611","Sunil Viru Vansfoda","Piaggio"]]};
+// demo plates (Shiv Logistics) assumed deactivated in admin → Shiv shows no fleet
+const fleet=t=>VEH[t]||[];
+const norm=s=>s.toUpperCase().replace(/[\s\-]/g,"");
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function hl(text,q){ if(!q) return esc(text);
+  const i=text.toLowerCase().indexOf(q.toLowerCase()); if(i<0) return esc(text);
+  return esc(text.slice(0,i))+"<mark>"+esc(text.slice(i,i+q.length))+"</mark>"+esc(text.slice(i+q.length)); }
+function hlPlate(p,q){ const nq=norm(q); if(!nq) return esc(p); const i=p.indexOf(nq);
+  if(i<0) return esc(p); return esc(p.slice(0,i))+"<mark>"+esc(p.slice(i,i+nq.length))+"</mark>"+esc(p.slice(i+nq.length)); }
+
+/* generic combobox */
+function combobox(host,cfg){
+  host.innerHTML=`<div class="cb"><div class="cb-field"></div><div class="cb-pop"><div class="cb-list"></div><div class="cb-foot"><span></span><span class="cnt"></span></div></div></div>`;
+  const cb=host.firstChild, field=cb.querySelector(".cb-field"), list=cb.querySelector(".cb-list"), cnt=cb.querySelector(".cnt");
+  let q="", act=0, rows=[];
+  function closed(){ cb.classList.remove("open"); field.innerHTML=cfg.renderValue()+`<span class="chev">▼</span>`;
+    const c=field.querySelector(".clr"); if(c) c.onclick=e=>{e.stopPropagation();cfg.clear();closed();}; }
+  function open(){ q=""; cb.classList.add("open");
+    field.innerHTML=`<input placeholder="${cfg.placeholder()}"><span class="chev">▲</span>`;
+    const inp=field.querySelector("input"); inp.focus();
+    inp.oninput=()=>{q=inp.value;act=0;draw();};
+    inp.onkeydown=e=>{ if(e.key==="ArrowDown"){act=Math.min(act+1,rows.length-1);draw();e.preventDefault();}
+      else if(e.key==="ArrowUp"){act=Math.max(act-1,0);draw();e.preventDefault();}
+      else if(e.key==="Enter"){ if(rows[act]) pick(rows[act]); e.preventDefault();}
+      else if(e.key==="Escape"){closed();} };
+    draw(); }
+  function pick(r){ cfg.pick(r); closed(); }
+  function draw(){ const out=cfg.rows(q); rows=out.rows;
+    list.innerHTML=out.html(act) || `<div class="none">${cfg.emptyText(q)}</div>`;
+    cnt.textContent=out.count||"";
+    list.querySelectorAll(".it").forEach((el,i)=>{ el.onmousedown=e=>{e.preventDefault();pick(rows[i]);}; el.onmouseenter=()=>{act=i;list.querySelectorAll(".it").forEach((x,j)=>x.classList.toggle("act",j===i));}; });
+    const a=list.querySelector(".it.act"); if(a) a.scrollIntoView({block:"nearest"});
+    if(cfg.afterDraw) cfg.afterDraw(list,()=>{act=0;draw();}); }
+  field.onclick=()=>{ if(!cb.classList.contains("open")) open(); };
+  document.addEventListener("mousedown",e=>{ if(!cb.contains(e.target)&&cb.classList.contains("open")) closed(); });
+  closed(); return {refresh:closed};
+}
+
+function buildForm(el,mode){
+  const st={type: mode==="edit"?"Upcountry":null, slot:null, transporter:DEFAULT_T, tTouched:false, vehicle:null, docket:"", note:""};
+  el.innerHTML=`
+    <div class="dh">${ mode==="new"
+      ? `<div class="dh-top"><span class="dh-title">New trip</span><span class="x">×</span></div>`
+      : `<div class="dh-top"><span class="dh-title mono">U-260921-06</span><span class="lock" title="Cannot change — the trip number is built from it. Cancel and rebuild if wrong.">🔒 Upcountry</span><span class="x">×</span></div><div class="dh-meta">Kamrej +1 · 3 stops · 7 bills · 930 L · 1,087 kg</div>`}
+    </div>
+    <div class="db">
+      ${ mode==="new" ? `<div class="f"><label class="l">Delivery type</label><div class="seg" data-k="type">${TYPES.map(t=>`<button>${t}</button>`).join("")}</div></div>`:"" }
+      <div class="f"><label class="l">Slot</label><div class="chips" data-k="slot">${SLOTS.map(s=>`<button class="chip">${s}</button>`).join("")}</div></div>
+      <div class="f"><label class="l">Transporter</label><div class="tbox"></div></div>
+      <div class="f"><label class="l">Vehicle</label><div class="vbox"></div></div>
+      <div class="f"><label class="l">Transporter's trip / docket no.</label><input class="inp" placeholder="e.g. L42"></div>
+      <div class="f"><label class="l">Reason / note</label><textarea class="inp" placeholder="Navsari side, going with the evening load"></textarea></div>
+    </div>
+    <div class="df"><button class="btn">Cancel</button><button class="btn p go">${mode==="new"?"Create trip":"Save"}</button></div>`;
+
+  const go=el.querySelector(".go");
+  function sync(){
+    el.querySelectorAll('[data-k="type"] button').forEach(b=>b.classList.toggle("on",b.textContent===st.type));
+    el.querySelectorAll('[data-k="slot"] button').forEach(b=>b.classList.toggle("on",b.textContent===st.slot));
+    const ok= mode==="edit" || !!st.type; go.disabled=!ok;
+  }
+  el.querySelectorAll('[data-k="type"] button').forEach(b=>b.onclick=()=>{st.type=b.textContent;sync();});
+  el.querySelectorAll('[data-k="slot"] button').forEach(b=>b.onclick=()=>{st.slot= st.slot===b.textContent?null:b.textContent;sync();});
+
+  const tcb=combobox(el.querySelector(".tbox"),{
+    placeholder:()=>"Search transporter",
+    renderValue:()=> st.transporter
+      ? `<span class="cb-val"><span>${esc(st.transporter)}</span></span><span class="clr" title="Clear">×</span>`
+      : `<span class="cb-val cb-empty">Not set</span>`,
+    clear:()=>{st.transporter=null;st.tTouched=true;st.vehicle=null;vcb.refresh();sync();},
+    emptyText:q=>`No transporter matches “${esc(q)}”`,
+    rows:q=>{ const r=TRANSPORTERS.filter(t=>t.toLowerCase().includes(q.toLowerCase()));
+      return {rows:r,count:`${r.length} of ${TRANSPORTERS.length}`,html:a=>r.map((t,i)=>`<div class="it ${i===a?'act':''} ${t===st.transporter?'sel':''}"><span class="nm">${hl(t,q)}</span></div>`).join("")}; },
+    pick:t=>{ if(t!==st.transporter){st.vehicle=null;st.vType=null;} st.transporter=t; st.tTouched=true; vcb.refresh(); sync(); }
+  });
+
+  const vcb=combobox(el.querySelector(".vbox"),{
+    placeholder:()=> fleet(st.transporter).length ? "Search plate or driver" : "Type the plate",
+    renderValue:()=> st.vehicle
+      ? `<span class="cb-val"><span class="mono">${esc(st.vehicle.plate)}</span>${st.vehicle.driver?`<span class="d">${esc(st.vehicle.driver)}</span>`:'<span class="tag warn">typed plate</span>'}</span><span class="clr" title="Clear">×</span>`
+      : `<span class="cb-val cb-empty">No vehicle yet</span>`,
+    clear:()=>{st.vehicle=null;sync();},
+    emptyText:q=> q?`Type at least 4 characters of the plate`:`Start typing a plate`,
+    rows:q=>{ const all=fleet(st.transporter), nq=norm(q), lq=q.toLowerCase().trim();
+      const m= !q?all: all.filter(([p,d])=>p.includes(nq)||d.toLowerCase().includes(lq));
+      const rows=m.map(([p,d])=>({plate:p,driver:d}));
+      const exact=all.some(([p])=>p===nq);
+      if(nq.length>=4 && !exact) rows.push({plate:nq,driver:null,typed:true});
+      const html=a=>{ let h=""; 
+        rows.forEach((r,i)=>{ if(r.typed) h+=`<div class="it ${i===a?'act':''}"><span>Use <span class="mono">“${esc(r.plate)}”</span> as typed plate</span><span class="tag warn" style="margin-left:auto">typed</span></div>`;
+          else h+=`<div class="it ${i===a?'act':''} ${st.vehicle&&st.vehicle.plate===r.plate?'sel':''}"><span class="mono">${hlPlate(r.plate,q)}</span><span class="d">${hl(r.driver,lq)}</span></div>`; });
+        return h; };
+      return {rows,count: all.length?`${m.length} of ${all.length}`:"",html}; },
+    pick:r=>{ st.vehicle=r; sync(); }
+  });
+  sync();
+}
+buildForm(document.getElementById("newTrip"),"new");
+buildForm(document.getElementById("editTrip"),"edit");
+</script>
+</body>
+</html>
