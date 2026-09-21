@@ -40,7 +40,7 @@ const RAW_CONFIG = {
 const AREA: Record<number, [string, number]> = {
   101: ["Navsari Town", 11], 102: ["Bilimora", 21], 103: ["Vapi Town", 12], 104: ["Valsad", 12],
   105: ["Bharuch Town", 17], 106: ["Kamrej Town", 19], 107: ["Adajan", 9], 108: ["IGT Area", 18],
-  109: ["New Navsari Area", 11], 110: ["Navsari East", 11], 111: ["Navsari West", 11],
+  109: ["New Navsari Area", 11], 110: ["Navsari East", 11], 111: ["Navsari West", 11], 112: ["Maroli", 11],
 };
 const R: Record<number, [number, number, number, number, number, number, boolean]> = {
   101: [811, 1037, 1437, 83, 107, 151, true],
@@ -53,6 +53,7 @@ const R: Record<number, [number, number, number, number, number, number, boolean
   108: [1709, 2017, 2719, 97, 127, 173, false],
   110: [823, 1049, 1447, 83, 107, 151, true],
   111: [827, 1051, 1451, 83, 107, 151, true],
+  112: [829, 1053, 1453, 83, 107, 151, true],
   // 109 has NO rate row — a new area.
 };
 // Pairs seen together (a < b) → times.
@@ -61,6 +62,14 @@ const PAIRS: Array<[number, number, number]> = [
   [101, 111, 3],
   // Deliberately NO row for 110–111 (same route) or 102–104 (different routes).
 ];
+
+/** The fixture context with one area's gcAllowed switched. */
+function ctxGc(areaId: number, gcAllowed: boolean): LoadPlanV2Context {
+  const c = ctx();
+  const rates = new Map<number, AreaRate>(c.rates);
+  rates.set(areaId, { ...rates.get(areaId)!, gcAllowed });
+  return { ...c, rates };
+}
 
 function ctx(overrides: Record<string, unknown> = {}): LoadPlanV2Context {
   const config = parseLoadPlanV2Config({ ...RAW_CONFIG, ...overrides }) as LoadPlanV2Config;
@@ -107,7 +116,7 @@ test("config: the v2 keys parse; a missing required one → null; defaults fill 
   assert.equal(parseLoadPlanV2Config(null), null);
 });
 
-test("a heavy stop is split BY BILL into full direct Bigs; the leftover plans normally", () => {
+test("a heavy stop is split BY BILL into full Big loads; the leftover plans normally", () => {
   // One stop, three bills: 2,000 + 1,500 + 1,000 = 4,500 kg — more than one
   // direct Big (3,500). First-fit, heaviest first, to ≤ 3,500: 2,000 → +1,500 =
   // 3,500 ✓ → +1,000 = 4,500 ✗ → a full direct Big of 3,500. Left: 1,000.
@@ -379,4 +388,155 @@ test("soft stop charge: stops above the ideal cost extra, so the plan avoids the
   assert.ok(charged.cards.every((c) => c.stopCount <= 5 && !c.flags.amber));
   // The soft cost never reaches the output.
   assert.doesNotMatch(JSON.stringify(charged), /100000|charge/i);
+});
+
+test("wording: with direct Big off, no reason says \"direct Big\"", () => {
+  // directBigMaxKg 3,050 = the normal Big limit → direct Big is off. A heavy
+  // stop still splits by bill, and a two-stop Big stays a plain Big.
+  const key = "c:heavy-off";
+  const heavy: V2Bill[] = [2000, 1500, 1000].map((kg) => ({ orderId: nextId++, weightKg: kg, stopKey: key, areaId: 101, routeId: 11, overdue: false }));
+  const p = planLoadsV2([...heavy, ...stop(103, 1400), ...stop(104, 1600)], ctx({ directBigMaxKg: 3050 }), { ace: 0, gc: 0 });
+  assert.ok(p.cards.some((c) => /split by bill into full Big loads/.test(c.reason)));
+  p.cards.forEach((c) => assert.doesNotMatch(c.reason, /direct Big/i, c.reason));
+});
+
+// ── Replan (owner, 2026-09-21) ──────────────────────────────────────────────
+
+test("suggest mode: Navsari 2,900 + Maroli 300 → one Big of 3,200 kg, amber", () => {
+  const p = planLoadsV2([...stop(101, 2900), ...stop(112, 300)], ctx());
+  assert.equal(p.mode, "suggest");
+  assert.equal(p.summary.trucks, 1);
+  const big = p.cards[0];
+  assert.equal(big.type, "big");
+  assert.equal(Math.round(big.kg), 3200);
+  assert.deepEqual(big.areaNames.slice().sort(), ["Maroli", "Navsari Town"]);
+  assert.equal(big.flags.amber, true);
+  assert.equal(p.shortage, null);
+  assert.deepEqual(p.unused, []);
+});
+
+test("replan: a Big capped at 3,000 + a GC → Navsari on the Big (green), Maroli on the GC", () => {
+  const available = [{ type: "big" as const, count: 1, maxKg: 3000 }, { type: "gc" as const, count: 1 }];
+  const navsari = stop(101, 2900);
+  const maroli = stop(112, 300);
+  const p = planLoadsV2([...navsari, ...maroli], ctxGc(112, true), {}, { available });
+  assert.equal(p.mode, "replan");
+  const big = p.cards.find((c) => c.type === "big")!;
+  assert.deepEqual(big.orderIds, navsari.map((b) => b.orderId));
+  assert.equal(Math.round(big.kg), 2900);
+  assert.equal(big.flags.amber, false);
+  assert.equal(big.flags.overloaded, false);
+  const gc = p.cards.find((c) => c.type === "gc")!;
+  assert.deepEqual(gc.areaNames, ["Maroli"]);
+  assert.equal(p.summary.waiting, 0);
+  assert.equal(p.shortage, null);
+  assert.deepEqual(p.unused, []);
+  // Never more than was given, never over the Big's 3,000.
+  assert.equal(p.summary.trucks, 2);
+  assert.ok(p.cards.every((c) => c.type !== "big" || c.kg <= 3000));
+});
+
+test("replan: Maroli not gcAllowed → it waits, with a shortage line and the GC unused", () => {
+  const available = [{ type: "big" as const, count: 1, maxKg: 3000 }, { type: "gc" as const, count: 1 }];
+  const p = planLoadsV2([...stop(101, 2900), ...stop(112, 300)], ctxGc(112, false), {}, { available });
+  assert.equal(p.summary.big, 1);
+  assert.equal(p.summary.gc, 0);
+  const waiting = p.cards.find((c) => c.type === "waiting")!;
+  assert.deepEqual(waiting.areaNames, ["Maroli"]);
+  assert.deepEqual(p.shortage, { kg: 300, add: { ace: 1 }, text: "Short 300 kg — add 1 Ace" });
+  assert.deepEqual(p.unused.map((u) => u.text), ["1 GC not needed"]);
+});
+
+test("replan: too few vehicles — the overdue order stays in a truck; the rest waits with a shortage", () => {
+  const available = [{ type: "big" as const, count: 1, maxKg: 3000 }];
+  const onTime = stop(101, 2000, { key: "c:rp-ontime" }); // Navsari, not overdue
+  const overdue = stop(103, 1500, { key: "c:rp-overdue", overdue: true, ageDays: 3 }); // Vapi, overdue
+  const p = planLoadsV2([...onTime, ...overdue], ctx(), {}, { available });
+  assert.equal(p.summary.trucks, 1); // never more than given
+  const big = p.cards.find((c) => c.type === "big")!;
+  assert.ok(big.orderIds.includes(overdue[0].orderId));
+  const waiting = p.cards.find((c) => c.type === "waiting")!;
+  assert.deepEqual(waiting.orderIds, onTime.map((b) => b.orderId));
+  assert.deepEqual(p.shortage, { kg: 2000, add: { ace: 1 }, text: "Short 2,000 kg — add 1 Ace" });
+  assert.deepEqual(p.unused, []);
+});
+
+test("replan: an overdue stop pushes a non-overdue stop out of a full truck", () => {
+  // One Big (3,000). Vapi 400 (overdue) + Valsad 2,500 plan together (same
+  // route). Bilimora 600 (overdue) can never ride with Valsad (no pair), so it
+  // has no vehicle — it pushes Valsad out and rides with Vapi (paired once).
+  const available = [{ type: "big" as const, count: 1, maxKg: 3000 }];
+  const vapi = stop(103, 400, { key: "c:ev-vapi", overdue: true, ageDays: 2 });
+  const valsad = stop(104, 2500, { key: "c:ev-valsad", ageDays: 1 });
+  const bilimora = stop(102, 600, { key: "c:ev-bilimora", overdue: true, ageDays: 2 });
+  const p = planLoadsV2([...vapi, ...valsad, ...bilimora], ctx(), {}, { available });
+  const big = p.cards.find((c) => c.type === "big")!;
+  assert.deepEqual(big.areaNames.slice().sort(), ["Bilimora", "Vapi Town"]);
+  const waiting = p.cards.find((c) => c.type === "waiting")!;
+  assert.deepEqual(waiting.orderIds, valsad.map((b) => b.orderId));
+});
+
+test("replan: an extra vehicle is listed as unused", () => {
+  const available = [{ type: "ace" as const, count: 1 }, { type: "big" as const, count: 1 }, { type: "gc" as const, count: 2, maxKg: 1200 }];
+  const p = planLoadsV2(stop(101, 1000), ctx(), {}, { available });
+  assert.equal(p.summary.trucks, 1);
+  assert.equal(p.cards[0].type, "ace"); // fill order: Ace first
+  assert.deepEqual(
+    p.unused.map((u) => [u.type, u.count, u.maxKg, u.text]),
+    [["big", 1, undefined, "1 Big not needed"], ["gc", 2, 1200, "2 GCs (1,200 kg) not needed"]],
+  );
+  assert.equal(p.shortage, null);
+});
+
+test("replan: a vehicle with no maxKg may bend overKg above its rated load, shown amber", () => {
+  const p = planLoadsV2(stop(101, 2040), ctx(), {}, { available: [{ type: "ace", count: 1 }] });
+  const ace = p.cards.find((c) => c.type === "ace")!;
+  assert.equal(Math.round(ace.kg), 2040);
+  assert.equal(ace.flags.amber, true);
+  assert.equal(ace.flags.overloaded, false);
+  assert.match(ace.reason, /40 kg over the Ace's 2,000 kg/);
+  // Capped at 2,000 (maxKg given): no bend. One bill of 2,040 is heavier than
+  // any vehicle on hand → Bulk; two bills of 1,020 split by bill — one Ace
+  // load, the other waits. Nothing rides over 2,000.
+  const q = planLoadsV2(stop(101, 2040), ctx(), {}, { available: [{ type: "ace", count: 1, maxKg: 2000 }] });
+  assert.equal(q.summary.trucks, 0);
+  assert.equal(q.summary.bulk, 1);
+  const r = planLoadsV2(stop(101, 2040, { bills: 2 }), ctx(), {}, { available: [{ type: "ace", count: 1, maxKg: 2000 }] });
+  assert.equal(r.summary.trucks, 1);
+  assert.equal(Math.round(r.cards.find((c) => c.type === "ace")!.kg), 1020);
+  assert.equal(r.summary.waiting, 1);
+});
+
+test("pinned: a pinned card comes back unchanged and its vehicle counts against available", () => {
+  const bills = [...stop(101, 1800), ...stop(103, 1700), ...stop(105, 1600), ...stop(106, 900)];
+  const first = planLoadsV2(bills, ctx());
+  const pin = first.cards.find((c) => c.type === "big" || c.type === "ace")!;
+  assert.ok(pin, "the suggest plan has a truck to pin");
+  const shape = (c: typeof pin) => ({ key: c.key, type: c.type, kg: c.kg, orderIds: c.orderIds, stops: c.stops.map((x) => [x.stopKey, x.areaId, x.kg, x.orderIds]) });
+  // Only the pinned card's vehicle is on hand: it keeps it; everything else waits.
+  const p = planLoadsV2(bills.map((b) => ({ ...b })), ctx(), {}, { available: [{ type: pin.type as "ace" | "big", count: 1 }], pinned: [pin.key] });
+  const again = p.cards.find((c) => c.key === pin.key)!;
+  assert.ok(again, "the pinned card is still there");
+  assert.deepEqual(shape(again), shape(pin));
+  assert.equal(again.flags.pinned, true);
+  assert.equal(p.summary.trucks, 1);
+  assert.deepEqual(p.unused, []);
+  const rest = bills.map((b) => b.orderId).filter((id) => !pin.orderIds.includes(id));
+  assert.deepEqual(p.cards.filter((c) => c.type === "waiting").flatMap((c) => c.orderIds).sort((a, b) => a - b), rest.sort((a, b) => a - b));
+  // Suggest mode too: pinned keeps its card.
+  const q = planLoadsV2(bills.map((b) => ({ ...b })), ctx(), {}, { pinned: [pin.key] });
+  assert.deepEqual(shape(q.cards.find((c) => c.key === pin.key)!), shape(pin));
+});
+
+test("replan: no rupee value in the output (shortage and unused included)", () => {
+  const bills = [...stop(101, 2900), ...stop(112, 300), ...stop(103, 1400), ...stop(105, 1200)];
+  const plan = planLoadsV2(bills, ctxGc(112, false), {}, { available: [{ type: "big", count: 1, maxKg: 3000 }, { type: "gc", count: 2 }] });
+  assert.ok(plan.shortage && plan.unused.length > 0, "the fixture exercises both lines");
+  const json = JSON.stringify(plan);
+  assert.doesNotMatch(json, /rate|cost|saving|penalty|rupee|₹|"rs"/i);
+  const secret = new Set<number>([613]);
+  Object.keys(R).forEach((k) => R[Number(k)].slice(0, 6).forEach((v) => secret.add(v as number)));
+  const SAFE = new Set(["orderIds", "areaId", "stopKey", "key", "kg", "stopCount", "totalKg", "ace", "big", "gc", "trucks", "bulk", "direct", "hold", "waiting", "count", "maxKg"]);
+  const numbers = (JSON.stringify(plan, (k, v) => (SAFE.has(k) ? undefined : v)).match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+  assert.deepEqual(numbers.filter((n) => secret.has(n)), []);
 });

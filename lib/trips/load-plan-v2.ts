@@ -30,7 +30,8 @@
 //                  above its rated maxKg, added to the PLANNING cost only (never
 //                  output). The hard limits are hardMaxKg (else maxKg + overKg)
 //                  and maxStops. A card over its ideal stops or its rated load
-//                  (maxKg + overKg) is flagged amber.
+//                  (maxKg) is flagged amber — a bend of up to overKg is allowed
+//                  but always shown.
 //   3. Heavy     — a stop heavier than one direct Big is split BY BILL into
 //                  full direct-Big loads while more than one direct Big of it is
 //                  left; the leftover bills plan like any other stop. Only a
@@ -54,6 +55,23 @@
 //                  side; overdue loads get vehicles first, then the oldest.
 //   8. Order     — stops far first (highest Big rate), back toward Surat.
 //   9. Output    — cards + a summary, no rupees; reasons name the PLACES.
+//                  `shortage` ("Short 800 kg — add 1 Ace") when anything waits:
+//                  kg and vehicle TYPES only, never a cost.
+//  10. Replan    — optional (owner, 2026-09-21). With `available` the engine
+//                  plans with THOSE vehicles only, never more: a vehicle with
+//                  maxKg is hard-capped there (no bend, no direct-Big stretch);
+//                  one without may bend overKg above its rated load (amber).
+//                  Fill order Ace → Big → GC (GC only where every place is
+//                  gcAllowed, within its maxStops); two trucks going the same
+//                  way share one vehicle when that saves. Stops that still have
+//                  no vehicle are placed one by one (overdue, heaviest, oldest
+//                  first); an overdue stop may push the smallest, newest
+//                  non-overdue stops of a truck out. What is left waits.
+//                  `unused` lists the vehicles not needed ("1 GC not needed").
+//                  Without `available` it is SUGGEST mode, exactly as before.
+//      Pinned    — `pinned` card keys keep their stops and vehicle out of any
+//                  planning (either mode); the vehicle counts against
+//                  `available` (or the day's counts).
 //
 // ⚠ TARGET < ES2015: every Set/Map is iterated through Array.from (CLAUDE.md §1).
 
@@ -271,6 +289,21 @@ export interface VehicleCounts {
   gc?: number;
 }
 
+/** One line of the vehicles on hand for a REPLAN. */
+export interface AvailableVehicle {
+  type: VehicleType;
+  count: number;
+  /** Hard cap for these vehicles (no bend). Absent → maxKg + overKg (a bend, amber). */
+  maxKg?: number;
+}
+
+export interface PlanOptions {
+  /** Present → REPLAN with exactly these vehicles. Absent → suggest mode. */
+  available?: AvailableVehicle[];
+  /** Card keys (V2Card.key) to keep exactly as they are. Truck cards only. */
+  pinned?: string[];
+}
+
 export type V2CardType = VehicleType | "bulk" | "direct" | "hold" | "waiting";
 
 export interface V2Stop {
@@ -302,9 +335,11 @@ export interface V2Card {
     newArea: boolean;
     /** An Ace beyond its normal stop limit on a light milk run — shown amber. */
     lightRun: boolean;
-    /** Heavier than the vehicle's rated load (maxKg + overKg). */
+    /** Heavier than the vehicle's limit: maxKg + overKg, or a replan vehicle's own maxKg. */
     overloaded: boolean;
-    /** Show amber: over the ideal stops, over the rated load, or a light milk run. */
+    /** Kept as it was (PlanOptions.pinned). */
+    pinned: boolean;
+    /** Show amber: over the ideal stops, over the rated load (a bend), or a light milk run. */
     amber: boolean;
   };
   /** Words only — never a rupee figure. */
@@ -313,8 +348,30 @@ export interface V2Card {
   needs?: Partial<Record<VehicleType, number>>;
 }
 
+/** Kilos left waiting and the cheapest vehicle types that would carry them — no cost. */
+export interface V2Shortage {
+  kg: number;
+  add: Partial<Record<VehicleType, number>>;
+  /** "Short 800 kg — add 1 Ace". */
+  text: string;
+}
+
+/** Replan vehicles no load needed. */
+export interface V2Unused {
+  type: VehicleType;
+  count: number;
+  maxKg?: number;
+  /** "1 GC not needed". */
+  text: string;
+}
+
 export interface V2Plan {
+  mode: "suggest" | "replan";
   cards: V2Card[];
+  /** null when nothing waits. */
+  shortage: V2Shortage | null;
+  /** Replan only; [] in suggest mode. */
+  unused: V2Unused[];
   summary: {
     /** Suggested trucks by type (split heavy-stop loads count as Bigs). */
     ace: number; big: number; gc: number;
@@ -461,7 +518,21 @@ interface Load {
   merged?: boolean;
   /** A full Big load split off a heavy stop (rule 3): the stop's area and total kg. */
   split?: { area: string; stopKg: number };
+  /** Replan: the one vehicle carrying it. */
+  unit?: Unit;
+  pinned?: boolean;
 }
+
+/** Replan: one vehicle on hand. `cap` = its maxKg, else maxKg + overKg. */
+interface Unit {
+  idx: number;
+  type: VehicleType;
+  maxKg?: number;
+  cap: number;
+  load?: Load;
+}
+
+const FILL_ORDER: readonly VehicleType[] = ["ace", "big", "gc"];
 
 function makeLoad(stops: StopRec[], side: string): Load {
   const all = new Map<number, AreaFacts>();
@@ -515,11 +586,26 @@ export function makePricer(ctx: LoadPlanV2Context): (areaIds: ReadonlyArray<numb
 
 type Avail = Record<VehicleType, number>;
 
-export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: VehicleCounts = {}): V2Plan {
+export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: VehicleCounts = {}, opts: PlanOptions = {}): V2Plan {
   const cfg = ctx.config;
   const V = cfg.vehicles;
-  /** One direct Big — what a single stop may weigh before it is split. */
-  const splitCap = kgCap(cfg, "big", 1);
+  const replan = opts.available !== undefined;
+  // Replan: every vehicle on hand is one unit.
+  const units: Unit[] = [];
+  (opts.available ?? []).forEach((a) => {
+    if (!VEHICLE_TYPES.includes(a.type)) return;
+    const hasMax = typeof a.maxKg === "number" && a.maxKg > 0;
+    for (let i = 0; i < Math.max(0, Math.floor(a.count)); i++) {
+      units.push({
+        idx: units.length,
+        type: a.type,
+        ...(hasMax ? { maxKg: a.maxKg } : {}),
+        cap: hasMax ? (a.maxKg as number) : V[a.type].maxKg + V[a.type].overKg,
+      });
+    }
+  });
+  /** What a single stop may weigh before it is split: one direct Big, or (replan) the largest vehicle on hand. */
+  const splitCap = replan && units.length > 0 ? Math.max(...units.map((u) => u.cap)) : kgCap(cfg, "big", 1);
   const areas = new Areas(ctx);
   const routeName = (id: number | null) => (id === null ? "No route" : ctx.routeNames[id]?.trim() || `Route ${id}`);
   const sideOf = (routeId: number | null) =>
@@ -555,8 +641,8 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
 
   // ── 1. Direct routes: one card per route, never mixed.
   const directByRoute = new Map<string, StopRec[]>();
-  const planned: Array<{ stop: StopRec; side: string }> = [];
-  const preassigned: Load[] = [];
+  let planned: Array<{ stop: StopRec; side: string }> = [];
+  let preassigned: Load[] = [];
   rawStops.forEach((s) => {
     const side = sideOf(s.routeId);
     if (side === "Direct") {
@@ -603,15 +689,62 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       cards.push(toCard(makeLoad(stops, "Direct"), "direct", `${routeName(Number(rk))} is a direct route — never mixed.`));
     });
 
+  // ── Pinned: a card key is "<type>:<stop key>|<stop key>…". Its stops come
+  //    out of the pool as they are and keep their vehicle.
+  const pinnedLoads: Load[] = [];
+  (opts.pinned ?? []).slice().sort().forEach((id) => {
+    const i = id.indexOf(":");
+    const t = id.slice(0, i) as VehicleType;
+    if (i < 0 || !VEHICLE_TYPES.includes(t)) return;
+    const keys = new Set(id.slice(i + 1).split("|"));
+    const got: Array<{ stop: StopRec; side: string }> = [];
+    planned = planned.filter((x) => {
+      if (!keys.has(x.stop.key)) return true;
+      got.push(x);
+      return false;
+    });
+    preassigned = preassigned.filter((l) => {
+      if (!keys.has(l.stops[0].key)) return true;
+      got.push({ stop: l.stops[0], side: l.side });
+      return false;
+    });
+    if (got.length === 0) return;
+    const l = makeLoad(got.map((x) => x.stop), got[0].side);
+    l.vehicle = t;
+    l.pinned = true;
+    if (replan) {
+      // The vehicle it keeps: the smallest of its type that carries it, else the largest.
+      let u: Unit | null = null;
+      for (const x of units) {
+        if (x.load || x.type !== t) continue;
+        const fitsX = l.kg <= x.cap;
+        const fitsU = u !== null && l.kg <= u.cap;
+        if (!u || (fitsX && !fitsU) || (fitsX === fitsU && (fitsX ? x.cap < u.cap : x.cap > u.cap))) u = x;
+      }
+      if (u) {
+        u.load = l;
+        l.unit = u;
+      }
+    } else avail[t] = Math.max(0, avail[t] - 1);
+    pinnedLoads.push(l);
+  });
+  /** Replan: the largest free vehicle of each type (−∞ = none on hand). */
+  const typeCap = {} as Record<VehicleType, number>;
+  VEHICLE_TYPES.forEach((t) => {
+    typeCap[t] = units.filter((u) => u.type === t && !u.load).reduce((m, u) => Math.max(m, u.cap), -Infinity);
+  });
+
   // ── 4. Every other stop is its own load.
   let loads: Load[] = planned.map((p) => makeLoad([p.stop], p.side));
 
   // ── Helpers over loads.
-  const allowedTypes = (l: { kg: number; stops: StopRec[]; areas: AreaFacts[] }, exclude: ReadonlySet<VehicleType>): VehicleType[] =>
+  /** "plan" = this run's vehicles (replan: the ones on hand); "suggest" = the normal limits, what an ADDED vehicle carries. */
+  const allowedTypes = (l: { kg: number; stops: StopRec[]; areas: AreaFacts[] }, exclude: ReadonlySet<VehicleType>, caps: "plan" | "suggest" = "plan"): VehicleType[] =>
     VEHICLE_TYPES.filter((t) => {
       if (exclude.has(t)) return false;
       const v = V[t];
-      if (l.kg > kgCap(cfg, t, l.stops.length) || !stopsAllowed(cfg, t, l.stops.length, l.kg)) return false;
+      const cap = replan && caps === "plan" ? typeCap[t] : kgCap(cfg, t, l.stops.length);
+      if (l.kg > cap || !stopsAllowed(cfg, t, l.stops.length, l.kg)) return false;
       // Near-only applies to EVERY place, riders included.
       if (v.nearOnly && !l.areas.every((a) => a.gcAllowed)) return false;
       return true;
@@ -674,8 +807,10 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       cur = cur.filter((_, k) => k !== i && k !== j).concat([u]);
     }
   };
-  const planCost = (exclude: ReadonlySet<VehicleType>) => (l: Load) => cheapest(l, allowedTypes(l, exclude))?.cost ?? Infinity;
-  const planUnion = (exclude: ReadonlySet<VehicleType>) => (_a: Load, _b: Load, u: Load) => cheapest(u, allowedTypes(u, exclude))?.cost ?? null;
+  const planCost = (exclude: ReadonlySet<VehicleType>, caps: "plan" | "suggest" = "plan") => (l: Load) =>
+    cheapest(l, allowedTypes(l, exclude, caps))?.cost ?? Infinity;
+  const planUnion = (exclude: ReadonlySet<VehicleType>, caps: "plan" | "suggest" = "plan") => (_a: Load, _b: Load, u: Load) =>
+    cheapest(u, allowedTypes(u, exclude, caps))?.cost ?? null;
 
   const NONE = new Set<VehicleType>();
   loads = combine(loads, planCost(NONE), planUnion(NONE));
@@ -709,9 +844,22 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     }
   });
 
-  // ── 6 + 7. Vehicles. The split heavy-stop loads take their Bigs first.
+  // ── 6 + 7. Vehicles.
   let assigned: Load[] = [];
   let unassigned: Load[] = [];
+  const costAs = (l: Load, t: VehicleType) => tripCostOf(l.areas, t) + softCost(cfg, t, l.stops.length, l.kg);
+  const fits = (l: Load, t: VehicleType) => allowedTypes(l, NONE).includes(t);
+  // Overdue first, then the oldest — the rule-7 priority.
+  const urgency = (a: Load, b: Load) => Number(b.overdue) - Number(a.overdue) || b.maxAge - a.maxAge;
+  const onlyAce = (l: Load) => l.stops.length > V.big.maxStops;
+  const aceGain = (l: Load) => (fits(l, "big") ? costAs(l, "big") : Infinity) - costAs(l, "ace");
+
+  if (replan) {
+    const r = replanVehicles(preassigned.concat(loads));
+    assigned = r.assigned;
+    unassigned = r.waiting;
+  } else {
+  // The split heavy-stop loads take their Bigs first.
   preassigned
     .sort((a, b) => (a.key < b.key ? -1 : 1))
     .forEach((l) => {
@@ -722,17 +870,10 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       } else unassigned.push(l);
     });
 
-  const costAs = (l: Load, t: VehicleType) => tripCostOf(l.areas, t) + softCost(cfg, t, l.stops.length, l.kg);
-  const fits = (l: Load, t: VehicleType) => allowedTypes(l, NONE).includes(t);
-  // Overdue first, then the oldest — the rule-7 priority.
-  const urgency = (a: Load, b: Load) => Number(b.overdue) - Number(a.overdue) || b.maxAge - a.maxAge;
-
   const assignAll = (pool: Load[], aceAllowed: boolean): { done: Load[]; left: Load[] } => {
     let left = pool.slice();
     const done: Load[] = [];
     if (aceAllowed) {
-      const onlyAce = (l: Load) => l.stops.length > V.big.maxStops;
-      const aceGain = (l: Load) => (fits(l, "big") ? costAs(l, "big") : Infinity) - costAs(l, "ace");
       const cands = left
         .filter((l) => fits(l, "ace"))
         .sort((a, b) => urgency(a, b) || Number(onlyAce(b)) - Number(onlyAce(a)) || aceGain(b) - aceGain(a) || (a.key < b.key ? -1 : 1));
@@ -810,7 +951,9 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       if (a.split || b.split) u.split = a.split ?? b.split;
     },
   );
+  }
 
+  pinnedLoads.forEach((l) => cards.push(toCard(l, l.vehicle!, `Pinned — kept as it is. ${truckReason(l)}`.trim())));
   assigned.forEach((l) => cards.push(toCard(l, l.vehicle!, truckReason(l))));
 
   // 7. Waiting — one card per side for the loads no vehicle is left for.
@@ -821,7 +964,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     .forEach(([side, ls]) => {
       const needs: Partial<Record<VehicleType, number>> = {};
       ls.forEach((l) => {
-        const t = l.split ? "big" : cheapest(l, allowedTypes(l, NONE))?.t ?? "big";
+        const t = l.split ? "big" : cheapest(l, allowedTypes(l, NONE, "suggest"))?.t ?? "big";
         needs[t] = (needs[t] ?? 0) + 1;
       });
       const words = VEHICLE_TYPES.filter((t) => needs[t])
@@ -838,8 +981,39 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
   cards.sort((a, b) => RANK[a.type] - RANK[b.type] || b.kg - a.kg || (a.key < b.key ? -1 : 1));
 
   const count = (t: V2CardType) => cards.filter((c) => c.type === t).length;
+
+  // Shortage: the kilos waiting and the cheapest vehicle types that carry them.
+  const waitCards = cards.filter((c) => c.type === "waiting");
+  let shortage: V2Shortage | null = null;
+  if (waitCards.length > 0) {
+    const add: Partial<Record<VehicleType, number>> = {};
+    waitCards.forEach((c) => VEHICLE_TYPES.forEach((t) => {
+      const n = c.needs?.[t] ?? 0;
+      if (n > 0) add[t] = (add[t] ?? 0) + n;
+    }));
+    const kg = waitCards.reduce((n, c) => n + c.kg, 0);
+    shortage = { kg, add, text: `Short ${fmtKg(kg)} kg — add ${vehicleWords(add)}` };
+  }
+  // Unused: replan vehicles no load needed, grouped by type and cap.
+  const unusedMap = new Map<string, V2Unused>();
+  units.filter((u) => !u.load).forEach((u) => {
+    const k = `${VEHICLE_TYPES.indexOf(u.type)}|${u.maxKg ?? 0}`;
+    const e = unusedMap.get(k) ?? { type: u.type, count: 0, ...(u.maxKg !== undefined ? { maxKg: u.maxKg } : {}), text: "" };
+    e.count += 1;
+    unusedMap.set(k, e);
+  });
+  const unused = Array.from(unusedMap.entries())
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([, e]) => ({
+      ...e,
+      text: `${vehicleWords({ [e.type]: e.count })}${e.maxKg !== undefined ? ` (${fmtKg(e.maxKg)} kg)` : ""} not needed`,
+    }));
+
   return {
+    mode: replan ? "replan" : "suggest",
     cards,
+    shortage,
+    unused,
     summary: {
       ace: count("ace"), big: count("big"), gc: count("gc"),
       trucks: count("ace") + count("big") + count("gc"),
@@ -847,6 +1021,168 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       totalKg: cards.reduce((n, c) => n + c.kg, 0),
     },
   };
+
+  // ── Replan vehicles (hoisted) ─────────────────────────────────────────────
+
+  /**
+   * 10. REPLAN: put the loads on the vehicles on hand, never more. Ace → Big →
+   * GC; a merge pass; then the stops still without a vehicle one by one;
+   * what is left waits (re-combined on the normal limits, so `needs` and the
+   * shortage name whole vehicles).
+   */
+  function replanVehicles(pool: Load[]): { assigned: Load[]; waiting: Load[] } {
+    const unitFits = (u: Unit, l: Load) =>
+      l.kg <= u.cap && stopsAllowed(cfg, u.type, l.stops.length, l.kg) && (!V[u.type].nearOnly || l.areas.every((a) => a.gcAllowed));
+    /** The smallest free vehicle of type `t` that carries `l`. */
+    const bestUnit = (l: Load, t: VehicleType): Unit | null => {
+      let best: Unit | null = null;
+      for (const u of units) {
+        if (u.load || u.type !== t || !unitFits(u, l)) continue;
+        if (!best || u.cap < best.cap) best = u;
+      }
+      return best;
+    };
+    const put = (l: Load, u: Unit) => {
+      l.vehicle = u.type;
+      l.unit = u;
+      u.load = l;
+    };
+
+    // a) Fill order Ace → Big → GC. Overdue first, then the oldest, then the heaviest.
+    for (const t of FILL_ORDER) {
+      const cands = pool
+        .filter((l) => !l.vehicle && bestUnit(l, t) !== null)
+        .sort(
+          (a, b) =>
+            urgency(a, b) ||
+            (t === "ace" ? Number(onlyAce(b)) - Number(onlyAce(a)) || aceGain(b) - aceGain(a) : 0) ||
+            b.kg - a.kg ||
+            (a.key < b.key ? -1 : 1),
+        );
+      for (const l of cands) {
+        const u = bestUnit(l, t);
+        if (u) put(l, u);
+      }
+    }
+
+    // b) Two trucks going the same way share one vehicle when that saves —
+    //    the union takes the cheapest vehicle free once the two give theirs back.
+    let trucks = combine(
+      pool.filter((l) => l.vehicle),
+      (l) => costAs(l, l.vehicle!),
+      (a, b, u) => {
+        let best: { x: Unit; c: number } | null = null;
+        for (const x of units) {
+          if ((x.load && x !== a.unit && x !== b.unit) || !unitFits(x, u)) continue;
+          const c = costAs(u, x.type);
+          if (!best || c < best.c || (c === best.c && (V[x.type].priority < V[best.x.type].priority || (x.type === best.x.type && x.cap < best.x.cap)))) {
+            best = { x, c };
+          }
+        }
+        if (!best) return null;
+        u.vehicle = best.x.type;
+        u.unit = best.x;
+        return best.c;
+      },
+      (a, b, u) => {
+        a.unit!.load = undefined;
+        b.unit!.load = undefined;
+        u.unit!.load = u;
+        u.merged = true;
+        if (a.split || b.split) u.split = a.split ?? b.split;
+      },
+    );
+
+    // c) The stops still without a vehicle, most important first.
+    const withStop = (host: Load, st: StopRec): Load | null => {
+      if (joinable(host, makeLoad([st], host.side))) return makeLoad(host.stops.concat([st]), host.side);
+      if (st.kg < cfg.rideAlongBelowKg) return makeLoad(host.stops.concat([{ ...st, rider: true }]), host.side);
+      return null;
+    };
+    const swap = (old: Load, nu: Load) => {
+      nu.vehicle = old.vehicle;
+      nu.unit = old.unit;
+      nu.merged = old.merged;
+      nu.split = old.split;
+      old.unit!.load = nu;
+      trucks = trucks.map((x) => (x === old ? nu : x));
+    };
+    /** Into the truck (or free vehicle) where it adds least. */
+    const place = (st: StopRec, side: string): boolean => {
+      let best: { add: number; tk: string; nu: Load; host?: Load; unit?: Unit } | null = null;
+      const consider = (add: number, tk: string, nu: Load, host?: Load, unit?: Unit) => {
+        if (!best || add < best.add || (add === best.add && tk < best.tk)) best = { add, tk, nu, host, unit };
+      };
+      for (const host of trucks) {
+        if (host.side !== side) continue;
+        const nu = withStop(host, st);
+        if (!nu || !unitFits(host.unit!, nu)) continue;
+        consider(costAs(nu, host.vehicle!) - costAs(host, host.vehicle!), `0${host.key}`, nu, host);
+      }
+      for (const u of units) {
+        const nu = makeLoad([st], side);
+        if (u.load || !unitFits(u, nu)) continue;
+        consider(costAs(nu, u.type) + cfg.truckPenaltyRs, `1${String(u.idx).padStart(4, "0")}`, nu, undefined, u);
+      }
+      if (!best) return false;
+      const b: { nu: Load; host?: Load; unit?: Unit } = best;
+      if (b.host) swap(b.host, b.nu);
+      else {
+        put(b.nu, b.unit!);
+        trucks.push(b.nu);
+      }
+      return true;
+    };
+    /** An overdue stop pushes the smallest, newest non-overdue stops of one truck out. */
+    const evictFor = (st: StopRec, side: string): StopRec[] | null => {
+      let best: { host: Load; nu: Load; out: StopRec[]; outKg: number } | null = null;
+      for (const host of trucks) {
+        if (host.side !== side) continue;
+        const movable = host.stops
+          .filter((x) => !x.overdue)
+          .sort((a, b) => a.kg - b.kg || a.maxAge - b.maxAge || (a.key < b.key ? -1 : 1));
+        for (let k = 1; k <= movable.length; k++) {
+          const out = movable.slice(0, k);
+          const keep = host.stops.filter((x) => !out.includes(x));
+          const nu = keep.length === 0 ? makeLoad([st], side) : withStop(makeLoad(keep, side), st);
+          if (!nu || !unitFits(host.unit!, nu)) continue;
+          const outKg = out.reduce((n, x) => n + x.kg, 0);
+          if (!best || outKg < best.outKg || (outKg === best.outKg && host.key < best.host.key)) best = { host, nu, out, outKg };
+          break;
+        }
+      }
+      if (!best) return null;
+      const b: { host: Load; nu: Load; out: StopRec[] } = best;
+      swap(b.host, b.nu);
+      return b.out;
+    };
+
+    const left = pool
+      .filter((l) => !l.vehicle)
+      .flatMap((l) => l.stops.map((st) => ({ st: { ...st, rider: false }, side: l.side })))
+      .sort((a, b) => Number(b.st.overdue) - Number(a.st.overdue) || b.st.kg - a.st.kg || b.st.maxAge - a.st.maxAge || (a.st.key < b.st.key ? -1 : 1));
+    const waitingStops: Array<{ st: StopRec; side: string }> = [];
+    left.forEach(({ st, side }) => {
+      if (place(st, side)) return;
+      const out = st.overdue ? evictFor(st, side) : null;
+      if (!out) {
+        waitingStops.push({ st, side });
+        return;
+      }
+      out.forEach((o) => {
+        const free = { ...o, rider: false };
+        if (!place(free, side)) waitingStops.push({ st: free, side });
+      });
+    });
+
+    // d) What waits, re-combined on the NORMAL limits (what an added vehicle carries).
+    const bySide = new Map<string, StopRec[]>();
+    waitingStops.forEach(({ st, side }) => bySide.set(side, [...(bySide.get(side) ?? []), st]));
+    const waiting = Array.from(bySide.entries())
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .flatMap(([side, ss]) => combine(ss.map((st) => makeLoad([st], side)), planCost(NONE, "suggest"), planUnion(NONE, "suggest")));
+    return { assigned: trucks, waiting };
+  }
 
   // ── Card building (hoisted) ───────────────────────────────────────────────
 
@@ -889,7 +1225,10 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       riders.forEach((s) => { if (!names.includes(s.area.name)) names.push(s.area.name); });
       parts.push(`${names.join(", ")} ${names.length === 1 ? "rides" : "ride"} along (under ${fmtKg(cfg.rideAlongBelowKg)} kg).`);
     }
-    if (l.vehicle === "big" && l.stops.length <= 2 && l.kg > (V.big.hardMaxKg ?? V.big.maxKg + V.big.overKg)) parts.push(`Direct Big (${l.stops.length} ${l.stops.length === 1 ? "stop" : "stops"}, up to ${fmtKg(cfg.directBigMaxKg)} kg).`);
+    if (l.unit && l.unit.maxKg === undefined && l.kg > V[l.unit.type].maxKg) {
+      parts.push(`${fmtKg(l.kg - V[l.unit.type].maxKg)} kg over the ${VEHICLE_LABEL[l.unit.type]}'s ${fmtKg(V[l.unit.type].maxKg)} kg.`);
+    }
+    if (!l.unit && l.vehicle === "big" && l.stops.length <= 2 && l.kg > (V.big.hardMaxKg ?? V.big.maxKg + V.big.overKg)) parts.push(`Direct Big (${l.stops.length} ${l.stops.length === 1 ? "stop" : "stops"}, up to ${fmtKg(cfg.directBigMaxKg)} kg).`);
     if (l.vehicle === "ace" && l.stops.length > V.ace.maxStops && cfg.aceLightRun) {
       parts.push(`Light milk run — ${l.stops.length} stops, ${fmtKg(cfg.aceLightRun.maxKg)} kg or less.`);
     } else if (l.vehicle === "ace" && l.stops.length > V.big.maxStops) {
@@ -910,6 +1249,10 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       if (!names.includes(s.area.name)) names.push(s.area.name);
     });
     const vt = type === "ace" || type === "big" || type === "gc" ? type : null;
+    // A replan vehicle with its own maxKg is judged against that; else the rated load.
+    const ownMax = type === l.vehicle ? l.unit?.maxKg : undefined;
+    const overloaded = vt !== null && (ownMax !== undefined ? l.kg > ownMax : overRated(cfg, vt, l.kg));
+    const bent = vt !== null && l.kg > (ownMax ?? V[vt].maxKg);
     return {
       key: `${type}:${l.key}`,
       type,
@@ -931,10 +1274,9 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
         overIdealStops: vt !== null && l.stops.length > V[vt].idealStops,
         newArea: l.areas.some((a) => a.typical || !a.hasPairs),
         lightRun: type === "ace" && l.stops.length > V.ace.maxStops,
-        overloaded: vt !== null && overRated(cfg, vt, l.kg),
-        amber:
-          vt !== null &&
-          (l.stops.length > V[vt].idealStops || overRated(cfg, vt, l.kg) || (type === "ace" && l.stops.length > V.ace.maxStops)),
+        overloaded,
+        pinned: l.pinned === true,
+        amber: vt !== null && (l.stops.length > V[vt].idealStops || bent || overloaded || (type === "ace" && l.stops.length > V.ace.maxStops)),
       },
       reason,
     };
@@ -943,3 +1285,8 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
 
 const VEHICLE_LABEL: Record<VehicleType, string> = { ace: "Ace", big: "Big", gc: "GC" };
 const fmtKg = (kg: number) => Math.round(kg).toLocaleString("en-US");
+/** "1 Ace and 2 Bigs". */
+const vehicleWords = (n: Partial<Record<VehicleType, number>>) =>
+  VEHICLE_TYPES.filter((t) => (n[t] ?? 0) > 0)
+    .map((t) => `${n[t]} ${VEHICLE_LABEL[t]}${(n[t] ?? 0) > 1 ? "s" : ""}`)
+    .join(" and ");
