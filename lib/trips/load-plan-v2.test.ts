@@ -107,32 +107,54 @@ test("config: the v2 keys parse; a missing required one → null; defaults fill 
   assert.equal(parseLoadPlanV2Config(null), null);
 });
 
-test("a heavy stop is split BY BILL into full Big loads; the leftover plans normally", () => {
-  // One stop, three bills: 2,000 + 1,500 + 1,000 = 4,500 kg (> 3,000). First-fit,
-  // heaviest first, to ≤ 3,050: 2,000 → +1,500 = 3,500 ✗ → +1,000 = 3,000 ✓ →
-  // a full Big of 3,000. Left: 1,500 (≤ 3,000) → an ordinary stop.
+test("a heavy stop is split BY BILL into full direct Bigs; the leftover plans normally", () => {
+  // One stop, three bills: 2,000 + 1,500 + 1,000 = 4,500 kg — more than one
+  // direct Big (3,500). First-fit, heaviest first, to ≤ 3,500: 2,000 → +1,500 =
+  // 3,500 ✓ → +1,000 = 4,500 ✗ → a full direct Big of 3,500. Left: 1,000.
   const key = "c:heavy";
   const bills: V2Bill[] = [2000, 1500, 1000].map((kg) => ({ orderId: nextId++, weightKg: kg, stopKey: key, areaId: 101, routeId: 11, overdue: false }));
   const p = planLoadsV2(bills, ctx());
   const split = p.cards.find((c) => /split by bill/.test(c.reason))!;
   assert.equal(split.type, "big");
-  assert.equal(Math.round(split.kg), 3000);
-  assert.deepEqual(split.orderIds, [bills[0].orderId, bills[2].orderId].sort((a, b) => a - b));
+  assert.equal(Math.round(split.kg), 3500);
+  assert.deepEqual(split.orderIds, [bills[0].orderId, bills[1].orderId].sort((x, y) => x - y));
   assert.match(split.reason, /Part of a 4,500 kg stop at Navsari Town/);
   assert.equal(split.stops[0].stopKey, key); // the internal part suffix never leaks
-  const rest = p.cards.find((c) => c.orderIds.includes(bills[1].orderId))!;
+  const rest = p.cards.find((c) => c.orderIds.includes(bills[2].orderId))!;
   assert.notEqual(rest, split);
-  assert.equal(Math.round(rest.kg), 1500);
+  assert.equal(Math.round(rest.kg), 1000);
   assert.equal(p.summary.bulk, 0);
 });
 
-test("bulk: only a single BILL heavier than a Big carries gets a Bulk card", () => {
-  const heavy = stop(101, 3200); // one bill of 3,200 > 3,050
+test("bulk: only a single BILL heavier than a direct Big gets a Bulk card", () => {
+  const heavy = stop(101, 3600); // one bill of 3,600 > 3,500
   const p = planLoadsV2([...heavy, ...stop(110, 900)], ctx());
   const bulk = p.cards.find((c) => c.type === "bulk")!;
   assert.deepEqual(bulk.orderIds, [heavy[0].orderId]);
-  assert.match(bulk.reason, /One bill over 3,050 kg — hire as needed/);
+  assert.match(bulk.reason, /One bill over 3,500 kg — hire as needed/);
   assert.equal(p.summary.bulk, 1);
+});
+
+test("direct Big: a 3,400 kg dealer is one Big, not bulk and not split", () => {
+  const dealer = stop(101, 3400, { bills: 3 });
+  const p = planLoadsV2(dealer, ctx());
+  assert.equal(p.summary.bulk, 0);
+  assert.equal(p.summary.big, 1);
+  assert.equal(p.cards[0].orderIds.length, 3);
+  assert.match(p.cards[0].reason, /Direct Big \(1 stop, up to 3,500 kg\)/);
+});
+
+test("direct Big: 1–2 stops may carry up to directBigMaxKg; 3+ stops keep 3,050", () => {
+  // Two stops, 3,300 kg → one direct Big.
+  const two = planLoadsV2([...stop(101, 1700), ...stop(110, 1600)], ctx());
+  assert.equal(two.summary.trucks, 1);
+  // Three stops, 3,300 kg → too heavy for a 3+-stop Big: two trucks.
+  const three = planLoadsV2([...stop(101, 1100), ...stop(110, 1100), ...stop(111, 1100)], ctx());
+  assert.ok(three.summary.trucks >= 2);
+  assert.ok(three.cards.every((c) => c.stopCount <= 2 || c.kg <= 3050));
+  // directBigMaxKg 3050 → the old behaviour: a 3,400 kg dealer is split.
+  const old = planLoadsV2(stop(101, 3400, { bills: 2 }), ctx({ directBigMaxKg: 3050 }));
+  assert.equal(old.summary.trucks, 2);
 });
 
 test("direct: a Direct route gets one card of its own, never mixed", () => {

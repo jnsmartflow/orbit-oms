@@ -19,10 +19,12 @@
 //   1. Direct    — a route whose side is "Direct" (IGT / CROSS, Transport): one
 //                  Direct card per route, never mixed.
 //   2. Stops     — bills grouped by stopKey. A stop of ≤ bulkKg is never split.
-//   3. Heavy     — a stop over bulkKg is split BY BILL into full Big loads
-//                  (≤ Big max + over) while more than bulkKg of it is left; the
-//                  leftover bills plan like any other stop. Only a single bill
-//                  heavier than a Big carries gets a Bulk card.
+//   2b. Direct Big — a Big with 1 or 2 stops may carry up to directBigMaxKg
+//                  (default 3,500); with 3+ stops it keeps maxKg + overKg.
+//   3. Heavy     — a stop heavier than one direct Big is split BY BILL into
+//                  full direct-Big loads while more than one direct Big of it is
+//                  left; the leftover bills plan like any other stop. Only a
+//                  single bill heavier than a direct Big gets a Bulk card.
 //   4. Every other stop starts as its own load.
 //   5. Combine   — the savings method: join the pair of loads on the SAME side
 //                  that saves most (cost A + cost B − cost A∪B + truckPenaltyRs)
@@ -74,6 +76,9 @@ export interface LoadPlanV2Config {
   sameRoutePairsAlways: boolean;
   /** A load lighter than this may ride along with any load on its side. */
   rideAlongBelowKg: number;
+  /** A Big with 1 or 2 stops may carry up to this; 3+ stops keep maxKg + overKg. */
+  directBigMaxKg: number;
+  /** Kept for the stored row; the heavy-stop split now keys on directBigMaxKg. */
   bulkKg: number;
   /** INTERNAL — the cost of one more truck, added to every saving. Never output. */
   truckPenaltyRs: number;
@@ -90,6 +95,7 @@ export const V2_DEFAULTS = {
   sameRoutePairsAlways: true,
   maxPlacesPerTruck: 6,
   rideAlongBelowKg: 300,
+  directBigMaxKg: 3500,
 } as const;
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -137,13 +143,25 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
   const maxPlacesPerTruck = posOr("maxPlacesPerTruck", V2_DEFAULTS.maxPlacesPerTruck);
   const rideAlongBelowKg = posOr("rideAlongBelowKg", V2_DEFAULTS.rideAlongBelowKg);
   const sameRoutePairsAlways = boolOr("sameRoutePairsAlways", V2_DEFAULTS.sameRoutePairsAlways);
-  if (pairMinTimes === null || maxPlacesPerTruck === null || rideAlongBelowKg === null || sameRoutePairsAlways === null) return null;
+  const directBigMaxKg = posOr("directBigMaxKg", V2_DEFAULTS.directBigMaxKg);
+  if (pairMinTimes === null || maxPlacesPerTruck === null || rideAlongBelowKg === null || sameRoutePairsAlways === null || directBigMaxKg === null) return null;
 
   return {
-    routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, sameRoutePairsAlways, rideAlongBelowKg,
+    routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, sameRoutePairsAlways, rideAlongBelowKg, directBigMaxKg,
     bulkKg: o.bulkKg, truckPenaltyRs: o.truckPenaltyRs, holdSmallUnlessOverdue: o.holdSmallUnlessOverdue,
     newArea: { rate: "route_typical", gcAllowed: na.gcAllowed, pairs: "same_route" },
   };
+}
+
+/**
+ * How many kg a vehicle of type `t` may carry with `stops` stops: maxKg +
+ * overKg, except a Big with 1 or 2 stops — a "direct Big" — which may carry
+ * up to directBigMaxKg (never less than the normal Big limit).
+ */
+export function kgCap(cfg: LoadPlanV2Config, t: VehicleType, stops: number): number {
+  const v = cfg.vehicles[t];
+  const normal = v.maxKg + v.overKg;
+  return t === "big" && stops <= 2 ? Math.max(normal, cfg.directBigMaxKg) : normal;
 }
 
 // ── Context (built on the server) ───────────────────────────────────────────
@@ -435,7 +453,8 @@ type Avail = Record<VehicleType, number>;
 export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: VehicleCounts = {}): V2Plan {
   const cfg = ctx.config;
   const V = cfg.vehicles;
-  const bigCap = V.big.maxKg + V.big.overKg;
+  /** One direct Big — what a single stop may weigh before it is split. */
+  const splitCap = kgCap(cfg, "big", 1);
   const areas = new Areas(ctx);
   const routeName = (id: number | null) => (id === null ? "No route" : ctx.routeNames[id]?.trim() || `Route ${id}`);
   const sideOf = (routeId: number | null) =>
@@ -481,31 +500,31 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       return;
     }
     const total = s.bills.reduce((n, b) => n + b.kg, 0);
-    if (total <= cfg.bulkKg) {
+    if (total <= splitCap) {
       planned.push({ stop: toStop(s, s.bills), side });
       return;
     }
-    // ── 3. A heavy stop: a single bill a Big cannot carry → Bulk; the rest is
-    //    split BY BILL into full Big loads while more than bulkKg is left; the
-    //    leftover bills plan like any other stop.
+    // ── 3. A heavy stop: a single bill no direct Big can carry → Bulk; the rest
+    //    is split BY BILL into full direct-Big loads while more than one direct
+    //    Big of it is left; the leftover bills plan like any other stop.
     let rest = s.bills.slice().sort((a, b) => b.kg - a.kg || a.id - b.id);
-    rest.filter((b) => b.kg > bigCap).forEach((b) => {
+    rest.filter((b) => b.kg > splitCap).forEach((b) => {
       const load = makeLoad([toStop(s, [b], `#bill${b.id}`)], side);
-      cards.push(toCard(load, "bulk", `One bill over ${fmtKg(bigCap)} kg — hire as needed.`));
+      cards.push(toCard(load, "bulk", `One bill over ${fmtKg(splitCap)} kg — hire as needed.`));
     });
-    rest = rest.filter((b) => b.kg <= bigCap);
+    rest = rest.filter((b) => b.kg <= splitCap);
     let part = 0;
-    while (rest.reduce((n, b) => n + b.kg, 0) > cfg.bulkKg) {
+    while (rest.reduce((n, b) => n + b.kg, 0) > splitCap) {
       const take: typeof rest = [];
       let kg = 0;
       const keep: typeof rest = [];
       rest.forEach((b) => {
-        if (kg + b.kg <= bigCap) {
+        if (kg + b.kg <= splitCap) {
           take.push(b);
           kg += b.kg;
         } else keep.push(b);
       });
-      if (take.length === 0) break; // cannot happen: every bill here ≤ bigCap
+      if (take.length === 0) break; // cannot happen: every bill here ≤ splitCap
       const load = makeLoad([toStop(s, take, `#part${++part}`)], side);
       load.split = { area: load.areas[0].name, stopKg: total };
       preassigned.push(load);
@@ -527,7 +546,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     VEHICLE_TYPES.filter((t) => {
       if (exclude.has(t)) return false;
       const v = V[t];
-      if (l.kg > v.maxKg + v.overKg || l.stops.length > v.maxStops) return false;
+      if (l.kg > kgCap(cfg, t, l.stops.length) || l.stops.length > v.maxStops) return false;
       // Near-only applies to EVERY place, riders included.
       if (v.nearOnly && !l.areas.every((a) => a.gcAllowed)) return false;
       return true;
@@ -774,7 +793,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
   function truckReason(l: Load): string {
     const parts: string[] = [];
     if (l.split) {
-      parts.push(`Part of a ${fmtKg(l.split.stopKg)} kg stop at ${l.split.area} — split by bill into full Big loads.`);
+      parts.push(`Part of a ${fmtKg(l.split.stopKg)} kg stop at ${l.split.area} — split by bill into full direct Bigs.`);
     }
     const core = l.stops.filter((s) => !s.rider);
     const riders = l.stops.filter((s) => s.rider);
@@ -805,6 +824,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       riders.forEach((s) => { if (!names.includes(s.area.name)) names.push(s.area.name); });
       parts.push(`${names.join(", ")} ${names.length === 1 ? "rides" : "ride"} along (under ${fmtKg(cfg.rideAlongBelowKg)} kg).`);
     }
+    if (l.vehicle === "big" && l.kg > V.big.maxKg + V.big.overKg) parts.push(`Direct Big (${l.stops.length} ${l.stops.length === 1 ? "stop" : "stops"}, up to ${fmtKg(cfg.directBigMaxKg)} kg).`);
     if (l.vehicle === "ace" && l.stops.length > V.big.maxStops) parts.push(`${l.stops.length} stops — only an Ace carries that many.`);
     if (l.replanned) parts.push(`Re-planned without an Ace (max ${V.big.maxStops} stops).`);
     if (l.merged) parts.push(`Two loads going the same way merged.`);

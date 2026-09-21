@@ -24,7 +24,7 @@ import fs from "fs";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { loadPlanV2Context } from "@/lib/floor/load-plan-v2-loader";
-import { makePricer, planLoadsV2, V2_DEFAULTS, type LoadPlanV2Context, type V2Bill, type V2Card, type VehicleType } from "@/lib/trips/load-plan-v2";
+import { kgCap, makePricer, planLoadsV2, V2_DEFAULTS, type LoadPlanV2Context, type V2Bill, type V2Card, type VehicleType } from "@/lib/trips/load-plan-v2";
 
 const HISTORY = path.join(process.cwd(), "docs/data/load-plan/load_plan_backtest_history.csv");
 const COUNTS = { ace: 2, gc: 3 } as const;
@@ -129,12 +129,13 @@ async function main() {
       routeId: null,
     }));
 
-    // Cost, both sides priced with the SAME table. A plan's BULK card is priced
-    // honestly as ⌈kg ÷ 3,000⌉ Bigs; a direct card as a Big; a HOLD as a Big
-    // too (it still has to go — conservative).
+    // Cost, both sides priced with the SAME table. A plan's BULK card (one bill
+    // heavier than a direct Big) is priced honestly as ⌈kg ÷ direct-Big kg⌉ Bigs;
+    // a direct card as a Big; a HOLD as a Big too (it still has to go).
+    const bulkTrucks = (kg: number) => Math.ceil(kg / kgCap(ctx.config, "big", 1));
     const costOf = (t: Truck) => {
       const one = price(t.areaIds, asVehicle(t.vehicle), t.routeId);
-      return t.vehicle === "bulk" ? one * Math.ceil(t.kg / 3000) : one;
+      return t.vehicle === "bulk" ? one * bulkTrucks(t.kg) : one;
     };
     const actualCost = actual.reduce((n, t) => n + costOf(t), 0);
     const planCost = plan.reduce((n, t) => n + costOf(t), 0);
@@ -146,11 +147,11 @@ async function main() {
   const isTruck = (v: string) => v === "ace" || v === "big" || v === "gc";
   const planTrucks = (d: Day) => d.plan.filter((t) => t.vehicle !== "hold");
   /** Trucks a plan needs: a bulk card is ⌈kg ÷ 3,000⌉ of them. */
-  const planTruckCount = (d: Day) => planTrucks(d).reduce((n, t) => n + (t.vehicle === "bulk" ? Math.ceil(t.kg / 3000) : 1), 0);
+  const planTruckCount = (d: Day) => planTrucks(d).reduce((n, t) => n + (t.vehicle === "bulk" ? Math.ceil(t.kg / kgCap(ctx.config, "big", 1)) : 1), 0);
   const line = "─".repeat(78);
   console.log(line);
   console.log(`LOAD PLAN v2 BACKTEST — ${days.length} days, ${rows.length.toLocaleString("en-US")} bills, Ace ${COUNTS.ace} / GC ${COUNTS.gc} / Big unlimited`);
-  console.log(`Rules: pairMinTimes ${ctx.config.pairMinTimes} · same route always · places ≤ ${ctx.config.maxPlacesPerTruck} · ride-along < ${ctx.config.rideAlongBelowKg} kg · heavy stops split by bill`);
+  console.log(`Rules: pairMinTimes ${ctx.config.pairMinTimes} · same route always · places ≤ ${ctx.config.maxPlacesPerTruck} · ride-along < ${ctx.config.rideAlongBelowKg} kg · direct Big (1–2 stops) ≤ ${ctx.config.directBigMaxKg} kg · heavy stops split by bill`);
   console.log(`       (live config row still says pairMinTimes ${liveRow.pairMinTimes}, maxPlacesPerTruck ${liveRow.maxPlacesPerTruck} — overridden for this run)`);
   console.log(`History: ${noiseTrucks} "trucks" under ${NOISE_TRUCK_KG} kg ignored as record noise (their bills are still planned)`);
   console.log(line);
@@ -169,7 +170,7 @@ async function main() {
     const br = ds.reduce((b, d) => ({ kg: b.kg + d.breaks.kg, stops: b.stops + d.breaks.stops, gc: b.gc + d.breaks.gc, pair: b.pair + d.breaks.pair, places: b.places + d.breaks.places }), { kg: 0, stops: 0, gc: 0, pair: 0, places: 0 });
 
     console.log(`\n${title} — ${ds.length} days, ${f0(ds.reduce((n, d) => n + d.kg, 0))} kg`);
-    console.log(`  Trucks            actual ${f0(aCount)}  ·  plan ${f0(pCount)}  (median day: actual ${f0(med(ds.map((d) => d.actual.length)))}, plan ${f0(med(ds.map((d) => planTruckCount(d))))})  [bulk counted as ⌈kg ÷ 3,000⌉]`);
+    console.log(`  Trucks            actual ${f0(aCount)}  ·  plan ${f0(pCount)}  (median day: actual ${f0(med(ds.map((d) => d.actual.length)))}, plan ${f0(med(ds.map((d) => planTruckCount(d))))})  [bulk counted as ⌈kg ÷ direct-Big kg⌉]`);
     console.log(`  Vehicle mix       actual: ${mix(aT, ["ace", "big", "gc", "other"])}`);
     console.log(`                    plan:   ${mix(pAll, ["ace", "big", "gc", "bulk", "direct", "waiting"])}  (+ hold ${pAll.filter((t) => t.vehicle === "hold").length}, not trucks)`);
     console.log(`  Stops / truck     actual median ${f0(med(aT.map((t) => t.stops)))} · 90% ${f0(quantile(aT.map((t) => t.stops), 0.9))} · max ${f0(Math.max(...aT.map((t) => t.stops)))}`);
@@ -182,7 +183,7 @@ async function main() {
     const ab = truckBreaks(aT, ctx);
     const outside = aT.filter((t) => { const b = truckBreaks([t], ctx); return b.kg + b.stops + b.gc + b.pair + b.places > 0; }).length;
     console.log(`  Actual vs limits  ${outside} of ${aT.length} real trucks (${pct((outside / aT.length) * 100)}) outside them: kg ${ab.kg} · stops ${ab.stops} · GC off-area ${ab.gc} · pair rule ${ab.pair} · places ${ab.places}`);
-    console.log(`  Estimated cost    plan = ${pct((pCost / aCost) * 100)} of actual  (same rate table; bulk = ⌈kg ÷ 3,000⌉ Bigs; holds priced as a Big)`);
+    console.log(`  Estimated cost    plan = ${pct((pCost / aCost) * 100)} of actual  (same rate table; bulk = ⌈kg ÷ direct-Big kg⌉ Bigs; holds priced as a Big)`);
   };
 
   section("ALL DAYS", days);
@@ -252,7 +253,7 @@ function truckBreaks(trucks: Truck[], ctx: LoadPlanV2Context): { kg: number; sto
     const t = asVehicle(c.vehicle);
     const v = V[t];
     const ids = c.coreAreaIds ?? c.areaIds;
-    if (c.kg > v.maxKg + v.overKg) out.kg++;
+    if (c.kg > kgCap(ctx.config, t, c.stops)) out.kg++;
     if (c.stops > v.maxStops) out.stops++;
     // GC near-only applies to EVERY place, riders included.
     if (t === "gc" && !c.areaIds.every(gcOk)) out.gc++;
