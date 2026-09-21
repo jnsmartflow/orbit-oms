@@ -36,6 +36,7 @@ import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs, useCardColumns } from "./route-cards";
 import { LoadPlanView } from "./load-plan";
+import { LoadPlanV2View } from "./load-plan-v2";
 import type { LoadPlanConfig } from "@/lib/trips/load-plan";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
@@ -720,6 +721,24 @@ export function TripDesk({
             nowMs={nowMs}
             variant={variant}
             {...selProps}
+          />
+        ) : effectivePoolPivot === "plan" && scope === "Upcountry" && !isHistory ? (
+          // THE UPCOUNTRY LOAD PLAN v2 (2026-09-21) — planned server-side from
+          // these due bills (POST /api/floor/load-plan); Replan, pins, moves,
+          // Make trip. History keeps the v1 view below: a past day is a record.
+          <LoadPlanV2View
+            rows={poolRows}
+            upcomingCount={poolUpcoming.length}
+            routeNames={routeNames}
+            columns={cardColumns}
+            nowMs={nowMs}
+            anchorIso={floor.date}
+            variant={variant}
+            onMarkUrgent={onMarkUrgent}
+            onOpenDetail={onOpenDetail}
+            gateOn={gateOn}
+            onMakeTrip={onMakeTrip}
+            makeTripBusy={makeTripBusy}
           />
         ) : effectivePoolPivot === "plan" ? (
           // THE LOAD PLAN (2026-09-19) — the due pool as suggested trucks.

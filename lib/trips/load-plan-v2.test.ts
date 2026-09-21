@@ -22,11 +22,11 @@ import {
 
 // Routes: South = Navsari 11, Vapi 12, Chikhli 21 · North = Bharuch 17,
 // Kamrej 19 · Surat = Adajan 9 · Direct = IGT 18.
-const ROUTES: Record<number, string> = { 11: "Navsari", 12: "Vapi", 21: "Chikhli", 17: "Bharuch", 19: "Kamrej", 9: "Adajan", 18: "IGT / CROSS" };
+const ROUTES: Record<number, string> = { 11: "Navsari", 12: "Vapi", 21: "Chikhli", 17: "Bharuch", 19: "Kamrej", 9: "Adajan", 22: "Olpad", 18: "IGT / CROSS" };
 
 const RAW_CONFIG = {
   smallMaxKg: 2000, bigMaxKg: 3000, mainRouteIds: [11, 12, 17], partners: [], // v1 keys, ignored by v2
-  routeSides: { "11": "South", "12": "South", "21": "South", "17": "North", "19": "North", "9": "Surat", "18": "Direct" },
+  routeSides: { "11": "South", "12": "South", "21": "South", "17": "North", "19": "North", "9": "Surat", "22": "Surat", "18": "Direct" },
   vehicles: {
     ace: { maxKg: 2000, overKg: 50, idealStops: 6, maxStops: 8, dailyCount: 2, nearOnly: false, priority: 1 },
     big: { maxKg: 3000, overKg: 50, idealStops: 5, maxStops: 6, dailyCount: null, nearOnly: false, priority: 2 },
@@ -43,6 +43,7 @@ const AREA: Record<number, [string, number]> = {
   101: ["Navsari Town", 11], 102: ["Bilimora", 21], 103: ["Vapi Town", 12], 104: ["Valsad", 12],
   105: ["Bharuch Town", 17], 106: ["Kamrej Town", 19], 107: ["Adajan", 9], 108: ["IGT Area", 18],
   109: ["New Navsari Area", 11], 110: ["Navsari East", 11], 111: ["Navsari West", 11], 112: ["Maroli", 11],
+  113: ["Pal", 9], 114: ["Olpad Town", 22],
 };
 const R: Record<number, [number, number, number, number, number, number, boolean]> = {
   101: [811, 1037, 1437, 83, 107, 151, true],
@@ -56,6 +57,9 @@ const R: Record<number, [number, number, number, number, number, number, boolean
   110: [823, 1049, 1447, 83, 107, 151, true],
   111: [827, 1051, 1451, 83, 107, 151, true],
   112: [829, 1053, 1453, 83, 107, 151, true],
+  // Surat side, stored gcAllowed false — the side makes them near anyway.
+  113: [419, 529, 821, 61, 79, 101, false],
+  114: [431, 541, 833, 63, 81, 103, false],
   // 109 has NO rate row — a new area.
 };
 // Pairs seen together (a < b) → times.
@@ -137,17 +141,21 @@ test("bulk dealer: a stop over bulkKg is split BY BILL into Bulk cards; the left
   assert.equal(p.summary.bulk, 1);
 });
 
-test("bulk: one bill over bulkKg is a Bulk card of its own; over every vehicle → hire", () => {
-  const big = stop(101, 3200); // one bill, 3,000 < 3,200 ≤ 3,500
-  const hire = stop(110, 3600); // one bill over the Big's 3,500
-  const p = planLoadsV2([...big, ...hire, ...stop(111, 900)], ctx());
-  const own = p.cards.find((c) => c.type === "bulk" && c.orderIds[0] === big[0].orderId)!;
-  assert.equal(own.vehicle, "big");
-  assert.match(own.reason, /One bill of 3,200 kg at Navsari Town — a truck of its own/);
-  const h = p.cards.find((c) => c.type === "bulk" && c.orderIds[0] === hire[0].orderId)!;
-  assert.equal(h.vehicle, undefined);
-  assert.match(h.reason, /One bill over 3,500 kg at Navsari East — no vehicle carries it; hire as needed/);
-  assert.equal(p.summary.bulk, 2);
+test("bulk: one bill over bulkKg is its own card; 3,500–4,500 kg → Big (heavy); over 4,500 → hire", () => {
+  const own = stop(101, 3200); // one bill, 3,000 < 3,200 ≤ 3,500
+  const heavy = stop(110, 3800); // one bill, 3,500 < 3,800 ≤ 4,500
+  const hire = stop(111, 5000); // one bill over 4,500
+  const p = planLoadsV2([...own, ...heavy, ...hire, ...stop(104, 900)], ctx());
+  const card = (id: number) => p.cards.find((c) => c.type === "bulk" && c.orderIds[0] === id)!;
+  assert.equal(card(own[0].orderId).bulkKind, "single");
+  assert.match(card(own[0].orderId).reason, /One bill of 3,200 kg at Navsari Town — a truck of its own/);
+  assert.equal(card(heavy[0].orderId).bulkKind, "heavy");
+  assert.equal(card(heavy[0].orderId).vehicle, "big");
+  assert.match(card(heavy[0].orderId).reason, /Big \(heavy\) — one bill of 3,800 kg at Navsari East/);
+  assert.equal(card(hire[0].orderId).bulkKind, "hire");
+  assert.equal(card(hire[0].orderId).vehicle, undefined);
+  assert.match(card(hire[0].orderId).reason, /Hire truck — about 2 Bigs of load \(one bill of 5,000 kg at Navsari West\)/);
+  assert.equal(p.summary.bulk, 3);
 });
 
 test("bulk: a 3,400 kg dealer of three bills → one Bulk card and the rest planned, never a direct Big", () => {
@@ -338,7 +346,7 @@ test("no rupee value anywhere in the output", () => {
   // any digits inside a reason.
   const secret = new Set<number>([613]);
   Object.keys(R).forEach((k) => R[Number(k)].slice(0, 6).forEach((v) => secret.add(v as number)));
-  const SAFE = new Set(["orderIds", "areaId", "stopKey", "key", "kg", "stopCount", "totalKg", "ace", "big", "gc", "trucks", "bulk", "direct", "hold", "waiting"]);
+  const SAFE = new Set(["orderIds", "areaId", "stopKey", "key", "kg", "stopCount", "totalKg", "ace", "big", "gc", "trucks", "bulk", "direct", "hold", "waiting", "id"]);
   const scanned = JSON.stringify(plan, (k, v) => (SAFE.has(k) ? undefined : v));
   const numbers = (scanned.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
   const leaked = numbers.filter((n) => secret.has(n));
@@ -507,15 +515,16 @@ test("replan: a vehicle with no maxKg may bend when stops join, shown amber; one
   assert.equal(one.summary.waiting, 1);
   assert.deepEqual(one.shortage?.add, { big: 1 });
   // Capped at 2,000 (maxKg given): no bend. One bill of 2,040 is heavier than
-  // any vehicle on hand → Bulk, hire; two bills of 1,020 are a bulk dealer
-  // for this fleet — one Bulk load on the Ace, the other waits.
+  // any vehicle on hand → it waits; two bills of 1,020 are a bulk dealer
+  // for this fleet — the leftover goes on the Ace, the Bulk part waits.
   const q = planLoadsV2(stop(101, 2040), ctx(), {}, { available: [{ type: "ace", count: 1, maxKg: 2000 }] });
   assert.equal(q.summary.trucks, 0);
-  assert.equal(q.summary.bulk, 1);
+  assert.equal(q.summary.waiting, 1);
   const r = planLoadsV2(stop(101, 2040, { bills: 2 }), ctx(), {}, { available: [{ type: "ace", count: 1, maxKg: 2000 }] });
-  const onAce = r.cards.find((c) => c.type === "bulk")!;
-  assert.equal(onAce.vehicle, "ace");
-  assert.equal(Math.round(onAce.kg), 1020);
+  // Bulk goes LAST (fix 8): the leftover 1,020 takes the Ace, the Bulk part waits.
+  assert.equal(r.summary.ace, 1);
+  assert.equal(Math.round(r.cards.find((c) => c.type === "ace")!.kg), 1020);
+  assert.equal(r.summary.bulk, 0);
   assert.equal(r.summary.waiting, 1);
   assert.deepEqual(r.unused, []);
 });
@@ -555,7 +564,7 @@ test("replan: no rupee value in the output (shortage and unused included)", () =
   assert.doesNotMatch(json, /rate|cost|saving|penalty|rupee|₹|"rs"/i);
   const secret = new Set<number>([613]);
   Object.keys(R).forEach((k) => R[Number(k)].slice(0, 6).forEach((v) => secret.add(v as number)));
-  const SAFE = new Set(["orderIds", "areaId", "stopKey", "key", "kg", "stopCount", "totalKg", "ace", "big", "gc", "trucks", "bulk", "direct", "hold", "waiting", "count", "maxKg"]);
+  const SAFE = new Set(["orderIds", "areaId", "stopKey", "key", "kg", "stopCount", "totalKg", "ace", "big", "gc", "trucks", "bulk", "direct", "hold", "waiting", "count", "maxKg", "id", "driverMaxKg"]);
   const numbers = (JSON.stringify(plan, (k, v) => (SAFE.has(k) ? undefined : v)).match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
   assert.deepEqual(numbers.filter((n) => secret.has(n)), []);
 });
@@ -564,7 +573,9 @@ test("locked defaults: lockV2Config lays the owner's numbers over the stored row
   const c = lockV2Config(ctx({ pairMinTimes: 2, maxPlacesPerTruck: 5, directBigMaxKg: 4000 }).config);
   const v = c.vehicles;
   assert.deepEqual([v.ace.maxKg, v.ace.hardMaxKg, v.big.maxKg, v.big.hardMaxKg, v.gc.maxKg, v.gc.hardMaxKg], [2000, 2300, 3000, 3500, 1500, 1650]);
-  assert.deepEqual([v.ace.idealStops, v.ace.maxStops, v.big.idealStops, v.gc.maxStops], [6, 8, 6, 4]);
+  assert.deepEqual([v.ace.idealStops, v.ace.maxStops, v.big.idealStops, v.big.maxStops, v.gc.maxStops], [6, 8, 6, 7, 4]);
+  assert.deepEqual(c.aceLightRun, { maxStops: 10, maxKg: 1500 });
+  assert.equal(c.heavyBigMaxKg, 4500);
   assert.deepEqual([v.ace.dailyCount, v.gc.dailyCount, v.big.dailyCount], [2, 3, null]);
   assert.deepEqual([c.pairMinTimes, c.sameRoutePairsAlways, c.maxPlacesPerTruck, c.rideAlongBelowKg, c.bulkKg], [1, true, 6, 300, 3000]);
   // Direct Big off: a two-stop Big gets no more than its hard max.
@@ -584,4 +595,90 @@ test("locked defaults: a 3,200 kg two-stop Big is amber; 3,600 kg is two trucks"
   const q = planLoadsV2([...stop(101, 2900), ...stop(110, 700)], L);
   assert.ok(q.cards.every((c) => c.kg <= 3500));
   assert.equal(q.summary.trucks + q.summary.bulk, 2);
+});
+
+// ── Final fixes (owner, 2026-09-21) ─────────────────────────────────────────
+
+const locked = () => ({ ...ctx(), config: lockV2Config(ctx().config) });
+
+test("fix 1: every Surat-side place counts as gcAllowed; other sides keep their own flag", () => {
+  const p = planLoadsV2(stop(113, 800), ctx(), { ace: 0, gc: 1 }); // Pal: stored false, Surat side
+  assert.equal(p.cards[0].type, "gc");
+  const q = planLoadsV2(stop(103, 800), ctx(), { ace: 0, gc: 1 }); // Vapi Town: stored false, South
+  assert.notEqual(q.cards[0].type, "gc");
+});
+
+test("fix 2: light milk run — an Ace does up to 10 stops when the load is ≤ 1,500 kg", () => {
+  const ten = Array.from({ length: 10 }, (_, i) => stop(101, 120, { key: `c:lm-${i}` })).flat();
+  const p = planLoadsV2(ten, locked());
+  assert.equal(p.summary.trucks, 1);
+  assert.equal(p.cards[0].type, "ace");
+  assert.equal(p.cards[0].stopCount, 10);
+  assert.equal(p.cards[0].flags.lightRun, true);
+  // 10 × 160 = 1,600 kg: over the light-run limit → no truck over 8 stops.
+  const heavy = Array.from({ length: 10 }, (_, i) => stop(101, 160, { key: `c:lh2-${i}` })).flat();
+  const q = planLoadsV2(heavy, locked());
+  assert.ok(q.cards.every((c) => c.stopCount <= 8));
+});
+
+test("fix 3: ride-along works on the Surat side; what cannot ride is one Hold card per place", () => {
+  // Adajan and Olpad Town are different routes, never paired — Olpad rides along.
+  const p = planLoadsV2([...stop(107, 900), ...stop(114, 150)], ctx());
+  assert.equal(p.summary.trucks, 1);
+  assert.ok(p.cards[0].stops.some((x) => x.areaName === "Olpad Town" && x.ridesAlong));
+  // North: two light places that plan together, and no North truck to ride with.
+  const q = planLoadsV2([...stop(105, 100), ...stop(106, 80)], ctx());
+  const holds = q.cards.filter((c) => c.type === "hold");
+  assert.equal(holds.length, 2);
+  assert.ok(holds.every((c) => c.areaNames.length === 1));
+});
+
+test("fix 5: a card on a vehicle with a driver max shows it", () => {
+  const p = planLoadsV2(stop(101, 2900), ctx(), {}, { available: [{ type: "big", count: 1, maxKg: 3000 }] });
+  const big = p.cards.find((c) => c.type === "big")!;
+  assert.equal(big.driverMaxKg, 3000);
+  assert.match(big.reason, /Driver max 3,000 kg/);
+});
+
+test("fix 6: the shortage never asks for more Aces than the day has left — Bigs instead", () => {
+  // Three 1,600 kg loads on three sides; each is cheapest on an Ace.
+  const three = () => [...stop(101, 1600), ...stop(105, 1600), ...stop(107, 1600)];
+  const two = planLoadsV2(three(), ctx(), {}, { available: [{ type: "ace", count: 2 }] });
+  assert.deepEqual(two.shortage?.add, { big: 1 }); // 2 Aces entered, 2 a day → no more Aces
+  const one = planLoadsV2(three(), ctx(), {}, { available: [{ type: "ace", count: 1 }] });
+  assert.deepEqual(one.shortage?.add, { ace: 1, big: 1 });
+});
+
+test("fix 8: vehicles short — bulk cards get vehicles LAST, unless overdue", () => {
+  // A 3,100 kg dealer → a 2,000 kg Bulk part + 1,100 kg left over; a 1,200 kg North load. One Big.
+  const dealer = (overdue: boolean): V2Bill[] =>
+    [2000, 1100].map((kg) => ({ orderId: nextId++, weightKg: kg, stopKey: `c:bl-${overdue}`, areaId: 101, routeId: 11, overdue }));
+  const p = planLoadsV2([...dealer(false), ...stop(105, 1200)], ctx(), {}, { available: [{ type: "big", count: 1 }] });
+  assert.equal(p.summary.bulk, 0);
+  assert.deepEqual(p.cards.find((c) => c.type === "big")!.areaNames, ["Bharuch Town"]);
+  const q = planLoadsV2([...dealer(true), ...stop(105, 1200)], ctx(), {}, { available: [{ type: "big", count: 1 }] });
+  assert.equal(q.summary.bulk, 1);
+  assert.equal(q.cards.find((c) => c.type === "bulk")!.vehicle, "big");
+});
+
+test("planner moves: a stop moved to Waiting stays there and asks for no vehicle", () => {
+  const a = stop(101, 900, { key: "c:mv-a" });
+  const b = stop(110, 800, { key: "c:mv-b" });
+  const p = planLoadsV2([...a, ...b], ctx(), {}, { waiting: ["c:mv-b"] });
+  const w = p.cards.find((c) => c.type === "waiting")!;
+  assert.deepEqual(w.orderIds, b.map((x) => x.orderId));
+  assert.equal(w.reason, "Moved to Waiting by the planner.");
+  assert.equal(p.shortage, null);
+  assert.ok(p.cards.some((c) => c.type !== "waiting" && c.orderIds.includes(a[0].orderId)));
+});
+
+test("planner moves: a pinned card over its hard max is kept and flagged red (overHard)", () => {
+  const bills = [...stop(101, 2000, { key: "c:oh1" }), ...stop(110, 1700, { key: "c:oh2" })];
+  const p = planLoadsV2(bills, ctx(), {}, { pinned: ["big:c:oh1|c:oh2"] });
+  const big = p.cards.find((c) => c.key === "big:c:oh1|c:oh2")!;
+  assert.equal(Math.round(big.kg), 3700);
+  assert.equal(big.flags.pinned, true);
+  assert.equal(big.flags.overHard, true);
+  // A card's key is its type + its stops' ids — what the screen builds a move from.
+  assert.equal(big.key, `big:${big.stops.map((x) => x.id).sort().join("|")}`);
 });
