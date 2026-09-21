@@ -34,6 +34,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { TripDesk, isPoolRow } from "./trip-desk";
 import { TripForm } from "./trip-form";
+import type { VehicleSize } from "@/lib/trips/vehicle-size";
 import { rankRouteName, formatRouteLabel } from "@/lib/trips/route-label";
 import { FloorBottomBar } from "./floor-bottom-bar";
 import { TripVehicleEditor } from "./trip-vehicle-editor";
@@ -1505,7 +1506,7 @@ export function FloorPage() {
   //   - it STAYS on the load plan: the ticks are cleared, the board reloads so
   //     the plan regroups, and a toast offers "Open" (which selects the trip
   //     on the rail exactly as a rail click does) instead of opening it.
-  const createTripWithSelection = useCallback(async (fromPlan?: { orderIds: number[] }) => {
+  const createTripWithSelection = useCallback(async (fromPlan?: { orderIds: number[]; vehicleSize?: VehicleSize }) => {
     const ids = fromPlan ? fromPlan.orderIds : selectedIdsRef.current;
     if (ids.length === 0) return;
     if (fromPlan) setSelection(new Set(ids));
@@ -1547,6 +1548,9 @@ export function FloorPage() {
           // The board's own anchor day, never a clock read here — a trip built
           // while looking at a past day carries that day, as the form does.
           tripDate: viewMode === "history" && histDate ? histDate : istTodayIso(),
+          // A load plan card's own size (Ace / Big / GC) rides along, so the
+          // trip carries it without the form (owner, 2026-09-21).
+          ...(fromPlan?.vehicleSize ? { vehicleSize: fromPlan.vehicleSize } : {}),
         }),
       });
       const created = await createRes.json().catch(() => ({}));
@@ -2089,7 +2093,7 @@ export function FloorPage() {
               searchActive={searchQuery.trim() !== ""}
               loadPlanConfigs={loadPlan.configs}
               routeNames={loadPlan.routeNames}
-              onMakeTrip={(orderIds) => void createTripWithSelection({ orderIds })}
+              onMakeTrip={(orderIds, vehicleSize) => void createTripWithSelection({ orderIds, vehicleSize })}
               makeTripBusy={tripBarBusy}
               // The SAME desk renders live and history, so the source is
               // decided here by the view (2026-08-25). "history" is the

@@ -657,7 +657,7 @@ model load_plan_config {
 }
 
 /// What the Upcountry load plan suggested (sql/2026-09-21-load-plan-snapshot.sql).
-/// source 'auto' = the 15:00 IST cron, at most one per day (partial unique index
+/// source 'auto' = the 21:00 IST cron, at most one per day (partial unique index
 /// load_plan_snapshot_auto_key, not expressible here); 'replan' = every Replan.
 /// cards: [{ cardNo, type, vehicle, billIds, kg, stops, places }] — no rates.
 model load_plan_snapshot {
@@ -3352,6 +3352,9 @@ model trips {
   driverName        String?
   driverPhone       String?
   transporterTripNo String?
+  /// gc | ace | big, or null (chk_trips_vehicle_size, sql/2026-09-21-trips-vehicle-size.sql).
+  /// Required on the Upcountry trip form; read by the admin Load plan check.
+  vehicleSize       String?
   note              String?
   status            String                @default("draft")
   releasedAt        DateTime?             @db.Timestamptz(6)

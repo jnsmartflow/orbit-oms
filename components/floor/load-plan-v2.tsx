@@ -116,7 +116,7 @@ export function LoadPlanV2View({
   onMarkUrgent: (id: number) => void;
   onOpenDetail: (id: number) => void;
   gateOn: boolean;
-  onMakeTrip?: (orderIds: number[]) => void;
+  onMakeTrip?: (orderIds: number[], vehicleSize?: VehicleType) => void;
   makeTripBusy?: boolean;
 }) {
   const [req, setReq] = useState<Req>({ replanNo: 0, pinned: [], waiting: [] });
@@ -491,7 +491,7 @@ function PlanPanel({
   gateOn: boolean;
   onTogglePin: () => void;
   onMove: (stopId: string, toKey: string) => void;
-  onMakeTrip?: (orderIds: number[]) => void;
+  onMakeTrip?: (orderIds: number[], vehicleSize?: VehicleType) => void;
   makeTripBusy?: boolean;
 }) {
   const lim = isTruck(c) && limits ? limits[c.type] : null;
@@ -527,7 +527,7 @@ function PlanPanel({
             <button
               type="button"
               disabled={makeTripBusy}
-              onClick={() => onMakeTrip(c.orderIds)}
+              onClick={() => onMakeTrip(c.orderIds, c.vehicle)}
               className="rounded-[8px] bg-brand-600 px-4 py-[6px] text-[12.5px] font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {makeTripBusy ? "Making…" : "Make trip"}

@@ -124,10 +124,19 @@ test("snapshot cards: the plan's cards as stored rows — bill ids, kg, stops, p
   assert.deepEqual(Object.keys(rows[0]).sort(), ["billIds", "cardNo", "kg", "places", "stops", "type", "vehicle"]);
 });
 
-test("actual vehicle class from vehicle_master.category", () => {
-  assert.equal(actualTypeOf("Tata Ace"), "ace");
-  assert.equal(actualTypeOf("Tata 407"), "big");
-  assert.equal(actualTypeOf("Eicher 14ft"), "big");
-  assert.equal(actualTypeOf("Tempo"), "unknown");
+test("actual vehicle class from the trip's vehicle size; none → unknown", () => {
+  assert.equal(actualTypeOf("ace"), "ace");
+  assert.equal(actualTypeOf("big"), "big");
+  assert.equal(actualTypeOf("gc"), "gc");
   assert.equal(actualTypeOf(null), "unknown");
+  assert.equal(actualTypeOf("Tata 407"), "unknown"); // a category is never guessed from
+});
+
+test("vehicle size: gc / ace / big or null; anything else refused", async () => {
+  const { parseVehicleSize } = await import("./vehicle-size");
+  assert.deepEqual(parseVehicleSize("big"), { ok: true, value: "big" });
+  assert.deepEqual(parseVehicleSize(null), { ok: true, value: null });
+  assert.deepEqual(parseVehicleSize(undefined), { ok: true, value: null });
+  assert.deepEqual(parseVehicleSize("Big"), { ok: false });
+  assert.deepEqual(parseVehicleSize(3), { ok: false });
 });

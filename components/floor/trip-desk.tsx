@@ -37,6 +37,7 @@ import { RouteRow } from "./route-row";
 import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs, useCardColumns } from "./route-cards";
 import { LoadPlanView } from "./load-plan";
 import { LoadPlanV2View } from "./load-plan-v2";
+import type { VehicleSize } from "@/lib/trips/vehicle-size";
 import type { LoadPlanConfig } from "@/lib/trips/load-plan";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
@@ -269,7 +270,7 @@ export function TripDesk({
   /** route_master id → name, for the plan's reasons. */
   routeNames: Record<number, string>;
   /** Make trip on a load-plan card — the New trip flow with these bills. */
-  onMakeTrip?: (orderIds: number[]) => void;
+  onMakeTrip?: (orderIds: number[], vehicleSize?: VehicleSize) => void;
   makeTripBusy?: boolean;
 }) {
   // ── TWO VIEW STATES, ONE PER LIST (2026-09-19) ───────────────────────────

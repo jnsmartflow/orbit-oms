@@ -1,3 +1,4 @@
+import { parseVehicleSize } from "@/lib/trips/vehicle-size";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
@@ -55,6 +56,8 @@ interface PatchBody {
   dispatchWindowId?: number | null;
   note?: string | null;
   transporterTripNo?: string | null;
+  /** gc | ace | big, or null to clear (lib/trips/vehicle-size.ts). */
+  vehicleSize?: string | null;
   /** Accepted ONLY so it can be refused with a clear message — see below. */
   deliveryTypeId?: number;
 }
@@ -159,6 +162,7 @@ export async function PATCH(
       dispatchWindowId: true,
       note: true,
       transporterTripNo: true,
+      vehicleSize: true,
       releasedAt: true,
       vehicle: { select: { vehicleNo: true } },
     },
@@ -176,6 +180,7 @@ export async function PATCH(
     dispatchWindowId?: number | null;
     note?: string | null;
     transporterTripNo?: string | null;
+    vehicleSize?: string | null;
     driverName?: string | null;
     driverPhone?: string | null;
     status?: string;
@@ -212,6 +217,11 @@ export async function PATCH(
     const v = optionalText(body.transporterTripNo);
     if (!v.ok) return NextResponse.json({ error: "transporterTripNo must be a string or null" }, { status: 400 });
     data.transporterTripNo = v.value;
+  }
+  if (has(body, "vehicleSize")) {
+    const v = parseVehicleSize(body.vehicleSize);
+    if (!v.ok) return NextResponse.json({ error: "vehicleSize must be gc, ace, big or null" }, { status: 400 });
+    data.vehicleSize = v.value;
   }
 
   if (Object.keys(data).length === 0) {
@@ -354,7 +364,7 @@ export async function PATCH(
     }
 
     // Everything else, compared field by field against the row as it was.
-    const OTHER_FIELDS = ["transporterId", "dispatchWindowId", "note", "transporterTripNo"] as const;
+    const OTHER_FIELDS = ["transporterId", "dispatchWindowId", "note", "transporterTripNo", "vehicleSize"] as const;
     const changes: TripDetailChange[] = [];
     for (const field of OTHER_FIELDS) {
       if (!has(body, field)) continue;

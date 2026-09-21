@@ -30,6 +30,7 @@
 //
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
+import { isVehicleSize, VEHICLE_SIZE_LABEL } from "./vehicle-size";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -321,7 +322,7 @@ export async function logTripVehicleChanged(opts: {
 }
 
 /** The PATCH fields `details_changed` covers. The vehicle has its own action. */
-export type TripDetailField = "dispatchWindowId" | "transporterId" | "note" | "transporterTripNo";
+export type TripDetailField = "dispatchWindowId" | "transporterId" | "note" | "transporterTripNo" | "vehicleSize";
 
 export interface TripDetailChange {
   field: TripDetailField;
@@ -356,6 +357,8 @@ function detailClause(c: TripDetailChange): string {
       return c.to === null ? "Note cleared" : "Note updated";
     case "transporterTripNo":
       return c.to === null ? "Transporter trip no cleared" : `Transporter trip no set to ${c.to}`;
+    case "vehicleSize":
+      return c.to === null ? "Vehicle size cleared" : `Vehicle size set to ${isVehicleSize(c.to) ? VEHICLE_SIZE_LABEL[c.to] : c.to}`;
   }
 }
 

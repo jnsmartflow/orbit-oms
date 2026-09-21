@@ -306,11 +306,7 @@ export function differenceText(d: PlaceDifference): string {
   return `${d.place} went with ${d.wentWith}, not ${d.plannedWith}`;
 }
 
-/** An actual vehicle's class from vehicle_master.category; unknown when it cannot be told. */
-export function actualTypeOf(category: string | null): ActualType {
-  if (!category) return "unknown";
-  if (/\bace\b/i.test(category)) return "ace";
-  if (/\bgc\b|goods carrier/i.test(category)) return "gc";
-  if (/407|eicher|big|truck|14 ?ft|17 ?ft|19 ?ft/i.test(category)) return "big";
-  return "unknown";
+/** An actual trip's class: its vehicle size (trips."vehicleSize"), else "unknown" — never guessed. */
+export function actualTypeOf(vehicleSize: string | null): ActualType {
+  return vehicleSize === "ace" || vehicleSize === "big" || vehicleSize === "gc" ? vehicleSize : "unknown";
 }

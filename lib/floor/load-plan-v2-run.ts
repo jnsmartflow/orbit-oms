@@ -32,6 +32,8 @@ export interface LoadPlanV2Response {
 
 export interface LoadPlanV2Request {
   orderIds: number[];
+  /** Plan bills already on a trip too (the 21:00 snapshot of the whole day). Default: pending bills only. */
+  includeOnTrips?: boolean;
   available?: AvailableVehicle[];
   pinned?: string[];
   waiting?: string[];
@@ -53,7 +55,7 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
     req.orderIds.length === 0
       ? []
       : await prisma.orders.findMany({
-          where: { id: { in: req.orderIds }, isRemoved: false, tripDropId: null },
+          where: { id: { in: req.orderIds }, isRemoved: false, ...(req.includeOnTrips ? {} : { tripDropId: null }) },
           select: {
             id: true,
             customerId: true,

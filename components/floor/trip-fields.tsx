@@ -17,6 +17,7 @@
 // ⚠ NO WINDOW-LEVEL KEY LISTENER. floor-page.tsx is the SINGLE Esc owner for the
 // whole floor tree (FLOOR §4.6). The drawer closes on its ✕ and its backdrop.
 
+import { VEHICLE_SIZES, VEHICLE_SIZE_DELIVERY_TYPE, VEHICLE_SIZE_LABEL, type VehicleSize } from "@/lib/trips/vehicle-size";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { SearchSelect, Highlight, HighlightSpan } from "@/components/ui/search-select";
@@ -53,8 +54,15 @@ export interface TripFieldValues {
   /** Carries the name so a stored transporter missing from the list still shows. */
   transporter: { id: number; name: string } | null;
   vehicle: VehiclePick | null;
+  /** gc | ace | big — asked (and required) on an Upcountry trip only. */
+  vehicleSize: VehicleSize | null;
   docket: string;
   note: string;
+}
+
+/** Is the size asked for (and required) on this form? Upcountry only (owner, 2026-09-21). */
+export function asksVehicleSize(values: TripFieldValues, deliveryTypes: DeliveryTypeOption[]): boolean {
+  return deliveryTypes.find((d) => d.id === values.deliveryTypeId)?.name === VEHICLE_SIZE_DELIVERY_TYPE;
 }
 
 /** The default transporter, looked up BY NAME — never by a hard-coded id. */
@@ -196,6 +204,33 @@ export function TripFields({
                   }`}
                 >
                   {d.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {asksVehicleSize(values, deliveryTypes) && (
+        <div>
+          <span className={LABEL}>
+            Vehicle size <span className="text-red-500">*</span>
+          </span>
+          <div className="flex gap-0.5 rounded-lg bg-gray-100 p-[3px]" role="radiogroup" aria-label="Vehicle size">
+            {VEHICLE_SIZES.map((sz) => {
+              const on = values.vehicleSize === sz;
+              return (
+                <button
+                  key={sz}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => set({ vehicleSize: sz })}
+                  className={`h-8 flex-1 rounded-md text-[13px] font-medium ${
+                    on ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  {VEHICLE_SIZE_LABEL[sz]}
                 </button>
               );
             })}

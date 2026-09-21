@@ -39,6 +39,7 @@ import {
   BUTTON_SECONDARY,
   TripDrawer,
   TripFields,
+  asksVehicleSize,
   findDefaultTransporter,
   type TripFieldValues,
   type VehiclePick,
@@ -82,6 +83,7 @@ export function TripVehicleEditor({
         ? { id: trip.transporterId, name: trip.transporterName ?? `#${trip.transporterId}` }
         : findDefaultTransporter(transporters),
     vehicle: initialVehicle(trip),
+    vehicleSize: trip.vehicleSize,
     docket: trip.transporterTripNo ?? "",
     note: trip.note ?? "",
   }));
@@ -90,7 +92,10 @@ export function TripVehicleEditor({
   const typeName =
     deliveryTypes.find((d) => d.id === trip.deliveryTypeId)?.name ?? trip.deliveryTypeName ?? trip.typeCode;
 
-  const canSave = !busy;
+  // An Upcountry trip must carry a size to be saved (owner, 2026-09-21) — an
+  // older trip without one asks for it on its next edit.
+  const needsSize = asksVehicleSize(values, deliveryTypes);
+  const canSave = !busy && (!needsSize || values.vehicleSize !== null);
 
   // The trip's summary, from props only. Dropped on an empty trip.
   const kg = formatWeightKg(Math.round(trip.totalWeightKg));
@@ -132,6 +137,8 @@ export function TripVehicleEditor({
 
       const nextDocket = values.docket.trim() === "" ? null : values.docket.trim();
       if (nextDocket !== trip.transporterTripNo) patch.transporterTripNo = nextDocket;
+
+      if (needsSize && values.vehicleSize !== trip.vehicleSize) patch.vehicleSize = values.vehicleSize;
 
       if (Object.keys(patch).length === 0) {
         toast.success("Nothing changed.");

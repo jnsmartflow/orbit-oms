@@ -1,7 +1,7 @@
 // lib/floor/load-plan-check-data.ts — SERVER ONLY, READ-ONLY (2026-09-21).
 //
 // Builds the admin "Load plan check" for a day or a week: picks the day's
-// snapshot (the 15:00 'auto' one unless another is asked for), finds the trip
+// snapshot (the 21:00 'auto' one unless another is asked for), finds the trip
 // each snapshot bill went on THAT DAY, and hands both to the pure comparison
 // (lib/trips/load-plan-check.ts).
 //
@@ -64,7 +64,7 @@ export async function loadDayCheck(dateIso: string, snapshotId?: number, ctxIn?:
     orderBy: [{ takenAt: "asc" }],
   });
   const snapshots = rows.map((r) => ({ id: r.id, source: r.source, takenAt: r.takenAt.toISOString() }));
-  // The 15:00 'auto' one by default; else the latest Replan of the day.
+  // The 21:00 'auto' one by default; else the latest Replan of the day.
   const row =
     (snapshotId !== undefined ? rows.find((r) => r.id === snapshotId) : undefined) ??
     rows.find((r) => r.source === "auto") ??
@@ -100,7 +100,7 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
   const tripRows = drops.length
     ? await prisma.trips.findMany({
         where: { id: { in: Array.from(new Set(drops.map((d) => d.tripId))) } },
-        select: { id: true, tripDate: true, status: true, vehicle: { select: { category: true } } },
+        select: { id: true, tripDate: true, status: true, vehicleSize: true },
       })
     : [];
   // A trip counts only if it is that day's and not cancelled.
@@ -134,7 +134,7 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
   const tripOfDrop = new Map(tripDrops.map((d) => [d.id, d.tripId] as const));
   const trips = new Map<number, TripFact>();
   dayTrips.forEach((t) => {
-    trips.set(t.id, { tripId: t.id, type: actualTypeOf(t.vehicle?.category ?? null), kg: 0, stops: tripDrops.filter((d) => d.tripId === t.id).length, places: [] });
+    trips.set(t.id, { tripId: t.id, type: actualTypeOf(t.vehicleSize), kg: 0, stops: tripDrops.filter((d) => d.tripId === t.id).length, places: [] });
   });
   tripOrders.forEach((o) => {
     const t = trips.get(tripOfDrop.get(o.tripDropId as number) ?? -1);

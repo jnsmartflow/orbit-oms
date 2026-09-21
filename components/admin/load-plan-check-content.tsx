@@ -50,7 +50,7 @@ export function LoadPlanCheckContent() {
     <div className="mx-auto max-w-[1100px] px-4 py-6">
       <h1 className="text-[20px] font-bold text-gray-900">Load plan check</h1>
       <p className="mt-1 text-[13px] text-gray-500">
-        The Upcountry load plan (the 15:00 snapshot unless you pick another) against the trips planners made that day, bill by bill.
+        The Upcountry load plan (the 21:00 snapshot unless you pick another) against the trips planners made that day, bill by bill.
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -77,10 +77,10 @@ export function LoadPlanCheckContent() {
         </div>
         {data?.view === "day" && data.day.snapshots.length > 1 && (
           <select value={snapshot} onChange={(e) => setSnapshot(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1 text-[13px]">
-            <option value="">Default (15:00, else latest)</option>
+            <option value="">Default (21:00, else latest)</option>
             {data.day.snapshots.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.source === "auto" ? "15:00 auto" : "Replan"} · {new Date(s.takenAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
+                {s.source === "auto" ? "21:00 auto" : "Replan"} · {new Date(s.takenAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
               </option>
             ))}
           </select>
@@ -94,7 +94,7 @@ export function LoadPlanCheckContent() {
         (data.day.check ? (
           <>
             <p className="mt-4 text-[12px] text-gray-500">
-              Snapshot #{data.day.snapshot!.id} · {data.day.snapshot!.source === "auto" ? "15:00 auto" : "Replan"} ·{" "}
+              Snapshot #{data.day.snapshot!.id} · {data.day.snapshot!.source === "auto" ? "21:00 auto" : "Replan"} ·{" "}
               {new Date(data.day.snapshot!.takenAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
             </p>
             <Numbers check={data.day.check} costPct={data.day.costPct} />

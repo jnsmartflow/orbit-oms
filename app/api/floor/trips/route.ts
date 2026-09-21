@@ -1,3 +1,4 @@
+import { parseVehicleSize } from "@/lib/trips/vehicle-size";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
@@ -43,6 +44,8 @@ interface CreateBody {
   adhocVehicleNo?: string | null;
   note?: string | null;
   transporterTripNo?: string | null;
+  /** gc | ace | big (lib/trips/vehicle-size.ts). The form requires it for Upcountry; the route does not. */
+  vehicleSize?: string | null;
 }
 
 /** A supplied optional integer must be a real positive integer or explicitly null. */
@@ -103,7 +106,7 @@ export async function GET(req: Request): Promise<NextResponse> {
  * POST /api/floor/trips — create a trip in `draft`.
  *
  * Body: `{ deliveryTypeId, tripDate, dispatchWindowId?, transporterId?,
- *          vehicleId?, adhocVehicleNo?, note?, transporterTripNo? }`
+ *          vehicleId?, adhocVehicleNo?, note?, transporterTripNo?, vehicleSize? }`
  *
  * 🔴 VEHICLE AND TRANSPORTER ARE BOTH OPTIONAL AND A TRIP MUST BE CREATABLE
  * WITH NEITHER. The owner's framing: *"assign a vehicle if there or draft
@@ -170,6 +173,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!note.ok) return NextResponse.json({ error: "note must be a string or null" }, { status: 400 });
   const transporterTripNo = optionalText(body.transporterTripNo);
   if (!transporterTripNo.ok) return NextResponse.json({ error: "transporterTripNo must be a string or null" }, { status: 400 });
+  const vehicleSize = parseVehicleSize(body.vehicleSize);
+  if (!vehicleSize.ok) return NextResponse.json({ error: "vehicleSize must be gc, ace, big or null" }, { status: 400 });
 
   // chk_trips_vehicle_one_of, surfaced as a readable 400 rather than a raw
   // constraint-violation string on somebody's screen.
@@ -262,6 +267,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           driverName,
           driverPhone,
           transporterTripNo: transporterTripNo.value,
+          vehicleSize: vehicleSize.value,
           note: note.value,
           // chk_trips_status admits draft|released|dispatched|cancelled. A trip
           // with a vehicle starts `released`; without one, `draft` (see above).

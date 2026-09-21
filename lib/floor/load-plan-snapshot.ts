@@ -2,7 +2,8 @@
 //
 // Keeps what the Upcountry load plan SUGGESTED (load_plan_snapshot,
 // sql/2026-09-21-load-plan-snapshot.sql), for the admin "Load plan check".
-//   - 'auto'   — the 15:00 IST cron (app/api/cron/load-plan-snapshot), one a day
+//   - 'auto'   — the 21:00 IST cron (app/api/cron/load-plan-snapshot), one a day,
+//                of ALL the day's Upcountry bills (on its trips + still pending)
 //   - 'replan' — every press of Replan on the Load plan tab
 //
 // 🔴 NO RATES: a snapshot holds bill ids, kg, stops, places — the engine's
@@ -54,17 +55,20 @@ export async function hasAutoSnapshotToday(): Promise<boolean> {
 }
 
 /**
- * The Upcountry DUE pool's bill ids, as the Load plan tab shows them: on no
- * trip, due (not upcoming), and not in the tint room.
- *
- * ⚠ THE TINT-ROOM TEST MIRRORS `isPoolRow` (components/floor/trip-desk.tsx →
- * `isTintRoomRow` in status-pill.tsx: rowStatus is tintPending | tintAssigned).
- * Those live in client component files a server route cannot call, so the
- * same condition is restated here. Change both or neither.
+ * ALL of today's Upcountry bills (owner, 2026-09-21): the ones already on
+ * today's trips (not cancelled) plus the ones still pending (on no trip, due —
+ * tint-room bills included; a bill still in the tint room at 21:00 is still
+ * today's work).
  */
-export async function upcountryPoolIds(): Promise<number[]> {
+export async function upcountryDayBillIds(): Promise<number[]> {
   const board = await getFloorBoard({ mode: "live", scope: "Upcountry" });
-  const inTintRoom = (r: (typeof board.rows)[number]) =>
-    !r.isDispatched && !r.isChecked && !r.isDone && !r.isAssigned && (r.tintPhase === "pending" || r.tintPhase === "assigned");
-  return board.rows.filter((r) => r.tripDropId === null && r.zone !== "upcoming" && !inTintRoom(r)).map((r) => r.orderId);
+  const pending = board.rows.filter((r) => r.tripDropId === null && r.zone !== "upcoming").map((r) => r.orderId);
+  const onTrips = await prisma.orders.findMany({
+    where: {
+      isRemoved: false,
+      tripDrop: { trip: { tripDate: istToday().date, status: { not: "cancelled" }, deliveryType: { name: "Upcountry" } } },
+    },
+    select: { id: true },
+  });
+  return Array.from(new Set(pending.concat(onTrips.map((o) => o.id))));
 }

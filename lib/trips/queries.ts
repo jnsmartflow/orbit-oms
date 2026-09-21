@@ -20,6 +20,7 @@
 // If you find yourself wanting to persist it, the answer is no — read §C2 of
 // docs/prompts/drafts/web-update-2026-09-09-trip-schema.md first.
 
+import { isVehicleSize, type VehicleSize } from "./vehicle-size";
 import { prisma } from "@/lib/prisma";
 import {
   SUPPORT_DONE_OUTPUT,
@@ -132,6 +133,8 @@ export interface TripSummary {
   driverName: string | null;
   driverPhone: string | null;
   transporterTripNo: string | null;
+  /** gc | ace | big, or null — lib/trips/vehicle-size.ts. */
+  vehicleSize: VehicleSize | null;
   note: string | null;
   status: string;
   /** DERIVED, never stored — every bill checked and at least one bill. */
@@ -448,6 +451,7 @@ const TRIP_SELECT = {
   driverName: true,
   driverPhone: true,
   transporterTripNo: true,
+  vehicleSize: true,
   note: true,
   status: true,
   releasedAt: true,
@@ -473,6 +477,7 @@ type TripRow = {
   driverName: string | null;
   driverPhone: string | null;
   transporterTripNo: string | null;
+  vehicleSize: string | null;
   note: string | null;
   status: string;
   releasedAt: Date | null;
@@ -713,6 +718,7 @@ function toSummary(
     driverName: t.driverName,
     driverPhone: t.driverPhone,
     transporterTripNo: t.transporterTripNo,
+    vehicleSize: isVehicleSize(t.vehicleSize) ? t.vehicleSize : null,
     note: t.note,
     status: t.status,
     // 🔴 DERIVED. `counts.total > 0` is load-bearing: an EMPTY trip is not

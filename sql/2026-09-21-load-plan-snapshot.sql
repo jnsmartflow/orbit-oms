@@ -7,8 +7,10 @@
 --
 --   date      the IST day the plan is for
 --   takenAt   when it was taken
---   source    'auto'   — the 15:00 IST cron (/api/cron/load-plan-snapshot),
---                        AT MOST ONE PER DAY (partial unique index below)
+--   source    'auto'   — the 21:00 IST cron (/api/cron/load-plan-snapshot):
+--                        ALL of that day's Upcountry bills — on that day's
+--                        trips and still pending — AT MOST ONE PER DAY
+--                        (partial unique index below)
 --             'replan' — every press of Replan on the Load plan tab (all kept)
 --   cards     jsonb array, one element per card:
 --             { cardNo, type, vehicle, billIds, kg, stops, places }
@@ -39,14 +41,14 @@ BEGIN
     CONSTRAINT chk_load_plan_snapshot_cards  CHECK (jsonb_typeof(cards) = 'array')
   );
 
-  -- The report reads one day at a time, the 15:00 one first.
+  -- The report reads one day at a time, the 21:00 one first.
   CREATE INDEX load_plan_snapshot_date_idx ON load_plan_snapshot (date, source, "takenAt");
 
   -- At most one AUTO snapshot per day: a cron retry cannot write a second.
   CREATE UNIQUE INDEX load_plan_snapshot_auto_key ON load_plan_snapshot (date) WHERE source = 'auto';
 END $$;
 
--- ── CHECK (read-only) — expect the 6 columns below and 0 rows ───────────────
+-- ── CHECK (read-only) — expect 5 columns and 0 rows ─────────────────────────
 SELECT column_name, data_type, is_nullable,
        (SELECT count(*) FROM load_plan_snapshot) AS row_count
 FROM information_schema.columns

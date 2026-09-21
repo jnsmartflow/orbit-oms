@@ -4,8 +4,10 @@
 // LOCKED 2026-09-21). The fields are the shared body in trip-fields.tsx; this
 // file owns the header, the footer and the POST.
 //
-// Delivery type is the ONLY required field — it is the letter in the trip
-// number. Nothing is pre-selected: the planner picks it. Transporter starts as
+// Delivery type is required — it is the letter in the trip number. Nothing is
+// pre-selected: the planner picks it. On an UPCOUNTRY trip the vehicle size
+// (GC / Ace / Big) is required too (owner, 2026-09-21) — the admin Load plan
+// check counts actual trucks by it. Transporter starts as
 // Nagadhiraj (looked up by name). Everything else is optional, and so are bills.
 //
 // 🔴 AN EMPTY TRIP IS VALID (owner, slice 6, 2026-09-15). The floor plans
@@ -42,6 +44,7 @@ import {
   BUTTON_SECONDARY,
   TripDrawer,
   TripFields,
+  asksVehicleSize,
   findDefaultTransporter,
   type TripFieldValues,
 } from "./trip-fields";
@@ -73,12 +76,14 @@ export function TripForm({
     dispatchWindowId: null,
     transporter: findDefaultTransporter(transporters),
     vehicle: null,
+    vehicleSize: null,
     docket: "",
     note: "",
   }));
   const [busy, setBusy] = useState(false);
 
-  const canSubmit = !busy && values.deliveryTypeId !== null;
+  const needsSize = asksVehicleSize(values, deliveryTypes);
+  const canSubmit = !busy && values.deliveryTypeId !== null && (!needsSize || values.vehicleSize !== null);
 
   async function submit() {
     if (!canSubmit) return;
@@ -97,6 +102,7 @@ export function TripForm({
           vehicleId: v?.kind === "master" ? v.id : null,
           adhocVehicleNo: v?.kind === "typed" ? v.plate : null,
           transporterTripNo: values.docket.trim() === "" ? null : values.docket.trim(),
+          vehicleSize: needsSize ? values.vehicleSize : null,
           note: values.note.trim() === "" ? null : values.note.trim(),
         }),
       });
