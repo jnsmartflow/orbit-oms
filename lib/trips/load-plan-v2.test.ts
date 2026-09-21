@@ -330,3 +330,27 @@ test("no rupee value anywhere in the output", () => {
   const leaked = numbers.filter((n) => secret.has(n));
   assert.deepEqual(leaked, [], `rate values in output: ${leaked.join(", ")}`);
 });
+
+test("light milk run: an Ace takes 9–10 stops only when the load is light", () => {
+  const LR = { aceLightRun: { maxStops: 10, maxKg: 1500 } };
+  // 10 stops of 120 kg = 1,200 kg → one Ace on a light run, flagged.
+  const ten = Array.from({ length: 10 }, (_, i) => stop(101, 120, { key: `c:lr-${i}` })).flat();
+  const p = planLoadsV2(ten, ctx(LR), { ace: 1 });
+  const ace = p.cards.find((c) => c.type === "ace")!;
+  assert.equal(ace.stopCount, 10);
+  assert.equal(ace.flags.lightRun, true);
+  assert.match(ace.reason, /Light milk run — 10 stops, 1,500 kg or less/);
+  // 10 stops of 200 kg = 2,000 kg → too heavy for a light run: no truck over 8 stops.
+  const heavy = Array.from({ length: 10 }, (_, i) => stop(101, 200, { key: `c:lh-${i}` })).flat();
+  const q = planLoadsV2(heavy, ctx(LR), { ace: 1 });
+  assert.ok(q.cards.every((c) => c.stopCount <= 8 && !c.flags.lightRun));
+  // Off by default: the same light 10 stops never go on one truck.
+  const r = planLoadsV2(ten.map((b) => ({ ...b })), ctx(), { ace: 1 });
+  assert.ok(r.cards.every((c) => c.stopCount <= 8 && !c.flags.lightRun));
+});
+
+test("config: aceLightRun is optional; a malformed one → null", () => {
+  assert.equal(parseLoadPlanV2Config(RAW_CONFIG)!.aceLightRun, null);
+  assert.deepEqual(parseLoadPlanV2Config({ ...RAW_CONFIG, aceLightRun: { maxStops: 10, maxKg: 1200 } })!.aceLightRun, { maxStops: 10, maxKg: 1200 });
+  assert.equal(parseLoadPlanV2Config({ ...RAW_CONFIG, aceLightRun: { maxStops: 10 } }), null);
+});

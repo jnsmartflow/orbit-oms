@@ -21,6 +21,10 @@
 //   2. Stops     — bills grouped by stopKey. A stop of ≤ bulkKg is never split.
 //   2b. Direct Big — a Big with 1 or 2 stops may carry up to directBigMaxKg
 //                  (default 3,500); with 3+ stops it keeps maxKg + overKg.
+//   2c. Light milk run — optional (aceLightRun): an Ace may carry more than
+//                  its maxStops, up to aceLightRun.maxStops, ONLY when the load
+//                  weighs ≤ aceLightRun.maxKg. Such a card carries flags.lightRun
+//                  (the screen shows it amber). Off unless configured.
 //   3. Heavy     — a stop heavier than one direct Big is split BY BILL into
 //                  full direct-Big loads while more than one direct Big of it is
 //                  left; the leftover bills plan like any other stop. Only a
@@ -78,6 +82,8 @@ export interface LoadPlanV2Config {
   rideAlongBelowKg: number;
   /** A Big with 1 or 2 stops may carry up to this; 3+ stops keep maxKg + overKg. */
   directBigMaxKg: number;
+  /** Light milk run: an Ace may exceed its maxStops up to `maxStops` when the load is ≤ `maxKg`. null = off. */
+  aceLightRun: { maxStops: number; maxKg: number } | null;
   /** Kept for the stored row; the heavy-stop split now keys on directBigMaxKg. */
   bulkKg: number;
   /** INTERNAL — the cost of one more truck, added to every saving. Never output. */
@@ -144,10 +150,17 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
   const rideAlongBelowKg = posOr("rideAlongBelowKg", V2_DEFAULTS.rideAlongBelowKg);
   const sameRoutePairsAlways = boolOr("sameRoutePairsAlways", V2_DEFAULTS.sameRoutePairsAlways);
   const directBigMaxKg = posOr("directBigMaxKg", V2_DEFAULTS.directBigMaxKg);
+  // aceLightRun: absent or null → off; present → { maxStops, maxKg }, both positive.
+  let aceLightRun: { maxStops: number; maxKg: number } | null = null;
+  if (o.aceLightRun !== undefined && o.aceLightRun !== null) {
+    const lr = o.aceLightRun as Record<string, unknown>;
+    if (typeof lr !== "object" || !isPos(lr.maxStops) || !isPos(lr.maxKg)) return null;
+    aceLightRun = { maxStops: lr.maxStops, maxKg: lr.maxKg };
+  }
   if (pairMinTimes === null || maxPlacesPerTruck === null || rideAlongBelowKg === null || sameRoutePairsAlways === null || directBigMaxKg === null) return null;
 
   return {
-    routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, sameRoutePairsAlways, rideAlongBelowKg, directBigMaxKg,
+    routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, sameRoutePairsAlways, rideAlongBelowKg, directBigMaxKg, aceLightRun,
     bulkKg: o.bulkKg, truckPenaltyRs: o.truckPenaltyRs, holdSmallUnlessOverdue: o.holdSmallUnlessOverdue,
     newArea: { rate: "route_typical", gcAllowed: na.gcAllowed, pairs: "same_route" },
   };
@@ -162,6 +175,16 @@ export function kgCap(cfg: LoadPlanV2Config, t: VehicleType, stops: number): num
   const v = cfg.vehicles[t];
   const normal = v.maxKg + v.overKg;
   return t === "big" && stops <= 2 ? Math.max(normal, cfg.directBigMaxKg) : normal;
+}
+
+/**
+ * May a vehicle of type `t` carry `stops` stops weighing `kg`? Up to its
+ * maxStops always; an Ace beyond that only on a light milk run (aceLightRun).
+ */
+export function stopsAllowed(cfg: LoadPlanV2Config, t: VehicleType, stops: number, kg: number): boolean {
+  if (stops <= cfg.vehicles[t].maxStops) return true;
+  const lr = cfg.aceLightRun;
+  return t === "ace" && lr !== null && stops <= lr.maxStops && kg <= lr.maxKg;
 }
 
 // ── Context (built on the server) ───────────────────────────────────────────
@@ -241,6 +264,8 @@ export interface V2Card {
     overIdealStops: boolean;
     /** An area priced by its route's typical rate, or with no pair history. */
     newArea: boolean;
+    /** An Ace beyond its normal stop limit on a light milk run — shown amber. */
+    lightRun: boolean;
   };
   /** Words only — never a rupee figure. */
   reason: string;
@@ -546,7 +571,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     VEHICLE_TYPES.filter((t) => {
       if (exclude.has(t)) return false;
       const v = V[t];
-      if (l.kg > kgCap(cfg, t, l.stops.length) || l.stops.length > v.maxStops) return false;
+      if (l.kg > kgCap(cfg, t, l.stops.length) || !stopsAllowed(cfg, t, l.stops.length, l.kg)) return false;
       // Near-only applies to EVERY place, riders included.
       if (v.nearOnly && !l.areas.every((a) => a.gcAllowed)) return false;
       return true;
@@ -825,7 +850,11 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       parts.push(`${names.join(", ")} ${names.length === 1 ? "rides" : "ride"} along (under ${fmtKg(cfg.rideAlongBelowKg)} kg).`);
     }
     if (l.vehicle === "big" && l.kg > V.big.maxKg + V.big.overKg) parts.push(`Direct Big (${l.stops.length} ${l.stops.length === 1 ? "stop" : "stops"}, up to ${fmtKg(cfg.directBigMaxKg)} kg).`);
-    if (l.vehicle === "ace" && l.stops.length > V.big.maxStops) parts.push(`${l.stops.length} stops — only an Ace carries that many.`);
+    if (l.vehicle === "ace" && l.stops.length > V.ace.maxStops && cfg.aceLightRun) {
+      parts.push(`Light milk run — ${l.stops.length} stops, ${fmtKg(cfg.aceLightRun.maxKg)} kg or less.`);
+    } else if (l.vehicle === "ace" && l.stops.length > V.big.maxStops) {
+      parts.push(`${l.stops.length} stops — only an Ace carries that many.`);
+    }
     if (l.replanned) parts.push(`Re-planned without an Ace (max ${V.big.maxStops} stops).`);
     if (l.merged) parts.push(`Two loads going the same way merged.`);
     return parts.join(" ");
@@ -861,6 +890,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       flags: {
         overIdealStops: vt !== null && l.stops.length > V[vt].idealStops,
         newArea: l.areas.some((a) => a.typical || !a.hasPairs),
+        lightRun: type === "ace" && l.stops.length > V.ace.maxStops,
       },
       reason,
     };
