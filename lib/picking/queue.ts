@@ -179,8 +179,9 @@ export interface PickingQueueOptions {
   pickerId?: number;
   /**
    * The floor visibility gate (2026-09-09). `true` narrows the WAITING branch
-   * to bills on no trip or on a SHOWN trip (per trip since slice 8, 2026-09-15 —
-   * it was a per-bill `orders.pickVisibleAt` stamp before; see
+   * to bills on a SHOWN trip — bills on no trip are hidden too since 2026-09-21
+   * (per trip since slice 8, 2026-09-15 — it was a per-bill
+   * `orders.pickVisibleAt` stamp before; see
    * waitingBranchWhere in ./visibility-gate); `false` emits no term at all and
    * the WHERE is byte-identical to what it was before the gate existed.
    *
@@ -290,6 +291,10 @@ export interface PickingQueueResult {
   /** The distinct trips those held-back bills are on (slice 8). 0 whenever
    *  `heldBack` is 0. */
   heldBackTrucks: number;
+  /** Waiting bills on NO trip ("To plan"), hidden by the gate since 2026-09-21.
+   *  Disjoint from `heldBack`, which counts only bills on unshown trips. 0 when
+   *  the gate is off and on every `pickerId` request, like the other two. */
+  heldBackUnplanned: number;
 }
 
 // Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
@@ -390,8 +395,9 @@ export function buildPickingWhere(
             // byte-identical to the pre-gate board.
             //
             // 🔴 PER TRIP SINCE SLICE 8 (2026-09-15). With the gate ON a waiting
-            // bill is here when it is on NO trip, or on a trip the desk has
-            // SHOWN (`trips.shownAt`). It used to require a per-bill
+            // bill is here ONLY when it is on a trip the desk has SHOWN
+            // (`trips.shownAt`); a bill on no trip is hidden since 2026-09-21
+            // (owner). It used to require a per-bill
             // `pickVisibleAt` stamp; nothing reads that column now. The term is
             // owned by waitingBranchWhere() in lib/picking/visibility-gate.ts,
             // never spelled out here.
@@ -1049,5 +1055,6 @@ export async function getPickingQueue(
     oilSkus,
     heldBack: held.bills,
     heldBackTrucks: held.trucks,
+    heldBackUnplanned: held.unplanned,
   };
 }

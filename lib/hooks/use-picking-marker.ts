@@ -25,6 +25,9 @@ interface MarkerResponse {
   /** The distinct trucks those held-back bills are on (slice 8). Optional for the
    *  same reason `heldBack` is, and coalesced to 0 the same way. */
   heldBackTrucks?: number;
+  /** Waiting bills on NO trip that the gate is hiding (2026-09-21). Optional for
+   *  the same reason `heldBack` is, and coalesced to 0 the same way. */
+  heldBackUnplanned?: number;
   scope: string;
 }
 
@@ -170,6 +173,7 @@ export function usePickingMarker({
     latest: string | null;
     heldBack: number;
     heldBackTrucks: number;
+    heldBackUnplanned: number;
   } | null>(null);
   // The marker moved while paused → fire once on resume.
   const pendingChangeRef = useRef(false);
@@ -262,6 +266,7 @@ export function usePickingMarker({
           latest: marker.latest,
           heldBack: marker.heldBack ?? 0,
           heldBackTrucks: marker.heldBackTrucks ?? 0,
+          heldBackUnplanned: marker.heldBackUnplanned ?? 0,
         };
         const prev = lastSeenRef.current;
         if (prev === null) {
@@ -271,11 +276,14 @@ export function usePickingMarker({
         // `heldBack` joins the comparison, and must: a bill arriving already
         // hidden by the visibility gate moves neither of the other two, because
         // the gated predicate the marker aggregates over never saw it.
+        // `heldBackUnplanned` too (2026-09-21): a bill moved from To plan onto
+        // an unshown trip lowers it and raises `heldBack` — the band must follow.
         const moved =
           prev.count !== next.count ||
           prev.latest !== next.latest ||
           prev.heldBack !== next.heldBack ||
-          prev.heldBackTrucks !== next.heldBackTrucks;
+          prev.heldBackTrucks !== next.heldBackTrucks ||
+          prev.heldBackUnplanned !== next.heldBackUnplanned;
         if (!moved) return;
         lastSeenRef.current = next; // always advance the baseline
         if (pausedRef.current) {
@@ -364,6 +372,7 @@ export function usePickingMarker({
         latest: marker.latest,
         heldBack: marker.heldBack ?? 0,
         heldBackTrucks: marker.heldBackTrucks ?? 0,
+        heldBackUnplanned: marker.heldBackUnplanned ?? 0,
       };
       // Any change deferred while paused is covered by the caller's own fresh
       // fetch — leaving it armed would fire on unpause for data already shown.

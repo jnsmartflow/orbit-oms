@@ -44,7 +44,10 @@ export const dynamic = "force-dynamic";
  * held-back bill is unassigned, so it belongs to no picker). The third number
  * is load-bearing for the same reason `count` is: a bill arriving already
  * hidden moves neither of the other two, because the gated predicate never
- * saw it.
+ * saw it. Since 2026-09-21 it comes in three parts — `heldBack` and
+ * `heldBackTrucks` (bills on unshown trips) and `heldBackUnplanned` (bills on
+ * no trip) — and the hook compares all three: a bill moved from To plan onto
+ * an unshown trip changes the split without changing any one total.
  */
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -165,7 +168,7 @@ export async function GET(req: Request): Promise<NextResponse> {
             buildPickingWhere({ date: dateParam, scope: scopeParam }).where,
             gateOn,
           )
-        : { bills: 0, trucks: 0 };
+        : { bills: 0, trucks: 0, unplanned: 0 };
 
     const body = {
       count: agg._count,
@@ -175,6 +178,10 @@ export async function GET(req: Request): Promise<NextResponse> {
       // "2 trucks with the planner · 17 bills". Compared by the hook like
       // heldBack, so a truck shown or taken back refreshes the band.
       heldBackTrucks: held.trucks,
+      // 2026-09-21: waiting bills on NO trip, hidden by the gate since the owner
+      // reversed "loose bills are always visible". Compared by the hook like
+      // the two above, so the band's "N not planned yet" stays current.
+      heldBackUnplanned: held.unplanned,
       scope: scopeParam ?? "single",
       // Echoed back so a debugger can see which question was asked (null =
       // board-wide). Not read by the client.

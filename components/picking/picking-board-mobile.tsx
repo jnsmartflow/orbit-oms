@@ -3171,7 +3171,8 @@ export function PickingBoardMobile(): React.JSX.Element {
             tell "the depot is quiet" from "the desk has not released today's
             work". That ambiguity is the whole reason this exists.
 
-            🔴 RENDERED WHENEVER heldBack > 0, NOT ONLY ON AN EMPTY LIST. A
+            🔴 RENDERED WHENEVER ANYTHING IS HELD (heldBack or heldBackUnplanned
+            above 0), NOT ONLY ON AN EMPTY LIST. A
             supervisor working through 3 released bills while 60 sit at the desk
             needs this as much as one holding none — arguably more, because his
             list looks perfectly normal.
@@ -3183,21 +3184,38 @@ export function PickingBoardMobile(): React.JSX.Element {
             operator's job on /floor, and a button the supervisor cannot use
             would be worse than no button.
 
-            GATE OFF → `heldBack` is 0 (the server returns it without even
-            querying) → this element does not exist.
+            GATE OFF → `heldBack` and `heldBackUnplanned` are 0 (the server
+            returns them without even querying) → this element does not exist.
 
             🔴 TRUCKS FIRST, THEN BILLS, AND NO TRUCK NUMBERS (slice 8,
             2026-09-15). The desk now shows work to the floor one TRUCK at a
             time, so the supervisor reads "2 trucks with the planner · 17
             bills". The trip numbers are deliberately absent (owner): the band
             tells him work is coming, and a list of numbers would be a to-do
-            list he cannot action. Easy to add later if he asks for it. */}
-        {(data?.heldBack ?? 0) > 0 && (
-          <div className="mb-2.5 flex items-center gap-1.5 rounded-[7px] border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#92400e]">
-            <span className="font-semibold tabular-nums">{data!.heldBackTrucks}</span>
-            <span>{data!.heldBackTrucks === 1 ? "truck" : "trucks"} with the planner ·</span>
-            <span className="font-semibold tabular-nums">{data!.heldBack}</span>
-            <span>{data!.heldBack === 1 ? "bill" : "bills"}</span>
+            list he cannot action. Easy to add later if he asks for it.
+
+            🔴 PLUS THE UNPLANNED PART (2026-09-21). With the gate on, a bill on
+            no trip is hidden too, so the band adds "40 not planned yet" — each
+            part only when it is above 0, joined with " · ". Rendered when EITHER
+            part is: with nothing shown and everything still in To plan, this
+            band is the only thing telling him why his list is empty. */}
+        {((data?.heldBack ?? 0) > 0 || (data?.heldBackUnplanned ?? 0) > 0) && (
+          <div className="mb-2.5 flex flex-wrap items-center gap-1.5 rounded-[7px] border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#92400e]">
+            {data!.heldBackTrucks > 0 && (
+              <>
+                <span className="font-semibold tabular-nums">{data!.heldBackTrucks}</span>
+                <span>{data!.heldBackTrucks === 1 ? "truck" : "trucks"} with the planner ·</span>
+                <span className="font-semibold tabular-nums">{data!.heldBack}</span>
+                <span>{data!.heldBack === 1 ? "bill" : "bills"}</span>
+              </>
+            )}
+            {data!.heldBackTrucks > 0 && (data!.heldBackUnplanned ?? 0) > 0 && <span>·</span>}
+            {(data!.heldBackUnplanned ?? 0) > 0 && (
+              <>
+                <span className="font-semibold tabular-nums">{data!.heldBackUnplanned}</span>
+                <span>not planned yet</span>
+              </>
+            )}
           </div>
         )}
 
