@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { runLoadPlanV2 } from "@/lib/floor/load-plan-v2-run";
+import { saveLoadPlanSnapshot } from "@/lib/floor/load-plan-snapshot";
 import { VEHICLE_TYPES, type AvailableVehicle, type VehicleType } from "@/lib/trips/load-plan-v2";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,12 @@ export const dynamic = "force-dynamic";
 //   available — the vehicles on hand (Replan). Absent → suggest mode.
 //   pinned    — card keys the planner keeps as they are (incl. moved stops).
 //   waiting   — stop ids the planner moved to Waiting.
+//   snapshot  — true on the request a Replan press makes: the plan is also
+//               kept as a 'replan' snapshot for the admin Load plan check
+//               (a failed save never fails the plan).
 //
-// 🔴 READ-ONLY, and NO RUPEE VALUE in the response: kg, stops, places,
+// 🔴 READ-ONLY except the Replan snapshot above (bill ids, kg, stops — no rates),
+// and NO RUPEE VALUE in the response: kg, stops, places,
 // reasons and the kg / stop limits only. Rates never leave the server.
 // Gate: `floor` canView, the same as GET /api/floor/board.
 
@@ -65,6 +70,7 @@ export async function POST(req: Request) {
 
   try {
     const res = await runLoadPlanV2({ orderIds: orderIds as number[], ...(available ? { available } : {}), pinned, waiting });
+    if (body.snapshot === true && available && res.plan) await saveLoadPlanSnapshot(res.plan, "replan");
     return NextResponse.json(res);
   } catch (e) {
     // No rate is in this message — only that the plan could not be built.

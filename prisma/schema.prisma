@@ -656,6 +656,20 @@ model load_plan_config {
   updatedAt      DateTime             @default(now()) @db.Timestamptz(6)
 }
 
+/// What the Upcountry load plan suggested (sql/2026-09-21-load-plan-snapshot.sql).
+/// source 'auto' = the 15:00 IST cron, at most one per day (partial unique index
+/// load_plan_snapshot_auto_key, not expressible here); 'replan' = every Replan.
+/// cards: [{ cardNo, type, vehicle, billIds, kg, stops, places }] — no rates.
+model load_plan_snapshot {
+  id      Int      @id @default(autoincrement())
+  date    DateTime @db.Date
+  takenAt DateTime @default(now()) @db.Timestamptz(6)
+  source  String
+  cards   Json
+
+  @@index([date, source, takenAt], map: "load_plan_snapshot_date_idx")
+}
+
 model route_club_members {
   id             Int          @id @default(autoincrement())
   clubId         Int

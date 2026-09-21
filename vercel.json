@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/cron/attendance-rollover", "schedule": "35 18 * * *" },
-    { "path": "/api/cron/attendance-purge", "schedule": "30 20 * * *" }
+    { "path": "/api/cron/attendance-purge", "schedule": "30 20 * * *" },
+    { "path": "/api/cron/load-plan-snapshot", "schedule": "30 9 * * *" }
   ]
 }

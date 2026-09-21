@@ -12,7 +12,9 @@
 // bundled for the browser.
 //
 // What the planner can do, all of it held in THIS component's state and sent
-// with every request (nothing is saved; a reload starts from the suggestion):
+// with every request (a reload starts from the suggestion; only a Replan press
+// leaves a trace — the plan it returns is kept as a snapshot, no rates, for the
+// admin Load plan check):
 //   - Replan with the vehicles they have ("Vehicles I have": counts, and an
 //     optional driver max kg per vehicle). "Back to suggested" drops all of it.
 //   - Pin a card: it comes back exactly as it is.
@@ -44,6 +46,8 @@ const AMBER = "#e0a832";
 const RED = "#d64545";
 
 interface Req {
+  /** Counts Replan presses: each press re-asks, and is kept as a snapshot once. */
+  replanNo: number;
   available?: AvailableVehicle[];
   pinned: string[];
   waiting: string[];
@@ -115,7 +119,7 @@ export function LoadPlanV2View({
   onMakeTrip?: (orderIds: number[]) => void;
   makeTripBusy?: boolean;
 }) {
-  const [req, setReq] = useState<Req>({ pinned: [], waiting: [] });
+  const [req, setReq] = useState<Req>({ replanNo: 0, pinned: [], waiting: [] });
   const [form, setForm] = useState<Form>({ count: { ace: "", big: "", gc: "" }, limits: { ace: [], big: [], gc: [] } });
   const [plan, setPlan] = useState<V2Plan | null>(null);
   const [limits, setLimits] = useState<V2Limits | null>(null);
@@ -128,15 +132,20 @@ export function LoadPlanV2View({
 
   // ── The plan: re-asked whenever the pool or the planner's choices change.
   const seq = useRef(0);
+  /** The last Replan press already sent as a snapshot (the admin Load plan check keeps each press once). */
+  const snappedNo = useRef(0);
   useEffect(() => {
     const my = ++seq.current;
     const ctl = new AbortController();
     setState((s) => (s === "ready" ? s : "loading"));
     const orderIds = idsSig === "" ? [] : idsSig.split(",").map(Number);
+    const r0 = JSON.parse(reqSig) as Req;
+    const snapshot = r0.available !== undefined && r0.replanNo > snappedNo.current;
+    if (snapshot) snappedNo.current = r0.replanNo;
     fetch("/api/floor/load-plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderIds, ...(JSON.parse(reqSig) as Req) }),
+      body: JSON.stringify({ orderIds, available: r0.available, pinned: r0.pinned, waiting: r0.waiting, ...(snapshot ? { snapshot: true } : {}) }),
       signal: ctl.signal,
     })
       .then(async (r) => {
@@ -178,9 +187,9 @@ export function LoadPlanV2View({
   }, [openKey, plan]);
 
   // ── Planner actions ───────────────────────────────────────────────────────
-  const replan = () => setReq((r) => ({ ...r, available: toAvailable(form) }));
+  const replan = () => setReq((r) => ({ ...r, replanNo: r.replanNo + 1, available: toAvailable(form) }));
   const backToSuggested = () => {
-    setReq({ pinned: [], waiting: [] });
+    setReq((r) => ({ replanNo: r.replanNo, pinned: [], waiting: [] }));
     setOpenKey(null);
   };
   const togglePin = (c: V2Card) =>

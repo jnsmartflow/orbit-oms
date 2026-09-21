@@ -124,6 +124,9 @@ const NAV_SECTIONS: NavSection[] = [
       // NOTHING linked to it — its own comment said "Direct URL only". 47 live
       // removed orders at the time of the edit.
       { label: "Removed Orders", href: "/admin/removed-orders" },
+      // 2026-09-21 — the Upcountry load plan vs the trips planners made.
+      // Keyless → superuser only, like every row without a pageKey.
+      { label: "Load plan check", href: "/admin/load-plan-check" },
     ],
   },
 ];
