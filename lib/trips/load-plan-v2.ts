@@ -25,6 +25,12 @@
 //                  its maxStops, up to aceLightRun.maxStops, ONLY when the load
 //                  weighs ≤ aceLightRun.maxKg. Such a card carries flags.lightRun
 //                  (the screen shows it amber). Off unless configured.
+//   2d. Soft service costs — optional: stopChargeRs per stop above a
+//                  vehicle's idealStops and weightChargeRsPer100Kg per 100 kg
+//                  above its rated maxKg, added to the PLANNING cost only (never
+//                  output). The hard limits are hardMaxKg (else maxKg + overKg)
+//                  and maxStops. A card over its ideal stops or its rated load
+//                  (maxKg + overKg) is flagged amber.
 //   3. Heavy     — a stop heavier than one direct Big is split BY BILL into
 //                  full direct-Big loads while more than one direct Big of it is
 //                  left; the leftover bills plan like any other stop. Only a
@@ -57,7 +63,10 @@ export type VehicleType = "ace" | "big" | "gc";
 export const VEHICLE_TYPES: readonly VehicleType[] = ["ace", "big", "gc"];
 
 export interface VehicleSpec {
+  /** The RATED load. Above it (+ overKg) a card is flagged amber. */
   maxKg: number;
+  /** Optional HARD weight limit; absent → maxKg + overKg is the hard limit. */
+  hardMaxKg?: number;
   /** Allowed over maxKg (a 2,000 kg Ace may carry 2,050). */
   overKg: number;
   idealStops: number;
@@ -84,6 +93,10 @@ export interface LoadPlanV2Config {
   directBigMaxKg: number;
   /** Light milk run: an Ace may exceed its maxStops up to `maxStops` when the load is ≤ `maxKg`. null = off. */
   aceLightRun: { maxStops: number; maxKg: number } | null;
+  /** INTERNAL soft cost per stop above a vehicle's idealStops (planning only, never output). Default 0. */
+  stopChargeRs: number;
+  /** INTERNAL soft cost per 100 kg above a vehicle's rated maxKg (planning only, never output). Default 0. */
+  weightChargeRsPer100Kg: number;
   /** Kept for the stored row; the heavy-stop split now keys on directBigMaxKg. */
   bulkKg: number;
   /** INTERNAL — the cost of one more truck, added to every saving. Never output. */
@@ -133,9 +146,11 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
     if (!isPos(s.maxKg) || !isNum(s.overKg) || s.overKg < 0 || !isPos(s.idealStops) || !isPos(s.maxStops)) return null;
     if (!(s.dailyCount === null || (isNum(s.dailyCount) && s.dailyCount >= 0))) return null;
     if (typeof s.nearOnly !== "boolean" || !isNum(s.priority)) return null;
+    if (s.hardMaxKg !== undefined && !isPos(s.hardMaxKg)) return null;
     vehicles[t] = {
       maxKg: s.maxKg, overKg: s.overKg, idealStops: s.idealStops, maxStops: s.maxStops,
       dailyCount: s.dailyCount as number | null, nearOnly: s.nearOnly, priority: s.priority,
+      ...(s.hardMaxKg !== undefined ? { hardMaxKg: s.hardMaxKg as number } : {}),
     };
   }
   if (!isPos(o.bulkKg) || !isNum(o.truckPenaltyRs) || typeof o.holdSmallUnlessOverdue !== "boolean") return null;
@@ -150,6 +165,10 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
   const rideAlongBelowKg = posOr("rideAlongBelowKg", V2_DEFAULTS.rideAlongBelowKg);
   const sameRoutePairsAlways = boolOr("sameRoutePairsAlways", V2_DEFAULTS.sameRoutePairsAlways);
   const directBigMaxKg = posOr("directBigMaxKg", V2_DEFAULTS.directBigMaxKg);
+  const nonNegOr = (k: string): number | null => (o[k] === undefined ? 0 : isNum(o[k]) && (o[k] as number) >= 0 ? (o[k] as number) : null);
+  const stopChargeRs = nonNegOr("stopChargeRs");
+  const weightChargeRsPer100Kg = nonNegOr("weightChargeRsPer100Kg");
+  if (stopChargeRs === null || weightChargeRsPer100Kg === null) return null;
   // aceLightRun: absent or null → off; present → { maxStops, maxKg }, both positive.
   let aceLightRun: { maxStops: number; maxKg: number } | null = null;
   if (o.aceLightRun !== undefined && o.aceLightRun !== null) {
@@ -161,6 +180,7 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
 
   return {
     routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, sameRoutePairsAlways, rideAlongBelowKg, directBigMaxKg, aceLightRun,
+    stopChargeRs, weightChargeRsPer100Kg,
     bulkKg: o.bulkKg, truckPenaltyRs: o.truckPenaltyRs, holdSmallUnlessOverdue: o.holdSmallUnlessOverdue,
     newArea: { rate: "route_typical", gcAllowed: na.gcAllowed, pairs: "same_route" },
   };
@@ -173,7 +193,7 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
  */
 export function kgCap(cfg: LoadPlanV2Config, t: VehicleType, stops: number): number {
   const v = cfg.vehicles[t];
-  const normal = v.maxKg + v.overKg;
+  const normal = v.hardMaxKg ?? v.maxKg + v.overKg;
   return t === "big" && stops <= 2 ? Math.max(normal, cfg.directBigMaxKg) : normal;
 }
 
@@ -185,6 +205,22 @@ export function stopsAllowed(cfg: LoadPlanV2Config, t: VehicleType, stops: numbe
   if (stops <= cfg.vehicles[t].maxStops) return true;
   const lr = cfg.aceLightRun;
   return t === "ace" && lr !== null && stops <= lr.maxStops && kg <= lr.maxKg;
+}
+
+/** Above the vehicle's RATED load (maxKg + overKg) — an amber card. */
+export function overRated(cfg: LoadPlanV2Config, t: VehicleType, kg: number): boolean {
+  const v = cfg.vehicles[t];
+  return kg > v.maxKg + v.overKg;
+}
+
+/**
+ * The SOFT service cost of carrying `stops` stops weighing `kg` in a `t`:
+ * stopChargeRs per stop above idealStops + weightChargeRsPer100Kg per 100 kg
+ * above the rated maxKg. INTERNAL — planning only, never output.
+ */
+function softCost(cfg: LoadPlanV2Config, t: VehicleType, stops: number, kg: number): number {
+  const v = cfg.vehicles[t];
+  return cfg.stopChargeRs * Math.max(0, stops - v.idealStops) + (cfg.weightChargeRsPer100Kg * Math.max(0, kg - v.maxKg)) / 100;
 }
 
 // ── Context (built on the server) ───────────────────────────────────────────
@@ -266,6 +302,10 @@ export interface V2Card {
     newArea: boolean;
     /** An Ace beyond its normal stop limit on a light milk run — shown amber. */
     lightRun: boolean;
+    /** Heavier than the vehicle's rated load (maxKg + overKg). */
+    overloaded: boolean;
+    /** Show amber: over the ideal stops, over the rated load, or a light milk run. */
+    amber: boolean;
   };
   /** Words only — never a rupee figure. */
   reason: string;
@@ -579,7 +619,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
   const cheapest = (l: Load, types: VehicleType[]): { t: VehicleType; cost: number } | null => {
     let best: { t: VehicleType; cost: number } | null = null;
     types.forEach((t) => {
-      const c = tripCostOf(l.areas, t);
+      const c = tripCostOf(l.areas, t) + softCost(cfg, t, l.stops.length, l.kg);
       if (!best || c < best.cost || (c === best.cost && V[t].priority < V[best.t].priority)) best = { t, cost: c };
     });
     return best;
@@ -682,7 +722,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       } else unassigned.push(l);
     });
 
-  const costAs = (l: Load, t: VehicleType) => tripCostOf(l.areas, t);
+  const costAs = (l: Load, t: VehicleType) => tripCostOf(l.areas, t) + softCost(cfg, t, l.stops.length, l.kg);
   const fits = (l: Load, t: VehicleType) => allowedTypes(l, NONE).includes(t);
   // Overdue first, then the oldest — the rule-7 priority.
   const urgency = (a: Load, b: Load) => Number(b.overdue) - Number(a.overdue) || b.maxAge - a.maxAge;
@@ -849,7 +889,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
       riders.forEach((s) => { if (!names.includes(s.area.name)) names.push(s.area.name); });
       parts.push(`${names.join(", ")} ${names.length === 1 ? "rides" : "ride"} along (under ${fmtKg(cfg.rideAlongBelowKg)} kg).`);
     }
-    if (l.vehicle === "big" && l.kg > V.big.maxKg + V.big.overKg) parts.push(`Direct Big (${l.stops.length} ${l.stops.length === 1 ? "stop" : "stops"}, up to ${fmtKg(cfg.directBigMaxKg)} kg).`);
+    if (l.vehicle === "big" && l.stops.length <= 2 && l.kg > (V.big.hardMaxKg ?? V.big.maxKg + V.big.overKg)) parts.push(`Direct Big (${l.stops.length} ${l.stops.length === 1 ? "stop" : "stops"}, up to ${fmtKg(cfg.directBigMaxKg)} kg).`);
     if (l.vehicle === "ace" && l.stops.length > V.ace.maxStops && cfg.aceLightRun) {
       parts.push(`Light milk run — ${l.stops.length} stops, ${fmtKg(cfg.aceLightRun.maxKg)} kg or less.`);
     } else if (l.vehicle === "ace" && l.stops.length > V.big.maxStops) {
@@ -891,6 +931,10 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
         overIdealStops: vt !== null && l.stops.length > V[vt].idealStops,
         newArea: l.areas.some((a) => a.typical || !a.hasPairs),
         lightRun: type === "ace" && l.stops.length > V.ace.maxStops,
+        overloaded: vt !== null && overRated(cfg, vt, l.kg),
+        amber:
+          vt !== null &&
+          (l.stops.length > V[vt].idealStops || overRated(cfg, vt, l.kg) || (type === "ace" && l.stops.length > V.ace.maxStops)),
       },
       reason,
     };

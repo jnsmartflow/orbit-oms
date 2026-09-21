@@ -354,3 +354,29 @@ test("config: aceLightRun is optional; a malformed one → null", () => {
   assert.deepEqual(parseLoadPlanV2Config({ ...RAW_CONFIG, aceLightRun: { maxStops: 10, maxKg: 1200 } })!.aceLightRun, { maxStops: 10, maxKg: 1200 });
   assert.equal(parseLoadPlanV2Config({ ...RAW_CONFIG, aceLightRun: { maxStops: 10 } }), null);
 });
+
+test("hard limits: hardMaxKg lets a Big carry more; above the rated load it is flagged amber", () => {
+  const VEH = RAW_CONFIG.vehicles;
+  const hard = { vehicles: { ...VEH, big: { ...VEH.big, hardMaxKg: 5350 } } };
+  // Three Navsari-route stops, 4,000 kg: over a normal 3+-stop Big (3,050).
+  const bills = [...stop(101, 1400), ...stop(110, 1300), ...stop(111, 1300)];
+  const off = planLoadsV2(bills, ctx(), { ace: 0, gc: 0 });
+  assert.ok(off.summary.trucks >= 2);
+  const on = planLoadsV2(bills.map((b) => ({ ...b })), ctx(hard), { ace: 0, gc: 0 });
+  assert.equal(on.summary.trucks, 1);
+  assert.equal(on.cards[0].flags.overloaded, true); // 4,000 > rated 3,000 + 50
+  assert.equal(on.cards[0].flags.amber, true);
+});
+
+test("soft stop charge: stops above the ideal cost extra, so the plan avoids them", () => {
+  // Six 400 kg stops in one place (not light, so none rides along — a rider
+  // ignores cost by rule); no Aces or GCs. Big ideal 5, max 6.
+  const six = () => Array.from({ length: 6 }, (_, i) => stop(101, 400, { key: `c:soft-${i}` })).flat();
+  const free = planLoadsV2(six(), ctx(), { ace: 0, gc: 0 });
+  assert.equal(free.summary.trucks, 1);
+  assert.equal(free.cards[0].flags.amber, true); // 6 stops > ideal 5
+  const charged = planLoadsV2(six(), ctx({ stopChargeRs: 100000 }), { ace: 0, gc: 0 });
+  assert.ok(charged.cards.every((c) => c.stopCount <= 5 && !c.flags.amber));
+  // The soft cost never reaches the output.
+  assert.doesNotMatch(JSON.stringify(charged), /100000|charge/i);
+});
