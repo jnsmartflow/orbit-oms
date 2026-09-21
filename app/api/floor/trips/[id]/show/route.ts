@@ -22,10 +22,11 @@ export const dynamic = "force-dynamic";
  * instead (lib/picking/visibility-gate.ts waitingBranchWhere).
  *
  * ⚠ REFUSED WHILE DESK CONTROL IS OFF, BOTH DIRECTIONS (409). With the switch off
- * every waiting bill is already visible, so a show would change nothing on
- * anybody's screen and a take-back would be undone by the no-cliff rule the
- * moment the switch went on. The button is greyed with "Desk control is off"
- * for the same reason; this is the server's half.
+ * every waiting bill is already visible, so a show or a take-back would change
+ * nothing on anybody's screen. The button is greyed with "Desk control is off"
+ * for the same reason; this is the server's half. (Until 2026-09-21 a take-back
+ * made while off would also have been undone by the no-cliff rule on the next
+ * OFF → ON flip; that rule is gone.)
  *
  * Idempotent: showing a shown trip, or taking back one that is not shown, is a
  * 200 with `changed: false` and nothing written.

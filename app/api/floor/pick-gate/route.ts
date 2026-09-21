@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { isPickGateOn, PICK_VISIBILITY_GATE_KEY } from "@/lib/picking/visibility-gate";
-import { showTripsHoldingWaitingBills } from "@/lib/trips/show";
 
 export const dynamic = "force-dynamic";
 
@@ -12,28 +11,23 @@ export const dynamic = "force-dynamic";
  * ("desk control").
  *
  * The switch is one `app_settings` row keyed by `PICK_VISIBILITY_GATE_KEY`.
- * ON, the supervisor's Assign tab shows a waiting bill only when it is on no
- * trip or on a trip the desk has SHOWN (`trips.shownAt`, slice 8 — per trip
- * since 2026-09-15; it was a per-bill `orders.pickVisibleAt` stamp before). OFF,
- * it shows every waiting bill, which is the board the floor has always had.
+ * ON, the supervisor's Assign tab shows a waiting bill ONLY when it is on a trip
+ * the desk has SHOWN (`trips.shownAt`, per trip since 2026-09-15; it was a
+ * per-bill `orders.pickVisibleAt` stamp before). A bill on no trip ("To plan")
+ * is hidden (owner, 2026-09-21). OFF, it shows every waiting bill, which is the
+ * board the floor has always had. In-progress and checked bills are never gated.
  *
- * 🔴 TURNING IT ON WRITES FIRST — THE NO-CLIFF RULE (slice 8, owner, a hard
- * requirement). Turning the switch on must not remove anything already on the
- * supervisor's screen. So an OFF → ON press first marks shown every trip that
- * holds a waiting bill (lib/trips/show.ts showTripsHoldingWaitingBills), THEN
- * flips the switch. Loose bills are always visible and in-progress bills are
- * never gated, so that is the whole set that could have vanished.
+ * 🔴 BOTH DIRECTIONS WRITE THE SWITCH AND NOTHING ELSE. The switch and
+ * `trips.shownAt` are independent: turning it ON marks no trip shown, and turning
+ * it OFF clears no trip's record. Trips the planner showed stay shown, trips he
+ * did not stay hidden, and the To plan pool is hidden — so an OFF → ON press CAN
+ * take bills off the supervisor's screen at once. That is the owner's intent: the
+ * planner's show choices stand. An off press that erased them would silently
+ * undo an afternoon's work, and an on press that overrode them would do the same.
  *
- * 🔴 AND AN OFF → ON CYCLE RE-SHOWS A TRIP THE PLANNER HAD HELD BACK. That is
- * DESIGNED, not a bug (owner, 2026-09-15): while the switch was off the
- * supervisor could see that trip's bills anyway, so no-cliff requires showing
- * them again. Nothing is lost — the planner can take the trip back.
- *
- * ⚠ TURNING IT OFF WRITES NOTHING. The filter simply stops, so the supervisor
- * gets everything back, and every trip's shown / not-shown record survives the
- * toggle. (The old rule this replaces — "the switch and the stamps are completely
- * independent" — was right about the off direction and still is: an off press
- * that erased the desk's handovers would silently undo an afternoon's work.)
+ * Until 2026-09-21 turning the gate ON first marked every unshown trip holding a
+ * waiting bill as shown (the no-cliff rule). Removed by owner: the planner's show
+ * choices stand. Do not revert.
  *
  * BOTH VERBS GATE ON `floor` canEdit. Since per-user access (2026-09-04) that is
  * ANYONE holding the floor Edit tick, not a pair of job titles — this comment
@@ -89,18 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   const enabled = body.enabled;
 
-  // ── THE NO-CLIFF STEP — only on an OFF → ON press, and BEFORE the flip ──────
-  // See the header. The order is the safety: trips first, switch second. If the
-  // upsert below then failed, the trips carry a harmless shown record with the
-  // switch still off; the reverse order would let the supervisor's 15s poll land
-  // between the two writes and drop those bills off his screen.
-  //
-  // ⚠ TRIPS ONLY — never an order row (no trip action may change a bill).
-  let shownTrips: string[] = [];
-  if (enabled && !(await isPickGateOn())) {
-    shownTrips = await showTripsHoldingWaitingBills(updatedById);
-  }
-
+  // The switch only — no trip is shown or taken back by a flip (see the header).
   // Upsert on the settingKey unique constraint (app_settings_settingKey_key,
   // live — so this is safe). First flip creates the row, every later one updates
   // it. `updatedAt` is @updatedAt in the schema and stamps itself on both paths.
@@ -111,6 +94,5 @@ export async function POST(req: Request): Promise<NextResponse> {
     create: { settingKey: PICK_VISIBILITY_GATE_KEY, isEnabled: enabled, updatedById },
   });
 
-  // `shownTrips` names what the no-cliff step showed, so the desk can say so.
-  return NextResponse.json({ enabled, shownTrips });
+  return NextResponse.json({ enabled });
 }

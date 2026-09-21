@@ -444,9 +444,11 @@ export async function logTripCancelled(opts: {
  * The trip was shown to the floor (slice 8).
  *
  * `via` records WHICH press did it: the planner's own Show to floor, or turning
- * desk control on — which shows every trip already holding a waiting bill, so
- * the supervisor loses nothing he could see (the no-cliff rule). The second is
- * not a person choosing this trip, and the summary says so.
+ * desk control on. The second is HISTORY ONLY since 2026-09-21: turning desk
+ * control on used to show every trip already holding a waiting bill (the
+ * no-cliff rule), and the owner removed that. Nothing writes
+ * `"desk_control_on"` any more; the value stays in the type because existing
+ * `trip_activity` rows carry it.
  */
 export async function logTripShown(opts: {
   tripId: number;

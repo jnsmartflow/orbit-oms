@@ -55,10 +55,11 @@ interface Failed {
  * visibility stamp.
  *
  * ⚠ VISIBILITY IS PER TRIP SINCE SLICE 8 (2026-09-15), AND CANCEL NEEDS NOTHING
- * FOR IT. Detaching the bills puts them on no trip, and a bill on no trip is
- * always visible to the floor whatever desk control says — so a cancelled trip's
- * waiting bills return to To plan visible, which is the truthful state, and a
- * bill a picker is already holding stays with him (never gated).
+ * FOR IT. Detaching the bills puts them on no trip. With desk control ON a
+ * waiting bill on no trip is hidden from the floor (owner, 2026-09-21), so a
+ * cancelled trip's waiting bills return to To plan HIDDEN until they are put on
+ * another trip and it is shown; with it OFF they stay visible. A bill a picker
+ * is already holding stays with him (never gated).
  *
  * Sequential awaits, never prisma.$transaction (CORE §3).
  */

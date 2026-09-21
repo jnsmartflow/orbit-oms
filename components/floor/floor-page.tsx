@@ -1921,10 +1921,12 @@ export function FloorPage() {
         <PickGateToggle
           enabled={gateEnabled}
           heldBackCount={heldBackCount}
-          // ⚠ REFETCH ON A FLIP (slice 8). Turning desk control on can mark trips
-          // shown server-side (the no-cliff step), which changes every affected
-          // row's `isAwaitingShow` — and a trip write moves no orders.updatedAt,
-          // so the floor's own marker would never notice.
+          // ⚠ REFETCH ON A FLIP (slice 8). It was needed while turning desk
+          // control on marked trips shown server-side (the no-cliff step,
+          // removed 2026-09-21); a flip now writes only the switch, and the pills
+          // pair `isAwaitingShow` with `gateEnabled` on the client. Kept as a
+          // cheap resync — a trip write moves no orders.updatedAt, so the floor's
+          // own marker would not notice one made elsewhere.
           onChanged={(v) => {
             setGateEnabled(v);
             void load();

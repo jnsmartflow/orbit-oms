@@ -63,26 +63,21 @@ export function PickGateToggle({
       });
       const body = (await res.json().catch(() => ({}))) as {
         enabled?: boolean;
-        shownTrips?: string[];
         error?: string;
       };
       if (!res.ok) {
         toast.error(body.error ? `Could not change the gate — ${body.error}` : "Could not change the gate.");
         return;
       }
-      // THE NO-CLIFF STEP, SAID OUT LOUD (slice 8). Turning desk control on marks
-      // shown every trip already holding a waiting bill, so nothing leaves the
-      // supervisor's screen. The planner should know which trips that was — they
-      // may include one he meant to hold back, which he can now take back.
-      const shownTrips = body.shownTrips ?? [];
-      if (next && shownTrips.length > 0) {
-        toast.info(
-          `Desk control on · ${shownTrips.length} trip${shownTrips.length === 1 ? "" : "s"} already on the floor's screen kept shown: ${shownTrips.join(", ")}`,
-        );
-      }
       // Trust the SERVER's answer, never the optimistic one — a switch whose
       // displayed position does not match reality lies about what the floor sees.
-      onChanged(typeof body.enabled === "boolean" ? body.enabled : next);
+      const nowOn = typeof body.enabled === "boolean" ? body.enabled : next;
+      // SAY WHAT THE FLOOR NOW SEES (2026-09-21). A flip marks no trip shown any
+      // more (the no-cliff step was removed by the owner), so turning desk control
+      // ON can take the To plan pool and every unshown trip off the supervisor's
+      // screen at once. The toast says so in the switch's own words.
+      toast.info(nowOn ? "Desk control ON · floor sees only trips you show" : "Desk control OFF · floor sees every bill");
+      onChanged(nowOn);
     } catch {
       toast.error("Could not change the gate — check your connection.");
     } finally {

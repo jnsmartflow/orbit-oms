@@ -3,14 +3,18 @@
 // SHOW TO FLOOR, PER TRIP (slice 8, 2026-09-15). The one owner of writing
 // `trips.shownAt` / `shownById`.
 //
-// With desk control on, a WAITING bill on a trip reaches the supervisor's Assign
-// tab only once its trip is shown (lib/picking/visibility-gate.ts
-// `waitingBranchWhere`). A bill on no trip is always visible. Three writers, all
-// here:
+// With desk control on, a WAITING bill reaches the supervisor's Assign tab only
+// once it is on a trip and that trip is shown (lib/picking/visibility-gate.ts
+// `waitingBranchWhere`). A bill on no trip is hidden (owner, 2026-09-21). One
+// writer, here: `setTripShown` — the planner's Show to floor and the ··· menu's
+// take-back.
 //
-//   - showTrip             — the planner's Show to floor
-//   - takeBackTrip         — the ··· menu's take-back
-//   - showTripsHoldingWaitingBills — turning desk control ON (the no-cliff rule)
+// ⚠ TURNING DESK CONTROL ON SHOWS NOTHING. Until 2026-09-21
+// `showTripsHoldingWaitingBills` (the no-cliff rule) marked every unshown trip
+// holding a waiting bill as shown on an OFF → ON flip. The owner removed it — the
+// planner's show choices stand — and the function went with its only caller
+// (app/api/floor/pick-gate/route.ts). Old `trip_activity` rows with
+// `via: "desk_control_on"` are its history; leave them.
 //
 // 🔴 EVERY WRITE HERE IS TO `trips`. Never an order row: no trip action may change
 // a bill's status or its hold (the rule the rebuild follows since slice 3). A
@@ -110,60 +114,4 @@ export async function setTripShown(opts: {
     shownAt: updated.shownAt?.toISOString() ?? null,
     waitingCount: counts.waiting,
   };
-}
-
-/**
- * THE NO-CLIFF RULE — run when desk control is turned ON, BEFORE the switch flips.
- *
- * 🔴 A HARD REQUIREMENT (owner): turning the switch on must not remove anything
- * already on the supervisor's screen. With the switch off he sees every waiting
- * bill. After it, he sees waiting bills on no trip (always) and on shown trips —
- * and in-progress and checked bills are never gated. So the only thing that could
- * vanish is a waiting bill on a trip that is not shown, and this marks every such
- * trip shown first. Nothing else needs doing, and nothing relies on the old
- * per-bill `pickVisibleAt` stamps.
- *
- * 🔴 THE OFF → ON CYCLE RE-SHOWS A TRIP THE PLANNER HAD HELD BACK, AND THAT IS
- * DESIGNED, NOT A BUG (owner, 2026-09-15). While the switch was off the supervisor
- * could see that trip's bills anyway; turning it back on must not take them away,
- * so it is shown again. Nothing is lost — the planner can take it back.
- *
- * ⚠ ORDER MATTERS, and the caller keeps it: stamp trips, THEN flip the switch. If
- * the flip then failed, the trips carry a harmless record with the switch still
- * off. The reverse order would let a 15s poll between the two writes empty those
- * bills off the supervisor's screen.
- *
- * One `trips.update` per trip (a handful), each with its own activity row saying
- * it was desk control, not a person choosing that trip. Returns the numbers shown.
- */
-export async function showTripsHoldingWaitingBills(actorId: number): Promise<string[]> {
-  const trips = await prisma.trips.findMany({
-    where: {
-      shownAt: null,
-      // ⚠ NO STATUS FILTER beyond cancelled, on purpose. The rule is "every trip
-      // holding a waiting bill", and a status test could only ever carve a
-      // cliff out of it. (A cancelled trip holds no bills — cancel detaches them.)
-      status: { not: "cancelled" },
-      drops: { some: { orders: { some: WAITING_FOR_PICKER } } },
-    },
-    select: { id: true, tripNumber: true },
-  });
-
-  const shown: string[] = [];
-  for (const t of trips) {
-    const counts = await countTripBills(t.id);
-    await prisma.trips.update({
-      where: { id: t.id },
-      data: { shownAt: new Date(), shownById: actorId },
-    });
-    await logTripShown({
-      tripId: t.id,
-      actorId,
-      tripNumber: t.tripNumber,
-      waitingCount: counts.waiting,
-      via: "desk_control_on",
-    });
-    shown.push(t.tripNumber);
-  }
-  return shown;
 }

@@ -71,7 +71,7 @@ export async function isPickGateOn(): Promise<boolean> {
  * A bill WAITING for a picker — the only kind the gate can ever hide.
  *
  * 🔴 THE ONE OWNER OF "WAITING" FOR THE GATE. The supervisor's waiting branch
- * (buildPickingWhere), the held-back count below, the no-cliff showing of trips
+ * (buildPickingWhere), the held-back count below, the per-trip waiting count
  * (lib/trips/show.ts) and the floor row's `isAwaitingShow` (lib/floor/queries.ts)
  * all mean exactly this. An assigned, picked or checked bill is never gated —
  * the locked owner rule in lib/picking/queue.ts — so it is never "waiting" here.

@@ -25,13 +25,14 @@ interface Failed {
  * reason membership and VISIBILITY are separate facts on separate columns.
  * Do not add a stage guard here.
  *
- * ⚠ BUT MEMBERSHIP NOW MOVES VISIBILITY (slice 8, 2026-09-15). With desk control
- * on, a WAITING bill on a trip that has not been shown is off the supervisor's
- * Assign tab — so ADDING a waiting bill to an unshown trip takes it off his
- * screen at once, and REMOVING it brings it straight back. That is the bucketing
- * the owner asked for, and this route writes nothing for it: the picking query
- * reads the trip (lib/picking/visibility-gate.ts waitingBranchWhere). A bill
- * already with a picker is never hidden by it.
+ * ⚠ BUT MEMBERSHIP MOVES VISIBILITY (slice 8, 2026-09-15; rule changed
+ * 2026-09-21). With desk control on, a WAITING bill is on the supervisor's
+ * Assign tab only while it is on a SHOWN trip. So ADDING a waiting bill to a
+ * shown trip puts it on his screen at once, adding it to an unshown trip keeps
+ * it off, and REMOVING it from a shown trip HIDES it — it returns to To plan,
+ * which the floor does not see. This route writes nothing for it: the picking
+ * query reads the trip (lib/picking/visibility-gate.ts waitingBranchWhere). A
+ * bill already with a picker is never hidden by it.
  *
  * ⚠ EXACTLY ONE `orders.update` PER BILL. The live-sync markers key on
  * `MAX(orders.updatedAt)`, so a second write fires a false "changed" on every
