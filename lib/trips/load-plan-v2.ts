@@ -47,9 +47,10 @@
 //                  a vehicle carries it, ≤ maxPlacesPerTruck places, and every
 //                  pair of places allowed (same route always; else seen together
 //                  ≥ pairMinTimes).
-//   5b. Ride-along — a load under rideAlongBelowKg may join ANY load on its
-//                  side, ignoring the pair rule and the places limit (kg and
-//                  stop limits still apply). If it can join nothing and has no
+//   5b. Ride-along — a load under rideAlongBelowKg may join a load on its
+//                  side with a looser pair rule (seen together ≥
+//                  rideAlongPairMinTimes, or same route) and no places limit
+//                  (kg and stop limits still apply). If it can join nothing and has no
 //                  overdue bill → Hold ("Hold for tomorrow").
 //   5c. Amber    — a load goes over a vehicle's ideal kg or stops only when
 //                  stops JOINED (so it saved a truck), never over the hard max:
@@ -114,6 +115,8 @@ export interface LoadPlanV2Config {
   vehicles: Record<VehicleType, VehicleSpec>;
   maxPlacesPerTruck: number;
   pairMinTimes: number;
+  /** A ride-along stop (under rideAlongBelowKg) needs only this many times together (or the same route). */
+  rideAlongPairMinTimes: number;
   /** Two places on the same route may always share a truck. */
   sameRoutePairsAlways: boolean;
   /** A load lighter than this may ride along with any load on its side. */
@@ -142,6 +145,7 @@ export interface LoadPlanV2Config {
  */
 export const V2_DEFAULTS = {
   pairMinTimes: 1,
+  rideAlongPairMinTimes: 1,
   sameRoutePairsAlways: true,
   maxPlacesPerTruck: 6,
   rideAlongBelowKg: 300,
@@ -164,8 +168,8 @@ export const V2_DEFAULTS = {
  *   Per day Ace 2 · GC 3 · Big as needed.
  *   Soft    a charge per stop above the ideal and per 100 kg above the ideal
  *           (planning only, never output); direct Big off.
- *   Pairs   seen together ≥ 1 time or same route · ≤ 6 places · ride-along
- *           under 300 kg · bulk dealer over 3,000 kg · one bill 3,500–4,500
+ *   Pairs   seen together ≥ 3 times or same route · ≤ 6 places · ride-along
+ *           under 300 kg needs ≥ 1 time or same route · bulk dealer over 3,000 kg · one bill 3,500–4,500
  *           kg → "Big (heavy)", over 4,500 kg → hire.
  */
 export const V2_LOCKED = {
@@ -178,7 +182,8 @@ export const V2_LOCKED = {
   weightChargeRsPer100Kg: 250,
   /** = the Big hard max → direct Big off. */
   directBigMaxKg: 3500,
-  pairMinTimes: 1,
+  pairMinTimes: 3,
+  rideAlongPairMinTimes: 1,
   sameRoutePairsAlways: true,
   maxPlacesPerTruck: 6,
   rideAlongBelowKg: 300,
@@ -201,6 +206,7 @@ export function lockV2Config(cfg: LoadPlanV2Config): LoadPlanV2Config {
     weightChargeRsPer100Kg: L.weightChargeRsPer100Kg,
     directBigMaxKg: L.directBigMaxKg,
     pairMinTimes: L.pairMinTimes,
+    rideAlongPairMinTimes: L.rideAlongPairMinTimes,
     sameRoutePairsAlways: L.sameRoutePairsAlways,
     maxPlacesPerTruck: L.maxPlacesPerTruck,
     rideAlongBelowKg: L.rideAlongBelowKg,
@@ -254,6 +260,8 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
   const posOr = (k: string, d: number): number | null => (o[k] === undefined ? d : isPos(o[k]) ? (o[k] as number) : null);
   const boolOr = (k: string, d: boolean): boolean | null => (o[k] === undefined ? d : typeof o[k] === "boolean" ? (o[k] as boolean) : null);
   const pairMinTimes = posOr("pairMinTimes", V2_DEFAULTS.pairMinTimes);
+  const rideAlongPairMinTimes = posOr("rideAlongPairMinTimes", V2_DEFAULTS.rideAlongPairMinTimes);
+  if (rideAlongPairMinTimes === null) return null;
   const maxPlacesPerTruck = posOr("maxPlacesPerTruck", V2_DEFAULTS.maxPlacesPerTruck);
   const rideAlongBelowKg = posOr("rideAlongBelowKg", V2_DEFAULTS.rideAlongBelowKg);
   const sameRoutePairsAlways = boolOr("sameRoutePairsAlways", V2_DEFAULTS.sameRoutePairsAlways);
@@ -274,7 +282,7 @@ export function parseLoadPlanV2Config(raw: unknown): LoadPlanV2Config | null {
   if (pairMinTimes === null || maxPlacesPerTruck === null || rideAlongBelowKg === null || sameRoutePairsAlways === null || directBigMaxKg === null) return null;
 
   return {
-    routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, sameRoutePairsAlways, rideAlongBelowKg, directBigMaxKg, heavyBigMaxKg, aceLightRun,
+    routeSides, vehicles, maxPlacesPerTruck, pairMinTimes, rideAlongPairMinTimes, sameRoutePairsAlways, rideAlongBelowKg, directBigMaxKg, heavyBigMaxKg, aceLightRun,
     stopChargeRs, weightChargeRsPer100Kg,
     bulkKg: o.bulkKg, truckPenaltyRs: o.truckPenaltyRs, holdSmallUnlessOverdue: o.holdSmallUnlessOverdue,
     newArea: { rate: "route_typical", gcAllowed: na.gcAllowed, pairs: "same_route" },
@@ -569,15 +577,15 @@ class Areas {
     return facts;
   }
 
-  /** May these two places share a truck? */
-  pairOk(a: AreaFacts, b: AreaFacts): boolean {
+  /** May these two places share a truck? `minTimes`: pairMinTimes, or rideAlongPairMinTimes for a rider. */
+  pairOk(a: AreaFacts, b: AreaFacts, minTimes: number = this.ctx.config.pairMinTimes): boolean {
     if (a.id === b.id) return true;
     const sameRoute = a.routeId !== null && a.routeId === b.routeId;
     // Same route: always together (owner, 2026-09-21) — which also covers
     // newArea.pairs = "same_route" for a place with no pair history.
     if (sameRoute && (this.ctx.config.sameRoutePairsAlways || !a.hasPairs || !b.hasPairs)) return true;
     const key = a.id < b.id ? `${a.id}-${b.id}` : `${b.id}-${a.id}`;
-    return (this.ctx.pairs.get(key) ?? 0) >= this.ctx.config.pairMinTimes;
+    return (this.ctx.pairs.get(key) ?? 0) >= minTimes;
   }
 }
 
@@ -942,11 +950,14 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
   const light = loads
     .filter((l) => l.kg < cfg.rideAlongBelowKg)
     .sort((a, b) => b.kg - a.kg || (a.key < b.key ? -1 : 1));
+  /** A rider's places vs the host's core places: seen together ≥ rideAlongPairMinTimes, or same route. */
+  const ridePairOk = (riders: StopRec[], host: Load) =>
+    riders.every((r) => host.coreAreas.every((c) => areas.pairOk(r.area, c, cfg.rideAlongPairMinTimes)));
   /** The load on `part`'s side where `part` rides along for the least added cost (kg and stop limits apply). */
   const rideHost = (part: Load): { host: Load; u: Load } | null => {
     let best: { host: Load; u: Load; add: number } | null = null;
     for (const host of loads) {
-      if (host === part || host.side !== part.side) continue;
+      if (host === part || host.side !== part.side || !ridePairOk(part.stops, host)) continue;
       const riders = part.stops.map((s) => ({ ...s, rider: true }));
       const u = makeLoad(host.stops.concat(riders), host.side);
       const uc = cheapest(u, allowedTypes(u, NONE));
@@ -1280,7 +1291,7 @@ export function planLoadsV2(bills: V2Bill[], ctx: LoadPlanV2Context, counts: Veh
     // c) The stops still without a vehicle, most important first.
     const withStop = (host: Load, st: StopRec): Load | null => {
       if (joinable(host, makeLoad([st], host.side))) return makeLoad(host.stops.concat([st]), host.side);
-      if (st.kg < cfg.rideAlongBelowKg) return makeLoad(host.stops.concat([{ ...st, rider: true }]), host.side);
+      if (st.kg < cfg.rideAlongBelowKg && ridePairOk([st], host)) return makeLoad(host.stops.concat([{ ...st, rider: true }]), host.side);
       return null;
     };
     const swap = (old: Load, nu: Load) => {

@@ -12,9 +12,9 @@
 
 - **Soft charges:** the plan adds a charge for each stop above the ideal and for each 100 kg above the ideal weight. It uses them only to choose between plans and never shows them. There is no "direct Big".
 - **Light milk run:** an Ace may do up to 10 stops when its load is 1,500 kg or less. A truck's stops are always on one side.
-- **Pairs:** two places share a truck only if they have gone together before (at least once) or are on the same route. At most 6 places per truck.
+- **Pairs:** two places share a truck only if they have gone together **at least 3 times** before or are on the **same route**. At most 6 places per truck.
 - **Near places (GC):** a GC goes only where every place is marked near. **Every Surat-side place counts as near.**
-- **Ride-along:** a stop under 300 kg may ride along with any truck on its side (any side), within that truck's stop limit.
+- **Ride-along:** a stop under 300 kg may ride along with a truck on its side (any side) if it has gone with that truck's places **at least once** (or shares a route), within the truck's stop limit. A light stop that never went with them does not ride; it holds.
 - **Bulk dealer:** a dealer over 3,000 kg. **One bill of 3,500–4,500 kg** goes on a Big on its own ("Big (heavy)"). **One bill over 4,500 kg:** "hire truck — about N Bigs of load".
 
 ## The order it plans in
@@ -23,7 +23,7 @@
 2. **Bulk:** a dealer over 3,000 kg is split by bill into Bulk cards of up to 3,000 kg (one Big each); the leftover bills join the plan.
 3. **Sides:** South, North and Surat are never mixed on one truck.
 4. **Aces first** (milk runs, many small dealers), **then Bigs** (heavy loads, fewer stops), **then GCs** (near places, max 4 stops). With Bigs unlimited, a load a GC carries more cheaply is kept for a GC and goes on a Big only when the GCs run out.
-5. **Merge:** two trucks become one when that saves, only if their places have gone together before or share a route.
+5. **Merge:** two trucks become one when that saves, only if their places have gone together at least 3 times or share a route.
 6. **Stop order:** farthest place first, back toward Surat.
 7. **Leftovers:** a small order that isn't overdue and has no room becomes a **Hold** card, **one per place** ("hold for tomorrow"). Anything else without a vehicle becomes a **Waiting** card, one per side. Every card says why, naming the places.
 

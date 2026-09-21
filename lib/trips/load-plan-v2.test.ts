@@ -22,11 +22,11 @@ import {
 
 // Routes: South = Navsari 11, Vapi 12, Chikhli 21 · North = Bharuch 17,
 // Kamrej 19 · Surat = Adajan 9 · Direct = IGT 18.
-const ROUTES: Record<number, string> = { 11: "Navsari", 12: "Vapi", 21: "Chikhli", 17: "Bharuch", 19: "Kamrej", 9: "Adajan", 22: "Olpad", 18: "IGT / CROSS" };
+const ROUTES: Record<number, string> = { 11: "Navsari", 12: "Vapi", 21: "Chikhli", 17: "Bharuch", 19: "Kamrej", 9: "Adajan", 22: "Olpad", 23: "Bardoli", 24: "Mahuva", 18: "IGT / CROSS" };
 
 const RAW_CONFIG = {
   smallMaxKg: 2000, bigMaxKg: 3000, mainRouteIds: [11, 12, 17], partners: [], // v1 keys, ignored by v2
-  routeSides: { "11": "South", "12": "South", "21": "South", "17": "North", "19": "North", "9": "Surat", "22": "Surat", "18": "Direct" },
+  routeSides: { "11": "South", "12": "South", "21": "South", "17": "North", "19": "North", "9": "Surat", "22": "Surat", "23": "South", "24": "South", "18": "Direct" },
   vehicles: {
     ace: { maxKg: 2000, overKg: 50, idealStops: 6, maxStops: 8, dailyCount: 2, nearOnly: false, priority: 1 },
     big: { maxKg: 3000, overKg: 50, idealStops: 5, maxStops: 6, dailyCount: null, nearOnly: false, priority: 2 },
@@ -43,7 +43,7 @@ const AREA: Record<number, [string, number]> = {
   101: ["Navsari Town", 11], 102: ["Bilimora", 21], 103: ["Vapi Town", 12], 104: ["Valsad", 12],
   105: ["Bharuch Town", 17], 106: ["Kamrej Town", 19], 107: ["Adajan", 9], 108: ["IGT Area", 18],
   109: ["New Navsari Area", 11], 110: ["Navsari East", 11], 111: ["Navsari West", 11], 112: ["Maroli", 11],
-  113: ["Pal", 9], 114: ["Olpad Town", 22],
+  113: ["Pal", 9], 114: ["Olpad Town", 22], 115: ["Bardoli", 23], 116: ["Mahuva", 24],
 };
 const R: Record<number, [number, number, number, number, number, number, boolean]> = {
   101: [811, 1037, 1437, 83, 107, 151, true],
@@ -60,12 +60,14 @@ const R: Record<number, [number, number, number, number, number, number, boolean
   // Surat side, stored gcAllowed false — the side makes them near anyway.
   113: [419, 529, 821, 61, 79, 101, false],
   114: [431, 541, 833, 63, 81, 103, false],
+  115: [1021, 1297, 1759, 89, 113, 157, false],
+  116: [1031, 1301, 1763, 89, 113, 157, false],
   // 109 has NO rate row — a new area.
 };
 // Pairs seen together (a < b) → times.
 const PAIRS: Array<[number, number, number]> = [
   [101, 102, 5], [101, 103, 3], [101, 104, 2], [103, 104, 6], [102, 103, 1], [101, 110, 4], [105, 106, 4],
-  [101, 111, 3],
+  [101, 111, 3], [107, 114, 1], [101, 115, 2],
   // Deliberately NO row for 110–111 (same route) or 102–104 (different routes).
 ];
 
@@ -227,16 +229,18 @@ test("the places limit: no truck carries more places than maxPlacesPerTruck", ()
   assert.equal(p.cards.reduce((n, c) => n + c.stopCount, 0), 3);
 });
 
-test("ride-along: a light load joins a load it could not pair with", () => {
-  // Valsad 150 kg (< 300) with Bilimora 900 kg: no pair row, different routes —
-  // but a light load rides along, ignoring the pair rule.
-  const p = planLoadsV2([...stop(102, 900), ...stop(104, 150)], ctx());
+test("ride-along: a light stop joins with a looser pair rule (≥ 1 time), never with none", () => {
+  // At pairMinTimes 3: Vapi Town and Bilimora went together once.
+  const P3 = { pairMinTimes: 3 };
+  const p = planLoadsV2([...stop(102, 900), ...stop(103, 150)], ctx(P3));
   assert.equal(p.summary.trucks, 1);
-  assert.equal(p.summary.hold, 0);
-  assert.match(p.cards[0].reason, /Valsad rides along/);
-  // At 400 kg it is not light: the pair rule applies and they go apart.
-  const q = planLoadsV2([...stop(102, 900), ...stop(104, 400)], ctx());
+  assert.match(p.cards[0].reason, /Vapi Town rides along/);
+  // At 400 kg it is not light: once is not 3 times — they go apart.
+  const q = planLoadsV2([...stop(102, 900), ...stop(103, 400)], ctx(P3));
   assert.equal(q.summary.trucks, 2);
+  // Valsad and Bilimora never went together: a light Valsad does not ride — it holds.
+  const r = planLoadsV2([...stop(102, 900), ...stop(104, 150)], ctx(P3));
+  assert.equal(r.summary.hold, 1);
 });
 
 test("reasons name the PLACES, not the routes", () => {
@@ -577,7 +581,7 @@ test("locked defaults: lockV2Config lays the owner's numbers over the stored row
   assert.deepEqual(c.aceLightRun, { maxStops: 10, maxKg: 1500 });
   assert.equal(c.heavyBigMaxKg, 4500);
   assert.deepEqual([v.ace.dailyCount, v.gc.dailyCount, v.big.dailyCount], [2, 3, null]);
-  assert.deepEqual([c.pairMinTimes, c.sameRoutePairsAlways, c.maxPlacesPerTruck, c.rideAlongBelowKg, c.bulkKg], [1, true, 6, 300, 3000]);
+  assert.deepEqual([c.pairMinTimes, c.rideAlongPairMinTimes, c.sameRoutePairsAlways, c.maxPlacesPerTruck, c.rideAlongBelowKg, c.bulkKg], [3, 1, true, 6, 300, 3000]);
   // Direct Big off: a two-stop Big gets no more than its hard max.
   assert.equal(kgCap(c, "big", 1), 3500);
   assert.ok(c.stopChargeRs > 0 && c.weightChargeRsPer100Kg > 0);
@@ -622,8 +626,8 @@ test("fix 2: light milk run — an Ace does up to 10 stops when the load is ≤ 
 });
 
 test("fix 3: ride-along works on the Surat side; what cannot ride is one Hold card per place", () => {
-  // Adajan and Olpad Town are different routes, never paired — Olpad rides along.
-  const p = planLoadsV2([...stop(107, 900), ...stop(114, 150)], ctx());
+  // Adajan and Olpad Town are different routes, together once (< 3) — Olpad rides along.
+  const p = planLoadsV2([...stop(107, 900), ...stop(114, 150)], ctx({ pairMinTimes: 3 }));
   assert.equal(p.summary.trucks, 1);
   assert.ok(p.cards[0].stops.some((x) => x.areaName === "Olpad Town" && x.ridesAlong));
   // North: two light places that plan together, and no North truck to ride with.
@@ -681,4 +685,19 @@ test("planner moves: a pinned card over its hard max is kept and flagged red (ov
   assert.equal(big.flags.overHard, true);
   // A card's key is its type + its stops' ids — what the screen builds a move from.
   assert.equal(big.key, `big:${big.stops.map((x) => x.id).sort().join("|")}`);
+});
+
+test("pair rule (locked): Navsari + Bardoli 900 kg → separate trucks; Bardoli 162 kg rides along", () => {
+  // Navsari Town and Bardoli: different routes, together 2 times (< 3, ≥ 1).
+  const navsari = () => Array.from({ length: 6 }, (_, i) => stop(101, 250, { key: `c:nv-${i}` })).flat();
+  const apart = planLoadsV2([...navsari(), ...stop(115, 900)], locked());
+  assert.ok(apart.cards.every((c) => !(c.areaNames.includes("Navsari Town") && c.areaNames.includes("Bardoli"))));
+  assert.ok(apart.cards.some((c) => c.areaNames.join() === "Bardoli"));
+  const ride = planLoadsV2([...navsari(), ...stop(115, 162)], locked());
+  const truck = ride.cards.find((c) => c.areaNames.includes("Bardoli"))!;
+  assert.ok(truck.areaNames.includes("Navsari Town"));
+  assert.ok(truck.stops.some((x) => x.areaName === "Bardoli" && x.ridesAlong));
+  // Mahuva never went with Navsari: at 162 kg it cannot ride — Hold.
+  const none = planLoadsV2([...navsari(), ...stop(116, 162)], locked());
+  assert.deepEqual(none.cards.find((c) => c.type === "hold")?.areaNames, ["Mahuva"]);
 });
