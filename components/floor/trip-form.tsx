@@ -1,38 +1,35 @@
 "use client";
 
-// Floor Control — the small New trip form (v3 mockup §01, "New trip").
+// Floor Control — the New trip drawer (docs/mockups/floor-trips/trip-form-v1.html,
+// LOCKED 2026-09-21). The fields are the shared body in trip-fields.tsx; this
+// file owns the header, the footer and the POST.
 //
-// Delivery type, slot, vehicle or ad-hoc plate, transporter, note. Delivery
-// type is the ONLY required field — it is the letter in the trip number — and it
-// is pre-filled when every ticked bill agrees. Everything else is optional, and
-// so are bills.
+// Delivery type is the ONLY required field — it is the letter in the trip
+// number. Nothing is pre-selected: the planner picks it. Transporter starts as
+// Nagadhiraj (looked up by name). Everything else is optional, and so are bills.
 //
 // 🔴 AN EMPTY TRIP IS VALID (owner, slice 6, 2026-09-15). The floor plans
-// trucks before the bills exist, so "+ New trip" with nothing ticked creates an
-// empty trip and bills are added later. Do NOT add an "at least one bill" rule
-// here or in POST /api/floor/trips.
+// trucks before the bills exist, so "+ New trip" creates an empty trip and bills
+// are added later. Do NOT add an "at least one bill" rule here or in
+// POST /api/floor/trips.
 //
 // ⚠ A VEHICLE ON THE FORM MOVES THE TRIP OUT OF DRAFT, on the server (the create
 // route writes `released` and its stamps). Nothing on screen names that state.
 //
-// ⚠ IT REPLACES build-trip-drawer.tsx ON THIS SCREEN. That drawer was built
-// around a selection — it summarised the ticked bills by route and created the
-// trip with them attached. The v3 flow separates the two: a trip is a thing you
-// make, and bills are added to it from the pool with the bottom bar. The one
-// case where both happen at once is "New trip…" at the foot of the Add-to-trip
-// list, and `attachOrderIds` covers it without the form knowing anything about
-// selections.
+// ⚠ ONE CALLER, AND IT PASSES NO BILLS. The form opens only from the "+ New
+// trip" button (floor-page.tsx, `openTripForm([])`). Creating a trip WITH the
+// ticked bills does not use this form at all — `createTripWithSelection` posts
+// straight to the route. `attachOrderIds` is kept so the form can still attach
+// bills if a caller ever passes some.
+//
+// ⚠ TRANSPORTER IS ALWAYS SENT. The route defaults the transporter from the
+// vehicle only when the supplied one is null, and a supplied value wins — so
+// what the planner sees on the form is what is saved.
 //
 // ⚠ NO WINDOW-LEVEL KEY LISTENER. floor-page.tsx is the SINGLE Esc owner for the
-// whole floor tree (FLOOR §4.6) and a second listener races it in registration
-// order. This closes on its ✕ and its backdrop.
-//
-// ⚠ VEHICLE AND TRANSPORTER ARE BOTH OPTIONAL. A trip must be creatable with
-// neither — the van is usually unknown when the load is planned. And the form
-// cannot express a master vehicle AND an ad-hoc plate at once, because the
-// choice is one control, so `chk_trips_vehicle_one_of` is unreachable from here.
+// whole floor tree (FLOOR §4.6). This closes on its ✕ and its backdrop.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import type {
   DeliveryTypeOption,
@@ -40,10 +37,14 @@ import type {
   TransporterOption,
   VehicleOption,
 } from "./trip-options";
-
-const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-1.5";
-const INPUT =
-  "w-full rounded-[8px] border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-900 outline-none focus:border-gray-400";
+import {
+  BUTTON_PRIMARY,
+  BUTTON_SECONDARY,
+  TripDrawer,
+  TripFields,
+  findDefaultTransporter,
+  type TripFieldValues,
+} from "./trip-fields";
 
 export function TripForm({
   tripDate,
@@ -52,7 +53,6 @@ export function TripForm({
   vehicles,
   transporters,
   attachOrderIds,
-  seedDeliveryTypeId,
   onClose,
   onCreated,
 }: {
@@ -62,54 +62,42 @@ export function TripForm({
   windows: DispatchWindowOption[];
   vehicles: VehicleOption[];
   transporters: TransporterOption[];
-  /**
-   * Bills to attach the moment the trip exists. Empty for the New trip button;
-   * the current selection when the form is opened from "New trip…" at the foot
-   * of the bottom bar's list.
-   */
+  /** Bills to attach the moment the trip exists. Empty from the one caller today. */
   attachOrderIds: number[];
-  /** Pre-selects the type when every ticked bill agrees. null = the operator picks. */
-  seedDeliveryTypeId: number | null;
   onClose: () => void;
   /** Called after a successful create — the page clears the selection and refetches. */
   onCreated: (tripId: number) => void;
 }) {
-  const [deliveryTypeId, setDeliveryTypeId] = useState<number | "">(seedDeliveryTypeId ?? "");
-  const [dispatchWindowId, setDispatchWindowId] = useState<number | "">("");
-  const [vehicleChoice, setVehicleChoice] = useState<number | "" | "adhoc">("");
-  const [adhocVehicleNo, setAdhocVehicleNo] = useState("");
-  const [transporterId, setTransporterId] = useState<number | "">("");
-  const [note, setNote] = useState("");
+  const [values, setValues] = useState<TripFieldValues>(() => ({
+    deliveryTypeId: null,
+    dispatchWindowId: null,
+    transporter: findDefaultTransporter(transporters),
+    vehicle: null,
+    docket: "",
+    note: "",
+  }));
   const [busy, setBusy] = useState(false);
 
-  // A master vehicle DEFAULTS the transporter and the operator can still change
-  // it — the trip carries its own transporter FK precisely so the default is
-  // overridable. Only fills an empty field.
-  useEffect(() => {
-    if (typeof vehicleChoice !== "number") return;
-    const v = vehicles.find((x) => x.id === vehicleChoice);
-    if (v?.transporterId != null) setTransporterId((cur) => (cur === "" ? v.transporterId! : cur));
-  }, [vehicleChoice, vehicles]);
-
-  const usingAdhoc = vehicleChoice === "adhoc";
-  const adhocTrimmed = adhocVehicleNo.trim();
-  const canSubmit = !busy && deliveryTypeId !== "" && (!usingAdhoc || adhocTrimmed !== "");
+  const canSubmit = !busy && values.deliveryTypeId !== null;
 
   async function submit() {
     if (!canSubmit) return;
     setBusy(true);
     try {
+      const v = values.vehicle;
       const res = await fetch("/api/floor/trips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          deliveryTypeId,
+          deliveryTypeId: values.deliveryTypeId,
           tripDate,
-          dispatchWindowId: dispatchWindowId === "" ? null : dispatchWindowId,
-          transporterId: transporterId === "" ? null : transporterId,
-          vehicleId: typeof vehicleChoice === "number" ? vehicleChoice : null,
-          adhocVehicleNo: usingAdhoc ? adhocTrimmed : null,
-          note: note.trim() === "" ? null : note.trim(),
+          dispatchWindowId: values.dispatchWindowId,
+          transporterId: values.transporter?.id ?? null,
+          // Never both — chk_trips_vehicle_one_of.
+          vehicleId: v?.kind === "master" ? v.id : null,
+          adhocVehicleNo: v?.kind === "typed" ? v.plate : null,
+          transporterTripNo: values.docket.trim() === "" ? null : values.docket.trim(),
+          note: values.note.trim() === "" ? null : values.note.trim(),
         }),
       });
       const created = await res.json().catch(() => ({}));
@@ -125,7 +113,7 @@ export function TripForm({
         return;
       }
 
-      // Attach whatever was ticked. A failure HERE leaves a real, empty trip
+      // Attach whatever was passed. A failure HERE leaves a real, empty trip
       // rather than rolling back — there is no transaction (CORE §3), and an
       // empty trip is visible and fixable where a silently-deleted one is not.
       const billsRes = await fetch(`/api/floor/trips/${trip.id}/bills`, {
@@ -157,150 +145,30 @@ export function TripForm({
   }
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={busy ? undefined : onClose} />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-[390px] max-w-full flex-col border-l border-gray-200 bg-white shadow-[0_12px_32px_-18px_rgba(20,19,26,0.4)]">
-        <header className="flex items-center gap-2.5 border-b border-gray-200 px-4 py-3.5">
-          <h4 className="m-0 text-[15px] font-bold tracking-[-0.01em] text-gray-900">New trip</h4>
-          <span className="text-[11.5px] text-gray-400">
-            {attachOrderIds.length > 0
-              ? `${attachOrderIds.length} bill${attachOrderIds.length === 1 ? "" : "s"} will be added`
-              : "number assigned on create"}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-            className="ml-auto flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={LABEL} htmlFor="tf-type">Delivery type</label>
-              <select
-                id="tf-type"
-                className={INPUT}
-                value={deliveryTypeId}
-                onChange={(e) => setDeliveryTypeId(e.target.value === "" ? "" : Number(e.target.value))}
-              >
-                <option value="">Choose…</option>
-                {deliveryTypes.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={LABEL} htmlFor="tf-window">Slot</label>
-              <select
-                id="tf-window"
-                className={INPUT}
-                value={dispatchWindowId}
-                onChange={(e) => setDispatchWindowId(e.target.value === "" ? "" : Number(e.target.value))}
-              >
-                <option value="">Not set</option>
-                {windows.map((w) => (
-                  <option key={w.id} value={w.id}>{w.windowTime}</option>
-                ))}
-              </select>
-              {/* ⚠ THIS SAID "A trip cannot be released without one" UNTIL
-                  2026-09-13, and then "the rail groups trips by slot, so this
-                  one sits under No slot yet" until slice 6 (2026-09-15) — both
-                  now false. The rail has no groups; a set slot is a chip on the
-                  card. The "Not set" default is deliberate and stays: the slot
-                  is optional. */}
-              {dispatchWindowId === "" && (
-                <p className="mt-1 text-[10.5px] text-gray-400">
-                  Optional — shown as a chip on the trip card once set.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="tf-vehicle">Vehicle</label>
-            <select
-              id="tf-vehicle"
-              className={INPUT}
-              value={vehicleChoice}
-              onChange={(e) => {
-                const v = e.target.value;
-                setVehicleChoice(v === "" ? "" : v === "adhoc" ? "adhoc" : Number(v));
-                if (v !== "adhoc") setAdhocVehicleNo("");
-              }}
-            >
-              <option value="">Not set</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.vehicleNo}
-                  {v.driverName ? ` — ${v.driverName}` : ""}
-                </option>
-              ))}
-              <option value="adhoc">Type a plate not in the master…</option>
-            </select>
-            {usingAdhoc && (
-              <input
-                className={`${INPUT} mt-2`}
-                placeholder="e.g. GJ05CT4488"
-                value={adhocVehicleNo}
-                onChange={(e) => setAdhocVehicleNo(e.target.value)}
-                autoFocus
-              />
-            )}
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="tf-transporter">Transporter</label>
-            <select
-              id="tf-transporter"
-              className={INPUT}
-              value={transporterId}
-              onChange={(e) => setTransporterId(e.target.value === "" ? "" : Number(e.target.value))}
-            >
-              <option value="">Not set</option>
-              {transporters.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="tf-note">Reason / note</label>
-            <input
-              id="tf-note"
-              className={INPUT}
-              placeholder="Navsari side, going with the evening load"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <footer className="flex justify-end gap-2 border-t border-gray-200 px-4 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="inline-flex h-[34px] items-center rounded-[8px] border border-gray-300 bg-white px-3.5 text-[12.5px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
+    <TripDrawer
+      busy={busy}
+      onClose={onClose}
+      title={<h4 className="m-0 text-[16px] font-semibold text-gray-900">New trip</h4>}
+      footer={
+        <>
+          <button type="button" onClick={onClose} disabled={busy} className={BUTTON_SECONDARY}>
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={!canSubmit}
-            className="inline-flex h-[34px] items-center rounded-[8px] bg-brand-600 px-4 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
-          >
+          <button type="button" onClick={() => void submit()} disabled={!canSubmit} className={BUTTON_PRIMARY}>
             {busy ? "Creating…" : "Create trip"}
           </button>
-        </footer>
-      </aside>
-    </>
+        </>
+      }
+    >
+      <TripFields
+        mode="new"
+        values={values}
+        onChange={setValues}
+        deliveryTypes={deliveryTypes}
+        windows={windows}
+        vehicles={vehicles}
+        transporters={transporters}
+      />
+    </TripDrawer>
   );
 }

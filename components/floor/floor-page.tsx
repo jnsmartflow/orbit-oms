@@ -1594,22 +1594,12 @@ export function FloorPage() {
   // dispatched or cancelled trip cannot take bills — now lives on the rail
   // card, which renders those cards inert with the reason on hover
   // (trip-rail.tsx, `addable`).
-  // The delivery type every ticked bill agrees on, or null. Seeds the New trip
-  // form so the common case — a planner ticking one route’s bills and pressing
-  // New trip… — needs no answer to a question he has already answered.
   //
-  // ⚠ NULL ON A MIXED SELECTION — the form is left blank for the planner to
-  // choose. A mixed load is NOT an error (owner, 2026-09-18: Local and Upcountry
-  // bills share trucks), but the form is the path where the planner states the
-  // type himself, so it does not pre-pick one for him. The direct "+ New trip"
-  // path picks by majority instead (`newTripTypeName`).
-  const seedDeliveryTypeId = useMemo<number | null>(() => {
-    const names = new Set(selectedRows.map((r) => r.deliveryType));
-    if (names.size !== 1) return null;
-    const name = Array.from(names)[0];
-    const match = tripOptions?.deliveryTypes.find((d) => d.name === name);
-    return match?.id ?? null;
-  }, [selectedRows, tripOptions]);
+  // ⚠ THE NEW TRIP FORM IS NOT SEEDED WITH A DELIVERY TYPE (owner, 2026-09-21,
+  // trip-form-v1 mockup). `seedDeliveryTypeId` — the type every ticked bill
+  // agreed on — went with the shared trip form: the form opens with nothing
+  // picked and the planner chooses. The direct "+ New trip" path with ticked
+  // bills still picks by majority (`newTripTypeName`).
 
   // ── What the selection adds up to (2026-09-10 b) ─────────────────────────
   //
@@ -2156,10 +2146,6 @@ export function FloorPage() {
           vehicles={tripOptions.vehicles}
           transporters={tripOptions.transporters}
           attachOrderIds={tripFormSeed}
-          // Pre-select the type when every ticked bill agrees, and leave it for
-          // the operator when they do not — guessing on a mixed selection would
-          // put a local bill on an upcountry trip without saying so.
-          seedDeliveryTypeId={seedDeliveryTypeId}
           onClose={() => setTripFormSeed(null)}
           onCreated={(tripId) => void onTripCreated(tripId)}
         />

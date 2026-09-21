@@ -1,27 +1,31 @@
 "use client";
 
-// Floor Control — the small editor behind the trip header's "Set vehicle" (called
-// "Change vehicle" until slice 7, 2026-09-15).
-//
-// Vehicle or ad-hoc plate, transporter, slot, note, and the carrier's own docket
-// number. Calls PATCH /api/floor/trips/[id].
-//
-// ⚠ NO WINDOW-LEVEL KEY LISTENER. floor-page.tsx is the SINGLE Esc owner for the
-// whole floor tree (FLOOR §4.6) and a second listener races it in registration
-// order — the bug that spec replaced. This closes on its ✕ and its backdrop.
+// Floor Control — the Edit trip drawer, behind the trip header's pencil
+// (docs/mockups/floor-trips/trip-form-v1.html, LOCKED 2026-09-21). The fields
+// are the shared body in trip-fields.tsx; this file owns the header, the footer
+// and the PATCH /api/floor/trips/[id].
 //
 // ⚠ IT SENDS ONLY WHAT CHANGED. The PATCH distinguishes an ABSENT key ("leave
 // alone") from an explicit null ("clear"), so a form that posted every field on
 // every save would overwrite columns the operator never looked at — and would
 // re-snapshot the driver on a save that only edited the note.
 //
-// ⚠ DELIVERY TYPE IS NOT HERE, deliberately. The route refuses it: the trip
+// ⚠ EXCEPT: A VEHICLE CHANGE ALWAYS CARRIES THE TRANSPORTER. The route defaults
+// the transporter from the vehicle whenever `vehicleId` is sent without
+// `transporterId` ([id]/route.ts). Sending them together keeps what the planner
+// sees equal to what is saved. A transporter-only change sends `transporterId`
+// alone — no vehicle key, so no driver re-snapshot and no default to fight.
+//
+// ⚠ DELIVERY TYPE IS NOT EDITABLE, deliberately. The route refuses it: the trip
 // number is built from the type (chk_trips_number_shape), so changing it is a
-// re-number, not an edit. Offering a control the server refuses would be worse
-// than not offering it.
+// re-number, not an edit. It sits locked in the header.
+//
+// ⚠ NO WINDOW-LEVEL KEY LISTENER. floor-page.tsx is the SINGLE Esc owner for the
+// whole floor tree (FLOOR §4.6). This closes on its ✕ and its backdrop.
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { Lock } from "lucide-react";
 import type {
   DeliveryTypeOption,
   DispatchWindowOption,
@@ -29,10 +33,26 @@ import type {
   VehicleOption,
 } from "./trip-options";
 import type { TripSummary } from "@/lib/trips/queries";
+import { formatLitres, formatWeightKg } from "./status-pill";
+import {
+  BUTTON_PRIMARY,
+  BUTTON_SECONDARY,
+  TripDrawer,
+  TripFields,
+  findDefaultTransporter,
+  type TripFieldValues,
+  type VehiclePick,
+} from "./trip-fields";
 
-const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400 mb-1.5";
-const INPUT =
-  "w-full rounded-[8px] border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-900 outline-none focus:border-gray-400";
+function initialVehicle(trip: TripSummary): VehiclePick | null {
+  // The STORED vehicle, even when it is not in the current transporter's fleet
+  // (or not active any more) — a legacy trip must not silently lose it.
+  if (trip.vehicleId !== null) {
+    return { kind: "master", id: trip.vehicleId, plate: trip.vehicleNo ?? `#${trip.vehicleId}`, driver: trip.driverName };
+  }
+  if (trip.adhocVehicleNo !== null) return { kind: "typed", plate: trip.adhocVehicleNo };
+  return null;
+}
 
 export function TripVehicleEditor({
   trip,
@@ -47,53 +67,70 @@ export function TripVehicleEditor({
   windows: DispatchWindowOption[];
   vehicles: VehicleOption[];
   transporters: TransporterOption[];
-  /** Read-only, for the caption — the type cannot be changed here. */
+  /** Read-only, for the locked chip — the type cannot be changed here. */
   deliveryTypes: DeliveryTypeOption[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  // "" = none · a number = a master vehicle · "adhoc" = type a plate.
-  const initialChoice: number | "" | "adhoc" =
-    trip.vehicleId !== null ? trip.vehicleId : trip.adhocVehicleNo !== null ? "adhoc" : "";
-  const [vehicleChoice, setVehicleChoice] = useState<number | "" | "adhoc">(initialChoice);
-  const [adhocVehicleNo, setAdhocVehicleNo] = useState(trip.adhocVehicleNo ?? "");
-  const [transporterId, setTransporterId] = useState<number | "">(trip.transporterId ?? "");
-  const [dispatchWindowId, setDispatchWindowId] = useState<number | "">(trip.dispatchWindowId ?? "");
-  const [note, setNote] = useState(trip.note ?? "");
-  const [docket, setDocket] = useState(trip.transporterTripNo ?? "");
+  const [values, setValues] = useState<TripFieldValues>(() => ({
+    deliveryTypeId: trip.deliveryTypeId,
+    dispatchWindowId: trip.dispatchWindowId,
+    // A trip with no transporter opens on the default — a change on Save, by
+    // design (owner, 2026-09-21).
+    transporter:
+      trip.transporterId !== null
+        ? { id: trip.transporterId, name: trip.transporterName ?? `#${trip.transporterId}` }
+        : findDefaultTransporter(transporters),
+    vehicle: initialVehicle(trip),
+    docket: trip.transporterTripNo ?? "",
+    note: trip.note ?? "",
+  }));
   const [busy, setBusy] = useState(false);
 
-  const usingAdhoc = vehicleChoice === "adhoc";
-  const adhocTrimmed = adhocVehicleNo.trim();
   const typeName =
-    deliveryTypes.find((d) => d.id === trip.deliveryTypeId)?.name ?? trip.typeCode;
+    deliveryTypes.find((d) => d.id === trip.deliveryTypeId)?.name ?? trip.deliveryTypeName ?? trip.typeCode;
 
-  const canSave = !busy && (!usingAdhoc || adhocTrimmed !== "");
+  const canSave = !busy;
+
+  // The trip's summary, from props only. Dropped on an empty trip.
+  const kg = formatWeightKg(Math.round(trip.totalWeightKg));
+  const meta =
+    trip.counts.total > 0
+      ? [
+          ...(trip.areaLabel ? [trip.areaLabel] : []),
+          `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
+          `${trip.counts.total} bill${trip.counts.total === 1 ? "" : "s"}`,
+          `${formatLitres(trip.totalLitres)} L`,
+          ...(kg ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
+        ].join(" · ")
+      : null;
 
   async function save() {
     if (!canSave) return;
     setBusy(true);
     try {
-      // Only the fields that MOVED. See the header: an absent key means "leave
-      // alone" to the route, so a full-form post would be a different request
-      // with different consequences.
       const patch: Record<string, unknown> = {};
 
-      const nextVehicleId = typeof vehicleChoice === "number" ? vehicleChoice : null;
-      const nextAdhoc = usingAdhoc ? adhocTrimmed : null;
-      if (nextVehicleId !== trip.vehicleId) patch.vehicleId = nextVehicleId;
-      if (nextAdhoc !== trip.adhocVehicleNo) patch.adhocVehicleNo = nextAdhoc;
+      const v = values.vehicle;
+      const nextVehicleId = v?.kind === "master" ? v.id : null;
+      const nextAdhoc = v?.kind === "typed" ? v.plate : null;
+      const nextTransporter = values.transporter?.id ?? null;
+      const vehicleChanged = nextVehicleId !== trip.vehicleId || nextAdhoc !== trip.adhocVehicleNo;
+      const transporterChanged = nextTransporter !== trip.transporterId;
+      if (vehicleChanged) {
+        patch.vehicleId = nextVehicleId;
+        patch.adhocVehicleNo = nextAdhoc;
+        patch.transporterId = nextTransporter;
+      } else if (transporterChanged) {
+        patch.transporterId = nextTransporter;
+      }
 
-      const nextTransporter = transporterId === "" ? null : transporterId;
-      if (nextTransporter !== trip.transporterId) patch.transporterId = nextTransporter;
+      if (values.dispatchWindowId !== trip.dispatchWindowId) patch.dispatchWindowId = values.dispatchWindowId;
 
-      const nextWindow = dispatchWindowId === "" ? null : dispatchWindowId;
-      if (nextWindow !== trip.dispatchWindowId) patch.dispatchWindowId = nextWindow;
-
-      const nextNote = note.trim() === "" ? null : note.trim();
+      const nextNote = values.note.trim() === "" ? null : values.note.trim();
       if (nextNote !== trip.note) patch.note = nextNote;
 
-      const nextDocket = docket.trim() === "" ? null : docket.trim();
+      const nextDocket = values.docket.trim() === "" ? null : values.docket.trim();
       if (nextDocket !== trip.transporterTripNo) patch.transporterTripNo = nextDocket;
 
       if (Object.keys(patch).length === 0) {
@@ -121,150 +158,50 @@ export function TripVehicleEditor({
     }
   }
 
+  // The stored slot, when it has left the active list, still shows selected.
+  const extraWindow =
+    trip.dispatchWindowId !== null && trip.windowTime !== null
+      ? { id: trip.dispatchWindowId, windowTime: trip.windowTime }
+      : null;
+
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={busy ? undefined : onClose} />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-[400px] max-w-full flex-col border-l border-gray-200 bg-white shadow-[0_12px_32px_-18px_rgba(20,19,26,0.4)]">
-        <header className="flex items-center gap-2.5 border-b border-gray-200 px-4 py-3.5">
-          <h4 className="m-0 text-[15px] font-bold tracking-[-0.01em] text-gray-900">
-            {trip.tripNumber}
-          </h4>
-          <span className="text-[11.5px] text-gray-400">{typeName}</span>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-            className="ml-auto flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
+    <TripDrawer
+      busy={busy}
+      onClose={onClose}
+      title={
+        <>
+          <h4 className="m-0 font-mono text-[16px] font-semibold text-gray-900">{trip.tripNumber}</h4>
+          <span
+            className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-[12px] text-gray-500"
+            title="Delivery type cannot be changed — the trip number is built from it. Cancel and rebuild if the type is wrong."
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4">
-          <div>
-            <label className={LABEL} htmlFor="tve-vehicle">Vehicle</label>
-            <select
-              id="tve-vehicle"
-              className={INPUT}
-              value={vehicleChoice}
-              onChange={(e) => {
-                const v = e.target.value;
-                setVehicleChoice(v === "" ? "" : v === "adhoc" ? "adhoc" : Number(v));
-                if (v !== "adhoc") setAdhocVehicleNo("");
-              }}
-            >
-              <option value="">Not set</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.vehicleNo}
-                  {v.driverName ? ` — ${v.driverName}` : ""}
-                </option>
-              ))}
-              <option value="adhoc">Type a plate not in the master…</option>
-            </select>
-            {usingAdhoc && (
-              <input
-                className={`${INPUT} mt-2`}
-                placeholder="e.g. GJ05CT4488"
-                value={adhocVehicleNo}
-                onChange={(e) => setAdhocVehicleNo(e.target.value)}
-                autoFocus
-              />
-            )}
-            {/* Choosing a master vehicle re-snapshots the driver server-side.
-                Said out loud because it is a write the operator did not type. */}
-            {typeof vehicleChoice === "number" && vehicleChoice !== trip.vehicleId && (
-              <p className="mt-1 text-[10.5px] text-gray-400">
-                The driver on the sheet will change to this vehicle&rsquo;s.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="tve-transporter">Transporter</label>
-            <select
-              id="tve-transporter"
-              className={INPUT}
-              value={transporterId}
-              onChange={(e) => setTransporterId(e.target.value === "" ? "" : Number(e.target.value))}
-            >
-              <option value="">Not set</option>
-              {transporters.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="tve-window">Slot</label>
-            <select
-              id="tve-window"
-              className={INPUT}
-              value={dispatchWindowId}
-              onChange={(e) => setDispatchWindowId(e.target.value === "" ? "" : Number(e.target.value))}
-            >
-              <option value="">Not set</option>
-              {windows.map((w) => (
-                <option key={w.id} value={w.id}>{w.windowTime}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="tve-docket">Transporter&rsquo;s own trip / docket no.</label>
-            <input
-              id="tve-docket"
-              className={INPUT}
-              placeholder="e.g. L42"
-              value={docket}
-              onChange={(e) => setDocket(e.target.value)}
-            />
-            {/* Free text, not validated, not unique — it is their reference, not
-                ours, and it is not comparable to the Orbit trip number above. */}
-            <p className="mt-1 text-[10.5px] text-gray-400">
-              Their number, not ours. During the NTS parallel run, the matching NTS trip number.
-            </p>
-          </div>
-
-          <div>
-            <label className={LABEL} htmlFor="tve-note">Reason / note</label>
-            <input
-              id="tve-note"
-              className={INPUT}
-              placeholder="Navsari side, going with the evening load"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          </div>
-
-          <p className="text-[11px] leading-relaxed text-gray-400">
-            Delivery type cannot be changed — the trip number is built from it. Cancel and rebuild
-            if the type is wrong.
-          </p>
-        </div>
-
-        <footer className="flex justify-end gap-2 border-t border-gray-200 px-4 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="inline-flex h-[34px] items-center rounded-[8px] border border-gray-300 bg-white px-3.5 text-[12.5px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
+            <Lock size={11} strokeWidth={2} />
+            {typeName}
+          </span>
+        </>
+      }
+      meta={meta}
+      footer={
+        <>
+          <button type="button" onClick={onClose} disabled={busy} className={BUTTON_SECONDARY}>
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={!canSave}
-            className="inline-flex h-[34px] items-center rounded-[8px] bg-brand-600 px-4 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
-          >
+          <button type="button" onClick={() => void save()} disabled={!canSave} className={BUTTON_PRIMARY}>
             {busy ? "Saving…" : "Save"}
           </button>
-        </footer>
-      </aside>
-    </>
+        </>
+      }
+    >
+      <TripFields
+        mode="edit"
+        values={values}
+        onChange={setValues}
+        deliveryTypes={deliveryTypes}
+        windows={windows}
+        vehicles={vehicles}
+        transporters={transporters}
+        extraWindow={extraWindow}
+      />
+    </TripDrawer>
   );
 }

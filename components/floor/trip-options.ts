@@ -15,7 +15,8 @@ export interface VehicleOption {
   id: number;
   vehicleNo: string;
   driverName: string | null;
-  transporterId: number | null;
+  /** vehicle_master.transporterId is NOT NULL (prisma/schema.prisma). */
+  transporterId: number;
 }
 
 export interface TransporterOption {
