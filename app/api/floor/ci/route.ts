@@ -63,6 +63,33 @@ export const dynamic = "force-dynamic";
  * line reconcile. Those are the findings path's, not this one's.
  */
 
+/**
+ * GET /api/floor/ci — the CI reasons the Floor form offers.
+ *
+ * → { reasons: [{ id, label, isPinned, sortOrder }] } — ACTIVE rows only,
+ *   pinned first, then sortOrder (then id, so equal sort orders are stable).
+ *
+ * ⚠ WHY NOT /api/ci/reasons: that route gates on `ci` canView, and the Floor
+ * desk users hold no `ci` ticks (owner decision 2026-09-22 — see POST below).
+ * Same gate as the POST it feeds: floor.canEdit. The list is DATA
+ * (CLAUDE_CI §3) — never hardcoded on the client.
+ */
+export async function GET(): Promise<NextResponse> {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const roles = session.user.roles ?? [session.user.role];
+  const allowed = await checkAnyPermission(roles, "floor", "canEdit");
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const reasons = await prisma.ci_reason_master.findMany({
+    where: { isActive: true },
+    orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+    select: { id: true, label: true, isPinned: true, sortOrder: true },
+  });
+  return NextResponse.json({ reasons });
+}
+
 interface Body {
   orderIds?: unknown;
   reasonId?: unknown;

@@ -105,8 +105,17 @@ export interface MoreMenuItem {
   hint: string;
   icon: ReactNode;
   onSelect: () => void;
+  /** Grey and inert; the hint should say why. */
   disabled?: boolean;
+  /** Destructive — danger text and icon (CLAUDE_UI §2: red is destructive only). */
+  danger?: boolean;
+  /** A 1px rule above this item. */
+  dividerBefore?: boolean;
 }
+
+/** A destructive submit ("Cancel N bills") — danger, never brand. Grey when disabled. */
+export const BAR_DANGER =
+  "inline-flex h-[44px] min-w-[112px] items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-danger bg-danger px-[18px] text-[14px] font-semibold text-white hover:border-danger-text hover:bg-danger-text disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400";
 
 /**
  * "··· More" — a secondary button that opens a menu UPWARD, right-aligned.
@@ -153,25 +162,38 @@ export function MoreMenu({
           className="absolute bottom-[calc(100%+8px)] right-0 z-30 w-[290px] rounded-xl border border-ink-200 bg-white p-1.5 shadow-lg"
         >
           {items.map((it) => (
-            <button
-              key={it.key}
-              type="button"
-              role="menuitem"
-              disabled={it.disabled}
-              onClick={() => {
-                onOpenChange(false);
-                it.onSelect();
-              }}
-              className="flex min-h-[44px] w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-            >
-              <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg bg-ink-50 text-ink-700">
-                {it.icon}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-[14px] font-semibold text-ink-900">{it.label}</span>
-                <span className="mt-0.5 block text-[12px] text-ink-500">{it.hint}</span>
-              </span>
-            </button>
+            <div key={it.key}>
+              {it.dividerBefore && <div aria-hidden className="mx-1 my-1.5 h-px bg-ink-100" />}
+              <button
+                type="button"
+                role="menuitem"
+                disabled={it.disabled}
+                onClick={() => {
+                  onOpenChange(false);
+                  it.onSelect();
+                }}
+                className="flex min-h-[44px] w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-ink-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              >
+                {/* Disabled is GREY (CLAUDE_UI §10), never a faded colour. */}
+                <span
+                  className={`flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg ${
+                    it.disabled ? "bg-gray-100 text-gray-400" : it.danger ? "bg-danger-bg text-danger-text" : "bg-ink-50 text-ink-700"
+                  }`}
+                >
+                  {it.icon}
+                </span>
+                <span className="min-w-0">
+                  <span
+                    className={`block text-[14px] font-semibold ${
+                      it.disabled ? "text-gray-400" : it.danger ? "text-danger-text" : "text-ink-900"
+                    }`}
+                  >
+                    {it.label}
+                  </span>
+                  <span className={`mt-0.5 block text-[12px] ${it.disabled ? "text-gray-400" : "text-ink-500"}`}>{it.hint}</span>
+                </span>
+              </button>
+            </div>
           ))}
         </div>
       )}

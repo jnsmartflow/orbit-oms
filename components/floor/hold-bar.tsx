@@ -14,7 +14,8 @@
 //
 // 🔴 THE SAME SHELL AS THE FLOOR TAB'S BAR (2026-09-22): floor-action-bar.tsx —
 // same size, same "{N} selected · ✕ Clear", same figures line. Release and the
-// slot picker sit in the CTA area; there is no ··· More on this bar yet. Release
+// slot picker sit in the CTA area, then ··· More with one item, Cancel / Raise
+// CI… (off-floor-dialog.tsx, 2026-09-22). Release
 // is the one brand button, and disabled is grey, never a faded brand (it was
 // `disabled:opacity-40` until this change — CLAUDE_UI §10).
 //
@@ -24,8 +25,9 @@
 // number that is wrong in a way nobody can see.
 
 import { useState } from "react";
+import { X } from "lucide-react";
 import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
-import { FloorActionBar, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
+import { FloorActionBar, MoreMenu, BarDivider, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 
 export function HoldBar({
   count,
@@ -35,6 +37,9 @@ export function HoldBar({
   busy,
   onRelease,
   onClear,
+  menuOpen,
+  onMenuOpenChange,
+  onOffFloor,
 }: {
   count: number;
   /** Physical pieces across the selection, from countArticles. */
@@ -45,6 +50,11 @@ export function HoldBar({
   busy: boolean;
   onRelease: (date: string, windowId: number) => void;
   onClear: () => void;
+  /** ··· More — owned by floor-page, the single Esc owner. */
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+  /** Open the Cancel / Raise CI form on the ticked held bills. */
+  onOffFloor: () => void;
 }) {
   const [slot, setSlot] = useState<DispatchSlotValue | null>(null);
 
@@ -64,6 +74,23 @@ export function HoldBar({
       >
         {busy ? "Releasing…" : "Release"}
       </button>
+      <BarDivider />
+      {/* One item on this bar (2026-09-22): a held bill has no Hold to offer. */}
+      <MoreMenu
+        open={menuOpen}
+        onOpenChange={onMenuOpenChange}
+        disabled={busy}
+        items={[
+          {
+            key: "off-floor",
+            label: "Cancel / Raise CI…",
+            hint: "Opens a form · choose Cancel or Raise CI",
+            icon: <X size={15} strokeWidth={2.2} />,
+            danger: true,
+            onSelect: onOffFloor,
+          },
+        ]}
+      />
     </FloorActionBar>
   );
 }

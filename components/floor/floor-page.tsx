@@ -56,6 +56,8 @@ import { FloorSkeleton } from "./floor-skeleton";
 import { HoldTab } from "./hold-tab";
 import { CancelledTab } from "./cancelled-tab";
 import { DetailPanel, type DetailActions } from "./detail-panel";
+import { OffFloorDialog, type OffFloorFormBill, type CiReasonOption } from "./off-floor-dialog";
+import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
 import { ConnectionStrip } from "./connection-strip";
@@ -172,6 +174,48 @@ function reportWrite(label: string, r: { ok: boolean; body: WriteBody }): boolea
     return false;
   }
   return true;
+}
+
+// ── The Cancel / Raise CI form's bills (2026-09-22) ─────────────────────────
+//
+// 🔴 THE PRE-CHECK ASKS offFloorRefusal() — the function both write routes call
+// (lib/floor/off-floor.ts) — so a greyed bill in the form is one the server
+// would refuse. A board row carries no `workflowStage`, so the three stages the
+// rule names are read off the row's own derived facts:
+//   isDispatched      → dispatched
+//   tintPhase assigned → tint_assigned        (tintPhaseOf, lib/floor/queries.ts)
+//   tintPhase tinting  → tinting_in_progress
+// Anything else is a stage the rule allows, and a live board row is never
+// cancelled. The server re-checks every bill regardless.
+function boardRowToOffFloorBill(r: FloorBoardRow): OffFloorFormBill {
+  const stage = r.isDispatched
+    ? "dispatched"
+    : r.tintPhase === "assigned"
+      ? "tint_assigned"
+      : r.tintPhase === "tinting"
+        ? "tinting_in_progress"
+        : "";
+  return {
+    orderId: r.orderId,
+    obdNumber: r.obdNumber,
+    dealerName: r.dealerName,
+    litres: r.volumeLitres,
+    invoiceNo: r.invoiceNo,
+    refusal: offFloorRefusal({ workflowStage: stage, tripDropId: r.tripDropId, tripNumber: r.tripNumber }),
+  };
+}
+
+// ⚠ A HELD ROW CANNOT BE PRE-CHECKED: the Hold feed carries no stage, trip or
+// invoice number. It goes in un-greyed and with no invoice tag; the server's
+// refusals come back in the form's result view.
+function holdRowToOffFloorBill(r: FloorHoldRow): OffFloorFormBill {
+  return {
+    orderId: r.orderId,
+    obdNumber: r.obdNumber,
+    dealerName: r.dealerName,
+    litres: r.volumeLitres,
+    refusal: null,
+  };
 }
 
 export function FloorPage() {
@@ -317,6 +361,8 @@ export function FloorPage() {
   // because this component is the single Esc owner (FLOOR §4.6) and Esc must be
   // able to close it. Reset whenever the bar goes away (effect below barVisible).
   const [moreOpen, setMoreOpen] = useState(false);
+  // The Hold tab bar's own ··· More (2026-09-22) — same reason it lives here.
+  const [holdMoreOpen, setHoldMoreOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1302,6 +1348,62 @@ export function FloorPage() {
     return (data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId)?.hasDuplicateSo ?? false;
   }, [detail, data]);
 
+  // ── The Cancel / Raise CI form (2026-09-22, off-floor-dialog.tsx) ─────────
+  //
+  // One form, three openers — the Floor bar, the Hold bar and the detail panel.
+  // Each hands in its bills and what "applied" means for ITS selection: the
+  // Floor bar keeps only the not-done bills ticked, the Hold tab does the same
+  // with its own local ticks, and the panel closes once its bill has gone.
+  const [offFloor, setOffFloor] = useState<{
+    bills: OffFloorFormBill[];
+    onApplied: (doneIds: number[], notDoneIds: number[]) => void;
+  } | null>(null);
+  // Esc must not close the form while a request is in flight — the result
+  // would land on a closed form and the planner would never see it.
+  const offFloorBusyRef = useRef(false);
+  // The CI reasons — fetched ONCE, when the form first opens, and kept for the
+  // session. A failed fetch is retried on the next open.
+  const [ciReasons, setCiReasons] = useState<CiReasonOption[] | null>(null);
+  const [ciReasonsError, setCiReasonsError] = useState<string | null>(null);
+  const ciReasonsAsked = useRef(false);
+  const loadCiReasons = useCallback(async () => {
+    if (ciReasonsAsked.current) return;
+    ciReasonsAsked.current = true;
+    try {
+      // Floor's own GET, not /api/ci/reasons — the desk users hold no `ci` ticks.
+      const res = await fetch("/api/floor/ci", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as { reasons?: CiReasonOption[]; error?: string };
+      if (!res.ok || !Array.isArray(body.reasons)) {
+        ciReasonsAsked.current = false;
+        setCiReasonsError(`Could not load the CI reasons — ${body.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      setCiReasonsError(null);
+      setCiReasons(body.reasons);
+    } catch {
+      ciReasonsAsked.current = false;
+      setCiReasonsError("Could not load the CI reasons — check your connection.");
+    }
+  }, []);
+  const openOffFloor = useCallback(
+    (bills: OffFloorFormBill[], onApplied: (doneIds: number[], notDoneIds: number[]) => void) => {
+      if (bills.length === 0) return;
+      setMoreOpen(false);
+      setHoldMoreOpen(false);
+      setOffFloor({ bills, onApplied });
+      void loadCiReasons();
+    },
+    [loadCiReasons],
+  );
+  /** Esc's close — refused mid-request. */
+  const closeOffFloor = useCallback(() => {
+    if (offFloorBusyRef.current) return;
+    setOffFloor(null);
+  }, []);
+  const setOffFloorBusy = useCallback((b: boolean) => {
+    offFloorBusyRef.current = b;
+  }, []);
+
   const detailActions: DetailActions = useMemo(
     () => ({
       onRelease: async (orderId, date, windowId) => {
@@ -1345,16 +1447,28 @@ export function FloorPage() {
         reportWrite("Hold", await postJson("/api/floor/actions", { action: "hold", orderIds: [orderId] }));
         await load();
       },
+      // ⋯ Cancel → the SAME Cancel / Raise CI form, on this one bill (2026-09-22).
+      // No direct cancel call any more: every cancel from the floor now carries
+      // a reason. The bill is described from the loaded board row (pre-checked)
+      // or the Hold row; the panel closes once the bill has gone.
       onCancel: async (orderId) => {
-        reportWrite("Cancel", await postJson("/api/floor/actions", { action: "cancel", orderIds: [orderId] }));
-        await load();
+        const row = (data?.floor.rows ?? []).find((x) => x.orderId === orderId);
+        const held = (holdRows ?? []).find((x) => x.orderId === orderId);
+        const bill: OffFloorFormBill = row
+          ? boardRowToOffFloorBill(row)
+          : held
+            ? holdRowToOffFloorBill(held)
+            : { orderId, obdNumber: `#${orderId}`, dealerName: null, litres: null, refusal: null };
+        openOffFloor([bill], (doneIds) => {
+          if (doneIds.includes(orderId)) closeDetail();
+        });
       },
       onUnassign: async (orderId) => {
         reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
         await load();
       },
     }),
-    [load, data],
+    [load, data, holdRows, openOffFloor, closeDetail],
   );
 
   // ── History navigation ────────────────────────────────────────────────────
@@ -1375,12 +1489,14 @@ export function FloorPage() {
 
   // ── Live sync (design §13) — TWO different mechanisms, no shared abstraction ─
   const detailOpen = detail !== null;
+  const offFloorOpen = offFloor !== null;
   const isLive = viewMode === "live";
 
   // Single Esc owner — lifted out of detail-panel so exactly ONE action fires per
   // press and only ONE listener exists: panel open → close it (selection kept);
   // else the bar's ··· More menu open → close it; else a live selection →
-  // clear it; else the add band → end it; else nothing. Ignored while focus is in a
+  // clear it; else the add band → end it; else nothing. The Cancel / Raise CI
+  // form, when open, comes before all of them. Ignored while focus is in a
   // field / native control so Esc never wipes a selection mid-type (ship-to
   // search, far-date box, picker dropdown).
   useEffect(() => {
@@ -1392,10 +1508,17 @@ export function FloorPage() {
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
-      if (detailOpen) closeDetail();
-      // The bottom bar's ··· More menu (2026-09-22) — closed first, so the
-      // next Esc clears the selection and one press never does both.
-      else if (moreOpen) setMoreOpen(false);
+      // The Cancel / Raise CI form (2026-09-22) — FIRST, above the panel: it
+      // can be opened FROM the panel, and one Esc must close only the top
+      // layer. Refused mid-request (closeOffFloor).
+      if (offFloorOpen) closeOffFloor();
+      else if (detailOpen) closeDetail();
+      // The bars' ··· More menus (2026-09-22) — closed first, so the next Esc
+      // clears the selection and one press never does both.
+      else if (moreOpen || holdMoreOpen) {
+        setMoreOpen(false);
+        setHoldMoreOpen(false);
+      }
       else if (selection.size > 0) clearSelection();
       // Then the add band — the same thing Done does. A live selection is
       // cleared first, so one Esc never both empties the ticks and closes the
@@ -1404,7 +1527,7 @@ export function FloorPage() {
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [detailOpen, moreOpen, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
+  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -1503,6 +1626,11 @@ export function FloorPage() {
   useEffect(() => {
     if (!barVisible) setMoreOpen(false);
   }, [barVisible]);
+  // Same for the Hold bar's menu when the Hold tab is left (HoldTab closes it
+  // itself when its ticks go).
+  useEffect(() => {
+    if (topTab !== "hold") setHoldMoreOpen(false);
+  }, [topTab]);
 
   // ── ONE BAR, TWO READINGS (2026-09-10) ────────────────────────────────────
   //
@@ -2124,6 +2252,11 @@ export function FloorPage() {
                     windows={dispatchWindows}
                     onRelease={holdRelease}
                     onOpenDetail={(id) => openDetail(id, "hold")}
+                    menuOpen={holdMoreOpen}
+                    onMenuOpenChange={setHoldMoreOpen}
+                    onOpenOffFloor={(rows, keepTicked) =>
+                      openOffFloor(rows.map(holdRowToOffFloorBill), (_done, notDone) => keepTicked(notDone))
+                    }
                   />
                 ) : topTab === "cancelled" ? (
                   <CancelledTab
@@ -2183,6 +2316,11 @@ export function FloorPage() {
                     menuOpen={moreOpen}
                     onMenuOpenChange={setMoreOpen}
                     onHold={() => void bulkHold(selectedRows)}
+                    onOffFloor={() =>
+                      openOffFloor(selectedRows.map(boardRowToOffFloorBill), (_done, notDone) =>
+                        setSelection(new Set(notDone)),
+                      )
+                    }
                   />
                 ) : null
               }
@@ -2260,6 +2398,23 @@ export function FloorPage() {
           actions={detailActions}
           onClose={closeDetail}
           onNavigate={navigateDetail}
+        />
+      )}
+
+      {/* Cancel / Raise CI (2026-09-22) — above the panel, which can open it.
+          The form closes itself on its Back / Done / scrim, and after an
+          all-done submit; `onApplied` fixes the opener's ticks and reloads. */}
+      {offFloor && (
+        <OffFloorDialog
+          bills={offFloor.bills}
+          reasons={ciReasons}
+          reasonsError={ciReasonsError}
+          onApplied={(doneIds, notDoneIds) => {
+            offFloor.onApplied(doneIds, notDoneIds);
+            void load();
+          }}
+          onBusyChange={setOffFloorBusy}
+          onClose={() => setOffFloor(null)}
         />
       )}
     </div>

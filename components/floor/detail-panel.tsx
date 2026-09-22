@@ -429,11 +429,14 @@ function PanelBody({
   // the reason on a span wrapper (a disabled button shows no title of its own).
   const overflow: Array<{ label: string; danger?: boolean; disabledReason?: string; fn: () => Promise<void> }> = [];
   if (source === "floor" && d.isAssigned) overflow.push({ label: "Unassign", fn: () => actions.onUnassign(d.orderId) });
+  // "Cancel / Raise CI…" opens the floor's one off-floor form on this bill
+  // (floor-page.tsx → off-floor-dialog.tsx, 2026-09-22); the refusals — trip,
+  // tint room, dispatched — are that form's and the routes', not this menu's.
   if (source === "floor" || source === "rail") {
     overflow.push({ label: "Hold", disabledReason: tintLockReason, fn: () => actions.onHold(d.orderId) });
-    overflow.push({ label: "Cancel", danger: true, disabledReason: tintLockReason, fn: () => actions.onCancel(d.orderId) });
+    overflow.push({ label: "Cancel / Raise CI…", danger: true, disabledReason: tintLockReason, fn: () => actions.onCancel(d.orderId) });
   }
-  if (source === "hold") overflow.push({ label: "Cancel", danger: true, fn: () => actions.onCancel(d.orderId) });
+  if (source === "hold") overflow.push({ label: "Cancel / Raise CI…", danger: true, fn: () => actions.onCancel(d.orderId) });
 
   const currentSlotValue =
     d.dispatchTargetDate && d.dispatchWindowId && d.dispatchWindowTime

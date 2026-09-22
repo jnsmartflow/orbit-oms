@@ -189,10 +189,12 @@ export async function POST(req: Request): Promise<NextResponse> {
             : body.reason
               ? `Cancelled — ${body.reason}`
               : "Cancelled from floor";
-        // 🔴 ORPHAN FIX (2026-08-20). Cancel is NOT stage-gated here — it will
-        // happily kill a bill sitting at pick_assigned / pick_done /
-        // pick_checked — and until now it left the pick_assignments row behind,
-        // because this branch only ever wrote to `orders`.
+        // 🔴 ORPHAN FIX (2026-08-20). Since 2026-09-22 cancel REFUSES a bill that
+        // is already cancelled, dispatched, on a trip, or in the tint room
+        // (offFloorRefusal above) — but every other stage is allowed, including
+        // pick_assigned / pick_done / pick_checked. Before the fix it left the
+        // pick_assignments row behind on those, because this branch only ever
+        // wrote to `orders`.
         //
         // That row is a trap, not just litter. A cancelled bill can be Restored
         // (the 'restore' arm below) to pending_support, then Released to

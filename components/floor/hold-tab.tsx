@@ -15,7 +15,7 @@
 // orders.heldAt (the arrival date). An approximated value carries a "~" so it can
 // never read as a recorded one.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Building2, FileText } from "lucide-react";
 import { FloorSkeleton } from "./floor-skeleton";
 import { HoldBar } from "./hold-bar";
@@ -144,6 +144,9 @@ export function HoldTab({
   windows,
   onRelease,
   onOpenDetail,
+  menuOpen,
+  onMenuOpenChange,
+  onOpenOffFloor,
 }: {
   rows: FloorHoldRow[] | null;
   loading: boolean;
@@ -152,6 +155,15 @@ export function HoldTab({
   windows: DispatchWindow[];
   onRelease: (orderIds: number[], date: string, windowId: number) => Promise<void>;
   onOpenDetail: (id: number) => void;
+  /** The bar's ··· More — owned by floor-page, the single Esc owner. */
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+  /**
+   * Open the Cancel / Raise CI form on these held bills. `keepTicked` is called
+   * once a request goes through, with the bills that did NOT go — the only ones
+   * left ticked. The selection is this tab's own, which is why it is handed in.
+   */
+  onOpenOffFloor: (rows: FloorHoldRow[], keepTicked: (orderIds: number[]) => void) => void;
 }) {
   const [oldestFirst, setOldestFirst] = useState(false);
   const [selection, setSelection] = useState<FloorSelection>(new Set());
@@ -169,6 +181,11 @@ export function HoldTab({
   const selectedArticles = countArticles(selectedRows.map((r) => r.articleTag)).pieces;
   const selectedRoutes = new Set(selectedRows.map((r) => r.route ?? "\u0000unrouted")).size;
   const clear = () => setSelection(new Set());
+  // The menu lives on the bar; when the ticks go, the bar goes, and the menu
+  // must not come back "open" with the next tick.
+  useEffect(() => {
+    if (selectedIds.length === 0 && menuOpen) onMenuOpenChange(false);
+  }, [selectedIds.length, menuOpen, onMenuOpenChange]);
 
   const doRelease = async (date: string, windowId: number) => {
     if (selectedIds.length === 0) return;
@@ -257,6 +274,9 @@ export function HoldTab({
           busy={busy}
           onRelease={doRelease}
           onClear={clear}
+          menuOpen={menuOpen}
+          onMenuOpenChange={onMenuOpenChange}
+          onOffFloor={() => onOpenOffFloor(selectedRows, (ids) => setSelection(new Set(ids)))}
         />
       )}
 

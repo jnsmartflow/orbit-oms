@@ -13,6 +13,8 @@
 //                                  see trip-rail.tsx addMode, 2026-09-16)
 //   trip selected  → Remove from trip
 //   either         → ··· More → Hold (bulk, 8 s Undo — floor-page.tsx bulkHold)
+//                              · Cancel / Raise CI… (off-floor-dialog.tsx;
+//                                grey inside a trip — remove from trip first)
 //
 // 🔴 IT RENDERS INSIDE THE BILLS COLUMN (2026-09-22). floor-page builds it and
 // TripDesk places it in its `relative` bills column, so it never runs under the
@@ -28,7 +30,7 @@
 // workflowStage. A dialog on an action repeated all afternoon is a tax, not a
 // safety net. Hold has no confirm either: its toast carries an Undo.
 
-import { Pause } from "lucide-react";
+import { Pause, X } from "lucide-react";
 import { FloorActionBar, MoreMenu, BarDivider, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 
 export function FloorBottomBar({
@@ -49,6 +51,7 @@ export function FloorBottomBar({
   menuOpen,
   onMenuOpenChange,
   onHold,
+  onOffFloor,
 }: {
   count: number;
   /** Already formatted by the caller through formatLitres. */
@@ -101,7 +104,15 @@ export function FloorBottomBar({
   onMenuOpenChange: (open: boolean) => void;
   /** Hold every ticked bill (floor-page.tsx bulkHold). */
   onHold: () => void;
+  /** Open the Cancel / Raise CI form (off-floor-dialog.tsx) on the ticked bills. */
+  onOffFloor: () => void;
 }) {
+  // 🔴 INSIDE A TRIP THE FORM IS OFFERED GREY, NOT HIDDEN (owner, 2026-09-22):
+  // every bill there would be refused ("On trip … — remove it from the trip
+  // first", lib/floor/off-floor.ts), so the hint says so up front. Filling a
+  // named trip ticks POOL bills, which may go — `addTargetLabel` wins, as it
+  // does for the CTA.
+  const onTripSelection = mode === "trip" && addTargetLabel === null;
   // The four numbers a planner checks before a selection goes on a van: how
   // much it holds, what it weighs, how many pieces there are to stack, and how
   // many parts of town it covers. Litres is what the depot talks in; KILOS is
@@ -159,6 +170,16 @@ export function FloorBottomBar({
             hint: "Off the floor until released · Undo for 8s",
             icon: <Pause size={15} strokeWidth={2.2} />,
             onSelect: onHold,
+          },
+          {
+            key: "off-floor",
+            label: "Cancel / Raise CI…",
+            hint: onTripSelection ? "Remove from trip first" : "Opens a form · choose Cancel or Raise CI",
+            icon: <X size={15} strokeWidth={2.2} />,
+            danger: true,
+            dividerBefore: true,
+            disabled: onTripSelection,
+            onSelect: onOffFloor,
           },
         ]}
       />
