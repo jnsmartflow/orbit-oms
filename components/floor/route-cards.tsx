@@ -20,7 +20,8 @@
 // trip, not in the tint room — `isPoolRow`). The card counts exactly what the
 // pool holds, so the bar and the table under it always agree (owner). Held
 // bills are not in the pool at all (every board arm pins dispatchStatus), so
-// there is no amber here and no held count.
+// there is no held segment here and no held count.
+// Was: pick_done shown blue with 'being picked' until 2026-09-22; now its own yellow segment. Do not revert.
 //
 // ⚠ THE ONE REACH ACROSS THE TAB FILTER. A club member whose route has no area
 // on this tab (Kamrej on Local) takes its bills from the tab its areas ARE on
@@ -43,6 +44,7 @@ import {
   sumWeightKg,
 } from "./status-pill";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
+import { NEEDS_CHECK_SEGMENT } from "./progress-bar";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import type { FloorSelection } from "@/lib/floor/selection";
@@ -64,10 +66,11 @@ const NO_ROUTE_LABEL = "No route";
 const OTHER_ROUTES_LABEL = "Other routes";
 
 // ── The bar ─────────────────────────────────────────────────────────────────
-// The trip bar's colours (trip-bar.tsx, owner 2026-09-15) plus the tint pink.
-// The colour IS the status — no words, no chips (owner). No amber: see above.
+// The trip bar's colours (trip-bar.tsx) plus the tint pink. The colour IS the
+// status — no words, no chips (owner). No held segment: see above.
 const SEGMENTS = [
   { key: "done", color: "#2eb862" },
+  { key: "needsCheck", color: NEEDS_CHECK_SEGMENT },
   { key: "picking", color: "#5b8ded" },
   { key: "waiting", color: "#d3d3dd" },
   { key: "tint", color: "#f9a8d4" },
@@ -75,20 +78,22 @@ const SEGMENTS = [
 type BarKey = (typeof SEGMENTS)[number]["key"];
 
 /**
- * The four segments, from `countByStatus` — the one owner of "what state is
+ * The five segments, from `countByStatus` — the one owner of "what state is
  * this row in" (status-pill.tsx). Every one of its buckets lands in exactly one
  * segment, so the segments always fill the bar:
- *   done    = done + dispatched (dispatched is 0 on a live board)
- *   picking = with picker + picked, not checked
- *   waiting = waiting + tint done (the same rung: on the floor, nobody has it)
- *   tint    = tinting, plus the two tint-room states (never in the pool — they
- *             are the Tinting tab's — counted anyway so nothing falls through)
+ *   done       = done + dispatched (dispatched is 0 on a live board)
+ *   needsCheck = picked, not checked (pick_done) — yellow since 2026-09-22
+ *   picking    = with picker
+ *   waiting    = waiting + tint done (the same rung: on the floor, nobody has it)
+ *   tint       = tinting, plus the two tint-room states (never in the pool — they
+ *                are the Tinting tab's — counted anyway so nothing falls through)
  */
 function barCounts(rows: FloorBoardRow[]): Record<BarKey, number> {
   const c = countByStatus(rows);
   return {
     done: c.done + c.dispatched,
-    picking: c.withPicker + c.needsCheck,
+    needsCheck: c.needsCheck,
+    picking: c.withPicker,
     waiting: c.waiting + c.tintDone,
     tint: c.tinting + c.tintAssigned + c.tintPending,
   };

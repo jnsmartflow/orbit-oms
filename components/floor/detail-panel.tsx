@@ -25,6 +25,7 @@ import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from 
 import { DetailItems } from "./detail-items";
 import { DetailDetails } from "./detail-details";
 import { DetailActivity } from "./detail-activity";
+import { ON_HOLD_PILL_CLS } from "./status-pill";
 import {
   DuplicateSoTag,
   DUP_SO_SOFT_BAR,
@@ -158,7 +159,7 @@ function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: strin
     return { label: "Not completed", cls: "bg-[#f3f4f6] text-[#6b7280]" };
   }
   if (source === "cancelled") return { label: "Cancelled", cls: "bg-[#fef2f2] text-[#b91c1c]" };
-  if (source === "hold" || d.dispatchStatus === "hold") return { label: "On hold", cls: "bg-[#fef2f2] text-[#b91c1c]" };
+  if (source === "hold" || d.dispatchStatus === "hold") return { label: "On hold", cls: ON_HOLD_PILL_CLS };
   if (source === "floor") {
     if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };

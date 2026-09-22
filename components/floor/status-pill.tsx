@@ -178,6 +178,15 @@ export function isHeldBack(
   return row.isAwaitingShow && PICKABLE_WAITING.includes(rowStatus(row));
 }
 
+/**
+ * THE "ON HOLD" RED — one place (2026-09-22). The pill (detail-panel.tsx's
+ * header status) wears the class; the trip bar's held segment is painted with
+ * the pill's own text red as a solid fill. Both read from here.
+ */
+export const ON_HOLD_PILL_CLS = "bg-[#fef2f2] text-[#b91c1c]";
+/** The pill's text red, as a solid bar segment — the SAME value as in the class above. */
+export const ON_HOLD_SEGMENT = "#b91c1c";
+
 const META: Record<FloorStatus, { label: string; cls: string }> = {
   waiting: { label: "Waiting", cls: "bg-[#f3f4f6] text-[#6b7280]" },
   withPicker: { label: "With picker", cls: "bg-tint-bg text-tint-700" },

@@ -42,13 +42,20 @@ import type { StatusCounts } from "./status-pill";
 // distinction, so the three would be indistinguishable if they were tinted down
 // toward each other; keeping the pill values at least makes the solid `tinting`
 // segment read as the loud one it is on the row above.
+/**
+ * "Picked · needs check" — `pick_done`. ONE value for every floor bar: this
+ * one, the trip bar (trip-bar.tsx) and the route cards (route-cards.tsx) all
+ * read it from here (2026-09-22). Do not retype it.
+ */
+export const NEEDS_CHECK_SEGMENT = "#fbbf24";
+
 const SEGMENTS: Array<{
   key: "dispatched" | "done" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintAssigned" | "tintPending";
   color: string;
 }> = [
   { key: "dispatched", color: "#94a3b8" },
   { key: "done", color: "#22c55e" },
-  { key: "needsCheck", color: "#fbbf24" },
+  { key: "needsCheck", color: NEEDS_CHECK_SEGMENT },
   { key: "withPicker", color: "#0284C7" },
   { key: "waiting", color: "#d1d5db" },
   { key: "tintDone", color: "#fbcfe8" },

@@ -1585,6 +1585,26 @@ export function FloorPage() {
     // No `scope` dep — the request is unscoped and the answer is scope-independent.
   }, []);
 
+  // The TRIPS feed alone (2026-09-22) — for the marker's ticked-bills path
+  // below. While bills are ticked the board rows must not move under the
+  // planner's hand, so the marker only reconciles the ticks; but the rail's
+  // cards and bars describe TRUCKS, not the rows being ticked, and without this
+  // they froze for as long as a selection was up — a picker marking a bill done
+  // never reached the rail. Live mode only (the marker is paused in History),
+  // so the day is today. A failure keeps the rail as it is: this is a refresh,
+  // and blanking the rail mid-selection would be worse than a stale one.
+  const refreshTrips = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/floor/trips?date=${istTodayIso()}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { trips?: TripSummary[]; placeholderRoutes?: string[] };
+      setTrips(body.trips ?? []);
+      setPlaceholderRoutes(new Set(body.placeholderRoutes ?? []));
+    } catch {
+      /* silent — the next marker change or the 30 s poll tries again */
+    }
+  }, []);
+
   // FLOOR — the Picking pattern: use-picking-marker, pointed at the floor's OWN
   // marker (/api/floor/marker) via the optional `url` param, so it watches the
   // floor's EXACT set (getFloorLiveMarkerWhere) — no silent dependence on what
@@ -1601,8 +1621,12 @@ export function FloorPage() {
       if (!isLive) return;
       // Rule 2: never move the ground while rows are selected — reconcile the
       // ticks only. Rule 1: otherwise refresh in place (rows keyed by orderId).
-      if (selection.size > 0) void reconcileSelection();
-      else void load();
+      // With ticks up: reconcile the ticks AND refresh the trips feed (rail
+      // cards and bars), never the board rows.
+      if (selection.size > 0) {
+        void reconcileSelection();
+        void refreshTrips();
+      } else void load();
     },
   });
 

@@ -464,14 +464,17 @@ function TripCard({
 export function tripBadge(trip: TripSummary, gateOn: boolean): TripChip | null {
   const b = tripBarCounts(trip.counts);
   if (b.total > 0 && trip.dispatchedCount === b.total) return BADGE_DISPATCHED;
-  if (b.picking > 0) return BADGE_PICKING;
+  // ⚠ `picking + needsCheck` — the bar split picked-not-checked into its own
+  // yellow segment on 2026-09-22; the BADGE is unchanged and still counts both.
+  const inPicking = b.picking + b.needsCheck;
+  if (inPicking > 0) return BADGE_PICKING;
   // HELD (owner, 2026-09-15) — closes the gap where done bills plus a hold
   // matched nothing. Below Picking (live picking is the more useful fact, and
-  // the bar's amber segment still shows the hold); above Ready (a trip with a
+  // the bar's red segment still shows the hold); above Ready (a trip with a
   // hold is not ready).
   if (b.held > 0) return BADGE_HELD;
   if (b.total > 0 && b.done === b.total) return BADGE_READY;
-  if (gateOn && trip.shownAt && b.picking === 0 && b.done === 0) return BADGE_SHOWN;
+  if (gateOn && trip.shownAt && inPicking === 0 && b.done === 0) return BADGE_SHOWN;
   return null;
 }
 

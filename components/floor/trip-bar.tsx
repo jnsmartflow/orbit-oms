@@ -9,14 +9,16 @@
 // 🔴 THE MAPPING IS AN OWNER DECISION, from the trip's own buckets
 // (TripBillCounts, lib/trips/queries.ts):
 //
-//   green  done          = checked + dispatched
-//   blue   being picked  = with picker + picked-not-checked
+//   green  checked       = checked + dispatched
+//   yellow needs check   = picked, not checked (pick_done)
+//   blue   picking       = with picker (pick_assigned)
 //   grey   waiting       = waiting + other
-//   amber  on hold       = held
+//   red    on hold       = held
 //
-// ⚠ AMBER MEANS "ON HOLD" HERE, not "needs check" as on the older bar. On this
-// screen amber means someone has to do something (the same amber as "No driver
-// yet"). The picking screens keep their own colours.
+// Was: pick_done shown blue with 'being picked' until 2026-09-22; now its own yellow segment. Do not revert.
+// (Held was amber until the same day; it is now the "On hold" pill's red,
+// ON_HOLD_SEGMENT in status-pill.tsx. The yellow is NEEDS_CHECK_SEGMENT,
+// progress-bar.tsx — one value for every floor bar.)
 //
 // ⚠ HELD BILLS HAVE A SEGMENT, and every bucket must: the segments are
 // flex-weighted by bill count, so the four always fill the full width. A bucket
@@ -24,32 +26,40 @@
 // exactly what the older bar did for held bills.
 
 import type { TripSummary } from "@/lib/trips/queries";
+import { NEEDS_CHECK_SEGMENT } from "./progress-bar";
+import { ON_HOLD_SEGMENT } from "./status-pill";
 
 export interface TripBarCounts {
   done: number;
+  /** Picked, not checked — pick_done (2026-09-22: its own segment). */
+  needsCheck: number;
+  /** With a picker — pick_assigned. Since 2026-09-22 this no longer includes picked bills. */
   picking: number;
   waiting: number;
   held: number;
   total: number;
 }
 
-/** The four buckets, from the trip's own counts. `checked` already includes dispatched bills. */
+/** The five buckets, from the trip's own counts. `checked` already includes dispatched bills. */
 export function tripBarCounts(c: TripSummary["counts"]): TripBarCounts {
   return {
     done: c.checked,
-    picking: c.withPicker + c.picked,
+    needsCheck: c.picked,
+    picking: c.withPicker,
     waiting: c.waiting + c.other,
     held: c.held,
     total: c.total,
   };
 }
 
-// Exact colours from the locked design file (owner, 2026-09-15).
+// Green, blue and grey from the locked design file (owner, 2026-09-15);
+// yellow and red are shared values (2026-09-22) — see the header.
 const SEGMENTS: Array<{ key: keyof Omit<TripBarCounts, "total">; color: string; label: string }> = [
-  { key: "done", color: "#2eb862", label: "done" },
-  { key: "picking", color: "#5b8ded", label: "being picked" },
-  { key: "waiting", color: "#d3d3dd", label: "waiting" },
-  { key: "held", color: "#e0a832", label: "on hold" },
+  { key: "done", color: "#2eb862", label: "Checked" },
+  { key: "needsCheck", color: NEEDS_CHECK_SEGMENT, label: "Needs check" },
+  { key: "picking", color: "#5b8ded", label: "Picking" },
+  { key: "waiting", color: "#d3d3dd", label: "Waiting" },
+  { key: "held", color: ON_HOLD_SEGMENT, label: "On hold" },
 ];
 
 /**
@@ -90,7 +100,9 @@ export function TripBarLegend({ counts, className = "" }: { counts: TripBarCount
           </span>
         ) : null,
       )}
-      {counts.picking === 0 && counts.waiting === 0 && <span className="text-[#96969f]">nothing pending</span>}
+      {counts.picking === 0 && counts.needsCheck === 0 && counts.waiting === 0 && (
+        <span className="text-[#96969f]">nothing pending</span>
+      )}
     </div>
   );
 }
