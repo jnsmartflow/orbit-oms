@@ -47,6 +47,7 @@ import { formatArticleTag, formatDateIST } from "@/lib/floor/format";
 // TINT / BASE -- one owner for the word, shared with both picking boards. The
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
+import { GiftBadge } from "./gift-badge";
 import {
   StatusPill,
   rowStatus,
@@ -1075,6 +1076,14 @@ export function FloorTable({
               <ColourWorkBadge work={row.colourWork} />
             </span>
           )}
+          {/* GIFT — SAP material type GIFTS. After TINT/BASE, same spacing.
+              Its L/kg are left out of every total (lib/orders/gift.ts), and
+              the VOL / KG cell greys them to match. */}
+          {row.isGift && (
+            <span className="ml-1 inline-block align-[-1px]">
+              <GiftBadge />
+            </span>
+          )}
           {isSite && (
             <div className="text-[10.5px] text-[#9ca3af]">
               billed to {row.billToName ?? "—"}
@@ -1157,9 +1166,17 @@ export function FloorTable({
             second line occupied so every row in the column is the same
             height — a cell that collapsed to one line would make the whole
             table jump row by row. */}
-        <td className={`${TD} text-right tabular-nums`}>
+        {/* A GIFT's figures are SAP placeholders and are left out of every
+            total — shown, but greyed in the muted ink so they read as "not
+            counted" beside the GIFT pill in the ship-to cell. */}
+        <td
+          // SWAP TD's text colour, never stack a second one: two colour
+          // utilities on one element resolve by stylesheet order, not class order.
+          className={`${row.isGift ? TD.replace("text-[#4b5563]", "text-ink-400") : TD} text-right tabular-nums`}
+          title={row.isGift ? "Gift — not counted in L / kg" : undefined}
+        >
           <div>{formatLitres(row.volumeLitres ?? 0)} L</div>
-          <div className="text-[10px] text-[#9ca3af]">
+          <div className={`text-[10px] ${row.isGift ? "text-ink-400" : "text-[#9ca3af]"}`}>
             {weightStr !== null ? (
               `${weightStr} kg`
             ) : (

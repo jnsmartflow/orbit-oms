@@ -15,6 +15,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { computeDropKey } from "@/lib/trips/drop-key";
+import { isGiftBill, loadKg } from "@/lib/orders/gift";
 import { loadPlanV2Context } from "@/lib/floor/load-plan-v2-loader";
 import { planLoadsV2, VEHICLE_TYPES, type AvailableVehicle, type V2Bill, type V2Plan, type VehicleType } from "@/lib/trips/load-plan-v2";
 
@@ -62,6 +63,7 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
             shipToOverrideCustomerId: true,
             shipToCustomerId: true,
             dispatchTargetDate: true,
+            materialType: true,
             querySnapshot: { select: { totalWeight: true } },
             customer: dealerSelect,
             shipToOverrideCustomer: dealerSelect,
@@ -77,7 +79,8 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
     const ageDays = due === null ? 0 : Math.max(0, Math.floor((todayMs - due.getTime()) / MS_PER_DAY));
     bills.push({
       orderId: o.id,
-      weightKg: o.querySnapshot?.totalWeight ?? null,
+      // A GIFT packs as 0 kg and keeps its stop (lib/orders/gift.ts).
+      weightKg: loadKg(o.querySnapshot?.totalWeight, isGiftBill(o.materialType)),
       stopKey: computeDropKey(o),
       areaId: dealer.areaId,
       routeId: dealer.area.primaryRouteId,

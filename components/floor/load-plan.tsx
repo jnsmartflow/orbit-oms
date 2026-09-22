@@ -91,7 +91,7 @@ export function LoadPlanView({
   const trucks = useMemo(
     () =>
       planLoads(
-        rows.map((r) => ({ orderId: r.orderId, routeId: r.routeId, routeName: r.route, stopKey: r.stopKey, weightKg: r.weightKg })),
+        rows.map((r) => ({ orderId: r.orderId, routeId: r.routeId, routeName: r.route, stopKey: r.stopKey, weightKg: r.weightKg, isGift: r.isGift })),
         config,
         routeNames,
       ),

@@ -11,6 +11,7 @@
 import { Check } from "lucide-react";
 import { DUP_SO_BADGE_CLASS } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
+import { loadLitres } from "@/lib/orders/gift";
 
 export type FloorStatus =
   | "waiting"
@@ -447,9 +448,13 @@ export function countByStatus(rows: StatusInput[]): StatusCounts {
   return c;
 }
 
-export function sumLitres(rows: Array<Pick<FloorBoardRow, "volumeLitres">>): number {
-  // Gift lines are OUT OF SCOPE this step — no gift-excluded totals, plain sum.
-  return rows.reduce((s, r) => s + (r.volumeLitres ?? 0), 0);
+/**
+ * Total litres of a set of rows. A GIFT bill adds nothing (lib/orders/gift.ts,
+ * owner 2026-09-22) — its litres are SAP placeholders. Counts are not totals:
+ * a gift is still a bill and a stop everywhere this file counts.
+ */
+export function sumLitres(rows: Array<Pick<FloorBoardRow, "volumeLitres" | "isGift">>): number {
+  return rows.reduce((s, r) => s + loadLitres(r.volumeLitres, r.isGift), 0);
 }
 
 /**
@@ -534,13 +539,18 @@ export function formatWeightKg(kg: number | null | undefined): string | null {
  * `kg` is the sum of the weights that ARE known. It is a lower bound, never a
  * guess: nothing here estimates a missing weight from litres, article counts or
  * anything else.
+ *
+ * A GIFT bill is a KNOWN zero (lib/orders/gift.ts): it adds no kilos and is
+ * never counted as unknown, so it cannot put a "+" on a total either.
  */
 export function sumWeightKg(
-  rows: Array<Pick<FloorBoardRow, "weightKg">>,
+  rows: Array<Pick<FloorBoardRow, "weightKg" | "isGift">>,
 ): { kg: number; unknown: number } {
   let kg = 0;
   let unknown = 0;
   for (const r of rows) {
+    // A gift is a known zero (loadKg) — skip it before the unknown test.
+    if (r.isGift) continue;
     const w = r.weightKg;
     if (w === null || w === undefined || !Number.isFinite(w) || w <= 0) unknown++;
     else kg += w;

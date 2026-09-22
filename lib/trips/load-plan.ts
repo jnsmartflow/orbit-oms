@@ -41,6 +41,12 @@
 // the view can print "2,400+ kg" — the same honest "+" the rest of the floor
 // uses. The importer stores a missing SAP weight as 0, so 0 and "unknown" are
 // one stored value (floor-page.tsx, `selectionWeight`).
+//
+// ⚠ A GIFT BILL PACKS AS A KNOWN 0 kg (lib/orders/gift.ts, 2026-09-22) — it is
+// not unknown, adds no "+", and keeps its stop.
+
+// Relative, not "@/": the unit tests run this file under plain `tsx --test`.
+import { loadKg } from "../orders/gift";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -103,6 +109,12 @@ export interface LoadPlanBill {
   stopKey: string;
   /** Kilos; null, 0 or negative = unknown (packs as 0, counted). */
   weightKg: number | null;
+  /**
+   * SAP GIFTS (lib/orders/gift.ts): packs as a KNOWN 0 kg — never counted as
+   * unknown — and still holds its stop. Optional so fixtures that predate the
+   * rule read as ordinary bills; the board caller always passes it.
+   */
+  isGift?: boolean;
 }
 
 export type TruckKind = "small" | "big" | "bulk";
@@ -229,9 +241,11 @@ export function planLoads(
     if (!nameOf.has(rk)) nameOf.set(rk, b.routeId === null ? NO_ROUTE : (b.routeName ?? `Route ${b.routeId}`).trim());
     const m = stopsOf.get(rk) ?? new Map<string, Stop>();
     const s = m.get(b.stopKey) ?? { key: b.stopKey, kg: 0, unknown: 0, orderIds: [] };
-    const w = knownKg(b.weightKg);
+    // A gift adds 0 and is not unknown; its bill still sits on this stop.
+    const gift = b.isGift === true;
+    const w = knownKg(loadKg(b.weightKg, gift));
     s.kg += w;
-    if (w === 0) s.unknown += 1;
+    if (w === 0 && !gift) s.unknown += 1;
     s.orderIds.push(b.orderId);
     m.set(b.stopKey, s);
     stopsOf.set(rk, m);

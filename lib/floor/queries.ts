@@ -62,6 +62,7 @@ import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // argument grouping.ts and release-window.ts carry above.
 import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { computeDropKey } from "@/lib/trips/drop-key";
+import { isGiftBill } from "@/lib/orders/gift";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -1016,6 +1017,9 @@ export async function getFloorBoard(
       // finer fact for the surfaces that want it.
       isChecked: order.workflowStage === PICK_CHECKED || order.workflowStage === DISPATCHED,
       isDispatched: order.workflowStage === DISPATCHED,
+      // SAP GIFTS — out of every L/kg total, still a bill and a stop. The
+      // board query is an `include`, so the scalar is already loaded.
+      isGift: isGiftBill(order.materialType),
       assignedAt: order.pickAssignment?.assignedAt?.toISOString() ?? null,
       pickedAt: order.pickAssignment?.pickedAt?.toISOString() ?? null,
       checkedAt: order.pickAssignment?.checkedAt?.toISOString() ?? null,

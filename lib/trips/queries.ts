@@ -34,6 +34,7 @@ import {
 // disagree about it again — read that module's header before changing the rule.
 import { tripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { getTripActivity, type TripActivityRow } from "@/lib/trips/activity";
+import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 // 🔴 THE ROUTE/AREA RANKING LIVES IN ONE PLACE (2026-09-16) — a pure module the
 // CLIENT can import too, so the rail card-s label and the pool-s add hint cannot
 // drift apart. PLACEHOLDER_ROUTE_IDS moved there with it.
@@ -302,6 +303,13 @@ interface TripBillRow {
    * query, one more column, no extra read.
    */
   dispatchStatus: string | null;
+  /**
+   * SAP GIFTS (lib/orders/gift.ts, owner 2026-09-22). `litres` and `weightKg`
+   * below are the RAW snapshot values; every total in this file runs them
+   * through loadLitres / loadKg, which count a gift as 0. The bill itself still
+   * counts — in `counts`, in its stop, in `bills` on the drop.
+   */
+  isGift: boolean;
   litres: number;
   /** kg from the snapshot; null when the bill has no snapshot row. */
   weightKg: number | null;
@@ -356,6 +364,8 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
       tripDropId: true,
       workflowStage: true,
       dispatchStatus: true,
+      // SAP GIFTS — see TripBillRow.isGift. One more column, same read.
+      materialType: true,
       // The effective dealer, for the delivery type — see TripBillRow.
       customerId: true,
       shipToOverrideCustomerId: true,
@@ -425,6 +435,7 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
       tripDropId: o.tripDropId,
       workflowStage: o.workflowStage,
       dispatchStatus: o.dispatchStatus,
+      isGift: isGiftBill(o.materialType),
       // A bill with no snapshot row contributes 0, never null — the same choice
       // lib/floor/queries.ts makes for `volumeLitres` on its own rows.
       litres: litresByOrderId.get(o.id) ?? 0,
@@ -667,9 +678,12 @@ function toSummary(
     counts[bucketFor(b.workflowStage, b.dispatchStatus)] += 1;
     counts.total += 1;
     if (b.workflowStage === DISPATCHED) dispatchedCount += 1;
-    totalLitres += b.litres;
-    if (b.weightKg === null) weightUnknownCount += 1;
-    else totalWeightKg += b.weightKg;
+    // A GIFT adds 0 L and a KNOWN 0 kg (never "unknown"); it is still counted
+    // above as a bill. lib/orders/gift.ts.
+    totalLitres += loadLitres(b.litres, b.isGift);
+    const kg = loadKg(b.weightKg, b.isGift);
+    if (kg === null) weightUnknownCount += 1;
+    else totalWeightKg += kg;
   }
   const route = deriveRouteLabel(areaStops, labels.placeholderRouteNames);
   // The trip's types: its STORED type UNIONED with its bills' types, ordered by
@@ -909,7 +923,8 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
       note: d.note,
       orderIds: own.map((b) => b.id),
       bills: own.length,
-      litres: own.reduce((sum, b) => sum + b.litres, 0),
+      // `bills` above counts a gift; the litres leave it out (lib/orders/gift.ts).
+      litres: own.reduce((sum, b) => sum + loadLitres(b.litres, b.isGift), 0),
     };
   });
 

@@ -127,6 +127,13 @@ export interface FloorBoardRow extends PickingQueueRow {
    */
   isDispatched: boolean;
   /**
+   * SAP material type GIFTS (lib/orders/gift.ts, owner 2026-09-22). A gift's
+   * litres and kilos are placeholders: `sumLitres` / `sumWeightKg` leave it out
+   * of every total and the row wears a GIFT pill. It still counts as a bill and
+   * as a stop. Floor-only, like `isDispatched` — never on PickingQueueRow.
+   */
+  isGift: boolean;
+  /**
    * WHERE THIS BILL IS IN THE TINT ROOM — `null` on every plain order
    * (2026-09-13).
    *

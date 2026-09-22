@@ -13,6 +13,7 @@
 // Sequential awaits; never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";
+import { isGiftBill, loadKg } from "@/lib/orders/gift";
 import { loadPlanV2Context } from "@/lib/floor/load-plan-v2-loader";
 import { makePricer, VEHICLE_TYPES, type LoadPlanV2Context, type VehicleType } from "@/lib/trips/load-plan-v2";
 import {
@@ -89,7 +90,7 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
   const orders = ids.length
     ? await prisma.orders.findMany({
         where: { id: { in: ids } },
-        select: { id: true, tripDropId: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
+        select: { id: true, tripDropId: true, materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
       })
     : [];
   const dropIds = Array.from(new Set(orders.map((o) => o.tripDropId).filter((d): d is number => d !== null)));
@@ -115,7 +116,8 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
       billId: o.id,
       areaId: area?.id ?? null,
       areaName: area?.name.trim() ?? "Area not set",
-      kg: o.querySnapshot?.totalWeight ?? 0,
+      // A GIFT carries 0 kg (lib/orders/gift.ts); it is still a bill.
+      kg: loadKg(o.querySnapshot?.totalWeight, isGiftBill(o.materialType)) ?? 0,
       tripId: tripId !== null && dayTripIds.has(tripId) ? tripId : null,
     });
   });
@@ -128,7 +130,7 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
   const tripOrders = tripDrops.length
     ? await prisma.orders.findMany({
         where: { tripDropId: { in: tripDrops.map((d) => d.id) }, isRemoved: false },
-        select: { tripDropId: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
+        select: { tripDropId: true, materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
       })
     : [];
   const tripOfDrop = new Map(tripDrops.map((d) => [d.id, d.tripId] as const));
@@ -140,7 +142,8 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
     const t = trips.get(tripOfDrop.get(o.tripDropId as number) ?? -1);
     if (!t) return;
     const area = (o.shipToOverrideCustomer ?? o.customer)?.area ?? null;
-    const kg = o.querySnapshot?.totalWeight ?? 0;
+    // A GIFT adds 0 kg; the trip's stop count (trip_drops) is untouched.
+    const kg = loadKg(o.querySnapshot?.totalWeight, isGiftBill(o.materialType)) ?? 0;
     t.kg += kg;
     t.places.push({ areaId: area?.id ?? null, areaName: area?.name.trim() ?? "Area not set", kg });
   });
