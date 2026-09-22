@@ -42,7 +42,7 @@ import type { LoadPlanConfig } from "@/lib/trips/load-plan";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
-import { connectionDownText } from "./connection-strip";
+import { lastUpdateTime } from "./connection-strip";
 import {
   rowStatus,
   isTintRoomRow,
@@ -582,16 +582,13 @@ export function TripDesk({
   //
   // 🔴 THE LIVE ROW IS GONE (2026-09-22). What it carried moved UP into the tab
   // row's right-hand group, in this order:
-  //   live   ● (dot) · [Flat | By route] · History ›
+  //   live    [Offline chip, only when disconnected] · [Flat | By route] · History ›
   //   history ‹ date › · [Flat | By route] · ‹ Back to Live
-  // The dot is the connection strip's job too: ok-green while the marker probe
-  // answers, ink-400 when it does not. Its tooltip carries what the row used to
-  // print — the counts when live, the strip's "not connected" text when down.
-  // Same state, same probe (floor-page `connected` / `lastSyncedAt`), no new
-  // poll. No dot in History — the strip never showed there either.
-  const liveTitle = connected
-    ? `Live · ${stillOpen} still open · ${checkedToday} checked today · ${checkedEarlier} checked earlier`
-    : connectionDownText(lastSyncedAt);
+  // 🔴 NOTHING WHILE CONNECTED (owner, 2026-09-22 — the live dot was removed).
+  // Only when the marker probe stops answering does a grey "Offline · last
+  // update HH:MM" chip appear. Same state, same probe (floor-page `connected` /
+  // `lastSyncedAt`), no new poll. Never in History — the strip never showed
+  // there either. The Live counts the row used to print are not shown now.
   const rightGroup = (
     <span className="ml-auto flex items-center gap-3 text-[11.5px]">
       {isHistory ? (
@@ -608,13 +605,10 @@ export function TripDesk({
             ›
           </button>
         </span>
-      ) : (
-        <span
-          role="status"
-          aria-label={liveTitle}
-          title={liveTitle}
-          className={`h-2 w-2 shrink-0 rounded-full ${connected ? "bg-ok" : "bg-ink-400"}`}
-        />
+      ) : connected ? null : (
+        <span role="status" className="whitespace-nowrap rounded-full bg-ink-100 px-2 py-[2px] text-[12px] text-ink-600">
+          Offline · last update {lastUpdateTime(lastSyncedAt)}
+        </span>
       )}
       {pivotToggle}
       {isHistory ? (

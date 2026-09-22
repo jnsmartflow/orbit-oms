@@ -18,7 +18,13 @@ function hhmm(d: Date): string {
  *  tab row's live dot (trip-desk.tsx), which took the strip's place on /floor
  *  on 2026-09-22. */
 export function connectionDownText(lastSyncedAt: Date | null): string {
-  return `Not connected — showing last update ${lastSyncedAt ? hhmm(lastSyncedAt) : "—"}`;
+  return `Not connected — showing last update ${lastUpdateTime(lastSyncedAt)}`;
+}
+
+/** "HH:MM" (IST) of the last successful board load, or "—". The tab row's
+ *  Offline chip (trip-desk.tsx) prints it. */
+export function lastUpdateTime(lastSyncedAt: Date | null): string {
+  return lastSyncedAt ? hhmm(lastSyncedAt) : "—";
 }
 
 // ⚠ NO LONGER RENDERED ON /floor (2026-09-22) — the live dot at the start of the
