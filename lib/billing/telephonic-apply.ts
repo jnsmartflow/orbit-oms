@@ -276,22 +276,43 @@ export async function applySoTagHolds(
           // ONE orders.update per bill. heldAt = the arrival date, the same
           // rule enrichment (applyMailOrderEnrichment) and Floor's hold action
           // use — the read side derives "held since" from the log row below.
-          await prisma.orders.update({
-            where: { id: order.id },
-            data: { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? now },
-          });
-          // ONE log row. toStage stays the unchanged workflowStage — a hold does
-          // not advance a bill; the NOTE is what identifies the hold event
-          // (lib/floor/hold-log.ts). changedById = the operator who typed the tag.
-          await prisma.order_status_logs.create({
-            data: {
-              orderId: order.id,
-              fromStage: order.workflowStage,
-              toStage: order.workflowStage,
-              changedById: tag.addedById,
-              note: TELEPHONIC_HOLD_NOTE,
-            },
-          });
+          try {
+            await prisma.orders.update({
+              where: { id: order.id },
+              data: { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? now },
+            });
+            // ONE log row. toStage stays the unchanged workflowStage — a hold does
+            // not advance a bill; the NOTE is what identifies the hold event
+            // (lib/floor/hold-log.ts). changedById = the operator who typed the tag.
+            await prisma.order_status_logs.create({
+              data: {
+                orderId: order.id,
+                fromStage: order.workflowStage,
+                toStage: order.workflowStage,
+                changedById: tag.addedById,
+                note: TELEPHONIC_HOLD_NOTE,
+              },
+            });
+          } catch (holdErr) {
+            // 🔴 SHOWN, NOT RETRIED. The claim stands (imports never revisit an
+            // existing bill, so a retry would almost never fire); the match row
+            // says "hold failed" and the tab shows the bill's LIVE dispatchStatus,
+            // so a bill that is not actually held is visible and Floor can hold it
+            // by hand. Best effort — its own try/catch. No CI for this bill: the
+            // rethrow below lands in the per-bill catch, which skips steps 3-4.
+            try {
+              await prisma.so_tag_matches.update({
+                where: { id: matchId },
+                data: { ciSkipReason: "hold failed" },
+              });
+            } catch (reasonErr) {
+              console.error(
+                `[telephonic] OBD ${order.obdNumber}: could not record "hold failed" on match #${matchId}:`,
+                reasonErr,
+              );
+            }
+            throw holdErr;
+          }
           summary.held += 1;
 
           // ── 3. CI ─────────────────────────────────────────────────────────
