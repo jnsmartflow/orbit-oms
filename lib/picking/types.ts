@@ -68,6 +68,13 @@ export interface PickingQueueRow {
   articleTag: string | null;
   volumeLitres: number | null;
   weightKg: number | null;
+  /**
+   * SAP material type GIFTS (lib/orders/gift.ts, owner 2026-09-22). The raw
+   * `volumeLitres` / `weightKg` above are kept for the row's own display, but
+   * every litre / kg TOTAL leaves a gift out (loadLitres / loadKg). A gift still
+   * counts as a bill and a stop. The card wears a GIFT pill beside TINT/BASE.
+   */
+  isGift: boolean;
   // SAP SMU code as a STRING ("70" | "74" | "76" | "77" | "10"), or null when
   // the order has no SMU / carries a name outside the map. Added 2026-08-19 for
   // the card + detail SmuBadge.

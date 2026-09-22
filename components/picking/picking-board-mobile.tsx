@@ -87,6 +87,8 @@ import { buildFindingsMessage, shareFindingsText } from "@/lib/picking/share-fin
 import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
+import { GiftBadge } from "@/components/floor/gift-badge";
+import { loadLitres } from "@/lib/orders/gift";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
 // The tint room's wire shapes. TYPE-only — the module is server-side (prisma),
 // and `import type` is erased, so nothing follows it into the browser bundle.
@@ -592,12 +594,18 @@ function PickingCard({
   // The litres block, used in TWO positions: inline after the route on the rich
   // variants, and as the where-row's RIGHT end on doneChecked. One definition
   // so the two cannot drift in type or colour.
+  // ⚠ A GIFT's litres are an SAP placeholder, left out of every total on this
+  // board — shown, but in the muted ink-400 (#9C99AC) so they read as "not
+  // counted" beside the GIFT pill, the same treatment as Floor's VOL cell.
   const volumeNode =
     row.volumeLitres == null ? null : (
-      <span className="flex items-baseline gap-[3px] shrink-0">
+      <span
+        className="flex items-baseline gap-[3px] shrink-0"
+        title={row.isGift ? "Gift — not counted in L / kg" : undefined}
+      >
         <span
           className="text-[12px] font-semibold tabular-nums"
-          style={{ color: dup ? DUP_SO_TEXT : "#667085" }}
+          style={{ color: dup ? DUP_SO_TEXT : row.isGift ? "#9C99AC" : "#667085" }}
         >
           {formatLitres(row.volumeLitres)}
         </span>
@@ -772,6 +780,9 @@ function PickingCard({
                   when the bill says nothing, so no wrapper and no gap is spent
                   on the ~93% of cards outside the two project divisions. */}
               <ColourWorkBadge work={row.colourWork} onRed={dup} />
+              {/* GIFT — SAP material type GIFTS, beside TINT/BASE, all five
+                  variants for the same reason. Floor's own pill, imported. */}
+              {row.isGift && <GiftBadge />}
               {/* The SMU as a BARE NUMBER — Done tab's checked band only.
                   ⚠ SmuBadge is NOT used here and NOT changed; its pill still
                   renders on every other card's where-row. Same 74/77 gate via
@@ -1942,7 +1953,8 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   // Lane strip counts the WORKING list only. An upcoming bill is not "ready
   // to load" — folding it in would overstate the floor's actual workload.
-  const totalLitres = filteredWaitingDue.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
+  // A GIFT bill adds no litres (lib/orders/gift.ts); it still counts as "due".
+  const totalLitres = filteredWaitingDue.reduce((sum, r) => sum + loadLitres(r.volumeLitres, r.isGift), 0);
   // Unchanged, and now provably consistent: the options ARE `routeCounts`'
   // keys, so this sum is exactly the sum of the numbers on screen. Before the
   // fix it was already the sum of the counts — but the list carried extra rows
@@ -2132,7 +2144,8 @@ export function PickingBoardMobile(): React.JSX.Element {
         map.set(r.pickerId, g);
       }
       g.bills.push(r);
-      g.litres += r.volumeLitres ?? 0;
+      // A gift is still one of his bills; its litres are left out.
+      g.litres += loadLitres(r.volumeLitres, r.isGift);
       const t = r.assignedAt !== null ? new Date(r.assignedAt).getTime() : NaN;
       if (!Number.isNaN(t) && t < g.oldestMs) g.oldestMs = t;
     }
@@ -2231,7 +2244,8 @@ export function PickingBoardMobile(): React.JSX.Element {
   // independent guard, and the one that would still hold if the card markup
   // were ever changed. Derived from filteredWaitingDue, NOT filteredWaiting.
   const selectedRows = filteredWaitingDue.filter((r) => selected.has(r.orderId));
-  const selectedLitres = selectedRows.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
+  // Gift bills stay in the selected COUNT; their litres are left out.
+  const selectedLitres = selectedRows.reduce((sum, r) => sum + loadLitres(r.volumeLitres, r.isGift), 0);
   const pickerSheetSubtitle =
     assignTarget.length === 1
       ? `1 bill · ${assignTarget[0].dealerName}`

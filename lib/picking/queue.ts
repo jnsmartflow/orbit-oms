@@ -15,6 +15,7 @@ import {
   PICKING_ACTIVE_STAGES,
 } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
+import { isGiftBill } from "@/lib/orders/gift";
 import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
 // The manual early-release window (last working day before dispatch, Sunday
 // skipped). Pure and clock-free — the day is passed in — so the server route
@@ -880,6 +881,9 @@ export async function getPickingQueue(
       articleTag: order.querySnapshot?.articleTag ?? null,
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       weightKg: order.querySnapshot?.totalWeight ?? null,
+      // SAP GIFTS — out of every litre/kg total, still a bill (lib/orders/gift.ts).
+      // The findMany is an `include`, so `materialType` is already loaded.
+      isGift: isGiftBill(order.materialType),
       // Pure in-memory reverse lookup — NO new query, no new column, no join.
       // `order.smu` is already here: the findMany above uses `include`, which
       // returns every base-model scalar (the same reason obdDateTime/orderType

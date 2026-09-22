@@ -6,6 +6,7 @@ import { ROLES } from "@/lib/rbac";
 import { getPickingQueue } from "@/lib/picking/queue";
 import { splitPickerRows } from "@/lib/picking/picker-split";
 import { resolveCatalogByCode } from "@/lib/picking/resolve-lines";
+import { loadLitres } from "@/lib/orders/gift";
 import type {
   CombinedBill,
   CombinedPickResult,
@@ -182,7 +183,10 @@ export async function GET(req: Request): Promise<NextResponse> {
         rowByCode.set(code, row);
       }
 
-      const litres = line.volumeLine ?? 0;
+      // A GIFT bill's lines carry SAP placeholder volumes (lib/orders/gift.ts):
+      // they contribute 0 L to the row and so to the "N orders · X L" summary.
+      // Qty is untouched — the picker still has to fetch the item.
+      const litres = loadLitres(line.volumeLine, bill.isGift);
       row.qty += line.unitQty;
       row.litres += litres;
       row.contributions.push({

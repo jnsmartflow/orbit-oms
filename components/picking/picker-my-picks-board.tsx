@@ -20,6 +20,7 @@ import { AgeBadge, CardShelf, CARD_SHADOW_V2, ColourWorkBadge, RouteDot, SmuBadg
 import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
+import { GiftBadge } from "@/components/floor/gift-badge";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // Same import list, same tokens and the same tag the supervisor board and Floor
 // use; this face was deliberately left out on 2026-08-20 and is now included
@@ -1562,6 +1563,8 @@ export function PickerMyPicksBoard({
                         two project divisions, so every other card's caption row
                         is byte-identical DOM. */}
                     <ColourWorkBadge work={row.colourWork} onRed={dup} />
+                    {/* GIFT beside TINT/BASE — same pill as the supervisor card. */}
+                    {row.isGift && <GiftBadge />}
                   </span>
                   {/* The tag LEADS the right cluster, so it is the first thing
                       read after the OBD — same order as the supervisor card.
@@ -1648,10 +1651,15 @@ export function PickerMyPicksBoard({
                         <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
                           &middot;
                         </span>
-                        <span className="flex items-baseline gap-[3px] shrink-0">
+                        {/* A GIFT's litres are an SAP placeholder — shown, muted
+                            to ink-400 (#9C99AC), same as the supervisor card. */}
+                        <span
+                          className="flex items-baseline gap-[3px] shrink-0"
+                          title={row.isGift ? "Gift — not counted in L / kg" : undefined}
+                        >
                           <span
                             className="text-[12px] font-semibold tabular-nums"
-                            style={{ color: dup ? DUP_SO_TEXT : "#667085" }}
+                            style={{ color: dup ? DUP_SO_TEXT : row.isGift ? "#9C99AC" : "#667085" }}
                           >
                             {formatLitres(row.volumeLitres)}
                           </span>

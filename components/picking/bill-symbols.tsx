@@ -24,9 +24,10 @@
 
 import { DUP_SO_MUTED, DuplicateSoTag } from "@/components/shared/duplicate-so-tag";
 import { ColourWorkBadge, isColourWorkBadged, isSmuBadged } from "./card-atoms";
+import { GiftBadge } from "@/components/floor/gift-badge";
 import type { ColourWork } from "@/lib/picking/colour-work";
 
-/** The five fields the run reads — narrow, not the whole PickingQueueRow. */
+/** The fields the run reads — narrow, not the whole PickingQueueRow. */
 export interface BillSymbolSource {
   hasDuplicateSo: boolean;
   isKeyCustomer: boolean;
@@ -39,6 +40,8 @@ export interface BillSymbolSource {
    */
   colourWork: ColourWork | null;
   smuCode: string | null;
+  /** SAP GIFTS (lib/orders/gift.ts) — a GIFT pill right after TINT/BASE. */
+  isGift: boolean;
 }
 
 /** Does this bill put ANYTHING in the run? Exported so a caller can decide
@@ -54,6 +57,9 @@ export function hasBillSymbols(row: BillSymbolSource): boolean {
     // gate TRUE while the badge renders nothing — leaving both callers drawing a
     // separator in front of an empty run.
     isColourWorkBadged(row.colourWork) ||
+    // Same rule as the term above: the gate must move with the mark, or a gift
+    // bill with no other flag would render a pill with no separator before it.
+    row.isGift ||
     isSmuBadged(row.smuCode)
   );
 }
@@ -132,6 +138,10 @@ export function BillSymbols({ row }: { row: BillSymbolSource }): React.JSX.Eleme
           header: `onRed` spends the pink and keeps the word, which is what
           `tone()` does for every other item in this run. */}
       <ColourWorkBadge work={row.colourWork} onRed={dup} />
+      {/* GIFT — the second pill in the run, straight after TINT/BASE. Floor's
+          own component, imported (components/floor/gift-badge.tsx). Its pale
+          ink fill reads on the pale masthead and on the duplicate-SO red. */}
+      {row.isGift && <GiftBadge />}
       {/* ⚠ THE NUMBER, WITHOUT SmuBadge's PILL — and SmuBadge itself is NOT
           touched. It still renders its indigo/cyan pill on both CARD where-rows
           (picking-board-mobile.tsx + picker-my-picks-board.tsx), which is the

@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type { PrintTrip } from "@/lib/billing/print";
+import { GiftBadge } from "@/components/floor/gift-badge";
 
 const LIST_URL = "/api/billing/print/list";
 
@@ -443,9 +444,20 @@ export function BillingPrintTab({
                           </td>
                           <td className={`${TD}${dim}`} title={r.shipToName ?? undefined}>
                             {r.shipToName ? smartTitleCase(r.shipToName) : "—"}
+                            {/* GIFT — SAP material type GIFTS; Floor's own pill. */}
+                            {r.isGift && (
+                              <span className="ml-1.5 inline-block align-[-1px]">
+                                <GiftBadge />
+                              </span>
+                            )}
                           </td>
                           <td className={`${TD}${dim}`}>{r.routeName ?? "—"}</td>
-                          <td className={`${TD} tabular-nums${dim}`}>
+                          {/* A GIFT's litres are left out of the trip total above —
+                              shown, but muted to ink-400 so they read as not counted. */}
+                          <td
+                            className={`${TD} tabular-nums${r.isGift && !r.held ? " !text-ink-400" : dim}`}
+                            title={r.isGift ? "Gift — not counted in L / kg" : undefined}
+                          >
                             {r.litres > 0 ? `${Math.round(r.litres).toLocaleString("en-US")} L` : ""}
                           </td>
                         </tr>

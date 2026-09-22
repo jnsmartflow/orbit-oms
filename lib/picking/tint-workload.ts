@@ -4,6 +4,7 @@ import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 import { computeElapsedMs } from "@/lib/tint/elapsed-time";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 import { billToByObd } from "@/lib/floor/queries";
+import { isGiftBill, loadLitres } from "@/lib/orders/gift";
 
 // ── The tint room, as the PICKING supervisor needs to read it ───────────────
 //
@@ -69,6 +70,8 @@ export interface TintWorkloadBill {
   /** For the section's Local / UPC filter — the same field the picking card filters on. */
   deliveryType: string | null;
   litres: number | null;
+  /** SAP GIFTS (lib/orders/gift.ts): `litres` is shown as stored, but left out of every total below. */
+  isGift: boolean;
   /** The article tag's D count. Null when the bill carries no tag at all. */
   drums: number | null;
   smuCode: string | null;
@@ -135,7 +138,8 @@ function sumDrums(rows: TintWorkloadBill[]): number {
 
 function sumLitres(rows: TintWorkloadBill[]): number {
   let n = 0;
-  for (const r of rows) n += r.litres ?? 0;
+  // A GIFT bill adds no litres (lib/orders/gift.ts); it still counts as a bill.
+  for (const r of rows) n += loadLitres(r.litres, r.isGift);
   return Math.round(n * 100) / 100;
 }
 
@@ -380,6 +384,8 @@ export async function getTintWorkload(nowMs: number = Date.now()): Promise<TintW
         area: dealer?.area?.name ?? null,
         deliveryType: dealer?.area?.deliveryType?.name ?? null,
         litres: order.querySnapshot?.totalVolume ?? null,
+        // `include` query — the scalar is already loaded.
+        isGift: isGiftBill(order.materialType),
         drums: drumsOf(order.querySnapshot?.articleTag ?? null),
         smuCode: order.smu !== null ? (SMU_CODE_BY_NAME[order.smu] ?? null) : null,
         state,

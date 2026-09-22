@@ -30,6 +30,7 @@
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { isGiftBill, loadLitres } from "@/lib/orders/gift";
 import { logTripInvoicesCopied, TRIP_INVOICES_COPIED, TRIP_BILLS_ADDED } from "@/lib/trips/activity";
 
 /** `orders.dispatchStatus` for a held bill — the same test lib/trips/queries.ts bucketFor makes. */
@@ -43,6 +44,9 @@ export interface PrintBillRow {
   routeName: string | null;
   dropSeq: number;
   litres: number;
+  /** SAP GIFTS (lib/orders/gift.ts): `litres` above is shown as stored but left
+   *  out of the trip total. Still a bill and a stop — counted, copied, invoiced. */
+  isGift: boolean;
   /** On hold — shown, never counted, never copied. */
   held: boolean;
   /** Its invoice number arrived after the trip was last copied. */
@@ -153,6 +157,7 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
           invoiceNo: true,
           dispatchStatus: true,
           shipToCustomerName: true,
+          materialType: true,
           shipToOverrideCustomer: { select: { customerName: true } },
         },
         orderBy: { id: "asc" },
@@ -237,6 +242,7 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
         routeName: drop.routeName,
         dropSeq: drop.dropSeq,
         litres: litresByOrderId.get(o.id) ?? 0,
+        isGift: isGiftBill(o.materialType),
         held: o.dispatchStatus === HOLD,
         isNew: o.dispatchStatus !== HOLD && o.invoiceNo !== null && newLookup.has(o.invoiceNo),
       };
@@ -254,7 +260,8 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       state,
       bills: own.length,
       stops: new Set(own.map((o) => o.tripDropId)).size,
-      litres: own.reduce((sum, o) => sum + (litresByOrderId.get(o.id) ?? 0), 0),
+      // A GIFT bill adds no litres (lib/orders/gift.ts); `bills` and `stops` above count it.
+      litres: own.reduce((sum, o) => sum + loadLitres(litresByOrderId.get(o.id), isGiftBill(o.materialType)), 0),
       held: own.length - eligible,
       eligible,
       invoiced,
