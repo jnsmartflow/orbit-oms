@@ -152,6 +152,7 @@ export function TripDesk({
   onSetTripShown,
   onSetTripSentToBilling,
   addMode,
+  addCount,
   sameRouteLabel,
   onAddToTrip,
   addingToTripId,
@@ -205,6 +206,8 @@ export function TripDesk({
    * no behaviour of its own here.
    */
   addMode: boolean;
+  /** Ticked bills — the rail's "+" button names the count in its aria-label. */
+  addCount: number;
   /** The selection-s route when it is a single one — cards matching it say so. */
   sameRouteLabel: string | null;
   onAddToTrip: (tripId: number) => void;
@@ -1031,6 +1034,7 @@ export function TripDesk({
         // ⚠ NOT A PICKER WHILE A NAMED TRIP IS BEING FILLED (owner): the trip is
         // already decided, so a card click opens it rather than adding to it.
         addMode={addMode && addingToTripId === null}
+        addCount={addCount}
         sameRouteLabel={sameRouteLabel}
         onAddToTrip={onAddToTrip}
         anchorIso={floor.date}

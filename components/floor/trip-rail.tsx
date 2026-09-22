@@ -53,6 +53,7 @@
 // done = checked, or on hold). Its number chip turns amber (redesign) — the
 // number already carries the real date — rather than implying it is today's.
 
+import { Plus } from "lucide-react";
 import { TripBar, tripBarCounts } from "./trip-bar";
 import { formatLitres } from "./status-pill";
 import { tripInScope, tripMixLabel } from "@/lib/floor/scope";
@@ -94,6 +95,7 @@ export function TripRail({
   selection,
   onSelect,
   addMode = false,
+  addCount = 0,
   sameRouteLabel = null,
   onAddToTrip,
 }: {
@@ -133,8 +135,12 @@ export function TripRail({
    * trip to add N bills" hint that replaced the header and the pink "+" on each
    * card are gone; the bottom bar already says what is ticked. Adding is still
    * "tick bills → click a trip card", and a dispatched card is still inert.
+   * Since 2026-09-22 (later) an addable card also carries a brand "+" button
+   * top-right — see TripCard.
    */
   addMode?: boolean;
+  /** How many bills are ticked — only for the "+" button's aria-label. */
+  addCount?: number;
   /**
    * The selection-s route when it is a SINGLE one (floor-page). A trip whose own
    * route label is exactly this gets a quiet green "Same route" line.
@@ -233,6 +239,7 @@ export function TripRail({
           // "Adajan +1" is a load that also goes somewhere else.
           sameRoute={sameRouteLabel !== null && t.routeName === sameRouteLabel && t.routeExtraCount === 0}
           addMode={addMode}
+          addCount={addCount}
           onAdd={() => onAddToTrip?.(t.id)}
         />
       ))}
@@ -248,6 +255,7 @@ function TripCard({
   gateOn,
   addMode = false,
   addable = false,
+  addCount = 0,
   sameRoute = false,
   onAdd,
 }: {
@@ -260,6 +268,8 @@ function TripCard({
   addMode?: boolean;
   /** This trip can take them. False on a dispatched trip: no click. */
   addable?: boolean;
+  /** Ticked bills — the "+" button's aria-label. */
+  addCount?: number;
   /** This trip already runs the selection-s route. */
   sameRoute?: boolean;
   onAdd?: () => void;
@@ -280,26 +290,36 @@ function TripCard({
   // The vehicle and the area are off the card — the detail panel carries both.
   // 🔴 THE WHOLE CARD IS THE TARGET IN ADD MODE (owner). A card that cannot
   // take bills is inert — it neither adds nor opens, so a click during add mode
-  // can never do something the planner did not ask for. The hover is violet,
-  // not pink (2026-09-22): no pink on the rail.
+  // can never do something the planner did not ask for. In add mode the hover
+  // is NEUTRAL (border-ink-400) — no violet, no pink (2026-09-22).
+  //
+  // 🔴 THE "+" (2026-09-22, later): a real brand button top-right, on ADDABLE
+  // cards only — never on a dispatched or blocked card, never with nothing
+  // ticked (addable is false then). It does exactly what a card click does
+  // (`onAdd`). It is a SIBLING of the card inside a wrapper, not a child: the
+  // card is itself a <button>, and a button inside a button is invalid HTML.
+  // stopPropagation keeps it to one add either way.
   const blocked = addMode && !addable;
+  const showPlus = addable;
   return (
+    <div className="relative mb-2">
     <button
       type="button"
       onClick={blocked ? undefined : addMode ? onAdd : onSelect}
       disabled={blocked}
       title={blocked ? `${trip.tripNumber} has been dispatched — it cannot take more bills` : undefined}
-      className={`relative mb-2 flex w-full flex-col gap-[6px] rounded-[9px] border px-3 pb-3 pt-[11px] text-left ${
+      className={`relative flex w-full flex-col gap-[6px] rounded-[9px] border px-3 pb-3 pt-[11px] text-left ${
         blocked
           ? "cursor-not-allowed border-[#e7e7ee] bg-white opacity-50"
           : addable
-            ? "cursor-pointer border-[#cfcfda] bg-white hover:border-brand-400 hover:bg-brand-50"
+            ? "cursor-pointer border-[#cfcfda] bg-white hover:border-ink-400"
             : selected
               ? "border-brand-600 bg-white shadow-[0_0_0_3px_#f2edfe]"
               : "border-[#e7e7ee] bg-white hover:border-[#cfcfda]"
       }`}
     >
-      <div className="flex items-center gap-[7px]">
+      {/* Room for the "+" ONLY while it shows — no permanent padding. */}
+      <div className={`flex items-center gap-[7px] ${showPlus ? "pr-[30px]" : ""}`}>
         {/* 🔴 A CARRIED TRIP'S NUMBER CHIP IS AMBER (owner). The separate date
             chip is gone: it did not fit, and the number already carries its
             date — L-260914-24 seen on the 15th IS the carry signal. Amber, not
@@ -385,6 +405,27 @@ function TripCard({
 
       <TripBar counts={bar} className="mt-[2px]" />
     </button>
+    {showPlus && (
+      // 28px hit area around a 24px circle, centred on the trip-number row
+      // (the card's 11px top padding + half the ~20px number chip = 21px;
+      // 21 − 14 = 7px). An ICON, not a "+" character, so it sits optically
+      // centred.
+      <button
+        type="button"
+        aria-label={`Add ${addCount} bill${addCount === 1 ? "" : "s"} to ${trip.tripNumber}`}
+        title={`Add ${addCount} bill${addCount === 1 ? "" : "s"} to ${trip.tripNumber}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onAdd?.();
+        }}
+        className="group absolute right-[8px] top-[7px] flex h-[28px] w-[28px] items-center justify-center rounded-full"
+      >
+        <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-brand-600 text-white group-hover:bg-brand-700">
+          <Plus size={14} strokeWidth={2.5} />
+        </span>
+      </button>
+    )}
+    </div>
   );
 }
 

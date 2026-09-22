@@ -2231,6 +2231,7 @@ export function FloorPage() {
               // something is ticked", so Escape and ✕ — which clear the
               // selection — end it with no second piece of state to go stale.
               addMode={addMode}
+              addCount={selectedRows.length}
               sameRouteLabel={sameRouteLabel}
               onAddToTrip={(id) => void addSelectionToTrip(id)}
               // Targeted add — "+ Add bills" inside a trip (2026-09-16).
