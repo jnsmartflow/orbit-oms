@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { litresPerTin, returnedLitres, round3 } from "@/lib/ci/derive";
-import { applyCiCatalog, resolveCiSkus } from "@/lib/ci/resolve-lines";
+import { round3 } from "@/lib/ci/derive";
+import {
+  computeFullBillLines,
+  deriveCiLineRows,
+  readActiveBillLines,
+  type DerivedCiLine,
+} from "@/lib/ci/full-bill";
 
 export const dynamic = "force-dynamic";
 
@@ -160,47 +165,52 @@ export async function PUT(
     );
   }
 
-  // ── 1b. The OBD's ACTIVE lines — the only lines that may be returned ───────
-  // 🔴 lineStatus 'active' ONLY. 113 rows across 100 OBDs are
-  // 'removed_by_import'; offering one would let a supervisor return a line SAP
-  // has withdrawn. Joined on the obdNumber TEXT column — there is no FK from
-  // `orders` to its line items (Picking and Floor both join on the string).
-  const active = await prisma.import_raw_line_items.findMany({
-    where: { obdNumber: ci.obdNumber, lineStatus: "active" },
-    select: { id: true, skuCodeRaw: true, unitQty: true, volumeLine: true },
-    orderBy: { lineId: "asc" },
-  });
-  if (active.length === 0) {
-    return NextResponse.json(
-      { error: `Bill ${ci.obdNumber} has no active lines to return.` },
-      { status: 409 },
-    );
-  }
-  const activeById = new Map(active.map((l) => [l.id, l]));
-
-  // ── 1c. Build the requested set ────────────────────────────────────────────
-  // 🔴 'full' IS COMPUTED HERE, NEVER ACCEPTED. The whole point of "Full bill"
-  // is that it means *every active line at its delivered quantity* — if the
-  // client supplied that list, a stale phone holding a bill from before a
-  // re-import would file a "full" return that silently omitted a line.
-  let requested: { rawLineItemId: number; returnedQty: number }[];
+  // ── 1b + 1c. The OBD's ACTIVE lines, and the requested set ────────────────
+  // The active-line read (lineStatus 'active' only, in bill order) and the
+  // per-line derivation live in lib/ci/full-bill.ts, shared with the bill-only
+  // auto-CI so both paths write IDENTICAL rows for the same bill.
+  //
+  // 🔴 'full' IS COMPUTED, NEVER ACCEPTED — computeFullBillLines owns that. The
+  // whole point of "Full bill" is that it means *every active line at its
+  // delivered quantity*; if the client supplied that list, a stale phone
+  // holding a bill from before a re-import would file a "full" return that
+  // silently omitted a line.
+  //
+  // ⚠ The two refusals below are mapped back to EXACTLY the 409 bodies this
+  // route returned before the extraction — same status, same text.
+  let derived: DerivedCiLine[];
 
   if (ci.returnType === "full") {
-    requested = active.map((l) => ({ rawLineItemId: l.id, returnedQty: l.unitQty ?? 0 }));
-    // A delivered quantity of 0 cannot be returned. If SAP sent one, the bill
-    // cannot be fully returned and the supervisor must use Part.
-    const zero = requested.filter((r) => r.returnedQty < 1);
-    if (zero.length > 0) {
+    const full = await computeFullBillLines(ci.obdNumber);
+    if (!full.ok) {
+      if (full.reason === "no_lines") {
+        return NextResponse.json(
+          { error: `Bill ${ci.obdNumber} has no active lines to return.` },
+          { status: 409 },
+        );
+      }
+      // A delivered quantity of 0 cannot be returned. If SAP sent one, the bill
+      // cannot be fully returned and the supervisor must use Part.
       return NextResponse.json(
         {
           error:
-            `Bill ${ci.obdNumber} has ${zero.length} line(s) with no delivered quantity, ` +
+            `Bill ${ci.obdNumber} has ${full.lineIds.length} line(s) with no delivered quantity, ` +
             "so it cannot be returned in full. Use Part and pick the lines that came back.",
         },
         { status: 409 },
       );
     }
+    derived = full.lines;
   } else {
+    const active = await readActiveBillLines(ci.obdNumber);
+    if (active.length === 0) {
+      return NextResponse.json(
+        { error: `Bill ${ci.obdNumber} has no active lines to return.` },
+        { status: 409 },
+      );
+    }
+    const activeById = new Map(active.map((l) => [l.id, l]));
+
     if (!Array.isArray(body.lines)) {
       return NextResponse.json(
         { error: "`lines` is required on a part return — expected an array" },
@@ -215,7 +225,7 @@ export async function PUT(
     }
 
     const seen = new Set<number>();
-    requested = [];
+    const requested: { rawLineItemId: number; returnedQty: number }[] = [];
     for (const entry of body.lines as unknown[]) {
       const e = entry as { rawLineItemId?: unknown; returnedQty?: unknown };
       const rawLineItemId = Number(e.rawLineItemId);
@@ -282,40 +292,19 @@ export async function PUT(
 
       requested.push({ rawLineItemId, returnedQty });
     }
+
+    // ── 1d. Catalog + derivation, for the part set ─────────────────────────
+    // The same deriveCiLineRows the full branch runs, in the order the lines
+    // were posted. Unmastered codes are stored AS-IS and never reject a save:
+    // ~5.9% of active lines resolve in neither catalog table.
+    derived = await deriveCiLineRows(
+      requested.map((r) => ({ src: activeById.get(r.rawLineItemId)!, returnedQty: r.returnedQty })),
+    );
   }
 
-  // ── 1d. Catalog, for the name/pack snapshots ──────────────────────────────
-  // Unmastered codes are stored AS-IS and never reject a save: ~5.9% of active
-  // lines resolve in neither catalog table, and the screens render the bare
-  // code with the line still fully returnable.
-  const catalog = await resolveCiSkus(
-    requested.map((r) => activeById.get(r.rawLineItemId)?.skuCodeRaw ?? null),
-  );
-
   // Everything below is DERIVED. Nothing here came off the wire except
-  // rawLineItemId and returnedQty.
-  const rows = requested.map((r, i) => {
-    const src = activeById.get(r.rawLineItemId)!;
-    const code = src.skuCodeRaw ?? "";
-    const resolved = applyCiCatalog(code, catalog);
-    // 🔴 Guarded on unitQty ONLY. volumeLine = 0 is a REAL value — 346 active
-    // lines are brushes and rollers — and must snapshot as 0, never as null.
-    const perTin = litresPerTin(src.volumeLine, src.unitQty);
-    return {
-      ciReturnId: ciId,
-      // 1..N in the order the lines sit on the bill. Not the SAP item number —
-      // that is display-only and can be sparse.
-      lineNumber: i + 1,
-      rawLineItemId: r.rawLineItemId,
-      skuCode: code,
-      skuDescription: resolved.description,
-      packCode: resolved.pack,
-      deliveryQty: src.unitQty,
-      returnedQty: r.returnedQty,
-      litresPerTin: perTin,
-      returnedQtyLitres: returnedLitres(perTin, r.returnedQty),
-    };
-  });
+  // rawLineItemId and returnedQty (and, on a part return, their order).
+  const rows = derived.map((l) => ({ ciReturnId: ciId, ...l }));
 
   // ═════════════════════════════════════════════════════════════════════════
   // 🔴 THE CLAIM — ONE GUARDED updateMany, AND IT IS THE RACE GUARD
