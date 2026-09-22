@@ -110,7 +110,13 @@ const BAND_TOP_GAP = 12;
 type PoolView = "flat" | "route" | "plan";
 /** Tabs with a Load plan view — Upcountry, where it is also the default. */
 const LOAD_PLAN_SCOPES: FloorScope[] = ["Upcountry"];
-const defaultPoolView = (scope: FloorScope): PoolView => (LOAD_PLAN_SCOPES.includes(scope) ? "plan" : "route");
+/**
+ * Every tab opens on By route (owner, 2026-09-22). Upcountry opened on Load
+ * plan until then; Load plan is still OFFERED there (LOAD_PLAN_SCOPES), just no
+ * longer the default. `scope` is kept so a per-tab default stays a one-line
+ * change.
+ */
+const defaultPoolView = (_scope: FloorScope): PoolView => "route";
 
 // FLOOR_SPINE, imported and never re-implemented (FLOOR §3).
 const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
@@ -302,8 +308,8 @@ export function TripDesk({
   // choice was never overwritten.
   //
   // ── EACH TAB REMEMBERS ITS OWN POOL VIEW (Load plan, 2026-09-19, owner) ──
-  // Load plan is the default on Upcountry (LOAD_PLAN_SCOPES); By route
-  // everywhere else, exactly as before. A choice made on one tab never
+  // By route is the default on every tab — Upcountry included since
+  // 2026-09-22 (it opened on Load plan before). A choice made on one tab never
   // carries to another — `poolViews` holds one entry per tab the planner has
   // actually switched, and the default fills the rest.
   const [poolViews, setPoolViews] = useState<Partial<Record<FloorScope, PoolView>>>({});
