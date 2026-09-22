@@ -5,6 +5,8 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { FLOOR_HOLD_NOTE, FLOOR_CLEAR_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
+import { buildCancelNote, type CancelReason } from "@/lib/picking/cancel-reasons";
+import { FLOOR_REMARK_MAX, isFloorCancelReason, offFloorRefusal } from "@/lib/floor/off-floor";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,9 @@ interface Body {
   urgent?: boolean; // mark-urgent: explicit set (bar). Omitted → per-bill toggle (row ⚡).
   dispatchTargetDate?: string; // change-slot: YYYY-MM-DD
   dispatchWindowId?: number; // change-slot
-  reason?: string; // cancel: optional log note
+  reason?: string; // cancel: legacy free-text note, used only when reasonKey is absent
+  reasonKey?: string; // cancel: one of FLOOR_CANCEL_REASONS (lib/floor/off-floor.ts)
+  remark?: string; // cancel: optional, ≤ FLOOR_REMARK_MAX, goes after the reason label
 }
 
 interface Failed {
@@ -84,6 +88,30 @@ export async function POST(req: Request): Promise<NextResponse> {
     windowLabel = win.windowTime;
   }
 
+  // cancel: a reason KEY, when sent, is validated once up front — a bad value is
+  // a clean 400, never a note recording a reason nobody chose. Absent means the
+  // legacy note (the detail panel sends none until the 5b form lands).
+  let cancelReason: CancelReason | null = null;
+  let cancelRemark: string | null = null;
+  if (action === "cancel") {
+    if (body.reasonKey !== undefined) {
+      if (!isFloorCancelReason(body.reasonKey)) {
+        return NextResponse.json({ error: `Unknown cancel reason "${String(body.reasonKey)}"` }, { status: 400 });
+      }
+      cancelReason = body.reasonKey;
+    }
+    if (body.remark !== undefined && body.remark !== null) {
+      if (typeof body.remark !== "string") {
+        return NextResponse.json({ error: "remark must be a string" }, { status: 400 });
+      }
+      const trimmed = body.remark.trim();
+      if (trimmed.length > FLOOR_REMARK_MAX) {
+        return NextResponse.json({ error: `remark is longer than ${FLOOR_REMARK_MAX} characters` }, { status: 400 });
+      }
+      cancelRemark = trimmed === "" ? null : trimmed;
+    }
+  }
+
   const done: number[] = [];
   const failed: Failed[] = [];
 
@@ -91,7 +119,17 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { id: true, workflowStage: true, priorityLevel: true, obdEmailDate: true, dispatchStatus: true, isRemoved: true },
+        select: {
+          id: true,
+          workflowStage: true,
+          priorityLevel: true,
+          obdEmailDate: true,
+          dispatchStatus: true,
+          isRemoved: true,
+          // cancel's refusals (offFloorRefusal) — the trip number is for the message.
+          tripDropId: true,
+          tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+        },
       });
       if (!order || order.isRemoved) {
         failed.push({ orderId, error: "Order not found" });
@@ -129,13 +167,28 @@ export async function POST(req: Request): Promise<NextResponse> {
         // constant with the reader (getFloorHold) so the two cannot drift.
         note = FLOOR_HOLD_NOTE;
       } else if (action === "cancel") {
-        if (order.workflowStage === "cancelled") {
-          failed.push({ orderId, error: "Already cancelled" });
+        // 🔴 THE SAME REFUSALS AS RAISE CI (lib/floor/off-floor.ts, owner
+        // 2026-09-22): already cancelled, dispatched, on a trip, or in the tint
+        // room. Per bill, into `failed`, never the whole batch.
+        const refusal = offFloorRefusal({
+          workflowStage: order.workflowStage,
+          tripDropId: order.tripDropId,
+          tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+        });
+        if (refusal !== null) {
+          failed.push({ orderId, error: refusal });
           continue;
         }
         updateData = { workflowStage: "cancelled", dispatchStatus: null };
         toStage = "cancelled";
-        note = body.reason ? `Cancelled — ${body.reason}` : "Cancelled from floor";
+        // With a reason key: Picking's note builder, so the Cancelled tab reads
+        // "Cancelled — Pick delete · {remark}" exactly as a picking cancel does.
+        note =
+          cancelReason !== null
+            ? buildCancelNote(cancelReason, cancelRemark)
+            : body.reason
+              ? `Cancelled — ${body.reason}`
+              : "Cancelled from floor";
         // 🔴 ORPHAN FIX (2026-08-20). Cancel is NOT stage-gated here — it will
         // happily kill a bill sitting at pick_assigned / pick_done /
         // pick_checked — and until now it left the pick_assignments row behind,
@@ -163,6 +216,23 @@ export async function POST(req: Request): Promise<NextResponse> {
         // 2026-09-13). Splits were never touched by cancel, so nothing to reset.
         if (order.workflowStage !== "cancelled") {
           failed.push({ orderId, error: "Order is not cancelled" });
+          continue;
+        }
+        // 🔴 A BILL WITH A LIVE CI IS NOT RESTORED (2026-09-22). Its return is on
+        // billing's desk; putting it back on the floor would send the goods out
+        // while billing books them back in. ANY source — a floor CI, a hand-raised
+        // one, an auto one. A draft is an in-flight write, invisible everywhere
+        // (CLAUDE_CI §2), and does not count.
+        const liveCi = await prisma.ci_returns.findFirst({
+          where: { orderId, isVoided: false, status: { not: "draft" } },
+          orderBy: { id: "asc" },
+          select: { id: true, ciNumber: true },
+        });
+        if (liveCi !== null) {
+          failed.push({
+            orderId,
+            error: `Return ${liveCi.ciNumber ?? `CI #${liveCi.id}`} is with billing — it can't be restored here`,
+          });
           continue;
         }
         updateData = { workflowStage: "pending_support", dispatchStatus: null };

@@ -3007,8 +3007,9 @@ model ci_reason_master {
 //   chk_ci_returns_status         CHECK (status IN ('draft','submitted','closed','returned_to_floor'))
 //   chk_ci_returns_return_type    CHECK ("returnType" IN ('full','part'))
 //   chk_ci_returns_material_moved CHECK ("materialMoved" IN ('moved','not_moved'))
-//   chk_ci_returns_source         CHECK (source IN ('manual','auto_finding','auto_bill_only'))
-//                                   (auto_bill_only added 2026-09-22, Schema v27.39)
+//   chk_ci_returns_source         CHECK (source IN ('manual','auto_finding','auto_bill_only','floor'))
+//                                   (auto_bill_only added 2026-09-22, Schema v27.39;
+//                                    floor added 2026-09-22, Schema v27.40)
 //   chk_ci_returns_complete_when_not_draft
 //     CHECK (status = 'draft' OR ("materialMoved" IS NOT NULL
 //            AND "materialReceivedDate" IS NOT NULL
@@ -3147,6 +3148,10 @@ model ci_returns {
   //                    billing tagged 'ci'. Owner: the Billing · Telephonic tab,
   //                    NOT BUILT YET — nothing writes this value today. Allowed
   //                    by chk_ci_returns_source since Schema v27.39.
+  //   'floor'        — (2026-09-22) raised from the Floor desk for ticked
+  //                    bills: full bill, material not moved, and the bill is
+  //                    taken off the floor (app/api/floor/ci/route.ts).
+  //                    Allowed by chk_ci_returns_source since Schema v27.40.
   //
   // ⚠ NOT COSMETIC. It is the only thing that tells billing a document was
   // assembled by the system rather than stated by a person, and it is the key

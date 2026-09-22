@@ -151,16 +151,18 @@ export interface CiBillResult {
  * findings trigger and on every hand-walked return; 'auto_finding' is raised as
  * a side effect of a supervisor confirming a pick finding (lib/ci/auto.ts);
  * 'auto_bill_only' is a full-bill, material-not-moved CI the system raises for
- * a bill billing tagged 'ci' on the Billing · Telephonic tab (not built yet —
- * nothing writes it today).
+ * a bill billing tagged 'ci' on the Billing · Telephonic tab
+ * (lib/ci/bill-only.ts); 'floor' (2026-09-22) is a full-bill,
+ * material-not-moved CI the Floor desk raises for ticked bills, which also
+ * takes each bill off the floor (app/api/floor/ci/route.ts).
  *
- * 🔴 Mirrors chk_ci_returns_source, which permits exactly these three since
- * Schema v27.39. A FOURTH value needs a SQL ALTER on that CHECK FIRST — never
+ * 🔴 Mirrors chk_ci_returns_source, which permits exactly these four since
+ * Schema v27.40. A FIFTH value needs a SQL ALTER on that CHECK FIRST — never
  * just a new string here.
  */
-export type CiSource = "manual" | "auto_finding" | "auto_bill_only";
+export type CiSource = "manual" | "auto_finding" | "auto_bill_only" | "floor";
 
-export const CI_SOURCES: readonly CiSource[] = ["manual", "auto_finding", "auto_bill_only"];
+export const CI_SOURCES: readonly CiSource[] = ["manual", "auto_finding", "auto_bill_only", "floor"];
 
 /**
  * Narrow a source string read back out of the database.
@@ -185,6 +187,8 @@ export function ciSourceTag(source: CiSource): { label: string; title: string } 
       return { label: "Auto", title: "Raised automatically from a picking finding" };
     case "auto_bill_only":
       return { label: "Bill-only", title: "Raised automatically for a bill-only order" };
+    case "floor":
+      return { label: "Floor", title: "Raised from the Floor desk — the bill was taken off the floor" };
     case "manual":
       return null;
   }

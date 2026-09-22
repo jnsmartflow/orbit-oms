@@ -470,7 +470,7 @@ function toBoardRow(r: BoardRow): CiBoardRow {
       ? isoDate((r.order?.invoiceDate ?? r.invoiceDate) as Date)
       : null,
     returnType: r.returnType as CiReturnType,
-    // Narrowed by asCiSource: chk_ci_returns_source permits exactly the three
+    // Narrowed by asCiSource: chk_ci_returns_source permits exactly the four
     // CiSource values, so anything else is a constraint that has been dropped —
     // and 'manual' is the honest read of an unrecognised value.
     source: asCiSource(r.source),
