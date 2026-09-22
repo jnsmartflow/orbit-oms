@@ -3344,7 +3344,8 @@ model so_tag_matches {
   // Snapshot, for display without a join.
   obdNumber    String
   appliedAt    DateTime @default(now()) @db.Timestamptz(6)
-  // Null unless the auto-CI refused — see the header.
+  // Null unless the tag could not be fully applied (auto-CI refused, or bill
+  // already dispatched) — see the header.
   ciSkipReason String?
 
   // A re-import must never record the same match twice. soTagId leads, so this

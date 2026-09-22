@@ -42,6 +42,7 @@ import {
 import type { ImportAnomaly, QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
+import { applySoTagHolds } from "@/lib/billing/telephonic-apply";
 
 export const dynamic = "force-dynamic";
 
@@ -1420,7 +1421,13 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   // order; this has to reach the ones that have neither. Runs after it, so a
   // mail-matched bill is already out of `pending_support` and is not a
   // candidate.
-  await applyNoMailOrderFallback(orderInterims.map((o) => o.obdNumber));
+  //
+  // 🔴 Telephonic tags FIRST (lib/billing/telephonic-apply.ts): a bill held
+  // here has a non-null dispatchStatus and is invisible to the fallback. Same
+  // OBD list, never throws.
+  const templateFallbackObds = orderInterims.map((o) => o.obdNumber);
+  await applySoTagHolds(templateFallbackObds, new Date());
+  await applyNoMailOrderFallback(templateFallbackObds);
 
   // ── STEP D2 — Fetch inserted order IDs ───────────────────────────────────
   const insertedOrders = await prisma.orders.findMany({
@@ -2014,9 +2021,13 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
     // the fallback over the whole batch's OBD numbers covers every outcome —
     // created, patched and unchanged alike — and skips anything enrichment has
     // already moved out of `pending_support`.
-    await applyNoMailOrderFallback(
-      results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber),
-    );
+    //
+    // 🔴 Telephonic tags FIRST (lib/billing/telephonic-apply.ts): a bill held
+    // here has a non-null dispatchStatus and is invisible to the fallback. Same
+    // OBD list, never throws.
+    const manualSapFallbackObds = results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber);
+    await applySoTagHolds(manualSapFallbackObds, new Date());
+    await applyNoMailOrderFallback(manualSapFallbackObds);
 
     // Update batch status.
     // - totalObds   = parser-skipped + (created + patched + unchanged + errored)
@@ -2558,10 +2569,11 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
       }
     }
 
-    // The no-mail-order fallback — identical to the .xlsx confirm (see there).
-    await applyNoMailOrderFallback(
-      results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber),
-    );
+    // The no-mail-order fallback — identical to the .xlsx confirm (see there),
+    // Telephonic tags first.
+    const pasteFallbackObds = results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber);
+    await applySoTagHolds(pasteFallbackObds, new Date());
+    await applyNoMailOrderFallback(pasteFallbackObds);
 
     await prisma.import_batches
       .update({
@@ -3866,7 +3878,11 @@ async function processAutoImportRows(
   // Keyed on obdNumber, not soNumber — see the note at the manual-template call
   // site and the function's own header. 25 of the 32 bills stranded on
   // 2026-09-11 came through THIS path, not manual SAP.
-  await applyNoMailOrderFallback(autoOrderInterims.map((o) => o.obdNumber));
+  //
+  // 🔴 Telephonic tags FIRST — see the manual-template call site.
+  const autoFallbackObds = autoOrderInterims.map((o) => o.obdNumber);
+  await applySoTagHolds(autoFallbackObds, new Date());
+  await applyNoMailOrderFallback(autoFallbackObds);
 
   // ── CONFIRM D2 — Fetch inserted order IDs ─────────────────────────────────
   const insertedOrders = await prisma.orders.findMany({

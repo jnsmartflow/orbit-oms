@@ -52,8 +52,15 @@ export const SUPPORT_HOLD_NOTES = [
   "Placed on hold by support (bulk)",
 ] as const;
 
+/** The import's hold note (2026-09-22). Written by lib/billing/telephonic-apply.ts
+ *  when a bill's SO carries a live Billing · Telephonic tag (`so_tags`, hold or
+ *  ci) — the import holds it before the no-mail-order fallback can release it.
+ *  Its own string, never FLOOR_HOLD_NOTE: nobody on the floor held this bill,
+ *  and the Hold tab's "held since" must still find it. */
+export const TELEPHONIC_HOLD_NOTE = "Held on import (Telephonic tag)";
+
 /** Every note that identifies a hold event, for the `note: { in: … }` filter. */
-export const HOLD_LOG_NOTES: string[] = [FLOOR_HOLD_NOTE, ...SUPPORT_HOLD_NOTES];
+export const HOLD_LOG_NOTES: string[] = [FLOOR_HOLD_NOTE, ...SUPPORT_HOLD_NOTES, TELEPHONIC_HOLD_NOTE];
 
 /** Where a row's `heldSince` came from — surfaced in the UI so an approximated
  *  date can never silently read as a recorded one.
