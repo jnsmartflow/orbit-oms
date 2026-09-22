@@ -8,6 +8,7 @@ import { BillingV2Provider } from "@/components/billing/billing-v2-provider";
 import { BillingPickingAccessProvider } from "@/components/billing/billing-picking-access-provider";
 import { BillingActionsAccessProvider } from "@/components/billing/billing-actions-access-provider";
 import { BillingPrintAccessProvider } from "@/components/billing/billing-print-access-provider";
+import { BillingTelephonicAccessProvider } from "@/components/billing/billing-telephonic-access-provider";
 import { getNotesFontSize } from "@/lib/mail-orders/notes-font-size";
 import { NotesFontSizeProvider } from "@/components/mail-orders/notes-font-size-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -77,6 +78,12 @@ export default async function MailOrdersLayout({
   const printPerms = allPerms["billing_print"];
   const canViewBillingPrint = printPerms?.canView ?? false;
   const canEditBillingPrint = printPerms?.canEdit ?? false;
+
+  // ── Billing Telephonic tab access (2026-09-22) ──────────────────────────────
+  // Same map, same absent-means-false rule, same known limit as Picking above.
+  const telephonicPerms = allPerms["billing_telephonic"];
+  const canViewBillingTelephonic = telephonicPerms?.canView ?? false;
+  const canEditBillingTelephonic = telephonicPerms?.canEdit ?? false;
 
   // ── Billing ACTION ticks (2026-09-11) ───────────────────────────────────────
   // The four dispatch decisions on the Orders tab — Hold, Slot, Urgent and the ✎
@@ -151,7 +158,14 @@ export default async function MailOrdersLayout({
                   reason Picking has one: a different key, granted and revoked
                   on its own. */}
               <BillingPrintAccessProvider canView={canViewBillingPrint} canEdit={canEditBillingPrint}>
-                <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+                {/* The Telephonic tab's grant (2026-09-22) — its own provider, its
+                    own key, for the same reason Print has one. */}
+                <BillingTelephonicAccessProvider
+                  canView={canViewBillingTelephonic}
+                  canEdit={canEditBillingTelephonic}
+                >
+                  <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+                </BillingTelephonicAccessProvider>
               </BillingPrintAccessProvider>
             </BillingActionsAccessProvider>
           </BillingPickingAccessProvider>

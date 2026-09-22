@@ -30,6 +30,7 @@ import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } f
 import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
 import { BillingPrintTab } from "@/components/billing/billing-print-tab";
+import { BillingTelephonicTab } from "@/components/billing/billing-telephonic-tab";
 import { BillingActionRibbon, BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
 import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
 import { useBillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
@@ -123,6 +124,16 @@ interface ReviewViewProps {
    */
   billingPrintCanView?: boolean;
   billingPrintCanEdit?: boolean;
+  /**
+   * The Telephonic tab's permission (2026-09-22) — `billing_telephonic`. Same
+   * two gates as Print and the same fail-closed FALSE default. `CanEdit` = the
+   * entry bar and the × (hidden without it).
+   */
+  billingTelephonicCanView?: boolean;
+  billingTelephonicCanEdit?: boolean;
+  /** The Telephonic tab's month (YYYY-MM, IST), owned by mail-orders-page.tsx
+   *  because its picker sits on the tab row. */
+  telephonicMonth?: string;
   /** Phase 2 — reload the order list after a billing action writes mo_orders. */
   onBillingActionSaved?: () => void;
   /**
@@ -573,6 +584,9 @@ export function ReviewView({
   billingPickingCanEdit = false,
   billingPrintCanView = false,
   billingPrintCanEdit = false,
+  billingTelephonicCanView = false,
+  billingTelephonicCanEdit = false,
+  telephonicMonth,
   onBillingActionSaved,
   billingHeaderSlot,
   hasHeaderFilter = false,
@@ -2795,7 +2809,7 @@ export function ReviewView({
       <div
         data-tutorial="order-list"
         className={`w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col${
-          billingV2 && billingTab === "print" ? " hidden" : ""
+          billingV2 && (billingTab === "print" || billingTab === "telephonic") ? " hidden" : ""
         }`}
       >
         {/* Rail head. On the BILLING face this slot carries the rail title; on
@@ -2941,6 +2955,8 @@ export function ReviewView({
               showPicking={billingPickingCanView}
               // The Print pill and its count fetch — `billing_print` (slice 9).
               showPrint={billingPrintCanView}
+              // The Telephonic pill and its count fetch — `billing_telephonic`.
+              showTelephonic={billingTelephonicCanView}
             />
           </div>
         )}
@@ -2956,6 +2972,13 @@ export function ReviewView({
           /* The Print BODY (slice 9) — carries its own permission term for the
              same belt-and-braces reason as Picking above. */
           <BillingPrintTab date={selectedDate} canEdit={billingPrintCanEdit} railSlot={printRailSlot} />
+        ) : billingV2 && billingTelephonicCanView && billingTab === "telephonic" && telephonicMonth ? (
+          /* The Telephonic BODY (2026-09-22) — its own permission term, like the
+             two above. FULL WIDTH: both 320px left columns (the order inbox and
+             Print's rail slot) are CSS-hidden on this tab, so this pane's
+             flex-1 takes the whole width. The inbox is hidden, NOT unmounted,
+             so its scroll and selection survive a trip here and back. */
+          <BillingTelephonicTab month={telephonicMonth} canEdit={billingTelephonicCanEdit} />
         ) :billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing

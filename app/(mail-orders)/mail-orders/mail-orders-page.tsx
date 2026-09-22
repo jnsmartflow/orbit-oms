@@ -16,8 +16,15 @@ import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
 import { useBillingPickingAccess } from "@/components/billing/billing-picking-access-provider";
-import { BillingMarkerProvider, BillingPrintMarkerProvider } from "@/components/billing/billing-marker-provider";
+import {
+  BillingMarkerProvider,
+  BillingPrintMarkerProvider,
+  BillingTelephonicMarkerProvider,
+} from "@/components/billing/billing-marker-provider";
 import { useBillingPrintAccess } from "@/components/billing/billing-print-access-provider";
+import { useBillingTelephonicAccess } from "@/components/billing/billing-telephonic-access-provider";
+import { TelephonicMonthPicker } from "@/components/billing/billing-telephonic-tab";
+import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useInitialNotesFontSize } from "@/components/mail-orders/notes-font-size-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
@@ -266,6 +273,12 @@ export default function MailOrdersPage() {
   const { canView: canViewPicking, canEdit: canEditPicking } = useBillingPickingAccess();
   // ── Billing Print tab access (slice 9, 2026-09-15) — `billing_print`. ───────
   const { canView: canViewPrint, canEdit: canEditPrint } = useBillingPrintAccess();
+  // ── Billing Telephonic tab access (2026-09-22) — `billing_telephonic`. ──────
+  const { canView: canViewTelephonic, canEdit: canEditTelephonic } = useBillingTelephonicAccess();
+  // The Telephonic tab's month (YYYY-MM, IST). Owned here because the month
+  // picker sits on the tab ROW (billingHeaderSlot, built below) while the list
+  // it drives is the tab BODY inside ReviewView. Not persisted.
+  const [telephonicMonth, setTelephonicMonth] = useState<string>(() => currentIstMonth(new Date()));
   const [billingTab, setBillingTab] = useState<BillingTab>("orders");
   // The tab actually rendered. A viewer without the key can never be on Picking,
   // whatever `billingTab` holds — derived rather than corrected in an effect, so
@@ -273,7 +286,9 @@ export default function MailOrdersPage() {
   // see it, and no setState-during-render. State itself is left alone: if the
   // grant is restored the operator lands back where they were.
   const effectiveBillingTab: BillingTab =
-    (billingTab === "picking" && !canViewPicking) || (billingTab === "print" && !canViewPrint)
+    (billingTab === "picking" && !canViewPicking) ||
+    (billingTab === "print" && !canViewPrint) ||
+    (billingTab === "telephonic" && !canViewTelephonic)
       ? "orders"
       : billingTab;
   // ── Notes-band text size (per user, px) ─────────────────────────────────────
@@ -1037,7 +1052,9 @@ export default function MailOrdersPage() {
       if (e.ctrlKey || e.metaKey) return;
       // 🔴 Orders tab only on the billing face — same reason as onCtrlKey above:
       // F (flag/lock), R, N, P, S and Esc all act on the Orders tab's focused
-      // order, which stays focused while Picking/Print is on screen.
+      // order, which stays focused while Picking/Print/Telephonic is on screen.
+      // (Telephonic's SO box: every key typed there must do nothing else —
+      // this `!== "orders"` return is what guarantees it.)
       if (billingV2 && effectiveBillingTab !== "orders") return;
 
       // Esc — cascading close (works even when input focused)
@@ -1267,7 +1284,14 @@ export default function MailOrdersPage() {
   // See the suppressFilterBar wiring for why that matters.
   const billingHeaderSlot = billingV2 ? (
     <>
-      <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
+      {/* TELEPHONIC TAB (2026-09-22): no day stepper — the tab has a waiting band
+          that is never date-fenced and a MONTH band below it, so a month picker
+          sits in the stepper's place. Every other tab keeps the stepper. */}
+      {effectiveBillingTab === "telephonic" ? (
+        <TelephonicMonthPicker month={telephonicMonth} onChange={setTelephonicMonth} />
+      ) : (
+        <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
+      )}
       {(() => {
         const rowControls = (
           <>
@@ -1299,7 +1323,9 @@ export default function MailOrdersPage() {
         // button out of the tab order and out of hit-testing; aria-hidden keeps
         // them from screen readers. Orders and Picking get the bare fragment:
         // the same elements as before, no wrapper.
-        return effectiveBillingTab === "print" ? (
+        // TELEPHONIC takes the same treatment as Print: Filter and ⌨ do nothing
+        // there, so they hold their width invisibly.
+        return effectiveBillingTab === "print" || effectiveBillingTab === "telephonic" ? (
           <div className="contents invisible" aria-hidden="true">
             {rowControls}
           </div>
@@ -1487,6 +1513,9 @@ export default function MailOrdersPage() {
         {/* The Print tab's own poll (slice 9) — on only for `billing_print`
             holders, for the same no-403-polling reason as the one above. */}
         <BillingPrintMarkerProvider enabled={billingV2 && canViewPrint} date={selectedDate}>
+        {/* The Telephonic tab's own poll (2026-09-22) — on only for
+            `billing_telephonic` holders; a pure pass-through otherwise. */}
+        <BillingTelephonicMarkerProvider enabled={billingV2 && canViewTelephonic}>
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1521,6 +1550,9 @@ export default function MailOrdersPage() {
           billingPickingCanEdit={canEditPicking}
           billingPrintCanView={canViewPrint}
           billingPrintCanEdit={canEditPrint}
+          billingTelephonicCanView={canViewTelephonic}
+          billingTelephonicCanEdit={canEditTelephonic}
+          telephonicMonth={telephonicMonth}
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
           hasHeaderFilter={hasHeaderFilter}
@@ -1535,6 +1567,7 @@ export default function MailOrdersPage() {
           notesFontSize={notesFontSize}
           onNotesFontSizeChange={handleNotesFontSizeChange}
         />
+        </BillingTelephonicMarkerProvider>
         </BillingPrintMarkerProvider>
         </BillingMarkerProvider>
       )}

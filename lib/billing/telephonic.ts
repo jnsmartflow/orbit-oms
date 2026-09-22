@@ -26,6 +26,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { applySoTagHolds, type SoTagApplySummary } from "@/lib/billing/telephonic-apply";
+import { currentIstMonth, normaliseSoNumber } from "@/lib/billing/telephonic-so";
 
 /** Days a tag waits for its OBD before it expires. THE ONLY PLACE THE 15 LIVES. */
 export const TELEPHONIC_TAG_TTL_DAYS = 15;
@@ -37,28 +38,9 @@ export type TelephonicTagState = "waiting" | "matched" | "expired";
 
 // ── The SO number rule ───────────────────────────────────────────────────────
 
-/**
- * Normalise and validate an SO number typed on the tab. Returns the stored
- * form, or null when it is not a SAP SO number.
- *
- * Rule: trim, strip every inner whitespace character, then EXACTLY 10 digits.
- *
- * Measured live 2026-09-22 over all 15,222 `orders.soNumber` values:
- *   • 15,137 (99.4%) are exactly 10 digits — 15,106 start "104", 28 "451",
- *     3 others. Every one of the 13,783 digit-only mail-order SOs is 10 long.
- *   • 14 are 1-4 digit numbers (9, 81-83, 108-866, 1158) — challan / manual
- *     serials, not SAP SOs.
- *   • 71 rows (44 distinct) are text: POTLI (19), SAMPLE (5), CHALLAN
- *     variants ("CHALLAN - 1799", "88 - CHALLAN"), J2/GST-00xx, "86 - MANUAL",
- *     CHN-2026-00088, IE-2026-27-32, a timestamp.
- * So 10 digits accepts every real SAP SO seen and rejects all 85 others.
- * No leading-prefix check: "451…" SOs are real, and a prefix rule would be a
- * guess about SAP's numbering.
- */
-export function normaliseSoNumber(raw: string): string | null {
-  const compact = raw.replace(/\s+/g, "");
-  return /^\d{10}$/.test(compact) ? compact : null;
-}
+// Lives in lib/billing/telephonic-so.ts (pure) so the client entry bar imports
+// the SAME rule. Re-exported here for server callers.
+export { currentIstMonth, normaliseSoNumber };
 
 // ── Shared WHERE builders (list AND marker) ──────────────────────────────────
 
@@ -95,10 +77,6 @@ export function istMonthRange(month: string): { start: Date; end: Date } | null 
   };
 }
 
-/** The current IST month as `YYYY-MM`. */
-export function currentIstMonth(now: Date): string {
-  return now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
-}
 
 export function deriveTagState(t: { status: string; expiresAt: Date }, now: Date): TelephonicTagState {
   if (t.status === "matched") return "matched";
@@ -386,6 +364,10 @@ export interface TelephonicMarker {
    *  compare ALL FOUR fields, not just count + latest. */
   matchCount: number;
   skipReasonCount: number;
+  /** `${matchCount}:${skipReasonCount}` — the same two numbers as one token,
+   *  in the field usePickingMarker compares (lib/hooks/use-picking-marker.ts),
+   *  so the shared hook refetches when EITHER moves. */
+  signature: string;
 }
 
 /**
@@ -427,5 +409,6 @@ export async function getTelephonicMarker(now: Date): Promise<TelephonicMarker> 
     latest: stamps.length === 0 ? null : new Date(Math.max(...stamps)).toISOString(),
     matchCount: matchAgg._count,
     skipReasonCount,
+    signature: `${matchAgg._count}:${skipReasonCount}`,
   };
 }

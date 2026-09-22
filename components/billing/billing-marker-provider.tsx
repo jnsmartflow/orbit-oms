@@ -214,3 +214,59 @@ export function BillingPrintMarkerProvider({
     </ActiveBillingMarkerProvider>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE TELEPHONIC TAB'S MARKER (2026-09-22)
+//
+// A THIRD poll, on its own context, against /api/billing/telephonic/marker —
+// the Telephonic pill's count and the Telephonic tab's refetch. Its own key
+// (`billing_telephonic`) and its own holders, for the same no-403-polling reason
+// as Print's. Same 30s cadence, same pause contract, same pass-through when off.
+//
+// The route sends `signature` (its match + skip-reason counts), which
+// usePickingMarker compares beside count and latest — so the list refetches when
+// ANY of the marker's four fields moves, not just two.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TELEPHONIC_MARKER_URL = "/api/billing/telephonic/marker";
+
+const BillingTelephonicMarkerContext = createContext<BillingMarkerApi>(INERT);
+
+/** Subscribe to the Telephonic marker. `onChange` fires once per detected change. */
+export function useBillingTelephonicMarkerSubscription(onChange: () => void): void {
+  const { subscribe } = useContext(BillingTelephonicMarkerContext);
+  const ref = useRef(onChange);
+  useEffect(() => {
+    ref.current = onChange;
+  }, [onChange]);
+  useEffect(() => subscribe(() => ref.current()), [subscribe]);
+}
+
+/** Hold the Telephonic marker paused while `paused` is true, under a stable key. */
+export function useBillingTelephonicMarkerPause(key: string, paused: boolean): void {
+  const { setPaused } = useContext(BillingTelephonicMarkerContext);
+  useEffect(() => {
+    setPaused(key, paused);
+    return () => setPaused(key, false);
+  }, [key, paused, setPaused]);
+}
+
+/** Mount around the billing face for viewers holding `billing_telephonic`/canView. */
+export function BillingTelephonicMarkerProvider({
+  enabled,
+  children,
+}: {
+  enabled: boolean;
+  children: React.ReactNode;
+}) {
+  if (!enabled) {
+    return (
+      <BillingTelephonicMarkerContext.Provider value={INERT}>{children}</BillingTelephonicMarkerContext.Provider>
+    );
+  }
+  return (
+    <ActiveBillingMarkerProvider url={TELEPHONIC_MARKER_URL} context={BillingTelephonicMarkerContext}>
+      {children}
+    </ActiveBillingMarkerProvider>
+  );
+}

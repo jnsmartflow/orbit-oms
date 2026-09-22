@@ -15,13 +15,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useBillingMarkerSubscription,
   useBillingPrintMarkerSubscription,
+  useBillingTelephonicMarkerSubscription,
 } from "@/components/billing/billing-marker-provider";
 
-export type BillingTab = "orders" | "picking" | "print";
+export type BillingTab = "orders" | "picking" | "print" | "telephonic";
 
 const MARKER_URL = "/api/billing/picking/marker";
 /** The Print pill's count (slice 9) — trips with copy work outstanding. */
 const PRINT_MARKER_URL = "/api/billing/print/marker";
+/** The Telephonic pill's count (2026-09-22) — tags still waiting for their OBD. */
+const TELEPHONIC_MARKER_URL = "/api/billing/telephonic/marker";
 
 export function BillingTabBar({
   active,
@@ -30,6 +33,7 @@ export function BillingTabBar({
   rightSlot,
   showPicking = true,
   showPrint = false,
+  showTelephonic = false,
 }: {
   active: BillingTab;
   onChange: (tab: BillingTab) => void;
@@ -76,10 +80,39 @@ export function BillingTabBar({
    * be granted to appear, never appear by default.
    */
   showPrint?: boolean;
+  /**
+   * Does this viewer hold `billing_telephonic`/canView? (2026-09-22.) The same
+   * two meanings as `showPrint` — no pill, and NO request to its marker — and
+   * the same FALSE default.
+   */
+  showTelephonic?: boolean;
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [printCount, setPrintCount] = useState<number | null>(null);
+  const [telephonicCount, setTelephonicCount] = useState<number | null>(null);
   const printReqRef = useRef(0);
+  const telephonicReqRef = useRef(0);
+
+  // The Telephonic count — the same shape as refreshPrintCount, on its own marker.
+  const refreshTelephonicCount = useCallback(async () => {
+    if (!showTelephonic) return;
+    const seq = ++telephonicReqRef.current;
+    try {
+      const res = await fetch(TELEPHONIC_MARKER_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { count?: number };
+      if (seq !== telephonicReqRef.current) return;
+      if (typeof body.count === "number") setTelephonicCount(body.count);
+    } catch {
+      // Silent, like refreshCount.
+    }
+  }, [showTelephonic]);
+
+  useEffect(() => {
+    void refreshTelephonicCount();
+  }, [refreshTelephonicCount]);
+
+  useBillingTelephonicMarkerSubscription(refreshTelephonicCount);
 
   // The Print count — the same shape as refreshCount below, on its own marker.
   const refreshPrintCount = useCallback(async () => {
@@ -140,8 +173,12 @@ export function BillingTabBar({
   // no-overlap guard, silent failure.
   useBillingMarkerSubscription(refreshCount);
 
-  function pill(key: BillingTab, label: string, count: number | null, live: boolean) {
+  function pill(key: BillingTab, label: string, count: number | null, live: boolean, hideZero = false) {
     const on = active === key;
+    // Telephonic only: no chip at all while nothing is waiting (or before the
+    // first count lands) — an always-zero badge on a list that is usually empty
+    // is noise. The other pills keep their chip exactly as before.
+    const showChip = !hideZero || (count !== null && count > 0);
     return (
       <button
         type="button"
@@ -159,13 +196,15 @@ export function BillingTabBar({
           />
         )}
         {label}
-        <span
-          className={`rounded px-1.5 py-px text-[10px] font-bold ${
-            on ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
-          }`}
-        >
-          {count ?? "–"}
-        </span>
+        {showChip && (
+          <span
+            className={`rounded px-1.5 py-px text-[10px] font-bold ${
+              on ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+            }`}
+          >
+            {count ?? "–"}
+          </span>
+        )}
       </button>
     );
   }
@@ -182,6 +221,11 @@ export function BillingTabBar({
       {/* Print (slice 9) — gated on `billing_print`/canView, a sibling in the
           same row like Picking. Its count is trips with copy work outstanding. */}
       {showPrint && pill("print", "Print", printCount, true)}
+      {/* Telephonic (2026-09-22) — gated on `billing_telephonic`/canView, a
+          sibling in the same row. Its count is tags still waiting for their OBD;
+          the chip is hidden at 0. No live dot: nothing on it moves by itself
+          often enough to earn one. */}
+      {showTelephonic && pill("telephonic", "Telephonic", telephonicCount, false, true)}
       {/* ⚠ `ml-auto` lives HERE now. It used to sit on a caption span that ran
           between the pills and this slot; removing that span without moving the
           class would have left the controls butted against the Picking pill

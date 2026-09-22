@@ -28,6 +28,14 @@ interface MarkerResponse {
   /** Waiting bills on NO trip that the gate is hiding (2026-09-21). Optional for
    *  the same reason `heldBack` is, and coalesced to 0 the same way. */
   heldBackUnplanned?: number;
+  /**
+   * An opaque extra change-token (2026-09-22) for a route whose list can change
+   * in a way count/latest cannot see — the Billing Telephonic marker sends its
+   * match and skip-reason counts here, because so_tag_matches has no updatedAt.
+   * Optional and coalesced to "" like heldBack, so every route that does not
+   * send it stores a constant and can never refetch because of it.
+   */
+  signature?: string;
   scope: string;
 }
 
@@ -174,6 +182,7 @@ export function usePickingMarker({
     heldBack: number;
     heldBackTrucks: number;
     heldBackUnplanned: number;
+    signature: string;
   } | null>(null);
   // The marker moved while paused → fire once on resume.
   const pendingChangeRef = useRef(false);
@@ -267,6 +276,7 @@ export function usePickingMarker({
           heldBack: marker.heldBack ?? 0,
           heldBackTrucks: marker.heldBackTrucks ?? 0,
           heldBackUnplanned: marker.heldBackUnplanned ?? 0,
+          signature: marker.signature ?? "",
         };
         const prev = lastSeenRef.current;
         if (prev === null) {
@@ -283,7 +293,8 @@ export function usePickingMarker({
           prev.latest !== next.latest ||
           prev.heldBack !== next.heldBack ||
           prev.heldBackTrucks !== next.heldBackTrucks ||
-          prev.heldBackUnplanned !== next.heldBackUnplanned;
+          prev.heldBackUnplanned !== next.heldBackUnplanned ||
+          prev.signature !== next.signature;
         if (!moved) return;
         lastSeenRef.current = next; // always advance the baseline
         if (pausedRef.current) {
@@ -373,6 +384,7 @@ export function usePickingMarker({
         heldBack: marker.heldBack ?? 0,
         heldBackTrucks: marker.heldBackTrucks ?? 0,
         heldBackUnplanned: marker.heldBackUnplanned ?? 0,
+        signature: marker.signature ?? "",
       };
       // Any change deferred while paused is covered by the caller's own fresh
       // fetch — leaving it armed would fire on unpause for data already shown.

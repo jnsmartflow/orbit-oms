@@ -7,9 +7,11 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/billing/telephonic/marker — the cheap "has the Telephonic tab
- * changed?" probe: { count, latest, matchCount, skipReasonCount }. The client
- * refetches the list when ANY of the four moves. Its sets are supersets of the
- * list's (see getTelephonicMarker). READ-ONLY — never add a write here.
+ * changed?" probe: { count, latest, matchCount, skipReasonCount, signature }.
+ * `signature` carries the two counts in the field the shared marker hook
+ * compares, so the client refetches when ANY of the four moves. Its sets are
+ * supersets of the list's (see getTelephonicMarker). READ-ONLY — never add a
+ * write here.
  */
 export async function GET(): Promise<NextResponse> {
   const session = await auth();
