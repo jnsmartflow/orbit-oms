@@ -201,18 +201,41 @@ export function SmuBadge({ code }: { code: string | null }): React.JSX.Element |
 // 2px taller than TINT, and the two sit in the same list one card apart, so the
 // words did not line up. The pale fill reads as a pill without help at this
 // size. The only bordered state is `onRed` below, where there is no fill to read.
+/**
+ * THE TINT / BASE PINKS, as class strings — ONE place (2026-09-22).
+ *
+ * The badge below reads `tintFill` / `baseFill`. The Floor rail's add "+" and
+ * its add-mode card hover (components/floor/trip-rail.tsx) borrow the same two
+ * pinks, so they read from here instead of retyping the hex.
+ *
+ * ⚠ THE VARIANT STRINGS ARE SPELLED OUT WHOLE, ON PURPOSE. Tailwind builds only
+ * the classes it can see written in the source; a `hover:` prefix glued on at
+ * runtime would produce a class that was never generated. So each variant the
+ * rail needs is a literal here.
+ */
+export const COLOUR_WORK_PINK = {
+  /** TINT badge: solid pink, white text. */
+  tintFill: "bg-[#db2777] text-white",
+  /** BASE badge: light pink, pink text. */
+  baseFill: "bg-[#fce7f3] text-[#be185d]",
+  /** Rail "+" on hover of its card group: the TINT fill. */
+  tintFillOnGroupHover: "group-hover:bg-[#db2777] group-hover:text-white",
+  /** Rail card on hover of its group: TINT pink border over the BASE fill. */
+  cardOnGroupHover: "group-hover:border-[#db2777] group-hover:bg-[#fce7f3]",
+} as const;
+
 const COLOUR_WORK_STYLE: Record<ColourWork, { label: string; cls: string; title: string }> = {
   // Floor's `tinting` pill — the one solid fill.
   tint: {
     label: "TINT",
-    cls: "bg-[#db2777] text-white",
+    cls: COLOUR_WORK_PINK.tintFill,
     title: "Tinted — colour mixed by an operator",
   },
   // Floor's `tintAssigned` fill. Pale, quiet: nothing was mixed, and the word is
   // here to stop a reader assuming otherwise.
   base: {
     label: "BASE",
-    cls: "bg-[#fce7f3] text-[#be185d]",
+    cls: COLOUR_WORK_PINK.baseFill,
     title: "Base — no tinting",
   },
 };

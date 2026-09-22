@@ -54,6 +54,7 @@
 // number already carries the real date — rather than implying it is today's.
 
 import { Plus } from "lucide-react";
+import { COLOUR_WORK_PINK } from "@/components/picking/card-atoms";
 import { TripBar, tripBarCounts } from "./trip-bar";
 import { formatLitres } from "./status-pill";
 import { tripInScope, tripMixLabel } from "@/lib/floor/scope";
@@ -290,29 +291,40 @@ function TripCard({
   // The vehicle and the area are off the card — the detail panel carries both.
   // 🔴 THE WHOLE CARD IS THE TARGET IN ADD MODE (owner). A card that cannot
   // take bills is inert — it neither adds nor opens, so a click during add mode
-  // can never do something the planner did not ask for. In add mode the hover
-  // is NEUTRAL (border-ink-400) — no violet, no pink (2026-09-22).
+  // can never do something the planner did not ask for.
   //
-  // 🔴 THE "+" (2026-09-22, later): a real brand button top-right, on ADDABLE
-  // cards only — never on a dispatched or blocked card, never with nothing
-  // ticked (addable is false then). It does exactly what a card click does
-  // (`onAdd`). It is a SIBLING of the card inside a wrapper, not a child: the
-  // card is itself a <button>, and a button inside a button is invalid HTML.
+  // 🔴 THE "+" (2026-09-22, later): a real button top-right, on ADDABLE cards
+  // only — never on a dispatched or blocked card, never with nothing ticked
+  // (addable is false then). It does exactly what a card click does (`onAdd`).
+  // It is a SIBLING of the card inside a wrapper, not a child: the card is
+  // itself a <button>, and a button inside a button is invalid HTML.
   // stopPropagation keeps it to one add either way.
+  //
+  // 🔴 THE TINT / BASE PINK (owner, 2026-09-22): the "+" rests in the BASE
+  // badge's light pink and turns the TINT badge's solid pink on hover; the card
+  // hover is a TINT-pink border over the BASE fill. The WRAPPER is the hover
+  // group, so hovering the card OR the "+" lights both together. Classes come
+  // from COLOUR_WORK_PINK (components/picking/card-atoms.tsx) — the badge's own
+  // constant — never retyped here. Outside add mode the hover is unchanged.
+  //
+  // ⚠ The addable border is 1.5px AT REST TOO, with the padding 0.5px smaller,
+  // so the hover changes only colour and nothing on the card moves.
   const blocked = addMode && !addable;
   const showPlus = addable;
   return (
-    <div className="relative mb-2">
+    <div className={`relative mb-2 ${showPlus ? "group" : ""}`}>
     <button
       type="button"
       onClick={blocked ? undefined : addMode ? onAdd : onSelect}
       disabled={blocked}
       title={blocked ? `${trip.tripNumber} has been dispatched — it cannot take more bills` : undefined}
-      className={`relative flex w-full flex-col gap-[6px] rounded-[9px] border px-3 pb-3 pt-[11px] text-left ${
+      className={`relative flex w-full flex-col gap-[6px] rounded-[9px] text-left ${
+        addable ? "border-[1.5px] px-[11.5px] pb-[11.5px] pt-[10.5px]" : "border px-3 pb-3 pt-[11px]"
+      } ${
         blocked
           ? "cursor-not-allowed border-[#e7e7ee] bg-white opacity-50"
           : addable
-            ? "cursor-pointer border-[#cfcfda] bg-white hover:border-ink-400"
+            ? `cursor-pointer border-[#cfcfda] bg-white transition-colors ${COLOUR_WORK_PINK.cardOnGroupHover}`
             : selected
               ? "border-brand-600 bg-white shadow-[0_0_0_3px_#f2edfe]"
               : "border-[#e7e7ee] bg-white hover:border-[#cfcfda]"
@@ -418,9 +430,11 @@ function TripCard({
           e.stopPropagation();
           onAdd?.();
         }}
-        className="group absolute right-[8px] top-[7px] flex h-[28px] w-[28px] items-center justify-center rounded-full"
+        className="absolute right-[8px] top-[7px] flex h-[28px] w-[28px] items-center justify-center rounded-full"
       >
-        <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-brand-600 text-white group-hover:bg-brand-700">
+        <span
+          className={`flex h-[24px] w-[24px] items-center justify-center rounded-full transition-colors ${COLOUR_WORK_PINK.baseFill} ${COLOUR_WORK_PINK.tintFillOnGroupHover}`}
+        >
           <Plus size={14} strokeWidth={2.5} />
         </span>
       </button>
