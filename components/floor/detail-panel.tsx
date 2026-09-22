@@ -176,6 +176,7 @@ export function DetailPanel({
   orderId,
   source,
   hasDuplicateSo = false,
+  withBillingCiNumber = null,
   list,
   windows,
   pickers,
@@ -196,6 +197,13 @@ export function DetailPanel({
    * the flag at all (known gap, see components/shared/duplicate-so-tag.tsx).
    */
   hasDuplicateSo?: boolean;
+  /**
+   * Set when this panel was opened on a CI row of the Cancel & CI tab
+   * (2026-09-22) — the bill's return is with billing. Restore is replaced by a
+   * line saying so; the actions route refuses it anyway. Passed down from the
+   * loaded row, like `hasDuplicateSo`.
+   */
+  withBillingCiNumber?: string | null;
   list: number[];
   windows: DispatchWindow[];
   pickers: FloorPicker[];
@@ -282,6 +290,7 @@ export function DetailPanel({
             d={detail}
             source={source}
             hasDuplicateSo={hasDuplicateSo}
+            withBillingCiNumber={withBillingCiNumber}
             tab={tab}
             setTab={setTab}
             windows={windows}
@@ -334,6 +343,7 @@ function PanelBody({
   d,
   source,
   hasDuplicateSo,
+  withBillingCiNumber,
   tab,
   setTab,
   windows,
@@ -352,6 +362,7 @@ function PanelBody({
   d: FloorDetail;
   source: FloorDetailSource;
   hasDuplicateSo: boolean;
+  withBillingCiNumber: string | null;
   tab: Tab;
   setTab: (t: Tab) => void;
   windows: DispatchWindow[];
@@ -603,8 +614,14 @@ function PanelBody({
             </div>
           )}
 
-          {/* Restore (cancelled) — teal primary. */}
-          {source === "cancelled" && (
+          {/* Restore (cancelled) — brand primary. Not on a bill whose CI is with
+              billing (2026-09-22): the line below takes its place. */}
+          {source === "cancelled" && withBillingCiNumber !== null && (
+            <span className="inline-flex h-[34px] items-center text-[12px] text-gray-500">
+              Return {withBillingCiNumber} is with billing
+            </span>
+          )}
+          {source === "cancelled" && withBillingCiNumber === null && (
             <button
               type="button"
               disabled={busy}

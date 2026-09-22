@@ -17,6 +17,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { inScope } from "./scope";
+import { parseCancelNote } from "./off-floor";
+import { asCiStatus, type CiSource } from "@/lib/ci/types";
 import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
@@ -392,9 +394,6 @@ export function parseFloorDate(dateStr: string): Date {
   return dateOnly;
 }
 
-function istDayOf(date: Date | null): string | null {
-  return date ? date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) : null;
-}
 
 
 // `inScope` MOVED to lib/floor/scope.ts (2026-08-09) — same function, byte for
@@ -1277,7 +1276,25 @@ export async function getFloorHold(
   return rows;
 }
 
-// ── 4. CANCELLED (today only, design §9) ─────────────────────────────────────
+// ── 4. CANCEL & CI (today only — was "Cancelled", design §9) ─────────────────
+//
+// 2026-09-22: TWO kinds of row, one list, newest first (FloorCancelledRow):
+//   a) "ci"     — ci_returns the FLOOR raised today: source 'floor', not voided,
+//                 not a draft, createdAt in today (IST). createdAt, NOT
+//                 closedAt: a CI billing closes today stays on the list,
+//                 reading "Closed by billing".
+//   b) "cancel" — orders still at `cancelled` whose latest cancel log is today,
+//                 EXCLUDING any order that has a row in (a) — a floor CI also
+//                 cancels its bill (app/api/floor/ci/route.ts), and that bill
+//                 is one CI row, not a CI row plus a cancel row.
+//
+// 🔴 TODAY IS IN SQL NOW. The old feed loaded EVERY cancelled order ever and
+// filtered to today in JS; both reads here are fenced by getISTDayRange(), and
+// the orders read is by id.
+//
+// SELECT-only, sequential awaits, never prisma.$transaction (CORE §3). The hide
+// exclusion is AND-merged into the orders read, so a hidden bill drops out of
+// both kinds.
 
 export async function getFloorCancelled(
   scope: FloorScope = "All",
@@ -1286,57 +1303,90 @@ export async function getFloorCancelled(
   hideExclusion?: Prisma.ordersWhereInput,
 ): Promise<FloorCancelledRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
-  const todayIso = istDayOf(new Date());
+  const today = getISTDayRange();
 
+  // ── a) Today's floor CIs ─────────────────────────────────────────────────
+  const FLOOR_SOURCE: CiSource = "floor";
+  const cis = await prisma.ci_returns.findMany({
+    where: {
+      source: FLOOR_SOURCE,
+      isVoided: false,
+      status: { not: "draft" },
+      createdAt: { gte: today.start, lt: today.end },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      orderId: true,
+      ciNumber: true,
+      status: true,
+      invoiceNo: true,
+      reasonLabel: true,
+      reasonRemark: true,
+      createdAt: true,
+      supervisor: { select: { name: true } },
+    },
+  });
+  // One per bill — the newest. The floor route refuses a second live CI, so
+  // this only matters if billing voided one and the floor raised again.
+  const ciByOrder = new Map<number, (typeof cis)[number]>();
+  for (const c of cis) if (!ciByOrder.has(c.orderId)) ciByOrder.set(c.orderId, c);
+
+  // ── b) Today's cancel logs ───────────────────────────────────────────────
+  // "Latest cancel log is today" ⇔ "there is a cancel log today": a later
+  // one could only be later today. Newest first, so the first per order wins.
+  const logs = await prisma.order_status_logs.findMany({
+    where: { toStage: "cancelled", createdAt: { gte: today.start, lt: today.end } },
+    orderBy: { createdAt: "desc" },
+    select: { orderId: true, createdAt: true, note: true, changedBy: { select: { name: true } } },
+  });
+  const cancelByOrder = new Map<number, { createdAt: Date; note: string | null; name: string | null }>();
+  for (const l of logs) {
+    if (ciByOrder.has(l.orderId) || cancelByOrder.has(l.orderId)) continue;
+    cancelByOrder.set(l.orderId, { createdAt: l.createdAt, note: l.note, name: l.changedBy?.name ?? null });
+  }
+
+  // ── The orders behind both, in one read ──────────────────────────────────
+  const ids = Array.from(new Set([...Array.from(ciByOrder.keys()), ...Array.from(cancelByOrder.keys())]));
+  if (ids.length === 0) return [];
   const orders = await prisma.orders.findMany({
-    where: { AND: [{ workflowStage: "cancelled", isRemoved: false }, hide] },
+    where: { AND: [{ id: { in: ids }, isRemoved: false }, hide] },
     include: {
       customer: { select: FLOOR_DEALER_SELECT },
       shipToOverrideCustomer: { select: FLOOR_DEALER_SELECT },
-      querySnapshot: { select: { articleTag: true, totalVolume: true } },
+      // totalWeight is the board's own kg source (getFloorBoard's `weightKg`).
+      querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
     },
   });
-
-  // Cancel time + actor + reason come from the latest toStage="cancelled" log.
-  const ids = orders.map((o) => o.id);
-  const logs =
-    ids.length > 0
-      ? await prisma.order_status_logs.findMany({
-          where: { orderId: { in: ids }, toStage: "cancelled" },
-          orderBy: { createdAt: "desc" },
-          select: { orderId: true, createdAt: true, note: true, changedBy: { select: { name: true } } },
-        })
-      : [];
-  const latest = new Map<number, { createdAt: Date; note: string | null; name: string | null }>();
-  for (const l of logs) {
-    if (!latest.has(l.orderId)) latest.set(l.orderId, { createdAt: l.createdAt, note: l.note, name: l.changedBy?.name ?? null });
-  }
 
   // TINT vs BASE — see the Hold feed above. A cancelled bill keeps whatever was
   // true of it: the record should read the same after cancellation as before.
   const colourWorkByOrder = await getColourWorkByOrder(
     orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
   );
-
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
 
   const rows: FloorCancelledRow[] = [];
   for (const order of orders) {
+    const ci = ciByOrder.get(order.id) ?? null;
+    const cancel = ci === null ? cancelByOrder.get(order.id) ?? null : null;
+    if (ci === null && cancel === null) continue;
+    // A cancel row is a bill that is STILL cancelled — one cancelled and then
+    // restored today has a log today but is back on the board.
+    if (cancel !== null && order.workflowStage !== "cancelled") continue;
+
     const dealer = order.shipToOverrideCustomer ?? order.customer;
     const deliveryType = dealer?.area?.deliveryType?.name ?? null;
     if (!inScope(deliveryType, scope)) continue;
 
-    const cancel = latest.get(order.id);
-    // Today only — anchored to the cancellation day (design §9). Older ones live
-    // in History. A currently-cancelled order with no cancel log is skipped.
-    if (!cancel || istDayOf(cancel.createdAt) !== todayIso) continue;
-
-    rows.push({
+    const party = {
       orderId: order.id,
       obdNumber: order.obdNumber,
       dealerName: dealer?.customerName ?? "(Unmatched)",
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
+      // The ship-to PAIR, exactly as getFloorBoard fills it.
+      customerName: order.customer?.customerName ?? null,
+      shipToOverrideName: order.shipToOverrideCustomer?.customerName ?? null,
       smu: order.smu,
       route: dealer?.area?.primaryRoute?.name ?? null,
       area: dealer?.area?.name ?? null,
@@ -1346,14 +1396,43 @@ export async function getFloorCancelled(
       isTint: order.orderType === "tint",
       colourWork: colourWorkByOrder.get(order.id) ?? null,
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
+      weightKg: order.querySnapshot?.totalWeight ?? null,
       articleTag: order.querySnapshot?.articleTag ?? null,
+      // The tab's own display-date rule, unchanged.
       obdDateTime: (order.obdEmailDate ?? order.orderDateTime)?.toISOString() ?? null,
-      cancelledAt: cancel.createdAt.toISOString(),
-      cancelledByName: cancel.name,
-      reason: cancel.note,
-    });
+    };
+
+    if (ci !== null) {
+      rows.push({
+        ...party,
+        action: "ci",
+        // 🔴 LIVE FIRST, the CI's snapshot as the fallback — never the reverse
+        // (CLAUDE_CI §5; the same rule toBoardRow applies on /ci).
+        invoiceNo: order.invoiceNo ?? ci.invoiceNo,
+        reason: ci.reasonLabel,
+        remark: ci.reasonRemark,
+        ciNumber: ci.ciNumber,
+        // submitted / returned_to_floor → with billing; closed → closed.
+        ciStatus: asCiStatus(ci.status) === "closed" ? "closed" : "with_billing",
+        byName: ci.supervisor?.name ?? null,
+        at: ci.createdAt.toISOString(),
+      });
+    } else if (cancel !== null) {
+      const { reason, remark } = parseCancelNote(cancel.note);
+      rows.push({
+        ...party,
+        action: "cancel",
+        invoiceNo: order.invoiceNo,
+        reason,
+        remark,
+        ciNumber: null,
+        ciStatus: null,
+        byName: cancel.name,
+        at: cancel.createdAt.toISOString(),
+      });
+    }
   }
 
-  rows.sort((a, b) => (a.cancelledAt === b.cancelledAt ? 0 : (a.cancelledAt ?? "") < (b.cancelledAt ?? "") ? 1 : -1));
+  rows.sort((a, b) => (a.at === b.at ? 0 : (a.at ?? "") < (b.at ?? "") ? 1 : -1));
   return rows;
 }

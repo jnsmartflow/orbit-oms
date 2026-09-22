@@ -1137,7 +1137,8 @@ export function FloorPage() {
     [load],
   );
 
-  // ── Cancelled tab: bulk restore → back to the left rail (Step-5 actions). ──
+  // ── Cancel & CI tab: bulk restore of Cancel rows → back onto the board as
+  // `no slot` rows (actions "restore"; a bill with a live CI is refused there). ──
   const cancelledRestore = useCallback(
     async (orderIds: number[]) => {
       const r = await postJson("/api/floor/actions", { action: "restore", orderIds });
@@ -1403,6 +1404,15 @@ export function FloorPage() {
   const setOffFloorBusy = useCallback((b: boolean) => {
     offFloorBusyRef.current = b;
   }, []);
+
+  // A Cancel & CI tab row that is a CI (2026-09-22): its panel shows no
+  // Restore — the return is with billing, and the actions route refuses it.
+  // Read off the row already loaded, like detailHasDuplicateSo above.
+  const detailCiNumber = useMemo(() => {
+    if (!detail || detail.source !== "cancelled") return null;
+    const r = (cancelledRows ?? []).find((x) => x.orderId === detail.orderId);
+    return r?.action === "ci" ? r.ciNumber ?? "a CI" : null;
+  }, [detail, cancelledRows]);
 
   const detailActions: DetailActions = useMemo(
     () => ({
@@ -2057,7 +2067,9 @@ export function FloorPage() {
           and two of them side by side was one too many. */}
       {tabPill("tinting", "Tinting", tintingCount)}
       {tabPill("hold", "On hold", holdCount)}
-      {tabPill("cancelled", "Cancelled", cancelledCount)}
+      {/* "Cancel & CI" since 2026-09-22 — today's cancels AND the CIs the floor
+          raised. The TopTab key stays "cancelled"; only the label moved. */}
+      {tabPill("cancelled", "Cancel & CI", cancelledCount)}
 
       {/* 🔴 THE VIEW PIVOT IS GONE (2026-09-10) — Flat, By route, By trip, By
           group, By picker, and with it the ⏳ admin-only clause. Flat / By route
@@ -2392,6 +2404,7 @@ export function FloorPage() {
           orderId={detail.orderId}
           source={detail.source}
           hasDuplicateSo={detailHasDuplicateSo}
+          withBillingCiNumber={detailCiNumber}
           list={detailList}
           windows={dispatchWindows}
           pickers={data?.pickers ?? []}

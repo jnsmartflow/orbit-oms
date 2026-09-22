@@ -6,7 +6,7 @@
 //
 //   Raise CI — the DEFAULT tab, every time. A full-bill CI per bill lands on the
 //              billing CI desk, and the bill leaves the floor. POST /api/floor/ci.
-//   Cancel   — the bill stops here, restorable from the Cancelled tab.
+//   Cancel   — the bill stops here, restorable from the Cancel & CI tab.
 //              POST /api/floor/actions { action: "cancel", reasonKey, remark }.
 //
 // Opened from the Floor bar's ··· More, the Hold bar's ··· More, and the detail
@@ -267,7 +267,7 @@ export function OffFloorDialog({
               <p className="mt-4 rounded-[9px] border border-ink-100 bg-ink-25 px-3 py-2.5 text-[13px] leading-relaxed text-ink-700">
                 {tab === "ci"
                   ? "A CI is raised for each bill and lands on the billing CI desk. These bills also leave the floor."
-                  : "These bills leave the floor and do not move ahead. You can Restore them from the Cancelled tab."}
+                  : "These bills leave the floor and do not move ahead. You can Restore them from the Cancel & CI tab."}
               </p>
 
               {/* ── The bills ──────────────────────────────────────────────── */}

@@ -454,14 +454,35 @@ export interface FloorHoldRow extends FloorPartyFields {
   heldSinceSource: HeldSinceSource;
 }
 
-// Cancelled tab row (design §9) — cancel time + actor come from the
-// order_status_logs cancel event, not a dedicated column.
+// Cancel & CI tab row (2026-09-22; was the Cancelled tab, design §9). TODAY
+// only (IST). Two kinds in one list — getFloorCancelled builds both:
+//   "ci"     — a ci_returns row the Floor raised today (source 'floor').
+//              Reason / remark / CI no. / by·when come from the CI.
+//   "cancel" — a cancelled order whose latest cancel log is today, with no
+//              floor CI. Reason / remark are split out of the log note
+//              (parseCancelNote), by·when come from that log.
+// ⚠ Restore is offered on "cancel" rows ONLY — the actions route refuses a
+// bill with a live CI anyway ("… is with billing").
 export interface FloorCancelledRow extends FloorPartyFields {
   orderId: number;
   obdNumber: string;
-  cancelledAt: string | null;   // ISO — latest cancel-log createdAt
-  cancelledByName: string | null;
-  reason: string | null;        // cancel-log note
+  action: "cancel" | "ci";
+  /** Live-first: orders.invoiceNo, then the CI's snapshot (CLAUDE_CI §5). */
+  invoiceNo: string | null;
+  /** The ship-to PAIR, as FloorBoardRow carries it — original and redirect. */
+  customerName: string | null;
+  shipToOverrideName: string | null;
+  /** querySnapshot.totalWeight — the board's own kg source. */
+  weightKg: number | null;
+  reason: string | null;
+  remark: string | null;
+  /** CI rows only. */
+  ciNumber: string | null;
+  /** CI rows only: submitted / returned_to_floor → with_billing; closed → closed. */
+  ciStatus: "with_billing" | "closed" | null;
+  /** Who cancelled / raised it, and when (ISO). */
+  byName: string | null;
+  at: string | null;
 }
 
 // ── Detail panel (design §10) ────────────────────────────────────────────────

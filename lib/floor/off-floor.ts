@@ -17,7 +17,7 @@
 // Adding one is adding a key to the array below — never a new label here, or
 // the floor's Cancelled tab and Picking's would word the same reason two ways.
 
-import { CANCEL_REASON_LABELS, CANCEL_NOTE_MAX, type CancelReason } from "@/lib/picking/cancel-reasons";
+import { CANCEL_REASON_LABELS, CANCEL_NOTE_MAX, buildCancelNote, type CancelReason } from "@/lib/picking/cancel-reasons";
 
 /** The cancel reasons the floor may give, in display order. */
 export const FLOOR_CANCEL_REASONS: readonly CancelReason[] = ["pick_delete"];
@@ -72,4 +72,36 @@ export function offFloorRefusal(bill: OffFloorBill): string | null {
     return "In the tint room — cancel from Tint Manager";
   }
   return null;
+}
+
+// ── Reading a cancel note back (the Cancel & CI tab, 2026-09-22) ─────────────
+
+// 🔴 THE NOTE'S SHAPE IS buildCancelNote's, AND IT IS READ FROM THERE — not
+// retyped. The prefix ("Cancelled — ") and the remark separator (" · ") are
+// derived once from what the builder actually writes, so a change to the
+// builder moves the parser with it.
+const PROBE_KEY: CancelReason = "other";
+const PROBE_BASE = buildCancelNote(PROBE_KEY);
+const NOTE_PREFIX = PROBE_BASE.slice(0, PROBE_BASE.length - CANCEL_REASON_LABELS[PROBE_KEY].length);
+const NOTE_SEPARATOR = buildCancelNote(PROBE_KEY, "x").slice(PROBE_BASE.length, -1);
+
+/**
+ * Split a cancel log note into the reason and the remark for display.
+ *
+ *   "Cancelled — {Label} · {remark}" → { reason: Label, remark }
+ *   "Cancelled — {Label}"            → { reason: Label, remark: null }
+ *   anything else ("Cancelled from floor", a Support-era note …)
+ *                                    → { reason: note,  remark: null }
+ *
+ * Display only — never parsed back into a key. Old free-text floor notes
+ * ("Cancelled — {text}") read as a reason, which is what they were.
+ */
+export function parseCancelNote(note: string | null): { reason: string | null; remark: string | null } {
+  if (note === null || note.trim() === "") return { reason: null, remark: null };
+  if (!note.startsWith(NOTE_PREFIX)) return { reason: note, remark: null };
+  const rest = note.slice(NOTE_PREFIX.length);
+  const at = rest.indexOf(NOTE_SEPARATOR);
+  if (at < 0) return { reason: rest, remark: null };
+  const remark = rest.slice(at + NOTE_SEPARATOR.length).trim();
+  return { reason: rest.slice(0, at), remark: remark === "" ? null : remark };
 }
