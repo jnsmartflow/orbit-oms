@@ -1,6 +1,6 @@
 "use client";
 
-import type { CiBoardRow } from "@/lib/ci/types";
+import { ciSourceTag, type CiBoardRow } from "@/lib/ci/types";
 
 // Billing's left rail — frames 1-4 of docs/mockups/ci/billing.html.
 //
@@ -221,6 +221,7 @@ function CiRailCard({
   onSelect: (id: number) => void;
 }): React.JSX.Element {
   const done = row.status === "closed";
+  const sourceTag = ciSourceTag(row.source);
   return (
     <button
       type="button"
@@ -262,12 +263,15 @@ function CiRailCard({
             #5C666E) — it is INFORMATION, not a warning, and the CI screens get
             no new colour for it. The word is what carries the meaning, as
             everywhere else in this module. */}
-        {row.source === "auto_finding" && (
+        {/* Each auto source carries its OWN word (ciSourceTag): "Auto" for a
+            picking finding, "Bill-only" for a bill-only order. Same tone for
+            both — the word, not the colour, tells them apart. */}
+        {sourceTag !== null && (
           <span
             className="shrink-0 rounded-full bg-[#E7EBEC] px-[6px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#5C666E]"
-            title="Raised automatically from a picking finding"
+            title={sourceTag.title}
           >
-            Auto
+            {sourceTag.label}
           </span>
         )}
         {/* Mention 2 of 3 (see the header). `shrink-0` so a long CI number

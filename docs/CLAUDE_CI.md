@@ -1,5 +1,5 @@
 # CLAUDE_CI.md — CI, Goods Return Note (CI Form)
-# v1.2 · Schema v27.24 · September 2026 · updated 2026-09-18
+# v1.3 · Schema v27.24 · September 2026 · updated 2026-09-22
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -129,14 +129,16 @@ count stayed wrong until 2026-09-03. It is 32.
 
 `CLAUDE_CORE.md §7.4` explains why: Prisma cannot express a CHECK, so it does not
 appear in `schema.prisma` as anything but a comment. Read live from
-`pg_constraint`, 2026-09-03 — **all five are on `ci_returns`**:
+`pg_constraint`, 2026-09-03; all five re-read 2026-09-21, and
+`chk_ci_returns_source` again 2026-09-22 after it was widened (CORE §7, Schema
+v27.39) — **all five are on `ci_returns`**:
 
 | Constraint | What it enforces |
 |---|---|
 | `chk_ci_returns_status` | `draft` / `submitted` / `closed` / `returned_to_floor` |
 | `chk_ci_returns_return_type` | `full` / `part` |
 | `chk_ci_returns_material_moved` | `moved` / `not_moved` |
-| `chk_ci_returns_source` | `manual` / `auto_finding` |
+| `chk_ci_returns_source` | `manual` / `auto_finding` / `auto_bill_only` — the third added 2026-09-22 (Schema v27.39). **`auto_bill_only`'s owner is the Billing · Telephonic tab, which is NOT BUILT: nothing writes the value yet.** The code already reads it — `CiSource` / `asCiSource` / `ciSourceTag` in `lib/ci/types.ts`, and the rail card and detail header tag it **"Bill-only"** (a picking-finding CI stays **"Auto"**, a manual one carries no tag). A FOURTH value needs a SQL ALTER on this CHECK first |
 | `chk_ci_returns_complete_when_not_draft` | 🔴 **the load-bearing one** — `status = 'draft'` OR all four of `materialMoved`, `materialReceivedDate`, `reasonId`, `reasonLabel` are NOT NULL |
 
 ⚠ A NULL `materialMoved` also *satisfies* `chk_ci_returns_material_moved`:
@@ -835,8 +837,12 @@ Four days from first table to register export: 19 CI commits, `e8695f40`
 
 ---
 
-*CLAUDE_CI.md v1.2 · Schema v27.24 · CI / Goods Return Note · September 2026 ·
-updated 2026-09-18 — reconciled to code at HEAD 5ab9ee40 and the 2026-09-18 live
+*CLAUDE_CI.md v1.3 · Schema v27.24 · CI / Goods Return Note · September 2026 ·
+updated 2026-09-22 — **§3 only:** `chk_ci_returns_source` widened to three
+values (`auto_bill_only`, CORE Schema v27.39), read live from `pg_constraint`
+2026-09-22; the code that labels it "Bill-only" is named in the row. The Schema
+stamp stays v27.24 ON PURPOSE: this was one row, not a reconciliation pass over
+the file (CLAUDE.md §4 item 4). Prior, v1.2 (2026-09-18) — reconciled to code at HEAD 5ab9ee40 and the 2026-09-18 live
 SELECTs (canon sweep batch B1). §13 CI-16 CLOSED: `/ci` has been in
 `PAGE_NAV_MAP` since `55c3cdc6` (2026-08-31) with the `Undo2` sidebar icon; the
 "URL only" / "not in the sidebar" claims are gone from §13 and §15, and §15

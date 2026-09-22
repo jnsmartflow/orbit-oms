@@ -149,10 +149,46 @@ export interface CiBillResult {
 /**
  * Who raised a CI. 'manual' is the default on every row that predates the
  * findings trigger and on every hand-walked return; 'auto_finding' is raised as
- * a side effect of a supervisor confirming a pick finding (lib/ci/auto.ts).
- * Mirrors chk_ci_returns_source.
+ * a side effect of a supervisor confirming a pick finding (lib/ci/auto.ts);
+ * 'auto_bill_only' is a full-bill, material-not-moved CI the system raises for
+ * a bill billing tagged 'ci' on the Billing · Telephonic tab (not built yet —
+ * nothing writes it today).
+ *
+ * 🔴 Mirrors chk_ci_returns_source, which permits exactly these three since
+ * Schema v27.39. A FOURTH value needs a SQL ALTER on that CHECK FIRST — never
+ * just a new string here.
  */
-export type CiSource = "manual" | "auto_finding";
+export type CiSource = "manual" | "auto_finding" | "auto_bill_only";
+
+export const CI_SOURCES: readonly CiSource[] = ["manual", "auto_finding", "auto_bill_only"];
+
+/**
+ * Narrow a source string read back out of the database.
+ *
+ * Defaults rather than throws, unlike asCiStatus: an unrecognised source only
+ * changes a label, never which surface a row appears on, and 'manual' is the
+ * honest read of it — it is what every row predating the auto paths carries.
+ */
+export function asCiSource(value: string): CiSource {
+  return (CI_SOURCES as readonly string[]).includes(value) ? (value as CiSource) : "manual";
+}
+
+/**
+ * The small tag a system-raised CI carries on the rail card and in the detail
+ * header — null for a manual CI, which shows no tag at all. Each auto source
+ * gets its OWN word: a bill-only CI must never read as "Auto" (a picking
+ * finding) or fall through to nothing (a hand-walked return).
+ */
+export function ciSourceTag(source: CiSource): { label: string; title: string } | null {
+  switch (source) {
+    case "auto_finding":
+      return { label: "Auto", title: "Raised automatically from a picking finding" };
+    case "auto_bill_only":
+      return { label: "Bill-only", title: "Raised automatically for a bill-only order" };
+    case "manual":
+      return null;
+  }
+}
 
 export interface CiBoardRow {
   id: number;

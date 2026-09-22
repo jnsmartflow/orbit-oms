@@ -292,6 +292,11 @@ model users {
   ciReturnsAsSupervisor       ci_returns[]             @relation("CiReturnSupervisor")
   ciReturnsAsBillingOperator  ci_returns[]             @relation("CiReturnBillingOperator")
   ciReturnsVoided             ci_returns[]             @relation("CiReturnVoidedBy")
+  // Billing · Telephonic SO tags (2026-09-22) — TWO FKs from `so_tags` to
+  // `users`: addedById / removedById. BOTH MUST STAY EXPLICITLY NAMED ON BOTH
+  // SIDES, or Prisma errors on ambiguity at generate time (CORE §7.3).
+  soTagsAdded                 so_tags[]                @relation("SoTagAddedBy")
+  soTagsRemoved               so_tags[]                @relation("SoTagRemovedBy")
   // Per-user page access (2026-09-04). One FK to `users`, so the relation is
   // deliberately UNNAMED — same call as pushSubscriptions and adminAuditLogs
   // above, and the opposite of the Mrn*/PickFinding*/CiReturn* clusters, which
@@ -1076,6 +1081,10 @@ model orders {
   // ⚠ NO BEHAVIOUR HANGS OFF THIS. Spec §2: a CI never changes the order's
   // workflowStage or any other column — the FK is a stored link only.
   ciReturns                ci_returns[]              @relation("CiReturnOrder")
+  // Billing · Telephonic SO tags (2026-09-22) — one row per tag that hit this
+  // bill. NAMED in the CiReturnOrder style. A stored link only: the hold the
+  // tag applies is written to dispatchStatus/heldAt like any other hold.
+  soTagMatches             so_tag_matches[]          @relation("SoTagMatchOrder")
   // TM Remove OBD (Feature 1)
   isRemoved                Boolean                   @default(false)
   removalReason            String?
@@ -2998,7 +3007,8 @@ model ci_reason_master {
 //   chk_ci_returns_status         CHECK (status IN ('draft','submitted','closed','returned_to_floor'))
 //   chk_ci_returns_return_type    CHECK ("returnType" IN ('full','part'))
 //   chk_ci_returns_material_moved CHECK ("materialMoved" IN ('moved','not_moved'))
-//   chk_ci_returns_source         CHECK (source IN ('manual','auto_finding'))
+//   chk_ci_returns_source         CHECK (source IN ('manual','auto_finding','auto_bill_only'))
+//                                   (auto_bill_only added 2026-09-22, Schema v27.39)
 //   chk_ci_returns_complete_when_not_draft
 //     CHECK (status = 'draft' OR ("materialMoved" IS NOT NULL
 //            AND "materialReceivedDate" IS NOT NULL
@@ -3132,6 +3142,11 @@ model ci_returns {
   //   'manual'       — the supervisor walked the /ci New flow himself.
   //   'auto_finding' — raised as a SIDE EFFECT of confirming a pick finding on
   //                    an already-invoiced bill (lib/ci/auto.ts).
+  //   'auto_bill_only' — (2026-09-22) raised by the system for a bill-only
+  //                    order: a full-bill, material-not-moved CI against a bill
+  //                    billing tagged 'ci'. Owner: the Billing · Telephonic tab,
+  //                    NOT BUILT YET — nothing writes this value today. Allowed
+  //                    by chk_ci_returns_source since Schema v27.39.
   //
   // ⚠ NOT COSMETIC. It is the only thing that tells billing a document was
   // assembled by the system rather than stated by a person, and it is the key
@@ -3225,6 +3240,119 @@ model ci_return_lines {
   // this pair is identical, so no `map:`. No separate index on ciReturnId: it is
   // the LEADING column here, which already serves every lookup by parent.
   @@unique([ciReturnId, lineNumber])
+}
+
+// ── Billing · Telephonic — SO tags (2026-09-22) ──────────────────────────────
+//
+// A telephonic order has no mail order, so nothing tells OrbitOMS it should be
+// held or is a bill-only CI order. Billing types the SO number with a tag
+// (normally right after punching it in SAP, before the OBD exists); when the
+// OBD lands the import holds the bill and, for a CI tag, raises the CI.
+//
+// DDL: sql/2026-09-22-billing-telephonic.sql — ALREADY RUN against production
+// 2026-09-22 and verified. Hand-mirrored from information_schema / pg_constraint
+// / pg_indexes the same day. Never `db push`, never `db pull` (CORE §3).
+
+// The waiting list — one row per SO number typed. 13 columns.
+//
+// 🔴 TWO LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA (CORE §7.4):
+//   chk_so_tags_tag    CHECK (tag = ANY (ARRAY['hold','ci']))
+//   chk_so_tags_status CHECK (status = ANY (ARRAY['waiting','matched']))
+//
+// 🔴 "EXPIRED" IS DERIVED, NOT STORED. There is no 'expired' status and the
+// CHECK refuses one. A tag is expired when
+//   status = 'waiting' AND expiresAt < now()
+// so no job has to flip rows at the 15-day mark, and the screen can never
+// disagree with the clock. expiresAt (addedAt + 15 days) is set by the add
+// route, not defaulted in the database.
+//
+// 🔴 A "LIVE" TAG IS status 'waiting' OR 'matched', isRemoved = false,
+// expiresAt > now(). NOT 'waiting' only: the first OBD flips the tag to
+// 'matched', and a second OBD on the same SO must still find it.
+//
+// 🔴 A PARTIAL UNIQUE INDEX — NOT EXPRESSIBLE IN PRISMA, recorded by hand:
+//   so_tags_soNumber_live_key
+//     UNIQUE ("soNumber") WHERE "isRemoved" = false
+//   The duplicate backstop (the add route checks first and names the existing
+//   tag). A removed tag frees its SO for remove + re-add. Do NOT model it as
+//   @@unique([soNumber]) — Prisma would describe a full unique that does not
+//   exist. Consequence: `findUnique({ where: { soNumber } })` is NOT available;
+//   callers use findFirst / findMany with isRemoved: false. Same class as
+//   trips_date_type_seq_live_key.
+//
+// No CI data lives on the tag. The tab reads a CI live through the matched
+// order (ci_returns WHERE orderId AND source = 'auto_bill_only'), the rule
+// CLAUDE_CI.md §5 applies to the invoice number. The one exception is
+// so_tag_matches.ciSkipReason, below.
+//
+// TWO FKs TO `users` — both NAMED on both sides (CORE §7.3). Live names are
+// Prisma's defaults (so_tags_pkey, so_tags_addedById_fkey,
+// so_tags_removedById_fkey — checked against pg_constraint 2026-09-22), so no
+// `map:` is needed.
+model so_tags {
+  id          Int       @id @default(autoincrement())
+  soNumber    String
+  // 'hold' | 'ci' — chk_so_tags_tag.
+  tag         String
+  // 'waiting' | 'matched' — chk_so_tags_status. Never 'expired' (see header).
+  status      String    @default("waiting")
+  // RESTRICT: who asked for the hold / CI is the record — same rule as
+  // ci_returns.supervisorId. Users are deactivated, never deleted.
+  addedById   Int
+  addedBy     users     @relation("SoTagAddedBy", fields: [addedById], references: [id], onDelete: Restrict)
+  addedAt     DateTime  @default(now()) @db.Timestamptz(6)
+  matchedAt   DateTime? @db.Timestamptz(6)
+  expiresAt   DateTime  @db.Timestamptz(6)
+  isRemoved   Boolean   @default(false)
+  removedAt   DateTime? @db.Timestamptz(6)
+  // SET NULL: an optional actor stamp, like ci_returns.voidedById.
+  removedById Int?
+  removedBy   users?    @relation("SoTagRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  // No trigger on the live column (NOT NULL DEFAULT now()) — @updatedAt is what
+  // advances it on every update.
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  matches so_tag_matches[] @relation("SoTagMatchTag")
+
+  // ⚠ NO @@unique ON soNumber — the live uniqueness is the PARTIAL index
+  // so_tags_soNumber_live_key (see the header), which Prisma cannot express.
+}
+
+// One row per OBD a tag hit. 6 columns. What makes "Held · 2 bills" and
+// "Couldn't raise" honest.
+//
+// 🔴 ciSkipReason IS THE ONE PLACE CI STATE IS STORED ON THE TELEPHONIC SIDE.
+// Everything else about the CI is read live from ci_returns. When the auto-CI
+// REFUSES (e.g. an active line with no delivered quantity) there is no
+// ci_returns row to read, so the reason lives here. Null otherwise.
+//
+// Both FKs are ON DELETE RESTRICT: nothing in the app deletes these rows or
+// their parents (tags and orders are soft-removed), so an accidental delete
+// must FAIL rather than cascade away the record of what was held.
+//
+// Live names are Prisma's defaults — so_tag_matches_pkey,
+// so_tag_matches_soTagId_fkey, so_tag_matches_orderId_fkey,
+// so_tag_matches_soTagId_orderId_key, so_tag_matches_orderId_idx (checked
+// against pg_constraint / pg_indexes 2026-09-22) — so no `map:` is needed.
+model so_tag_matches {
+  id           Int      @id @default(autoincrement())
+  soTagId      Int
+  soTag        so_tags  @relation("SoTagMatchTag", fields: [soTagId], references: [id], onDelete: Restrict)
+  orderId      Int
+  order        orders   @relation("SoTagMatchOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  // Snapshot, for display without a join.
+  obdNumber    String
+  appliedAt    DateTime @default(now()) @db.Timestamptz(6)
+  // Null unless the auto-CI refused — see the header.
+  ciSkipReason String?
+
+  // A re-import must never record the same match twice. soTagId leads, so this
+  // also serves "every bill this tag hit".
+  @@unique([soTagId, orderId])
+  // The referencing side of the orderId FK — Postgres does not index it, and
+  // without it a delete on orders scans this table to enforce the RESTRICT.
+  @@index([orderId])
 }
 
 // ─────────────────────────────────────────────

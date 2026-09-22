@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { CiDetail } from "@/lib/ci/types";
+import { ciSourceTag, type CiDetail } from "@/lib/ci/types";
 
 // Billing's right-hand pane — frames 1-3 of docs/mockups/ci/billing.html.
 //
@@ -128,7 +128,11 @@ export function CiDetailPane({
 
   const isFull = detail.returnType === "full";
   const closed = detail.status === "closed";
-  const isAuto = detail.source === "auto_finding";
+  // Any system-raised source ("Auto" / "Bill-only") — each with its own word,
+  // from ciSourceTag. isAuto still gates the route segment below: both auto
+  // kinds are documents nobody typed.
+  const sourceTag = ciSourceTag(detail.source);
+  const isAuto = sourceTag !== null;
 
   return (
     /* 🔴 `min-w-0` IS LOAD-BEARING — THIS ELEMENT IS THE GRID ITEM, and a grid
@@ -201,7 +205,7 @@ export function CiDetailPane({
                 between two things that are actually there. */}
             <div className="text-[11px] text-gray-400 mt-0.5">
               {[
-                isAuto ? "Auto" : null,
+                sourceTag?.label ?? null,
                 `Raised by ${detail.supervisorName ?? "—"}`,
                 detail.submittedAt !== null ? formatIstDateTime(detail.submittedAt) : null,
                 isAuto ? detail.routeName : null,

@@ -30,7 +30,7 @@ import { getISTDayRange } from "@/lib/dates";
 import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 import { applyCiCatalog, resolveCiSkus } from "./resolve-lines";
 import { billTotals, ciTotals, litresPerTin, resolveCiDealer, round3, sumLitres } from "./derive";
-import { asCiStatus } from "./types";
+import { asCiSource, asCiStatus } from "./types";
 // 🔴 `import type`, AND THAT KEYWORD IS LOAD-BEARING — do not drop it.
 // lib/ci/workbook.ts imports `xlsx`, a ~900KB CommonJS bundle. A type-only
 // import is erased at compile time (tsconfig sets isolatedModules), so the
@@ -470,11 +470,10 @@ function toBoardRow(r: BoardRow): CiBoardRow {
       ? isoDate((r.order?.invoiceDate ?? r.invoiceDate) as Date)
       : null,
     returnType: r.returnType as CiReturnType,
-    // Narrowed, not defaulted: chk_ci_returns_source permits exactly these two,
-    // so anything else is a constraint that has been dropped — and 'manual' is
-    // the honest read of an unrecognised value, since it is what every row
-    // predating the findings trigger carries.
-    source: r.source === "auto_finding" ? "auto_finding" : "manual",
+    // Narrowed by asCiSource: chk_ci_returns_source permits exactly the three
+    // CiSource values, so anything else is a constraint that has been dropped —
+    // and 'manual' is the honest read of an unrecognised value.
+    source: asCiSource(r.source),
     lineCount: r.lines.length,
     totalTins: r.lines.reduce((s, l) => s + l.returnedQty, 0),
     totalLitres: round3(
@@ -746,7 +745,7 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
     reasonLabel: row.reasonLabel,
     reasonRemark: row.reasonRemark,
     supervisorName: row.supervisor?.name ?? null,
-    source: row.source === "auto_finding" ? "auto_finding" : "manual",
+    source: asCiSource(row.source),
     // Null is a NORMAL state — an unmastered dealer has no area and therefore no
     // route. The badge drops the segment rather than printing a dash.
     routeName: row.customer?.area?.primaryRoute?.name ?? null,
