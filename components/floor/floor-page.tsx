@@ -60,7 +60,6 @@ import { OffFloorDialog, type OffFloorFormBill, type CiReasonOption } from "./of
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
-import { ConnectionStrip } from "./connection-strip";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useFloorRailPoll } from "@/lib/floor/use-floor-rail-poll";
 // 🔴 toggleAllIds / (no isSelectable), NOT the stage-gated pair (2026-09-10 d).
@@ -2071,34 +2070,15 @@ export function FloorPage() {
           raised. The TopTab key stays "cancelled"; only the label moved. */}
       {tabPill("cancelled", "Cancel & CI", cancelledCount)}
 
-      {/* 🔴 THE VIEW PIVOT IS GONE (2026-09-10) — Flat, By route, By trip, By
-          group, By picker, and with it the ⏳ admin-only clause. Flat / By route
-          survive INSIDE the desk, on the pool where they still mean something.
+      {/* 🔴 NO "+ New trip" ON THIS ROW ANY MORE (2026-09-22). A trip is made
+          from ticked bills, by the bottom bar's "+ New trip" — the only way in
+          now. With nothing ticked the Floor tab has NO brand button: a browse
+          state (like CLAUDE_UI §59.9's list screens). TripForm and openTripForm
+          stay in this file with no caller; not deleted.
 
-          What takes the space is the one thing the planner starts with. It is
-          this row's only filled control (CLAUDE_UI §1) and it is hidden in
-          History, where a past day is a record and a new trip on it would be a
-          fiction — `isLive` is that guard, so a past day shows no New trip.
-
-          The date/History control is NOT beside it any more: it moved DOWN onto
-          the Live row on 2026-09-14, which is where the Flat / By route pivot
-          also landed. This row is tabs and one filled action, nothing else. */}
-      {/* ⚠ SECONDARY WHILE THE BOTTOM BAR IS UP (2026-09-22). The bar's main
-          CTA is then the one brand button on screen (CLAUDE_UI §10); this one
-          goes white + grey border, same box, so nothing shifts. */}
-      {topTab === "floor" && isLive && (
-        <button
-          type="button"
-          onClick={() => void openTripForm([])}
-          className={`ml-auto inline-flex h-[27px] items-center gap-1.5 rounded-[7px] border px-3 text-[11.5px] font-semibold ${
-            barVisible
-              ? "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-              : "border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
-          }`}
-        >
-          <span className="text-[13px] leading-none">+</span> New trip
-        </button>
-      )}
+          The right-hand group of this row (live dot · Flat | By route ·
+          History / the history stepper) is built by TripDesk, which owns
+          those controls' state (trip-desk.tsx). */}
     </>
   );
 
@@ -2163,7 +2143,9 @@ export function FloorPage() {
 
       {/* Connection strip (design §13) — only in live mode; renders only when the
           server is unreachable. A strip, never a modal — the board stays readable. */}
-      {isLive && <ConnectionStrip connected={connected} lastSyncedAt={lastSyncedAt} />}
+      {/* The connection strip that rendered here is replaced by the live dot in
+          the tab row (2026-09-22) — same `connected` / `lastSyncedAt` state from
+          the same marker probe, passed to TripDesk below. */}
 
       {/* ── Body — ONE column (2026-09-10) ────────────────────────────────
           🔴 THE 344px DECISION RAIL IS GONE. It held the bills the dispatch
@@ -2255,6 +2237,8 @@ export function FloorPage() {
               // TABLE column. Hold and Cancelled ride in as `sideBody`.
               activeTab={topTab}
               tabs={tabRow}
+              connected={connected}
+              lastSyncedAt={lastSyncedAt}
               sideBody={
                 topTab === "hold" ? (
                   <HoldTab

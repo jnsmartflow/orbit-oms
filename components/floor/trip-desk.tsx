@@ -42,6 +42,7 @@ import type { LoadPlanConfig } from "@/lib/trips/load-plan";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
+import { connectionDownText } from "./connection-strip";
 import {
   rowStatus,
   isTintRoomRow,
@@ -162,6 +163,8 @@ export function TripDesk({
   onDoneAdding,
   activeTab,
   tabs,
+  connected,
+  lastSyncedAt,
   sideBody,
   tintOperators,
   unfilteredRows,
@@ -229,6 +232,11 @@ export function TripDesk({
    *  rebuilt here: the counts come from four different filtered lists that
    *  floor-page already owns, and a second derivation of them is two answers. */
   tabs: ReactNode;
+  /** The floor marker probe's answer (use-picking-marker onProbe) — the live
+   *  dot. No poll of its own. */
+  connected: boolean;
+  /** The last successful board load — the dot's "not connected" tooltip. */
+  lastSyncedAt: Date | null;
   /** The Hold / Cancelled body. Rendered in the table column when `activeTab`
    *  is neither floor nor tinting, so those tabs keep the rail beside them. */
   sideBody: ReactNode;
@@ -571,48 +579,54 @@ export function TripDesk({
   // beside it. The stepper IS the read-only signal: it names a past date and the
   // forward arrow is disabled at yesterday. A second row for a caption would be
   // a row that says nothing the date does not.
-  const liveBar = (
-    <div
-      className={`flex items-center gap-2 border-b border-gray-200 px-3.5 py-[7px] text-[11.5px] ${
-        isHistory ? "bg-[#f9fafb]" : "bg-[#fcfcfd]"
-      }`}
-    >
+  //
+  // 🔴 THE LIVE ROW IS GONE (2026-09-22). What it carried moved UP into the tab
+  // row's right-hand group, in this order:
+  //   live   ● (dot) · [Flat | By route] · History ›
+  //   history ‹ date › · [Flat | By route] · ‹ Back to Live
+  // The dot is the connection strip's job too: ok-green while the marker probe
+  // answers, ink-400 when it does not. Its tooltip carries what the row used to
+  // print — the counts when live, the strip's "not connected" text when down.
+  // Same state, same probe (floor-page `connected` / `lastSyncedAt`), no new
+  // poll. No dot in History — the strip never showed there either.
+  const liveTitle = connected
+    ? `Live · ${stillOpen} still open · ${checkedToday} checked today · ${checkedEarlier} checked earlier`
+    : connectionDownText(lastSyncedAt);
+  const rightGroup = (
+    <span className="ml-auto flex items-center gap-3 text-[11.5px]">
       {isHistory ? (
-        <>
-          <button type="button" className={navCls} onClick={() => onStepHistory(-1)}>‹</button>
-          <span className="font-semibold">{histDate ? fmtHistLabel(histDate) : ""}</span>
+        <span className="flex items-center gap-2">
+          <button type="button" className={navCls} onClick={() => onStepHistory(-1)} aria-label="Previous day">‹</button>
+          <span className="font-semibold text-gray-900">{histDate ? fmtHistLabel(histDate) : ""}</span>
           <button
             type="button"
             className={navCls}
             disabled={forwardDisabled}
             onClick={() => !forwardDisabled && onStepHistory(1)}
+            aria-label="Next day"
           >
             ›
           </button>
-        </>
+        </span>
       ) : (
-        <>
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#10b981]" />
-          <span className="font-semibold">Live</span>
-          <span className="text-[10.5px] text-gray-400">
-            {stillOpen} still open &middot; {checkedToday} checked today
-            {checkedEarlier > 0 && <> &middot; {checkedEarlier} checked earlier</>}
-          </span>
-        </>
+        <span
+          role="status"
+          aria-label={liveTitle}
+          title={liveTitle}
+          className={`h-2 w-2 shrink-0 rounded-full ${connected ? "bg-ok" : "bg-ink-400"}`}
+        />
       )}
-      <span className="ml-auto flex items-center gap-3">
-        {pivotToggle}
-        {isHistory ? (
-          <button type="button" className="text-[10.5px] font-semibold text-brand-600" onClick={onExitHistory}>
-            &lsaquo; Back to Live
-          </button>
-        ) : (
-          <button type="button" className="text-[10.5px] font-semibold text-brand-600" onClick={onEnterHistory}>
-            History &rsaquo;
-          </button>
-        )}
-      </span>
-    </div>
+      {pivotToggle}
+      {isHistory ? (
+        <button type="button" className="text-[11px] font-semibold text-brand-600" onClick={onExitHistory}>
+          &lsaquo; Back to Live
+        </button>
+      ) : (
+        <button type="button" className="text-[11px] font-semibold text-brand-600" onClick={onEnterHistory}>
+          History &rsaquo;
+        </button>
+      )}
+    </span>
   );
 
   // ── THE TINTING TAB (2026-09-14) ─────────────────────────────────────────
@@ -1051,13 +1065,14 @@ export function TripDesk({
       {/* `relative` — the Floor bar and the Hold / Cancelled bars are
           positioned against THIS column, so none of them runs under the rail. */}
       <div className="relative flex min-h-0 flex-col overflow-hidden">
-        {/* THE TAB ROW. "+ New trip" stays here; the date control moved DOWN onto
-            the Live row below (2026-09-14), so this row is tabs and the one
-            filled action and nothing else. */}
+        {/* THE TAB ROW (2026-09-22): tabs on the left; on the right the live
+            dot (or the history stepper), Flat | By route where it applies, and
+            History / Back to Live. The Live row that sat under it is gone, and
+            so is the "+ New trip" that sat here. */}
         <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
           {tabs}
+          {rightGroup}
         </div>
-        {liveBar}
         {/* ⚠ ONE ELEMENT, TWO SHAPES (2026-09-22). Floor and Tinting scroll
             here. Hold and Cancelled bring their own scrolling body and an
             absolute bar, so for them this is a bounded flex column instead: as a
