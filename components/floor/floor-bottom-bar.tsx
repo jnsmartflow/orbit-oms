@@ -7,22 +7,29 @@
 // of those any more: the slot arrives from the trip, and assigning a picker is
 // the supervisor's job on /picking (one bill at a time is still reachable from
 // the detail panel). What is left is the one thing the planner actually does
-// with a selection — move it on or off a trip.
+// with a selection — move it on or off a trip — plus ··· More.
 //
 //   pool selected  → + New trip   (an EXISTING trip is clicked on the rail —
 //                                  see trip-rail.tsx addMode, 2026-09-16)
 //   trip selected  → Remove from trip
+//   either         → ··· More → Hold (bulk, 8 s Undo — floor-page.tsx bulkHold)
 //
-// ⚠ THE ✕ GLOBAL CLEAR STAYS. `toggleAll()` is PER GROUP and selects-all on a
-// partial selection (lib/floor/selection.ts), so a selection spanning two route
-// groups or two stops cannot be cleared by any header checkbox. This is the only
-// control that clears everything, which is why it is on the bar and not in a
-// menu.
+// 🔴 IT RENDERS INSIDE THE BILLS COLUMN (2026-09-22). floor-page builds it and
+// TripDesk places it in its `relative` bills column, so it never runs under the
+// trip rail. The shell (size, figures, ✕ Clear, the menu) is floor-action-bar.tsx,
+// shared with the Hold tab's bar.
 //
-// ⚠ NO CONFIRM ON EITHER ACTION. Both are reversible in one press — Remove puts
-// a bill back in the pool, Add to trip puts it back on one — and neither touches
-// the bill's workflowStage. A dialog on an action repeated all afternoon is a
-// tax, not a safety net.
+// ⚠ ONE BRAND BUTTON: the main CTA — "+ New trip", "Remove from trip" or
+// "Add N bills to {trip}". floor-page greys the tab row's own "+ New trip" while
+// this bar is up, so only one brand button is ever on screen (CLAUDE_UI §10).
+//
+// ⚠ NO CONFIRM ON THE CTA. Remove puts a bill back in the pool, Add to trip puts
+// it back on one — both reversible in one press, neither touches the bill's
+// workflowStage. A dialog on an action repeated all afternoon is a tax, not a
+// safety net. Hold has no confirm either: its toast carries an Undo.
+
+import { Pause } from "lucide-react";
+import { FloorActionBar, MoreMenu, BarDivider, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 
 export function FloorBottomBar({
   count,
@@ -39,6 +46,9 @@ export function FloorBottomBar({
   onRemoveFromTrip,
   onClear,
   contextLabel,
+  menuOpen,
+  onMenuOpenChange,
+  onHold,
 }: {
   count: number;
   /** Already formatted by the caller through formatLitres. */
@@ -51,8 +61,7 @@ export function FloorBottomBar({
   weight: string | null;
   /**
    * 🔴 TRUE WHEN AT LEAST ONE SELECTED BILL HAS NO WEIGHT, and the total is
-   * therefore a LOWER BOUND. The bar renders "67+ kg" and puts the count on the
-   * title.
+   * therefore a LOWER BOUND. The bar renders "67+ kg" and says so on the title.
    *
    * This exists because the alternative is silent under-counting. A planner
    * checks a selection against `vehicle_master.capacityKg` before putting it on
@@ -87,100 +96,72 @@ export function FloorBottomBar({
   onClear: () => void;
   /** e.g. "on L-260910-02" — a short reminder of what is selected. */
   contextLabel?: string | null;
+  /** ··· More — controlled by floor-page, the single Esc owner. */
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+  /** Hold every ticked bill (floor-page.tsx bulkHold). */
+  onHold: () => void;
 }) {
-  if (count === 0) return null;
+  // The four numbers a planner checks before a selection goes on a van: how
+  // much it holds, what it weighs, how many pieces there are to stack, and how
+  // many parts of town it covers. Litres is what the depot talks in; KILOS is
+  // what a vehicle's capacity is measured in (vehicle_master.capacityKg), which
+  // is why the two sit together.
+  const figures: BarFigure[] = [{ key: "l", value: litres, unit: "L" }];
+  if (weight !== null) {
+    figures.push({
+      key: "kg",
+      value: `${weight}${weightIsPartial ? "+" : ""}`,
+      unit: "kg",
+      title: weightIsPartial ? "Some selected bills have no weight recorded — this total is a lower bound" : undefined,
+    });
+  }
+  if (articles > 0) figures.push({ key: "art", value: String(articles), unit: articles === 1 ? "article" : "articles" });
+  if (routes > 0) figures.push({ key: "rt", value: String(routes), unit: routes === 1 ? "route" : "routes" });
+
+  // 🔴 THE TARGET WINS OVER THE MODE (2026-09-18). "+ Add bills" keeps the rail
+  // on the trip, so `mode` is "trip" for the whole of targeted add — and this
+  // branch used to require "pool", which put "Remove from trip" under the pink
+  // band from the day it shipped (6136b423). While a named trip is being filled
+  // the bar ADDS, and nothing else.
+  const cta =
+    addTargetLabel !== null ? (
+      <button type="button" onClick={onAddToTarget} disabled={busy} className={BAR_PRIMARY}>
+        {busy ? "Working…" : `Add ${count} bill${count === 1 ? "" : "s"} to ${addTargetLabel}`}
+      </button>
+    ) : mode === "pool" ? (
+      // ⚠ NEVER DISABLED BY A MIXED SELECTION (owner, 2026-09-18). A trip may
+      // carry Local and Upcountry bills on one truck; the number takes the
+      // majority type's letter (lib/trips/type-choice.ts).
+      <button type="button" onClick={onNewTripWithSelection} disabled={busy} className={BAR_PRIMARY}>
+        {busy ? "Working…" : "+ New trip"}
+      </button>
+    ) : (
+      // Brand since 2026-09-22 — inside a trip, taking bills off is the state's
+      // real job, so it is the one brand button (CLAUDE_UI §10).
+      <button type="button" onClick={onRemoveFromTrip} disabled={busy} className={BAR_PRIMARY}>
+        {busy ? "Working…" : "Remove from trip"}
+      </button>
+    );
 
   return (
-    <div className="absolute inset-x-0 bottom-0 z-20 flex h-[60px] items-center border-t border-gray-200 bg-white px-[18px] shadow-[0_-6px_18px_-12px_rgba(0,0,0,0.25)]">
-      <div className="flex min-w-0 items-center gap-[7px]">
-        <span className="whitespace-nowrap text-[13px] font-semibold text-gray-900">
-          {count} selected
-        </span>
-        <button
-          type="button"
-          onClick={onClear}
-          aria-label="Clear selection"
-          title="Clear selection"
-          className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
-        {/* The four numbers a planner checks before a selection goes on a van:
-            how much it holds, what it weighs, how many pieces there are to
-            stack, and how many parts of town it covers. Litres is what the depot
-            talks in; KILOS is what a vehicle's capacity is measured in
-            (vehicle_master.capacityKg), which is why the two sit together. */}
-        <span className="truncate whitespace-nowrap text-[11px] tabular-nums text-gray-400">
-          &middot; {litres} L
-          {weight !== null && (
-            <span
-              title={
-                weightIsPartial
-                  ? "Some selected bills have no weight recorded — this total is a lower bound"
-                  : undefined
-              }
-            >
-              {" · "}
-              {weight}
-              {weightIsPartial ? "+" : ""} kg
-            </span>
-          )}
-          {articles > 0 && ` · ${articles} article${articles === 1 ? "" : "s"}`}
-          {routes > 0 && ` · ${routes} route${routes === 1 ? "" : "s"}`}
-          {contextLabel ? ` · ${contextLabel}` : ""}
-        </span>
-      </div>
-
-      <div className="ml-auto flex items-center gap-2">
-        {/* 🔴 THE TARGET WINS OVER THE MODE (2026-09-18). "+ Add bills" keeps the
-            rail on the trip, so `mode` is "trip" for the whole of targeted add —
-            and this branch used to require "pool", which put "Remove from trip"
-            under the pink band from the day it shipped (6136b423). While a named
-            trip is being filled the bar ADDS, and nothing else. */}
-        {addTargetLabel !== null ? (
-          <button
-            type="button"
-            onClick={onAddToTarget}
-            disabled={busy}
-            className="inline-flex h-[34px] items-center rounded-md border border-brand-600 bg-brand-600 px-4 text-[12px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
-          >
-            {busy ? "Working…" : `Add ${count} bill${count === 1 ? "" : "s"} to ${addTargetLabel}`}
-          </button>
-        ) : mode === "pool" ? (
-          <>
-            {/* 🔴 THE ONLY BUTTON LEFT ON THIS BAR (2026-09-16). "Add to trip ▾"
-                — a <select> listing every trip by number — is gone: the RAIL is
-                the picker now, and it shows the route, the load and the driver
-                that the menu never did. An existing trip is a card on the left; a
-                new one is this button. Two answers, two places, neither behind a
-                menu (owner's design).
-
-                ⚠ NEVER DISABLED BY A MIXED SELECTION (owner, 2026-09-18). A trip
-                may carry Local and Upcountry bills on one truck; the number takes
-                the majority type's letter (lib/trips/type-choice.ts). The amber
-                "Selection mixes …" block that stood here was wrong and is gone. */}
-            <button
-              type="button"
-              onClick={onNewTripWithSelection}
-              disabled={busy}
-              className="inline-flex h-[34px] items-center rounded-md border border-brand-600 bg-brand-600 px-4 text-[12px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
-            >
-              {busy ? "Working…" : "+ New trip"}
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={onRemoveFromTrip}
-            disabled={busy}
-            className="inline-flex h-[34px] items-center rounded-md border border-[#d6a3a3] bg-white px-4 text-[12px] font-semibold text-[#b91c1c] hover:bg-[#fef2f2] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {busy ? "Working…" : "Remove from trip"}
-          </button>
-        )}
-      </div>
-    </div>
+    <FloorActionBar count={count} figures={figures} extra={contextLabel ?? undefined} onClear={onClear}>
+      {cta}
+      <BarDivider />
+      <MoreMenu
+        open={menuOpen}
+        onOpenChange={onMenuOpenChange}
+        disabled={busy}
+        items={[
+          {
+            key: "hold",
+            label: "Hold",
+            hint: "Off the floor until released · Undo for 8s",
+            icon: <Pause size={15} strokeWidth={2.2} />,
+            onSelect: onHold,
+          },
+        ]}
+      />
+    </FloorActionBar>
   );
 }

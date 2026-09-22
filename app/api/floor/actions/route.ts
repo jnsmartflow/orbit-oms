@@ -3,13 +3,14 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { FLOOR_HOLD_NOTE } from "@/lib/floor/hold-log";
+import { FLOOR_HOLD_NOTE, FLOOR_CLEAR_HOLD_NOTE } from "@/lib/floor/hold-log";
+import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
 
 export const dynamic = "force-dynamic";
 
 // Floor Control — bulk + single actions on floor/rail bills (design §7.8-§7.11,
 // §9). NOT assignment: Assign/Unassign go through the existing Picking endpoints
-// unchanged (see components/floor/floor-page.tsx). This route owns the five
+// unchanged (see components/floor/floor-page.tsx). This route owns the six
 // state actions below.
 //
 // Contract per bill, non-negotiable (CORE §3 + CLAUDE_PICKING §10):
@@ -18,8 +19,8 @@ export const dynamic = "force-dynamic";
 //     on every board's updatedAt live-sync marker)
 //   - exactly ONE order_status_logs row per bill per action
 
-type FloorAction = "mark-urgent" | "change-slot" | "hold" | "cancel" | "restore";
-const ACTIONS: FloorAction[] = ["mark-urgent", "change-slot", "hold", "cancel", "restore"];
+type FloorAction = "mark-urgent" | "change-slot" | "hold" | "cancel" | "restore" | "unhold";
+const ACTIONS: FloorAction[] = ["mark-urgent", "change-slot", "hold", "cancel", "restore", "unhold"];
 
 interface Body {
   action?: FloorAction;
@@ -103,7 +104,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       let toStage = order.workflowStage;
       let note: string;
       // Set by 'cancel' only — see the write block below. Declared here rather
-      // than inside the branch because the writes are shared by all five
+      // than inside the branch because the writes are shared by all six
       // actions and must stay in ONE place.
       let clearAssignment = false;
 
@@ -155,11 +156,11 @@ export async function POST(req: Request): Promise<NextResponse> {
         // survives on the assign event in order_status_logs, which is the right
         // home for history.
         clearAssignment = true;
-      } else {
-        // restore — cancelled → back onto the left rail as an undecided card
-        // (design §9). pending_support (rank 50) satisfies the rail predicate
-        // (getFloorRail: rank < 60 + dispatchStatus null). Splits were never
-        // touched by cancel, so nothing to reset here.
+      } else if (action === "restore") {
+        // restore — cancelled → back onto the board as a `no slot` row, through
+        // floorBoardWhere's arm 2 (floorUnslottedWhere: rank < 60 +
+        // dispatchStatus null; the decision rail this once fed retired
+        // 2026-09-13). Splits were never touched by cancel, so nothing to reset.
         if (order.workflowStage !== "cancelled") {
           failed.push({ orderId, error: "Order is not cancelled" });
           continue;
@@ -167,6 +168,29 @@ export async function POST(req: Request): Promise<NextResponse> {
         updateData = { workflowStage: "pending_support", dispatchStatus: null };
         toStage = "pending_support";
         note = "Restored to decisions";
+      } else {
+        // unhold (2026-09-22) — the 8 s Undo on the bottom bar's bulk Hold.
+        // Puts back the ONE thing hold changed: `dispatchStatus`. Stage, slot,
+        // trip and pick assignment were never written by hold, so they are
+        // still exactly as they were. `heldAt` is left alone, as Release leaves
+        // it (it is the arrival date, CLAUDE_FLOOR §4.5).
+        //
+        // 🔴 THE STATUS IS DERIVED FROM THE STAGE, NEVER TAKEN FROM THE CALLER.
+        // A stage the bill reached by being sent to the floor
+        // (FLOOR_CLEAR_HOLD_STAGES) gets "dispatch" back. Anything else —
+        // pending_support and the tint stages — gets NULL: "dispatch" on those
+        // leaves a bill no screen shows (release-stages.ts, the
+        // pending_support note).
+        if (order.dispatchStatus !== "hold") {
+          failed.push({ orderId, error: "Bill is not on hold" });
+          continue;
+        }
+        updateData = {
+          dispatchStatus: FLOOR_CLEAR_HOLD_STAGES.includes(order.workflowStage) ? "dispatch" : null,
+        };
+        // ⚠ NOT a hold note — FLOOR_CLEAR_HOLD_NOTE is kept OUT of
+        // HOLD_LOG_NOTES so a re-held bill's "held since" is its new hold.
+        note = FLOOR_CLEAR_HOLD_NOTE;
       }
 
       // ONE orders.update per bill.

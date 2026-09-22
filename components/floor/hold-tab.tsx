@@ -25,6 +25,7 @@ import { PdfPreview } from "./pdf-preview";
 import { shipMarkers } from "./floor-table";
 import { toggleOne, toggleAllIds, isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
 import { groupByHoldBand, heldSinceLabel, holdAgeDays } from "@/lib/floor/hold-log";
+import { countArticles } from "@/lib/floor/format";
 import type { FloorHoldRow } from "@/lib/floor/types";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 
@@ -162,7 +163,11 @@ export function HoldTab({
   const list = rows ?? [];
   const bands = useMemo(() => groupByHoldBand(list, now, oldestFirst), [list, now, oldestFirst]);
 
-  const selectedIds = list.filter((r) => selection.has(r.orderId)).map((r) => r.orderId);
+  const selectedRows = list.filter((r) => selection.has(r.orderId));
+  const selectedIds = selectedRows.map((r) => r.orderId);
+  // The bar's figures — the same two helpers' meaning as the Floor tab's bar.
+  const selectedArticles = countArticles(selectedRows.map((r) => r.articleTag)).pieces;
+  const selectedRoutes = new Set(selectedRows.map((r) => r.route ?? "\u0000unrouted")).size;
   const clear = () => setSelection(new Set());
 
   const doRelease = async (date: string, windowId: number) => {
@@ -208,8 +213,9 @@ export function HoldTab({
         </span>
       </div>
 
-      {/* Body */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Body. Room at the bottom while the bar is up, so it never covers the
+          last rows. */}
+      <div className={`min-h-0 flex-1 overflow-y-auto ${selectedIds.length > 0 ? "pb-[84px]" : ""}`}>
         {loading ? (
           <FloorSkeleton variant="floor" />
         ) : error ? (
@@ -243,7 +249,15 @@ export function HoldTab({
       </div>
 
       {selectedIds.length > 0 && (
-        <HoldBar count={selectedIds.length} windows={windows} busy={busy} onRelease={doRelease} onClear={clear} />
+        <HoldBar
+          count={selectedIds.length}
+          articles={selectedArticles}
+          routes={selectedRoutes}
+          windows={windows}
+          busy={busy}
+          onRelease={doRelease}
+          onClear={clear}
+        />
       )}
 
       {pdfOpen && <PdfPreview rows={list} scope={scope} onClose={() => setPdfOpen(false)} />}

@@ -152,8 +152,6 @@ export function TripDesk({
   onSetTripShown,
   onSetTripSentToBilling,
   addMode,
-  addCount,
-  addSummary,
   sameRouteLabel,
   onAddToTrip,
   addingToTripId,
@@ -173,6 +171,7 @@ export function TripDesk({
   routeNames,
   onMakeTrip,
   makeTripBusy,
+  bottomBar,
 }: {
   floor: FloorBoardResult;
   trips: TripSummary[] | null;
@@ -206,9 +205,6 @@ export function TripDesk({
    * no behaviour of its own here.
    */
   addMode: boolean;
-  addCount: number;
-  /** "1,320 L · 1,822 kg · Adajan" — the hint line under the heading. */
-  addSummary: ReactNode;
   /** The selection-s route when it is a single one — cards matching it say so. */
   sameRouteLabel: string | null;
   onAddToTrip: (tripId: number) => void;
@@ -272,6 +268,13 @@ export function TripDesk({
   /** Make trip on a load-plan card — the New trip flow with these bills. */
   onMakeTrip?: (orderIds: number[], vehicleSize?: VehicleSize) => void;
   makeTripBusy?: boolean;
+  /**
+   * The Floor tab's bottom bar (floor-bottom-bar.tsx), built by floor-page and
+   * placed HERE, in the bills column (2026-09-22). It used to be mounted in
+   * floor-page, one level above this grid, so its `inset-x-0` spanned the rail
+   * too. Null when nothing is ticked.
+   */
+  bottomBar?: ReactNode;
 }) {
   // ── TWO VIEW STATES, ONE PER LIST (2026-09-19) ───────────────────────────
   //
@@ -1026,10 +1029,8 @@ export function TripDesk({
         trips={trips}
         loading={tripsLoading}
         // ⚠ NOT A PICKER WHILE A NAMED TRIP IS BEING FILLED (owner): the trip is
-        // already decided, so the rail shows no hint and no "+".
+        // already decided, so a card click opens it rather than adding to it.
         addMode={addMode && addingToTripId === null}
-        addCount={addCount}
-        addSummary={addSummary}
         sameRouteLabel={sameRouteLabel}
         onAddToTrip={onAddToTrip}
         anchorIso={floor.date}
@@ -1043,7 +1044,9 @@ export function TripDesk({
       {/* THE TABLE COLUMN. Tabs first, exactly as the original July board had
           them and as Mail Orders still does — the scope row spans the page
           above, and everything below it belongs to one column or the other. */}
-      <div className="flex min-h-0 flex-col overflow-hidden">
+      {/* `relative` — the Floor bar and the Hold / Cancelled bars are
+          positioned against THIS column, so none of them runs under the rail. */}
+      <div className="relative flex min-h-0 flex-col overflow-hidden">
         {/* THE TAB ROW. "+ New trip" stays here; the date control moved DOWN onto
             the Live row below (2026-09-14), so this row is tabs and the one
             filled action and nothing else. */}
@@ -1051,7 +1054,24 @@ export function TripDesk({
           {tabs}
         </div>
         {liveBar}
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+        {/* ⚠ ONE ELEMENT, TWO SHAPES (2026-09-22). Floor and Tinting scroll
+            here. Hold and Cancelled bring their own scrolling body and an
+            absolute bar, so for them this is a bounded flex column instead: as a
+            plain scroll box it let their `flex-1` grow to the content, and the
+            bar sat after the last row rather than on the bottom edge. Same
+            element either way, so a tab change never remounts it. The bottom
+            padding keeps the last rows clear of the Floor bar. */}
+        <div
+          ref={scrollRef}
+          className={
+            activeTab === "hold" || activeTab === "cancelled"
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+              : `min-h-0 flex-1 overflow-y-auto ${bottomBar ? "pb-[84px]" : ""}`
+          }
+        >
+          {body}
+        </div>
+        {bottomBar}
       </div>
     </div>
   );

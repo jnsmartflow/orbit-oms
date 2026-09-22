@@ -35,7 +35,7 @@ import { toast } from "sonner";
 import { TripDesk, isPoolRow } from "./trip-desk";
 import { TripForm } from "./trip-form";
 import type { VehicleSize } from "@/lib/trips/vehicle-size";
-import { rankRouteName, formatRouteLabel } from "@/lib/trips/route-label";
+import { rankRouteName } from "@/lib/trips/route-label";
 import { FloorBottomBar } from "./floor-bottom-bar";
 import { TripVehicleEditor } from "./trip-vehicle-editor";
 import {
@@ -136,7 +136,9 @@ function addDaysIso(iso: string, delta: number): string {
 // hid the Hold-tab release no-op).
 interface WriteBody {
   error?: string;
-  failed?: Array<{ error?: string }>;
+  /** The batch routes' applied ids (POST /api/floor/actions returns them). */
+  done?: number[];
+  failed?: Array<{ orderId?: number; error?: string }>;
 }
 
 async function postJson(url: string, payload: unknown, method: "POST" | "PATCH" = "POST"): Promise<{ ok: boolean; body: WriteBody }> {
@@ -311,6 +313,10 @@ export function FloorPage() {
   // Selection (design §7.8) — a Set of orderIds; survives a re-sort, cleared on
   // any tab/scope/date change below.
   const [selection, setSelection] = useState<FloorSelection>(new Set());
+  // The bottom bar's ··· More menu (2026-09-22). Owned HERE, not in the menu,
+  // because this component is the single Esc owner (FLOOR §4.6) and Esc must be
+  // able to close it. Reset whenever the bar goes away (effect below barVisible).
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1011,6 +1017,65 @@ export function FloorPage() {
   // panel's ⋯ menu (`detailActions` below) — those call /api/picking/assign and
   // /api/picking/unassign directly, so no Picking endpoint lost a caller.
 
+  // ── Bottom bar: bulk Hold + 8 s Undo (2026-09-22, floor-bulk-actions v5) ──
+  //
+  // Hold posts every ticked id to the existing `hold` action — the route was
+  // always a batch; only the caller was single-bill. Undo posts the ids that
+  // were ACTUALLY held to `unhold`, which puts back the one field hold changed
+  // (`dispatchStatus`, derived from the stage server-side).
+  //
+  // ⚠ THE UNDO IDS LIVE IN THE TOAST'S CLOSURE. The reload right after the hold
+  // takes those bills off the board, so nothing on screen can be read back for
+  // them eight seconds later.
+  const undoHold = useCallback(
+    async (orderIds: number[]) => {
+      const r = await postJson("/api/floor/actions", { action: "unhold", orderIds });
+      if (reportWrite("Undo hold", r)) {
+        const n = orderIds.length;
+        toast.success(`${n} bill${n === 1 ? "" : "s"} back on the floor`);
+      }
+      await load();
+    },
+    [load],
+  );
+
+  const bulkHold = useCallback(
+    async (rowsToHold: FloorBoardRow[]) => {
+      if (rowsToHold.length === 0) return;
+      setTripBarBusy(true);
+      const r = await postJson("/api/floor/actions", { action: "hold", orderIds: rowsToHold.map((x) => x.orderId) });
+      setTripBarBusy(false);
+      const done = Array.isArray(r.body.done) ? r.body.done : [];
+      const failed = Array.isArray(r.body.failed) ? r.body.failed : [];
+      if (done.length === 0) {
+        // Nothing held — say why and keep every tick where it was.
+        const why = r.body.error ?? failed[0]?.error;
+        toast.error(why ? `Hold failed — ${why}` : "Hold failed.");
+        await load();
+        return;
+      }
+      const heldSet = new Set(done);
+      // A held bill keeps its trip (hold never writes tripDropId) but leaves the
+      // trip's stop on the board, so the planner is told how many went.
+      const fromTrips = rowsToHold.filter((x) => heldSet.has(x.orderId) && x.tripDropId !== null).length;
+      const n = done.length;
+      const tripsBit = fromTrips > 0 ? ` · ${fromTrips} from trip${fromTrips === 1 ? "" : "s"}` : "";
+      const undo = { duration: 8_000, action: { label: "Undo", onClick: () => void undoHold(done) } };
+      if (failed.length > 0) {
+        toast.warning(
+          `${n} held · ${failed.length} could not be held${tripsBit} — ${failed[0]?.error ?? "not valid at its current state"}`,
+          undo,
+        );
+      } else {
+        toast.success(`${n} bill${n === 1 ? "" : "s"} put on hold${tripsBit}`, undo);
+      }
+      // The failed ones stay ticked, so the planner can see which they were.
+      setSelection(new Set(failed.map((f) => f.orderId).filter((id): id is number => typeof id === "number")));
+      await load();
+    },
+    [load, undoHold],
+  );
+
   // ── Hold tab: bulk release → the floor (reuses the Step-3 release route). ──
   // Each ticked bill gets the SAME chosen date+window; the route advances it to
   // pending_picking with dispatchStatus="dispatch", so it leaves Hold and lands
@@ -1314,7 +1379,8 @@ export function FloorPage() {
 
   // Single Esc owner — lifted out of detail-panel so exactly ONE action fires per
   // press and only ONE listener exists: panel open → close it (selection kept);
-  // else a live selection → clear it; else nothing. Ignored while focus is in a
+  // else the bar's ··· More menu open → close it; else a live selection →
+  // clear it; else the add band → end it; else nothing. Ignored while focus is in a
   // field / native control so Esc never wipes a selection mid-type (ship-to
   // search, far-date box, picker dropdown).
   useEffect(() => {
@@ -1327,6 +1393,9 @@ export function FloorPage() {
       const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
       if (detailOpen) closeDetail();
+      // The bottom bar's ··· More menu (2026-09-22) — closed first, so the
+      // next Esc clears the selection and one press never does both.
+      else if (moreOpen) setMoreOpen(false);
       else if (selection.size > 0) clearSelection();
       // Then the add band — the same thing Done does. A live selection is
       // cleared first, so one Esc never both empties the ticks and closes the
@@ -1335,7 +1404,7 @@ export function FloorPage() {
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [detailOpen, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
+  }, [detailOpen, moreOpen, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -1429,6 +1498,11 @@ export function FloorPage() {
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
 
   const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null;
+  // The menu lives on the bar, so it closes when the bar goes (ticks cleared,
+  // tab changed, History) — never left "open" to reappear with the next tick.
+  useEffect(() => {
+    if (!barVisible) setMoreOpen(false);
+  }, [barVisible]);
 
   // ── ONE BAR, TWO READINGS (2026-09-10) ────────────────────────────────────
   //
@@ -1655,7 +1729,6 @@ export function FloorPage() {
       ),
     [selectedRows, placeholderRoutes],
   );
-  const selectionRouteLabel = useMemo(() => formatRouteLabel(selectionRouteRank), [selectionRouteRank]);
   /**
    * The label a card must match to earn its quiet "Same route" line: only when
    * the selection is ONE route, and never in targeted add mode, where the trip
@@ -1666,25 +1739,9 @@ export function FloorPage() {
       ? selectionRouteRank.name
       : null;
 
-  /**
-   * The add hint's second line — the same facts the bar already prints, in the
-   * same words, from the same helpers: litres, kilos (with the honest "+" when a
-   * bill has no weight) and the selection's route label.
-   *
-   * "No route" is GREY, the same grey as the rail card's own "No route"
-   * (trip-rail.tsx) — so this is a node, not a joined string.
-   */
-  const addSummary = useMemo(() => {
-    const bits = [`${formatLitres(sumLitres(selectedRows))} L`];
-    const kg = formatWeightKg(selectionWeight.kg);
-    if (kg !== null) bits.push(`${kg}${selectionWeight.unknown > 0 ? "+" : ""} kg`);
-    return (
-      <>
-        {bits.join(" · ")} ·{" "}
-        {selectionRouteLabel ?? <span className="text-[#96969f]">No route</span>}
-      </>
-    );
-  }, [selectedRows, selectionWeight, selectionRouteLabel]);
+  // ⚠ THE RAIL'S PINK ADD HINT WENT ON 2026-09-22 (floor-bulk-actions v5), and
+  // `addSummary` — its second line — went with it. The bottom bar already
+  // prints the same litres / kg for the selection.
 
   // A short reminder of what the selection is sitting on. Reads off the rail,
   // for the same reason `barMode` does.
@@ -1886,11 +1943,18 @@ export function FloorPage() {
           The date/History control is NOT beside it any more: it moved DOWN onto
           the Live row on 2026-09-14, which is where the Flat / By route pivot
           also landed. This row is tabs and one filled action, nothing else. */}
+      {/* ⚠ SECONDARY WHILE THE BOTTOM BAR IS UP (2026-09-22). The bar's main
+          CTA is then the one brand button on screen (CLAUDE_UI §10); this one
+          goes white + grey border, same box, so nothing shifts. */}
       {topTab === "floor" && isLive && (
         <button
           type="button"
           onClick={() => void openTripForm([])}
-          className="ml-auto inline-flex h-[27px] items-center gap-1.5 rounded-[7px] bg-brand-600 px-3 text-[11.5px] font-semibold text-white hover:bg-brand-700"
+          className={`ml-auto inline-flex h-[27px] items-center gap-1.5 rounded-[7px] border px-3 text-[11.5px] font-semibold ${
+            barVisible
+              ? "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              : "border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
+          }`}
         >
           <span className="text-[13px] leading-none">+</span> New trip
         </button>
@@ -1974,7 +2038,8 @@ export function FloorPage() {
           rails side by side would have been two answers to "what am I looking
           at". */}
       <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "1fr" }}>
-        {/* The desk + (bulk bar overlay).
+        {/* The desk. (The bottom bar is NOT overlaid here any more — TripDesk
+            places it inside its bills column, 2026-09-22.)
 
             🔴 THE TAB ROW MOVED INSIDE THE TABLE COLUMN (2026-09-14). It used to
             sit here, spanning the whole page above the rail. That is the shape
@@ -2026,8 +2091,6 @@ export function FloorPage() {
               // something is ticked", so Escape and ✕ — which clear the
               // selection — end it with no second piece of state to go stale.
               addMode={addMode}
-              addCount={selectedRows.length}
-              addSummary={addSummary}
               sameRouteLabel={sameRouteLabel}
               onAddToTrip={(id) => void addSelectionToTrip(id)}
               // Targeted add — "+ Add bills" inside a trip (2026-09-16).
@@ -2095,6 +2158,34 @@ export function FloorPage() {
               routeNames={loadPlan.routeNames}
               onMakeTrip={(orderIds, vehicleSize) => void createTripWithSelection({ orderIds, vehicleSize })}
               makeTripBusy={tripBarBusy}
+              // ONE BAR, placed by TripDesk INSIDE its bills column (2026-09-22)
+              // so it never runs under the trip rail. The assign bar and the
+              // trip selection bar were two components at the same bottom-0,
+              // picked between by a rows test; both are gone, and this one reads
+              // which question to ask off the rail.
+              bottomBar={
+                barVisible ? (
+                  <FloorBottomBar
+                    count={selectedRows.length}
+                    litres={formatLitres(sumLitres(selectedRows))}
+                    weight={formatWeightKg(selectionWeight.kg)}
+                    weightIsPartial={selectionWeight.unknown > 0}
+                    articles={selectionArticles}
+                    routes={selectionRoutes}
+                    mode={barMode}
+                    busy={tripBarBusy || tripBusyId !== null}
+                    addTargetLabel={addTargetTrip?.tripNumber ?? null}
+                    onAddToTarget={() => { if (addingToTripId !== null) void addSelectionToTrip(addingToTripId, { quiet: true }); }}
+                    onNewTripWithSelection={() => void createTripWithSelection()}
+                    onRemoveFromTrip={() => void removeSelectionFromTrips(selectedRows)}
+                    onClear={clearSelection}
+                    contextLabel={barContextLabel}
+                    menuOpen={moreOpen}
+                    onMenuOpenChange={setMoreOpen}
+                    onHold={() => void bulkHold(selectedRows)}
+                  />
+                ) : null
+              }
               // The SAME desk renders live and history, so the source is
               // decided here by the view (2026-08-25). "history" is the
               // read-only source — it suppresses every action in the panel
@@ -2105,30 +2196,6 @@ export function FloorPage() {
               onOpenDetail={(id) => openDetail(id, isLive ? "floor" : "history")}
             />
           ) : null}
-
-          {/* ONE BAR. The assign bar (Change slot · Choose picker · Assign) and
-              the trip selection bar (Remove from trip) were two components at
-              the same bottom-0, picked between by a rows test. Both are gone;
-              floor-bottom-bar.tsx does the one job that is left, and reads which
-              question to ask off the rail. */}
-          {barVisible && (
-            <FloorBottomBar
-              count={selectedRows.length}
-              litres={formatLitres(sumLitres(selectedRows))}
-              weight={formatWeightKg(selectionWeight.kg)}
-              weightIsPartial={selectionWeight.unknown > 0}
-              articles={selectionArticles}
-              routes={selectionRoutes}
-              mode={barMode}
-              busy={tripBarBusy || tripBusyId !== null}
-              addTargetLabel={addTargetTrip?.tripNumber ?? null}
-              onAddToTarget={() => { if (addingToTripId !== null) void addSelectionToTrip(addingToTripId, { quiet: true }); }}
-              onNewTripWithSelection={() => void createTripWithSelection()}
-              onRemoveFromTrip={() => void removeSelectionFromTrips(selectedRows)}
-              onClear={clearSelection}
-              contextLabel={barContextLabel}
-            />
-          )}
         </div>
       </div>
 

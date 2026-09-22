@@ -25,7 +25,8 @@
 export const FLOOR_HOLD_NOTE = "Held from floor";
 
 /** Floor's clear-hold note (slice 3b, 2026-09-14). Written by
- *  `app/api/floor/actions/route.ts` (action "clear-hold").
+ *  `app/api/floor/actions/route.ts` (action "unhold" — the bottom bar's
+ *  8 s Undo after a bulk Hold, 2026-09-22).
  *
  *  ⚠ NOT IN HOLD_LOG_NOTES, AND MUST NEVER BE. That list identifies HOLD events
  *  for the "held since" read; a clear event inside it would make a re-held bill's

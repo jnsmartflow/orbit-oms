@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floor Bulk Actions v5</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand-50:#F5F3FF;--brand-600:#7C3AED;--brand-700:#6D28D9;--brand-800:#5B21B6;
+  --ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;
+  --ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5E5A6E;--ink-700:#443F55;--ink-900:#1B1826;
+  --ok:#059669;--ok-bg:#ECFDF5;--ok-text:#047857;
+  --warn-bg:#FFFBEB;--warn-text:#B45309;
+  --danger:#E11D48;--danger-bg:#FFF1F2;--danger-text:#BE123C;--danger-bd:#FECDD3;
+  --slate:#475569;--tint-bg:#F0F9FF;--tint-bd:#BAE6FD;--tint-700:#0369A1;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Plus Jakarta Sans",system-ui,sans-serif;background:#E9E7F0;color:var(--ink-900);font-size:13px}
+.mono{font-family:"JetBrains Mono",monospace}
+
+.switch{position:sticky;top:0;z-index:50;background:#1B1826;color:#fff;padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.switch b{font-size:12px;margin-right:8px;opacity:.7;font-weight:500}
+.switch button{font:inherit;font-size:12px;background:#2E2A3D;color:#fff;border:1px solid #443F55;border-radius:6px;padding:6px 10px;cursor:pointer}
+.switch button.on{background:#fff;color:#1B1826}
+
+.app{display:grid;grid-template-columns:64px 300px 1fr;height:calc(100vh - 46px);min-height:800px;background:#fff;position:relative;overflow:hidden}
+.side{border-right:1px solid var(--ink-100);display:flex;flex-direction:column;align-items:center;padding-top:16px;gap:18px}
+.side .logo{color:var(--brand-800);font-weight:700;font-size:15px}
+.side i{width:20px;height:20px;border-radius:5px;background:var(--ink-100);display:block}
+.side i.on{background:var(--brand-50);outline:2px solid var(--brand-600)}
+
+.rail{border-right:1px solid var(--ink-100);background:var(--ink-25);min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.plan{border:1px solid var(--ink-200);background:#fff;border-radius:10px;padding:12px 14px}
+.plan.sel,.trip.sel{border-color:var(--slate);box-shadow:inset 3px 0 0 var(--slate)}
+.plan .t{font-size:16px;font-weight:600}
+.plan .n{font-size:14px;color:var(--ink-600);margin-top:2px}
+.plan .n b{color:var(--ink-900)}
+.trip{border:1px solid var(--ink-100);background:#fff;border-radius:10px;padding:12px 14px}
+.trip .top{display:flex;align-items:center;gap:8px}
+.trip .no{font-size:12px;background:var(--ink-50);border:1px solid var(--ink-100);border-radius:5px;padding:2px 6px;color:var(--ink-700)}
+.trip .slot{font-size:12px;color:var(--ink-500)}
+.chip-ok{margin-left:auto;font-size:11px;font-weight:700;letter-spacing:.03em;color:var(--ok-text);background:var(--ok-bg);border-radius:5px;padding:3px 7px}
+.trip .name{font-size:18px;font-weight:600;margin-top:8px}
+.trip .name span{color:var(--ink-400);font-weight:500}
+.trip .nums{font-size:14px;color:var(--ink-600);margin-top:3px}
+.trip .nums b{color:var(--ink-900);font-weight:600}
+.trip .drv{font-size:13px;color:var(--ink-700);margin-top:6px}
+.bar{height:5px;border-radius:3px;background:var(--ink-100);margin-top:10px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+
+.main{display:flex;flex-direction:column;min-width:0;position:relative}
+.head{display:flex;align-items:center;padding:12px 20px;border-bottom:1px solid var(--ink-100)}
+.scope{display:flex;background:var(--ink-50);border-radius:8px;padding:3px}
+.scope span{padding:5px 12px;font-size:13px;color:var(--ink-600);border-radius:6px}
+.scope span.on{background:#fff;color:var(--ink-900);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.tabs{display:flex;gap:22px;padding:0 20px;border-bottom:1px solid var(--ink-100)}
+.tabs span{padding:12px 0;font-size:14px;color:var(--ink-500);display:flex;gap:6px;align-items:center}
+.tabs span.on{color:var(--ink-900);font-weight:600;box-shadow:inset 0 -2px 0 var(--brand-600)}
+.tabs em{font-style:normal;font-size:11px;background:var(--ink-50);border-radius:5px;padding:1px 6px;color:var(--ink-600)}
+.tabs span.on em{background:var(--ink-900);color:#fff}
+.content{flex:1;overflow:auto;padding:16px 20px 130px}
+.grouphead{font-size:15px;font-weight:600;margin:6px 0 8px;display:flex;align-items:center;gap:10px}
+.grouphead span{color:var(--ink-500);font-weight:400;font-size:13px}
+.filt{margin-left:auto;display:flex;background:var(--ink-50);border-radius:8px;padding:3px}
+.filt i{font-style:normal;padding:4px 10px;font-size:12px;color:var(--ink-600);border-radius:6px;font-weight:500}
+.filt i.on{background:#fff;color:var(--ink-900);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+table{width:100%;border-collapse:collapse;border:1px solid var(--ink-100)}
+th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);font-weight:600;padding:10px 12px;background:var(--ink-25);border-bottom:1px solid var(--ink-100)}
+td{padding:11px 12px;border-bottom:1px solid var(--ink-50);font-size:13px;vertical-align:top}
+tr.sel td{background:#F8F7FB}
+td small{display:block;color:var(--ink-500);font-size:11px;margin-top:2px}
+.cb{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--ink-400);display:inline-block;vertical-align:middle;position:relative}
+.cb.on{background:var(--slate);border-color:var(--slate)}
+.cb.on:after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.pill{font-size:11px;font-weight:600;border-radius:5px;padding:3px 7px;display:inline-block;white-space:nowrap}
+.p-done{background:var(--ok-bg);color:var(--ok-text)}
+.p-wait{background:var(--ink-50);color:var(--ink-700)}
+.p-hold{background:var(--warn-bg);color:var(--warn-text)}
+.p-can{background:var(--danger-bg);color:var(--danger-text)}
+.p-ci{background:var(--tint-bg);color:var(--tint-700)}
+.p-ci2{background:var(--ok-bg);color:var(--ok-text)}
+.r{text-align:right}
+.rem{color:var(--ink-600);font-size:12px;max-width:220px}
+.lnk{color:var(--brand-700);font-weight:600;font-size:12px}
+
+.bbar{position:absolute;left:16px;right:16px;bottom:16px;background:#fff;border:1px solid var(--ink-200);border-radius:14px;box-shadow:0 10px 30px rgba(27,24,38,.14);padding:12px 14px 12px 20px;display:flex;align-items:center;gap:16px;min-height:78px;z-index:5}
+.sum{display:flex;flex-direction:column;gap:4px}
+.sum .count{font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px}
+.sum .count button{font:inherit;font-size:12px;font-weight:600;color:var(--ink-600);background:var(--ink-50);border:1px solid var(--ink-100);border-radius:6px;padding:3px 8px;cursor:pointer}
+.metrics{display:flex;gap:16px;font-size:14px;color:var(--ink-500)}
+.metrics b{color:var(--ink-900);font-size:16px;font-weight:600}
+.spacer{flex:1}
+.div{width:1px;height:36px;background:var(--ink-100)}
+.btn{height:44px;min-width:112px;padding:0 18px;border-radius:9px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap}
+.b-sec{background:#fff;border:1px solid var(--ink-200);color:var(--ink-900)}
+.b-sec:hover,.b-sec.open{background:var(--ink-50);border-color:var(--ink-400)}
+.b-pri{background:var(--brand-600);border:1px solid var(--brand-600);color:#fff;min-width:150px}
+.b-pri:hover{background:var(--brand-700)}
+.b-red{background:#E11D48;border:1px solid #E11D48;color:#fff}
+.b-off{background:#F3F4F6;border:1px solid #E5E7EB;color:#9CA3AF;cursor:not-allowed}
+.dots{font-size:18px;letter-spacing:1px;line-height:0;margin-top:-4px}
+
+.menuwrap{position:relative}
+.menu{display:none;position:absolute;right:0;bottom:54px;width:290px;background:#fff;border:1px solid var(--ink-200);border-radius:12px;box-shadow:0 14px 40px rgba(27,24,38,.18);padding:6px}
+body.menuopen .menu{display:block}
+.mi{display:flex;gap:12px;align-items:flex-start;padding:11px 12px;border-radius:8px;cursor:pointer}
+.mi:hover{background:var(--ink-50)}
+.mi .ic{width:30px;height:30px;border-radius:8px;background:var(--ink-50);display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+.mi .l{font-size:14px;font-weight:600}
+.mi .d{font-size:12px;color:var(--ink-500);margin-top:2px}
+.mi.dng .l{color:var(--danger-text)}
+.mi.dng .ic{background:var(--danger-bg);color:var(--danger-text)}
+.mi.off{opacity:.5;cursor:not-allowed}
+.msep{height:1px;background:var(--ink-100);margin:6px 4px}
+
+/* dialog */
+.scrim{display:none;position:absolute;inset:0;background:rgba(27,24,38,.38);z-index:20;align-items:center;justify-content:center}
+body.dlg1 .scrim.s1, body.dlg2 .scrim.s2{display:flex}
+.dlg{width:600px;max-height:calc(100% - 40px);background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;display:flex;flex-direction:column}
+.dlg .b{padding:22px 24px;overflow:auto}
+.dlg h3{font-size:18px;font-weight:700}
+.dlg .sub{font-size:14px;color:var(--ink-600);margin-top:6px;line-height:1.5}
+.sect{margin-top:18px;border:1px solid var(--ink-100);border-radius:12px;overflow:hidden}
+.sect .sh{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--ink-25);border-bottom:1px solid var(--ink-100)}
+.sect .sh .tag{font-size:11px;font-weight:700;letter-spacing:.04em;border-radius:5px;padding:3px 8px}
+.tag.can{background:var(--danger-bg);color:var(--danger-text)}
+.tag.ci{background:var(--tint-bg);color:var(--tint-700)}
+.sect .sh .t{font-size:14px;font-weight:600}
+.sect .sh .why{margin-left:auto;font-size:12px;color:var(--ink-500)}
+.sect .sb{padding:12px 14px}
+.bills{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.bills div{display:flex;justify-content:space-between;font-size:13px}
+.bills div span:last-child{color:var(--ink-500)}
+.lbl{font-size:12px;font-weight:600;color:var(--ink-500);text-transform:uppercase;letter-spacing:.05em;margin:4px 0 8px}
+.lbl em{font-style:normal;color:var(--danger-text)}
+.reasons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rs{border:1px solid var(--ink-200);border-radius:9px;padding:10px 12px;font-size:13.5px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:10px}
+.rs .dot{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--ink-400);flex:none}
+.rs.on{border-color:var(--slate);background:var(--ink-25);font-weight:600}
+.rs.on .dot{border:5px solid var(--slate)}
+textarea{width:100%;margin-top:12px;border:1px solid var(--ink-200);border-radius:9px;padding:10px 12px;font:inherit;font-size:13.5px;resize:none;height:62px;color:var(--ink-900)}
+textarea::placeholder{color:var(--ink-400)}
+.fixed{margin-top:10px;font-size:12px;color:var(--ink-500);line-height:1.6}
+.fixed b{color:var(--ink-700)}
+.dlg .f{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 24px;background:var(--ink-25);border-top:1px solid var(--ink-100)}
+.dlg .f .note{margin-right:auto;font-size:12px;color:var(--ink-500)}
+.focusring{box-shadow:0 0 0 3px rgba(124,58,237,.25)}
+
+.toast{display:none;position:absolute;left:50%;transform:translateX(-50%);bottom:110px;background:var(--ink-900);color:#fff;border-radius:10px;padding:12px 16px;font-size:14px;align-items:center;gap:18px;z-index:10}
+.toast button{background:none;border:none;color:#C4B5FD;font:inherit;font-weight:700;cursor:pointer}
+body.toasted .toast{display:flex}
+
+/* in-form tabs */
+.ftabs{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:16px;background:var(--ink-50);border-radius:10px;padding:4px}
+.ftab{border-radius:8px;padding:10px 12px;cursor:pointer;text-align:left;border:1px solid transparent}
+.ftab .h{font-size:15px;font-weight:700;color:var(--ink-600)}
+.ftab .s{font-size:12px;color:var(--ink-500);margin-top:2px}
+.ftab.on{background:#fff;border-color:var(--ink-200);box-shadow:0 1px 3px rgba(27,24,38,.08)}
+.ftab.on .h{color:var(--ink-900)}
+.pane{margin-top:16px}
+.bills2{border:1px solid var(--ink-100);border-radius:10px;margin-bottom:16px}
+.bills2 div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;font-size:13px;border-bottom:1px solid var(--ink-50)}
+.bills2 div:last-child{border:none}
+.bills2 div>span:last-child{white-space:nowrap}
+.bills2 div.skip{color:var(--ink-400)}
+.skiptag{font-size:11px;font-weight:600;background:var(--warn-bg);color:var(--warn-text);border-radius:5px;padding:2px 6px;white-space:nowrap}
+.effect{font-size:13px;color:var(--ink-700);background:var(--ink-25);border:1px solid var(--ink-100);border-radius:9px;padding:10px 12px;margin-bottom:16px;line-height:1.5}
+.effect b{color:var(--ink-900)}
+th.grp1{border-left:1px solid var(--ink-100)}
+td.grp1{border-left:1px solid var(--ink-100)}
+
+.notes{background:#fff;margin:18px auto 40px;max-width:1100px;border-radius:12px;padding:22px 26px;border:1px solid var(--ink-100)}
+.notes h2{font-size:16px;margin-bottom:10px}
+.notes h4{font-size:13px;margin:16px 0 6px;color:var(--ink-700)}
+.notes li{font-size:13px;line-height:1.6;margin-left:18px;color:var(--ink-700)}
+</style>
+</head>
+<body>
+
+<div class="switch">
+  <b>Review states →</b>
+  <button data-s="pool" class="on">1 · Bills ticked</button>
+  <button data-s="menu">2 · ⋯ More open</button>
+  <button data-s="dlg1">3 · Form · Cancel tab</button>
+  <button data-s="dlg2">4 · Form · Raise CI tab</button>
+  <button data-s="done">5 · After submit</button>
+  <button data-s="hold">6 · Hold toast</button>
+  <button data-s="tab">7 · Cancel &amp; CI tab</button>
+  <button data-s="trip">8 · Inside a trip</button>
+</div>
+
+<div class="app">
+  <div class="side"><div class="logo">Orbit</div><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+
+  <aside class="rail">
+    <div class="plan" id="plan"><div class="t">To plan</div><div class="n"><b>4</b> bills · <b>221</b> L</div></div>
+    <div class="trip" id="trip20">
+      <div class="top"><span class="no mono">L-260921-20</span><span class="slot">16:00</span><span class="chip-ok">READY</span></div>
+      <div class="name">Ghod Dod</div>
+      <div class="nums"><b>2</b> stops · <b>2</b> bills · <b>980</b> L</div>
+      <div class="drv">Rajubhai Ranabhai Vansfoda</div>
+      <div class="bar"><i style="width:100%"></i></div>
+    </div>
+    <div class="trip">
+      <div class="top"><span class="no mono">L-260921-19</span><span class="slot">16:00</span><span class="chip-ok">READY</span></div>
+      <div class="name">Olpad</div>
+      <div class="nums"><b>1</b> stop · <b>2</b> bills · <b>300</b> L</div>
+      <div class="drv">Manish Narendra Vansfoda</div>
+      <div class="bar"><i style="width:100%"></i></div>
+    </div>
+    <div class="trip">
+      <div class="top"><span class="no mono">L-260921-17</span><span class="slot">16:00</span><span class="chip-ok">READY</span></div>
+      <div class="name">Bardoli <span>+1</span></div>
+      <div class="nums"><b>5</b> stops · <b>8</b> bills · <b>687</b> L</div>
+      <div class="drv">Vijaybhai Maganbhai Vansfoda</div>
+      <div class="bar"><i style="width:100%"></i></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="head"><div class="scope"><span>All</span><span class="on">Local</span><span>Upcountry</span><span>IGT</span></div></div>
+    <div class="tabs" id="tabs">
+      <span data-t="floor" class="on">Floor <em>114</em></span>
+      <span data-t="tinting">Tinting <em>1</em></span>
+      <span data-t="hold">On hold <em>149</em></span>
+      <span data-t="cc">Cancel &amp; CI <em>34</em></span>
+    </div>
+    <div class="content" id="content"></div>
+
+    <div class="toast" id="toast"></div>
+    <div class="bbar" id="bbar"></div>
+
+    <div class="scrim s1"><div class="dlg">
+      <div class="b">
+        <h3>Cancel or Raise CI — 3 bills</h3>
+        <div class="ftabs">
+          <div class="ftab on"><div class="h">Cancel</div><div class="s">Bill stops here</div></div>
+          <div class="ftab "><div class="h">Raise CI</div><div class="s">Return goes to billing</div></div>
+        </div>
+        <div class="pane">
+          <div class="effect">These <b>3 bills</b> leave the floor and <b>do not move ahead</b>. You can Restore them from the Cancel &amp; CI tab.</div>
+          <div class="lbl">Bills</div>
+          <div class="bills2">
+            <div><span><span class="mono">9109663630</span> · Nakoda Colours</span><span>3 L</span></div>
+            <div><span><span class="mono">9109663612</span> · Shree Rang Sarita</span><span>140 L</span></div>
+            <div><span><span class="mono">9109663598</span> · Patel Hardware</span><span>78 L</span></div>
+          </div>
+          <div class="lbl">Cancel reason <em>*</em></div>
+            <div class="reasons">
+              <div class="rs on"><span class="dot"></span>Dealer cancelled</div>
+              <div class="rs"><span class="dot"></span>Stock not available</div>
+              <div class="rs"><span class="dot"></span>Duplicate order</div>
+              <div class="rs"><span class="dot"></span>Wrong order by S.O.</div>
+              <div class="rs"><span class="dot"></span>Credit block</div>
+              <div class="rs"><span class="dot"></span>Other</div>
+            </div>
+          <textarea placeholder="Remarks (optional) — e.g. dealer called at 10:40, will re-order Monday"></textarea>
+        </div>
+      </div>
+      <div class="f"><button class="btn b-sec focusring">Back</button><button class="btn b-red">Cancel 3 bills</button></div>
+    </div></div>
+
+    <div class="scrim s2"><div class="dlg">
+      <div class="b">
+        <h3>Cancel or Raise CI — 3 bills</h3>
+        <div class="ftabs">
+          <div class="ftab "><div class="h">Cancel</div><div class="s">Bill stops here</div></div>
+          <div class="ftab on"><div class="h">Raise CI</div><div class="s">Return goes to billing</div></div>
+        </div>
+        <div class="pane">
+          <div class="effect">A CI is raised for <b>each bill</b> and lands on the <b>billing CI desk</b>. These bills also leave the floor.</div>
+          <div class="lbl">Bills</div>
+          <div class="bills2">
+            <div><span><span class="mono">I536229027</span> · Nakoda Colours</span><span>3 L</span></div>
+            <div><span><span class="mono">I536229044</span> · Shree Rang Sarita</span><span>140 L</span></div>
+            <div><span><span class="mono">9109663598</span> · Patel Hardware <span class="skiptag" style="margin-left:6px">Invoice not in Orbit yet — fills in when SAP sends it</span></span><span>78 L</span></div>
+          </div>
+          <div class="lbl">CI reason <em>*</em></div>
+            <div class="reasons">
+              <div class="rs"><span class="dot"></span>Physically Cross</div>
+              <div class="rs on"><span class="dot"></span>Order Cancel by Dealer</div>
+              <div class="rs"><span class="dot"></span>Wrong Order by S.O.</div>
+              <div class="rs"><span class="dot"></span>Return by Dealer</div>
+            </div>
+          <textarea placeholder="Remarks for billing (optional)">Dealer cancelled after invoice, goods not loaded</textarea>
+          <div class="fixed">Filled in for you: <b>Full bill</b> · <b>Goods in depot</b> · <b>Received today</b></div>
+        </div>
+      </div>
+      <div class="f"><button class="btn b-sec focusring">Back</button><button class="btn b-pri">Raise 3 CIs</button></div>
+    </div></div>
+
+  </main>
+</div>
+
+<div class="notes">
+  <h2>v5 — what changed</h2>
+  <h4>Form</h4>
+  <ul>
+    <li>Two tabs at the top of the form: <b>Cancel</b> | <b>Raise CI</b>. Each tab shows only its own reasons and remarks.</li>
+    <li><b>Cancel tab</b> — all ticked bills, cancel reasons, remarks. Red button "Cancel 3 bills".</li>
+    <li><b>Raise CI tab</b> — all ticked bills. A bill whose invoice number hasn't reached Orbit yet gets a soft tag only — the CI still raises and the number appears when SAP sends it (CI module rule). CI reasons, remarks for billing. Brand button "Raise 3 CIs".</li>
+    <li>Opens on the <b>Cancel</b> tab by default; switching tabs keeps what was typed on the other tab.</li>
+  </ul>
+  <h4>Cancel &amp; CI tab — column order</h4>
+  <ul>
+    <li><b>Action first</b> (Cancel / CI), then the bill: ☐ · Action · OBD (+date) · Invoice · Ship to · Area · Vol / KG.</li>
+    <li>Then Reason · Remarks. No divider lines.</li>
+    <li>Then <b>follow-up</b>: CI no. (with billing / closed) · By · when — last, like Status is last on the Floor table.</li>
+    <li>Checkbox only on Cancel rows (only they can Restore). Dropped Due and Article — not useful once a bill is off the floor.</li>
+  </ul>
+  <h4>Still open</h4>
+  <ul>
+    <li>Cancel &amp; CI tab: today only (as Cancelled is now), or a date stepper?</li>
+    <li>Cancel reason list and remarks need new storage — discovery checks this.</li>
+  </ul>
+</div>
+
+<script>
+const floorRows=[
+  ["9109663630","21 Sept 17:04","I536229027","Nakoda Colours And Hardware","Bamroli","Tue 22 · 10:30","3","3","3T",'<span class="pill p-done">Done 18:08</span>',1],
+  ["9109663612","21 Sept 16:40","I536229044","Shree Rang Sarita","Udhana","Tue 22 · 10:30","140","152","12",'<span class="pill p-done">Done 17:52</span>',1],
+  ["9109663598","21 Sept 15:12","","Patel Hardware","Pandesara","Tue 22 · 12:30","78","84","6",'<span class="pill p-wait">Waiting</span>',1],
+  ["9109663571","21 Sept 14:55","","Jay Ambe Paints","Sachin","Tue 22 · 12:30","0.9","1","1",'<span class="pill p-wait">Waiting</span>',0]
+];
+function floorTable(){
+  return `<table><tr><th style="width:36px"><span class="cb on"></span></th><th>OBD</th><th>Invoice</th><th>Ship to</th><th>Area</th><th>Due</th><th class="r">Vol / KG</th><th>Article</th><th>Status</th></tr>`+
+  floorRows.map(x=>`<tr class="${x[10]?'sel':''}"><td><span class="cb ${x[10]?'on':''}"></span></td><td><span class="mono">${x[0]}</span><small>${x[1]}</small></td><td><span class="mono">${x[2]||'—'}</span></td><td>${x[3]}</td><td>${x[4]}</td><td>${x[5]}</td><td class="r">${x[6]} L<small>${x[7]} kg</small></td><td>${x[8]}</td><td>${x[9]}</td></tr>`).join("")+`</table>`;
+}
+function ccTable(){
+  // [selected, action, obd, obdDate, invoice, shipTo, area, L, kg, reason, remarks, ciNo, ciState, by, when]
+  const r=[
+    [1,"can","9109663598","21 Sept 15:12","—","Patel Hardware","Pandesara","78","84","Dealer cancelled","dealer called at 10:40, will re-order Monday","","","Ajay","Today 09:48"],
+    [0,"ci","9109663630","21 Sept 17:04","I536229027","Nakoda Colours And Hardware","Bamroli","3","3","Order Cancel by Dealer","Dealer cancelled after invoice, goods not loaded","CI-2026-00041","with","Ajay","Today 09:48"],
+    [0,"ci","9109663612","21 Sept 16:40","I536229044","Shree Rang Sarita","Udhana","140","152","Order Cancel by Dealer","Dealer cancelled after invoice, goods not loaded","CI-2026-00042","with","Ajay","Today 09:48"],
+    [0,"can","9109662201","21 Sept 09:10","—","Shivam Enterprise","Adajan","45","48","Duplicate order","same as 9109662188","","","Priya","Today 08:15"],
+    [0,"ci","9109660871","20 Sept 14:22","I536221190","Om Sai Colours","Varachha","22","24","Physically Cross","2 tins short at loading","CI-2026-00038","closed","Dhanraj","Today 08:02"]
+  ];
+  const act=a=>a==="can"?'<span class="pill p-can">Cancel</span>':'<span class="pill p-ci">CI</span>';
+  const ci=(n,st)=>n?`<span class="mono lnk">${n}</span><small>${st==="closed"?'<span style="color:var(--ok-text)">Closed by billing</span>':'With billing'}</small>`:'<span style="color:var(--ink-400)">—</span>';
+  return `<table><tr><th style="width:36px"></th><th>Action</th><th>OBD</th><th>Invoice</th><th>Ship to</th><th>Area</th><th class="r">Vol / KG</th><th>Reason</th><th>Remarks</th><th>CI no.</th><th>By · when</th></tr>`+
+  r.map(x=>`<tr class="${x[0]?'sel':''}"><td>${x[1]==="can"?`<span class="cb ${x[0]?'on':''}"></span>`:''}</td><td>${act(x[1])}</td><td><span class="mono">${x[2]}</span><small>${x[3]}</small></td><td><span class="mono">${x[4]}</span></td><td>${x[5]}</td><td>${x[6]}</td><td class="r">${x[7]} L<small>${x[8]} kg</small></td><td><b style="font-weight:600">${x[9]}</b></td><td class="rem">${x[10]}</td><td style="white-space:nowrap">${ci(x[11],x[12])}</td><td style="white-space:nowrap">${x[13]}<small>${x[14]}</small></td></tr>`).join("")+`</table>`;
+}
+const sum=(n,L,kg,extra)=>`<div class="sum"><div class="count">${n} selected <button>✕ Clear</button></div><div class="metrics"><span><b>${L}</b> L</span><span><b>${kg}</b> kg</span>${extra}</div></div>`;
+const menu=(items)=>`<div class="menuwrap"><button class="btn b-sec ${document.body.classList.contains('menuopen')?'open':''}"><span class="dots">···</span> More</button><div class="menu">${items}</div></div>`;
+const MI={
+ hold:`<div class="mi"><span class="ic">⏸</span><div><div class="l">Hold</div><div class="d">Off the floor until released · Undo for 8s</div></div></div>`,
+ cc:`<div class="msep"></div><div class="mi dng"><span class="ic">✕</span><div><div class="l">Cancel / Raise CI…</div><div class="d">Opens a form · choose Cancel or Raise CI</div></div></div>`,
+ ccOff:`<div class="msep"></div><div class="mi off dng"><span class="ic">✕</span><div><div class="l">Cancel / Raise CI…</div><div class="d">Remove from trip first</div></div></div>`
+};
+let state="pool";
+function render(){
+  document.body.className="";
+  const bc={menu:"menuopen",dlg1:"dlg1",dlg2:"dlg2"}[state];if(bc)document.body.classList.add(bc);
+  if(state==="done"||state==="hold")document.body.classList.add("toasted");
+  const tab=state==="tab"?"cc":"floor";
+  document.querySelectorAll("#tabs span").forEach(t=>t.classList.toggle("on",t.dataset.t===tab));
+  document.getElementById("plan").classList.toggle("sel",tab==="floor"&&state!=="trip");
+  document.getElementById("trip20").classList.toggle("sel",state==="trip");
+  const c=document.getElementById("content"),bar=document.getElementById("bbar");
+  if(tab==="cc"){
+    c.innerHTML=`<div class="grouphead">Cancel &amp; CI <span>today · 3 cancelled · 2 CI raised</span><div class="filt"><i class="on">All</i><i>Cancel</i><i>CI</i></div></div>`+ccTable();
+    bar.innerHTML=sum(1,"45","48",`<span><b>3</b> articles</span>`)+`<div class="spacer"></div><button class="btn b-pri">Restore</button>`;
+  } else {
+    c.innerHTML=(state==="trip"?`<div class="grouphead">L-260921-20 · Ghod Dod <span>2 stops · 3 bills ticked</span></div>`:`<div class="grouphead">To plan <span>4 bills · 221 L</span></div>`)+floorTable();
+    if(state==="trip") bar.innerHTML=sum(3,"221","239",`<span>on <b class="mono" style="font-size:14px">L-260921-20</b></span>`)+`<div class="spacer"></div><button class="btn b-pri">Remove from trip</button><span class="div"></span>`+menu(MI.hold+MI.ccOff);
+    else bar.innerHTML=sum(3,"221","239",`<span><b>21</b> articles</span><span><b>3</b> routes</span>`)+`<div class="spacer"></div><button class="btn b-pri">+ New trip</button><span class="div"></span>`+menu(MI.hold+MI.cc);
+  }
+  const t=document.getElementById("toast");
+  if(state==="done") t.innerHTML=`<span>3 bills cancelled</span><button>View in Cancel &amp; CI</button>`;
+  if(state==="hold") t.innerHTML=`<span>3 bills put on hold</span><button>Undo</button>`;
+}
+document.querySelectorAll(".switch button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".switch button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on");state=b.dataset.s;render();
+});
+render();
+</script>
+</body>
+</html>
