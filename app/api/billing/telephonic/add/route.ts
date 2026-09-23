@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { addTelephonicTag } from "@/lib/billing/telephonic";
+import { addTelephonicTags, TELEPHONIC_TAGS } from "@/lib/billing/telephonic";
+import { TELEPHONIC_MAX_PER_ADD } from "@/lib/billing/telephonic-so";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/billing/telephonic/add — body { soNumber, tag: "hold" | "ci" }.
+ * POST /api/billing/telephonic/add — body { soNumbers: string[], tag: "hold" | "ci" }.
  *
- * 400 — not a 10-digit SO number, or an unknown tag (plain message).
- * 409 — the SO already has a non-removed tag: { error, existingTag,
- *       addedByName, addedAt }.
- * 200 — { tag, applied }. `applied` is the applySoTagHolds summary when OBDs
- *       for the SO already existed (the late tag — it may have HELD a bill and
- *       raised a CI), else null.
+ * 🔴 A BATCH ALWAYS ANSWERS 200 WHEN THE BODY IS WELL FORMED, even if every
+ * number was a duplicate or unreadable. Each number's fate is a row in
+ * `results` — "added" | "duplicate" | "invalid" — because one bad number in a
+ * paste of twenty must not lose the other nineteen. A 400 means the REQUEST was
+ * wrong: no list, an empty list, over the cap, or an unknown tag.
+ *
+ * `applied` is the applySoTagHolds summary when any added SO already had an OBD
+ * (the late tag — it may have HELD a bill and raised a CI), else null.
  *
  * The user is ALWAYS the session user, never the body.
  */
@@ -31,30 +34,28 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { soNumber?: unknown; tag?: unknown };
-  if (typeof body.soNumber !== "string" || typeof body.tag !== "string") {
-    return NextResponse.json({ error: "soNumber and tag are required." }, { status: 400 });
+  const body = (await req.json().catch(() => ({}))) as { soNumbers?: unknown; tag?: unknown };
+  if (typeof body.tag !== "string" || !(TELEPHONIC_TAGS as readonly string[]).includes(body.tag)) {
+    return NextResponse.json({ error: "Pick Hold or CI." }, { status: 400 });
+  }
+  if (!Array.isArray(body.soNumbers) || body.soNumbers.some((s) => typeof s !== "string")) {
+    return NextResponse.json({ error: "soNumbers must be an array of strings." }, { status: 400 });
+  }
+  if (body.soNumbers.length === 0) {
+    return NextResponse.json({ error: "No SO numbers to add." }, { status: 400 });
+  }
+  if (body.soNumbers.length > TELEPHONIC_MAX_PER_ADD) {
+    return NextResponse.json(
+      { error: `At most ${TELEPHONIC_MAX_PER_ADD} SO numbers per add.` },
+      { status: 400 },
+    );
   }
 
-  const result = await addTelephonicTag({
-    soNumber: body.soNumber,
+  const result = await addTelephonicTags({
+    soNumbers: body.soNumbers as string[],
     tag: body.tag,
     userId,
     now: new Date(),
   });
-  if (!result.ok) {
-    if (result.status === 400) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
-    }
-    return NextResponse.json(
-      {
-        error: result.error,
-        existingTag: result.existingTag,
-        addedByName: result.addedByName,
-        addedAt: result.addedAt,
-      },
-      { status: 409 },
-    );
-  }
-  return NextResponse.json({ tag: result.tag, applied: result.applied });
+  return NextResponse.json(result);
 }

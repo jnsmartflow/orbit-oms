@@ -33,3 +33,51 @@ export function normaliseSoNumber(raw: string): string | null {
 export function currentIstMonth(now: Date): string {
   return now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
 }
+
+/** The most SO numbers one Add may carry. A paste longer than this is almost
+ *  always the wrong clipboard, and 50 already covers a day of phone orders
+ *  (~33 no-mail bills a day across the whole depot). */
+export const TELEPHONIC_MAX_PER_ADD = 50;
+
+export interface ParsedSoBlock {
+  /** Normalised, de-duplicated, in the order they were typed. */
+  valid: string[];
+  /** Everything that cannot be added, each with the reason to show on its chip. */
+  invalid: { raw: string; reason: string }[];
+}
+
+/**
+ * Split a pasted block into SO numbers. Newlines, spaces, commas, tabs — ANY
+ * run of non-digits separates, because an operator pasting out of SAP or a
+ * chat message cannot be asked which separator to use.
+ *
+ * ⚠ PURE, and it judges only FINISHED tokens. The entry rail decides what is
+ * finished (a separator was typed, or Add was pressed) and never asks about
+ * the token still under the caret — see billing-telephonic-tab.tsx.
+ *
+ * A duplicate inside one paste keeps its FIRST position and is dropped
+ * silently: the operator typed the same number twice, which is not an error.
+ */
+export function parseSoBlock(text: string): ParsedSoBlock {
+  const tokens = text.split(/\D+/).filter((t) => t !== "");
+  const valid: string[] = [];
+  const invalid: { raw: string; reason: string }[] = [];
+  const seen = new Set<string>();
+
+  for (const token of tokens) {
+    const so = normaliseSoNumber(token);
+    if (so === null) {
+      invalid.push({ raw: token, reason: "not 10 digits" });
+      continue;
+    }
+    if (seen.has(so)) continue; // same number twice in one paste — keep the first
+    seen.add(so);
+    if (valid.length >= TELEPHONIC_MAX_PER_ADD) {
+      invalid.push({ raw: so, reason: "over 50" });
+      continue;
+    }
+    valid.push(so);
+  }
+
+  return { valid, invalid };
+}

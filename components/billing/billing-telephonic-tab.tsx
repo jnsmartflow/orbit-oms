@@ -1,37 +1,45 @@
 "use client";
 
-// Billing v2 — the "Telephonic" tab (2026-09-22).
+// Billing v2 — the "Telephonic" tab (2026-09-22; entry rail + multi-paste 2026-09-23).
 //
 // A telephonic order has no mail order, so nothing tells OrbitOMS to hold it or
-// that it is a bill-only (CI) order. Billing types the SO number here straight
-// after punching it in SAP — Hold or CI — and the import applies the tag when
-// the OBD lands (lib/billing/telephonic-apply.ts). Design:
+// that it is a bill-only (CI) order. Billing pastes the SO numbers here straight
+// after punching them in SAP — Hold or CI — and the import applies each tag when
+// its OBD lands (lib/billing/telephonic-apply.ts). Design:
 // docs/prompts/drafts/web-update-2026-09-21-billing-telephonic-tab.md §3.
 //
-//   ENTRY BAR — SO number · Hold | CI · Add. canEdit only; hidden otherwise
-//               (hide, never disable — CLAUDE_UI §10).
-//   TABLE     — two bands in ONE fixed table: "Waiting for OBD — all dates"
-//               (never month-fenced), then the picked month's settled rows.
-//               One row per BILL: an SO that hit several OBDs gets one row
-//               each, tag cells on the first row only, because each bill can
-//               differ (one held, one released, one with its CI refused).
+// GEOMETRY — the `344px minmax(0, 1fr)` two-track grid MRN, CI and /floor use
+// (components/ci/billing-board.tsx). 🔴 `minmax(0, 1fr)`, never plain `1fr`:
+// plain `1fr` floors at the item's content-based minimum and a wide table
+// inflates the track. The right pane also carries `min-w-0` — two floors, both
+// needed.
+//
+// 🔴 THE RAIL IS FOR ADDING, NEVER A DETAIL PANE. An entry has too few facts to
+// fill one, so nothing is selectable and nothing opens. Without canEdit the rail
+// is not rendered at all (hide, never disable — CLAUDE_UI §10) and the lists
+// take the full width.
+//
+// TWO LISTS, DIFFERENT COLUMNS. Waiting has no bill yet, so every bill column
+// would be a dash — it gets its own narrow table. The month's table carries the
+// bill, and its CI number, state and SAP number are ONE column stacked, not
+// three that are empty on every Hold row.
 //
 // 🔴 EVERYTHING ON A BILL IS READ LIVE — dispatchStatus, invoiceNo, the CI — so
 // a bill Floor released, or one whose hold failed, reads as what it is now.
-//
-// The SO rule is lib/billing/telephonic-so.ts, the SAME function the add route
-// validates with. The route re-checks everything; this only decides what is
-// drawn and when Add is live.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { toast } from "sonner";
 import {
   useBillingTelephonicMarkerSubscription,
   useBillingTelephonicMarkerPause,
 } from "@/components/billing/billing-marker-provider";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
-import { currentIstMonth, normaliseSoNumber } from "@/lib/billing/telephonic-so";
+import {
+  currentIstMonth,
+  normaliseSoNumber,
+  parseSoBlock,
+  TELEPHONIC_MAX_PER_ADD,
+} from "@/lib/billing/telephonic-so";
 import type { TelephonicBill, TelephonicList, TelephonicRow } from "@/lib/billing/telephonic";
 
 const LIST_URL = "/api/billing/telephonic/list";
@@ -41,19 +49,23 @@ const REMOVE_URL = "/api/billing/telephonic/remove";
 type TagKind = "hold" | "ci";
 
 // Fixed table standard (CLAUDE_UI §27): 32px header, 36px rows, 10px uppercase
-// header, 11px data. Constants shaped like the Print tab's.
+// header, 11px data.
 const HEAD_TH = "h-[32px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af] whitespace-nowrap overflow-hidden text-ellipsis";
 const HEAD_TH_C = "h-[32px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD = "h-[36px] border-b border-[#f0f0f0] px-3.5 text-[11px] text-[#4b5563] whitespace-nowrap overflow-hidden text-ellipsis";
 const TD_C = "h-[36px] border-b border-[#f0f0f0] px-1 text-center text-[11px] text-[#9ca3af]";
 
-// # 3 · SO Number 10 · Tag 6 · Customer / OBD 20 · Invoice No 10 · Status 11 ·
-// CI No. 13 · CI Status 10 · Added by 9 · Added 5 · × 3 = 100
-const WIDTHS = [3, 10, 6, 20, 10, 11, 13, 10, 9, 5, 3];
+/** Waiting: # · SO Number · Tag · Added by · Added · ×. Nothing else — a tag
+ *  with no OBD has no bill facts, and a dash column is a column that lies. */
+const WAITING_WIDTHS = [6, 24, 16, 26, 18, 10];
+/** The month: the full set, CI as ONE stacked column, plus the × an expired row
+ *  needs (the design's suggested widths total 100 without it, so Customer/OBD
+ *  gives up 2% and Added by 1%). */
+const MONTH_WIDTHS = [3, 10, 6, 22, 11, 12, 16, 9, 8, 3];
 
 // 🔴 TAG COLOURS. Hold = the `danger` token (a thing being stopped — CLAUDE_UI
 // §1/§3). CI = the neutral `ink` family: clearly not Hold's red, and NOT brand
-// violet, which means action. Every `data.*` colour is an identity already
+// violet, which means pressable. Every `data.*` colour is an identity already
 // spoken for, and `tint` belongs to tinting only.
 const TAG_CHIP: Record<TagKind, string> = {
   hold: "border border-danger-bd bg-danger-bg text-danger-text",
@@ -67,6 +79,10 @@ const NOT_APPLIED_REASONS = new Set(["bill cancelled", "already dispatched", "bi
 
 function tagLabel(tag: string): string {
   return tag === "ci" ? "CI" : "Hold";
+}
+
+function firstName(name: string | null): string {
+  return name ? name.split(" ")[0] : "—";
 }
 
 function istTime(iso: string): string {
@@ -89,6 +105,10 @@ function shiftMonth(month: string, by: number): string {
   const [y, m] = month.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 1 + by, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
 // ── The month picker (tab row, replaces the date stepper on this tab) ───────
@@ -156,31 +176,20 @@ function BillStatus({ row, bill }: { row: TelephonicRow; bill: TelephonicBill | 
   return <span className={`${PILL} border border-gray-200 bg-white text-gray-600`}>Released</span>;
 }
 
-/** The CI No. and CI Status cells (CI tags only). */
-function CiCells({ row, bill, muted }: { row: TelephonicRow; bill: TelephonicBill | null; muted: string }) {
-  const dash = <span className="text-gray-300">—</span>;
-  if (row.tag !== "ci" || bill === null) {
-    return (
-      <>
-        <td className={`${TD}${muted}`}>{dash}</td>
-        <td className={`${TD}${muted}`}>{dash}</td>
-      </>
-    );
-  }
+/** The ONE CI cell: number on top, state under it, SAP's number under that once
+ *  closed. Hold rows and bill-less rows show a dash. */
+function CiCell({ row, bill }: { row: TelephonicRow; bill: TelephonicBill | null }) {
+  if (row.tag !== "ci" || bill === null) return <span className="text-gray-300">—</span>;
+
   if (bill.ci !== null) {
     const closed = bill.ci.status === "closed";
     return (
-      <>
-        <td className={`${TD} leading-tight${muted}`}>
-          {/* Plain link: /ci cannot open one CI by URL today. */}
-          <a href="/ci" className="font-mono text-gray-800 hover:underline">
-            {bill.ci.ciNumber ?? "—"}
-          </a>
-          {closed && bill.ci.sapCiNumber && (
-            <div className="font-mono text-[10px] text-gray-400">{bill.ci.sapCiNumber}</div>
-          )}
-        </td>
-        <td className={`${TD}${muted}`}>
+      <div className="leading-tight">
+        {/* Plain link: /ci cannot open one CI by URL today. */}
+        <a href="/ci" className="font-mono text-gray-800 hover:underline">
+          {bill.ci.ciNumber ?? "—"}
+        </a>
+        <div className="mt-px">
           {closed ? (
             <span className={`${PILL} bg-ok-bg text-ok-text`}>Closed</span>
           ) : bill.ci.status === "submitted" ? (
@@ -188,41 +197,113 @@ function CiCells({ row, bill, muted }: { row: TelephonicRow; bill: TelephonicBil
           ) : (
             <span className={`${PILL} bg-gray-100 text-gray-500`}>{bill.ci.status}</span>
           )}
-        </td>
-      </>
+          {closed && bill.ci.sapCiNumber && (
+            <span className="ml-1.5 font-mono text-[10px] text-gray-400">{bill.ci.sapCiNumber}</span>
+          )}
+        </div>
+      </div>
     );
   }
   const reason = bill.ciSkipReason;
   if (reason !== null && reason !== "hold failed" && !NOT_APPLIED_REASONS.has(reason)) {
     return (
-      <>
-        <td className={`${TD}${muted}`} title={reason}>
-          <span className="font-semibold text-danger-text">Couldn&apos;t raise — do by hand</span>
-        </td>
-        <td className={`${TD}${muted}`}>{dash}</td>
-      </>
+      <span className="font-semibold text-danger-text" title={reason}>
+        Couldn&apos;t raise — do by hand
+      </span>
     );
   }
-  return (
-    <>
-      <td className={`${TD}${muted}`}>{dash}</td>
-      <td className={`${TD}${muted}`}>{dash}</td>
-    </>
-  );
+  return <span className="text-gray-300">—</span>;
 }
 
+// ── The entry rail's chips ───────────────────────────────────────────────────
+
+type ChipState = "valid" | "already" | "invalid" | "pending";
+
+interface Chip {
+  key: string;
+  text: string;
+  state: ChipState;
+  reason?: string;
+}
+
+/**
+ * 🔴 THE "STILL BEING TYPED" RULE. A token is judged only once it is FINISHED —
+ * a separator has been typed after it, or Add was pressed. While the caret sits
+ * at the end of the box and the text ends in a digit, that last token is
+ * PENDING: no colour, no reason, and it counts as neither valid nor skipped. So
+ * "10467" shows nothing; "10467 " (or Enter, or Add) shows "not 10 digits".
+ *
+ * `caretAtEnd` is false when the operator has clicked back into the middle of
+ * the block — then every token is finished, including the last one.
+ */
+function buildChips(text: string, caretAtEnd: boolean, alreadyOnList: Set<string>): Chip[] {
+  const tokens = text.match(/\d+/g) ?? [];
+  // Pending only when the text ENDS in a digit (nothing separates it yet) and
+  // the caret is still at the end.
+  const lastIsUnfinished = caretAtEnd && /\d$/.test(text) && tokens.length > 0;
+  const chips: Chip[] = [];
+  const seen = new Set<string>();
+  let validCount = 0;
+
+  tokens.forEach((token, i) => {
+    const isLast = i === tokens.length - 1;
+    if (isLast && lastIsUnfinished) {
+      chips.push({ key: `${i}-${token}`, text: token, state: "pending" });
+      return;
+    }
+    const so = normaliseSoNumber(token);
+    if (so === null) {
+      chips.push({ key: `${i}-${token}`, text: token, state: "invalid", reason: "not 10 digits" });
+      return;
+    }
+    if (seen.has(so)) return; // the same number twice in one paste — keep the first
+    seen.add(so);
+    if (validCount >= TELEPHONIC_MAX_PER_ADD) {
+      chips.push({ key: `${i}-${so}`, text: so, state: "invalid", reason: "over 50" });
+      return;
+    }
+    if (alreadyOnList.has(so)) {
+      chips.push({ key: `${i}-${so}`, text: so, state: "already", reason: "already on the list" });
+      return;
+    }
+    validCount += 1;
+    chips.push({ key: `${i}-${so}`, text: so, state: "valid" });
+  });
+
+  return chips;
+}
+
+const CHIP_CLASS: Record<ChipState, string> = {
+  valid: "border border-gray-200 bg-gray-50 text-gray-700",
+  already: "border border-warn/30 bg-warn-bg text-warn-text",
+  invalid: "border border-danger-bd bg-danger-bg text-danger-text",
+  // Still being typed: no verdict, so no colour.
+  pending: "border border-dashed border-gray-200 bg-white text-gray-400",
+};
+
 // ── The tab body ─────────────────────────────────────────────────────────────
+
+interface AddOutcome {
+  soNumber: string;
+  status: "added" | "duplicate" | "invalid";
+  existingTag?: string;
+  addedByName?: string | null;
+  addedAt?: string;
+  reason?: string;
+}
 
 export function BillingTelephonicTab({ month, canEdit = false }: { month: string; canEdit?: boolean }) {
   const [data, setData] = useState<TelephonicList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [soInput, setSoInput] = useState("");
+  const [text, setText] = useState("");
+  const [caretAtEnd, setCaretAtEnd] = useState(true);
   // No tag preselected on first load; after an add it STAYS selected.
   const [tag, setTag] = useState<TagKind | null>(null);
-  const [fieldError, setFieldError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [outcome, setOutcome] = useState<string[] | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const boxRef = useRef<HTMLTextAreaElement>(null);
   const reqRef = useRef(0);
 
   const load = useCallback(async (): Promise<TelephonicList | null> => {
@@ -251,66 +332,107 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
   }, [load]);
 
   useBillingTelephonicMarkerSubscription(load);
-  // No refetch while the operator is typing an SO or a write is in flight — the
-  // table must not move under the box.
-  useBillingTelephonicMarkerPause("telephonic-entry", soInput.trim() !== "" || busy);
+  // No refetch while numbers are in the box or a write is in flight — the lists
+  // must not move under the operator.
+  useBillingTelephonicMarkerPause("telephonic-entry", text.trim() !== "" || busy);
 
-  const normalised = normaliseSoNumber(soInput);
-  const canAdd = canEdit && normalised !== null && tag !== null && !busy;
+  const waiting = useMemo(() => data?.waiting ?? [], [data]);
+  const monthRows = useMemo(() => data?.month ?? [], [data]);
+  const expiredCount = useMemo(() => monthRows.filter((r) => r.state === "expired").length, [monthRows]);
+
+  /** Every SO already carrying a live tag, for the warn chip. The server is the
+   *  real check — this only saves the operator a round trip. */
+  const alreadyOnList = useMemo(
+    () => new Set([...waiting, ...monthRows].filter((r) => r.state !== "expired").map((r) => r.soNumber)),
+    [waiting, monthRows],
+  );
+
+  const chips = useMemo(() => buildChips(text, caretAtEnd, alreadyOnList), [text, caretAtEnd, alreadyOnList]);
+  const validChips = chips.filter((c) => c.state === "valid");
+  const skippedCount = chips.filter((c) => c.state === "already" || c.state === "invalid").length;
+  const canAdd = canEdit && validChips.length > 0 && tag !== null && !busy;
+
+  /** Drop one chip from the box — the text is rebuilt from the tokens that stay. */
+  const dropChip = useCallback((key: string) => {
+    setText((prev) => {
+      const tokens = prev.match(/\d+/g) ?? [];
+      const kept = tokens.filter((t, i) => `${i}-${t}` !== key && `${i}-${normaliseSoNumber(t) ?? t}` !== key);
+      return kept.length > 0 ? `${kept.join("\n")}\n` : "";
+    });
+    boxRef.current?.focus();
+  }, []);
 
   const submit = useCallback(async () => {
-    if (!canEdit || normalised === null || tag === null || busy) return;
+    if (!canEdit || tag === null || busy) return;
+    // Pressing Add FINISHES every token, including the one under the caret.
+    const parsed = parseSoBlock(text);
+    if (parsed.valid.length === 0) return;
     setBusy(true);
-    setFieldError(null);
+    setFailure(null);
+    setOutcome(null);
     try {
       const res = await fetch(ADD_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ soNumber: soInput, tag }),
+        body: JSON.stringify({ soNumbers: parsed.valid, tag }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
-        existingTag?: string;
-        addedByName?: string | null;
-        addedAt?: string;
-        tag?: { id: number; soNumber: string };
+        results?: AddOutcome[];
         applied?: { held: number; ciRaised: number; ciSkipped: number; recordOnly: number; errors: number } | null;
       };
-      if (res.status === 409) {
-        setFieldError(
-          `Already on the list as ${tagLabel(body.existingTag ?? "")}, added by ${body.addedByName ?? "someone"}` +
-            `${body.addedAt ? ` at ${istDay(body.addedAt)} ${istTime(body.addedAt)}` : ""}. Remove it first to change the tag.`,
-        );
-        return;
-      }
       if (!res.ok) {
-        setFieldError(body.error ?? `Could not add (HTTP ${res.status}).`);
+        setFailure(body.error ?? `Could not add (HTTP ${res.status}).`);
         return;
       }
-      // Added. Box clears and keeps focus; the tag stays selected.
-      setSoInput("");
-      const fresh = await load();
-      if (body.applied && body.tag) {
-        // The bill was already here — say what happened to it.
-        const row = [...(fresh?.waiting ?? []), ...(fresh?.month ?? [])].find((r) => r.id === body.tag!.id);
-        const parts = (row?.bills ?? []).map((b) => {
-          if (b.ciSkipReason) return `${b.obdNumber}: ${b.ciSkipReason}`;
-          if (b.ci) return `${b.obdNumber}: held, ${b.ci.ciNumber ?? "CI"} raised`;
-          return `${b.obdNumber}: held`;
-        });
-        if (body.applied.errors > 0) {
-          toast.error(`SO ${body.tag.soNumber}: the bill is here but the tag could not be applied.`);
-        } else if (parts.length > 0) {
-          toast.success(`SO ${body.tag.soNumber} — ${parts.join(" · ")}`);
-        }
+      const results = body.results ?? [];
+      const added = results.filter((r) => r.status === "added");
+      const dupes = results.filter((r) => r.status === "duplicate");
+      const bad = results.filter((r) => r.status === "invalid");
+
+      // Anything the server took goes out of the box; everything it refused
+      // stays behind with its chip, plus whatever never passed the parse.
+      const rejected = [
+        ...dupes.map((d) => d.soNumber),
+        ...bad.map((b) => b.soNumber),
+        ...parsed.invalid.map((i) => i.raw),
+      ];
+      setText(rejected.length > 0 ? `${rejected.join("\n")}\n` : "");
+
+      const lines: string[] = [];
+      if (added.length > 0) lines.push(`${plural(added.length, "SO")} added`);
+      for (const d of dupes) {
+        lines.push(
+          `${d.soNumber} already on the list (${tagLabel(d.existingTag ?? "")}` +
+            `${d.addedByName ? `, by ${firstName(d.addedByName)}` : ""}` +
+            `${d.addedAt ? ` ${istTime(d.addedAt)}` : ""})`,
+        );
       }
+      for (const b of bad) lines.push(`${b.soNumber} — ${b.reason ?? "could not be added"}`);
+      for (const i of parsed.invalid) lines.push(`${i.raw} — ${i.reason}`);
+
+      const fresh = await load();
+      if (body.applied) {
+        // Bills that were already here — say what happened to each.
+        const addedSet = new Set(added.map((a) => a.soNumber));
+        for (const row of [...(fresh?.waiting ?? []), ...(fresh?.month ?? [])]) {
+          if (!addedSet.has(row.soNumber)) continue;
+          for (const bill of row.bills) {
+            if (bill.ciSkipReason) lines.push(`${bill.obdNumber}: ${bill.ciSkipReason}`);
+            else if (bill.ci) lines.push(`${bill.obdNumber}: held, ${bill.ci.ciNumber ?? "CI"} raised`);
+            else lines.push(`${bill.obdNumber}: held`);
+          }
+        }
+        if (body.applied.errors > 0) lines.push("A bill already here could not be tagged — check the row.");
+      }
+      setOutcome(lines);
     } catch {
-      setFieldError("Could not reach the server.");
+      setFailure("Could not reach the server.");
     } finally {
       setBusy(false);
-      inputRef.current?.focus();
+      boxRef.current?.focus();
     }
-  }, [canEdit, normalised, tag, busy, soInput, load]);
+  }, [canEdit, tag, busy, text, load]);
 
   const remove = useCallback(
     async (id: number) => {
@@ -323,11 +445,11 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          toast.error(body.error ?? `Could not remove (HTTP ${res.status}).`);
+          setFailure(body.error ?? `Could not remove (HTTP ${res.status}).`);
         }
         await load();
       } catch {
-        toast.error("Could not reach the server.");
+        setFailure("Could not reach the server.");
       } finally {
         setBusy(false);
       }
@@ -335,149 +457,125 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
     [load],
   );
 
-  const waiting = useMemo(() => data?.waiting ?? [], [data]);
-  const monthRows = useMemo(() => data?.month ?? [], [data]);
   const empty = !loading && !error && waiting.length === 0 && monthRows.length === 0;
 
-  function renderRows(rows: TelephonicRow[], startAt: number) {
-    return rows.flatMap((row, ri) => {
-      const bills: (TelephonicBill | null)[] = row.bills.length > 0 ? row.bills : [null];
-      const isWaiting = row.state === "waiting";
-      const muted = row.state === "expired" ? " !text-gray-400" : "";
-      const edge = isWaiting ? "border-l-[3px] border-l-warn" : "border-l-[3px] border-l-transparent";
-      const showX = canEdit && (row.state === "waiting" || row.state === "expired");
-      return bills.map((bill, bi) => {
-        const first = bi === 0;
-        const invoice = bill?.invoiceNo ?? null;
-        return (
-          <tr key={`${row.id}-${bill?.orderId ?? "none"}`}>
-            <td className={`${TD_C} ${edge}`}>{first ? startAt + ri : ""}</td>
-            <td className={`${TD} font-mono text-gray-800${muted}`}>{first ? row.soNumber : ""}</td>
-            <td className={TD}>
-              {first && (
-                <span className={`${PILL} ${TAG_CHIP[row.tag === "ci" ? "ci" : "hold"]}`}>{tagLabel(row.tag)}</span>
-              )}
-            </td>
-            <td className={`${TD} leading-tight${muted}`}>
-              {bill === null ? (
-                <span className="text-gray-300">—</span>
-              ) : (
-                <>
-                  <div className="overflow-hidden text-ellipsis font-medium text-[#111827]">
-                    {bill.customerName ? smartTitleCase(bill.customerName) : "—"}
-                  </div>
-                  <div className="font-mono text-[10px] text-gray-400">{bill.obdNumber}</div>
-                </>
-              )}
-            </td>
-            <td className={`${TD}${muted}`}>
-              {invoice !== null ? (
-                <span className="font-mono">{invoice}</span>
-              ) : bill !== null && row.tag === "ci" ? (
-                <span className="text-gray-400">awaiting SAP</span>
-              ) : (
-                <span className="text-gray-300">—</span>
-              )}
-            </td>
-            <td className={TD}>
-              <BillStatus row={row} bill={bill} />
-            </td>
-            <CiCells row={row} bill={bill} muted={muted} />
-            <td className={`${TD}${muted}`}>{first ? (row.addedByName ?? "—") : ""}</td>
-            <td className={`${TD} !text-gray-400`} title={first ? `${istDay(row.addedAt)} ${istTime(row.addedAt)}` : undefined}>
-              {first ? istDay(row.addedAt) : ""}
-            </td>
-            <td className={TD_C}>
-              {first && showX && (
-                <button
-                  type="button"
-                  aria-label={`Remove SO ${row.soNumber}`}
-                  disabled={busy}
-                  onClick={() => void remove(row.id)}
-                  className="inline-flex h-[20px] w-[20px] items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </td>
-          </tr>
-        );
-      });
-    });
-  }
+  // ── The rail ───────────────────────────────────────────────────────────────
+  const rail = (
+    <div className="flex min-h-0 flex-col overflow-y-auto border-r border-gray-200 bg-white px-[14px] py-3">
+      <h3 className="text-[12px] font-bold text-gray-900">Add</h3>
 
-  function band(label: string) {
-    return (
-      <tr>
-        <td
-          colSpan={WIDTHS.length}
-          className="h-[28px] border-b border-[#ebebeb] bg-gray-50 px-3.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500"
-        >
-          {label}
-        </td>
-      </tr>
-    );
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-      {canEdit && (
-        <form
-          className="flex flex-shrink-0 items-start gap-2 border-b border-gray-200 px-[18px] py-3"
-          onSubmit={(e) => {
+      <textarea
+        ref={boxRef}
+        value={text}
+        rows={4}
+        placeholder="Paste SO numbers — one per line"
+        spellCheck={false}
+        onChange={(e) => {
+          setText(e.target.value);
+          setCaretAtEnd(e.target.selectionStart === e.target.value.length);
+        }}
+        onSelect={(e) => {
+          const el = e.currentTarget;
+          setCaretAtEnd(el.selectionStart === el.value.length);
+        }}
+        onBlur={() => setCaretAtEnd(false)}
+        onKeyDown={(e) => {
+          // Enter submits; Shift+Enter is a new line.
+          if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             void submit();
-          }}
-        >
-          <div className="w-[220px]">
-            <input
-              ref={inputRef}
-              value={soInput}
-              onChange={(e) => {
-                setSoInput(e.target.value);
-                if (fieldError) setFieldError(null);
-              }}
-              placeholder="SO number"
-              inputMode="numeric"
-              autoComplete="off"
-              spellCheck={false}
-              className={`h-[32px] w-full rounded-md border px-3 font-mono text-[13px] text-gray-900 outline-none placeholder:font-sans placeholder:text-gray-300 focus:ring-2 ${
-                fieldError
-                  ? "border-danger focus:ring-danger/10"
-                  : "border-gray-200 focus:border-brand-500 focus:ring-brand-500/10"
-              }`}
-            />
-            {fieldError && <p className="mt-1 text-[11px] leading-snug text-danger-text">{fieldError}</p>}
-          </div>
-          <div className="inline-flex h-[32px] overflow-hidden rounded-md border border-gray-200" role="radiogroup">
-            {(["hold", "ci"] as const).map((k) => (
+          }
+        }}
+        className="mt-2 max-h-[240px] min-h-[88px] w-full resize-y rounded-md border border-gray-200 px-3 py-2 font-mono text-[13px] leading-[1.5] text-gray-900 outline-none placeholder:font-sans placeholder:text-gray-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+      />
+
+      {chips.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {chips.map((c) => (
+            <span
+              key={c.key}
+              title={c.reason}
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-[2px] font-mono text-[11px] ${CHIP_CLASS[c.state]}`}
+            >
+              {c.text}
               <button
-                key={k}
                 type="button"
-                role="radio"
-                aria-checked={tag === k}
-                onClick={() => setTag(k)}
-                className={`px-3 text-[12px] font-semibold transition-colors ${
-                  tag === k ? "bg-gray-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
-                }`}
+                aria-label={`Remove ${c.text}`}
+                onClick={() => dropChip(c.key)}
+                className="text-current opacity-50 hover:opacity-100"
               >
-                {tagLabel(k)}
+                <X size={10} />
               </button>
-            ))}
-          </div>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {(validChips.length > 0 || skippedCount > 0) && (
+        <p className="mt-2 text-[11px] text-gray-500">
+          {validChips.length} will be added
+          {skippedCount > 0 ? ` · ${skippedCount} skipped` : ""}
+        </p>
+      )}
+
+      <div className="mt-3 inline-flex h-[32px] w-full overflow-hidden rounded-md border border-gray-200" role="radiogroup">
+        {(["hold", "ci"] as const).map((k) => (
           <button
-            type="submit"
-            disabled={!canAdd}
-            className={`inline-flex h-[32px] items-center rounded-md border px-[15px] text-[12px] font-semibold transition-colors ${
-              canAdd
-                ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
-                : "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+            key={k}
+            type="button"
+            role="radio"
+            aria-checked={tag === k}
+            onClick={() => setTag(k)}
+            className={`flex-1 text-[12px] font-semibold transition-colors ${
+              tag === k
+                ? k === "hold"
+                  ? "bg-danger-bg text-danger-text"
+                  : "bg-ink-100 text-ink-700"
+                : "bg-white text-gray-500 hover:bg-gray-50"
             }`}
           >
-            Add
+            {tagLabel(k)}
           </button>
-        </form>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        disabled={!canAdd}
+        onClick={() => void submit()}
+        className={`mt-2 inline-flex h-[32px] w-full items-center justify-center rounded-md border text-[12px] font-semibold transition-colors ${
+          canAdd
+            ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
+            : "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+        }`}
+      >
+        {validChips.length > 0 ? `Add ${validChips.length}` : "Add"}
+      </button>
+
+      {failure && <p className="mt-2 text-[11px] leading-snug text-danger-text">{failure}</p>}
+
+      {/* The outcome lives HERE, not in a toast: a paste of twenty has more to
+          say than a toast can hold, and it must stay readable while the
+          operator fixes what was refused. */}
+      {outcome && outcome.length > 0 && (
+        <ul className="mt-3 space-y-1 border-t border-gray-100 pt-2">
+          {outcome.map((line, i) => (
+            <li key={i} className="text-[11px] leading-snug text-gray-600">
+              {line}
+            </li>
+          ))}
+        </ul>
       )}
+    </div>
+  );
+
+  // ── The lists ──────────────────────────────────────────────────────────────
+  const lists = (
+    <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+      <div className="flex-shrink-0 border-b border-gray-200 px-[18px] py-2 text-[11px] text-gray-500">
+        {waiting.length} waiting · {monthRows.length} this month
+        {expiredCount > 0 ? ` · ${expiredCount} expired` : ""}
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {error && !data ? (
@@ -490,37 +588,182 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
               Type an SO number as soon as you punch a phone order in SAP. It is matched when its delivery arrives.
             </p>
           </div>
-        ) : data ? (
-          <table className="w-full table-fixed border-collapse">
-            <colgroup>
-              {WIDTHS.map((w, i) => (
-                <col key={i} style={{ width: `${w}%` }} />
-              ))}
-            </colgroup>
-            <thead>
-              <tr>
-                <th className={HEAD_TH_C}>#</th>
-                <th className={HEAD_TH}>SO Number</th>
-                <th className={HEAD_TH}>Tag</th>
-                <th className={HEAD_TH}>Customer / OBD</th>
-                <th className={HEAD_TH}>Invoice No</th>
-                <th className={HEAD_TH}>Status</th>
-                <th className={HEAD_TH}>CI No.</th>
-                <th className={HEAD_TH}>CI Status</th>
-                <th className={HEAD_TH}>Added by</th>
-                <th className={HEAD_TH}>Added</th>
-                <th className={HEAD_TH_C} aria-label="Remove" />
-              </tr>
-            </thead>
-            <tbody>
-              {waiting.length > 0 && band("Waiting for OBD — all dates")}
-              {renderRows(waiting, 1)}
-              {monthRows.length > 0 && band(monthLabel(month))}
-              {renderRows(monthRows, waiting.length + 1)}
-            </tbody>
-          </table>
-        ) : null}
+        ) : (
+          <>
+            {waiting.length > 0 && (
+              <>
+                <div className="border-b border-[#ebebeb] bg-gray-50 px-[18px] py-1.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500">
+                  Waiting for OBD — all dates
+                </div>
+                {/* Capped, not stretched: six short columns across a wide screen
+                    would be mostly whitespace. */}
+                <div className="max-w-[720px]">
+                  <table className="w-full table-fixed border-collapse">
+                    <colgroup>
+                      {WAITING_WIDTHS.map((w, i) => (
+                        <col key={i} style={{ width: `${w}%` }} />
+                      ))}
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className={HEAD_TH_C}>#</th>
+                        <th className={HEAD_TH}>SO Number</th>
+                        <th className={HEAD_TH}>Tag</th>
+                        <th className={HEAD_TH}>Added by</th>
+                        <th className={HEAD_TH}>Added</th>
+                        <th className={HEAD_TH_C} aria-label="Remove" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {waiting.map((row, i) => (
+                        <tr key={row.id}>
+                          <td className={`${TD_C} border-l-[3px] border-l-warn`}>{i + 1}</td>
+                          <td className={`${TD} font-mono text-gray-800`}>{row.soNumber}</td>
+                          <td className={TD}>
+                            <span className={`${PILL} ${TAG_CHIP[row.tag === "ci" ? "ci" : "hold"]}`}>
+                              {tagLabel(row.tag)}
+                            </span>
+                          </td>
+                          <td className={TD}>{firstName(row.addedByName)}</td>
+                          <td className={`${TD} !text-gray-400`} title={`${istDay(row.addedAt)} ${istTime(row.addedAt)}`}>
+                            {istDay(row.addedAt)}
+                          </td>
+                          <td className={TD_C}>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                aria-label={`Remove SO ${row.soNumber}`}
+                                disabled={busy}
+                                onClick={() => void remove(row.id)}
+                                className="inline-flex h-[20px] w-[20px] items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {monthRows.length > 0 && (
+              <>
+                <div className="border-b border-t border-[#ebebeb] bg-gray-50 px-[18px] py-1.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500">
+                  {monthLabel(month)}
+                </div>
+                <table className="w-full table-fixed border-collapse">
+                  <colgroup>
+                    {MONTH_WIDTHS.map((w, i) => (
+                      <col key={i} style={{ width: `${w}%` }} />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th className={HEAD_TH_C}>#</th>
+                      <th className={HEAD_TH}>SO Number</th>
+                      <th className={HEAD_TH}>Tag</th>
+                      <th className={HEAD_TH}>Customer / OBD</th>
+                      <th className={HEAD_TH}>Invoice No</th>
+                      <th className={HEAD_TH}>Status</th>
+                      <th className={HEAD_TH}>CI</th>
+                      <th className={HEAD_TH}>Added by</th>
+                      <th className={HEAD_TH}>Added</th>
+                      <th className={HEAD_TH_C} aria-label="Remove" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthRows.flatMap((row, ri) => {
+                      const bills: (TelephonicBill | null)[] = row.bills.length > 0 ? row.bills : [null];
+                      const muted = row.state === "expired" ? " !text-gray-400" : "";
+                      const showX = canEdit && row.state === "expired";
+                      return bills.map((bill, bi) => {
+                        const first = bi === 0;
+                        return (
+                          <tr key={`${row.id}-${bill?.orderId ?? "none"}`}>
+                            <td className={TD_C}>{first ? ri + 1 : ""}</td>
+                            <td className={`${TD} font-mono text-gray-800${muted}`}>{first ? row.soNumber : ""}</td>
+                            <td className={TD}>
+                              {first ? (
+                                <span className={`${PILL} ${TAG_CHIP[row.tag === "ci" ? "ci" : "hold"]}`}>
+                                  {tagLabel(row.tag)}
+                                </span>
+                              ) : (
+                                /* A second bill on the same SO. */
+                                <span className="text-gray-300">↳</span>
+                              )}
+                            </td>
+                            <td className={`${TD} leading-tight${muted}`}>
+                              {bill === null ? (
+                                <span className="text-gray-300">—</span>
+                              ) : (
+                                <>
+                                  <div className="overflow-hidden text-ellipsis font-medium text-[#111827]">
+                                    {bill.customerName ? smartTitleCase(bill.customerName) : "—"}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-gray-400">{bill.obdNumber}</div>
+                                </>
+                              )}
+                            </td>
+                            <td className={`${TD}${muted}`}>
+                              {bill?.invoiceNo ? (
+                                <span className="font-mono">{bill.invoiceNo}</span>
+                              ) : bill !== null && row.tag === "ci" ? (
+                                <span className="text-gray-400">awaiting SAP</span>
+                              ) : (
+                                <span className="text-gray-300">—</span>
+                              )}
+                            </td>
+                            <td className={TD}>
+                              <BillStatus row={row} bill={bill} />
+                            </td>
+                            <td className={`${TD}${muted}`}>
+                              <CiCell row={row} bill={bill} />
+                            </td>
+                            <td className={`${TD}${muted}`}>{first ? firstName(row.addedByName) : ""}</td>
+                            <td
+                              className={`${TD} !text-gray-400`}
+                              title={first ? `${istDay(row.addedAt)} ${istTime(row.addedAt)}` : undefined}
+                            >
+                              {first ? istDay(row.addedAt) : ""}
+                            </td>
+                            <td className={TD_C}>
+                              {first && showX && (
+                                <button
+                                  type="button"
+                                  aria-label={`Remove SO ${row.soNumber}`}
+                                  disabled={busy}
+                                  onClick={() => void remove(row.id)}
+                                  className="inline-flex h-[20px] w-[20px] items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                                >
+                                  <X size={12} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </>
+        )}
       </div>
+    </div>
+  );
+
+  return (
+    <div
+      className="grid min-h-0 flex-1 overflow-hidden"
+      // 🔴 minmax(0, 1fr), never plain 1fr — see this file's header.
+      style={{ gridTemplateColumns: canEdit ? "344px minmax(0, 1fr)" : "minmax(0, 1fr)" }}
+    >
+      {canEdit && rail}
+      {lists}
     </div>
   );
 }

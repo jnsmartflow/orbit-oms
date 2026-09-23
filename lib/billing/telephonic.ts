@@ -227,103 +227,132 @@ export async function listTelephonic(month: string, now: Date): Promise<Telephon
 
 // ── Add ──────────────────────────────────────────────────────────────────────
 
-export type AddTelephonicResult =
-  | {
-      ok: true;
-      tag: { id: number; soNumber: string; tag: TelephonicTagKind; expiresAt: string };
-      /** Set when OBDs for this SO already existed and the tag was applied at
-       *  once (the late-tag case); null otherwise. */
-      applied: SoTagApplySummary | null;
-    }
-  | { ok: false; status: 400; error: string }
-  | {
-      ok: false;
-      status: 409;
-      error: string;
-      existingTag: string;
-      addedByName: string | null;
-      addedAt: string;
-    };
+/** What happened to ONE SO number in a batch. Never an error on its own: a
+ *  duplicate or an unreadable number is reported beside the ones that went in. */
+export interface AddTelephonicOutcome {
+  soNumber: string;
+  status: "added" | "duplicate" | "invalid";
+  /** duplicate only — the tag already on that SO, and who put it there. */
+  existingTag?: string;
+  addedByName?: string | null;
+  addedAt?: string;
+  /** invalid only — what the chip says ("not 10 digits", "over 50"). */
+  reason?: string;
+}
 
-async function duplicateOf(soNumber: string): Promise<AddTelephonicResult | null> {
-  const existing = await prisma.so_tags.findFirst({
+export interface AddTelephonicResult {
+  results: AddTelephonicOutcome[];
+  /** ONE summary for the whole batch: the tags that matched bills already here
+   *  (the late-tag case). Null when no added SO had an OBD yet. */
+  applied: SoTagApplySummary | null;
+}
+
+/** The live row blocking a re-add, if any. */
+async function duplicateOf(
+  soNumber: string,
+): Promise<{ tag: string; addedAt: Date; addedBy: { name: string } | null } | null> {
+  return prisma.so_tags.findFirst({
     where: { soNumber, isRemoved: false },
     select: { tag: true, addedAt: true, addedBy: { select: { name: true } } },
   });
-  if (existing === null) return null;
+}
+
+function duplicateOutcome(
+  soNumber: string,
+  row: { tag: string; addedAt: Date; addedBy: { name: string } | null },
+): AddTelephonicOutcome {
   return {
-    ok: false,
-    status: 409,
-    error: `SO ${soNumber} is already tagged ${existing.tag === "ci" ? "CI" : "Hold"}. Remove it first to change the tag.`,
-    existingTag: existing.tag,
-    addedByName: existing.addedBy?.name ?? null,
-    addedAt: existing.addedAt.toISOString(),
+    soNumber,
+    status: "duplicate",
+    existingTag: row.tag,
+    addedByName: row.addedBy?.name ?? null,
+    addedAt: row.addedAt.toISOString(),
   };
 }
 
 /**
- * Add one tag.
- *   1. validate the SO number (normaliseSoNumber) and the tag → 400
- *   2. a non-removed row for that SO → 409 naming it (expired ones included:
- *      the partial unique index covers them, so "remove + re-add" is the way)
- *   3. insert, expiresAt = now + TELEPHONIC_TAG_TTL_DAYS; a P2002 from the
- *      partial unique index (two operators, same second) → the same 409
- *   4. LATE TAG — if OBDs for the SO already exist, apply the tag to them now
- *      through the same applySoTagHolds the import uses.
+ * Add a BATCH of tags, one tag kind for the whole batch.
+ *
+ * 🔴 EACH NUMBER STANDS ALONE. An unreadable number or one already on the list
+ * is REPORTED, never an error, and never stops the rest going in — an operator
+ * pasting twenty numbers must not lose nineteen good ones to one typo.
+ *
+ * Per number: validate → look for a live row → insert. A P2002 from the partial
+ * unique index (two operators in the same second) becomes "duplicate" for that
+ * number alone.
+ *
+ * LATE TAG — the OBDs of EVERY added number are collected and applySoTagHolds
+ * is called ONCE for the whole set, so a twenty-number paste costs one hook run,
+ * not twenty. It never throws.
+ *
+ * Sequential awaits, never prisma.$transaction (CORE §3).
  */
-export async function addTelephonicTag(args: {
-  soNumber: string;
+export async function addTelephonicTags(args: {
+  soNumbers: string[];
   tag: string;
   userId: number;
   now: Date;
 }): Promise<AddTelephonicResult> {
-  const soNumber = normaliseSoNumber(args.soNumber);
-  if (soNumber === null) {
-    return { ok: false, status: 400, error: "An SO number is 10 digits, e.g. 1046880241." };
-  }
   if (!(TELEPHONIC_TAGS as readonly string[]).includes(args.tag)) {
-    return { ok: false, status: 400, error: "Pick Hold or CI." };
+    throw new Error("Pick Hold or CI.");
   }
   const tag = args.tag as TelephonicTagKind;
+  const expiresAt = new Date(args.now.getTime() + TELEPHONIC_TAG_TTL_DAYS * 86_400_000);
 
-  const dup = await duplicateOf(soNumber);
-  if (dup !== null) return dup;
+  const results: AddTelephonicOutcome[] = [];
+  const addedSoNumbers: string[] = [];
+  const seen = new Set<string>();
 
-  let created: { id: number; expiresAt: Date };
-  try {
-    created = await prisma.so_tags.create({
-      data: {
-        soNumber,
-        tag,
-        addedById: args.userId,
-        addedAt: args.now,
-        expiresAt: new Date(args.now.getTime() + TELEPHONIC_TAG_TTL_DAYS * 86_400_000),
-      },
-      select: { id: true, expiresAt: true },
-    });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const raced = await duplicateOf(soNumber);
-      if (raced !== null) return raced;
+  for (const raw of args.soNumbers) {
+    const soNumber = normaliseSoNumber(raw);
+    if (soNumber === null) {
+      results.push({ soNumber: raw, status: "invalid", reason: "not 10 digits" });
+      continue;
     }
-    throw err;
+    if (seen.has(soNumber)) continue; // the same number twice in one request
+    seen.add(soNumber);
+
+    const dup = await duplicateOf(soNumber);
+    if (dup !== null) {
+      results.push(duplicateOutcome(soNumber, dup));
+      continue;
+    }
+
+    try {
+      await prisma.so_tags.create({
+        data: { soNumber, tag, addedById: args.userId, addedAt: args.now, expiresAt },
+        select: { id: true },
+      });
+      results.push({ soNumber, status: "added" });
+      addedSoNumbers.push(soNumber);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        // Lost a race on the partial unique index — report the winner's row.
+        const raced = await duplicateOf(soNumber);
+        results.push(
+          raced !== null
+            ? duplicateOutcome(soNumber, raced)
+            : { soNumber, status: "duplicate" },
+        );
+        continue;
+      }
+      throw err;
+    }
   }
 
-  // LATE TAG — the OBD may already be here (the tag is normally typed before
-  // it). Same hook, same rules, never throws.
-  const existing = await prisma.orders.findMany({
-    where: { soNumber, isRemoved: false },
-    select: { obdNumber: true },
-  });
-  const applied = existing.length === 0
-    ? null
-    : await applySoTagHolds(existing.map((o) => o.obdNumber), args.now);
+  // LATE TAG — one hook run for every bill already here across the whole batch.
+  let applied: SoTagApplySummary | null = null;
+  if (addedSoNumbers.length > 0) {
+    const existing = await prisma.orders.findMany({
+      where: { soNumber: { in: addedSoNumbers }, isRemoved: false },
+      select: { obdNumber: true },
+    });
+    if (existing.length > 0) {
+      applied = await applySoTagHolds(existing.map((o) => o.obdNumber), args.now);
+    }
+  }
 
-  return {
-    ok: true,
-    tag: { id: created.id, soNumber, tag, expiresAt: created.expiresAt.toISOString() },
-    applied,
-  };
+  return { results, applied };
 }
 
 // ── Remove ───────────────────────────────────────────────────────────────────
