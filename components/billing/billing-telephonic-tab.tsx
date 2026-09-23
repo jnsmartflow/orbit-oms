@@ -28,7 +28,7 @@
 // a bill Floor released, or one whose hold failed, reads as what it is now.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, X } from "lucide-react";
 import {
   useBillingTelephonicMarkerSubscription,
   useBillingTelephonicMarkerPause,
@@ -63,13 +63,20 @@ const WAITING_WIDTHS = [6, 24, 16, 26, 18, 10];
  *  gives up 2% and Added by 1%). */
 const MONTH_WIDTHS = [3, 10, 6, 22, 11, 12, 16, 9, 8, 3];
 
-// 🔴 TAG COLOURS. Hold = the `danger` token (a thing being stopped — CLAUDE_UI
-// §1/§3). CI = the neutral `ink` family: clearly not Hold's red, and NOT brand
-// violet, which means pressable. Every `data.*` colour is an identity already
-// spoken for, and `tint` belongs to tinting only.
+// 🔴 TAG COLOURS.
+// data.* are IDENTITIES, never states (UI §2.1). Hold and CI are two KINDS of
+// telephonic order, not two statuses, so an identity colour is right here. Hold
+// keeps danger because Hold is red everywhere else in the app. The status pills
+// (Waiting / Held / Released / Not held) are unchanged and keep their warn / ok
+// / grey / danger state colours.
+//
+// CI is `data.blue` (#2563EB). The config exposes that one hex only — no 50/200
+// steps — so the ground and border are Tailwind's `blue-50` / `blue-200`, the
+// closest pale pair, with the label on the token itself (`text-data-blue`).
+// The ink family read as DISABLED, which is why it went.
 const TAG_CHIP: Record<TagKind, string> = {
   hold: "border border-danger-bd bg-danger-bg text-danger-text",
-  ci: "border border-ink-200 bg-ink-100 text-ink-700",
+  ci: "border border-blue-200 bg-blue-50 text-data-blue",
 };
 
 const PILL = "inline-block rounded px-1.5 py-px text-[10px] font-semibold";
@@ -526,14 +533,19 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
             role="radio"
             aria-checked={tag === k}
             onClick={() => setTag(k)}
-            className={`flex-1 text-[12px] font-semibold transition-colors ${
+            className={`flex flex-1 items-center justify-center gap-1.5 text-[12px] font-semibold transition-colors ${
               tag === k
                 ? k === "hold"
                   ? "bg-danger-bg text-danger-text"
-                  : "bg-ink-100 text-ink-700"
+                  : // ring-inset, not a border: the group already has one, and a
+                    // second would shift the box on selection.
+                    "bg-blue-50 text-data-blue ring-1 ring-inset ring-blue-200"
                 : "bg-white text-gray-500 hover:bg-gray-50"
             }`}
           >
+            {tag === k && k === "ci" && (
+              <span aria-hidden className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-data-blue" />
+            )}
             {tagLabel(k)}
           </button>
         ))}
@@ -551,6 +563,12 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
       >
         {validChips.length > 0 ? `Add ${validChips.length}` : "Add"}
       </button>
+
+      {/* Always there, directly under the button — the three things the box does
+          that are not visible from looking at it. */}
+      <p className="mt-1.5 text-[10.5px] text-gray-400">
+        Enter adds · Shift+Enter new line · max 50 at a time
+      </p>
 
       {failure && <p className="mt-2 text-[11px] leading-snug text-danger-text">{failure}</p>}
 
@@ -582,7 +600,9 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
           <div className="px-5 py-10 text-center text-[11.5px] text-gray-400">Could not load the list ({error}).</div>
         ) : empty ? (
           <div className="px-5 py-14 text-center">
-            <div className="text-[28px] leading-none text-gray-300">○</div>
+            <div className="mx-auto flex h-[42px] w-[42px] items-center justify-center rounded-full bg-gray-100">
+              <Clock size={20} className="text-gray-400" />
+            </div>
             <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Nothing recorded yet</h4>
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
               Type an SO number as soon as you punch a phone order in SAP. It is matched when its delivery arrives.
