@@ -101,11 +101,14 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
   const tripRows = drops.length
     ? await prisma.trips.findMany({
         where: { id: { in: Array.from(new Set(drops.map((d) => d.tripId))) } },
-        select: { id: true, tripDate: true, status: true, vehicleSize: true },
+        select: { id: true, tripDate: true, status: true, vehicleSize: true, isHand: true },
       })
     : [];
-  // A trip counts only if it is that day's and not cancelled.
-  const dayTrips = tripRows.filter((t) => t.status !== "cancelled" && t.tripDate.getTime() === date.getTime());
+  // A trip counts only if it is that day's, not cancelled, and a TRUCK — a Hand
+  // trip (the dealer collects) has no vehicle to price (2026-09-24, design §4).
+  const dayTrips = tripRows.filter(
+    (t) => t.status !== "cancelled" && !t.isHand && t.tripDate.getTime() === date.getTime(),
+  );
   const dayTripIds = new Set(dayTrips.map((t) => t.id));
 
   const bills = new Map<number, BillFact>();

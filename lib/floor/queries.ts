@@ -1087,6 +1087,8 @@ export async function getFloorBoard(
       // trip module's own stop identity, so a card's "N stops" counts exactly
       // what trip_drops would (FloorBoardRow).
       routeId: dealer?.area?.primaryRoute?.id ?? null,
+      // Hand — the dealer collects (2026-09-24). A scalar the include already brings.
+      isHand: order.handAt !== null,
       stopKey: computeDropKey(order),
       tripDropId: order.tripDropId,
       tripNumber:
@@ -1245,6 +1247,7 @@ export async function getFloorHold(
     rows.push({
       orderId: order.id,
       obdNumber: order.obdNumber,
+      isHand: order.handAt !== null,
       dealerName: dealer?.customerName ?? "(Unmatched)",
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
@@ -1418,6 +1421,7 @@ export async function getFloorCancelled(
     const party = {
       orderId: order.id,
       obdNumber: order.obdNumber,
+      isHand: order.handAt !== null,
       dealerName: dealer?.customerName ?? "(Unmatched)",
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,

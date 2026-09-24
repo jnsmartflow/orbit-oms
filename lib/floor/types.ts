@@ -48,6 +48,9 @@ export interface TintState {
 
 // Party + flags block shared by the rail / hold / cancelled rows.
 export interface FloorPartyFields {
+  /** Hand — the dealer collects (orders.handAt set, 2026-09-24). Never a
+   *  dispatchStatus value; drives the ✋ HAND chip (UI in build step 6b). */
+  isHand: boolean;
   dealerName: string;         // effective ship-to (shipToOverrideCustomer ?? customer)
   billToName: string | null;  // bill-to dealer (import_raw_summary.billToCustomerName)
   isShipToOverride: boolean;
@@ -303,6 +306,9 @@ export interface FloorBoardRow extends PickingQueueRow {
   // routes to clubs BY ID (route_club_members.routeId), never by name, so a
   // renamed route cannot silently fall out of its club.
   routeId: number | null;
+  /** Hand — the dealer collects (orders.handAt set, 2026-09-24). Left out of
+   *  route-card and pool totals and the load plan; planned on a Hand trip. */
+  isHand: boolean;
   // `stopKey` is the bill's STOP: `computeDropKey` (lib/trips/drop-key.ts), the
   // one definition of "which customer does this bill go to" that trip_drops is
   // built on. A route card's "N stops" is the count of distinct keys, so a pool

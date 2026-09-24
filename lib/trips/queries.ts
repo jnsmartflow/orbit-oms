@@ -136,6 +136,9 @@ export interface TripSummary {
   transporterTripNo: string | null;
   /** gc | ace | big, or null — lib/trips/vehicle-size.ts. */
   vehicleSize: VehicleSize | null;
+  /** A Hand trip — the dealer collects, no vehicle (2026-09-24). Set at create,
+   *  never changed; only Hand bills can join it. */
+  isHand: boolean;
   note: string | null;
   status: string;
   /** DERIVED, never stored — every bill checked and at least one bill. */
@@ -463,6 +466,7 @@ const TRIP_SELECT = {
   driverPhone: true,
   transporterTripNo: true,
   vehicleSize: true,
+  isHand: true,
   note: true,
   status: true,
   releasedAt: true,
@@ -489,6 +493,7 @@ type TripRow = {
   driverPhone: string | null;
   transporterTripNo: string | null;
   vehicleSize: string | null;
+  isHand: boolean;
   note: string | null;
   status: string;
   releasedAt: Date | null;
@@ -733,6 +738,7 @@ function toSummary(
     driverPhone: t.driverPhone,
     transporterTripNo: t.transporterTripNo,
     vehicleSize: isVehicleSize(t.vehicleSize) ? t.vehicleSize : null,
+    isHand: t.isHand,
     note: t.note,
     status: t.status,
     // 🔴 DERIVED. `counts.total > 0` is load-bearing: an EMPTY trip is not

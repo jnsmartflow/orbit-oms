@@ -166,9 +166,11 @@ export async function countHeldBackWaiting(
     },
     select: { tripDrop: { select: { tripId: true } } },
   });
+  // handAt: null — a Hand bill (the dealer collects) is not "not planned yet":
+  // it waits for a Hand trip, not a truck (2026-09-24, design §4).
   const unplanned = await prisma.orders.count({
     where: {
-      AND: [boardWhere, { workflowStage: SUPPORT_DONE_OUTPUT, tripDropId: null }],
+      AND: [boardWhere, { workflowStage: SUPPORT_DONE_OUTPUT, tripDropId: null, handAt: null }],
     },
   });
   const trucks = new Set(rows.map((r) => r.tripDrop?.tripId).filter((id): id is number => id != null));

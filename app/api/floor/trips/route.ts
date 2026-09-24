@@ -46,6 +46,9 @@ interface CreateBody {
   transporterTripNo?: string | null;
   /** gc | ace | big (lib/trips/vehicle-size.ts). The form requires it for Upcountry; the route does not. */
   vehicleSize?: string | null;
+  /** A Hand trip — the dealer collects, no vehicle (2026-09-24). Set here only;
+   *  PATCH refuses to change it. Default false. */
+  isHand?: boolean;
 }
 
 /** A supplied optional integer must be a real positive integer or explicitly null. */
@@ -176,6 +179,24 @@ export async function POST(req: Request): Promise<NextResponse> {
   const vehicleSize = parseVehicleSize(body.vehicleSize);
   if (!vehicleSize.ok) return NextResponse.json({ error: "vehicleSize must be gc, ace, big or null" }, { status: 400 });
 
+  // A HAND TRIP (2026-09-24, design web-update-2026-09-24-billing-mo-actions.md
+  // §4): the dealer collects, so there is no vehicle, plate or driver — refused
+  // here, and on PATCH. It therefore stays `draft` for life, which blocks
+  // nothing (show, pick gate, send-to-billing and Print ignore the status).
+  // The driver is only ever copied from a master vehicle, so refusing the
+  // vehicle refuses the driver too. Number, letter and delivery type are
+  // untouched — a Hand trip is numbered like any other.
+  if (body.isHand !== undefined && typeof body.isHand !== "boolean") {
+    return NextResponse.json({ error: "isHand must be true or false" }, { status: 400 });
+  }
+  const isHand = body.isHand === true;
+  if (isHand && (vehicleId.value !== null || adhoc.value !== null)) {
+    return NextResponse.json(
+      { error: "A Hand trip has no vehicle — the dealer collects. Leave the vehicle and plate empty." },
+      { status: 400 },
+    );
+  }
+
   // chk_trips_vehicle_one_of, surfaced as a readable 400 rather than a raw
   // constraint-violation string on somebody's screen.
   if (vehicleId.value !== null && adhoc.value !== null) {
@@ -268,6 +289,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           driverPhone,
           transporterTripNo: transporterTripNo.value,
           vehicleSize: vehicleSize.value,
+          isHand,
           note: note.value,
           // chk_trips_status admits draft|released|dispatched|cancelled. A trip
           // with a vehicle starts `released`; without one, `draft` (see above).

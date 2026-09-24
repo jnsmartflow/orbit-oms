@@ -56,7 +56,10 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
     req.orderIds.length === 0
       ? []
       : await prisma.orders.findMany({
-          where: { id: { in: req.orderIds }, isRemoved: false, ...(req.includeOnTrips ? {} : { tripDropId: null }) },
+          // handAt: null — a bill the dealer collects never rides a truck, so it
+          // is never planned (2026-09-24, design §4). Server-side, so it also
+          // covers the 21:00 snapshot cron.
+          where: { id: { in: req.orderIds }, isRemoved: false, handAt: null, ...(req.includeOnTrips ? {} : { tripDropId: null }) },
           select: {
             id: true,
             customerId: true,

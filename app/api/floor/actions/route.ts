@@ -8,12 +8,19 @@ import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
 import { buildCancelNote, type CancelReason } from "@/lib/picking/cancel-reasons";
 import { FLOOR_REMARK_MAX, isFloorCancelReason, offFloorRefusal } from "@/lib/floor/off-floor";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
+import { billingRefusal } from "@/lib/billing/refusal";
+import { notifyHandSet } from "@/lib/push/hand";
+
+/** The log notes for the Hand mark (2026-09-24). Plain strings: nothing reads
+ *  them back — the mark itself is orders.handAt. */
+const HAND_SET_NOTE = "Hand — dealer collects";
+const HAND_CLEAR_NOTE = "Hand cleared";
 
 export const dynamic = "force-dynamic";
 
 // Floor Control — bulk + single actions on floor/rail bills (design §7.8-§7.11,
 // §9). NOT assignment: Assign/Unassign go through the existing Picking endpoints
-// unchanged (see components/floor/floor-page.tsx). This route owns the six
+// unchanged (see components/floor/floor-page.tsx). This route owns the eight
 // state actions below.
 //
 // Contract per bill, non-negotiable (CORE §3 + CLAUDE_PICKING §10):
@@ -22,8 +29,8 @@ export const dynamic = "force-dynamic";
 //     on every board's updatedAt live-sync marker)
 //   - exactly ONE order_status_logs row per bill per action
 
-type FloorAction = "mark-urgent" | "change-slot" | "hold" | "cancel" | "restore" | "unhold";
-const ACTIONS: FloorAction[] = ["mark-urgent", "change-slot", "hold", "cancel", "restore", "unhold"];
+type FloorAction = "mark-urgent" | "change-slot" | "hold" | "cancel" | "restore" | "unhold" | "hand" | "unhand";
+const ACTIONS: FloorAction[] = ["mark-urgent", "change-slot", "hold", "cancel", "restore", "unhold", "hand", "unhand"];
 
 interface Body {
   action?: FloorAction;
@@ -115,6 +122,9 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const done: number[] = [];
   const failed: Failed[] = [];
+  // hand / unhand only: a repeat press (the mark is already as asked) writes
+  // NOTHING — no update, no log — and is reported here, not as a failure.
+  const skipped: number[] = [];
 
   for (const orderId of orderIds) {
     try {
@@ -127,6 +137,8 @@ export async function POST(req: Request): Promise<NextResponse> {
           obdEmailDate: true,
           dispatchStatus: true,
           isRemoved: true,
+          // hand / unhand: the repeat-press skip.
+          handAt: true,
           // cancel's refusals (offFloorRefusal) — the trip number is for the message.
           tripDropId: true,
           tripDrop: { select: { trip: { select: { tripNumber: true } } } },
@@ -143,7 +155,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       let toStage = order.workflowStage;
       let note: string;
       // Set by 'cancel' only — see the write block below. Declared here rather
-      // than inside the branch because the writes are shared by all six
+      // than inside the branch because the writes are shared by all eight
       // actions and must stay in ONE place.
       let clearAssignment = false;
 
@@ -167,6 +179,34 @@ export async function POST(req: Request): Promise<NextResponse> {
         // toStage deliberately stays the order's unchanged workflowStage. Shared
         // constant with the reader (getFloorHold) so the two cannot drift.
         note = FLOOR_HOLD_NOTE;
+      } else if (action === "hand" || action === "unhand") {
+        // HAND — the dealer collects from the depot (2026-09-24, design
+        // web-update-2026-09-24-billing-mo-actions.md §4). A timestamp + actor,
+        // 🔴 NEVER a dispatchStatus value: every board predicate pins 'dispatch'.
+        // The refusals are billing's own rule (lib/billing/refusal.ts):
+        // dispatched, cancelled or ON A TRIP refused — clearing too, so a bill on
+        // a Hand trip is taken off the trip first; tint room and picked allowed.
+        const setting = action === "hand";
+        const refusal = billingRefusal(
+          "hand",
+          {
+            workflowStage: order.workflowStage,
+            isRemoved: order.isRemoved,
+            tripDropId: order.tripDropId,
+            tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+          },
+          setting ? "set" : "clear",
+        );
+        if (refusal !== null) {
+          failed.push({ orderId, error: refusal });
+          continue;
+        }
+        if (setting === (order.handAt !== null)) {
+          skipped.push(orderId);
+          continue;
+        }
+        updateData = setting ? { handAt: new Date(), handById: changedById } : { handAt: null, handById: null };
+        note = setting ? HAND_SET_NOTE : HAND_CLEAR_NOTE;
       } else if (action === "cancel") {
         // 🔴 THE SAME REFUSALS AS RAISE CI (lib/floor/off-floor.ts, owner
         // 2026-09-22): already cancelled, dispatched, on a trip, or in the tint
@@ -303,6 +343,12 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Nothing changed at all → 422 so a fully-skipped action cannot be read as
   // success by the client. A partial success stays 200 but always carries the
   // `failed` list to be surfaced (the swallowed-response bug this closes).
+  // Hand set → the supervisors hear about it: only the bills actually marked;
+  // awaited and swallowed — it never changes this response.
+  if (action === "hand" && done.length > 0) {
+    await notifyHandSet(done, changedById);
+  }
+
   const status = done.length === 0 && failed.length > 0 ? 422 : 200;
-  return NextResponse.json({ done, failed }, { status });
+  return NextResponse.json({ done, failed, ...(skipped.length > 0 ? { skipped } : {}) }, { status });
 }

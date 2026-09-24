@@ -91,7 +91,8 @@ export async function POST(
 
   const trip = await prisma.trips.findUnique({
     where: { id: tripId },
-    select: { id: true, status: true },
+    // isHand — the add branch admits only matching bills (2026-09-24).
+    select: { id: true, status: true, isHand: true },
   });
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   // A cancelled or dispatched trip is finished with. Refusing here is the
@@ -128,6 +129,8 @@ export async function POST(
           shipToOverrideCustomerId: true,
           shipToCustomerId: true,
           shipToCustomerName: true,
+          // The Hand mark — a Hand bill rides only a Hand trip (add branch).
+          handAt: true,
         },
       });
       if (!order || order.isRemoved) {
@@ -193,6 +196,23 @@ export async function POST(
             current && current.tripId !== tripId
               ? `Already on ${current.trip.tripNumber} — remove it from that trip first.`
               : "Already attached to a different stop on this trip.",
+        });
+        continue;
+      }
+
+      // 🔴 HAND vs TRUCK (2026-09-24, design web-update-2026-09-24-billing-mo-
+      // actions.md §4). A bill the dealer collects never joins a truck, and a
+      // truck bill never joins a Hand trip. THIS route is the only runtime
+      // writer of tripDropId, so every add path — the rail, the add band,
+      // "+ New trip", load plan "Make trip" — is held to it here, per bill.
+      // To move a bill across, clear its Hand mark first.
+      const isHandBill = order.handAt !== null;
+      if (isHandBill !== trip.isHand) {
+        failed.push({
+          orderId,
+          error: isHandBill
+            ? "The dealer collects this bill (Hand) — put it on a Hand trip, not a truck."
+            : "This is a Hand trip (dealer collects) — only Hand bills can join it.",
         });
         continue;
       }

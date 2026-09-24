@@ -60,6 +60,8 @@ interface PatchBody {
   vehicleSize?: string | null;
   /** Accepted ONLY so it can be refused with a clear message — see below. */
   deliveryTypeId?: number;
+  /** Accepted ONLY so it can be refused — a Hand trip is decided at create. */
+  isHand?: boolean;
 }
 
 /** Present in the body at all? `undefined` means "leave alone", `null` means "clear". */
@@ -145,6 +147,16 @@ export async function PATCH(
     );
   }
 
+  // A Hand trip is decided when the trip is built and never changes (2026-09-24,
+  // design §4): the add route admits bills by it, so flipping it later would
+  // leave truck bills on a Hand trip or the reverse.
+  if (has(body, "isHand")) {
+    return NextResponse.json(
+      { error: "Whether a trip is a Hand trip is set when it is built and cannot be changed." },
+      { status: 400 },
+    );
+  }
+
   const trip = await prisma.trips.findUnique({
     where: { id: tripId },
     // 🔴 THE BEFORE SIDE, AND IT IS READ FOR THE LOG AS MUCH AS FOR THE GUARD.
@@ -163,6 +175,7 @@ export async function PATCH(
       note: true,
       transporterTripNo: true,
       vehicleSize: true,
+      isHand: true,
       releasedAt: true,
       vehicle: { select: { vehicleNo: true } },
     },
@@ -232,6 +245,14 @@ export async function PATCH(
   // body — an unmentioned column keeps its stored value and can still collide.
   const nextVehicleId = has(body, "vehicleId") ? (data.vehicleId ?? null) : trip.vehicleId;
   const nextAdhoc = has(body, "adhocVehicleNo") ? (data.adhocVehicleNo ?? null) : trip.adhocVehicleNo;
+  // A Hand trip never carries a vehicle, plate or driver (the driver only comes
+  // from a vehicle), so it stays `draft` — see POST /api/floor/trips.
+  if (trip.isHand && (nextVehicleId !== null || nextAdhoc !== null)) {
+    return NextResponse.json(
+      { error: "A Hand trip has no vehicle — the dealer collects. It cannot be given a vehicle or plate." },
+      { status: 400 },
+    );
+  }
   if (nextVehicleId !== null && nextAdhoc !== null) {
     return NextResponse.json(
       { error: "A trip carries EITHER a master vehicle OR an ad-hoc plate, never both." },
