@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
+import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 import { PackCode, Prisma } from "@prisma/client";
 import {
   getIstYearPrefix,
@@ -32,8 +33,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // Per-user tick, not a job title (2026-09-06). Allow/deny only — the ownership
   // scope is canSeeAllOperatorRows further down, a FACE branch. Gate report 6a.
+  //
+  // Two arms, same as the TINTER route: tint_operator/canEdit unchanged, else
+  // tint_manager/canEdit on the MANAGER-ONLY path (Base bypass TI only).
   const roles = session.user.roles ?? [session.user.role];
-  if (!(await checkAnyPermission(roles, "tint_operator", "canEdit"))) {
+  const operatorArm = await checkAnyPermission(roles, "tint_operator", "canEdit");
+  const managerOnly = !operatorArm && (await checkAnyPermission(roles, "tint_manager", "canEdit"));
+  if (!operatorArm && !managerOnly) {
     return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
@@ -89,6 +95,19 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Resolved once per request. Sequential await, never $transaction (CORE §3).
   const baseOperatorId = await getBaseOperatorId();
 
+  // MANAGER-ONLY path — see the TINTER route. Placeholder-owned `tinting_done`
+  // assignments only; no splits, no FACE branch, no own id. Fails CLOSED.
+  let managerScope: { assignedToId: number; status: string } | null = null;
+  if (managerOnly) {
+    if (hasSplit || baseOperatorId === null) {
+      return NextResponse.json(
+        { error: "Managers can save Tinter Issue only for Base — No Tint bills" },
+        { status: 403 },
+      );
+    }
+    managerScope = { assignedToId: baseOperatorId, status: TINT_STATUS_DONE };
+  }
+
   try {
     // Step 1 — resolve orderId from split or assignment (ownership-gated)
     let orderId: number;
@@ -103,8 +122,11 @@ export async function POST(req: Request): Promise<NextResponse> {
       // change, for the same reason, as the TINTER route next door. Full
       // reasoning lives there; the short version is that a "Base — No Tint"
       // bypass attributes its assignment to the placeholder worker, so a
-      // manager typing the missing TI is neither its owner nor covered by the
-      // FACE branch (which reads the SINGULAR primary role).
+      // tint_operator/canEdit holder typing the missing TI is neither its owner
+      // nor covered by the FACE branch (which reads the SINGULAR primary role).
+      // This tint_operator arm is unchanged. Managers WITHOUT tint_operator take
+      // the tint_manager arm (`managerScope` above), placeholder rows only.
+      // 2026-09-24: before this, managers needed tint_operator canEdit — do not revert.
       //
       // 🔴 An exception for ONE row, never a widening of canSeeAllOperatorRows
       // (CLAUDE_TINT.md §13.4). `baseOperatorId === null` fails CLOSED, back to
@@ -115,7 +137,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           ? { assignedToId: { in: [userId, baseOperatorId] } }
           : { assignedToId: userId };
       const assignment = await prisma.tint_assignments.findFirst({
-        where: { id: Number(tintAssignmentId), ...ownershipScope },
+        where: { id: Number(tintAssignmentId), ...(managerScope ?? ownershipScope) },
       });
       if (!assignment) return NextResponse.json({ error: "Assignment not found or not assigned to you" }, { status: 404 });
       orderId = assignment.orderId;

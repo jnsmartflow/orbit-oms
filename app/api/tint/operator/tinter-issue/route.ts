@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
+import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 import { syncChallanFormulasFromTi } from "@/lib/tint/sync-challan-formulas";
 import { PackCode, Prisma } from "@prisma/client";
 import {
@@ -33,8 +34,14 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // Per-user tick, not a job title (2026-09-06). Allow/deny only — the ownership
   // scope is canSeeAllOperatorRows further down, a FACE branch. Gate report 6a.
+  //
+  // Two arms. tint_operator/canEdit is the operator's own path, unchanged.
+  // Failing that, tint_manager/canEdit admits the MANAGER-ONLY path, which may
+  // write TI on a "Base — No Tint" bypass and nothing else (scoped below).
   const roles = session.user.roles ?? [session.user.role];
-  if (!(await checkAnyPermission(roles, "tint_operator", "canEdit"))) {
+  const operatorArm = await checkAnyPermission(roles, "tint_operator", "canEdit");
+  const managerOnly = !operatorArm && (await checkAnyPermission(roles, "tint_manager", "canEdit"));
+  if (!operatorArm && !managerOnly) {
     return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
@@ -90,6 +97,20 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Resolved once per request. Sequential await, never $transaction (CORE §3).
   const baseOperatorId = await getBaseOperatorId();
 
+  // MANAGER-ONLY path: a bypassed assignment owned by the placeholder, and
+  // nothing else. Never splits (a bypass is whole-OBD), never the FACE branch,
+  // never the caller's own id. No placeholder row → refuse (fails CLOSED).
+  let managerScope: { assignedToId: number; status: string } | null = null;
+  if (managerOnly) {
+    if (hasSplit || baseOperatorId === null) {
+      return NextResponse.json(
+        { error: "Managers can save Tinter Issue only for Base — No Tint bills" },
+        { status: 403 },
+      );
+    }
+    managerScope = { assignedToId: baseOperatorId, status: TINT_STATUS_DONE };
+  }
+
   try {
     // Step 1 — resolve orderId from split or assignment (ownership-gated)
     let orderId: number;
@@ -106,11 +127,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       // CLAUDE_TINT.md §13.4, which must never become a tick).
       // Now:  mine, OR the FACE branch, OR the "Base — No Tint" placeholder.
       //
-      // The third arm is what lets a manager type the missing Tinter Issue for
-      // a bypassed bill. A bypass attributes its assignment to the placeholder,
-      // so `assignedToId` is neither the manager's id nor covered by the FACE
-      // branch (which reads the SINGULAR primary role — Chandresh's is
-      // tint_manager, so he takes the narrow arm and was getting a 404).
+      // The third arm serves a tint_operator/canEdit holder typing the missing
+      // Tinter Issue for a bypassed bill (the placeholder owns the assignment,
+      // so it is neither his id nor covered by the FACE branch). Managers
+      // WITHOUT tint_operator do not come through here: they take the
+      // tint_manager arm (`managerScope` above), scoped to the placeholder's
+      // `tinting_done` rows only. This tint_operator arm is unchanged.
+      // 2026-09-24: before this, managers needed tint_operator canEdit — do not revert.
       //
       // 🔴 IT IS AN EXCEPTION FOR ONE SPECIFIC ROW, NOT A WIDENING OF THE FACE
       // BRANCH. It admits exactly the assignments nobody owns; every real
@@ -127,7 +150,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           ? { assignedToId: { in: [userId, baseOperatorId] } }
           : { assignedToId: userId };
       const assignment = await prisma.tint_assignments.findFirst({
-        where: { id: Number(tintAssignmentId), ...ownershipScope },
+        where: { id: Number(tintAssignmentId), ...(managerScope ?? ownershipScope) },
       });
       if (!assignment) return NextResponse.json({ error: "Assignment not found or not assigned to you" }, { status: 404 });
       orderId = assignment.orderId;
