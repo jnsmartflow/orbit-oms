@@ -6,7 +6,7 @@
 // The pool's By route view on a tab that HAS CLUBS (Local; Upcountry once its
 // clubs are seeded, sql/2026-09-24-route-clubs-upcountry.sql). Two kinds of card:
 //   club    one per CLUB, in the club's fixed order — never re-sorted; a club
-//           with nothing due is not drawn (2026-09-24);
+//           with no bills at all is not drawn, nor is a member with none (2026-09-24);
 //   other   ONE "Other routes" card, always last: every route of the tab in
 //           no club, plus the route-less bills, one line each — lines by
 //           kilos, "No route" always the last line. Display-only: nothing is
@@ -29,8 +29,8 @@
 // in grey. Only club members reach, and only that way; every other card is
 // built from this tab's rows alone (owner, 2026-09-19).
 //
-// ONLY CARDS WITH BILLS DUE (owner, 2026-09-24). A club, or Other routes, with
-// nothing due today or overdue is not drawn at all — no dimmed card.
+// ONLY CARDS WITH BILLS (owner, 2026-09-24) — due or upcoming. A club, or Other
+// routes, with nothing at all is not drawn; one with only upcoming bills reads "Upcoming only".
 //
 // CLICK A CARD (owner, 2026-09-24) and the grid collapses into a row of CHIPS,
 // one per card, with that card's bills full width below — one FloorTable per
@@ -253,7 +253,10 @@ export function buildRouteCards(
           upcoming: all.filter((r) => !isDue(r)),
           reachLabel: m.reachFrom,
         };
-      });
+      })
+      // A member with no bills at all — due or upcoming — gets no line
+      // (owner, 2026-09-24): "Olpad · No bills" is noise on the card.
+      .filter((l) => l.rows.length > 0 || l.upcoming.length > 0);
     return {
       key: `club:${c.id}`,
       kind: "club",
@@ -266,7 +269,7 @@ export function buildRouteCards(
 
   // OTHER ROUTES — every route of this tab in no club, plus the route-less
   // bills, one line each on ONE card. A route whose only bills are upcoming
-  // still gets its line (it reads "No bills" and its bills open with the card);
+  // still gets its line (it reads "Upcoming only" and its bills open with the card);
   // upcoming bills with no route land on the "No route" line.
   const others = new Map<string, RouteLine>();
   for (const r of rows) {
@@ -307,11 +310,11 @@ export function buildRouteCards(
 
 /**
  * The cards that are DRAWN, in board order (clubs, then Other routes): only
- * those with a bill due today or overdue (owner, 2026-09-24). A card whose
- * bills are all upcoming is not drawn either — Flat still lists them.
+ * those with ANY bill, upcoming included (owner, 2026-09-24). A card whose
+ * bills are all upcoming reads "Upcoming only" in place of its kilos.
  */
 export function shownCards(model: RouteCardModel): RouteCard[] {
-  return allCards(model).filter((c) => c.rows.length > 0);
+  return allCards(model).filter((c) => c.rows.length > 0 || c.upcoming.length > 0);
 }
 
 // ── The board ───────────────────────────────────────────────────────────────
@@ -511,7 +514,9 @@ function Chip({ card, isOpen, onClick }: { card: RouteCard; isOpen: boolean; onC
       <span className="block min-w-0 flex-1">
         <span className="block truncate text-[15px] font-semibold">{card.name}</span>
         <span className={`block whitespace-nowrap text-[13px] tabular-nums ${isOpen ? "text-white/80" : "text-[#96969f]"}`}>
-          {kgText(card.rows)} kg &middot; {plural(stopCount(card.rows), "stop", "stops")}
+          {card.rows.length === 0
+            ? "Upcoming only"
+            : `${kgText(card.rows)} kg · ${plural(stopCount(card.rows), "stop", "stops")}`}
         </span>
       </span>
       {isOpen && (
@@ -554,17 +559,34 @@ const LINE = "block border-t border-[#f1f1f6] px-3.5 pb-3 pt-[11px]";
 
 function CardButton({ card, lineSlots, onOpen }: { card: RouteCard; lineSlots: number; onOpen: () => void }) {
   const spacers = Math.max(0, lineSlots - card.lines.length);
+  // Nothing due, only later bills (owner, 2026-09-24): no kilos — the figures
+  // count due bills only — just "Upcoming only", small and grey.
+  const upcomingOnly = card.rows.length === 0;
 
   return (
     <button type="button" className={CARD} onClick={onOpen}>
       <span className="block px-3.5 pb-3 pt-3.5">
         <span className="mb-1 block truncate text-[13px] font-semibold text-[#61616d]">{card.name}</span>
+        {/* The row keeps the big figure's 26px line box either way (its strut),
+            so an "Upcoming only" card stays the board's one height. */}
         <span className="block whitespace-nowrap text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] tabular-nums text-[#1a1a22]">
-          {kgText(card.rows)}
-          <small className="ml-[3px] text-[13px] font-semibold tracking-normal text-[#96969f]">kg</small>
+          {upcomingOnly ? (
+            <small className="text-[13px] font-medium tracking-normal text-[#96969f]">Upcoming only</small>
+          ) : (
+            <>
+              {kgText(card.rows)}
+              <small className="ml-[3px] text-[13px] font-semibold tracking-normal text-[#96969f]">kg</small>
+            </>
+          )}
         </span>
         <span className="mt-[5px] block whitespace-nowrap text-[12.5px] tabular-nums text-[#96969f]">
-          {plural(stopCount(card.rows), "stop", "stops")} &middot; {formatLitres(sumLitres(card.rows))} L
+          {upcomingOnly ? (
+            <>{plural(stopCount(card.upcoming), "stop", "stops")} due later</>
+          ) : (
+            <>
+              {plural(stopCount(card.rows), "stop", "stops")} &middot; {formatLitres(sumLitres(card.rows))} L
+            </>
+          )}
         </span>
       </span>
       {Array.from({ length: spacers }, (_, i) => (
@@ -583,9 +605,10 @@ function CardButton({ card, lineSlots, onOpen }: { card: RouteCard; lineSlots: n
 
 /**
  * One route line: name (+ the grey reach label), stops, kilos right, and the
- * bar under it. A route with nothing due says "No bills" and KEEPS the bar's
- * space, empty — every line slot is one height, which is what lets every card
- * on the board come out the same height.
+ * bar under it. A route with only later bills says "Upcoming only" and KEEPS
+ * the bar's space, empty — every line slot is one height, which is what lets
+ * every card on the board come out the same height. A route with no bills at
+ * all has no line (buildRouteCards).
  */
 function RouteLineBody({ line: l }: { line: RouteLine }) {
   return (
@@ -604,7 +627,7 @@ function RouteLineBody({ line: l }: { line: RouteLine }) {
             </span>
           </>
         ) : (
-          <span className="shrink-0 text-[12px] text-[#96969f]">No bills</span>
+          <span className="shrink-0 text-[12px] text-[#96969f]">Upcoming only</span>
         )}
       </span>
       {l.rows.length > 0 ? <StatusBar rows={l.rows} /> : <span className="block h-1" aria-hidden />}
@@ -626,7 +649,7 @@ function RouteLineBody({ line: l }: { line: RouteLine }) {
 // route its heading names.
 //
 // A route with nothing at all gets no section. A route whose only bills are
-// upcoming DOES — its heading says "No bills" (nothing due) and its table
+// upcoming DOES — its heading says "Upcoming only" (nothing due) and its table
 // lists them.
 //
 // ⚠ ONE TABLE PER ROUTE, TODAY'S FIRST, THEN UPCOMING BY DATE — and no
@@ -662,7 +685,7 @@ function OpenPanel({
                   {plural(stopCount(l.rows), "stop", "stops")} &middot; {kgText(l.rows)} kg
                 </>
               ) : (
-                "No bills"
+                "Upcoming only"
               )}
             </span>
           </div>
