@@ -35,8 +35,8 @@
 // CLICK A CARD (owner, 2026-09-24) and the grid collapses into a row of CHIPS,
 // one per card, with that card's bills full width below — one FloorTable per
 // route. ONE card is open at a time; another chip switches straight to it; the
-// open chip, its ✕, or Esc goes back to the grid. With one card only there is
-// no chip row, just "← Back to cards" and its name. WHICH card is open is
+// open chip, its ✕, or Esc goes back to the grid. One card only still gets the
+// chip row (one chip), so every tab looks the same. WHICH card is open is
 // floor-page's state (it owns the floor's one Esc listener, FLOOR §4.6).
 // Was: several panels open under the grid, every card holding a tick kept open
 // (commit 4b, 2026-09-19) — replaced by the chips, do not bring it back beside
@@ -358,8 +358,8 @@ interface LeafWiring {
 // and a short last row leaves its cells empty rather than stretching its cards.
 //
 // OPEN: the grid gives way to a wrapping row of chips (one per shown card, same
-// order) and the open card's bills full width under it. One shown card → no
-// chip row, a "← Back to cards" button and its name instead.
+// order) and the open card's bills full width under it — one chip when only
+// one card is shown, never a different layout.
 //
 // ⚠ NOTHING COUNTS CARDS BY HAND. A new club or a new route with bills takes
 // the next slot; see RouteCards for how every card gets the same height.
@@ -438,31 +438,20 @@ export function RouteCards({
   if (open !== null) {
     return (
       <div className="px-3.5 py-3.5">
-        {cards.length === 1 ? (
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => onOpenCard(null)}
-              className="rounded-[8px] border border-[#e7e7ee] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#61616d] hover:border-[#cfcfda]"
-            >
-              &larr; Back to cards
-            </button>
-            <span className="truncate text-[15px] font-semibold text-[#1a1a22]">{open.name}</span>
-            <EscHint />
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2.5">
-            {cards.map((c) => (
-              <Chip
-                key={c.key}
-                card={c}
-                isOpen={c.key === open.key}
-                onClick={() => onOpenCard(c.key === open.key ? null : c.key)}
-              />
-            ))}
-            <EscHint />
-          </div>
-        )}
+        {/* The chip row ALWAYS, even for one card (owner, 2026-09-24) — Local
+            and Upcountry look the same. Was: a "← Back to cards" button and the
+            name when only one card was drawn. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {cards.map((c) => (
+            <Chip
+              key={c.key}
+              card={c}
+              isOpen={c.key === open.key}
+              onClick={() => onOpenCard(c.key === open.key ? null : c.key)}
+            />
+          ))}
+          <EscHint />
+        </div>
         <OpenPanel card={open} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
       </div>
     );
