@@ -86,16 +86,17 @@ export default async function MailOrdersLayout({
   const canEditBillingTelephonic = telephonicPerms?.canEdit ?? false;
 
   // ── Billing ACTION ticks (2026-09-11) ───────────────────────────────────────
-  // The four dispatch decisions on the Orders tab — Hold, Slot, Urgent and the ✎
-  // ship-to pencil — one key each, so Slot can be granted without Hold.
+  // The six dispatch decisions on the Orders tab — Hold, Slot, Urgent, the ✎
+  // ship-to pencil, and Hand + CI (2026-09-24) — one key each, so Slot can be
+  // granted without Hold.
   //
   // Read off the SAME `allPerms` map as everything above: no second query, no
   // client fetch, nothing per poll. The map already follows ACCESS_SOURCE, and
   // admin / superuser is short-circuited to all-true inside
-  // getAllPermissionsForRoles — so Harsh keeps every button while holding four
+  // getAllPermissionsForRoles — so Harsh keeps every button while holding six
   // all-false rows, which is exactly what the bypass is for.
   //
-  // 🔴 canEdit ONLY. `canView` on these four keys gates nothing and must never
+  // 🔴 canEdit ONLY. `canView` on these six keys gates nothing and must never
   // be read here (lib/permissions.ts — isActionAvailable's known limit).
   //
   // An absent key reads as false, which is what an absent row means everywhere
@@ -104,6 +105,8 @@ export default async function MailOrdersLayout({
   const canSlot   = allPerms["billing_slot"]?.canEdit    ?? false;
   const canUrgent = allPerms["billing_urgent"]?.canEdit  ?? false;
   const canShipTo = allPerms["billing_ship_to"]?.canEdit ?? false;
+  const canHand   = allPerms["billing_hand"]?.canEdit    ?? false;
+  const canCi     = allPerms["billing_ci"]?.canEdit      ?? false;
 
   // Billing v2 rollout (Phase 0) — global stage (billing_settings.rolloutStage)
   // AND the per-user opt-in, read FRESH each load (never cached onto the JWT;
@@ -153,6 +156,8 @@ export default async function MailOrdersLayout({
               slot={canSlot}
               urgent={canUrgent}
               shipTo={canShipTo}
+              hand={canHand}
+              ci={canCi}
             >
               {/* The Print tab's grant (slice 9) — its own provider for the same
                   reason Picking has one: a different key, granted and revoked

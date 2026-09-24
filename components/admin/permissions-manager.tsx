@@ -78,6 +78,9 @@ const PAGES_CONFIG = [
   { key: "billing_slot",    label: "Billing · Slot",    path: "/mail-orders",     section: "Operations" },
   { key: "billing_urgent",  label: "Billing · Urgent",  path: "/mail-orders",     section: "Operations" },
   { key: "billing_ship_to", label: "Billing · Ship-to", path: "/mail-orders",     section: "Operations" },
+  // Hand + CI (2026-09-24) — same canEdit-only meaning and ROLLBACK caveat.
+  { key: "billing_hand",    label: "Billing · Hand",    path: "/mail-orders",     section: "Operations" },
+  { key: "billing_ci",      label: "Billing · CI",      path: "/mail-orders",     section: "Operations" },
   // place_order_ship_to — the Ship To block on desktop /place-order (2026-09-17).
   // canEdit is its only meaning. Same ROLLBACK-editor caveat as the rows above.
   // ⚠ `place_order` itself has no row in this array (pre-existing gap).

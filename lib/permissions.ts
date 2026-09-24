@@ -290,10 +290,9 @@ export type PageKey =
   // 🔴 canEdit IS THE ONLY MEANING: "may use that button". canView on these four
   // rows gates NOTHING and cannot be dashed — see ACTION_PAGES below.
   //
-  // ⚠ Nothing reads these yet. All four buttons still gate on `mail_orders`
-  // canEdit inside POST /api/billing/mail-order/actions; the repoint is its own
-  // commit, so that people can be granted BEFORE the gate moves. Registering
-  // first is the same ordering `billing_picking` used, and for the same reason.
+  // Read by POST /api/billing/mail-order/actions (one key per action name, on
+  // top of `mail_orders` canEdit) and by the mail-orders layout, which hides a
+  // button whose tick is off (BillingActionsAccessProvider).
   //
   // ⚠ These scope the BILLING face only. Floor reaches all four facts through
   // its own routes on the `floor` key and is untouched — see
@@ -302,6 +301,14 @@ export type PageKey =
   | "billing_slot"
   | "billing_urgent"
   | "billing_ship_to"
+  // Hand and CI (2026-09-24, design web-update-2026-09-24-billing-mo-actions.md
+  // §8) — the bottom bar's two new marks, one key each for the same reason.
+  // Hand = the dealer collects; CI = bill-only (full-bill CI + cancel at import).
+  // Same canEdit-only meaning as the four above. ⚠ user_page_access rows for
+  // these two are a Smart Flow SQL job — until they exist /admin/access shows
+  // its "page rows missing" banner for them.
+  | "billing_hand"
+  | "billing_ci"
   | "mrn"
   // CI — Goods Return Note (2026-09-01). Live `role_permissions` rows exist for
   // billing_operator / floor_supervisor / operations, and prisma/seed.ts carries
@@ -374,10 +381,11 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // board. Keep them visually apart in this list, never adjacent.
   "place_order", "place_order_ship_to", "trip_report", "mail_orders", "billing_picking", "billing_print",
   "billing_telephonic", "mrn", "ci",
-  // The four Billing action ticks, kept together and next to their host screen
+  // The six Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
   // /mail-orders, not routes of their own.
   "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
+  "billing_hand", "billing_ci",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   // The per-report ticks, beside the legacy hub key they replace.
   "reports_tint_summary", "reports_ti_report",
@@ -433,16 +441,13 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // billing_telephonic (2026-09-22) — Add and Remove a tag gate on canEdit
     // (api/billing/telephonic/add, /remove). Backed from day one.
     "billing_telephonic",
-    // The four Billing action ticks (2026-09-11). Listed here for exactly the
-    // same reason and with the same not-yet-backed caveat: `canEdit` is the ONE
-    // question the app will ask of these keys, and without an entry
-    // /admin/access draws a dash on the Edit cell — a switch nobody can turn on,
-    // which would make it impossible to grant people before the gate moves.
-    //
-    // 🔴 THE CHECKS THESE ANTICIPATE DO NOT EXIST YET. They land in the repoint
-    // commit, inside POST /api/billing/mail-order/actions, one per action name.
-    // Until then all four buttons still gate on `mail_orders` canEdit.
+    // The six Billing action ticks (2026-09-11; Hand + CI 2026-09-24). `canEdit`
+    // is the ONE question the app asks of these keys — POST
+    // /api/billing/mail-order/actions checks it per action name, on top of
+    // `mail_orders` canEdit. Without an entry here /admin/access draws a dash on
+    // the Edit cell — a switch nobody can turn on.
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
+    "billing_hand", "billing_ci",
     // place_order_ship_to (2026-09-17) — backed from day one: the desktop
     // /place-order layout reads its canEdit to draw the Ship To block. Without
     // this entry the Edit cell on /admin/access is a dash, i.e. ungrantable.
@@ -497,10 +502,10 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. EIGHTEEN
-// of the 40 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. TWENTY
+// of the 42 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
-// billing_print, billing_telephonic, the four billing action ticks, place_order_ship_to, the three
+// billing_print, billing_telephonic, the six billing action ticks, place_order_ship_to, the three
 // Tint Manager panel tabs, and the two report ticks.
 // (`ti_report` IS in PAGE_NAV_MAP as "Reports", but is overridden here because
 // since 2026-09-17 its tick gates nothing — see its label below.)
@@ -536,6 +541,8 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   billing_slot:     "Billing · Slot",
   billing_urgent:   "Billing · Urgent",
   billing_ship_to:  "Billing · Ship-to",
+  billing_hand:     "Billing · Hand",
+  billing_ci:       "Billing · CI",
   // Not in PAGE_NAV_MAP, so without this the row would read its raw key. The
   // "Purchase Order ·" prefix keeps it apart from "Billing · Ship-to" above —
   // a different screen and a different key.
@@ -564,7 +571,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 40 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 42 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -574,12 +581,13 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     // `billing_picking` follows `mail_orders` because it is a tab INSIDE that
     // screen, and the two rows read as a pair on /admin/access. ⚠ It is not the
     // `picking` row at the head of this list — that is the floor board.
-    // The four action ticks follow "Billing · Picking" so the whole Billing
+    // The six action ticks follow "Billing · Picking" so the whole Billing
     // family reads as one block on /admin/access: the screen, its Picking tab,
-    // then the four decisions the Orders tab allows.
+    // then the six decisions the Orders tab allows.
     "picking", "floor", "mrn", "ci", "mail_orders", "billing_picking",
     "billing_print", "billing_telephonic",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
+    "billing_hand", "billing_ci",
     "place_order", "place_order_ship_to", "trip_report", "import_obd",
   ] },
   { label: "Tinting", keys: [

@@ -1,24 +1,46 @@
-// Billing v2 — client helper for the four mail-order actions.
+// Billing v2 — client helper for the mail-order actions.
 // One POST per action, straight to /api/billing/mail-order/actions.
 
+/** A bill on the SO the press did NOT change, and why (design §6). */
+export interface BillingBillOutcome {
+  orderId: number;
+  obdNumber: string;
+  /** skipped: "already set" · failed: billingRefusal's words, a live-CI refusal, or an error. */
+  reason: string;
+}
+
 export type BillingActionResult =
-  | { ok: true; ordersUpdated: number }
+  | {
+      ok: true;
+      /** Live bills this press changed (length of `updated`). Kept for existing callers. */
+      ordersUpdated: number;
+      /** Their order ids. */
+      updated: number[];
+      /** Bills already in the asked state — nothing written. */
+      skipped: BillingBillOutcome[];
+      /** Bills REFUSED (dispatched / cancelled / on a trip / tint room / live CI).
+       *  The mail order itself WAS saved — show these as a warning, not an error. */
+      failed: BillingBillOutcome[];
+    }
   | { ok: false; error: string };
 
 type Payload =
   | { action: "slot"; date: string | null; dispatchWindowId: number | null }
   | { action: "shipTo"; customerId: number | null }
   | { action: "hold"; on: boolean }
-  | { action: "urgent"; on: boolean };
+  | { action: "urgent"; on: boolean }
+  | { action: "hand"; on: boolean }
+  | { action: "ci"; on: boolean };
 
 /**
  * Posts one action. Never throws — callers get a discriminated result and
  * render the message, because a failed action must not take the detail view
  * down with it.
  *
- * `ordersUpdated` is how many live OBD rows the server's second write touched:
- * 0 before the SAP import exists (the mo_orders intent covers that case), 1
- * normally, >1 for a split bill. It is information, not an error.
+ * `ok: true` means the MAIL ORDER was saved. Some bills on the SO may still
+ * have been refused — they are in `failed`, and the caller shows them beside the
+ * new state (never as "nothing changed": the server answers 200 precisely
+ * because the mail order DID change).
  */
 export async function postMailOrderAction(
   moOrderId: number,
@@ -31,8 +53,19 @@ export async function postMailOrderAction(
       body: JSON.stringify({ moOrderId, ...payload }),
     });
     if (res.ok) {
-      const ok = (await res.json().catch(() => ({}))) as { ordersUpdated?: number };
-      return { ok: true, ordersUpdated: ok.ordersUpdated ?? 0 };
+      const ok = (await res.json().catch(() => ({}))) as {
+        ordersUpdated?: number;
+        updated?: number[];
+        skipped?: BillingBillOutcome[];
+        failed?: BillingBillOutcome[];
+      };
+      return {
+        ok: true,
+        ordersUpdated: ok.ordersUpdated ?? 0,
+        updated: ok.updated ?? [],
+        skipped: ok.skipped ?? [],
+        failed: ok.failed ?? [],
+      };
     }
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     return { ok: false, error: body.error ?? `Failed (HTTP ${res.status}).` };

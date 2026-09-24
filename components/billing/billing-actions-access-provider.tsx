@@ -2,14 +2,16 @@
 
 // Billing ACTION ticks — carried from the server layout to the client tree.
 //
-// Four independent permissions, one per button on the Billing Orders tab:
+// Six independent permissions, one per button on the Billing Orders tab:
 //
 //   billing_hold      ⚑ Hold
 //   billing_slot      🕑 Slot (and its dispatch-slot picker)
 //   billing_urgent    ⚡ Urgent
 //   billing_ship_to   ✎ the ship-to pencil on the Ship To card
+//   billing_hand      ✋ Hand — the dealer collects (2026-09-24)
+//   billing_ci        CI — bill-only: full-bill CI + cancel at import (2026-09-24)
 //
-// Four, not one, because the owner wants Slot grantable without Hold.
+// Six, not one, because the owner wants Slot grantable without Hold.
 //
 // Resolved ONCE, server-side, in app/(mail-orders)/mail-orders/layout.tsx, off
 // the SAME `allPerms` map that layout already computes for buildNavItems — no
@@ -19,7 +21,7 @@
 //
 // 🔴 canEdit IS THE ONLY QUESTION ASKED OF THESE KEYS: "may this person press
 // that button". There is no canView meaning — /admin/access draws a View box for
-// every key it knows and those four boxes gate nothing (lib/permissions.ts,
+// every key it knows and those six boxes gate nothing (lib/permissions.ts,
 // isActionAvailable's known limit). Never read canView off these.
 //
 // Defaults to all-false, so a component rendered outside the provider offers no
@@ -47,10 +49,14 @@ export interface BillingActionsAccess {
   urgent: boolean;
   /** May redirect the delivery dealer, or clear a redirect. */
   shipTo: boolean;
+  /** May mark a mail order Hand (dealer collects), or clear it. */
+  hand: boolean;
+  /** May mark a mail order CI (bill-only), or clear it while unmatched. */
+  ci: boolean;
 }
 
 const NONE: BillingActionsAccess = {
-  hold: false, slot: false, urgent: false, shipTo: false,
+  hold: false, slot: false, urgent: false, shipTo: false, hand: false, ci: false,
 };
 
 const BillingActionsAccessContext = createContext<BillingActionsAccess>(NONE);
@@ -60,19 +66,23 @@ export function BillingActionsAccessProvider({
   slot,
   urgent,
   shipTo,
+  hand,
+  ci,
   children,
 }: {
   hold: boolean;
   slot: boolean;
   urgent: boolean;
   shipTo: boolean;
+  hand: boolean;
+  ci: boolean;
   children: React.ReactNode;
 }) {
-  // Memoised on the four primitives rather than rebuilt each render, so a
+  // Memoised on the six primitives rather than rebuilt each render, so a
   // consumer reading this context does not re-render on every parent render.
   const value = useMemo<BillingActionsAccess>(
-    () => ({ hold, slot, urgent, shipTo }),
-    [hold, slot, urgent, shipTo],
+    () => ({ hold, slot, urgent, shipTo, hand, ci }),
+    [hold, slot, urgent, shipTo, hand, ci],
   );
   return (
     <BillingActionsAccessContext.Provider value={value}>

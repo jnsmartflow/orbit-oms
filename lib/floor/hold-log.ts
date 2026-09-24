@@ -74,6 +74,13 @@ export const BILLING_CI_HOLD_NOTE = "Held on import (CI marked in billing)";
  *  so the Hold tab's "held since" already recognises it. */
 export const BILLING_HOLD_NOTE = "Held from billing";
 
+/** Billing's Release note (2026-09-24) — the Orders-tab Hold button turned off.
+ *
+ *  ⚠ NOT IN HOLD_LOG_NOTES, AND MUST NEVER BE — the same rule as
+ *  FLOOR_CLEAR_HOLD_NOTE above: a clear event in that list would make a re-held
+ *  bill's "held since" start from the moment its previous hold was lifted. */
+export const BILLING_CLEAR_HOLD_NOTE = "Hold cleared from billing";
+
 /** Every note that identifies a hold event, for the `note: { in: … }` filter. */
 export const HOLD_LOG_NOTES: string[] = [
   FLOOR_HOLD_NOTE,
