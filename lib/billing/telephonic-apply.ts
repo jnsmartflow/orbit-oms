@@ -120,13 +120,16 @@ export interface SoTagApplySummary {
   errors: number;
 }
 
-// ── The ciSkipReason vocabulary for path (c) ─────────────────────────────────
-// Written on the match row; the Telephonic tab reads them (status pills).
-
-export const CI_CANCEL_FAILED = "cancel failed";
-export const CI_CANCEL_FAILED_HOLD_FAILED = "cancel failed; hold failed";
-export const CI_CANCEL_INCOMPLETE = "cancel incomplete";
-export const HOLD_FAILED = "hold failed";
+// ── The ciSkipReason vocabulary ──────────────────────────────────────────────
+// Written on the match row; the Telephonic tab reads the SAME constants from the
+// pure module (a client component cannot import this file — it holds Prisma).
+import {
+  CI_CANCEL_FAILED,
+  CI_CANCEL_FAILED_HOLD_FAILED,
+  CI_CANCEL_INCOMPLETE,
+  HOLD_FAILED,
+} from "@/lib/billing/tag-reasons";
+export { CI_CANCEL_FAILED, CI_CANCEL_FAILED_HOLD_FAILED, CI_CANCEL_INCOMPLETE, HOLD_FAILED };
 
 // ── The pure planner ─────────────────────────────────────────────────────────
 

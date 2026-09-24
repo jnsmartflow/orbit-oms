@@ -41,6 +41,12 @@ import {
   TELEPHONIC_MAX_PER_ADD,
 } from "@/lib/billing/telephonic-so";
 import type { TelephonicBill, TelephonicList, TelephonicRow } from "@/lib/billing/telephonic";
+import {
+  CI_CANCEL_FAILED_REASONS,
+  CI_CANCEL_INCOMPLETE,
+  HOLD_FAILED,
+  isRecordOnlyReason,
+} from "@/lib/billing/tag-reasons";
 
 const LIST_URL = "/api/billing/telephonic/list";
 const ADD_URL = "/api/billing/telephonic/add";
@@ -70,19 +76,29 @@ const MONTH_WIDTHS = [3, 10, 6, 22, 11, 12, 16, 9, 8, 3];
 // (Waiting / Held / Released / Not held) are unchanged and keep their warn / ok
 // / grey / danger state colours.
 //
-// CI is `data.blue` (#2563EB). The config exposes that one hex only — no 50/200
-// steps — so the ground and border are Tailwind's `blue-50` / `blue-200`, the
-// closest pale pair, with the label on the token itself (`text-data-blue`).
-// The ink family read as DISABLED, which is why it went.
+// CI is SOLID ink-900 (`bg-ink-900 text-white`) since 2026-09-24 — ONE colour
+// for CI across billing (design web-update-2026-09-24-billing-mo-actions.md §7).
+// It was `data.blue` for two days (2026-09-23), which is the Local delivery
+// type's identity; blue now belongs to Local only.
+// 🔴 SOLID, never the pale ink chip: the pale ink tag was dropped on 2026-09-23
+// because it READ AS DISABLED. Do not "soften" it back.
 const TAG_CHIP: Record<TagKind, string> = {
   hold: "border border-danger-bd bg-danger-bg text-danger-text",
-  ci: "border border-blue-200 bg-blue-50 text-data-blue",
+  ci: "border border-ink-900 bg-ink-900 text-white",
 };
 
 const PILL = "inline-block rounded px-1.5 py-px text-[10px] font-semibold";
 
-/** Reasons the tag was deliberately not applied — shown as the Status itself. */
-const NOT_APPLIED_REASONS = new Set(["bill cancelled", "already dispatched", "bill removed"]);
+/** Shown beside the tag of a mail-order CI tag (so_tags.fromMailOrder): the tag
+ *  belongs to the mail order's CI mark and is read-only here — no ×, and the
+ *  server refuses a remove with 'locked'. */
+function FromMailOrder() {
+  return (
+    <span className="ml-1 text-[10px] text-gray-400" title="Remove it from the mail order">
+      from mail order
+    </span>
+  );
+}
 
 function tagLabel(tag: string): string {
   return tag === "ci" ? "CI" : "Hold";
@@ -170,11 +186,36 @@ function BillStatus({ row, bill }: { row: TelephonicRow; bill: TelephonicBill | 
       <span className={`${PILL} bg-warn-bg text-warn-text`}>Waiting</span>
     );
   }
-  if (bill.ciSkipReason === "hold failed") {
+  if (bill.ciSkipReason === HOLD_FAILED) {
     return <span className={`${PILL} bg-danger text-white`}>Not held</span>;
   }
-  if (bill.ciSkipReason !== null && NOT_APPLIED_REASONS.has(bill.ciSkipReason)) {
-    return <span className={`${PILL} bg-gray-100 text-gray-500`}>{bill.ciSkipReason}</span>;
+  // The CI was raised but the cancel did not land (path c). The detail — held
+  // instead, or not even held — is in the tooltip.
+  if (bill.ciSkipReason !== null && CI_CANCEL_FAILED_REASONS.includes(bill.ciSkipReason)) {
+    return (
+      <span className={`${PILL} bg-danger text-white`} title={bill.ciSkipReason}>
+        Cancel failed
+      </span>
+    );
+  }
+  if (isRecordOnlyReason(bill.ciSkipReason)) {
+    return (
+      <span className={`${PILL} bg-gray-100 text-gray-500`} title={bill.ciSkipReason ?? undefined}>
+        {bill.ciSkipReason}
+      </span>
+    );
+  }
+  // CI raised and the bill taken off the floor (path a). "cancel incomplete"
+  // lands here too — the bill IS cancelled; the tooltip says what was missed.
+  if (bill.workflowStage === "cancelled" && bill.ci !== null) {
+    return (
+      <span
+        className={`${PILL} bg-ink-100 text-ink-700`}
+        title={bill.ciSkipReason === CI_CANCEL_INCOMPLETE ? "Cancelled — the assignment clear or the log was not written" : undefined}
+      >
+        Cancelled
+      </span>
+    );
   }
   if (bill.dispatchStatus === "hold") {
     return <span className={`${PILL} bg-ok-bg text-ok-text`}>Held</span>;
@@ -212,7 +253,13 @@ function CiCell({ row, bill }: { row: TelephonicRow; bill: TelephonicBill | null
     );
   }
   const reason = bill.ciSkipReason;
-  if (reason !== null && reason !== "hold failed" && !NOT_APPLIED_REASONS.has(reason)) {
+  if (
+    reason !== null &&
+    reason !== HOLD_FAILED &&
+    reason !== CI_CANCEL_INCOMPLETE &&
+    !CI_CANCEL_FAILED_REASONS.includes(reason) &&
+    !isRecordOnlyReason(reason)
+  ) {
     return (
       <span className="font-semibold text-danger-text" title={reason}>
         Couldn&apos;t raise — do by hand
@@ -294,6 +341,8 @@ interface AddOutcome {
   soNumber: string;
   status: "added" | "duplicate" | "invalid";
   existingTag?: string;
+  /** The tag on that SO belongs to a mail order's CI mark. */
+  existingFromMailOrder?: boolean;
   addedByName?: string | null;
   addedAt?: string;
   reason?: string;
@@ -411,6 +460,7 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
       for (const d of dupes) {
         lines.push(
           `${d.soNumber} already on the list (${tagLabel(d.existingTag ?? "")}` +
+            `${d.existingFromMailOrder ? " from mail order" : ""}` +
             `${d.addedByName ? `, by ${firstName(d.addedByName)}` : ""}` +
             `${d.addedAt ? ` ${istTime(d.addedAt)}` : ""})`,
         );
@@ -539,12 +589,12 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
                   ? "bg-danger-bg text-danger-text"
                   : // ring-inset, not a border: the group already has one, and a
                     // second would shift the box on selection.
-                    "bg-blue-50 text-data-blue ring-1 ring-inset ring-blue-200"
+                    "bg-ink-900 text-white ring-1 ring-inset ring-ink-900"
                 : "bg-white text-gray-500 hover:bg-gray-50"
             }`}
           >
             {tag === k && k === "ci" && (
-              <span aria-hidden className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-data-blue" />
+              <span aria-hidden className="h-[5px] w-[5px] flex-shrink-0 rounded-full bg-white" />
             )}
             {tagLabel(k)}
           </button>
@@ -643,13 +693,14 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
                             <span className={`${PILL} ${TAG_CHIP[row.tag === "ci" ? "ci" : "hold"]}`}>
                               {tagLabel(row.tag)}
                             </span>
+                            {row.fromMailOrder && <FromMailOrder />}
                           </td>
                           <td className={TD}>{firstName(row.addedByName)}</td>
                           <td className={`${TD} !text-gray-400`} title={`${istDay(row.addedAt)} ${istTime(row.addedAt)}`}>
                             {istDay(row.addedAt)}
                           </td>
                           <td className={TD_C}>
-                            {canEdit && (
+                            {canEdit && !row.fromMailOrder && (
                               <button
                                 type="button"
                                 aria-label={`Remove SO ${row.soNumber}`}
@@ -698,7 +749,7 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
                     {monthRows.flatMap((row, ri) => {
                       const bills: (TelephonicBill | null)[] = row.bills.length > 0 ? row.bills : [null];
                       const muted = row.state === "expired" ? " !text-gray-400" : "";
-                      const showX = canEdit && row.state === "expired";
+                      const showX = canEdit && row.state === "expired" && !row.fromMailOrder;
                       return bills.map((bill, bi) => {
                         const first = bi === 0;
                         return (
@@ -707,9 +758,12 @@ export function BillingTelephonicTab({ month, canEdit = false }: { month: string
                             <td className={`${TD} font-mono text-gray-800${muted}`}>{first ? row.soNumber : ""}</td>
                             <td className={TD}>
                               {first ? (
-                                <span className={`${PILL} ${TAG_CHIP[row.tag === "ci" ? "ci" : "hold"]}`}>
-                                  {tagLabel(row.tag)}
-                                </span>
+                                <>
+                                  <span className={`${PILL} ${TAG_CHIP[row.tag === "ci" ? "ci" : "hold"]}`}>
+                                    {tagLabel(row.tag)}
+                                  </span>
+                                  {row.fromMailOrder && <FromMailOrder />}
+                                </>
                               ) : (
                                 /* A second bill on the same SO. */
                                 <span className="text-gray-300">↳</span>

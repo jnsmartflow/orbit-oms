@@ -239,6 +239,9 @@ that is a pure pass-through for a non-holder.
   Hold and CI are two KINDS of telephonic order, not two statuses, so an identity colour is right.
   The status pills keep their warn / ok / grey / danger state colours. The ink family was tried
   first and read as disabled.
+  ⚠ **Superseded 2026-09-24:** "CI stays blue" no longer holds — CI is SOLID `ink-900`
+  (`bg-ink-900 text-white`) everywhere in billing, and `data.blue` is Local only (design
+  `web-update-2026-09-24-billing-mo-actions.md` §7). The landmine below is superseded with it.
 
 ---
 

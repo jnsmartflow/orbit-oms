@@ -454,9 +454,14 @@ export interface FloorHoldRow extends FloorPartyFields {
   heldSinceSource: HeldSinceSource;
 }
 
+/** Cancel & CI source chip. auto_bill_only is Billing (mail-order CI mark) or
+ *  Telephonic; floor → Floor; auto_finding → Auto; manual → Manual. */
+export type CiSourceLabel = "Floor" | "Billing" | "Telephonic" | "Auto" | "Manual";
+
 // Cancel & CI tab row (2026-09-22; was the Cancelled tab, design §9). TODAY
 // only (IST). Two kinds in one list — getFloorCancelled builds both:
-//   "ci"     — a ci_returns row the Floor raised today (source 'floor').
+//   "ci"     — a ci_returns row raised today, ANY source (widened 2026-09-24),
+//              on a bill that is cancelled.
 //              Reason / remark / CI no. / by·when come from the CI.
 //   "cancel" — a cancelled order whose latest cancel log is today, with no
 //              floor CI. Reason / remark are split out of the log note
@@ -480,6 +485,8 @@ export interface FloorCancelledRow extends FloorPartyFields {
   ciNumber: string | null;
   /** CI rows only: submitted / returned_to_floor → with_billing; closed → closed. */
   ciStatus: "with_billing" | "closed" | null;
+  /** CI rows only: who raised it (2026-09-24, every source is listed now). */
+  ciSourceLabel: CiSourceLabel | null;
   /** Who cancelled / raised it, and when (ISO). */
   byName: string | null;
   at: string | null;

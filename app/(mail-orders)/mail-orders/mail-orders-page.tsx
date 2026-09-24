@@ -634,10 +634,12 @@ export default function MailOrdersPage() {
     }
   }, [focusedId, smartCopyOrderId]);
 
-  const showCopyToast = useCallback((text: string, type: "customer" | "sku" | "error") => {
+  // `ms` — how long it stays up. 1.5 s suits a copy receipt; a server refusal
+  // the operator must actually read (the SO save) passes longer.
+  const showCopyToast = useCallback((text: string, type: "customer" | "sku" | "error", ms = 1500) => {
     if (copyToastTimer.current) clearTimeout(copyToastTimer.current);
     setCopyToast({ text, type });
-    copyToastTimer.current = setTimeout(() => setCopyToast(null), 1500);
+    copyToastTimer.current = setTimeout(() => setCopyToast(null), ms);
   }, []);
 
   // ── Notes-band size: optimistic write ───────────────────────────────────────
@@ -809,14 +811,20 @@ export default function MailOrdersPage() {
     }
 
     try {
-      await saveSoNumber(orderId, value);
+      const saved = await saveSoNumber(orderId, value);
+      // The number is saved; a CI-marked mail order's tag could not follow it
+      // (the bill will be held on import instead). Say so.
+      if (saved.ciTagWarning) showCopyToast(saved.ciTagWarning, "error", 6000);
       return true;
-    } catch {
+    } catch (err) {
+      // Show the server's reason (e.g. the SO of a CI'd mail order cannot
+      // change) instead of failing silently.
+      showCopyToast(err instanceof Error ? err.message : "Failed to save SO number", "error", 6000);
       const data = await fetchMailOrders(selectedDate);
       setOrders(data.orders);
       return false;
     }
-  }, [selectedDate]);
+  }, [selectedDate, showCopyToast]);
 
   const handleSplitComplete = useCallback(async (orderAId: number) => {
     // Optimistically focus Group A immediately so the user sees

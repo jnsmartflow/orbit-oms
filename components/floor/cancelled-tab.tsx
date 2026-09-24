@@ -7,10 +7,11 @@
 // Two kinds of row in one list, newest first:
 //   Cancel — a bill cancelled today (reason and remark split out of the log
 //            note by parseCancelNote). Tickable → Restore.
-//   CI     — a CI the Floor raised today (POST /api/floor/ci). NOT tickable:
-//            its return is on billing's desk, and the actions route refuses to
-//            restore it anyway. "With billing" / "Closed by billing" under the
-//            CI number, from the CI's own status.
+//   CI     — a CI raised today on a bill that is cancelled, ANY source
+//            (widened 2026-09-24: Floor · Billing · Telephonic · Auto · Manual,
+//            shown under the CI pill). NOT tickable: its return is on billing's
+//            desk, and the actions route refuses to restore it anyway. "With
+//            billing" / "Closed by billing" under the CI number.
 //
 // Columns (owner order): ☐ · Action · OBD (+date) · Invoice · Ship to · Area ·
 // Vol / KG · Reason · Remarks · CI no. (+status) · By · when. No vertical rules.
@@ -150,7 +151,7 @@ export function CancelledTab({
               {filter === "cancel"
                 ? "Nothing cancelled today"
                 : filter === "ci"
-                  ? "No CI raised from the floor today"
+                  ? "No CI on a cancelled bill today"
                   : scope !== "All"
                     ? `Nothing cancelled or returned for ${scope} today`
                     : "Nothing cancelled or returned today"}
@@ -215,9 +216,17 @@ export function CancelledTab({
                           Cancel
                         </span>
                       ) : (
-                        <span className="rounded-full bg-ink-100 px-[7px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-ink-700">
-                          CI
-                        </span>
+                        <>
+                          <span className="rounded-full bg-ink-100 px-[7px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-ink-700">
+                            CI
+                          </span>
+                          {/* WHO raised it (2026-09-24 — every source is listed now).
+                              Neutral ink, never a data.* colour: a source is not an
+                              identity this tab needs to tell apart at a glance. */}
+                          {row.ciSourceLabel !== null && (
+                            <div className="mt-[3px] text-[9.5px] font-medium text-ink-500">{row.ciSourceLabel}</div>
+                          )}
+                        </>
                       )}
                     </td>
                     <td className={TD}>

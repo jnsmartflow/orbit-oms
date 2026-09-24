@@ -7,6 +7,7 @@ import { FLOOR_HOLD_NOTE, FLOOR_CLEAR_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
 import { buildCancelNote, type CancelReason } from "@/lib/picking/cancel-reasons";
 import { FLOOR_REMARK_MAX, isFloorCancelReason, offFloorRefusal } from "@/lib/floor/off-floor";
+import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 
 export const dynamic = "force-dynamic";
 
@@ -255,6 +256,14 @@ export async function POST(req: Request): Promise<NextResponse> {
         // pending_support note).
         if (order.dispatchStatus !== "hold") {
           failed.push({ orderId, error: "Bill is not on hold" });
+          continue;
+        }
+        // 🔴 A bill carrying a LIVE CI stays held (2026-09-24, design
+        // web-update-2026-09-24-billing-mo-actions.md §3.7) — unhold would put a
+        // bill-only bill back toward picking. Finish it with Cancel instead.
+        const liveCi = await findLiveCi(orderId);
+        if (liveCi !== null) {
+          failed.push({ orderId, error: liveCiRefusal(liveCi, "released") });
           continue;
         }
         updateData = {

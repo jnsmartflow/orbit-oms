@@ -38,6 +38,7 @@
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { FLOOR_RELEASABLE_STAGES } from "./release-stages";
+import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 
 export interface ReleaseFailure {
   orderId: number;
@@ -116,6 +117,17 @@ export async function releaseBillsToFloor(opts: {
       });
       if (!order || order.isRemoved) {
         failed.push({ orderId, error: "Order not found" });
+        continue;
+      }
+
+      // 🔴 A bill carrying a LIVE CI is never released (2026-09-24, design
+      // web-update-2026-09-24-billing-mo-actions.md §3.7). Its goods are being
+      // booked back on billing's desk; releasing it would put them in front of a
+      // picker. A bill-only bill whose cancel failed sits held with its CI —
+      // Floor finishes it with a plain Cancel, not a Release.
+      const liveCi = await findLiveCi(orderId);
+      if (liveCi !== null) {
+        failed.push({ orderId, error: liveCiRefusal(liveCi, "released") });
         continue;
       }
 

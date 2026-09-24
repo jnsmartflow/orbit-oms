@@ -18,7 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { inScope } from "./scope";
 import { parseCancelNote } from "./off-floor";
-import { asCiStatus, type CiSource } from "@/lib/ci/types";
+import { asCiSource, asCiStatus, type CiSource } from "@/lib/ci/types";
 import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
@@ -72,6 +72,7 @@ import type {
   FloorBoardResult,
   FloorHoldRow,
   FloorCancelledRow,
+  CiSourceLabel,
   FloorPicker,
   FloorWaitingSkus,
   FloorOilSkus,
@@ -1279,10 +1280,11 @@ export async function getFloorHold(
 // ── 4. CANCEL & CI (today only — was "Cancelled", design §9) ─────────────────
 //
 // 2026-09-22: TWO kinds of row, one list, newest first (FloorCancelledRow):
-//   a) "ci"     — ci_returns the FLOOR raised today: source 'floor', not voided,
-//                 not a draft, createdAt in today (IST). createdAt, NOT
+//   a) "ci"     — ci_returns raised today, ANY source (widened 2026-09-24 from
+//                 'floor' only), not voided, not a draft, createdAt in today
+//                 (IST), and ONLY where the bill is cancelled. createdAt, NOT
 //                 closedAt: a CI billing closes today stays on the list,
-//                 reading "Closed by billing".
+//                 reading "Closed by billing". Each carries a source chip.
 //   b) "cancel" — orders still at `cancelled` whose latest cancel log is today,
 //                 EXCLUDING any order that has a row in (a) — a floor CI also
 //                 cancels its bill (app/api/floor/ci/route.ts), and that bill
@@ -1296,6 +1298,21 @@ export async function getFloorHold(
 // exclusion is AND-merged into the orders read, so a hidden bill drops out of
 // both kinds.
 
+/** The Cancel & CI tab's source chip (design §3.7). auto_bill_only splits by
+ *  who asked for it: a mail order's CI mark (Billing) or the Telephonic tab. */
+function ciSourceLabelOf(source: CiSource, fromMailOrder: boolean): CiSourceLabel {
+  switch (source) {
+    case "floor":
+      return "Floor";
+    case "auto_finding":
+      return "Auto";
+    case "auto_bill_only":
+      return fromMailOrder ? "Billing" : "Telephonic";
+    case "manual":
+      return "Manual";
+  }
+}
+
 export async function getFloorCancelled(
   scope: FloorScope = "All",
   // OPTIONAL pre-computed hide-exclusion — see getFloorHold above. Same story:
@@ -1305,20 +1322,25 @@ export async function getFloorCancelled(
   const hide = hideExclusion ?? (await getHideExclusion());
   const today = getISTDayRange();
 
-  // ── a) Today's floor CIs ─────────────────────────────────────────────────
-  const FLOOR_SOURCE: CiSource = "floor";
+  // ── a) Today's CIs on CANCELLED bills — EVERY source ─────────────────────
+  // Widened 2026-09-24 (design web-update-2026-09-24-billing-mo-actions.md §3.7,
+  // re-gate R5): was `source: 'floor'` only. Now any source, but ONLY where the
+  // bill itself is cancelled — a floor CI, a billing / Telephonic bill-only CI
+  // (the import cancels those bills), or a hand-raised one on a bill later
+  // cancelled. An auto-finding CI on a bill that still ships is NOT listed.
   const cis = await prisma.ci_returns.findMany({
     where: {
-      source: FLOOR_SOURCE,
       isVoided: false,
       status: { not: "draft" },
       createdAt: { gte: today.start, lt: today.end },
+      order: { workflowStage: "cancelled", isRemoved: false },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
       orderId: true,
       ciNumber: true,
       status: true,
+      source: true,
       invoiceNo: true,
       reasonLabel: true,
       reasonRemark: true,
@@ -1326,10 +1348,25 @@ export async function getFloorCancelled(
       supervisor: { select: { name: true } },
     },
   });
-  // One per bill — the newest. The floor route refuses a second live CI, so
-  // this only matters if billing voided one and the floor raised again.
+  // One per bill — the newest. Every raiser refuses a second live CI, so this
+  // only matters if billing voided one and another was raised.
   const ciByOrder = new Map<number, (typeof cis)[number]>();
   for (const c of cis) if (!ciByOrder.has(c.orderId)) ciByOrder.set(c.orderId, c);
+
+  // auto_bill_only is shared by two raisers: Billing (a mail order's CI mark —
+  // the matching tag has fromMailOrder) and Telephonic. ONE batched read tells
+  // them apart: the match rows for these bills, with their tag's flag.
+  const billOnlyOrderIds = Array.from(ciByOrder.values())
+    .filter((c) => asCiSource(c.source) === "auto_bill_only")
+    .map((c) => c.orderId);
+  const fromMailOrderByOrder = new Set<number>();
+  if (billOnlyOrderIds.length > 0) {
+    const tagMatches = await prisma.so_tag_matches.findMany({
+      where: { orderId: { in: billOnlyOrderIds }, soTag: { fromMailOrder: true } },
+      select: { orderId: true },
+    });
+    for (const m of tagMatches) fromMailOrderByOrder.add(m.orderId);
+  }
 
   // ── b) Today's cancel logs ───────────────────────────────────────────────
   // "Latest cancel log is today" ⇔ "there is a cancel log today": a later
@@ -1414,6 +1451,7 @@ export async function getFloorCancelled(
         ciNumber: ci.ciNumber,
         // submitted / returned_to_floor → with billing; closed → closed.
         ciStatus: asCiStatus(ci.status) === "closed" ? "closed" : "with_billing",
+        ciSourceLabel: ciSourceLabelOf(asCiSource(ci.source), fromMailOrderByOrder.has(order.id)),
         byName: ci.supervisor?.name ?? null,
         at: ci.createdAt.toISOString(),
       });
@@ -1427,6 +1465,7 @@ export async function getFloorCancelled(
         remark,
         ciNumber: null,
         ciStatus: null,
+        ciSourceLabel: null,
         byName: cancel.name,
         at: cancel.createdAt.toISOString(),
       });

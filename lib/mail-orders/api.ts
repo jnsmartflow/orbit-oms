@@ -49,13 +49,18 @@ export async function resolveLine(
 export async function saveSoNumber(
   orderId: number,
   soNumber: string,
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; ciTagWarning?: string | null }> {
   const res = await fetch(`/api/mail-orders/${orderId}/so-number`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ soNumber }),
   });
-  if (!res.ok) throw new Error("Failed to save SO number");
+  if (!res.ok) {
+    // The server's own words when it gives them — e.g. the 409 CI_TAG_MATCHED
+    // refusal on a CI-marked mail order ("… the SO number can't be changed").
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(typeof body.error === "string" && body.error !== "" ? body.error : "Failed to save SO number");
+  }
   return res.json();
 }
 

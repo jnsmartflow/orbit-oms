@@ -10,6 +10,7 @@ import {
   CANCEL_NOTE_MAX,
 } from "@/lib/picking/cancel-reasons";
 import { sendToUser } from "@/lib/push/send";
+import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 
 export const dynamic = "force-dynamic";
 
@@ -169,6 +170,15 @@ export async function POST(req: Request): Promise<NextResponse> {
       { error: "This bill can no longer be cancelled from picking." },
       { status: 409 },
     );
+  }
+
+  // b2. A bill carrying a live FULL CI is not cancelled here (2026-09-24,
+  // design web-update-2026-09-24-billing-mo-actions.md §3.7): its return is on
+  // billing's desk, and Floor owns taking a CI'd bill off the floor. 409, so
+  // the boards' existing lost-race handler shows the message.
+  const liveCi = await findLiveCi(orderId);
+  if (liveCi !== null) {
+    return NextResponse.json({ error: liveCiRefusal(liveCi, "cancelled") }, { status: 409 });
   }
 
   // c. FIRST write — kill the order. ONE orders.update.
