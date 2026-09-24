@@ -88,6 +88,7 @@ import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import { GiftBadge } from "@/components/floor/gift-badge";
+import { HandBadge } from "@/components/shared/hand-badge";
 import { loadLitres } from "@/lib/orders/gift";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
 // The tint room's wire shapes. TYPE-only — the module is server-side (prisma),
@@ -783,6 +784,9 @@ function PickingCard({
               {/* GIFT — SAP material type GIFTS, beside TINT/BASE, all five
                   variants for the same reason. Floor's own pill, imported. */}
               {row.isGift && <GiftBadge />}
+              {/* HAND — the dealer collects (2026-09-24): the goods go to the counter,
+                  not a truck. Same shared pill Floor draws. */}
+              {row.isHand && <HandBadge label="✋ Hand — to counter" />}
               {/* The SMU as a BARE NUMBER — Done tab's checked band only.
                   ⚠ SmuBadge is NOT used here and NOT changed; its pill still
                   renders on every other card's where-row. Same 74/77 gate via

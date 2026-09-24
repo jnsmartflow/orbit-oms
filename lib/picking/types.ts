@@ -42,6 +42,13 @@ export interface PickingQueueRow {
    */
   dealerInMaster: boolean;
   isShipToOverride: boolean;
+  /**
+   * HAND — the dealer collects from the depot (orders.handAt set, 2026-09-24,
+   * design web-update-2026-09-24-billing-mo-actions.md §4). The goods go to
+   * the counter, not a truck: the card and detail header show "✋ Hand — to
+   * counter". A scalar the queue's `include` already brings.
+   */
+  isHand: boolean;
   windowId: number | null;
   windowTime: string | null;
   windowSortOrder: number | null;

@@ -865,6 +865,7 @@ export async function getPickingQueue(
       // delivery_point_master", which is the question the marker asks.
       dealerInMaster: effectiveDealer != null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
+      isHand: order.handAt !== null,
       windowId: order.dispatchWindow?.id ?? null,
       windowTime: order.dispatchWindow?.windowTime ?? null,
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,

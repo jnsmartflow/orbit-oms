@@ -21,6 +21,7 @@ import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import { GiftBadge } from "@/components/floor/gift-badge";
+import { HandBadge } from "@/components/shared/hand-badge";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // Same import list, same tokens and the same tag the supervisor board and Floor
 // use; this face was deliberately left out on 2026-08-20 and is now included
@@ -1565,6 +1566,8 @@ export function PickerMyPicksBoard({
                     <ColourWorkBadge work={row.colourWork} onRed={dup} />
                     {/* GIFT beside TINT/BASE — same pill as the supervisor card. */}
                     {row.isGift && <GiftBadge />}
+                    {/* HAND — the dealer collects (2026-09-24): to the counter. */}
+                    {row.isHand && <HandBadge label="✋ Hand — to counter" />}
                   </span>
                   {/* The tag LEADS the right cluster, so it is the first thing
                       read after the OBD — same order as the supervisor card.

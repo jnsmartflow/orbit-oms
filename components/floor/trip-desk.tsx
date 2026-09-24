@@ -717,8 +717,11 @@ export function TripDesk({
     // the table below lists — a header that counted only the due half would not
     // add up to the rows on screen. The divider gives the upcoming subtotal.
     const allPool = [...poolRows, ...poolUpcoming];
-    const litres = sumLitres(allPool);
-    const weight = sumWeightKg(allPool);
+    // HAND bills (the dealer collects, 2026-09-24) are LISTED but never
+    // counted in a truck figure — they ride no truck.
+    const truckPool = allPool.filter((r) => !r.isHand);
+    const litres = sumLitres(truckPool);
+    const weight = sumWeightKg(truckPool);
     const weightStr = formatWeightKg(weight.kg);
     // Also what the route cards show when no card has a bill due (2026-09-24).
     const poolEmpty = (
@@ -730,8 +733,19 @@ export function TripDesk({
         </p>
       </div>
     );
+    // Every TRUCK bill is planned and only Hand bills are left (2026-09-24,
+    // design §4). The test changes, the LIST does not: the Hand bills still
+    // render below, because the planner ticks them for a Hand trip. A note says
+    // why nothing is waiting for a truck.
+    const handOnly = allPool.length > 0 && allPool.every((r) => r.isHand);
     poolContent = (
       <>
+        {handOnly && (
+          <div className="border-b border-[#f1f1f6] px-5 py-2.5 text-[12px] font-semibold text-data-brown">
+            Every truck bill is on a trip · {allPool.length} Hand bill{allPool.length === 1 ? "" : "s"} wait
+            {allPool.length === 1 ? "s" : ""} for a Hand trip — tick them and press “+ New trip”.
+          </div>
+        )}
         {allPool.length === 0 ? (
           poolEmpty
         ) : effectivePoolPivot === "flat" ? (
@@ -1056,7 +1070,9 @@ export function TripDesk({
         scope={scope}
         gateOn={gateOn}
         poolCount={poolRows.length + poolUpcoming.length}
-        poolLitres={sumLitres([...poolRows, ...poolUpcoming])}
+        // Hand bills are counted as bills (they are listed) but never in the
+        // litres — they ride no truck (2026-09-24).
+        poolLitres={sumLitres([...poolRows, ...poolUpcoming].filter((r) => !r.isHand))}
         selection={railSelection}
         onSelect={onSelectRail}
       />

@@ -300,6 +300,10 @@ export function TripDetailHeader({
         <div className="mt-[6px] flex flex-wrap items-center gap-x-[7px] gap-y-[3px] text-[13px] text-[#61616d]">
           {plate ? (
             <span className="font-mono font-semibold text-[#1a1a22]">{plate}</span>
+          ) : trip.isHand ? (
+            // A HAND TRIP (2026-09-24) has no vehicle by design — the dealer
+            // collects — so there is nothing "not set" to warn about.
+            <span className="font-semibold text-data-brown">✋ Hand — dealer collects</span>
           ) : (
             <span className="font-medium text-[#8a5d0c]">Vehicle not set</span>
           )}

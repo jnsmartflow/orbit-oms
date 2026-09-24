@@ -28,6 +28,7 @@ import { Building2 } from "lucide-react";
 import { FloorSkeleton } from "./floor-skeleton";
 // TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
+import { HandBadge } from "@/components/shared/hand-badge";
 import { shipMarkers } from "./floor-table";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { FloorActionBar, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
@@ -248,6 +249,12 @@ export function CancelledTab({
                       {row.colourWork !== null && (
                         <span className="ml-1 inline-block align-[-1px]">
                           <ColourWorkBadge work={row.colourWork} />
+                        </span>
+                      )}
+                      {/* HAND — the dealer collects (2026-09-24). Beside BASE. */}
+                      {row.isHand && (
+                        <span className="ml-1 inline-block align-[-1px]">
+                          <HandBadge />
                         </span>
                       )}
                       {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}

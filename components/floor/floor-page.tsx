@@ -140,6 +140,8 @@ interface WriteBody {
   /** The batch routes' applied ids (POST /api/floor/actions returns them). */
   done?: number[];
   failed?: Array<{ orderId?: number; error?: string }>;
+  /** POST /api/floor/actions hand | unhand — repeat presses, nothing written. */
+  skipped?: number[];
 }
 
 async function postJson(url: string, payload: unknown, method: "POST" | "PATCH" = "POST"): Promise<{ ok: boolean; body: WriteBody }> {
@@ -217,7 +219,7 @@ function holdRowToOffFloorBill(r: FloorHoldRow): OffFloorFormBill {
   };
 }
 
-export function FloorPage() {
+export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // 🔴 THE TEMPORARY ADMIN-ONLY GATE IS GONE (2026-09-10). It existed for one
   // day, to keep the By trip pivot option off everyone else's screen while it
   // was tested on live data, and it read the session purely to decide whether to
@@ -1345,6 +1347,19 @@ export function FloorPage() {
   // view. Hold and Cancelled rows are not flagged at all (their feeds do not
   // carry the field), so a panel opened from those tabs resolves to false —
   // the known gap, not a bug.
+  // Hand — read off whichever loaded row the panel was opened from (board,
+  // Hold or Cancel & CI all carry `isHand`), like detailHasDuplicateSo below.
+  const detailIsHand = useMemo(() => {
+    if (!detail) return false;
+    const id = detail.orderId;
+    return (
+      (data?.floor.rows ?? []).find((r) => r.orderId === id)?.isHand ??
+      (holdRows ?? []).find((r) => r.orderId === id)?.isHand ??
+      (cancelledRows ?? []).find((r) => r.orderId === id)?.isHand ??
+      false
+    );
+  }, [detail, data, holdRows, cancelledRows]);
+
   const detailHasDuplicateSo = useMemo(() => {
     if (!detail) return false;
     // The rail lookup that used to sit here went with the rail feed (2026-09-13);
@@ -1478,6 +1493,17 @@ export function FloorPage() {
       },
       onUnassign: async (orderId) => {
         reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
+        await load();
+      },
+      // HAND — the dealer collects (2026-09-24). A repeat press writes nothing
+      // on the server and comes back in `skipped`; say so rather than stay quiet.
+      onHand: async (orderId, set) => {
+        const label = set ? "Mark Hand" : "Clear Hand";
+        const r = await postJson("/api/floor/actions", { action: set ? "hand" : "unhand", orderIds: [orderId] });
+        if (reportWrite(label, r)) {
+          if ((r.body.skipped ?? []).length > 0) toast(set ? "Already marked Hand — nothing changed." : "Not marked Hand — nothing changed.");
+          else toast.success(set ? "Marked Hand — the dealer collects." : "Hand cleared.");
+        }
         await load();
       },
     }),
@@ -1753,6 +1779,21 @@ export function FloorPage() {
   const createTripWithSelection = useCallback(async (fromPlan?: { orderIds: number[]; vehicleSize?: VehicleSize }) => {
     const ids = fromPlan ? fromPlan.orderIds : selectedIdsRef.current;
     if (ids.length === 0) return;
+    // ── HAND TRIP (2026-09-24, design §4) ─────────────────────────────────
+    // "+ New trip" with EVERY ticked bill marked Hand builds a Hand trip — the
+    // dealer collects, so no vehicle, plate, driver or size is sent (the server
+    // refuses them on a Hand trip anyway). A MIX of Hand and truck bills is
+    // refused here, before anything is created: the add route would split them
+    // and leave half the ticks behind. (The load plan never holds Hand bills.)
+    const handById = new Map((data?.floor.rows ?? []).map((r) => [r.orderId, r.isHand] as const));
+    const handCount = ids.filter((id) => handById.get(id) === true).length;
+    if (handCount > 0 && handCount < ids.length) {
+      toast.error(
+        `${handCount} of the ${ids.length} ticked bills are Hand (dealer collects) — a trip is either a truck or a Hand trip. Tick one kind.`,
+      );
+      return;
+    }
+    const isHandTrip = handCount > 0;
     if (fromPlan) setSelection(new Set(ids));
     setTripBarBusy(true);
     try {
@@ -1794,7 +1835,8 @@ export function FloorPage() {
           tripDate: viewMode === "history" && histDate ? histDate : istTodayIso(),
           // A load plan card's own size (Ace / Big / GC) rides along, so the
           // trip carries it without the form (owner, 2026-09-21).
-          ...(fromPlan?.vehicleSize ? { vehicleSize: fromPlan.vehicleSize } : {}),
+          ...(fromPlan?.vehicleSize && !isHandTrip ? { vehicleSize: fromPlan.vehicleSize } : {}),
+          ...(isHandTrip ? { isHand: true } : {}),
         }),
       });
       const created = await createRes.json().catch(() => ({}));
@@ -2425,6 +2467,8 @@ export function FloorPage() {
           source={detail.source}
           hasDuplicateSo={detailHasDuplicateSo}
           withBillingCiNumber={detailCiNumber}
+          isHand={detailIsHand}
+          canEdit={canEdit}
           list={detailList}
           windows={dispatchWindows}
           pickers={data?.pickers ?? []}

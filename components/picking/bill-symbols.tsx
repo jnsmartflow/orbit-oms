@@ -25,6 +25,7 @@
 import { DUP_SO_MUTED, DuplicateSoTag } from "@/components/shared/duplicate-so-tag";
 import { ColourWorkBadge, isColourWorkBadged, isSmuBadged } from "./card-atoms";
 import { GiftBadge } from "@/components/floor/gift-badge";
+import { HandBadge } from "@/components/shared/hand-badge";
 import type { ColourWork } from "@/lib/picking/colour-work";
 
 /** The fields the run reads — narrow, not the whole PickingQueueRow. */
@@ -42,6 +43,8 @@ export interface BillSymbolSource {
   smuCode: string | null;
   /** SAP GIFTS (lib/orders/gift.ts) — a GIFT pill right after TINT/BASE. */
   isGift: boolean;
+  /** HAND — the dealer collects (2026-09-24): a pill after GIFT. */
+  isHand: boolean;
 }
 
 /** Does this bill put ANYTHING in the run? Exported so a caller can decide
@@ -60,6 +63,8 @@ export function hasBillSymbols(row: BillSymbolSource): boolean {
     // Same rule as the term above: the gate must move with the mark, or a gift
     // bill with no other flag would render a pill with no separator before it.
     row.isGift ||
+    // Same rule again: the Hand pill must open the run's separator too.
+    row.isHand ||
     isSmuBadged(row.smuCode)
   );
 }
@@ -142,6 +147,8 @@ export function BillSymbols({ row }: { row: BillSymbolSource }): React.JSX.Eleme
           own component, imported (components/floor/gift-badge.tsx). Its pale
           ink fill reads on the pale masthead and on the duplicate-SO red. */}
       {row.isGift && <GiftBadge />}
+      {/* HAND — the dealer collects (2026-09-24): "to counter", the shared pill. */}
+      {row.isHand && <HandBadge label="✋ Hand — to counter" />}
       {/* ⚠ THE NUMBER, WITHOUT SmuBadge's PILL — and SmuBadge itself is NOT
           touched. It still renders its indigo/cyan pill on both CARD where-rows
           (picking-board-mobile.tsx + picker-my-picks-board.tsx), which is the

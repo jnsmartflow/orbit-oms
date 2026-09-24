@@ -48,6 +48,7 @@ import { formatArticleTag, formatDateIST } from "@/lib/floor/format";
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { GiftBadge } from "./gift-badge";
+import { HandBadge } from "@/components/shared/hand-badge";
 import {
   StatusPill,
   rowStatus,
@@ -1082,6 +1083,13 @@ export function FloorTable({
           {row.isGift && (
             <span className="ml-1 inline-block align-[-1px]">
               <GiftBadge />
+            </span>
+          )}
+          {/* HAND — the dealer collects (2026-09-24). After TINT/BASE and GIFT,
+              same spacing; no new column. */}
+          {row.isHand && (
+            <span className="ml-1 inline-block align-[-1px]">
+              <HandBadge />
             </span>
           )}
           {isSite && (

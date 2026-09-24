@@ -91,7 +91,12 @@ export function LoadPlanView({
   const trucks = useMemo(
     () =>
       planLoads(
-        rows.map((r) => ({ orderId: r.orderId, routeId: r.routeId, routeName: r.route, stopKey: r.stopKey, weightKg: r.weightKg, isGift: r.isGift })),
+        // HAND bills (the dealer collects, 2026-09-24) are never planned onto a
+        // truck. Filtered HERE, at the engine's input — `rowById` below keeps
+        // every row, so nothing that looks a bill up by id can miss one.
+        rows
+          .filter((r) => !r.isHand)
+          .map((r) => ({ orderId: r.orderId, routeId: r.routeId, routeName: r.route, stopKey: r.stopKey, weightKg: r.weightKg, isGift: r.isGift })),
         config,
         routeNames,
       ),

@@ -162,6 +162,13 @@ export interface RouteLine {
    * today's truck against must not include Sunday's bills (owner).
    */
   upcoming: FloorBoardRow[];
+  /**
+   * HAND bills — the dealer collects (2026-09-24, design §4). NEVER counted in
+   * kg / L / stops (they ride no truck); listed in the open panel with their
+   * chip so the planner can find them, and summed on the card face as
+   * "+N Hand · X kg — not counted". Taken out of `rows` and `upcoming` both.
+   */
+  hand: FloorBoardRow[];
   /** The other tab this line's bills come from (Kamrej: "Upcountry"), or null. */
   reachLabel: string | null;
 }
@@ -177,6 +184,8 @@ export interface RouteCard {
   rows: FloorBoardRow[];
   /** Every upcoming bill on the card — listed when open, never counted. */
   upcoming: FloorBoardRow[];
+  /** Every Hand bill on the card — listed when open, never counted (see RouteLine.hand). */
+  hand: FloorBoardRow[];
 }
 
 export interface RouteCardModel {
@@ -246,17 +255,20 @@ export function buildRouteCards(
           m.reachFrom === null
             ? rows.filter((r) => r.routeId === m.routeId)
             : reachRows.filter((r) => r.routeId === m.routeId && r.deliveryType === m.reachFrom);
+        // Hand bills out of the counted halves FIRST (2026-09-24).
+        const trucked = all.filter((r) => !r.isHand);
         return {
           key: `r:${m.routeId}`,
           name: m.routeName,
-          rows: all.filter(isDue),
-          upcoming: all.filter((r) => !isDue(r)),
+          rows: trucked.filter(isDue),
+          upcoming: trucked.filter((r) => !isDue(r)),
+          hand: all.filter((r) => r.isHand),
           reachLabel: m.reachFrom,
         };
       })
-      // A member with no bills at all — due or upcoming — gets no line
+      // A member with no bills at all — due, upcoming or Hand — gets no line
       // (owner, 2026-09-24): "Olpad · No bills" is noise on the card.
-      .filter((l) => l.rows.length > 0 || l.upcoming.length > 0);
+      .filter((l) => l.rows.length > 0 || l.upcoming.length > 0 || l.hand.length > 0);
     return {
       key: `club:${c.id}`,
       kind: "club",
@@ -264,6 +276,7 @@ export function buildRouteCards(
       lines,
       rows: lines.flatMap((l) => l.rows),
       upcoming: lines.flatMap((l) => l.upcoming),
+      hand: lines.flatMap((l) => l.hand),
     };
   });
 
@@ -280,9 +293,10 @@ export function buildRouteCards(
       name: key === "none" ? NO_ROUTE_LABEL : r.route ?? NO_ROUTE_LABEL,
       rows: [],
       upcoming: [],
+      hand: [],
       reachLabel: null,
     };
-    (isDue(r) ? line.rows : line.upcoming).push(r);
+    (r.isHand ? line.hand : isDue(r) ? line.rows : line.upcoming).push(r);
     others.set(key, line);
   }
   // Lines by kilos due, highest first (owner, 2026-09-19); name breaks a tie so
@@ -303,6 +317,7 @@ export function buildRouteCards(
           lines: otherLines,
           rows: otherLines.flatMap((l) => l.rows),
           upcoming: otherLines.flatMap((l) => l.upcoming),
+          hand: otherLines.flatMap((l) => l.hand),
         };
 
   return { clubCards, otherCard };
@@ -314,7 +329,7 @@ export function buildRouteCards(
  * bills are all upcoming reads "Upcoming only" in place of its kilos.
  */
 export function shownCards(model: RouteCardModel): RouteCard[] {
-  return allCards(model).filter((c) => c.rows.length > 0 || c.upcoming.length > 0);
+  return allCards(model).filter((c) => c.rows.length > 0 || c.upcoming.length > 0 || c.hand.length > 0);
 }
 
 // ── The board ───────────────────────────────────────────────────────────────
@@ -462,6 +477,9 @@ export function RouteCards({
   // never a pixel number: every card is the same head plus `lineSlots`
   // equal-height line slots, so they come out identical.
   const lineSlots = Math.max(1, ...cards.map((c) => c.lines.length));
+  // The "+N Hand" line is ONE slot every card carries when ANY card has Hand
+  // bills (invisible on the rest), so every card on the board stays one height.
+  const handSlot = cards.some((c) => c.hand.length > 0);
   const tracks = `repeat(${columns}, minmax(0, 1fr))`;
 
   return (
@@ -469,7 +487,7 @@ export function RouteCards({
       {chunk(cards, columns).map((row, i) => (
         <div key={i} className={`grid items-start gap-3 ${i === 0 ? "" : "mt-3"}`} style={{ gridTemplateColumns: tracks }}>
           {row.map((c) => (
-            <CardButton key={c.key} card={c} lineSlots={lineSlots} onOpen={() => onOpenCard(c.key)} />
+            <CardButton key={c.key} card={c} lineSlots={lineSlots} handSlot={handSlot} onOpen={() => onOpenCard(c.key)} />
           ))}
         </div>
       ))}
@@ -546,11 +564,24 @@ const CARD =
   "block w-full min-w-0 cursor-pointer rounded-[11px] border border-[#e7e7ee] bg-white text-left hover:border-[#cfcfda]";
 const LINE = "block border-t border-[#f1f1f6] px-3.5 pb-3 pt-[11px]";
 
-function CardButton({ card, lineSlots, onOpen }: { card: RouteCard; lineSlots: number; onOpen: () => void }) {
+function CardButton({
+  card,
+  lineSlots,
+  handSlot,
+  onOpen,
+}: {
+  card: RouteCard;
+  lineSlots: number;
+  /** Some card on the board has Hand bills — reserve the "+N Hand" line. */
+  handSlot: boolean;
+  onOpen: () => void;
+}) {
   const spacers = Math.max(0, lineSlots - card.lines.length);
   // Nothing due, only later bills (owner, 2026-09-24): no kilos — the figures
-  // count due bills only — just "Upcoming only", small and grey.
+  // count due bills only — just "Upcoming only", small and grey. A card whose
+  // only bills are Hand reads "Hand only" instead.
   const upcomingOnly = card.rows.length === 0;
+  const nothingDueLabel = card.upcoming.length > 0 ? "Upcoming only" : "Hand only";
 
   return (
     <button type="button" className={CARD} onClick={onOpen}>
@@ -560,7 +591,7 @@ function CardButton({ card, lineSlots, onOpen }: { card: RouteCard; lineSlots: n
             so an "Upcoming only" card stays the board's one height. */}
         <span className="block whitespace-nowrap text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] tabular-nums text-[#1a1a22]">
           {upcomingOnly ? (
-            <small className="text-[13px] font-medium tracking-normal text-[#96969f]">Upcoming only</small>
+            <small className="text-[13px] font-medium tracking-normal text-[#96969f]">{nothingDueLabel}</small>
           ) : (
             <>
               {kgText(card.rows)}
@@ -570,17 +601,35 @@ function CardButton({ card, lineSlots, onOpen }: { card: RouteCard; lineSlots: n
         </span>
         <span className="mt-[5px] block whitespace-nowrap text-[12.5px] tabular-nums text-[#96969f]">
           {upcomingOnly ? (
-            <>{plural(stopCount(card.upcoming), "stop", "stops")} due later</>
+            card.upcoming.length > 0 ? (
+              <>{plural(stopCount(card.upcoming), "stop", "stops")} due later</>
+            ) : (
+              <>&nbsp;</>
+            )
           ) : (
             <>
               {plural(stopCount(card.rows), "stop", "stops")} &middot; {formatLitres(sumLitres(card.rows))} L
             </>
           )}
         </span>
+        {/* HAND (2026-09-24) — the dealer collects, so these bills ride no truck
+            and are NOT in the kilos above. One line, data.brown (Hand's
+            identity, UI §2.1). Invisible on a card with none, so the board
+            keeps one card height. */}
+        {handSlot && (
+          <span
+            className={`mt-[3px] block whitespace-nowrap text-[11.5px] font-semibold tabular-nums text-data-brown ${
+              card.hand.length > 0 ? "" : "invisible"
+            }`}
+            aria-hidden={card.hand.length === 0}
+          >
+            +{card.hand.length} Hand &middot; {kgText(card.hand)} kg — not counted
+          </span>
+        )}
       </span>
       {Array.from({ length: spacers }, (_, i) => (
         <span key={`spacer:${i}`} className={`${LINE} invisible`} aria-hidden>
-          <RouteLineBody line={{ key: "", name: "·", rows: [], upcoming: [], reachLabel: null }} />
+          <RouteLineBody line={{ key: "", name: "·", rows: [], upcoming: [], hand: [], reachLabel: null }} />
         </span>
       ))}
       {card.lines.map((l) => (
@@ -616,7 +665,9 @@ function RouteLineBody({ line: l }: { line: RouteLine }) {
             </span>
           </>
         ) : (
-          <span className="shrink-0 text-[12px] text-[#96969f]">Upcoming only</span>
+          <span className="shrink-0 text-[12px] text-[#96969f]">
+            {l.upcoming.length > 0 ? "Upcoming only" : "Hand only"}
+          </span>
         )}
       </span>
       {l.rows.length > 0 ? <StatusBar rows={l.rows} /> : <span className="block h-1" aria-hidden />}
@@ -660,7 +711,7 @@ function OpenPanel({
   variant: FloorTableVariant;
   leaf: LeafWiring;
 }) {
-  const sections = card.lines.filter((l) => l.rows.length > 0 || l.upcoming.length > 0);
+  const sections = card.lines.filter((l) => l.rows.length > 0 || l.upcoming.length > 0 || l.hand.length > 0);
   return (
     <div className="mt-3 overflow-hidden rounded-[11px] border border-[#e7e7ee] bg-white">
       {sections.map((l, i) => (
@@ -673,13 +724,22 @@ function OpenPanel({
                 <>
                   {plural(stopCount(l.rows), "stop", "stops")} &middot; {kgText(l.rows)} kg
                 </>
-              ) : (
+              ) : l.upcoming.length > 0 ? (
                 "Upcoming only"
+              ) : (
+                "Hand only"
+              )}
+              {l.hand.length > 0 && (
+                <span className="ml-[9px] font-semibold text-data-brown">
+                  +{l.hand.length} Hand · {kgText(l.hand)} kg — not counted
+                </span>
               )}
             </span>
           </div>
+          {/* Hand bills still LIST here, after the due ones, each with its
+              ✋ HAND chip — the planner needs to find them for a Hand trip. */}
           <FloorTable
-            rows={[...sort(l.rows), ...sortUpcoming(l.upcoming)]}
+            rows={[...sort(l.rows), ...sort(l.hand), ...sortUpcoming(l.upcoming)]}
             nowMs={nowMs}
             anchorIso={anchorIso}
             variant={variant}

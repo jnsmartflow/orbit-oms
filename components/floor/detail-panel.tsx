@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import { Building2, X } from "lucide-react";
 // TINT / BASE -- one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
+import { HandBadge } from "@/components/shared/hand-badge";
 import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
 import { DetailItems } from "./detail-items";
 import { DetailDetails } from "./detail-details";
@@ -116,6 +117,8 @@ export interface DetailActions {
   onHold: (orderId: number) => Promise<void>;
   onCancel: (orderId: number) => Promise<void>;
   onUnassign: (orderId: number) => Promise<void>;
+  /** Hand (dealer collects) on / off — POST /api/floor/actions hand | unhand. */
+  onHand: (orderId: number, set: boolean) => Promise<void>;
 }
 
 function fmtDateTime(iso: string | null): string {
@@ -178,6 +181,8 @@ export function DetailPanel({
   source,
   hasDuplicateSo = false,
   withBillingCiNumber = null,
+  isHand = false,
+  canEdit = false,
   list,
   windows,
   pickers,
@@ -205,6 +210,16 @@ export function DetailPanel({
    * loaded row, like `hasDuplicateSo`.
    */
   withBillingCiNumber?: string | null;
+  /**
+   * Hand — the dealer collects (2026-09-24). Passed down from the loaded row
+   * (board / Hold / Cancel & CI all carry `isHand`), like `hasDuplicateSo`.
+   */
+  isHand?: boolean;
+  /**
+   * `floor` canEdit, resolved on the server (app/(floor)/floor/page.tsx).
+   * Gates the Hand toggle — HIDDEN without it, never disabled (UI §10).
+   */
+  canEdit?: boolean;
   list: number[];
   windows: DispatchWindow[];
   pickers: FloorPicker[];
@@ -292,6 +307,8 @@ export function DetailPanel({
             source={source}
             hasDuplicateSo={hasDuplicateSo}
             withBillingCiNumber={withBillingCiNumber}
+            isHand={isHand}
+            canEdit={canEdit}
             tab={tab}
             setTab={setTab}
             windows={windows}
@@ -345,6 +362,8 @@ function PanelBody({
   source,
   hasDuplicateSo,
   withBillingCiNumber,
+  isHand,
+  canEdit,
   tab,
   setTab,
   windows,
@@ -364,6 +383,8 @@ function PanelBody({
   source: FloorDetailSource;
   hasDuplicateSo: boolean;
   withBillingCiNumber: string | null;
+  isHand: boolean;
+  canEdit: boolean;
   tab: Tab;
   setTab: (t: Tab) => void;
   windows: DispatchWindow[];
@@ -449,6 +470,16 @@ function PanelBody({
     overflow.push({ label: "Cancel / Raise CI…", danger: true, disabledReason: tintLockReason, fn: () => actions.onCancel(d.orderId) });
   }
   if (source === "hold") overflow.push({ label: "Cancel / Raise CI…", danger: true, fn: () => actions.onCancel(d.orderId) });
+  // HAND — the dealer collects (2026-09-24, design §4). Floor + Hold panels, and
+  // only for a `floor` canEdit holder: HIDDEN otherwise, never disabled (UI §10).
+  // The route owns the refusals (dispatched / cancelled / on a trip).
+  if (canEdit && (source === "floor" || source === "hold")) {
+    overflow.push(
+      isHand
+        ? { label: "Clear Hand", fn: () => actions.onHand(d.orderId, false) }
+        : { label: "Mark Hand (dealer collects)", fn: () => actions.onHand(d.orderId, true) },
+    );
+  }
 
   const currentSlotValue =
     d.dispatchTargetDate && d.dispatchWindowId && d.dispatchWindowTime
@@ -566,6 +597,8 @@ function PanelBody({
               project divisions, exactly as the chip rendered nothing on a plain
               bill, so this row is unchanged on every other panel. */}
           <ColourWorkBadge work={d.colourWork} />
+          {/* HAND — the dealer collects (2026-09-24), beside TINT / BASE. */}
+          {isHand && <HandBadge />}
         </div>
       </div>
 

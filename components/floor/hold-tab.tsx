@@ -21,6 +21,7 @@ import { FloorSkeleton } from "./floor-skeleton";
 import { HoldBar } from "./hold-bar";
 // TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
+import { HandBadge } from "@/components/shared/hand-badge";
 import { PdfPreview } from "./pdf-preview";
 import { shipMarkers } from "./floor-table";
 import { toggleOne, toggleAllIds, isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
@@ -115,6 +116,12 @@ function HoldRows({
                 {row.colourWork !== null && (
                   <span className="ml-1 inline-block align-[-1px]">
                     <ColourWorkBadge work={row.colourWork} />
+                  </span>
+                )}
+                {/* HAND — the dealer collects (2026-09-24). Beside BASE. */}
+                {row.isHand && (
+                  <span className="ml-1 inline-block align-[-1px]">
+                    <HandBadge />
                   </span>
                 )}
                 {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}

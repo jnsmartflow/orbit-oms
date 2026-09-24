@@ -55,6 +55,7 @@
 
 import { Plus } from "lucide-react";
 import { COLOUR_WORK_PINK } from "@/components/picking/card-atoms";
+import { HandBadge } from "@/components/shared/hand-badge";
 import { TripBar, tripBarCounts } from "./trip-bar";
 import { formatLitres } from "./status-pill";
 import { tripInScope, tripMixLabel } from "@/lib/floor/scope";
@@ -408,7 +409,12 @@ function TripCard({
           something. A typed plate never brings a driver, so those trips read
           "No driver yet" until a master vehicle is chosen (owner, accepted). */}
       <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-[#61616d]" title={trip.driverName ?? undefined}>
-        {trip.driverName ?? <span className="font-semibold text-[#8a5d0c]">No driver yet</span>}
+        {trip.isHand ? (
+          // A HAND TRIP (2026-09-24): no driver by design — the dealer collects.
+          <HandBadge label="✋ Hand — dealer collects" />
+        ) : (
+          trip.driverName ?? <span className="font-semibold text-[#8a5d0c]">No driver yet</span>
+        )}
       </div>
 
       {/* QUIET, and between the driver and the bar (owner-s design). A hint, not
