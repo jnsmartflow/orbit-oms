@@ -99,11 +99,12 @@ const MAIL_ORDERS_MARKER_POLL_MS = 30_000;
 // This page's extra shortcut rows. Hoisted out of the JSX 2026-08-01 for the
 // same reason MO_FILTER_GROUPS was: the header's shortcuts popover and the
 // Billing tab row's copy render the SAME array rather than two literals that
-// drift. Values unchanged from the inline version.
+// drift. Values unchanged from the inline version, except the dead
+// "E · Slot email" row, removed 2026-09-24 (BILLING §11 — no handler since
+// c103d5f4 retired the slot-email modal).
 const MO_SHORTCUTS = [
   { key: "Ctrl+C", label: "Smart copy" },
   { key: "Ctrl+V", label: "Paste SO" },
-  { key: "E", label: "Slot email" },
   { key: "R", label: "Reply" },
   { key: "F", label: "Flag" },
   { key: "N", label: "Next unmatched" },
@@ -946,6 +947,18 @@ export default function MailOrdersPage() {
   // Registered on document capture phase with stopImmediatePropagation to ensure
   // no other capture listener (sidebar, header, etc.) can swallow Ctrl+ events.
   useEffect(() => {
+    // Billing face (2026-09-24, design §2): once the SKUs are copied, the next job
+    // is pasting the SO number back, so the Order No box takes focus. Only after
+    // the LAST copy of the two-state machine — focusing after the customer-code
+    // press would put the caret in an INPUT, and the Ctrl+C branch below returns
+    // early for inputs, so the second press would copy nothing. Found by the same
+    // placeholder Ctrl+V uses; absent (punched order) → no-op.
+    function focusBillingOrderNo() {
+      if (!billingV2) return;
+      requestAnimationFrame(() => {
+        (document.querySelector('input[placeholder="Enter number"]') as HTMLInputElement | null)?.focus();
+      });
+    }
     function onCtrlKey(e: KeyboardEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
       if (viewMode !== "table" && viewMode !== "focus") return;
@@ -1033,6 +1046,7 @@ export default function MailOrdersPage() {
             showCopyToast(`SKUs batch ${batchIdx + 1}/${totalBatches} copied — done`, "sku");
             setSmartCopyOrderId(null);
             setSmartCopyLineIdx(0);
+            focusBillingOrderNo();
           } else {
             showCopyToast(`SKUs batch ${batchIdx + 1}/${totalBatches} copied`, "sku");
             setSmartCopyLineIdx(nextBatch);
@@ -1044,6 +1058,7 @@ export default function MailOrdersPage() {
           showCopyToast(`${matchedLines.length} SKUs copied`, "sku");
           setSmartCopyOrderId(null);
           setSmartCopyLineIdx(0);
+          focusBillingOrderNo();
         }
         return;
       }

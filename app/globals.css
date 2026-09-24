@@ -866,3 +866,35 @@ html, body { overscroll-behavior: none; }
     break-inside: avoid;
   }
 }
+
+/* ── Billing · Orders bottom bar (2026-09-24) ─────────────────────────────────
+   components/billing/billing-bottom-bar.tsx. Design web-update-2026-09-24-
+   billing-mo-actions.md §2, mockup v12 tab 1 (the resizable one-row demo).
+   Sized by CONTAINER QUERY on the bar (= the right pane's width), never the
+   viewport: the left inbox takes a fixed 320px, so the viewport says nothing
+   about how much room the bar has.
+     > 1050px  full labels
+     <= 1050px Hold/Hand/CI/Urgent/Slot icon-only, 40px square (title = name)
+     <=  760px the "Order No." label hides; the input shrinks (min ~96px)
+     <=  520px wrap, as the last resort - nothing ever overlaps
+   Punch always keeps its word. Every button stays 40px tall.
+   Top level on purpose - nothing here is print-only (router §1). */
+.mo-bbar { container-type: inline-size; }
+.mo-bbar-row { display: flex; align-items: center; flex-wrap: nowrap; gap: clamp(4px, 1cqi, 10px); }
+.mo-bbar-grp { display: flex; align-items: center; flex-wrap: nowrap; gap: clamp(4px, 0.8cqi, 8px); min-width: 0; }
+.mo-bbar-end { flex: 1 1 auto; justify-content: flex-end; }
+.mo-bbar-btn { height: 40px; min-width: 0; flex: 0 1 auto; padding: 0 clamp(8px, 1.4cqi, 16px); white-space: nowrap; }
+.mo-bbar-ordno { flex: 1 1 200px; min-width: 96px; max-width: 280px; }
+.mo-bbar-ordno input { min-width: 0; width: 100%; }
+.mo-bbar-punch { height: 40px; min-width: 96px; padding: 0 16px; white-space: nowrap; flex-shrink: 0; }
+@container (max-width: 1050px) {
+  .mo-bbar-btn[data-icon-able] .mo-bbar-tx { display: none; }
+  .mo-bbar-btn[data-icon-able] { width: 40px; padding: 0; flex-shrink: 0; }
+}
+@container (max-width: 760px) {
+  .mo-bbar-ordlabel { display: none; }
+}
+@container (max-width: 520px) {
+  .mo-bbar-row, .mo-bbar-grp { flex-wrap: wrap; }
+  .mo-bbar-end { flex-basis: 100%; }
+}

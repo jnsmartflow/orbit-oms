@@ -9,9 +9,23 @@ export interface BillingBillOutcome {
   reason: string;
 }
 
+/** The mail order as the route saved it — the bar lights its buttons from this
+ *  until the page reload lands. Dates arrive as ISO strings. */
+export interface BillingMoOrderState {
+  id: number;
+  dispatchStatus: string | null;
+  dispatchPriority: string | null;
+  dispatchTargetDate: string | null;
+  dispatchWindowId: number | null;
+  handAt: string | null;
+  billOnlyAt: string | null;
+}
+
 export type BillingActionResult =
   | {
       ok: true;
+      /** The saved mail order; null only if an older server omitted it. */
+      moOrder: BillingMoOrderState | null;
       /** Live bills this press changed (length of `updated`). Kept for existing callers. */
       ordersUpdated: number;
       /** Their order ids. */
@@ -54,6 +68,7 @@ export async function postMailOrderAction(
     });
     if (res.ok) {
       const ok = (await res.json().catch(() => ({}))) as {
+        moOrder?: BillingMoOrderState;
         ordersUpdated?: number;
         updated?: number[];
         skipped?: BillingBillOutcome[];
@@ -61,6 +76,7 @@ export async function postMailOrderAction(
       };
       return {
         ok: true,
+        moOrder: ok.moOrder ?? null,
         ordersUpdated: ok.ordersUpdated ?? 0,
         updated: ok.updated ?? [],
         skipped: ok.skipped ?? [],

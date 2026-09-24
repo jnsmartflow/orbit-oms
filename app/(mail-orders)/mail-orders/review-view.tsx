@@ -31,7 +31,10 @@ import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
 import { BillingPrintTab } from "@/components/billing/billing-print-tab";
 import { BillingTelephonicTab } from "@/components/billing/billing-telephonic-tab";
-import { BillingActionRibbon, BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
+// BillingActionRibbon itself is retired (2026-09-24) — the bottom bar replaced it;
+// its button shape is still what Notes + Copy wear on the top row.
+import { BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
+import { BillingBottomBar } from "@/components/billing/billing-bottom-bar";
 import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
 import { useBillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
@@ -616,13 +619,15 @@ export function ReviewView({
   }, [billingV2]);
   // ── Local state ─────────────────────────────────────────────────
   const [soInput, setSoInput] = useState("");
+  // The Billing bottom bar's Order No box — focused after Copy (design §2).
+  const soInputRef = useRef<HTMLInputElement>(null);
   const [editingSoNumber, setEditingSoNumber] = useState(false);
   const [replyCopied, setReplyCopied] = useState(false);
   const [codePopoverOpen, setCodePopoverOpen] = useState(false);
 
   // Billing ACTION ticks (2026-09-11). Read from context rather than threaded
-  // as props: only the ship-to pencil below needs it here, and BillingActionRibbon
-  // reads the same context for its own three buttons — one source, two readers,
+  // as props: only the ship-to pencil below needs it here, and BillingBottomBar
+  // reads the same context for its own five buttons — one source, two readers,
   // no prop chain through mail-orders-page for a value it does not use.
   //
   // Defaults to all-false outside the provider, and is meaningless with the flag
@@ -1040,6 +1045,9 @@ export function ReviewView({
       l => l.matchStatus === "matched" && l.skuCode != null
     );
     showCopyToast(`${matchedLines.length} SKUs copied`, "sku");
+    // Billing face: the next job after copying is pasting the SO number back
+    // (design §2). No-op when the order is punched — the box is not rendered.
+    if (billingV2) requestAnimationFrame(() => soInputRef.current?.focus());
   }
 
   async function handlePickCandidate(c: { customerCode: string; customerName: string; area?: string | null; deliveryType?: string | null; route?: string | null }, fromSearch: boolean) {
@@ -1435,13 +1443,197 @@ export function ReviewView({
     </>
   );
 
+  // ── Order No / Punch slot ─────────────────────────────────────────
+  // Hoisted out of renderDetailHeader 2026-09-24 so the Billing bottom bar can
+  // render it as well. "ribbon" is the slot MetaRibbon renders — the flag-OFF
+  // face, unchanged; "bar" is the Billing bottom bar, whose FRESH-PUNCH arm is
+  // the 40px Order No + Punch (design §2). The edit and punched-view arms are
+  // shared by both. Body moved verbatim apart from the new "bar" arm.
+  function renderSoNumberSlot(order: MoOrder, variant: "ribbon" | "bar") {
+    const isPunched = order.status === "punched" && !!order.soNumber;
+    const showInputMode = !isPunched || editingSoNumber;
+    const punchReady = soInput.length === 10;
+
+    // ── The three states of this slot ─────────────────────────────────────
+    //   1. fresh punch  (!isPunched)                    → Order No. box + Punch
+    //   2. billing EDIT (isPunched && editingSoNumber)  → compact inline editor
+    //   3. view         (isPunched, not editing)        → the green pill + ✎
+    //
+    // ⚠ THIS SLOT IS NOT BILLING-ONLY. It is passed unconditionally to
+    // MetaRibbon (:1817) and rendered by its NON-override branch
+    // (meta-ribbon.tsx:139), so it also drives the non-billing focus view.
+    // That is why mode 2 is gated on `billingV2`: with the flag off the pencil
+    // still opens the full Order No. box + Punch, exactly as it always has.
+    const soEditMode = billingV2 && isPunched && editingSoNumber;
+
+    const soNumberSlot = soEditMode ? (
+      // 2 — a CORRECTION, not a re-punch: no Punch button, an explicit ✓ to
+      // commit and ✕ to back out. Same `handlePunchClick` save handler and the
+      // same 10-digit gate as a fresh punch; only the chrome differs.
+      <>
+        <div className="flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15">
+          <input
+            type="text"
+            value={soInput}
+            onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onKeyDown={handleSoKeyDown}
+            autoFocus
+            maxLength={10}
+            className="w-[130px] h-[30px] border-none outline-none bg-transparent font-mono text-[14px] font-medium text-gray-900 px-2.5"
+          />
+        </div>
+        <button
+          onClick={handlePunchClick}
+          disabled={!punchReady}
+          title={punchReady ? "Save order number" : "Enter 10 digits"}
+          aria-label="Save order number"
+          className={`flex h-[26px] w-[26px] items-center justify-center rounded-md border transition-colors ${
+            punchReady
+              ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer"
+              : "border-gray-200 bg-white text-gray-300 cursor-default"
+          }`}
+        >
+          <Check size={13} />
+        </button>
+        <button
+          onClick={handleCancelSoEdit}
+          title="Cancel"
+          aria-label="Cancel editing order number"
+          className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300 cursor-pointer"
+        >
+          <X size={13} />
+        </button>
+      </>
+    ) : showInputMode && variant === "bar" ? (
+      // BAR — the Billing bottom bar's fresh punch (2026-09-24, design §2).
+      // 40px tall like the buttons beside it; "Order No." hides at ≤760px pane
+      // width and the input shrinks to ~96px (app/globals.css `.mo-bbar-*`).
+      // Same state, handlers, 10-digit gate and placeholder as the arm below —
+      // ⚠ Ctrl+V (mail-orders-page.tsx) finds this box by placeholder="Enter
+      // number", so the placeholder is load-bearing. Punch is the bar's ONLY
+      // solid brand-600; not ready = the grey disabled treatment (UI §10).
+      <>
+        <div className="mo-bbar-ordno flex h-10 items-center overflow-hidden rounded-[9px] border-[1.5px] border-ink-100 bg-ink-25 transition-colors focus-within:border-brand-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand-600/15">
+          <span className="mo-bbar-ordlabel whitespace-nowrap pl-3 text-[12px] font-semibold text-ink-600">Order No.</span>
+          <input
+            ref={soInputRef}
+            type="text"
+            inputMode="numeric"
+            value={soInput}
+            onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onKeyDown={handleSoKeyDown}
+            placeholder="Enter number"
+            maxLength={10}
+            className="h-full border-none bg-transparent px-2.5 font-mono text-[14px] font-medium text-ink-900 outline-none placeholder:text-[12px] placeholder:font-normal placeholder:text-ink-400"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handlePunchClick}
+          disabled={!punchReady}
+          title={punchReady ? "Punch · Enter" : "Enter 10 digits"}
+          className={`mo-bbar-punch rounded-[9px] border-[1.5px] text-[14px] font-semibold transition-colors ${
+            punchReady
+              ? "cursor-pointer border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700"
+              : "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+          }`}
+        >
+          Punch
+        </button>
+      </>
+    ) : showInputMode ? (
+      <>
+        {/* (D) BILLING ONLY: styled to match the wide-arm search box in
+            universal-header.tsx — same pearl fill, hairline border, 10px radius
+            and teal focus ring, so the two fields on that screen read as one
+            control family.
+            ⚠ The OFF arm is the ORIGINAL string, restored verbatim from
+            0a8582e3~1. This slot is shared with the non-billing focus view (see
+            the note above), so only the class string may branch — the input,
+            its handlers, placeholder, maxLength and 120px width are one
+            definition and stay identical on both faces. */}
+        <div
+          className={
+            billingV2
+              ? "flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15"
+              : "flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-brand-500 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.08)]"
+          }
+        >
+          <span className="text-[10px] font-medium text-gray-400 pl-2 whitespace-nowrap">Order No.</span>
+          <input
+            type="text"
+            value={soInput}
+            onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onKeyDown={handleSoKeyDown}
+            placeholder="Enter number"
+            maxLength={10}
+            className="w-[120px] h-[30px] border-none outline-none bg-transparent font-mono text-[14px] font-medium text-gray-900 px-2 placeholder:text-gray-300 placeholder:font-normal placeholder:text-[12px]"
+          />
+        </div>
+        <button
+          onClick={handlePunchClick}
+          disabled={!punchReady}
+          className={`h-[32px] px-3.5 rounded-md text-[12px] font-semibold whitespace-nowrap transition-all ${
+            punchReady
+              ? "bg-brand-600 text-white hover:bg-brand-700 cursor-pointer"
+              : "bg-gray-100 text-gray-300 cursor-default"
+          }`}
+        >
+          Punch
+        </button>
+      </>
+    ) : billingV2 ? (
+      // 3a — BILLING view. ✓ and the SO number are ONE green pill, wearing the
+      // tokens the separate "Punched" pill used to carry (bg-green-50 /
+      // text-green-700 / border-green-200) — same shade, moved, not re-picked.
+      // That pill is gone here: the green already says punched, so the word was
+      // saying it twice. The ✓ keeps its own text-green-600.
+      <>
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-2 py-0.5">
+          <Check size={14} className="text-green-600" />
+          <span className="font-mono text-[14px] font-medium text-green-700">{order.soNumber}</span>
+        </span>
+        <button
+          // PREFILL with the current number: on this face the pencil opens the
+          // compact editor, which is a correction of a known value, so it should
+          // start from that value rather than make the operator retype ten
+          // digits. The OFF arm below keeps the original blank-on-entry.
+          onClick={() => { setEditingSoNumber(true); setSoInput(order.soNumber ?? ""); }}
+          className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
+          title="Edit SO number"
+        >
+          <Pencil size={10} />
+        </button>
+      </>
+    ) : (
+      // 3b — the ORIGINAL punched view, restored verbatim from 0a8582e3~1: bare
+      // ✓, gray-900 number, pencil, then the separate "Punched" pill, in that
+      // order, with `setSoInput("")` on entry. This slot is shared with the
+      // non-billing focus view, so this arm must stay character-identical to
+      // what shipped before the billing restyle.
+      <>
+        <Check size={14} className="text-green-600" />
+        <span className="font-mono text-[14px] font-medium text-gray-900">{order.soNumber}</span>
+        <button
+          onClick={() => { setEditingSoNumber(true); setSoInput(""); }}
+          className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
+          title="Edit SO number"
+        >
+          <Pencil size={10} />
+        </button>
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
+          Punched
+        </span>
+      </>
+    );
+
+    return soNumberSlot;
+  }
+
   function renderDetailHeader(order: MoOrder) {
     const isPunched = order.status === "punched" && !!order.soNumber;
     const signals = getOrderSignals(order, { isPunched, disabledTagKeys });
     const isFlagged = !!order.isLocked || isOdCiFlagged(order);
-    const showInputMode = !isPunched || editingSoNumber;
-    const punchReady = soInput.length === 10;
-
     // Ship-to identity + delivery instruction parsing
     const parsed = splitDeliveryRemarks(order.deliveryRemarks, order.shipToOverride ?? false);
     const billToName = smartTitleCase(order.customerName ?? cleanSubject(order.subject));
@@ -1493,8 +1685,8 @@ export function ReviewView({
     const shipSignals = signals.filter((s) => s.card === "ship");
 
     // ── Billing v2 — the ship card drops Urgent / Hold / Dispatch ────────────
-    // On this face those three are redundant with BillingActionRibbon, which
-    // reads the SAME fields (billing-action-ribbon.tsx:54-55 — `dispatchStatus`
+    // On this face those three are redundant with BillingBottomBar, which
+    // reads the SAME fields (billing-bottom-bar.tsx — `dispatchStatus`
     // and `dispatchPriority`) in the SAME amber and red, and is interactive
     // besides. Dispatch is worse than redundant: its label is `dispatchStatus`
     // passed through verbatim, which in this app is only ever "Hold" or
@@ -1634,141 +1826,7 @@ export function ReviewView({
       ? (matchStatus === "multiple" ? multiPopoverContent : unmatchedPopoverContent)
       : undefined;
 
-    // ── The three states of this slot ─────────────────────────────────────
-    //   1. fresh punch  (!isPunched)                    → Order No. box + Punch
-    //   2. billing EDIT (isPunched && editingSoNumber)  → compact inline editor
-    //   3. view         (isPunched, not editing)        → the green pill + ✎
-    //
-    // ⚠ THIS SLOT IS NOT BILLING-ONLY. It is passed unconditionally to
-    // MetaRibbon (:1817) and rendered by its NON-override branch
-    // (meta-ribbon.tsx:139), so it also drives the non-billing focus view.
-    // That is why mode 2 is gated on `billingV2`: with the flag off the pencil
-    // still opens the full Order No. box + Punch, exactly as it always has.
-    const soEditMode = billingV2 && isPunched && editingSoNumber;
-
-    const soNumberSlot = soEditMode ? (
-      // 2 — a CORRECTION, not a re-punch: no Punch button, an explicit ✓ to
-      // commit and ✕ to back out. Same `handlePunchClick` save handler and the
-      // same 10-digit gate as a fresh punch; only the chrome differs.
-      <>
-        <div className="flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15">
-          <input
-            type="text"
-            value={soInput}
-            onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            onKeyDown={handleSoKeyDown}
-            autoFocus
-            maxLength={10}
-            className="w-[130px] h-[30px] border-none outline-none bg-transparent font-mono text-[14px] font-medium text-gray-900 px-2.5"
-          />
-        </div>
-        <button
-          onClick={handlePunchClick}
-          disabled={!punchReady}
-          title={punchReady ? "Save order number" : "Enter 10 digits"}
-          aria-label="Save order number"
-          className={`flex h-[26px] w-[26px] items-center justify-center rounded-md border transition-colors ${
-            punchReady
-              ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer"
-              : "border-gray-200 bg-white text-gray-300 cursor-default"
-          }`}
-        >
-          <Check size={13} />
-        </button>
-        <button
-          onClick={handleCancelSoEdit}
-          title="Cancel"
-          aria-label="Cancel editing order number"
-          className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300 cursor-pointer"
-        >
-          <X size={13} />
-        </button>
-      </>
-    ) : showInputMode ? (
-      <>
-        {/* (D) BILLING ONLY: styled to match the wide-arm search box in
-            universal-header.tsx — same pearl fill, hairline border, 10px radius
-            and teal focus ring, so the two fields on that screen read as one
-            control family.
-            ⚠ The OFF arm is the ORIGINAL string, restored verbatim from
-            0a8582e3~1. This slot is shared with the non-billing focus view (see
-            the note above), so only the class string may branch — the input,
-            its handlers, placeholder, maxLength and 120px width are one
-            definition and stay identical on both faces. */}
-        <div
-          className={
-            billingV2
-              ? "flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15"
-              : "flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-brand-500 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.08)]"
-          }
-        >
-          <span className="text-[10px] font-medium text-gray-400 pl-2 whitespace-nowrap">Order No.</span>
-          <input
-            type="text"
-            value={soInput}
-            onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            onKeyDown={handleSoKeyDown}
-            placeholder="Enter number"
-            maxLength={10}
-            className="w-[120px] h-[30px] border-none outline-none bg-transparent font-mono text-[14px] font-medium text-gray-900 px-2 placeholder:text-gray-300 placeholder:font-normal placeholder:text-[12px]"
-          />
-        </div>
-        <button
-          onClick={handlePunchClick}
-          disabled={!punchReady}
-          className={`h-[32px] px-3.5 rounded-md text-[12px] font-semibold whitespace-nowrap transition-all ${
-            punchReady
-              ? "bg-brand-600 text-white hover:bg-brand-700 cursor-pointer"
-              : "bg-gray-100 text-gray-300 cursor-default"
-          }`}
-        >
-          Punch
-        </button>
-      </>
-    ) : billingV2 ? (
-      // 3a — BILLING view. ✓ and the SO number are ONE green pill, wearing the
-      // tokens the separate "Punched" pill used to carry (bg-green-50 /
-      // text-green-700 / border-green-200) — same shade, moved, not re-picked.
-      // That pill is gone here: the green already says punched, so the word was
-      // saying it twice. The ✓ keeps its own text-green-600.
-      <>
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-2 py-0.5">
-          <Check size={14} className="text-green-600" />
-          <span className="font-mono text-[14px] font-medium text-green-700">{order.soNumber}</span>
-        </span>
-        <button
-          // PREFILL with the current number: on this face the pencil opens the
-          // compact editor, which is a correction of a known value, so it should
-          // start from that value rather than make the operator retype ten
-          // digits. The OFF arm below keeps the original blank-on-entry.
-          onClick={() => { setEditingSoNumber(true); setSoInput(order.soNumber ?? ""); }}
-          className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
-          title="Edit SO number"
-        >
-          <Pencil size={10} />
-        </button>
-      </>
-    ) : (
-      // 3b — the ORIGINAL punched view, restored verbatim from 0a8582e3~1: bare
-      // ✓, gray-900 number, pencil, then the separate "Punched" pill, in that
-      // order, with `setSoInput("")` on entry. This slot is shared with the
-      // non-billing focus view, so this arm must stay character-identical to
-      // what shipped before the billing restyle.
-      <>
-        <Check size={14} className="text-green-600" />
-        <span className="font-mono text-[14px] font-medium text-gray-900">{order.soNumber}</span>
-        <button
-          onClick={() => { setEditingSoNumber(true); setSoInput(""); }}
-          className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
-          title="Edit SO number"
-        >
-          <Pencil size={10} />
-        </button>
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
-          Punched
-        </span>
-      </>
-    );
+    const soNumberSlot = renderSoNumberSlot(order, "ribbon");
 
     // Notes. Hoisted separately from Print (2026-07-31) so the Billing ribbon
     // can place the two independently — Notes beside the actions on the left,
@@ -1875,16 +1933,11 @@ export function ReviewView({
     // top border and alignment). `undefined` when the flag is off, which makes
     // MetaRibbon render its summary line + slots exactly as it always has.
     //
-    // Left→right (2026-08-01): the sales officer's name · spacer · then EVERY
-    // action together on the right — Urgent · Hold · Slot · Notes · the punch
-    // controls — with the ⓘ and the reopen × trailing as utilities.
-    //
-    // Punch is the last ACTION, not the last node: the ⓘ and × are view
-    // utilities, not things done to the order, and they keep the position they
-    // have always had at the end of the row.
-    //
-    // ⚠ A FUTURE action button inserts immediately BEFORE the soNumberSlot
-    // wrapper below — that is the one line that keeps Punch last.
+    // Left→right (2026-09-24): the sales officer's name · spacer · Notes · Copy
+    // · the reopen × utility. That is ALL this row holds now: Hold/Hand/CI,
+    // Urgent/Slot and the Order No + Punch moved to the pinned BillingBottomBar
+    // (design web-update-2026-09-24-billing-mo-actions.md §2). A new DECISION
+    // button belongs in that bar, not here.
     //
     // The descriptive facts that used to sit on this line — received, punched by
     // — live in the ⓘ popover. It is fed the SAME formatted strings MetaRibbon
@@ -1894,9 +1947,6 @@ export function ReviewView({
     // binding, so the row and the popover cannot drift. Readiness (✓ 6/6) and
     // volume live on the SKU caption below, via the same getMatchChip().
     //
-    // soNumberSlot is reused VERBATIM — the punch flow, its 10-digit gate, the
-    // edit pencil and the "Punched" badge are untouched, and Order No. / SO
-    // number stays on the RIGHT in both the pre- and post-punch states.
     const billingRibbonRow = billingV2 ? (
       <div className="flex w-full items-center gap-2">
         {/* (B) The order's provenance, inline — this replaces the ⓘ popover,
@@ -1923,14 +1973,7 @@ export function ReviewView({
             ` · punched by ${punchedByName} ${punchedAtFormatted}`}
         </span>
         <div className="flex-1" />
-        <BillingActionRibbon
-          order={order}
-          windows={billingWindows}
-          onSaved={() => onBillingActionSaved?.()}
-        />
-        {/* Notes sits with the actions, not with the utilities: it is something
-            the operator DOES to this order, like Hold or Urgent — not a view
-            control. Same handler and same "dot when notes exist" indicator. */}
+        {/* Notes — same handler and same has-notes tint as before. */}
         <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
           {billingNotesButton}
         </span>
@@ -1950,14 +1993,6 @@ export function ReviewView({
           <Copy size={12} className="text-gray-400" />
           Copy
         </button>
-        {/* (C) The row's ONE divider: it separates the things you DO to the
-            order (Urgent/Hold/Slot/Notes) from the punch controls. The four
-            buttons are deliberately left undivided — they are one group. Same
-            `w-px h-4 bg-gray-200` rule used across the header and tab row. */}
-        <div className="w-px h-4 bg-gray-200" />
-        <div className="flex flex-shrink-0 items-center gap-1.5">
-          {soNumberSlot}
-        </div>
         {/* Right end: only the reopen ×, on a deliberately reopened done order.
             The ⓘ was removed 2026-08-01 — its three facts now render inline on
             the left of this row, so the popover had nothing left to hold.
@@ -1985,17 +2020,6 @@ export function ReviewView({
 
     const actionsSlot = (
       <div className="mo-print-hide" style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-        {/* Phase 2 — Slot / Hold / Urgent. Prepended as a SIBLING inside the
-            existing actions row: nothing here is wrapped, no style object is
-            changed, and with the flag off this expression is `false`, which
-            React renders as nothing at all. */}
-        {billingV2 && (
-          <BillingActionRibbon
-            order={order}
-            windows={billingWindows}
-            onSaved={() => onBillingActionSaved?.()}
-          />
-        )}
         {/* Copy · Reply · Flag — hidden on the BILLING face only (2026-07-31).
             Reply is unused there, Flag is not a billing concern, and Copy is
             covered by Ctrl+C, which is a wholly separate document-level
@@ -3144,6 +3168,21 @@ export function ReviewView({
                 ↑↓ navigate · Ctrl+C copy · Ctrl+V paste SO
               </span>
             </div>
+
+            {/* ── Billing bottom bar (2026-09-24) ── Hold · Hand · CI | Urgent ·
+                Slot | Order No · Punch. The LAST row of this fixed-height flex
+                column (the SKU card above is the flex-1 scroller), so it is
+                pinned and never scrolls away. Keyed by order so its confirm and
+                notice never carry over to the next bill. Flag-OFF: not rendered. */}
+            {billingV2 && (
+              <BillingBottomBar
+                key={selectedOrder.id}
+                order={selectedOrder}
+                windows={billingWindows}
+                soSlot={renderSoNumberSlot(selectedOrder, "bar")}
+                onSaved={() => onBillingActionSaved?.()}
+              />
+            )}
 
             {/* ── Resolve Popover ── */}
             {resolveLineId !== null && (() => {

@@ -72,6 +72,10 @@ export interface MoOrder {
   // uses `include`, not `select`, so new scalars flow through automatically.
   dispatchTargetDate?: string | null;
   dispatchWindowId?: number | null;
+  // Billing marks (2026-09-24, schema v27.41) — Hand (dealer collects) and CI
+  // (bill-only). Flow through the list route the same way (`include`).
+  handAt?: string | null;
+  billOnlyAt?: string | null;
   customerMatchStatus?: "exact" | "multiple" | "unmatched" | null;
   customerCandidates?: string | null;
   customerArea?: string | null;

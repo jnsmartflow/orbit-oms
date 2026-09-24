@@ -1,5 +1,12 @@
 "use client";
 
+// ⛔ RETIRED 2026-09-24 — NOT RENDERED ANYWHERE. BillingBottomBar
+// (components/billing/billing-bottom-bar.tsx) replaced this ribbon: Hold / Hand /
+// CI | Urgent / Slot + Order No / Punch, pinned to the bottom of the pane
+// (design web-update-2026-09-24-billing-mo-actions.md §2). Kept per the
+// no-delete rule and because BTN_BASE / BTN_OFF below are still imported by
+// review-view (Notes, Copy) and billing-order-info.
+//
 // Billing v2 — the compact Slot / Hold / Urgent buttons on the order line
 // (mockup billing-final-mockup.html `.ribbon .acts`).
 //
