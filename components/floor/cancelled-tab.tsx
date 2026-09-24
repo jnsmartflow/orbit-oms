@@ -208,16 +208,17 @@ export function CancelledTab({
                       )}
                     </td>
                     <td className={TD}>
-                      {/* Cancel = danger (destructive, CLAUDE_UI §2). CI = the NEUTRAL
-                          ink tone — the same quiet grey the /ci screens give their
-                          source tags (ciSourceTag), never tint (tint only). */}
+                      {/* Cancel = danger (destructive, CLAUDE_UI §2). CI = SOLID ink-900
+                          (bg-ink-900 text-white), the one CI colour across billing and
+                          floor (UI §2.1) — never the pale ink chip, which read as
+                          disabled; never tint (tint only). */}
                       {row.action === "cancel" ? (
                         <span className="rounded-full bg-danger-bg px-[7px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-danger-text">
                           Cancel
                         </span>
                       ) : (
                         <>
-                          <span className="rounded-full bg-ink-100 px-[7px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-ink-700">
+                          <span className="rounded-full bg-ink-900 px-[7px] py-[2px] text-[9.5px] font-bold uppercase tracking-[0.05em] text-white">
                             CI
                           </span>
                           {/* WHO raised it (2026-09-24 — every source is listed now).
