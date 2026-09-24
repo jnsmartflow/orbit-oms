@@ -3,16 +3,16 @@
 // Floor Control — BY ROUTE AS CARDS (2026-09-19, design:
 // docs/mockups/floor-trips/route-cards.html).
 //
-// The pool's By route view on a tab that HAS CLUBS (Local today). Two kinds
-// of card:
-//   club    one per CLUB, in the club's fixed order — never re-sorted, and an
-//           empty club stays in its place, dimmed, reading "No bills";
+// The pool's By route view on a tab that HAS CLUBS (Local; Upcountry once its
+// clubs are seeded, sql/2026-09-24-route-clubs-upcountry.sql). Two kinds of card:
+//   club    one per CLUB, in the club's fixed order — never re-sorted; a club
+//           with nothing due is not drawn (2026-09-24);
 //   other   ONE "Other routes" card, always last: every route of the tab in
 //           no club, plus the route-less bills, one line each — lines by
 //           kilos, "No route" always the last line. Display-only: nothing is
 //           written for it (owner, 2026-09-19).
 // All the same size, in one grid — see "The layout" below.
-// A tab with no clubs (All, Upcountry, IGT today) keeps the old route rows
+// A tab with no clubs (All, IGT) keeps the old route rows
 // (ByRoute in trip-desk.tsx) — this component is not rendered there.
 //
 // 🔴 DISPLAY ONLY. Nothing here writes, and nothing here decides what the pool
@@ -29,13 +29,20 @@
 // in grey. Only club members reach, and only that way; every other card is
 // built from this tab's rows alone (owner, 2026-09-19).
 //
-// CLICK A CARD and the bills of all its routes open full width under its row,
-// one FloorTable per route (commit 4, 2026-09-19). WHICH cards are open is
-// TripDesk's to decide, not this file's: every card holding a ticked bill,
-// plus the one last clicked (commit 4b), so no tick is ever inside a closed
-// card. Several can be open; each panel sits under its own card's row.
+// ONLY CARDS WITH BILLS DUE (owner, 2026-09-24). A club, or Other routes, with
+// nothing due today or overdue is not drawn at all — no dimmed card.
+//
+// CLICK A CARD (owner, 2026-09-24) and the grid collapses into a row of CHIPS,
+// one per card, with that card's bills full width below — one FloorTable per
+// route. ONE card is open at a time; another chip switches straight to it; the
+// open chip, its ✕, or Esc goes back to the grid. With one card only there is
+// no chip row, just "← Back to cards" and its name. WHICH card is open is
+// floor-page's state (it owns the floor's one Esc listener, FLOOR §4.6).
+// Was: several panels open under the grid, every card holding a tick kept open
+// (commit 4b, 2026-09-19) — replaced by the chips, do not bring it back beside
+// them. Ticks survive a switch: the bottom bar still carries them.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   countByStatus,
   formatLitres,
@@ -299,16 +306,12 @@ export function buildRouteCards(
 }
 
 /**
- * The cards holding at least one ticked bill, in board order (clubs, then
- * Other routes). TripDesk keeps every one of them open (commit 4b).
+ * The cards that are DRAWN, in board order (clubs, then Other routes): only
+ * those with a bill due today or overdue (owner, 2026-09-24). A card whose
+ * bills are all upcoming is not drawn either — Flat still lists them.
  */
-export function cardsHoldingTicks(model: RouteCardModel, selection: ReadonlySet<number>): string[] {
-  if (selection.size === 0) return [];
-  return allCards(model)
-    // BOTH halves: a ticked upcoming bill is a tick like any other, and must
-    // never sit inside a closed card either.
-    .filter((c) => [...c.rows, ...c.upcoming].some((r) => selection.has(r.orderId)))
-    .map((c) => c.key);
+export function shownCards(model: RouteCardModel): RouteCard[] {
+  return allCards(model).filter((c) => c.rows.length > 0);
 }
 
 // ── The board ───────────────────────────────────────────────────────────────
@@ -326,9 +329,6 @@ const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as F
 const sortUpcoming = (rows: FloorBoardRow[]) =>
   sort(rows).sort((a, b) => (a.dispatchTargetDate ?? "").localeCompare(b.dispatchTargetDate ?? ""));
 
-/** Anything to open — today's bills or later ones. */
-const openable = (c: RouteCard) => c.rows.length > 0 || c.upcoming.length > 0;
-
 /** What each route's FloorTable needs beyond its rows — trip-desk's LeafProps. */
 interface LeafWiring {
   selection?: FloorSelection;
@@ -339,10 +339,11 @@ interface LeafWiring {
   gateOn: boolean;
 }
 
-// ── The layout (2026-09-19, owner) ──────────────────────────────────────────
+// ── The layout (2026-09-19, owner; open state 2026-09-24) ───────────────────
 //
-// ONE GRID OF EQUAL CARDS that flow in order — clubs first by sortOrder, then
-// the one Other routes card, always last (buildRouteCards).
+// CLOSED: ONE GRID OF EQUAL CARDS that flow in order — clubs first by
+// sortOrder, then the one Other routes card, always last (buildRouteCards) —
+// only the cards with bills due (`shownCards`).
 // Columns by screen width: 4 at ≥1470px, 3 at 1100–1469px, 2 below.
 //
 // ⚠ 1470, NOT 1400 (owner, 2026-09-19). Four equal columns at 1440px leave a
@@ -350,12 +351,12 @@ interface LeafWiring {
 // 225px (measured in Chrome with the app's font) — the name was cut to
 // "Ka…". From 1470px it fits whole.
 //
-// 🔴 THE COLUMN COUNT IS KNOWN TO JS, NOT LEFT TO CSS. A card's panel opens
-// full width directly under the ROW that card is in, and which row that is
-// depends on how many cards fit across. So the cards are chunked into rows of
-// `cols` here and each row is its own grid, with its panels after it. Every
-// row uses the same track list, so the columns line up down the page, and a
-// short last row leaves its cells empty rather than stretching its cards.
+// Every row uses the same track list, so the columns line up down the page,
+// and a short last row leaves its cells empty rather than stretching its cards.
+//
+// OPEN: the grid gives way to a wrapping row of chips (one per shown card, same
+// order) and the open card's bills full width under it. One shown card → no
+// chip row, a "← Back to cards" button and its name instead.
 //
 // ⚠ NOTHING COUNTS CARDS BY HAND. A new club or a new route with bills takes
 // the next slot; see RouteCards for how every card gets the same height.
@@ -401,8 +402,9 @@ function chunk<T>(items: T[], size: number): T[][] {
 export function RouteCards({
   model,
   columns,
-  openKeys,
-  onToggleCard,
+  openKey,
+  onOpenCard,
+  empty,
   nowMs,
   anchorIso,
   variant,
@@ -411,53 +413,71 @@ export function RouteCards({
   model: RouteCardModel;
   /** Cards per row — TripDesk passes `useCardColumns()`. */
   columns: number;
-  /** The open cards' keys — any number (TripDesk `openCards`). */
-  openKeys: readonly string[];
-  onToggleCard: (key: string) => void;
+  /** The open card's key, or null for the grid (floor-page `openRouteCard`). */
+  openKey: string | null;
+  /** Open a card, switch to another, or null to go back to the grid. */
+  onOpenCard: (key: string | null) => void;
+  /** What to show when no card has a bill due — the pool's own empty state. */
+  empty: ReactNode;
   nowMs: number;
   anchorIso: string;
   variant: FloorTableVariant;
   /** Forwarded unchanged to each route's FloorTable. No selection in History. */
   leaf: LeafWiring;
 }) {
-  // Clubs in sortOrder, then Other routes — always last.
-  const cards = allCards(model);
-  // A key that no longer names a card with anything in it (its last bill went
-  // onto a trip, or Other routes has emptied) counts as closed: nothing to show,
-  // and nothing else dims for it.
-  const isOpen = (c: RouteCard) => openable(c) && openKeys.includes(c.key);
-  const anyOpen = cards.some(isOpen);
+  const cards = shownCards(model);
+  if (cards.length === 0) return <>{empty}</>;
+
+  // A key that names no shown card (its last due bill went onto a trip) is the
+  // grid — TripDesk also clears it, this just never renders a stale one.
+  const open = cards.find((c) => c.key === openKey) ?? null;
+
+  if (open !== null) {
+    return (
+      <div className="px-3.5 py-3.5">
+        {cards.length === 1 ? (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenCard(null)}
+              className="rounded-[8px] border border-[#e7e7ee] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#61616d] hover:border-[#cfcfda]"
+            >
+              &larr; Back to cards
+            </button>
+            <span className="truncate text-[15px] font-semibold text-[#1a1a22]">{open.name}</span>
+            <EscHint />
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {cards.map((c) => (
+              <Chip
+                key={c.key}
+                card={c}
+                isOpen={c.key === open.key}
+                onClick={() => onOpenCard(c.key === open.key ? null : c.key)}
+              />
+            ))}
+            <EscHint />
+          </div>
+        )}
+        <OpenPanel card={open} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
+      </div>
+    );
+  }
 
   // 🔴 EVERY CARD THE SAME HEIGHT, ACROSS THE WHOLE BOARD (owner). The height
-  // is the card with the MOST route lines — worked out from the data, never a
-  // pixel number: every card is the same head plus `lineSlots` equal-height
-  // line slots, so they come out identical. Today that is 2 (the clubs, and
-  // Other routes with Parvat + No route); a club — or an Other routes card —
-  // of 3 lines makes every card grow by one line.
+  // is the shown card with the MOST route lines — worked out from the data,
+  // never a pixel number: every card is the same head plus `lineSlots`
+  // equal-height line slots, so they come out identical.
   const lineSlots = Math.max(1, ...cards.map((c) => c.lines.length));
   const tracks = `repeat(${columns}, minmax(0, 1fr))`;
 
   return (
     <div className="px-3.5 py-3.5">
       {chunk(cards, columns).map((row, i) => (
-        <div key={i} className={i === 0 ? "" : "mt-3"}>
-          <div className="grid items-start gap-3" style={{ gridTemplateColumns: tracks }}>
-            {row.map((c) => (
-              <CardButton
-                key={c.key}
-                card={c}
-                lineSlots={lineSlots}
-                isOpen={isOpen(c)}
-                dimmed={anyOpen && !isOpen(c)}
-                onToggle={() => onToggleCard(c.key)}
-              />
-            ))}
-          </div>
-          {/* THE PANELS OPEN UNDER THE ROW THEIR CARD IS IN, full width
-              (design) — one per open card in this row, in the cards' own order.
-              A panel is NOT a card: it keeps its natural height. */}
-          {row.filter(isOpen).map((c) => (
-            <OpenPanel key={`panel:${c.key}`} card={c} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
+        <div key={i} className={`grid items-start gap-3 ${i === 0 ? "" : "mt-3"}`} style={{ gridTemplateColumns: tracks }}>
+          {row.map((c) => (
+            <CardButton key={c.key} card={c} lineSlots={lineSlots} onOpen={() => onOpenCard(c.key)} />
           ))}
         </div>
       ))}
@@ -465,16 +485,52 @@ export function RouteCards({
   );
 }
 
+/** Right end of the chip row. Esc itself is floor-page's (FLOOR §4.6). */
+function EscHint() {
+  return <span className="ml-auto whitespace-nowrap pl-3 text-[12px] text-[#96969f]">Esc to go back to cards</span>;
+}
+
+// ── The chips (2026-09-24, owner) ───────────────────────────────────────────
+//
+// A box, not a pill: ~190px, two lines — the card's name, then "744 kg · 5
+// stops" (due bills only, like the card). The open one is brand-filled with a
+// ✕; clicking it (✕ included — the ✕ is part of the one button) goes back to
+// the grid. Any other chip switches straight to its card.
+
+function Chip({ card, isOpen, onClick }: { card: RouteCard; isOpen: boolean; onClick: () => void }) {
+  const cls = isOpen
+    ? "border-brand-600 bg-brand-600 text-white"
+    : "border-[#e7e7ee] bg-white text-[#1a1a22] hover:border-[#cfcfda]";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={isOpen}
+      className={`flex w-[190px] items-center gap-2 rounded-[14px] border px-5 py-3 text-left ${cls}`}
+    >
+      <span className="block min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold">{card.name}</span>
+        <span className={`block whitespace-nowrap text-[13px] tabular-nums ${isOpen ? "text-white/80" : "text-[#96969f]"}`}>
+          {kgText(card.rows)} kg &middot; {plural(stopCount(card.rows), "stop", "stops")}
+        </span>
+      </span>
+      {isOpen && (
+        <span className="shrink-0 text-[15px] leading-none" aria-label="Close">
+          &#x2715;
+        </span>
+      )}
+    </button>
+  );
+}
+
 // ── The cards ───────────────────────────────────────────────────────────────
 //
 // 🔴 THE CARD IS THE BUTTON (owner): no "Take both", no chevron. Click opens
-// the bills of every route on it; click again, or another card, closes or
-// switches — except a card holding ticked bills, which stays open beside the
-// new one until its ticks go (see trip-desk.tsx).
+// the bills of every route on it, and the grid becomes the chip row.
 //
 // ONE SHAPE FOR EVERY CARD, club or Other routes (owner, 2026-09-19): the
 // head — name, big kilos, "N stops · L" — then one line per route with its
-// bar.
+// bar. A one-route club has one line.
 //
 // ⚠ EQUAL HEIGHT IS BUILT, NOT STRETCHED. Each card is:
 //     head  (always three rows: name, big figure, summary)
@@ -492,63 +548,23 @@ export function RouteCards({
 // ever outgrows its card, the route NAME gives way with an ellipsis and the
 // numbers stay whole.
 
-const CARD = "block w-full min-w-0 rounded-[11px] border bg-white text-left transition-opacity";
+const CARD =
+  "block w-full min-w-0 cursor-pointer rounded-[11px] border border-[#e7e7ee] bg-white text-left hover:border-[#cfcfda]";
 const LINE = "block border-t border-[#f1f1f6] px-3.5 pb-3 pt-[11px]";
 
-function CardButton({
-  card,
-  lineSlots,
-  isOpen,
-  dimmed,
-  onToggle,
-}: {
-  card: RouteCard;
-  lineSlots: number;
-  isOpen: boolean;
-  dimmed: boolean;
-  onToggle: () => void;
-}) {
-  // EMPTY = nothing due today or overdue: the card reads "No bills", dimmed.
-  // It can still OPEN when it holds upcoming bills — only a card with nothing
-  // at all is inert.
-  const empty = card.rows.length === 0;
-  const canOpen = openable(card);
-  // Open: the violet ring (brand, CLAUDE_UI §2).
-  const cls = [
-    CARD,
-    isOpen ? "border-brand-600 ring-[3px] ring-brand-100" : "border-[#e7e7ee] hover:border-[#cfcfda]",
-    (empty && !isOpen) || dimmed ? "opacity-[.45]" : "",
-    canOpen ? "cursor-pointer" : "cursor-default",
-  ].join(" ");
+function CardButton({ card, lineSlots, onOpen }: { card: RouteCard; lineSlots: number; onOpen: () => void }) {
   const spacers = Math.max(0, lineSlots - card.lines.length);
 
   return (
-    <button
-      type="button"
-      className={cls}
-      onClick={onToggle}
-      disabled={!canOpen}
-      aria-expanded={canOpen ? isOpen : undefined}
-    >
+    <button type="button" className={CARD} onClick={onOpen}>
       <span className="block px-3.5 pb-3 pt-3.5">
         <span className="mb-1 block truncate text-[13px] font-semibold text-[#61616d]">{card.name}</span>
-        {/* The big figure's row is always there; on an empty card it is held
-            open invisibly so the card keeps the board's one height. */}
-        <span
-          className={`block whitespace-nowrap text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] tabular-nums text-[#1a1a22] ${empty ? "invisible" : ""}`}
-          aria-hidden={empty || undefined}
-        >
-          {empty ? "0" : kgText(card.rows)}
+        <span className="block whitespace-nowrap text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] tabular-nums text-[#1a1a22]">
+          {kgText(card.rows)}
           <small className="ml-[3px] text-[13px] font-semibold tracking-normal text-[#96969f]">kg</small>
         </span>
         <span className="mt-[5px] block whitespace-nowrap text-[12.5px] tabular-nums text-[#96969f]">
-          {empty ? (
-            "No bills"
-          ) : (
-            <>
-              {plural(stopCount(card.rows), "stop", "stops")} &middot; {formatLitres(sumLitres(card.rows))} L
-            </>
-          )}
+          {plural(stopCount(card.rows), "stop", "stops")} &middot; {formatLitres(sumLitres(card.rows))} L
         </span>
       </span>
       {Array.from({ length: spacers }, (_, i) => (

@@ -362,6 +362,10 @@ export function FloorPage() {
   const [moreOpen, setMoreOpen] = useState(false);
   // The Hold tab bar's own ··· More (2026-09-22) — same reason it lives here.
   const [holdMoreOpen, setHoldMoreOpen] = useState(false);
+  // The By route card open as chips + table (2026-09-24), or null for the grid.
+  // Owned HERE for the same reason: Esc goes back to the cards. TripDesk clears
+  // it whenever that card is not on screen, so Esc never closes an unseen card.
+  const [openRouteCard, setOpenRouteCard] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1503,7 +1507,8 @@ export function FloorPage() {
 
   // Single Esc owner — lifted out of detail-panel so exactly ONE action fires per
   // press and only ONE listener exists: panel open → close it (selection kept);
-  // else the bar's ··· More menu open → close it; else a live selection →
+  // else the bar's ··· More menu open → close it; else an open By route card →
+  // back to the cards; else a live selection →
   // clear it; else the add band → end it; else nothing. The Cancel / Raise CI
   // form, when open, comes before all of them. Ignored while focus is in a
   // field / native control so Esc never wipes a selection mid-type (ship-to
@@ -1528,6 +1533,10 @@ export function FloorPage() {
         setMoreOpen(false);
         setHoldMoreOpen(false);
       }
+      // An open By route card → back to the card grid (2026-09-24), BEFORE the
+      // selection: the chip row says "Esc to go back to cards", and the ticks
+      // survive it — the next Esc clears them as before.
+      else if (openRouteCard !== null) setOpenRouteCard(null);
       else if (selection.size > 0) clearSelection();
       // Then the add band — the same thing Done does. A live selection is
       // cleared first, so one Esc never both empties the ticks and closes the
@@ -1536,7 +1545,7 @@ export function FloorPage() {
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
+  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, openRouteCard, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -2307,6 +2316,8 @@ export function FloorPage() {
               unfilteredRows={data?.floor.rows ?? []}
               routeClubs={routeClubs}
               clubReachRows={clubReachRows}
+              openRouteCard={openRouteCard}
+              onOpenRouteCard={setOpenRouteCard}
               searchActive={searchQuery.trim() !== ""}
               loadPlanConfigs={loadPlan.configs}
               routeNames={loadPlan.routeNames}

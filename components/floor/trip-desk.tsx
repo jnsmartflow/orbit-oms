@@ -29,12 +29,12 @@
 // ⚠ NO WINDOW-LEVEL KEY LISTENER ANYWHERE UNDER HERE. floor-page.tsx is the
 // single Esc owner for the floor tree (FLOOR §4.6).
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
-import { RouteCards, buildRouteCards, cardsHoldingTicks, tabHasClubs, useCardColumns } from "./route-cards";
+import { RouteCards, buildRouteCards, shownCards, tabHasClubs, useCardColumns } from "./route-cards";
 import { LoadPlanView } from "./load-plan";
 import { LoadPlanV2View } from "./load-plan-v2";
 import type { VehicleSize } from "@/lib/trips/vehicle-size";
@@ -176,6 +176,8 @@ export function TripDesk({
   unfilteredRows,
   routeClubs,
   clubReachRows,
+  openRouteCard,
+  onOpenRouteCard,
   searchActive,
   loadPlanConfigs,
   routeNames,
@@ -276,6 +278,13 @@ export function TripDesk({
    * member whose route has no area on this tab (Kamrej on Local).
    */
   clubReachRows: FloorBoardRow[];
+  /**
+   * The route card open as chips + table, by its model key (`club:<id>` or
+   * `other`), or null for the card grid. floor-page's state, because its Esc
+   * listener closes it (2026-09-24).
+   */
+  openRouteCard: string | null;
+  onOpenRouteCard: (key: string | null) => void;
   /** A search is up — the pool shows Flat until it is cleared (2026-09-19). */
   searchActive: boolean;
   /** Load plan rules by delivery type name (GET /api/floor/board `loadPlan`). */
@@ -364,10 +373,6 @@ export function TripDesk({
     }
   }, [addingToTripId, railSelection]);
   const [openRoute, setOpenRoute] = useState<string | null>(null);
-  // The route CARD last clicked open (By route on a tab with clubs), by its
-  // model key — `club:<id>` or `other`. Not the open list: that
-  // also holds every card with a tick, and is derived below (`openCards`).
-  const [clickedCard, setClickedCard] = useState<string | null>(null);
   // Cards per row for the route cards, by screen width (route-cards.tsx).
   const cardColumns = useCardColumns();
 
@@ -434,38 +439,29 @@ export function TripDesk({
     scope !== "All" && tabHasClubs(routeClubs, scope)
       ? buildRouteCards(scope, routeClubs, [...poolRows, ...poolUpcoming], clubReachRows.filter(isPoolRow))
       : null;
-  // 🔴 NO TICK IS EVER INSIDE A CLOSED CARD (owner, 2026-09-19).
+  // 🔴 ONE CARD OPEN AT A TIME (owner, 2026-09-24). Which one is floor-page's
+  // state (`openRouteCard`), because floor-page owns the floor's one Esc
+  // listener and Esc goes back to the cards. Was: every card holding a tick
+  // stayed open beside the one last clicked (commit 4b, 2026-09-19) — the chip
+  // row replaced that; ticks now simply survive a switch between chips.
   //
-  // WHICH CARDS ARE OPEN IS DERIVED, NOT STORED:
-  //
-  //     open  =  every card holding a ticked bill  +  the one card last clicked
-  //
-  // and that single line is the whole rule set (commit 4b):
-  //   - a card holding ticks stays open — nothing can close it but its ticks
-  //     going (✕ / Esc, or the bills onto a trip);
-  //   - clicking another card OPENS it too: the ticked card is open by the
-  //     first half, the clicked one by the second — the Parvat case, where a
-  //     planner ticks Adajan, then opens Parvat to put its bill on the same
-  //     truck;
-  //   - a card with no ticks is open only as "the one last clicked", so it
-  //     closes when another card is clicked, or when it is clicked again;
-  //   - when the cards come on screen with ticks up (from Flat, or after a
-  //     search) every card holding a tick is already open — no effect, no
-  //     first-one-only.
-  //
-  // ⚠ NO TOAST AND NO REFUSAL. Clicking a card that holds ticks simply leaves
-  // it open (owner). And no effect keeps anything in step: a stored "open" list
-  // would need one, and would be a second answer to "which cards hold ticks"
-  // that could lag the selection by a render.
-  const tickedCards = cardModel !== null ? cardsHoldingTicks(cardModel, rowSelection) : [];
-  const openCards = clickedCard !== null && !tickedCards.includes(clickedCard) ? [...tickedCards, clickedCard] : tickedCards;
-
-  const toggleCard = (key: string) => {
-    // A ticked card is open whatever happens here, so clicking it changes
-    // nothing it shows. An unticked one toggles as "the card last clicked".
-    if (tickedCards.includes(key)) return;
-    setClickedCard(clickedCard === key ? null : key);
-  };
+  // ⚠ CLEARED WHENEVER THAT CARD IS NOT ON SCREEN — another tab or view, a
+  // trip on the rail, a search, or its last due bill gone onto a trip. So Esc
+  // never spends a press closing a card nobody can see, and coming back to By
+  // route always shows the grid first.
+  const cardsOnScreen =
+    activeTab === "floor" &&
+    (railSelection.kind === "pool" || addingToTripId !== null) &&
+    effectivePoolPivot === "route" &&
+    cardModel !== null;
+  const openCardShown =
+    cardsOnScreen &&
+    openRouteCard !== null &&
+    cardModel !== null &&
+    shownCards(cardModel).some((c) => c.key === openRouteCard);
+  useEffect(() => {
+    if (openRouteCard !== null && !openCardShown) onOpenRouteCard(null);
+  }, [openRouteCard, openCardShown, onOpenRouteCard]);
 
   const selectedTrip =
     railSelection.kind === "trip"
@@ -724,16 +720,20 @@ export function TripDesk({
     const litres = sumLitres(allPool);
     const weight = sumWeightKg(allPool);
     const weightStr = formatWeightKg(weight.kg);
+    // Also what the route cards show when no card has a bill due (2026-09-24).
+    const poolEmpty = (
+      <div className="px-5 py-14 text-center">
+        <div className="text-[28px] leading-none text-gray-300">○</div>
+        <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Every bill is on a trip</h4>
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+          Nothing is waiting to be planned. New bills land here as they arrive.
+        </p>
+      </div>
+    );
     poolContent = (
       <>
         {allPool.length === 0 ? (
-          <div className="px-5 py-14 text-center">
-            <div className="text-[28px] leading-none text-gray-300">○</div>
-            <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Every bill is on a trip</h4>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
-              Nothing is waiting to be planned. New bills land here as they arrive.
-            </p>
-          </div>
+          poolEmpty
         ) : effectivePoolPivot === "flat" ? (
           <FloorTable
             rows={sort(poolRows)}
@@ -787,14 +787,15 @@ export function TripDesk({
                 "Adajan is 2 of 9" would change a number the operator already
                 reads. The upcoming half follows the route rows as one block,
                 with the same divider the flat view uses. */}
-            {/* CARDS ON A TAB WITH CLUBS (Local today, 2026-09-19); every other
+            {/* CARDS ON A TAB WITH CLUBS (Local and Upcountry); every other
                 tab keeps the route rows exactly as they were. */}
             {cardModel !== null ? (
               <RouteCards
                 model={cardModel}
                 columns={cardColumns}
-                openKeys={openCards}
-                onToggleCard={toggleCard}
+                openKey={openCardShown ? openRouteCard : null}
+                onOpenCard={onOpenRouteCard}
+                empty={poolEmpty}
                 nowMs={nowMs}
                 anchorIso={floor.date}
                 variant={variant}
