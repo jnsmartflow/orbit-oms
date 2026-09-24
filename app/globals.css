@@ -869,32 +869,44 @@ html, body { overscroll-behavior: none; }
 
 /* ── Billing · Orders bottom bar (2026-09-24) ─────────────────────────────────
    components/billing/billing-bottom-bar.tsx. Design web-update-2026-09-24-
-   billing-mo-actions.md §2, mockup v12 tab 1 (the resizable one-row demo).
+   billing-mo-actions.md §2; sizes from billing-bar-polish-mockup.html.
    Sized by CONTAINER QUERY on the bar (= the right pane's width), never the
    viewport: the left inbox takes a fixed 320px, so the viewport says nothing
    about how much room the bar has.
-     > 1050px  full labels
-     <= 1050px Hold/Hand/CI/Urgent/Slot icon-only, 40px square (title = name)
-     <=  760px the "Order No." label hides; the input shrinks (min ~96px)
-     <=  520px wrap, as the last resort - nothing ever overlaps
-   Punch always keeps its word. Every button stays 40px tall.
+     > 1150px  full labels · buttons 48px tall, min 112px wide
+     <= 1150px Hold/Hand/CI/Urgent/Slot become 48px icon squares (title = name)
+     <=  780px the "Order No." label hides; box min 150px, Punch min 110px
+     <=  560px wrap, as the last resort - nothing ever overlaps
+   Punch always keeps its word. The bar is ~72px (48px + 12px padding each way).
    Top level on purpose - nothing here is print-only (router §1). */
-.mo-bbar { container-type: inline-size; }
-.mo-bbar-row { display: flex; align-items: center; flex-wrap: nowrap; gap: clamp(4px, 1cqi, 10px); }
-.mo-bbar-grp { display: flex; align-items: center; flex-wrap: nowrap; gap: clamp(4px, 0.8cqi, 8px); min-width: 0; }
+.mo-bbar { container-type: inline-size; min-height: 72px; }
+.mo-bbar-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 10px; }
+.mo-bbar-grp { display: flex; align-items: center; flex-wrap: nowrap; gap: 10px; min-width: 0; }
 .mo-bbar-end { flex: 1 1 auto; justify-content: flex-end; }
-.mo-bbar-btn { height: 40px; min-width: 0; flex: 0 1 auto; padding: 0 clamp(8px, 1.4cqi, 16px); white-space: nowrap; }
-.mo-bbar-ordno { flex: 1 1 200px; min-width: 96px; max-width: 280px; }
-.mo-bbar-ordno input { min-width: 0; width: 100%; }
-.mo-bbar-punch { height: 40px; min-width: 96px; padding: 0 16px; white-space: nowrap; flex-shrink: 0; }
-@container (max-width: 1050px) {
+.mo-bbar-btn { height: 48px; min-width: 112px; flex: 0 0 auto; padding: 0 16px; white-space: nowrap; }
+.mo-bbar-ordno { flex: 0 1 280px; min-width: 220px; }
+.mo-bbar-ordno input { min-width: 60px; width: 100%; }
+.mo-bbar-punch { height: 48px; min-width: 140px; padding: 0 18px; white-space: nowrap; flex-shrink: 0; }
+@container (max-width: 1150px) {
   .mo-bbar-btn[data-icon-able] .mo-bbar-tx { display: none; }
-  .mo-bbar-btn[data-icon-able] { width: 40px; padding: 0; flex-shrink: 0; }
+  .mo-bbar-btn[data-icon-able] { min-width: 0; width: 48px; padding: 0; }
 }
-@container (max-width: 760px) {
+@container (max-width: 780px) {
   .mo-bbar-ordlabel { display: none; }
+  .mo-bbar-ordno { min-width: 150px; }
+  .mo-bbar-punch { min-width: 110px; }
 }
-@container (max-width: 520px) {
+@container (max-width: 560px) {
   .mo-bbar-row, .mo-bbar-grp { flex-wrap: wrap; }
   .mo-bbar-end { flex-basis: 100%; }
+  .mo-bbar-ordno { flex: 1 1 150px; }
 }
+
+/* ── Billing · Orders lines table scroll (2026-09-24) ─────────────────────────
+   The right pane is a fixed-height column: only the lines body scrolls, its
+   column header row is sticky (review-view renderSkuTable). One thin scrollbar.
+   Billing face only — the class is applied behind billingV2. */
+.mo-lines-scroll { scrollbar-width: thin; scrollbar-color: #D6D3E0 transparent; padding-bottom: 8px; }
+.mo-lines-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.mo-lines-scroll::-webkit-scrollbar-thumb { background: #D6D3E0; border-radius: 8px; }
+.mo-lines-scroll::-webkit-scrollbar-track { background: transparent; }

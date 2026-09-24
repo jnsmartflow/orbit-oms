@@ -1353,6 +1353,9 @@ export function ReviewView({
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.ctrlKey || e.metaKey) return;
+      // A local keyboard surface (the Billing CI confirm card) owns its keys:
+      // Tab must move between its buttons, not jump to the next order.
+      if ((document.activeElement as HTMLElement | null)?.closest?.("[data-mo-kbd-local]")) return;
 
       const lines = selectedOrder.lines;
       if (!lines || lines.length === 0) return;
@@ -1505,16 +1508,18 @@ export function ReviewView({
         </button>
       </>
     ) : showInputMode && variant === "bar" ? (
-      // BAR — the Billing bottom bar's fresh punch (2026-09-24, design §2).
-      // 40px tall like the buttons beside it; "Order No." hides at ≤760px pane
-      // width and the input shrinks to ~96px (app/globals.css `.mo-bbar-*`).
-      // Same state, handlers, 10-digit gate and placeholder as the arm below —
-      // ⚠ Ctrl+V (mail-orders-page.tsx) finds this box by placeholder="Enter
-      // number", so the placeholder is load-bearing. Punch is the bar's ONLY
-      // solid brand-600; not ready = the grey disabled treatment (UI §10).
+      // BAR — the Billing bottom bar's fresh punch (2026-09-24, design §2,
+      // billing-bar-polish-mockup.html `.ord` / `.punch`). 48px like the buttons
+      // beside it; "Order No." hides at ≤780px pane width and the box shrinks to
+      // 150px (app/globals.css `.mo-bbar-*`). Same state, handlers, 10-digit gate
+      // and placeholder as the arm below — ⚠ Ctrl+V (mail-orders-page.tsx) finds
+      // this box by placeholder="Enter number", so the placeholder is load-bearing.
+      // [owner] Punch is ALWAYS visibly Punch: not ready = brand-50 / brand-700 /
+      // brand-200 border (a quiet violet, still inert), 10 digits = solid
+      // brand-600 — the bar's only solid violet.
       <>
-        <div className="mo-bbar-ordno flex h-10 items-center overflow-hidden rounded-[9px] border-[1.5px] border-ink-100 bg-ink-25 transition-colors focus-within:border-brand-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand-600/15">
-          <span className="mo-bbar-ordlabel whitespace-nowrap pl-3 text-[12px] font-semibold text-ink-600">Order No.</span>
+        <div className="mo-bbar-ordno flex h-12 items-center gap-2.5 overflow-hidden rounded-[10px] border-[1.5px] border-ink-200 bg-white px-3.5 transition-colors focus-within:border-brand-600 focus-within:ring-[3px] focus-within:ring-brand-600/10">
+          <span className="mo-bbar-ordlabel whitespace-nowrap text-[13px] font-semibold text-ink-600">Order No.</span>
           <input
             ref={soInputRef}
             type="text"
@@ -1524,7 +1529,7 @@ export function ReviewView({
             onKeyDown={handleSoKeyDown}
             placeholder="Enter number"
             maxLength={10}
-            className="h-full border-none bg-transparent px-2.5 font-mono text-[14px] font-medium text-ink-900 outline-none placeholder:text-[12px] placeholder:font-normal placeholder:text-ink-400"
+            className="h-full border-none bg-transparent font-mono text-[15px] font-medium text-ink-900 outline-none placeholder:text-[13px] placeholder:font-normal placeholder:text-ink-400"
           />
         </div>
         <button
@@ -1532,10 +1537,10 @@ export function ReviewView({
           onClick={handlePunchClick}
           disabled={!punchReady}
           title={punchReady ? "Punch · Enter" : "Enter 10 digits"}
-          className={`mo-bbar-punch rounded-[9px] border-[1.5px] text-[14px] font-semibold transition-colors ${
+          className={`mo-bbar-punch rounded-[10px] border-[1.5px] text-[15px] font-bold transition-colors ${
             punchReady
               ? "cursor-pointer border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700"
-              : "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+              : "cursor-default border-brand-200 bg-brand-50 text-brand-700"
           }`}
         >
           Punch
@@ -2358,7 +2363,8 @@ export function ReviewView({
       letterSpacing: "0.05em",
       color: "#9ca3af",
       textAlign: "left",
-      background: "#f9fafb",
+      // Billing: ink-25, the sticky header row's fill over scrolling rows.
+      background: billingV2 ? "#FAFAFC" : "#f9fafb",
       borderBottom: "1px solid #ebebeb",
       paddingLeft: 14,
       paddingRight: 14,
@@ -2486,7 +2492,11 @@ export function ReviewView({
           )}
         </div>
       )}
-      <div data-tutorial="sku-table" className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
+      {/* Billing: the ONLY scroller in the pane (design §2, 2026-09-24) — min-h-0
+          so it gives way instead of pushing the bar, one thin scrollbar and
+          bottom padding so the last row clears the edge (globals.css
+          .mo-lines-scroll). Flag-off: the original class string. */}
+      <div data-tutorial="sku-table" className={billingV2 ? "mo-lines-scroll min-h-0 flex-1 overflow-y-auto" : "flex-1 overflow-y-auto"} style={{ padding: "0 6px" }}>
         <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "4%" }} />
@@ -3110,7 +3120,10 @@ export function ReviewView({
               {renderSkuTable(selectedOrder)}
             </div>
 
-            {/* ── Nav Footer ── */}
+            {/* ── Nav Footer ── FLAG-OFF FACE ONLY since 2026-09-24: the billing
+                face dropped Prev / Next for the bottom bar (design §2). ↑↓ /
+                Tab still navigate; the hint lives in the ⌨ popover. */}
+            {!billingV2 && (
             <div
               className="mo-print-hide"
               style={{
@@ -3168,6 +3181,7 @@ export function ReviewView({
                 ↑↓ navigate · Ctrl+C copy · Ctrl+V paste SO
               </span>
             </div>
+            )}
 
             {/* ── Billing bottom bar (2026-09-24) ── Hold · Hand · CI | Urgent ·
                 Slot | Order No · Punch. The LAST row of this fixed-height flex

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billing Bar Polish</title>
+<style>
+:root{
+  --brand-50:#F5F3FF;--brand-200:#DDD6FE;--brand-600:#7C3AED;--brand-700:#6D28D9;
+  --ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7690;--ink-600:#5B5770;--ink-900:#1B1826;
+  --danger:#E11D48;--brown:#8B5A2B;--warn:#B45309;--warn-bg:#FFFBEB;--ok:#059669;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#eceaf2;color:var(--ink-900);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
+h1{font-size:16px;margin:0 0 4px}
+.sub{color:var(--ink-500);font-size:12px;margin:0 0 14px}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.ctrl button{border:1px solid var(--ink-200);background:#fff;border-radius:999px;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
+.ctrl button.on{background:var(--ink-900);color:#fff;border-color:var(--ink-900)}
+.note{background:#fff;border:1px dashed var(--ink-400);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--ink-600);max-width:1400px}
+.note b{color:var(--ink-900)}
+
+/* the pane */
+.frame{resize:horizontal;overflow:hidden;width:100%;max-width:1400px;min-width:560px;border:2px dashed var(--brand-200);border-radius:10px;background:#fff}
+.pane{container-type:inline-size;height:620px;display:flex;flex-direction:column;background:#f9fafb}
+.tabs{display:flex;gap:18px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--ink-100);background:#fff;font-size:13px;color:var(--ink-500);flex:none}
+.tabs b{color:var(--ink-900)}
+.cnt{background:var(--ink-900);color:#fff;border-radius:4px;padding:0 5px;font-size:11px;margin-left:4px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 16px 0;flex:none}
+.card{background:#fff;border:1px solid var(--ink-100);border-radius:10px;padding:10px 12px}
+.lbl{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);font-weight:600}
+.nm{font-weight:700;font-size:15px;margin-top:3px}
+.meta{color:var(--ink-500);font-size:12px}
+.meta code{background:var(--ink-50);border:1px solid var(--ink-100);border-radius:4px;padding:0 5px;font-size:11px}
+.row2{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;flex:none}
+.small{color:var(--ink-400);font-size:12px}
+.sbtn{border:1px solid var(--ink-100);background:#fff;border-radius:7px;padding:5px 10px;font:inherit;font-size:12px;color:var(--ink-600);font-weight:600}
+
+/* lines card: only this scrolls */
+.lines{flex:1;min-height:0;margin:0 16px 12px;background:#fff;border:1px solid var(--ink-100);border-radius:10px;display:flex;flex-direction:column;overflow:hidden}
+.lines .top{display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--ink-100);flex:none;font-size:12px;color:var(--ink-500)}
+.scroll{flex:1;min-height:0;overflow:auto;padding-bottom:8px;scrollbar-width:thin;scrollbar-color:var(--ink-200) transparent}
+.scroll::-webkit-scrollbar{width:8px;height:8px}
+.scroll::-webkit-scrollbar-thumb{background:var(--ink-200);border-radius:8px}
+.scroll::-webkit-scrollbar-track{background:transparent}
+table{width:100%;border-collapse:collapse}
+th{position:sticky;top:0;z-index:1;background:var(--ink-25);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-400);text-align:left;padding:8px 10px;border-bottom:1px solid var(--ink-100);font-weight:600;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--ink-100);white-space:nowrap}
+td.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--ink-600)}
+.tog{display:inline-block;width:26px;height:14px;border-radius:9px;background:var(--ok);position:relative}
+.tog:after{content:"";position:absolute;right:2px;top:2px;width:10px;height:10px;border-radius:50%;background:#fff}
+
+/* the bar */
+.bar{flex:none;height:72px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--ink-50);border-top:1px solid var(--ink-100);box-shadow:0 -4px 12px rgb(27 24 38 / .06)}
+.grp{display:flex;gap:10px;align-items:center}
+.sep{width:1px;height:32px;background:var(--ink-200);margin:0 2px}
+.spacer{flex:1}
+.ab{height:48px;min-width:112px;padding:0 16px;border-radius:10px;border:1.5px solid var(--ink-200);background:#fff;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:600 15px system-ui,sans-serif;color:var(--ink-600);cursor:pointer;white-space:nowrap}
+.ab .ic{font-size:18px;line-height:1}
+.ab.hold .ic{color:var(--danger)} .ab.hand .ic{color:var(--brown)} .ab.ci .ic{color:var(--ink-900)} .ab.urg .ic{color:var(--warn)} .ab.slot .ic{color:var(--brand-600)}
+.ab.hold.on{background:var(--danger);border-color:var(--danger);color:#fff}
+.ab.hand.on{background:var(--brown);border-color:var(--brown);color:#fff}
+.ab.ci.on{background:var(--ink-900);border-color:var(--ink-900);color:#fff}
+.ab.urg.on{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
+.ab.slot.on{background:var(--brand-50);border-color:var(--brand-600);color:var(--brand-700)}
+.ab.on .ic{color:inherit}
+.ab.fade{opacity:.35;pointer-events:none}
+.ord{height:48px;min-width:220px;display:flex;align-items:center;gap:10px;padding:0 14px;border:1.5px solid var(--ink-200);border-radius:10px;background:#fff}
+.ord b{font-size:13px;color:var(--ink-600);white-space:nowrap}
+.ord input{border:0;outline:0;font:15px ui-monospace,Consolas,monospace;width:100%;min-width:60px;background:transparent}
+.ord:focus-within{border-color:var(--brand-600);box-shadow:0 0 0 3px rgb(124 58 237 / .12)}
+.punch{height:48px;min-width:140px;border-radius:10px;font:700 15px system-ui,sans-serif;cursor:pointer;border:1.5px solid var(--brand-200);background:var(--brand-50);color:var(--brand-700)}
+.punch.ready{background:var(--brand-600);border-color:var(--brand-600);color:#fff}
+
+
+.confirm{flex:none;margin:0 16px 10px;background:#fff;border:1.5px solid var(--ink-900);border-radius:12px;box-shadow:0 8px 24px rgb(27 24 38 / .14);padding:14px 16px;display:none;max-width:560px}
+.confirm.show{display:block}
+.confirm h3{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+.confirm h3 .pill{background:var(--ink-900);color:#fff;border-radius:6px;padding:1px 8px;font-size:12px}
+.confirm p{margin:0 0 4px;color:var(--ink-600);font-size:13px}
+.confirm .warn{color:var(--warn);font-weight:600;font-size:12px;margin:6px 0 10px}
+.confirm label{display:block;font-size:11px;font-weight:600;color:var(--ink-600);margin-bottom:4px}
+.confirm input{width:100%;height:38px;border:1.5px solid var(--ink-200);border-radius:8px;padding:0 10px;font:13px system-ui,sans-serif}
+.confirm input:focus{outline:0;border-color:var(--brand-600);box-shadow:0 0 0 3px rgb(124 58 237 / .12)}
+.confirm .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.confirm .acts button{height:40px;padding:0 16px;border-radius:9px;font:600 14px system-ui,sans-serif;cursor:pointer}
+.confirm .no{background:#fff;border:1.5px solid var(--ink-200);color:var(--ink-600)}
+.confirm .yes{background:var(--ink-900);border:1.5px solid var(--ink-900);color:#fff}
+.confirm .hint{font-size:11px;color:var(--ink-400);margin-right:auto;align-self:center}
+@container (max-width:1150px){
+  .ab{min-width:0;width:48px;padding:0} .ab .tx{display:none}
+}
+@container (max-width:780px){
+  .ord b{display:none} .ord{min-width:150px} .punch{min-width:110px}
+}
+</style>
+</head>
+<body>
+<h1>Billing bar polish — mockup</h1>
+<p class="sub">Prev/Next removed · bigger tinted bar · Punch always visible · only the lines table scrolls (header pinned). Drag the dashed box's bottom-right corner narrower to see the bar shrink.</p>
+
+<div class="note">
+<b>Try:</b> click the <b>CI</b> button in the bar (or “CI confirm card”) to see the confirmation. Click CI again when lit to clear it — no question asked. scroll the lines table — the column header stays pinned, Bill-to/Ship-to and the bar never move. Type 10 digits in Order No — Punch turns solid violet. Use the buttons above to see states.
+</div>
+
+<div class="ctrl" id="ctrl">
+  <span class="small">State:</span>
+  <button data-s="none" class="on">Normal</button>
+  <button data-s="hold">Hold</button>
+  <button data-s="hand">Hand + Urgent + 12:30</button>
+  <button data-s="ci">CI</button>
+  <button data-s="confirm">CI confirm card</button>
+  <span class="small" style="margin-left:12px">Lines:</span>
+  <button data-l="3" class="on">3 lines</button>
+  <button data-l="30">30 lines</button>
+</div>
+
+<div class="frame">
+<div class="pane">
+  <div class="tabs"><b>Orders <span class="cnt">2</span></b><span>● Picking 0</span><span>● Print 0</span><span>Telephonic</span><span style="margin-left:auto" class="small">Today · 24 Sept ▾ &nbsp; Filter &nbsp; ⌨</span></div>
+  <div class="cards">
+    <div class="card"><div class="lbl">Bill to</div><div class="nm">Shreenathji Sales Corporation</div><div class="meta"><code>102546</code> · KATARGAM · LOCAL</div></div>
+    <div class="card" style="position:relative"><div class="lbl">Ship to</div><div class="nm">Shreenathji Sales Corporation</div><div class="meta"><code>102546</code> · KATARGAM · LOCAL</div><span style="position:absolute;right:10px;top:8px;color:var(--ink-500)">✎</span></div>
+  </div>
+  <div class="row2"><span class="small">(jsw) Nirav Jayeshbhai Tailor · 13:37</span><span><button class="sbtn">🗒 Notes</button> <button class="sbtn">⧉ Copy</button></span></div>
+
+  <div class="lines">
+    <div class="top"><span id="lc">3 lines · ✓3/3</span><span>18L</span></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>#</th><th>Raw text</th><th>SKU code</th><th>Description</th><th>Pk</th><th>Qty</th><th>Vol</th><th></th></tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="confirm" id="confirm" role="dialog" aria-label="Raise CI">
+    <h3><span class="pill">⊘ CI</span> Raise a CI for this bill?</h3>
+    <p>When the SAP bill imports, it will be <b>cancelled</b> and a full-bill CI raised.</p>
+    <p>Reason: <b>Wrong order by S.O.</b> · Raised by: <b>you</b></p>
+    <div class="warn">⚠ You can undo this only until the bill imports.</div>
+    <label for="cinote">Note (optional)</label>
+    <input id="cinote" placeholder="e.g. dealer cancelled on call, rate issue">
+    <div class="acts"><span class="hint">Esc to cancel</span><button class="no" id="cino">Cancel</button><button class="yes" id="ciyes">Yes, raise CI</button></div>
+  </div>
+
+  <div class="bar">
+    <div class="grp">
+      <button class="ab hold" title="Hold"><span class="ic">⚑</span><span class="tx">Hold</span></button>
+      <button class="ab hand" title="Hand"><span class="ic">✋</span><span class="tx">Hand</span></button>
+      <button class="ab ci" title="CI"><span class="ic">⊘</span><span class="tx">CI</span></button>
+    </div>
+    <span class="sep"></span>
+    <div class="grp">
+      <button class="ab urg" title="Urgent"><span class="ic">⚡</span><span class="tx">Urgent</span></button>
+      <button class="ab slot" title="Slot"><span class="ic">🕑</span><span class="tx" id="slotx">Slot</span></button>
+    </div>
+    <span class="spacer"></span>
+    <label class="ord"><b>Order No.</b><input id="ord" placeholder="Enter number" inputmode="numeric"></label>
+    <button class="punch" id="punch">Punch</button>
+  </div>
+</div>
+</div>
+
+<script>
+const items=[["Multi Purpose Thinner","5826259","DN SADOLIN Multi Purpose Thinner 1L","1","6","6L"],["Gloss Dark Brown","IN28912272","DN GLOSS DARK BROWN 1L","1","6","6L"],["Super Satin 90 Base","IN28079073","DN SAT FIN WHITE BASE-NEW 500ML","500ML","12","6L"]];
+function lines(n){
+  const tb=document.getElementById('tb');tb.innerHTML='';
+  for(let i=0;i<n;i++){const r=items[i%3];tb.insertAdjacentHTML('beforeend',`<tr><td class="small">${i+1}</td><td>${r[0]}</td><td class="mono">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td><b>${r[4]}</b></td><td class="small">${r[5]}</td><td><span class="tog"></span></td></tr>`)}
+  document.getElementById('lc').textContent=n+' lines · ✓'+n+'/'+n;
+}
+lines(3);
+function state(s){
+  const q=c=>document.querySelector('.ab.'+c);
+  ['hold','hand','ci','urg','slot'].forEach(c=>q(c).classList.remove('on','fade'));
+  document.getElementById('slotx').textContent='Slot';
+  if(s==='hold')q('hold').classList.add('on');
+  if(s==='hand'){q('hand').classList.add('on');q('urg').classList.add('on');q('slot').classList.add('on');document.getElementById('slotx').textContent='12:30'}
+  if(s==='ci'){q('ci').classList.add('on');q('urg').classList.add('fade');q('slot').classList.add('fade')}
+}
+document.getElementById('ctrl').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.s){document.querySelectorAll('[data-s]').forEach(x=>x.classList.toggle('on',x===b));state(b.dataset.s)}
+  if(b.dataset.l){document.querySelectorAll('[data-l]').forEach(x=>x.classList.toggle('on',x===b));lines(+b.dataset.l)}
+});
+const ord=document.getElementById('ord');
+ord.addEventListener('input',()=>{ord.value=ord.value.replace(/\D/g,'').slice(0,10);document.getElementById('punch').classList.toggle('ready',ord.value.length===10)});
+
+const cf=document.getElementById('confirm');
+function openConfirm(){cf.classList.add('show');document.getElementById('cinote').focus()}
+function closeConfirm(){cf.classList.remove('show')}
+document.querySelector('.ab.ci').addEventListener('click',()=>{
+  if(document.querySelector('.ab.ci').classList.contains('on')){state('none');return}
+  openConfirm()});
+document.getElementById('cino').addEventListener('click',closeConfirm);
+document.getElementById('ciyes').addEventListener('click',()=>{closeConfirm();state('ci')});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeConfirm()});
+document.getElementById('ctrl').addEventListener('click',e=>{const b=e.target.closest('button');if(b&&b.dataset.s==='confirm'){state('none');openConfirm()}});
+</script>
+</body>
+</html>

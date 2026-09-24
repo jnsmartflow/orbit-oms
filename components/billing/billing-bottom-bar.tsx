@@ -1,14 +1,21 @@
 "use client";
 
 // Billing v2 — the Orders tab's pinned BOTTOM BAR (2026-09-24).
-// Design: docs/prompts/drafts/web-update-2026-09-24-billing-mo-actions.md §2;
-// mockup docs/mockups/billing-mo-actions/billing-mo-actions-mockup.html (v12, tab 1).
+// Design: docs/prompts/drafts/web-update-2026-09-24-billing-mo-actions.md §2 + §3.1;
+// mockups docs/mockups/billing-mo-actions/billing-mo-actions-mockup.html (v12,
+// tab 1) and billing-bar-polish-mockup.html (the polish pass — THE TARGET for
+// size, tint and the CI card).
 //
-//   [⚑ Hold][✋ Hand][⊘ CI] | [⚡ Urgent][🕑 Slot]          [Order No.][Punch]
+//   [⚑ Hold][✋ Hand][⊘ CI] | [⚡ Urgent][🕑 Slot]  ——spacer——  [Order No.][Punch]
 //
-// Replaces BillingActionRibbon (the small Urgent/Hold/Slot buttons that sat on
-// the top row). Notes + Copy stay on the top row; the Order No box + Punch move
-// here and arrive as `soSlot`, rendered by review-view so the punch flow, its
+// Renders THREE siblings into the right pane's fixed-height column, in order:
+// the result notice (when there is one), the CI confirm card (when open), then
+// the bar itself. They are siblings of the lines card, not children of the bar,
+// so the card sits "just above the bar" as the mockup draws it and the bar keeps
+// its fixed height. The lines card above is the only thing that gives way.
+//
+// Replaces BillingActionRibbon. Notes + Copy stay on the top row; the Order No
+// box + Punch arrive as `soSlot`, rendered by review-view so the punch flow, its
 // 10-digit gate, its edit pencil and Ctrl+V's `placeholder="Enter number"`
 // lookup stay one definition.
 //
@@ -19,12 +26,12 @@
 //
 // 🔴 HIDDEN, NEVER DISABLED, WITHOUT THE TICK (CLAUDE_UI §10, BILLING §5). Each
 // of the five buttons renders only when its billing_* canEdit is held. The route
-// re-checks every one; this only decides what is drawn. The one DISABLED state
+// re-checks every one; this only decides what is drawn. The one faded state
 // here is CI-on fading Urgent + Slot: that is "not now, for this bill", not "not
 // yours" — the owner's choice (§2 "When CI is on, Urgent and Slot fade out").
 //
-// SIZING is by CONTAINER QUERY on the pane, not the viewport — see the
-// `.mo-bbar*` rules in app/globals.css. Always one row down to ~520px.
+// SIZING is by CONTAINER QUERY on the bar (= the pane's width), not the
+// viewport — see the `.mo-bbar*` rules in app/globals.css.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
@@ -32,18 +39,20 @@ import { postMailOrderAction, type BillingMoOrderState } from "@/lib/billing/mo-
 import { useBillingActionsAccess } from "@/components/billing/billing-actions-access-provider";
 import type { MoOrder } from "@/lib/mail-orders/types";
 
+// 48px, 15px semibold, 18px icon (polish mockup `.ab`). Width/padding and the
+// icon-only collapse live in globals.css (`.mo-bbar-btn`).
 const BTN =
-  "mo-bbar-btn inline-flex items-center justify-center gap-[7px] rounded-[9px] border-[1.5px] text-[14px] font-semibold transition-colors disabled:cursor-wait";
-const OFF = "border-ink-100 bg-white text-ink-600 hover:border-ink-200 hover:bg-ink-25";
+  "mo-bbar-btn inline-flex items-center justify-center gap-2 rounded-[10px] border-[1.5px] text-[15px] font-semibold transition-colors disabled:cursor-wait";
+const OFF = "border-ink-200 bg-white text-ink-600 hover:bg-ink-25";
 // ON states — design §2 / §7. CI is the SOLID dark style, never the pale ink tag.
 const ON = {
   hold:   "border-danger bg-danger text-white",
   hand:   "border-data-brown bg-data-brown text-white",
   ci:     "border-ink-900 bg-ink-900 text-white",
-  urgent: "border-warn bg-warn-bg text-warn-text",
+  urgent: "border-warn-text bg-warn-bg text-warn-text",
   slot:   "border-brand-600 bg-brand-50 text-brand-700",
 } as const;
-// The coloured icon on an OFF (grey) button. When on, the icon inherits.
+// The coloured icon on an OFF (white) button. When on, the icon inherits.
 const ICON_OFF = {
   hold:   "text-danger",
   hand:   "text-data-brown",
@@ -53,6 +62,18 @@ const ICON_OFF = {
 } as const;
 
 type Notice = { tone: "warn" | "error" | "quiet"; title: string; lines: string[] };
+
+/**
+ * ⚠ The CI card's optional NOTE is HIDDEN (2026-09-24). It must reach the raised
+ * CI (`ci_returns.reasonRemark`), but it is typed at PRESS time and the CI is
+ * raised at IMPORT, and no existing column can carry it between the two:
+ * so_tags has no text field, and all four text columns on mo_orders are taken
+ * (notes = the Notes button; remarks / billRemarks / deliveryRemarks = parsed
+ * email text). It needs `mo_orders."billOnlyNote"` (or `so_tags."note"`),
+ * written by markMoOrderCi and copied by raiseBillOnlyCi. Flip this once that
+ * column exists and is wired.
+ */
+const SHOW_CI_NOTE = false;
 
 function toDateString(iso: string | null | undefined): string | null {
   return iso ? iso.slice(0, 10) : null;
@@ -74,6 +95,7 @@ export function BillingBottomBar({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [confirmCi, setConfirmCi] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
   const [slotGen, setSlotGen] = useState(0);
   // The mail order as the route last saved it. Wins over the prop until the
   // page's reload hands down a NEW order object, then clears — so the bar shows
@@ -84,8 +106,15 @@ export function BillingBottomBar({
   const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (quietTimer.current) clearTimeout(quietTimer.current); }, []);
 
-  const confirmBtnRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (confirmCi) confirmBtnRef.current?.focus(); }, [confirmCi]);
+  // The card takes focus when it opens — the card ITSELF, not "Yes": Enter must
+  // never confirm unless the Yes button is the focused element (a native button
+  // is the only thing Enter clicks), and Esc must reach the card's handler.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const noteRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!confirmCi) return;
+    (SHOW_CI_NOTE ? noteRef.current : cardRef.current)?.focus();
+  }, [confirmCi]);
 
   const s = saved && saved.id === order.id ? saved : null;
   const dispatchStatus = s ? s.dispatchStatus : (order.dispatchStatus ?? null);
@@ -113,18 +142,27 @@ export function BillingBottomBar({
     if (n?.tone === "quiet") quietTimer.current = setTimeout(() => setNotice(null), 2500);
   }
 
+  function closeCard() {
+    setConfirmCi(false);
+    setCardError(null);
+  }
+
   async function run(payload: Parameters<typeof postMailOrderAction>[1]) {
     if (busy) return;
+    const fromCard = payload.action === "ci" && payload.on;
     setBusy(true);
-    setConfirmCi(false);
+    setCardError(null);
     showNotice(null);
     const res = await postMailOrderAction(order.id, payload);
     setBusy(false);
     if (!res.ok) {
       // Nothing was saved (bad input, no tick, LOCKED, a matched CI tag…).
-      showNotice({ tone: "error", title: res.error, lines: [] });
+      // A refused CI press keeps the card OPEN with the reason inside it.
+      if (fromCard) setCardError(res.error);
+      else showNotice({ tone: "error", title: res.error, lines: [] });
       return;
     }
+    if (fromCard) closeCard();
     if (res.moOrder) setSaved(res.moOrder);
     if (res.failed.length > 0) {
       // 🔴 The MAIL ORDER DID SAVE — only these bills refused. Never "nothing changed".
@@ -148,52 +186,18 @@ export function BillingBottomBar({
   function label(icon: string, text: string, key: keyof typeof ICON_OFF, on: boolean) {
     return (
       <>
-        <span aria-hidden className={`text-[15px] leading-none ${on ? "" : ICON_OFF[key]}`}>{icon}</span>
+        <span aria-hidden className={`text-[18px] leading-none ${on ? "" : ICON_OFF[key]}`}>{icon}</span>
         <span className="mo-bbar-tx">{text}</span>
       </>
     );
   }
 
   return (
-    <div className="mo-bbar mo-print-hide flex-shrink-0 border-t border-ink-100 bg-white px-[14px] py-3 shadow-[0_-6px_16px_rgba(27,24,38,0.06)]">
-      {confirmCi && (
-        <div
-          role="alertdialog"
-          aria-label="Confirm CI"
-          className="mb-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-ink-200 bg-ink-25 px-3 py-2"
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              e.stopPropagation();
-              setConfirmCi(false);
-            }
-          }}
-        >
-          <span className="min-w-0 flex-1 text-[13px] font-medium text-ink-900">
-            Raise a CI for this bill when it imports?
-          </span>
-          <button
-            type="button"
-            onClick={() => setConfirmCi(false)}
-            className="h-8 rounded-md border border-ink-200 bg-white px-3 text-[12px] font-medium text-ink-600 hover:bg-ink-50"
-          >
-            Cancel
-          </button>
-          <button
-            ref={confirmBtnRef}
-            type="button"
-            onClick={() => void run({ action: "ci", on: true })}
-            className="h-8 rounded-md border border-ink-900 bg-ink-900 px-3 text-[12px] font-semibold text-white hover:bg-ink-700"
-          >
-            Raise CI
-          </button>
-        </div>
-      )}
-
+    <>
       {notice && (
         <div
           role={notice.tone === "quiet" ? "status" : "alert"}
-          className={`mb-2.5 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] ${
+          className={`mo-print-hide mx-4 mb-2.5 flex flex-shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-[12px] ${
             notice.tone === "warn"
               ? "border-warn/40 bg-warn-bg text-warn-text"
               : notice.tone === "error"
@@ -204,7 +208,7 @@ export function BillingBottomBar({
           <div className="min-w-0 flex-1">
             <div className="font-semibold">{notice.title}</div>
             {notice.lines.length > 0 && (
-              <ul className="mt-1 space-y-0.5 font-mono text-[11.5px]">
+              <ul className="mt-1 max-h-[96px] space-y-0.5 overflow-y-auto font-mono text-[11.5px]">
                 {notice.lines.map((l) => <li key={l} className="break-words">{l}</li>)}
               </ul>
             )}
@@ -220,124 +224,202 @@ export function BillingBottomBar({
         </div>
       )}
 
-      <div className="mo-bbar-row">
-        {leftGroup && (
-          <div className="mo-bbar-grp">
-            {access.hold && (
-              <button
-                type="button"
-                disabled={busy}
-                data-icon-able
-                onClick={() => void run({ action: "hold", on: !holdOn })}
-                title={holdOn ? "Release hold" : "Hold"}
-                aria-pressed={holdOn}
-                className={`${BTN} ${holdOn ? ON.hold : OFF}`}
-              >
-                {label("⚑", "Hold", "hold", holdOn)}
-              </button>
-            )}
-            {access.hand && (
-              <button
-                type="button"
-                disabled={busy}
-                data-icon-able
-                onClick={() => void run({ action: "hand", on: !handOn })}
-                title={handOn ? "Clear Hand" : "Hand — dealer collects"}
-                aria-pressed={handOn}
-                className={`${BTN} ${handOn ? ON.hand : OFF}`}
-              >
-                {label("✋", "Hand", "hand", handOn)}
-              </button>
-            )}
-            {access.ci && (
-              <button
-                type="button"
-                disabled={busy}
-                data-icon-able
-                // Clearing a lit CI needs no question; SETTING one asks once.
-                onClick={() => (ciOn ? void run({ action: "ci", on: false }) : setConfirmCi(true))}
-                title={ciOn ? "Clear CI" : "CI — bill only, raise a CI when it imports"}
-                aria-pressed={ciOn}
-                className={`${BTN} ${ciOn ? ON.ci : OFF}`}
-              >
-                {label("⊘", "CI", "ci", ciOn)}
-              </button>
-            )}
+      {/* ── CI confirm card (design §3.1, polish mockup `.confirm`) ── Just above
+          the bar. `data-mo-kbd-local`: the page's single-key and line-nav
+          listeners stand down while focus is inside, so Tab / Space / R / F
+          act on the card and never on the order behind it. */}
+      {confirmCi && (
+        <div
+          ref={cardRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-label="Raise CI"
+          data-mo-kbd-local
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              closeCard();
+            }
+          }}
+          className="mo-print-hide mx-4 mb-2.5 w-[calc(100%-2rem)] max-w-[560px] flex-shrink-0 rounded-xl border-[1.5px] border-ink-900 bg-white px-4 py-3.5 shadow-[0_8px_24px_rgb(27_24_38/0.14)] outline-none"
+        >
+          <h3 className="mb-1.5 flex items-center gap-2 text-[15px] font-semibold text-ink-900">
+            <span className="rounded-md bg-ink-900 px-2 py-px text-[12px] text-white">⊘ CI</span>
+            Raise a CI for this bill?
+          </h3>
+          <p className="mb-1 text-[13px] text-ink-600">
+            When the SAP bill imports, it will be <b className="text-ink-900">cancelled</b> and a full-bill CI raised.
+          </p>
+          <p className="mb-1 text-[13px] text-ink-600">
+            Reason: <b className="text-ink-900">Wrong order by S.O.</b> · Raised by: <b className="text-ink-900">you</b>
+          </p>
+          <div className="mb-2.5 mt-1.5 text-[12px] font-semibold text-warn-text">
+            ⚠ You can undo this only until the bill imports.
           </div>
-        )}
+          {SHOW_CI_NOTE && (
+            <>
+              <label htmlFor="mo-ci-note" className="mb-1 block text-[11px] font-semibold text-ink-600">
+                Note (optional)
+              </label>
+              <input
+                ref={noteRef}
+                id="mo-ci-note"
+                maxLength={200}
+                placeholder="e.g. dealer cancelled on call, rate issue"
+                className="h-[38px] w-full rounded-lg border-[1.5px] border-ink-200 px-2.5 text-[13px] outline-none focus:border-brand-600 focus:ring-[3px] focus:ring-brand-600/10"
+              />
+            </>
+          )}
+          {cardError && (
+            <div role="alert" className="mt-2 rounded-lg border border-danger-bd bg-danger-bg px-3 py-2 text-[12px] font-medium text-danger-text">
+              {cardError}
+            </div>
+          )}
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <span className="mr-auto text-[11px] text-ink-400">Esc to cancel</span>
+            <button
+              type="button"
+              onClick={closeCard}
+              className="h-10 rounded-[9px] border-[1.5px] border-ink-200 bg-white px-4 text-[14px] font-semibold text-ink-600 hover:bg-ink-25"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run({ action: "ci", on: true })}
+              className="h-10 rounded-[9px] border-[1.5px] border-ink-900 bg-ink-900 px-4 text-[14px] font-semibold text-white hover:bg-ink-700 disabled:cursor-wait"
+            >
+              Yes, raise CI
+            </button>
+          </div>
+        </div>
+      )}
 
-        {leftGroup && midGroup && <span aria-hidden className="mx-1 w-px self-stretch bg-ink-100" />}
+      <div className="mo-bbar mo-print-hide flex-shrink-0 border-t border-ink-100 bg-ink-50 px-4 py-3 shadow-[0_-4px_12px_rgb(27_24_38/0.06)]">
+        <div className="mo-bbar-row">
+          {leftGroup && (
+            <div className="mo-bbar-grp">
+              {access.hold && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  data-icon-able
+                  onClick={() => void run({ action: "hold", on: !holdOn })}
+                  title={holdOn ? "Release hold" : "Hold"}
+                  aria-pressed={holdOn}
+                  className={`${BTN} ${holdOn ? ON.hold : OFF}`}
+                >
+                  {label("⚑", "Hold", "hold", holdOn)}
+                </button>
+              )}
+              {access.hand && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  data-icon-able
+                  onClick={() => void run({ action: "hand", on: !handOn })}
+                  title={handOn ? "Clear Hand" : "Hand — dealer collects"}
+                  aria-pressed={handOn}
+                  className={`${BTN} ${handOn ? ON.hand : OFF}`}
+                >
+                  {label("✋", "Hand", "hand", handOn)}
+                </button>
+              )}
+              {access.ci && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  data-icon-able
+                  // Clearing a lit CI needs no card; SETTING one opens it.
+                  onClick={() => {
+                    if (ciOn) void run({ action: "ci", on: false });
+                    else { setCardError(null); setConfirmCi(true); }
+                  }}
+                  title={ciOn ? "Clear CI" : "CI — bill only, raise a CI when it imports"}
+                  aria-pressed={ciOn}
+                  className={`${BTN} ${ciOn ? ON.ci : OFF}`}
+                >
+                  {label("⊘", "CI", "ci", ciOn)}
+                </button>
+              )}
+            </div>
+          )}
 
-        {midGroup && (
-          <div className="mo-bbar-grp">
-            {access.urgent && (
-              <button
-                type="button"
-                disabled={busy}
-                data-icon-able
-                aria-disabled={ciOn || undefined}
-                tabIndex={ciOn ? -1 : undefined}
-                onClick={() => { if (!ciOn) void run({ action: "urgent", on: !urgentOn }); }}
-                title={ciOn ? "Urgent — not used on a CI bill" : urgentOn ? "Clear urgent" : "Urgent"}
-                aria-pressed={urgentOn}
-                className={`${BTN} ${urgentOn ? ON.urgent : OFF}${fade}`}
-              >
-                {label("⚡", "Urgent", "urgent", urgentOn)}
-              </button>
-            )}
-            {/* Slot — the reused Floor picker overlaid invisibly on this button to
-                anchor its popover (the technique the old ribbon used). The
-                overlay is a real trigger, so it is NOT rendered while CI fades
-                the button or a write is in flight. */}
-            {access.slot && (
-              <span className={`relative inline-flex${fade}`}>
+          {leftGroup && midGroup && <span aria-hidden className="mx-0.5 h-8 w-px flex-shrink-0 bg-ink-200" />}
+
+          {midGroup && (
+            <div className="mo-bbar-grp">
+              {access.urgent && (
                 <button
                   type="button"
                   disabled={busy}
                   data-icon-able
                   aria-disabled={ciOn || undefined}
                   tabIndex={ciOn ? -1 : undefined}
-                  onClick={() => { if (!ciOn) setSlotGen((g) => g + 1); }}
-                  title={
-                    ciOn
-                      ? "Slot — not used on a CI bill"
-                      : slotOn && slotWindow
-                        ? `Slot ${slotDate?.slice(8, 10)}-${slotDate?.slice(5, 7)} · ${slotWindow.windowTime}`
-                        : "Slot"
-                  }
-                  aria-pressed={slotOn}
-                  className={`${BTN} ${slotOn ? ON.slot : OFF}`}
+                  onClick={() => { if (!ciOn) void run({ action: "urgent", on: !urgentOn }); }}
+                  title={ciOn ? "Urgent — not used on a CI bill" : urgentOn ? "Clear urgent" : "Urgent"}
+                  aria-pressed={urgentOn}
+                  className={`${BTN} ${urgentOn ? ON.urgent : OFF}${fade}`}
                 >
-                  {label("🕑", slotOn && slotWindow ? slotWindow.windowTime : "Slot", "slot", slotOn)}
+                  {label("⚡", "Urgent", "urgent", urgentOn)}
                 </button>
-                {!busy && !ciOn && (
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 opacity-0 [&>div]:!block [&>div]:h-full [&>div]:w-full [&>div>button]:!h-full [&>div>button]:!w-full"
+              )}
+              {/* Slot — the reused Floor picker overlaid invisibly on this button to
+                  anchor its popover (the technique the old ribbon used). The
+                  overlay is a real trigger, so it is NOT rendered while CI fades
+                  the button or a write is in flight. */}
+              {access.slot && (
+                <span className={`relative inline-flex${fade}`}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    data-icon-able
+                    aria-disabled={ciOn || undefined}
+                    tabIndex={ciOn ? -1 : undefined}
+                    onClick={() => { if (!ciOn) setSlotGen((g) => g + 1); }}
+                    title={
+                      ciOn
+                        ? "Slot — not used on a CI bill"
+                        : slotOn && slotWindow
+                          ? `Slot ${slotDate?.slice(8, 10)}-${slotDate?.slice(5, 7)} · ${slotWindow.windowTime}`
+                          : "Slot"
+                    }
+                    aria-pressed={slotOn}
+                    className={`${BTN} ${slotOn ? ON.slot : OFF}`}
                   >
-                    <DispatchSlotPicker
-                      value={slotValue}
-                      windows={windows}
-                      popoverDir="up"
-                      popoverAlign="left"
-                      forceOpenGen={slotGen || undefined}
-                      onChange={(v) =>
-                        void run(
-                          v === null
-                            ? { action: "slot", date: null, dispatchWindowId: null }
-                            : { action: "slot", date: v.date, dispatchWindowId: v.dispatchWindowId },
-                        )
-                      }
-                    />
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-        )}
+                    {label("🕑", slotOn && slotWindow ? slotWindow.windowTime : "Slot", "slot", slotOn)}
+                  </button>
+                  {!busy && !ciOn && (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 opacity-0 [&>div]:!block [&>div]:h-full [&>div]:w-full [&>div>button]:!h-full [&>div>button]:!w-full"
+                    >
+                      <DispatchSlotPicker
+                        value={slotValue}
+                        windows={windows}
+                        popoverDir="up"
+                        popoverAlign="left"
+                        forceOpenGen={slotGen || undefined}
+                        onChange={(v) =>
+                          void run(
+                            v === null
+                              ? { action: "slot", date: null, dispatchWindowId: null }
+                              : { action: "slot", date: v.date, dispatchWindowId: v.dispatchWindowId },
+                          )
+                        }
+                      />
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+          )}
 
-        <div className="mo-bbar-grp mo-bbar-end">{soSlot}</div>
+          <div className="mo-bbar-grp mo-bbar-end">{soSlot}</div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

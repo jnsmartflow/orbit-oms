@@ -1117,6 +1117,9 @@ export default function MailOrdersPage() {
 
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      // A local keyboard surface (the Billing CI confirm card, 2026-09-24) owns
+      // its keys — R / F / N / Enter must not act on the order behind it.
+      if ((document.activeElement as HTMLElement | null)?.closest?.("[data-mo-kbd-local]")) return;
 
       const key = e.key;
 
