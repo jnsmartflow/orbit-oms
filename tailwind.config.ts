@@ -143,6 +143,9 @@ const config: Config = {
                              // · mail-order remark type "cross" (ruled 2026-09-09, applied in step 3)
           slate:  "#475569", // role: admin · unknown-category fallback · mobile SELECTION
                              // (CLAUDE_UI.md §59.9). Spoken for — NOT free for a new category.
+          brown:  "#8B5A2B", // Hand (dealer collects) — owner 2026-09-24
+                             // After brown, NO data.* colour is free — the next category
+                             // needs a new token (CLAUDE_UI.md §2.1).
         },
       },
       borderRadius: {

@@ -221,6 +221,11 @@ model users {
   mrnPhotosCaptured           mrn_photos[]             @relation("MrnPhotoCapturedBy")
   // Mail Order back-relations
   mailOrdersPunched           mo_orders[]              @relation("MoOrderPunchedBy")
+  // Billing CI / Hand marks (2026-09-24, Schema v27.41) — mo_orders now has
+  // THREE FKs to `users` (punchedById, billOnlyById, handById), so all three
+  // MUST stay explicitly named on BOTH sides or generate fails (CORE §7.3).
+  mailOrdersBillOnly          mo_orders[]              @relation("MoOrderBillOnlyBy")
+  mailOrdersHand              mo_orders[]              @relation("MoOrderHandBy")
   lineStatuses                mo_line_status[]
   // Multi-role back-relations
   userRoles                   user_roles[]             @relation("UserRoleAssignments")
@@ -256,6 +261,9 @@ model users {
   // (CORE §7.3). `orders.hiddenById` is deliberately a bare Int with no
   // relation at all and is not part of this count.
   ordersLoaded                orders[]                 @relation("OrderLoadedBy")
+  // Billing Hand mark (2026-09-24, Schema v27.41) — the EIGHTH named users
+  // relation on `orders`. Same rule: named on both sides or generate fails.
+  ordersHand                  orders[]                 @relation("OrderHandBy")
   // Trip module (2026-09-09) — FOUR FKs from `trips` to `users`. The largest
   // such cluster after Mrn*, and the same rule binds: all four MUST stay
   // explicitly named on BOTH sides or generate fails with an ambiguity ERROR.
@@ -1187,6 +1195,18 @@ model orders {
   loadedById Int?
   loadedBy   users?    @relation("OrderLoadedBy", fields: [loadedById], references: [id], onDelete: SetNull)
 
+  // Billing "Hand" mark — the dealer collects from the depot (2026-09-24,
+  // Schema v27.41, sql/2026-09-24-billing-mo-actions.sql). Carried from
+  // mo_orders.handAt/ById by enrichment and dual-written by the billing actions
+  // route. Timestamp + actor, the house shape for a decision.
+  // 🔴 Hand is NEVER a dispatchStatus value — every board predicate pins
+  // 'dispatch', so a new value would drop the bill off picking and billing.
+  // Live FK orders_handById_fkey ON DELETE SET NULL (Prisma's default name, no
+  // `map:`). The EIGHTH FK from `orders` to `users` — named on both sides.
+  handAt   DateTime? @db.Timestamptz(6)
+  handById Int?
+  handBy   users?    @relation("OrderHandBy", fields: [handById], references: [id], onDelete: SetNull)
+
   // Partial index created directly in Supabase, NOT expressible in Prisma
   // syntax — do NOT model it as @@index:
   //   orders_billing_pending_idx ON orders ("workflowStage")
@@ -2100,6 +2120,29 @@ model mo_orders {
   splitLabel               String?
   isLocked                 Boolean                @default(false)
   notes                    String?
+  // Billing marks (2026-09-24, Schema v27.41, sql/2026-09-24-billing-mo-actions.sql).
+  // The INTENT, set on the mail order before any OBD exists:
+  //   billOnlyAt/ById — billing pressed CI (bill-only; a full-bill CI is raised
+  //                     when the OBD imports, via an so_tags row fromMailOrder)
+  //   handAt/ById     — billing pressed Hand (the dealer collects); carried onto
+  //                     orders.handAt/ById by enrichment
+  // Timestamp + actor, never a status value. Live FKs mo_orders_billOnlyById_fkey
+  // and mo_orders_handById_fkey, both ON DELETE SET NULL (Prisma default names).
+  // mo_orders now has THREE FKs to `users` — every one named on both sides.
+  //
+  // 🔴 A PARTIAL INDEX — NOT EXPRESSIBLE IN PRISMA, recorded by hand:
+  //   mo_orders_billOnly_soNumber_idx ON mo_orders ("soNumber")
+  //     WHERE "billOnlyAt" IS NOT NULL
+  //   Answers "is any mail order on this SO marked CI?" (enrichment skip,
+  //   un-press, re-punch). Do NOT model it as @@index([soNumber]) — that would
+  //   describe a full index that does not exist. Same class as
+  //   so_tags_soNumber_live_key.
+  billOnlyAt               DateTime?              @db.Timestamptz(6)
+  billOnlyById             Int?
+  billOnlyBy               users?                 @relation("MoOrderBillOnlyBy", fields: [billOnlyById], references: [id], onDelete: SetNull)
+  handAt                   DateTime?              @db.Timestamptz(6)
+  handById                 Int?
+  handBy                   users?                 @relation("MoOrderHandBy", fields: [handById], references: [id], onDelete: SetNull)
   createdAt                DateTime               @default(now())
   // Maintained by the DATABASE, not by Prisma. Live column is
   // timestamptz NOT NULL DEFAULT now(), kept current by
@@ -3317,6 +3360,12 @@ model so_tags {
   // No trigger on the live column (NOT NULL DEFAULT now()) — @updatedAt is what
   // advances it on every update.
   updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  // true = written because a mail order is marked CI (mo_orders.billOnlyAt),
+  // not typed on the Telephonic tab (2026-09-24, Schema v27.41). A FLAG, not a
+  // moOrderId: one live tag per SO can be shared by two marked mail orders;
+  // owners are found by mo_orders WHERE soNumber AND billOnlyAt IS NOT NULL.
+  // Live: boolean NOT NULL DEFAULT false.
+  fromMailOrder Boolean @default(false)
 
   matches so_tag_matches[] @relation("SoTagMatchTag")
 
@@ -3489,6 +3538,10 @@ model trips {
   /// gc | ace | big, or null (chk_trips_vehicle_size, sql/2026-09-21-trips-vehicle-size.sql).
   /// Required on the Upcountry trip form; read by the admin Load plan check.
   vehicleSize       String?
+  /// Hand trip — the dealer collects, no vehicle (2026-09-24, Schema v27.41).
+  /// Live: boolean NOT NULL DEFAULT false. Set on create, never changed; a Hand
+  /// trip refuses a vehicle/plate and so stays `draft` for life (harmless).
+  isHand            Boolean               @default(false)
   note              String?
   status            String                @default("draft")
   releasedAt        DateTime?             @db.Timestamptz(6)
