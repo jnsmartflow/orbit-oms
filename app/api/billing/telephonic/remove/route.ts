@@ -33,6 +33,10 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const result = await removeTelephonicTag({ id, userId, now: new Date() });
   if (!result.ok) {
+    // 'locked' — a mail-order CI tag; 409 with a code the tab can read.
+    if (result.status === "locked") {
+      return NextResponse.json({ error: result.error, code: "locked" }, { status: 409 });
+    }
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
   return NextResponse.json({ alreadyRemoved: result.alreadyRemoved });

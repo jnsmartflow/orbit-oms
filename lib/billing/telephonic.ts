@@ -123,6 +123,8 @@ export interface TelephonicRow {
   addedAt: string;
   matchedAt: string | null;
   expiresAt: string;
+  /** Written by a mail order's CI mark — read-only on the tab (design §3.6). */
+  fromMailOrder: boolean;
   bills: TelephonicBill[];
 }
 
@@ -135,7 +137,7 @@ export interface TelephonicList {
 
 const TAG_SELECT = {
   id: true, soNumber: true, tag: true, status: true, addedById: true,
-  addedAt: true, matchedAt: true, expiresAt: true,
+  addedAt: true, matchedAt: true, expiresAt: true, fromMailOrder: true,
 } as const;
 
 /**
@@ -202,6 +204,7 @@ export async function listTelephonic(month: string, now: Date): Promise<Telephon
     addedAt: t.addedAt.toISOString(),
     matchedAt: t.matchedAt ? t.matchedAt.toISOString() : null,
     expiresAt: t.expiresAt.toISOString(),
+    fromMailOrder: t.fromMailOrder,
     bills: (matchesByTag.get(t.id) ?? []).map((m): TelephonicBill => {
       const o = orderById.get(m.orderId);
       const ci = ciByOrder.get(m.orderId);
@@ -234,6 +237,9 @@ export interface AddTelephonicOutcome {
   status: "added" | "duplicate" | "invalid";
   /** duplicate only — the tag already on that SO, and who put it there. */
   existingTag?: string;
+  /** duplicate only — true when that tag belongs to a mail order's CI mark
+   *  (label it "from mail order", design §3.6). */
+  existingFromMailOrder?: boolean;
   addedByName?: string | null;
   addedAt?: string;
   /** invalid only — what the chip says ("not 10 digits", "over 50"). */
@@ -250,21 +256,22 @@ export interface AddTelephonicResult {
 /** The live row blocking a re-add, if any. */
 async function duplicateOf(
   soNumber: string,
-): Promise<{ tag: string; addedAt: Date; addedBy: { name: string } | null } | null> {
+): Promise<{ tag: string; fromMailOrder: boolean; addedAt: Date; addedBy: { name: string } | null } | null> {
   return prisma.so_tags.findFirst({
     where: { soNumber, isRemoved: false },
-    select: { tag: true, addedAt: true, addedBy: { select: { name: true } } },
+    select: { tag: true, fromMailOrder: true, addedAt: true, addedBy: { select: { name: true } } },
   });
 }
 
 function duplicateOutcome(
   soNumber: string,
-  row: { tag: string; addedAt: Date; addedBy: { name: string } | null },
+  row: { tag: string; fromMailOrder: boolean; addedAt: Date; addedBy: { name: string } | null },
 ): AddTelephonicOutcome {
   return {
     soNumber,
     status: "duplicate",
     existingTag: row.tag,
+    existingFromMailOrder: row.fromMailOrder,
     addedByName: row.addedBy?.name ?? null,
     addedAt: row.addedAt.toISOString(),
   };
@@ -359,25 +366,49 @@ export async function addTelephonicTags(args: {
 
 export type RemoveTelephonicResult =
   | { ok: true; alreadyRemoved: boolean }
-  | { ok: false; status: 404; error: string };
+  | { ok: false; status: 404; error: string }
+  /** A mail-order CI tag (fromMailOrder) — owned by the mail order's CI mark,
+   *  never removable here (design web-update-2026-09-24-billing-mo-actions.md §3.6). */
+  | { ok: false; status: "locked"; error: string };
+
+export const LOCKED_FROM_MAIL_ORDER = "Remove it from the mail order";
 
 /**
  * Soft-remove a tag. Idempotent. Stops FUTURE OBDs from matching — it does NOT
  * release a held bill or void a CI; those stay Floor's and billing's jobs.
+ *
+ * 🔴 A tag written by a mail order's CI mark (fromMailOrder) is LOCKED here:
+ * removing it would leave mo_orders.billOnlyAt saying CI with no tag behind it.
+ * It is refused with its own result — never reported as "already removed".
  */
 export async function removeTelephonicTag(args: {
   id: number;
   userId: number;
   now: Date;
 }): Promise<RemoveTelephonicResult> {
+  const row = await prisma.so_tags.findUnique({
+    where: { id: args.id },
+    select: { id: true, isRemoved: true, fromMailOrder: true },
+  });
+  if (row === null) return { ok: false, status: 404, error: "Tag not found." };
+  if (row.isRemoved) return { ok: true, alreadyRemoved: true };
+  if (row.fromMailOrder) return { ok: false, status: "locked", error: LOCKED_FROM_MAIL_ORDER };
+
+  // The guard repeats both conditions, so a tag flipped to fromMailOrder between
+  // the read and this write is not removed.
   const res = await prisma.so_tags.updateMany({
-    where: { id: args.id, isRemoved: false },
+    where: { id: args.id, isRemoved: false, fromMailOrder: false },
     data: { isRemoved: true, removedAt: args.now, removedById: args.userId },
   });
   if (res.count > 0) return { ok: true, alreadyRemoved: false };
 
-  const row = await prisma.so_tags.findUnique({ where: { id: args.id }, select: { id: true } });
-  if (row === null) return { ok: false, status: 404, error: "Tag not found." };
+  const again = await prisma.so_tags.findUnique({
+    where: { id: args.id },
+    select: { isRemoved: true, fromMailOrder: true },
+  });
+  if (again?.fromMailOrder && !again.isRemoved) {
+    return { ok: false, status: "locked", error: LOCKED_FROM_MAIL_ORDER };
+  }
   return { ok: true, alreadyRemoved: true };
 }
 

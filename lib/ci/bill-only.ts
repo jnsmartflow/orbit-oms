@@ -6,14 +6,26 @@
 //
 // A bill-only order: the sales officer asks for the invoice, but the material
 // never leaves the depot, so a CI (Goods Return Note) is raised against the
-// same bill with material not moved. Billing marks such an SO with a 'ci' tag
-// on the Billing · Telephonic tab (so_tags); when the OBD lands, the import
-// holds the bill and raises this CI in the same step.
-// Design: docs/prompts/drafts/web-update-2026-09-21-billing-telephonic-tab.md §5.
+// same bill with material not moved. The SO carries a 'ci' tag (so_tags) —
+// typed on the Billing · Telephonic tab, or written because billing pressed CI
+// on a mail order (so_tags.fromMailOrder). When the OBD lands, the import hook
+// raises this CI and then takes the bill off the floor.
+// Designs: docs/prompts/drafts/web-update-2026-09-21-billing-telephonic-tab.md §5
+//          docs/prompts/drafts/web-update-2026-09-24-billing-mo-actions.md §3.3
 //
-// 🔴 NOTHING CALLS THIS YET. The import hook that will (step 5 of the build) is
-// not written. An import is not a call: until that hook lands, no CI is ever
-// raised by this file. Do not wire it from anywhere else.
+// ONE CALLER: lib/billing/telephonic-apply.ts (applySoTagHolds), reached from
+// the four import sites in app/api/import/obd/route.ts and from the late-tag
+// paths (lib/billing/telephonic.ts addTelephonicTags, lib/billing/mo-ci-tag.ts).
+// Do not wire it from anywhere else — a raise here is followed by the hook's
+// cancel, and a raise without that cancel leaves a CI'd bill on the floor.
+//
+// ── Refusals (all `skipped`, the caller holds the bill for a person) ─────────
+//   • a live CI already exists (any source) — see the duplicate guard below
+//   • an OPEN DRAFT CI exists on /ci for this bill (Floor Raise CI's own check,
+//     app/api/floor/ci/route.ts) — raising here would make the draft, once
+//     submitted, a second CI on the same bill
+//   • the bill is gone, has no active lines, a line has no quantity, or the
+//     reason code is inactive
 //
 // 🔴 IT NEVER THROWS. The caller runs inside an import, and a throw there would
 // break the import for every other bill in the batch. The whole body is
@@ -61,7 +73,9 @@ import { computeFullBillLines } from "@/lib/ci/full-bill";
 const BILL_ONLY_REASON_CODE = "WRONG_ORDER_BY_SO";
 
 export type BillOnlyCiResult =
-  | { status: "raised"; ciId: number; ciNumber: string }
+  /** reasonLabel — the snapshotted ci_reason_master label, for the caller's
+   *  cancel note ("CI raised — {ciNumber} · {reasonLabel}"). */
+  | { status: "raised"; ciId: number; ciNumber: string; reasonLabel: string }
   /** A normal refusal — the caller records `reason`. */
   | { status: "skipped"; reason: string }
   /** Unexpected — already logged here with the orderId. */
@@ -87,6 +101,17 @@ export async function raiseBillOnlyCi(args: {
         status: "skipped",
         reason: `CI already exists: ${existing.ciNumber ?? `ci #${existing.id}`}`,
       };
+    }
+
+    // ── 1b. An open DRAFT on /ci — Floor Raise CI's own check ────────────────
+    // A draft is invisible everywhere (CLAUDE_CI.md §2), so the guard above does
+    // not see it; but submitting it later would put a SECOND CI on this bill.
+    const draft = await prisma.ci_returns.findFirst({
+      where: { orderId, isVoided: false, status: "draft" },
+      select: { id: true },
+    });
+    if (draft !== null) {
+      return { status: "skipped", reason: "A CI draft is open on /ci for this bill" };
     }
 
     // ── 2. The bill, and the header snapshot — the same select auto.ts's
@@ -183,7 +208,12 @@ export async function raiseBillOnlyCi(args: {
           `[ci/bill-only] raised ${created.ciNumber} on order #${order.id} / OBD ${order.obdNumber} ` +
             `with ${full.lines.length} line(s).`,
         );
-        return { status: "raised", ciId: created.id, ciNumber: created.ciNumber ?? identity.ciNumber };
+        return {
+          status: "raised",
+          ciId: created.id,
+          ciNumber: created.ciNumber ?? identity.ciNumber,
+          reasonLabel: reason.label,
+        };
       } catch (err) {
         const collided =
           err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";

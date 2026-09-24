@@ -1,22 +1,24 @@
 // lib/billing/telephonic-apply.ts
 //
 // ═══════════════════════════════════════════════════════════════════════════
-// 🔴 THE IMPORT HOOK FOR BILLING · TELEPHONIC TAGS — HOLD, AND THE BILL-ONLY CI
+// 🔴 THE IMPORT HOOK FOR SO TAGS — HOLD, AND THE BILL-ONLY CI + CANCEL
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // A telephonic order has no mail order, so the no-mail-order fallback
 // (app/api/import/obd/route.ts, applyNoMailOrderFallback) would release it to
 // picking the moment its OBD lands. Billing types the SO number on the
-// Telephonic tab with a tag — 'hold' or 'ci' (so_tags). This hook runs at every
+// Telephonic tab with a tag — 'hold' or 'ci' (so_tags). Billing can also press
+// CI on a MAIL order (mo_orders.billOnlyAt), which writes a 'ci' tag with
+// fromMailOrder = true (lib/billing/mo-ci-tag.ts). This hook runs at every
 // fallback call site, AFTER applyMailOrderEnrichment and immediately BEFORE the
-// fallback, and holds the tagged bills first.
+// fallback.
 //
 // 🔴 THE ORDER IS LOAD-BEARING. The fallback only releases bills whose
-// dispatchStatus is null; a bill this hook has held is invisible to it — no
-// second write, no false "Auto-dispatched on import" log line.
+// dispatchStatus is null; a bill this hook has held or cancelled is invisible
+// to it — no second write, no false "Auto-dispatched on import" log line.
 //
-// Design: docs/prompts/drafts/web-update-2026-09-21-billing-telephonic-tab.md
-// §5, "Import hook rules".
+// Designs: docs/prompts/drafts/web-update-2026-09-21-billing-telephonic-tab.md §5
+//          docs/prompts/drafts/web-update-2026-09-24-billing-mo-actions.md §3.3–§3.5
 //
 // TWO HALVES:
 //   planSoTagApplications — PURE. No Prisma, no clock (`now` is passed in).
@@ -25,16 +27,35 @@
 //                           decisions in order. NEVER THROWS into the import.
 //
 // Per acting bill, IN THIS ORDER, sequential awaits, never $transaction:
+//
+//   'hold' tag:   CLAIM → HOLD → TAG
+//   'ci'   tag:   CLAIM → CI → (a) CANCEL / (b) HOLD / (c) split → TAG
+//
 //   1. CLAIM — insert the so_tag_matches row. Its UNIQUE (soTagId, orderId)
 //      is the lock: a P2002 means another import run (auto-import fires every
 //      minute; a manual paste can overlap it) got there first → skip.
-//   2. HOLD  — ONE orders.update + ONE order_status_logs row.
-//   3. CI    — 'ci' tags only: raiseBillOnlyCi, which never throws. A refusal
-//      or failure is written to the match row's ciSkipReason.
-//   4. TAG   — 'waiting' → 'matched' with matchedAt = now. An already-matched
+//   2. HOLD  — ONE orders.update + ONE order_status_logs row (TELEPHONIC_HOLD_NOTE).
+//   2'. CI tags (design §3.3, gate G4 / re-gate R1):
+//      raiseBillOnlyCi FIRST, then
+//      (a) raised       → Floor Raise CI's three writes (app/api/floor/ci/route.ts):
+//                         orders.update {cancelled, dispatchStatus null},
+//                         pick_assignments.deleteMany, ONE log
+//                         "CI raised — {ciNumber} · {reason}".
+//      (b) skipped/failed → today's HOLD; the reason goes in ciSkipReason and
+//                         a person looks at it. Never a cancelled bill with no CI.
+//      (c) raised, cancel went wrong — WHICH write failed decides it:
+//           • the orders.update itself threw → try the HOLD, record "cancel failed"
+//             (and "cancel failed; hold failed" if the hold throws too — the
+//             fallback in this same run may then release the CI'd bill; the
+//             Telephonic tab shows it and Floor cancels by hand)
+//           • the update landed, the deleteMany or the log threw → record
+//             "cancel incomplete" and DO NOT hold: the bill is already cancelled.
+//   3. TAG   — 'waiting' → 'matched' with matchedAt = now. An already-matched
 //      tag keeps its matchedAt (it records the FIRST match).
-// record_only (dispatched / removed / cancelled bill): step 1 with the reason
-// in ciSkipReason, then step 4. No hold, no CI.
+//
+// record_only (removed / dispatched / cancelled bill; for 'ci' tags also a bill
+// on a trip or in the tint room — billingRefusal, lib/billing/refusal.ts):
+// step 1 with the reason in ciSkipReason, then step 3. No hold, no CI.
 //
 // ⚠ A bill that already has a match row for this tag is skipped ENTIRELY. A
 // re-import must never re-hold a bill Floor has deliberately released, and
@@ -44,6 +65,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { raiseBillOnlyCi } from "@/lib/ci/bill-only";
 import { TELEPHONIC_HOLD_NOTE } from "@/lib/floor/hold-log";
+import { billingRefusal } from "@/lib/billing/refusal";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +76,9 @@ export interface TagPlanOrder {
   soNumber: string | null;
   workflowStage: string;
   isRemoved: boolean;
+  /** For billingRefusal('ci', …) — a CI'd bill cannot be cancelled off a trip. */
+  tripDropId: number | null;
+  tripNumber: string | null;
 }
 
 /** The tag fields the planner needs. */
@@ -67,6 +92,8 @@ export interface TagPlanTag {
   isRemoved: boolean;
   expiresAt: Date;
   addedById: number;
+  /** true = written because a mail order is marked CI (so_tags.fromMailOrder). */
+  fromMailOrder: boolean;
 }
 
 export interface TagPlanMatch {
@@ -78,16 +105,28 @@ export type SoTagDecision<O extends TagPlanOrder = TagPlanOrder, T extends TagPl
   | { action: "skip"; order: O; reason: "no SO number" | "no live tag" | "already matched" }
   | { action: "record_only"; order: O; tag: T; reason: string }
   | { action: "hold"; order: O; tag: T }
-  | { action: "hold_and_ci"; order: O; tag: T };
+  | { action: "ci_cancel"; order: O; tag: T };
 
 export interface SoTagApplySummary {
   held: number;
+  /** CI raised AND the bill cancelled (path a). */
   ciRaised: number;
+  /** CI refused or failed — the bill was held instead (path b). */
   ciSkipped: number;
+  /** CI raised but the cancel did not complete (path c). */
+  cancelFailed: number;
   recordOnly: number;
   skipped: number;
   errors: number;
 }
+
+// ── The ciSkipReason vocabulary for path (c) ─────────────────────────────────
+// Written on the match row; the Telephonic tab reads them (status pills).
+
+export const CI_CANCEL_FAILED = "cancel failed";
+export const CI_CANCEL_FAILED_HOLD_FAILED = "cancel failed; hold failed";
+export const CI_CANCEL_INCOMPLETE = "cancel incomplete";
+export const HOLD_FAILED = "hold failed";
 
 // ── The pure planner ─────────────────────────────────────────────────────────
 
@@ -95,7 +134,8 @@ export interface SoTagApplySummary {
  * 🔴 A LIVE TAG: not removed, not expired, status 'waiting' OR 'matched'.
  * NOT 'waiting' only — the first OBD flips a tag to 'matched', and a second OBD
  * on the same SO arriving in a later import must still find it.
- * "Expired" is never stored; it is `expiresAt <= now` read here.
+ * "Expired" is never stored; it is `expiresAt <= now` read here. Mail-order
+ * tags carry a far-future expiresAt, so they never expire.
  */
 export function isLiveTag(tag: TagPlanTag, now: Date): boolean {
   return (
@@ -116,12 +156,17 @@ function normaliseSo(so: string | null): string | null {
  *   blank / null soNumber             → skip ("no SO number")
  *   no live tag for its SO            → skip ("no live tag")
  *   a match row exists for the pair   → skip ("already matched")
- *   removed / dispatched / cancelled  → record_only (reason names which)
- *   otherwise                         → hold ('hold' tag) or hold_and_ci ('ci' tag)
+ *   removed / dispatched / cancelled  → record_only (the reason names which —
+ *                                       these exact strings are what the
+ *                                       Telephonic tab's status pill matches)
+ *   'ci' tag + billingRefusal('ci')   → record_only (on a trip, tint room)
+ *   otherwise                         → hold ('hold' tag) or ci_cancel ('ci' tag)
  *
  * Cancelled joins dispatched and removed because Floor refuses to hold a
  * cancelled bill (app/api/floor/actions/route.ts) and a "material not moved"
- * CI on a dead bill would be false.
+ * CI on a dead bill would be false. A 'ci' tag cannot cancel a bill that is on
+ * a trip (the trip would never read READY) or in the tint room (an operator's
+ * live assignment would be orphaned) — design §3.5.
  */
 export function planSoTagApplications<O extends TagPlanOrder, T extends TagPlanTag>(
   orders: readonly O[],
@@ -149,6 +194,7 @@ export function planSoTagApplications<O extends TagPlanOrder, T extends TagPlanT
       return { action: "skip", order, reason: "already matched" };
     }
 
+    // Kept FIRST, with their exact strings — the Telephonic tab's pill matches them.
     if (order.isRemoved) return { action: "record_only", order, tag, reason: "bill removed" };
     if (order.workflowStage === "dispatched") {
       return { action: "record_only", order, tag, reason: "already dispatched" };
@@ -157,14 +203,61 @@ export function planSoTagApplications<O extends TagPlanOrder, T extends TagPlanT
       return { action: "record_only", order, tag, reason: "bill cancelled" };
     }
 
-    return { action: tag.tag === "ci" ? "hold_and_ci" : "hold", order, tag };
+    if (tag.tag === "ci") {
+      const refusal = billingRefusal("ci", {
+        workflowStage: order.workflowStage,
+        isRemoved: order.isRemoved,
+        tripDropId: order.tripDropId,
+        tripNumber: order.tripNumber,
+      });
+      if (refusal !== null) return { action: "record_only", order, tag, reason: refusal };
+      return { action: "ci_cancel", order, tag };
+    }
+
+    return { action: "hold", order, tag };
   });
 }
 
 // ── The executor ─────────────────────────────────────────────────────────────
 
+/** The executor's view of one order (Read 1). */
+interface HookOrder extends TagPlanOrder {
+  dispatchStatus: string | null;
+  obdEmailDate: Date | null;
+}
+
+/** ONE orders.update + ONE log row. Throws on failure — callers decide. */
+async function writeHold(order: HookOrder, byId: number, now: Date): Promise<void> {
+  // heldAt = the arrival date, the same rule enrichment and Floor's hold action
+  // use — the read side derives "held since" from the log row below.
+  await prisma.orders.update({
+    where: { id: order.id },
+    data: { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? now },
+  });
+  // toStage stays the unchanged workflowStage — a hold does not advance a bill;
+  // the NOTE identifies the hold event (lib/floor/hold-log.ts).
+  await prisma.order_status_logs.create({
+    data: {
+      orderId: order.id,
+      fromStage: order.workflowStage,
+      toStage: order.workflowStage,
+      changedById: byId,
+      note: TELEPHONIC_HOLD_NOTE,
+    },
+  });
+}
+
+/** Best-effort write of the match row's reason — never throws. */
+async function setSkipReason(matchId: number, obd: string, reason: string): Promise<void> {
+  try {
+    await prisma.so_tag_matches.update({ where: { id: matchId }, data: { ciSkipReason: reason } });
+  } catch (err) {
+    console.error(`[telephonic] OBD ${obd}: could not record "${reason}" on match #${matchId}:`, err);
+  }
+}
+
 /**
- * Apply live Telephonic tags to the bills of one import batch.
+ * Apply live SO tags to the bills of one import batch.
  *
  * Pass the SAME OBD list the no-mail-order fallback receives, and call it
  * immediately before that fallback. Three batched reads — orders, so_tags,
@@ -179,7 +272,7 @@ export async function applySoTagHolds(
   now: Date,
 ): Promise<SoTagApplySummary> {
   const summary: SoTagApplySummary = {
-    held: 0, ciRaised: 0, ciSkipped: 0, recordOnly: 0, skipped: 0, errors: 0,
+    held: 0, ciRaised: 0, ciSkipped: 0, cancelFailed: 0, recordOnly: 0, skipped: 0, errors: 0,
   };
 
   try {
@@ -187,13 +280,26 @@ export async function applySoTagHolds(
     if (unique.length === 0) return summary;
 
     // ── Read 1: the batch's orders (removed included — the planner records them).
-    const orders = await prisma.orders.findMany({
+    const rows = await prisma.orders.findMany({
       where: { obdNumber: { in: unique } },
       select: {
         id: true, obdNumber: true, soNumber: true, workflowStage: true,
         isRemoved: true, dispatchStatus: true, obdEmailDate: true,
+        tripDropId: true,
+        tripDrop: { select: { trip: { select: { tripNumber: true } } } },
       },
     });
+    const orders: HookOrder[] = rows.map((r) => ({
+      id: r.id,
+      obdNumber: r.obdNumber,
+      soNumber: r.soNumber,
+      workflowStage: r.workflowStage,
+      isRemoved: r.isRemoved,
+      dispatchStatus: r.dispatchStatus,
+      obdEmailDate: r.obdEmailDate,
+      tripDropId: r.tripDropId,
+      tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+    }));
     const soNumbers = Array.from(
       new Set(orders.map((o) => normaliseSo(o.soNumber)).filter((s): s is string => s !== null)),
     );
@@ -210,7 +316,7 @@ export async function applySoTagHolds(
       },
       select: {
         id: true, soNumber: true, tag: true, status: true,
-        isRemoved: true, expiresAt: true, addedById: true,
+        isRemoved: true, expiresAt: true, addedById: true, fromMailOrder: true,
       },
     });
     if (tags.length === 0) return summary;
@@ -257,80 +363,113 @@ export async function applySoTagHolds(
           throw err;
         }
 
+        // A mail order already set a status (enrichment). For a Telephonic tag
+        // that is a clash worth a warning — the tag wins. For a mail-order tag
+        // it is expected: enrichment holds a CI-marked bill as a safety net
+        // (design §3.4), so no warning.
+        if (d.action !== "record_only" && order.dispatchStatus !== null && !tag.fromMailOrder) {
+          console.warn(
+            `[telephonic] CLASH OBD ${order.obdNumber} / SO ${order.soNumber}: mail order set ` +
+              `dispatchStatus '${order.dispatchStatus}', ${tag.tag} tag overrides it`,
+          );
+        }
+
         if (d.action === "record_only") {
           summary.recordOnly += 1;
           console.warn(
             `[telephonic] OBD ${order.obdNumber} / SO ${order.soNumber}: ${tag.tag} tag not applied — ${d.reason}`,
           );
-        } else {
+        } else if (d.action === "hold") {
           // ── 2. HOLD ───────────────────────────────────────────────────────
-          if (order.dispatchStatus !== null) {
-            // Enrichment already set a status from a mail order. The tag wins:
-            // a wrong hold costs one Release click; a wrong dispatch puts goods
-            // in front of a picker.
-            console.warn(
-              `[telephonic] CLASH OBD ${order.obdNumber} / SO ${order.soNumber}: mail order set ` +
-                `dispatchStatus '${order.dispatchStatus}', ${tag.tag} tag holds it`,
-            );
-          }
-          // ONE orders.update per bill. heldAt = the arrival date, the same
-          // rule enrichment (applyMailOrderEnrichment) and Floor's hold action
-          // use — the read side derives "held since" from the log row below.
           try {
-            await prisma.orders.update({
-              where: { id: order.id },
-              data: { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? now },
-            });
-            // ONE log row. toStage stays the unchanged workflowStage — a hold does
-            // not advance a bill; the NOTE is what identifies the hold event
-            // (lib/floor/hold-log.ts). changedById = the operator who typed the tag.
-            await prisma.order_status_logs.create({
-              data: {
-                orderId: order.id,
-                fromStage: order.workflowStage,
-                toStage: order.workflowStage,
-                changedById: tag.addedById,
-                note: TELEPHONIC_HOLD_NOTE,
-              },
-            });
+            await writeHold(order, tag.addedById, now);
           } catch (holdErr) {
             // 🔴 SHOWN, NOT RETRIED. The claim stands (imports never revisit an
             // existing bill, so a retry would almost never fire); the match row
-            // says "hold failed" and the tab shows the bill's LIVE dispatchStatus,
-            // so a bill that is not actually held is visible and Floor can hold it
-            // by hand. Best effort — its own try/catch. No CI for this bill: the
-            // rethrow below lands in the per-bill catch, which skips steps 3-4.
-            try {
-              await prisma.so_tag_matches.update({
-                where: { id: matchId },
-                data: { ciSkipReason: "hold failed" },
-              });
-            } catch (reasonErr) {
-              console.error(
-                `[telephonic] OBD ${order.obdNumber}: could not record "hold failed" on match #${matchId}:`,
-                reasonErr,
-              );
-            }
+            // says "hold failed" and the tab shows the bill's LIVE dispatchStatus.
+            await setSkipReason(matchId, order.obdNumber, HOLD_FAILED);
             throw holdErr;
           }
           summary.held += 1;
+        } else {
+          // ── 2'. CI → CANCEL (a) / HOLD (b) / split (c) ────────────────────
+          const ci = await raiseBillOnlyCi({ orderId: order.id, raisedById: tag.addedById });
 
-          // ── 3. CI ─────────────────────────────────────────────────────────
-          if (d.action === "hold_and_ci") {
-            const ci = await raiseBillOnlyCi({ orderId: order.id, raisedById: tag.addedById });
-            if (ci.status === "raised") {
-              summary.ciRaised += 1;
-            } else {
-              summary.ciSkipped += 1;
-              await prisma.so_tag_matches.update({
-                where: { id: matchId },
-                data: { ciSkipReason: ci.status === "skipped" ? ci.reason : `failed: ${ci.error}` },
+          if (ci.status !== "raised") {
+            // (b) No CI — hold for a person, and say why. Never cancel here.
+            summary.ciSkipped += 1;
+            await setSkipReason(
+              matchId,
+              order.obdNumber,
+              ci.status === "skipped" ? ci.reason : `failed: ${ci.error}`,
+            );
+            try {
+              await writeHold(order, tag.addedById, now);
+            } catch (holdErr) {
+              await setSkipReason(matchId, order.obdNumber, HOLD_FAILED);
+              throw holdErr;
+            }
+            summary.held += 1;
+          } else {
+            // (a) CI raised → Floor Raise CI's three writes.
+            let updateLanded = false;
+            try {
+              // ONE orders.update per bill (the live-sync markers key on
+              // MAX(orders.updatedAt) — CORE §3). Clears the safety-net hold too.
+              await prisma.orders.update({
+                where: { id: order.id },
+                data: { workflowStage: "cancelled", dispatchStatus: null },
               });
+              updateLanded = true;
+              // AFTER the stage write, never before (the floor cancel's orphan
+              // fix). A late tag can meet a bill already with a picker.
+              await prisma.pick_assignments.deleteMany({ where: { orderId: order.id } });
+              await prisma.order_status_logs.create({
+                data: {
+                  orderId: order.id,
+                  fromStage: order.workflowStage,
+                  toStage: "cancelled",
+                  changedById: tag.addedById,
+                  note: `CI raised — ${ci.ciNumber} · ${ci.reasonLabel}`,
+                },
+              });
+              summary.ciRaised += 1;
+            } catch (cancelErr) {
+              summary.cancelFailed += 1;
+              if (updateLanded) {
+                // (c-2) The bill IS cancelled — do not hold it.
+                console.error(
+                  `[telephonic] OBD ${order.obdNumber}: ${ci.ciNumber} raised and bill cancelled, ` +
+                    `but the assignment delete or log failed:`,
+                  cancelErr,
+                );
+                await setSkipReason(matchId, order.obdNumber, CI_CANCEL_INCOMPLETE);
+              } else {
+                // (c-1) The cancel never landed — hold the CI'd bill instead.
+                console.error(
+                  `[telephonic] OBD ${order.obdNumber}: ${ci.ciNumber} raised but the cancel failed — holding:`,
+                  cancelErr,
+                );
+                try {
+                  await writeHold(order, tag.addedById, now);
+                  await setSkipReason(matchId, order.obdNumber, CI_CANCEL_FAILED);
+                  summary.held += 1;
+                } catch (holdErr) {
+                  // 🔴 A CI'd bill left at its old status. If that status is null
+                  // the fallback in THIS run releases it — nothing here can stop
+                  // that; the tab shows "Cancel failed" and Floor cancels by hand.
+                  console.error(
+                    `[telephonic] OBD ${order.obdNumber}: ${ci.ciNumber} raised, cancel AND hold failed:`,
+                    holdErr,
+                  );
+                  await setSkipReason(matchId, order.obdNumber, CI_CANCEL_FAILED_HOLD_FAILED);
+                }
+              }
             }
           }
         }
 
-        // ── 4. TAG ──────────────────────────────────────────────────────────
+        // ── 3. TAG ──────────────────────────────────────────────────────────
         if (tagStatus.get(tag.id) === "waiting") {
           // Guarded on status so a concurrent run cannot overwrite the FIRST
           // match's matchedAt.
@@ -350,7 +489,7 @@ export async function applySoTagHolds(
     console.error("[telephonic] FAILED before applying any tag:", err);
   }
 
-  if (summary.held + summary.recordOnly + summary.errors > 0) {
+  if (summary.held + summary.ciRaised + summary.cancelFailed + summary.recordOnly + summary.errors > 0) {
     console.log("[telephonic] applied", summary);
   }
   return summary;

@@ -60,8 +60,28 @@ export const SUPPORT_HOLD_NOTES = [
  *  and the Hold tab's "held since" must still find it. */
 export const TELEPHONIC_HOLD_NOTE = "Held on import (Telephonic tag)";
 
+/** The import's SAFETY-NET hold note (2026-09-24). Written by
+ *  applyMailOrderEnrichment (app/api/import/obd/route.ts) when any mail order on
+ *  the bill's SO is marked CI by billing (mo_orders.billOnlyAt): the bill is held
+ *  instead of carrying the mail order's status, so a missing tag or a failed hook
+ *  can never let the no-mail-order fallback release it to picking with no CI.
+ *  The hook's cancel (lib/billing/telephonic-apply.ts) clears the hold.
+ *  Design: web-update-2026-09-24-billing-mo-actions.md §3.4. */
+export const BILLING_CI_HOLD_NOTE = "Held on import (CI marked in billing)";
+
+/** Billing's own hold note (2026-09-24) — the Orders-tab Hold button, once the
+ *  billing actions route writes one log per bill (design §6). Declared here now
+ *  so the Hold tab's "held since" already recognises it. */
+export const BILLING_HOLD_NOTE = "Held from billing";
+
 /** Every note that identifies a hold event, for the `note: { in: … }` filter. */
-export const HOLD_LOG_NOTES: string[] = [FLOOR_HOLD_NOTE, ...SUPPORT_HOLD_NOTES, TELEPHONIC_HOLD_NOTE];
+export const HOLD_LOG_NOTES: string[] = [
+  FLOOR_HOLD_NOTE,
+  ...SUPPORT_HOLD_NOTES,
+  TELEPHONIC_HOLD_NOTE,
+  BILLING_CI_HOLD_NOTE,
+  BILLING_HOLD_NOTE,
+];
 
 /** Where a row's `heldSince` came from — surfaced in the UI so an approximated
  *  date can never silently read as a recorded one.

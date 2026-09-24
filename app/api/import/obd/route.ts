@@ -43,6 +43,7 @@ import type { ImportAnomaly, QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 import { applySoTagHolds } from "@/lib/billing/telephonic-apply";
+import { BILLING_CI_HOLD_NOTE } from "@/lib/floor/hold-log";
 
 export const dynamic = "force-dynamic";
 
@@ -261,15 +262,31 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     });
     if (!mailOrder) continue;
 
+    // 🔴 BILL-ONLY (CI) — keyed on the SO, NOT on the newest mail order
+    // (design web-update-2026-09-24-billing-mo-actions.md §3.4, re-gate R2).
+    // If ANY mail order on this SO is marked CI by billing, the bill must never
+    // be moved toward picking here: no status, slot or priority is carried, the
+    // engine does not run, nothing auto-advances — and the bill is HELD below as
+    // a safety net, so a missing tag or a failed hook can never let the
+    // no-mail-order fallback release it with no CI. The tag hook
+    // (lib/billing/telephonic-apply.ts), which runs right after this, raises the
+    // CI and its cancel clears the hold. Served by the partial index
+    // mo_orders_billOnly_soNumber_idx.
+    const billOnlyMark = await prisma.mo_orders.findFirst({
+      where: { soNumber: soNum, billOnlyAt: { not: null } },
+      select: { billOnlyById: true },
+    });
+    const billOnly = billOnlyMark !== null;
+
     const updateData: Record<string, unknown> = { mailMatched: true };
 
-    if (mailOrder.dispatchStatus) {
+    if (mailOrder.dispatchStatus && !billOnly) {
       const loweredStatus = mailOrder.dispatchStatus.toLowerCase();
       updateData.dispatchStatus = loweredStatus;
       // heldAt set per-order below — updateMany can't apply per-row values
     }
 
-    if (mailOrder.dispatchPriority) {
+    if (mailOrder.dispatchPriority && !billOnly) {
       updateData.priorityLevel = mailOrder.dispatchPriority === "Urgent" ? 1 : 3;
     }
 
@@ -308,7 +325,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     //
     // Same shape Floor's own change-slot action writes
     // (app/api/floor/actions/route.ts:111), so the target state is proven.
-    if (mailOrder.dispatchTargetDate && mailOrder.dispatchWindowId) {
+    if (mailOrder.dispatchTargetDate && mailOrder.dispatchWindowId && !billOnly) {
       updateData.dispatchTargetDate = mailOrder.dispatchTargetDate;
       updateData.dispatchWindowId = mailOrder.dispatchWindowId;
       updateData.dispatchSlotSource = "manual";
@@ -352,6 +369,46 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       where: { soNumber: soNum },
       data: updateData,
     });
+
+    if (billOnly) {
+      // ── Safety-net hold for a CI-marked SO (design §3.4) ──────────────────
+      // ONLY bills with no status yet that are not cancelled or dispatched —
+      // exactly the set the fallback would otherwise release. A bill Floor has
+      // released (status set), or one an earlier import already CI'd and
+      // cancelled, is never re-held by a later enrichment of the same SO.
+      // ONE orders.update + ONE log per bill; heldAt = the arrival date, as
+      // every hold path writes it (CLAUDE_FLOOR.md §4.5).
+      const toHold = await prisma.orders.findMany({
+        where: {
+          soNumber: soNum,
+          isRemoved: false,
+          dispatchStatus: null,
+          workflowStage: { notIn: ["cancelled", "dispatched"] },
+        },
+        select: { id: true, obdEmailDate: true, workflowStage: true },
+      });
+      for (const ord of toHold) {
+        await prisma.orders.update({
+          where: { id: ord.id },
+          data: { dispatchStatus: "hold", heldAt: ord.obdEmailDate ?? new Date() },
+        });
+        await prisma.order_status_logs.create({
+          data: {
+            orderId: ord.id,
+            fromStage: ord.workflowStage,
+            toStage: ord.workflowStage,
+            // The billing user who pressed CI; 1 (system) if that stamp is gone.
+            changedById: billOnlyMark.billOnlyById ?? 1,
+            note: BILLING_CI_HOLD_NOTE,
+          },
+        });
+      }
+      console.log(
+        `[mail-order-enrichment] soNumber=${soNum} is CI-marked in billing — held ${toHold.length} bill(s), ` +
+          `no status/slot/priority carried, engine and auto-advance skipped`,
+      );
+      continue;
+    }
 
     // Dispatch engine (Rule 1) — auto-assign a slot for orders enriched in
     // this run only (soNumber-scoped, never a full-table scan). A human's
