@@ -13,6 +13,7 @@ import {
 import { extractCustomerFromSubject, matchCustomer, parseSubject } from "@/lib/mail-orders/customer-match";
 import { matchDeliveryCustomer } from "@/lib/mail-orders/delivery-match";
 import { buildTableCContext } from "@/lib/mail-orders/table-c-context";
+import { isSignatureJunk } from "@/lib/mail-orders/note-junk";
 
 
 export const dynamic = "force-dynamic";
@@ -330,6 +331,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 4d. Drop signature / footer / mail-header junk from the joined remarks
+    const finalRemarks = remarks
+      ? remarks
+          .split("; ")
+          .filter((part) => !isSignatureJunk(part, soName))
+          .join("; ")
+      : remarks ?? null;
+
     // 5. Create order
     const order = await prisma.mo_orders.create({
       data: {
@@ -342,7 +351,7 @@ export async function POST(req: NextRequest) {
         customerMatchStatus: customerMatch.customerMatchStatus,
         customerCandidates: customerMatch.customerCandidates,
         deliveryRemarks: finalDeliveryRemarks,
-        remarks: remarks ?? null,
+        remarks: finalRemarks,
         billRemarks: finalBillRemarks,
         dispatchStatus: dispatchStatus || "Dispatch",
         dispatchPriority: dispatchPriority || "Normal",
@@ -422,6 +431,7 @@ export async function POST(req: NextRequest) {
       let remarkNum = 0;
       for (const rl of remarkLines) {
         if (rl.remarkType === "noise") continue;
+        if (isSignatureJunk(rl.rawText, soName)) continue;
         remarkNum++;
         await prisma.mo_order_remarks.create({
           data: {
@@ -439,6 +449,7 @@ export async function POST(req: NextRequest) {
     if (subjectParsed.remarks.length > 0) {
       let subjectRemarkNum = 0;
       for (const sr of subjectParsed.remarks) {
+        if (isSignatureJunk(sr.text, soName)) continue;
         subjectRemarkNum++;
         await prisma.mo_order_remarks.create({
           data: {
