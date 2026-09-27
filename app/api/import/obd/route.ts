@@ -365,8 +365,13 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
 
     if (Object.keys(updateData).length === 0) continue;
 
+    // 🔴 Never a cancelled or removed bill (2026-09-27, build step 5b). Without
+    // this a later import on the same SO re-wrote dispatchStatus onto a bill
+    // already cancelled (Floor cancel, Raise CI, Billing Pick delete) — and a
+    // Hold mail order put it back on Floor's Hold tab, whose feed checks the
+    // hold alone (lib/floor/queries.ts getFloorHold).
     await prisma.orders.updateMany({
-      where: { soNumber: soNum },
+      where: { soNumber: soNum, isRemoved: false, workflowStage: { not: "cancelled" } },
       data: updateData,
     });
 
@@ -488,8 +493,9 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
 
     // heldAt = each order's own obdEmailDate (arrival anchor for the board).
     if (updateData.dispatchStatus === "hold") {
+      // Same filter as the updateMany above — only the bills it wrote.
       const ordersToHold = await prisma.orders.findMany({
-        where: { soNumber: soNum },
+        where: { soNumber: soNum, isRemoved: false, workflowStage: { not: "cancelled" } },
         select: { id: true, obdEmailDate: true },
       });
       for (const ord of ordersToHold) {
