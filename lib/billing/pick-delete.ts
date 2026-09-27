@@ -196,14 +196,57 @@ async function readBills(ids: number[]): Promise<Map<number, BillRow>> {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
+/**
+ * 🔴 THE ONE "WHICH GROUPS SHOW" RULE — the list AND the marker count both call
+ * this, so the pill number always equals the groups on the tab (owner,
+ * 2026-09-27). A group shows ONLY when at least one of its bills passes
+ * pickDeleteCheck() — a group billing cannot act on (every bill on a trip,
+ * dispatched, in the tint room, legacy closed or with a live CI) is not work.
+ * A shown group keeps ALL its bills: the one that cannot go is still needed to
+ * compare against. Replaced "at least one bill before dispatch" the same day.
+ *
+ * Picking's red Same SO flag is NOT this rule and does not change
+ * (lib/picking/duplicate-so.ts) — a hidden group still flags on the boards.
+ */
+export async function getActionableGroups(): Promise<{
+  /** SO → sorted live bill ids, shown groups only. */
+  groups: Map<string, number[]>;
+  /** Every open group's bill ids, shown or not — the marker's clock watches all. */
+  openIds: number[];
+  billsById: Map<number, BillRow>;
+  checks: Map<number, PickDeleteCheck>;
+}> {
+  const open = await getOpenGroups();
+  const openIds = Array.from(open.values()).flat();
+  const billsById = await readBills(openIds);
+  const checks = new Map<number, PickDeleteCheck>();
+  const groups = new Map<string, number[]>();
+  for (const [soNumber, ids] of Array.from(open.entries())) {
+    let any = false;
+    for (const id of ids) {
+      const r = billsById.get(id);
+      if (!r) continue;
+      // Sequential awaits (CORE §3). The CI read only runs for a bill that
+      // passed the cheap stage/trip checks first.
+      const check = await pickDeleteCheck(
+        { id: r.id, workflowStage: r.workflowStage, tripDropId: r.tripDropId, tripNumber: r.tripDrop?.trip.tripNumber ?? null },
+        ids,
+      );
+      checks.set(id, check);
+      if (check.canDelete) any = true;
+    }
+    if (any) groups.set(soNumber, ids);
+  }
+  return { groups, openIds, billsById, checks };
+}
+
 export async function listPickDelete(month: string): Promise<PickDeleteList> {
   const range = istMonthRange(month);
   if (range === null) throw new Error(`Invalid month "${month}"`);
 
-  // ── Open groups ──
-  const groups = await getOpenGroups();
+  // ── Open groups — only those billing can act on (getActionableGroups) ──
+  const { groups, billsById, checks } = await getActionableGroups();
   const allIds = Array.from(groups.values()).flat();
-  const billsById = await readBills(allIds);
 
   // ONE batched line read for the hint and the line counts.
   const obds = allIds.map((id) => billsById.get(id)?.obdNumber).filter((o): o is string => Boolean(o));
@@ -229,11 +272,9 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
 
     const bills: PickDeleteBill[] = [];
     for (const r of rows) {
-      // THE SAME rule pickDelete() runs before it writes — one function.
-      const check = await pickDeleteCheck(
-        { id: r.id, workflowStage: r.workflowStage, tripDropId: r.tripDropId, tripNumber: r.tripDrop?.trip.tripNumber ?? null },
-        ids,
-      );
+      // THE SAME rule pickDelete() runs before it writes — one function, already
+      // run once per bill by getActionableGroups.
+      const check = checks.get(r.id) ?? { canDelete: false, label: null, message: null };
       const punched = punchedOf(r);
       bills.push({
         orderId: r.id,
@@ -312,8 +353,10 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
 // ── Marker ─────────────────────────────────────────────────────────────────
 
 export async function getPickDeleteMarker(): Promise<PickDeleteMarker> {
-  const groups = await getOpenGroups();
-  const ids = Array.from(groups.values()).flat();
+  // count = the SHOWN groups (the same function the list uses); the clock
+  // watches every open group's bills, so a hidden group becoming actionable
+  // (e.g. a bill taken off a trip) still moves `latest`.
+  const { groups, openIds: ids } = await getActionableGroups();
 
   const dec = await prisma.pick_delete_decisions.aggregate({ _max: { updatedAt: true } });
   const ord =

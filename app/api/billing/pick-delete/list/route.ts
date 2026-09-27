@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/billing/pick-delete/list?month=YYYY-MM — the Pick delete tab: the open
- * same-SO groups (ALL DATES, oldest first) and the Decided list for the IST
+ * same-SO groups billing can act on (getActionableGroups — at least one bill
+ * passes pickDeleteCheck; ALL DATES, oldest first) and the History list for the IST
  * month (newest first). `month` defaults to the current IST month; a malformed
  * one is a 400. READ-ONLY. Gate: billing_pick_delete canView. Logic:
  * lib/billing/pick-delete.ts.
