@@ -270,3 +270,57 @@ export function BillingTelephonicMarkerProvider({
     </ActiveBillingMarkerProvider>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE PICK DELETE TAB'S MARKER (2026-09-27)
+//
+// A FOURTH poll, on its own context, against /api/billing/pick-delete/marker —
+// the Pick delete pill's count and the tab's refetch. Its own key
+// (`billing_pick_delete`) and its own holders, for the same no-403-polling
+// reason as Telephonic's. Same 30s cadence, same pause contract, same
+// pass-through when off. `latest` carries the later of the decisions clock and
+// the open groups' bills (lib/billing/pick-delete.ts getPickDeleteMarker).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PICK_DELETE_MARKER_URL = "/api/billing/pick-delete/marker";
+
+const BillingPickDeleteMarkerContext = createContext<BillingMarkerApi>(INERT);
+
+/** Subscribe to the Pick delete marker. `onChange` fires once per detected change. */
+export function useBillingPickDeleteMarkerSubscription(onChange: () => void): void {
+  const { subscribe } = useContext(BillingPickDeleteMarkerContext);
+  const ref = useRef(onChange);
+  useEffect(() => {
+    ref.current = onChange;
+  }, [onChange]);
+  useEffect(() => subscribe(() => ref.current()), [subscribe]);
+}
+
+/** Hold the Pick delete marker paused while `paused` is true, under a stable key. */
+export function useBillingPickDeleteMarkerPause(key: string, paused: boolean): void {
+  const { setPaused } = useContext(BillingPickDeleteMarkerContext);
+  useEffect(() => {
+    setPaused(key, paused);
+    return () => setPaused(key, false);
+  }, [key, paused, setPaused]);
+}
+
+/** Mount around the billing face for viewers holding `billing_pick_delete`/canView. */
+export function BillingPickDeleteMarkerProvider({
+  enabled,
+  children,
+}: {
+  enabled: boolean;
+  children: React.ReactNode;
+}) {
+  if (!enabled) {
+    return (
+      <BillingPickDeleteMarkerContext.Provider value={INERT}>{children}</BillingPickDeleteMarkerContext.Provider>
+    );
+  }
+  return (
+    <ActiveBillingMarkerProvider url={PICK_DELETE_MARKER_URL} context={BillingPickDeleteMarkerContext}>
+      {children}
+    </ActiveBillingMarkerProvider>
+  );
+}

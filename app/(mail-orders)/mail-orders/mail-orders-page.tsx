@@ -20,9 +20,11 @@ import {
   BillingMarkerProvider,
   BillingPrintMarkerProvider,
   BillingTelephonicMarkerProvider,
+  BillingPickDeleteMarkerProvider,
 } from "@/components/billing/billing-marker-provider";
 import { useBillingPrintAccess } from "@/components/billing/billing-print-access-provider";
 import { useBillingTelephonicAccess } from "@/components/billing/billing-telephonic-access-provider";
+import { useBillingPickDeleteAccess } from "@/components/billing/billing-pick-delete-access-provider";
 import { TelephonicMonthPicker } from "@/components/billing/billing-telephonic-tab";
 import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
@@ -280,6 +282,11 @@ export default function MailOrdersPage() {
   // picker sits on the tab ROW (billingHeaderSlot, built below) while the list
   // it drives is the tab BODY inside ReviewView. Not persisted.
   const [telephonicMonth, setTelephonicMonth] = useState<string>(() => currentIstMonth(new Date()));
+  // ── Billing Pick delete tab access (2026-09-27) — `billing_pick_delete`. ────
+  const { canView: canViewPickDelete, canEdit: canEditPickDelete } = useBillingPickDeleteAccess();
+  // The Pick delete tab's Decided month (YYYY-MM, IST) — owned here for the same
+  // reason as telephonicMonth: its picker sits on the tab ROW. Not persisted.
+  const [pickDeleteMonth, setPickDeleteMonth] = useState<string>(() => currentIstMonth(new Date()));
   const [billingTab, setBillingTab] = useState<BillingTab>("orders");
   // The tab actually rendered. A viewer without the key can never be on Picking,
   // whatever `billingTab` holds — derived rather than corrected in an effect, so
@@ -289,7 +296,8 @@ export default function MailOrdersPage() {
   const effectiveBillingTab: BillingTab =
     (billingTab === "picking" && !canViewPicking) ||
     (billingTab === "print" && !canViewPrint) ||
-    (billingTab === "telephonic" && !canViewTelephonic)
+    (billingTab === "telephonic" && !canViewTelephonic) ||
+    (billingTab === "pick_delete" && !canViewPickDelete)
       ? "orders"
       : billingTab;
   // ── Notes-band text size (per user, px) ─────────────────────────────────────
@@ -1315,6 +1323,9 @@ export default function MailOrdersPage() {
           sits in the stepper's place. Every other tab keeps the stepper. */}
       {effectiveBillingTab === "telephonic" ? (
         <TelephonicMonthPicker month={telephonicMonth} onChange={setTelephonicMonth} />
+      ) : effectiveBillingTab === "pick_delete" ? (
+        /* PICK DELETE (2026-09-27): the same month picker, driving the Decided list. */
+        <TelephonicMonthPicker month={pickDeleteMonth} onChange={setPickDeleteMonth} />
       ) : (
         <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
       )}
@@ -1351,7 +1362,9 @@ export default function MailOrdersPage() {
         // the same elements as before, no wrapper.
         // TELEPHONIC takes the same treatment as Print: Filter and ⌨ do nothing
         // there, so they hold their width invisibly.
-        return effectiveBillingTab === "print" || effectiveBillingTab === "telephonic" ? (
+        return effectiveBillingTab === "print" ||
+          effectiveBillingTab === "telephonic" ||
+          effectiveBillingTab === "pick_delete" ? (
           <div className="contents invisible" aria-hidden="true">
             {rowControls}
           </div>
@@ -1542,6 +1555,9 @@ export default function MailOrdersPage() {
         {/* The Telephonic tab's own poll (2026-09-22) — on only for
             `billing_telephonic` holders; a pure pass-through otherwise. */}
         <BillingTelephonicMarkerProvider enabled={billingV2 && canViewTelephonic}>
+        {/* The Pick delete tab's own poll (2026-09-27) — on only for
+            `billing_pick_delete` holders; a pure pass-through otherwise. */}
+        <BillingPickDeleteMarkerProvider enabled={billingV2 && canViewPickDelete}>
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1579,6 +1595,9 @@ export default function MailOrdersPage() {
           billingTelephonicCanView={canViewTelephonic}
           billingTelephonicCanEdit={canEditTelephonic}
           telephonicMonth={telephonicMonth}
+          billingPickDeleteCanView={canViewPickDelete}
+          billingPickDeleteCanEdit={canEditPickDelete}
+          pickDeleteMonth={pickDeleteMonth}
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
           hasHeaderFilter={hasHeaderFilter}
@@ -1593,6 +1612,7 @@ export default function MailOrdersPage() {
           notesFontSize={notesFontSize}
           onNotesFontSizeChange={handleNotesFontSizeChange}
         />
+        </BillingPickDeleteMarkerProvider>
         </BillingTelephonicMarkerProvider>
         </BillingPrintMarkerProvider>
         </BillingMarkerProvider>

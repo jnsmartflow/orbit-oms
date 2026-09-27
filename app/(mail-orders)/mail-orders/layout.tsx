@@ -9,6 +9,7 @@ import { BillingPickingAccessProvider } from "@/components/billing/billing-picki
 import { BillingActionsAccessProvider } from "@/components/billing/billing-actions-access-provider";
 import { BillingPrintAccessProvider } from "@/components/billing/billing-print-access-provider";
 import { BillingTelephonicAccessProvider } from "@/components/billing/billing-telephonic-access-provider";
+import { BillingPickDeleteAccessProvider } from "@/components/billing/billing-pick-delete-access-provider";
 import { getNotesFontSize } from "@/lib/mail-orders/notes-font-size";
 import { NotesFontSizeProvider } from "@/components/mail-orders/notes-font-size-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -84,6 +85,12 @@ export default async function MailOrdersLayout({
   const telephonicPerms = allPerms["billing_telephonic"];
   const canViewBillingTelephonic = telephonicPerms?.canView ?? false;
   const canEditBillingTelephonic = telephonicPerms?.canEdit ?? false;
+
+  // ── Billing Pick delete tab access (2026-09-27) ─────────────────────────────
+  // Same map, same absent-means-false rule, same known limit as Picking above.
+  const pickDeletePerms = allPerms["billing_pick_delete"];
+  const canViewBillingPickDelete = pickDeletePerms?.canView ?? false;
+  const canEditBillingPickDelete = pickDeletePerms?.canEdit ?? false;
 
   // ── Billing ACTION ticks (2026-09-11) ───────────────────────────────────────
   // The six dispatch decisions on the Orders tab — Hold, Slot, Urgent, the ✎
@@ -169,7 +176,14 @@ export default async function MailOrdersLayout({
                   canView={canViewBillingTelephonic}
                   canEdit={canEditBillingTelephonic}
                 >
-                  <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+                  {/* The Pick delete tab's grant (2026-09-27) — its own provider,
+                      its own key, for the same reason Telephonic has one. */}
+                  <BillingPickDeleteAccessProvider
+                    canView={canViewBillingPickDelete}
+                    canEdit={canEditBillingPickDelete}
+                  >
+                    <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+                  </BillingPickDeleteAccessProvider>
                 </BillingTelephonicAccessProvider>
               </BillingPrintAccessProvider>
             </BillingActionsAccessProvider>

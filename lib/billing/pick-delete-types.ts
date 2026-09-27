@@ -24,7 +24,13 @@ export interface PickDeleteBill {
   lineCount: number;
   invoiceNo: string | null;
   tripNumber: string | null;
-  /** Why "Pick delete this bill" would be refused, or null when it is allowed. */
+  /** May "Pick delete this bill" be pressed? From pickDeleteCheck — the SAME
+   *  function the delete route runs (lib/billing/pick-delete.ts). */
+  canDelete: boolean;
+  /** When refused: the few plain words the disabled button shows ("On a trip",
+   *  "Dispatched", "In tint room", "Has a CI", "Old closed bill", …). */
+  reason: string | null;
+  /** When refused: the full message the route would answer with. */
   refusal: string | null;
 }
 

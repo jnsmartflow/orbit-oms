@@ -16,9 +16,13 @@ import {
   useBillingMarkerSubscription,
   useBillingPrintMarkerSubscription,
   useBillingTelephonicMarkerSubscription,
+  useBillingPickDeleteMarkerSubscription,
 } from "@/components/billing/billing-marker-provider";
 
-export type BillingTab = "orders" | "picking" | "print" | "telephonic";
+export type BillingTab = "orders" | "picking" | "print" | "telephonic" | "pick_delete";
+
+/** The Pick delete pill's count (2026-09-27) — same-SO groups waiting for a decision. */
+const PICK_DELETE_MARKER_URL = "/api/billing/pick-delete/marker";
 
 const MARKER_URL = "/api/billing/picking/marker";
 /** The Print pill's count (slice 9) — trips with copy work outstanding. */
@@ -34,6 +38,7 @@ export function BillingTabBar({
   showPicking = true,
   showPrint = false,
   showTelephonic = false,
+  showPickDelete = false,
 }: {
   active: BillingTab;
   onChange: (tab: BillingTab) => void;
@@ -86,6 +91,12 @@ export function BillingTabBar({
    * the same FALSE default.
    */
   showTelephonic?: boolean;
+  /**
+   * Does this viewer hold `billing_pick_delete`/canView? (2026-09-27.) The same
+   * two meanings as `showTelephonic` — no pill, and NO request to its marker —
+   * and the same FALSE default.
+   */
+  showPickDelete?: boolean;
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [printCount, setPrintCount] = useState<number | null>(null);
@@ -113,6 +124,29 @@ export function BillingTabBar({
   }, [refreshTelephonicCount]);
 
   useBillingTelephonicMarkerSubscription(refreshTelephonicCount);
+
+  // The Pick delete count — the same shape as refreshTelephonicCount, on its own marker.
+  const [pickDeleteCount, setPickDeleteCount] = useState<number | null>(null);
+  const pickDeleteReqRef = useRef(0);
+  const refreshPickDeleteCount = useCallback(async () => {
+    if (!showPickDelete) return;
+    const seq = ++pickDeleteReqRef.current;
+    try {
+      const res = await fetch(PICK_DELETE_MARKER_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { count?: number };
+      if (seq !== pickDeleteReqRef.current) return;
+      if (typeof body.count === "number") setPickDeleteCount(body.count);
+    } catch {
+      // Silent, like refreshCount.
+    }
+  }, [showPickDelete]);
+
+  useEffect(() => {
+    void refreshPickDeleteCount();
+  }, [refreshPickDeleteCount]);
+
+  useBillingPickDeleteMarkerSubscription(refreshPickDeleteCount);
 
   // The Print count — the same shape as refreshCount below, on its own marker.
   const refreshPrintCount = useCallback(async () => {
@@ -226,6 +260,41 @@ export function BillingTabBar({
           the chip is hidden at 0. No live dot: nothing on it moves by itself
           often enough to earn one. */}
       {showTelephonic && pill("telephonic", "Telephonic", telephonicCount, false, true)}
+      {/* Pick delete (2026-09-27) — gated on `billing_pick_delete`/canView. Its
+          own look, from the design: a WARN pill while any same-SO group waits,
+          grey at 0 (and before the first count lands). The tab's own underline
+          still marks it active, like every other pill on this row. */}
+      {showPickDelete && (
+        <button
+          type="button"
+          onClick={() => onChange("pick_delete")}
+          aria-label="Pick delete"
+          className={`flex items-center border-b-2 py-2 ${
+            active === "pick_delete" ? "border-ink-900" : "border-transparent"
+          }`}
+        >
+          <span
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] font-semibold ${
+              (pickDeleteCount ?? 0) > 0
+                ? "border-warn/30 bg-warn-bg text-warn-text"
+                : "border-ink-100 bg-ink-50 text-ink-500"
+            }`}
+          >
+            <span
+              aria-hidden
+              className={`h-[7px] w-[7px] rounded-full ${(pickDeleteCount ?? 0) > 0 ? "bg-warn" : "bg-ink-400"}`}
+            />
+            Pick delete
+            <span
+              className={`min-w-[18px] rounded-full px-1.5 text-center text-[10px] font-bold text-white ${
+                (pickDeleteCount ?? 0) > 0 ? "bg-warn-text" : "bg-ink-400"
+              }`}
+            >
+              {pickDeleteCount ?? "–"}
+            </span>
+          </span>
+        </button>
+      )}
       {/* ⚠ `ml-auto` lives HERE now. It used to sit on a caption span that ran
           between the pills and this slot; removing that span without moving the
           class would have left the controls butted against the Picking pill

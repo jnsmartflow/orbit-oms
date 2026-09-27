@@ -96,23 +96,58 @@ interface RefusalBill {
   tripNumber: string | null;
 }
 
+/** The result of pickDeleteCheck — `message` is the route's 409 text, `label`
+ *  the few plain words the tab shows on a disabled button. */
+export interface PickDeleteCheck {
+  canDelete: boolean;
+  label: string | null;
+  message: string | null;
+}
+
+const ALLOWED: PickDeleteCheck = { canDelete: true, label: null, message: null };
+
+function refused(label: string, message: string): PickDeleteCheck {
+  return { canDelete: false, label, message };
+}
+
 /**
- * Why this bill may NOT be pick deleted, or null. Floor cancel's refusals
- * (offFloorRefusal: cancelled, dispatched, on a trip, tint room) PLUS the
- * legacy `closed` stage and a live CI (owner rulings 2026-09-27; findLiveCi is
- * the rule Picking cancel uses). `twinIds` = the SO's current live bill ids.
+ * 🔴 THE ONE PICK DELETE RULE — used by the tab's list (per bill: canDelete +
+ * label) AND by pickDelete() before it writes, so a button and the route can
+ * never disagree. Floor cancel's refusals (offFloorRefusal: cancelled,
+ * dispatched, on a trip, tint room) PLUS the legacy `closed` stage, no live
+ * twin left, and a live CI (owner rulings 2026-09-27; findLiveCi is the rule
+ * Picking cancel uses). `twinIds` = the SO's current live bill ids.
+ *
+ * The allow/refuse decision for the Floor half is offFloorRefusal's alone; the
+ * short label is only chosen from the same facts once it has refused.
  */
-export async function pickDeleteRefusal(bill: RefusalBill, twinIds: readonly number[]): Promise<string | null> {
+export async function pickDeleteCheck(bill: RefusalBill, twinIds: readonly number[]): Promise<PickDeleteCheck> {
   const floor = offFloorRefusal({
     workflowStage: bill.workflowStage,
     tripDropId: bill.tripDropId,
     tripNumber: bill.tripNumber,
   });
-  if (floor !== null) return floor;
-  if (bill.workflowStage === "closed") return "Old closed bill — it cannot be pick deleted";
-  if (twinIds.length < 2 || !twinIds.includes(bill.id)) return "No other live bill on this SO";
+  if (floor !== null) {
+    const label =
+      bill.workflowStage === "cancelled" ? "Already cancelled"
+      : bill.workflowStage === "dispatched" ? "Dispatched"
+      : bill.tripDropId !== null ? "On a trip"
+      : "In tint room";
+    return refused(label, floor);
+  }
+  if (bill.workflowStage === "closed") return refused("Old closed bill", "Old closed bill — it cannot be pick deleted");
+  if (twinIds.length < 2 || !twinIds.includes(bill.id)) {
+    return refused("No other live bill", "No other live bill on this SO");
+  }
   const ci = await findLiveCi(bill.id);
-  if (ci !== null) return liveCiRefusal(ci, "cancelled");
+  if (ci !== null) return refused("Has a CI", liveCiRefusal(ci, "cancelled"));
+  return ALLOWED;
+}
+
+/** The route's form of the same rule: the 409 message, or null. */
+export async function pickDeleteRefusal(bill: RefusalBill, twinIds: readonly number[]): Promise<string | null> {
+  const check = await pickDeleteCheck(bill, twinIds);
+  if (!check.canDelete) return check.message;
   return null;
 }
 
@@ -193,7 +228,8 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
 
     const bills: PickDeleteBill[] = [];
     for (const r of rows) {
-      const refusal = await pickDeleteRefusal(
+      // THE SAME rule pickDelete() runs before it writes — one function.
+      const check = await pickDeleteCheck(
         { id: r.id, workflowStage: r.workflowStage, tripDropId: r.tripDropId, tripNumber: r.tripDrop?.trip.tripNumber ?? null },
         ids,
       );
@@ -209,7 +245,9 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
         lineCount: linesByObd.get(r.obdNumber)?.length ?? 0,
         invoiceNo: r.invoiceNo,
         tripNumber: r.tripDrop?.trip.tripNumber ?? null,
-        refusal,
+        canDelete: check.canDelete,
+        reason: check.label,
+        refusal: check.message,
       });
     }
 
