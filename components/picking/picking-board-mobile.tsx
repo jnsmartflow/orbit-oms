@@ -47,6 +47,7 @@ import {
   DUP_SO_TEXT,
   DUP_SO_WASH_BORDER,
 } from "@/components/shared/duplicate-so-tag";
+import { PickDeletedBand } from "@/components/picking/pick-deleted-band";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
 import { CancelSheet } from "./cancel-sheet";
@@ -3871,6 +3872,12 @@ export function PickingBoardMobile(): React.JSX.Element {
                 />
               ))
             )}
+
+            {/* Pick deleted today (2026-09-27) — Billing cancelled these as
+                same-SO duplicates. A SIBLING list (data.pickDeleted), never rows:
+                read-only, untappable, in no badge and no pager list. Not run
+                through the tab's filters either — it is a notice, not work. */}
+            <PickDeletedBand cards={data.pickDeleted ?? []} />
           </>
         )}
       </div>

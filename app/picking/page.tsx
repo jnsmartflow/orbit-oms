@@ -10,7 +10,7 @@ import { PickerMyPicksBoard } from "@/components/picking/picker-my-picks-board";
 import { ROLES } from "@/lib/rbac";
 import { getPickingQueue } from "@/lib/picking/queue";
 import { getActivePickers, type PickerRosterEntry } from "@/lib/picking/picker-roster";
-import type { PickingQueueRow } from "@/lib/picking/types";
+import type { PickDeletedCard, PickingQueueRow } from "@/lib/picking/types";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +110,7 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
 
   let pickerFaceData: {
     rows: PickingQueueRow[];
+    pickDeleted: PickDeletedCard[];
     pickers: PickerRosterEntry[];
     activePickerId: number | null;
   } | null = null;
@@ -159,6 +160,9 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
       // sides) and needs the raw rows to re-split after each refetch. This is
       // his handful of bills, so the RSC payload is unchanged in practice.
       rows: queue.rows,
+      // Today's pick-deleted bills this picker held (2026-09-27) — scoped in the
+      // query by the decision's saved picker id; first paint only, like rows.
+      pickDeleted: queue.pickDeleted,
       pickers,
       activePickerId: viewerId,
     };
@@ -178,6 +182,7 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
            apply) for both lists AND the tab counts, then owns them: every
            later update is its own fetch, not a re-render of this page. */
         pickerRows={pickerFaceData?.rows}
+        pickerPickDeleted={pickerFaceData?.pickDeleted}
         pickerViewerId={pickerFaceData?.activePickerId}
       >
         {/* ONE face at every width — the card board (2026-07-28). The desktop

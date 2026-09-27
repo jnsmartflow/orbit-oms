@@ -14,7 +14,8 @@ import {
   PICK_CHECKED,
   PICKING_ACTIVE_STAGES,
 } from "@/lib/workflow-stages";
-import type { PickingQueueRow } from "./types";
+import type { PickDeletedCard, PickingQueueRow } from "./types";
+import { getPickDeletedToday } from "./pick-deleted";
 import { isGiftBill } from "@/lib/orders/gift";
 import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
 // The manual early-release window (last working day before dispatch, Sunday
@@ -296,6 +297,16 @@ export interface PickingQueueResult {
    *  Disjoint from `heldBack`, which counts only bills on unshown trips. 0 when
    *  the gate is off and on every `pickerId` request, like the other two. */
   heldBackUnplanned: number;
+  /**
+   * Bills BILLING pick deleted today (2026-09-27) — a SIBLING of `rows`, never a
+   * row: the bill is cancelled, and every "still waiting" filter would read a
+   * cancelled row as work (PICKING §7). Read-only cards at the foot of the
+   * supervisor's Done tab and the picker's Pending tab; in no badge.
+   * `openPending` only (empty for `single`); for a `pickerId` request, only the
+   * bills THAT picker held (scoped on the decision's saved picker id).
+   * lib/picking/pick-deleted.ts.
+   */
+  pickDeleted: PickDeletedCard[];
 }
 
 // Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
@@ -1053,9 +1064,16 @@ export async function getPickingQueue(
         )
       : { bills: 0, trucks: 0, unplanned: 0 };
 
+  // Today's pick-deleted bills — its OWN read, never a term on the queue's WHERE
+  // (which must not widen to cancelled bills). openPending only: that is the
+  // scope both live faces use; `single` has no caller (PICKING §9).
+  const pickDeleted: PickDeletedCard[] =
+    options.scope === "openPending" ? await getPickDeletedToday({ pickerId: options.pickerId }) : [];
+
   return {
     date: isoDate,
     rows: sortedRows,
+    pickDeleted,
     waitingSkus,
     oilSkus,
     heldBack: held.bills,

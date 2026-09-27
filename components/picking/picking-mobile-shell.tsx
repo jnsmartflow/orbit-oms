@@ -6,7 +6,7 @@ import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
-import type { PickingQueueRow } from "@/lib/picking/types";
+import type { PickDeletedCard, PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
 // The tint room's wire shape. A TYPE-only import — the module it comes from is
 // server-side (prisma), and this file is a client component; `import type` is
@@ -143,6 +143,10 @@ interface PickerBoardContextValue {
   // the server page, because this face now refetches its own rows.
   pending: PickingQueueRow[];
   done:    PickingQueueRow[];
+  // Today's bills Billing pick deleted that THIS picker held (2026-09-27) — the
+  // payload's `pickDeleted` sibling, never mixed into pending/done, so no badge,
+  // Combined view or pager list sees them. Read-only band at the foot of Pending.
+  pickDeleted: PickDeletedCard[];
   // The ONE refresh path for this face. Called by the 15s marker and by Mark
   // Done. See PickerPickingShell for why it is a fetch and not router.refresh().
   //
@@ -192,13 +196,15 @@ interface PickingMobileShellProps {
   // refetches them itself. Already narrowed to him server-side, so this is a
   // handful of rows in the RSC payload, not the whole board.
   pickerRows?:     PickingQueueRow[];
+  /** First-paint seed for the picker face's "Pick deleted today" band (2026-09-27). */
+  pickerPickDeleted?: PickDeletedCard[];
   pickerViewerId?: number | null;
   children:        React.ReactNode;
 }
 
 export function PickingMobileShell({
   role, userName, userInitials, navItems, showPickerFace, canSeePushTest,
-  pickerRows, pickerViewerId, children,
+  pickerRows, pickerPickDeleted, pickerViewerId, children,
 }: PickingMobileShellProps): React.JSX.Element {
   // Picker face: its OWN two-tab bottom bar (Pending/Done) since 2026-07-29 —
   // it no longer falls through to the default Home/Menu/You nav. Menu and You
@@ -211,6 +217,7 @@ export function PickingMobileShell({
       userInitials={userInitials}
       navItems={navItems}
       initialRows={pickerRows ?? []}
+      initialPickDeleted={pickerPickDeleted ?? []}
       viewerId={pickerViewerId ?? null}
     >
       {children}
@@ -249,6 +256,7 @@ interface PickerPickingShellProps {
   userInitials: string;
   navItems:     NavItemConfig[];
   initialRows:  PickingQueueRow[];
+  initialPickDeleted: PickDeletedCard[];
   viewerId:     number | null;
   children:     React.ReactNode;
 }
@@ -302,13 +310,16 @@ interface PickerPickingShellProps {
  * anything here changes.
  */
 function PickerPickingShell({
-  role, userName, userInitials, navItems, initialRows, viewerId, children,
+  role, userName, userInitials, navItems, initialRows, initialPickDeleted, viewerId, children,
 }: PickerPickingShellProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<PickerTabKey>("pending");
   const [detailOpen, setDetailOpen] = useState(false);
   // Seeded from the server render — first paint is byte-identical to before
   // this face started fetching. The phone takes over only for UPDATES.
   const [rows, setRows] = useState<PickingQueueRow[]>(initialRows);
+  // Today's pick-deleted bills this picker held — the payload's SIBLING list,
+  // refreshed with the rows, never mixed into them (2026-09-27).
+  const [pickDeleted, setPickDeleted] = useState<PickDeletedCard[]>(initialPickDeleted);
 
   // Narrowed server-side by pickerId: ~8 KB of his own bills instead of ~202 KB
   // of the whole board, and no other picker's work reaches this device. Silent
@@ -329,6 +340,7 @@ function PickerPickingShell({
       if (!res.ok) return;
       const json = (await res.json()) as PickingQueueResult;
       setRows(json.rows);
+      setPickDeleted(json.pickDeleted ?? []);
       // Skipped when the marker itself asked for this — it has already
       // re-baselined, so a resync would be a pointless extra probe.
       if (!opts?.fromMarker) await markerResyncRef.current?.();
@@ -364,8 +376,8 @@ function PickerPickingShell({
   const contextValue = useMemo<PickerBoardContextValue>(
     // markerResyncRef is a stable ref object — it never changes identity, so it
     // adds nothing to this memo's deps.
-    () => ({ activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen, markerResyncRef }),
-    [activeTab, pending, done, refetchQueue, detailOpen],
+    () => ({ activeTab, pending, done, pickDeleted, refetchQueue, detailOpen, setDetailOpen, markerResyncRef }),
+    [activeTab, pending, done, pickDeleted, refetchQueue, detailOpen],
   );
 
   return (

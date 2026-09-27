@@ -569,3 +569,30 @@ export interface OilGroup {
    *  client-side from data already in hand, so it costs nothing to carry. */
   allPure: boolean;
 }
+
+/**
+ * A bill BILLING pick deleted today (2026-09-27) — shown read-only at the foot of
+ * the supervisor's Done tab and, for the picker who held it, his Pending tab,
+ * until the end of the IST day. A SIBLING list on PickingQueueResult, NEVER a
+ * PickingQueueRow: the bill is cancelled, and every "still waiting" filter
+ * (`!isAssigned && !isDone && !isChecked`, PICKING §7) would read a cancelled
+ * row as work. No action, no detail screen, no pager entry, no badge.
+ * Built by getPickDeletedToday() (lib/picking/pick-deleted.ts).
+ */
+export interface PickDeletedCard {
+  /** pick_delete_decisions.id — the React key. */
+  decisionId: number;
+  orderId: number;
+  obdNumber: string;
+  /** Effective dealer: ship-to override, then customer, then SAP's own name. */
+  dealerName: string;
+  route: string | null;
+  deliveryType: string | null;
+  /** The picker who held the bill at delete time (the assignment row is gone). */
+  pickerId: number | null;
+  pickerName: string | null;
+  /** The surviving bill(s) — "Correct pick: …". Live OBDs only. */
+  correctObds: string[];
+  /** ISO. */
+  decidedAt: string;
+}

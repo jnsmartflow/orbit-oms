@@ -34,6 +34,7 @@ import {
   DUP_SO_MUTED,
   DUP_SO_TEXT,
 } from "@/components/shared/duplicate-so-tag";
+import { PickDeletedBand } from "@/components/picking/pick-deleted-band";
 import { usePickerBoard } from "./picking-mobile-shell";
 import { NO_BILL_SWIPE_ATTR, useBillPager } from "./use-bill-pager";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
@@ -355,7 +356,7 @@ export function PickerMyPicksBoard({
   // `pending`/`done`/`refetchQueue` joined this context on 2026-07-29 when the
   // shell took ownership of the rows — see PickerPickingShell for why this face
   // fetches rather than calling router.refresh().
-  const { activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen, markerResyncRef } =
+  const { activeTab, pending, done, pickDeleted, refetchQueue, detailOpen, setDetailOpen, markerResyncRef } =
     usePickerBoard();
 
   // Detail overlay — always-mounted, translateX slide, same pattern as
@@ -1723,6 +1724,11 @@ export function PickerMyPicksBoard({
             );
           })
         )}
+        {/* Pick deleted today (2026-09-27) — bills THIS picker held that Billing
+            cancelled as same-SO duplicates, at the foot of Pending only. A
+            SIBLING list from the shell (never in `pending`), so it is not in the
+            Pending badge, the Combined view or the pager, and is not tappable. */}
+        {listKey === "pending" && <PickDeletedBand cards={pickDeleted} />}
       </div>
       )}
 
