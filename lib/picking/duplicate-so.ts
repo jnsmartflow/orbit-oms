@@ -1,11 +1,21 @@
 import { prisma } from "@/lib/prisma";
 
 /**
- * Which of these SO numbers are carried by MORE THAN ONE live order.
+ * Which of these SO numbers are carried by MORE THAN ONE live order AND are
+ * still undecided — i.e. not every current twin sits inside an active Billing
+ * "All OK" set (pick_delete_decisions, 2026-09-27).
  *
- * The signal means "same SO, go check" — not "this is wrong". A supervisor
- * opens the flagged bills and decides which is the real one; nothing here
- * blocks, edits or ranks anything.
+ * The signal means "same SO, go check" — not "this is wrong". BILLING decides
+ * (the Pick delete tab: All OK keeps every bill, Pick delete cancels one);
+ * PICKING owns this rule, and Floor imports it. Nothing here blocks, edits or
+ * ranks anything.
+ *
+ * WHEN THE FLAG CLEARS / COMES BACK:
+ *   - All OK → cleared while every current twin is in that approved set.
+ *   - a NEW bill joins the SO → it is not in the set → flagged again.
+ *   - Pick delete → the bill is cancelled, so it is no longer a twin; the
+ *     survivor clears by the twin rule alone (no decision read needed).
+ *   - Undo of All OK → the set is no longer active → flagged again.
  *
  * ⚠ BOUNDED ON PURPOSE. It asks only about the SO numbers on the rows a board
  * is already returning (`soNumber: { in: [...] }`), never about the whole
@@ -25,12 +35,11 @@ import { prisma } from "@/lib/prisma";
  *     no hide filter at all (CORE §13 / PICKING §7). Both boards therefore get
  *     the same answer for the same SO.
  *
- * ⚠ BLANK AND NULL ARE NEVER FLAGGED. `orders.soNumber` is nullable and Postgres
- * groups every NULL into ONE group — an unguarded call would come back with a
- * single enormous group and paint every un-punched bill as a duplicate. The
- * filter below drops null/whitespace-only values BEFORE they can reach the
- * `in` list, and the result loop re-checks for null so the flag can never be
- * set from a null-vs-null match.
+ * ⚠ BLANK AND NULL ARE NEVER FLAGGED. `orders.soNumber` is nullable, and an
+ * unguarded read would lump every un-punched bill into ONE group and paint them
+ * all as duplicates. nonBlankDistinct() drops null/whitespace-only values
+ * BEFORE they can reach the `in` list, and getTwinIdsBySo() skips a null
+ * soNumber, so the flag can never be set from a null-vs-null match.
  *
  * ⚠ MATCHES THE RAW STORED VALUE — no trim, no normalisation. `.trim()` below
  * is a BLANKNESS TEST only; the value put into the `in` list is the untouched
@@ -44,48 +53,30 @@ import { prisma } from "@/lib/prisma";
  * owner per behaviour, so the two surfaces can never disagree about what a
  * duplicate is.
  *
- * SELECT-only, ONE query, sequential await, never `prisma.$transaction`
- * (CORE §3). It is a POST-FETCH enrichment: it adds no term to
- * `buildPickingWhere` / `floorLiveBaseWhere` / `getFloorLiveMarkerWhere`, so
- * neither live-sync marker moves and no board's row set changes.
+ * SELECT-only, sequential awaits, never `prisma.$transaction` (CORE §3). At
+ * most two bounded reads: the twins of the SOs asked about, and — only when a
+ * group exists — the active All OK sets for those SOs. It is a POST-FETCH
+ * enrichment: it adds no term to `buildPickingWhere` / `floorBoardWhere` /
+ * `getFloorLiveMarkerWhere`, so no board's row set changes. (A decision moves
+ * no order row; the Picking and Floor markers fold getDecisionsLatest() into
+ * `latest` so an All OK or an Undo still refreshes the boards.)
+ *
+ * Signature and return type unchanged since 2026-08-20 — both callers
+ * (lib/picking/queue.ts, lib/floor/queries.ts) are untouched by the All OK
+ * change (build step 6, 2026-09-27).
  */
 export async function getDuplicateSoNumbers(
   soNumbers: (string | null)[],
 ): Promise<Set<string>> {
-  // Non-null, non-blank, de-duplicated. The `in` list is the raw values.
-  const candidates = Array.from(
-    new Set(soNumbers.filter((s): s is string => s !== null && s.trim() !== "")),
-  );
-
-  // Never query with an empty `in` list.
-  if (candidates.length === 0) return new Set<string>();
-
-  const groups = await prisma.orders.groupBy({
-    by: ["soNumber"],
-    where: {
-      soNumber: { in: candidates },
-      isRemoved: false,
-      workflowStage: { not: "cancelled" },
-    },
-    _count: { _all: true },
-  });
-
-  const duplicates = new Set<string>();
-  for (const g of groups) {
-    if (g.soNumber !== null && g._count._all > 1) duplicates.add(g.soNumber);
-  }
-  return duplicates;
+  return new Set((await getDuplicateGroups(soNumbers)).keys());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Billing "Pick delete" (2026-09-27, build step 5) — the SAME rule with bill ids,
-// and the All OK acknowledgement read. ADDITIVE: getDuplicateSoNumbers() above
-// is deliberately untouched until build step 6 re-points it onto
-// getDuplicateGroups() (docs/prompts/drafts/code-discovery-2026-09-27-pick-delete-build-plan.md §4).
-//
-// The RULE stays Picking's; Billing only WRITES pick_delete_decisions and reads
-// its groups through these functions, so the three screens can never disagree
-// about what a same-SO group is.
+// The rule with bill ids + the All OK acknowledgement (Billing "Pick delete",
+// 2026-09-27). getTwinIdsBySo() is the ONE place the twin rule is written;
+// getDuplicateSoNumbers() above and Billing's Pick delete tab
+// (lib/billing/pick-delete.ts) both read through it. The RULE stays Picking's;
+// Billing only WRITES pick_delete_decisions.
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Postgres bind-parameter headroom for the `in` lists below. */
@@ -98,12 +89,13 @@ function nonBlankDistinct(soNumbers: (string | null)[]): string[] {
 }
 
 /**
- * Every live bill id per SO — the twin rule of getDuplicateSoNumbers (not
- * removed, not cancelled; dispatched counts) — for the SO numbers asked about,
- * INCLUDING single-bill SOs. Ids sorted ascending. No acknowledgement filter:
- * the All OK and Pick delete writes re-check the live set against this.
+ * Every live bill id per SO — THE TWIN RULE, written here and nowhere else (not
+ * removed, not cancelled; dispatched counts — see getDuplicateSoNumbers' header)
+ * — for the SO numbers asked about, INCLUDING single-bill SOs. Ids sorted
+ * ascending. No acknowledgement filter: the All OK and Pick delete writes
+ * re-check the live set against this.
  *
- * Bounded the same way: an `in` list of the SOs asked about, never a scan.
+ * Bounded: an `in` list of the SOs asked about, never a scan (idx_orders_sonumber).
  * Sequential awaits per chunk, never prisma.$transaction (CORE §3).
  */
 export async function getTwinIdsBySo(
@@ -178,4 +170,23 @@ export async function getDuplicateGroups(
     if (ids && isAcknowledged(ids, sets)) groups.delete(so);
   });
   return groups;
+}
+
+/**
+ * The decisions clock: MAX(pick_delete_decisions.updatedAt), or null on an
+ * empty table. The Picking and Floor markers fold it into `latest`, because an
+ * All OK or an Undo changes the flag WITHOUT touching an order row — the same
+ * later-of-two-clocks trick as app/api/picking/tint-workload/marker/route.ts.
+ * Any decision anywhere refreshes every open board once (owner-accepted,
+ * 2026-09-27). One aggregate on a small table; read-only.
+ */
+export async function getDecisionsLatest(): Promise<Date | null> {
+  const agg = await prisma.pick_delete_decisions.aggregate({ _max: { updatedAt: true } });
+  return agg._max.updatedAt ?? null;
+}
+
+/** The later of two marker clocks, as the ISO string the hook compares. */
+export function laterIso(a: Date | null, b: Date | null): string | null {
+  const t = [a, b].filter((d): d is Date => d !== null).map((d) => d.getTime());
+  return t.length > 0 ? new Date(Math.max(...t)).toISOString() : null;
 }

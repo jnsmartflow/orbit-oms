@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getFloorLiveMarkerWhere } from "@/lib/floor/queries";
+import { getDecisionsLatest, laterIso } from "@/lib/picking/duplicate-so";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,9 @@ export const dynamic = "force-dynamic";
  * in shape: one aggregate, no joins, no line items, no sort.
  *
  *   count  — COUNT(*) of live-floor orders (arrivals/departures move it)
- *   latest — MAX(orders.updatedAt) (in-place edits move it); hits
- *            orders_updatedAt_idx.
+ *   latest — the LATER of MAX(orders.updatedAt) (in-place edits move it; hits
+ *            orders_updatedAt_idx) and MAX(pick_delete_decisions.updatedAt)
+ *            (a Billing All OK / Undo moves the same-SO tag, not an order).
  *
  * The WHERE comes from getFloorLiveMarkerWhere() — the SAME predicate
  * getFloorBoard's live branch renders (floorLiveBaseWhere + hide) — so the marker
@@ -43,8 +45,13 @@ export async function GET(): Promise<NextResponse> {
     _max: { updatedAt: true },
   });
 
+  // `latest` also carries the Billing Pick delete decisions clock (2026-09-27):
+  // an All OK / Undo changes the board's same-SO tag with no order row moving.
+  // The predicate above is untouched — marker and board still watch ONE set.
+  const decisionsLatest = await getDecisionsLatest();
+
   return NextResponse.json(
-    { count: agg._count, latest: agg._max.updatedAt ? agg._max.updatedAt.toISOString() : null },
+    { count: agg._count, latest: laterIso(agg._max.updatedAt, decisionsLatest) },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }

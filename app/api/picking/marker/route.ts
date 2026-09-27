@@ -5,6 +5,7 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { buildPickingWhere } from "@/lib/picking/queue";
 import { isPickGateOn, countHeldBackWaiting } from "@/lib/picking/visibility-gate";
+import { getDecisionsLatest, laterIso } from "@/lib/picking/duplicate-so";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,9 @@ export const dynamic = "force-dynamic";
  * count() and is skipped entirely unless the visibility gate is on (see below):
  *   count  — COUNT(*) of picking-scoped orders; catches arrivals/departures
  *            (a bill leaving the scope drops the count).
- *   latest — MAX(orders.updatedAt); catches in-place edits. Every picking
+ *   latest — the later of MAX(pick_delete_decisions.updatedAt) — a Billing
+ *            All OK / Undo moves a same-SO flag with no order row moving
+ *            (2026-09-27) — and MAX(orders.updatedAt); catches in-place edits. Every picking
  *            mutation bumps orders.updatedAt (@updatedAt) via a paired
  *            orders.update in assign/done/approve/unassign/release, so a state
  *            transition always moves this value. Hits orders_updatedAt_idx.
@@ -170,9 +173,14 @@ export async function GET(req: Request): Promise<NextResponse> {
           )
         : { bills: 0, trucks: 0, unplanned: 0 };
 
+    // The Billing Pick delete decisions clock (2026-09-27): an All OK / Undo
+    // changes a card's same-SO flag with no order row moving, so `latest` is the
+    // later of the two clocks. The predicate above is untouched (marker ⊇ queue).
+    const decisionsLatest = await getDecisionsLatest();
+
     const body = {
       count: agg._count,
-      latest: agg._max.updatedAt ? agg._max.updatedAt.toISOString() : null,
+      latest: laterIso(agg._max.updatedAt, decisionsLatest),
       heldBack: held.bills,
       // Slice 8: the distinct trucks those bills are on, for the band's
       // "2 trucks with the planner · 17 bills". Compared by the hook like

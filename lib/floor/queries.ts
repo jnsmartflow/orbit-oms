@@ -844,10 +844,13 @@ export async function getFloorBoard(
 
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
 
-  // Same-SO detection — see getFloorRail above for the full note. One bounded
-  // groupBy, sequential await, post-fetch: `base` / floorLiveBaseWhere() and
-  // getFloorLiveMarkerWhere() are untouched, so board and marker stay on the
-  // ONE shared predicate (FLOOR §3/§5).
+  // Same-SO detection — the rule is Picking's (lib/picking/duplicate-so.ts),
+  // and since 2026-09-27 it honours Billing's decisions: an SO whose every live
+  // twin is in an active All OK set is not flagged; a pick-deleted bill is
+  // cancelled and no longer counts. Bounded reads, sequential awaits,
+  // post-fetch: floorBoardWhere() and getFloorLiveMarkerWhere() are untouched,
+  // so board and marker stay on the ONE shared predicate (FLOOR §3/§5); the
+  // marker folds the decisions clock into `latest`.
   const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
 
   // TINT vs BASE — same post-fetch contract as the line above: batched once for
