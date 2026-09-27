@@ -13,7 +13,8 @@
 // card is the baseline and is never marked; every later card is compared with
 // it SKU by SKU and carries small bordered tags — Added / Removed / Qty was N.
 // The lines arrive ALREADY MERGED per SKU (SAP per-batch split lines summed by
-// lib/picking/group-lines.ts, inside getPickDeleteBillLines), so the comparison
+// lib/picking/group-lines.ts, in mergeBillLines) and ship WITH the list — one
+// batched read, no per-bill fetch (2026-09-27) — so the comparison
 // never sees raw batch rows. The screen deliberately names no verdict — it
 // shows the difference and lets billing judge.
 //
@@ -41,7 +42,6 @@ import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type {
   PickDeleteBill,
-  PickDeleteBillLines,
   PickDeleteDecidedRow,
   PickDeleteGroup,
   PickDeleteLine,
@@ -511,38 +511,9 @@ function GroupCard({
     [group.bills],
   );
 
-  // Lines for EVERY bill of the group, loaded as soon as the group shows — the
-  // tables are always open and every later card is compared with the first.
-  const [lines, setLines] = useState<Record<number, PickDeleteLine[]> | null>(null);
-  const [linesError, setLinesError] = useState<string | null>(null);
-  // Keyed on the bill IDS, not the array: a live list refresh hands over a new
-  // array for the same bills, which must not refetch every table.
-  const idsKey = group.bills.map((b) => b.orderId).join(",");
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const out: Record<number, PickDeleteLine[]> = {};
-      try {
-        for (const id of idsKey.split(",").map(Number)) {
-          const res = await fetch(`${BASE}/bill/${id}`, { cache: "no-store" });
-          if (!res.ok) throw new Error("load");
-          const body = (await res.json()) as PickDeleteBillLines;
-          out[id] = body.lines;
-        }
-        if (alive) {
-          setLines(out);
-          setLinesError(null);
-        }
-      } catch {
-        if (alive) setLinesError("Could not load the lines.");
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [idsKey]);
-
-  const baseLines = lines?.[bills[0]?.orderId] ?? null;
+  // Lines ship WITH the list (one batched read, 2026-09-27) — no per-bill fetch,
+  // no loading line. GET bill/[orderId] still exists but this tab no longer calls it.
+  const baseLines = bills[0]?.lines ?? [];
   const many = group.bills.length > 2;
 
   return (
@@ -555,9 +526,7 @@ function GroupCard({
             customer={customerOf(group.customerName)}
             soNumber={group.soNumber}
             isFirst={i === 0}
-            mine={lines?.[b.orderId] ?? null}
             base={i === 0 ? null : baseLines}
-            linesError={linesError}
             canEdit={canEdit}
             busy={busy}
             onDelete={() => onDelete(b)}
@@ -600,9 +569,7 @@ function BillCard({
   customer,
   soNumber,
   isFirst,
-  mine,
   base,
-  linesError,
   canEdit,
   busy,
   onDelete,
@@ -611,24 +578,17 @@ function BillCard({
   customer: string;
   soNumber: string;
   isFirst: boolean;
-  mine: PickDeleteLine[] | null;
-  /** The first-punch bill's lines; null on the first card itself, or while loading. */
+  /** The first-punch bill's lines; null on the first card itself. */
   base: PickDeleteLine[] | null;
-  linesError: string | null;
   canEdit: boolean;
   busy: boolean;
   onDelete: () => void;
 }) {
-  // A later card is compared only once the baseline's lines are in; until then
-  // it waits with the loading line rather than drawing unmarked rows.
-  const cmp = useMemo(
-    () => (mine === null || (!isFirst && base === null) ? null : compareWithFirst(mine, isFirst ? null : base)),
-    [mine, base, isFirst],
-  );
+  const cmp = useMemo(() => compareWithFirst(bill.lines, isFirst ? null : base), [bill.lines, base, isFirst]);
 
   let note = "";
   if (isFirst) note = "First punch";
-  else if (cmp) {
+  else {
     const parts: string[] = [];
     if (cmp.added) parts.push(`${cmp.added} added`);
     if (cmp.removed) parts.push(`${cmp.removed} removed`);
@@ -646,9 +606,9 @@ function BillCard({
           <span className={`${PILL} shrink-0 bg-ink-50 text-ink-700`}>{statusOf(bill)}</span>
         </div>
         <dl className="m-0 mt-2.5 grid grid-cols-3 gap-x-4 gap-y-2.5">
-          <KV label="OBD" mono>{bill.obdNumber}</KV>
-          <KV label="SO number" mono>{soNumber}</KV>
           <KV label="Punched">{fmtDayTime(bill.punchedAt)}</KV>
+          <KV label="SO number" mono>{soNumber}</KV>
+          <KV label="OBD" mono>{bill.obdNumber}</KV>
           <KV label="Volume">{fmtLitres(bill.volume)}</KV>
           <KV label="Lines">{bill.lineCount}</KV>
           <KV label="Article" title={bill.articleTag ?? undefined}>
@@ -657,44 +617,38 @@ function BillCard({
         </dl>
       </header>
 
-      {linesError !== null ? (
-        <div className="px-3 py-2 text-[11px] text-danger-text">{linesError}</div>
-      ) : cmp === null ? (
-        <div className="px-3 py-2 text-[11px] text-ink-500">Loading lines…</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[12px]">
-            <thead>
-              <tr>
-                <th className={LTH}>SKU</th>
-                <th className={LTH}>Description</th>
-                <th className={`${LTH} text-right`}>Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cmp.rows.map((r) => {
-                const gone = r.change?.kind === "removed";
-                return (
-                  <tr key={r.key} className={gone ? "text-ink-400" : "text-ink-900"}>
-                    <td className={`${LTD} font-mono`}>{gone ? <s>{r.sku}</s> : r.sku}</td>
-                    <td className={`${LTD} ${gone ? "" : "text-ink-700"}`}>
-                      {gone ? <s>{r.name}</s> : r.name}
-                      {r.change?.kind === "added" && <span className={`${TAG} border-ok/30 text-ok-text`}>Added</span>}
-                      {r.change?.kind === "removed" && (
-                        <span className={`${TAG} border-danger-bd text-danger-text`}>Removed</span>
-                      )}
-                      {r.change?.kind === "qty" && (
-                        <span className={`${TAG} border-warn/30 text-warn-text`}>Qty was {r.change.was}</span>
-                      )}
-                    </td>
-                    <td className={`${LTD} text-right font-mono`}>{gone ? <s>{r.qty}</s> : r.qty}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[12px]">
+          <thead>
+            <tr>
+              <th className={LTH}>SKU</th>
+              <th className={LTH}>Description</th>
+              <th className={`${LTH} text-right`}>Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cmp.rows.map((r) => {
+              const gone = r.change?.kind === "removed";
+              return (
+                <tr key={r.key} className={gone ? "text-ink-400" : "text-ink-900"}>
+                  <td className={`${LTD} font-mono`}>{gone ? <s>{r.sku}</s> : r.sku}</td>
+                  <td className={`${LTD} ${gone ? "" : "text-ink-700"}`}>
+                    {gone ? <s>{r.name}</s> : r.name}
+                    {r.change?.kind === "added" && <span className={`${TAG} border-ok/30 text-ok-text`}>Added</span>}
+                    {r.change?.kind === "removed" && (
+                      <span className={`${TAG} border-danger-bd text-danger-text`}>Removed</span>
+                    )}
+                    {r.change?.kind === "qty" && (
+                      <span className={`${TAG} border-warn/30 text-warn-text`}>Qty was {r.change.was}</span>
+                    )}
+                  </td>
+                  <td className={`${LTD} text-right font-mono`}>{gone ? <s>{r.qty}</s> : r.qty}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-3 py-2.5">
         <span className="text-[12px] text-ink-500">{note}</span>

@@ -22,6 +22,9 @@ export interface PickDeleteBill {
   articleTag: string | null;
   /** Distinct SKUs across the active import_raw_line_items rows (batch splits merged). */
   lineCount: number;
+  /** The bill's lines, SAP batch splits merged per SKU — shipped WITH the list
+   *  (one batched read, 2026-09-27) so the tab never fetches them per bill. */
+  lines: PickDeleteLine[];
   invoiceNo: string | null;
   tripNumber: string | null;
   /** May "Pick delete this bill" be pressed? From pickDeleteCheck — the SAME

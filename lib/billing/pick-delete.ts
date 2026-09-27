@@ -27,7 +27,7 @@ import { getDuplicateGroups, getTwinIdsBySo } from "@/lib/picking/duplicate-so";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { buildCancelNote } from "@/lib/picking/cancel-reasons";
-import { resolveCatalogByCode } from "@/lib/picking/resolve-lines";
+import { resolveCatalogByCode, type CatalogEntry } from "@/lib/picking/resolve-lines";
 import { groupPickingDetailLines } from "@/lib/picking/group-lines";
 import { sendToUser } from "@/lib/push/send";
 import { STAGE_LADDER, SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
@@ -38,6 +38,7 @@ import type {
   PickDeleteDecidedRow,
   PickDeleteGroup,
   PickDeleteHint,
+  PickDeleteLine,
   PickDeleteList,
   PickDeleteMarker,
 } from "@/lib/billing/pick-delete-types";
@@ -152,6 +153,45 @@ export async function pickDeleteRefusal(bill: RefusalBill, twinIds: readonly num
   return null;
 }
 
+// ── Lines (shared by the list and GET bill/[orderId]) ──────────────────────
+
+/** The import_raw_line_items columns a bill's lines table needs. */
+const LINE_SELECT = {
+  id: true,
+  skuCodeRaw: true,
+  skuDescriptionRaw: true,
+  unitQty: true,
+  volumeLine: true,
+  netWeight: true,
+  totalWeight: true,
+  articleTag: true,
+  isTinting: true,
+} satisfies Prisma.import_raw_line_itemsSelect;
+
+type RawBillLine = Prisma.import_raw_line_itemsGetPayload<{ select: typeof LINE_SELECT }>;
+
+/**
+ * One bill's raw lines (lineId order) → the tab's lines. PURE. SAP per-batch
+ * split lines are MERGED per SKU (qty summed) by Picking's own grouping
+ * (lib/picking/group-lines.ts) — the tab compares bills SKU by SKU, so it must
+ * never see raw batch rows. No findings map: this tab records none, so every
+ * same-SKU bucket merges and each SKU is exactly one line.
+ */
+function mergeBillLines(rawLines: readonly RawBillLine[], catalog: Map<string, CatalogEntry>): PickDeleteLine[] {
+  const tintingById = new Map(rawLines.map((l) => [l.id, l.isTinting]));
+  return groupPickingDetailLines(rawLines, catalog, new Map()).map((l) => ({
+    id: l.id,
+    sku: l.sku,
+    name: l.name,
+    pack: l.pack,
+    unitQty: l.qty,
+    volumeLine: l.litres,
+    // Same across a merged bucket (group-lines.ts: isTinting differed in zero
+    // live groups), so the head line's value stands for the row.
+    isTinting: tintingById.get(l.id) ?? false,
+  }));
+}
+
 // ── List ───────────────────────────────────────────────────────────────────
 
 const BILL_SELECT = {
@@ -248,21 +288,27 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
   const { groups, billsById, checks } = await getActionableGroups();
   const allIds = Array.from(groups.values()).flat();
 
-  // ONE batched line read for the hint and the line counts.
+  // ONE batched line read for EVERY shown bill (hint, line counts AND the cards'
+  // lines tables), then ONE catalog resolution for every SKU — lines ship with
+  // the list since 2026-09-27; the per-bill fetch was too slow. lineId order is
+  // kept per OBD, which groupPickingDetailLines needs.
   const obds = allIds.map((id) => billsById.get(id)?.obdNumber).filter((o): o is string => Boolean(o));
   const lineRows =
     obds.length > 0
       ? await prisma.import_raw_line_items.findMany({
           where: { obdNumber: { in: obds }, lineStatus: "active" },
-          select: { obdNumber: true, skuCodeRaw: true, unitQty: true },
+          select: { obdNumber: true, ...LINE_SELECT },
+          orderBy: [{ obdNumber: "asc" }, { lineId: "asc" }],
         })
       : [];
-  const linesByObd = new Map<string, { skuCodeRaw: string; unitQty: number }[]>();
+  const linesByObd = new Map<string, RawBillLine[]>();
   for (const l of lineRows) {
     const list = linesByObd.get(l.obdNumber);
     if (list) list.push(l);
     else linesByObd.set(l.obdNumber, [l]);
   }
+  // sku_master_v2 by `material` ONLY — never enrichedLineItem.sku (CORE §13).
+  const catalog = await resolveCatalogByCode(lineRows.map((l) => l.skuCodeRaw));
 
   const out: PickDeleteGroup[] = [];
   const groupEntries = Array.from(groups.entries());
@@ -285,8 +331,9 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
         volume: r.querySnapshot?.totalVolume ?? null,
         articleTag: r.querySnapshot?.articleTag ?? null,
         // DISTINCT SKUs, not raw rows — the count of the tab's lines table, whose
-        // SAP batch splits are merged per SKU (getPickDeleteBillLines).
+        // SAP batch splits are merged per SKU (mergeBillLines).
         lineCount: new Set((linesByObd.get(r.obdNumber) ?? []).map((l) => l.skuCodeRaw)).size,
+        lines: mergeBillLines(linesByObd.get(r.obdNumber) ?? [], catalog),
         invoiceNo: r.invoiceNo,
         tripNumber: r.tripDrop?.trip.tripNumber ?? null,
         canDelete: check.canDelete,
@@ -385,43 +432,16 @@ export async function getPickDeleteBillLines(orderId: number): Promise<PickDelet
 
   const rawLines = await prisma.import_raw_line_items.findMany({
     where: { obdNumber: order.obdNumber, lineStatus: "active" },
-    select: {
-      id: true,
-      skuCodeRaw: true,
-      skuDescriptionRaw: true,
-      unitQty: true,
-      volumeLine: true,
-      netWeight: true,
-      totalWeight: true,
-      articleTag: true,
-      isTinting: true,
-    },
+    select: LINE_SELECT,
     orderBy: { lineId: "asc" },
   });
   // sku_master_v2 by `material` ONLY — never enrichedLineItem.sku (CORE §13).
   const catalog = await resolveCatalogByCode(rawLines.map((l) => l.skuCodeRaw));
-  const tintingById = new Map(rawLines.map((l) => [l.id, l.isTinting]));
-
-  // SAP per-batch split lines MERGED per SKU (qty summed) by Picking's own
-  // grouping (lib/picking/group-lines.ts) — the tab compares bills SKU by SKU,
-  // so it must never see raw batch rows. No findings map: this tab records none,
-  // so every same-SKU bucket merges and each SKU is exactly one line.
-  const merged = groupPickingDetailLines(rawLines, catalog, new Map());
 
   return {
     orderId: order.id,
     obdNumber: order.obdNumber,
-    lines: merged.map((l) => ({
-      id: l.id,
-      sku: l.sku,
-      name: l.name,
-      pack: l.pack,
-      unitQty: l.qty,
-      volumeLine: l.litres,
-      // Same across a merged bucket (group-lines.ts: isTinting differed in zero
-      // live groups), so the head line's value stands for the row.
-      isTinting: tintingById.get(l.id) ?? false,
-    })),
+    lines: mergeBillLines(rawLines, catalog),
   };
 }
 
