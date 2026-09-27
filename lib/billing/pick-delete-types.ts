@@ -20,7 +20,7 @@ export interface PickDeleteBill {
   /** import_obd_query_summary.totalVolume (litres). */
   volume: number | null;
   articleTag: string | null;
-  /** Active import_raw_line_items rows. */
+  /** Distinct SKUs across the active import_raw_line_items rows (batch splits merged). */
   lineCount: number;
   invoiceNo: string | null;
   tripNumber: string | null;

@@ -2,11 +2,20 @@
 
 // Billing v2 — the "Pick delete" tab (2026-09-27).
 //
-// Two or more live bills share one SO number. Only billing knows whether that is
-// a genuine SAP split or a bill punched twice, so billing decides here, ONE
-// GROUP AT A TIME, oldest first: All OK (keep every bill) or Pick delete (cancel
-// one bill as a duplicate). Design: docs/prompts/drafts/web-update-2026-09-27-
-// billing-pick-delete.md · mockup docs/mockups/billing/pick-delete-review.html.
+// Two or more live bills share one SO number. Only billing knows whether the
+// later bill is genuine or a mistake, so billing decides here, ONE GROUP AT A
+// TIME, oldest first: All OK (keep every bill) or Pick delete (cancel one bill
+// as a duplicate). Design: docs/prompts/drafts/web-update-2026-09-27-billing-
+// pick-delete.md · mockup docs/mockups/billing/pick-delete-review.html.
+//
+// LAYOUT (2026-09-27 hand review). The group's bills sit side by side, ordered by
+// REAL punch time (the timestamp, never the display string). The FIRST-PUNCH
+// card is the baseline and is never marked; every later card is compared with
+// it SKU by SKU and carries small bordered tags — Added / Removed / Qty was N.
+// The lines arrive ALREADY MERGED per SKU (SAP per-batch split lines summed by
+// lib/picking/group-lines.ts, inside getPickDeleteBillLines), so the comparison
+// never sees raw batch rows. The screen deliberately names no verdict — it
+// shows the difference and lets billing judge.
 //
 // OWNERSHIP. The duplicate-SO RULE is Picking's (lib/picking/duplicate-so.ts);
 // the DECISION is Billing's (lib/billing/pick-delete.ts). Every button here only
@@ -19,14 +28,16 @@
 // about the bill, not about the viewer.
 //
 // Colours are Orbit tokens only (CLAUDE_UI §2.1): brand = the one commit (All
-// OK, Next group); danger = Pick delete; warn = the group accent and the
-// "double punch" hint; ok = the "split" hint and the All OK panel; ink = neutral.
+// OK, Next group); danger = Pick delete and the Removed tag; ok = the Added tag
+// and the All OK panel; warn = the Qty-was tag; ink = neutral.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   useBillingPickDeleteMarkerPause,
   useBillingPickDeleteMarkerSubscription,
 } from "@/components/billing/billing-marker-provider";
+import { TelephonicMonthPicker } from "@/components/billing/billing-telephonic-tab";
+import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type {
   PickDeleteBill,
@@ -51,9 +62,6 @@ const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
   hour12: false,
 });
 
-function fmtDay(iso: string | null): string {
-  return iso ? DAY_FMT.format(new Date(iso)) : "—";
-}
 function fmtDayTime(iso: string | null): string {
   return iso ? `${DAY_FMT.format(new Date(iso))} · ${TIME_FMT.format(new Date(iso))}` : "—";
 }
@@ -63,8 +71,17 @@ function fmtLitres(v: number | null): string {
 function customerOf(name: string | null): string {
   return name ? smartTitleCase(name) : "(Unmatched)";
 }
-function lineKey(l: PickDeleteLine): string {
-  return `${l.sku.trim()}|${l.unitQty}`;
+/** This tab only: "Waiting" in place of the ladder's "Awaiting Support". The
+ *  global label (lib/workflow-stages.ts) is untouched. */
+function statusOf(b: PickDeleteBill): string {
+  return b.stage === "pending_support" ? "Waiting" : b.stageLabel;
+}
+/** Punch time in ms; a bill with none sorts last. */
+function punchMs(b: PickDeleteBill): number {
+  return b.punchedAt ? new Date(b.punchedAt).getTime() : Number.POSITIVE_INFINITY;
+}
+function skuKey(l: PickDeleteLine): string {
+  return l.sku.trim();
 }
 
 // ── Shared class strings ────────────────────────────────────────────────────
@@ -79,12 +96,18 @@ const BTN_DANGER =
 const BTN_REFUSED =
   "cursor-not-allowed rounded-lg border border-ink-100 bg-ink-50 px-3.5 py-1.5 text-[12.5px] font-semibold text-ink-400";
 const PILL = "inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold";
+/** The change tags — small bordered text, never a filled block. */
+const TAG = "ml-1.5 inline-block whitespace-nowrap rounded border px-1 text-[10px] font-semibold leading-[15px]";
 
 // Fixed table standard (CLAUDE_UI §27): 32px header, 36px rows, 10px uppercase
 // header, 11px data — in ink tokens.
 const TH =
   "h-[32px] border-b border-ink-100 px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400 whitespace-nowrap overflow-hidden text-ellipsis";
 const TD = "h-[36px] border-b border-ink-50 px-3.5 text-[11px] text-ink-600 whitespace-nowrap overflow-hidden text-ellipsis";
+
+// The per-bill lines table (lighter than the fixed standard — it sits inside a card).
+const LTH = "border-b border-ink-50 px-3 py-1.5 text-left text-[10px] font-medium uppercase tracking-[0.04em] text-ink-400";
+const LTD = "border-b border-ink-50 px-3 py-1.5 align-top";
 
 // ── The confirmation panel's state ──────────────────────────────────────────
 
@@ -112,7 +135,10 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; data
 
 // ── The tab ─────────────────────────────────────────────────────────────────
 
-export function BillingPickDeleteTab({ month, canEdit }: { month: string; canEdit: boolean }) {
+export function BillingPickDeleteTab({ canEdit }: { canEdit: boolean }) {
+  // The History month (YYYY-MM, IST). Owned HERE since the hand review: its
+  // picker sits in the History header, which hides while any group waits.
+  const [month, setMonth] = useState<string>(() => currentIstMonth(new Date()));
   const [data, setData] = useState<PickDeleteList | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cur, setCur] = useState(0);
@@ -232,6 +258,8 @@ export function BillingPickDeleteTab({ month, canEdit }: { month: string; canEdi
   );
 
   const group = groups[cur] ?? null;
+  // History shows only once nothing is left to decide and no panel is up.
+  const showHistory = data !== null && groups.length === 0 && justDone === null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-ink-25">
@@ -309,17 +337,24 @@ export function BillingPickDeleteTab({ month, canEdit }: { month: string; canEdi
           />
         )}
 
-        {/* ── Decided ── */}
-        <div className="mt-3 flex flex-wrap items-center gap-2 px-0.5">
-          <span className="text-[13px] font-semibold text-ink-900">Decided</span>
-          <span className="text-[12px] text-ink-500">every pick delete and All OK, with Undo</span>
-        </div>
-        <DecidedTable
-          rows={data?.decided ?? []}
-          canEdit={canEdit}
-          busy={busy}
-          onUndo={(row) => void undo(row.id, row.soNumber)}
-        />
+        {/* ── History ── hidden while any group waits or the panel is up. */}
+        {showHistory && (
+          <>
+            <div className="mt-3 flex flex-wrap items-center gap-2 px-0.5">
+              <span className="text-[13px] font-semibold text-ink-900">History</span>
+              <span className="text-[12px] text-ink-500">every pick delete and All OK, with Undo</span>
+              <div className="ml-auto">
+                <TelephonicMonthPicker month={month} onChange={setMonth} />
+              </div>
+            </div>
+            <DecidedTable
+              rows={data?.decided ?? []}
+              canEdit={canEdit}
+              busy={busy}
+              onUndo={(row) => void undo(row.id, row.soNumber)}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -401,6 +436,62 @@ function DonePanel({
 
 // ── One group ───────────────────────────────────────────────────────────────
 
+/** One row of a bill's lines table, after the first-punch comparison. */
+interface CmpRow {
+  key: string;
+  sku: string;
+  name: string;
+  qty: number;
+  /** null = unmarked (the baseline card, or a line identical to the first bill). */
+  change: { kind: "added" } | { kind: "removed" } | { kind: "qty"; was: number } | null;
+}
+
+function describe(l: PickDeleteLine): string {
+  return `${l.name ?? "—"}${l.pack ? ` · ${l.pack}` : ""}`;
+}
+
+/**
+ * Compare one bill with the FIRST-PUNCH bill, SKU by SKU. Both line sets are
+ * already merged per SKU on the server (one line per SKU), so a Map keyed on the
+ * SKU is exact. `base === null` → this IS the baseline: every row unmarked.
+ */
+function compareWithFirst(
+  mine: PickDeleteLine[],
+  base: PickDeleteLine[] | null,
+): { rows: CmpRow[]; added: number; removed: number; changed: number } {
+  if (base === null) {
+    return {
+      rows: mine.map((l) => ({ key: `l${l.id}`, sku: l.sku, name: describe(l), qty: l.unitQty, change: null })),
+      added: 0,
+      removed: 0,
+      changed: 0,
+    };
+  }
+  const baseBySku = new Map(base.map((l) => [skuKey(l), l]));
+  const mineSkus = new Set(mine.map(skuKey));
+  let added = 0;
+  let removed = 0;
+  let changed = 0;
+  const rows: CmpRow[] = mine.map((l) => {
+    const o = baseBySku.get(skuKey(l));
+    let change: CmpRow["change"] = null;
+    if (!o) {
+      added++;
+      change = { kind: "added" };
+    } else if (o.unitQty !== l.unitQty) {
+      changed++;
+      change = { kind: "qty", was: o.unitQty };
+    }
+    return { key: `l${l.id}`, sku: l.sku, name: describe(l), qty: l.unitQty, change };
+  });
+  for (const o of base) {
+    if (mineSkus.has(skuKey(o))) continue;
+    removed++;
+    rows.push({ key: `r${o.id}`, sku: o.sku, name: describe(o), qty: o.unitQty, change: { kind: "removed" } });
+  }
+  return { rows, added, removed, changed };
+}
+
 function GroupCard({
   group,
   canEdit,
@@ -414,199 +505,220 @@ function GroupCard({
   onAllOk: () => void;
   onDelete: (b: PickDeleteBill) => void;
 }) {
-  // Lines, loaded for EVERY bill of the group on the first "Show lines" — the
-  // "same in other bill" shading needs the other bills' lines too.
+  // Earliest punch first, on the TIMESTAMP; ties by order id so the order is stable.
+  const bills = useMemo(
+    () => [...group.bills].sort((a, b) => punchMs(a) - punchMs(b) || a.orderId - b.orderId),
+    [group.bills],
+  );
+
+  // Lines for EVERY bill of the group, loaded as soon as the group shows — the
+  // tables are always open and every later card is compared with the first.
   const [lines, setLines] = useState<Record<number, PickDeleteLine[]> | null>(null);
   const [linesError, setLinesError] = useState<string | null>(null);
-  const [open, setOpen] = useState<Set<number>>(new Set());
-  const loadingRef = useRef(false);
-
-  const ensureLines = useCallback(async () => {
-    if (lines !== null || loadingRef.current) return;
-    loadingRef.current = true;
-    const out: Record<number, PickDeleteLine[]> = {};
-    try {
-      for (const b of group.bills) {
-        const res = await fetch(`${BASE}/bill/${b.orderId}`, { cache: "no-store" });
-        if (!res.ok) throw new Error("load");
-        const body = (await res.json()) as PickDeleteBillLines;
-        out[b.orderId] = body.lines;
+  // Keyed on the bill IDS, not the array: a live list refresh hands over a new
+  // array for the same bills, which must not refetch every table.
+  const idsKey = group.bills.map((b) => b.orderId).join(",");
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const out: Record<number, PickDeleteLine[]> = {};
+      try {
+        for (const id of idsKey.split(",").map(Number)) {
+          const res = await fetch(`${BASE}/bill/${id}`, { cache: "no-store" });
+          if (!res.ok) throw new Error("load");
+          const body = (await res.json()) as PickDeleteBillLines;
+          out[id] = body.lines;
+        }
+        if (alive) {
+          setLines(out);
+          setLinesError(null);
+        }
+      } catch {
+        if (alive) setLinesError("Could not load the lines.");
       }
-      setLines(out);
-      setLinesError(null);
-    } catch {
-      setLinesError("Could not load the lines.");
-    } finally {
-      loadingRef.current = false;
-    }
-  }, [group.bills, lines]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [idsKey]);
 
-  const toggle = (orderId: number) => {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(orderId)) next.delete(orderId);
-      else next.add(orderId);
-      return next;
-    });
-    void ensureLines();
-  };
-
-  const dup = group.hint === "double_punch";
+  const baseLines = lines?.[bills[0]?.orderId] ?? null;
+  const many = group.bills.length > 2;
 
   return (
-    <div className="overflow-hidden rounded-[10px] border border-l-[3px] border-ink-100 border-l-warn bg-white">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-50 bg-ink-25 px-4 py-3">
-        <span className="text-[13.5px] font-semibold text-ink-900">{customerOf(group.customerName)}</span>
-        <span className="text-[12px] text-ink-500">
-          SO <span className="font-mono font-semibold text-ink-900">{group.soNumber}</span> · {group.bills.length} bills ·
-          first punch {fmtDay(group.firstPunchAt)}
-        </span>
-        <span
-          className={`${PILL} border ${
-            dup ? "border-warn/30 bg-warn-bg text-warn-text" : "border-ok/30 bg-ok-bg text-ok-text"
-          }`}
-        >
-          {dup ? "Lines identical, looks like a double punch" : "Lines differ, looks like a split"}
-        </span>
-        {canEdit && (
-          <button type="button" className={`${BTN_BRAND} ml-auto`} disabled={busy} onClick={onAllOk}>
-            All OK, keep all bills
-          </button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-3 px-4 py-3">
-        {group.bills.map((b) => (
+    <div className="overflow-hidden rounded-[10px] border border-ink-100 bg-white">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] gap-3 p-4">
+        {bills.map((b, i) => (
           <BillCard
             key={b.orderId}
             bill={b}
-            others={group.bills.filter((o) => o.orderId !== b.orderId).map((o) => o.orderId)}
-            lines={lines}
+            customer={customerOf(group.customerName)}
+            soNumber={group.soNumber}
+            isFirst={i === 0}
+            mine={lines?.[b.orderId] ?? null}
+            base={i === 0 ? null : baseLines}
             linesError={linesError}
-            open={open.has(b.orderId)}
-            onToggle={() => toggle(b.orderId)}
             canEdit={canEdit}
             busy={busy}
             onDelete={() => onDelete(b)}
           />
         ))}
       </div>
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-3 border-t border-ink-50 px-4 py-3.5">
+          <span className="text-[13px] font-semibold text-ink-900">
+            {many ? "All bills genuine?" : "Both bills genuine?"}
+          </span>
+          <button type="button" className={BTN_BRAND} disabled={busy} onClick={onAllOk}>
+            All OK, keep all bills
+          </button>
+          <span className="text-[12px] text-ink-500">or pick delete the wrong one above</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KV({ label, children, title, mono }: { label: string; children: ReactNode; title?: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] uppercase tracking-[0.05em] text-ink-500">{label}</dt>
+      <dd
+        className={`m-0 mt-px overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-ink-900 ${
+          mono ? "font-mono" : ""
+        }`}
+        title={title}
+      >
+        {children}
+      </dd>
     </div>
   );
 }
 
 function BillCard({
   bill,
-  others,
-  lines,
+  customer,
+  soNumber,
+  isFirst,
+  mine,
+  base,
   linesError,
-  open,
-  onToggle,
   canEdit,
   busy,
   onDelete,
 }: {
   bill: PickDeleteBill;
-  others: number[];
-  lines: Record<number, PickDeleteLine[]> | null;
+  customer: string;
+  soNumber: string;
+  isFirst: boolean;
+  mine: PickDeleteLine[] | null;
+  /** The first-punch bill's lines; null on the first card itself, or while loading. */
+  base: PickDeleteLine[] | null;
   linesError: string | null;
-  open: boolean;
-  onToggle: () => void;
   canEdit: boolean;
   busy: boolean;
   onDelete: () => void;
 }) {
-  const mine = lines?.[bill.orderId] ?? null;
-  const otherKeys = useMemo(() => {
-    const s = new Set<string>();
-    if (lines) for (const id of others) for (const l of lines[id] ?? []) s.add(lineKey(l));
-    return s;
-  }, [lines, others]);
+  // A later card is compared only once the baseline's lines are in; until then
+  // it waits with the loading line rather than drawing unmarked rows.
+  const cmp = useMemo(
+    () => (mine === null || (!isFirst && base === null) ? null : compareWithFirst(mine, isFirst ? null : base)),
+    [mine, base, isFirst],
+  );
+
+  let note = "";
+  if (isFirst) note = "First punch";
+  else if (cmp) {
+    const parts: string[] = [];
+    if (cmp.added) parts.push(`${cmp.added} added`);
+    if (cmp.removed) parts.push(`${cmp.removed} removed`);
+    if (cmp.changed) parts.push(`${cmp.changed} qty changed`);
+    if (parts.length) note = `Compared with first bill: ${parts.join(" · ")}`;
+  }
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-[10px] border border-ink-100">
-      <div className="flex items-center justify-between gap-2 border-b border-ink-50 px-3.5 py-3">
-        <span className="font-mono text-[14px] font-medium text-ink-900">{bill.obdNumber}</span>
-        <span className={`${PILL} bg-ink-50 text-ink-700`}>{bill.stageLabel}</span>
-      </div>
-      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3.5 gap-y-1.5 px-3.5 py-3 text-[12px]">
-        <dt className="text-ink-500">Punched</dt>
-        <dd className="m-0 text-ink-900">{fmtDayTime(bill.punchedAt)}</dd>
-        <dt className="text-ink-500">Volume</dt>
-        <dd className="m-0 text-ink-900">{fmtLitres(bill.volume)}</dd>
-        <dt className="text-ink-500">Article</dt>
-        <dd className="m-0 text-ink-900">{bill.articleTag ?? "—"}</dd>
-        <dt className="text-ink-500">Lines</dt>
-        <dd className="m-0 text-ink-900">{bill.lineCount}</dd>
-      </dl>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="px-3.5 pb-2.5 text-left text-[12px] font-semibold text-brand-700 hover:underline"
-      >
-        {open ? "Hide lines ▴" : "Show lines ▾"}
-      </button>
-      {open && (
-        <div className="mx-3.5 mb-3 overflow-x-auto rounded-md border border-ink-50">
-          {linesError !== null ? (
-            <div className="px-2 py-2 text-[11px] text-danger-text">{linesError}</div>
-          ) : mine === null ? (
-            <div className="px-2 py-2 text-[11px] text-ink-500">Loading…</div>
-          ) : (
-            <table className="w-full border-collapse text-[11px]">
-              <thead>
-                <tr>
-                  <th className="bg-ink-25 px-2 py-1.5 text-left text-[10px] font-medium uppercase text-ink-500">SKU</th>
-                  <th className="bg-ink-25 px-2 py-1.5 text-left text-[10px] font-medium uppercase text-ink-500">Description</th>
-                  <th className="bg-ink-25 px-2 py-1.5 text-left text-[10px] font-medium uppercase text-ink-500">Qty</th>
-                  <th className="bg-ink-25 px-2 py-1.5" />
-                </tr>
-              </thead>
-              <tbody>
-                {mine.map((l) => {
-                  const same = otherKeys.has(lineKey(l));
-                  return (
-                    <tr key={l.id} className={same ? "bg-warn-bg" : ""}>
-                      <td className="border-t border-ink-50 px-2 py-1.5 font-mono text-ink-900">{l.sku}</td>
-                      <td className="border-t border-ink-50 px-2 py-1.5 text-ink-700">
-                        {l.name ?? "—"}
-                        {l.pack ? ` · ${l.pack}` : ""}
-                      </td>
-                      <td className="border-t border-ink-50 px-2 py-1.5 font-mono text-ink-900">{l.unitQty}</td>
-                      <td className="whitespace-nowrap border-t border-ink-50 px-2 py-1.5 text-[10px] text-warn-text">
-                        {same ? "same in other bill" : ""}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+    <section aria-label={`Bill ${bill.obdNumber}`} className="flex flex-col overflow-hidden rounded-lg border border-ink-100 bg-white">
+      <header className="border-b border-ink-100 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[15px] font-semibold text-ink-900" title={customer}>
+            {customer}
+          </span>
+          <span className={`${PILL} shrink-0 bg-ink-50 text-ink-700`}>{statusOf(bill)}</span>
+        </div>
+        <dl className="m-0 mt-2.5 grid grid-cols-3 gap-x-4 gap-y-2.5">
+          <KV label="OBD" mono>{bill.obdNumber}</KV>
+          <KV label="SO number" mono>{soNumber}</KV>
+          <KV label="Punched">{fmtDayTime(bill.punchedAt)}</KV>
+          <KV label="Volume">{fmtLitres(bill.volume)}</KV>
+          <KV label="Lines">{bill.lineCount}</KV>
+          <KV label="Article" title={bill.articleTag ?? undefined}>
+            {bill.articleTag ?? "—"}
+          </KV>
+        </dl>
+      </header>
+
+      {linesError !== null ? (
+        <div className="px-3 py-2 text-[11px] text-danger-text">{linesError}</div>
+      ) : cmp === null ? (
+        <div className="px-3 py-2 text-[11px] text-ink-500">Loading lines…</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[12px]">
+            <thead>
+              <tr>
+                <th className={LTH}>SKU</th>
+                <th className={LTH}>Description</th>
+                <th className={`${LTH} text-right`}>Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cmp.rows.map((r) => {
+                const gone = r.change?.kind === "removed";
+                return (
+                  <tr key={r.key} className={gone ? "text-ink-400" : "text-ink-900"}>
+                    <td className={`${LTD} font-mono`}>{gone ? <s>{r.sku}</s> : r.sku}</td>
+                    <td className={`${LTD} ${gone ? "" : "text-ink-700"}`}>
+                      {gone ? <s>{r.name}</s> : r.name}
+                      {r.change?.kind === "added" && <span className={`${TAG} border-ok/30 text-ok-text`}>Added</span>}
+                      {r.change?.kind === "removed" && (
+                        <span className={`${TAG} border-danger-bd text-danger-text`}>Removed</span>
+                      )}
+                      {r.change?.kind === "qty" && (
+                        <span className={`${TAG} border-warn/30 text-warn-text`}>Qty was {r.change.was}</span>
+                      )}
+                    </td>
+                    <td className={`${LTD} text-right font-mono`}>{gone ? <s>{r.qty}</s> : r.qty}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
-      {canEdit && (
-        <div className="mt-auto flex items-center justify-end gap-2 border-t border-ink-50 px-3.5 py-2.5">
-          {bill.canDelete ? (
+
+      <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 px-3 py-2.5">
+        <span className="text-[12px] text-ink-500">{note}</span>
+        {canEdit &&
+          (bill.canDelete ? (
             <button type="button" className={BTN_DANGER} disabled={busy} onClick={onDelete}>
               Pick delete this bill
             </button>
           ) : (
-            <>
+            <span className="flex items-center gap-2">
               <span className="text-[11.5px] text-ink-500" title={bill.refusal ?? undefined}>
                 {bill.reason}
               </span>
               <button type="button" className={BTN_REFUSED} disabled title={bill.refusal ?? undefined}>
                 Pick delete this bill
               </button>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+            </span>
+          ))}
+      </footer>
+    </section>
   );
 }
 
-// ── Decided ─────────────────────────────────────────────────────────────────
+// ── History ─────────────────────────────────────────────────────────────────
 
 function DecidedTable({
   rows,

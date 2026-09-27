@@ -145,8 +145,6 @@ interface ReviewViewProps {
    */
   billingPickDeleteCanView?: boolean;
   billingPickDeleteCanEdit?: boolean;
-  /** The Pick delete tab's Decided month (YYYY-MM, IST), owned by mail-orders-page.tsx. */
-  pickDeleteMonth?: string;
   /** Phase 2 — reload the order list after a billing action writes mo_orders. */
   onBillingActionSaved?: () => void;
   /**
@@ -602,7 +600,6 @@ export function ReviewView({
   telephonicMonth,
   billingPickDeleteCanView = false,
   billingPickDeleteCanEdit = false,
-  pickDeleteMonth,
   onBillingActionSaved,
   billingHeaderSlot,
   hasHeaderFilter = false,
@@ -3030,10 +3027,11 @@ export function ReviewView({
              flex-1 takes the whole width. The inbox is hidden, NOT unmounted,
              so its scroll and selection survive a trip here and back. */
           <BillingTelephonicTab month={telephonicMonth} canEdit={billingTelephonicCanEdit} />
-        ) : billingV2 && billingPickDeleteCanView && billingTab === "pick_delete" && pickDeleteMonth ? (
+        ) : billingV2 && billingPickDeleteCanView && billingTab === "pick_delete" ? (
           /* The Pick delete BODY (2026-09-27) — its own permission term, and FULL
-             WIDTH exactly like Telephonic (the inbox is CSS-hidden above). */
-          <BillingPickDeleteTab month={pickDeleteMonth} canEdit={billingPickDeleteCanEdit} />
+             WIDTH exactly like Telephonic (the inbox is CSS-hidden above). It owns
+             its History month. */
+          <BillingPickDeleteTab canEdit={billingPickDeleteCanEdit} />
         ) :billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing

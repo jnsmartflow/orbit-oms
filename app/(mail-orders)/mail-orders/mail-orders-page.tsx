@@ -284,9 +284,9 @@ export default function MailOrdersPage() {
   const [telephonicMonth, setTelephonicMonth] = useState<string>(() => currentIstMonth(new Date()));
   // ── Billing Pick delete tab access (2026-09-27) — `billing_pick_delete`. ────
   const { canView: canViewPickDelete, canEdit: canEditPickDelete } = useBillingPickDeleteAccess();
-  // The Pick delete tab's Decided month (YYYY-MM, IST) — owned here for the same
-  // reason as telephonicMonth: its picker sits on the tab ROW. Not persisted.
-  const [pickDeleteMonth, setPickDeleteMonth] = useState<string>(() => currentIstMonth(new Date()));
+  // The Pick delete tab's History month is owned by the TAB since 2026-09-27
+  // (hand review): its picker sits in the History header, which the tab hides
+  // while groups wait — so the tab row carries no picker on this tab.
   const [billingTab, setBillingTab] = useState<BillingTab>("orders");
   // The tab actually rendered. A viewer without the key can never be on Picking,
   // whatever `billingTab` holds — derived rather than corrected in an effect, so
@@ -1324,8 +1324,9 @@ export default function MailOrdersPage() {
       {effectiveBillingTab === "telephonic" ? (
         <TelephonicMonthPicker month={telephonicMonth} onChange={setTelephonicMonth} />
       ) : effectiveBillingTab === "pick_delete" ? (
-        /* PICK DELETE (2026-09-27): the same month picker, driving the Decided list. */
-        <TelephonicMonthPicker month={pickDeleteMonth} onChange={setPickDeleteMonth} />
+        /* PICK DELETE (2026-09-27): no stepper and no picker here — the tab is not
+           date-fenced, and its History month picker lives inside the tab. */
+        null
       ) : (
         <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
       )}
@@ -1597,7 +1598,6 @@ export default function MailOrdersPage() {
           telephonicMonth={telephonicMonth}
           billingPickDeleteCanView={canViewPickDelete}
           billingPickDeleteCanEdit={canEditPickDelete}
-          pickDeleteMonth={pickDeleteMonth}
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
           hasHeaderFilter={hasHeaderFilter}

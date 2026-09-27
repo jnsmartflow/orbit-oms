@@ -6,8 +6,10 @@ import { getPickDeleteBillLines } from "@/lib/billing/pick-delete";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/billing/pick-delete/bill/[orderId] — the active lines of one bill
- * ("Show lines"). The same read as GET /api/billing/picking/order/[orderId],
+ * GET /api/billing/pick-delete/bill/[orderId] — the active lines of one bill,
+ * SAP batch splits merged per SKU (lib/picking/group-lines.ts), for the tab's
+ * always-open lines table and its first-punch comparison. Base read as GET
+ * /api/billing/picking/order/[orderId],
  * under THIS tab's own gate (billing_pick_delete canView) so a Pick delete user
  * never needs billing_picking. No findings, no pending fact. READ-ONLY.
  */
