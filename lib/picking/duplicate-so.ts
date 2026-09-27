@@ -76,3 +76,106 @@ export async function getDuplicateSoNumbers(
   }
   return duplicates;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Billing "Pick delete" (2026-09-27, build step 5) — the SAME rule with bill ids,
+// and the All OK acknowledgement read. ADDITIVE: getDuplicateSoNumbers() above
+// is deliberately untouched until build step 6 re-points it onto
+// getDuplicateGroups() (docs/prompts/drafts/code-discovery-2026-09-27-pick-delete-build-plan.md §4).
+//
+// The RULE stays Picking's; Billing only WRITES pick_delete_decisions and reads
+// its groups through these functions, so the three screens can never disagree
+// about what a same-SO group is.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Postgres bind-parameter headroom for the `in` lists below. */
+const SO_CHUNK = 1000;
+
+function nonBlankDistinct(soNumbers: (string | null)[]): string[] {
+  return Array.from(
+    new Set(soNumbers.filter((s): s is string => s !== null && s.trim() !== "")),
+  );
+}
+
+/**
+ * Every live bill id per SO — the twin rule of getDuplicateSoNumbers (not
+ * removed, not cancelled; dispatched counts) — for the SO numbers asked about,
+ * INCLUDING single-bill SOs. Ids sorted ascending. No acknowledgement filter:
+ * the All OK and Pick delete writes re-check the live set against this.
+ *
+ * Bounded the same way: an `in` list of the SOs asked about, never a scan.
+ * Sequential awaits per chunk, never prisma.$transaction (CORE §3).
+ */
+export async function getTwinIdsBySo(
+  soNumbers: (string | null)[],
+): Promise<Map<string, number[]>> {
+  const candidates = nonBlankDistinct(soNumbers);
+  const bySo = new Map<string, number[]>();
+  for (let i = 0; i < candidates.length; i += SO_CHUNK) {
+    const rows = await prisma.orders.findMany({
+      where: {
+        soNumber: { in: candidates.slice(i, i + SO_CHUNK) },
+        isRemoved: false,
+        workflowStage: { not: "cancelled" },
+      },
+      select: { id: true, soNumber: true },
+    });
+    for (const r of rows) {
+      if (r.soNumber === null) continue;
+      const list = bySo.get(r.soNumber);
+      if (list) list.push(r.id);
+      else bySo.set(r.soNumber, [r.id]);
+    }
+  }
+  bySo.forEach((ids) => ids.sort((a, b) => a - b));
+  return bySo;
+}
+
+/**
+ * Is this group covered by an active All OK? Yes when EVERY current twin is in
+ * one approved set (owner ruling 2026-09-27): a NEW bill joining the SO brings
+ * the flag back; a twin that later leaves (cancelled / removed) does not. PURE.
+ */
+export function isAcknowledged(currentIds: readonly number[], ackSets: readonly (readonly number[])[]): boolean {
+  return ackSets.some((ack) => currentIds.every((id) => ack.includes(id)));
+}
+
+/** Active (not undone) All OK sets per SO, for the SOs asked about. */
+export async function getActiveAllOkSets(soNumbers: string[]): Promise<Map<string, number[][]>> {
+  const bySo = new Map<string, number[][]>();
+  for (let i = 0; i < soNumbers.length; i += SO_CHUNK) {
+    const rows = await prisma.pick_delete_decisions.findMany({
+      where: { kind: "all_ok", undoneAt: null, soNumber: { in: soNumbers.slice(i, i + SO_CHUNK) } },
+      select: { soNumber: true, orderIds: true },
+    });
+    for (const r of rows) {
+      const list = bySo.get(r.soNumber);
+      if (list) list.push(r.orderIds);
+      else bySo.set(r.soNumber, [r.orderIds]);
+    }
+  }
+  return bySo;
+}
+
+/**
+ * The flagged same-SO groups among these SO numbers: ≥ 2 live twins AND not
+ * covered by an active All OK. SO → sorted bill ids. Two bounded reads; the
+ * acknowledgement read runs only when a group exists.
+ */
+export async function getDuplicateGroups(
+  soNumbers: (string | null)[],
+): Promise<Map<string, number[]>> {
+  const twins = await getTwinIdsBySo(soNumbers);
+  const groups = new Map<string, number[]>();
+  twins.forEach((ids, so) => {
+    if (ids.length > 1) groups.set(so, ids);
+  });
+  if (groups.size === 0) return groups;
+
+  const acks = await getActiveAllOkSets(Array.from(groups.keys()));
+  acks.forEach((sets, so) => {
+    const ids = groups.get(so);
+    if (ids && isAcknowledged(ids, sets)) groups.delete(so);
+  });
+  return groups;
+}
