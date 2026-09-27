@@ -305,6 +305,12 @@ model users {
   // SIDES, or Prisma errors on ambiguity at generate time (CORE §7.3).
   soTagsAdded                 so_tags[]                @relation("SoTagAddedBy")
   soTagsRemoved               so_tags[]                @relation("SoTagRemovedBy")
+  // Billing · Pick delete decisions (2026-09-27, Schema v27.42) — THREE FKs from
+  // `pick_delete_decisions` to `users`: decidedById / undoneById /
+  // deletedPickerId. ALL THREE MUST STAY EXPLICITLY NAMED ON BOTH SIDES (CORE §7.3).
+  pickDeleteDecided           pick_delete_decisions[]  @relation("PickDeleteDecidedBy")
+  pickDeleteUndone            pick_delete_decisions[]  @relation("PickDeleteUndoneBy")
+  pickDeleteHeld              pick_delete_decisions[]  @relation("PickDeleteDeletedPicker")
   // Per-user page access (2026-09-04). One FK to `users`, so the relation is
   // deliberately UNNAMED — same call as pushSubscriptions and adminAuditLogs
   // above, and the opposite of the Mrn*/PickFinding*/CiReturn* clusters, which
@@ -1093,6 +1099,10 @@ model orders {
   // bill. NAMED in the CiReturnOrder style. A stored link only: the hold the
   // tag applies is written to dispatchStatus/heldAt like any other hold.
   soTagMatches             so_tag_matches[]          @relation("SoTagMatchOrder")
+  // Billing · Pick delete (2026-09-27, Schema v27.42) — the decision that
+  // cancelled THIS bill as a same-SO duplicate. NAMED in the SoTagMatchOrder
+  // style. A stored link only: the cancel itself is workflowStage/dispatchStatus.
+  pickDeleteDecisions      pick_delete_decisions[]   @relation("PickDeleteDeletedOrder")
   // TM Remove OBD (Feature 1)
   isRemoved                Boolean                   @default(false)
   removalReason            String?
@@ -3408,6 +3418,69 @@ model so_tag_matches {
   // The referencing side of the orderId FK — Postgres does not index it, and
   // without it a delete on orders scans this table to enforce the RESTRICT.
   @@index([orderId])
+}
+
+// ─────────────────────────────────────────────
+// BILLING · PICK DELETE — same-SO decisions (2026-09-27, Schema v27.42)
+// ─────────────────────────────────────────────
+// One row per billing decision on a same-SO group: 'all_ok' (keep every bill)
+// or 'pick_delete' (one bill cancelled as a duplicate). Undo stamps undoneAt /
+// undoneById; a row is never deleted. The duplicate-SO RULE stays Picking's
+// (lib/picking/duplicate-so.ts reads the active all_ok rows); only Billing
+// writes this table. Created by hand in the Supabase SQL Editor
+// (docs/prompts/drafts/2026-09-27-pick-delete-table.sql, run live 2026-09-27).
+//
+// ⚠ orderIds / keptOrderIds are written SORTED ASCENDING — the first partial
+//   unique index below depends on it.
+//
+// 🔴 NOT EXPRESSIBLE IN PRISMA — live only, quoted from pg_constraint /
+//   pg_indexes 2026-09-27. No @@unique for either partial index, so there is no
+//   findUnique on them; a double press surfaces as P2002.
+//   pick_delete_decisions_all_ok_live_key UNIQUE ("soNumber","orderIds")
+//     WHERE kind='all_ok' AND "undoneAt" IS NULL
+//   pick_delete_decisions_deleted_live_key UNIQUE ("deletedOrderId")
+//     WHERE kind='pick_delete' AND "undoneAt" IS NULL
+//   chk_pick_delete_decisions_kind: CHECK ((kind = ANY (ARRAY['all_ok'::text, 'pick_delete'::text])))
+//   chk_pick_delete_decisions_member: CHECK ((("deletedOrderId" IS NULL) OR ("deletedOrderId" = ANY ("orderIds"))))
+//   chk_pick_delete_decisions_set: CHECK ((cardinality("orderIds") >= 2))
+//   chk_pick_delete_decisions_shape: CHECK ((((kind = 'all_ok'::text) AND ("deletedOrderId" IS NULL) AND ("deletedFromStage" IS NULL) AND ("deletedPickerId" IS NULL)) OR ((kind = 'pick_delete'::text) AND ("deletedOrderId" IS NOT NULL) AND ("deletedFromStage" IS NOT NULL))))
+//   chk_pick_delete_decisions_undo: CHECK ((("undoneById" IS NULL) OR ("undoneAt" IS NOT NULL)))
+//   A new `kind` value needs a SQL ALTER on the CHECK FIRST (CORE §3).
+// Every FK name is Prisma's default, so no `map:` on the relations.
+model pick_delete_decisions {
+  id               Int       @id @default(autoincrement())
+  soNumber         String
+  // 'all_ok' | 'pick_delete' — chk_pick_delete_decisions_kind.
+  kind             String
+  // The exact set decided on, sorted ascending, ≥ 2 ids.
+  orderIds         Int[]
+  // pick_delete only. RESTRICT: the decision is the record of why it died.
+  deletedOrderId   Int?
+  deletedOrder     orders?   @relation("PickDeleteDeletedOrder", fields: [deletedOrderId], references: [id], onDelete: Restrict)
+  // pick_delete only — the stage at delete time; Undo returns a
+  // pending_tint_assignment bill to the tint queue, every other to pending_picking.
+  deletedFromStage String?
+  // Who held the pick assignment when it was deleted (the assignment row itself
+  // is gone) — scopes the picker's "pick deleted today" card.
+  deletedPickerId  Int?
+  deletedPicker    users?    @relation("PickDeleteDeletedPicker", fields: [deletedPickerId], references: [id], onDelete: SetNull)
+  keptOrderIds     Int[]     @default([])
+  decidedById      Int
+  decidedBy        users     @relation("PickDeleteDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+  decidedAt        DateTime  @default(now()) @db.Timestamptz(6)
+  undoneAt         DateTime? @db.Timestamptz(6)
+  // SET NULL, so chk_pick_delete_decisions_undo is one-directional on purpose.
+  undoneById       Int?
+  undoneBy         users?    @relation("PickDeleteUndoneBy", fields: [undoneById], references: [id], onDelete: SetNull)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  // No trigger on the live column (NOT NULL DEFAULT now()) — @updatedAt is what
+  // advances it. The Picking/Floor markers read MAX(updatedAt) as a clock.
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([soNumber], map: "pick_delete_decisions_so_idx")
+  @@index([decidedAt(sort: Desc)], map: "pick_delete_decisions_decided_idx")
+  @@index([deletedPickerId, decidedAt], map: "pick_delete_decisions_picker_idx")
+  @@index([deletedOrderId], map: "pick_delete_decisions_deleted_order_idx")
 }
 
 // ─────────────────────────────────────────────

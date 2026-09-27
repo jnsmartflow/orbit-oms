@@ -283,6 +283,13 @@ export type PageKey =
   // all-false user_page_access rows were written by
   // sql/2026-09-22-billing-telephonic.sql.
   | "billing_telephonic"
+  // billing_pick_delete — the BILLING Pick delete tab (2026-09-27): same-SO
+  // groups billing decides on — All OK, or cancel one bill as a duplicate
+  // (pick_delete_decisions, Schema v27.42). canView = see the pill + tab (list,
+  // marker, bill lines); canEdit = All OK / Pick delete / Undo. A TAB inside
+  // /mail-orders like billing_telephonic, so deliberately NOT in PAGE_NAV_MAP
+  // or ICON_MAP. Grants are user_page_access data (build step 9), never seed.
+  | "billing_pick_delete"
   // The four dispatch DECISIONS on the Billing face's Orders tab — Hold, Slot,
   // Urgent and the ✎ ship-to pencil (2026-09-11). One key per button, because
   // the owner wants to grant Slot without granting Hold.
@@ -380,7 +387,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // its host screen. It is NOT `picking` on the line above — that is the floor
   // board. Keep them visually apart in this list, never adjacent.
   "place_order", "place_order_ship_to", "trip_report", "mail_orders", "billing_picking", "billing_print",
-  "billing_telephonic", "mrn", "ci",
+  "billing_telephonic", "billing_pick_delete", "mrn", "ci",
   // The six Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
   // /mail-orders, not routes of their own.
@@ -441,6 +448,10 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // billing_telephonic (2026-09-22) — Add and Remove a tag gate on canEdit
     // (api/billing/telephonic/add, /remove). Backed from day one.
     "billing_telephonic",
+    // billing_pick_delete (2026-09-27) — All OK / Pick delete / Undo gate on
+    // canEdit (api/billing/pick-delete/*, build step 5). Listed ahead of its
+    // call sites, as billing_picking was, so /admin/access can grant it.
+    "billing_pick_delete",
     // The six Billing action ticks (2026-09-11; Hand + CI 2026-09-24). `canEdit`
     // is the ONE question the app asks of these keys — POST
     // /api/billing/mail-order/actions checks it per action name, on top of
@@ -502,10 +513,10 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. TWENTY
-// of the 42 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. TWENTY-ONE
+// of the 43 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
-// billing_print, billing_telephonic, the six billing action ticks, place_order_ship_to, the three
+// billing_print, billing_telephonic, billing_pick_delete, the six billing action ticks, place_order_ship_to, the three
 // Tint Manager panel tabs, and the two report ticks.
 // (`ti_report` IS in PAGE_NAV_MAP as "Reports", but is overridden here because
 // since 2026-09-17 its tick gates nothing — see its label below.)
@@ -529,6 +540,7 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   billing_picking:  "Billing · Picking",
   billing_print:    "Billing · Print",
   billing_telephonic: "Billing · Telephonic",
+  billing_pick_delete: "Billing · Pick delete",
   // Same rule as the row above, and the same reason it is not optional: none of
   // these four is in PAGE_NAV_MAP, so without an override each row would read
   // its raw key. The "Billing ·" prefix also keeps them recognisable as one
@@ -571,7 +583,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 42 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 43 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -585,7 +597,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     // family reads as one block on /admin/access: the screen, its Picking tab,
     // then the six decisions the Orders tab allows.
     "picking", "floor", "mrn", "ci", "mail_orders", "billing_picking",
-    "billing_print", "billing_telephonic",
+    "billing_print", "billing_telephonic", "billing_pick_delete",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
     "billing_hand", "billing_ci",
     "place_order", "place_order_ship_to", "trip_report", "import_obd",
