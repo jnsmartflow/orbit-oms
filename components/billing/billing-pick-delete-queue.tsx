@@ -667,7 +667,7 @@ function BillCard({
         {canEdit &&
           (bill.canDelete ? (
             <button type="button" className={BTN_DANGER} disabled={busy} onClick={onDelete}>
-              Pick delete this bill
+              Pick delete
             </button>
           ) : (
             <span className="flex items-center gap-2">
@@ -675,7 +675,7 @@ function BillCard({
                 {bill.reason}
               </span>
               <button type="button" className={BTN_REFUSED} disabled title={bill.refusal ?? undefined}>
-                Pick delete this bill
+                Pick delete
               </button>
             </span>
           ))}

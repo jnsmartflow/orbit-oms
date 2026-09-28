@@ -44,6 +44,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AlertTriangle } from "lucide-react";
 import { useBillingPickDeleteMarkerSubscription } from "@/components/billing/billing-marker-provider";
 import {
   PICK_DELETE_BASE,
@@ -163,15 +164,18 @@ export function BillingPickDeletePopup() {
         aria-modal="true"
         aria-labelledby="pick-delete-popup-title"
         tabIndex={-1}
-        className="flex h-full max-h-[calc(100vh-32px)] w-full max-w-[1280px] flex-col overflow-hidden rounded-xl border border-ink-100 bg-ink-25 shadow-xl outline-none"
+        className="flex max-h-[90vh] w-full max-w-[1280px] flex-col overflow-hidden rounded-xl border border-ink-100 bg-ink-25 shadow-xl outline-none"
       >
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-ink-100 bg-white px-4 py-3">
-          <h2 id="pick-delete-popup-title" className="m-0 text-[15px] font-semibold text-ink-900">
+        {/* Height fits the content (max 90vh); the queue scrolls inside. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-warn/30 bg-warn-bg px-4 py-3">
+          <AlertTriangle size={18} strokeWidth={2} className="shrink-0 text-warn" aria-hidden />
+          <h2 id="pick-delete-popup-title" className="m-0 text-[16px] font-bold text-ink-900">
             Pick delete
           </h2>
-          <span className="text-[12px] text-ink-500">
+          <span className="text-[12px] text-ink-600">
             Two or more bills share one SO number. Decide each group to continue.
           </span>
+          {count > 0 && <span className="ml-auto text-[12px] font-semibold text-warn-text">{count} left</span>}
         </div>
         <PickDeleteQueue canEdit onState={onQueueState} />
       </div>
