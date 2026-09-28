@@ -46,6 +46,16 @@ const MARKER_URL = "/api/billing/picking/marker";
  */
 export const BILLING_MARKER_POLL_MS = 30_000;
 
+/**
+ * The Pick delete marker ONLY: 10s (2026-09-28). Its count opens a BLOCKING
+ * popup on every Billing tab — billing must decide a duplicate before anything
+ * else, so "instant" matters here. The popup also checks at once on window
+ * focus and when an Import on this screen finishes
+ * (components/billing/billing-pick-delete-popup.tsx); the hook itself checks at
+ * once when the tab becomes visible. Every other billing marker keeps 30s.
+ */
+export const BILLING_PICK_DELETE_POLL_MS = 10_000;
+
 interface BillingMarkerApi {
   /** Register a callback fired once per detected change. Returns an unsubscribe. */
   subscribe: (fn: () => void) => () => void;
@@ -92,9 +102,12 @@ function ActiveBillingMarkerProvider({
   date,
   url = MARKER_URL,
   context: Context = BillingMarkerContext,
+  pollMs = BILLING_MARKER_POLL_MS,
   children,
 }: {
   date?: string;
+  /** Only the Pick delete twin passes this (BILLING_PICK_DELETE_POLL_MS). */
+  pollMs?: number;
   /** The Print tab's twin points this at its own marker (slice 9). */
   url?: string;
   context?: React.Context<BillingMarkerApi>;
@@ -130,7 +143,7 @@ function ActiveBillingMarkerProvider({
     scope: "openPending",
     url,
     date,
-    pollMs: BILLING_MARKER_POLL_MS,
+    pollMs,
     paused: pauseCount > 0,
     onChange: () => {
       // Snapshot before iterating: a subscriber could unsubscribe during its own
@@ -275,10 +288,10 @@ export function BillingTelephonicMarkerProvider({
 // THE PICK DELETE TAB'S MARKER (2026-09-27)
 //
 // A FOURTH poll, on its own context, against /api/billing/pick-delete/marker —
-// the Pick delete pill's count and the tab's refetch. Its own key
-// (`billing_pick_delete`) and its own holders, for the same no-403-polling
-// reason as Telephonic's. Same 30s cadence, same pause contract, same
-// pass-through when off. `latest` carries the later of the decisions clock and
+// the blocking popup's count and refetch, and the History tab's refetch. Its own
+// key (`billing_pick_delete`) and its own holders, for the same no-403-polling
+// reason as Telephonic's. 10s cadence (BILLING_PICK_DELETE_POLL_MS, 2026-09-28),
+// same pause contract, same pass-through when off. `latest` carries the later of the decisions clock and
 // the open groups' bills (lib/billing/pick-delete.ts getPickDeleteMarker).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -319,7 +332,11 @@ export function BillingPickDeleteMarkerProvider({
     );
   }
   return (
-    <ActiveBillingMarkerProvider url={PICK_DELETE_MARKER_URL} context={BillingPickDeleteMarkerContext}>
+    <ActiveBillingMarkerProvider
+      url={PICK_DELETE_MARKER_URL}
+      context={BillingPickDeleteMarkerContext}
+      pollMs={BILLING_PICK_DELETE_POLL_MS}
+    >
       {children}
     </ActiveBillingMarkerProvider>
   );

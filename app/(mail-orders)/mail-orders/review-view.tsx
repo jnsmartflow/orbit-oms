@@ -3028,7 +3028,8 @@ export function ReviewView({
              so its scroll and selection survive a trip here and back. */
           <BillingTelephonicTab month={telephonicMonth} canEdit={billingTelephonicCanEdit} />
         ) : billingV2 && billingPickDeleteCanView && billingTab === "pick_delete" ? (
-          /* The Pick delete BODY (2026-09-27) — its own permission term, and FULL
+          /* The Pick delete BODY — HISTORY ONLY since 2026-09-28 (the groups are decided
+             in the blocking popup, billing-pick-delete-popup.tsx). Its own permission term, FULL
              WIDTH exactly like Telephonic (the inbox is CSS-hidden above). It owns
              its History month. */
           <BillingPickDeleteTab canEdit={billingPickDeleteCanEdit} />

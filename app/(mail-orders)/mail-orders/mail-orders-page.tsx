@@ -25,6 +25,7 @@ import {
 import { useBillingPrintAccess } from "@/components/billing/billing-print-access-provider";
 import { useBillingTelephonicAccess } from "@/components/billing/billing-telephonic-access-provider";
 import { useBillingPickDeleteAccess } from "@/components/billing/billing-pick-delete-access-provider";
+import { BillingPickDeletePopup } from "@/components/billing/billing-pick-delete-popup";
 import { TelephonicMonthPicker } from "@/components/billing/billing-telephonic-tab";
 import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
@@ -1556,8 +1557,9 @@ export default function MailOrdersPage() {
         {/* The Telephonic tab's own poll (2026-09-22) — on only for
             `billing_telephonic` holders; a pure pass-through otherwise. */}
         <BillingTelephonicMarkerProvider enabled={billingV2 && canViewTelephonic}>
-        {/* The Pick delete tab's own poll (2026-09-27) — on only for
-            `billing_pick_delete` holders; a pure pass-through otherwise. */}
+        {/* The Pick delete poll (2026-09-27; 10s since 2026-09-28) — on only for
+            `billing_pick_delete` holders; a pure pass-through otherwise. It feeds
+            the History tab and the blocking popup mounted just below. */}
         <BillingPickDeleteMarkerProvider enabled={billingV2 && canViewPickDelete}>
         <ReviewView
           orders={filteredOrders}
@@ -1612,6 +1614,11 @@ export default function MailOrdersPage() {
           notesFontSize={notesFontSize}
           onNotesFontSizeChange={handleNotesFontSizeChange}
         />
+        {/* The BLOCKING Pick delete popup (2026-09-28) — over every Billing tab,
+            for `billing_pick_delete` canEdit holders ONLY: view-only or no tick
+            mounts nothing. It renders into its own <body> portal, so this
+            sibling adds no DOM here. */}
+        {billingV2 && canViewPickDelete && canEditPickDelete && <BillingPickDeletePopup />}
         </BillingPickDeleteMarkerProvider>
         </BillingTelephonicMarkerProvider>
         </BillingPrintMarkerProvider>
