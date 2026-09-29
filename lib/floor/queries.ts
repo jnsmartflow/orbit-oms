@@ -1070,6 +1070,8 @@ export async function getFloorBoard(
       // §5/§10 — the live marker keys on MAX(orders.updatedAt), so a second
       // write would fire a false "changed" on every board).
       invoiceNo: order.invoiceNo ?? null,
+      // SEARCH ONLY — never displayed (owner decision 2026-09-29; FloorBoardRow).
+      soNumber: order.soNumber ?? null,
       // ISO for the wire, like every other date on this payload. The column is
       // date-only in practice (all values 00:00:00 UTC, verified live
       // 2026-08-31) — formatting is the renderer's job, not this feed's.
@@ -1268,6 +1270,10 @@ export async function getFloorHold(
       heldAt: order.heldAt?.toISOString() ?? null,
       heldSince,
       heldSinceSource,
+      // Search-only (2026-09-29): scalars the `include` already brought.
+      invoiceNo: order.invoiceNo ?? null,
+      soNumber: order.soNumber ?? null,
+      dealerInMaster: dealer != null,
     });
   }
 
@@ -1444,6 +1450,9 @@ export async function getFloorCancelled(
       articleTag: order.querySnapshot?.articleTag ?? null,
       // The tab's own display-date rule, unchanged.
       obdDateTime: (order.obdEmailDate ?? order.orderDateTime)?.toISOString() ?? null,
+      // Search-only (2026-09-29) — never displayed.
+      soNumber: order.soNumber ?? null,
+      dealerInMaster: dealer != null,
     };
 
     if (ci !== null) {

@@ -179,6 +179,7 @@ export function TripDesk({
   openRouteCard,
   onOpenRouteCard,
   searchActive,
+  searchTripIds = null,
   loadPlanConfigs,
   routeNames,
   onMakeTrip,
@@ -287,6 +288,9 @@ export function TripDesk({
   onOpenRouteCard: (key: string | null) => void;
   /** A search is up — the pool shows Flat until it is cleared (2026-09-19). */
   searchActive: boolean;
+  /** Trips holding bills the search matched (2026-09-29). The rail shows only
+   *  these while it is non-null; null = the full rail. */
+  searchTripIds?: ReadonlySet<number> | null;
   /** Load plan rules by delivery type name (GET /api/floor/board `loadPlan`). */
   loadPlanConfigs: Record<string, LoadPlanConfig>;
   /** route_master id → name, for the plan's reasons. */
@@ -1068,6 +1072,7 @@ export function TripDesk({
         onAddToTrip={onAddToTrip}
         anchorIso={floor.date}
         scope={scope}
+        searchTripIds={searchTripIds}
         gateOn={gateOn}
         poolCount={poolRows.length + poolUpcoming.length}
         // Hand bills are counted as bills (they are listed) but never in the

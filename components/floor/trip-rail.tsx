@@ -100,6 +100,7 @@ export function TripRail({
   addCount = 0,
   sameRouteLabel = null,
   onAddToTrip,
+  searchTripIds = null,
 }: {
   trips: TripSummary[] | null;
   loading: boolean;
@@ -153,13 +154,26 @@ export function TripRail({
    */
   sameRouteLabel?: string | null;
   onAddToTrip?: (tripId: number) => void;
+  /**
+   * SEARCH NARROWING (owner, 2026-09-29): the trips holding bills the search
+   * matched. While non-null the rail lists ONLY these, and the scope tab does
+   * not hide one — a search names the bill, and its truck is the answer
+   * whatever letter the truck carries (an opened trip is unscoped too). Null =
+   * the ordinary rail. Built in floor-page.tsx (`searchTripIds`).
+   */
+  searchTripIds?: ReadonlySet<number> | null;
 }) {
   const all = trips ?? [];
   // 🔴 CANCELLED NEVER REACHES THE RAIL (2026-09-11), and a trip outside the
   // page's scope does not either (slice 6). One filter, applied once, in the
   // server's order — newest created first. In scope = the trip's OWN type, the
-  // letter in its number (2026-09-18).
-  const live = all.filter((t) => t.status !== "cancelled" && tripInScope(t, scope));
+  // letter in its number (2026-09-18). A search replaces the scope test with
+  // its own list (above).
+  const live = all.filter(
+    (t) =>
+      t.status !== "cancelled" &&
+      (searchTripIds !== null ? searchTripIds.has(t.id) : tripInScope(t, scope)),
+  );
 
   // The header's two numbers. Both describe the LIVE list — what is actually on
   // the rail — so the count and the cards can never disagree.
@@ -176,6 +190,7 @@ export function TripRail({
           is what is rendered. */}
       <div className="mb-[9px] px-1 text-[11px] font-semibold uppercase tabular-nums tracking-[0.06em] text-[#96969f]">
         {tripCount} trip{tripCount === 1 ? "" : "s"} · {billCount} bill{billCount === 1 ? "" : "s"}
+        {searchTripIds !== null && <span className="ml-1 text-brand-600">· search</span>}
       </div>
 
       {/* ── The pool ─────────────────────────────────────────────────────── */}

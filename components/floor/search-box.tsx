@@ -7,6 +7,13 @@
 import { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import type { ParsedSearch, SearchReport } from "@/lib/floor/search";
+import type { TripSearchHit, LookupState, LookupTrip } from "./floor-page";
+
+/** "2026-09-24" → "24 Sep" — a trip's own day, for the lookup's choice list. */
+function formatTripDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
 
 export function SearchBox({
   committed,
@@ -62,14 +69,31 @@ export function SearchBox({
 // The teal results strip. Text mode → one summary line; numbers mode → a chip per
 // number (teal with a count, red "not found") + a summary. Not-found is never
 // silent (design §5.2). Renders nothing when no search is active.
+//
+// 2026-09-29 (owner): bills that sit on TRIPS are not pool hits. They get one
+// line per trip — "1 bill on L-260929-03 ›" — that opens the trip, and a
+// numbers chip found only there reads "on a trip" instead of "not found". The
+// other-days lookup (GET /api/floor/trips/lookup) reports here too: looking,
+// nothing on any trip, or a short list to choose from when several trips match.
 export function SearchHits({
   parsed,
   report,
   onClear,
+  tripHits = [],
+  onOpenTrip,
+  lookup = null,
+  onPickLookup,
+  onRetryOpen,
 }: {
   parsed: ParsedSearch;
   report: SearchReport | null;
   onClear: () => void;
+  tripHits?: TripSearchHit[];
+  onOpenTrip?: (tripId: number) => void;
+  lookup?: LookupState | null;
+  onPickLookup?: (trip: LookupTrip) => void;
+  /** Retry a History jump whose load failed ("open-failed"). */
+  onRetryOpen?: (trip: LookupTrip) => void;
 }) {
   if (parsed.mode === "none" || !report) return null;
 
@@ -93,14 +117,70 @@ export function SearchHits({
             <span
               key={t.token}
               className={`inline-flex items-center gap-[5px] rounded-[4px] border px-2 py-[2px] font-mono text-[10.5px] ${
-                t.count > 0 ? "border-ok/30 bg-white text-ok-text" : "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
+                t.count > 0 || t.elsewhere > 0 ? "border-ok/30 bg-white text-ok-text" : "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
               }`}
             >
               {t.token}
-              <span className="opacity-60">{t.count > 0 ? t.count : "not found"}</span>
+              <span className="opacity-60">
+                {t.count > 0 ? t.count : t.elsewhere > 0 ? "on a trip" : "not found"}
+              </span>
             </span>
           ))}
         </>
+      )}
+      {tripHits.map((h) => (
+        <button
+          key={h.tripId}
+          type="button"
+          onClick={() => onOpenTrip?.(h.tripId)}
+          className="font-semibold text-brand-600 hover:text-brand-700"
+        >
+          · {h.count} bill{h.count === 1 ? "" : "s"} on {h.tripNumber} ›
+        </button>
+      ))}
+      {lookup?.status === "loading" && <span className="text-[#6b7280]">· Looking on other days…</span>}
+      {lookup?.status === "none" && <span className="text-[#6b7280]">· Not on any trip on other days</span>}
+      {lookup?.status === "error" && (
+        <span className="font-semibold text-[#b91c1c]">· Could not check other days</span>
+      )}
+      {/* The History jump (2026-09-29): up from the lookup's answer until that
+          day's board and trips have landed with the trip selected. On a slow
+          link that is many seconds, and a silent gap reads as "nothing
+          happened". Settled by load() in floor-page.tsx. */}
+      {lookup?.status === "opening" && (
+        <span className="font-semibold text-[#6D28D9]">
+          · Opening {lookup.trip.tripNumber} ({formatTripDay(lookup.trip.tripDate)})…
+        </span>
+      )}
+      {lookup?.status === "open-failed" && (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="font-semibold text-[#b91c1c]">
+            · Could not open {lookup.trip.tripNumber} ({formatTripDay(lookup.trip.tripDate)})
+            {lookup.reason ? ` — ${lookup.reason}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => onRetryOpen?.(lookup.trip)}
+            className="font-semibold text-brand-600 underline hover:text-brand-700"
+          >
+            Retry
+          </button>
+        </span>
+      )}
+      {lookup?.status === "many" && (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span className="text-[#6b7280]">· On {lookup.trips.length} trips:</span>
+          {lookup.trips.map((t) => (
+            <button
+              key={t.tripId}
+              type="button"
+              onClick={() => onPickLookup?.(t)}
+              className="rounded-[4px] border border-brand-100 bg-white px-2 py-[2px] font-mono text-[10.5px] text-brand-700 hover:border-brand-500"
+            >
+              {t.tripNumber} · {formatTripDay(t.tripDate)}
+            </button>
+          ))}
+        </span>
       )}
       <button type="button" onClick={onClear} className="ml-auto text-[11px] font-semibold text-brand-600 hover:text-brand-700">
         Clear search ✕

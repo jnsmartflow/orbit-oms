@@ -67,7 +67,7 @@ import { useFloorRailPoll } from "@/lib/floor/use-floor-rail-poll";
 // membership is not stage-gated — see the two families in lib/floor/selection.ts.
 import { toggleOne, toggleAllIds, type FloorSelection } from "@/lib/floor/selection";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
-import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
+import { parseSearch, applySearch, searchReport, lookupTermOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub } from "@/lib/floor/types";
@@ -129,6 +129,69 @@ function istTodayIso(): string {
 function addDaysIso(iso: string, delta: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
+}
+
+/**
+ * A board row's trip NUMBER → the trip on the loaded rail feed. THE page's one
+ * tripNumber → trip mapping: `removeSelectionFromTrips` and the search's trip
+ * narrowing (2026-09-29) both call this, so the two can never resolve a number
+ * differently. The feed is newest-created first, so a number a cancelled trip
+ * gave back resolves to the newer trip holding it now.
+ */
+function findTripByNumber(trips: TripSummary[], tripNumber: string): TripSummary | undefined {
+  return trips.find((x) => x.tripNumber === tripNumber);
+}
+
+/** A trip the search reached through bills on the loaded desk, with how many. */
+export interface TripSearchHit {
+  tripId: number;
+  tripNumber: string;
+  count: number;
+}
+
+/**
+ * The trips holding bills that `parsed` matches (2026-09-29, owner). Read over
+ * the UNSCOPED board rows — a trip is opened unscoped (floor-page's
+ * `unfilteredRows`), so a Local trip carrying the searched Upcountry bill is
+ * still that bill's trip. Cancelled trips are skipped (they hold no bills).
+ */
+function tripHitsFor(rows: FloorBoardRow[], trips: TripSummary[], parsed: ParsedSearch): TripSearchHit[] {
+  if (parsed.mode === "none") return [];
+  const byId = new Map<number, TripSearchHit>();
+  for (const r of applySearch(rows, parsed)) {
+    if (r.tripDropId === null || !r.tripNumber) continue;
+    const t = findTripByNumber(trips, r.tripNumber);
+    if (!t || t.status === "cancelled") continue;
+    const hit = byId.get(t.id) ?? { tripId: t.id, tripNumber: t.tripNumber, count: 0 };
+    hit.count++;
+    byId.set(t.id, hit);
+  }
+  return Array.from(byId.values());
+}
+
+/** One trip GET /api/floor/trips/lookup returned. */
+export interface LookupTrip {
+  tripId: number;
+  tripNumber: string;
+  tripDate: string; // YYYY-MM-DD
+  status: string;
+  obdNumber: string;
+  obdNumbers: string[];
+  onLiveDesk: boolean;
+}
+
+/** The other-days lookup's state, for the hits strip. Null = no lookup.
+ *  "opening" / "open-failed" (2026-09-29): the lookup found a trip on an older
+ *  day and the page is switching to History for it — see `openLookupTrip`. */
+export type LookupState =
+  | { term: string; status: "loading" | "none" | "error" }
+  | { term: string; status: "many"; trips: LookupTrip[] }
+  | { status: "opening" | "open-failed"; trip: LookupTrip; reason?: string };
+
+/** Which board a load() is for — live, or History on one day. Two loads with
+ *  different keys answer different questions (the stale-answer guard). */
+function viewKeyOf(viewMode: "live" | "history", histDate: string | null): string {
+  return viewMode === "history" && histDate ? `history:${histDate}` : "live";
 }
 
 // Every write route returns one of these shapes: { failed:[…] } for the batch
@@ -369,7 +432,40 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // it whenever that card is not on screen, so Esc never closes an unseen card.
   const [openRouteCard, setOpenRouteCard] = useState<string | null>(null);
 
+  // ── The other-days lookup's state (owner, 2026-09-29) ─────────────────────
+  // Declared HERE, above load(), because load() settles the "Opening …" line
+  // when the History day it was waiting for lands (see `pendingOpenRef`).
+  // `lookupSeq` drops a stale lookup answer when a newer search (or a clear)
+  // has happened since the request went out.
+  const [lookup, setLookup] = useState<LookupState | null>(null);
+  const lookupSeq = useRef(0);
+  /**
+   * The trip a lookup is OPENING on an older day, until the load for that day
+   * lands. load() resolves it (clears the line once the day's trips include the
+   * trip) or fails it (the line turns into an error with a retry). Cleared by a
+   * new search, a clear, or a load for a different view (the planner moved on).
+   */
+  const pendingOpenRef = useRef<LookupTrip | null>(null);
+
+  // ── THE STALE-ANSWER GUARD (owner, 2026-09-29) ────────────────────────────
+  // load() had no guard, and on a slow link a LIVE refresh that started before
+  // a History jump could land AFTER it — putting today's board and today's
+  // trips under a History header, with polling paused so nothing corrected it
+  // (step-3b diagnosis: live loads of 20-26 s starting ~7 s apart). Every load
+  // now takes a number; its answer is applied only while it is still the
+  // newest load AND the page still shows the view it was asked for. Same
+  // pattern as `lookupSeq`. `viewKeyRef` is the CURRENT view, refreshed every
+  // render below, so an in-flight load compares against now, not its closure.
+  const loadSeq = useRef(0);
+  const loadInFlightRef = useRef(false);
+  const viewKeyRef = useRef(viewKeyOf(viewMode, histDate));
+  viewKeyRef.current = viewKeyOf(viewMode, histDate);
+
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    const viewKey = viewKeyOf(viewMode, histDate);
+    const isStale = () => seq !== loadSeq.current || viewKeyRef.current !== viewKey;
+    loadInFlightRef.current = true;
     setLoading(true);
     setError(null);
     setSideError(null);
@@ -417,17 +513,40 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
         fetch(`/api/floor/cancelled?${UNSCOPED_QS}`, { cache: "no-store" }),
         fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" }).catch(() => null),
       ]);
+      // A stale answer is dropped BEFORE anything is read or thrown — its
+      // failure is no more this view's than its success is.
+      if (isStale()) return;
       if (!boardRes.ok) throw new Error(`HTTP ${boardRes.status}`);
       const board = await boardRes.json();
+      // ⚠ READ EVERY BODY FIRST, THEN CHECK ONCE, THEN APPLY. The side-feed
+      // bodies are awaited here, before any setter, so the guard below is the
+      // last await in the success path and a load is applied whole or not at
+      // all — never a live board beside a History day's trips. The failure
+      // semantics are unchanged: a board or a hold/cancelled body that throws
+      // still reaches the outer catch; a trips failure still only empties the
+      // rail (the inner try/catch below, now around the read).
+      const holdBody = holdRes.ok ? await holdRes.json() : null;
+      const cancBody = cancRes.ok ? await cancRes.json() : null;
+      let tripsBody: { trips?: TripSummary[]; placeholderRoutes?: string[] } | null = null;
+      let tripsError: string | null = null;
+      try {
+        if (tripRes === null) tripsError = "Trips feed unreachable";
+        else if (tripRes.ok) tripsBody = (await tripRes.json()) as { trips?: TripSummary[]; placeholderRoutes?: string[] };
+        else tripsError = `Trips feed HTTP ${tripRes.status}`;
+      } catch {
+        tripsError = "Trips feed unreachable";
+      }
+      if (isStale()) return;
+
       setData({ floor: board.floor, pickers: board.pickers ?? [] });
       setRouteClubs((board.routeClubs ?? []) as FloorRouteClub[]);
       setLoadPlan((board.loadPlan ?? { configs: {}, routeNames: {} }) as FloorLoadPlanPayload);
 
       // A failed side feed must not blank the board — surface its own error and
       // leave the tab empty rather than throwing the whole page away.
-      if (holdRes.ok) setHoldRows(((await holdRes.json()).rows ?? []) as FloorHoldRow[]);
+      if (holdBody !== null) setHoldRows((holdBody.rows ?? []) as FloorHoldRow[]);
       else { setHoldRows([]); setSideError(`Hold feed HTTP ${holdRes.status}`); }
-      if (cancRes.ok) setCancelledRows(((await cancRes.json()).rows ?? []) as FloorCancelledRow[]);
+      if (cancBody !== null) setCancelledRows((cancBody.rows ?? []) as FloorCancelledRow[]);
       else { setCancelledRows([]); setSideError((prev) => prev ?? `Cancelled feed HTTP ${cancRes.status}`); }
 
       // The day's trips — a FOURTH feed, issued in the Promise.all above rather
@@ -448,30 +567,65 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       // By trip was an admin-only pivot option nobody else could reach. The trip
       // desk IS the Floor tab now, so skipping this would leave the rail empty
       // for every operator on the floor.
-      try {
-        if (tripRes === null) { setTrips([]); setSideError((prev) => prev ?? "Trips feed unreachable"); }
-        else if (tripRes.ok) {
-          const body = (await tripRes.json()) as { trips?: TripSummary[]; placeholderRoutes?: string[] };
-          setTrips(body.trips ?? []);
-          // The routes that name nothing, by their current names — the pool-s
-          // add hint skips exactly what the rail card-s label skips (2026-09-16).
-          setPlaceholderRoutes(new Set(body.placeholderRoutes ?? []));
-        }
-        else { setTrips([]); setSideError((prev) => prev ?? `Trips feed HTTP ${tripRes.status}`); }
-      } catch {
+      // (The read itself moved above the stale check; the rule is unchanged.)
+      if (tripsBody !== null) {
+        setTrips(tripsBody.trips ?? []);
+        // The routes that name nothing, by their current names — the pool-s
+        // add hint skips exactly what the rail card-s label skips (2026-09-16).
+        setPlaceholderRoutes(new Set(tripsBody.placeholderRoutes ?? []));
+      } else {
         setTrips([]);
-        setSideError((prev) => prev ?? "Trips feed unreachable");
+        setSideError((prev) => prev ?? tripsError ?? "Trips feed unreachable");
       }
 
       setLastSyncedAt(new Date());
+
+      // ── Settle a lookup's History jump (owner, 2026-09-29) ───────────────
+      // This load is the newest and for the view on screen. If it is the day a
+      // lookup is opening, the jump is done once that day's trips include the
+      // trip (it was selected in openLookupTrip). A load for any OTHER view
+      // means the planner moved on — the line goes quietly.
+      const pend = pendingOpenRef.current;
+      if (pend !== null) {
+        pendingOpenRef.current = null;
+        const forThatDay = viewKey === viewKeyOf("history", pend.tripDate);
+        const found = (tripsBody?.trips ?? []).some((t) => t.id === pend.tripId);
+        setLookup((cur) =>
+          cur?.status !== "opening" || cur.trip.tripId !== pend.tripId
+            ? cur
+            : forThatDay && !found
+              ? {
+                  status: "open-failed",
+                  trip: pend,
+                  reason: tripsError ?? `${pend.tripNumber} is not in that day's trips`,
+                }
+              : null,
+        );
+      }
     } catch (e) {
+      if (isStale()) return;
       setError(e instanceof Error ? e.message : "Failed to load");
       setData(null);
       setHoldRows(null);
       setCancelledRows(null);
       setTrips(null);
+      // The History load a lookup was waiting on failed → say so, with a retry.
+      const pend = pendingOpenRef.current;
+      if (pend !== null && viewKey === viewKeyOf("history", pend.tripDate)) {
+        pendingOpenRef.current = null;
+        setLookup((cur) =>
+          cur?.status === "opening" && cur.trip.tripId === pend.tripId
+            ? { status: "open-failed", trip: pend, reason: e instanceof Error ? e.message : "Failed to load" }
+            : cur,
+        );
+      }
     } finally {
-      setLoading(false);
+      // ⚠ ONLY THE NEWEST LOAD CLEARS THE SPINNER. A superseded load finishing
+      // must not report "loaded" while the newer one is still in flight.
+      if (seq === loadSeq.current) {
+        loadInFlightRef.current = false;
+        setLoading(false);
+      }
     }
     // `scope` is NOT here on purpose — every fetch is unscoped and the chips are
     // a pure client-side narrowing (scopedData below). Adding it back would
@@ -838,7 +992,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
         let removed = 0;
         const problems: string[] = [];
         for (const [tripNumber, orderIds] of Array.from(byTrip.entries())) {
-          const t = allTrips.find((x) => x.tripNumber === tripNumber);
+          const t = findTripByNumber(allTrips, tripNumber);
           if (!t) {
             problems.push(`${tripNumber} is no longer on the board`);
             continue;
@@ -1234,17 +1388,111 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // off screen; they are listed now, so a strip reporting fewer hits than the
   // auto-tick just selected would be describing a different board from the one
   // below it.
+  //
+  // 🔴 THE FLOOR TAB COUNTS THE POOL ONLY (owner, 2026-09-29). It counted every
+  // scoped row, trip bills included, so an OBD on a trip read "1 bill matched"
+  // over a pool that showed nothing. Pool = `isPoolRow`, the same test the pool
+  // list and the auto-tick use. Bills on trips are reported as `elsewhere` and
+  // get their own "on L-… ›" line (`tripSearchHits` below). The Tinting tab
+  // counts the tint-room rows it lists.
   const searchableFloorRows = useMemo(
-    () => scopedData?.floor.rows ?? [],
-    [scopedData],
+    () => (scopedData?.floor.rows ?? []).filter(topTab === "tinting" ? isTintRoomRow : isPoolRow),
+    [scopedData, topTab],
   );
-  // ⚠ "tinting" SEARCHES THE FLOOR ROWS, and that is right rather than lazy:
-  // its rows ARE floor rows, filtered client-side, so the same searchable list
-  // covers both tabs. A separate list would report a hit count for a set the
-  // user is not looking at.
+  const tripBillRows = useMemo(
+    () => (topTab === "floor" ? (data?.floor.rows ?? []).filter((r) => r.tripDropId !== null) : []),
+    [data, topTab],
+  );
   const activePool: Searchable[] =
     topTab === "hold" ? scopedHold ?? [] : topTab === "cancelled" ? scopedCancelled ?? [] : searchableFloorRows;
-  const tabSearchReport = useMemo(() => searchReport(activePool, parsed), [activePool, parsed]);
+  const tabSearchReport = useMemo(
+    () => searchReport(activePool, parsed, tripBillRows),
+    [activePool, parsed, tripBillRows],
+  );
+
+  // ── Search → the trips holding the matched bills (owner, 2026-09-29) ──────
+  // The rail narrows to these while the search is up; clearing the search
+  // brings the full rail back and leaves whatever trip is open alone.
+  const tripSearchHits = useMemo(
+    () => (data ? tripHitsFor(data.floor.rows, trips ?? [], parsed) : []),
+    [data, trips, parsed],
+  );
+  const searchTripIds = useMemo(
+    () => (tripSearchHits.length > 0 ? new Set(tripSearchHits.map((h) => h.tripId)) : null),
+    [tripSearchHits],
+  );
+
+  // ── The other-days lookup (owner, 2026-09-29) ─────────────────────────────
+  // GET /api/floor/trips/lookup — for ONE full number the loaded desk did not
+  // find, or that was searched before the board had loaded at all. State and
+  // refs are declared above load() (`lookup`, `lookupSeq`, `pendingOpenRef`).
+  //
+  // The number a search committed BEFORE the board arrived (fix 2, 2026-09-29).
+  // Its lookup runs at once; when the board lands, the effect below re-runs the
+  // search if the number is on the loaded desk, so the local match wins and the
+  // lookup (still in flight or already answered) is voided. Cleared by any new
+  // search, a clear, or the lookup acting on its answer.
+  const earlyLookupRawRef = useRef<string | null>(null);
+
+  /** Open a trip the lookup found: on today's desk → the live desk; otherwise
+   *  History on the trip's own date, with "Opening …" in the status line until
+   *  that day has loaded (load() settles it). History stays read-only. */
+  const openLookupTrip = useCallback(
+    (t: LookupTrip) => {
+      earlyLookupRawRef.current = null;
+      pendingOpenRef.current = null;
+      setTopTab("floor");
+      if (t.onLiveDesk) {
+        setLookup(null);
+        setViewMode("live");
+      } else if (t.tripDate < istTodayIso()) {
+        pendingOpenRef.current = t;
+        setLookup({ status: "opening", trip: t });
+        const target = viewKeyOf("history", t.tripDate);
+        const alreadyThere = viewKeyRef.current === target;
+        // Moved NOW, not at the next render: a live load finishing in the gap
+        // before that render must already read as stale, or it would land
+        // today's board and settle the "Opening …" line against the wrong day.
+        viewKeyRef.current = target;
+        setHistDate(t.tripDate);
+        setViewMode("history");
+        // Already on that day → no view change, so no load would run and the
+        // line would never settle. Load it explicitly.
+        if (alreadyThere) void load();
+      } else {
+        // Dated after today and not on the desk — History cannot go forward.
+        setLookup(null);
+        toast.error(`${t.tripNumber} is dated ${t.tripDate} — it is not on today's desk yet.`);
+        return;
+      }
+      selectRail({ kind: "trip", tripId: t.tripId });
+    },
+    [selectRail, load],
+  );
+
+  const runLookup = useCallback(
+    async (term: string) => {
+      const seq = ++lookupSeq.current;
+      setLookup({ term, status: "loading" });
+      try {
+        const res = await fetch(`/api/floor/trips/lookup?q=${encodeURIComponent(term)}`, { cache: "no-store" });
+        if (seq !== lookupSeq.current) return;
+        if (!res.ok) {
+          setLookup({ term, status: "error" });
+          return;
+        }
+        const body = (await res.json()) as { trips?: LookupTrip[] };
+        if (seq !== lookupSeq.current) return;
+        const found = body.trips ?? [];
+        if (found.length === 0) setLookup({ term, status: "none" });
+        else if (found.length === 1) openLookupTrip(found[0]);
+        else setLookup({ term, status: "many", trips: found });
+      } catch {
+        if (seq === lookupSeq.current) setLookup({ term, status: "error" });
+      }
+    },
+    [openLookupTrip],
+  );
 
   const commitSearch = useCallback(
     (raw: string) => {
@@ -1284,13 +1532,68 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       } else {
         setSelection(new Set());
       }
+
+      // ── Trips (owner, 2026-09-29) ──────────────────────────────────────────
+      // Any earlier lookup is void the moment a new search is committed.
+      lookupSeq.current++;
+      setLookup(null);
+      earlyLookupRawRef.current = null;
+      pendingOpenRef.current = null;
+      if (p.mode === "none") return;
+      // 🔴 THE LOOKUP DOES NOT WAIT FOR THE BOARD (fix 2, 2026-09-29). It used
+      // to return here when `data` was null, so a number searched in the first
+      // seconds after a page load (26 s on a slow link) was never looked up and
+      // never retried. The lookup needs no board — ask now, and let the board,
+      // when it lands, overrule it if the number is on the desk (effect below).
+      if (!data) {
+        const early = lookupTermOf(raw);
+        if (early !== null) {
+          earlyLookupRawRef.current = raw;
+          void runLookup(early);
+        }
+        return;
+      }
+      // ONE matched trip → open it, as a rail click would. Several → the rail
+      // narrows (`searchTripIds`) and nothing opens.
+      //
+      // ⚠ NOT WHILE THE POOL ALSO MATCHES, AND NOT DURING A TARGETED ADD. A
+      // pasted list is how a planner ticks pool bills for a load; if one of the
+      // numbers is already on a trip, jumping into that trip would throw away
+      // the ticks just made and end the add. The rail still narrows and the
+      // "on L-… ›" line still offers the trip.
+      const hits = tripHitsFor(data.floor.rows, trips ?? [], p);
+      const poolHit = applySearch((scopedData?.floor.rows ?? []).filter(isPoolRow), p).length > 0;
+      if (hits.length === 1 && !poolHit && addingToTripId === null && topTab === "floor") {
+        selectRail({ kind: "trip", tripId: hits[0].tripId });
+      }
+      // Nothing on the loaded desk at all, and ONE full number → ask the server
+      // which trip it is on, any day.
+      const term = lookupTermOf(raw);
+      if (term !== null && applySearch(data.floor.rows, p).length === 0) void runLookup(term);
     },
-    [topTab, scopedData, data, railSelection, addingToTripId, tripDetail],
+    [topTab, scopedData, data, trips, railSelection, addingToTripId, tripDetail, selectRail, runLookup],
   );
   const clearSearch = useCallback(() => {
     setSearchQuery("");
     setSelection(new Set());
+    lookupSeq.current++;
+    setLookup(null);
+    earlyLookupRawRef.current = null;
+    pendingOpenRef.current = null;
   }, []);
+
+  // ── The board arrives after an early lookup (fix 2, 2026-09-29) ───────────
+  // If the number is on the desk that just loaded, the LOCAL match wins: the
+  // search is re-committed exactly as if it had been typed now, which voids
+  // the lookup (in flight or already answered — `lookupSeq`) and runs the
+  // normal narrowing / auto-open / auto-tick. Only one thing ever opens. Not on
+  // the desk → nothing here; the early lookup carries on and acts on its own.
+  useEffect(() => {
+    const raw = earlyLookupRawRef.current;
+    if (raw === null || !data) return;
+    earlyLookupRawRef.current = null;
+    if (applySearch(data.floor.rows, parseSearch(raw)).length > 0) commitSearch(raw);
+  }, [data, commitSearch]);
 
   // ── Detail panel (design §10) — open state + single-bill action handlers ──
   // Additive wiring only: the panel is mounted at the end; every write REUSES an
@@ -1633,6 +1936,9 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       const res = await fetch(`/api/floor/trips?date=${istTodayIso()}`, { cache: "no-store" });
       if (!res.ok) return;
       const body = (await res.json()) as { trips?: TripSummary[]; placeholderRoutes?: string[] };
+      // TODAY's trips — dropped if the page left the live desk while this was
+      // in flight (a History jump), the same rule as load()'s stale guard.
+      if (viewKeyRef.current !== "live") return;
       setTrips(body.trips ?? []);
       setPlaceholderRoutes(new Set(body.placeholderRoutes ?? []));
     } catch {
@@ -1669,7 +1975,15 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // is up or the panel is open (a refetch would move the floor ground) or history.
   useFloorRailPoll({
     paused: !isLive || detailOpen || selection.size > 0,
-    onTick: () => void load(),
+    // ⚠ A TICK DOES NOT SUPERSEDE A LOAD IN FLIGHT (2026-09-29). With the
+    // stale-answer guard, a newer load voids the older one; a timed refresh
+    // starting over one that is still running would, on a link where a load
+    // outlasts the gap between ticks, void every load and never show one. The
+    // running load is already fresh. The MARKER still always reloads — it has
+    // seen a real change, and a load started before the change may miss it.
+    onTick: () => {
+      if (!loadInFlightRef.current) void load();
+    },
   });
 
   // Unscoped on purpose: this is the LIST of dispatch windows to offer, not
@@ -2214,7 +2528,18 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       </div>
 
       {/* Search results strip (design §5.2) — describes the OPEN tab's matches. */}
-      <SearchHits parsed={parsed} report={tabSearchReport} onClear={clearSearch} />
+      <SearchHits
+        parsed={parsed}
+        report={tabSearchReport}
+        onClear={clearSearch}
+        // Trip lines on the Floor tab only — the tab whose rail click opens a trip.
+        tripHits={topTab === "floor" ? tripSearchHits : []}
+        onOpenTrip={(tripId) => selectRail({ kind: "trip", tripId })}
+        lookup={lookup}
+        onPickLookup={openLookupTrip}
+        // A failed History jump retries the same trip (it reloads that day).
+        onRetryOpen={openLookupTrip}
+      />
 
       {/* Connection strip (design §13) — only in live mode; renders only when the
           server is unreachable. A strip, never a modal — the board stays readable. */}
@@ -2361,6 +2686,9 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
               openRouteCard={openRouteCard}
               onOpenRouteCard={setOpenRouteCard}
               searchActive={searchQuery.trim() !== ""}
+              // The trips holding the searched bills — the rail narrows to them
+              // (owner, 2026-09-29). Null = no narrowing.
+              searchTripIds={searchTripIds}
               loadPlanConfigs={loadPlan.configs}
               routeNames={loadPlan.routeNames}
               onMakeTrip={(orderIds, vehicleSize) => void createTripWithSelection({ orderIds, vehicleSize })}

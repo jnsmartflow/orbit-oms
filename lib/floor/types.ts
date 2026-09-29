@@ -260,6 +260,17 @@ export interface FloorBoardRow extends PickingQueueRow {
   // 6,962 rows, zero exceptions), so an IST render lands on the same calendar
   // day and there is no midnight-rollover class here.
   invoiceDate: string | null;
+  /**
+   * orders.soNumber — 🔴 FOR SEARCH ONLY, NEVER DISPLAYED (owner decision
+   * 2026-09-29). It rides the row so lib/floor/search.ts can match an SO; no
+   * Floor table or panel renders it (the detail panel fetches its own SO).
+   * Already on the fetched row — getFloorBoard reads it for the same-SO check.
+   *
+   * ⚠ DECLARED HERE, NOT ON PickingQueueRow. That interface says `soNumber`
+   * must stay off the Picking payload, and that rule is Picking's — Floor
+   * widens its own type (FLOOR §1).
+   */
+  soNumber: string | null;
   // ── Show to floor, PER TRIP (slice 8, 2026-09-15) ─────────────────────────
   // `pickVisibleAt` (the per-bill handover stamp) was here until slice 8 and is
   // gone: the desk shows the supervisor one TRUCK at a time now.
@@ -460,6 +471,13 @@ export interface FloorHoldRow extends FloorPartyFields {
   // order_status_logs.createdAt — see lib/floor/hold-log.ts for why.
   heldSince: string | null; // ISO
   heldSinceSource: HeldSinceSource;
+  // ── Search-only fields (2026-09-29) — lib/floor/search.ts reads them; the
+  // Hold tab renders none of them. SO by owner decision 2026-09-29.
+  invoiceNo: string | null;
+  soNumber: string | null;
+  /** Did the effective dealer resolve in delivery_point_master? Drives the
+   *  synthetic "unmatched" search term, as on Picking. */
+  dealerInMaster: boolean;
 }
 
 /** Cancel & CI source chip. auto_bill_only is Billing (mail-order CI mark) or
@@ -482,6 +500,11 @@ export interface FloorCancelledRow extends FloorPartyFields {
   action: "cancel" | "ci";
   /** Live-first: orders.invoiceNo, then the CI's snapshot (CLAUDE_CI §5). */
   invoiceNo: string | null;
+  /** orders.soNumber — SEARCH ONLY, never displayed (owner decision 2026-09-29). */
+  soNumber: string | null;
+  /** Did the effective dealer resolve in delivery_point_master? Search's
+   *  synthetic "unmatched" term reads it; nothing renders it. */
+  dealerInMaster: boolean;
   /** The ship-to PAIR, as FloorBoardRow carries it — original and redirect. */
   customerName: string | null;
   shipToOverrideName: string | null;
