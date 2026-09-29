@@ -18,6 +18,7 @@ import {
   getSplitDisplayLabel,
   splitLinesByCategory,
   splitDeliveryRemarks,
+  deliveryTextForNotes,
   SPLIT_VOLUME_THRESHOLD,
   SPLIT_LINE_THRESHOLD,
   formatVolume,
@@ -2349,7 +2350,15 @@ export function ReviewView({
               ⚠ The notes-size stepper rides that same null return by design
               (:37-39), so it goes with the band on an otherwise-quiet order. */}
           <InstructionsStrip
-            delivery={disabledTagKeys?.has(MO_TAG.deliveryLine) ? null : parsed.deliveryInstruction}
+            // Billing face: the whole delivery text, flag or no flag (auto
+            // ship-to retired 2026-09-29 — the operator reads it and uses ✎).
+            delivery={
+              disabledTagKeys?.has(MO_TAG.deliveryLine)
+                ? null
+                : billingV2
+                  ? deliveryTextForNotes(order.deliveryRemarks)
+                  : parsed.deliveryInstruction
+            }
             bill={disabledTagKeys?.has(MO_TAG.billLine) ? null : (order.billRemarks || null)}
             notes={disabledTagKeys?.has(MO_TAG.notesBand) ? null : notesString}
             tone={billingV2 ? "notes" : "default"}

@@ -895,6 +895,20 @@ export function splitDeliveryRemarks(
   };
 }
 
+/**
+ * The FULL delivery text for the Billing notes strip's DELIVERY row, whatever
+ * shipToOverride says. Only a legacy trailing "[→ Name (Code)]" suffix is
+ * removed — ingest wrote it before auto ship-to was retired (2026-09-29).
+ */
+export function deliveryTextForNotes(
+  deliveryRemarks: string | null | undefined,
+): string | null {
+  const text = (deliveryRemarks ?? "")
+    .replace(/\s*\[→\s*([^()\[\]]+?)\s*\((\d+)\)\s*\]\s*$/, "")
+    .trim();
+  return text || null;
+}
+
 export function buildReplyTemplate(
   soName: string,
   orders: {

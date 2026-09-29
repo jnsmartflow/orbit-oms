@@ -299,12 +299,8 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       updateData.remarks = remarkParts.join(" | ");
     }
 
-    if (mailOrder.shipToOverride) {
-      updateData.shipToOverride = true;
-    }
-    if (mailOrder.shipToOverrideCustomerId != null) {
-      updateData.shipToOverrideCustomerId = mailOrder.shipToOverrideCustomerId;
-    }
+    // Ship-to is NOT in updateData — it is carried by its own guarded write
+    // right after the updateMany below, so a set ship-to is never overwritten.
     if (mailOrder.slotToOverride) {
       updateData.slotToOverride = true;
     }
@@ -374,6 +370,25 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       where: { soNumber: soNum, isRemoved: false, workflowStage: { not: "cancelled" } },
       data: updateData,
     });
+
+    // Ship-to carry (2026-09-29) — the billing ✎ pencil's choice on the mail
+    // order reaches bills imported later. FILL-ONLY: a bill that already has a
+    // shipToOverrideCustomerId (e.g. set on Floor) is never overwritten. Ingest
+    // no longer sets these, so only a pencil write (or a legacy row) gets here.
+    if (mailOrder.shipToOverride || mailOrder.shipToOverrideCustomerId != null) {
+      await prisma.orders.updateMany({
+        where: {
+          soNumber: soNum,
+          isRemoved: false,
+          workflowStage: { not: "cancelled" },
+          shipToOverrideCustomerId: null,
+        },
+        data:
+          mailOrder.shipToOverrideCustomerId != null
+            ? { shipToOverride: true, shipToOverrideCustomerId: mailOrder.shipToOverrideCustomerId }
+            : { shipToOverride: true },
+      });
+    }
 
     if (billOnly) {
       // ── Safety-net hold for a CI-marked SO (design §3.4) ──────────────────

@@ -11,7 +11,6 @@ import {
   type SkuEntry,
 } from "@/lib/mail-orders/enrich";
 import { extractCustomerFromSubject, matchCustomer, parseSubject } from "@/lib/mail-orders/customer-match";
-import { matchDeliveryCustomer } from "@/lib/mail-orders/delivery-match";
 import { buildTableCContext } from "@/lib/mail-orders/table-c-context";
 import { isSignatureJunk } from "@/lib/mail-orders/note-junk";
 
@@ -85,7 +84,7 @@ export async function POST(req: NextRequest) {
 
     const { emailEntryId, soName, soEmail, receivedAt, subject,
             deliveryRemarks, remarks, billRemarks,
-            dispatchStatus, dispatchPriority, shipToOverride, slotToOverride,
+            dispatchStatus, dispatchPriority, slotToOverride,
             lines, remarkLines } = body;
 
     if (!emailEntryId || !soName || !receivedAt || !subject || !Array.isArray(lines)) {
@@ -306,30 +305,15 @@ export async function POST(req: NextRequest) {
           : ""),
     );
 
-    // 4c. Ship-to override detection from deliveryRemarks
-    let finalDeliveryRemarks = deliveryFromSubject
+    // 4c. Delivery text — subject-derived + body, kept whole; the billing notes
+    // strip shows it as the DELIVERY row.
+    // 2026-09-29: auto ship-to detection removed by owner decision — ship-to is set only by the billing pencil or Floor. Do not re-enable.
+    const finalDeliveryRemarks = deliveryFromSubject
       ? deliveryFromSubject + (deliveryRemarks ? "; " + deliveryRemarks : "")
       : deliveryRemarks ?? null;
     const finalBillRemarks = billFromSubject
       ? billFromSubject + (billRemarks ? "; " + billRemarks : "")
       : billRemarks ?? null;
-    let finalShipToOverride = shipToOverride || false;
-    let shipToOverrideCustomerId: number | undefined = undefined;
-
-    if (deliveryRemarks && deliveryRemarks.trim()) {
-      const deliveryMatch = await matchDeliveryCustomer(
-        deliveryRemarks,
-        customerMatch.customerCode,
-      );
-      if (deliveryMatch && deliveryMatch.isOverride) {
-        finalShipToOverride = true;
-        shipToOverrideCustomerId = deliveryMatch.customerId;
-        finalDeliveryRemarks = `${deliveryRemarks} [→ ${deliveryMatch.customerName} (${deliveryMatch.customerCode})]`;
-        console.log(
-          `[Ship-To Override] "${deliveryRemarks}" → ${deliveryMatch.customerName} (${deliveryMatch.customerCode})`,
-        );
-      }
-    }
 
     // 4d. Drop signature / footer / mail-header junk from the joined remarks
     const finalRemarks = remarks
@@ -355,8 +339,9 @@ export async function POST(req: NextRequest) {
         billRemarks: finalBillRemarks,
         dispatchStatus: dispatchStatus || "Dispatch",
         dispatchPriority: dispatchPriority || "Normal",
-        shipToOverride: finalShipToOverride,
-        shipToOverrideCustomerId: shipToOverrideCustomerId ?? null,
+        // The payload's shipToOverride (parser SHIPTO line / keyword) is ignored.
+        shipToOverride: false,
+        shipToOverrideCustomerId: null,
         slotToOverride: slotToOverride || false,
         emailEntryId,
         status: "pending",
