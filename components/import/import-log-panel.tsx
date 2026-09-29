@@ -31,8 +31,8 @@ const HOW_LABEL: Record<ImportLogHow, string> = {
   "template":  "Template",
 };
 
-const TH = "h-8 px-3.5 text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400 border-b border-ink-100 bg-ink-25 whitespace-nowrap overflow-hidden text-ellipsis";
-const TD = "h-9 px-3.5 text-[11px] border-b border-ink-50 whitespace-nowrap overflow-hidden text-ellipsis";
+const TH = "h-10 px-3.5 text-[11px] font-medium uppercase tracking-[0.05em] text-ink-400 border-b border-ink-100 bg-ink-25 whitespace-nowrap overflow-hidden text-ellipsis";
+const TD = "h-12 px-3.5 text-[14px] border-b border-ink-50 whitespace-nowrap overflow-hidden text-ellipsis";
 
 export function ImportLogPanel({ refreshKey, onCount }: ImportLogPanelProps): React.JSX.Element {
   const [data,    setData]    = useState<ImportLogResponse | null>(null);
@@ -72,12 +72,11 @@ export function ImportLogPanel({ refreshKey, onCount }: ImportLogPanelProps): Re
   });
 
   return (
-    <div className="p-5">
-      <div className="mb-3.5 flex items-center justify-between">
-        <p className="text-[14px] font-bold text-ink-900">
-          Today <span className="ml-1.5 text-[12.5px] font-medium text-ink-500">{today}</span>
+    <div className="p-6">
+      <div className="mb-4">
+        <p className="text-[16px] font-bold text-ink-900">
+          Today <span className="ml-1.5 text-[14px] font-medium text-ink-500">{today}</span>
         </p>
-        <span className="text-[12px] text-ink-500">Manual imports only</span>
       </div>
 
       {error !== null ? (
@@ -97,14 +96,13 @@ export function ImportLogPanel({ refreshKey, onCount }: ImportLogPanelProps): Re
         </div>
       ) : (
         <>
-          <div className="mb-3.5 grid grid-cols-3 gap-2.5">
-            <Tile value={data.totals.imports}  label={data.totals.imports === 1 ? "import" : "imports"} />
-            <Tile value={data.totals.new}      label="new bills" />
-            <Tile value={data.totals.existing} label="already in Orbit" />
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <Tile value={data.totals.imports} label={data.totals.imports === 1 ? "import" : "imports"} />
+            <Tile value={data.totals.new}     label="new bills" />
           </div>
 
           {data.rows.length === 0 ? (
-            <div className="flex h-[120px] items-center justify-center rounded-lg border border-ink-100 text-[12.5px] text-ink-500">
+            <div className="flex h-[120px] items-center justify-center rounded-lg border border-ink-100 text-[14px] text-ink-500">
               No manual imports yet today.
             </div>
           ) : (
@@ -138,7 +136,6 @@ export function ImportLogPanel({ refreshKey, onCount }: ImportLogPanelProps): Re
               </table>
             </div>
           )}
-          <p className="mt-2 text-[10.5px] text-ink-400">Skipped includes skipped rows, not only whole bills.</p>
         </>
       )}
     </div>
@@ -147,9 +144,9 @@ export function ImportLogPanel({ refreshKey, onCount }: ImportLogPanelProps): Re
 
 function Tile({ value, label }: { value: number; label: string }): React.JSX.Element {
   return (
-    <div className="rounded-[10px] border border-ink-100 px-3 py-2.5">
-      <b className="block text-[20px] font-bold tabular-nums text-ink-900">{value.toLocaleString("en-IN")}</b>
-      <span className="text-[11.5px] text-ink-500">{label}</span>
+    <div className="rounded-[10px] border border-ink-100 px-4 py-3">
+      <b className="block text-[28px] font-bold leading-tight tabular-nums text-ink-900">{value.toLocaleString("en-IN")}</b>
+      <span className="text-[13px] text-ink-500">{label}</span>
     </div>
   );
 }
@@ -166,19 +163,19 @@ function LogRow({ row }: { row: ImportLogRow }): React.JSX.Element {
       <td className={`${TD} font-mono tabular-nums text-ink-500`} title={row.batchRef}>{time}</td>
       <td className={TD}>
         <div className="flex min-w-0 items-center gap-2">
-          <span className="grid h-6 w-6 flex-none place-items-center rounded-full bg-ink-50 text-[10px] font-bold text-ink-700">
+          <span className="grid h-7 w-7 flex-none place-items-center rounded-full bg-ink-50 text-[11px] font-bold text-ink-700">
             {initials(row.who)}
           </span>
           <span className="truncate font-medium text-ink-900">{row.who}</span>
           {row.status === "failed" && (
-            <span className="flex-none rounded border border-danger-bd bg-danger-bg px-1.5 py-px text-[9.5px] font-semibold text-danger-text">
+            <span className="flex-none rounded border border-danger-bd bg-danger-bg px-1.5 py-px text-[11px] font-semibold text-danger-text">
               Failed
             </span>
           )}
         </div>
       </td>
       <td className={TD}>
-        <span className="rounded-md bg-ink-50 px-2 py-0.5 text-[11px] font-semibold text-ink-700">{HOW_LABEL[row.how]}</span>
+        <span className="rounded-md bg-ink-50 px-2 py-0.5 text-[12.5px] font-semibold text-ink-700">{HOW_LABEL[row.how]}</span>
       </td>
       <td className={`${TD} text-right tabular-nums`}>{n(row.new, "text-ink-700")}</td>
       <td className={`${TD} text-right tabular-nums`}>{n(row.existing, "text-ink-700")}</td>

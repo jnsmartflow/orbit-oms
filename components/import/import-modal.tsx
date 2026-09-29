@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Eye,
-  Download as DownloadIcon,
 } from "lucide-react";
 import { getTodayIST } from "@/lib/dates";
 import type {
@@ -46,10 +45,14 @@ type Format = "sap-paste" | "sap" | "manual-template";
 
 type Tab = "new" | "log";
 
-const FORMAT_CARDS: { format: Format; title: string; hint: string }[] = [
-  { format: "sap-paste",       title: "Paste from SAP",  hint: "Copy the OBD list off the SAP screen" },
-  { format: "sap",             title: "SAP file",        hint: "Upload a downloaded .xlsx" },
-  { format: "manual-template", title: "Manual template", hint: "Orbit's own template (combined_v2)" },
+// The window offers the two SAP sources only (owner, 2026-09-29 — zero template
+// batches in the 60 days before). Manual template stays on the /import page
+// (components/import/import-page-content.tsx). Its branches below are left in
+// place, unreachable from this window: `format` can no longer become
+// "manual-template" here.
+const FORMAT_CARDS: { format: Format; title: string }[] = [
+  { format: "sap-paste", title: "Paste from SAP" },
+  { format: "sap",       title: "SAP file" },
 ];
 
 type UnifiedOutcome = "new" | "patch" | "skipped" | "error";
@@ -402,23 +405,6 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
     setFormat(f);
   }
 
-  function handleDownloadTemplate(): void {
-    // Static files served from /public/import-templates/. If a file isn't
-    // present yet the browser will 404 — acceptable graceful failure; no
-    // toast / error UI by design (operator can ask whoever curates blanks).
-    // The paste is the same 19-column SAP layout as the .xlsx, so it shares the
-    // SAP blank.
-    const url = format === "manual-template"
-      ? "/import-templates/manual-template-blank.xlsx"
-      : "/import-templates/sap-blank.xlsx";
-    const a = document.createElement("a");
-    a.href     = url;
-    a.download = url.split("/").pop()!;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-
   // ── Primary CTA dispatch (idle stage) ────────────────────────────────────
 
   async function handlePrimaryFromIdle(): Promise<void> {
@@ -664,7 +650,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-modal-title"
-        className="w-[880px] max-w-[calc(100vw-32px)] bg-white rounded-[14px] shadow-xl flex flex-col overflow-hidden"
+        className="w-[1120px] max-w-[calc(100vw-48px)] bg-white rounded-[14px] shadow-xl flex flex-col overflow-hidden"
         style={{ maxHeight: "calc(100vh - 80px)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -715,8 +701,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
           <div className="flex-1 overflow-y-auto">
             <ImportLogPanel refreshKey={logRefreshKey} onCount={setLogCount} />
           </div>
-          <div className="flex items-center justify-between gap-3 border-t border-ink-100 bg-ink-25 px-5 py-3 flex-shrink-0">
-            <span className="text-[12px] text-ink-500">Today only · newest first · read-only</span>
+          <div className="flex items-center justify-end gap-3 border-t border-ink-100 bg-ink-25 px-6 py-3 flex-shrink-0">
             <button
               type="button"
               onClick={() => attemptClose("x")}
@@ -733,15 +718,17 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
         {/* Body — branches by stage */}
         {(stage === "idle" || stage === "parsing" || stage === "submitting") && (
-          <div className="flex-1 overflow-y-auto p-5 relative">
+          <div className="flex-1 overflow-y-auto p-6 relative">
             {isInFlight && (
               <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center pointer-events-none">
                 <Loader2 className="animate-spin text-gray-500" size={28} />
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-[22px] md:grid-cols-[220px_1fr]">
-            {/* LEFT — source cards + Download blank template */}
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
+            {/* LEFT — source cards. "Download blank template" was removed
+                2026-09-29: neither public/import-templates/*.xlsx exists (only
+                the README is tracked), so the link was a 404 on every format. */}
             <div>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-500">Source</p>
               <div className={`flex flex-col gap-1.5 ${isLocked ? "opacity-60" : ""}`}>
@@ -752,25 +739,15 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                     aria-pressed={format === c.format}
                     disabled={isLocked || isInFlight}
                     onClick={() => handleFormatChange(c.format)}
-                    className={`rounded-[10px] border px-3 py-2.5 text-left ${
+                    className={`rounded-[10px] border px-3.5 py-3 text-left ${
                       format === c.format
                         ? "border-brand-600 bg-brand-50"
                         : "border-ink-100 bg-white hover:bg-ink-25"
                     } ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
                   >
-                    <b className="block text-[13px] font-semibold text-ink-900">{c.title}</b>
-                    <span className="text-[11.5px] text-ink-500">{c.hint}</span>
+                    <b className="block text-[14px] font-semibold text-ink-900">{c.title}</b>
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={handleDownloadTemplate}
-                  className="mt-2 flex items-center gap-1 pl-0.5 text-left text-[12px] text-brand-700 hover:underline underline-offset-2 cursor-pointer"
-                  title="Download a blank import template"
-                >
-                  <DownloadIcon size={12} />
-                  Download blank template
-                </button>
               </div>
             </div>
 
@@ -792,41 +769,25 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                     {/* State A. The textarea is only a focus + paste target: it
                         never holds text — the modal-level paste listener takes
                         the clipboard and swallows the native insert. */}
-                    <div className="relative h-[150px] rounded-lg border border-gray-200 bg-gray-50/60 transition-colors focus-within:border-gray-400 focus-within:bg-white">
+                    <div className="relative h-[240px] rounded-xl border-[1.5px] border-dashed border-ink-200 bg-ink-25 transition-colors focus-within:border-ink-400 focus-within:bg-white">
                       <textarea
                         ref={pasteSinkRef}
                         value=""
                         onChange={() => undefined}
                         spellCheck={false}
                         aria-label="Paste the SAP OBD list here"
-                        className="absolute inset-0 h-full w-full resize-none rounded-lg bg-transparent text-transparent caret-transparent outline-none cursor-default"
+                        className="absolute inset-0 h-full w-full resize-none rounded-xl bg-transparent text-transparent caret-transparent outline-none cursor-default"
                       />
-                      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
-                        <div className="mb-2 flex items-center gap-1"><Kbd>Ctrl</Kbd><Kbd>V</Kbd></div>
-                        <p className="text-[12px] font-medium text-gray-700">Paste the rows you copied from SAP</p>
-                        <p className="mt-1 text-[10px] leading-relaxed text-gray-400">
-                          All 19 columns, exactly as SAP shows them.<br />
-                          The header line and the dashed <span className="font-mono">-----</span> lines are ignored automatically.
-                        </p>
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2">
+                        <KeyCap>Ctrl</KeyCap><KeyCap>V</KeyCap>
                       </div>
                     </div>
-                    <p className="mt-2 text-center text-[10.5px] text-gray-400">
-                      Got a downloaded file instead?{" "}
-                      <button
-                        type="button"
-                        onClick={() => handleFormatChange("sap")}
-                        disabled={isInFlight}
-                        className="text-gray-600 underline underline-offset-2 hover:text-gray-900 cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        Upload a .xlsx
-                      </button>
-                    </p>
                   </>
                 )}
               </>
             ) : file === null ? (
               <div
-                className="border-2 border-dashed border-gray-300 rounded-lg p-7 flex flex-col items-center justify-center text-center hover:border-gray-400 cursor-pointer transition-colors"
+                className="h-[240px] rounded-xl border-[1.5px] border-dashed border-ink-200 bg-ink-25 flex flex-col items-center justify-center text-center hover:border-ink-400 cursor-pointer transition-colors"
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
@@ -845,9 +806,8 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                     if (f) handleFileSelect(f);
                   }}
                 />
-                <Upload size={28} className="text-gray-400 mb-2" strokeWidth={1.6} />
-                <p className="text-[12px] text-gray-700 font-medium">Drop file here or click to browse</p>
-                <p className="text-[10px] text-gray-400 mt-1">.xlsx files only · max 10 MB</p>
+                <Upload size={30} className="text-ink-400 mb-2.5" strokeWidth={1.6} />
+                <p className="text-[14px] font-semibold text-ink-700">Drop .xlsx or click</p>
               </div>
             ) : (
               <div className="border border-gray-200 rounded-lg p-3 flex items-center gap-3 bg-gray-50">
@@ -874,10 +834,13 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 column (19 columns, same as the .xlsx), so the paste cannot
                 supply it: defaults to today, exactly as for the file. */}
             {/* OBD date + Preview toggle, side by side (one column below md) */}
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* OBD Date is in the WARN family on purpose — amber = attention
+                (UI §2.1): a wrong date silently mis-stamps every bill. Not red
+                (error only), not brand. */}
+            <div className="mt-5 grid grid-cols-1 items-end gap-4 md:grid-cols-2">
             {isSapLike ? (
               <div>
-                <label className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.06em] block mb-2">
+                <label className="text-[11px] font-semibold text-warn-text uppercase tracking-[0.06em] block mb-2">
                   OBD Date
                 </label>
                 <input
@@ -885,11 +848,8 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                   value={obdEmailDate}
                   onChange={(e) => setObdEmailDate(e.target.value)}
                   disabled={isInFlight}
-                  className="w-full border border-ink-200 rounded-lg px-3 py-2 text-[12px] font-mono text-ink-900 hover:border-ink-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full border border-warn bg-warn-bg rounded-lg px-3 py-2.5 text-[14px] font-mono font-semibold text-warn-text focus:outline-none focus:ring-2 focus:ring-warn/20 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
-                <p className="text-[11px] text-ink-500 mt-1.5">
-                  Defaults to today. Set to actual file date if importing yesterday&apos;s data.
-                </p>
               </div>
             ) : (
               <div className="hidden md:block" />
@@ -897,11 +857,9 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
             {/* Preview toggle row */}
             <div>
-              <p className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.06em] mb-2">Check first</p>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 px-3 py-2">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 px-3.5 py-3">
                 <div>
-                  <p className="text-[12px] font-semibold text-ink-900">Preview before import</p>
-                  <p className="text-[11px] text-ink-500 mt-0.5">Review changes per-OBD before writing to live tables.</p>
+                  <p className="text-[13px] font-semibold text-ink-900">Preview before import</p>
                 </div>
                 <button
                   type="button"
@@ -1398,6 +1356,15 @@ function OutcomeBadge({ outcome }: { outcome: UnifiedOutcome }): React.JSX.Eleme
     <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${styles[outcome]}`}>
       {labels[outcome]}
     </span>
+  );
+}
+
+/** The empty paste box's only content — two large key caps. */
+function KeyCap({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <kbd className="inline-block rounded-lg border border-ink-200 border-b-[3px] bg-white px-3.5 py-2 font-mono text-[18px] font-semibold leading-none text-ink-700">
+      {children}
+    </kbd>
   );
 }
 
