@@ -311,6 +311,11 @@ model users {
   pickDeleteDecided           pick_delete_decisions[]  @relation("PickDeleteDecidedBy")
   pickDeleteUndone            pick_delete_decisions[]  @relation("PickDeleteUndoneBy")
   pickDeleteHeld              pick_delete_decisions[]  @relation("PickDeleteDeletedPicker")
+  // Sales-officer order access (2026-09-29, Schema v27.43) — TWO FKs from
+  // `so_order_access` to `users`: grantedById / revokedById. BOTH MUST STAY
+  // EXPLICITLY NAMED ON BOTH SIDES (CORE §7.3).
+  soAccessGranted             so_order_access[]        @relation("SoOrderAccessGrantedBy")
+  soAccessRevoked             so_order_access[]        @relation("SoOrderAccessRevokedBy")
   // Per-user page access (2026-09-04). One FK to `users`, so the relation is
   // deliberately UNNAMED — same call as pushSubscriptions and adminAuditLogs
   // above, and the opposite of the Mrn*/PickFinding*/CiReturn* clusters, which
@@ -755,6 +760,11 @@ model sales_officer_master {
   samplingRegisterEntries sampling_register[]
   customerLinks           customer_sales_officers[] @relation("CustomerSOLinks")
   contactLinks            delivery_point_contacts[] @relation("ContactSOLinks")
+  // SO OTP login (2026-09-29, Schema v27.43) — lib/so-auth/. Order access is a
+  // SEPARATE table on purpose: editing this master must not grant it.
+  orderAccess             so_order_access[]         @relation("SoOrderAccessOfficer")
+  loginCodes              so_login_codes[]          @relation("SoLoginCodeOfficer")
+  soSessions              so_sessions[]             @relation("SoSessionOfficer")
 }
 
 model sales_officer_group {
@@ -3824,4 +3834,81 @@ model trip_activity {
   // second is for a future cross-trip audit view; it has no caller today.
   @@index([tripId, createdAt], map: "trip_activity_trip_idx")
   @@index([createdAt(sort: Desc)], map: "trip_activity_created_idx")
+}
+
+// ─────────────────────────────────────────────
+// SALES-OFFICER OTP LOGIN (2026-09-29, Schema v27.43)
+// ─────────────────────────────────────────────
+// Applied BY HAND in the Supabase SQL Editor 2026-09-29 and hand-mirrored here
+// (never db push / db pull — CORE §3). DDL of record:
+// sql/2026-09-29-so-login-tables.sql. Code: lib/so-auth/, app/api/so-lab/auth/*.
+// 🔴 SO login is deliberately SEPARATE from staff NextAuth — do not merge it
+// into lib/auth.ts (docs/prompts/drafts/code-update-2026-09-29-so-otp-login.md).
+//
+// LIVE CHECKs not expressible in Prisma:
+//   chk_so_order_access_revoke        ("revokedById" IS NULL OR "revokedAt" IS NOT NULL)
+//   chk_so_order_access_revoke_order  ("revokedAt" IS NULL OR "revokedAt" >= "grantedAt")
+//   chk_so_login_codes_email_normalised, chk_so_login_codes_hash_not_plain (>= 32 chars),
+//   chk_so_login_codes_attempts (>= 0), chk_so_login_codes_expiry, chk_so_login_codes_used
+//   chk_so_sessions_hash_not_plain (>= 32 chars), chk_so_sessions_expiry, chk_so_sessions_revoked
+
+// Sales-officer order access. SEPARATE from sales_officer_master on purpose:
+// editing the SO master must not grant or revoke order access — only a
+// superuser route does (not built yet).
+// 🔴 PARTIAL UNIQUE INDEX so_order_access_live_key ("salesOfficerId")
+//    WHERE "revokedAt" IS NULL — exists in Supabase only; Prisma cannot model
+//    it. Never add @@unique([salesOfficerId]): revoked rows are history, and a
+//    re-grant is a NEW row.
+model so_order_access {
+  id             Int                  @id @default(autoincrement())
+  salesOfficerId Int
+  salesOfficer   sales_officer_master @relation("SoOrderAccessOfficer", fields: [salesOfficerId], references: [id], onDelete: Restrict)
+  grantedById    Int
+  grantedBy      users                @relation("SoOrderAccessGrantedBy", fields: [grantedById], references: [id], onDelete: Restrict)
+  grantedAt      DateTime             @default(now()) @db.Timestamptz(6)
+  revokedAt      DateTime?            @db.Timestamptz(6)
+  // SET NULL, so chk_so_order_access_revoke is one-directional on purpose.
+  revokedById    Int?
+  revokedBy      users?               @relation("SoOrderAccessRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  note           String?
+  updatedAt      DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([salesOfficerId], map: "so_order_access_so_idx")
+}
+
+// One row per OTP issued. codeHash only — chk_so_login_codes_hash_not_plain
+// makes a plaintext 6-digit code unstorable. email is stored lower(btrim()).
+model so_login_codes {
+  id             Int                  @id @default(autoincrement())
+  salesOfficerId Int
+  salesOfficer   sales_officer_master @relation("SoLoginCodeOfficer", fields: [salesOfficerId], references: [id], onDelete: Cascade)
+  email          String
+  codeHash       String
+  expiresAt      DateTime             @db.Timestamptz(6)
+  attempts       Int                  @default(0)
+  usedAt         DateTime?            @db.Timestamptz(6)
+  requestedIp    String?
+  createdAt      DateTime             @default(now()) @db.Timestamptz(6)
+
+  @@index([salesOfficerId, createdAt(sort: Desc)], map: "so_login_codes_so_created_idx")
+  @@index([requestedIp, createdAt(sort: Desc)], map: "so_login_codes_ip_created_idx")
+}
+
+// Server-side SO sessions. The cookie carries a random token; only its SHA-256
+// hash is stored. Valid = not revoked AND not expired AND a live
+// so_order_access row AND sales_officer_master.isActive — re-checked on every
+// read (lib/so-auth/session.ts getSoSession).
+model so_sessions {
+  id             Int                  @id @default(autoincrement())
+  tokenHash      String               @unique(map: "so_sessions_tokenHash_key")
+  salesOfficerId Int
+  salesOfficer   sales_officer_master @relation("SoSessionOfficer", fields: [salesOfficerId], references: [id], onDelete: Cascade)
+  createdAt      DateTime             @default(now()) @db.Timestamptz(6)
+  expiresAt      DateTime             @db.Timestamptz(6)
+  lastSeenAt     DateTime             @default(now()) @db.Timestamptz(6)
+  revokedAt      DateTime?            @db.Timestamptz(6)
+  userAgent      String?
+  ip             String?
+
+  @@index([salesOfficerId], map: "so_sessions_so_idx")
 }
