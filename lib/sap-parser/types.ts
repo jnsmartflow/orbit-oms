@@ -43,7 +43,8 @@ export interface SkippedRow {
     | "all-lines-ZZRE"
     | "no-valid-lines"
     | "non-LF row"
-    | "parent item superseded by batch sub-items";
+    | "parent item superseded by batch sub-items"
+    | "other depot shipping point";
   rowNumbers: number[];
 }
 
@@ -56,6 +57,7 @@ export type WarningKind =
   | "duplicate-delivery-header"
   | "row-parse-failed"
   | "zinr-article-tag-pending"
+  | "foreign-shipping-point"
   | "stats-mismatch";
 
 export interface Warning {
@@ -101,6 +103,12 @@ export interface RawSapRow {
  */
 export const KNOWN_ITEM_CATEGORIES = ["TAN", "Z007", "ZKL3", "ZINR", "ZZRE"] as const;
 export type KnownItemCategory = typeof KNOWN_ITEM_CATEGORIES[number];
+
+/**
+ * Surat depot's SAP shipping point; auto-import stores "Surat Depot" in the
+ * same field and never passes through this parser.
+ */
+export const DEPOT_SHIPPING_POINT = "IN53";
 
 // ─── Errors (named classes, instanceof-checkable by callers) ──────────────
 

@@ -1,12 +1,20 @@
 // lib/sap-parser/group-rows.ts
 //
 // Step 2 of the parse pipeline: bucket flat RawSapRow[] by Delivery and
-// apply skip rule D.1 (non-LF returns where Delivery length < 10 AND
-// Delivery Type is not "LF"). The other skip rules — all-ZZRE and
-// no-valid-lines — are applied later in apply-rules.ts after per-row
-// filtering, since they depend on what survives line-level processing.
+// apply two whole-delivery skip rules:
+// - D.1  non-LF returns where Delivery length < 10 AND Delivery Type is not
+//        "LF".
+// - D.1b other depot's shipping point — every row's Shipping Point (col 2)
+//        must be DEPOT_SHIPPING_POINT; anything else (another code, a mix,
+//        or blank) skips the WHOLE delivery with a foreign-shipping-point
+//        warning naming the value(s). Never row-level: SAP sources carry
+//        LINE_AUTHORITY, so a dropped row on a kept bill would be marked
+//        removed_by_import.
+// The other skip rules — all-ZZRE and no-valid-lines — are applied later in
+// apply-rules.ts after per-row filtering, since they depend on what survives
+// line-level processing.
 
-import type { RawSapRow, SkippedRow, Warning } from "./types";
+import { DEPOT_SHIPPING_POINT, type RawSapRow, type SkippedRow, type Warning } from "./types";
 
 export interface GroupedDelivery {
   delivery: string;
@@ -78,6 +86,25 @@ export function groupRows(rows: RawSapRow[]): GroupRowsResult {
         reason:     "non-LF return",
         rowNumbers: deliveryRows.map((r: RawSapRow) => r.rowNumber),
       });
+      continue;
+    }
+
+    // Skip rule D.1b — other depot's shipping point. Checked on EVERY row,
+    // not the first: buildObds stores rows[0]'s value, so a mixed delivery
+    // would otherwise import under whichever row came first.
+    const shippingPoints = Array.from(new Set(
+      deliveryRows.map((r: RawSapRow) => (r.warehouse ?? "").trim().toUpperCase() || "(blank)"),
+    ));
+    if (shippingPoints.length !== 1 || shippingPoints[0] !== DEPOT_SHIPPING_POINT) {
+      const rowNumbers = deliveryRows.map((r: RawSapRow) => r.rowNumber);
+      const message =
+        shippingPoints.length > 1
+          ? `mixed shipping points ${shippingPoints.join(", ")} — only ${DEPOT_SHIPPING_POINT} bills are imported`
+          : shippingPoints[0] === "(blank)"
+            ? `no shipping point — only ${DEPOT_SHIPPING_POINT} bills are imported`
+            : `shipping point ${shippingPoints[0]} — only ${DEPOT_SHIPPING_POINT} bills are imported`;
+      skipped.push({ delivery, reason: "other depot shipping point", rowNumbers });
+      warnings.push({ delivery, kind: "foreign-shipping-point", message, rowNumbers });
       continue;
     }
 
