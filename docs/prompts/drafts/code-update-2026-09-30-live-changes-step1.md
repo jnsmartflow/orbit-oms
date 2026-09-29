@@ -2,7 +2,7 @@
 
 **Commit:** the single commit on `main` titled *"live feed step 1: live_changes table + orders trigger (nothing reads it yet)"* (`git log --grep "live feed step 1"`).
 **Design of record:** `docs/prompts/drafts/code-discovery-2026-09-29-live-change-feed.md` — owner approved all 12 decisions as recommended; this is §M step 1 only.
-**Schema:** v27.45 (CORE §7). **SQL committed; APPLIED TO LIVE: pending.**
+**Schema:** v27.45 (CORE §7). **APPLIED TO LIVE 2026-09-30 ~01:00 IST (Smart Flow); verification + TEST OK (a:0 b:0 c:1 d:3 e: write ok + 0 lines).** Verification: 2 tables, 11 columns, 3 indexes, 2 CHECKs, 3 `orders` triggers `enabled = O`, meta row, anon cannot read. TEST: "TEST OK — rolled back (e: write ok + 0 lines · a: 0 · b: 0 · c: 1 · d: 3 · trip lines: 0)".
 **Prerequisite (step 0) is live:** the access notebook, commit `ddfcb43d`, SQL applied 2026-09-30 ~00:30 IST, `ACCESS_CACHE='on'` ~00:35 IST.
 
 ## What shipped
