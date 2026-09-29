@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Eye,
+  ClipboardPaste,
+  FileSpreadsheet,
 } from "lucide-react";
 import { getTodayIST } from "@/lib/dates";
 import type {
@@ -50,10 +52,14 @@ type Tab = "new" | "log";
 // (components/import/import-page-content.tsx). Its branches below are left in
 // place, unreachable from this window: `format` can no longer become
 // "manual-template" here.
-const FORMAT_CARDS: { format: Format; title: string }[] = [
-  { format: "sap-paste", title: "Paste from SAP" },
-  { format: "sap",       title: "SAP file" },
+const FORMAT_CARDS: { format: Format; title: string; Icon: typeof ClipboardPaste }[] = [
+  { format: "sap-paste", title: "Paste from SAP", Icon: ClipboardPaste },
+  { format: "sap",       title: "SAP file",       Icon: FileSpreadsheet },
 ];
+
+/** Footer Cancel — a bordered secondary button, so it reads as a button. */
+const CANCEL_BTN =
+  "h-9 px-4 rounded-lg border border-ink-200 bg-white text-[13px] font-medium text-ink-700 hover:bg-ink-50 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed";
 
 type UnifiedOutcome = "new" | "patch" | "skipped" | "error";
 
@@ -650,7 +656,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-modal-title"
-        className="w-[1120px] max-w-[calc(100vw-48px)] bg-white rounded-[14px] shadow-xl flex flex-col overflow-hidden"
+        className="w-[960px] max-w-[calc(100vw-48px)] bg-white rounded-[14px] shadow-xl flex flex-col overflow-hidden"
         style={{ maxHeight: "calc(100vh - 80px)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -718,36 +724,46 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
         {/* Body — branches by stage */}
         {(stage === "idle" || stage === "parsing" || stage === "submitting") && (
-          <div className="flex-1 overflow-y-auto p-6 relative">
+          <div className="flex-1 min-h-[560px] overflow-y-auto p-6 relative">
             {isInFlight && (
               <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center pointer-events-none">
                 <Loader2 className="animate-spin text-gray-500" size={28} />
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]">
             {/* LEFT — source cards. "Download blank template" was removed
                 2026-09-29: neither public/import-templates/*.xlsx exists (only
                 the README is tracked), so the link was a 404 on every format. */}
             <div>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-500">Source</p>
-              <div className={`flex flex-col gap-1.5 ${isLocked ? "opacity-60" : ""}`}>
-                {FORMAT_CARDS.map((c) => (
-                  <button
-                    key={c.format}
-                    type="button"
-                    aria-pressed={format === c.format}
-                    disabled={isLocked || isInFlight}
-                    onClick={() => handleFormatChange(c.format)}
-                    className={`rounded-[10px] border px-3.5 py-3 text-left ${
-                      format === c.format
-                        ? "border-brand-600 bg-brand-50"
-                        : "border-ink-100 bg-white hover:bg-ink-25"
-                    } ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
-                  >
-                    <b className="block text-[14px] font-semibold text-ink-900">{c.title}</b>
-                  </button>
-                ))}
+              <div className={`flex flex-col gap-3 ${isLocked ? "opacity-60" : ""}`}>
+                {FORMAT_CARDS.map((c) => {
+                  const selected = format === c.format;
+                  return (
+                    <button
+                      key={c.format}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={isLocked || isInFlight}
+                      onClick={() => handleFormatChange(c.format)}
+                      className={`flex min-h-[88px] items-center gap-3.5 rounded-xl border p-5 text-left ${
+                        selected
+                          ? "border-brand-600 bg-brand-50"
+                          : "border-ink-100 bg-white hover:bg-ink-25"
+                      } ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      <span
+                        className={`grid h-9 w-9 flex-none place-items-center rounded-lg ${
+                          selected ? "bg-brand-600 text-white" : "bg-ink-50 text-ink-700"
+                        }`}
+                      >
+                        <c.Icon size={18} strokeWidth={2} />
+                      </span>
+                      <b className="text-[16px] font-semibold text-ink-900">{c.title}</b>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -778,8 +794,13 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                         aria-label="Paste the SAP OBD list here"
                         className="absolute inset-0 h-full w-full resize-none rounded-xl bg-transparent text-transparent caret-transparent outline-none cursor-default"
                       />
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2">
-                        <KeyCap>Ctrl</KeyCap><KeyCap>V</KeyCap>
+                      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4">
+                        <ClipboardPaste size={40} className="text-ink-400" strokeWidth={1.6} />
+                        <div className="flex items-center gap-2.5">
+                          <KeyCap>Ctrl</KeyCap>
+                          <span className="text-[18px] font-semibold text-ink-400">+</span>
+                          <KeyCap>V</KeyCap>
+                        </div>
                       </div>
                     </div>
                   </>
@@ -885,15 +906,6 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             </div>
             {/* /OBD date + Preview */}
 
-            {/* Amber notice — preview OFF + something ready to import */}
-            {!previewEnabled && canSubmit && (
-              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-[5px] px-3 py-2 flex items-start gap-2">
-                <AlertTriangle size={13} className="text-amber-700 flex-shrink-0 mt-0.5" />
-                <p className="text-[10.5px] text-amber-800 leading-snug">
-                  Preview is off. Clicking <b>Import</b> will write to live tables immediately. Recommended for SAP imports — switch on to review changes first.
-                </p>
-              </div>
-            )}
 
             {/* Picker error (file too large / wrong type) */}
             {pickerError && (
@@ -1115,7 +1127,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 type="button"
                 onClick={() => attemptClose("x")}
                 disabled={isInFlight}
-                className="text-[11px] text-gray-600 hover:text-gray-900 px-3 py-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className={CANCEL_BTN}
               >
                 Cancel
               </button>
@@ -1150,7 +1162,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               <button
                 type="button"
                 onClick={handlePreviewCancel}
-                className="text-[11px] text-gray-600 hover:text-gray-900 px-3 py-1.5 cursor-pointer"
+                className={CANCEL_BTN}
               >
                 Cancel
               </button>
@@ -1174,7 +1186,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               <button
                 type="button"
                 onClick={handleConfirmCancel}
-                className="text-[11px] text-gray-600 hover:text-gray-900 px-3 py-1.5 cursor-pointer"
+                className={CANCEL_BTN}
               >
                 Cancel
               </button>
@@ -1203,7 +1215,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               <button
                 type="button"
                 onClick={handleErrorCancel}
-                className="text-[11px] text-gray-600 hover:text-gray-900 px-3 py-1.5 cursor-pointer"
+                className={CANCEL_BTN}
               >
                 Cancel
               </button>
@@ -1362,7 +1374,7 @@ function OutcomeBadge({ outcome }: { outcome: UnifiedOutcome }): React.JSX.Eleme
 /** The empty paste box's only content — two large key caps. */
 function KeyCap({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <kbd className="inline-block rounded-lg border border-ink-200 border-b-[3px] bg-white px-3.5 py-2 font-mono text-[18px] font-semibold leading-none text-ink-700">
+    <kbd className="inline-flex h-[52px] min-w-[64px] items-center justify-center rounded-xl border border-ink-200 border-b-4 bg-white px-4 font-mono text-[18px] font-semibold leading-none text-ink-700 shadow-sm">
       {children}
     </kbd>
   );
