@@ -189,6 +189,7 @@ export function DetailPanel({
   actions,
   onClose,
   onNavigate,
+  changeSignal,
 }: {
   orderId: number;
   source: FloorDetailSource;
@@ -226,6 +227,14 @@ export function DetailPanel({
   actions: DetailActions;
   onClose: () => void;
   onNavigate: (orderId: number) => void;
+  /**
+   * Live feed (7b) only — undefined with the feed off, and then nothing below
+   * runs. Bumped by floor-page each time THIS bill shows up in the change feed.
+   * The panel re-reads the bill quietly and, only if it really differs from
+   * what is on screen, shows a slim "Changed — Reload" bar. It never swaps the
+   * data by itself: the operator may be mid-read or mid-action.
+   */
+  changeSignal?: number;
 }) {
   const [detail, setDetail] = useState<FloorDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -255,6 +264,38 @@ export function DetailPanel({
   useEffect(() => {
     void fetchDetail();
   }, [fetchDetail]);
+
+  // ── "Changed elsewhere" (live feed 7b) ──────────────────────────────────────
+  // A quiet re-read on each signal; the bar shows only when the bill really
+  // differs from the one on screen (the panel's own write refetches first, so
+  // its echo in the feed compares equal and raises nothing). Cleared whenever
+  // the shown bill changes — Reload, a refetch after an action, or Prev/Next.
+  const [changedDetail, setChangedDetail] = useState<FloorDetail | null>(null);
+  const shownDetailRef = useRef<FloorDetail | null>(detail);
+  shownDetailRef.current = detail;
+  useEffect(() => {
+    setChangedDetail(null);
+  }, [orderId, detail]);
+  useEffect(() => {
+    if (!changeSignal) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/floor/order/${orderId}`, { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const fresh = ((await res.json()) as { detail: FloorDetail }).detail;
+        if (cancelled || !shownDetailRef.current) return;
+        if (JSON.stringify(fresh) !== JSON.stringify(shownDetailRef.current)) setChangedDetail(fresh);
+      } catch {
+        /* no bar — the next change tries again */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // orderId is read, not a trigger: a new bill resets the signal to 0 upstream.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changeSignal]);
 
   // Reset per-bill UI when the panel walks to another bill.
   useEffect(() => {
@@ -292,6 +333,19 @@ export function DetailPanel({
     <div className="fixed inset-0 z-[110]">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <aside className="absolute right-0 top-0 flex h-full w-[472px] flex-col bg-white shadow-[-14px_0_40px_rgba(17,24,39,0.10)]">
+        {changedDetail && (
+          <div role="status" className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-5 py-1.5 text-[11.5px] text-gray-600">
+            Changed elsewhere
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setDetail(changedDetail)}
+              className="ml-auto font-semibold text-brand-600 disabled:opacity-40"
+            >
+              Reload
+            </button>
+          </div>
+        )}
         {loading && !detail ? (
           <div className="flex flex-1 items-center justify-center text-[11.5px] text-gray-400">Loading…</div>
         ) : error && !detail ? (

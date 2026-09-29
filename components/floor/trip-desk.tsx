@@ -170,6 +170,7 @@ export function TripDesk({
   activeTab,
   tabs,
   connected,
+  delayed = false,
   lastSyncedAt,
   sideBody,
   tintOperators,
@@ -244,6 +245,9 @@ export function TripDesk({
   /** The floor marker probe's answer (use-picking-marker onProbe) — the live
    *  dot. No poll of its own. */
   connected: boolean;
+  /** Live feed (7b): the feed answers but its lag is over 2 min — a "Delayed"
+   *  chip instead of nothing. Optional; the old marker path never sets it. */
+  delayed?: boolean;
   /** The last successful board load — the dot's "not connected" tooltip. */
   lastSyncedAt: Date | null;
   /** The Hold / Cancelled body. Rendered in the table column when `activeTab`
@@ -611,7 +615,13 @@ export function TripDesk({
             ›
           </button>
         </span>
-      ) : connected ? null : (
+      ) : connected ? (
+        delayed ? (
+          <span role="status" className="whitespace-nowrap rounded-full bg-ink-100 px-2 py-[2px] text-[12px] text-ink-600">
+            Delayed · last update {lastUpdateTime(lastSyncedAt)}
+          </span>
+        ) : null
+      ) : (
         <span role="status" className="whitespace-nowrap rounded-full bg-ink-100 px-2 py-[2px] text-[12px] text-ink-600">
           Offline · last update {lastUpdateTime(lastSyncedAt)}
         </span>

@@ -62,6 +62,19 @@ import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useFloorRailPoll } from "@/lib/floor/use-floor-rail-poll";
+// Live change feed (7b) — behind app_settings 'live.feed'. OFF → the two hooks
+// above run exactly as before, inside <LegacyFloorSync> (bottom of this file).
+import { useLiveFeed, readLiveHint, liveLog } from "@/lib/live/use-live-feed";
+import { chunk, MAX_PATCH_IDS, type FeedMode, type Work } from "@/lib/live/feed-core";
+import {
+  boardIdsOnTrips,
+  isDateMismatch,
+  mergeFloorRows,
+  mergeTrips,
+  tripIdsToRefresh,
+  withBoardRows,
+  type FloorRowPatchIn,
+} from "@/lib/floor/live-merge";
 // 🔴 toggleAllIds / (no isSelectable), NOT the stage-gated pair (2026-09-10 d).
 // Selecting a bill on this screen means putting it on a TRIP, and trip
 // membership is not stage-gated — see the two families in lib/floor/selection.ts.
@@ -121,6 +134,15 @@ interface BoardData {
   // gone; arm 2 of floorBoardWhere is not, so those bills are still here as rows.
   floor: FloorBoardResult;
   pickers: FloorPicker[];
+}
+
+/** "The feed was on for Floor last time" (localStorage) — lets the mount load wait for the head cursor. */
+const FLOOR_LIVE_HINT_KEY = "orbit.live.floor";
+
+/** GET /api/floor/counts — the lazy tabs' labels while their rows are not loaded (live feed only). */
+interface TabCounts {
+  hold: Record<FloorScope, number>;
+  cancelled: Record<FloorScope, number>;
 }
 
 function istTodayIso(): string {
@@ -461,10 +483,57 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   const viewKeyRef = useRef(viewKeyOf(viewMode, histDate));
   viewKeyRef.current = viewKeyOf(viewMode, histDate);
 
+  // ── LIVE CHANGE FEED (7b, behind app_settings 'live.feed') ────────────────
+  // Mode "live": the feed replaces the 15 s marker + 30 s blind reload
+  // (<LegacyFloorSync> is not mounted), On hold / Cancel & CI load lazily, and
+  // changed bills are patched in by id (POST /api/floor/rows). Any other mode —
+  // "off", "fallback" (repeated errors), or "unknown" without the hint — mounts
+  // the old hooks and everything below behaves exactly as before: every
+  // `feedModeRef.current === "live"` test is false. See the flush further down.
+  const [tabCounts, setTabCounts] = useState<TabCounts | null>(null);
+  const [sideTabLoading, setSideTabLoading] = useState<"hold" | "cancelled" | null>(null);
+  const [detailChangeSignal, setDetailChangeSignal] = useState(0);
+  const [, setRenderTick] = useState(0);
+  const liveHintRef = useRef<boolean | null>(null);
+  if (liveHintRef.current === null) liveHintRef.current = readLiveHint(FLOOR_LIVE_HINT_KEY);
+  const feedModeRef = useRef<FeedMode>("unknown");
+  const flushRef = useRef<() => void>(() => {});
+  const onFeedModeRef = useRef<(m: FeedMode, prev: FeedMode) => void>(() => {});
+  const onFeedChangesRef = useRef<(b: { orderIds: number[] }) => void>(() => {});
+  const onMidnightRef = useRef<() => void>(() => {});
+  const dataRef = useRef<BoardData | null>(data);
+  dataRef.current = data;
+  const holdRowsRef = useRef<FloorHoldRow[] | null>(holdRows);
+  holdRowsRef.current = holdRows;
+  const cancelledRowsRef = useRef<FloorCancelledRow[] | null>(cancelledRows);
+  cancelledRowsRef.current = cancelledRows;
+  const topTabRef = useRef<TopTab>(topTab);
+  topTabRef.current = topTab;
+  const feed = useLiveFeed({
+    scope: "floor",
+    topics: "order,trip,config",
+    hintKey: FLOOR_LIVE_HINT_KEY,
+    onPending: () => flushRef.current(),
+    onChanges: (b) => onFeedChangesRef.current(b),
+    onMode: (m, prev) => {
+      feedModeRef.current = m;
+      onFeedModeRef.current(m, prev);
+    },
+    onMidnight: () => onMidnightRef.current(),
+  });
+  const feedLive = feed.mode === "live";
+
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
     const viewKey = viewKeyOf(viewMode, histDate);
     const isStale = () => seq !== loadSeq.current || viewKeyRef.current !== viewKey;
+    // Live feed: a full load covers every change seen so far — drop the queue.
+    // Lazy tabs: On hold / Cancel & CI only once opened; their labels come from
+    // /api/floor/counts until then. OFF: lazy is false and nothing here differs.
+    const lazy = feedModeRef.current === "live" && viewMode === "live";
+    if (lazy) feed.controller.current?.noteFullLoad();
+    const wantHold = !lazy || holdRowsRef.current !== null || topTabRef.current === "hold";
+    const wantCanc = !lazy || cancelledRowsRef.current !== null || topTabRef.current === "cancelled";
     loadInFlightRef.current = true;
     setLoading(true);
     setError(null);
@@ -507,11 +576,14 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       // discovered later.
       const tripDateParam =
         viewMode === "history" && histDate ? histDate : istTodayIso();
-      const [boardRes, holdRes, cancRes, tripRes] = await Promise.all([
+      // (Live feed: a lazy tab not yet opened is skipped — `null` — and the
+      // counts ride as a fifth entry, caught like trips. OFF: the same four.)
+      const [boardRes, holdRes, cancRes, tripRes, countsRes] = await Promise.all([
         fetch(`/api/floor/board?${params.toString()}`, { cache: "no-store" }),
-        fetch(`/api/floor/hold?${UNSCOPED_QS}`, { cache: "no-store" }),
-        fetch(`/api/floor/cancelled?${UNSCOPED_QS}`, { cache: "no-store" }),
+        wantHold ? fetch(`/api/floor/hold?${UNSCOPED_QS}`, { cache: "no-store" }) : null,
+        wantCanc ? fetch(`/api/floor/cancelled?${UNSCOPED_QS}`, { cache: "no-store" }) : null,
         fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" }).catch(() => null),
+        lazy && (!wantHold || !wantCanc) ? fetch("/api/floor/counts", { cache: "no-store" }).catch(() => null) : null,
       ]);
       // A stale answer is dropped BEFORE anything is read or thrown — its
       // failure is no more this view's than its success is.
@@ -525,8 +597,14 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       // semantics are unchanged: a board or a hold/cancelled body that throws
       // still reaches the outer catch; a trips failure still only empties the
       // rail (the inner try/catch below, now around the read).
-      const holdBody = holdRes.ok ? await holdRes.json() : null;
-      const cancBody = cancRes.ok ? await cancRes.json() : null;
+      const holdBody = holdRes === null ? null : holdRes.ok ? await holdRes.json() : null;
+      const cancBody = cancRes === null ? null : cancRes.ok ? await cancRes.json() : null;
+      let countsBody: ({ enabled?: boolean } & Partial<TabCounts>) | null = null;
+      try {
+        if (countsRes && countsRes.ok) countsBody = (await countsRes.json()) as { enabled?: boolean } & Partial<TabCounts>;
+      } catch {
+        countsBody = null; // labels keep their last numbers
+      }
       let tripsBody: { trips?: TripSummary[]; placeholderRoutes?: string[] } | null = null;
       let tripsError: string | null = null;
       try {
@@ -544,10 +622,15 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
 
       // A failed side feed must not blank the board — surface its own error and
       // leave the tab empty rather than throwing the whole page away.
-      if (holdBody !== null) setHoldRows((holdBody.rows ?? []) as FloorHoldRow[]);
+      if (holdRes === null) { /* live feed: lazy tab not opened — rows stay unloaded */ }
+      else if (holdBody !== null) setHoldRows((holdBody.rows ?? []) as FloorHoldRow[]);
       else { setHoldRows([]); setSideError(`Hold feed HTTP ${holdRes.status}`); }
-      if (cancBody !== null) setCancelledRows((cancBody.rows ?? []) as FloorCancelledRow[]);
+      if (cancRes === null) { /* live feed: lazy tab not opened */ }
+      else if (cancBody !== null) setCancelledRows((cancBody.rows ?? []) as FloorCancelledRow[]);
       else { setCancelledRows([]); setSideError((prev) => prev ?? `Cancelled feed HTTP ${cancRes.status}`); }
+      if (countsBody?.enabled && countsBody.hold && countsBody.cancelled) {
+        setTabCounts({ hold: countsBody.hold, cancelled: countsBody.cancelled });
+      }
 
       // The day's trips — a FOURTH feed, issued in the Promise.all above rather
       // than by a poll of its own, so the board and the bands can never describe
@@ -625,6 +708,8 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       if (seq === loadSeq.current) {
         loadInFlightRef.current = false;
         setLoading(false);
+        // Live feed: changes that arrived during the load were held back — apply now.
+        if (feedModeRef.current === "live") setTimeout(() => flushRef.current(), 0);
       }
     }
     // `scope` is NOT here on purpose — every fetch is unscoped and the chips are
@@ -632,7 +717,22 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     // restore the 3-fetches-per-chip-click behaviour this change removed.
   }, [viewMode, histDate]);
 
+  // ⚠ ONE EXCEPTION, live feed only: when this browser saw the feed ON last
+  // time (FLOOR_LIVE_HINT_KEY), the MOUNT load is skipped — the feed takes its
+  // head cursor first and then asks for the load itself (design: cursor before
+  // load, so no change is missed). If the feed turns out OFF or unreachable,
+  // onFeedMode below loads at once. Without the hint (always, until the switch
+  // has been on) this effect is exactly what it was.
+  const skipMountLoadRef = useRef(liveHintRef.current === true);
+  const mountLoadSkippedRef = useRef(false);
   useEffect(() => {
+    if (skipMountLoadRef.current) {
+      skipMountLoadRef.current = false;
+      if (feedModeRef.current === "unknown") {
+        mountLoadSkippedRef.current = true;
+        return;
+      }
+    }
     void load();
   }, [load]);
 
@@ -1953,38 +2053,416 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // ignored by the floor marker route (fixed set). `onProbe` feeds the connection
   // strip off this same 15s poll — one probe powers both. Deferred while the
   // detail panel is open or in read-only history.
-  usePickingMarker({
-    scope: "openPending",
-    url: "/api/floor/marker",
-    paused: !isLive || detailOpen,
-    onProbe: setConnected,
-    onChange: () => {
-      if (!isLive) return;
-      // Rule 2: never move the ground while rows are selected — reconcile the
-      // ticks only. Rule 1: otherwise refresh in place (rows keyed by orderId).
-      // With ticks up: reconcile the ticks AND refresh the trips feed (rail
-      // cards and bars), never the board rows.
-      if (selection.size > 0) {
-        void reconcileSelection();
-        void refreshTrips();
-      } else void load();
-    },
-  });
+  //
+  // ⚠ LIVE FEED 7b: the two hooks moved, unchanged, into <LegacyFloorSync> at
+  // the foot of this file, which is rendered only while the feed is NOT live
+  // (`legacySyncMounted`). Their arguments are built here, word for word as
+  // they were written inline.
+  const legacyMarkerOnChange = () => {
+    if (!isLive) return;
+    // Rule 2: never move the ground while rows are selected — reconcile the
+    // ticks only. Rule 1: otherwise refresh in place (rows keyed by orderId).
+    // With ticks up: reconcile the ticks AND refresh the trips feed (rail
+    // cards and bars), never the board rows.
+    if (selection.size > 0) {
+      void reconcileSelection();
+      void refreshTrips();
+    } else void load();
+  };
 
   // RAIL — the Mail Orders pattern: a 30s full refetch. Paused while a selection
   // is up or the panel is open (a refetch would move the floor ground) or history.
-  useFloorRailPoll({
-    paused: !isLive || detailOpen || selection.size > 0,
-    // ⚠ A TICK DOES NOT SUPERSEDE A LOAD IN FLIGHT (2026-09-29). With the
-    // stale-answer guard, a newer load voids the older one; a timed refresh
-    // starting over one that is still running would, on a link where a load
-    // outlasts the gap between ticks, void every load and never show one. The
-    // running load is already fresh. The MARKER still always reloads — it has
-    // seen a real change, and a load started before the change may miss it.
-    onTick: () => {
-      if (!loadInFlightRef.current) void load();
+  //
+  // ⚠ A TICK DOES NOT SUPERSEDE A LOAD IN FLIGHT (2026-09-29). With the
+  // stale-answer guard, a newer load voids the older one; a timed refresh
+  // starting over one that is still running would, on a link where a load
+  // outlasts the gap between ticks, void every load and never show one. The
+  // running load is already fresh. The MARKER still always reloads — it has
+  // seen a real change, and a load started before the change may miss it.
+  const legacyRailOnTick = () => {
+    if (!loadInFlightRef.current) void load();
+  };
+
+  // Off, fallback (repeated feed errors), or not known yet on a browser that
+  // never saw the feed on → the old hooks run. Live → they are not mounted.
+  const legacySyncMounted =
+    feed.mode === "off" || feed.mode === "fallback" || (feed.mode === "unknown" && !liveHintRef.current);
+
+  // ── LIVE FEED 7b — applying changes ────────────────────────────────────────
+  // The feed (useLiveFeed) only COLLECTS changed ids; this is where they land.
+  // "Never move the ground under a hand": nothing is applied while the panel,
+  // a form, a menu or a write is open, while typing, or in History — the glance
+  // keeps running and only applying waits (`hardPaused`). While bills are
+  // ticked or a targeted add is on (`rowsPaused`), trips still refresh (the
+  // rail describes trucks, not the rows being ticked — same rule as the old
+  // marker path) and ticked bills that left the board are unticked, but no
+  // board row moves.
+  const hardPaused =
+    !isLive ||
+    detailOpen ||
+    offFloorOpen ||
+    tripFormSeed !== null ||
+    editingTripId !== null ||
+    moreOpen ||
+    holdMoreOpen ||
+    tripBusyId !== null ||
+    tripBarBusy;
+  const rowsPaused = selection.size > 0 || addingToTripId !== null;
+  const hardPausedRef = useRef(hardPaused);
+  hardPausedRef.current = hardPaused;
+  const rowsPausedRef = useRef(rowsPaused);
+  rowsPausedRef.current = rowsPaused;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
+  const flushingRef = useRef(false);
+  const tripsForbiddenRef = useRef(false);
+  const midnightPendingRef = useRef(false);
+  const patchSeqRef = useRef(0);
+  const patchFailuresRef = useRef(0);
+  const lastRecoverLoadRef = useRef(0);
+  const tickCheckedRef = useRef<Set<number>>(new Set());
+
+  const refreshCounts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/floor/counts", { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { enabled?: boolean } & Partial<TabCounts>;
+      if (body.enabled === false) return feed.controller.current?.noteDisabled();
+      if (body.hold && body.cancelled) setTabCounts({ hold: body.hold, cancelled: body.cancelled });
+    } catch {
+      /* the labels keep their last numbers */
+    }
+  }, [feed.controller]);
+
+  // The pick gate lives in app_settings, so a flip made elsewhere arrives as a
+  // `config` change — re-read it alongside that full load (live feed only).
+  const readGate = useCallback(async () => {
+    try {
+      const res = await fetch("/api/floor/pick-gate", { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { enabled?: boolean };
+      if (typeof body.enabled === "boolean") setGateEnabled(body.enabled);
+    } catch {
+      /* unchanged */
+    }
+  }, []);
+
+  // GET /api/floor/trips?ids= (floor canEdit, like the trips list). A viewer
+  // never asks (the desk has no trips for them today); a 403 stops asking for
+  // the rest of the session — no error loop. Any other failure is silent: the
+  // next full load corrects the rail.
+  const refreshTripsByIds = useCallback(
+    async (ids: number[]) => {
+      if (ids.length === 0 || !canEdit || tripsForbiddenRef.current) return;
+      for (const part of chunk(ids, MAX_PATCH_IDS)) {
+        try {
+          const res = await fetch(`/api/floor/trips?date=${istTodayIso()}&ids=${part.join(",")}`, { cache: "no-store" });
+          if (res.status === 403) {
+            tripsForbiddenRef.current = true;
+            liveLog("floor", "trips by id: 403 — not asking again this session");
+            return;
+          }
+          if (!res.ok) {
+            liveLog("floor", `trips by id: HTTP ${res.status}`);
+            return;
+          }
+          const body = (await res.json()) as { enabled?: boolean; trips?: TripSummary[]; gone?: number[] };
+          if (body.enabled === false) return feed.controller.current?.noteDisabled();
+          if (viewKeyRef.current !== "live") return;
+          setTrips((prev) => (prev === null ? prev : mergeTrips(prev, body.trips ?? [], body.gone ?? [])));
+          liveLog("floor", "trips patched", { ids: part, gone: body.gone ?? [] });
+        } catch {
+          return;
+        }
+      }
     },
-  });
+    [canEdit, feed.controller],
+  );
+
+  type RowsAnswer = {
+    enabled?: boolean;
+    date?: string;
+    rows?: FloorRowPatchIn[];
+    soFlags?: Record<string, boolean>;
+    tripIds?: number[];
+    pickers?: FloorPicker[];
+  };
+  const postRows = useCallback(async (ids: number[]): Promise<RowsAnswer> => {
+    const res = await fetch("/api/floor/rows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`rows HTTP ${res.status}`);
+    return (await res.json()) as RowsAnswer;
+  }, []);
+
+  // Ticked bills that changed elsewhere and LEFT the board are unticked (the
+  // old reconcileSelection's rule, by id instead of a whole board read).
+  const checkTickedBills = useCallback(async () => {
+    const ctl = feed.controller.current;
+    if (!ctl) return;
+    const sel = selectionRef.current;
+    const ids = ctl.pendingSnapshot().orders.filter((id) => sel.has(id) && !tickCheckedRef.current.has(id));
+    if (ids.length === 0) return;
+    for (const id of ids) tickCheckedRef.current.add(id);
+    const body = await postRows(ids.slice(0, MAX_PATCH_IDS));
+    if (body.enabled === false) return ctl.noteDisabled();
+    const left = new Set((body.rows ?? []).filter((r) => r.tab !== "board").map((r) => r.id));
+    if (left.size === 0) return;
+    setSelection((prev) => {
+      const next = new Set<number>();
+      let dropped = 0;
+      for (const id of Array.from(prev)) {
+        if (left.has(id)) dropped++;
+        else next.add(id);
+      }
+      if (dropped === 0) return prev;
+      toast.info(`${dropped} selected bill${dropped === 1 ? "" : "s"} changed elsewhere — unticked`);
+      return next;
+    });
+  }, [feed.controller, postRows]);
+
+  const applyPatch = useCallback(
+    async (work: Extract<Work, { kind: "patch" }>, ordersPaused: boolean) => {
+      const ctl = feed.controller.current;
+      const cur = dataRef.current;
+      if (!ctl || !cur) return; // no board yet — flush's recovery load covers it
+      if (ordersPaused) {
+        // Trips only. The board bills that SHOW those trips wait in the queue.
+        ctl.requeue(boardIdsOnTrips(cur.floor.rows, work.tripIds, tripsRef.current), []);
+        await refreshTripsByIds(work.tripIds);
+        return;
+      }
+      // A trip that changed with no bill changing (show, send to billing,
+      // vehicle, rename) still changes what its bills' rows show.
+      const ids = Array.from(new Set([...work.orderIds, ...boardIdsOnTrips(cur.floor.rows, work.tripIds, tripsRef.current)]));
+      if (ids.length > MAX_PATCH_IDS) {
+        liveLog("floor", `${ids.length} ids — full load instead`);
+        void load();
+        return;
+      }
+      const seq0 = loadSeq.current;
+      const patches: FloorRowPatchIn[] = [];
+      const soFlags: Record<string, boolean> = {};
+      const nowTripIds: number[] = [];
+      let pickers: FloorPicker[] | null = null;
+      let date: string | null = null;
+      if (ids.length > 0) {
+        for (const part of chunk(ids, MAX_PATCH_IDS)) {
+          const body = await postRows(part);
+          if (body.enabled === false) return ctl.noteDisabled();
+          patches.push(...(body.rows ?? []));
+          Object.assign(soFlags, body.soFlags ?? {});
+          nowTripIds.push(...(body.tripIds ?? []));
+          pickers = body.pickers ?? pickers;
+          date = body.date ?? date;
+        }
+      }
+      // A full load started meanwhile began AFTER these ids were taken — it
+      // covers them. Anything opened mid-fetch → apply later, never under a hand.
+      if (loadSeq.current !== seq0 || viewKeyRef.current !== "live") return;
+      if (loadInFlightRef.current || hardPausedRef.current || rowsPausedRef.current) {
+        ctl.requeue(work.orderIds, work.tripIds);
+        return;
+      }
+      const before = dataRef.current;
+      if (!before) return;
+      if (date !== null && isDateMismatch(before.floor.date, date)) {
+        liveLog("floor", `rows are for ${date}, board is ${before.floor.date} — full load`);
+        void load();
+        return;
+      }
+      if (patches.length > 0) {
+        const onBoardBefore = new Set(before.floor.rows.map((r) => r.orderId));
+        const m = mergeFloorRows(
+          { board: before.floor.rows, hold: holdRowsRef.current, cancelled: cancelledRowsRef.current },
+          patches,
+          soFlags,
+        );
+        const next: BoardData = { floor: withBoardRows(before.floor, m.lists.board), pickers: pickers ?? before.pickers };
+        dataRef.current = next;
+        setData(next);
+        if (holdRowsRef.current !== null) {
+          holdRowsRef.current = m.lists.hold;
+          setHoldRows(m.lists.hold);
+        }
+        if (cancelledRowsRef.current !== null) {
+          cancelledRowsRef.current = m.lists.cancelled;
+          setCancelledRows(m.lists.cancelled);
+        }
+        patchSeqRef.current++;
+        setLastSyncedAt(new Date());
+        liveLog("floor", "rows patched", {
+          ids,
+          tabs: patches.map((p) => `${p.id}→${p.tab ?? "gone"}`),
+          touched: Array.from(m.tabsTouched),
+        });
+        // A lazy tab's label: refresh when a bill went to it, or came from a
+        // place this page cannot see (not on the board → maybe that tab).
+        if (
+          (holdRowsRef.current === null || cancelledRowsRef.current === null) &&
+          patches.some((p) => p.tab === "hold" || p.tab === "cancelled" || !onBoardBefore.has(p.id))
+        ) {
+          void refreshCounts();
+        }
+        await refreshTripsByIds(tripIdsToRefresh(work.tripIds, nowTripIds, m.previousTripNumbers, tripsRef.current));
+      } else {
+        await refreshTripsByIds(work.tripIds);
+      }
+    },
+    [feed.controller, load, postRows, refreshCounts, refreshTripsByIds],
+  );
+
+  const flush = useCallback(async () => {
+    const ctl = feed.controller.current;
+    if (!ctl || ctl.getMode() !== "live" || flushingRef.current) return;
+    if (hardPausedRef.current || loadInFlightRef.current || isTypingInField()) return;
+    // No board (the last load failed): the old 30 s rail poll used to retry —
+    // here a full load at most every 30 s (also driven by the 30 s tick below).
+    if (!dataRef.current) {
+      if (Date.now() - lastRecoverLoadRef.current >= 30_000) {
+        lastRecoverLoadRef.current = Date.now();
+        void load();
+      }
+      return;
+    }
+    const ordersPaused = rowsPausedRef.current;
+    if (midnightPendingRef.current && !ordersPaused) {
+      midnightPendingRef.current = false;
+      liveLog("floor", "IST midnight — full load");
+      void load();
+      return;
+    }
+    const work = ctl.take({ ordersPaused });
+    flushingRef.current = true;
+    let applied = false;
+    try {
+      if (work?.kind === "full") {
+        liveLog("floor", `full load (${work.reasons.join(", ")})`);
+        if (work.reasons.includes("config")) void readGate();
+        await load();
+      } else if (work?.kind === "patch") {
+        await applyPatch(work, ordersPaused);
+      }
+      if (ordersPaused) await checkTickedBills();
+      patchFailuresRef.current = 0;
+      applied = work !== null;
+    } catch (e) {
+      patchFailuresRef.current++;
+      liveLog("floor", `apply failed (${patchFailuresRef.current})`, e instanceof Error ? e.message : e);
+      if (work?.kind === "patch") ctl.requeue(work.orderIds, work.tripIds);
+      // Three in a row → one full load instead; the retry pace is the glance's.
+      if (patchFailuresRef.current >= 3) {
+        patchFailuresRef.current = 0;
+        void load();
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+    // Changes that arrived while this ran → one more pass. Never after a
+    // failure (the glance paces retries); stops when take() has nothing left.
+    if (applied) setTimeout(() => flushRef.current(), 0);
+  }, [feed.controller, load, applyPatch, checkTickedBills, readGate]);
+  flushRef.current = () => {
+    void flush();
+  };
+
+  onFeedModeRef.current = (m, prev) => {
+    // Live → off: the old hooks mount; one full (non-lazy) load fills On hold /
+    // Cancel & CI and re-bases everything — no browser reload needed.
+    // The mount load was skipped on the hint and the feed is off/unreachable →
+    // load now. Live: the flush's "start"/"switch-on" full load covers it.
+    if (m === "off" && prev === "live") void load();
+    else if ((m === "off" || m === "fallback") && mountLoadSkippedRef.current) {
+      mountLoadSkippedRef.current = false;
+      void load();
+    }
+    if (m === "live") mountLoadSkippedRef.current = false;
+  };
+  onFeedChangesRef.current = (b) => {
+    const d = detailRef.current;
+    if (d && b.orderIds.includes(d.orderId)) setDetailChangeSignal((n) => n + 1);
+  };
+  onMidnightRef.current = () => {
+    if (viewKeyRef.current !== "live") return;
+    midnightPendingRef.current = true;
+    flushRef.current();
+  };
+
+  // A bill opened in the panel starts with no "changed" signal.
+  useEffect(() => {
+    setDetailChangeSignal(0);
+  }, [detail?.orderId]);
+  // Pauses lifting → apply what queued up.
+  useEffect(() => {
+    if (!hardPaused) flushRef.current();
+  }, [hardPaused, rowsPaused]);
+  useEffect(() => {
+    if (selection.size === 0) tickCheckedRef.current = new Set();
+  }, [selection]);
+  // Typing ends → apply; and a 30 s render tick (no network) so ages and the
+  // clock move while no reload happens. Live mode only.
+  useEffect(() => {
+    if (!feedLive) return;
+    const onFocusOut = () => setTimeout(() => flushRef.current(), 0);
+    document.addEventListener("focusout", onFocusOut);
+    const tick = setInterval(() => {
+      setRenderTick((t) => t + 1);
+      if (!dataRef.current) flushRef.current(); // recovery after a failed load (throttled in flush)
+    }, 30_000);
+    return () => {
+      document.removeEventListener("focusout", onFocusOut);
+      clearInterval(tick);
+    };
+  }, [feedLive]);
+
+  // Lazy tabs (live only): On hold / Cancel & CI load the first time they are
+  // opened; after that they are patched like the board. A patch landing
+  // mid-fetch → fetch once more, so an older answer never wins.
+  const loadSideTab = useCallback(async (tab: "hold" | "cancelled") => {
+    const seq0 = loadSeq.current;
+    setSideTabLoading(tab);
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const patch0 = patchSeqRef.current;
+        const res = await fetch(`/api/floor/${tab}?${UNSCOPED_QS}`, { cache: "no-store" });
+        if (loadSeq.current !== seq0 || viewKeyRef.current !== "live") return;
+        if (!res.ok) {
+          setSideError(`${tab === "hold" ? "Hold" : "Cancelled"} feed HTTP ${res.status}`);
+          if (tab === "hold") setHoldRows([]);
+          else setCancelledRows([]);
+          return;
+        }
+        const body = (await res.json()) as { rows?: unknown[] };
+        if (loadSeq.current !== seq0) return;
+        if (patchSeqRef.current !== patch0 && attempt === 0) continue;
+        if (tab === "hold") {
+          holdRowsRef.current = (body.rows ?? []) as FloorHoldRow[];
+          setHoldRows(holdRowsRef.current);
+        } else {
+          cancelledRowsRef.current = (body.rows ?? []) as FloorCancelledRow[];
+          setCancelledRows(cancelledRowsRef.current);
+        }
+        liveLog("floor", `${tab} tab loaded (${(body.rows ?? []).length})`);
+        return;
+      }
+    } catch {
+      setSideError(`${tab === "hold" ? "Hold" : "Cancelled"} feed unreachable`);
+      if (tab === "hold") setHoldRows([]);
+      else setCancelledRows([]);
+    } finally {
+      setSideTabLoading((cur) => (cur === tab ? null : cur));
+    }
+  }, []);
+  useEffect(() => {
+    if (!feedLive || !isLive || loading || sideTabLoading !== null) return;
+    if (topTab === "hold" && holdRows === null) void loadSideTab("hold");
+    else if (topTab === "cancelled" && cancelledRows === null) void loadSideTab("cancelled");
+  }, [feedLive, isLive, loading, sideTabLoading, topTab, holdRows, cancelledRows, loadSideTab]);
 
   // Unscoped on purpose: this is the LIST of dispatch windows to offer, not
   // their counts. The server maps every active dispatch_slot_master row whatever
@@ -2290,8 +2768,11 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // Tab counts reflect the searched/filtered set of each surface (they equal the
   // full totals when no search/filter is active).
   const floorCount = filteredFloor?.total ?? 0;
-  const holdCount = filteredHold?.length ?? 0;
-  const cancelledCount = filteredCancelled?.length ?? 0;
+  // Live feed, lazy tab not loaded yet → the server's count for this scope
+  // (before search / flags). Loaded, or feed off → exactly as before.
+  const liveCounts = feedLive && isLive ? tabCounts : null;
+  const holdCount = filteredHold?.length ?? liveCounts?.hold[scope] ?? 0;
+  const cancelledCount = filteredCancelled?.length ?? liveCounts?.cancelled[scope] ?? 0;
 
   // Bills ON the floor with nobody on them yet — the one number the operator
   // cannot read off the badge beside it, which counts everything including work
@@ -2477,6 +2958,16 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-white">
+      {/* The old live-sync — mounted only while the live feed is not live. */}
+      {legacySyncMounted && (
+        <LegacyFloorSync
+          markerPaused={!isLive || detailOpen}
+          onMarkerChange={legacyMarkerOnChange}
+          onProbe={setConnected}
+          railPaused={!isLive || detailOpen || selection.size > 0}
+          onRailTick={legacyRailOnTick}
+        />
+      )}
       {/* ── Row 1 — title + date/time (design §5). ───────────────────────── */}
       <div className="flex h-11 items-center gap-2.5 border-b border-[#f0f0f0] px-4">
         {/* The board no longer names itself — the nav says where you are and the
@@ -2641,13 +3132,16 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
               // TABLE column. Hold and Cancelled ride in as `sideBody`.
               activeTab={topTab}
               tabs={tabRow}
-              connected={connected}
+              // Live feed: the chip follows the feed's own health (and says
+              // "Delayed" while its lag persists). Off: the marker probe, as before.
+              connected={feedLive ? feed.connected : connected}
+              delayed={feedLive && feed.delayed}
               lastSyncedAt={lastSyncedAt}
               sideBody={
                 topTab === "hold" ? (
                   <HoldTab
                     rows={filteredHold}
-                    loading={loading && filteredHold === null}
+                    loading={(loading || sideTabLoading === "hold") && filteredHold === null}
                     error={error ?? sideError}
                     scope={scope}
                     windows={dispatchWindows}
@@ -2662,7 +3156,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
                 ) : topTab === "cancelled" ? (
                   <CancelledTab
                     rows={filteredCancelled}
-                    loading={loading && filteredCancelled === null}
+                    loading={(loading || sideTabLoading === "cancelled") && filteredCancelled === null}
                     error={error ?? sideError}
                     scope={scope}
                     onRestore={cancelledRestore}
@@ -2807,6 +3301,9 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
           actions={detailActions}
           onClose={closeDetail}
           onNavigate={navigateDetail}
+          // Live feed only: bumps when this bill changes elsewhere. The panel
+          // checks and offers "Changed — Reload"; it never swaps data itself.
+          changeSignal={feedLive ? detailChangeSignal : undefined}
         />
       )}
 
@@ -2828,4 +3325,49 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       )}
     </div>
   );
+}
+
+/** Focus is in a field — the live feed waits to apply (typing queues patches). */
+function isTypingInField(): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement as HTMLElement | null;
+  const tag = el?.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
+}
+
+/**
+ * The OLD live-sync, moved here unchanged (live feed 7b): the 15 s floor marker
+ * (use-picking-marker → /api/floor/marker, which also drives the connection
+ * chip) and the 30 s blind reload (useFloorRailPoll). FloorPage renders this
+ * only while the live feed is NOT live — switch off, fallback after repeated
+ * feed errors, or not yet known on a browser that never saw the feed on — so
+ * with the switch off the page runs exactly these two hooks with exactly the
+ * arguments it always passed. Mounting / unmounting is what starts and stops
+ * them (each cleans up its own timer and listener).
+ */
+function LegacyFloorSync({
+  markerPaused,
+  onMarkerChange,
+  onProbe,
+  railPaused,
+  onRailTick,
+}: {
+  markerPaused: boolean;
+  onMarkerChange: () => void;
+  onProbe: (ok: boolean) => void;
+  railPaused: boolean;
+  onRailTick: () => void;
+}) {
+  usePickingMarker({
+    scope: "openPending",
+    url: "/api/floor/marker",
+    paused: markerPaused,
+    onProbe,
+    onChange: onMarkerChange,
+  });
+  useFloorRailPoll({
+    paused: railPaused,
+    onTick: onRailTick,
+  });
+  return null;
 }

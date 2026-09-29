@@ -21,7 +21,7 @@ import { parseCancelNote } from "./off-floor";
 import { asCiSource, asCiStatus, type CiSource } from "@/lib/ci/types";
 import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE } from "@/lib/floor/sort";
+import { FLOOR_SPINE, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
 import { resolveFloorDisplayDate } from "@/lib/floor/format";
 import {
   STAGE_LADDER,
@@ -1303,12 +1303,9 @@ export async function getFloorHold(
 
   // Recent first by default (design §8) — on heldSince, the real hold moment.
   // Unknown-held rows sink last (the tab bands them separately anyway).
-  rows.sort((a, b) => {
-    if (a.heldSince === b.heldSince) return 0;
-    if (a.heldSince === null) return 1;
-    if (b.heldSince === null) return -1;
-    return a.heldSince < b.heldSince ? 1 : -1;
-  });
+  // The comparator lives in lib/floor/sort.ts (2026-09-30) so the live-merge
+  // re-sort after a row patch uses the SAME rule — identical logic, moved.
+  rows.sort(compareHoldRows);
 
   return rows;
 }
@@ -1519,6 +1516,7 @@ export async function getFloorCancelled(
     }
   }
 
-  rows.sort((a, b) => (a.at === b.at ? 0 : (a.at ?? "") < (b.at ?? "") ? 1 : -1));
+  // Shared with the live-merge re-sort (lib/floor/sort.ts) — identical logic, moved.
+  rows.sort(compareCancelledRows);
   return rows;
 }
