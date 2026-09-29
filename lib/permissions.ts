@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { getAccessSource } from "@/lib/access/source";
+import { accessNotebook, notebookOn } from "@/lib/access/notebook-store";
+import type { RolePermRow } from "@/lib/access/notebook";
 import type { RolloutStage } from "@/auth.config";
 
 // ── Nav config ─────────────────────────────────────────────────────────────────
@@ -696,8 +698,22 @@ async function userModeId(access: SessionAccess): Promise<number | null> {
   return access.userId;
 }
 
+// ── The access notebook (2026-09-30) ─────────────────────────────────────────
+// Every read below that touches user_page_access or role_permissions has ONE
+// notebook branch in front of it: `if (await notebookOn()) { … }`. With
+// system_config ACCESS_CACHE anything but 'on' that branch is skipped and the
+// ORIGINAL query lines below it run, unchanged — the OFF path is the old code,
+// not a re-implementation. The admin role arm and the superuser flag arm sit
+// ABOVE every one of these branches in each resolver and are untouched, so
+// neither the notebook nor its failure can affect them. Absent row ≡ all false
+// holds in both paths. lib/access/notebook.ts has the trust rules.
+
 /** One user's stored ticks for one page. Absent row ≡ all false. */
 async function userPagePerms(userId: number, pageKey: PageKey): Promise<PagePermissions> {
+  if (await notebookOn()) {
+    const stored = (await accessNotebook.getUserBundle(userId)).pages.get(pageKey);
+    return stored ? { ...stored } : ALL_FALSE;
+  }
   const row = await prisma.user_page_access.findUnique({
     where:  { userId_pageKey: { userId, pageKey } },
     select: { canView: true, canImport: true, canExport: true, canEdit: true, canDelete: true },
@@ -714,6 +730,14 @@ async function userPagePerms(userId: number, pageKey: PageKey): Promise<PagePerm
 
 /** All of one user's stored ticks, as the same map shape the role path returns. */
 async function userAllPerms(userId: number): Promise<Record<string, PagePermissions>> {
+  if (await notebookOn()) {
+    // Stored keys only — the same undensified shape as the query path below.
+    const result: Record<string, PagePermissions> = {};
+    for (const [pageKey, perms] of Array.from((await accessNotebook.getUserBundle(userId)).pages)) {
+      result[pageKey] = { ...perms };
+    }
+    return result;
+  }
   const rows = await prisma.user_page_access.findMany({
     where:  { userId },
     select: {
@@ -748,7 +772,17 @@ async function mergeRolePerms(roleSlugs: string[]): Promise<Record<string, PageP
   const rows = await prisma.role_permissions.findMany({
     where: { roleSlug: { in: roleSlugs } },
   });
+  return mergeRoleRows(rows);
+}
 
+/**
+ * The OR-merge itself, over rows already read — shared by the query path above
+ * and the notebook path in getAllPermissionsForRoles(), so there is one merge
+ * rule, not two copies that can drift.
+ */
+function mergeRoleRows(
+  rows: Pick<RolePermRow, "pageKey" | "canView" | "canImport" | "canExport" | "canEdit" | "canDelete">[],
+): Record<string, PagePermissions> {
   const merged: Record<string, PagePermissions> = {};
   for (const row of rows) {
     const existing = merged[row.pageKey];
@@ -812,6 +846,12 @@ export async function checkPermission(
     return (await userPagePerms(userId, pageKey))[action];
   }
 
+  if (await notebookOn()) {
+    const row = (await accessNotebook.getRoleRows([roleSlug])).find((r) => r.pageKey === pageKey);
+    if (!row) return false;
+    return row[action];
+  }
+
   const perm = await prisma.role_permissions.findUnique({
     where: { roleSlug_pageKey: { roleSlug, pageKey } },
   });
@@ -840,6 +880,12 @@ export async function checkAnyPermission(
     return (await userPagePerms(userId, pageKey))[action];
   }
 
+  if (await notebookOn()) {
+    return (await accessNotebook.getRoleRows(roleSlugs))
+      .filter((r) => r.pageKey === pageKey)
+      .some((r) => r[action] === true);
+  }
+
   const rows = await prisma.role_permissions.findMany({
     where:  { roleSlug: { in: roleSlugs }, pageKey },
     select: { canView: true, canEdit: true, canImport: true, canExport: true, canDelete: true },
@@ -861,6 +907,18 @@ export async function getPagePermissions(
   const userId = await userModeId(access);
   if (userId !== null) {
     return userPagePerms(userId, pageKey);
+  }
+
+  if (await notebookOn()) {
+    const row = (await accessNotebook.getRoleRows([roleSlug])).find((r) => r.pageKey === pageKey);
+    if (!row) return ALL_FALSE;
+    return {
+      canView:   row.canView,
+      canImport: row.canImport,
+      canExport: row.canExport,
+      canEdit:   row.canEdit,
+      canDelete: row.canDelete,
+    };
   }
 
   const perm = await prisma.role_permissions.findUnique({
@@ -894,6 +952,20 @@ export async function getAllPermissionsForRole(
   const userId = await userModeId(access);
   if (userId !== null) {
     return userAllPerms(userId);
+  }
+
+  if (await notebookOn()) {
+    const cached: Record<string, PagePermissions> = {};
+    for (const row of await accessNotebook.getRoleRows([roleSlug])) {
+      cached[row.pageKey] = {
+        canView:   row.canView,
+        canImport: row.canImport,
+        canExport: row.canExport,
+        canEdit:   row.canEdit,
+        canDelete: row.canDelete,
+      };
+    }
+    return cached;
   }
 
   const rows = await prisma.role_permissions.findMany({
@@ -937,6 +1009,10 @@ export async function getAllPermissionsForRoles(
   const userId = await userModeId(access);
   if (userId !== null) {
     return userAllPerms(userId);
+  }
+
+  if (await notebookOn()) {
+    return mergeRoleRows(await accessNotebook.getRoleRows(roleSlugs));
   }
 
   return mergeRolePerms(roleSlugs);

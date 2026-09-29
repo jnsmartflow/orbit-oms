@@ -1,4 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import {
+  ACCESS_CACHE_KEY,
+  ACCESS_SOURCE_KEY,
+  ACCESS_VERSION_KEY,
+  parseAccessState,
+  type AccessSource,
+  type AccessState,
+} from "@/lib/access/access-state";
 
 /**
  * ACCESS_SOURCE — the runtime switch that decides where permissions are read
@@ -36,40 +44,66 @@ import { prisma } from "@/lib/prisma";
  * genuinely a 30-second transition, not an instant one.
  */
 
-export type AccessSource = "role" | "user";
+export type { AccessSource, AccessState } from "@/lib/access/access-state";
 
 const TTL_MS = 30_000;
-const CONFIG_KEY = "ACCESS_SOURCE";
 
-let cached: { value: AccessSource; at: number } | null = null;
+// ── The access notebook's two keys ride the SAME read (2026-09-30) ─────────
+// ACCESS_VERSION — a counter bumped by database triggers on every access table
+//   (sql/2026-09-30-access-notebook.sql). A change drops every instance's
+//   notebook within one TTL. Missing row → null = "unknown" (the notebook then
+//   trusts an entry for 30 s at most — lib/access/notebook.ts).
+// ACCESS_CACHE — the notebook's kill switch. ONLY the exact string "on"
+//   (trimmed, lower-cased) turns it on; a missing row or any other value is OFF,
+//   which is the pre-notebook code path. Same rule as ACCESS_SOURCE: only the
+//   exact new value switches the new thing on. On a READ ERROR this instance
+//   keeps the last value it successfully read (else OFF) — flipping to OFF on an
+//   error would multiply database reads at the exact moment the database is
+//   struggling. The interpretation of all three keys is the pure
+//   parseAccessState() in lib/access/access-state.ts (unit-tested).
+
+let cached: { value: AccessState; at: number } | null = null;
+/** Last successfully read ACCESS_CACHE value on this instance (null = never read). */
+let lastKnownCacheOn: boolean | null = null;
+
+/**
+ * The live access state — source, notebook version and notebook switch — from
+ * ONE system_config read per instance per TTL, then memory. Never throws —
+ * every failure path returns source "role", version null (unknown), and the
+ * last known cache switch (else off).
+ */
+export async function getAccessState(): Promise<AccessState> {
+  const now = Date.now();
+  if (cached && now - cached.at < TTL_MS) return cached.value;
+
+  let value: AccessState;
+  try {
+    const rows = await prisma.system_config.findMany({
+      where:  { key: { in: [ACCESS_SOURCE_KEY, ACCESS_VERSION_KEY, ACCESS_CACHE_KEY] } },
+      select: { key: true, value: true },
+    });
+    // Only the exact string "user" flips the source. Anything else — absent
+    // row, null, "USER ", "1", "true", a typo — stays on "role".
+    value = parseAccessState(new Map(rows.map((r) => [r.key, r.value])), lastKnownCacheOn);
+    lastKnownCacheOn = value.cacheOn;
+  } catch (err) {
+    // Cache the SAFE answer for a full TTL rather than hammering a database
+    // that is already failing. A transient error therefore pins role mode for
+    // at most 30s, which is the direction that cannot hurt anyone.
+    console.error("[access] could not read ACCESS_SOURCE; falling back to role mode:", err);
+    value = parseAccessState(null, lastKnownCacheOn);
+  }
+
+  cached = { value, at: now };
+  return value;
+}
 
 /**
  * The live access source. Cheap: one query per instance per TTL, then memory.
  * Never throws — every failure path returns "role".
  */
 export async function getAccessSource(): Promise<AccessSource> {
-  const now = Date.now();
-  if (cached && now - cached.at < TTL_MS) return cached.value;
-
-  let value: AccessSource = "role";
-  try {
-    const row = await prisma.system_config.findUnique({
-      where:  { key: CONFIG_KEY },
-      select: { value: true },
-    });
-    // Only the exact string "user" flips it. Anything else — absent row, null,
-    // "USER ", "1", "true", a typo — stays on "role".
-    if (row?.value?.trim().toLowerCase() === "user") value = "user";
-  } catch (err) {
-    // Cache the SAFE answer for a full TTL rather than hammering a database
-    // that is already failing. A transient error therefore pins role mode for
-    // at most 30s, which is the direction that cannot hurt anyone.
-    console.error("[access] could not read ACCESS_SOURCE; falling back to role mode:", err);
-    value = "role";
-  }
-
-  cached = { value, at: now };
-  return value;
+  return (await getAccessState()).source;
 }
 
 /**
@@ -82,3 +116,6 @@ export function clearAccessSourceCache(): void {
 
 /** The TTL, so the UI can tell the owner how long a flip takes to land. */
 export const ACCESS_SOURCE_TTL_MS = TTL_MS;
+
+/** Same TTL — how long an ACCESS_VERSION bump or ACCESS_CACHE flip takes to land. */
+export const ACCESS_STATE_TTL_MS = TTL_MS;

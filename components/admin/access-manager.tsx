@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Search, Info, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Search, Info, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // /admin/access — per-user page access, by person.
@@ -190,12 +191,58 @@ export function AccessManager({
     return m;
   }, [sections]);
 
+  // "Apply access changes now" — bumps ACCESS_VERSION (POST /api/admin/access/apply)
+  // so every server instance drops its cached access within ~30 s. Saves on this
+  // screen already do that through the database triggers; the lever is for a
+  // change the triggers cannot see. Secondary style on purpose: Save changes is
+  // this screen's one brand button (CLAUDE_UI.md §10).
+  const [applying, setApplying] = useState(false);
+  async function applyAccessNow() {
+    setApplying(true);
+    try {
+      const res = await fetch("/api/admin/access/apply", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data?.error === "string" ? data.error : "Could not apply access changes.");
+        return;
+      }
+      toast.success("Access changes sent — every screen within 30 s.");
+    } catch {
+      toast.error("Could not apply access changes — check your connection.");
+    } finally {
+      setApplying(false);
+    }
+  }
+
   return (
     <div className="p-5">
-      <h1 className="text-[14px] font-semibold text-gray-900">Access</h1>
-      <p className="text-[11px] text-gray-400 mt-0.5">
-        Who can see what — one person at a time
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[14px] font-semibold text-gray-900">Access</h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Who can see what — one person at a time
+          </p>
+        </div>
+        <div className="flex flex-col items-end">
+          <button
+            type="button"
+            onClick={applyAccessNow}
+            disabled={applying}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-[7px] border px-3 py-1.5 text-[11.5px] font-medium",
+              applying
+                ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
+            )}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", applying && "animate-spin")} />
+            Apply access changes now
+          </button>
+          <p className="text-[10.5px] text-gray-400 mt-1">
+            Changes reach every screen within about 30 seconds.
+          </p>
+        </div>
+      </div>
 
       {/* ── WHICH SOURCE IS LIVE ─────────────────────────────────────────────
           Driven by the same cached ACCESS_SOURCE value every resolver reads,

@@ -16,6 +16,14 @@ async function main() {
     { key: "aging_priority_days", value: "2" },
     { key: "aging_alert_days", value: "3" },
     { key: "change_queue_urgent_alert", value: "true" },
+    // The access notebook (2026-09-30, sql/2026-09-30-access-notebook.sql).
+    // Seeded in the SAFE state: ACCESS_CACHE 'off' = the pre-notebook code
+    // path. A reseed therefore switches the notebook off and resets the
+    // version — both safe: version changes are compared with !==, so any
+    // change (even backwards) drops every instance's notebook.
+    // ⚠ The bump TRIGGERS are schema, not seed data — they come from the SQL file.
+    { key: "ACCESS_VERSION", value: "1" },
+    { key: "ACCESS_CACHE", value: "off" },
   ];
 
   for (const row of configRows) {

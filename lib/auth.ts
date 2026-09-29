@@ -5,6 +5,9 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { authConfig, type RolloutStage } from "@/auth.config";
 import { istDateString } from "@/lib/attendance/date";
+import { getAccessState } from "@/lib/access/source";
+import { accessNotebook } from "@/lib/access/notebook-store";
+import { readRefreshClaims } from "@/lib/access/notebook";
 
 // ── Validation schema ──────────────────────────────────────────────────────────
 const loginSchema = z.object({
@@ -14,9 +17,15 @@ const loginSchema = z.object({
 
 // ── Attendance gate helpers (Node-only — Prisma access) ───────────────────────
 //
-// Stale window: cached rollout flags are re-read from DB this often. Lower
-// = faster propagation when admin toggles rolloutStage; higher = fewer DB
-// hits per session refresh. 5 min matches the diagnosis trade-off.
+// Stale window: the refresh branch below skips the DB while the token's
+// rolloutStageStaleAt is in the future, and stamps it forward after a re-read.
+// ⚠ In practice the stamp NEVER ADVANCES in the cookie: a bare auth() (route
+// handlers, layouts, pages) throws away the re-encoded token, and middleware's
+// Edge jwt callback re-signs the old value. So after minute 5 of a session the
+// OFF path re-reads the users row + attendance_settings on EVERY auth() —
+// measured in docs/prompts/drafts/code-discovery-2026-09-29-disk-io.md §C.
+// With system_config ACCESS_CACHE = 'on' the refresh reads the per-instance
+// access notebook instead (lib/access/notebook.ts) and this window is not used.
 const STALE_MS = 5 * 60 * 1000;
 
 interface UserAttendanceFlags {
@@ -67,9 +76,9 @@ async function fetchLastCheckInForToday(
   return record?.attendanceDate ?? null;
 }
 
-// Mirror of the middleware gate logic — kept in sync there. Lives here so
-// the jwt callback can skip the lastCheckInDate fetch when the gate doesn't
-// apply to this user (Q3 refinement).
+// Decides whether the jwt callback fetches lastCheckInDate for this user.
+// (It once mirrored a middleware attendance gate; that gate was removed in
+// 236f9743 and nothing reads lastCheckInDate today — CLAUDE_ATTENDANCE.md §3.)
 function gateAppliesTo(role: string | undefined, flags: UserAttendanceFlags): boolean {
   if (flags.rolloutStage === "OFF") return false;
   if (flags.attendanceExempt) return false;
@@ -114,6 +123,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             userId,
             istDateString(),
           );
+          // This user's own notebook entry on THIS instance is now older than
+          // what was just read — forget it (memory only; the consent column
+          // deliberately does not bump ACCESS_VERSION for every instance).
+          accessNotebook.invalidateUser(userId);
         }
         return token;
       }
@@ -126,6 +139,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         const userId = user.id ? parseInt(user.id, 10) : NaN;
         if (!Number.isFinite(userId)) return token;
+
+        // A fresh sign-in must never be judged by an older notebook entry on
+        // this instance (e.g. one cached while the account was inactive).
+        // Memory only — the reads below are fresh either way.
+        accessNotebook.invalidateUser(userId);
 
         const flags = await fetchUserAttendanceFlags(userId);
         token.rolloutStage = flags.rolloutStage;
@@ -143,6 +161,46 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         } else {
           token.lastCheckInDate = null;
         }
+        return token;
+      }
+
+      // ── Refresh path, ACCESS NOTEBOOK ON (system_config ACCESS_CACHE='on') ──
+      // Reads the per-instance notebook instead of the database. No stale-
+      // window gate: the check is a memory read, and a deactivation must not
+      // wait for minute 5 of a session. With the switch anything but 'on' this
+      // block is skipped and the pre-notebook code below runs unchanged.
+      // lib/access/notebook.ts has the trust rules; the plan of record is
+      // docs/prompts/drafts/code-plan-2026-09-29-auth-access-notebook.md.
+      if ((await getAccessState()).cacheOn) {
+        const nbUserId = token.id ? parseInt(token.id as string, 10) : NaN;
+        if (!Number.isFinite(nbUserId)) return token;
+
+        const refresh = await readRefreshClaims(accessNotebook, nbUserId);
+
+        if (refresh.kind === "failed") {
+          // Decision 3 (2026-09-29): a failed read keeps the token's OWN claims
+          // — exactly what the first 5 minutes of every session carry today.
+          // It never deactivates anyone, never grants anything new, and nothing
+          // is cached (the notebook stores only successful reads). The pre-
+          // notebook path instead throws here, which makes auth() return null
+          // and bounces every user to /login while the database is struggling.
+          console.error("[auth] access notebook read failed; keeping the token's own claims:", refresh.error);
+          return token;
+        }
+
+        // Deactivation mid-session: no users row, or isActive = false → null.
+        // @auth/core then returns a null session, so auth() is null and the
+        // person is treated as signed out on this and every later request;
+        // sign-in is refused by authorize() below.
+        if (refresh.kind === "inactive") return null;
+
+        token.rolloutStage = refresh.claims.rolloutStage as RolloutStage;
+        token.attendanceTestUser = refresh.claims.attendanceTestUser;
+        token.attendanceExempt = refresh.claims.attendanceExempt;
+        token.attendanceConsentVersion = refresh.claims.attendanceConsentVersion;
+        token.isSuperuser = refresh.claims.isSuperuser;
+        // Decision 8: lastCheckInDate is NOT re-read here — nothing reads the
+        // claim (CLAUDE_ATTENDANCE.md §3); it keeps its sign-in / update() value.
         return token;
       }
 

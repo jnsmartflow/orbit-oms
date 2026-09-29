@@ -41,6 +41,23 @@ export async function PATCH(req: Request) {
   // `value` is selected too so the audit line can carry the BEFORE state: this
   // read already existed for the unknown-key guard, so nothing new is queried
   // (audit rule — reuse the read the route already does).
+  // ACCESS_* keys (ACCESS_SOURCE, ACCESS_VERSION, ACCESS_CACHE) decide how
+  // access itself is resolved and cached. They are changed in the Supabase SQL
+  // Editor (the documented one-liners) or bumped by "Apply access changes now"
+  // on /admin/access — never through this generic form API, whose whitelist
+  // does not show them anyway (components/admin/system-config-form.tsx).
+  const reserved = parsed.data.updates.filter((u) => u.key.trim().toUpperCase().startsWith("ACCESS_"));
+  if (reserved.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          `${reserved.map((u) => u.key).join(", ")} cannot be changed here — ACCESS_* keys are ` +
+          `changed in the Supabase SQL Editor, or with "Apply access changes now" on /admin/access.`,
+      },
+      { status: 400 },
+    );
+  }
+
   const existing = await prisma.system_config.findMany({ select: { key: true, value: true } });
   const existingKeys = new Set(existing.map((r) => r.key));
   const valueByKey   = new Map(existing.map((r) => [r.key, r.value]));
