@@ -6,12 +6,12 @@ import type { FloorScope } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
 
-const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
+const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT / Cross"];
 function parseScope(v: string | null): FloorScope {
   return (SCOPES as string[]).includes(v ?? "") ? (v as FloorScope) : "All";
 }
 
-// GET /api/floor/cancelled?scope=All|Local|Upcountry|IGT — today's cancelled
+// GET /api/floor/cancelled?scope=All|Local|Upcountry|IGT / Cross (URL-encoded) — today's cancelled
 // bills (design §9), newest-cancelled first.
 export async function GET(req: Request) {
   const session = await auth();

@@ -10,7 +10,11 @@ import type { HeldSinceSource } from "./hold-log";
 export type { SortRule };
 
 // Delivery-type scope (design §5.1). "All" means no filter.
-export type FloorScope = "All" | "Local" | "Upcountry" | "IGT";
+// "IGT / Cross" (owner, 2026-09-29) is ONE tab covering TWO delivery types —
+// it replaced the "IGT" tab. A scope key is therefore NOT always a type name:
+// read the types a tab covers from `scopeTypes` (lib/floor/scope.ts), never by
+// comparing a type name to the key.
+export type FloorScope = "All" | "Local" | "Upcountry" | "IGT / Cross";
 
 // Render-time slot suggestion — what the left-rail Release button offers.
 // Null (elsewhere) means the UI shows grey "Set slot".

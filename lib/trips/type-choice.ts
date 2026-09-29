@@ -15,6 +15,10 @@
 //   2. The type with the most bills wins.
 //   3. A tie goes to the ACTIVE TAB when a typed tab is selected and it is one
 //      of the tied types — on the Upcountry tab, a Local/Upcountry tie is U.
+//      A tab can cover MORE than one type ("IGT / Cross", 2026-09-29): the tie
+//      goes to the tab when exactly ONE of the tied types is on it. When two
+//      are (IGT and Cross tie on that tab), the first-ticked rule below runs
+//      among those two.
 //   4. Otherwise (the All tab, or a tab that is not among the tied types) the
 //      type of the FIRST BILL TICKED among the tied types wins.
 // No type is a special default: Local does not win a tie on the Upcountry tab.
@@ -23,6 +27,8 @@
 // call it and a test can check it without a database.
 
 import type { FloorScope } from "@/lib/floor/types";
+// Client-safe (types only, no prisma) — the one tab → types map.
+import { scopeTypes } from "@/lib/floor/scope";
 
 /**
  * @param typesInTickOrder each ticked bill's delivery type name, in the order
@@ -48,6 +54,11 @@ export function chooseTripTypeName(
   // Kept in first-ticked order, so tied[0] IS rule 4.
   const tied = firstSeen.filter((n) => counts.get(n) === max);
   if (tied.length === 1) return tied[0];
-  if (scope !== "All" && tied.includes(scope)) return scope;
+  // Rule 3, by the TYPES the tab covers — never by comparing a type name to the
+  // scope key ("IGT / Cross" is not a type name). `onTab` keeps first-ticked
+  // order, so onTab[0] is rule 4 applied to the tab's own tied types.
+  const tabTypes = scopeTypes(scope);
+  const onTab = tabTypes === null ? [] : tied.filter((n) => tabTypes.includes(n));
+  if (onTab.length > 0) return onTab[0];
   return tied[0];
 }

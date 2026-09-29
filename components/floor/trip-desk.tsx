@@ -735,6 +735,16 @@ export function TripDesk({
         <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
           Nothing is waiting to be planned. New bills land here as they arrive.
         </p>
+        {/* IGT / Cross (2026-09-29): an IGT or Cross bill is often in the tint
+            room, which the pool leaves out — so the tab read as broken. The
+            count is the Tinting tab's own (`tintingTabRows`, isTintRoomRow), so
+            the line and the tab cannot disagree. No new query. */}
+        {scope === "IGT / Cross" && tintingTabRows.length > 0 && (
+          <p className="mt-1 text-[11.5px] leading-relaxed text-gray-400">
+            {tintingTabRows.length} IGT / Cross bill{tintingTabRows.length === 1 ? " is" : "s are"} in tinting — see
+            the Tinting tab.
+          </p>
+        )}
       </div>
     );
     // Every TRUCK bill is planned and only Hand bills are left (2026-09-24,

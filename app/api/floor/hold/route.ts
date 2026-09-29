@@ -6,12 +6,12 @@ import type { FloorScope } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
 
-const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
+const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT / Cross"];
 function parseScope(v: string | null): FloorScope {
   return (SCOPES as string[]).includes(v ?? "") ? (v as FloorScope) : "All";
 }
 
-// GET /api/floor/hold?scope=All|Local|Upcountry|IGT — held bills, all dates
+// GET /api/floor/hold?scope=All|Local|Upcountry|IGT / Cross (URL-encoded) — held bills, all dates
 // (a pure open state, design §8), recent-held first.
 export async function GET(req: Request) {
   const session = await auth();

@@ -12,7 +12,7 @@
 //           kilos, "No route" always the last line. Display-only: nothing is
 //           written for it (owner, 2026-09-19).
 // All the same size, in one grid — see "The layout" below.
-// A tab with no clubs (All, IGT) keeps the old route rows
+// A tab with no clubs (All, IGT / Cross) keeps the old route rows
 // (ByRoute in trip-desk.tsx) — this component is not rendered there.
 //
 // 🔴 DISPLAY ONLY. Nothing here writes, and nothing here decides what the pool

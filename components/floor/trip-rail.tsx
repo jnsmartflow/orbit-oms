@@ -20,7 +20,7 @@
 // this rail and the Add-to-trip list cannot disagree about it.
 //
 // 🔴 THE PAGE'S SCOPE FILTERS IT; IT HAS NO TABS OF ITS OWN. All / Local /
-// Upcountry / IGT is the page's own control. A trip is in scope by its OWN
+// Upcountry / IGT / Cross is the page's own control. A trip is in scope by its OWN
 // delivery type — the letter in its number, what the planner declared it to be
 // (`tripInScope`, lib/floor/scope.ts). An L- trip is on All and Local only, even
 // when it carries a Kamrej drop: that drop is not the Upcountry planner's
@@ -113,7 +113,7 @@ export function TripRail({
    * reads this.
    */
   anchorIso: string;
-  /** The page's All / Local / Upcountry / IGT scope. Filters trips by their own type. */
+  /** The page's All / Local / Upcountry / IGT / Cross scope. Filters trips by their own type. */
   scope: FloorScope;
   /** Desk control. The card's "Shown" marker appears only while it is on. */
   gateOn: boolean;

@@ -5,7 +5,7 @@
 // always applied in JS, AFTER the rows were fetched: lib/floor/queries.ts ran
 // `if (!inScope(...)) continue;` inside its row-building loops, and not one
 // `findMany` referenced scope. Every scope value therefore cost the IDENTICAL
-// database work, and `All` is a strict superset of Local / Upcountry / IGT by
+// database work, and `All` is a strict superset of Local / Upcountry / IGT / Cross by
 // construction.
 //
 // So the client now fetches ONCE, unscoped, and re-derives each scope's view
@@ -20,11 +20,36 @@
 
 import type { FloorScope, FloorBoardResult } from "./types";
 
+/**
+ * The delivery_type_master names each typed tab covers.
+ *
+ * 🔴 "IGT / Cross" IS ONE TAB FOR TWO TYPES (owner, 2026-09-29). It replaced
+ * the "IGT" tab; there was never a Cross tab, so a Cross bill showed only
+ * under All. The BILL still keeps its own type — an IGT bill is numbered I-, a
+ * Cross bill C- (lib/trips/number.ts); only the tab groups them.
+ *
+ * ⚠ THIS IS THE ONE PLACE A TAB IS MAPPED TO TYPES. Anything asking "is this
+ * type on this tab" calls `scopeTypes` / `inScope`; nothing compares a type
+ * name to a scope key (the key "IGT / Cross" is not a type name).
+ */
+const SCOPE_TYPES: Record<Exclude<FloorScope, "All">, readonly string[]> = {
+  Local: ["Local"],
+  Upcountry: ["Upcountry"],
+  "IGT / Cross": ["IGT", "Cross"],
+};
+
+/** The delivery type names a tab covers; null on All (every type, and none). */
+export function scopeTypes(scope: FloorScope): readonly string[] | null {
+  return scope === "All" ? null : SCOPE_TYPES[scope];
+}
+
 /** Does a row's delivery type belong to this scope? `All` admits everything,
- *  including a null delivery type; a named scope matches by exact string.
- *  Unchanged from the original in lib/floor/queries.ts — moved, not rewritten. */
+ *  including a null delivery type; a typed tab admits the types it covers
+ *  (`scopeTypes`). A null type is on All only — owner, 2026-09-29: unmatched
+ *  bills stay on All until trips for them are blocked. */
 export function inScope(deliveryType: string | null, scope: FloorScope): boolean {
-  return scope === "All" || deliveryType === scope;
+  if (scope === "All") return true;
+  return deliveryType !== null && SCOPE_TYPES[scope].includes(deliveryType);
 }
 
 /** Narrow any list of rows carrying a `deliveryType` to one scope. */
@@ -47,8 +72,9 @@ interface TripTypes {
 /**
  * Does a trip belong on this tab? By the trip's OWN delivery type — the one it
  * was numbered under, the letter in its number — and nothing else. `All` admits
- * every trip, exactly as `inScope` admits every row. A Cross trip shows under
- * All only, because there is no Cross tab.
+ * every trip, exactly as `inScope` admits every row. An I- trip and a C- trip
+ * both list under "IGT / Cross" (2026-09-29; until then a Cross trip showed
+ * under All only, because there was no Cross tab).
  *
  * 🔴 NOT BY ITS BILLS' TYPES (owner, 2026-09-18, reversing 41c5dab8 the same
  * day). The letter is what the planner DECLARED the trip to be. L-260918-03 is

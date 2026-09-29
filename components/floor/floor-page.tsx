@@ -90,7 +90,7 @@ interface TripOptions {
   transporters: TransporterOption[];
 }
 
-const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
+const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT / Cross"];
 
 // Every board/hold/cancelled fetch asks for the UNSCOPED set and the chips
 // narrow it client-side (lib/floor/scope.ts).
@@ -2627,7 +2627,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
               onStartAddingTo={startAddingTo}
               onDoneAdding={stopAddingTo}
               tripBusyId={tripBusyId}
-              // The page's All / Local / Upcountry / IGT scope, for the RAIL
+              // The page's All / Local / Upcountry / IGT / Cross scope, for the RAIL
               // (slice 6). The rail filters trips by their own delivery type;
               // it adds no tabs of its own.
               scope={scope}

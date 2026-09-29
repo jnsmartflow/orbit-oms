@@ -9,12 +9,12 @@ import type { FloorScope } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
 
-const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
+const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT / Cross"];
 function parseScope(v: string | null): FloorScope {
   return (SCOPES as string[]).includes(v ?? "") ? (v as FloorScope) : "All";
 }
 
-// GET /api/floor/board?scope=All|Local|Upcountry|IGT&mode=live|history&date=YYYY-MM-DD
+// GET /api/floor/board?scope=All|Local|Upcountry|IGT / Cross (URL-encoded)&mode=live|history&date=YYYY-MM-DD
 // Returns the floor board + the picker roster. `mode=history` requires `date`.
 //
 // 🔴 THE `rail` FEED IS GONE (2026-09-13) AND THE ARM THAT FED IT IS NOT.
