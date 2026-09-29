@@ -2135,7 +2135,11 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
         : newTripTypeName;
       const deliveryType = opts.deliveryTypes.find((d) => d.name === typeName);
       if (!deliveryType) {
-        toast.error(`Could not match the delivery type "${typeName ?? "unknown"}" — nothing was created.`);
+        toast.error(
+          typeName === null
+            ? "These bills have no customer in Delivery Point Master. Add the customer first, then create the trip."
+            : `Could not match the delivery type "${typeName}" — nothing was created.`,
+        );
         return;
       }
 

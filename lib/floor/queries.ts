@@ -65,6 +65,7 @@ import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { isGiftBill } from "@/lib/orders/gift";
+import { dealerDisplayName } from "@/lib/orders/dealer-name";
 import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
@@ -937,7 +938,7 @@ export async function getFloorBoard(
     rows.push({
       orderId: order.id,
       obdNumber: order.obdNumber,
-      dealerName: dealer?.customerName ?? "(Unmatched)",
+      dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
       // ⚠ COMPILE-REQUIRED ONLY — NOT a Floor feature (2026-08-31).
       // `FloorBoardRow extends PickingQueueRow`, and Picking added
       // `dealerInMaster` alongside its SAP-name fallback (lib/picking/queue.ts).
@@ -946,13 +947,11 @@ export async function getFloorBoard(
       // (It briefly also fed a Picking card chip; that chip was removed
       // 2026-09-01 and its sole consumer is now lib/picking/search.ts.)
       //
-      // 🔴 NOTHING ON FLOOR READS IT, AND NOTHING ON FLOOR CHANGED. Floor's
-      // `dealerName` above still prints the literal, deliberately: Floor already
-      // shows a real name through `billToName` (billToByObd), so it never had
-      // Picking's blank-card problem. Whether Floor should ALSO fall back to
-      // orders.shipToCustomerName is a Floor decision for a Floor session
-      // (FLOOR §1 — Floor is a CALLER of Picking, and Picking must not reach in
-      // here to change what this board renders).
+      // 🔴 FLOOR NOW READS IT (2026-09-29). `dealerName` above falls back to
+      // SAP's own name (dealerDisplayName, owner decision 2026-09-29 — Picking's
+      // chain), so the name no longer says whether the dealer is in master. This
+      // flag does: lib/floor/search.ts matches the word "unmatched" off it, never
+      // off the name. Hold and Cancelled rows carry the same flag.
       //
       // Same expression as Picking's, so the flag cannot mean two things: it is
       // "did the effective dealer FK resolve", never `orders.customerMissing`.
@@ -1253,7 +1252,7 @@ export async function getFloorHold(
       orderId: order.id,
       obdNumber: order.obdNumber,
       isHand: order.handAt !== null,
-      dealerName: dealer?.customerName ?? "(Unmatched)",
+      dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
       smu: order.smu,
@@ -1431,7 +1430,7 @@ export async function getFloorCancelled(
       orderId: order.id,
       obdNumber: order.obdNumber,
       isHand: order.handAt !== null,
-      dealerName: dealer?.customerName ?? "(Unmatched)",
+      dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
       // The ship-to PAIR, exactly as getFloorBoard fills it.

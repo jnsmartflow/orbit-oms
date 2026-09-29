@@ -4,6 +4,7 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { computeDropKey, dropShipToCode } from "@/lib/trips/drop-key";
 import { logTripBills } from "@/lib/trips/activity";
+import { dealerDisplayName } from "@/lib/orders/dealer-name";
 
 export const dynamic = "force-dynamic";
 
@@ -273,8 +274,11 @@ export async function POST(
             // lib/picking/queue.ts uses for `dealerName`, so an unmatched bill
             // still names a real shop instead of printing "(Unmatched)" on a
             // driver's paperwork.
-            customerName:
-              customer?.customerName ?? order.shipToCustomerName ?? "(Unmatched)",
+            //
+            // `nonBlank` since 2026-09-29 (dealerDisplayName): a bare `??` let an
+            // empty or whitespace-only SAP name through and made a BLANK stop.
+            // Existing snapshots are not rewritten.
+            customerName: dealerDisplayName(customer?.customerName, order.shipToCustomerName),
             areaName: customer?.area?.name ?? null,
             routeName: customer?.area?.primaryRoute?.name ?? null,
           },
