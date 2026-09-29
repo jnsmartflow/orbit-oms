@@ -724,14 +724,17 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
         {/* Body — branches by stage */}
         {(stage === "idle" || stage === "parsing" || stage === "submitting") && (
-          <div className="flex-1 min-h-[560px] overflow-y-auto p-6 relative">
+          <div className="flex-1 min-h-[560px] overflow-y-auto p-6 relative flex flex-col">
             {isInFlight && (
               <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center pointer-events-none">
                 <Loader2 className="animate-spin text-gray-500" size={28} />
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]">
+            {/* The grid stretches to the full body height; the right column is
+                a flex column whose paste box / dropzone takes the free space, so
+                the date + Preview row lands on the body's bottom padding. */}
+            <div className="grid flex-1 grid-cols-1 gap-6 md:grid-cols-[280px_1fr]">
             {/* LEFT — source cards. "Download blank template" was removed
                 2026-09-29: neither public/import-templates/*.xlsx exists (only
                 the README is tracked), so the link was a 404 on every format. */}
@@ -768,11 +771,14 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             </div>
 
             {/* RIGHT — what to import, date, preview */}
-            <div className="min-w-0">
+            <div className="min-w-0 flex flex-col">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-500">
               {format === "sap-paste" ? "Paste" : "File"}
             </p>
 
+            {/* Grows to fill the column — the empty paste box / dropzone inside
+                takes all of it; a loaded summary or file chip sits at its top. */}
+            <div className="flex min-h-[240px] flex-1 flex-col">
             {/* Paste area (states A / B / C) OR the file area, unchanged */}
             {format === "sap-paste" ? (
               <>
@@ -785,7 +791,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                     {/* State A. The textarea is only a focus + paste target: it
                         never holds text — the modal-level paste listener takes
                         the clipboard and swallows the native insert. */}
-                    <div className="relative h-[240px] rounded-xl border-[1.5px] border-dashed border-ink-200 bg-ink-25 transition-colors focus-within:border-ink-400 focus-within:bg-white">
+                    <div className="relative flex-1 min-h-[240px] rounded-xl border-[1.5px] border-dashed border-ink-200 bg-ink-25 transition-colors focus-within:border-ink-400 focus-within:bg-white">
                       <textarea
                         ref={pasteSinkRef}
                         value=""
@@ -808,7 +814,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               </>
             ) : file === null ? (
               <div
-                className="h-[240px] rounded-xl border-[1.5px] border-dashed border-ink-200 bg-ink-25 flex flex-col items-center justify-center text-center hover:border-ink-400 cursor-pointer transition-colors"
+                className="flex-1 min-h-[240px] rounded-xl border-[1.5px] border-dashed border-ink-200 bg-ink-25 flex flex-col items-center justify-center text-center hover:border-ink-400 cursor-pointer transition-colors"
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
@@ -851,6 +857,16 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               </div>
             )}
 
+            {/* Picker error (file too large / wrong type) — inside the growing
+                area so the date row stays on the bottom edge. */}
+            {pickerError && (
+              <div className="mt-3 bg-red-50 border border-red-200 text-red-700 text-[11px] rounded px-3 py-2">
+                {pickerError}
+              </div>
+            )}
+            </div>
+            {/* /growing area */}
+
             {/* OBD Date picker — SAP file AND paste. The SAP list has no date
                 column (19 columns, same as the .xlsx), so the paste cannot
                 supply it: defaults to today, exactly as for the file. */}
@@ -858,7 +874,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             {/* OBD Date is in the WARN family on purpose — amber = attention
                 (UI §2.1): a wrong date silently mis-stamps every bill. Not red
                 (error only), not brand. */}
-            <div className="mt-5 grid grid-cols-1 items-end gap-4 md:grid-cols-2">
+            <div className="mt-6 grid grid-cols-1 items-end gap-6 md:grid-cols-2">
             {isSapLike ? (
               <div>
                 <label className="text-[11px] font-semibold text-warn-text uppercase tracking-[0.06em] block mb-2">
@@ -869,7 +885,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                   value={obdEmailDate}
                   onChange={(e) => setObdEmailDate(e.target.value)}
                   disabled={isInFlight}
-                  className="w-full border border-warn bg-warn-bg rounded-lg px-3 py-2.5 text-[14px] font-mono font-semibold text-warn-text focus:outline-none focus:ring-2 focus:ring-warn/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full h-12 border border-warn bg-warn-bg rounded-xl px-3.5 text-[14px] font-mono font-semibold text-warn-text focus:outline-none focus:ring-2 focus:ring-warn/20 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
             ) : (
@@ -878,7 +894,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
             {/* Preview toggle row */}
             <div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 px-3.5 py-3">
+              <div className="flex h-12 items-center justify-between gap-3 rounded-xl border border-ink-100 px-3.5">
                 <div>
                   <p className="text-[13px] font-semibold text-ink-900">Preview before import</p>
                 </div>
@@ -905,14 +921,6 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             </div>
             </div>
             {/* /OBD date + Preview */}
-
-
-            {/* Picker error (file too large / wrong type) */}
-            {pickerError && (
-              <div className="mt-3 bg-red-50 border border-red-200 text-red-700 text-[11px] rounded px-3 py-2">
-                {pickerError}
-              </div>
-            )}
             </div>
             {/* /RIGHT */}
             </div>
@@ -941,14 +949,6 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                   }`}
                 >
                   SAP file
-                </button>
-                <button
-                  disabled
-                  className={`px-[14px] py-[5px] text-[11px] rounded-[5px] cursor-not-allowed ${
-                    format === "manual-template" ? "bg-gray-900 text-white font-medium" : "text-gray-500"
-                  }`}
-                >
-                  Manual template
                 </button>
               </div>
             </div>
@@ -1002,14 +1002,6 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                   }`}
                 >
                   SAP file
-                </button>
-                <button
-                  disabled
-                  className={`px-[14px] py-[5px] text-[11px] rounded-[5px] cursor-not-allowed ${
-                    format === "manual-template" ? "bg-gray-900 text-white font-medium" : "text-gray-500"
-                  }`}
-                >
-                  Manual template
                 </button>
               </div>
             </div>
@@ -1135,7 +1127,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 type="button"
                 onClick={handlePrimaryFromIdle}
                 disabled={!canSubmit || isInFlight}
-                className={`text-[11px] font-medium rounded-[5px] px-3 py-1.5 inline-flex items-center gap-1.5 ${
+                className={`h-9 px-4 text-[13px] font-medium rounded-lg inline-flex items-center gap-1.5 ${
                   !canSubmit
                     ? "bg-gray-300 text-white cursor-not-allowed"
                     : previewEnabled
@@ -1170,7 +1162,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 type="button"
                 onClick={handleConfirmFromPreview}
                 disabled={importableCount === 0}
-                className={`text-[11px] font-medium rounded-[5px] px-3 py-1.5 ${
+                className={`h-9 px-4 text-[13px] font-medium rounded-lg ${
                   importableCount === 0
                     ? "bg-gray-300 text-white cursor-not-allowed"
                     : "bg-gray-900 hover:bg-gray-800 text-white cursor-pointer"
@@ -1193,7 +1185,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               <button
                 type="button"
                 onClick={handleConfirmYes}
-                className="text-[11px] bg-red-600 hover:bg-red-700 text-white font-medium rounded-[5px] px-3 py-1.5 cursor-pointer"
+                className="h-9 px-4 text-[13px] bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg cursor-pointer"
               >
                 Yes, Confirm
               </button>
@@ -1204,7 +1196,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             <button
               type="button"
               onClick={handleResultDone}
-              className="text-[11px] bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-[5px] px-4 py-1.5 cursor-pointer"
+              className="h-9 px-4 text-[13px] bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-lg cursor-pointer"
             >
               Done
             </button>
@@ -1222,7 +1214,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               <button
                 type="button"
                 onClick={handleErrorTryAgain}
-                className="text-[11px] bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-[5px] px-3 py-1.5 cursor-pointer"
+                className="h-9 px-4 text-[13px] bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-lg cursor-pointer"
               >
                 Try Again
               </button>
