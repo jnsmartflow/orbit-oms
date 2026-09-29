@@ -29,6 +29,7 @@ import {
 } from "@/lib/sap-paste/read-paste";
 import type { RawSapRow } from "@/lib/sap-parser/types";
 import { useImportProgress, type ImportJobRequest } from "@/components/import/import-progress-provider";
+import { ImportLogPanel } from "@/components/import/import-log-panel";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,14 @@ type Stage =
   | "error";
 
 type Format = "sap-paste" | "sap" | "manual-template";
+
+type Tab = "new" | "log";
+
+const FORMAT_CARDS: { format: Format; title: string; hint: string }[] = [
+  { format: "sap-paste",       title: "Paste from SAP",  hint: "Copy the OBD list off the SAP screen" },
+  { format: "sap",             title: "SAP file",        hint: "Upload a downloaded .xlsx" },
+  { format: "manual-template", title: "Manual template", hint: "Orbit's own template (combined_v2)" },
+];
 
 type UnifiedOutcome = "new" | "patch" | "skipped" | "error";
 
@@ -117,6 +126,11 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
   const [resultData,      setResultData]      = useState<SapConfirmResponse | ImportConfirmResponse | null>(null);
   const [errorMessage,    setErrorMessage]    = useState<string | null>(null);
   const [pickerError,     setPickerError]     = useState<string | null>(null);
+  // Today's log tab. BOTH panels stay mounted while the modal is open — the tab
+  // only hides one, so a loaded paste or picked file survives a look at the log.
+  const [tab,             setTab]             = useState<Tab>("new");
+  const [logRefreshKey,   setLogRefreshKey]   = useState<number>(0);
+  const [logCount,        setLogCount]        = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pasteSinkRef = useRef<HTMLTextAreaElement>(null);
@@ -137,6 +151,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
     setResultData(null);
     setErrorMessage(null);
     setPickerError(null);
+    setTab("new");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -206,9 +221,23 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
   // the summary; Ctrl+V still works from there via the modal-level listener.
 
   useEffect(() => {
-    if (!open || stage !== "idle" || format !== "sap-paste" || paste || pasteBlocked) return;
+    if (!open || tab !== "new" || stage !== "idle" || format !== "sap-paste" || paste || pasteBlocked) return;
     pasteSinkRef.current?.focus();
-  }, [open, stage, format, paste, pasteBlocked]);
+  }, [open, tab, stage, format, paste, pasteBlocked]);
+
+  // ── Today's log: refresh when a template import lands in the window ──────
+  // (The log also refetches when the modal opens — the panel mounts then — and
+  // on every Log tab select. SAP writes finish in the header pill with this
+  // window closed, so opening it again is what shows them.)
+  useEffect(() => {
+    if (stage === "result") setLogRefreshKey((k) => k + 1);
+  }, [stage]);
+
+  function selectTab(next: Tab): void {
+    if (stage === "parsing" || stage === "submitting") return;
+    setTab(next);
+    if (next === "log") setLogRefreshKey((k) => k + 1);
+  }
 
   // ── Paste: read a block into state B or C ────────────────────────────────
 
@@ -266,8 +295,9 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
     function onPaste(e: ClipboardEvent): void {
       const inSink = e.target === pasteSinkRef.current;
       // Only while the operator is choosing what to import. A loaded .xlsx
-      // locks the tabs, so a paste then is not ours to take either.
-      const accepting = (stage === "idle" || stage === "error") && file === null;
+      // locks the tabs, so a paste then is not ours to take either — and never
+      // on the Log tab, where a loaded paste would be invisible.
+      const accepting = tab === "new" && (stage === "idle" || stage === "error") && file === null;
       const text = e.clipboardData?.getData("text/plain") ?? "";
       const looksLikeReport =
         accepting && text !== "" && readPaste(text.slice(0, SAP_PASTE_SNIFF_CHARS)).headerLine !== null;
@@ -287,7 +317,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
       window.removeEventListener("paste", onPaste, { capture: true });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, file]);
+  }, [open, tab, stage, file]);
 
   /**
    * POST the pasted block. Returns the parsed body, or null when the server
@@ -634,24 +664,72 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-modal-title"
-        className="w-[520px] bg-white rounded-lg shadow-xl flex flex-col"
+        className="w-[880px] max-w-[calc(100vw-32px)] bg-white rounded-[14px] shadow-xl flex flex-col overflow-hidden"
         style={{ maxHeight: "calc(100vh - 80px)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header bar */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
-          <div id="import-modal-title" className="text-[13px] font-semibold text-gray-900">
+        {/* Header bar — title · tabs · close (mockup import-window-v2) */}
+        <div className="flex h-14 items-stretch border-b border-ink-100 flex-shrink-0">
+          <div id="import-modal-title" className="flex flex-1 items-center gap-2.5 px-5 text-[15px] font-bold text-ink-900">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-ink-900 text-white">
+              <Upload size={14} strokeWidth={2.4} />
+            </span>
             Import OBDs
+          </div>
+          <div role="tablist" className="flex items-stretch">
+            {([["new", "New import"], ["log", "Today's log"]] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => selectTab(key)}
+                disabled={isInFlight}
+                className={`relative flex items-center gap-2 border-l border-ink-100 px-[18px] text-[13px] font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+                  tab === key
+                    ? "bg-white text-ink-900 after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-brand-600"
+                    : "text-ink-500 hover:bg-ink-25 hover:text-ink-900 cursor-pointer"
+                }`}
+              >
+                {label}
+                {key === "log" && logCount !== null && (
+                  <span className="rounded-full bg-ink-50 px-[7px] py-0.5 text-[11px] font-semibold text-ink-600 tabular-nums">
+                    {logCount}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
           <button
             type="button"
             onClick={() => attemptClose("x")}
-            className="text-gray-400 hover:text-gray-600 cursor-pointer"
+            className="w-14 border-l border-ink-100 bg-ink-900 text-white hover:bg-ink-700 cursor-pointer grid place-items-center"
             aria-label="Close"
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
+
+        {/* TODAY'S LOG — mounted with the modal (fetches on open), hidden on the New tab */}
+        <div className={tab === "log" ? "flex flex-1 min-h-0 flex-col" : "hidden"}>
+          <div className="flex-1 overflow-y-auto">
+            <ImportLogPanel refreshKey={logRefreshKey} onCount={setLogCount} />
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-ink-100 bg-ink-25 px-5 py-3 flex-shrink-0">
+            <span className="text-[12px] text-ink-500">Today only · newest first · read-only</span>
+            <button
+              type="button"
+              onClick={() => attemptClose("x")}
+              className="rounded-lg border border-ink-200 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-ink-700 hover:bg-ink-25 cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        {/* NEW IMPORT — `contents` keeps the stage bodies and footer as direct
+            flex children of the dialog, exactly as before the tabs. */}
+        <div className={tab === "new" ? "contents" : "hidden"}>
 
         {/* Body — branches by stage */}
         {(stage === "idle" || stage === "parsing" || stage === "submitting") && (
@@ -662,66 +740,45 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
               </div>
             )}
 
-            {/* Format toggle row + Download blank template */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Source format</p>
+            <div className="grid grid-cols-1 gap-[22px] md:grid-cols-[220px_1fr]">
+            {/* LEFT — source cards + Download blank template */}
+            <div>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-500">Source</p>
+              <div className={`flex flex-col gap-1.5 ${isLocked ? "opacity-60" : ""}`}>
+                {FORMAT_CARDS.map((c) => (
+                  <button
+                    key={c.format}
+                    type="button"
+                    aria-pressed={format === c.format}
+                    disabled={isLocked || isInFlight}
+                    onClick={() => handleFormatChange(c.format)}
+                    className={`rounded-[10px] border px-3 py-2.5 text-left ${
+                      format === c.format
+                        ? "border-brand-600 bg-brand-50"
+                        : "border-ink-100 bg-white hover:bg-ink-25"
+                    } ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <b className="block text-[13px] font-semibold text-ink-900">{c.title}</b>
+                    <span className="text-[11.5px] text-ink-500">{c.hint}</span>
+                  </button>
+                ))}
                 <button
                   type="button"
                   onClick={handleDownloadTemplate}
-                  className="text-[10.5px] text-gray-500 hover:text-gray-900 cursor-pointer flex items-center gap-1 underline-offset-2 hover:underline"
+                  className="mt-2 flex items-center gap-1 pl-0.5 text-left text-[12px] text-brand-700 hover:underline underline-offset-2 cursor-pointer"
                   title="Download a blank import template"
                 >
-                  <DownloadIcon size={11} />
+                  <DownloadIcon size={12} />
                   Download blank template
                 </button>
               </div>
-              <div className={`inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px] ${isLocked ? "opacity-60" : ""}`}>
-                <button
-                  type="button"
-                  disabled={isLocked || isInFlight}
-                  onClick={() => handleFormatChange("sap-paste")}
-                  className={`px-[14px] py-[5px] text-[11px] rounded-[5px] ${
-                    format === "sap-paste"
-                      ? "bg-gray-900 text-white font-medium"
-                      : "text-gray-500 hover:bg-white/60"
-                  } ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  Paste from SAP
-                </button>
-                <button
-                  type="button"
-                  disabled={isLocked || isInFlight}
-                  onClick={() => handleFormatChange("sap")}
-                  className={`px-[14px] py-[5px] text-[11px] rounded-[5px] ${
-                    format === "sap"
-                      ? "bg-gray-900 text-white font-medium"
-                      : "text-gray-500 hover:bg-white/60"
-                  } ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  SAP file
-                </button>
-                <button
-                  type="button"
-                  disabled={isLocked || isInFlight}
-                  onClick={() => handleFormatChange("manual-template")}
-                  className={`px-[14px] py-[5px] text-[11px] rounded-[5px] ${
-                    format === "manual-template"
-                      ? "bg-gray-900 text-white font-medium"
-                      : "text-gray-500 hover:bg-white/60"
-                  } ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
-                >
-                  Manual template
-                </button>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1.5">
-                {format === "sap-paste"
-                  ? "Copy the OBD list straight off the SAP screen — header row and all. No download needed."
-                  : format === "sap"
-                  ? "SAP OBT export. Single .xlsx file."
-                  : "Manual template (combined_v2). Single .xlsx with two sheets."}
-              </p>
             </div>
+
+            {/* RIGHT — what to import, date, preview */}
+            <div className="min-w-0">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-500">
+              {format === "sap-paste" ? "Paste" : "File"}
+            </p>
 
             {/* Paste area (states A / B / C) OR the file area, unchanged */}
             {format === "sap-paste" ? (
@@ -816,9 +873,11 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             {/* OBD Date picker — SAP file AND paste. The SAP list has no date
                 column (19 columns, same as the .xlsx), so the paste cannot
                 supply it: defaults to today, exactly as for the file. */}
-            {isSapLike && (
-              <div className="mt-4">
-                <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1.5">
+            {/* OBD date + Preview toggle, side by side (one column below md) */}
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {isSapLike ? (
+              <div>
+                <label className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.06em] block mb-2">
                   OBD Date
                 </label>
                 <input
@@ -826,20 +885,23 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                   value={obdEmailDate}
                   onChange={(e) => setObdEmailDate(e.target.value)}
                   disabled={isInFlight}
-                  className="w-full border border-gray-200 rounded-[5px] px-3 py-2 text-[11px] text-gray-900 hover:border-gray-300 focus:outline-none focus:border-gray-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full border border-ink-200 rounded-lg px-3 py-2 text-[12px] font-mono text-ink-900 hover:border-ink-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
-                <p className="text-[10px] text-gray-400 mt-1">
+                <p className="text-[11px] text-ink-500 mt-1.5">
                   Defaults to today. Set to actual file date if importing yesterday&apos;s data.
                 </p>
               </div>
+            ) : (
+              <div className="hidden md:block" />
             )}
 
             {/* Preview toggle row */}
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.06em] mb-2">Check first</p>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 px-3 py-2">
                 <div>
-                  <p className="text-[11px] font-medium text-gray-900">Preview before import</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Review changes per-OBD before writing to live tables.</p>
+                  <p className="text-[12px] font-semibold text-ink-900">Preview before import</p>
+                  <p className="text-[11px] text-ink-500 mt-0.5">Review changes per-OBD before writing to live tables.</p>
                 </div>
                 <button
                   type="button"
@@ -862,6 +924,8 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 </button>
               </div>
             </div>
+            </div>
+            {/* /OBD date + Preview */}
 
             {/* Amber notice — preview OFF + something ready to import */}
             {!previewEnabled && canSubmit && (
@@ -879,6 +943,10 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 {pickerError}
               </div>
             )}
+            </div>
+            {/* /RIGHT */}
+            </div>
+            {/* /grid */}
           </div>
         )}
 
@@ -1191,6 +1259,8 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             </>
           )}
         </div>
+        </div>
+        {/* /NEW IMPORT */}
       </div>
     </div>
   );

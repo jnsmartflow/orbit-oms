@@ -132,3 +132,38 @@ export interface PasteUnresolvedCustomer {
 
 export type SapPastePreviewResponse = SapPreviewResponse & { unresolvedCustomers: PasteUnresolvedCustomer[] }
 export type SapPasteConfirmResponse = SapConfirmResponse & { unresolvedCustomers: PasteUnresolvedCustomer[] }
+
+// ─── Today's import log (GET /api/import/log) ──────────────────────────────
+//
+// TODAY's (IST) MANUAL imports only — auto-import batches are excluded. Every
+// count comes from import_batches + orders.batchId; nothing per-OBD is stored,
+// so there is no skip REASON and no patched/unchanged split.
+
+export type ImportLogHow = "sap-paste" | "sap-file" | "template"
+
+export interface ImportLogRow {
+  id:       number
+  batchRef: string
+  /** import_batches.createdAt as ISO (UTC). The panel renders it in IST. */
+  at:       string
+  who:      string
+  how:      ImportLogHow
+  /** "completed" or "failed" — a failed SAP batch may still have written bills. */
+  status:   string
+  /** Bills this batch CREATED — orders.batchId = batch.id (removed ones included). */
+  new:      number
+  /** Bills already in Orbit. SAP: patched + unchanged. Template: its duplicates. */
+  existing: number
+  /** skippedObds on SAP paths — counts skipped ROWS as well as bills. 0 for template. */
+  skipped:  number
+  failed:   number
+}
+
+export interface ImportLogResponse {
+  rows:   ImportLogRow[]
+  totals: {
+    imports:  number
+    new:      number
+    existing: number
+  }
+}
