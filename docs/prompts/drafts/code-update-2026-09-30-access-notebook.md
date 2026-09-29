@@ -2,7 +2,7 @@
 
 **Commit:** the single commit on `main` titled *"auth: access notebook behind ACCESS_CACHE (default off) — per-lambda bundle + ACCESS_VERSION lever; zero per-request auth/permission reads when on"* (a commit cannot carry its own hash — `git log --grep "access notebook behind ACCESS_CACHE"`).
 **Spec:** `docs/prompts/drafts/code-plan-2026-09-29-auth-access-notebook.md` (all 11 decisions approved as recommended) · superseded: `code-plan-2026-09-29-auth-request-cost.md` · diagnosis: `code-discovery-2026-09-29-disk-io.md §C`.
-**Schema:** v27.44 (CORE §7) — `bump_access_version()` + six triggers + two `system_config` rows. **SQL committed, applied to live: PENDING.**
+**Schema:** v27.44 (CORE §7) — `bump_access_version()` + six triggers + two `system_config` rows. **APPLIED TO LIVE 2026-09-30 ~00:30 IST (Smart Flow), verified: 3 keys + 6 triggers enabled; `ACCESS_CACHE` flipped `'on'` 2026-09-30 ~00:35 IST; hand tests a-d passed.** The notebook is LIVE.
 
 ## What shipped
 
@@ -59,7 +59,7 @@ UPDATE system_config SET value = (CASE WHEN value ~ '^[0-9]+$' THEN value::bigin
 - CORE §7.14 / §7.15: the triggers and the notebook in one line each.
 - CLAUDE_ATTENDANCE §3 stale-window paragraph; `auth.config.ts:37-39` comment ("same 5-minute stale window"); CLAUDE_UI §63 (the lever button).
 - `components/admin/access-manager.tsx` "Not live" banner says to set `ACCESS_SOURCE` "in System Config" — that form never listed the key (whitelist) and the API now refuses it; the instruction should say the SQL Editor. (Pre-existing wording; the "Live" state is what shows today.)
-- After Smart Flow runs the SQL: change the v27.44 chain entry to "applied to live <date>, verified".
+- ~~After Smart Flow runs the SQL: change the v27.44 chain entry to "applied to live <date>, verified".~~ Done 2026-09-30 in the live-feed step 1 commit (CORE v115).
 
 ## Hand tests (Smart Flow) — plan §I.3
 See the chat reply of 2026-09-30 for the numbered checklist (run with `ACCESS_CACHE='off'` first, then `on`).

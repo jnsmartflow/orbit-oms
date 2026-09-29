@@ -3912,3 +3912,48 @@ model so_sessions {
 
   @@index([salesOfficerId], map: "so_sessions_so_idx")
 }
+
+// ── LIVE FEED — the change book (v27.45, 2026-09-30) ─────────────────────────
+// sql/2026-09-30-live-changes.sql · design docs/prompts/drafts/
+// code-discovery-2026-09-29-live-change-feed.md (§C) · record
+// docs/prompts/drafts/code-update-2026-09-30-live-changes-step1.md
+//
+// One narrow line per changed entity ('order' | 'trip' | 'config'), WRITTEN
+// ONLY BY DATABASE TRIGGERS (today: the three trg_live_changes_orders_*
+// statement triggers on `orders`). App code must NEVER insert, update or
+// delete here — Prisma cannot even create a row (txId is Unsupported).
+// Nothing reads it yet (step 1 of §M); the catch-up API and the 3-day prune
+// come in later steps.
+//
+// 🔴 THE CURSOR IS ("txId", seq), NOT seq ALONE. seq is drawn at INSERT, not at
+// commit, so `seq > lastSeq` would skip a transaction that commits late. The
+// catch-up read (raw SQL, $queryRaw — xid8 is Unsupported in Prisma 5) returns
+// only lines below the commit-safe horizon:
+//   WHERE ("txId", seq) > ($cursorTx, $cursorSeq)
+//     AND "txId" < pg_snapshot_xmin(pg_current_snapshot())
+//   ORDER BY "txId", seq
+// Checks chk_live_changes_entity (order|trip|config) and chk_live_changes_op
+// (I|U|D) are live-only. seq is GENERATED ALWAYS AS IDENTITY (modelled as
+// autoincrement; never written by the app). anon/authenticated are REVOKEd.
+model live_changes {
+  seq         BigInt                @id @default(autoincrement())
+  txId        Unsupported("xid8")   @default(dbgenerated("pg_current_xact_id()"))
+  entity      String
+  entityId    String
+  op          String
+  sourceTable String
+  createdAt   DateTime              @default(now()) @db.Timestamptz(6)
+
+  @@index([txId, seq], map: "live_changes_tx_seq_idx")
+}
+
+// The prune watermark — one row, id 'live_changes'. The prune job (step 2)
+// sets prunedThroughTxId to the highest txId it deleted; a client cursor
+// older than it is told to do one full reload. Written by raw SQL only (xid8),
+// which must stamp updatedAt itself.
+model live_feed_meta {
+  id                String              @id
+  prunedThroughTxId Unsupported("xid8")?
+  prunedAt          DateTime?           @db.Timestamptz(6)
+  updatedAt         DateTime            @default(now()) @db.Timestamptz(6)
+}
