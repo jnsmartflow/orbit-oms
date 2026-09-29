@@ -1483,6 +1483,17 @@ model tint_logs {
   createdAt     DateTime      @default(now())
 }
 
+// order_status_logs — INSERT-ONLY audit of stage events.
+// 🔴 A PARTIAL INDEX — NOT EXPRESSIBLE IN PRISMA, recorded by hand (v27.46, 2026-09-30,
+// sql/2026-09-30-order-status-logs-cancelled-idx.sql):
+//   order_status_logs_cancelled_created_idx ON order_status_logs ("createdAt")
+//     WHERE "toStage" = 'cancelled'
+//   Serves the ONE reader that filters on toStage: lib/floor/queries.ts getFloorCancelled
+//   (today's cancel logs, newest first). Do NOT model it as @@index([createdAt]) — that would
+//   describe a full index that does not exist. A reader of any OTHER toStage value gets no help
+//   from it and needs its own index. Also live: order_status_logs_orderId_idx (not modelled).
+// No live_changes trigger on this table, deliberately (v27.45/46 — every screen-relevant log is
+// paired with an orders or tint write, which is triggered).
 model order_status_logs {
   id          Int      @id @default(autoincrement())
   orderId     Int
