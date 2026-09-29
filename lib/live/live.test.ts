@@ -8,6 +8,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  createHeadCache,
+  HEAD_CACHE_TTL_MS,
   compareCursor,
   compareDecimal,
   decodeCursor,
@@ -127,4 +129,67 @@ test("live.feed switch: ON only for isEnabled === true", () => {
   assert.equal(parseLiveFeedSwitch({ isEnabled: null }), false);
   assert.equal(parseLiveFeedSwitch(null), false, "absent row → OFF");
   assert.equal(parseLiveFeedSwitch(undefined), false);
+});
+
+// ── the head cache (7a) ─────────────────────────────────────────────────────
+function clock(start = 1_000_000) {
+  const c = { t: start };
+  return { c, now: () => c.t };
+}
+
+test("head cache: a caller AT the remembered head within the TTL is a hit, with the cached lag", () => {
+  const { c, now } = clock();
+  const cache = createHeadCache(now);
+  cache.remember({ txId: "500", seq: "0" }, 2);
+  c.t += HEAD_CACHE_TTL_MS - 1;
+  assert.deepEqual(cache.hit({ txId: "500", seq: "0" }), { lagSeconds: 2 });
+  assert.deepEqual(cache.hit({ txId: "0500", seq: "000" }), { lagSeconds: 2 }, "same cursor, different spelling");
+});
+
+test("head cache: expires at the TTL — the next call must read live_changes", () => {
+  const { c, now } = clock();
+  const cache = createHeadCache(now);
+  cache.remember({ txId: "500", seq: "0" }, 0);
+  c.t += HEAD_CACHE_TTL_MS;
+  assert.equal(cache.hit({ txId: "500", seq: "0" }), null);
+});
+
+test("head cache: a caller BEHIND or AHEAD of the head is never answered from cache", () => {
+  const { now } = clock();
+  const cache = createHeadCache(now);
+  cache.remember({ txId: "500", seq: "0" }, 0);
+  assert.equal(cache.hit({ txId: "499", seq: "9" }), null, "behind → it may have changes to collect");
+  assert.equal(cache.hit({ txId: "500", seq: "1" }), null, "ahead → not the remembered head");
+  assert.equal(cache.hit({ txId: "600", seq: "0" }), null);
+});
+
+test("head cache: empty until something is remembered; clear() empties it; clock stepping back → miss", () => {
+  const { c, now } = clock();
+  const cache = createHeadCache(now);
+  assert.equal(cache.hit({ txId: "1", seq: "0" }), null);
+  cache.remember({ txId: "1", seq: "0" }, 0);
+  cache.clear();
+  assert.equal(cache.hit({ txId: "1", seq: "0" }), null);
+  cache.remember({ txId: "1", seq: "0" }, 0);
+  c.t -= 1;
+  assert.equal(cache.hit({ txId: "1", seq: "0" }), null);
+});
+
+test("head cache cannot skip: a hit never advances — the caller keeps its own cursor, so a change committed during the TTL is read on the first call after it", () => {
+  // Simulated timeline. Horizon H=500 at t0; a transaction 505 commits at t0+2s.
+  const { c, now } = clock();
+  const cache = createHeadCache(now);
+  const head = { txId: "500", seq: "0" };
+  cache.remember(head, 0);
+  c.t += 2_000;
+  // During the TTL the caller is told "no changes" and KEEPS cursor 500.0.
+  assert.ok(cache.hit(head));
+  let callerCursor = head; // the route returns encodeCursor(after) — unchanged
+  c.t += HEAD_CACHE_TTL_MS;
+  assert.equal(cache.hit(callerCursor), null, "after the TTL the route reads live_changes again");
+  // The uncached read returns every row after 500.0 below the new horizon (510): row 505.7.
+  const returned = [row("505", "7", "order", "42")];
+  callerCursor = nextCursor({ after: callerCursor, returned, more: false, horizonTxId: "510" });
+  assert.deepEqual(groupChanges(returned), [{ entity: "order", ids: [42] }]);
+  assert.deepEqual(callerCursor, { txId: "510", seq: "0" });
 });

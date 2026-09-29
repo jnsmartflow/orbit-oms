@@ -803,12 +803,23 @@ function toSummary(
  *
  * Sequential awaits, never $transaction. SELECT-only.
  */
-export async function getTripsForDate(tripDate: Date, todayDate: Date): Promise<TripSummary[]> {
+export async function getTripsForDate(
+  tripDate: Date,
+  todayDate: Date,
+  // LIVE FEED 7a (2026-09-30): restrict the SAME desk rule to these trip ids
+  // (GET /api/floor/trips?ids=). Every trip still goes through the one builder
+  // below, so a patched card cannot differ from a full load
+  // (scripts/parity-floor-rows.ts). An asked-for id that does not come back has
+  // left the desk. Omitted → the full feed, whose `where` is unchanged.
+  onlyIds?: number[],
+): Promise<TripSummary[]> {
   const trips = (await prisma.trips.findMany({
     // 🔴 THE RULE LIVES IN lib/trips/live-trips.ts (2026-09-13), shared with the
     // board's trip arm so the rail and the board can never disagree about which
     // trips are on the desk. Slice 10 changed the rule there, not here.
-    where: tripsOnDeskWhere(tripDate, todayDate),
+    where: onlyIds
+      ? { AND: [tripsOnDeskWhere(tripDate, todayDate), { id: { in: onlyIds } }] }
+      : tripsOnDeskWhere(tripDate, todayDate),
     select: TRIP_SELECT,
     // 🔴 NEWEST CREATED FIRST (slice 6, 2026-09-15). The rail and the Add-to-trip
     // list both read this order. NOT the trip number: since slice 5 a cancelled

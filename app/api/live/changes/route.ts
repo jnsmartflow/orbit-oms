@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { isLiveFeedOn, readChangesAfter, readFeedMeta } from "@/lib/live/feed";
 import {
+  createHeadCache,
   decodeCursor,
   encodeCursor,
   groupChanges,
@@ -49,6 +50,14 @@ export const dynamic = "force-dynamic";
 
 const PAGE_KEYS_THAT_CONSUME_THE_FEED = ["floor"] as const;
 
+// 7a (2026-09-30): per-instance safe-head cache — see HEAD_CACHE rules in
+// lib/live/cursor.ts. A caller already AT the latest safe head this instance
+// handed out (≤ 5 s ago) gets "no changes" with its own cursor and no
+// live_changes read. Remembered only after a NON-full read or a fresh-head
+// answer; never moves anyone's cursor, so it can delay a change ≤ 5 s but can
+// never skip one.
+const headCache = createHeadCache(() => Date.now());
+
 const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
 
 export async function GET(req: Request) {
@@ -82,10 +91,29 @@ export async function GET(req: Request) {
   }
 
   const serverNow = new Date().toISOString();
+
+  // Cached safe head — no live_changes read, no meta read.
+  const cached = after !== null ? headCache.hit(after) : null;
+  if (after !== null && cached !== null) {
+    return NextResponse.json(
+      {
+        enabled: true,
+        cursor: encodeCursor(after),
+        changes: [],
+        more: false,
+        reset: false,
+        lagSeconds: cached.lagSeconds,
+        serverNow,
+      },
+      { headers: NO_STORE },
+    );
+  }
+
   const meta = await readFeedMeta();
 
   // No cursor, or the log was pruned past it → start from the current head.
   if (after === null || isPrunedPast(after, meta.pruned)) {
+    headCache.remember(horizonCursor(meta.horizon), meta.lagSeconds);
     return NextResponse.json(
       {
         enabled: true,
@@ -104,6 +132,7 @@ export async function GET(req: Request) {
   const more = rows.length > limit;
   const returned = more ? rows.slice(0, limit) : rows;
   const cursor = nextCursor({ after, returned, more, horizonTxId: horizon });
+  if (!more) headCache.remember(cursor, meta.lagSeconds);
 
   return NextResponse.json(
     {

@@ -178,6 +178,48 @@ export function isPrunedPast(after: Cursor, prunedThroughTxId: string | null): b
   return compareDecimal(after.txId, prunedThroughTxId) <= 0;
 }
 
+// ── THE HEAD CACHE (live feed 7a, 2026-09-30) ───────────────────────────────
+// Per server instance, GET /api/live/changes remembers the latest SAFE head it
+// handed out — a cursor from a read that was NOT full (so everything below that
+// statement's horizon had been returned), or the head it gave a new caller —
+// for HEAD_CACHE_TTL_MS. A caller whose cursor EQUALS that head within the TTL
+// is answered "no changes" with its OWN cursor, without touching live_changes.
+//
+// WHY IT CANNOT SKIP A CHANGE: the cached answer never moves the caller's
+// cursor. Anything committed in those ≤ 5 s is either below the old horizon
+// (impossible — every transaction below it had already finished and was read)
+// or at/above it, and the next uncached call reads everything after the
+// unchanged cursor. The only effect is up to TTL of extra delay. It also never
+// needs the prune check: a cursor that is a head handed out ≤ 5 s ago is days
+// newer than anything the 3-day prune can delete.
+export const HEAD_CACHE_TTL_MS = 5_000;
+
+export interface HeadCache {
+  /** Remember a safe head (only from a non-full read or a fresh-head answer). */
+  remember(head: Cursor, lagSeconds: number): void;
+  /** The cached lag if `after` IS the cached head and the entry is fresh; else null. */
+  hit(after: Cursor): { lagSeconds: number } | null;
+  clear(): void;
+}
+
+export function createHeadCache(now: () => number, ttlMs: number = HEAD_CACHE_TTL_MS): HeadCache {
+  let entry: { head: Cursor; lagSeconds: number; at: number } | null = null;
+  return {
+    remember(head, lagSeconds) {
+      entry = { head, lagSeconds, at: now() };
+    },
+    hit(after) {
+      if (!entry) return null;
+      const age = now() - entry.at;
+      if (age < 0 || age >= ttlMs) return null;
+      return compareCursor(after, entry.head) === 0 ? { lagSeconds: entry.lagSeconds } : null;
+    },
+    clear() {
+      entry = null;
+    },
+  };
+}
+
 // ── THE SWITCH ──────────────────────────────────────────────────────────────
 /** app_settings "settingKey" for the live feed kill switch. Never retype it. */
 export const LIVE_FEED_KEY = "live.feed";

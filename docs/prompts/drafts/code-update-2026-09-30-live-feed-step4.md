@@ -2,7 +2,7 @@
 
 **Commit:** the single commit on `main` titled *"live feed step 4: triggers on remaining screen tables + cancelled-feed index"* (`git log --grep "live feed step 4"`).
 **Design of record:** `docs/prompts/drafts/code-discovery-2026-09-29-live-change-feed.md` §B.4 (which tables), §C.2 (trigger design), §H, §M step 4.
-**Schema:** v27.46 (CORE §7). **SQL committed; APPLIED TO LIVE: pending.**
+**Schema:** v27.46 (CORE §7). **APPLIED TO LIVE 2026-09-30 ~01:38 IST (Smart Flow): 69 triggers on 23 tables enabled (`O`), 7 functions; `order_status_logs_cancelled_created_idx` created (16 kB); step-4 TEST "TEST OK — rolled back (23 tables checked, 0 skipped, 0 failed)".**
 **Live before this:** step 0 access notebook (`ddfcb43d`, `ACCESS_CACHE` on) · step 1 `live_changes` + `orders` triggers (`7c985f57`, applied, TEST OK) · steps 2–3 prune cron + `GET /api/live/changes` (`126abf2a`, `live.feed` absent = OFF).
 
 ## What shipped

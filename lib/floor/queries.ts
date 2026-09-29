@@ -711,6 +711,15 @@ export async function getFloorBoard(
     date?: string;
     scope?: FloorScope;
     hideExclusion?: Prisma.ordersWhereInput;
+    // LIVE FEED 7a (2026-09-30): restrict the SAME query to these order ids —
+    // lib/floor/rows.ts. Every row still goes through the one include tree,
+    // enrichment and mapping below, so a patched row cannot differ from a full
+    // load (scripts/parity-floor-rows.ts proves it). Omitted → the full feed,
+    // whose `where` is exactly what it was before this option existed. With it,
+    // the whole-set extras (`windows` counts, `total`, `waitingSkus`, `oilSkus`)
+    // describe only the subset and must not be used — the rows endpoint returns
+    // rows only.
+    onlyIds?: number[];
   } = {},
 ): Promise<FloorBoardResult> {
   const mode = opts.mode ?? "live";
@@ -833,7 +842,7 @@ export async function getFloorBoard(
         floorBoardWhere(getISTDayRange(), todayDateOnly);
 
   const orders = await prisma.orders.findMany({
-    where: { AND: [base, hide] },
+    where: { AND: opts.onlyIds ? [base, hide, { id: { in: opts.onlyIds } }] : [base, hide] },
     include: FLOOR_BOARD_INCLUDE,
   });
 
@@ -1160,10 +1169,12 @@ export async function getFloorBoard(
   // (bills that were never picked), the data is equally true for them, and a
   // mode branch here would leave a future caller with a silently empty array
   // instead of an answer.
-  const waitingRows = rows.filter(
-    (r) => r.zone !== "upcoming" && !r.isAssigned && !r.isDone && !r.isChecked,
-  );
-  const waitingSkuMap = await skusByObd(waitingRows.map((r) => r.obdNumber));
+  // 7a: the by-id path (opts.onlyIds) skips these two reads — no Floor reader
+  // uses them (FLOOR §10b "dead payload") and they would describe a subset.
+  const waitingRows = opts.onlyIds
+    ? []
+    : rows.filter((r) => r.zone !== "upcoming" && !r.isAssigned && !r.isDone && !r.isChecked);
+  const waitingSkuMap = opts.onlyIds ? new Map<string, string[]>() : await skusByObd(waitingRows.map((r) => r.obdNumber));
   // Emitted in `rows` order, which is FLOOR_SPINE-sorted and obdNumber-tie-
   // broken above — so this array is byte-stable across loads, which is what
   // lib/picking/grouping.ts's determinism contract rests on. A bill with no
@@ -1180,12 +1191,23 @@ export async function getFloorBoard(
   // all, and buildOilGroups against an empty set produces no groups, so the
   // feature is gone rather than merely hidden. The field is always present, so
   // no caller's type moves with the flag.
-  const oilSkus: FloorOilSkus[] = RULE2_ENABLED ? await oilSkusByOrder(waitingSkus) : [];
+  const oilSkus: FloorOilSkus[] = RULE2_ENABLED && !opts.onlyIds ? await oilSkusByOrder(waitingSkus) : [];
 
   return { mode, date: anchorIso, rows, windows, total: dueRows.length, waitingSkus, oilSkus };
 }
 
 // ── 3. HOLD ──────────────────────────────────────────────────────────────────
+
+/**
+ * The On hold tab's predicate — every held bill, all dates (a pure open state).
+ * ONE definition, imported by getFloorHold below and by the tab counts
+ * (lib/floor/counts.ts), so the count and the tab can never describe different
+ * sets (FLOOR §10: never re-declare a predicate). The hide exclusion is AND-ed
+ * on by each caller, exactly as the feed does.
+ */
+export function floorHoldWhere(): Prisma.ordersWhereInput {
+  return { dispatchStatus: "hold", isRemoved: false };
+}
 
 export async function getFloorHold(
   scope: FloorScope = "All",
@@ -1194,10 +1216,13 @@ export async function getFloorHold(
   // parameter exists so a future caller that also needs the board cannot
   // accidentally reintroduce a second read.
   hideExclusion?: Prisma.ordersWhereInput,
+  // LIVE FEED 7a — restrict the SAME query to these ids (lib/floor/rows.ts);
+  // omitted → the full feed, unchanged.
+  onlyIds?: number[],
 ): Promise<FloorHoldRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
   const orders = await prisma.orders.findMany({
-    where: { AND: [{ dispatchStatus: "hold", isRemoved: false }, hide] },
+    where: { AND: onlyIds ? [floorHoldWhere(), hide, { id: { in: onlyIds } }] : [floorHoldWhere(), hide] },
     include: {
       customer: { select: FLOOR_DEALER_SELECT },
       shipToOverrideCustomer: { select: FLOOR_DEALER_SELECT },
@@ -1329,9 +1354,15 @@ export async function getFloorCancelled(
   // OPTIONAL pre-computed hide-exclusion — see getFloorHold above. Same story:
   // /api/floor/cancelled passes nothing and is unchanged.
   hideExclusion?: Prisma.ordersWhereInput,
+  // LIVE FEED 7a — restrict BOTH membership reads (today's CIs, today's cancel
+  // logs) to these order ids (lib/floor/rows.ts). Every later step is per order,
+  // so the rows are exactly the full feed's rows for those ids. Omitted → the
+  // full feed, unchanged.
+  onlyIds?: number[],
 ): Promise<FloorCancelledRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
   const today = getISTDayRange();
+  const idFilter = onlyIds ? { orderId: { in: onlyIds } } : {};
 
   // ── a) Today's CIs on CANCELLED bills — EVERY source ─────────────────────
   // Widened 2026-09-24 (design web-update-2026-09-24-billing-mo-actions.md §3.7,
@@ -1341,6 +1372,7 @@ export async function getFloorCancelled(
   // cancelled. An auto-finding CI on a bill that still ships is NOT listed.
   const cis = await prisma.ci_returns.findMany({
     where: {
+      ...idFilter,
       isVoided: false,
       status: { not: "draft" },
       createdAt: { gte: today.start, lt: today.end },
@@ -1383,7 +1415,7 @@ export async function getFloorCancelled(
   // "Latest cancel log is today" ⇔ "there is a cancel log today": a later
   // one could only be later today. Newest first, so the first per order wins.
   const logs = await prisma.order_status_logs.findMany({
-    where: { toStage: "cancelled", createdAt: { gte: today.start, lt: today.end } },
+    where: { ...idFilter, toStage: "cancelled", createdAt: { gte: today.start, lt: today.end } },
     orderBy: { createdAt: "desc" },
     select: { orderId: true, createdAt: true, note: true, changedBy: { select: { name: true } } },
   });

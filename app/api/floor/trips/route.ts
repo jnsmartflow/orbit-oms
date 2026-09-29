@@ -7,6 +7,8 @@ import { allocateTripNumberWithRetry, findPreviousHolders, typeCodeForDeliveryTy
 import { getPlaceholderRouteNames, getTripsForDate, parseTripDate } from "@/lib/trips/queries";
 import { logTripCreated } from "@/lib/trips/activity";
 import { getTodayIST } from "@/lib/dates";
+import { isLiveFeedOn } from "@/lib/live/feed";
+import { FLOOR_ROWS_MAX_IDS } from "@/lib/floor/rows";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +92,31 @@ export async function GET(req: Request): Promise<NextResponse> {
       { error: err instanceof Error ? err.message : "Invalid date" },
       { status: 400 },
     );
+  }
+
+  // LIVE FEED 7a (2026-09-30): `?ids=1,2,3` — only those trips, through the SAME
+  // builder, plus `gone`: asked-for ids no longer on this desk. Behind the
+  // live.feed switch (OFF → { enabled: false }); without `ids` the route is
+  // exactly what it was.
+  const idsParam = new URL(req.url).searchParams.get("ids");
+  if (idsParam !== null) {
+    if (!(await isLiveFeedOn())) return NextResponse.json({ enabled: false });
+    const ids = idsParam.split(",").map((s) => Number(s.trim()));
+    if (ids.length === 0 || ids.length > FLOOR_ROWS_MAX_IDS || !ids.every((n) => Number.isInteger(n) && n > 0)) {
+      return NextResponse.json(
+        { error: `ids must be 1–${FLOOR_ROWS_MAX_IDS} comma-separated positive integers` },
+        { status: 400 },
+      );
+    }
+    const asked = Array.from(new Set(ids));
+    const trips = await getTripsForDate(tripDate, parseTripDate(getTodayIST()), asked);
+    const onDesk = new Set(trips.map((t) => t.id));
+    return NextResponse.json({
+      enabled: true,
+      date: dateParam,
+      trips,
+      gone: asked.filter((id) => !onDesk.has(id)),
+    });
   }
 
   // TODAY in IST, as the same UTC-midnight shape. It is what tells the desk rule
