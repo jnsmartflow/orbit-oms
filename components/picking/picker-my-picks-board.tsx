@@ -46,7 +46,7 @@ import type {
   PickingQueueRow,
 } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
-import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import { DetailChangedStrip, LegacyPickerMarker } from "@/components/picking/picking-live";
 
 // Which of the two BILL lists a detail session pages through. Deliberately NOT
 // PickerTabKey: the Combined tab (2026-08-07) is not a bill list — a bill
@@ -356,8 +356,10 @@ export function PickerMyPicksBoard({
   // `pending`/`done`/`refetchQueue` joined this context on 2026-07-29 when the
   // shell took ownership of the rows — see PickerPickingShell for why this face
   // fetches rather than calling router.refresh().
-  const { activeTab, pending, done, pickDeleted, refetchQueue, detailOpen, setDetailOpen, markerResyncRef } =
-    usePickerBoard();
+  const {
+    activeTab, pending, done, pickDeleted, refetchQueue, detailOpen, setDetailOpen, markerResyncRef,
+    live, setPickerBusy, reportDetailId, detailChanged, reloadDetail, detailReloadNonce,
+  } = usePickerBoard();
 
   // Detail overlay — always-mounted, translateX slide, same pattern as
   // picking-board-mobile.tsx's detail screen so the list underneath is never
@@ -507,21 +509,20 @@ export function PickerMyPicksBoard({
   // The resync CALL lives in the shell's refetchQueue; this file only registers
   // the handle below, because the marker has to stay here (its `paused` reads
   // `marking`/`markingAll`, which are local to this component).
-  const markerResync = usePickingMarker({
-    scope: "openPending",
-    pickerId: activePickerId ?? undefined,
-    onChange: () => {
-      void refetchQueue({ fromMarker: true });
-    },
-    paused: detailOpen || marking || markingAll,
-  });
-
+  //
+  // ⚠ LIVE FEED 4b (2026-09-30): the call moved UNCHANGED (same scope, pickerId, onChange, paused,
+  // and the resync registration) into <LegacyPickerMarker> (components/picking/picking-live.tsx),
+  // rendered at the top of this board's JSX only while the Picking feed is NOT live. On the feed the
+  // shell (PickerPickingShell) owns the refresh; this board reports what it must not move under.
   useEffect(() => {
-    markerResyncRef.current = markerResync;
-    return () => {
-      markerResyncRef.current = null;
-    };
-  }, [markerResync, markerResyncRef]);
+    setPickerBusy(marking || markingAll);
+  }, [marking, markingAll, setPickerBusy]);
+  useEffect(() => {
+    reportDetailId(detailOpen ? detailOrderId : null);
+  }, [detailOpen, detailOrderId, reportDetailId]);
+  useEffect(() => {
+    if (detailReloadNonce > 0) setLineItemsReloadKey((k) => k + 1);
+  }, [detailReloadNonce]);
 
   // Reset the per-visit view state every time Combined is opened. "All bills
   // on" and "All packs" is the state he expects to find; carrying a toggle
@@ -1222,6 +1223,18 @@ export function PickerMyPicksBoard({
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#f9fafb]">
+      {/* Live feed 4b: the legacy narrowed marker — mounted only while the Picking feed is NOT live. */}
+      {!live && (
+        <LegacyPickerMarker
+          pickerId={activePickerId ?? undefined}
+          paused={detailOpen || marking || markingAll}
+          onChange={() => {
+            void refetchQueue({ fromMarker: true });
+          }}
+          markerResyncRef={markerResyncRef}
+        />
+      )}
+      {live && detailOpen && detailChanged && <DetailChangedStrip onReload={reloadDetail} />}
       {/* Admin-only debug strip — deliberately outside the app's visual
           language (dark, dashed amber border, monospace) so it never reads
           as something a real picker would see. Matches

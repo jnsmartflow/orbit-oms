@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.18 · Schema v27.24 · September 2026 · updated 2026-09-18
+# v1.19 · Schema v27.24 · September 2026 · updated 2026-09-30
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -992,7 +992,9 @@ picker cards (`openTintId`, `:1528`, no history entry) — `TintCard` / `TintBil
 tab's pink strip jumps here (`goToTinting` + `tintJumpNonce`, owned by the shell). Nothing on it
 writes.
 
-**Live sync:** its own `usePickingMarker` call with `url: "/api/picking/tint-workload/marker"`
+**Live sync (change feed, `live.feed.picking` ON — §10.0):** no tint marker; a sync answer with `tintTouched` (a tint bill at a tint-room stage changed, or one the section shows) refetches `/api/picking/tint-workload`.
+
+**Live sync (switch OFF):** its own `usePickingMarker` call with `url: "/api/picking/tint-workload/marker"`
 (`picking-mobile-shell.tsx:548-554`), paused on the same `detailOpen || overlayBusy` as the board.
 The marker returns `latest` = the later of the order clock and the assignment clock, because a
 pause or resume writes only the assignment row (e2446c70) — see §10 for the marker-field contract.
@@ -1325,7 +1327,40 @@ pointer to the drain hole survives anywhere in `docs/`.
 
 ---
 
-## 10. Live sync [LIVE — 2026-07-22]
+## 10. Live sync [LIVE — 2026-07-22; change-feed path BUILT 2026-09-30, behind `live.feed.picking` (OFF)]
+
+### 10.0 Two paths, one switch (2026-09-30, live feed 4a/4b)
+
+Picking runs on the **change feed** when `app_settings` `live.feed` AND `live.feed.picking` are both ON
+(absent row = OFF); otherwise on the **marker path** described in the rest of this section, which is
+unchanged. Plan: `docs/prompts/drafts/code-plan-2026-09-30-picking-live-feed.md`; records:
+`code-update-2026-09-30-picking-live-feed-4a.md` (server) and `-4b.md` (client).
+
+| | Marker path (switch OFF — today) | Change-feed path (switch ON) |
+|---|---|---|
+| Who polls | supervisor: queue marker + tint-workload marker, 15 s each; picker: his narrowed marker, 15 s | ONE `GET /api/live/changes?screen=picking` per phone: 15 s while touched in the last 2 min, 60 s idle, instant on touch-after-idle / visible / focus (≤ 1 per 3 s), **nothing while hidden** (screen off, locked, app switched), backoff 5 s → 2 min on flaky data |
+| Supervisor refresh | marker moved → full queue refetch (~2 s, ~54 KB) | ONE `POST /api/picking/sync { orderIds, tripIds, shownIds, tintShownIds }` → rows re-read BY ID through the same builder (`getPickingQueue({ onlyIds })` → `buildPickingWhere`, same `gateOn`) and merged by `lib/picking/live-merge.ts` (replace / insert / remove, re-sorted with `PICKING_SPINE`, siblings re-emitted, held-back triple and pick-deleted replaced only when returned); `tintTouched` → refetch the tint workload; a different IST day → full reload |
+| Picker refresh | marker (narrowed to his `pickerId`) moved → his list | the feed asks `&face=picker&held=<his ids>` — the SERVER keeps only order ids assigned to the session user now, or held by his phone (a bill leaving him still wakes it) → his list refetched (`?pickerId=me`) |
+| Own writes | full refetch + `resync()` | supervisor: the acted-on ids through one sync (`refetchQueue({ ids })`), applied at once; picker: his list |
+| **Push → instant** | — (the notification only) | `public/sw.js` posts `{ type: "orbit-push", tag, kind, orderId }` to open windows after a picking notification. Page ON the feed and VISIBLE: supervisor (`pick-done-<id>`) → `POST /api/picking/sync` with that one id; picker (`pick-assigned-<id>` / `pick-cancelled-<id>`) → his list. **Never through the feed** — its per-instance head cache can answer "nothing new" for ≤ 5 s. The next glance re-reads the same bill harmlessly. Pushes are best-effort (device toggle, permission, iOS installed-app only) — the glance is the guarantee |
+| Pause (never move the ground under a hand) | the hook's `paused` defers `onChange` | the glance keeps running; applying waits while `detailOpen \|\| overlayBusy` (supervisor) / `detailOpen \|\| marking \|\| markingAll` (picker); applied ONCE on release. A push while held is queued, not dropped |
+| Open bill changed elsewhere | deferred silently | quiet re-read of that bill; a slim **"This bill changed elsewhere · Reload"** strip only if its row really differs; Reload applies the row and re-reads the lines. The detail's single history entry is never touched |
+| Ticks | not pruned on the phone | supervisor ticks on bills that left the waiting set are dropped as rows patch in |
+| Config (incl. the pick gate) | next marker change | one full reload (debounced 5 s, ≤ 1 per 2 min) |
+| Midnight | — | one reload at IST midnight (server clock, + 0–120 s jitter) |
+| Fallback | — | switch OFF, or 3 failed glances → the marker path mounts again without a reload (re-checked every 60 s) |
+
+**Implementation:** `components/picking/picking-mobile-shell.tsx` owns each face's feed (the supervisor
+and picker shells); the legacy `usePickingMarker` calls moved UNCHANGED into
+`components/picking/picking-live.tsx` (`LegacySupervisorMarkers`, `LegacyPickerMarker`), mounted only
+while the feed is not live. Server: `app/api/picking/sync`, `lib/picking/sync.ts`,
+`lib/picking/picker-feed.ts`, `app/api/live/changes` (`screen=picking`, `face=picker`). Debug log:
+`localStorage.setItem("orbit.live.debug","1")` → `[live:picking]` lines incl. `push …` triggers.
+**Trigger coverage** replaces the "marker ⊇ queue" rule on this path: every table the queue reads is
+triggered (CORE §13), incl. `pick_findings` — whose trigger (2b-i SQL) must be applied before the
+switch is turned on.
+
+### 10.1 The marker path (switch OFF) — unchanged
 
 Both picking surfaces self-refresh **with no manual refresh, pull-to-refresh or app restart**.
 Previously each surface fetched once and never again — the acting device saw its own change, every
@@ -1680,6 +1715,12 @@ Evidence: all nine commits confirmed present on `main` by `git log` before anyth
 
 ---
 
+## Change log — v1.19 (2026-09-30, live feed picking 4a/4b)
+
+- §10 gains §10.0: the change-feed path behind `live.feed.picking` (OFF at writing) — one adaptive glance per phone, the supervisor patched BY ID through `POST /api/picking/sync` (same builder, parity 18/18 in 4a), the picker's feed narrowed server-side to his own bills, own writes by id, push → instant re-read of one bill via the service-worker message, pause rules, the "changed elsewhere" strip, tick pruning, midnight reload, fallback. The existing text is now §10.1, the marker path, unchanged.
+- §5.6: the Tinting section's live sync on the feed (`tintTouched`).
+- Schema stamp unchanged (no table this module owns changed).
+
 ## Change log — v1.18 (2026-09-18, canon sweep batch A)
 
 Evidence: code read at the call sites at HEAD `cc1e721a`; sweep report
@@ -1717,4 +1758,4 @@ Q09, Q10a). Drafts read as history: code-update 2026-08-18 grouping, 2026-08-20 
 
 ---
 
-*CLAUDE_PICKING.md v1.18 · Schema v27.24 · Picking Module · September 2026 · updated 2026-09-18 — reconciled to code at HEAD `cc1e721a`: bills reach Picking on import (`applyNoMailOrderFallback`), per-user access, the pick visibility gate as Picking applies it, bundling, supervisor cancel, the Tinting section, colour work, duplicate-SO, SAP-name fallback, bay band, hardener rows, WhatsApp share, the unreachable `dispatched` writer and 23 new key-file rows; the v1.18 change log lists every section. Prior, v1.17 (2026-09-04): §3.1 added, `lib/picking/pack-sort.ts` documented in the file that owns it*
+*CLAUDE_PICKING.md v1.19 · Schema v27.24 · Picking Module · September 2026 · updated 2026-09-30 — §10.0 change-feed path (live feed picking 4a/4b, behind live.feed.picking). Prior, v1.18 (2026-09-18) — reconciled to code at HEAD `cc1e721a`: bills reach Picking on import (`applyNoMailOrderFallback`), per-user access, the pick visibility gate as Picking applies it, bundling, supervisor cancel, the Tinting section, colour work, duplicate-SO, SAP-name fallback, bay band, hardener rows, WhatsApp share, the unreachable `dispatched` writer and 23 new key-file rows; the v1.18 change log lists every section. Prior, v1.17 (2026-09-04): §3.1 added, `lib/picking/pack-sort.ts` documented in the file that owns it*

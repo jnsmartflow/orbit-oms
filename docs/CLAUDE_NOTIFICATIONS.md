@@ -1,5 +1,5 @@
 # CLAUDE_NOTIFICATIONS.md — Push Notifications
-# v1.4 · Schema v27.24 · September 2026 · updated 2026-09-18
+# v1.5 · Schema v27.24 · September 2026 · updated 2026-09-30
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -136,7 +136,14 @@ Must exist for push to work in any environment:
   public key is read **server-side at request time** and passed to the client, so it takes effect
   without a rebuild.
 - **Service worker** — `public/sw.js`, served at `/sw.js`, registered from the client. **`push` +
-  `notificationclick` handlers ONLY.**
+  `notificationclick` handlers ONLY.** Since 2026-09-30 (live feed picking 4b, `SW_VERSION 2026-09-30.2`) the
+  `push` handler, AFTER showing the notification, also `postMessage`s every open Orbit window
+  `{ type: "orbit-push", tag, kind, orderId }` for the three picking tags (`pick-assigned-<id>`,
+  `pick-done-<id>`, `pick-cancelled-<id>`). A Picking page ON the change feed re-reads that one bill at
+  once (~1–2 s): the supervisor with `POST /api/picking/sync`, the picker by refetching his own list
+  (`CLAUDE_PICKING.md §10`). A page not listening ignores it — with `live.feed.picking` OFF nothing
+  changes. Still no fetch handler and no Cache API; `skipWaiting` + `clients.claim` (unchanged) make a
+  new worker take over on the next page load without a restart.
 - **`web-push` npm package** — approved dependency.
 - **Manifest / install** — on iOS, Web Push works ONLY from a home-screen-installed PWA (no icon → no
   notifications, ever). All picker/supervisor phones are Android (also install-to-home-screen); the
@@ -248,6 +255,11 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
    fastest way to answer "why isn't this picker getting alerts" (shows installed? allowed? buzz
    reaches?).
 
+10. **[LANDMINE] The picking tag pattern lives TWICE** — the regex in `public/sw.js` (`PICKING_PUSH_TAG`)
+   and `PUSH_TAG_PATTERN_SOURCE` in `lib/push/sw-message.ts` (the page-side parser). A new picking tag, or a
+   renamed one, changes both — `lib/push/sw-message.test.ts` reads `sw.js` and fails if they drift. The
+   message is a HINT to re-read one bill, never data: the page always re-reads through its own routes.
+
 ---
 
 ## 9. Temporary scaffolding [DEFERRED — remove after rollout]
@@ -273,7 +285,8 @@ and its API route calls itself a "THROWAWAY proof" (`app/api/picking/push-test/r
 
 | File | Role |
 |---|---|
-| `public/sw.js` | Service worker — `push` + `notificationclick` ONLY; no fetch, no cache |
+| `public/sw.js` | Service worker — `push` + `notificationclick` ONLY; no fetch, no cache; since 2026-09-30 posts `{ type: "orbit-push", tag, kind, orderId }` to open windows after a picking notification |
+| `lib/push/sw-message.ts` | Page-side parser of that message + the tag pattern (tested against `sw.js`) |
 | `lib/push/send.ts` | `sendToUser(userId, payload)` + `getVapid()`; dead-endpoint hygiene; never throws |
 | `lib/push/recipients.ts` | `getPickingSupervisorUserIds()` — `PICKING_SUPERVISOR_ROLE_SLUGS = ["floor_supervisor","operations","admin"]`, matches PRIMARY role AND any secondary `user_roles` row, **`isActive` users only**, one sequential query (verified 2026-08-04) |
 | `app/api/push/subscribe/route.ts` | Upsert on endpoint; `userId` from session; reassigns a shared phone |
@@ -288,6 +301,12 @@ and its API route calls itself a "THROWAWAY proof" (`app/api/picking/push-test/r
 | `app/picking/push-test/page.tsx` + `push-test-client.tsx` | Diagnostic page (§9) |
 
 ---
+
+## Change log — v1.5 (2026-09-30, live feed picking 4b)
+
+- §5: `public/sw.js` posts `{ type: "orbit-push", tag, kind, orderId }` to open windows after a picking notification (assigned / done / cancelled); a Picking page on the change feed re-reads that bill at once. No fetch handler, no caches — landmine 1 unchanged.
+- §8: landmine 10 — the tag pattern lives in `sw.js` AND `lib/push/sw-message.ts`; a test keeps them equal.
+- §10: `lib/push/sw-message.ts` added.
 
 ## Change log — v1.4 (2026-09-18, canon sweep reconciliation)
 

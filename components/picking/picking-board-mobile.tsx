@@ -99,6 +99,8 @@ import type { TintWorkloadBill, TintWorkloadOperator } from "@/lib/picking/tint-
 // the server's (`row.releasableToday`); this import renders the day that
 // decision implies and is never used to compute one on the client.
 import { previousWorkingDateOnlyUTC } from "@/lib/picking/release-window";
+import { pruneSelection } from "@/lib/picking/live-merge";
+import { DetailChangedStrip } from "@/components/picking/picking-live";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
 //
@@ -1440,6 +1442,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   const {
     data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy,
     tintWork, goToTinting, tintJumpNonce,
+    live, reportDetailId, detailChanged, reloadDetail, detailReloadNonce,
   } = usePickingBoard();
   // Direction-A header (avatar/grid/search) reaches the shared Menu/You
   // sheets + the signed-in user's initials via the Stage-1 provider —
@@ -1622,6 +1625,22 @@ export function PickingBoardMobile(): React.JSX.Element {
   // design.html). Only `mode` differs: "confirm" posts to the supervisor route
   // and labels the CTA "Confirm".
   const [lineItemsReloadKey, setLineItemsReloadKey] = useState(0);
+
+  // ── LIVE FEED (4b) — all four do nothing off the feed ──────────────────────
+  // Which bill is open, for the shell's "changed elsewhere" check.
+  useEffect(() => {
+    reportDetailId(detailOpen ? detailOrderId : null);
+  }, [detailOpen, detailOrderId, reportDetailId]);
+  // "Reload" on the Changed strip → re-read the open bill's lines (the shell applied its row).
+  useEffect(() => {
+    if (detailReloadNonce > 0) setLineItemsReloadKey((k) => k + 1);
+  }, [detailReloadNonce]);
+  // Ticks on bills that left the waiting set drop out as rows patch in ("pruned, not frozen",
+  // PICKING §10). Feed only — the legacy path keeps today's behaviour.
+  useEffect(() => {
+    if (!live || !data) return;
+    setSelected((prev) => pruneSelection(prev, data.rows) as Set<number>);
+  }, [live, data]);
 
   const applyFinding = useCallback((rawLineItemId: number, finding: PickingLineFinding) => {
     setLineItems((prev) =>
@@ -2694,7 +2713,8 @@ export function PickingBoardMobile(): React.JSX.Element {
         if (detailOpen) {
           window.history.back();
         }
-        await refetchQueue();
+        // Live feed 4b: the acted-on ids (ignored off the feed — full refetch as before).
+        await refetchQueue({ ids: assignTarget.map((r) => r.orderId) });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Assign failed");
       } finally {
@@ -2738,7 +2758,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             setCancelTarget(null);
             toast("Already changed — refreshed.");
             if (detailOpen) window.history.back();
-            await refetchQueue();
+            await refetchQueue({ ids: [row.orderId] });
           } else {
             toast.error(json.error ?? `Request failed (${res.status})`);
           }
@@ -2748,7 +2768,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         setCancelMenuOpen(false);
         window.history.back();
         toast.success(`Bill cancelled · ${row.obdNumber}`);
-        await refetchQueue();
+        await refetchQueue({ ids: [row.orderId] });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Cancel failed");
       } finally {
@@ -2772,14 +2792,14 @@ export function PickingBoardMobile(): React.JSX.Element {
         if (!res.ok) {
           if (res.status === 409) {
             toast("Already changed — refreshed.");
-            await refetchQueue();
+            await refetchQueue({ ids: [row.orderId] });
           } else {
             toast.error(json.error ?? `Request failed (${res.status})`);
           }
           return;
         }
         toast.success(`${row.dealerName} released`);
-        await refetchQueue();
+        await refetchQueue({ ids: [row.orderId] });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Undo failed");
       } finally {
@@ -2826,7 +2846,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             // The fallback keeps the old wording for a 409 with no body.
             toast(json.error ?? "Already changed — refreshed.");
             setReleaseTarget(null);
-            await refetchQueue();
+            await refetchQueue({ ids: [row.orderId] });
           } else {
             toast.error(json.error ?? `Request failed (${res.status})`);
           }
@@ -2834,7 +2854,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         }
         toast.success(`${row.dealerName} released for picking`);
         setReleaseTarget(null);
-        await refetchQueue();
+        await refetchQueue({ ids: [row.orderId] });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Release failed");
       } finally {
@@ -2860,7 +2880,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         if (!res.ok) {
           if (res.status === 409) {
             toast("Already changed — refreshed.");
-            await refetchQueue();
+            await refetchQueue({ ids: [row.orderId] });
           } else {
             toast.error(json.error ?? `Request failed (${res.status})`);
           }
@@ -2870,7 +2890,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         // Approve only ever renders inside the detail screen (no bulk
         // equivalent) — unconditional history.back(), unlike handleAssign.
         window.history.back();
-        await refetchQueue();
+        await refetchQueue({ ids: [row.orderId] });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Approve failed");
       } finally {
@@ -2882,6 +2902,8 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#f9fafb]">
+      {/* Live feed 4b: the open bill changed elsewhere — offer the reload, never swap under the hand. */}
+      {live && detailOpen && detailChanged && <DetailChangedStrip onReload={reloadDetail} />}
       {/* Direction-A slim header (Stage 3/4, 2026-07-19) — replaces the old
           Assign/Check/Checked TopBarTab strip, which now lives in the shared
           bottom bar (workflow-tab-bar.tsx, driven by PickingMobileShell).

@@ -63,6 +63,9 @@ export interface UseLiveFeedOptions {
   /** Optional `?screen=` (2026-09-30: "billing" → enabled only when live.feed AND live.feed.billing).
    *  Omitted (Floor) → the request is exactly what it was. */
   screen?: string;
+  /** Optional extra query params, read at EACH glance (2026-09-30: the picker face's `face` + `held`).
+   *  Omitted (Floor, Billing) → the request is exactly what it was. */
+  params?: () => Record<string, string>;
   /** localStorage key remembering whether the feed was on last time. */
   hintKey: string;
   onPending: () => void;
@@ -97,6 +100,8 @@ export function useLiveFeed(opts: UseLiveFeedOptions): LiveFeedHandle {
       fetchChanges: async (after) => {
         const qs = new URLSearchParams({ topics });
         if (screen) qs.set("screen", screen);
+        const extra = optsRef.current.params?.();
+        if (extra) for (const [k, v] of Object.entries(extra)) qs.set(k, v);
         if (after) qs.set("after", after);
         const res = await fetch(`/api/live/changes?${qs.toString()}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

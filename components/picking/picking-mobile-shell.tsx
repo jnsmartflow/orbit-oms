@@ -13,7 +13,17 @@ import type { PickingQueueResult } from "@/lib/picking/queue";
 // erased by isolatedModules, so nothing follows it into the browser bundle.
 import type { TintWorkloadResult } from "@/lib/picking/tint-workload";
 import { splitPickerRows } from "@/lib/picking/picker-split";
-import { usePickingMarker, type MarkerResync } from "@/lib/hooks/use-picking-marker";
+import type { MarkerResync } from "@/lib/hooks/use-picking-marker";
+// Live feed 4b — the change feed, the merge, and the shared picking-live pieces.
+import { liveLog, useLiveFeed } from "@/lib/live/use-live-feed";
+import { applyPickingSync, patchRowFor, sameRow } from "@/lib/picking/live-merge";
+import type { PickingSyncResult } from "@/lib/picking/sync";
+import {
+  LegacySupervisorMarkers,
+  PICKING_LIVE_HINT_KEY,
+  readPickingLiveHint,
+  useOrbitPushMessages,
+} from "@/components/picking/picking-live";
 
 // Stage 3/4 (2026-07-19) — Direction A. `workflowTabs`/`activeTabKey`/
 // `onTabChange` (the Stage-2 slot on MobileShell) must reach
@@ -52,7 +62,22 @@ interface PickingBoardContextValue {
   // localStorage, no URL param, and WorkflowTab.key is a bare string), so
   // there is no stored value to migrate.
   activeTab:    "assign" | "picking" | "done";
-  refetchQueue: () => Promise<void>;
+  /**
+   * `ids` (live feed 4b) = the bills an own write acted on: on the feed they are re-read by one
+   * sync instead of a full refetch; off the feed the argument is ignored.
+   */
+  refetchQueue: (opts?: { ids?: number[] }) => Promise<void>;
+  // ── LIVE FEED (4b) ──
+  /** On the Picking change feed (then the legacy markers are not mounted). */
+  live: boolean;
+  /** The board reports which bill's detail is open (null when closed). */
+  reportDetailId: (id: number | null) => void;
+  /** The open bill changed elsewhere (live only) — show the "Changed — Reload" strip. */
+  detailChanged: boolean;
+  /** Apply the fresh row and re-read the open bill's lines. */
+  reloadDetail: () => void;
+  /** Bumped by reloadDetail — the board re-reads the detail's lines when it changes. */
+  detailReloadNonce: number;
   // Detail-interactions Build A (2026-07-19) — lifted from PickingBoardMobile
   // for the same reason activeTab/data were lifted in Stage 3: RoleLayoutClient's
   // hideBar slot needs this one level up, at SupervisorPickingShell, which
@@ -172,6 +197,19 @@ interface PickerBoardContextValue {
   // Read AND written by the board (every open/close call site lives there).
   detailOpen:    boolean;
   setDetailOpen: (open: boolean) => void;
+  // ── LIVE FEED (4b) ──
+  /** On the Picking change feed (then the board does NOT mount its legacy marker). */
+  live: boolean;
+  /** The board reports Mark done in flight (marking || markingAll) — the feed holds while true. */
+  setPickerBusy: (busy: boolean) => void;
+  /** The board reports which bill's detail is open (null when closed). */
+  reportDetailId: (id: number | null) => void;
+  /** The open bill changed elsewhere (live only). */
+  detailChanged: boolean;
+  /** Apply the fresh list and re-read the open bill's lines. */
+  reloadDetail: () => void;
+  /** Bumped by reloadDetail. */
+  detailReloadNonce: number;
 }
 
 const PickerBoardContext = createContext<PickerBoardContextValue | null>(null);
@@ -349,6 +387,105 @@ function PickerPickingShell({
     }
   }, [viewerId]);
 
+  // ── LIVE FEED (4b) — the picker's phone on the change feed ──────────────────
+  // His feed asks only for HIS bills: /api/live/changes?screen=picking&face=picker&held=<the ids
+  // this phone shows> — the server keeps order ids assigned to the SESSION user now, or held (so a
+  // bill leaving him still wakes the phone). Any hit → his own list, refetched (the existing
+  // ?pickerId path). A pushed assign / cancel → the same refetch at once (~1–2 s). Held while a bill
+  // is open or a Mark done is in flight; applied once on release. Off the feed: his legacy marker
+  // (mounted by the board, <LegacyPickerMarker>) runs exactly as before.
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const pausedNow = detailOpen || pickerBusy;
+  const pausedRef = useRef(pausedNow);
+  pausedRef.current = pausedNow;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const flushingRef = useRef(false);
+  const flushRef = useRef<() => void>(() => {});
+  const onChangesRef = useRef<(b: { orderIds: number[] }) => void>(() => {});
+  const hintRef = useRef<boolean>(readPickingLiveHint());
+  const feed = useLiveFeed({
+    scope: "picking",
+    screen: "picking",
+    topics: "order,config",
+    hintKey: PICKING_LIVE_HINT_KEY,
+    params: () => ({ face: "picker", held: rowsRef.current.slice(0, 100).map((r) => r.orderId).join(",") }),
+    onPending: () => flushRef.current(),
+    onChanges: (b) => onChangesRef.current(b),
+    onMode: (m, prev) => liveLog("picking", `picker mode ${prev} → ${m}`),
+    onMidnight: () => {
+      liveLog("picking", "IST midnight — his list reloaded");
+      void refetchQueue();
+    },
+  });
+  const live = viewerId !== null && (feed.mode === "live" || (feed.mode === "unknown" && hintRef.current));
+
+  const flush = useCallback(async () => {
+    const ctl = feed.controller.current;
+    if (!ctl || ctl.getMode() !== "live" || flushingRef.current || pausedRef.current) return;
+    const work = ctl.take();
+    if (!work) return;
+    flushingRef.current = true;
+    try {
+      if (work.kind === "full") ctl.noteFullLoad();
+      liveLog("picking", work.kind === "full" ? `his list: full (${work.reasons.join(", ")})` : "his list: changed");
+      await refetchQueue();
+    } finally {
+      flushingRef.current = false;
+    }
+  }, [feed.controller, refetchQueue]);
+  flushRef.current = () => {
+    void flush();
+  };
+  useEffect(() => {
+    if (!pausedNow) flushRef.current();
+  }, [pausedNow]);
+
+  // The open bill changed elsewhere → quiet re-read of his list; strip only if that bill differs.
+  const detailIdRef = useRef<number | null>(null);
+  const [detailChangedRows, setDetailChangedRows] = useState<PickingQueueResult | null>(null);
+  const [detailReloadNonce, setDetailReloadNonce] = useState(0);
+  const reportDetailId = useCallback((id: number | null) => {
+    detailIdRef.current = id;
+    if (id === null) setDetailChangedRows(null);
+  }, []);
+  onChangesRef.current = (b) => {
+    const id = detailIdRef.current;
+    if (id === null || !live || viewerId === null || !b.orderIds.includes(id)) return;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/picking/queue?scope=openPending&pickerId=${viewerId}`);
+        if (!res.ok || detailIdRef.current !== id) return;
+        const json = (await res.json()) as PickingQueueResult;
+        const cur = rowsRef.current.find((r) => r.orderId === id) ?? null;
+        const fresh = json.rows.find((r) => r.orderId === id) ?? null;
+        if (!sameRow(cur, fresh)) {
+          liveLog("picking", `open bill ${id} changed elsewhere`);
+          setDetailChangedRows(json);
+        }
+      } catch {
+        /* no strip */
+      }
+    })();
+  };
+  const reloadDetail = useCallback(() => {
+    if (detailChangedRows) {
+      setRows(detailChangedRows.rows);
+      setPickDeleted(detailChangedRows.pickDeleted ?? []);
+    }
+    setDetailChangedRows(null);
+    setDetailReloadNonce((n) => n + 1);
+  }, [detailChangedRows]);
+
+  // Instant on push (decision 7): "new pick assigned" / "bill cancelled" → his list now.
+  useOrbitPushMessages(live, (m) => {
+    if (m.kind === "done") return; // a done push goes to supervisors, never to the picker who did it
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    liveLog("picking", `push ${m.tag} → his list`);
+    if (pausedRef.current) feed.controller.current?.requeue([m.orderId], []);
+    else void refetchQueue();
+  });
+
   // THE one split, shared with app/picking/page.tsx. The clock is passed in
   // (never read inside), and the IST derivation there is host-independent —
   // which matters now that this runs on a phone in Asia/Kolkata as well as on
@@ -376,8 +513,12 @@ function PickerPickingShell({
   const contextValue = useMemo<PickerBoardContextValue>(
     // markerResyncRef is a stable ref object — it never changes identity, so it
     // adds nothing to this memo's deps.
-    () => ({ activeTab, pending, done, pickDeleted, refetchQueue, detailOpen, setDetailOpen, markerResyncRef }),
-    [activeTab, pending, done, pickDeleted, refetchQueue, detailOpen],
+    () => ({
+      activeTab, pending, done, pickDeleted, refetchQueue, detailOpen, setDetailOpen, markerResyncRef,
+      live, setPickerBusy, reportDetailId, detailChanged: detailChangedRows !== null, reloadDetail, detailReloadNonce,
+    }),
+    [activeTab, pending, done, pickDeleted, refetchQueue, detailOpen,
+      live, reportDetailId, detailChangedRows, reloadDetail, detailReloadNonce],
   );
 
   return (
@@ -470,6 +611,9 @@ function SupervisorPickingShell({
   // the marker needs refetchQueue as its onChange, so the two cannot both be
   // plain values in dependency order.
   const markerResyncRef = useRef<MarkerResync | null>(null);
+  // LIVE FEED (4b): set further down (the feed section), read by refetchQueue.
+  const liveRef = useRef(false);
+  const syncIdsRef = useRef<(ids: number[], own?: boolean) => Promise<boolean>>(async () => false);
 
   // A REFRESH of already-loaded data — deliberately silent on failure: keep the
   // last good board (the error SCREEN is owned only by the initial load() above)
@@ -490,7 +634,16 @@ function SupervisorPickingShell({
   // stops the marker firing a second full rebuild ~15s later for a change the
   // supervisor is already looking at. Optional with a safe default, so the
   // context type below stays `() => Promise<void>` and the board is untouched.
-  const refetchQueue = useCallback(async (opts?: { fromMarker?: boolean }) => {
+  //
+  // `ids` (LIVE FEED 4b, 2026-09-30): the bills the write acted on. ON the feed they are re-read by
+  // one POST /api/picking/sync and patched in (no full rebuild, no marker to resync); if that fails
+  // it falls through to the full refetch below. OFF the feed `ids` is ignored — unchanged.
+  const refetchQueue = useCallback(async (opts?: { fromMarker?: boolean; ids?: number[] }) => {
+    if (opts?.ids && opts.ids.length > 0 && liveRef.current) {
+      // `own` = true: the supervisor's own write applies at once, exactly as the full refetch it
+      // replaces always did (the detail / sheet it came from is closing in the same tick).
+      if (await syncIdsRef.current(opts.ids, true)) return;
+    }
     try {
       const json = await fetchQueue();
       setData(json);
@@ -507,17 +660,10 @@ function SupervisorPickingShell({
   // line-tick / Approve screen) OR overlayBusy (picker sheet / release confirm
   // floating over the list) — a background refetch must never move the ground
   // under an in-progress assignment or approval.
-  const markerResync = usePickingMarker({
-    scope: "openPending",
-    onChange: () => {
-      void refetchQueue({ fromMarker: true });
-    },
-    paused: detailOpen || overlayBusy,
-  });
-
-  useEffect(() => {
-    markerResyncRef.current = markerResync;
-  }, [markerResync]);
+  //
+  // ⚠ LIVE FEED 4b: this marker and the tint-room marker below moved UNCHANGED into
+  // <LegacySupervisorMarkers> (components/picking/picking-live.tsx), rendered at the foot of this
+  // shell only while the Picking feed is NOT live.
 
   // ── The tint room's own fetch ─────────────────────────────────────────────
   // Silent on failure, deliberately: `tintWork` stays null, the section does not
@@ -557,13 +703,199 @@ function SupervisorPickingShell({
   // while the supervisor is inside a detail screen or a sheet would move the
   // ground under him — and while a tint operator's bills are open, the section
   // he is reading is exactly what would be replaced.
-  usePickingMarker({
-    scope: "openPending",
-    url: "/api/picking/tint-workload/marker",
-    onChange: () => {
+  // (The call itself: <LegacySupervisorMarkers>, feed OFF only — see above.)
+
+  // ── LIVE FEED (4b) — the supervisor board on the change feed ───────────────
+  // One glance (15 s active / 60 s idle, nothing while hidden = screen off), ONE
+  // POST /api/picking/sync per glance with changes, merged by lib/picking/live-merge.ts;
+  // held while detailOpen || overlayBusy and applied once on release; a pushed
+  // "pick done" re-read at once (sync with that one id — never the feed, whose head
+  // cache can lag ≤ 5 s). Off the feed nothing here fetches except the glance itself.
+  const pausedNow = detailOpen || overlayBusy;
+  const pausedRef = useRef(pausedNow);
+  pausedRef.current = pausedNow;
+  const dataRef = useRef<PickingQueueResult | null>(data);
+  dataRef.current = data;
+  const tintRef = useRef<TintWorkloadResult | null>(tintWork);
+  tintRef.current = tintWork;
+  const flushingRef = useRef(false);
+  const failuresRef = useRef(0);
+  const flushRef = useRef<() => void>(() => {});
+  const onChangesRef = useRef<(b: { orderIds: number[]; tripIds: number[] }) => void>(() => {});
+  const hintRef = useRef<boolean>(readPickingLiveHint());
+  const feed = useLiveFeed({
+    scope: "picking",
+    screen: "picking",
+    topics: "order,trip,config",
+    hintKey: PICKING_LIVE_HINT_KEY,
+    onPending: () => flushRef.current(),
+    onChanges: (b) => onChangesRef.current(b),
+    onMode: (m, prev) => liveLog("picking", `supervisor mode ${prev} → ${m}`),
+    onMidnight: () => {
+      liveLog("picking", "IST midnight — full reload");
+      void refetchQueue();
       void refetchTint();
     },
-    paused: detailOpen || overlayBusy,
+  });
+  const live = feed.mode === "live" || (feed.mode === "unknown" && hintRef.current);
+  liveRef.current = live;
+
+  /** POST /api/picking/sync; null when it failed or the switch went off. */
+  const postSync = useCallback(
+    async (body: { orderIds?: number[]; tripIds?: number[]; shownIds?: number[]; tintShownIds?: number[] }) => {
+      const res = await fetch("/api/picking/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`sync HTTP ${res.status}`);
+      const json = (await res.json()) as { enabled?: boolean } & PickingSyncResult;
+      if (json.enabled === false) {
+        feed.controller.current?.noteDisabled();
+        return null;
+      }
+      return json as PickingSyncResult;
+    },
+    [feed.controller],
+  );
+
+  const tintShownIds = useCallback((): number[] => {
+    const t = tintRef.current;
+    if (!t) return [];
+    return [...t.pool.rows, ...t.operators.flatMap((o) => o.rows)].map((b) => b.orderId);
+  }, []);
+
+  /** Merge one sync answer; a different IST day → full reload. */
+  const applySync = useCallback(
+    (res: PickingSyncResult) => {
+      const cur = dataRef.current;
+      if (!cur) return;
+      const m = applyPickingSync(cur, res);
+      if (m.dateMismatch) {
+        liveLog("picking", `sync is for ${res.date}, board is ${cur.date} — full reload`);
+        void refetchQueue();
+        return;
+      }
+      dataRef.current = m.data;
+      setData(m.data);
+      liveLog("picking", "patched", { ids: res.patches.map((p) => `${p.id}${p.row ? "" : "→gone"}`), left: m.leftIds });
+      if (res.tintTouched) void refetchTint();
+    },
+    [refetchQueue, refetchTint],
+  );
+
+  /**
+   * Own writes (`own` = true — apply now, like the full refetch they replace) and pushes (held while a
+   * sheet / the detail is up): re-read these ids. true = applied (or held for release).
+   */
+  const syncIds = useCallback(
+    async (ids: number[], own = false): Promise<boolean> => {
+      try {
+        const res = await postSync({ orderIds: ids, shownIds: ids, tintShownIds: tintShownIds() });
+        if (!res) return false;
+        if (!own && pausedRef.current) {
+          // A sheet / the detail is up — never move the ground: hand the ids to the next flush.
+          feed.controller.current?.requeue(ids, []);
+          return true;
+        }
+        applySync(res);
+        return true;
+      } catch (e) {
+        liveLog("picking", "sync failed", e instanceof Error ? e.message : e);
+        return false;
+      }
+    },
+    [postSync, tintShownIds, applySync, feed.controller],
+  );
+  syncIdsRef.current = syncIds;
+
+  const flush = useCallback(async () => {
+    const ctl = feed.controller.current;
+    if (!ctl || ctl.getMode() !== "live" || flushingRef.current || pausedRef.current) return;
+    const work = ctl.take();
+    if (!work) return;
+    flushingRef.current = true;
+    let applied = false;
+    try {
+      if (work.kind === "full" || work.orderIds.length > 1000 || work.tripIds.length > 1000) {
+        liveLog("picking", `full reload (${work.kind === "full" ? work.reasons.join(", ") : "too many"})`);
+        ctl.noteFullLoad();
+        await refetchQueue();
+        await refetchTint();
+      } else {
+        const res = await postSync({
+          orderIds: work.orderIds,
+          tripIds: work.tripIds,
+          shownIds: (dataRef.current?.rows ?? []).map((r) => r.orderId),
+          tintShownIds: tintShownIds(),
+        });
+        if (res) {
+          if (pausedRef.current) ctl.requeue(work.orderIds, work.tripIds);
+          else applySync(res);
+        }
+      }
+      failuresRef.current = 0;
+      applied = true;
+    } catch (e) {
+      failuresRef.current++;
+      liveLog("picking", `apply failed (${failuresRef.current})`, e instanceof Error ? e.message : e);
+      if (work.kind === "patch") ctl.requeue(work.orderIds, work.tripIds);
+      if (failuresRef.current >= 3) {
+        failuresRef.current = 0;
+        void refetchQueue();
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+    if (applied) setTimeout(() => flushRef.current(), 0);
+  }, [feed.controller, postSync, tintShownIds, applySync, refetchQueue, refetchTint]);
+  flushRef.current = () => {
+    void flush();
+  };
+  // Released (detail closed, sheet gone) → apply what queued up.
+  useEffect(() => {
+    if (!pausedNow) flushRef.current();
+  }, [pausedNow]);
+
+  // ── The open bill changed elsewhere → quiet re-read, slim "Changed — Reload" strip ──
+  const detailIdRef = useRef<number | null>(null);
+  const [detailChanged, setDetailChanged] = useState<PickingSyncResult | null>(null);
+  const [detailReloadNonce, setDetailReloadNonce] = useState(0);
+  const reportDetailId = useCallback((id: number | null) => {
+    detailIdRef.current = id;
+    if (id === null) setDetailChanged(null);
+  }, []);
+  onChangesRef.current = (b) => {
+    const id = detailIdRef.current;
+    if (id === null || !live || !b.orderIds.includes(id)) return;
+    void (async () => {
+      try {
+        const res = await postSync({ orderIds: [id], shownIds: [id] });
+        if (!res || detailIdRef.current !== id) return;
+        const cur = dataRef.current?.rows.find((r) => r.orderId === id) ?? null;
+        const fresh = patchRowFor(res, id);
+        if (fresh !== undefined && !sameRow(cur, fresh)) {
+          liveLog("picking", `open bill ${id} changed elsewhere`);
+          setDetailChanged(res);
+        }
+      } catch {
+        /* no strip — the next change tries again */
+      }
+    })();
+  };
+  const reloadDetail = useCallback(() => {
+    if (detailChanged) applySync(detailChanged);
+    setDetailChanged(null);
+    setDetailReloadNonce((n) => n + 1);
+  }, [detailChanged, applySync]);
+
+  // ── Instant on push (decision 7): a "pick done" for a supervisor → re-read that bill now ──
+  const pageVisible = () => typeof document === "undefined" || document.visibilityState === "visible";
+  useOrbitPushMessages(live, (m) => {
+    if (!pageVisible()) return; // the glance on return covers it
+    liveLog("picking", `push ${m.tag} → sync ${m.orderId}`);
+    void syncIds([m.orderId]);
   });
 
   // The Assign strip's "View ›" — switch tab here, then let the board scroll.
@@ -618,8 +950,10 @@ function SupervisorPickingShell({
     () => ({
       data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy,
       tintWork, goToTinting, tintJumpNonce,
+      live, reportDetailId, detailChanged: detailChanged !== null, reloadDetail, detailReloadNonce,
     }),
-    [data, loading, error, activeTab, refetchQueue, detailOpen, tintWork, goToTinting, tintJumpNonce],
+    [data, loading, error, activeTab, refetchQueue, detailOpen, tintWork, goToTinting, tintJumpNonce,
+      live, reportDetailId, detailChanged, reloadDetail, detailReloadNonce],
   );
 
   return (
@@ -634,6 +968,19 @@ function SupervisorPickingShell({
       hideBar={detailOpen}
     >
       <PickingBoardContext.Provider value={contextValue}>
+        {/* The two legacy polls — mounted only while the Picking feed is NOT live (4b). */}
+        {!live && (
+          <LegacySupervisorMarkers
+            paused={detailOpen || overlayBusy}
+            onQueueChange={() => {
+              void refetchQueue({ fromMarker: true });
+            }}
+            onTintChange={() => {
+              void refetchTint();
+            }}
+            markerResyncRef={markerResyncRef}
+          />
+        )}
         {children}
       </PickingBoardContext.Provider>
     </RoleLayoutClient>
