@@ -1780,6 +1780,13 @@ the items below. Build record (history): `docs/prompts/archive/2026-09/code-upda
 wire is guarded by **`scripts/po-v2-email-fixtures.ts`** — run it before any commit that touches
 the send path.
 
+### P1 — ZeptoMail credits for SO login (added 2026-09-30)
+ZeptoMail credits: 1 free credit (10,000 emails) expires 31 Oct 2026. If credits run out, SO login stops.
+Buy credits or enable auto top-up before go-live. (Sales-officer OTP login sends its code through
+ZeptoMail, `lib/so-auth/send-code-email.ts`, env `ZEPTOMAIL_TOKEN`; a failed send is logged as
+`[so-auth] code email failed` while the page still says the code was sent. Record:
+`docs/prompts/drafts/code-update-2026-09-29-so-otp-login.md`.)
+
 ### P0 — 🔴 `/api/order/data` is an unauthenticated full-catalogue dump
 The ONE route `/po2` calls, and it is **wide open**: no session, no token, no rate limit, no
 origin check. Any request returns **every customer name, code and area the depot holds**

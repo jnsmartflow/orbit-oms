@@ -17,9 +17,18 @@ export const IP_WINDOW_MS = 60 * 60 * 1000;         // … per hour
 
 export const SO_SESSION_COOKIE = "orbit_so_session";
 
-// TEST PHASE ONLY — must become false when real email sending ships (step 7).
-// Only safe because every /api/so-lab route is superuser-gated.
-export const TEST_MODE_SHOW_CODE = true;
+// Switched OFF 2026-09-30, when email sending shipped (ZeptoMail,
+// lib/so-auth/send-code-email.ts). While it was true the code was returned to
+// the page for testing — safe ONLY because every /api/so-lab route is
+// superuser-gated. 🔴 Never turn it back on outside a superuser-only page.
+export const TEST_MODE_SHOW_CODE = false;
+
+// Every request-code answer takes at least this long (plus jitter), whatever
+// the outcome, so an allowed email (DB insert + email send) cannot be told
+// from a disallowed one by timing. A send slower than this still shows; the
+// floor covers the typical case.
+export const REQUEST_CODE_MIN_MS = 1500;
+export const REQUEST_CODE_JITTER_MS = 300;
 
 /** The one generic answer to a code request — identical whether or not the
  *  email is allowed, so the response never reveals eligibility. */

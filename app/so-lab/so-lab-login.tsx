@@ -37,7 +37,6 @@ export function SoLabLogin() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [testCode, setTestCode] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -82,7 +81,6 @@ export function SoLabLogin() {
         body: JSON.stringify({ email: target }),
       });
       if (!data?.ok) { setError(STAFF_LOST); return; }
-      setNotice(String(data.message));
       setTestCode(typeof data.testCode === "string" ? data.testCode : null);
       setCooldown(typeof data.cooldownSeconds === "number" ? data.cooldownSeconds : RESEND_SECONDS_DEFAULT);
       setCode("");
@@ -120,7 +118,6 @@ export function SoLabLogin() {
       if (status === 200 && data?.ok) {
         setWho({ name: String(data.name), email: String(data.email) });
         setTestCode(null);
-        setNotice(null);
         setScreen("in");
         return;
       }
@@ -143,7 +140,6 @@ export function SoLabLogin() {
       setWho(null);
       setCode("");
       setTestCode(null);
-      setNotice(null);
       setScreen("email");
     } catch {
       setError("Could not reach the server. Check the connection.");
@@ -156,7 +152,6 @@ export function SoLabLogin() {
     setScreen("email");
     setCode("");
     setTestCode(null);
-    setNotice(null);
     setError(null);
   }
 
@@ -207,11 +202,14 @@ export function SoLabLogin() {
 
           {screen === "code" && (
             <form onSubmit={onVerify} noValidate>
-              <p className="text-[13px] text-gray-600">
-                Code for <span className="font-semibold text-gray-900 break-all">{email}</span>
+              <p className="text-[14px] text-gray-700">
+                We sent a 6-digit code to{" "}
+                <span className="font-semibold text-gray-900 break-all">{email}</span>. Check your inbox and
+                spam folder.
               </p>
-              {notice && <p className="mt-1 text-[12.5px] text-gray-500">{notice}</p>}
 
+              {/* Only drawn if the API returns testCode — it has not since
+                  2026-09-30 (TEST_MODE_SHOW_CODE = false). */}
               {testCode && (
                 <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-[14px] text-amber-900">
                   TEST MODE — your code: <span className="font-mono font-semibold tracking-widest">{testCode}</span>

@@ -4,12 +4,15 @@ import {
   CODE_TTL_MS,
   IP_LIMIT,
   IP_WINDOW_MS,
+  REQUEST_CODE_JITTER_MS,
   REQUEST_CODE_MESSAGE,
+  REQUEST_CODE_MIN_MS,
   RESEND_COOLDOWN_MS,
   TEST_MODE_SHOW_CODE,
 } from "@/lib/so-auth/constants";
 import { generateCode, hashCode, normaliseEmail } from "@/lib/so-auth/crypto";
 import { findEligibleSoByEmail } from "@/lib/so-auth/eligibility";
+import { sendCodeEmail } from "@/lib/so-auth/send-code-email";
 import { requestIp, soLabStaffGate } from "@/lib/so-auth/staff-gate";
 
 export const dynamic = "force-dynamic";
@@ -17,24 +20,16 @@ export const dynamic = "force-dynamic";
 // POST /api/so-lab/auth/request-code  { email }
 //
 // 🔴 NEVER REVEALS ELIGIBILITY. Every outcome — not allowed, IP limit hit,
-// inside the 60 s cooldown, code created — answers 200 with the same
-// { ok, message, cooldownSeconds } shape. The ONE exception is testCode, sent
-// only while TEST_MODE_SHOW_CODE is on, which is safe only because the staff
-// gate below admits superusers alone.
+// inside the 60 s cooldown, code created and emailed, email send failed —
+// answers 200 with the same { ok, message, cooldownSeconds } shape, and no
+// sooner than REQUEST_CODE_MIN_MS (+ jitter) after the request arrived, so the
+// allowed path's insert + email send is not visible as a slower answer.
+// testCode is added only while TEST_MODE_SHOW_CODE is on (off since 2026-09-30).
 // Sequential awaits only — never prisma.$transaction (CORE §3).
-export async function POST(req: Request): Promise<NextResponse> {
-  const denied = await soLabStaffGate();
-  if (denied) return denied;
 
-  let body: unknown = null;
-  try { body = await req.json(); } catch { body = null; }
-  const email = normaliseEmail((body as { email?: unknown } | null)?.email);
+type Outcome = { testCode?: string };
 
-  const generic = {
-    ok: true,
-    message: REQUEST_CODE_MESSAGE,
-    cooldownSeconds: Math.round(RESEND_COOLDOWN_MS / 1000),
-  };
+async function issueCode(req: Request, email: string): Promise<Outcome> {
   const now = new Date();
   const ip = requestIp(req);
 
@@ -43,20 +38,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     const recent = await prisma.so_login_codes.count({
       where: { requestedIp: ip, createdAt: { gte: new Date(now.getTime() - IP_WINDOW_MS) } },
     });
-    if (recent >= IP_LIMIT) return NextResponse.json(generic);
+    if (recent >= IP_LIMIT) return {};
   }
 
   const so = await findEligibleSoByEmail(email);
-  if (!so) return NextResponse.json(generic);
+  if (!so) return {};
 
   const latest = await prisma.so_login_codes.findFirst({
     where: { salesOfficerId: so.salesOfficerId },
     orderBy: { createdAt: "desc" },
     select: { createdAt: true },
   });
-  if (latest && now.getTime() - latest.createdAt.getTime() < RESEND_COOLDOWN_MS) {
-    return NextResponse.json(generic);
-  }
+  if (latest && now.getTime() - latest.createdAt.getTime() < RESEND_COOLDOWN_MS) return {};
 
   const code = generateCode();
   await prisma.so_login_codes.create({
@@ -70,6 +63,35 @@ export async function POST(req: Request): Promise<NextResponse> {
     },
   });
 
-  // Real email sending is step 7 — until then the code reaches the owner here.
-  return NextResponse.json(TEST_MODE_SHOW_CODE ? { ...generic, testCode: code } : generic);
+  const sent = await sendCodeEmail({ to: so.email, name: so.name, code });
+  if (!sent.ok) {
+    // One line, no address, no code, no token.
+    console.error(`[so-auth] code email failed: ${sent.reason} soId=${so.salesOfficerId}`);
+  }
+
+  return TEST_MODE_SHOW_CODE ? { testCode: code } : {};
+}
+
+export async function POST(req: Request): Promise<NextResponse> {
+  const denied = await soLabStaffGate();
+  if (denied) return denied;
+
+  const startedAt = Date.now();
+
+  let body: unknown = null;
+  try { body = await req.json(); } catch { body = null; }
+  const email = normaliseEmail((body as { email?: unknown } | null)?.email);
+
+  const outcome = await issueCode(req, email);
+
+  const floor = REQUEST_CODE_MIN_MS + Math.floor(Math.random() * REQUEST_CODE_JITTER_MS);
+  const wait = floor - (Date.now() - startedAt);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+
+  return NextResponse.json({
+    ok: true,
+    message: REQUEST_CODE_MESSAGE,
+    cooldownSeconds: Math.round(RESEND_COOLDOWN_MS / 1000),
+    ...(outcome.testCode ? { testCode: outcome.testCode } : {}),
+  });
 }

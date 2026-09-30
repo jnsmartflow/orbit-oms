@@ -2,6 +2,35 @@
 # 2026-09-29 · step 1 of the /po2 → private SO order page plan
 
 > **2026-09-29 — SO login is deliberately separate from NextAuth — do not merge into lib/auth.ts.**
+>
+> **2026-09-30: on-screen test code removed — do not re-enable outside a superuser-only page.**
+
+## Update 2026-09-30 — the code is now sent by email
+
+- **Provider: Zoho ZeptoMail** (now "Zoho CPaaS"), **India data centre**, `https://api.zeptomail.in/v1.1/email`.
+  Domain `orbitoms.in` verified in ZeptoMail (DKIM + CNAME). **Sender `noreply@orbitoms.in`** ("Orbit").
+- **Env var `ZEPTOMAIL_TOKEN`** (Vercel, Production + Preview; name only — the value carries its own
+  `Zoho-enczapikey ` prefix and is sent as-is in `Authorization`). Missing → `sendCodeEmail` returns
+  `no-token` without touching the network.
+- **`lib/so-auth/send-code-email.ts`** — `sendCodeEmail({ to, name, code })`: `fetch` only (no SDK), 8 s
+  `AbortController` timeout, subject "Orbit login code", Outlook-safe HTML (tables, inline styles, no images)
+  + plain text. Failure reason = `http-<status> <Zoho error code>` / `timeout` / `network` / `no-token` —
+  never the response body, never the token.
+- **`TEST_MODE_SHOW_CODE = false`** (`lib/so-auth/constants.ts`); the route adds `testCode` only when it is
+  true, so the API no longer returns it and the page's amber box no longer draws. Code screen now reads
+  "We sent a 6-digit code to {email}. Check your inbox and spam folder."
+- **request-code**: after the `so_login_codes` insert it awaits `sendCodeEmail`. A failed send logs ONE line,
+  `[so-auth] code email failed: <reason> soId=<id>` (no address, no code) and the response is unchanged —
+  same message, same status, same shape.
+- **Timing floor**: every request-code answer (allowed, not allowed, cooldown, IP limit, send failed) is held
+  until at least **1,500 ms + 0–300 ms random jitter** after the request arrived (`REQUEST_CODE_MIN_MS`,
+  `REQUEST_CODE_JITTER_MS`). The allowed path does an insert plus an email round-trip that a disallowed email
+  skips; the floor hides it in the usual case. A ZeptoMail send slower than the floor still shows as a slower
+  answer — accepted, noted here.
+- Cooldown, IP limit, verify, logout, me: unchanged. `/so-lab` and every `/api/so-lab/*` route are still
+  superuser-gated.
+- ⚠ **ZeptoMail credits:** one free credit (10,000 emails) expires **31 Oct 2026**. If credits run out, SO
+  login stops (the page still says "sent"; the log shows `code email failed`). Tracked in ROADMAP → `/po2`.
 
 Discovery: `docs/prompts/drafts/code-discovery-2026-09-29-po2-so-login.md` (§A Option 2, §G).
 SQL (run live 2026-09-29 by Smart Flow, verified): `sql/2026-09-29-so-login-tables.sql`.
@@ -51,9 +80,9 @@ Not touched: `lib/auth.ts`, `auth.config.ts`, `middleware.ts` (git diff empty), 
 
 ## 🔴 Must happen later
 
-1. **`TEST_MODE_SHOW_CODE` must flip to `false` at step 7** (real email sending). It is safe today ONLY because
-   every `/api/so-lab` route is superuser-gated. Lifting the staff gate while it is `true` hands any caller
-   a valid code for any allowed email.
+1. ~~**`TEST_MODE_SHOW_CODE` must flip to `false` at step 7**~~ — **DONE 2026-09-30** with email sending
+   (above). Never turn it back on outside a superuser-only page: with the staff gate lifted it would hand any
+   caller a valid code for any allowed email.
 2. **Deactivate the TEST sales officer, `sales_officer_master` id 19** ('TEST — Smart Flow') after testing,
    and revoke `so_order_access` id 1. While active it appears in the SO dropdowns on `/admin/customers`,
    `/tint/manager/customers` and `/dispatcher/customers` — do not assign it to a customer.
