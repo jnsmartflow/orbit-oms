@@ -11,6 +11,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   LIVE_FEED_KEY,
+  LIVE_FEED_BILLING_KEY,
   parseLiveFeedSwitch,
   type Cursor,
   type LiveRow,
@@ -25,24 +26,40 @@ import {
 // instance per 30 s. A READ ERROR → OFF, cached for the TTL — the feed is an
 // optimisation, so failing it off is always safe (screens keep their old poll).
 const SWITCH_TTL_MS = 30_000;
-let switchCache: { on: boolean; at: number } | null = null;
+// One cache entry per settingKey (2026-09-30: 'live.feed' and 'live.feed.billing').
+const switchCache = new Map<string, { on: boolean; at: number }>();
 
-export async function isLiveFeedOn(): Promise<boolean> {
+async function isSwitchOn(settingKey: string): Promise<boolean> {
   const now = Date.now();
-  if (switchCache && now - switchCache.at < SWITCH_TTL_MS) return switchCache.on;
+  const hit = switchCache.get(settingKey);
+  if (hit && now - hit.at < SWITCH_TTL_MS) return hit.on;
   let on = false;
   try {
     const row = await prisma.app_settings.findUnique({
-      where:  { settingKey: LIVE_FEED_KEY },
+      where:  { settingKey },
       select: { isEnabled: true },
     });
     on = parseLiveFeedSwitch(row);
   } catch (err) {
-    console.error("[live] could not read the live.feed switch; treating it as OFF:", err);
+    console.error(`[live] could not read the ${settingKey} switch; treating it as OFF:`, err);
     on = false;
   }
-  switchCache = { on, at: now };
+  switchCache.set(settingKey, { on, at: now });
   return on;
+}
+
+/** The global kill switch — every screen's feed. Unchanged behaviour. */
+export async function isLiveFeedOn(): Promise<boolean> {
+  return isSwitchOn(LIVE_FEED_KEY);
+}
+
+/**
+ * Billing's feed: 'live.feed' AND 'live.feed.billing' (absent = OFF). The global switch is read
+ * first, so with it OFF the Billing key is never read (the caller's "reading nothing").
+ */
+export async function isBillingFeedOn(): Promise<boolean> {
+  if (!(await isLiveFeedOn())) return false;
+  return isSwitchOn(LIVE_FEED_BILLING_KEY);
 }
 
 // ── Horizon, watermark and lag (one small statement, no live_changes read) ──

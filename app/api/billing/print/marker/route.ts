@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { loadPrintTrips, getPrintWorkTripIds, getPrintMarkerLatest } from "@/lib/billing/print";
-import { prisma } from "@/lib/prisma";
+import { getPrintMarkerLatest } from "@/lib/billing/print";
+import { getPrintCount } from "@/lib/billing/marker-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -30,17 +30,9 @@ export async function GET(): Promise<NextResponse> {
   const allowed = await checkAnyPermission(roles, "billing_print", "canView");
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const workIds = await getPrintWorkTripIds();
-  // Split the work ids: never-copied ones count as they are; copied-and-touched
-  // ones are loaded and counted only if they really reopened.
-  const touched = workIds.length
-    ? await prisma.trips.findMany({
-        where: { id: { in: workIds }, billingCopiedAt: { not: null } },
-        select: { id: true },
-      })
-    : [];
-  const reopened = (await loadPrintTrips(touched.map((t) => t.id))).filter((t) => t.state === "reopened").length;
-  const count = workIds.length - touched.length + reopened;
+  // The count lives in lib/billing/marker-counts.ts since 2026-09-30 (moved
+  // verbatim) — POST /api/billing/sync imports the same function.
+  const count = await getPrintCount();
 
   const latest = await getPrintMarkerLatest();
 

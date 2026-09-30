@@ -69,8 +69,11 @@ export function horizonCursor(horizonTxId: string): Cursor {
 }
 
 // ── TOPICS ──────────────────────────────────────────────────────────────────
-// The entities live_changes can carry (chk_live_changes_entity).
-export const LIVE_TOPICS = ["order", "trip", "config"] as const;
+// The entities live_changes can carry (chk_live_changes_entity). "mail_order" (mo_orders)
+// and "so_tag" (so_tags) added 2026-09-30 for Billing (Schema v27.47,
+// sql/2026-09-30-live-changes-billing.sql). A caller that names its topics (Floor asks
+// "order,trip,config") never sees them; only the no-topics default widens.
+export const LIVE_TOPICS = ["order", "trip", "config", "mail_order", "so_tag"] as const;
 export type LiveTopic = (typeof LIVE_TOPICS)[number];
 
 /**
@@ -223,6 +226,21 @@ export function createHeadCache(now: () => number, ttlMs: number = HEAD_CACHE_TT
 // ── THE SWITCH ──────────────────────────────────────────────────────────────
 /** app_settings "settingKey" for the live feed kill switch. Never retype it. */
 export const LIVE_FEED_KEY = "live.feed";
+
+/** Billing's own switch (2026-09-30). Billing is live only when BOTH are on: LIVE_FEED_KEY is
+ *  the global kill switch for every screen, this one is Billing's. Absent row = OFF. */
+export const LIVE_FEED_BILLING_KEY = "live.feed.billing";
+
+/** `?screen=` values GET /api/live/changes understands; anything else → 400. */
+export const LIVE_SCREENS = ["billing"] as const;
+export type LiveScreen = (typeof LIVE_SCREENS)[number];
+
+/** `?screen=billing` → "billing"; absent / blank → null (the global switch alone, as before); unknown → undefined. */
+export function parseScreen(raw: string | null | undefined): LiveScreen | null | undefined {
+  if (raw === null || raw === undefined || raw.trim() === "") return null;
+  const s = raw.trim().toLowerCase();
+  return (LIVE_SCREENS as readonly string[]).includes(s) ? (s as LiveScreen) : undefined;
+}
 
 /** ON only for a row whose isEnabled is exactly true; no row / null / false → OFF. */
 export function parseLiveFeedSwitch(row: { isEnabled: boolean | null } | null | undefined): boolean {

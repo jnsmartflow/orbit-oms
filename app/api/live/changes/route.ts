@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { isLiveFeedOn, readChangesAfter, readFeedMeta } from "@/lib/live/feed";
+import { isBillingFeedOn, isLiveFeedOn, readChangesAfter, readFeedMeta } from "@/lib/live/feed";
 import {
   createHeadCache,
   decodeCursor,
@@ -11,6 +11,7 @@ import {
   isPrunedPast,
   nextCursor,
   parseLimit,
+  parseScreen,
   parseTopics,
 } from "@/lib/live/cursor";
 
@@ -24,9 +25,9 @@ export const dynamic = "force-dynamic";
 // rows through its own permission-checked route.
 //
 // Order of checks:
-//   1. session (401) → 2. canView on a page that consumes the feed (403; today
-//      only 'floor' — checkAnyPermission, so the access notebook applies) →
-//   3. the kill switch app_settings 'live.feed' (absent / false / read error =
+//   1. session (401) → 2. canView on a page that consumes the feed (403; floor OR mail_orders
+//      since 2026-09-30 — checkAnyPermission, so the access notebook applies) →
+//   3. the kill switch app_settings 'live.feed' (+ 'live.feed.billing' for ?screen=billing; absent / false / read error =
 //      OFF → 200 { enabled: false }, and NOTHING else is read).
 //
 // Cursor: opaque "v1.<txId>.<seq>" (lib/live/cursor.ts). No `after` → the
@@ -48,7 +49,11 @@ export const dynamic = "force-dynamic";
 // Topic filtering: the cursor advances past rows of topics the caller did not
 // ask for. A client that changes its topic list must start again with no cursor.
 
-const PAGE_KEYS_THAT_CONSUME_THE_FEED = ["floor"] as const;
+// 2026-09-30 (billing 2b-i): + "mail_orders" — billing staff hold mail_orders, not floor.
+// The rule is: a session AND (floor canView OR mail_orders canView), each through
+// checkAnyPermission (all roles, access notebook). Ids only — every row still comes
+// from the screen's own permission-checked route.
+const PAGE_KEYS_THAT_CONSUME_THE_FEED = ["floor", "mail_orders"] as const;
 
 // 7a (2026-09-30): per-instance safe-head cache — see HEAD_CACHE rules in
 // lib/live/cursor.ts. A caller already AT the latest safe head this instance
@@ -74,14 +79,22 @@ export async function GET(req: Request) {
   }
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  if (!(await isLiveFeedOn())) {
+  const url = new URL(req.url);
+
+  // ?screen=billing (2026-09-30) → enabled only when live.feed AND live.feed.billing are ON
+  // (absent row = OFF). No screen → the global switch alone, exactly as before (Floor).
+  const screen = parseScreen(url.searchParams.get("screen"));
+  if (screen === undefined) {
+    return NextResponse.json({ error: "screen must be: billing" }, { status: 400 });
+  }
+  const on = screen === "billing" ? await isBillingFeedOn() : await isLiveFeedOn();
+  if (!on) {
     return NextResponse.json({ enabled: false }, { headers: NO_STORE });
   }
 
-  const url = new URL(req.url);
   const topics = parseTopics(url.searchParams.get("topics"));
   if (topics === null) {
-    return NextResponse.json({ error: "topics must name at least one of: order, trip, config" }, { status: 400 });
+    return NextResponse.json({ error: "topics must name at least one of: order, trip, config, mail_order, so_tag" }, { status: 400 });
   }
   const limit = parseLimit(url.searchParams.get("limit"));
   const rawAfter = url.searchParams.get("after");

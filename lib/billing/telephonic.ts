@@ -50,7 +50,8 @@ export function liveTagWhere(now: Date): Prisma.so_tagsWhereInput {
   return { isRemoved: false, expiresAt: { gt: now }, status: { in: ["waiting", "matched"] } };
 }
 
-/** The WAITING band — ALL DATES, never month-fenced. */
+/** The WAITING band — ALL DATES, never month-fenced.
+ *  ⚠ Spelled a second time, in SQL, in getTelephonicMarker (below) — change both. */
 export function waitingTagWhere(now: Date): Prisma.so_tagsWhereInput {
   return { isRemoved: false, status: "waiting", expiresAt: { gt: now } };
 }
@@ -442,26 +443,42 @@ export interface TelephonicMarker {
  * READ-ONLY: it adds no write, ever.
  */
 export async function getTelephonicMarker(now: Date): Promise<TelephonicMarker> {
-  const count = await prisma.so_tags.count({ where: waitingTagWhere(now) });
-  const tagMax = await prisma.so_tags.aggregate({ _max: { updatedAt: true } });
-  const matchAgg = await prisma.so_tag_matches.aggregate({ _max: { appliedAt: true }, _count: true });
-  const skipReasonCount = await prisma.so_tag_matches.count({ where: { ciSkipReason: { not: null } } });
-
-  const matchedOrderIds = (
-    await prisma.so_tag_matches.findMany({ select: { orderId: true }, distinct: ["orderId"] })
-  ).map((m) => m.orderId);
-  let orderMax: Date | null = null;
-  let ciMax: Date | null = null;
-  if (matchedOrderIds.length > 0) {
-    orderMax = (await prisma.orders.aggregate({
-      where: { id: { in: matchedOrderIds } }, _max: { updatedAt: true },
-    }))._max.updatedAt;
-    ciMax = (await prisma.ci_returns.aggregate({
-      where: { orderId: { in: matchedOrderIds } }, _max: { updatedAt: true },
-    }))._max.updatedAt;
-  }
-
-  const stamps = [tagMax._max.updatedAt, matchAgg._max.appliedAt, orderMax, ciMax]
+  // ONE statement (2026-09-30, live feed billing 2b-i). Was SEVEN: the four
+  // small aggregates below, plus a `distinct orderId` over EVERY so_tag_matches
+  // row (in memory — Prisma 5 has no native distinct) feeding two
+  // `IN (every matched bill ever)` aggregates. Each scalar sub-select is the old
+  // statement's own predicate; `count` is waitingTagWhere(now) spelled in SQL
+  // (isRemoved = false, status 'waiting', expiresAt > now). The IN lists became
+  // semi-joins (`IN (SELECT "orderId" FROM so_tag_matches)`) — same set, and an
+  // empty so_tag_matches still yields NULL for both MAXes, exactly as the old
+  // `if (matchedOrderIds.length > 0)` did. Proven equal on live data by
+  // scripts/parity-billing-sync.ts (old body frozen there).
+  const [r] = await prisma.$queryRaw<
+    {
+      count: number;
+      tagMax: Date | null;
+      matchMax: Date | null;
+      matchCount: number;
+      skipReasonCount: number;
+      orderMax: Date | null;
+      ciMax: Date | null;
+    }[]
+  >`
+    SELECT
+      (SELECT count(*) FROM so_tags
+        WHERE "isRemoved" = false AND status = 'waiting' AND "expiresAt" > ${now})::int         AS count,
+      (SELECT max("updatedAt") FROM so_tags)                                                    AS "tagMax",
+      (SELECT max("appliedAt") FROM so_tag_matches)                                             AS "matchMax",
+      (SELECT count(*) FROM so_tag_matches)::int                                                AS "matchCount",
+      (SELECT count(*) FROM so_tag_matches WHERE "ciSkipReason" IS NOT NULL)::int               AS "skipReasonCount",
+      (SELECT max(o."updatedAt") FROM orders o
+        WHERE o.id IN (SELECT m."orderId" FROM so_tag_matches m))                               AS "orderMax",
+      (SELECT max(c."updatedAt") FROM ci_returns c
+        WHERE c."orderId" IN (SELECT m."orderId" FROM so_tag_matches m))                        AS "ciMax"`;
+  const count = r.count;
+  const skipReasonCount = r.skipReasonCount;
+  const matchAgg = { _count: r.matchCount };
+  const stamps = [r.tagMax, r.matchMax, r.orderMax, r.ciMax]
     .filter((d): d is Date => d !== null)
     .map((d) => d.getTime());
   return {

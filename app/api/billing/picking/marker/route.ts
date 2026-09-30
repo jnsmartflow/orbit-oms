@@ -2,10 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import {
-  buildBillingPendingWhere,
-  buildBillingMarkerWhere,
-} from "@/lib/billing/picking-where";
+import { buildBillingMarkerWhere } from "@/lib/billing/picking-where";
+import { countBillingPending } from "@/lib/billing/marker-counts";
 import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
@@ -94,11 +92,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // 15s. Not a cache: still a real, fresh read on each request, just once.
   const hideExclusion = await getHideExclusion();
 
-  const pendingWhere = await buildBillingPendingWhere(hideExclusion);
-  const countAgg = await prisma.orders.aggregate({
-    where: pendingWhere,
-    _count: true,
-  });
+  // The count lives in lib/billing/marker-counts.ts since 2026-09-30 (moved
+  // verbatim) — POST /api/billing/sync imports the same function.
+  const count = await countBillingPending(hideExclusion);
 
   const unionWhere = await buildBillingMarkerWhere(dateStr, hideExclusion);
   const latestAgg = await prisma.orders.aggregate({
@@ -107,7 +103,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   });
 
   const body = {
-    count: countAgg._count,
+    count,
     latest: latestAgg._max.updatedAt ? latestAgg._max.updatedAt.toISOString() : null,
   };
 

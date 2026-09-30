@@ -21,6 +21,9 @@ import {
   parseLimit,
   parseLiveFeedSwitch,
   parseTopics,
+  parseScreen,
+  LIVE_FEED_BILLING_KEY,
+  LIVE_FEED_KEY,
   DEFAULT_LIMIT,
   MAX_LIMIT,
   type LiveRow,
@@ -105,8 +108,9 @@ test("no rows → no groups", () => {
 
 // ── params ──────────────────────────────────────────────────────────────────
 test("topics: default all; unknown ignored; nothing known → null (400)", () => {
-  assert.deepEqual(parseTopics(null), ["order", "trip", "config"]);
-  assert.deepEqual(parseTopics(""), ["order", "trip", "config"]);
+  // The no-topics default widened with mail_order / so_tag (2026-09-30); nobody relies on it.
+  assert.deepEqual(parseTopics(null), ["order", "trip", "config", "mail_order", "so_tag"]);
+  assert.deepEqual(parseTopics(""), ["order", "trip", "config", "mail_order", "so_tag"]);
   assert.deepEqual(parseTopics("trip, order ,order"), ["order", "trip"]);
   assert.deepEqual(parseTopics("ORDER,nonsense"), ["order"]);
   assert.equal(parseTopics("nonsense"), null);
@@ -192,4 +196,44 @@ test("head cache cannot skip: a hit never advances — the caller keeps its own 
   callerCursor = nextCursor({ after: callerCursor, returned, more: false, horizonTxId: "510" });
   assert.deepEqual(groupChanges(returned), [{ entity: "order", ids: [42] }]);
   assert.deepEqual(callerCursor, { txId: "510", seq: "0" });
+});
+
+// ── Billing (2b-i, 2026-09-30) ──────────────────────────────────────────────
+test("Floor's topics are unchanged by the Billing entities: it asks order,trip,config and gets exactly those", () => {
+  // lib/live/use-live-feed.ts is called by Floor with topics "order,trip,config" (components/floor/floor-page.tsx).
+  assert.deepEqual(parseTopics("order,trip,config"), ["order", "trip", "config"]);
+  // …so a mail_order / so_tag line can never reach it: the SQL filters entity = ANY(topics).
+  const floorTopics = parseTopics("order,trip,config") as string[];
+  assert.equal(floorTopics.includes("mail_order"), false);
+  assert.equal(floorTopics.includes("so_tag"), false);
+});
+
+test("Billing topics parse in canonical order", () => {
+  assert.deepEqual(parseTopics("so_tag,mail_order,order,trip,config"), ["order", "trip", "config", "mail_order", "so_tag"]);
+  assert.deepEqual(parseTopics("mail_order"), ["mail_order"]);
+});
+
+test("groupChanges: mail_order and so_tag ids are numbers, config stays text, canonical entity order", () => {
+  const rows = [
+    row("10", "1", "so_tag", "7"),
+    row("10", "2", "mail_order", "501"),
+    row("10", "3", "config", "app_settings"),
+    row("10", "4", "order", "9"),
+    row("10", "5", "mail_order", "501"),
+  ];
+  assert.deepEqual(groupChanges(rows), [
+    { entity: "order", ids: [9] },
+    { entity: "config", ids: ["app_settings"] },
+    { entity: "mail_order", ids: [501] },
+    { entity: "so_tag", ids: [7] },
+  ]);
+});
+
+test("screen param: absent → null (global switch only), billing → billing, junk → undefined (400)", () => {
+  assert.equal(parseScreen(null), null);
+  assert.equal(parseScreen(""), null);
+  assert.equal(parseScreen(" Billing "), "billing");
+  assert.equal(parseScreen("floor"), undefined);
+  assert.equal(LIVE_FEED_KEY, "live.feed");
+  assert.equal(LIVE_FEED_BILLING_KEY, "live.feed.billing");
 });
