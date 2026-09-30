@@ -8,7 +8,7 @@
 // assigned (/api/tint/manager/orders/[id]/remove returns 409 outside
 // pending_tint_assignment).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle, ChevronLeft, ChevronRight, Eye, Loader2, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
@@ -18,7 +18,7 @@ import type { BasePendingLine, BasePendingOrder, Operator, TintOrder } from "./t
 export function BoardRail({
   rail, operators, onAssign, onBaseBypass, onRemove, onOpenPanel, onResolveMissing, canRemove,
   basePending, baseDrill, baseLineId, onOpenBase, onBackFromBase, onPickBaseLine,
-  onUndoBase, baseUndoBusyId,
+  onUndoBase, baseUndoBusyId, onMenuOpenChange,
 }: {
   rail:             TintOrder[];
   operators:        Operator[];
@@ -49,11 +49,16 @@ export function BoardRail({
   onUndoBase:       (order: BasePendingOrder) => void;
   /** orderId with an undo in flight, so its button goes inert. */
   baseUndoBusyId:   number | null;
+  /** Live feed (tint step 4): the operator menu opened / closed, so the page can
+   *  hold its reload while a manager is picking an operator. Optional. */
+  onMenuOpenChange?: (open: boolean) => void;
 }) {
   // The open menu carries its TRIGGER ELEMENT, not just an id: OperatorMenu is
   // portalled to document.body and measures its position from that element, so
   // the anchor has to travel with the open-state.
   const [menu, setMenu] = useState<{ orderId: number; anchor: HTMLElement } | null>(null);
+  const menuOpen = menu !== null;
+  useEffect(() => { onMenuOpenChange?.(menuOpen); }, [menuOpen, onMenuOpenChange]);
 
   // ── Drilldown: one bypassed bill's tinting lines ──────────────────────────
   // REPLACES the whole rail rather than expanding inside it. The manager is

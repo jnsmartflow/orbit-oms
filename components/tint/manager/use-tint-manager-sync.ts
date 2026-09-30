@@ -67,3 +67,18 @@ export function useTintManagerSync({
     onChange,
   });
 }
+
+/**
+ * The legacy path as a component (tint step 4, 2026-09-30): the page renders this ONLY while the
+ * Tint feed is not live (switch off, fallback after errors, or unknown on a browser that never saw
+ * it on). Same props, same single useTintManagerSync call as the page made before the feed — so the
+ * OFF path's marker is byte-identical. See use-tint-manager-live.ts.
+ */
+export function LegacyTintManagerSync(props: {
+  paused: boolean;
+  onChange: () => void;
+  onProbe: (connected: boolean) => void;
+}): null {
+  useTintManagerSync(props);
+  return null;
+}

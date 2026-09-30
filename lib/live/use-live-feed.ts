@@ -73,6 +73,9 @@ export interface UseLiveFeedOptions {
   onMode?: (mode: FeedMode, prev: FeedMode) => void;
   /** IST midnight on the server's clock, plus 0–120 s jitter. Live mode only. */
   onMidnight?: () => void;
+  /** Optional: every raw answer, for screen-specific top-level fields the controller does not know
+   *  (2026-09-30: Tint's `missingTouched`). Omitted (Floor, Billing, Picking) → nothing changes. */
+  onAnswer?: (answer: ChangesAnswer & Record<string, unknown>) => void;
 }
 
 export interface LiveFeedHandle {
@@ -105,7 +108,9 @@ export function useLiveFeed(opts: UseLiveFeedOptions): LiveFeedHandle {
         if (after) qs.set("after", after);
         const res = await fetch(`/api/live/changes?${qs.toString()}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return (await res.json()) as ChangesAnswer;
+        const answer = (await res.json()) as ChangesAnswer & Record<string, unknown>;
+        optsRef.current.onAnswer?.(answer);
+        return answer;
       },
       now: () => Date.now(),
       random: () => Math.random(),

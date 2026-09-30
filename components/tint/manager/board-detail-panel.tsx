@@ -36,7 +36,7 @@ export function BoardDetailPanel({
   onClose, onPrev, onNext,
   onAssign, onBaseBypass, onReassignOrder, onReassignSplit, onSendBack,
   onRemove, onResolveMissing, onOpenPauseHistory, onOpenSkipHistory,
-  canRemove,
+  canRemove, changedElsewhere = false, onReloadChanged,
 }: {
   target:    PanelTarget;
   operators: Operator[];
@@ -64,6 +64,14 @@ export function BoardDetailPanel({
   onOpenPauseHistory:  (orderId: number, obdNumber: string, siteName: string) => void;
   onOpenSkipHistory:   (orderId: number, obdNumber: string, siteName: string) => void;
   canRemove: boolean;
+  /**
+   * Live feed only (tint step 4) — false with the feed off, and then nothing
+   * below renders. The page sets it when THIS bill changed elsewhere and a quiet
+   * re-read really differs; the panel shows Floor's slim "Changed elsewhere ·
+   * Reload" bar and never swaps the data by itself.
+   */
+  changedElsewhere?: boolean;
+  onReloadChanged?: () => void;
 }) {
   // One tick per tab (tint_panel_items / _details / _activity, 2026-09-17).
   // A tab without its tick is never drawn AND never mounted, so its content
@@ -286,6 +294,19 @@ export function BoardDetailPanel({
     <>
       <div className="fixed inset-0 bg-black/25 z-[49]" onClick={onClose} />
       <aside className="fixed top-0 right-0 bottom-0 w-[480px] bg-white shadow-[-8px_0_30px_rgba(0,0,0,.12)] z-[50] flex flex-col">
+        {changedElsewhere && (
+          <div role="status" className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-[18px] py-1.5 text-[11.5px] text-gray-600">
+            Changed elsewhere
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onReloadChanged?.()}
+              className="ml-auto font-semibold text-brand-600 disabled:opacity-40"
+            >
+              Reload
+            </button>
+          </div>
+        )}
 
         {/* Header */}
         <div className="px-[18px] pt-4 pb-3 border-b border-gray-100">

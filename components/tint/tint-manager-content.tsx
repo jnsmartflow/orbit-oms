@@ -55,7 +55,8 @@ import { BoardAssignBar } from "@/components/tint/manager/board-assign-bar";
 import { BoardDetailPanel, type PanelTarget } from "@/components/tint/manager/board-detail-panel";
 import { useTintManagerAccess } from "@/components/tint/manager/tint-manager-access-provider";
 import { ConnectionStrip } from "@/components/tint/manager/board-bits";
-import { useTintManagerSync } from "@/components/tint/manager/use-tint-manager-sync";
+import { LegacyTintManagerSync } from "@/components/tint/manager/use-tint-manager-sync";
+import { boardOrderIds, useTintManagerLive } from "@/components/tint/manager/use-tint-manager-live";
 import { useMissingCustomersPoll } from "@/components/tint/manager/use-missing-customers-poll";
 import { buildGroups, buildRail, panelSequence, queueSignature } from "@/components/tint/manager/rows";
 import type {
@@ -124,6 +125,8 @@ export function TintManagerContent() {
   const [panelError, setPanelError] = useState<string | null>(null);
   const [writeBusy, setWriteBusy] = useState(false);
   const [reorderBusy, setReorderBusy] = useState<Set<string>>(new Set());
+  // The rail's operator menu is open (reported up by BoardRail) — a live-feed hold.
+  const [railMenuOpen, setRailMenuOpen] = useState(false);
 
   const [removeModalOrder, setRemoveModalOrder] = useState<TintOrder | null>(null);
   const [hideModalOrder,   setHideModalOrder]   = useState<TintOrder | null>(null);
@@ -229,15 +232,6 @@ export function TintManagerContent() {
   // The page's own writes below still refetch it directly, as before.
   useMissingCustomersPoll(fetchMissingCustomers);
 
-  // ── Live sync ─────────────────────────────────────────────────────────────
-  // Paused while the panel is open or a selection is up: never move the ground
-  // under a hand (FLOOR §5).
-  useTintManagerSync({
-    paused:   panelKey !== null || selection.size > 0,
-    onProbe:  setConnected,
-    onChange: () => { void fetchBoard(); },
-  });
-
   // ── Derived board ─────────────────────────────────────────────────────────
 
   const delTypes  = useMemo(() => new Set(headerFilters.deliveryType ?? []), [headerFilters]);
@@ -332,6 +326,62 @@ export function TintManagerContent() {
   }, [panelKey, panelTarget]);
 
   useEffect(() => { setPanelError(null); }, [panelKey]);
+
+  // ── Live sync ─────────────────────────────────────────────────────────────
+  // Two paths, one switch (tint step 4, 2026-09-30 — use-tint-manager-live.ts):
+  //   feed live → one glance, ONE board reload per hit, held while `holdLive`
+  //               and applied once on release;
+  //   not live  → <LegacyTintManagerSync> at the foot of the page: the 15 s
+  //               marker exactly as before, paused while the panel is open or a
+  //               selection is up (FLOOR §5).
+  // The feed holds for MORE than the marker did: a re-sequence or any write in
+  // flight, and every modal / sheet / popover this page opens.
+  const holdLive =
+    panelKey !== null || selection.size > 0 || reorderBusy.size > 0 || writeBusy || railMenuOpen ||
+    baseUndoBusyId !== null || missingBadgeOpen || missingSheetOpen || pullModalOpen ||
+    revertOrder !== null || removeModalOrder !== null || hideModalOrder !== null ||
+    skipHistoryFor !== null || pauseHistoryFor !== null;
+  const payloadRef = useRef(payload);
+  payloadRef.current = payload;
+  const missingRef = useRef(missingCustomers);
+  missingRef.current = missingCustomers;
+  const panelOrderId =
+    panelTarget === null ? null : panelTarget.kind === "pending" ? panelTarget.order.id : panelTarget.row.orderId;
+
+  // "Changed — Reload" (feed only): the open bill changed elsewhere → a quiet
+  // board read; the strip shows only if that bill really differs. Never swaps
+  // the data under the panel by itself.
+  const [panelFresh, setPanelFresh] = useState<TintBoardPayload | null>(null);
+  useEffect(() => { setPanelFresh(null); }, [panelKey, payload]);
+  const panelKeyRef = useRef(panelKey);
+  panelKeyRef.current = panelKey;
+  const checkPanelChanged = useCallback(async () => {
+    const key = panelKeyRef.current;
+    if (key === null) return;
+    try {
+      const res = await fetch("/api/tint/manager/orders", { cache: "no-store" });
+      if (!res.ok || panelKeyRef.current !== key) return;
+      const data = (await res.json()) as TintBoardPayload;
+      const fresh: TintBoardPayload = {
+        orders:               data.orders ?? [],
+        activeSplits:         data.activeSplits ?? [],
+        completedSplits:      data.completedSplits ?? [],
+        completedAssignments: data.completedAssignments ?? [],
+      };
+      if (panelSnapshot(fresh, key) !== panelSnapshot(payloadRef.current, key)) setPanelFresh(fresh);
+    } catch { /* no strip — the next change tries again */ }
+  }, []);
+
+  const liveSync = useTintManagerLive({
+    hold:          holdLive,
+    boardIds:      () => boardOrderIds(payloadRef.current),
+    missingIds:    () => missingRef.current.map((m) => m.orderId),
+    panelOrderId,
+    fetchBoard,
+    fetchMissing:  fetchMissingCustomers,
+    onPanelBillChanged: () => { void checkPanelChanged(); },
+  });
+  const feedLive = liveSync.live;
 
   // ── THE single window-level Esc owner for this screen ──────────────────────
   // One listener, one branch per keypress. Never add a second under
@@ -923,7 +973,17 @@ export function TintManagerContent() {
         ]}
       />
 
-      <ConnectionStrip connected={connected} lastSyncedAt={lastSyncedAt} />
+      <ConnectionStrip connected={feedLive ? liveSync.connected : connected} lastSyncedAt={lastSyncedAt} />
+
+      {/* The legacy 15 s marker — mounted ONLY while the Tint feed is not live
+          (tint step 4). Same props as the page passed before the feed. */}
+      {!feedLive && (
+        <LegacyTintManagerSync
+          paused={panelKey !== null || selection.size > 0}
+          onProbe={setConnected}
+          onChange={() => { void fetchBoard(); }}
+        />
+      )}
 
       {/* ── Body shell: 344px rail + one flat table ──────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
@@ -947,6 +1007,7 @@ export function TintManagerContent() {
           onPickBaseLine={(l) => setBaseLine(l)}
           onUndoBase={(o) => { void handleBaseUndo(o); }}
           baseUndoBusyId={baseUndoBusyId}
+          onMenuOpenChange={setRailMenuOpen}
           onRemove={(o) => setRemoveModalOrder(o)}
           onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
           onResolveMissing={(o) => {
@@ -1024,6 +1085,11 @@ export function TintManagerContent() {
           }}
           onOpenPauseHistory={(orderId, obdNumber, siteName) => setPauseHistoryFor({ orderId, obdNumber, customerName: siteName })}
           onOpenSkipHistory={(orderId, obdNumber, siteName) => setSkipHistoryFor({ orderId, obdNumber, customerName: siteName })}
+          changedElsewhere={feedLive && panelFresh !== null}
+          onReloadChanged={() => {
+            if (panelFresh) { setPayload(panelFresh); setLastSyncedAt(new Date()); }
+            setPanelFresh(null);
+          }}
         />
       )}
 
@@ -1171,4 +1237,22 @@ export function TintManagerContent() {
       )}
     </div>
   );
+}
+
+/**
+ * What the detail panel shows for `key`, as a string to compare two board reads
+ * ("pending-N" → that rail order; any other key → that table row; "gone" when it
+ * left the board). Used only by the feed's "Changed — Reload" check.
+ */
+function panelSnapshot(p: TintBoardPayload, key: string): string {
+  if (key.startsWith("pending-")) {
+    const id = Number(key.slice("pending-".length));
+    const o = p.orders.find((x) => x.id === id);
+    return o ? JSON.stringify(o) : "gone";
+  }
+  for (const g of buildGroups(p)) {
+    const r = g.rows.find((x) => x.key === key);
+    if (r) return JSON.stringify(r);
+  }
+  return "gone";
 }
