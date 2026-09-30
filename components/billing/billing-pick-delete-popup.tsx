@@ -31,21 +31,28 @@
 //     buttons.
 //
 // "INSTANT". The count comes from /api/billing/pick-delete/marker (the list's
-// own rule, lib/billing/pick-delete.ts getActionableGroups):
+// own rule, lib/billing/pick-delete.ts — one SQL statement since 2026-09-30):
 //   · polled every 10s by BillingPickDeleteMarkerProvider
 //     (BILLING_PICK_DELETE_POLL_MS), which also checks at once when the browser
-//     tab becomes visible (lib/hooks/use-picking-marker.ts);
-//   · checked at once on window focus (below);
-//   · checked at once when an Import on this screen finishes (below, off
-//     useImportProgress — the one place every Import run reports "done");
-//   · checked at once on PICK_DELETE_CHECK_EVENT (the History tab after Undo).
+//     tab becomes visible (lib/hooks/use-picking-marker.ts). 🔴 The popup READS
+//     that answer (useBillingPickDeleteMarkerValue) — it no longer fetches the
+//     marker a second time after every change the provider sees (2026-09-30);
+//   · on mount: one check of its own (subject to the 10 s throttle below);
+//   · on window focus: a check ONLY if nothing has checked in the last 10 s
+//     (FOCUS_THROTTLE_MS — any check counts: the provider's probe or the
+//     popup's own). The look happens 1.5 s after the focus, so returning to the
+//     tab — where the provider's visible-again probe is already on its way —
+//     does not fire two marker calls at once (it used to);
+//   · at once, never throttled: an Import on this screen finishes (off
+//     useImportProgress) and PICK_DELETE_CHECK_EVENT (the History tab's Undo).
 // The poll still pauses during a write and while the confirmation panel shows
-// (the queue holds the marker pause).
+// (the queue holds the marker pause); while that is up the popup ignores the
+// provider's answers too, and takes its count from the queue.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
-import { useBillingPickDeleteMarkerSubscription } from "@/components/billing/billing-marker-provider";
+import { useBillingPickDeleteMarkerValue } from "@/components/billing/billing-marker-provider";
 import {
   PICK_DELETE_BASE,
   PICK_DELETE_CHECK_EVENT,
@@ -53,6 +60,11 @@ import {
   type PickDeleteQueueState,
 } from "@/components/billing/billing-pick-delete-queue";
 import { useImportProgress } from "@/components/import/import-progress-provider";
+
+/** A focus check waits this long since the last check of any kind (2026-09-30). */
+const FOCUS_THROTTLE_MS = 10_000;
+/** …and looks this long after the focus, so a visible-again probe lands first. */
+const FOCUS_SETTLE_MS = 1_500;
 
 // ── The key guard (module scope — see the header) ───────────────────────────
 
@@ -76,34 +88,69 @@ export function BillingPickDeletePopup() {
   const [held, setHeld] = useState(false);
   const open = count > 0 || held;
 
+  // When anything last CHECKED the marker (the popup's own fetch starting, or a
+  // provider answer arriving) — the focus throttle's clock.
+  const lastCheckAtRef = useRef(0);
+  // When the count shown was last SET (an answer applied, or the queue's own
+  // state) — an answer older than this is never applied over it.
+  const appliedAtRef = useRef(0);
+  const heldRef = useRef(held);
+  heldRef.current = held;
+
   const reqRef = useRef(0);
   const check = useCallback(async () => {
     const seq = ++reqRef.current;
+    lastCheckAtRef.current = Date.now();
     try {
       const res = await fetch(`${PICK_DELETE_BASE}/marker`, { cache: "no-store" });
       if (!res.ok) return;
       const body = (await res.json()) as { count?: number };
       if (seq !== reqRef.current) return;
-      if (typeof body.count === "number") setCount(body.count);
+      if (typeof body.count === "number") {
+        appliedAtRef.current = Date.now();
+        setCount(body.count);
+      }
     } catch {
       // Silent — the next trigger or tick retries.
     }
   }, []);
 
-  // First look on mount, then every detected marker change (10s poll + the
-  // hook's own visible-again check).
+  // First look on mount (the throttle cannot hold it — nothing has checked yet).
   useEffect(() => {
-    void check();
+    if (Date.now() - lastCheckAtRef.current >= FOCUS_THROTTLE_MS) void check();
   }, [check]);
-  useBillingPickDeleteMarkerSubscription(check);
 
-  // Immediate: window focus, and the History tab's Undo.
+  // The provider's answer — every 10 s probe, its visible-again probe, and the
+  // baseline. Replaces the second fetch the popup used to make on each change.
+  // Ignored while a decision / confirmation holds the queue (the queue's own
+  // state is newer), and never applied over a newer answer.
+  const providerValue = useBillingPickDeleteMarkerValue();
   useEffect(() => {
+    if (providerValue === null) return;
+    lastCheckAtRef.current = Math.max(lastCheckAtRef.current, providerValue.at);
+    if (heldRef.current || providerValue.at <= appliedAtRef.current) return;
+    appliedAtRef.current = providerValue.at;
+    setCount(providerValue.count);
+  }, [providerValue]);
+
+  // Window focus → a check only if nothing checked in the last 10 s, looked at
+  // 1.5 s later so the provider's visible-again probe can land first.
+  // The History tab's Undo → at once, never throttled.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onFocus = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        if (Date.now() - lastCheckAtRef.current >= FOCUS_THROTTLE_MS) void check();
+      }, FOCUS_SETTLE_MS);
+    };
     const now = () => void check();
-    window.addEventListener("focus", now);
+    window.addEventListener("focus", onFocus);
     window.addEventListener(PICK_DELETE_CHECK_EVENT, now);
     return () => {
-      window.removeEventListener("focus", now);
+      if (timer !== null) clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener(PICK_DELETE_CHECK_EVENT, now);
     };
   }, [check]);
@@ -116,6 +163,7 @@ export function BillingPickDeletePopup() {
   }, [importState, check]);
 
   const onQueueState = useCallback((s: PickDeleteQueueState) => {
+    appliedAtRef.current = Date.now();
     setCount(s.groups);
     setHeld(s.held);
   }, []);

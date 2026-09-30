@@ -1,0 +1,41 @@
+// lib/billing/pick-delete-rule.test.ts — npx tsx --test lib/billing/pick-delete-rule.test.ts (npm run test:pick-delete)
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { JS_TRIM_CHARS, compareGroups, markerFromRows, type OpenGroupRow } from "./pick-delete-rule";
+
+test("JS_TRIM_CHARS is exactly the set of UTF-16 code units trim() removes", () => {
+  const expected: number[] = [];
+  for (let c = 0; c <= 0xffff; c++) {
+    if (String.fromCharCode(c).trim() === "") expected.push(c);
+  }
+  const actual = Array.from(new Set(Array.from(JS_TRIM_CHARS).map((ch) => ch.charCodeAt(0)))).sort((a, b) => a - b);
+  assert.deepEqual(actual, expected);
+  assert.equal(JS_TRIM_CHARS.length, expected.length); // no duplicates
+});
+
+const row = (so: string, ids: number[], latest: string | null, actionable: boolean): OpenGroupRow => ({
+  so,
+  ids,
+  latest: latest === null ? null : new Date(latest),
+  actionable,
+});
+
+test("markerFromRows: count = actionable rows; latest = max of every row and the decisions clock", () => {
+  const rows = [row("A", [1, 2], "2026-09-30T01:00:00Z", true), row("B", [3, 4], "2026-09-30T03:00:00Z", false)];
+  assert.deepEqual(markerFromRows(rows, new Date("2026-09-30T02:00:00Z")), { count: 1, latest: "2026-09-30T03:00:00.000Z" });
+  assert.deepEqual(markerFromRows(rows, new Date("2026-09-30T04:00:00Z")).latest, "2026-09-30T04:00:00.000Z");
+});
+
+test("markerFromRows: no groups and no decisions → { 0, null }; decisions only → their clock", () => {
+  assert.deepEqual(markerFromRows([], null), { count: 0, latest: null });
+  assert.deepEqual(markerFromRows([], new Date("2026-09-29T10:00:00Z")), { count: 0, latest: "2026-09-29T10:00:00.000Z" });
+});
+
+test("compareGroups: oldest first punch first, unknown last, then SO number", () => {
+  const g = (soNumber: string, firstPunchAt: string | null) => ({ soNumber, firstPunchAt });
+  const sorted = [g("9", null), g("5", "2026-09-30T02:00:00Z"), g("7", "2026-09-30T01:00:00Z"), g("3", "2026-09-30T02:00:00Z"), g("1", null)].sort(
+    compareGroups,
+  );
+  assert.deepEqual(sorted.map((x) => x.soNumber), ["7", "3", "5", "1", "9"]);
+});

@@ -20,8 +20,10 @@ import { prisma } from "@/lib/prisma";
  * ⚠ BOUNDED ON PURPOSE. It asks only about the SO numbers on the rows a board
  * is already returning (`soNumber: { in: [...] }`), never about the whole
  * table. Do NOT "improve" it into an unbounded `having: { _count: { gt: 1 } }`
- * scan across all ~11k orders: the boards call this on every fetch, and the
- * answer for a bill that is not on screen is not wanted.
+ * scan across all ~16k orders: the boards call this on every fetch, and the
+ * answer for a bill that is not on screen is not wanted. (Billing's Pick delete
+ * read DOES need every open group — it no longer comes through here; see the
+ * "ONE SQL COPY" note below.)
  *
  * WHAT COUNTS AS A TWIN — `isRemoved: false` AND `workflowStage <> 'cancelled'`,
  * and NOTHING else:
@@ -73,10 +75,19 @@ export async function getDuplicateSoNumbers(
 
 // ═══════════════════════════════════════════════════════════════════════════
 // The rule with bill ids + the All OK acknowledgement (Billing "Pick delete",
-// 2026-09-27). getTwinIdsBySo() is the ONE place the twin rule is written;
-// getDuplicateSoNumbers() above and Billing's Pick delete tab
-// (lib/billing/pick-delete.ts) both read through it. The RULE stays Picking's;
-// Billing only WRITES pick_delete_decisions.
+// 2026-09-27). getTwinIdsBySo() is the ONE place the twin rule is written IN
+// TYPESCRIPT; getDuplicateSoNumbers() above and Billing's Pick delete WRITES
+// (markAllOk / pickDelete in lib/billing/pick-delete.ts) read through it.
+//
+// ⚠ ONE SQL COPY (2026-09-30). Billing's Pick delete READS — the open-group
+// list and its 10 s marker — no longer call this file: they ask every open SO,
+// which through these helpers meant shipping every open orders row to Node
+// (1,787 rows + 1,791 twin rows per call on 2026-09-30). They run the same
+// rule as one statement instead (lib/billing/pick-delete.ts openGroupsCte),
+// which cites the lines below term by term. If the twin rule, the blank test
+// or isAcknowledged changes here, change that statement in the same commit
+// and re-run scripts/parity-pick-delete.ts. The RULE stays Picking's; Billing
+// only WRITES pick_delete_decisions.
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Postgres bind-parameter headroom for the `in` lists below. */

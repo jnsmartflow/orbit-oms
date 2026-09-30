@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/billing/pick-delete/marker — the pill's probe: `{ count, latest }`,
  * the two fields usePickingMarker reads (CLAUDE_PICKING §10). count = the shown
- * groups (getActionableGroups, the list's own rule); latest = the later of
+ * groups (the list's own rule, one SQL statement since 2026-09-30 —
+ * lib/billing/pick-delete.ts getPickDeleteMarker); latest = the later of
  * MAX(pick_delete_decisions.updatedAt) and
  * MAX(orders.updatedAt) over the open groups' bills. READ-ONLY.
  * Gate: billing_pick_delete canView.

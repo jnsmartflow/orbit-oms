@@ -103,11 +103,14 @@ function ActiveBillingMarkerProvider({
   url = MARKER_URL,
   context: Context = BillingMarkerContext,
   pollMs = BILLING_MARKER_POLL_MS,
+  onResult,
   children,
 }: {
   date?: string;
   /** Only the Pick delete twin passes this (BILLING_PICK_DELETE_POLL_MS). */
   pollMs?: number;
+  /** Only the Pick delete twin passes this — every probe's {count, latest}. */
+  onResult?: (marker: { count: number; latest: string | null }) => void;
   /** The Print tab's twin points this at its own marker (slice 9). */
   url?: string;
   context?: React.Context<BillingMarkerApi>;
@@ -144,6 +147,7 @@ function ActiveBillingMarkerProvider({
     url,
     date,
     pollMs,
+    onResult,
     paused: pauseCount > 0,
     onChange: () => {
       // Snapshot before iterating: a subscriber could unsubscribe during its own
@@ -318,6 +322,45 @@ export function useBillingPickDeleteMarkerPause(key: string, paused: boolean): v
   }, [key, paused, setPaused]);
 }
 
+/**
+ * The Pick delete marker's LAST ANSWER (2026-09-30) — `{ count, latest, at }`
+ * from every probe this provider makes, `at` = when it arrived (ms). The
+ * blocking popup reads its count from here instead of fetching the same marker
+ * again after every change (billing-pick-delete-popup.tsx). Null until the first
+ * probe lands, and always null when the provider is disabled.
+ */
+export interface PickDeleteMarkerValue {
+  count: number;
+  latest: string | null;
+  at: number;
+}
+
+const BillingPickDeleteMarkerValueContext = createContext<PickDeleteMarkerValue | null>(null);
+
+/** The Pick delete marker's last answer, or null. */
+export function useBillingPickDeleteMarkerValue(): PickDeleteMarkerValue | null {
+  return useContext(BillingPickDeleteMarkerValueContext);
+}
+
+function ActivePickDeleteMarkerProvider({ children }: { children: React.ReactNode }) {
+  const [value, setValue] = useState<PickDeleteMarkerValue | null>(null);
+  const onResult = useCallback((m: { count: number; latest: string | null }) => {
+    setValue({ count: m.count, latest: m.latest, at: Date.now() });
+  }, []);
+  return (
+    <BillingPickDeleteMarkerValueContext.Provider value={value}>
+      <ActiveBillingMarkerProvider
+        url={PICK_DELETE_MARKER_URL}
+        context={BillingPickDeleteMarkerContext}
+        pollMs={BILLING_PICK_DELETE_POLL_MS}
+        onResult={onResult}
+      >
+        {children}
+      </ActiveBillingMarkerProvider>
+    </BillingPickDeleteMarkerValueContext.Provider>
+  );
+}
+
 /** Mount around the billing face for viewers holding `billing_pick_delete`/canView. */
 export function BillingPickDeleteMarkerProvider({
   enabled,
@@ -331,13 +374,5 @@ export function BillingPickDeleteMarkerProvider({
       <BillingPickDeleteMarkerContext.Provider value={INERT}>{children}</BillingPickDeleteMarkerContext.Provider>
     );
   }
-  return (
-    <ActiveBillingMarkerProvider
-      url={PICK_DELETE_MARKER_URL}
-      context={BillingPickDeleteMarkerContext}
-      pollMs={BILLING_PICK_DELETE_POLL_MS}
-    >
-      {children}
-    </ActiveBillingMarkerProvider>
-  );
+  return <ActivePickDeleteMarkerProvider>{children}</ActivePickDeleteMarkerProvider>;
 }

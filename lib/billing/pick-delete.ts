@@ -7,9 +7,14 @@
 // Design:  docs/prompts/drafts/web-update-2026-09-27-billing-pick-delete.md
 // Plan:    docs/prompts/drafts/code-discovery-2026-09-27-pick-delete-build-plan.md §3
 //
-// OWNERSHIP. The duplicate-SO RULE is Picking's (lib/picking/duplicate-so.ts):
-// every group read here goes through getTwinIdsBySo / getDuplicateGroups. The
-// DECISION is Billing's: only this module writes pick_delete_decisions.
+// OWNERSHIP. The duplicate-SO RULE is Picking's (lib/picking/duplicate-so.ts).
+// The WRITES here (markAllOk, pickDelete) re-read the live group through its
+// getTwinIdsBySo. The READS (open groups for the list and the marker) run the
+// same rule as ONE SQL statement since 2026-09-30 (openGroupsCte, below) —
+// each term copied from duplicate-so.ts, off-floor.ts and live-ci.ts with a
+// line citation, and proven against the old two-step read by
+// scripts/parity-pick-delete.ts. Change the rule there → change it here too.
+// The DECISION is Billing's: only this module writes pick_delete_decisions.
 //
 // REUSED, NOT COPIED: offFloorRefusal (lib/floor/off-floor.ts) · findLiveCi +
 // liveCiRefusal (lib/ci/live-ci.ts) · buildCancelNote("duplicate_bill")
@@ -23,7 +28,8 @@
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getDuplicateGroups, getTwinIdsBySo } from "@/lib/picking/duplicate-so";
+import { getTwinIdsBySo } from "@/lib/picking/duplicate-so";
+import { JS_TRIM_CHARS, compareGroups, type OpenGroupRow } from "@/lib/billing/pick-delete-rule";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { buildCancelNote } from "@/lib/picking/cancel-reasons";
@@ -68,25 +74,92 @@ function stageLabel(stage: string): string {
   return STAGE_LADDER.find((s) => s.stage === stage)?.label ?? stage;
 }
 
+// ── Open groups — ONE statement (bounded rewrite, 2026-09-30) ─────────────
+//
+// Plan: docs/prompts/drafts/code-plan-2026-09-30-billing-live-feed.md §C.
+// Update: docs/prompts/drafts/code-update-2026-09-30-billing-pick-delete-bounded.md
+//
+// WAS: fetch every open orders row (Prisma 5 does `distinct` in Node — 1,787
+// rows on 2026-09-30), then every twin of those 1,775 SOs (1,791 rows in two
+// `IN` chunks), then the bills, then one ci_returns read per candidate bill —
+// ≈ 14 statements and ~3,600 rows every 10 s per desk. The old header called
+// that "never a scan of the whole orders table"; it was exactly that, done in
+// Node. Frozen copy for parity: scripts/parity-pick-delete-legacy.ts.
+//
+// NOW: the database groups, filters and checks in one statement and returns
+// one row per open group (6 on 2026-09-30). It is still one pass over the
+// live orders rows (a cached ~5 MB seq scan) — honest wording: bounded in
+// round trips and rows shipped, not an index probe.
+//
+// Each term is the old rule, copied — never re-derived:
+//   · twins = not removed, stage ≠ cancelled, SO not blank (the twin rule,
+//     lib/picking/duplicate-so.ts getTwinIdsBySo :107-113; blank = JS trim(),
+//     nonBlankDistinct :85-89 — JS_TRIM_CHARS makes btrim strip the same set);
+//   · a group = ≥ 2 twins (getDuplicateGroups :163) with ≥ 1 bill still before
+//     dispatch (the old step 1: stage ∉ cancelled / dispatched / closed);
+//   · minus an active All OK set containing every current twin
+//     (isAcknowledged :131-133, getActiveAllOkSets :140);
+//   · actionable = some bill passes pickDeleteCheck (below): offFloorRefusal
+//     (lib/floor/off-floor.ts :65-75 — cancelled, dispatched, on a trip,
+//     tint_assigned / tinting_in_progress), legacy closed, and no live FULL CI
+//     (lib/ci/live-ci.ts findLiveCi :34-40, predicate copied verbatim).
+// Parameterised ($queryRaw tagged template) — no string building.
+
+const OPEN_STAGE_EXCLUDED = ["cancelled", ...AFTER_DISPATCH_STAGES];
+/** Stages offFloorRefusal refuses + legacy closed (pickDeleteCheck). */
+const NOT_DELETABLE_STAGES = ["cancelled", "dispatched", "closed", "tint_assigned", "tinting_in_progress"];
+
+function openGroupsCte(): Prisma.Sql {
+  return Prisma.sql`
+    grp AS (
+      SELECT "soNumber" AS so, array_agg(id ORDER BY id) AS ids, max("updatedAt") AS latest
+        FROM orders
+       WHERE "isRemoved" = false
+         AND "workflowStage" <> 'cancelled'
+         AND "soNumber" IS NOT NULL
+         AND btrim("soNumber", ${JS_TRIM_CHARS}) <> ''
+       GROUP BY "soNumber"
+      HAVING count(*) >= 2
+         AND bool_or(NOT ("workflowStage" = ANY (${OPEN_STAGE_EXCLUDED}::text[])))
+    ),
+    open_groups AS (
+      SELECT g.so, g.ids, g.latest,
+             EXISTS (
+               SELECT 1 FROM orders o
+                WHERE o.id = ANY (g.ids)
+                  AND NOT (o."workflowStage" = ANY (${NOT_DELETABLE_STAGES}::text[]))
+                  AND o."tripDropId" IS NULL
+                  AND NOT EXISTS (
+                        SELECT 1 FROM ci_returns c
+                         WHERE c."orderId" = o.id
+                           AND c."isVoided" = false
+                           AND c.status <> 'draft'
+                           AND c."returnType" = 'full')
+             ) AS actionable
+        FROM grp g
+       WHERE NOT EXISTS (
+               SELECT 1 FROM pick_delete_decisions d
+                WHERE d.kind = 'all_ok'
+                  AND d."undoneAt" IS NULL
+                  AND d."soNumber" = g.so
+                  AND d."orderIds" @> g.ids)
+    )`;
+}
+
+/** Every open (not acknowledged) same-SO group, ONE statement. Ordered by SO. */
+async function readOpenGroupRows(): Promise<OpenGroupRow[]> {
+  return prisma.$queryRaw<OpenGroupRow[]>`
+    WITH ${openGroupsCte()}
+    SELECT so, ids, latest, actionable FROM open_groups ORDER BY so`;
+}
+
 /**
- * The open groups: SO → sorted live bill ids. Two bounded steps, never a scan
- * of the whole orders table:
- *   1. the distinct SO numbers of bills still before dispatch (not removed,
- *      not cancelled, not dispatched, not legacy closed);
- *   2. Picking's getDuplicateGroups over those SOs (≥ 2 live twins, minus
- *      groups covered by an active All OK), on idx_orders_sonumber.
+ * The open groups: SO → sorted live bill ids (≥ 2 live twins, ≥ 1 still before
+ * dispatch, not covered by an active All OK). One statement — see above.
  */
 export async function getOpenGroups(): Promise<Map<string, number[]>> {
-  const openRows = await prisma.orders.findMany({
-    where: {
-      isRemoved: false,
-      workflowStage: { notIn: ["cancelled", ...AFTER_DISPATCH_STAGES] },
-      soNumber: { not: null },
-    },
-    select: { soNumber: true },
-    distinct: ["soNumber"],
-  });
-  return getDuplicateGroups(openRows.map((r) => r.soNumber));
+  const rows = await readOpenGroupRows();
+  return new Map(rows.map((r) => [r.so, r.ids]));
 }
 
 // ── Refusal (Pick delete) ──────────────────────────────────────────────────
@@ -253,15 +326,23 @@ export async function getActionableGroups(): Promise<{
   groups: Map<string, number[]>;
   /** Every open group's bill ids, shown or not — the marker's clock watches all. */
   openIds: number[];
+  /** Bills of the SHOWN groups only (since 2026-09-30 — nothing reads the others). */
   billsById: Map<number, BillRow>;
   checks: Map<number, PickDeleteCheck>;
 }> {
-  const open = await getOpenGroups();
-  const openIds = Array.from(open.values()).flat();
-  const billsById = await readBills(openIds);
+  // ONE statement finds the groups and which are actionable; the per-bill
+  // reads below (bills, and pickDeleteCheck's CI read for a bill that passes
+  // the cheap checks) run ONLY for the shown groups — 13 bills on 2026-09-30,
+  // not every open bill. pickDeleteCheck still decides each bill's button and
+  // label, so the list and the delete route keep sharing one rule; the SQL's
+  // `actionable` only chooses which groups to look at.
+  const rows = await readOpenGroupRows();
+  const openIds = rows.flatMap((r) => r.ids);
+  const candidates = rows.filter((r) => r.actionable);
+  const billsById = await readBills(candidates.flatMap((r) => r.ids));
   const checks = new Map<number, PickDeleteCheck>();
   const groups = new Map<string, number[]>();
-  for (const [soNumber, ids] of Array.from(open.entries())) {
+  for (const { so: soNumber, ids } of candidates) {
     let any = false;
     for (const id of ids) {
       const r = billsById.get(id);
@@ -358,8 +439,9 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
       bills,
     });
   }
-  // Oldest group first; an unknown punch sorts last.
-  out.sort((a, b) => (a.firstPunchAt ?? "9999").localeCompare(b.firstPunchAt ?? "9999"));
+  // Oldest group first; an unknown punch sorts last; then SO number (2026-09-30:
+  // a tie no longer falls back on the order the database returned twins in).
+  out.sort(compareGroups);
 
   // ── Decided list, the IST month, newest first ──
   const decisions = await prisma.pick_delete_decisions.findMany({
@@ -399,23 +481,27 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
 
 // ── Marker ─────────────────────────────────────────────────────────────────
 
+/**
+ * ONE statement (2026-09-30). count = the actionable groups (the list's rule —
+ * the SQL form of pickDeleteCheck, see openGroupsCte); latest = the later of
+ * MAX(pick_delete_decisions.updatedAt) and MAX(orders.updatedAt) over EVERY
+ * open group's bills, shown or not, so a hidden group becoming actionable
+ * (e.g. a bill taken off a trip) still moves it. Same arithmetic as before
+ * (pick-delete-rule.ts markerFromRows does the same in JS), fed by one round
+ * trip instead of ≈ 14.
+ */
 export async function getPickDeleteMarker(): Promise<PickDeleteMarker> {
-  // count = the SHOWN groups (the same function the list uses); the clock
-  // watches every open group's bills, so a hidden group becoming actionable
-  // (e.g. a bill taken off a trip) still moves `latest`.
-  const { groups, openIds: ids } = await getActionableGroups();
-
-  const dec = await prisma.pick_delete_decisions.aggregate({ _max: { updatedAt: true } });
-  const ord =
-    ids.length > 0
-      ? await prisma.orders.aggregate({ where: { id: { in: ids } }, _max: { updatedAt: true } })
-      : null;
-
-  const times = [dec._max.updatedAt, ord?._max.updatedAt ?? null]
+  const res = await prisma.$queryRaw<{ count: number; latest: Date | null; decisions: Date | null }[]>`
+    WITH ${openGroupsCte()}
+    SELECT (SELECT count(*) FROM open_groups WHERE actionable)::int AS count,
+           (SELECT max(latest) FROM open_groups) AS latest,
+           (SELECT max("updatedAt") FROM pick_delete_decisions) AS decisions`;
+  const r = res[0];
+  const times = [r?.latest ?? null, r?.decisions ?? null]
     .filter((d): d is Date => d !== null)
     .map((d) => d.getTime());
   return {
-    count: groups.size,
+    count: r?.count ?? 0,
     latest: times.length > 0 ? new Date(Math.max(...times)).toISOString() : null,
   };
 }

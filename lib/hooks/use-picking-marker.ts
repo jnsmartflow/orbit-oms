@@ -84,6 +84,15 @@ interface UsePickingMarkerOptions {
    * feeds its connection strip via `onProbe` — so do NOT slow that one down.
    */
   pollMs?: number;
+  /**
+   * Optional (2026-09-30): called with `{ count, latest }` after EVERY accepted
+   * probe — the baseline, a change, or no change — whether or not `paused`.
+   * Lets a caller that needs the NUMBER (Billing's Pick delete popup) read the
+   * answer this hook already fetched instead of fetching the marker a second
+   * time. Not called for a failed probe or one superseded by resync(). Every
+   * other caller omits it and is byte-identical.
+   */
+  onResult?: (marker: { count: number; latest: string | null }) => void;
 }
 
 /**
@@ -168,6 +177,7 @@ export function usePickingMarker({
   url,
   onProbe,
   pollMs = PICKING_MARKER_POLL_MS,
+  onResult,
 }: UsePickingMarkerOptions): MarkerResync {
   // Refs let the poll effect stay mounted for the component's life without
   // re-subscribing every render when onChange/paused identities change.
@@ -229,6 +239,11 @@ export function usePickingMarker({
     onProbeRef.current = onProbe;
   }, [onProbe]);
 
+  const onResultRef = useRef(onResult);
+  useEffect(() => {
+    onResultRef.current = onResult;
+  }, [onResult]);
+
   // On unpause, flush a change that landed during the pause — exactly once.
   useEffect(() => {
     const was = pausedRef.current;
@@ -270,6 +285,7 @@ export function usePickingMarker({
         const marker = (await res.json()) as MarkerResponse;
         if (cancelled) return;
         if (generation !== generationRef.current) return; // superseded by resync()
+        onResultRef.current?.({ count: marker.count, latest: marker.latest });
         const next = {
           count: marker.count,
           latest: marker.latest,
@@ -376,6 +392,7 @@ export function usePickingMarker({
       onProbeRef.current?.(true);
       const marker = (await res.json()) as MarkerResponse;
       if (!mountedRef.current) return;
+      onResultRef.current?.({ count: marker.count, latest: marker.latest });
       // Accept as the new baseline WITHOUT comparing and WITHOUT firing: the
       // caller has already fetched and rendered this state.
       lastSeenRef.current = {
