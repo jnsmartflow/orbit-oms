@@ -22,7 +22,8 @@
     "test:billing-live": "tsx --test lib/billing/live-rule.test.ts",
     "test:picking-sync": "tsx --test lib/picking/sync.test.ts",
     "test:picking-live": "tsx --test lib/picking/live-merge.test.ts lib/push/sw-message.test.ts",
-    "test:tint-sync": "tsx --test components/tint/manager/use-tint-manager-sync.test.ts lib/tint/marker-coverage.test.ts"
+    "test:tint-sync": "tsx --test components/tint/manager/use-tint-manager-sync.test.ts lib/tint/marker-coverage.test.ts",
+    "test:tint-live": "tsx --test lib/tint/live-feed-rule.test.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

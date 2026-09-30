@@ -13,6 +13,7 @@ import {
   LIVE_FEED_KEY,
   LIVE_FEED_BILLING_KEY,
   LIVE_FEED_PICKING_KEY,
+  LIVE_FEED_TINT_KEY,
   parseLiveFeedSwitch,
   type Cursor,
   type LiveRow,
@@ -67,6 +68,12 @@ export async function isBillingFeedOn(): Promise<boolean> {
 export async function isPickingFeedOn(): Promise<boolean> {
   if (!(await isLiveFeedOn())) return false;
   return isSwitchOn(LIVE_FEED_PICKING_KEY);
+}
+
+/** Tint's feed (Manager + Operator): 'live.feed' AND 'live.feed.tint' (absent = OFF); global read first. */
+export async function isTintFeedOn(): Promise<boolean> {
+  if (!(await isLiveFeedOn())) return false;
+  return isSwitchOn(LIVE_FEED_TINT_KEY);
 }
 
 // ── Horizon, watermark and lag (one small statement, no live_changes read) ──

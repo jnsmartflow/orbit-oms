@@ -234,8 +234,11 @@ export const LIVE_FEED_BILLING_KEY = "live.feed.billing";
 /** Picking's own switch (2026-09-30, picking 4a) — the same AND-with-the-global rule. Absent row = OFF. */
 export const LIVE_FEED_PICKING_KEY = "live.feed.picking";
 
+/** Tint's own switch (2026-09-30, tint step 3) — the same AND-with-the-global rule. Absent row = OFF. */
+export const LIVE_FEED_TINT_KEY = "live.feed.tint";
+
 /** `?screen=` values GET /api/live/changes understands; anything else → 400. */
-export const LIVE_SCREENS = ["billing", "picking"] as const;
+export const LIVE_SCREENS = ["billing", "picking", "tint"] as const;
 export type LiveScreen = (typeof LIVE_SCREENS)[number];
 
 /** `?screen=billing` → "billing"; absent / blank → null (the global switch alone, as before); unknown → undefined. */
@@ -246,12 +249,22 @@ export function parseScreen(raw: string | null | undefined): LiveScreen | null |
 }
 
 /**
- * `?face=picker` (only with screen=picking) → "picker"; absent / blank → null; anything else → undefined (400).
- * The picker face gets only the order ids that concern the SESSION user (lib/picking/picker-feed.ts).
+ * `?face=picker` (only with screen=picking) → "picker"; `?face=operator` (only with screen=tint) → "operator";
+ * absent / blank → null; anything else → undefined (400). Which screen a face may go with is the route's check
+ * (faceFitsScreen). Both faces get only the order ids that concern the SESSION user
+ * (lib/picking/picker-feed.ts, lib/tint/live-feed.ts).
  */
-export function parseFace(raw: string | null | undefined): "picker" | null | undefined {
+export type LiveFace = "picker" | "operator";
+export function parseFace(raw: string | null | undefined): LiveFace | null | undefined {
   if (raw === null || raw === undefined || raw.trim() === "") return null;
-  return raw.trim().toLowerCase() === "picker" ? "picker" : undefined;
+  const f = raw.trim().toLowerCase();
+  return f === "picker" || f === "operator" ? f : undefined;
+}
+
+/** A face only exists on its own screen: picker ↔ picking, operator ↔ tint. No face fits any screen. */
+export function faceFitsScreen(face: LiveFace | null, screen: LiveScreen | null): boolean {
+  if (face === null) return true;
+  return face === "picker" ? screen === "picking" : screen === "tint";
 }
 
 export const HELD_MAX = 100;
