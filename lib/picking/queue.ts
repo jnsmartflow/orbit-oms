@@ -180,6 +180,15 @@ export interface PickingQueueOptions {
    */
   pickerId?: number;
   /**
+   * LIVE FEED (2026-09-30, picking 4a): ONLY these order ids — AND-ed onto the
+   * SAME scope filter (buildPickingWhere, same `gateOn`, same `pickerId`
+   * narrowing), so a by-id row can never differ from the full queue's row for
+   * that id. Ids not in the result have left the board. The bundling siblings
+   * are built for these rows only; the held-back triple is still the WHOLE
+   * board's (it is an aggregate, not a row). Omitted → byte-identical to before.
+   */
+  onlyIds?: number[];
+  /**
    * The floor visibility gate (2026-09-09). `true` narrows the WAITING branch
    * to bills on a SHOWN trip — bills on no trip are hidden too since 2026-09-21
    * (per trip since slice 8, 2026-09-15 — it was a per-bill
@@ -558,10 +567,15 @@ export async function getPickingQueue(
   // byte-identical for the marker and every board-wide caller. A to-one
   // relation filter: only orders whose pick_assignments row carries this
   // pickerId — an unassigned bill, or one assigned to somebody else, is out.
-  const scopedWhere: Prisma.ordersWhereInput =
+  const pickerWhere: Prisma.ordersWhereInput =
     options.pickerId !== undefined
       ? { ...where, pickAssignment: { pickerId: options.pickerId } }
       : where;
+  // Live feed by-id read (onlyIds, 2026-09-30): AND-ed as a sibling so it can
+  // never merge into the scope filter's own keys. Omitted → the where above,
+  // unchanged.
+  const scopedWhere: Prisma.ordersWhereInput =
+    options.onlyIds !== undefined ? { AND: [pickerWhere, { id: { in: options.onlyIds } }] } : pickerWhere;
 
   // Sequential awaits only — never prisma.$transaction (CORE §3).
   const orders = await prisma.orders.findMany({
@@ -1067,8 +1081,13 @@ export async function getPickingQueue(
   // Today's pick-deleted bills — its OWN read, never a term on the queue's WHERE
   // (which must not widen to cancelled bills). openPending only: that is the
   // scope both live faces use; `single` has no caller (PICKING §9).
+  // (A by-id read — `onlyIds`, live feed 4a — skips it: POST /api/picking/sync
+  // calls getPickDeletedToday itself, only when a changed id is one of today's
+  // pick-delete decisions.)
   const pickDeleted: PickDeletedCard[] =
-    options.scope === "openPending" ? await getPickDeletedToday({ pickerId: options.pickerId }) : [];
+    options.scope === "openPending" && options.onlyIds === undefined
+      ? await getPickDeletedToday({ pickerId: options.pickerId })
+      : [];
 
   return {
     date: isoDate,

@@ -22,6 +22,11 @@ import {
   parseLiveFeedSwitch,
   parseTopics,
   parseScreen,
+  parseFace,
+  parseHeldIds,
+  narrowOrderIds,
+  HELD_MAX,
+  LIVE_FEED_PICKING_KEY,
   LIVE_FEED_BILLING_KEY,
   LIVE_FEED_KEY,
   DEFAULT_LIMIT,
@@ -236,4 +241,44 @@ test("screen param: absent → null (global switch only), billing → billing, j
   assert.equal(parseScreen("floor"), undefined);
   assert.equal(LIVE_FEED_KEY, "live.feed");
   assert.equal(LIVE_FEED_BILLING_KEY, "live.feed.billing");
+});
+
+// ── Picking (4a, 2026-09-30) ────────────────────────────────────────────────
+test("screen=picking parses; Floor (no screen) and Billing are unchanged", () => {
+  assert.equal(parseScreen("picking"), "picking");
+  assert.equal(parseScreen(null), null); // Floor
+  assert.equal(parseScreen("billing"), "billing");
+  assert.equal(parseScreen("floor"), undefined);
+  assert.equal(LIVE_FEED_PICKING_KEY, "live.feed.picking");
+});
+
+test("face: picker or nothing; junk → undefined (400)", () => {
+  assert.equal(parseFace(null), null);
+  assert.equal(parseFace(""), null);
+  assert.equal(parseFace(" Picker "), "picker");
+  assert.equal(parseFace("supervisor"), undefined);
+});
+
+test("held: distinct positive ints, ≤ HELD_MAX; junk or too many → null", () => {
+  assert.deepEqual(parseHeldIds(null), []);
+  assert.deepEqual(parseHeldIds(""), []);
+  assert.deepEqual(parseHeldIds("3, 1,3"), [3, 1]);
+  assert.equal(parseHeldIds("1,x"), null);
+  assert.equal(parseHeldIds("0"), null);
+  assert.equal(parseHeldIds("-2"), null);
+  assert.equal(parseHeldIds(Array.from({ length: HELD_MAX + 1 }, (_, i) => i + 1).join(",")), null);
+  assert.equal(parseHeldIds(Array.from({ length: HELD_MAX }, (_, i) => i + 1).join(","))?.length, HELD_MAX);
+});
+
+test("narrowOrderIds keeps only allowed ORDER ids; other entities pass; empty groups drop", () => {
+  const groups = [
+    { entity: "order", ids: [1, 2, 3] },
+    { entity: "config", ids: ["app_settings"] },
+  ];
+  assert.deepEqual(narrowOrderIds(groups, new Set([2])), [
+    { entity: "order", ids: [2] },
+    { entity: "config", ids: ["app_settings"] },
+  ]);
+  assert.deepEqual(narrowOrderIds(groups, new Set()), [{ entity: "config", ids: ["app_settings"] }]);
+  assert.deepEqual(narrowOrderIds([], new Set([1])), []);
 });

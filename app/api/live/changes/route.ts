@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { isBillingFeedOn, isLiveFeedOn, readChangesAfter, readFeedMeta } from "@/lib/live/feed";
+import { isBillingFeedOn, isLiveFeedOn, isPickingFeedOn, readChangesAfter, readFeedMeta } from "@/lib/live/feed";
+import { filterPickerOrderIds } from "@/lib/picking/picker-feed";
 import {
   createHeadCache,
   decodeCursor,
@@ -10,9 +11,14 @@ import {
   horizonCursor,
   isPrunedPast,
   nextCursor,
+  HELD_MAX,
+  narrowOrderIds,
+  parseFace,
+  parseHeldIds,
   parseLimit,
   parseScreen,
   parseTopics,
+  type LiveGroup,
 } from "@/lib/live/cursor";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +31,7 @@ export const dynamic = "force-dynamic";
 // rows through its own permission-checked route.
 //
 // Order of checks:
-//   1. session (401) → 2. canView on a page that consumes the feed (403; floor OR mail_orders
+//   1. session (401) → 2. canView on a page that consumes the feed (403; floor OR mail_orders OR picking
 //      since 2026-09-30 — checkAnyPermission, so the access notebook applies) →
 //   3. the kill switch app_settings 'live.feed' (+ 'live.feed.billing' for ?screen=billing; absent / false / read error =
 //      OFF → 200 { enabled: false }, and NOTHING else is read).
@@ -53,7 +59,16 @@ export const dynamic = "force-dynamic";
 // The rule is: a session AND (floor canView OR mail_orders canView), each through
 // checkAnyPermission (all roles, access notebook). Ids only — every row still comes
 // from the screen's own permission-checked route.
-const PAGE_KEYS_THAT_CONSUME_THE_FEED = ["floor", "mail_orders"] as const;
+// Picking 4a (2026-09-30): + "picking" — the supervisor and picker faces hold picking, not floor.
+const PAGE_KEYS_THAT_CONSUME_THE_FEED = ["floor", "mail_orders", "picking"] as const;
+
+/** face=picker: keep only the order ids assigned to the session user now, or held by his phone. */
+async function narrowForPicker(groups: LiveGroup[], pickerId: number, held: number[]): Promise<LiveGroup[]> {
+  const order = groups.find((g) => g.entity === "order");
+  const ids = (order?.ids ?? []).filter((id): id is number => typeof id === "number");
+  const keep = new Set(await filterPickerOrderIds(ids, pickerId, held));
+  return narrowOrderIds(groups, keep);
+}
 
 // 7a (2026-09-30): per-instance safe-head cache — see HEAD_CACHE rules in
 // lib/live/cursor.ts. A caller already AT the latest safe head this instance
@@ -82,12 +97,28 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
 
   // ?screen=billing (2026-09-30) → enabled only when live.feed AND live.feed.billing are ON
-  // (absent row = OFF). No screen → the global switch alone, exactly as before (Floor).
+  // (absent row = OFF). ?screen=picking (picking 4a) → live.feed AND live.feed.picking.
+  // No screen → the global switch alone, exactly as before (Floor).
   const screen = parseScreen(url.searchParams.get("screen"));
   if (screen === undefined) {
-    return NextResponse.json({ error: "screen must be: billing" }, { status: 400 });
+    return NextResponse.json({ error: "screen must be: billing, picking" }, { status: 400 });
   }
-  const on = screen === "billing" ? await isBillingFeedOn() : await isLiveFeedOn();
+  // &face=picker&held=<ids ≤ 100> (picking only): the ORDER ids are narrowed to those assigned
+  // to the SESSION user now, or in `held` (lib/picking/picker-feed.ts). Never a client picker id.
+  const face = parseFace(url.searchParams.get("face"));
+  if (face === undefined || (face === "picker" && screen !== "picking")) {
+    return NextResponse.json({ error: "face must be: picker (with screen=picking)" }, { status: 400 });
+  }
+  const held = parseHeldIds(url.searchParams.get("held"));
+  if (held === null) {
+    return NextResponse.json({ error: `held must be up to ${HELD_MAX} comma-separated positive integers` }, { status: 400 });
+  }
+  const sessionUserId = Number(session.user.id);
+  if (face === "picker" && (!Number.isInteger(sessionUserId) || sessionUserId <= 0)) {
+    return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
+  }
+  const on =
+    screen === "billing" ? await isBillingFeedOn() : screen === "picking" ? await isPickingFeedOn() : await isLiveFeedOn();
   if (!on) {
     return NextResponse.json({ enabled: false }, { headers: NO_STORE });
   }
@@ -151,7 +182,7 @@ export async function GET(req: Request) {
     {
       enabled: true,
       cursor: encodeCursor(cursor),
-      changes: groupChanges(returned),
+      changes: face === "picker" ? await narrowForPicker(groupChanges(returned), sessionUserId, held) : groupChanges(returned),
       more,
       reset: false,
       lagSeconds: meta.lagSeconds,

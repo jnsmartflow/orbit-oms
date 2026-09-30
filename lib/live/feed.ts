@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import {
   LIVE_FEED_KEY,
   LIVE_FEED_BILLING_KEY,
+  LIVE_FEED_PICKING_KEY,
   parseLiveFeedSwitch,
   type Cursor,
   type LiveRow,
@@ -60,6 +61,12 @@ export async function isLiveFeedOn(): Promise<boolean> {
 export async function isBillingFeedOn(): Promise<boolean> {
   if (!(await isLiveFeedOn())) return false;
   return isSwitchOn(LIVE_FEED_BILLING_KEY);
+}
+
+/** Picking's feed: 'live.feed' AND 'live.feed.picking' (absent = OFF); global read first. */
+export async function isPickingFeedOn(): Promise<boolean> {
+  if (!(await isLiveFeedOn())) return false;
+  return isSwitchOn(LIVE_FEED_PICKING_KEY);
 }
 
 // ── Horizon, watermark and lag (one small statement, no live_changes read) ──

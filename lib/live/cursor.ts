@@ -231,8 +231,11 @@ export const LIVE_FEED_KEY = "live.feed";
  *  the global kill switch for every screen, this one is Billing's. Absent row = OFF. */
 export const LIVE_FEED_BILLING_KEY = "live.feed.billing";
 
+/** Picking's own switch (2026-09-30, picking 4a) — the same AND-with-the-global rule. Absent row = OFF. */
+export const LIVE_FEED_PICKING_KEY = "live.feed.picking";
+
 /** `?screen=` values GET /api/live/changes understands; anything else → 400. */
-export const LIVE_SCREENS = ["billing"] as const;
+export const LIVE_SCREENS = ["billing", "picking"] as const;
 export type LiveScreen = (typeof LIVE_SCREENS)[number];
 
 /** `?screen=billing` → "billing"; absent / blank → null (the global switch alone, as before); unknown → undefined. */
@@ -240,6 +243,34 @@ export function parseScreen(raw: string | null | undefined): LiveScreen | null |
   if (raw === null || raw === undefined || raw.trim() === "") return null;
   const s = raw.trim().toLowerCase();
   return (LIVE_SCREENS as readonly string[]).includes(s) ? (s as LiveScreen) : undefined;
+}
+
+/**
+ * `?face=picker` (only with screen=picking) → "picker"; absent / blank → null; anything else → undefined (400).
+ * The picker face gets only the order ids that concern the SESSION user (lib/picking/picker-feed.ts).
+ */
+export function parseFace(raw: string | null | undefined): "picker" | null | undefined {
+  if (raw === null || raw === undefined || raw.trim() === "") return null;
+  return raw.trim().toLowerCase() === "picker" ? "picker" : undefined;
+}
+
+export const HELD_MAX = 100;
+
+/** `?held=1,2,3` → distinct positive ints (≤ HELD_MAX); absent / blank → []; junk or too many → null (400). */
+export function parseHeldIds(raw: string | null | undefined): number[] | null {
+  if (raw === null || raw === undefined || raw.trim() === "") return [];
+  const parts = raw.split(",").map((s) => s.trim()).filter((s) => s !== "");
+  const ids = parts.map((s) => (/^\d{1,10}$/.test(s) ? Number(s) : NaN));
+  if (ids.some((n) => !Number.isInteger(n) || n <= 0)) return null;
+  const out = Array.from(new Set(ids));
+  return out.length > HELD_MAX ? null : out;
+}
+
+/** Keep only `keep` among the ORDER group's ids; every other entity passes through unchanged. */
+export function narrowOrderIds(groups: LiveGroup[], keep: ReadonlySet<number>): LiveGroup[] {
+  return groups
+    .map((g) => (g.entity === "order" ? { ...g, ids: g.ids.filter((id) => typeof id === "number" && keep.has(id)) } : g))
+    .filter((g) => g.ids.length > 0);
 }
 
 /** ON only for a row whose isEnabled is exactly true; no row / null / false → OFF. */
