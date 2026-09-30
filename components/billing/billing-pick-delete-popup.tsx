@@ -53,6 +53,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import { useBillingPickDeleteMarkerValue } from "@/components/billing/billing-marker-provider";
+import { useBillingLiveApi } from "@/components/billing/billing-live";
 import {
   PICK_DELETE_BASE,
   PICK_DELETE_CHECK_EVENT,
@@ -133,12 +134,20 @@ export function BillingPickDeletePopup() {
     setCount(providerValue.count);
   }, [providerValue]);
 
+  // LIVE FEED (2b-ii): on the feed, focus already makes the feed glance (≤ 1 per 3 s) and the
+  // count arrives through the provider value above — so the focus check is skipped, and an
+  // Import finishing asks the feed for an immediate glance instead of a marker call.
+  const liveApi = useBillingLiveApi();
+  const liveRef = useRef(false);
+  liveRef.current = liveApi?.live === true;
+
   // Window focus → a check only if nothing checked in the last 10 s, looked at
   // 1.5 s later so the provider's visible-again probe can land first.
   // The History tab's Undo → at once, never throttled.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const onFocus = () => {
+      if (liveRef.current) return;
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
@@ -159,7 +168,11 @@ export function BillingPickDeletePopup() {
   // transition, so this fires once per completed run.
   const { state: importState } = useImportProgress();
   useEffect(() => {
-    if (importState.status === "done") void check();
+    if (importState.status !== "done") return;
+    if (liveRef.current) liveApi?.glanceNow("import-done");
+    else void check();
+    // liveApi is read, not a trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [importState, check]);
 
   const onQueueState = useCallback((s: PickDeleteQueueState) => {

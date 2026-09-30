@@ -64,7 +64,15 @@ export type FullReason = "start" | "switch-on" | "reset" | "overflow" | "too-man
 /** What the screen should do now. */
 export type Work =
   | { kind: "full"; reasons: FullReason[] }
-  | { kind: "patch"; orderIds: number[]; tripIds: number[] };
+  | {
+      kind: "patch";
+      orderIds: number[];
+      tripIds: number[];
+      /** Entities beyond order / trip / config (2026-09-30: Billing's mail_order, so_tag) — ids per
+       *  entity. PRESENT ONLY WHEN NON-EMPTY, so a caller that never asks for such a topic (Floor)
+       *  gets exactly the object it always got. */
+      extra?: Record<string, (number | string)[]>;
+    };
 
 // ── pure timing helpers ─────────────────────────────────────────────────────
 
@@ -143,7 +151,13 @@ export interface FeedDeps {
   onMode: (mode: FeedMode, prev: FeedMode) => void;
   onHealth: (h: { connected: boolean; delayed: boolean }) => void;
   /** Every glance's raw ids (order + trip) — for "changed elsewhere" signals. Accumulation is internal. */
-  onChanges: (batch: { orderIds: number[]; tripIds: number[]; config: string[] }) => void;
+  onChanges: (batch: {
+    orderIds: number[];
+    tripIds: number[];
+    config: string[];
+    /** Other entities (mail_order, so_tag …) — present only when non-empty. */
+    extra?: Record<string, (number | string)[]>;
+  }) => void;
   /** Something may be ready to `take`. */
   onPending: () => void;
   onServerNow: (iso: string) => void;
@@ -164,6 +178,8 @@ export class LiveFeedController {
   // pending work
   private orders = new Set<number>();
   private trips = new Set<number>();
+  /** Entities beyond order / trip / config, by entity (Billing: mail_order, so_tag). */
+  private extra = new Map<string, Set<number | string>>();
   private fullReasons = new Set<FullReason>();
   private configPending = false;
   private lastConfigSeenAt = 0;
@@ -226,6 +242,11 @@ export class LiveFeedController {
     this.extraGlance("focus");
   }
 
+  /** An immediate glance for a known reason (e.g. an Import finished) — same 3 s throttle as focus. */
+  glanceNow(why: string): void {
+    this.extraGlance(why);
+  }
+
   private extraGlance(why: string): void {
     if (this.stopped || this.inFlight) return;
     const timerPending = this.timer !== null;
@@ -251,6 +272,7 @@ export class LiveFeedController {
   noteFullLoad(): void {
     this.orders.clear();
     this.trips.clear();
+    this.extra.clear();
     this.fullReasons.clear();
     this.configPending = false;
     this.lastFullLoadAt = this.deps.now();
@@ -259,9 +281,32 @@ export class LiveFeedController {
   }
 
   /** A patch could not be applied (a load was in flight) — keep its ids for the next take. */
-  requeue(orderIds: number[], tripIds: number[]): void {
+  requeue(orderIds: number[], tripIds: number[], extra?: Record<string, (number | string)[]>): void {
     for (const id of orderIds) this.orders.add(id);
     for (const id of tripIds) this.trips.add(id);
+    if (extra) this.addExtra(extra);
+  }
+
+  private addExtra(extra: Record<string, (number | string)[]>): void {
+    for (const [entity, ids] of Object.entries(extra)) {
+      let set = this.extra.get(entity);
+      if (!set) {
+        set = new Set();
+        this.extra.set(entity, set);
+      }
+      for (const id of ids) set.add(id);
+    }
+  }
+
+  /** Hand out and clear the extra entities; null when there are none. */
+  private takeExtra(): Record<string, (number | string)[]> | null {
+    if (this.extra.size === 0) return null;
+    const out: Record<string, (number | string)[]> = {};
+    this.extra.forEach((set, entity) => {
+      out[entity] = Array.from(set);
+    });
+    this.extra.clear();
+    return out;
   }
 
   /** A patch endpoint answered { enabled: false } — the switch went off between glances. */
@@ -292,10 +337,11 @@ export class LiveFeedController {
 
     const tripIds = Array.from(this.trips);
     const orderIds = opts.ordersPaused ? [] : Array.from(this.orders);
-    if (orderIds.length === 0 && tripIds.length === 0) return null;
+    const extra = this.takeExtra();
+    if (orderIds.length === 0 && tripIds.length === 0 && extra === null) return null;
     this.trips.clear();
     if (!opts.ordersPaused) this.orders.clear();
-    return { kind: "patch", orderIds, tripIds };
+    return extra === null ? { kind: "patch", orderIds, tripIds } : { kind: "patch", orderIds, tripIds, extra };
   }
 
   // ── internals ─────────────────────────────────────────────────────────────
@@ -380,6 +426,7 @@ export class LiveFeedController {
       this.cursor = answer.cursor ?? null;
       this.orders.clear();
       this.trips.clear();
+      this.extra.clear();
       this.fullReasons.add(
         wasMode === "unknown" ? "start" : wasMode === "off" ? "switch-on" : this.fullReasons.has("overflow") ? "overflow" : "reset",
       );
@@ -405,13 +452,17 @@ export class LiveFeedController {
     const orderIds: number[] = [];
     const tripIds: number[] = [];
     const config: string[] = [];
+    const extra: Record<string, (number | string)[]> = {};
     for (const g of answer.changes ?? []) {
       for (const id of g.ids) {
         if (g.entity === "order" && typeof id === "number") orderIds.push(id);
         else if (g.entity === "trip" && typeof id === "number") tripIds.push(id);
         else if (g.entity === "config") config.push(String(id));
+        else if (g.entity !== "order" && g.entity !== "trip") (extra[g.entity] ??= []).push(id);
       }
     }
+    const hasExtra = Object.keys(extra).length > 0;
+    if (hasExtra) this.addExtra(extra);
     for (const id of orderIds) this.orders.add(id);
     for (const id of tripIds) this.trips.add(id);
     if (config.length > 0) {
@@ -420,11 +471,11 @@ export class LiveFeedController {
       if (this.configTimer !== null) this.deps.clearTimer(this.configTimer);
       this.configTimer = null;
     }
-    if (orderIds.length + tripIds.length + config.length > 0) {
-      this.deps.log("changes", { orderIds, tripIds, config, cursor: this.cursor });
-      this.deps.onChanges({ orderIds, tripIds, config });
+    if (orderIds.length + tripIds.length + config.length > 0 || hasExtra) {
+      this.deps.log("changes", { orderIds, tripIds, config, ...(hasExtra ? { extra } : {}), cursor: this.cursor });
+      this.deps.onChanges(hasExtra ? { orderIds, tripIds, config, extra } : { orderIds, tripIds, config });
     }
-    if (this.orders.size + this.trips.size > 0 || this.configPending || this.lagging) this.deps.onPending();
+    if (this.orders.size + this.trips.size + this.extra.size > 0 || this.configPending || this.lagging) this.deps.onPending();
     this.schedule(glanceDelay(this.deps.now(), this.lastInputAt, this.deps.random()));
   }
 

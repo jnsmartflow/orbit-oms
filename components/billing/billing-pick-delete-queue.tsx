@@ -43,6 +43,7 @@ import {
   useBillingPickDeleteMarkerPause,
   useBillingPickDeleteMarkerSubscription,
 } from "@/components/billing/billing-marker-provider";
+import { useBillingShownIds } from "@/components/billing/billing-live";
 import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type {
@@ -196,6 +197,9 @@ export function PickDeleteQueue({
   useBillingPickDeleteMarkerPause("pick-delete-queue", busy || justDone !== null);
 
   const groups = useMemo(() => data?.groups ?? [], [data]);
+  // LIVE FEED (2b-ii): the bills of the groups on screen (no-op off the feed).
+  const shownIds = useMemo(() => groups.flatMap((g) => g.orderIds), [groups]);
+  useBillingShownIds("pick-delete-queue", "pickDelete", shownIds);
 
   // Keep the cursor in range as groups come and go; honour a pending focus.
   useEffect(() => {

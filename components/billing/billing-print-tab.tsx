@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type { PrintTrip } from "@/lib/billing/print";
+import { useBillingShownIds } from "@/components/billing/billing-live";
 import { GiftBadge } from "@/components/floor/gift-badge";
 
 const LIST_URL = "/api/billing/print/list";
@@ -196,6 +197,10 @@ export function BillingPrintTab({
 
   const pending = useMemo(() => data?.pending ?? [], [data]);
   const copied = useMemo(() => data?.copied ?? [], [data]);
+
+  // LIVE FEED (2b-ii): the trip ids this tab shows (no-op off the feed).
+  const shownTripIds = useMemo(() => [...pending.map((t) => t.id), ...copied.map((t) => t.id)], [pending, copied]);
+  useBillingShownIds("print-tab", "print", shownTripIds);
 
   // The selection is an id, so it survives a refetch; if its trip left both
   // lists, fall back to the first card rather than showing nothing.

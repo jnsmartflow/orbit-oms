@@ -18,7 +18,8 @@
     "test:live-client": "tsx --test lib/live/feed-core.test.ts",
     "test:floor-live": "tsx --test lib/floor/live-merge.test.ts",
     "test:pick-delete": "tsx --test lib/billing/pick-delete-rule.test.ts",
-    "test:billing-sync": "tsx --test lib/billing/sync-rule.test.ts"
+    "test:billing-sync": "tsx --test lib/billing/sync-rule.test.ts",
+    "test:billing-live": "tsx --test lib/billing/live-rule.test.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

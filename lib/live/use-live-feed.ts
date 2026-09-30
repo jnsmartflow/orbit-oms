@@ -60,10 +60,13 @@ export interface UseLiveFeedOptions {
   scope: string;
   /** Comma list for GET /api/live/changes?topics= */
   topics: string;
+  /** Optional `?screen=` (2026-09-30: "billing" → enabled only when live.feed AND live.feed.billing).
+   *  Omitted (Floor) → the request is exactly what it was. */
+  screen?: string;
   /** localStorage key remembering whether the feed was on last time. */
   hintKey: string;
   onPending: () => void;
-  onChanges?: (batch: { orderIds: number[]; tripIds: number[]; config: string[] }) => void;
+  onChanges?: (batch: { orderIds: number[]; tripIds: number[]; config: string[]; extra?: Record<string, (number | string)[]> }) => void;
   onMode?: (mode: FeedMode, prev: FeedMode) => void;
   /** IST midnight on the server's clock, plus 0–120 s jitter. Live mode only. */
   onMidnight?: () => void;
@@ -86,13 +89,14 @@ export function useLiveFeed(opts: UseLiveFeedOptions): LiveFeedHandle {
   optsRef.current = opts;
 
   useEffect(() => {
-    const { scope, topics, hintKey } = optsRef.current;
+    const { scope, topics, hintKey, screen } = optsRef.current;
     let midnightTimer: ReturnType<typeof setTimeout> | null = null;
     let midnightFor: string | null = null; // the serverNow IST day a timer is armed for
 
     const ctl = new LiveFeedController({
       fetchChanges: async (after) => {
         const qs = new URLSearchParams({ topics });
+        if (screen) qs.set("screen", screen);
         if (after) qs.set("after", after);
         const res = await fetch(`/api/live/changes?${qs.toString()}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

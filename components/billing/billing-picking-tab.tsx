@@ -40,6 +40,7 @@ import {
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { BillingOrderDetailPanel } from "@/components/billing/billing-order-detail-panel";
+import { useBillingLiveTick, useBillingShownIds } from "@/components/billing/billing-live";
 import { billingFlags, type BillingPickingList, type BillingPendingRow, type BillingDoneRow } from "@/lib/billing/types";
 
 const LIST_URL = "/api/billing/picking/list";
@@ -191,6 +192,12 @@ export function BillingPickingTab({
 
   const pending = useMemo(() => data?.pending ?? [], [data]);
   const done = useMemo(() => data?.done ?? [], [data]);
+
+  // LIVE FEED (2b-ii): the ids this tab shows (so a row LEAVING it is seen), and a no-network
+  // 30 s re-render for the "Xm ago" column. Both do nothing off the feed.
+  const shownIds = useMemo(() => [...pending.map((r) => r.id), ...done.map((r) => r.id)], [pending, done]);
+  useBillingShownIds("picking-tab", "picking", shownIds);
+  useBillingLiveTick();
 
   /**
    * The rows a batch may touch: pending MINUS every bill carrying a confirmed

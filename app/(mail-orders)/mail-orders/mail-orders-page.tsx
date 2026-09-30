@@ -26,6 +26,7 @@ import { useBillingPrintAccess } from "@/components/billing/billing-print-access
 import { useBillingTelephonicAccess } from "@/components/billing/billing-telephonic-access-provider";
 import { useBillingPickDeleteAccess } from "@/components/billing/billing-pick-delete-access-provider";
 import { BillingPickDeletePopup } from "@/components/billing/billing-pick-delete-popup";
+import { BillingLiveRoot, readBillingLiveHint } from "@/components/billing/billing-live";
 import { TelephonicMonthPicker } from "@/components/billing/billing-telephonic-tab";
 import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
@@ -388,13 +389,13 @@ export default function MailOrdersPage() {
   // `date` makes the hook re-baseline when the day changes, so stepping the
   // header stores a fresh baseline instead of firing a spurious refetch — and
   // the effect above has already reloaded for the new day anyway.
-  usePickingMarker({
-    scope: "openPending",
-    url: "/api/mail-orders/marker",
-    date: selectedDate,
-    pollMs: MAIL_ORDERS_MARKER_POLL_MS,
-    onChange: loadOrders,
-  });
+  //
+  // ⚠ LIVE FEED (2b-ii, 2026-09-30): the call moved, unchanged, into
+  // <LegacyOrdersMarker> (foot of this file), rendered while the Billing desk is
+  // NOT on the change feed — always on the non-billing face, and on the billing
+  // face whenever the feed is off / unknown / in fallback. On the feed, a
+  // `mail_order` change reloads the list instead (components/billing/billing-live.tsx).
+  const [billingLive, setBillingLive] = useState<boolean>(() => billingV2 && readBillingLiveHint());
 
   // ── Auto logout at midnight IST ───────────────────────────────────────────
   useEffect(() => {
@@ -1391,9 +1392,38 @@ export default function MailOrdersPage() {
   );
   const hasUrgentOrHold = urgentCount > 0 || holdCount > 0;
 
+  // ── LIVE FEED (2b-ii) — what the Billing live root needs from this page ──────
+  // The arms it may fire: EXACTLY the four marker providers' `enabled` gates below.
+  const billingLivePermitted = useMemo(
+    () => ({
+      picking: billingV2 && canViewPicking,
+      print: billingV2 && canViewPrint,
+      telephonic: billingV2 && canViewTelephonic,
+      pickDelete: billingV2 && canViewPickDelete,
+    }),
+    [billingV2, canViewPicking, canViewPrint, canViewTelephonic, canViewPickDelete],
+  );
+  // Plan §E: hold an Orders reload while the operator is mid-action — typing in any
+  // field, a smart-copy run, the code popover or SKU panel, or any dialog (split,
+  // notes, resolve, the Pick delete popup). Read at call time, never a dependency.
+  // Feed only: the legacy marker keeps today's no-pause behaviour.
+  const ordersPausedRef = useRef<() => boolean>(() => false);
+  ordersPausedRef.current = () => {
+    if (smartCopyOrderId !== null || openCodePopoverId !== null || skuPanelOrderId !== null) return true;
+    if (typeof document === "undefined") return false;
+    const el = document.activeElement as HTMLElement | null;
+    const tag = el?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return true;
+    return document.querySelector('[role="dialog"], [aria-modal="true"]') !== null;
+  };
+  const ordersPaused = useCallback(() => ordersPausedRef.current(), []);
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden">
+      {/* The Orders tab's 30 s marker — mounted unless the Billing desk is on the
+          change feed (see LegacyOrdersMarker). Renders nothing. */}
+      {!billingLive && <LegacyOrdersMarker date={selectedDate} onChange={loadOrders} />}
       {/* Smart copy flash animations */}
       <style>{`
         @keyframes flash-green { 0% { background-color: #dcfce7; } 100% { background-color: transparent; } }
@@ -1529,6 +1559,18 @@ export default function MailOrdersPage() {
           retry line below stay the only thing on screen while either is true.
           With the flag off this term is false and the expression is the original
           `orders.length > 0`, so the non-billing face is unchanged. */}
+      {/* LIVE FEED (2b-ii): the Billing desk's change-feed root — ABOVE the
+          `!loading` gate, so a date step (which remounts everything below) never
+          restarts the feed. Non-billing face: a plain pass-through. Billing face
+          off the feed: the providers below poll exactly as before. */}
+      <BillingLiveRoot
+        enabled={billingV2}
+        permitted={billingLivePermitted}
+        date={selectedDate}
+        loadOrders={loadOrders}
+        ordersPaused={ordersPaused}
+        onLiveChange={setBillingLive}
+      >
       {!loading && !error && (orders.length > 0 || billingV2) && viewMode === "focus" && (
         // ONE marker poll for the billing face (2026-08-10). BillingTabBar and
         // BillingPickingTab are siblings inside ReviewView and each used to run
@@ -1624,6 +1666,7 @@ export default function MailOrdersPage() {
         </BillingPrintMarkerProvider>
         </BillingMarkerProvider>
       )}
+      </BillingLiveRoot>
 
       {/* Table mode — padded wrapper. Also shows loading/error/empty for focus mode. */}
       {/* ⚠ This guard and the ReviewView guard above must stay MUTUALLY
@@ -1761,4 +1804,22 @@ export default function MailOrdersPage() {
       />
     </div>
   );
+}
+
+/**
+ * The Orders tab's 30 s marker — the usePickingMarker call that sat inline in the
+ * page, moved here UNCHANGED (live feed 2b-ii, 2026-09-30) so the page can stop it
+ * while the Billing desk is on the change feed. Rendered whenever the feed is not
+ * live: always on the non-billing face, and on the billing face while the feed is
+ * off, unknown, or in fallback after errors. Same arguments, same cadence.
+ */
+function LegacyOrdersMarker({ date, onChange }: { date: string; onChange: () => void }) {
+  usePickingMarker({
+    scope: "openPending",
+    url: "/api/mail-orders/marker",
+    date,
+    pollMs: MAIL_ORDERS_MARKER_POLL_MS,
+    onChange,
+  });
+  return null;
 }

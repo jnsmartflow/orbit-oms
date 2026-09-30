@@ -405,3 +405,49 @@ test("noteDisabled (a patch route said enabled:false) → off and the 60 s re-ch
   assert.deepEqual(h.calls, [null, null]);
   assert.equal(h.ctl.getMode(), "live");
 });
+
+// ── extra entities (Billing: mail_order, so_tag — 2026-09-30) ──────────────
+test("extra entities are accumulated per entity and handed out with the patch; order/trip-only work keeps its old shape", async () => {
+  const h = harness([
+    head("v1.1.0"),
+    step("v1.2.0", [{ entity: "mail_order", ids: [501, 502] }, { entity: "so_tag", ids: [7] }]),
+    step("v1.3.0", [{ entity: "mail_order", ids: [502, 503] }, { entity: "order", ids: [9] }]),
+  ]);
+  h.ctl.start();
+  await h.flush();
+  h.ctl.noteFullLoad();
+  await h.advance(ACTIVE_GLANCE_MS);
+  await h.advance(ACTIVE_GLANCE_MS);
+  assert.deepEqual(h.changes[0], { orderIds: [], tripIds: [], config: [], extra: { mail_order: [501, 502], so_tag: [7] } });
+  assert.deepEqual(h.ctl.take(), {
+    kind: "patch",
+    orderIds: [9],
+    tripIds: [],
+    extra: { mail_order: [501, 502, 503], so_tag: [7] },
+  });
+  assert.equal(h.ctl.take(), null);
+});
+
+test("extra-only changes still make a patch; requeue and noteFullLoad cover them", async () => {
+  const h = harness([head("v1.1.0"), step("v1.2.0", [{ entity: "so_tag", ids: [3] }])]);
+  h.ctl.start();
+  await h.flush();
+  h.ctl.noteFullLoad();
+  await h.advance(ACTIVE_GLANCE_MS);
+  assert.deepEqual(h.ctl.take(), { kind: "patch", orderIds: [], tripIds: [], extra: { so_tag: [3] } });
+  h.ctl.requeue([], [], { mail_order: [1] });
+  h.ctl.noteFullLoad();
+  assert.equal(h.ctl.take(), null);
+});
+
+test("glanceNow glances at once, throttled like focus", async () => {
+  const h = harness([head("v1.1.0"), step("v1.1.0"), step("v1.1.0")]);
+  h.ctl.start();
+  await h.flush();
+  h.ctl.glanceNow("import-done");
+  await h.flush();
+  assert.equal(h.calls.length, 2);
+  h.ctl.glanceNow("again");
+  await h.flush();
+  assert.equal(h.calls.length, 2); // < 3 s
+});

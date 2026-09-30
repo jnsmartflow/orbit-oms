@@ -17,6 +17,7 @@ import {
   useBillingPrintMarkerSubscription,
   useBillingTelephonicMarkerSubscription,
 } from "@/components/billing/billing-marker-provider";
+import { useBillingLiveCounts } from "@/components/billing/billing-live";
 
 export type BillingTab = "orders" | "picking" | "print" | "telephonic" | "pick_delete";
 
@@ -96,6 +97,12 @@ export function BillingTabBar({
    */
   showPickDelete?: boolean;
 }) {
+  // LIVE FEED (2b-ii): while the Billing desk is on the change feed the pills read the
+  // root's counts (sync answers + one marker read at start) and NOTHING below fetches a
+  // marker. Off the feed `live` is null and this bar is exactly what it was.
+  const live = useBillingLiveCounts();
+  const liveRef = useRef(live);
+  liveRef.current = live;
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [printCount, setPrintCount] = useState<number | null>(null);
   const [telephonicCount, setTelephonicCount] = useState<number | null>(null);
@@ -105,6 +112,7 @@ export function BillingTabBar({
   // The Telephonic count — the same shape as refreshPrintCount, on its own marker.
   const refreshTelephonicCount = useCallback(async () => {
     if (!showTelephonic) return;
+    if (liveRef.current) return; // live: the count comes from the feed
     const seq = ++telephonicReqRef.current;
     try {
       const res = await fetch(TELEPHONIC_MARKER_URL, { cache: "no-store" });
@@ -126,6 +134,7 @@ export function BillingTabBar({
   // The Print count — the same shape as refreshCount below, on its own marker.
   const refreshPrintCount = useCallback(async () => {
     if (!showPrint) return;
+    if (liveRef.current) return; // live: the count comes from the feed
     const seq = ++printReqRef.current;
     try {
       const res = await fetch(PRINT_MARKER_URL, { cache: "no-store" });
@@ -154,6 +163,7 @@ export function BillingTabBar({
     // dependency list, so a grant arriving mid-session starts the count on the
     // next render rather than needing a reload.
     if (!showPicking) return;
+    if (liveRef.current) return; // live: the count comes from the feed
     const seq = ++reqRef.current;
     try {
       const res = await fetch(MARKER_URL, { cache: "no-store" });
@@ -181,6 +191,24 @@ export function BillingTabBar({
   // mattered still comes from the same hook underneath: tab-hidden pause,
   // no-overlap guard, silent failure.
   useBillingMarkerSubscription(refreshCount);
+
+  // Leaving the feed (switch off / errors): the legacy polls only take a silent baseline, so
+  // re-read each count once here or the pills would keep their last live numbers.
+  const wasLive = useRef(false);
+  useEffect(() => {
+    if (live !== null) {
+      wasLive.current = true;
+      return;
+    }
+    if (!wasLive.current) return;
+    wasLive.current = false;
+    void refreshCount();
+    void refreshPrintCount();
+    void refreshTelephonicCount();
+  }, [live, refreshCount, refreshPrintCount, refreshTelephonicCount]);
+  const shownPending = live?.picking ?? pendingCount;
+  const shownPrint = live?.print ?? printCount;
+  const shownTelephonic = live?.telephonic ?? telephonicCount;
 
   function pill(key: BillingTab, label: string, count: number | null, live: boolean, hideZero = false) {
     const on = active === key;
@@ -226,15 +254,15 @@ export function BillingTabBar({
           carries the date stepper, Filter and shortcuts on the billing face.
           ⚠ The pill is a SIBLING inside the existing flex row, not wrapped in a
           new div (§23.1), so the granted layout is byte-identical. */}
-      {showPicking && pill("picking", "Picking", pendingCount, true)}
+      {showPicking && pill("picking", "Picking", shownPending, true)}
       {/* Print (slice 9) — gated on `billing_print`/canView, a sibling in the
           same row like Picking. Its count is trips with copy work outstanding. */}
-      {showPrint && pill("print", "Print", printCount, true)}
+      {showPrint && pill("print", "Print", shownPrint, true)}
       {/* Telephonic (2026-09-22) — gated on `billing_telephonic`/canView, a
           sibling in the same row. Its count is tags still waiting for their OBD;
           the chip is hidden at 0. No live dot: nothing on it moves by itself
           often enough to earn one. */}
-      {showTelephonic && pill("telephonic", "Telephonic", telephonicCount, false, true)}
+      {showTelephonic && pill("telephonic", "Telephonic", shownTelephonic, false, true)}
       {/* Pick delete — gated on `billing_pick_delete`/canView. HISTORY ONLY since
           2026-09-28: a plain label like Telephonic, no count and no yellow — the
           groups themselves are decided in the blocking popup

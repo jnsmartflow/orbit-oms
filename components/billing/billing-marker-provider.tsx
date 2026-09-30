@@ -29,6 +29,8 @@ import {
   useState,
 } from "react";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import { useBillingLiveApi, type BillingArmHandle } from "@/components/billing/billing-live";
+import { PausedFire, type BillingArm } from "@/lib/billing/live-rule";
 
 const MARKER_URL = "/api/billing/picking/marker";
 
@@ -104,8 +106,11 @@ function ActiveBillingMarkerProvider({
   context: Context = BillingMarkerContext,
   pollMs = BILLING_MARKER_POLL_MS,
   onResult,
+  arm,
   children,
 }: {
+  /** Which Billing arm this poll serves — its key with the live-feed root (2b-ii). */
+  arm?: BillingArm;
   date?: string;
   /** Only the Pick delete twin passes this (BILLING_PICK_DELETE_POLL_MS). */
   pollMs?: number;
@@ -138,25 +143,86 @@ function ActiveBillingMarkerProvider({
 
   const api = useMemo<BillingMarkerApi>(() => ({ subscribe, setPaused }), [subscribe, setPaused]);
 
-  // THE single poll. `paused` is true while ANY subscriber holds a pause — the
-  // hook keeps polling and advancing its baseline, and flushes one onChange when
-  // the last holder releases. That is the same contract each component had on
-  // its own marker, now shared.
+  // Snapshot before iterating: a subscriber could unsubscribe during its own
+  // callback, which would mutate the live Set mid-iteration.
+  const fireSubscribers = useCallback(() => {
+    for (const fn of Array.from(subsRef.current)) fn();
+  }, []);
+
+  // ── LIVE FEED (2b-ii, 2026-09-30) ──────────────────────────────────────────
+  // When the Billing desk is on the change feed (components/billing/billing-live.tsx),
+  // the root fires this provider's subscribers through a registered handle and
+  // THIS provider's poll is not mounted. The pause contract is the hook's: a
+  // change arriving while any key holds the pause fires ONCE on release.
+  // Off the feed (the root absent, or not live) nothing below does anything:
+  // `live` is false, the poll child mounts exactly as the hook call used to run,
+  // and `livePending` is never set.
+  const liveApi = useBillingLiveApi();
+  const live = liveApi?.live === true;
+  const livePending = useRef(new PausedFire());
+  const pauseCountRef = useRef(pauseCount);
+  pauseCountRef.current = pauseCount;
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
+  const handle = useMemo<BillingArmHandle>(
+    () => ({
+      requestFire: () => {
+        if (livePending.current.request(pauseCountRef.current > 0)) fireSubscribers();
+      },
+      setValue: (v) => onResultRef.current?.(v),
+    }),
+    [fireSubscribers],
+  );
+  useEffect(() => {
+    if (!liveApi || !arm) return;
+    return liveApi.register(arm, handle);
+  }, [liveApi, arm, handle]);
+  useEffect(() => {
+    if (pauseCount === 0 && livePending.current.release()) fireSubscribers();
+  }, [pauseCount, fireSubscribers]);
+
+  return (
+    <Context.Provider value={api}>
+      {/* THE single poll — moved, unchanged, into a child (2b-ii) so it can be
+          unmounted while the feed is live without remounting the tabs below.
+          `paused` is true while ANY subscriber holds a pause — the hook keeps
+          polling and advancing its baseline, and flushes one onChange when the
+          last holder releases. That is the same contract each component had on
+          its own marker, now shared. */}
+      {!live && (
+        <MarkerPoll url={url} date={date} pollMs={pollMs} onResult={onResult} paused={pauseCount > 0} onChange={fireSubscribers} />
+      )}
+      {children}
+    </Context.Provider>
+  );
+}
+
+/** The legacy poll — usePickingMarker with exactly the arguments the provider always passed. Renders nothing. */
+function MarkerPoll({
+  url,
+  date,
+  pollMs,
+  onResult,
+  paused,
+  onChange,
+}: {
+  url: string;
+  date?: string;
+  pollMs: number;
+  onResult?: (marker: { count: number; latest: string | null }) => void;
+  paused: boolean;
+  onChange: () => void;
+}) {
   usePickingMarker({
     scope: "openPending",
     url,
     date,
     pollMs,
     onResult,
-    paused: pauseCount > 0,
-    onChange: () => {
-      // Snapshot before iterating: a subscriber could unsubscribe during its own
-      // callback, which would mutate the live Set mid-iteration.
-      for (const fn of Array.from(subsRef.current)) fn();
-    },
+    paused,
+    onChange,
   });
-
-  return <Context.Provider value={api}>{children}</Context.Provider>;
+  return null;
 }
 
 /**
@@ -176,7 +242,7 @@ export function BillingMarkerProvider({
   if (!enabled) {
     return <BillingMarkerContext.Provider value={INERT}>{children}</BillingMarkerContext.Provider>;
   }
-  return <ActiveBillingMarkerProvider date={date}>{children}</ActiveBillingMarkerProvider>;
+  return <ActiveBillingMarkerProvider date={date} arm="picking">{children}</ActiveBillingMarkerProvider>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,7 +292,7 @@ export function BillingPrintMarkerProvider({
     return <BillingPrintMarkerContext.Provider value={INERT}>{children}</BillingPrintMarkerContext.Provider>;
   }
   return (
-    <ActiveBillingMarkerProvider date={date} url={PRINT_MARKER_URL} context={BillingPrintMarkerContext}>
+    <ActiveBillingMarkerProvider date={date} url={PRINT_MARKER_URL} context={BillingPrintMarkerContext} arm="print">
       {children}
     </ActiveBillingMarkerProvider>
   );
@@ -282,7 +348,7 @@ export function BillingTelephonicMarkerProvider({
     );
   }
   return (
-    <ActiveBillingMarkerProvider url={TELEPHONIC_MARKER_URL} context={BillingTelephonicMarkerContext}>
+    <ActiveBillingMarkerProvider url={TELEPHONIC_MARKER_URL} context={BillingTelephonicMarkerContext} arm="telephonic">
       {children}
     </ActiveBillingMarkerProvider>
   );
@@ -354,6 +420,7 @@ function ActivePickDeleteMarkerProvider({ children }: { children: React.ReactNod
         context={BillingPickDeleteMarkerContext}
         pollMs={BILLING_PICK_DELETE_POLL_MS}
         onResult={onResult}
+        arm="pickDelete"
       >
         {children}
       </ActiveBillingMarkerProvider>
