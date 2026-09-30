@@ -1,7 +1,8 @@
 import { CODE_TTL_MS } from "./constants";
 
-// Sends the SO login code by email through Zoho ZeptoMail (2026-09-30).
-// Server-only — the only caller is app/api/so-lab/auth/request-code.
+// Sends a one-time login code by email through Zoho ZeptoMail (2026-09-30).
+// Channel-neutral (moved out of the sales-officer login 2026-09-30); server-only. Callers
+// today: the sales-officer request-code route only.
 //
 // • Auth: env var ZEPTOMAIL_TOKEN (Vercel, Production + Preview). Its value
 //   already carries the "Zoho-enczapikey " prefix and is sent as-is.

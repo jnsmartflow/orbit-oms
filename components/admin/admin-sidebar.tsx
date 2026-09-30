@@ -11,7 +11,7 @@ import {
   Tag, Palette, Package,
   Building2, UserCheck, ContactRound, Store,
   Upload, ClipboardCheck, CalendarCheck, Paintbrush, Briefcase,
-  EyeOff, Trash2, Grid3x3, ChevronRight,
+  EyeOff, Trash2, Grid3x3, ChevronRight, KeyRound,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
 // ICON_MAP is keyed by PAGE KEY and is the shared map the operational sidebar
@@ -82,6 +82,10 @@ const NAV_SECTIONS: NavSection[] = [
       // Keyless by construction: visibleItems() shows it to a superuser alone —
       // the same gate every other keyless item here uses.
       { label: "Access",      href: "/admin/access", icon: ShieldCheck },
+      // Sales-officer order access (2026-09-30). Keyless ON PURPOSE → superuser
+      // only via visibleItems(). 🔴 SO order-access grant is deliberately NOT a
+      // PageKey — do not add one: a tick could be handed out via /admin/access.
+      { label: "Order access", href: "/admin/so-access", icon: KeyRound },
       // Relabelled from "Roles" 2026-09-06. SAME href, same read-only
       // role_master screen. ⚠ ICONS is keyed on the LABEL, so the map key was
       // renamed in the same edit — see the note above ICONS.

@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { CODE_TTL_MS, RESEND_COOLDOWN_MS } from "@/lib/otp/constants";
+import { generateCode, hashCode, normaliseEmail } from "@/lib/otp/code";
+import { sendCodeEmail } from "@/lib/otp/send-code-email";
 import {
-  CODE_TTL_MS,
   IP_LIMIT,
   IP_WINDOW_MS,
   REQUEST_CODE_JITTER_MS,
   REQUEST_CODE_MESSAGE,
   REQUEST_CODE_MIN_MS,
-  RESEND_COOLDOWN_MS,
+  SO_OTP_HMAC_LABEL,
   TEST_MODE_SHOW_CODE,
 } from "@/lib/so-auth/constants";
-import { generateCode, hashCode, normaliseEmail } from "@/lib/so-auth/crypto";
 import { findEligibleSoByEmail } from "@/lib/so-auth/eligibility";
-import { sendCodeEmail } from "@/lib/so-auth/send-code-email";
 import { requestIp, soLabStaffGate } from "@/lib/so-auth/staff-gate";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,7 @@ async function issueCode(req: Request, email: string): Promise<Outcome> {
     data: {
       salesOfficerId: so.salesOfficerId,
       email: so.email,
-      codeHash: hashCode(so.salesOfficerId, code),
+      codeHash: hashCode(SO_OTP_HMAC_LABEL, String(so.salesOfficerId), code),
       createdAt: now,
       expiresAt: new Date(now.getTime() + CODE_TTL_MS),
       requestedIp: ip,

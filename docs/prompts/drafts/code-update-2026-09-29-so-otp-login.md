@@ -35,6 +35,44 @@
 Discovery: `docs/prompts/drafts/code-discovery-2026-09-29-po2-so-login.md` (§A Option 2, §G).
 SQL (run live 2026-09-29 by Smart Flow, verified): `sql/2026-09-29-so-login-tables.sql`.
 
+## Update 2026-09-30 (b) — shared `lib/otp/` + the `/admin/so-access` screen
+
+> **2026-09-30: SO order-access grant is deliberately NOT a PageKey — do not add one.**
+
+**The split (refactor — no change a user can see).** Channel-neutral pieces moved to `lib/otp/`
+(`git mv`, history kept); everything SO-specific stayed in `lib/so-auth/`, which imports from `lib/otp/`.
+Prepared for a possible **staff OTP later — not built.**
+
+| `lib/otp/` (no SO names, tables or imports — grep for `so_` / `salesOfficer` / `so-auth` is empty) | `lib/so-auth/` |
+|---|---|
+| `code.ts` (was `lib/so-auth/crypto.ts`): `normaliseEmail`, `generateCode`, `hashCode(label, subject, code)`, `codeMatches(label, subject, code, hash)` — the HMAC label is now a PARAMETER | `constants.ts`: session TTL, IP limit, cookie, **`SO_OTP_HMAC_LABEL = "orbit-so-otp:v1"`** (unchanged, frozen — changing it kills live codes; a staff channel gets its own), `TEST_MODE_SHOW_CODE`, timing floor, generic message |
+| `constants.ts` (new): `CODE_LENGTH`, `CODE_TTL_MS`, `MAX_ATTEMPTS`, `RESEND_COOLDOWN_MS` — values unchanged | `eligibility.ts`, `session.ts` (session-token generation + hashing now private here), `staff-gate.ts` |
+| `send-code-email.ts` (was `lib/so-auth/send-code-email.ts`, unchanged apart from its header comment) | `access.ts` (new): `listSoAccess`, `grantSoAccess`, `revokeSoAccess` |
+
+Hash equivalence was checked by script: the old formula and `hashCode("orbit-so-otp:v1", "19", code)` give
+the identical digest, so codes issued before the split still verify.
+
+**`/admin/so-access` — "Order access"** (`app/(admin)/admin/so-access/page.tsx` +
+`components/admin/so-access-table.tsx`).
+- **Superuser only, three ways:** the `/admin` layout's `requireSuperuser`; every API route's `isSuperuser`
+  JSON 401/403; and the sidebar entry is **keyless**, which `visibleItems()` in `admin-sidebar.tsx` shows
+  to a superuser alone (the same rule as "Access"). **No PageKey, no `PAGE_NAV_MAP` row, no tick** — a tick
+  could be handed to anyone through `/admin/access`. Editing `sales_officer_master` (Sales Officers screen)
+  grants nothing: access lives only in `so_order_access`.
+- Table (CLAUDE_UI §27 fixed layout): name (+ "{n} past grants/revokes") · employee code · email (grey
+  "No email — add it in Sales Officers") · Active · Access (Granted / Not granted) · granted by + date
+  (IST) · last login = `MAX(so_sessions.lastSeenAt)` or "Never" · action. Loads once, reloads after each
+  action — **no polling**.
+- **Grant** (`POST /api/admin/so-access/grant {salesOfficerId}`): disabled with a tooltip when the SO has no
+  email or is inactive; the server re-checks both (404 / 422). Inserts a NEW `so_order_access` row with
+  `grantedById` = the superuser; a P2002 on `so_order_access_live_key` → **409 "Already granted."**
+- **Revoke** (`POST /api/admin/so-access/revoke {salesOfficerId}`): confirm dialog "Revoke order access for
+  {name}? They will be logged out now." → `updateMany` the live row (`revokedAt` now, `revokedById`), never
+  a delete; **then `updateMany` every open `so_sessions` row of that SO → `revokedAt` now**, answering
+  `sessionsEnded`. Belt and braces: `getSoSession` also re-checks eligibility on every read. A later
+  **re-grant is a new row** and the SO must log in again.
+- `GET /api/admin/so-access` — the list. Three reads, sequential, no `$transaction`.
+
 ## What shipped
 
 - **Schema v27.43** — Prisma models `so_order_access`, `so_login_codes`, `so_sessions` hand-mirrored in

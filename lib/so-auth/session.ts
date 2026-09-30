@@ -1,13 +1,23 @@
+import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SESSION_TTL_MS, SO_SESSION_COOKIE } from "./constants";
-import { hashToken, newSessionToken } from "./crypto";
 import { findEligibleSoById, type EligibleSo } from "./eligibility";
 
 // Server-side SO sessions. The cookie holds a random token; so_sessions holds
 // only its SHA-256 hash, so a database read never yields a usable cookie.
 // Sequential awaits only — never prisma.$transaction (CORE §3).
+
+/** A new session token for the cookie: 32 random bytes, base64url. */
+function newSessionToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+/** What is stored in so_sessions.tokenHash — SHA-256 hex of the cookie token. */
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 function cookieOptions(maxAgeSeconds: number) {
   return {

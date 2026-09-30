@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { CODE_LENGTH, MAX_ATTEMPTS } from "@/lib/so-auth/constants";
-import { codeMatches, normaliseEmail } from "@/lib/so-auth/crypto";
+import { CODE_LENGTH, MAX_ATTEMPTS } from "@/lib/otp/constants";
+import { codeMatches, normaliseEmail } from "@/lib/otp/code";
+import { SO_OTP_HMAC_LABEL } from "@/lib/so-auth/constants";
 import { findEligibleSoByEmail } from "@/lib/so-auth/eligibility";
 import { createSoSession } from "@/lib/so-auth/session";
 import { requestIp, soLabStaffGate } from "@/lib/so-auth/staff-gate";
@@ -55,7 +56,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   });
   if (claimed.count !== 1) return fail("too_many");
 
-  if (!codeMatches(so.salesOfficerId, code, latest.codeHash)) {
+  if (!codeMatches(SO_OTP_HMAC_LABEL, String(so.salesOfficerId), code, latest.codeHash)) {
     return fail(latest.attempts + 1 >= MAX_ATTEMPTS ? "too_many" : "wrong");
   }
 
