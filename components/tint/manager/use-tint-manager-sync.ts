@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 
 /**
@@ -23,10 +22,16 @@ import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
  * triggers the same refetch. That is the rail's "a new OBD appears on its own"
  * behaviour, driven by the 15s probe rather than a 30s blind poll.
  *
- * `SLOW_REFETCH_MS` is a belt-and-braces floor, not a second mechanism: if the
- * marker probe itself is failing (network, auth expiry) the board still
- * reconciles every 60s once connectivity returns, instead of sitting stale until
- * someone reloads.
+ * ── No blind refetch (removed 2026-09-30 — do not re-add) ────────────────────
+ * There used to be a 60s `setInterval` refetch here as a "belt-and-braces floor".
+ * It was also, silently, the ONLY thing that showed a pause/resume, a split
+ * start/status/reassign, a TI entry or a challan save/void — none of those write
+ * `orders`, so the orders-only marker never moved. The marker route now folds
+ * MAX(updatedAt) of tint_assignments, order_splits and delivery_challans into
+ * `latest`, so the 15s probe sees all of them (within 15s instead of ≤ 60s), and
+ * the blind tick went. Recovery after a failed probe needs no timer: the marker
+ * hook keeps probing every 15s and probes once on becoming visible.
+ * (docs/prompts/drafts/code-plan-2026-09-30-tint-live-feed.md §C1.)
  *
  * ── Pause rules, copied from Floor ───────────────────────────────────────────
  * Never move the ground under a hand: no refetch while the detail panel is open
@@ -39,8 +44,6 @@ import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
  * keys on MAX(orders.updatedAt), so one extra write here fires a false "changed"
  * on all of them (CORE §3 / PICKING §10 / FLOOR §10).
  */
-const SLOW_REFETCH_MS = 60_000;
-
 export function useTintManagerSync({
   paused,
   onChange,
@@ -63,18 +66,4 @@ export function useTintManagerSync({
     onProbe,
     onChange,
   });
-
-  const onChangeRef = useRef(onChange);
-  const pausedRef   = useRef(paused);
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { pausedRef.current = paused; }, [paused]);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (pausedRef.current) return;
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      onChangeRef.current();
-    }, SLOW_REFETCH_MS);
-    return () => clearInterval(id);
-  }, []);
 }

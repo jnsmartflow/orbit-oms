@@ -15,8 +15,10 @@ export const dynamic = "force-dynamic";
  *
  *   count  — COUNT(*) of orders on the Tint Manager board (arrivals and
  *            departures move it)
- *   latest — MAX(orders.updatedAt) (in-place edits move it); hits the
- *            orders_updatedAt_idx index created for the picking marker.
+ *   latest — the later of MAX(orders.updatedAt) over that set (in-place edits
+ *            move it) and, since 2026-09-30, MAX(updatedAt) of tint_assignments /
+ *            order_splits / delivery_challans (child writes that never touch
+ *            `orders` — see the extra statement below).
  *
  * Consumed by lib/hooks/use-picking-marker's `url` param, the same way Floor
  * watches its own set — so the poll, the refetch trigger and the connection
@@ -134,8 +136,30 @@ export async function GET(): Promise<NextResponse> {
     _max: { updatedAt: true },
   });
 
+  // Widened 2026-09-30 (plan §C1), replacing the Manager's blind 60s refetch.
+  // A pause/resume, a split start/status/reassign, a TI entry and a challan
+  // save/void write tint_assignments / order_splits / delivery_challans but NOT
+  // `orders`, so the aggregate above never moved for them. `@updatedAt` sets
+  // each table's stamp on every write. Deliberately unfiltered: any row there is
+  // tint work, and a rare false "changed" costs one board reload — what the blind
+  // tick paid every 60s. 3 tiny seq scans (~1 ms). Folded into `latest`, so the
+  // response shape — and lib/hooks/use-picking-marker — are unchanged.
+  const childRows = await prisma.$queryRaw<{ m: Date | null }[]>`
+    SELECT GREATEST(
+      (SELECT max("updatedAt") FROM tint_assignments),
+      (SELECT max("updatedAt") FROM order_splits),
+      (SELECT max("updatedAt") FROM delivery_challans)) AS m`;
+  const latest = laterOf(agg._max.updatedAt, childRows[0]?.m ?? null);
+
   return NextResponse.json(
-    { count: agg._count, latest: agg._max.updatedAt ? agg._max.updatedAt.toISOString() : null },
+    { count: agg._count, latest: latest ? latest.toISOString() : null },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
+}
+
+/** The later of two nullable stamps (GREATEST ignores NULLs; so does this). */
+function laterOf(a: Date | null, b: Date | null): Date | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a.getTime() >= b.getTime() ? a : b;
 }

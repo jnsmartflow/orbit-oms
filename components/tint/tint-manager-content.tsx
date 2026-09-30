@@ -56,6 +56,7 @@ import { BoardDetailPanel, type PanelTarget } from "@/components/tint/manager/bo
 import { useTintManagerAccess } from "@/components/tint/manager/tint-manager-access-provider";
 import { ConnectionStrip } from "@/components/tint/manager/board-bits";
 import { useTintManagerSync } from "@/components/tint/manager/use-tint-manager-sync";
+import { useMissingCustomersPoll } from "@/components/tint/manager/use-missing-customers-poll";
 import { buildGroups, buildRail, panelSequence, queueSignature } from "@/components/tint/manager/rows";
 import type {
   BasePendingLine,
@@ -221,8 +222,12 @@ export function TintManagerContent() {
       }
     }
     void init();
-    void fetchMissingCustomers();
-  }, [fetchMissingCustomers]);
+  }, []);
+
+  // Missing-customers side list: mount + on becoming visible + every 5 min
+  // while visible — no longer on every marker change (plan §C2, 2026-09-30).
+  // The page's own writes below still refetch it directly, as before.
+  useMissingCustomersPoll(fetchMissingCustomers);
 
   // ── Live sync ─────────────────────────────────────────────────────────────
   // Paused while the panel is open or a selection is up: never move the ground
@@ -230,7 +235,7 @@ export function TintManagerContent() {
   useTintManagerSync({
     paused:   panelKey !== null || selection.size > 0,
     onProbe:  setConnected,
-    onChange: () => { void fetchBoard(); void fetchMissingCustomers(); },
+    onChange: () => { void fetchBoard(); },
   });
 
   // ── Derived board ─────────────────────────────────────────────────────────
