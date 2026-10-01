@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import NextAuth from "next-auth";
 import { authConfig } from "./auth.config";
+import { isSoSurfacePath } from "./lib/so-auth/surface-path";
 
 const { auth } = NextAuth(authConfig);
 
@@ -34,6 +35,14 @@ export default auth(function middleware(req) {
 
   // Always allow public paths
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
+
+  // SO surface: own OTP session (lib/so-auth); see web-update-2026-09-30-so-order-pipeline.md H5.
+  // EXACT SEGMENT ONLY — /so-lab, /so-lab/, /api/so-lab, /api/so-lab/* (isSoSurfacePath).
+  // Never a bare prefix. Each route gates itself: superuser staff while the
+  // app_settings 'so.page.open' switch is off, the SO session once it is on.
+  if (isSoSurfacePath(pathname)) {
     return NextResponse.next();
   }
 

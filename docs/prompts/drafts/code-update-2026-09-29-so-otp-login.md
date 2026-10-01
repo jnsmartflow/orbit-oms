@@ -35,6 +35,51 @@
 Discovery: `docs/prompts/drafts/code-discovery-2026-09-29-po2-so-login.md` (§A Option 2, §G).
 SQL (run live 2026-09-29 by Smart Flow, verified): `sql/2026-09-29-so-login-tables.sql`.
 
+## Update 2026-10-01 (b) — middleware: exact-segment bypass for the SO surface (checklist H5)
+
+> **2026-10-01: /so-lab + /api/so-lab/* bypass NextAuth in middleware by exact segment — they carry their own SO session; never widen to a prefix.**
+
+- `middleware.ts` gains ONE branch, right after the `PUBLIC_PATHS` check: `if (isSoSurfacePath(pathname))
+  return NextResponse.next();`. `PUBLIC_PATHS`, `/po`, `/order` and every other branch are untouched.
+- `lib/so-auth/surface-path.ts` (`isSoSurfacePath`, no imports — Edge-safe): TRUE only for `/so-lab`,
+  `/so-lab/`, `/api/so-lab`, and `/api/so-lab/…`. A throwaway check (not committed) printed:
+  `/so-lab=YES /so-lab/=YES /so-labx=no /so-lab-old=no /api/so-lab/catalogue=YES /api/so-lab/auth/verify=YES
+  /api/so-labx=no /admin/so-access=no /api/admin/so-access=no /po2=no /floor=no /login=no`.
+- `/so-lab/manifest.webmanifest` contains a dot, so the middleware matcher (`middleware.ts` `config.matcher`)
+  never runs on it — confirmed against the matcher regex.
+- `/admin/so-access` and `/api/admin/so-access/*` do NOT match, so they stay behind middleware's NextAuth
+  redirect AND their own superuser gates (admin layout `requireSuperuser`; `isSuperuser` JSON 401/403).
+
+**Gate table after the bypass** (middleware no longer redirects these; each enforces its own gate):
+
+| Route | `so.page.open` OFF (absent / false / read error) | `so.page.open` ON |
+|---|---|---|
+| `/so-lab` (layout + page) | superuser staff session (`requireSuperuser` → `/unauthorized`) | none to SEE the login screen; the board needs a live SO session (`getSoSession`) |
+| `POST /api/so-lab/auth/request-code` | superuser staff (JSON 401/403) | none — it IS the login; rate-limited (below), answer never reveals eligibility |
+| `POST /api/so-lab/auth/verify` | superuser staff | none — it IS the login; 5 tries per code, 10-min codes |
+| `POST /api/so-lab/auth/logout` | superuser staff | none — only revokes the session in the caller's OWN cookie; no cookie = no-op |
+| `GET /api/so-lab/auth/me` | superuser staff | SO session, else 401 `no_so_session` |
+| `GET /api/so-lab/catalogue` | superuser staff, then SO session (`requireSoApi`) | SO session (`requireSoApi`) |
+
+No route is fully open in a way that exposes data: with the switch ON the only session-less routes are the
+login pair and logout. Nothing opens until the owner flips the switch.
+
+**Rate limits = the only guard on the OTP sender once ON** (all apply with no session — they are keyed on the
+SO and the IP, not on any login):
+- **60 s cooldown per sales officer** (`RESEND_COOLDOWN_MS`): at most one code — one email — per SO per minute.
+- **10 codes per IP per hour** (`IP_LIMIT` / `IP_WINDOW_MS`), counting codes actually issued.
+- An email that is not an active, granted SO creates no row and sends nothing, so the sender can only ever
+  mail the granted SO addresses.
+- ⚠ Residual risk to decide before real SOs: the IP limit counts per IP, so a distributed caller could still
+  make one email a minute to a granted SO (≤ 60/h each), and guessing is bounded by 5 tries × one code a
+  minute ≈ 300 guesses/h per SO against 1,000,000 codes. A per-SO hourly cap on issued codes / failed tries
+  would close both; not built.
+
+**Switch SQL (owner, Smart Flow — NOT RUN):**
+- ON: `INSERT INTO app_settings ("settingKey","isEnabled") VALUES ('so.page.open', true) ON CONFLICT ("settingKey") DO UPDATE SET "isEnabled" = true, "updatedAt" = now();`
+- OFF: `UPDATE app_settings SET "isEnabled" = false, "updatedAt" = now() WHERE "settingKey" = 'so.page.open';`
+- Takes effect within ~30 s (per-instance cache).
+
 ## Update 2026-10-01 — C.2a: the /po2 board behind SO login (local storage only)
 
 > **2026-10-01: lastSeenAt throttled to 10 min — do not write on every call.**
