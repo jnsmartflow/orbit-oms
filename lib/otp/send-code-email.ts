@@ -9,16 +9,19 @@ import { CODE_TTL_MS } from "./constants";
 //   🔴 NEVER log, return or echo the token — or the code, or the address.
 // • India data centre: a token only works on its own DC.
 // • Sender noreply@orbitoms.in — orbitoms.in is verified in ZeptoMail (DKIM + CNAME).
-// • fetch only, no SDK (no new npm package). 8 s timeout.
+// • fetch only, no SDK (no new npm package). 10 s + one 8 s retry (below).
 // • Failure reasons are short strings: HTTP status + Zoho error code, never
 //   the response body (it could echo request details).
 
 const ZEPTO_API_URL = "https://api.zeptomail.in/v1.1/email";
 const FROM = { address: "noreply@orbitoms.in", name: "Orbit" };
 const SUBJECT = "Orbit login code";
-const TIMEOUT_MS = 8000;
+const FIRST_TIMEOUT_MS = 10_000; // attempt 1
+const RETRY_TIMEOUT_MS = 8_000;  // the one retry
 
-export type SendCodeResult = { ok: true } | { ok: false; reason: string };
+export type SendCodeResult =
+  | { ok: true; attempts: number }
+  | { ok: false; reason: string; attempts: number };
 
 function escapeHtml(s: string): string {
   return s
@@ -59,18 +62,17 @@ function buildBodies(name: string, code: string): { html: string; text: string }
   return { html, text };
 }
 
-export async function sendCodeEmail(args: {
-  to: string;
-  name: string;
-  code: string;
-}): Promise<SendCodeResult> {
-  const token = process.env.ZEPTOMAIL_TOKEN;
-  if (!token) return { ok: false, reason: "no-token" };
-
-  const { html, text } = buildBodies(args.name, args.code);
+/**
+ * ONE attempt. Retryable = timeout, network error, or HTTP 5xx; a 4xx (bad
+ * token, bad sender, bad address) is final.
+ */
+async function attemptSend(
+  token: string,
+  payload: string,
+  timeoutMs: number,
+): Promise<{ ok: true } | { ok: false; reason: string; retryable: boolean }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(ZEPTO_API_URL, {
       method: "POST",
@@ -79,13 +81,7 @@ export async function sendCodeEmail(args: {
         "Content-Type": "application/json",
         Authorization: token,
       },
-      body: JSON.stringify({
-        from: FROM,
-        to: [{ email_address: { address: args.to, name: args.name } }],
-        subject: SUBJECT,
-        htmlbody: html,
-        textbody: text,
-      }),
+      body: payload,
       signal: controller.signal,
       cache: "no-store",
     });
@@ -100,11 +96,47 @@ export async function sendCodeEmail(args: {
     } catch {
       // body not JSON — status alone
     }
-    return { ok: false, reason: zohoCode ? `http-${res.status} ${zohoCode}` : `http-${res.status}` };
+    return {
+      ok: false,
+      reason: zohoCode ? `http-${res.status} ${zohoCode}` : `http-${res.status}`,
+      retryable: res.status >= 500,
+    };
   } catch (err) {
     const aborted = err instanceof Error && err.name === "AbortError";
-    return { ok: false, reason: aborted ? "timeout" : "network" };
+    return { ok: false, reason: aborted ? "timeout" : "network", retryable: true };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * 🔴 2026-10-01: 10 s, then ONE 8 s retry on timeout / network / 5xx — never a
+ * retry on 4xx. A single 8 s attempt lost the first code after a cold start
+ * (cold boot + Prisma + TLS to api.zeptomail.in). The caller's route sets
+ * maxDuration = 30, so both attempts fit. Do not restore the single attempt.
+ */
+export async function sendCodeEmail(args: {
+  to: string;
+  name: string;
+  code: string;
+}): Promise<SendCodeResult> {
+  const token = process.env.ZEPTOMAIL_TOKEN;
+  if (!token) return { ok: false, reason: "no-token", attempts: 0 };
+
+  const { html, text } = buildBodies(args.name, args.code);
+  const payload = JSON.stringify({
+    from: FROM,
+    to: [{ email_address: { address: args.to, name: args.name } }],
+    subject: SUBJECT,
+    htmlbody: html,
+    textbody: text,
+  });
+
+  const first = await attemptSend(token, payload, FIRST_TIMEOUT_MS);
+  if (first.ok) return { ok: true, attempts: 1 };
+  if (!first.retryable) return { ok: false, reason: first.reason, attempts: 1 };
+
+  const second = await attemptSend(token, payload, RETRY_TIMEOUT_MS);
+  if (second.ok) return { ok: true, attempts: 2 };
+  return { ok: false, reason: second.reason, attempts: 2 };
 }

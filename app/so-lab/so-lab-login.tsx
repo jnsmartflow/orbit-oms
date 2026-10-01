@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RESEND_COOLDOWN_MS } from "@/lib/otp/constants";
 
 // /so-lab — sales-officer OTP login, TEST page (2026-09-29). Mobile-first:
 // 16px gutters, inputs at 16px so iOS never zooms (CLAUDE_UI.md §9), tap
@@ -10,7 +11,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Screen = "loading" | "email" | "code" | "in";
 type FailReason = "wrong" | "expired" | "too_many";
 
-const RESEND_SECONDS_DEFAULT = 60;
+// The server answers with cooldownSeconds from the SAME constant; this is only
+// the fallback if that field is missing (one constant, both places).
+const RESEND_SECONDS_DEFAULT = Math.round(RESEND_COOLDOWN_MS / 1000);
 
 const FAIL_TEXT: Record<FailReason, string> = {
   wrong: "That code is not right. Check it and try again.",
@@ -42,6 +45,17 @@ export function SoLabLogin() {
   const [cooldown, setCooldown] = useState(0);
   const [who, setWho] = useState<{ name: string; email: string } | null>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const warmedRef = useRef(false);
+
+  // WARM-UP (2026-10-01): the first time the email screen shows, boot the
+  // server function and its pooler connection so the salesman's first "Send
+  // code" is not the cold start. ONCE per page open — never per keystroke,
+  // never on a timer. Fire-and-forget: a failure changes nothing.
+  useEffect(() => {
+    if (screen !== "email" || warmedRef.current) return;
+    warmedRef.current = true;
+    fetch("/api/so-lab/auth/warm", { cache: "no-store" }).catch(() => {});
+  }, [screen]);
 
   // On load: skip straight to the logged-in screen if an SO session exists.
   useEffect(() => {

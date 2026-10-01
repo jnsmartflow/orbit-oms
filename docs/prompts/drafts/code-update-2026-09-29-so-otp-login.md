@@ -35,6 +35,41 @@
 Discovery: `docs/prompts/drafts/code-discovery-2026-09-29-po2-so-login.md` (§A Option 2, §G).
 SQL (run live 2026-09-29 by Smart Flow, verified): `sql/2026-09-29-so-login-tables.sql`.
 
+## Update 2026-10-01 (c) — OTP send survives a cold start; a failed send no longer blocks Resend
+
+> **2026-10-01: OTP send gets 10 s + one 8 s retry and maxDuration 30; a failed send deletes its code row so the cooldown never blocks a retry — do not restore the single 8 s attempt.**
+
+**Symptom (owner, phone, switch ON):** the first "Send code" after a quiet spell never arrived; Resend after the
+cooldown did. **Cause:** the send was awaited, but its single 8 s abort fired on a cold start (boot + Prisma +
+TLS to `api.zeptomail.in`); the code row was already written, so the 60 s cooldown blocked an immediate retry,
+and the page showed the normal generic message. Zoho showed 4 delivered / 0 failed — every send that reached it
+was delivered.
+
+- **`lib/otp/send-code-email.ts`:** attempt 1 times out at **10 s**; on timeout / network error / HTTP 5xx,
+  **ONE retry at 8 s**; no retry on 4xx. Returns `{ ok, reason?, attempts }`.
+- **`request-code` route:** `export const maxDuration = 30` (both attempts fit). If the send finally fails,
+  the `so_login_codes` row just created is **deleted** (`deleteMany` by its id) — the cooldown does not apply and
+  a code nobody received can never verify.
+- **Fewer steps before the send:** eligibility (active SO + live grant), this IP's codes in the last hour and the
+  SO's newest code now come from **ONE raw read** (`$queryRaw`, parameterised), then the insert. Round trips
+  before the email is handed to ZeptoMail: **5 → 2** (the 30 s-cached lock-switch read is unchanged). Same rules
+  as before: case-insensitive trimmed email, exactly one match, IP limit 10/h, cooldown. Checked read-only
+  against production 2026-10-01 (TEST SO id 19 returned, types correct; an unknown email returns 0 rows).
+- **Resend cooldown 60 s → 30 s:** `RESEND_COOLDOWN_MS` in `lib/otp/constants.ts` is read by the server check AND
+  by the `/so-lab` login screen's countdown fallback (the server also returns `cooldownSeconds` from it).
+- **Warm-up:** `GET /api/so-lab/auth/warm` — no session, no rate limit, returns 204 with no body, runs ONE
+  `SELECT 1` and writes nothing. The login screen calls it once, fire-and-forget, when the email step first
+  shows. **Cost: one tiny read per login-screen open.** Best effort only — Vercel may serve request-code from
+  another instance; the retry is what actually covers a cold send.
+- **Anti-enumeration kept:** same message, same status, ≥ 1.5 s floor (+ jitter) for allowed and not-allowed
+  alike. Accepted: when ZeptoMail is slow or the retry runs, an allowed email's answer is later than the floor —
+  an attacker cannot cause that.
+- **Log lines (Vercel), neither carries an address, a code or the token:**
+  - `[so-auth] request-code ms: db=<n> send=<n> total=<n> attempts=<n> ok=<bool>` — once per call that issued a
+    code to an eligible SO (not written for unknown emails, cooldown hits or the IP limit).
+  - `[so-auth] code email failed: <reason> attempts=<n> soId=<id>` — reason `timeout` / `network` /
+    `http-<status> [<Zoho code>]` / `no-token`.
+
 ## Update 2026-10-01 (b) — middleware: exact-segment bypass for the SO surface (checklist H5)
 
 > **2026-10-01: /so-lab + /api/so-lab/* bypass NextAuth in middleware by exact segment — they carry their own SO session; never widen to a prefix.**
