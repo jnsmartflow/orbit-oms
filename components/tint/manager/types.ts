@@ -64,6 +64,18 @@ export interface TintOrder {
   articleTag:         string | null;
   isKeyCustomer:      boolean;
 
+  // ── Ship-to override + dispatch window (2026-10-01, tabs build step 5) ─────
+  /** delivery_point_master.customerName of orders.shipToOverrideCustomerId —
+   *  the REDIRECTED site, set by Floor / Tint Manager ship-to. Null when the
+   *  bill goes to its own site. Shown first wherever the board names a site. */
+  shipToOverrideName: string | null;
+  /** orders.dispatchTargetDate as YYYY-MM-DD (IST calendar day), or null. */
+  dispatchTargetDate: string | null;
+  /** orders.dispatchWindowId, or null. */
+  dispatchWindowId:   number | null;
+  /** dispatch_slot_master.windowTime of that window, e.g. "16:00". */
+  dispatchWindowTime: string | null;
+
   customer: {
     customerName:       string;
     area:               { name: string };
@@ -164,6 +176,8 @@ export interface SplitCard {
   billToName:       string | null;
   route:            string | null;
   isKeyCustomer:    boolean;
+  /** The parent bill's redirected site (orders.shipToOverrideCustomerId), or null. */
+  shipToOverrideName: string | null;
   assignedTo:     { id: number; name: string | null };
   lineItems: {
     rawLineItemId: number;
@@ -210,6 +224,8 @@ export interface CompletedAssignment {
   route:            string | null;
   articleTag:       string | null;
   isKeyCustomer:    boolean;
+  /** The bill's redirected site (orders.shipToOverrideCustomerId), or null. */
+  shipToOverrideName: string | null;
   assignedTo:  { id: number; name: string | null };
   order: {
     id:                 number;
@@ -275,8 +291,12 @@ export interface BoardRow {
   smuCode:        string | null;
   /** Ordering dealer — its own column on the board, beside the ship-to site. */
   billToName:     string | null;
-  /** The ship-to SITE. Rendered as the "Ship To" column. */
+  /** The ship-to SITE. Rendered as the "Ship To" column. OVERRIDE-FIRST
+   *  (2026-10-01): the redirected site when the bill has one. */
   siteName:       string;
+  /** The bill's OWN site when siteName is a redirect, else null — the left
+   *  half of Floor's ORIGINAL → REDIRECT pair (CLAUDE_FLOOR §4.9). */
+  originalSiteName: string | null;
   route:          string | null;
   volumeLitres:   number | null;
   articleTag:     string | null;

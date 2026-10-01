@@ -296,8 +296,12 @@ function Row({
       </td>
 
       {/* Ship To — the site. Floor's dealer-name treatment, ★/⚡ inline-styled
-          to Floor's exact amber/red. */}
-      <td className={TD} title={row.siteName}>
+          to Floor's exact amber/red. OVERRIDE-FIRST since 2026-10-01: siteName
+          is the redirected site when the bill has one (rows.ts siteNameOf). */}
+      <td
+        className={TD}
+        title={row.originalSiteName ? `${row.originalSiteName} → ship to ${row.siteName}` : row.siteName}
+      >
         <span className="text-[11.5px] font-medium text-[#111827]">{row.siteName}</span>
         {row.isKeyCustomer && <span className="ml-1.5" style={{ color: "#f59e0b" }} title="Key customer">★</span>}
         {row.isUrgent && <span className="ml-1" style={{ color: "#ef4444" }} title="Urgent">⚡</span>}
@@ -308,6 +312,17 @@ function Row({
           >
             ↩{row.skipCount}
           </span>
+        )}
+        {/* Ship-to redirect — Floor's ORIGINAL → REDIRECT pair, copied from
+            components/floor/floor-table.tsx (CLAUDE_FLOOR §4.9): same wording,
+            same brand-800, rides inside this column with its own ellipsis
+            (fixed layout, CLAUDE_UI §27), full pair on the cell's title. */}
+        {row.originalSiteName && (
+          <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-brand-800">
+            {row.originalSiteName}
+            <span className="mx-1 opacity-60">→</span>
+            <b className="font-semibold">{row.siteName}</b>
+          </div>
         )}
       </td>
 

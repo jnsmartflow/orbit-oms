@@ -32,8 +32,28 @@ const STATUS_ORDER: Record<BoardRowStatus, number> = {
   tinting_done:        3,
 };
 
-function siteNameOf(o: { customer: { customerName: string } | null; shipToCustomerName?: string | null }): string {
+/** The bill's OWN site — the customer master name, else SAP's ship-to name. */
+function ownSiteOf(o: { customer: { customerName: string } | null; shipToCustomerName?: string | null }): string {
   return o.customer?.customerName ?? o.shipToCustomerName ?? "—";
+}
+
+/**
+ * The site the board NAMES, override-first (2026-10-01, plan decision 12): a
+ * ship-to redirect set on Floor or the Tint Manager wins over the bill's own
+ * site, so a Tint Manager ship-to change shows on its own board. `original` is
+ * the bill's own site when a redirect is in force (the left half of Floor's
+ * ORIGINAL → REDIRECT pair, CLAUDE_FLOOR §4.9), else null.
+ *
+ * ⚠ Display only. TI and sampling stay keyed on orders.customerId — the
+ * original site — by design (ROADMAP).
+ */
+export function siteNameOf(
+  o: { customer: { customerName: string } | null; shipToCustomerName?: string | null },
+  overrideName: string | null | undefined,
+): { site: string; original: string | null } {
+  const own = ownSiteOf(o);
+  if (overrideName) return { site: overrideName, original: own };
+  return { site: own, original: null };
 }
 
 /**
@@ -81,7 +101,8 @@ function rowFromOrder(o: TintOrder, status: BoardRowStatus): BoardRow | null {
     smu:             o.smu ?? null,
     smuCode:         o.smuCode ?? null,
     billToName:      o.billToName ?? null,
-    siteName:        siteNameOf(o),
+    siteName:        siteNameOf(o, o.shipToOverrideName).site,
+    originalSiteName: siteNameOf(o, o.shipToOverrideName).original,
     route:           o.route ?? null,
     volumeLitres:    o.querySnapshot?.totalVolume ?? null,
     articleTag:      o.articleTag ?? o.querySnapshot?.articleTag ?? null,
@@ -121,7 +142,8 @@ function rowFromSplit(s: SplitCard, status: BoardRowStatus): BoardRow {
     smu:             s.smu ?? null,
     smuCode:         s.smuCode ?? null,
     billToName:      s.billToName ?? null,
-    siteName:        s.order.customer?.customerName ?? "—",
+    siteName:        siteNameOf(s.order, s.shipToOverrideName).site,
+    originalSiteName: siteNameOf(s.order, s.shipToOverrideName).original,
     route:           s.route ?? null,
     volumeLitres:    s.totalVolume,
     articleTag:      s.articleTag,
@@ -158,7 +180,8 @@ function rowFromCompletedAssignment(a: CompletedAssignment): BoardRow {
     smu:             a.smu ?? null,
     smuCode:         a.smuCode ?? null,
     billToName:      a.billToName ?? null,
-    siteName:        a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—",
+    siteName:        siteNameOf(a.order, a.shipToOverrideName).site,
+    originalSiteName: siteNameOf(a.order, a.shipToOverrideName).original,
     route:           a.route ?? null,
     volumeLitres:    a.order.querySnapshot?.totalVolume ?? null,
     articleTag:      a.articleTag ?? a.order.querySnapshot?.articleTag ?? null,
@@ -188,10 +211,15 @@ function rowFromCompletedAssignment(a: CompletedAssignment): BoardRow {
  * worked because a card could sit in two columns at once; one flat table has no
  * such affordance, and the remainder flow was reachable only through Create
  * Split, which this screen drops by scope decision.
+ *
+ * 🔴 A HELD BILL IS NOT ON THE RAIL (2026-10-01, tabs build step 5). It lives on
+ * the Hold tab; Release (unhold) brings it back here (owner decision 9). Strict
+ * lowercase "hold" — every writer lowercases it (CLAUDE_TINT §12). The marker's
+ * first arm still covers the stage, so a hold/release still refreshes the board.
  */
 export function buildRail(payload: TintBoardPayload): TintOrder[] {
   return payload.orders
-    .filter((o) => o.workflowStage === "pending_tint_assignment")
+    .filter((o) => o.workflowStage === "pending_tint_assignment" && o.dispatchStatus !== "hold")
     .sort((a, b) => {
       const ta = a.orderDateTime ? Date.parse(a.orderDateTime) : 0;
       const tb = b.orderDateTime ? Date.parse(b.orderDateTime) : 0;

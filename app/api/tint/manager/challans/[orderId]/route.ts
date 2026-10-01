@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import { resolveFiniMap } from "@/lib/fini-resolver";
@@ -55,6 +56,9 @@ export async function GET(
       select: {
         id:               true,
         obdNumber:        true,
+        // The ship-to redirect (Floor / Tint Manager ship-to) — the site block
+        // resolves it FIRST (2026-10-01, plan decision 12).
+        shipToOverrideCustomerId: true,
         dispatchSlot:     true,
         shipToCustomerId: true,
         // Void-state metadata for the right-panel banner ("Voided by …").
@@ -258,6 +262,27 @@ export async function GET(
       });
     }
 
+    // ── 4b. Ship-to REDIRECT wins (2026-10-01, Tint Manager tabs build step 5) ──
+    // A bill whose ship-to was redirected on Floor or the Tint Manager
+    // (orders.shipToOverrideCustomerId) prints the REDIRECTED site: its name,
+    // address, code, route, area, site contact and sales officer all come from
+    // that delivery point. Re-resolved on every GET, like the rest of this
+    // block, so a reprint after a redirect carries the new site. No redirect, or
+    // a redirect to a point that no longer exists → today's source, unchanged.
+    // Bill-to is never touched: the ordering dealer did not change.
+    // ⚠ TI report and sampling stay on the ORIGINAL site by design (ROADMAP).
+    let shipToOverridden = false;
+    if (order.shipToOverrideCustomerId !== null) {
+      const overridePoint = await prisma.delivery_point_master.findUnique({
+        where:  { id: order.shipToOverrideCustomerId },
+        select: SHIP_TO_POINT_SELECT,
+      });
+      if (overridePoint !== null) {
+        resolvedShipTo = overridePoint;
+        shipToOverridden = true;
+      }
+    }
+
     // ── 5. Build lookup maps ──────────────────────────────────────────────────
     const formulaMap = new Map(formulas.map((f) => [f.rawLineItemId, f.formula]));
     const configMap  = new Map(configRows.map((c) => [c.key, c.value]));
@@ -376,9 +401,14 @@ export async function GET(
         },
 
         shipTo: {
-          name:         rawSummary?.shipToCustomerName        ?? "",
+          // Redirected → the redirect's own name and code; else SAP's, as before.
+          name:         shipToOverridden
+                          ? (resolvedShipTo?.customerName ?? "")
+                          : (rawSummary?.shipToCustomerName ?? ""),
           address:      resolvedShipTo?.address               ?? null,
-          shipToCode:   rawSummary?.shipToCustomerId ?? resolvedShipTo?.customerCode ?? null,
+          shipToCode:   shipToOverridden
+                          ? (resolvedShipTo?.customerCode ?? null)
+                          : (rawSummary?.shipToCustomerId ?? resolvedShipTo?.customerCode ?? null),
           route:
             resolvedShipTo?.primaryRoute?.name ??
             resolvedShipTo?.area?.primaryRoute?.name ??
@@ -421,6 +451,42 @@ export async function GET(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// The ship-to delivery-point read for the REDIRECT (step 4b in GET). The same
+// columns the two ship-to reads above select, so the result drops into
+// `resolvedShipTo` unchanged — those two are left as they were.
+const SHIP_TO_POINT_SELECT = {
+  customerCode: true,
+  customerName: true,
+  address:      true,
+  primaryRoute: { select: { name: true } },
+  area: {
+    select: {
+      name:         true,
+      primaryRoute: { select: { name: true } },
+    },
+  },
+  salesOfficerGroup: {
+    select: {
+      salesOfficer: { select: { name: true, phone: true } },
+    },
+  },
+  salesOfficerLinks: {
+    where:  { role: "PRIMARY", contactDismissed: false },
+    take:   1,
+    select: {
+      salesOfficer: { select: { name: true, phone: true } },
+    },
+  },
+  contacts: {
+    select: {
+      name:        true,
+      phone:       true,
+      isPrimary:   true,
+      contactRole: { select: { name: true } },
+    },
+  },
+} satisfies Prisma.delivery_point_masterSelect;
+
 // PATCH — save transporter, vehicleNo, formulas, printedAt/printedBy
 // ─────────────────────────────────────────────────────────────────────────────
 

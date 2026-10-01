@@ -51,6 +51,8 @@ import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-moda
 import { BoardRail } from "@/components/tint/manager/board-rail";
 import { BaseTiPanel } from "@/components/tint/manager/base-ti-panel";
 import { BoardTable } from "@/components/tint/manager/board-table";
+import { BoardTabs, BoardTabComingNext, type BoardTab } from "@/components/tint/manager/board-tabs";
+import { BoardTiTab } from "@/components/tint/manager/board-ti-tab";
 import { BoardAssignBar } from "@/components/tint/manager/board-assign-bar";
 import { BoardDetailPanel, type PanelTarget } from "@/components/tint/manager/board-detail-panel";
 import { useTintManagerAccess } from "@/components/tint/manager/tint-manager-access-provider";
@@ -162,10 +164,15 @@ export function TintManagerContent() {
   const [pendingBypass, setPendingBypass] = useState<{ orderId: number } | null>(null);
   const sheetResolvedRef = useRef(false);
 
+  // ── The tab bar above the table pane (2026-10-01, tabs build step 5) ─────
+  // Tinting · TI · Hold · CI · Pick delete. The rail stays on the left for all.
+  const [activeTab, setActiveTab] = useState<BoardTab>("tinting");
+
   // ── Base — No Tint · Tinter Issue pending ─────────────────────────────────
   // Bills a bypass sent out with their TI still owed, plus the drilldown state.
-  // `baseDrill` non-null replaces the rail with that bill's lines; `baseLine`
-  // non-null replaces the board table with the TI form for that line.
+  // They live on the TI TAB since 2026-10-01 (they used to sit under the rail):
+  // `baseDrill` non-null shows that bill's lines in the TI tab; `baseLine`
+  // non-null shows the TI form for that line beside them.
   const [basePending, setBasePending] = useState<BasePendingOrder[]>([]);
   const [baseDrill,   setBaseDrill]   = useState<BasePendingOrder | null>(null);
   const [baseLine,    setBaseLine]    = useState<BasePendingLine | null>(null);
@@ -993,20 +1000,6 @@ export function TintManagerContent() {
           canRemove={canRemoveObd}
           onAssign={(o, opId) => { void handleAssign(o, opId); }}
           onBaseBypass={(o) => { void handleBaseBypass(o); }}
-          basePending={basePending}
-          baseDrill={baseDrill}
-          baseLineId={baseLine?.rawLineItemId ?? null}
-          onOpenBase={(o) => {
-            setPanelKey(null);
-            setBaseDrill(o);
-            // Open the first line still owing a TI, so the common case (one
-            // pending line) is a single click rather than two.
-            setBaseLine(o.lines.find((l) => !l.hasTiEntry) ?? null);
-          }}
-          onBackFromBase={() => { setBaseDrill(null); setBaseLine(null); }}
-          onPickBaseLine={(l) => setBaseLine(l)}
-          onUndoBase={(o) => { void handleBaseUndo(o); }}
-          baseUndoBusyId={baseUndoBusyId}
           onMenuOpenChange={setRailMenuOpen}
           onRemove={(o) => setRemoveModalOrder(o)}
           onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
@@ -1018,38 +1011,68 @@ export function TintManagerContent() {
           }}
         />
 
-        {/* The right pane is the board table, EXCEPT while a TI-pending line is
-            open — then it is that line's Tinter Issue form. One pane, one job:
-            the manager is either reading the floor or paying off one bill's
-            paperwork, never both. */}
-        {baseDrill && baseLine ? (
-          <BaseTiPanel
-            key={`${baseDrill.tintAssignmentId}-${baseLine.rawLineItemId}`}
-            tintAssignmentId={baseDrill.tintAssignmentId}
-            siteId={baseDrill.siteId}
-            obdNumber={baseDrill.obdNumber}
-            siteName={baseDrill.siteName}
-            line={baseLine}
-            onSaved={() => { void handleBaseLineSaved(); }}
+        {/* The right pane: the TAB BAR, then the open tab's body (2026-10-01,
+            tabs build step 5). The rail on the left never changes with the
+            tab. The TI tab now owns the Tinter Issue drilldown and its form
+            that used to take over the rail and this pane. */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <BoardTabs
+            active={activeTab}
+            onChange={setActiveTab}
+            counts={{
+              tinting: groups.reduce((n, g) => n + g.rows.length, 0),
+              ti:      basePending.length,
+            }}
           />
-        ) : baseDrill ? (
-          <div className="flex-1 flex items-center justify-center text-[11.5px] text-gray-400">
-            Pick a line to record its Tinter Issue.
-          </div>
-        ) : (
-        <BoardTable
-          groups={groups}
-          selection={selection}
-          busyKeys={reorderBusy}
-          onToggleRow={(r) => setSelection((s) => {
-            const n = new Set(s);
-            if (n.has(r.key)) n.delete(r.key); else n.add(r.key);
-            return n;
-          })}
-          onOpenRow={(r) => setPanelKey(r.key)}
-          onReorder={(r, d) => { void handleReorder(r, d); }}
-        />
-        )}
+          {activeTab === "tinting" && (
+            <BoardTable
+              groups={groups}
+              selection={selection}
+              busyKeys={reorderBusy}
+              onToggleRow={(r) => setSelection((s) => {
+                const n = new Set(s);
+                if (n.has(r.key)) n.delete(r.key); else n.add(r.key);
+                return n;
+              })}
+              onOpenRow={(r) => setPanelKey(r.key)}
+              onReorder={(r, d) => { void handleReorder(r, d); }}
+            />
+          )}
+          {activeTab === "ti" && (
+            <BoardTiTab
+              pending={basePending}
+              drill={baseDrill}
+              lineId={baseLine?.rawLineItemId ?? null}
+              undoBusyId={baseUndoBusyId}
+              panel={baseDrill && baseLine ? (
+                <BaseTiPanel
+                  key={`${baseDrill.tintAssignmentId}-${baseLine.rawLineItemId}`}
+                  tintAssignmentId={baseDrill.tintAssignmentId}
+                  siteId={baseDrill.siteId}
+                  obdNumber={baseDrill.obdNumber}
+                  siteName={baseDrill.siteName}
+                  line={baseLine}
+                  onSaved={() => { void handleBaseLineSaved(); }}
+                />
+              ) : null}
+              onOpen={(o) => {
+                setPanelKey(null);
+                setBaseDrill(o);
+                // Open the first line still owing a TI, so the common case (one
+                // pending line) is a single click rather than two.
+                setBaseLine(o.lines.find((l) => !l.hasTiEntry) ?? null);
+              }}
+              onBack={() => { setBaseDrill(null); setBaseLine(null); }}
+              onPickLine={(l) => setBaseLine(l)}
+              onUndo={(o) => { void handleBaseUndo(o); }}
+            />
+          )}
+          {/* Bodies land in build steps 7 (Hold, CI) and 8 (Pick delete). The
+              tabs themselves are already gated on their ticks (board-tabs.tsx). */}
+          {activeTab === "hold" && <BoardTabComingNext label="Hold" />}
+          {activeTab === "ci"   && <BoardTabComingNext label="CI" />}
+          {activeTab === "pick" && <BoardTabComingNext label="Pick delete" />}
+        </div>
       </div>
 
       <BoardAssignBar

@@ -425,6 +425,10 @@ export function TintTableView({
       soNumber: a.soNumber ?? null, billToName: a.billToName ?? null, route: a.route ?? null,
       articleTag: a.articleTag ?? a.order.querySnapshot?.articleTag ?? null,
       isKeyCustomer: a.isKeyCustomer ?? false,
+      // Ship-to override + dispatch window (2026-10-01) — same reason as above:
+      // retired but type-checked, so the synthetic order carries the new fields.
+      shipToOverrideName: a.shipToOverrideName ?? null,
+      dispatchTargetDate: null, dispatchWindowId: null, dispatchWindowTime: null,
       customer: a.order.customer ?? null, querySnapshot: a.order.querySnapshot ?? null,
       tintAssignments: [{ id: a.id, status: "tinting_done", assignedTo: a.assignedTo, startedAt: null, completedAt: a.completedAt, updatedAt: a.completedAt ?? "", accumulatedMinutes: 0 }],
       lineItems: [] as TintOrder["lineItems"], existingSplits: [], splits: [], remainingQty: 0,

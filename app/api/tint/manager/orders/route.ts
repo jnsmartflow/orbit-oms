@@ -555,6 +555,36 @@ export async function GET(): Promise<NextResponse> {
     const obdDateMap = new Map(rawSummaries.map((s) => [s.obdNumber, { date: s.obdEmailDate, time: s.obdEmailTime }]));
     const billToMap  = new Map(rawSummaries.map((s) => [s.obdNumber, s.billToCustomerName]));
 
+    // ── Ship-to override + dispatch window (2026-10-01, tabs build step 5) ────
+    // ONE batched read over every bill the board shows, instead of widening four
+    // include blocks. Sequential await (CORE §3). READ-ONLY.
+    //   shipToOverrideName — the redirected site (Floor / Tint Manager ship-to),
+    //     which the board now names FIRST (plan decision 12);
+    //   dispatchTargetDate / dispatchWindowId / dispatchWindowTime — the real
+    //     Floor dispatch window (not the legacy slotId), for the Slot column
+    //     that step 6 draws.
+    const boardBillIds = Array.from(new Set([
+      ...orders.map((o) => o.id),
+      ...activeSplits.map((s) => s.order.id),
+      ...completedSplits.map((s) => s.order.id),
+      ...completedAssignments.map((a) => a.order.id),
+    ]));
+    const shipAndSlotRows = boardBillIds.length > 0
+      ? await prisma.orders.findMany({
+          where:  { id: { in: boardBillIds } },
+          select: {
+            id:                     true,
+            dispatchTargetDate:     true,
+            dispatchWindowId:       true,
+            dispatchWindow:         { select: { windowTime: true } },
+            shipToOverrideCustomer: { select: { customerName: true } },
+          },
+        })
+      : [];
+    const shipAndSlotById = new Map(shipAndSlotRows.map((r) => [r.id, r]));
+    const overrideNameOf = (id: number): string | null =>
+      shipAndSlotById.get(id)?.shipToOverrideCustomer?.customerName ?? null;
+
     // ── Line items for orders (split builder modal needs these) ───────────────
     const orderObdNumbers = orders.map((o) => o.obdNumber);
     const rawLineItemsRaw = orderObdNumbers.length > 0
@@ -750,6 +780,14 @@ export async function GET(): Promise<NextResponse> {
 
         isKeyCustomer:    (o as any).customer?.isKeyCustomer ?? false,
 
+        // Ship-to override + the Floor dispatch window (2026-10-01). The date
+        // column is @db.Date (UTC midnight of the calendar day), so its ISO date
+        // part IS the day. Overrides the raw Date that `...o` spread.
+        shipToOverrideName: overrideNameOf(o.id),
+        dispatchTargetDate: shipAndSlotById.get(o.id)?.dispatchTargetDate?.toISOString().slice(0, 10) ?? null,
+        dispatchWindowId:   shipAndSlotById.get(o.id)?.dispatchWindowId ?? null,
+        dispatchWindowTime: shipAndSlotById.get(o.id)?.dispatchWindow?.windowTime ?? null,
+
         // Phase 3e/4e — strip raw include fields, emit the mapped summaries.
         // JSON.stringify drops undefined fields.
         skipEvents:       undefined,
@@ -789,6 +827,7 @@ export async function GET(): Promise<NextResponse> {
       soNumber:         s.order.soNumber ?? null,
       route:            (s.order as any).customer?.area?.primaryRoute?.name ?? null,
       isKeyCustomer:    (s.order as any).customer?.isKeyCustomer ?? false,
+      shipToOverrideName: overrideNameOf(s.order.id),
     }));
     const completedSplitsWithSmu = completedSplits.map((s) => ({
       ...s,
@@ -816,6 +855,7 @@ export async function GET(): Promise<NextResponse> {
       soNumber:         s.order.soNumber ?? null,
       route:            (s.order as any).customer?.area?.primaryRoute?.name ?? null,
       isKeyCustomer:    (s.order as any).customer?.isKeyCustomer ?? false,
+      shipToOverrideName: overrideNameOf(s.order.id),
     }));
 
     // 3e bug fix — destructure skipEventId (BigInt) off each tint_assignments
@@ -847,6 +887,7 @@ export async function GET(): Promise<NextResponse> {
       route:            (a.order as any).customer?.area?.primaryRoute?.name ?? null,
       articleTag:       (a.order as any).querySnapshot?.articleTag ?? null,
       isKeyCustomer:    (a.order as any).customer?.isKeyCustomer ?? false,
+      shipToOverrideName: overrideNameOf(a.order.id),
     }));
 
     return NextResponse.json({
