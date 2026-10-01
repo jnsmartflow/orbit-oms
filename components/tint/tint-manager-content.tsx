@@ -57,25 +57,28 @@ import { BoardTiTab } from "@/components/tint/manager/board-ti-tab";
 // bottom bar replaced it in tabs build step 6.
 import { BoardBottomBar, type BarMode } from "@/components/tint/manager/board-bottom-bar";
 import { BoardStopCancelDialog, type StopCancelBill } from "@/components/tint/manager/board-stop-cancel-dialog";
-import { BoardShipToDialog } from "@/components/tint/manager/board-ship-to-dialog";
+import { BoardHoldTab } from "@/components/tint/manager/board-hold-tab";
+import { BoardCiTab } from "@/components/tint/manager/board-ci-tab";
+import type { FloorCancelledRow } from "@/lib/floor/types";
 import { slotValueOf } from "@/components/tint/manager/board-slot-cell";
 import { OffFloorDialog, type CiReasonOption, type OffFloorFormBill, type OffFloorTab } from "@/components/floor/off-floor-dialog";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { formatLitres } from "@/components/floor/status-pill";
 import { countArticles } from "@/lib/floor/format";
-import { BoardDetailPanel, type PanelTarget } from "@/components/tint/manager/board-detail-panel";
+import { BoardDetailPanel, type PanelBill, type PanelTarget, type TintPanelActions } from "@/components/tint/manager/board-detail-panel";
 import { useTintManagerAccess } from "@/components/tint/manager/tint-manager-access-provider";
 import { ConnectionStrip, OperatorMenu } from "@/components/tint/manager/board-bits";
 import { LegacyTintManagerSync } from "@/components/tint/manager/use-tint-manager-sync";
 import { boardOrderIds, useTintManagerLive } from "@/components/tint/manager/use-tint-manager-live";
 import { useMissingCustomersPoll } from "@/components/tint/manager/use-missing-customers-poll";
-import { buildGroups, buildRail, panelSequence, queueSignature } from "@/components/tint/manager/rows";
+import { buildGroups, buildRail, queueSignature } from "@/components/tint/manager/rows";
 import type {
   BasePendingLine,
   BasePendingOrder,
   BoardRow,
   Operator,
   TintBoardPayload,
+  TintHoldRow,
   TintOrder,
 } from "@/components/tint/manager/types";
 
@@ -145,7 +148,17 @@ export function TintManagerContent() {
   const [ciReasons, setCiReasons] = useState<CiReasonOption[] | null>(null);
   const [ciReasonsError, setCiReasonsError] = useState<string | null>(null);
   const [stopCancelBill, setStopCancelBill] = useState<StopCancelBill | null>(null);
-  const [shipToFor, setShipToFor] = useState<{ orderId: number; obdNumber: string; site: string; original: string | null } | null>(null);
+  // The bar's "Change ship-to" opens the detail panel with the shared
+  // ShipToEditor already open (step 7 retired the step-6 stand-in dialog).
+  const [shipToSignal, setShipToSignal] = useState(0);
+  // Hold + CI tab lists (step 7). null = not loaded yet.
+  const [holdRows, setHoldRows] = useState<TintHoldRow[] | null>(null);
+  const [holdError, setHoldError] = useState<string | null>(null);
+  const [cancelledRows, setCancelledRows] = useState<FloorCancelledRow[] | null>(null);
+  const [cancelledError, setCancelledError] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
+  // Bumped after every board reload so an open panel re-reads its bill.
+  const [panelReload, setPanelReload] = useState(0);
   const [dialogBusy, setDialogBusy] = useState(false);
   // Active dispatch windows for the Slot picker (bar + table cell).
   const [windows, setWindows] = useState<DispatchWindow[]>([]);
@@ -208,6 +221,7 @@ export function TintManagerContent() {
 
   /** Returns the payload it just stored, so a caller can diff before/after. */
   const fetchBoard = useCallback(async (): Promise<TintBoardPayload | null> => {
+    setPanelReload((n) => n + 1);
     try {
       const res = await fetch("/api/tint/manager/orders");
       if (!res.ok) return null;
@@ -391,8 +405,31 @@ export function TintManagerContent() {
         status: r.status as string, operatorName: r.operatorName,
       }));
     }
+    if (barMode === "hold") {
+      return (holdRows ?? []).filter((h) => holdSel.has(h.orderId)).map((h) => ({
+        orderId: h.orderId, obdNumber: h.obdNumber,
+        site: h.dealerName, original: h.originalSiteName,
+        litres: h.volumeLitres, articleTag: h.articleTag, route: h.route,
+        slotDate: h.dispatchTargetDate, slotWindowId: h.dispatchWindowId, slotWindowTime: h.dispatchWindowTime,
+        isHeld: true, isHand: h.isHand,
+        // The STAGE, so the bar knows a tint-room bill needs Stop & cancel.
+        status: h.workflowStage, operatorName: h.operatorName ?? "",
+      }));
+    }
     return [];
-  }, [barMode, selectedRail, selectedRows]);
+  }, [barMode, selectedRail, selectedRows, holdRows, holdSel]);
+
+  const toggleHold = useCallback((h: TintHoldRow) => {
+    setSelection(new Set());
+    setRailSel(new Set());
+    setHoldSel((s) => { const n = new Set(s); if (n.has(h.orderId)) n.delete(h.orderId); else n.add(h.orderId); return n; });
+  }, []);
+  // Hold selection prunes like the others: a released bill leaves the list.
+  useEffect(() => {
+    if (holdSel.size === 0 || holdRows === null) return;
+    const live = Array.from(holdSel).filter((id) => holdRows.some((h) => h.orderId === id));
+    if (live.length !== holdSel.size) setHoldSel(new Set(live));
+  }, [holdRows, holdSel]);
   const barIds = useMemo(() => barBills.map((b) => b.orderId), [barBills]);
   const barSlot: DispatchSlotValue | null = useMemo(() => {
     if (barBills.length === 0) return null;
@@ -403,7 +440,14 @@ export function TintManagerContent() {
 
   // ── Panel walk ────────────────────────────────────────────────────────────
 
-  const walk = useMemo(() => panelSequence(rail, groups), [rail, groups]);
+  // Prev/Next walks THE LIST THE PANEL WAS OPENED FROM (step 7): the rail, the
+  // table, or the Hold tab — never across them.
+  const walk = useMemo<Array<{ key: string }>>(() => {
+    if (panelKey === null) return [];
+    if (panelKey.startsWith("pending-")) return rail.map((o) => ({ key: `pending-${o.id}` }));
+    if (panelKey.startsWith("hold-")) return (holdRows ?? []).map((h) => ({ key: `hold-${h.orderId}` }));
+    return groups.flatMap((g) => g.rows.map((r) => ({ key: r.key })));
+  }, [panelKey, rail, holdRows, groups]);
   const panelIndex = panelKey === null ? -1 : walk.findIndex((w) => w.key === panelKey);
 
   const panelTarget: PanelTarget | null = useMemo(() => {
@@ -413,9 +457,14 @@ export function TintManagerContent() {
       const o = rail.find((x) => x.id === id);
       return o ? { kind: "pending", order: o } : null;
     }
+    if (panelKey.startsWith("hold-")) {
+      const id = Number(panelKey.slice("hold-".length));
+      const h = (holdRows ?? []).find((x) => x.orderId === id);
+      return h ? { kind: "hold", hold: h } : null;
+    }
     const r = rowsByKey.get(panelKey);
     return r ? { kind: "row", row: r } : null;
-  }, [panelKey, rail, rowsByKey]);
+  }, [panelKey, rail, holdRows, rowsByKey]);
 
   // The panel's target vanished under it (finished, reassigned away, filtered
   // out). Close rather than showing a stale ghost.
@@ -436,7 +485,7 @@ export function TintManagerContent() {
   // flight, and every modal / sheet / popover this page opens.
   const holdLive =
     panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 ||
-    barMenuOpen || barOpAnchor !== null || offFloor !== null || stopCancelBill !== null || shipToFor !== null ||
+    barMenuOpen || barOpAnchor !== null || offFloor !== null || stopCancelBill !== null || restoringId !== null ||
     reorderBusy.size > 0 || writeBusy || railMenuOpen ||
     baseUndoBusyId !== null || missingBadgeOpen || missingSheetOpen || pullModalOpen ||
     revertOrder !== null || removeModalOrder !== null || hideModalOrder !== null ||
@@ -446,7 +495,10 @@ export function TintManagerContent() {
   const missingRef = useRef(missingCustomers);
   missingRef.current = missingCustomers;
   const panelOrderId =
-    panelTarget === null ? null : panelTarget.kind === "pending" ? panelTarget.order.id : panelTarget.row.orderId;
+    panelTarget === null ? null
+    : panelTarget.kind === "pending" ? panelTarget.order.id
+    : panelTarget.kind === "hold" ? panelTarget.hold.orderId
+    : panelTarget.row.orderId;
 
   // "Changed — Reload" (feed only): the open bill changed elsewhere → a quiet
   // board read; the strip shows only if that bill really differs. Never swaps
@@ -502,9 +554,9 @@ export function TintManagerContent() {
         if (typing) return;
         if (barOpAnchor !== null) { setBarOpAnchor(null); return; }
         if (barMenuOpen) { setBarMenuOpen(false); return; }
-        if (offFloor !== null || stopCancelBill !== null || shipToFor !== null) {
+        if (offFloor !== null || stopCancelBill !== null) {
           if (dialogBusy) return;
-          setOffFloor(null); setStopCancelBill(null); setShipToFor(null);
+          setOffFloor(null); setStopCancelBill(null);
           return;
         }
         if (panelKey !== null) { setPanelKey(null); return; }
@@ -520,7 +572,32 @@ export function TintManagerContent() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelKey, selection, railSel, holdSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shipToFor, dialogBusy, clearAllSelection]);
+  }, [panelKey, selection, railSel, holdSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, dialogBusy, clearAllSelection]);
+
+  // ── Hold + CI lists (step 7) — read when the person can see the tab, and
+  // again after every board reload (payload changes), so the tab counts track
+  // the board. Read-only; the marker widening is build step 9.
+  const fetchHold = useCallback(async () => {
+    if (!access.canViewHoldTab) return;
+    try {
+      const res = await fetch("/api/tint/manager/hold", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as { rows?: TintHoldRow[]; error?: string };
+      if (!res.ok || !Array.isArray(body.rows)) { setHoldError(body.error ?? `Hold list HTTP ${res.status}`); return; }
+      setHoldError(null);
+      setHoldRows(body.rows);
+    } catch { setHoldError("Could not load the Hold list."); }
+  }, [access.canViewHoldTab]);
+  const fetchCancelled = useCallback(async () => {
+    if (!access.canViewCiTab) return;
+    try {
+      const res = await fetch("/api/tint/manager/cancelled", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as { rows?: FloorCancelledRow[]; error?: string };
+      if (!res.ok || !Array.isArray(body.rows)) { setCancelledError(body.error ?? `CI list HTTP ${res.status}`); return; }
+      setCancelledError(null);
+      setCancelledRows(body.rows);
+    } catch { setCancelledError("Could not load the CI list."); }
+  }, [access.canViewCiTab]);
+  useEffect(() => { void fetchHold(); void fetchCancelled(); }, [payload, fetchHold, fetchCancelled]);
 
   // Active dispatch windows, once — the Slot picker (bar + table cell).
   useEffect(() => {
@@ -1071,12 +1148,14 @@ export function TintManagerContent() {
   /** Open the Cancel or Raise CI form on the bar's bills, on the Tint Manager's
    *  routes. The server decides each bill (refusals come back in the result
    *  view), so nothing is pre-refused here. */
-  const openOffFloor = useCallback((tab: OffFloorTab) => {
+  const openOffFloor = useCallback((tab: OffFloorTab, only?: PanelBill[]) => {
     setOffFloor({
       tab,
-      bills: barBills.map((b) => ({
-        orderId: b.orderId, obdNumber: b.obdNumber, dealerName: b.site, litres: b.litres, refusal: null,
-      })),
+      bills: only
+        ? only.map((b) => ({ orderId: b.orderId, obdNumber: b.obdNumber, dealerName: b.siteName, litres: b.litres, refusal: null }))
+        : barBills.map((b) => ({
+            orderId: b.orderId, obdNumber: b.obdNumber, dealerName: b.site, litres: b.litres, refusal: null,
+          })),
     });
     if (tab === "ci" && ciReasons === null) {
       setCiReasonsError(null);
@@ -1095,6 +1174,84 @@ export function TintManagerContent() {
       })();
     }
   }, [barBills, ciReasons]);
+
+  /** Restore one cancelled tint bill (CI tab) — POST /api/tint/manager/restore,
+   *  the shared restore. The toast says WHERE it went, from the route's answer:
+   *  never finished tinting → the tint rail; finished → Floor. */
+  const handleRestore = useCallback(async (r: FloorCancelledRow) => {
+    setRestoringId(r.orderId);
+    try {
+      const res = await fetch("/api/tint/manager/restore", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ orderIds: [r.orderId] }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string; failed?: Array<{ orderId: number; error: string }>; restored?: Array<{ orderId: number; toStage: string }>;
+      };
+      const done = body.restored?.find((x) => x.orderId === r.orderId);
+      if (!done) {
+        toast.error(body.failed?.[0]?.error ?? body.error ?? `Restore failed — HTTP ${res.status}`);
+        return;
+      }
+      toast.success(
+        done.toStage === "pending_tint_assignment"
+          ? `${r.obdNumber} back on the tint rail`
+          : `${r.obdNumber} restored to Floor (tinting was already done)`,
+      );
+      await fetchBoard();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Restore failed");
+    } finally {
+      setRestoringId(null);
+    }
+  }, [fetchBoard]);
+
+  /** The panel's ship-to save — POST /api/tint/manager/ship-to (the shared
+   *  setShipToOverride; a bill on a trip is refused with Billing's words). */
+  const handleShipTo = useCallback(async (orderId: number, customerId: number | null): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/tint/manager/ship-to", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ orderId, customerId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; changed?: boolean };
+      if (!res.ok) { toast.error(body.error ?? `Could not change the ship-to — HTTP ${res.status}`); return false; }
+      toast.success(customerId === null ? "Back to its own site" : body.changed === false ? "Already shipping there" : "Ship-to changed");
+      await fetchBoard();
+      return true;
+    } catch {
+      toast.error("Could not reach the server — nothing was changed.");
+      return false;
+    }
+  }, [fetchBoard]);
+
+  /** Everything the detail panel can ask for — the page owns every write. */
+  const panelActions: TintPanelActions = useMemo(() => ({
+    onAssign:          (o, opId) => { void handleAssign(o, opId); },
+    onBaseBypass:      (o) => { void handleBaseBypass(o); },
+    onReassignOrder:   (r, opId) => { void handleReassignOrder(r, opId); },
+    onReassignSplit:   (r, opId) => { void handleReassignSplit(r, opId); },
+    onSendBack:        (r) => { void handleSendBack(r); },
+    onRemove:          (o) => setRemoveModalOrder(o),
+    onResolveMissing:  (o) => {
+      sheetResolvedRef.current = false;
+      setMissingSheetWarning(undefined);
+      setMissingSheetOrder(o);
+      setMissingSheetOpen(true);
+    },
+    onOpenPauseHistory: (orderId, obdNumber, siteName) => setPauseHistoryFor({ orderId, obdNumber, customerName: siteName }),
+    onOpenSkipHistory:  (orderId, obdNumber, siteName) => setSkipHistoryFor({ orderId, obdNumber, customerName: siteName }),
+    onSetSlot:     (orderId, v) => { void postTintAction("change-slot", [orderId], { slot: v, keepSelection: true }); },
+    onHold:        (orderId) => { void postTintAction("hold", [orderId], { keepSelection: true }); },
+    onReleaseHold: (orderId) => { void postTintAction("unhold", [orderId], { keepSelection: true }); },
+    onHand:        (orderId, set) => { void postTintAction(set ? "hand" : "unhand", [orderId], { keepSelection: true }); },
+    onShipTo:      handleShipTo,
+    onCancel:      (b) => openOffFloor("cancel", [b]),
+    onStopCancel:  (b) => setStopCancelBill({ orderId: b.orderId, obdNumber: b.obdNumber, siteName: b.siteName, operatorName: b.operatorName, status: b.status }),
+    onRaiseCi:     (b) => openOffFloor("ci", [b]),
+  }), [handleAssign, handleBaseBypass, handleReassignOrder, handleReassignSplit, handleSendBack, postTintAction, handleShipTo, openOffFloor]);
 
   /**
    * Re-sequence one step inside one operator's queue.
@@ -1299,6 +1456,8 @@ export function TintManagerContent() {
             counts={{
               tinting: groups.reduce((n, g) => n + g.rows.length, 0),
               ti:      basePending.length,
+              ...(holdRows !== null ? { hold: holdRows.length } : {}),
+              ...(cancelledRows !== null ? { ci: cancelledRows.length } : {}),
             }}
           />
           {activeTab === "tinting" && (
@@ -1345,10 +1504,31 @@ export function TintManagerContent() {
               onUndo={(o) => { void handleBaseUndo(o); }}
             />
           )}
-          {/* Bodies land in build steps 7 (Hold, CI) and 8 (Pick delete). The
-              tabs themselves are already gated on their ticks (board-tabs.tsx). */}
-          {activeTab === "hold" && <BoardTabComingNext label="Hold" />}
-          {activeTab === "ci"   && <BoardTabComingNext label="CI" />}
+          {activeTab === "hold" && (
+            <BoardHoldTab
+              rows={holdRows}
+              error={holdError}
+              selected={holdSel}
+              onToggle={toggleHold}
+              onOpen={(h) => setPanelKey(`hold-${h.orderId}`)}
+              windows={windows}
+              canSlot={access.canSlot}
+              slotBusy={writeBusy}
+              onSetSlot={(h, v) => { void postTintAction("change-slot", [h.orderId], { slot: v, keepSelection: true }); }}
+              barUp={barMode !== null}
+            />
+          )}
+          {activeTab === "ci" && (
+            <BoardCiTab
+              rows={cancelledRows}
+              error={cancelledError}
+              canRestore={access.canCancel}
+              restoringId={restoringId}
+              onRestore={(r) => { void handleRestore(r); }}
+            />
+          )}
+          {/* Pick delete's body lands in build step 8; the tab is already gated
+              on its tick (board-tabs.tsx). */}
           {activeTab === "pick" && <BoardTabComingNext label="Pick delete" />}
 
           {barMode !== null && (
@@ -1362,7 +1542,8 @@ export function TintManagerContent() {
                 allAssigned:   barMode === "table" && barBills.every((b) => b.status === "assigned"),
                 // Every table row is a bill an operator holds (assigned, tinting
                 // or paused) — Cancel refuses all three; Stop & cancel takes them.
-                operatorHolds: barMode === "table",
+                operatorHolds: barMode === "table" ||
+                  (barMode === "hold" && barBills.some((b) => b.status === "tint_assigned" || b.status === "tinting_in_progress")),
                 allHeld:       barBills.length > 0 && barBills.every((b) => b.isHeld),
                 allHand:       barBills.length > 0 && barBills.every((b) => b.isHand),
               }}
@@ -1370,7 +1551,11 @@ export function TintManagerContent() {
               windows={windows}
               slotValue={barSlot}
               onSlot={(v) => { void postTintAction("change-slot", barIds, { slot: v, keepSelection: true }); }}
-              onPrimary={(anchor) => { if (barMode !== "hold") setBarOpAnchor(anchor); }}
+              onPrimary={(anchor) => {
+                // Hold tab → Release = unhold (owner decision 9); else the operator menu.
+                if (barMode === "hold") void postTintAction("unhold", barIds);
+                else setBarOpAnchor(anchor);
+              }}
               menuOpen={barMenuOpen}
               onMenuOpenChange={setBarMenuOpen}
               onClear={clearAllSelection}
@@ -1379,8 +1564,13 @@ export function TintManagerContent() {
               onReleaseHold={() => { void postTintAction("unhold", barIds); }}
               onHand={(set) => { void postTintAction(set ? "hand" : "unhand", barIds); }}
               onShipTo={() => {
+                // Opens the bill's detail panel with the shared ShipToEditor open.
                 const b = barBills[0];
-                if (b) setShipToFor({ orderId: b.orderId, obdNumber: b.obdNumber, site: b.site, original: b.original });
+                if (!b) return;
+                const key = barMode === "rail" ? `pending-${b.orderId}`
+                  : barMode === "hold" ? `hold-${b.orderId}`
+                  : selectedRows[0]?.key ?? null;
+                if (key) { setPanelKey(key); setShipToSignal((n) => n + 1); }
               }}
               onCancel={() => openOffFloor("cancel")}
               onStopCancel={() => {
@@ -1441,18 +1631,6 @@ export function TintManagerContent() {
         />
       )}
 
-      {shipToFor && (
-        <BoardShipToDialog
-          orderId={shipToFor.orderId}
-          obdNumber={shipToFor.obdNumber}
-          currentSite={shipToFor.site}
-          originalSite={shipToFor.original}
-          onDone={() => { void fetchBoard(); }}
-          onBusyChange={setDialogBusy}
-          onClose={() => setShipToFor(null)}
-        />
-      )}
-
       {panelTarget && (
         <BoardDetailPanel
           target={panelTarget}
@@ -1461,23 +1639,13 @@ export function TintManagerContent() {
           busy={writeBusy}
           error={panelError}
           canRemove={canRemoveObd}
+          windows={windows}
+          reloadSignal={panelReload}
+          openShipToSignal={shipToSignal}
+          actions={panelActions}
           onClose={() => setPanelKey(null)}
           onPrev={() => { if (panelIndex > 0) setPanelKey(walk[panelIndex - 1].key); }}
           onNext={() => { if (panelIndex < walk.length - 1) setPanelKey(walk[panelIndex + 1].key); }}
-          onAssign={(o, opId) => { void handleAssign(o, opId); }}
-          onBaseBypass={(o) => { void handleBaseBypass(o); }}
-          onReassignOrder={(r, opId) => { void handleReassignOrder(r, opId); }}
-          onReassignSplit={(r, opId) => { void handleReassignSplit(r, opId); }}
-          onSendBack={(r) => { void handleSendBack(r); }}
-          onRemove={(o) => setRemoveModalOrder(o)}
-          onResolveMissing={(o) => {
-            sheetResolvedRef.current = false;
-            setMissingSheetWarning(undefined);
-            setMissingSheetOrder(o);
-            setMissingSheetOpen(true);
-          }}
-          onOpenPauseHistory={(orderId, obdNumber, siteName) => setPauseHistoryFor({ orderId, obdNumber, customerName: siteName })}
-          onOpenSkipHistory={(orderId, obdNumber, siteName) => setSkipHistoryFor({ orderId, obdNumber, customerName: siteName })}
           changedElsewhere={feedLive && panelFresh !== null}
           onReloadChanged={() => {
             if (panelFresh) { setPayload(panelFresh); setLastSyncedAt(new Date()); }

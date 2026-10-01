@@ -5,11 +5,9 @@
 // picker's own trigger overlaid invisibly and stretched to this button's box
 // only to anchor its portalled popover.
 //
-// 🔴 A BYTE COPY of the private SlotPickerButton in components/floor/
-// detail-panel.tsx:41-82 (2026-10-01, Tint Manager tabs build step 6), so the
-// Tint Manager's bottom bar and Slot cell open the SAME picker the same way.
-// Floor's detail panel still uses its own private copy until build step 7 swaps
-// its import to this file — until then, an edit to one MUST be made to both.
+// 🔴 ONE COPY. Moved here from a private function in components/floor/
+// detail-panel.tsx (2026-10-01, Tint Manager tabs build steps 6–7); Floor's
+// detail panel and the Tint Manager's bar, Slot cell and panel all import it.
 // The shared picker is NOT modified.
 
 import { useState, type ReactNode } from "react";

@@ -14,9 +14,9 @@
 //
 // Two-step confirm (CLAUDE_UI §13, as Remove OBD and Mark Done use): the first
 // press turns the button into "Yes — stop and cancel"; only the second posts.
-// The reason is mandatory (the route 400s without one) and comes from Floor's
-// cancel vocabulary (lib/floor/off-floor.ts FLOOR_CANCEL_REASON_OPTIONS — never
-// a label of our own).
+// The reason is mandatory (the route 400s without one) and comes from the DESK
+// list Floor uses too (lib/floor/desk-cancel-reasons.ts, owner decision B);
+// "Other" needs a remark, as the route enforces.
 //
 // ⚠ NO KEY LISTENER. tint-manager-content.tsx is the single Esc owner; it closes
 // this through `onClose` (refused while busy, via onBusyChange).
@@ -27,7 +27,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FLOOR_CANCEL_REASON_OPTIONS, FLOOR_REMARK_MAX } from "@/lib/floor/off-floor";
-import type { CancelReason } from "@/lib/picking/cancel-reasons";
+import { deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { BAR_DANGER, BAR_SECONDARY } from "@/components/floor/floor-action-bar";
 
 export interface StopCancelBill {
@@ -52,7 +52,7 @@ export function BoardStopCancelDialog({
   onBusyChange: (busy: boolean) => void;
   onClose:      () => void;
 }) {
-  const [reason, setReason]   = useState<CancelReason | null>(null);
+  const [reason, setReason]   = useState<DeskCancelReason | null>(null);
   const [remark, setRemark]   = useState("");
   const [armed, setArmed]     = useState(false);
   const [busy, setBusyState]  = useState(false);
@@ -65,7 +65,8 @@ export function BoardStopCancelDialog({
   useEffect(() => { setArmed(false); }, [reason, remark]);
 
   const remarkTooLong = remark.trim().length > FLOOR_REMARK_MAX;
-  const canSubmit = !busy && reason !== null && !remarkTooLong;
+  const needsRemark = reason !== null && deskCancelRequiresNote(reason) && remark.trim() === "";
+  const canSubmit = !busy && reason !== null && !remarkTooLong && !needsRemark;
 
   async function press() {
     if (!canSubmit) return;
@@ -131,7 +132,7 @@ export function BoardStopCancelDialog({
           </label>
           <select
             value={reason ?? ""}
-            onChange={(e) => setReason(e.target.value === "" ? null : (e.target.value as CancelReason))}
+            onChange={(e) => setReason(e.target.value === "" ? null : (e.target.value as DeskCancelReason))}
             disabled={busy}
             className="mt-1.5 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
           >
@@ -147,7 +148,7 @@ export function BoardStopCancelDialog({
             onChange={(e) => setRemark(e.target.value)}
             disabled={busy}
             rows={2}
-            placeholder="Remarks (optional)"
+            placeholder={reason !== null && deskCancelRequiresNote(reason) ? "Remarks (required for Other)" : "Remarks (optional)"}
             className="mt-1.5 w-full resize-none rounded-lg border border-ink-200 px-3 py-2 text-[13px] focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
           />
           {remarkTooLong && (

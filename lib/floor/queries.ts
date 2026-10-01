@@ -1219,10 +1219,16 @@ export async function getFloorHold(
   // LIVE FEED 7a — restrict the SAME query to these ids (lib/floor/rows.ts);
   // omitted → the full feed, unchanged.
   onlyIds?: number[],
+  // OPTIONAL extra filter AND-ed onto the held set (2026-10-01, Tint Manager
+  // tabs build step 7): the Tint Manager's Hold tab passes { orderType: "tint" }.
+  // Floor passes nothing, so its query is byte-for-byte what it was.
+  extraWhere?: Prisma.ordersWhereInput,
 ): Promise<FloorHoldRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
+  const holdTerms: Prisma.ordersWhereInput[] = onlyIds ? [floorHoldWhere(), hide, { id: { in: onlyIds } }] : [floorHoldWhere(), hide];
+  if (extraWhere) holdTerms.push(extraWhere);
   const orders = await prisma.orders.findMany({
-    where: { AND: onlyIds ? [floorHoldWhere(), hide, { id: { in: onlyIds } }] : [floorHoldWhere(), hide] },
+    where: { AND: holdTerms },
     include: {
       customer: { select: FLOOR_DEALER_SELECT },
       shipToOverrideCustomer: { select: FLOOR_DEALER_SELECT },
@@ -1356,6 +1362,10 @@ export async function getFloorCancelled(
   // so the rows are exactly the full feed's rows for those ids. Omitted → the
   // full feed, unchanged.
   onlyIds?: number[],
+  // OPTIONAL extra filter AND-ed onto the orders read (2026-10-01, tabs build
+  // step 7) — the Tint Manager's CI tab passes { orderType: "tint" }. Floor
+  // passes nothing, so its rows are exactly what they were.
+  extraWhere?: Prisma.ordersWhereInput,
 ): Promise<FloorCancelledRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
   const today = getISTDayRange();
@@ -1426,7 +1436,7 @@ export async function getFloorCancelled(
   const ids = Array.from(new Set([...Array.from(ciByOrder.keys()), ...Array.from(cancelByOrder.keys())]));
   if (ids.length === 0) return [];
   const orders = await prisma.orders.findMany({
-    where: { AND: [{ id: { in: ids }, isRemoved: false }, hide] },
+    where: { AND: extraWhere ? [{ id: { in: ids }, isRemoved: false }, hide, extraWhere] : [{ id: { in: ids }, isRemoved: false }, hide] },
     include: {
       customer: { select: FLOOR_DEALER_SELECT },
       shipToOverrideCustomer: { select: FLOOR_DEALER_SELECT },

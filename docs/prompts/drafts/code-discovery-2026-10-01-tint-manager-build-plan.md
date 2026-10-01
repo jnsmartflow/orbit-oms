@@ -578,3 +578,12 @@ Recorded before step 2 was built. These close §I-3, §I-5, §I-6 and §I-7.
 3. **Mid-tint pick-delete twins (§I-5)** stay undeletable, and the popup does not block on them. Accepted.
 4. **`live.feed.tint` stays OFF (§I-7).** Mirroring the new marker arms into `classifyTintManager` goes on
    ROADMAP.
+5. **Desk cancel reasons (decision B, 2026-10-01).** Floor's and the Tint Manager's cancel forms get their own
+   **desk list**, `lib/floor/desk-cancel-reasons.ts`, in this order: Pick delete · Customer cancelled · Wrong
+   order by SO · Duplicate bill · Material short · Other. The stable keys are `pick_delete`,
+   `customer_cancelled`, `wrong_order_by_so`, `duplicate_bill`, `material_short`, `other`.
+   - "Other" needs a remark. Both cancel routes (`/api/floor/actions` cancel and `/api/tint/manager/cancel`)
+     validate against this list.
+   - The note shape is still Picking's, so Floor's Cancelled tab parses desk notes unchanged.
+   - Picking's `CANCEL_REASONS` and its cancel sheet are **unchanged**. That sheet renders Picking's list
+     whole, which is why the desk list is separate. Built in step 7.

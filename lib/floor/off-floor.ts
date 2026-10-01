@@ -11,25 +11,33 @@
 // it offers and greys out is what the routes accept and refuse.
 //
 // ── The reasons ─────────────────────────────────────────────────────────────
-// 🔴 THE VOCABULARY IS PICKING'S, NOT A COPY (owner, 2026-09-22). The keys,
-// labels and note builder live in lib/picking/cancel-reasons.ts; the floor
-// chooses a SUBSET of them. Today that subset is one reason, "Pick delete".
-// Adding one is adding a key to the array below — never a new label here, or
-// the floor's Cancelled tab and Picking's would word the same reason two ways.
+// 🔴 THE DESK LIST (owner decision B, 2026-10-01). Floor's and the Tint
+// Manager's cancel forms offer lib/floor/desk-cancel-reasons.ts — Pick delete ·
+// Customer cancelled · Wrong order by SO · Duplicate bill · Material short ·
+// Other. It used to be a one-reason SUBSET of Picking's list; it became its own
+// list because Picking's cancel sheet renders Picking's list whole and must not
+// change. The names below are kept so every existing import still resolves;
+// they now point at the desk list. The note shape is still Picking's
+// (buildDeskCancelNote derives it from buildCancelNote), so parseCancelNote
+// below reads both.
 
 import { CANCEL_REASON_LABELS, CANCEL_NOTE_MAX, buildCancelNote, type CancelReason } from "@/lib/picking/cancel-reasons";
+import {
+  DESK_CANCEL_REASONS,
+  DESK_CANCEL_REASON_OPTIONS,
+  isDeskCancelReason,
+  type DeskCancelReason,
+} from "@/lib/floor/desk-cancel-reasons";
 
-/** The cancel reasons the floor may give, in display order. */
-export const FLOOR_CANCEL_REASONS: readonly CancelReason[] = ["pick_delete"];
+/** The cancel reasons the desks may give, in display order (the desk list). */
+export const FLOOR_CANCEL_REASONS: readonly DeskCancelReason[] = DESK_CANCEL_REASONS;
 
-export function isFloorCancelReason(value: unknown): value is CancelReason {
-  return typeof value === "string" && (FLOOR_CANCEL_REASONS as readonly string[]).includes(value);
+export function isFloorCancelReason(value: unknown): value is DeskCancelReason {
+  return isDeskCancelReason(value);
 }
 
-/** {value,label} pairs for the form, in FLOOR_CANCEL_REASONS order. */
-export const FLOOR_CANCEL_REASON_OPTIONS: { value: CancelReason; label: string }[] = FLOOR_CANCEL_REASONS.map(
-  (value) => ({ value, label: CANCEL_REASON_LABELS[value] }),
-);
+/** {value,label} pairs for the forms, in FLOOR_CANCEL_REASONS order. */
+export const FLOOR_CANCEL_REASON_OPTIONS: { value: DeskCancelReason; label: string }[] = DESK_CANCEL_REASON_OPTIONS;
 
 /** The remark cap — Picking's constant, so the two cancel forms agree. Also
  *  used for the CI remark (ci_returns.reasonRemark) on the floor. */

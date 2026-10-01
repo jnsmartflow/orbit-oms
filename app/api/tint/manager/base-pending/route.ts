@@ -56,6 +56,13 @@ interface PendingOrder {
    */
   siteId:             number | null;
   billToName:         string | null;
+  /** DISPLAY ONLY (2026-10-01, step 7): the site the board names — the
+   *  ship-to redirect when one is set, else siteName. */
+  shipToName:        string;
+  /** siteName when a redirect is in force (left half of the pair), else null. */
+  originalSiteName:  string | null;
+  /** import_obd_query_summary.totalVolume — the TI tab's Vol column. */
+  totalVolume:       number | null;
   tintAssignmentId:   number;
   /** When the bypass closed the bill — tint_assignments.completedAt. */
   bypassedAt:         string | null;
@@ -118,6 +125,9 @@ export async function GET(): Promise<NextResponse> {
           shipToCustomerName: true,
           customerId:         true,
           customer:           { select: { customerName: true } },
+          // Display only (step 7): the redirect name and the bill volume.
+          shipToOverrideCustomer: { select: { customerName: true } },
+          querySnapshot:          { select: { totalVolume: true } },
         },
       },
     },
@@ -192,11 +202,16 @@ export async function GET(): Promise<NextResponse> {
     const missing = lines.filter((l) => !covered.has(l.id));
     if (missing.length === 0) continue; // fully covered — drops off the list
 
+    const ownSite = a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—";
+    const redirect = a.order.shipToOverrideCustomer?.customerName ?? null;
     out.push({
       orderId:           a.order.id,
       obdNumber:         a.order.obdNumber,
-      siteName:          a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—",
+      siteName:          ownSite,
       siteId:            a.order.customerId,
+      shipToName:        redirect ?? ownSite,
+      originalSiteName:  redirect ? ownSite : null,
+      totalVolume:       a.order.querySnapshot?.totalVolume ?? null,
       billToName:        null, // filled below, one query for the whole page
       tintAssignmentId:  a.id,
       bypassedAt:        a.completedAt ? a.completedAt.toISOString() : null,

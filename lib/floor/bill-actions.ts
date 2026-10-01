@@ -30,7 +30,7 @@ import {
   TINT_CLEAR_HOLD_NOTE,
 } from "@/lib/floor/hold-log";
 import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
-import { buildCancelNote, type CancelReason } from "@/lib/picking/cancel-reasons";
+import { buildDeskCancelNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { billingRefusal } from "@/lib/billing/refusal";
@@ -75,7 +75,7 @@ export interface BillActionOpts {
   /** change-slot: from resolveChangeSlot. */
   slot?: ResolvedSlot;
   /** cancel: a validated reason key, or null for the legacy note. */
-  cancelReason?: CancelReason | null;
+  cancelReason?: DeskCancelReason | null;
   /** cancel: optional remark (trimmed, ≤ FLOOR_REMARK_MAX), after the label. */
   cancelRemark?: string | null;
   /** cancel: legacy free-text note, used only when cancelReason is absent. */
@@ -88,7 +88,12 @@ export interface BillActionOpts {
 
 /** done = wrote one update + one log · failed = refused, nothing written ·
  *  skipped = hand/unhand repeat press, nothing written, not a failure. */
-export type BillActionResult = { kind: "done" } | { kind: "failed"; error: string } | { kind: "skipped" };
+export type BillActionResult =
+  /** toStage = the stage the bill is at now (2026-10-01: the Tint Manager's
+   *  Restore says where the bill went). Floor ignores it. */
+  | { kind: "done"; toStage: string }
+  | { kind: "failed"; error: string }
+  | { kind: "skipped" };
 
 // ── change-slot input ──────────────────────────────────────────────────────
 
@@ -235,12 +240,13 @@ export async function applyBillAction(
     }
     updateData = { workflowStage: "cancelled", dispatchStatus: null };
     toStage = "cancelled";
-    // With a reason key: Picking's note builder, so the Cancelled tab reads
+    // With a reason key: the desk note builder (lib/floor/desk-cancel-reasons.ts,
+    // Picking's note shape), so the Cancelled tab reads
     // "Cancelled — Pick delete · {remark}" exactly as a picking cancel does.
     const cancelReason = opts.cancelReason ?? null;
     note =
       cancelReason !== null
-        ? buildCancelNote(cancelReason, opts.cancelRemark ?? null)
+        ? buildDeskCancelNote(cancelReason, opts.cancelRemark ?? null)
         : opts.reason
           ? `Cancelled — ${opts.reason}`
           : "Cancelled from floor";
@@ -366,5 +372,5 @@ export async function applyBillAction(
     data: { orderId, fromStage: order.workflowStage, toStage, changedById, note },
   });
 
-  return { kind: "done" };
+  return { kind: "done", toStage };
 }

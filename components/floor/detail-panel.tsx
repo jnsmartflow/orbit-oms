@@ -9,20 +9,25 @@
 // move so his hand learns one place.
 //
 // REUSE, never fork:
-//   - Change ship-to → GET /api/floor/ship-to-search + the override write on
-//     POST /api/floor/ship-to. Both are Floor's own as of the Support
-//     retirement step 2/8; neither uses $transaction.
+//   - Change ship-to → components/floor/ship-to-editor.tsx (GET
+//     /api/floor/ship-to-search, its default) + the override write on POST
+//     /api/floor/ship-to. Both are Floor's own as of the Support retirement
+//     step 2/8; neither uses $transaction. The editor is shared with the Tint
+//     Manager since 2026-10-01 (it passes its own search route).
 //   - Update slot / release → components/floor/dispatch-slot-picker.tsx +
 //     the existing /api/floor routes.
 // Every write goes through floor-page's reportWrite() handlers, so a failure
 // surfaces — never a swallowed response.
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Building2, X } from "lucide-react";
 // TINT / BASE -- one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
-import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
+import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
+import { SlotPickerButton } from "@/components/floor/slot-picker-button";
+import { ShipToEditor } from "@/components/floor/ship-to-editor";
+import { TINT_ROOM_REFUSAL } from "@/lib/floor/off-floor";
 import { DetailItems } from "./detail-items";
 import { DetailDetails } from "./detail-details";
 import { DetailActivity } from "./detail-activity";
@@ -34,52 +39,9 @@ import {
 } from "@/components/shared/duplicate-so-tag";
 import type { FloorDetail, FloorDetailSource, FloorPicker } from "@/lib/floor/types";
 
-// ── Slot-chip / Release launcher — a custom trigger that opens the reused
-// DispatchSlotPicker via forceOpenGen, with the picker's own trigger overlaid
-// invisibly and stretched to this button's box only to anchor its portalled
-// popover. Same pattern as the assign bar; the shared picker is NOT modified. ──
-function SlotPickerButton({
-  value,
-  onPick,
-  windows,
-  className,
-  disabled,
-  popoverDir = "down",
-  popoverAlign = "right",
-  children,
-}: {
-  value: DispatchSlotValue | null;
-  onPick: (v: DispatchSlotValue) => void;
-  windows: DispatchWindow[];
-  className: string;
-  disabled?: boolean;
-  popoverDir?: "down" | "up";
-  popoverAlign?: "left" | "right";
-  children: ReactNode;
-}) {
-  const [gen, setGen] = useState(0);
-  return (
-    <div className="relative inline-flex">
-      <button type="button" disabled={disabled} onClick={() => setGen((g) => g + 1)} className={className}>
-        {children}
-      </button>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-0 [&>div]:!block [&>div]:h-full [&>div]:w-full [&>div>button]:!h-full [&>div>button]:!w-full"
-      >
-        <DispatchSlotPicker
-          value={value}
-          onChange={(v) => v && onPick(v)}
-          windows={windows}
-          popoverDir={popoverDir}
-          popoverAlign={popoverAlign}
-          disabled={disabled}
-          forceOpenGen={gen || undefined}
-        />
-      </div>
-    </div>
-  );
-}
+// The slot-chip / Release launcher is components/floor/slot-picker-button.tsx
+// since 2026-10-01 (Tint Manager tabs build step 7) — this file's private copy
+// was moved there and is imported below; the Tint Manager uses the same one.
 
 function ClockIcon() {
   return (
@@ -99,12 +61,6 @@ function PencilIcon() {
 }
 
 type Tab = "items" | "details" | "activity";
-
-interface ShipToResult {
-  id: number;
-  customerName: string;
-  area: string | null;
-}
 
 // Action handlers — each does the write + reportWrite + board reload inside
 // floor-page; the panel just calls the right one per source, then refetches.
@@ -503,13 +459,10 @@ function PanelBody({
     (d.workflowStage === "pending_tint_assignment" ||
       d.workflowStage === "tint_assigned" ||
       d.workflowStage === "tinting_in_progress");
-  const tintLockReason = !tintLocked
-    ? undefined
-    : d.workflowStage === "tinting_in_progress"
-      ? "Tinting in progress — cancel from Tint Manager"
-      : d.workflowStage === "tint_assigned"
-        ? "Assigned to a tint operator — cancel from Tint Manager"
-        : "Tint order not yet assigned — cancel from Tint Manager";
+  // ⚠ INERT since the rail retired (no opener passes "rail" — CLAUDE_FLOOR §4.7).
+  // The wording follows the routes' own refusal (lib/floor/off-floor.ts
+  // TINT_ROOM_REFUSAL, 2026-10-01): the Tint Manager's Stop & cancel exists now.
+  const tintLockReason = !tintLocked ? undefined : TINT_ROOM_REFUSAL;
 
   // Overflow (⋯) actions per source — only the ones with real routes.
   // `disabledReason` set ⇒ the item renders visible but greyed and inert, with
@@ -843,86 +796,5 @@ function PanelBody({
         {tab === "activity" && <DetailActivity d={d} />}
       </div>
     </>
-  );
-}
-
-// ── Ship-to inline editor — reuses Support's search route as a caller ────────
-
-function ShipToEditor({
-  busy,
-  onCancel,
-  onPick,
-}: {
-  busy: boolean;
-  onCancel: () => void;
-  onPick: (customerId: number) => void;
-}) {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<ShipToResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (timer.current) clearTimeout(timer.current);
-    const query = q.trim();
-    if (query.length < 2) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    timer.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/floor/ship-to-search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
-        setResults(res.ok ? ((await res.json()) as ShipToResult[]) : []);
-      } catch {
-        setResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 250);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [q]);
-
-  return (
-    <div className="border-b border-gray-200 bg-[#fcfcfd] px-5 py-3">
-      <div className="mb-1.5 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-gray-400">Change ship-to</div>
-      <input
-        autoFocus
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search dealer or site name…"
-        className="h-8 w-full rounded-[7px] border border-gray-300 px-2.5 text-[12px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
-      />
-      {q.trim().length >= 2 && (
-        <div className="mt-1.5 max-h-[220px] overflow-y-auto">
-          {searching && results.length === 0 ? (
-            <div className="px-1 py-2 text-[11px] text-gray-400">Searching…</div>
-          ) : results.length === 0 ? (
-            <div className="px-1 py-2 text-[11px] text-gray-400">No matches.</div>
-          ) : (
-            results.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                disabled={busy}
-                onClick={() => onPick(r.id)}
-                className="flex w-full items-center gap-2 rounded-[6px] px-2.5 py-2 text-left hover:bg-[#F5F3FF] disabled:opacity-40"
-              >
-                <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-800">{r.customerName}</span>
-                {r.area && <span className="shrink-0 text-[10px] text-gray-400">{r.area}</span>}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-      <div className="mt-2 flex">
-        <button type="button" onClick={onCancel} className="rounded-[6px] border border-gray-200 px-3 py-1.5 text-[11.5px] text-gray-500 hover:border-gray-300 hover:text-gray-700">
-          Cancel
-        </button>
-      </div>
-    </div>
   );
 }

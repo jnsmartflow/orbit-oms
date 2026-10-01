@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { type CancelReason } from "@/lib/picking/cancel-reasons";
+import { deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { FLOOR_REMARK_MAX, isFloorCancelReason, offFloorRefusal } from "@/lib/floor/off-floor";
 import { applyBillAction, BILL_ACTION_ORDER_SELECT } from "@/lib/floor/bill-actions";
 import { stopTintWork } from "@/lib/tint/stop-work";
@@ -20,8 +20,8 @@ export const dynamic = "force-dynamic";
 // cancel adds { stopped: { assignmentsEnded, splitsCancelled } }.
 //
 // Gate: tint_manager canEdit AND tint_cancel canEdit. The reason is MANDATORY
-// here (400 without one) — Floor's vocabulary (lib/floor/off-floor.ts
-// FLOOR_CANCEL_REASONS, itself Picking's), never a label of our own.
+// here (400 without one) — the DESK list Floor uses too
+// (lib/floor/desk-cancel-reasons.ts, owner decision B), never a label of our own.
 //
 // 🔴 STOP & CANCEL — THE WRITE ORDER IS THE SAFETY (owner decision 10, plan §D):
 //   0. read + refuse (tint bill; tint-room stage; cancelled / dispatched / on a
@@ -82,7 +82,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!isFloorCancelReason(body.reasonKey)) {
     return NextResponse.json({ error: `Unknown cancel reason "${String(body.reasonKey)}"` }, { status: 400 });
   }
-  const cancelReason: CancelReason = body.reasonKey;
+  const cancelReason: DeskCancelReason = body.reasonKey;
   let cancelRemark: string | null = null;
   if (body.remark !== undefined && body.remark !== null) {
     if (typeof body.remark !== "string") {
@@ -93,6 +93,9 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: `remark is longer than ${FLOOR_REMARK_MAX} characters` }, { status: 400 });
     }
     cancelRemark = trimmed === "" ? null : trimmed;
+  }
+  if (deskCancelRequiresNote(cancelReason) && cancelRemark === null) {
+    return NextResponse.json({ error: "A remark is required when the reason is Other" }, { status: 400 });
   }
 
   // ── Stop & cancel — ONE bill ─────────────────────────────────────────────

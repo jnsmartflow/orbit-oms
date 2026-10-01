@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 // (2026-10-01, tabs build step 3 — plan §C, §D).
 //
 // Body: { orderIds: number[] }
-// Response: Floor's shape — { done, failed }, 422 when nothing landed.
+// Response: Floor's shape — { done, failed } — plus restored: [{ orderId, toStage }]
+// so the tab can say where each bill went (the rail, or Floor). 422 when nothing landed.
 //
 // Gate: tint_manager canEdit AND tint_cancel canEdit (restore shares cancel's
 // tick, so nobody can create a state they cannot undo). Tint bills only, then
@@ -48,6 +49,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const done: number[] = [];
+  const restored: Array<{ orderId: number; toStage: string }> = [];
   const failed: Failed[] = [];
   for (const orderId of orderIds) {
     try {
@@ -59,12 +61,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       }
       const r = await applyBillAction(order, "restore", {}, changedById, "tint");
       if (r.kind === "failed") failed.push({ orderId, error: r.error });
-      else if (r.kind === "done") done.push(orderId);
+      else if (r.kind === "done") { done.push(orderId); restored.push({ orderId, toStage: r.toStage }); }
     } catch (err) {
       failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
     }
   }
 
   const status = done.length === 0 && failed.length > 0 ? 422 : 200;
-  return NextResponse.json({ done, failed }, { status });
+  return NextResponse.json({ done, failed, restored }, { status });
 }

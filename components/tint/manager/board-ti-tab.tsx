@@ -27,9 +27,9 @@ import type { BasePendingLine, BasePendingOrder } from "./types";
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
 
-// OBD · Ship to · Bill to · Sent · TI · actions = 100. (The mockup's Vol
-// column is left out: base-pending carries no bill volume — see step 5 notes.)
-const COLS = ["13%", "26%", "22%", "14%", "9%", "16%"] as const;
+// OBD 12 · Ship to 24 · Bill to 20 · Sent 13 · Vol 6 · TI 9 · actions 16 = 100.
+// (Vol and the override-first Ship To joined in step 7.)
+const COLS = ["12%", "24%", "20%", "13%", "6%", "9%", "16%"] as const;
 
 export function BoardTiTab({
   pending,
@@ -142,6 +142,7 @@ export function BoardTiTab({
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Sent</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>TI</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")} />
               </tr>
@@ -150,13 +151,21 @@ export function BoardTiTab({
               {pending.map((o) => (
                 <tr key={o.tintAssignmentId} className="hover:bg-gray-50">
                   <td className={TD}><ObdCode code={o.obdNumber} /></td>
-                  <td className={TD} title={o.siteName}>
-                    <span className="text-[11.5px] font-medium text-[#111827]">{o.siteName}</span>
+                  <td className={TD} title={o.originalSiteName ? `${o.originalSiteName} → ship to ${o.shipToName}` : o.shipToName}>
+                    <span className="text-[11.5px] font-medium text-[#111827]">{o.shipToName}</span>
+                    {/* Floor's ORIGINAL → REDIRECT pair (CLAUDE_FLOOR §4.9). TI itself
+                        stays on the original site (plan decision 12). */}
+                    {o.originalSiteName && (
+                      <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-brand-800">
+                        {o.originalSiteName}<span className="mx-1 opacity-60">→</span><b className="font-semibold">{o.shipToName}</b>
+                      </div>
+                    )}
                   </td>
                   <td className={TD} title={o.billToName ?? undefined}>
                     <span className="text-[#9ca3af]">{o.billToName ?? "—"}</span>
                   </td>
                   <td className={cn(TD, "text-[#9ca3af]")}>{istDateTime(o.bypassedAt)}</td>
+                  <td className={cn(TD, "text-right tabular-nums")}>{o.totalVolume ?? "—"}</td>
                   <td className={TD}>
                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
                       TI {o.coveredLines}/{o.totalTintingLines}

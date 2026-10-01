@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { type CancelReason } from "@/lib/picking/cancel-reasons";
+import { deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { FLOOR_REMARK_MAX, isFloorCancelReason } from "@/lib/floor/off-floor";
 import { notifyHandSet } from "@/lib/push/hand";
 import {
@@ -83,7 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // cancel: a reason KEY, when sent, is validated once up front — a bad value is
   // a clean 400, never a note recording a reason nobody chose. Absent means the
   // legacy note (the detail panel sends none until the 5b form lands).
-  let cancelReason: CancelReason | null = null;
+  let cancelReason: DeskCancelReason | null = null;
   let cancelRemark: string | null = null;
   if (action === "cancel") {
     if (body.reasonKey !== undefined) {
@@ -101,6 +101,11 @@ export async function POST(req: Request): Promise<NextResponse> {
         return NextResponse.json({ error: `remark is longer than ${FLOOR_REMARK_MAX} characters` }, { status: 400 });
       }
       cancelRemark = trimmed === "" ? null : trimmed;
+    }
+    // "Other" alone records nothing — the remark is required (desk list rule,
+    // 2026-10-01; Picking applies the same rule to its own "Other").
+    if (cancelReason !== null && deskCancelRequiresNote(cancelReason) && cancelRemark === null) {
+      return NextResponse.json({ error: "A remark is required when the reason is Other" }, { status: 400 });
     }
   }
 

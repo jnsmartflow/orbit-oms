@@ -8,6 +8,7 @@
 // import must keep resolving.
 
 import type { SkuDisplay } from "@/types/sku-display";
+import type { FloorHoldRow } from "@/lib/floor/types";
 
 export interface TintAssignmentInfo {
   id:          number;
@@ -368,10 +369,33 @@ export interface BasePendingOrder {
   siteName:          string;
   /** orders.customerId — the numeric site FK the suggest endpoint needs. */
   siteId:            number | null;
+  /** Display only (step 7): the redirected site, else siteName. TI stays on siteName/siteId. */
+  shipToName:        string;
+  /** siteName when a redirect is in force, else null. */
+  originalSiteName:  string | null;
+  /** The bill's volume (import_obd_query_summary.totalVolume). */
+  totalVolume:       number | null;
   billToName:        string | null;
   tintAssignmentId:  number;
   bypassedAt:        string | null;
   totalTintingLines: number;
   coveredLines:      number;
   lines:             BasePendingLine[];
+}
+
+// ── Hold tab (2026-10-01, tabs build step 7) ─────────────────────────────────
+// GET /api/tint/manager/hold — Floor's Hold row (lib/floor/queries.ts
+// getFloorHold, extraWhere { orderType: "tint" }) plus the tint facts the tab adds.
+
+export interface TintHoldRow extends FloorHoldRow {
+  workflowStage: string;
+  /** The bill's OWN site when a ship-to redirect is in force (left half of the pair), else null. */
+  originalSiteName: string | null;
+  dispatchTargetDate: string | null;
+  dispatchWindowId: number | null;
+  dispatchWindowTime: string | null;
+  /** The latest whole-OBD assignment's operator, or null (waiting / no row). */
+  operatorName: string | null;
+  /** That assignment's status (assigned / tinting_in_progress / paused / tinting_done / …). */
+  assignmentStatus: string | null;
 }

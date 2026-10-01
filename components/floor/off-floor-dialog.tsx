@@ -32,7 +32,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FLOOR_CANCEL_REASON_OPTIONS, FLOOR_REMARK_MAX } from "@/lib/floor/off-floor";
-import type { CancelReason } from "@/lib/picking/cancel-reasons";
+import { deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { formatLitres } from "./status-pill";
 import { BAR_DANGER, BAR_PRIMARY, BAR_SECONDARY } from "./floor-action-bar";
 
@@ -115,7 +115,7 @@ export function OffFloorDialog({
   // Each tab keeps its own answers — switching tabs loses nothing typed.
   const [ciReasonId, setCiReasonId] = useState<number | null>(null);
   const [ciRemark, setCiRemark] = useState("");
-  const [cancelReason, setCancelReason] = useState<CancelReason>(FLOOR_CANCEL_REASON_OPTIONS[0].value);
+  const [cancelReason, setCancelReason] = useState<DeskCancelReason>(FLOOR_CANCEL_REASON_OPTIONS[0].value);
   const [cancelRemark, setCancelRemark] = useState("");
   const [busy, setBusyState] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +134,8 @@ export function OffFloorDialog({
   const remark = tab === "ci" ? ciRemark : cancelRemark;
   const remarkTooLong = remark.trim().length > FLOOR_REMARK_MAX;
   const canSubmit =
-    !busy && n > 0 && !remarkTooLong && (tab === "ci" ? ciReasonId !== null : true);
+    !busy && n > 0 && !remarkTooLong &&
+    (tab === "ci" ? ciReasonId !== null : !(deskCancelRequiresNote(cancelReason) && cancelRemark.trim() === ""));
 
   const obdOf = (id: number) => bills.find((b) => b.orderId === id)?.obdNumber ?? `#${id}`;
 
@@ -380,7 +381,11 @@ export function OffFloorDialog({
                 value={remark}
                 onChange={(e) => (tab === "ci" ? setCiRemark(e.target.value) : setCancelRemark(e.target.value))}
                 disabled={busy}
-                placeholder={tab === "ci" ? "Remarks for billing (optional)" : "Remarks (optional)"}
+                placeholder={
+                  tab === "ci" ? "Remarks for billing (optional)"
+                  : deskCancelRequiresNote(cancelReason) ? "Remarks (required for Other)"
+                  : "Remarks (optional)"
+                }
                 className="mt-3 h-[62px] w-full resize-none rounded-[9px] border border-ink-200 px-3 py-2.5 text-[13.5px] text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/10"
               />
               <div className="mt-1 flex items-start justify-between gap-3 text-[12px] text-ink-500">

@@ -17,7 +17,8 @@
 //                           customer-missing interceptor first, CLAUDE_TINT §1.5)
 //   table → "Re-assign ▾"  (disabled, with the reason, when any selected job is
 //                           running or paused — the server 400s those, §1.6)
-//   hold  → "Release"      (wired in build step 7; disabled until then)
+//   hold  → "Release"      (= unhold, owner decision 9 — the page posts it;
+//                           tint_hold)
 // The three selections never mix — the page keeps them disjoint.
 //
 // ··· More items are each HIDDEN without their tick (TintManagerAccessProvider;
@@ -132,7 +133,13 @@ export function BoardBottomBar({
         Re-assign ▾
       </button>
     ) : (
-      <button type="button" disabled title="Release arrives with the Hold tab (next step)" className={BAR_PRIMARY}>
+      <button
+        type="button"
+        disabled={busy || !access.canHold}
+        title="Clear the hold — a waiting bill goes back to the rail, a mid-tint bill keeps tinting"
+        onClick={(e) => onPrimary(e.currentTarget)}
+        className={BAR_PRIMARY}
+      >
         Release
       </button>
     );
@@ -149,7 +156,8 @@ export function BoardBottomBar({
       onSelect: onSendBack,
     });
   }
-  if (access.canHold) {
+  // On the Hold tab Release IS the primary — no second copy in More.
+  if (access.canHold && mode !== "hold") {
     items.push(
       facts.allHeld
         ? {
