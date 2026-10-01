@@ -19,17 +19,25 @@ import { buildReportsHref, buildPrintHref, type ReportParams } from "@/component
 // CSS are owned by app/reports/tint-summary/page.tsx and
 // components/reports/tint-summary-document.tsx — not this file.
 //
-// The date and the Customise options still live in the URL (buildReportsHref),
-// so the PDF always carries what the panel shows.
+// The date and the Customise options are held by the Reports popup
+// (onParamsChange) and travel to the PDF in buildPrintHref, so the PDF always
+// carries what the panel shows. Without onParamsChange they fall back to the
+// /reports URL (buildReportsHref) — no caller does that since 2026-10-01.
 export default function ReportsTopBar({
   params,
   roster,
+  onParamsChange,
 }: {
   params: ReportParams;
   roster: { id: number; name: string | null }[];
+  /** When given (the Reports popup), date and Customise changes come back here
+   *  and are held in state; without it they go into the /reports URL as before. */
+  onParamsChange?: (next: ReportParams) => void;
 }) {
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const apply = (next: ReportParams) =>
+    onParamsChange ? onParamsChange(next) : router.push(buildReportsHref(next));
 
   return (
     <div className="flex max-w-[560px] flex-col px-6 py-[22px]">
@@ -46,7 +54,7 @@ export default function ReportsTopBar({
           id="ts-date"
           mode="single"
           value={{ from: params.date, to: params.date }}
-          onChange={(v) => router.push(buildReportsHref({ ...params, date: v.from }))}
+          onChange={(v) => apply({ ...params, date: v.from })}
         />
       </div>
 
@@ -78,7 +86,7 @@ export default function ReportsTopBar({
         </p>
       </div>
 
-      <CustomiseDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} params={params} roster={roster} />
+      <CustomiseDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} params={params} roster={roster} onApply={onParamsChange} />
     </div>
   );
 }

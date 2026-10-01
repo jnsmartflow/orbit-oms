@@ -56,11 +56,16 @@ export default function CustomiseDrawer({
   onClose,
   params,
   roster,
+  onApply,
 }: {
   open: boolean;
   onClose: () => void;
   params: ReportParams;
   roster: Operator[];
+  /** When given, Apply hands the new params back instead of pushing them into
+   *  the /reports URL — the Reports popup keeps them in state so the screen
+   *  behind it never navigates. */
+  onApply?: (next: ReportParams) => void;
 }) {
   const router = useRouter();
   const allOpIds = roster.map((o) => o.id);
@@ -100,7 +105,8 @@ export default function CustomiseDrawer({
       area: area.size === allArea.length ? [] : Array.from(area),
       trendDays,
     };
-    router.push(buildReportsHref(next));
+    if (onApply) onApply(next);
+    else router.push(buildReportsHref(next));
     onClose();
   };
 

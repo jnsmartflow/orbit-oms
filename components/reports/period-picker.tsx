@@ -139,7 +139,12 @@ export function PeriodPicker({
       if (ref.current && !ref.current.contains(e.target as Node)) close();
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
+      // preventDefault marks this Escape as used, so the Reports popup (which
+      // listens on window, after document) closes only the calendar, not itself.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
     }
     if (open) {
       document.addEventListener("mousedown", onDown);

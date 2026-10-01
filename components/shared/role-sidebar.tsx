@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useState } from "react";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,13 @@ import {
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
 import { OrbitWordmark } from "./orbit-wordmark";
+import { ReportsDialog } from "@/components/reports/reports-dialog";
+
+/** The Reports row's page key — PAGE_NAV_MAP's REPORTS_NAV_PAGE_KEY
+ *  (lib/permissions.ts). That row opens the Reports popup over the current
+ *  screen instead of navigating; its visibility rule is unchanged
+ *  (buildNavItems → canViewAnyReport). */
+const REPORTS_ROW_KEY = "ti_report";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,6 +123,12 @@ const DESKTOP_HIDDEN_PAGE_KEYS = new Set(["picking"]);
 export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSidebarProps) {
   const pathname              = usePathname();
   const { isExpanded, expand, collapse } = useRoleSidebar();
+  // The Reports popup lives HERE, in the layout-owned sidebar, so the screen
+  // beside it can re-render, poll and live-sync without unmounting it, and
+  // opening it never navigates — the screen keeps its filters, scroll and
+  // open panels. The dialog itself is portalled to <body>.
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const closeReports = useCallback(() => setReportsOpen(false), []);
 
   const roleLabel = ROLE_LABELS[role];
 
@@ -132,18 +146,24 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
       <div className="flex flex-col">
         {visibleNavItems.map((item) => {
           const Icon   = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
-          const active = isActive(item.href);
+          const isReports = item.pageKey === REPORTS_ROW_KEY;
+          const active = isActive(item.href) || (isReports && reportsOpen);
+          const className = cn(
+            "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
+            active
+              ? "bg-brand-50 text-brand-700 font-semibold pl-[10px] border-l-2 border-brand-600"
+              : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
+          );
+          if (isReports) {
+            return (
+              <button key={item.href} type="button" onClick={() => setReportsOpen(true)} className={cn(className, "text-left")}>
+                <Icon className="h-[15px] w-[15px] shrink-0" />
+                {item.label}
+              </button>
+            );
+          }
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
-                active
-                  ? "bg-brand-50 text-brand-700 font-semibold pl-[10px] border-l-2 border-brand-600"
-                  : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
-              )}
-            >
+            <Link key={item.href} href={item.href} className={className}>
               <Icon className="h-[15px] w-[15px] shrink-0" />
               {item.label}
             </Link>
@@ -159,21 +179,25 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
     <nav className="flex flex-col py-2 overflow-y-auto flex-1 scrollbar-hide items-center">
       {visibleNavItems.map((item) => {
         const Icon   = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
-        const active = isActive(item.href);
+        const isReports = item.pageKey === REPORTS_ROW_KEY;
+        const active = isActive(item.href) || (isReports && reportsOpen);
+        const className = cn(
+          "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
+          active
+            ? "bg-brand-50 text-brand-600"
+            : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+        );
         return (
           <div key={item.href} className="relative group w-full flex justify-center mb-0.5">
-            <Link
-              href={item.href}
-              className={cn(
-                "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
-                active
-                  ? "bg-brand-50 text-brand-600"
-                  : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-              )}
-              title={item.label}
-            >
-              <Icon className="h-[17px] w-[17px]" />
-            </Link>
+            {isReports ? (
+              <button type="button" onClick={() => setReportsOpen(true)} className={className} title={item.label}>
+                <Icon className="h-[17px] w-[17px]" />
+              </button>
+            ) : (
+              <Link href={item.href} className={className} title={item.label}>
+                <Icon className="h-[17px] w-[17px]" />
+              </Link>
+            )}
             {/* Tooltip */}
             <div className="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2 z-[200] hidden group-hover:block">
               <div className="bg-gray-900 text-white text-[11px] px-2.5 py-1 rounded-md whitespace-nowrap shadow-lg">
@@ -187,6 +211,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
   );
 
   return (
+    <>
     <aside
       onMouseEnter={expand}
       onMouseLeave={collapse}
@@ -254,5 +279,10 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
         )}
       </div>
     </aside>
+    {/* OUTSIDE the <aside> on purpose: React events bubble through a portal to
+        its React parent, so inside the aside the rail's onMouseEnter/Leave would
+        treat the dialog as part of the rail and keep it expanded. */}
+    <ReportsDialog open={reportsOpen} onClose={closeReports} />
+    </>
   );
 }
