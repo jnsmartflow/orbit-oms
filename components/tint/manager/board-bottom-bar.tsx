@@ -22,10 +22,15 @@
 // The three selections never mix — the page keeps them disjoint.
 //
 // ··· More items are each HIDDEN without their tick (TintManagerAccessProvider;
-// the routes re-check). The page owns every write and both menus' open state —
+// the routes re-check).
+//
+// Ship-to (owner, 2026-10-01): the bar carries "Shop delivery" (tint_shop_delivery
+// — every selected bill to its own bill-to dealer, on rail / table / hold
+// selections alike). "Change ship-to" is NOT on the bar any more: a single-bill
+// redirect lives only in the detail panel (tint_ship_to). The page owns every write and both menus' open state —
 // it is the single Esc owner, so nothing here listens for keys.
 
-import { Clock, Hand, Pause, Play, Trash2, Undo2, X, ArrowRightLeft, FileX2 } from "lucide-react";
+import { Clock, Hand, Pause, Play, Trash2, Undo2, X, Store, FileX2 } from "lucide-react";
 import {
   BarDivider,
   BAR_PRIMARY,
@@ -75,7 +80,7 @@ export function BoardBottomBar({
   onHold,
   onReleaseHold,
   onHand,
-  onShipTo,
+  onShopDelivery,
   onCancel,
   onStopCancel,
   onRaiseCi,
@@ -102,7 +107,8 @@ export function BoardBottomBar({
   onHold:        () => void;
   onReleaseHold: () => void;
   onHand:        (set: boolean) => void;
-  onShipTo:      () => void;
+  /** Opens the Shop delivery confirm for the whole selection. */
+  onShopDelivery: () => void;
   onCancel:      () => void;
   onStopCancel:  () => void;
   onRaiseCi:     () => void;
@@ -187,14 +193,13 @@ export function BoardBottomBar({
       onSelect: () => onHand(!facts.allHand),
     });
   }
-  if (access.canShipTo) {
+  if (access.canShopDelivery) {
     items.push({
-      key: "ship-to",
-      label: "Change ship-to",
-      hint: one ? "Redirect this bill to another site" : "One bill at a time",
-      icon: <ArrowRightLeft size={15} strokeWidth={2.2} />,
-      disabled: !one,
-      onSelect: onShipTo,
+      key: "shop-delivery",
+      label: "Shop delivery",
+      hint: "Ship to the dealer's shop",
+      icon: <Store size={15} strokeWidth={2.2} />,
+      onSelect: onShopDelivery,
     });
   }
   if (access.canCancel) {

@@ -50,8 +50,11 @@ export async function setShipToOverride(args: {
   orderId: number;
   customerId: number | null;
   changedById: number;
+  /** The log row's note. Omitted → null, exactly what Floor and the single-bill
+   *  Tint Manager route have always written. Shop delivery passes its own. */
+  note?: string | null;
 }): Promise<ShipToResult> {
-  const { orderId, customerId, changedById } = args;
+  const { orderId, customerId, changedById, note = null } = args;
 
   const order = await prisma.orders.findFirst({
     where: { id: orderId, isRemoved: false },
@@ -115,7 +118,7 @@ export async function setShipToOverride(args: {
       fromStage: order.shipToOverrideCustomerId !== null ? String(order.shipToOverrideCustomerId) : null,
       toStage: customerId !== null ? String(customerId) : "cleared",
       changedById,
-      note: null,
+      note,
     },
   });
 

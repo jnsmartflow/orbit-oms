@@ -61,6 +61,7 @@ import { BoardTiTab } from "@/components/tint/manager/board-ti-tab";
 // bottom bar replaced it in tabs build step 6.
 import { BoardBottomBar, type BarMode } from "@/components/tint/manager/board-bottom-bar";
 import { BoardStopCancelDialog, type StopCancelBill } from "@/components/tint/manager/board-stop-cancel-dialog";
+import { BoardShopDeliveryDialog, type ShopDeliveryBill } from "@/components/tint/manager/board-shop-delivery-dialog";
 import { BoardHoldTab } from "@/components/tint/manager/board-hold-tab";
 import { BoardCiTab } from "@/components/tint/manager/board-ci-tab";
 import type { FloorCancelledRow } from "@/lib/floor/types";
@@ -152,9 +153,9 @@ export function TintManagerContent() {
   const [ciReasons, setCiReasons] = useState<CiReasonOption[] | null>(null);
   const [ciReasonsError, setCiReasonsError] = useState<string | null>(null);
   const [stopCancelBill, setStopCancelBill] = useState<StopCancelBill | null>(null);
-  // The bar's "Change ship-to" opens the detail panel with the shared
-  // ShipToEditor already open (step 7 retired the step-6 stand-in dialog).
-  const [shipToSignal, setShipToSignal] = useState(0);
+  // The bar's "Shop delivery" confirm (owner 2026-10-01). "Change ship-to" left
+  // the bar the same day — it lives only in the detail panel now.
+  const [shopDeliveryBills, setShopDeliveryBills] = useState<ShopDeliveryBill[] | null>(null);
   // Hold + CI tab lists (step 7). null = not loaded yet.
   const [holdRows, setHoldRows] = useState<TintHoldRow[] | null>(null);
   const [holdError, setHoldError] = useState<string | null>(null);
@@ -561,9 +562,9 @@ export function TintManagerContent() {
         if (typing) return;
         if (barOpAnchor !== null) { setBarOpAnchor(null); return; }
         if (barMenuOpen) { setBarMenuOpen(false); return; }
-        if (offFloor !== null || stopCancelBill !== null) {
+        if (offFloor !== null || stopCancelBill !== null || shopDeliveryBills !== null) {
           if (dialogBusy) return;
-          setOffFloor(null); setStopCancelBill(null);
+          setOffFloor(null); setStopCancelBill(null); setShopDeliveryBills(null);
           return;
         }
         if (panelKey !== null) { setPanelKey(null); return; }
@@ -579,7 +580,7 @@ export function TintManagerContent() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelKey, selection, railSel, holdSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, dialogBusy, clearAllSelection]);
+  }, [panelKey, selection, railSel, holdSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, dialogBusy, clearAllSelection]);
 
   // ── Hold + CI lists (step 7) — read when the person can see the tab, and
   // again after every board reload (payload changes), so the tab counts track
@@ -1607,14 +1608,8 @@ export function TintManagerContent() {
               onHold={() => { void postTintAction("hold", barIds); }}
               onReleaseHold={() => { void postTintAction("unhold", barIds); }}
               onHand={(set) => { void postTintAction(set ? "hand" : "unhand", barIds); }}
-              onShipTo={() => {
-                // Opens the bill's detail panel with the shared ShipToEditor open.
-                const b = barBills[0];
-                if (!b) return;
-                const key = barMode === "rail" ? `pending-${b.orderId}`
-                  : barMode === "hold" ? `hold-${b.orderId}`
-                  : selectedRows[0]?.key ?? null;
-                if (key) { setPanelKey(key); setShipToSignal((n) => n + 1); }
+              onShopDelivery={() => {
+                setShopDeliveryBills(barBills.map((b) => ({ orderId: b.orderId, obdNumber: b.obdNumber })));
               }}
               onCancel={() => openOffFloor("cancel")}
               onStopCancel={() => {
@@ -1687,6 +1682,15 @@ export function TintManagerContent() {
         />
       )}
 
+      {shopDeliveryBills && (
+        <BoardShopDeliveryDialog
+          bills={shopDeliveryBills}
+          onDone={() => { clearAllSelection(); void fetchBoard(); }}
+          onBusyChange={setDialogBusy}
+          onClose={() => setShopDeliveryBills(null)}
+        />
+      )}
+
       {panelTarget && (
         <BoardDetailPanel
           target={panelTarget}
@@ -1697,7 +1701,6 @@ export function TintManagerContent() {
           canRemove={canRemoveObd}
           windows={windows}
           reloadSignal={panelReload}
-          openShipToSignal={shipToSignal}
           actions={panelActions}
           onClose={() => setPanelKey(null)}
           onPrev={() => { if (panelIndex > 0) setPanelKey(walk[panelIndex - 1].key); }}

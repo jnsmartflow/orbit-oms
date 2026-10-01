@@ -273,6 +273,13 @@ export type PageKey =
   | "tint_cancel"
   | "tint_ci"
   | "tint_pick_delete"
+  // tint_shop_delivery — "Shop delivery" in the Tint Manager bottom bar's More
+  // menu (2026-10-01, owner): every selected bill's ship-to becomes its own
+  // BILL-TO dealer (app/api/tint/manager/shop-delivery). canEdit is its only
+  // meaning, on top of tint_manager canEdit. INDEPENDENT of tint_ship_to, which
+  // keeps the single-bill Change ship-to in the detail panel. Tint Manager
+  // only — Floor and Billing have no such action.
+  | "tint_shop_delivery"
   | "tint_operator"
   | "place_order"
   // place_order_ship_to — the Ship To block in the DESKTOP /place-order cart
@@ -422,8 +429,10 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "import_obd", "tint_manager",
   // The three Tint Manager panel TABS sit beside their host screen.
   "tint_panel_items", "tint_panel_details", "tint_panel_activity",
-  // The seven Tint Manager action ticks (2026-10-01), beside their host screen.
+  // The seven Tint Manager action ticks (2026-10-01), beside their host screen,
+  // then Shop delivery (2026-10-01, owner — added after the seven).
   "tint_hold", "tint_hand", "tint_slot", "tint_ship_to", "tint_cancel", "tint_ci", "tint_pick_delete",
+  "tint_shop_delivery",
   "tint_operator",
   // ⚠ `billing_picking` (the Billing Picking TAB) sits beside `mail_orders`,
   // its host screen. It is NOT `picking` on the line above — that is the floor
@@ -511,6 +520,8 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // first call sites (app/api/tint/manager/actions, ship-to, ship-to-search,
     // orders/[id]/remove); the rest land in steps 3-8 of the same build.
     "tint_hold", "tint_hand", "tint_slot", "tint_ship_to", "tint_cancel", "tint_ci", "tint_pick_delete",
+    // Shop delivery (2026-10-01) — app/api/tint/manager/shop-delivery.
+    "tint_shop_delivery",
   ],
   // Two helper call sites — import/obd:3796 and sampling-library:253 — plus the
   // CSV import buttons on the four master-data screens, which read canImport
@@ -562,11 +573,11 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. TWENTY-EIGHT
-// of the 51 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. TWENTY-NINE
+// of the 52 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
 // billing_print, billing_telephonic, billing_pick_delete, the six billing action ticks, place_order_ship_to, the three
-// Tint Manager panel tabs, the seven Tint Manager action ticks, and the two older report ticks.
+// Tint Manager panel tabs, the eight Tint Manager action ticks, and the two older report ticks.
 // (⚠ reports_trip_detail, added 2026-10-01, has no label here yet and falls
 // through to its raw key — recorded, not fixed in the tint ticks commit.)
 // (`ti_report` IS in PAGE_NAV_MAP as "Reports", but is overridden here because
@@ -625,6 +636,7 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   tint_cancel:         "Tint Manager · Cancel",
   tint_ci:             "Tint Manager · CI",
   tint_pick_delete:    "Tint Manager · Pick delete",
+  tint_shop_delivery:  "Tint Manager · Shop delivery",
   attendance:      "Attendance — their own",
   attendance_admin: "Attendance — everyone",
   // The per-report ticks (2026-09-17). Not in PAGE_NAV_MAP.
@@ -644,7 +656,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 51 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 52 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -669,7 +681,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     // The seven action ticks follow the panel tabs: the screen, its tabs, then
     // the buttons — one block on /admin/access, like the Billing family.
     "tint_hold", "tint_hand", "tint_slot", "tint_ship_to",
-    "tint_cancel", "tint_ci", "tint_pick_delete",
+    "tint_cancel", "tint_ci", "tint_pick_delete", "tint_shop_delivery",
     "tint_operator", "operations_tinting",
     "operations_tint_operator", "delivery_challans", "shade_master",
     "sampling_library", "ti_report",

@@ -42,7 +42,8 @@ export type TintAction =
   | "restore"
   | "remove"
   | "ci"
-  | "pick-delete";
+  | "pick-delete"
+  | "shop-delivery";
 
 /** Action → its key. Set and clear share one key, so nobody can create a state
  *  they cannot undo (hold/unhold, hand/unhand, cancel/stop/restore/remove). */
@@ -59,6 +60,8 @@ export const TINT_ACTION_KEY: Record<TintAction, PageKey> = {
   remove:        "tint_cancel",
   ci:            "tint_ci",
   "pick-delete": "tint_pick_delete",
+  // Owner 2026-10-01: its OWN tick, independent of tint_ship_to.
+  "shop-delivery": "tint_shop_delivery",
 };
 
 /** Human words for the 403, naming what was refused. */
@@ -75,6 +78,7 @@ const ACTION_WORDS: Record<TintAction, string> = {
   remove:        "remove an OBD",
   ci:            "raise a CI",
   "pick-delete": "decide pick deletes",
+  "shop-delivery": "send bills to the dealer's shop",
 };
 
 /**

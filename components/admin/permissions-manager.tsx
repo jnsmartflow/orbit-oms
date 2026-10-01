@@ -100,6 +100,8 @@ const PAGES_CONFIG = [
   { key: "tint_cancel",      label: "Tint Manager · Cancel",      path: "/tint/manager", section: "Operations" },
   { key: "tint_ci",          label: "Tint Manager · CI",          path: "/tint/manager", section: "Operations" },
   { key: "tint_pick_delete", label: "Tint Manager · Pick delete", path: "/tint/manager", section: "Operations" },
+  // Shop delivery (2026-10-01) — same canEdit-only meaning and caveat.
+  { key: "tint_shop_delivery", label: "Tint Manager · Shop delivery", path: "/tint/manager", section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [

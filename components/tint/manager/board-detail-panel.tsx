@@ -104,7 +104,7 @@ function stageStatus(d: FloorDetail): BoardRowStatus | "waiting" | "cancelled" {
 
 export function BoardDetailPanel({
   target, operators, position, busy, error, canRemove, windows, reloadSignal, actions,
-  onClose, onPrev, onNext, changedElsewhere = false, onReloadChanged, openShipToSignal = 0,
+  onClose, onPrev, onNext, changedElsewhere = false, onReloadChanged,
 }: {
   target:    PanelTarget;
   operators: Operator[];
@@ -125,9 +125,6 @@ export function BoardDetailPanel({
   /** Live feed only — this bill changed elsewhere; a quiet bar offers Reload. */
   changedElsewhere?: boolean;
   onReloadChanged?: () => void;
-  /** Bumped by the page when the bottom bar's "Change ship-to" opens this
-   *  panel — the shared ShipToEditor opens straight away. */
-  openShipToSignal?: number;
 }) {
   const access = useTintManagerAccess();
   const visibleTabs = TAB_ORDER.filter((t) =>
@@ -182,10 +179,6 @@ export function BoardDetailPanel({
     setEditingShipTo(false);
     setTab(firstTab);
   }, [targetKey, firstTab]);
-  // The bar's "Change ship-to" — open the editor (after the reset above).
-  useEffect(() => {
-    if (openShipToSignal > 0 && access.canShipTo) setEditingShipTo(true);
-  }, [openShipToSignal, access.canShipTo]);
 
   const d = detail;
   const status = d ? stageStatus(d) : null;

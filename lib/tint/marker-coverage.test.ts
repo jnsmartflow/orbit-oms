@@ -158,6 +158,8 @@ test("every tabs-build Tint Manager write route moves a marker stamp", () => {
   const tabsRoutes = [
     "actions", "ship-to", "cancel", "restore", "ci",
     "pick-delete/all-ok", "pick-delete/delete", "pick-delete/undo",
+    // Shop delivery (2026-10-01) — writes through lib/floor/ship-to.ts.
+    "shop-delivery",
   ];
   const failures: string[] = [];
   for (const r of tabsRoutes) {

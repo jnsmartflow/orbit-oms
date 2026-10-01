@@ -67,6 +67,9 @@ export interface TintManagerAccess {
   canCi: boolean;
   /** tint_manager canEdit && tint_pick_delete canEdit — the popup + Undo. */
   canPickDelete: boolean;
+  /** tint_manager canEdit && tint_shop_delivery canEdit — the bar's Shop delivery
+   *  (bulk ship-to = each bill's own bill-to dealer). Independent of canShipTo. */
+  canShopDelivery: boolean;
   /** tint_hold canView — the Hold tab. */
   canViewHoldTab: boolean;
   /** tint_ci canView || tint_cancel canView — the CI tab. */
@@ -80,7 +83,7 @@ const NONE: TintManagerAccess = {
   canReports: false,
   canEdit: false,
   canHold: false, canHand: false, canSlot: false, canShipTo: false,
-  canCancel: false, canCi: false, canPickDelete: false,
+  canCancel: false, canCi: false, canPickDelete: false, canShopDelivery: false,
   canViewHoldTab: false, canViewCiTab: false, canViewPickDelete: false,
 };
 
@@ -104,13 +107,14 @@ export function TintManagerAccessProvider({
       canEdit: a.canEdit,
       canHold: a.canHold, canHand: a.canHand, canSlot: a.canSlot, canShipTo: a.canShipTo,
       canCancel: a.canCancel, canCi: a.canCi, canPickDelete: a.canPickDelete,
+      canShopDelivery: a.canShopDelivery,
       canViewHoldTab: a.canViewHoldTab, canViewCiTab: a.canViewCiTab, canViewPickDelete: a.canViewPickDelete,
     }),
     [
       a.canPanelItems, a.canPanelDetails, a.canPanelActivity, a.canReports,
       a.canEdit,
       a.canHold, a.canHand, a.canSlot, a.canShipTo,
-      a.canCancel, a.canCi, a.canPickDelete,
+      a.canCancel, a.canCi, a.canPickDelete, a.canShopDelivery,
       a.canViewHoldTab, a.canViewCiTab, a.canViewPickDelete,
     ],
   );
