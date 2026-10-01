@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
+import { getActiveDispatchWindows } from "@/lib/dispatch/windows";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +29,9 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const windows = await prisma.dispatch_slot_master.findMany({
-    where: { isActive: true },
-    select: { id: true, windowTime: true, label: true },
-    orderBy: { sortOrder: "asc" },
-  });
+  // The query is lib/dispatch/windows.ts (2026-10-01) — shared with the Tint
+  // Manager's windows route.
+  const windows = await getActiveDispatchWindows();
 
   return NextResponse.json({ windows });
 }

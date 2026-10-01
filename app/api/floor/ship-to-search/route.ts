@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
+import { searchShipTo } from "@/lib/floor/ship-to";
 
 export const dynamic = "force-dynamic";
 
@@ -23,25 +23,8 @@ export async function GET(req: Request): Promise<NextResponse> {
   const allowed = await checkAnyPermission(roles, "floor", "canView");
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  // The query lives in lib/floor/ship-to.ts searchShipTo since 2026-10-01 —
+  // shared with the Tint Manager's search route. Same rule, same bare array.
   const { searchParams } = new URL(req.url);
-  const q = searchParams.get("q")?.trim() ?? "";
-  // Under 2 characters: answer empty without touching the DB. The client also
-  // guards this, but a short query would match half the master.
-  if (q.length < 2) {
-    return NextResponse.json([]);
-  }
-
-  const matches = await prisma.delivery_point_master.findMany({
-    where: {
-      customerName: { contains: q, mode: "insensitive" },
-      isActive: true,
-    },
-    select: { id: true, customerName: true, area: { select: { name: true } } },
-    take: 8,
-    orderBy: { customerName: "asc" },
-  });
-
-  return NextResponse.json(
-    matches.map((m) => ({ id: m.id, customerName: m.customerName, area: m.area?.name ?? null })),
-  );
+  return NextResponse.json(await searchShipTo(searchParams.get("q")));
 }

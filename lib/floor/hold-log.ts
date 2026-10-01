@@ -81,6 +81,19 @@ export const BILLING_HOLD_NOTE = "Held from billing";
  *  bill's "held since" start from the moment its previous hold was lifted. */
 export const BILLING_CLEAR_HOLD_NOTE = "Hold cleared from billing";
 
+/** The Tint Manager's hold note (2026-10-01, tabs build step 2). Written by
+ *  lib/floor/bill-actions.ts applyBillAction("hold") when the caller is the
+ *  Tint Manager (app/api/tint/manager/actions). Its own string, never
+ *  FLOOR_HOLD_NOTE: nobody on the floor held this bill — but Floor's Hold tab
+ *  must still find it for "held since", so it is in HOLD_LOG_NOTES below. */
+export const TINT_HOLD_NOTE = "Held from Tint Manager";
+
+/** The Tint Manager's Release (unhold) note (2026-10-01).
+ *
+ *  ⚠ NOT IN HOLD_LOG_NOTES, AND MUST NEVER BE — the same rule as
+ *  FLOOR_CLEAR_HOLD_NOTE above. */
+export const TINT_CLEAR_HOLD_NOTE = "Hold cleared from Tint Manager";
+
 /** Every note that identifies a hold event, for the `note: { in: … }` filter. */
 export const HOLD_LOG_NOTES: string[] = [
   FLOOR_HOLD_NOTE,
@@ -88,6 +101,7 @@ export const HOLD_LOG_NOTES: string[] = [
   TELEPHONIC_HOLD_NOTE,
   BILLING_CI_HOLD_NOTE,
   BILLING_HOLD_NOTE,
+  TINT_HOLD_NOTE,
 ];
 
 /** Where a row's `heldSince` came from — surfaced in the UI so an approximated

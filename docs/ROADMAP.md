@@ -702,6 +702,16 @@ owner, not settled removals.** Full list in `CLAUDE_TINT.md §1.11`.
       to Pending with its assignment still live, or reverted with no audit line. Needs a deliberate
       decision on the failure mode, then one session.
 
+### P1 — Tint feed must learn the new tabs before `live.feed.tint` is turned on (owner 2026-10-01)
+
+- [ ] The Tint Manager tabs build (plan `docs/prompts/drafts/code-discovery-2026-10-01-tint-manager-build-plan.md`
+      §F, §J-4) widens `/api/tint/manager/marker` with two arms (held tint bills in any stage; today's
+      cancelled tint bills) and four stamp tables (tint `ci_returns`, `pick_delete_decisions`, the
+      placeholder's `tinter_issue_entries` / `_b`). With the feed ON the marker is unmounted and
+      `classifyTintManager` (`lib/tint/live-feed.ts`) keeps only onBoard ∪ held ids, so the Hold, CI,
+      TI and Pick delete tabs would go stale. Mirror the arms there first. `live.feed.tint` stays OFF
+      until then.
+
 ### P2 — Canon disagreement: table row height, Floor vs UI §27
 
 - [ ] `CLAUDE_UI.md §27` states a **32px header row and a 36px data row**. Floor's live table

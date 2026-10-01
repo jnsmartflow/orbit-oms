@@ -1,26 +1,22 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { checkAnyPermission } from "@/lib/permissions";
+import { prisma } from "@/lib/prisma";
 import { setShipToOverride } from "@/lib/floor/ship-to";
+import { checkTintAction, tintBillRefusal } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/floor/ship-to — redirect ONE bill's ship-to to a different delivery
-// point (CLAUDE_FLOOR.md §4.4). Support retirement step 2/8.
+// POST /api/tint/manager/ship-to — redirect ONE tint bill's ship-to, or clear
+// it (2026-10-01, tabs build step 2 — plan §C).
 //
-// Deliberately NOT a copy of PATCH /api/support/orders/[id]: that route carries
-// four unrelated fields (dispatchStatus / priorityLevel / dispatchSlot / ship-to),
-// a dispatch_change_queue side effect, and a prisma.$transaction. This one does a
-// single job with sequential awaits (CORE §3).
+// Body: { orderId: number, customerId: number | null }  (null clears)
+// Response: Floor's exactly — { orderId, shipToOverrideCustomerId, changed }.
 //
-// Contract per bill (one update, one log, unchanged = nothing written) is owned
-// by lib/floor/ship-to.ts setShipToOverride since 2026-10-01. That function also
-// REFUSES a bill on a trip (409, Billing's wording — owner 2026-10-01); it is
-// the one behaviour this route gained in the extraction.
-//
-// `customerId: null` (clear the redirect) is accepted so a future clear action
-// needs no route change. Floor's UI never sends it today — detail-panel.tsx types
-// onChangeShipTo as (orderId, customerId: number).
+// Gate: tint_manager canEdit AND tint_ship_to canEdit. Tint bills only, then
+// lib/floor/ship-to.ts setShipToOverride — the SAME write Floor's route calls,
+// which also refuses a bill ON A TRIP (409, Billing's wording, owner 2026-10-01).
+// `orders.customerId` never changes: TI and sampling stay on the original site
+// (plan decision 12).
 
 interface Body {
   orderId?: number;
@@ -32,11 +28,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "floor", "canEdit");
-  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const refused = await checkTintAction(roles, "ship-to");
+  if (refused !== null) return NextResponse.json({ error: refused }, { status: 403 });
 
-  // session.user.id is a numeric string (lib/auth.ts). Require a real positive
-  // integer so an empty/absent id can never become changedById: 0.
   const changedById = Number(session.user.id);
   if (!Number.isInteger(changedById) || changedById <= 0) {
     return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
@@ -51,7 +45,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // Absent and null are NOT the same: `undefined` is a malformed body, `null` is
   // an explicit "clear the redirect".
-  const customerId = body.customerId === undefined ? undefined : body.customerId;
+  const customerId = body.customerId;
   if (customerId !== null && (typeof customerId !== "number" || !Number.isInteger(customerId) || customerId <= 0)) {
     return NextResponse.json(
       { error: "customerId must be a positive integer, or null to clear" },
@@ -59,9 +53,15 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // The write, the no-op skip, the target check and (since 2026-10-01) the
-  // on-a-trip refusal all live in lib/floor/ship-to.ts — shared with the Tint
-  // Manager's ship-to route.
+  const order = await prisma.orders.findUnique({
+    where: { id: orderId },
+    select: { orderType: true, isRemoved: true },
+  });
+  const notTint = tintBillRefusal(order);
+  if (notTint !== null) {
+    return NextResponse.json({ error: notTint }, { status: order === null || order.isRemoved ? 404 : 409 });
+  }
+
   const r = await setShipToOverride({ orderId, customerId, changedById });
   if (!r.ok) {
     return NextResponse.json({ error: r.error }, { status: r.status });

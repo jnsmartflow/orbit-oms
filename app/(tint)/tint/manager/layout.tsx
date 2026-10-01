@@ -41,6 +41,15 @@ export default async function TintManagerLayout({
   // Header "Reports" pill (2026-09-17): any report tick — the hub's own rule.
   const canReports       = canViewAnyReport(allPerms);
 
+  // Action + tab ticks (2026-10-01, tabs build step 2 — plan §B). Same map, no
+  // second query. An action = tint_manager canEdit AND its key's canEdit — the
+  // exact rule lib/tint/manager-bill.ts checkTintAction enforces on the routes,
+  // so a button is never drawn for a write the route would refuse. A tab = its
+  // key's canView. Nothing consumes these yet (build steps 5-8).
+  const hostEdit = allPerms["tint_manager"]?.canEdit ?? false;
+  const edit = (k: string) => hostEdit && (allPerms[k]?.canEdit ?? false);
+  const view = (k: string) => allPerms[k]?.canView ?? false;
+
   const seen = new Set<string>();
   const dedupedNavItems = navItems.filter(item => {
     if (seen.has(item.pageKey)) return false;
@@ -60,10 +69,23 @@ export default async function TintManagerLayout({
         navItems={dedupedNavItems}
       >
         <TintManagerAccessProvider
-          canPanelItems={canPanelItems}
-          canPanelDetails={canPanelDetails}
-          canPanelActivity={canPanelActivity}
-          canReports={canReports}
+          access={{
+            canPanelItems,
+            canPanelDetails,
+            canPanelActivity,
+            canReports,
+            canEdit:           hostEdit,
+            canHold:           edit("tint_hold"),
+            canHand:           edit("tint_hand"),
+            canSlot:           edit("tint_slot"),
+            canShipTo:         edit("tint_ship_to"),
+            canCancel:         edit("tint_cancel"),
+            canCi:             edit("tint_ci"),
+            canPickDelete:     edit("tint_pick_delete"),
+            canViewHoldTab:    view("tint_hold"),
+            canViewCiTab:      view("tint_ci") || view("tint_cancel"),
+            canViewPickDelete: view("tint_pick_delete"),
+          }}
         >
           {children}
         </TintManagerAccessProvider>

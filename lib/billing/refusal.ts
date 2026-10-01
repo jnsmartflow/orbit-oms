@@ -71,6 +71,19 @@ const REFUSED_ON_TRIP: ReadonlySet<BillingAction> = new Set<BillingAction>(["shi
 const REFUSED_IN_TINT_ROOM: ReadonlySet<BillingAction> = new Set<BillingAction>(["ci"]);
 
 /**
+ * The ON-A-TRIP half of the rule on its own: the refusal text when the bill is
+ * on a trip, else null. Exported (2026-10-01, owner) so the shared ship-to
+ * write (lib/floor/ship-to.ts setShipToOverride) refuses a bill on a trip with
+ * EXACTLY Billing's wording, on every desk — without also taking on Billing's
+ * cancelled / dispatched refusals, which Floor's ship-to never had.
+ */
+export function onTripRefusal(bill: Pick<BillingRefusalBill, "tripDropId" | "tripNumber">): string | null {
+  const onTrip = bill.tripDropId !== null && bill.tripDropId !== undefined;
+  if (!onTrip) return null;
+  return `On trip ${bill.tripNumber ?? "(unknown)"} — remove it from the trip first`;
+}
+
+/**
  * Why this billing action may NOT touch this bill, or null when it may.
  * Per bill — the caller reports it beside the bills that did change.
  */
@@ -88,9 +101,9 @@ export function billingRefusal(
     return stage === "cancelled" ? "Already cancelled" : "Already dispatched";
   }
 
-  const onTrip = bill.tripDropId !== null && bill.tripDropId !== undefined;
-  if (onTrip && REFUSED_ON_TRIP.has(action)) {
-    return `On trip ${bill.tripNumber ?? "(unknown)"} — remove it from the trip first`;
+  if (REFUSED_ON_TRIP.has(action)) {
+    const trip = onTripRefusal(bill);
+    if (trip !== null) return trip;
   }
 
   if (TINT_ROOM_STAGES.includes(stage) && REFUSED_IN_TINT_ROOM.has(action)) {

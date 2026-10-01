@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { checkAnyPermission } from "@/lib/permissions";
+import { checkTintAction } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +35,15 @@ export async function POST(
   // this route soft-removes an OBD from the board and voids its challan, so a
   // single view-only tick would have handed that to a bystander. The two holder
   // sets happened to be identical on 2026-09-06, so no live grant was affected.
+  //
+  // + tint_cancel canEdit (2026-10-01, Tint Manager tabs build step 2 — plan §B):
+  // Remove OBD is one of the four buttons on the tint_cancel tick, beside
+  // tint_manager canEdit — lib/tint/manager-bill.ts checkTintAction("remove").
+  // Same 403 shape as before ({ ok: false, error }).
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
-  if (!allowed) {
-    return NextResponse.json({ ok: false, error: "Permission denied" }, { status: 403 });
+  const refused = await checkTintAction(roles, "remove");
+  if (refused !== null) {
+    return NextResponse.json({ ok: false, error: refused }, { status: 403 });
   }
 
   // ── Validate params + body ──────────────────────────────────────────────────

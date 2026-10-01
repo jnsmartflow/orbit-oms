@@ -90,6 +90,16 @@ const PAGES_CONFIG = [
   // ROLLBACK-editor caveat as the rows above.
   { key: "reports_tint_summary", label: "Reports · Tint Summary", path: "/reports", section: "Operations" },
   { key: "reports_ti_report",    label: "Reports · TI Report",    path: "/reports", section: "Operations" },
+  // The seven Tint Manager action ticks (2026-10-01). Same canEdit-only meaning
+  // as the Billing ticks above and the same ROLLBACK-editor caveat: nothing
+  // written here is enforced while ACCESS_SOURCE='user'.
+  { key: "tint_hold",        label: "Tint Manager · Hold",        path: "/tint/manager", section: "Operations" },
+  { key: "tint_hand",        label: "Tint Manager · Hand",        path: "/tint/manager", section: "Operations" },
+  { key: "tint_slot",        label: "Tint Manager · Slot",        path: "/tint/manager", section: "Operations" },
+  { key: "tint_ship_to",     label: "Tint Manager · Ship-to",     path: "/tint/manager", section: "Operations" },
+  { key: "tint_cancel",      label: "Tint Manager · Cancel",      path: "/tint/manager", section: "Operations" },
+  { key: "tint_ci",          label: "Tint Manager · CI",          path: "/tint/manager", section: "Operations" },
+  { key: "tint_pick_delete", label: "Tint Manager · Pick delete", path: "/tint/manager", section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [
