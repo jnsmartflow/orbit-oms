@@ -152,8 +152,9 @@ const ROLE_HREF_OVERRIDES: Record<string, Record<string, string>> = {
 // 🔴 THE ONE LIST OF REPORT KEYS (2026-09-17). The hub (app/reports/page.tsx),
 // the sidebar "Reports" row (buildNavItems below) and the Tint Manager header
 // pill all read it, so a new report is registered HERE and nowhere else.
-// canView on a key = may see that report in the hub. Holding ANY of them opens
-// the hub; holding none shuts it. There is no separate hub-door tick — the old
+// canView OR canExport on a key = may see that report in the hub (2026-10-01;
+// was canView only — Trip Detail is granted export-only to some people).
+// Holding ANY of them opens the hub; holding none shuts it. There is no separate hub-door tick — the old
 // `ti_report` key gates nothing any more (kept, relabelled, retirement later).
 export const REPORT_PAGE_KEYS = [
   "reports_tint_summary",
@@ -164,9 +165,20 @@ export const REPORT_PAGE_KEYS = [
 /** The PAGE_NAV_MAP row that links to the Reports hub. Its identity only. */
 const REPORTS_NAV_PAGE_KEY = "ti_report";
 
-/** May this person open the Reports hub at all — canView on ANY report key. */
+/** Is this report listed for this person — canView OR canExport on its key. */
+export function holdsReportTick(
+  allPerms: Record<string, PagePermissions>,
+  key: (typeof REPORT_PAGE_KEYS)[number],
+): boolean {
+  return allPerms[key]?.canView === true || allPerms[key]?.canExport === true;
+}
+
+/** May this person open the Reports hub at all — any report tick, by the
+ *  holdsReportTick rule. ⚠ Name kept for its three callers; since 2026-10-01
+ *  it also counts an export-only tick, so the sidebar row and the Tint Manager
+ *  pill appear for an export-only Trip Detail holder. */
 export function canViewAnyReport(allPerms: Record<string, PagePermissions>): boolean {
-  return REPORT_PAGE_KEYS.some((k) => allPerms[k]?.canView === true);
+  return REPORT_PAGE_KEYS.some((k) => holdsReportTick(allPerms, k));
 }
 
 export function buildNavItems(
