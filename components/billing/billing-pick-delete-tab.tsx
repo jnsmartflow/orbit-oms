@@ -23,7 +23,10 @@
 //   · columns — "tint" relabels Customer → "Site" (the column already shows the
 //               ship-to site first) and OBD → "OBD removed" (the deleted OBD on a
 //               pick delete, "—" on an All OK). Default "billing" = as before;
-//   · onCount — the decided-row count of the month shown, for a tab badge.
+//   · onCount — the decided-row count of the month shown, for a tab badge;
+//   · reloadSignal — a host with no Billing marker provider (the subscription
+//               hook is inert there) bumps it to make the tab re-read. Default
+//               undefined: Billing reloads off its provider, as before.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -54,6 +57,7 @@ export function BillingPickDeleteTab({
   base = PICK_DELETE_BASE,
   columns = "billing",
   onCount,
+  reloadSignal,
 }: {
   canEdit: boolean;
   /** API base for list / undo. Default = Billing's routes. */
@@ -62,6 +66,8 @@ export function BillingPickDeleteTab({
   columns?: "billing" | "tint";
   /** Called with the decided-row count after every load. */
   onCount?: (n: number) => void;
+  /** A change re-reads the list (hosts without Billing's provider). */
+  reloadSignal?: number;
 }) {
   const [month, setMonth] = useState<string>(() => currentIstMonth(new Date()));
   const [data, setData] = useState<PickDeleteList | null>(null);
@@ -95,6 +101,13 @@ export function BillingPickDeleteTab({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A host-driven reload (the Tint Manager). Undefined for Billing → never runs.
+  useEffect(() => {
+    if (reloadSignal !== undefined && reloadSignal > 0) void load();
+    // load is read, not a trigger: a month change already reloads above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadSignal]);
 
   // Live: a decision made in the popup (here or on another desk) moves the marker.
   useBillingPickDeleteMarkerSubscription(load);

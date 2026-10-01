@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
@@ -50,7 +51,21 @@ export const dynamic = "force-dynamic";
  *           a split finishing is a visible board change whose parent order sits
  *           outside arm 1.
  *
- * ⚠ If any of those six feeds gains or loses a stage, THIS predicate must move
+ *   arm 4 — HELD tint bills in ANY stage (2026-10-01, tabs build step 9): the
+ *           Hold tab (/api/tint/manager/hold) lists a bill held and then
+ *           finished (pending_support + hold), which arm 1 no longer sees.
+ *   arm 5 — tint bills CANCELLED with an orders write today: the CI tab
+ *           (/api/tint/manager/cancelled) is a today-only list, and a bill that
+ *           left arm 1 by being cancelled must still move the marker for later
+ *           edits that day. Same startOfToday as the board (below).
+ *
+ * And four more stamps in the GREATEST statement (step 9), each a tab's own
+ * source: tint bills' ci_returns (the CI tab), pick_delete_decisions (the Pick
+ * delete tab + popup), and the "Base — No Tint" placeholder's TI entries
+ * (tinter_issue_entries / _b createdAt — the TI tab; a TI edit does not change
+ * what is owed, and those tables carry no updatedAt).
+ *
+ * ⚠ If any of those feeds gains or loses a stage, THIS predicate must move
  * with it, or the board will stop refreshing on a change it displays.
  *
  * ⚠ `startOfToday` is deliberately computed the SAME (server-local, not IST) way
@@ -127,6 +142,12 @@ export async function GET(): Promise<NextResponse> {
                 },
               },
             },
+            // Arm 4 — the Hold tab: a held tint bill in any stage, including
+            // one that finished tinting and is parked at pending_support.
+            { dispatchStatus: "hold" },
+            // Arm 5 — the CI tab: a tint bill cancelled (or edited after its
+            // cancel) today. Same startOfToday as the board — do not "fix" one.
+            { workflowStage: "cancelled", updatedAt: { gte: startOfToday } },
           ],
         },
         hideExclusion,
@@ -144,11 +165,32 @@ export async function GET(): Promise<NextResponse> {
   // tint work, and a rare false "changed" costs one board reload — what the blind
   // tick paid every 60s. 3 tiny seq scans (~1 ms). Folded into `latest`, so the
   // response shape — and lib/hooks/use-picking-marker — are unchanged.
+  //
+  // Step 9 (2026-10-01) adds four terms to the SAME single statement:
+  //   · tint bills' CIs — ci_returns joined to orderType 'tint' only, so
+  //     billing's CI churn on other bills never reloads this board;
+  //   · pick_delete_decisions — low volume, unfiltered (a Billing decision
+  //     costs one reload);
+  //   · the placeholder's TI rows — createdAt (no updatedAt on those tables),
+  //     restricted to "Base — No Tint" assignments so an operator's ordinary TI
+  //     save does not fire. Skipped entirely when the placeholder is missing.
+  // Parameterised fragments only (Prisma.sql / Prisma.empty), never string
+  // building. Still READ-ONLY.
+  const baseTiTerms = baseOperatorId !== null
+    ? Prisma.sql`,
+      (SELECT max(e."createdAt") FROM tinter_issue_entries e
+        WHERE e."tintAssignmentId" IN (SELECT id FROM tint_assignments WHERE "assignedToId" = ${baseOperatorId})),
+      (SELECT max(e."createdAt") FROM tinter_issue_entries_b e
+        WHERE e."tintAssignmentId" IN (SELECT id FROM tint_assignments WHERE "assignedToId" = ${baseOperatorId}))`
+    : Prisma.empty;
   const childRows = await prisma.$queryRaw<{ m: Date | null }[]>`
     SELECT GREATEST(
       (SELECT max("updatedAt") FROM tint_assignments),
       (SELECT max("updatedAt") FROM order_splits),
-      (SELECT max("updatedAt") FROM delivery_challans)) AS m`;
+      (SELECT max("updatedAt") FROM delivery_challans),
+      (SELECT max(c."updatedAt") FROM ci_returns c
+         JOIN orders o ON o.id = c."orderId" AND o."orderType" = 'tint'),
+      (SELECT max("updatedAt") FROM pick_delete_decisions)${baseTiTerms}) AS m`;
   const latest = laterOf(agg._max.updatedAt, childRows[0]?.m ?? null);
 
   return NextResponse.json(

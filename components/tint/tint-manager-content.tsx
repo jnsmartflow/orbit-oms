@@ -55,6 +55,7 @@ import { BoardTabs, type BoardTab } from "@/components/tint/manager/board-tabs";
 import { BoardPickDeleteTab, TINT_PICK_DELETE_BASE } from "@/components/tint/manager/board-pick-delete-tab";
 // Billing's blocking popup, REUSED with the tint base (2026-10-01, step 8).
 import { BillingPickDeletePopup } from "@/components/billing/billing-pick-delete-popup";
+import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { BoardTiTab } from "@/components/tint/manager/board-ti-tab";
 // BoardAssignBar (board-assign-bar.tsx) is RETIRED, not deleted (CORE §3): the
 // bottom bar replaced it in tabs build step 6.
@@ -603,7 +604,35 @@ export function TintManagerContent() {
       setCancelledRows(body.rows);
     } catch { setCancelledError("Could not load the CI list."); }
   }, [access.canViewCiTab]);
-  useEffect(() => { void fetchHold(); void fetchCancelled(); }, [payload, fetchHold, fetchCancelled]);
+  // ── Tab badges + list refresh (step 9) ───────────────────────────────────
+  // Every board reload — on page load, after this page's own writes, and on a
+  // MARKER CHANGE (LegacyTintManagerSync → fetchBoard; the marker's arms 4–5 and
+  // its four tab stamps since step 9) — re-reads the Hold and CI lists, and the
+  // TI and Pick-delete counts in the effect further down. So every badge shows
+  // without opening its tab, and an open tab moves when its source moves. The
+  // marker's pause rule (panel open / a selection up) holds all of it: no
+  // marker change is delivered while paused, so nothing reloads.
+  // `sideReload` is the signal an open Pick-delete tab reloads on.
+  const [sideReload, setSideReload] = useState(0);
+  useEffect(() => {
+    void fetchHold();
+    void fetchCancelled();
+    setSideReload((n) => n + 1);
+  }, [payload, fetchHold, fetchCancelled]);
+
+  // The Pick delete badge from page load (step 9 — it used to appear only once
+  // the tab had been opened): the decided rows of the current IST month, the
+  // same count the tab shows for its default month.
+  const fetchPickCount = useCallback(async () => {
+    if (!access.canViewPickDelete) return;
+    try {
+      const month = currentIstMonth(new Date());
+      const res = await fetch(`${TINT_PICK_DELETE_BASE}/list?month=${encodeURIComponent(month)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { decided?: unknown[] };
+      if (Array.isArray(body.decided)) setPickDecidedCount(body.decided.length);
+    } catch { /* the badge keeps its last number */ }
+  }, [access.canViewPickDelete]);
 
   // Active dispatch windows, once — the Slot picker (bar + table cell).
   useEffect(() => {
@@ -659,7 +688,13 @@ export function TintManagerContent() {
     }
   }, []);
 
-  useEffect(() => { void fetchBasePending(); }, [fetchBasePending]);
+  // TI list (and its badge) + the Pick delete badge: on load and on every board
+  // reload, like Hold / CI above (step 9 — base-pending used to be read on mount
+  // and after this page's own actions only).
+  useEffect(() => {
+    void fetchBasePending();
+    void fetchPickCount();
+  }, [payload, fetchBasePending, fetchPickCount]);
 
   /**
    * A line's TI just saved. Advance to the next line still owing one on this
@@ -1537,7 +1572,7 @@ export function TintManagerContent() {
           {/* Pick delete — the decision HISTORY (Billing's tab on the tint routes);
               the tab itself is gated on tint_pick_delete canView (board-tabs.tsx). */}
           {activeTab === "pick" && (
-            <BoardPickDeleteTab canEdit={access.canPickDelete} onCount={setPickDecidedCount} />
+            <BoardPickDeleteTab canEdit={access.canPickDelete} onCount={setPickDecidedCount} reloadSignal={sideReload} />
           )}
 
           {barMode !== null && (

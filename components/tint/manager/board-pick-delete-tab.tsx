@@ -19,11 +19,15 @@ export const TINT_PICK_DELETE_BASE = "/api/tint/manager/pick-delete";
 export function BoardPickDeleteTab({
   canEdit,
   onCount,
+  reloadSignal,
 }: {
   /** tint_manager canEdit && tint_pick_delete canEdit — draws the Undo column. */
   canEdit: boolean;
   /** The decided-row count for the month shown — the tab badge. */
   onCount: (n: number) => void;
+  /** Bumped by the page on every board reload (a marker change included) —
+   *  the tab re-reads its list. Billing's marker subscription is inert here. */
+  reloadSignal: number;
 }) {
   return (
     <BillingPickDeleteTab
@@ -31,6 +35,7 @@ export function BoardPickDeleteTab({
       base={TINT_PICK_DELETE_BASE}
       columns="tint"
       onCount={onCount}
+      reloadSignal={reloadSignal}
     />
   );
 }

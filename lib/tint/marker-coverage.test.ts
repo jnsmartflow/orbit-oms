@@ -18,8 +18,13 @@ import path from "node:path";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 
-/** The tables the marker reads a stamp from. */
-const STAMP_TABLES = ["orders", "tint_assignments", "order_splits", "delivery_challans"];
+/** The tables the marker reads a stamp from. Step 9 (2026-10-01) added the four
+ *  tab sources: tint CIs, pick-delete decisions and the placeholder's TI rows
+ *  (the TI tables stamp on createdAt — a create is what changes what is owed). */
+const STAMP_TABLES = [
+  "orders", "tint_assignments", "order_splits", "delivery_challans",
+  "ci_returns", "pick_delete_decisions", "tinter_issue_entries", "tinter_issue_entries_b",
+];
 
 /**
  * Tables GET /api/tint/manager/orders READS (its finds + includes): a write to one changes what
@@ -34,6 +39,10 @@ const BOARD_TABLES = [
   "import_raw_summary",    // the SMU / summary lookup
   "import_obd_query_summary", // querySnapshot
   "manual_tint_entries",
+  // The tabs (2026-10-01, tabs build steps 5–8) — Hold / CI / TI / Pick delete
+  // read these; a write to one must move a stamp (each is a stamp itself now).
+  "ci_returns",
+  "pick_delete_decisions",
 ];
 
 /**
@@ -64,12 +73,22 @@ function writesIn(src: string, from: string): Write[] {
   return out;
 }
 
+// The lib folders whose writes a tint route can reach (one level deep). Since
+// the tabs build (2026-10-01) the Tint Manager's routes write through the SHARED
+// Floor / Billing owners — lib/floor/bill-actions.ts, ship-to.ts, raise-ci.ts,
+// lib/billing/pick-delete.ts — so the scan follows those imports too; otherwise
+// those routes would look write-free and prove nothing.
+const LIB_DIRS = ["tint", "floor", "billing"];
+
 function routeWrites(file: string): Write[] {
   const src = stripComments(readFileSync(file, "utf8"));
   const out = writesIn(src, "route");
-  for (const m of Array.from(src.matchAll(/from\s+"@\/lib\/tint\/([\w\-/]+)"/g))) {
-    const lib = path.join(ROOT, "lib", "tint", `${m[1]}.ts`);
-    if (existsSync(lib)) out.push(...writesIn(stripComments(readFileSync(lib, "utf8")), `lib/tint/${m[1]}.ts`));
+  for (const dir of LIB_DIRS) {
+    const re = new RegExp(`from\\s+"@\\/lib\\/${dir}\\/([\\w\\-/]+)"`, "g");
+    for (const m of Array.from(src.matchAll(re))) {
+      const lib = path.join(ROOT, "lib", dir, `${m[1]}.ts`);
+      if (existsSync(lib)) out.push(...writesIn(stripComments(readFileSync(lib, "utf8")), `lib/${dir}/${m[1]}.ts`));
+    }
   }
   return out;
 }
@@ -109,10 +128,14 @@ test("the NOT_ON_BOARD exemption still holds: the board reload does not read the
   assert.equal(/tinterIssue/i.test(src), false, "the orders route now includes a tinter-issue relation");
 });
 
-test("the marker route reads all four stamp tables", () => {
+test("the marker route reads every stamp table", () => {
   const src = stripComments(readFileSync(path.join(ROOT, "app", "api", "tint", "manager", "marker", "route.ts"), "utf8"));
-  for (const t of ["tint_assignments", "order_splits", "delivery_challans"]) {
-    assert.ok(new RegExp(`max\\("updatedAt"\\)\\s+FROM\\s+${t}\\b`).test(src), `marker does not read ${t}`);
+  // max("updatedAt") or max(alias."updatedAt"/"createdAt") FROM <table>.
+  for (const t of STAMP_TABLES.filter((x) => x !== "orders")) {
+    assert.ok(
+      new RegExp(`max\\((?:\\w+\\.)?"(?:updatedAt|createdAt)"\\)\\s+FROM\\s+${t}\\b`).test(src),
+      `marker does not read ${t}`,
+    );
   }
   assert.ok(/_max:\s*\{\s*updatedAt:\s*true\s*\}/.test(src), "marker does not read MAX(orders.updatedAt)");
 });
@@ -125,4 +148,23 @@ test("the scanner sees prisma. and tx. writes, and ignores reads and comments", 
     // await prisma.delivery_challans.update({});
   `);
   assert.deepEqual(writesIn(src, "t").map((w) => `${w.table}.${w.op}`), ["tint_pause_events.create", "order_splits.update"]);
+});
+
+// Tabs build step 9 (2026-10-01): every Tint Manager WRITE route added in steps
+// 2–8 must reach a stamp table — through its own code or the shared lib it calls
+// (lib/floor/*, lib/billing/*, lib/tint/*). Named, so a route that stops
+// stamping (or that the scanner can no longer follow) fails by name.
+test("every tabs-build Tint Manager write route moves a marker stamp", () => {
+  const tabsRoutes = [
+    "actions", "ship-to", "cancel", "restore", "ci",
+    "pick-delete/all-ok", "pick-delete/delete", "pick-delete/undo",
+  ];
+  const failures: string[] = [];
+  for (const r of tabsRoutes) {
+    const file = path.join(ROOT, "app", "api", "tint", "manager", ...r.split("/"), "route.ts");
+    assert.ok(existsSync(file), `missing route ${r}`);
+    const stamps = routeWrites(file).filter((w) => STAMP_TABLES.includes(w.table) && STAMP_OPS.has(w.op));
+    if (stamps.length === 0) failures.push(`${r}: no stamp write found (route + lib/tint|floor|billing)`);
+  }
+  assert.deepEqual(failures, []);
 });
