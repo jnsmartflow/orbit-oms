@@ -119,6 +119,9 @@ export function SoLabLogin() {
         setWho({ name: String(data.name), email: String(data.email) });
         setTestCode(null);
         setScreen("in");
+        // C.2a: the server page decides login vs board — reload so it renders
+        // the order board for the session just created.
+        window.location.reload();
         return;
       }
       const reason = data?.reason as FailReason | undefined;

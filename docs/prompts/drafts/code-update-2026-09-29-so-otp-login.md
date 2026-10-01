@@ -35,6 +35,56 @@
 Discovery: `docs/prompts/drafts/code-discovery-2026-09-29-po2-so-login.md` (§A Option 2, §G).
 SQL (run live 2026-09-29 by Smart Flow, verified): `sql/2026-09-29-so-login-tables.sql`.
 
+## Update 2026-10-01 — C.2a: the /po2 board behind SO login (local storage only)
+
+> **2026-10-01: lastSeenAt throttled to 10 min — do not write on every call.**
+
+Plan: `docs/prompts/drafts/code-discovery-2026-09-30-so-lab-order-page.md`, as amended by the owner's
+2026-10-01 decisions (`web-update-2026-09-30-so-order-pipeline.md`): final address = the SAME `/po2` link at
+go-live (no `/sales`), NO import of old `po2_*` phone data, lock = an `app_settings` switch.
+
+- **Fork location: `app/so-lab/_board/`** (underscore = private, never a route). 13 files, all NEW; `app/po2/`,
+  `app/po9/`, `app/po/`, `lib/place-order/`, `/api/order/data` untouched (git diff empty).
+  - As-is copies: `v2-data.ts`, `product-drawer.tsx`, `product-search.tsx`, `customer-list.tsx`,
+    `review-screen.tsx`, `order-sheet.tsx`, `v2-sheet.tsx`, `v2-search-input.tsx` (only the storage type import
+    is repointed in `customer-list` / `order-sheet`).
+  - Changed: `po-v2-page.tsx` (SO prop, `setStorageScope(so.id)`, catalogue URL, SO name + Log out in the
+    masthead, no sent log, Send stamps the SO), `so-storage.ts` (was `v2-storage.ts`), `v2-email.ts`,
+    `drafts-sent.tsx` (Sent = "Coming soon" placeholder), `v2-manifest.ts` (mount `/so-lab`).
+  - Read-only imports from outside, as /po2: `lib/place-order/pack`, `lib/place-order/mobile-search`,
+    `lib/place-order/email` (`buildSubject`, `emailLineLabel`, `renderOrderBody` — NOT `ORDER_TO`),
+    `components/shared/orbit-wordmark`.
+- **One URL, server decides** (`app/so-lab/page.tsx`): lock → `getSoSession()` → login screen or
+  `<SoBoard so={{ id, name, email }} />`. Login success and Log out → `window.location.reload()`. The lock is
+  checked in the layout AND the page (they render in parallel).
+- **Lock switch: `app_settings` `settingKey = 'so.page.open'`** (`lib/so-auth/lock.ts`). Absent / false /
+  read error = LOCKED (superuser staff session required on the page and every `/api/so-lab/*`, as before);
+  cached 30 s per instance. **The row is NOT created.** Go-live SQL (owner, Smart Flow — NOT RUN):
+  `INSERT INTO app_settings ("settingKey","isEnabled") VALUES ('so.page.open', true) ON CONFLICT ("settingKey") DO UPDATE SET "isEnabled" = true, "updatedAt" = now();`
+  ⚠ Opening it does not by itself admit an SO without a staff login: `middleware.ts:78-80` still redirects to
+  `/login` — the go-live middleware branch (checklist H) is separate.
+- **`requireSoApi()`** (`lib/so-auth/require-so-api.ts`): lock gate → `getSoSession()` → 401
+  `{ reason: "no_so_session" }`. SO id from the session only.
+- **Catalogue: `GET /api/so-lab/catalogue`** → `lib/so-order/catalogue.ts` (`buildSoCatalogue`, a third copy of
+  the `/api/order/data` payload builder — same shape). Gate first, then `unstable_cache` (key
+  `so-lab-catalogue-v1`, tag `so-lab-catalogue`, revalidate 600 s). Throws on error or an empty catalogue →
+  **503**, never cached, never 200-with-empty; the board shows its Retry screen on any non-200. One call per page
+  load, no polling.
+- **Storage = LOCAL ONLY in C.2a**, keys `sopage_{soId}_draft` / `_saved` / `_favs` / `_stars_dealer` /
+  `_stars_shipto` — per SO, so a shared phone keeps salesmen apart. /po2's rules kept: 24 h live draft, 20 saved
+  drafts, 8 favourites (9th refused), two star lists (200 fuse). **No `po2_*` key is ever read or written**; the
+  /po2 star-seed chain is dropped (an absent list is empty). No sent log. The DB tables of v27.48-designed
+  `sql/2026-09-30-so-drafts-favourites.sql` are NOT used yet — that is C.2b.
+- **Send (until phase D):** mailto to **`SO_TEST_ORDER_TO = "harsh.jnenterprise@outlook.com"`**
+  (`_board/v2-email.ts`, "phase D replaces this"), subject = `buildSubject` as today, body = `renderOrderBody`
+  + a final line `Sent by {SO name}`. No CC.
+- **`getSoSession()` lastSeenAt throttle:** `LAST_SEEN_THROTTLE_MS = 10 min` (`lib/so-auth/constants.ts`); the
+  bump is a conditional `updateMany … WHERE "lastSeenAt" < now − 10 min`, so at most one write per session per
+  10 min however many board calls run.
+- ⚠ **Schema-version clash to resolve in C.2b:** the SO drafts SQL was drafted as **v27.48**, but commit
+  `81925d52` (another session, 2026-09-30) also claims v27.48 for the `delivery_challans` live-feed trigger. The
+  C.2b chain entry must take the next free number at the time it is written.
+
 ## Update 2026-09-30 (b) — shared `lib/otp/` + the `/admin/so-access` screen
 
 > **2026-09-30: SO order-access grant is deliberately NOT a PageKey — do not add one.**

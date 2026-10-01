@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { SESSION_TTL_MS, SO_SESSION_COOKIE } from "./constants";
+import { LAST_SEEN_THROTTLE_MS, SESSION_TTL_MS, SO_SESSION_COOKIE } from "./constants";
 import { findEligibleSoById, type EligibleSo } from "./eligibility";
 
 // Server-side SO sessions. The cookie holds a random token; so_sessions holds
@@ -65,6 +65,12 @@ function readTokenHash(): string | null {
  * expired) → eligibility (active SO + live grant) → lastSeenAt bumped.
  * A session whose SO has lost eligibility is REVOKED here, so a revoked grant
  * or a deactivated SO ends the session on its next request.
+ *
+ * 🔴 2026-10-01: lastSeenAt throttled to 10 min — do not write on every call.
+ * Every board API runs through this, so an unconditional bump would make every
+ * read a DB write (the 2026-09-29 Disk IO outage). The bump is a conditional
+ * updateMany (WHERE lastSeenAt < now − 10 min), so it writes at most once per
+ * session per 10 minutes. "Last login" on /admin/so-access is accurate to 10 min.
  */
 export async function getSoSession(): Promise<EligibleSo | null> {
   const tokenHash = readTokenHash();
@@ -73,7 +79,7 @@ export async function getSoSession(): Promise<EligibleSo | null> {
   const now = new Date();
   const row = await prisma.so_sessions.findUnique({
     where: { tokenHash },
-    select: { id: true, salesOfficerId: true, expiresAt: true, revokedAt: true },
+    select: { id: true, salesOfficerId: true, expiresAt: true, revokedAt: true, lastSeenAt: true },
   });
   if (!row || row.revokedAt || row.expiresAt <= now) return null;
 
@@ -86,10 +92,13 @@ export async function getSoSession(): Promise<EligibleSo | null> {
     return null;
   }
 
-  await prisma.so_sessions.update({
-    where: { id: row.id },
-    data: { lastSeenAt: now },
-  });
+  const staleBefore = new Date(now.getTime() - LAST_SEEN_THROTTLE_MS);
+  if (row.lastSeenAt < staleBefore) {
+    await prisma.so_sessions.updateMany({
+      where: { id: row.id, lastSeenAt: { lt: staleBefore } },
+      data: { lastSeenAt: now },
+    });
+  }
   return so;
 }
 

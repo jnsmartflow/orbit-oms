@@ -10,6 +10,9 @@
 // middleware into every staff route. docs/prompts/drafts/code-discovery-2026-09-29-po2-so-login.md §A.
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// 🔴 2026-10-01: so_sessions.lastSeenAt is written at most once per 10 min per
+// session — never on every call (getSoSession runs on every board API).
+export const LAST_SEEN_THROTTLE_MS = 10 * 60 * 1000;
 export const IP_LIMIT = 10;                         // code requests per IP …
 export const IP_WINDOW_MS = 60 * 60 * 1000;         // … per hour
 
