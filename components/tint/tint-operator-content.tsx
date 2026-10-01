@@ -34,6 +34,8 @@ import { computeElapsedMs } from "@/lib/tint/elapsed-time";
 import { SkipJobModal } from "@/components/tint/SkipJobModal";
 import { PauseJobModal } from "@/components/tint/PauseJobModal";
 import { MarkDoneConfirmModal } from "@/components/tint/MarkDoneConfirmModal";
+import { useTintOperatorLive } from "@/components/tint/operator/use-tint-operator-live";
+import { DetailChangedStrip } from "@/components/picking/picking-live";
 import { Tooltip } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 
@@ -234,6 +236,9 @@ interface Job {
 
 interface CompletedAssignment {
   id:          number;
+  // A scalar of tint_assignments the route already returns (include → every
+  // scalar); typed here for the live feed's held ids (tint step 5).
+  orderId?:    number;
   completedAt: string | null;
   order: {
     obdNumber:          string;
@@ -522,7 +527,16 @@ export function TintOperatorContent() {
   const coverageStripRef  = useRef<HTMLDivElement>(null);
   const autoSelectDoneRef = useRef(false);
 
-  const fetchOrders = useCallback(async () => {
+  // The job he has selected, readable inside fetchOrders without re-creating it.
+  const selectionRef = useRef<{ id: number | null; type: "split" | "order" | null }>({ id: null, type: null });
+  selectionRef.current = { id: selectedJobId, type: selectedJobType };
+
+  /**
+   * `keepSelection` (live feed only, tint step 5): a BACKGROUND refetch keeps the job he
+   * has open while it is still in his list — re-selecting would reset his TI form. Every
+   * own-action call passes nothing and behaves exactly as before.
+   */
+  const fetchOrders = useCallback(async (opts?: { keepSelection?: boolean }) => {
     try {
       const res  = await fetch("/api/tint/operator/my-orders");
       const data = (await res.json()) as {
@@ -553,7 +567,9 @@ export function TintOperatorContent() {
 
       const active = allJobs.find(j => j.status === "tinting_in_progress");
       const toSelect = active ?? allJobs[0] ?? null;
-      if (toSelect) {
+      const cur = selectionRef.current;
+      const keep = opts?.keepSelection === true && allJobs.some(j => j.id === cur.id && j.type === cur.type);
+      if (toSelect && !keep) {
         setSelectedJobId(toSelect.id);
         setSelectedJobType(toSelect.type);
       }
@@ -1557,6 +1573,41 @@ export function TintOperatorContent() {
   const currentNonTintingLines = selectedJob
     ? selectedJob.lineItems.filter(li => !li.rawLineItem.isTinting)
     : [];
+
+  // ── Live sync (tint step 5, 2026-10-01 — operator/use-tint-operator-live.ts) ──
+  // Feed live → his list is refetched (KEEPING his selected job) when one of HIS
+  // jobs changes elsewhere: a new assignment, a re-sequence, a manager cancel or
+  // reassign. Held while any modal / sheet / popup is open or one of his own
+  // actions is in flight, applied once on release. NOT held for a running timer.
+  // Feed off → nothing (the screen never had a background sync).
+  const holdLive =
+    skipModalJob !== null || pauseModalJob !== null || markDoneModalJob !== null ||
+    formulaModalOpen || samplingPopup !== null || queueDropdownOpen ||
+    splitActionLoading !== null || orderActionLoading !== null || resumingId !== null ||
+    tiActionLoading || formulaLoading || pendingSaveAfterApply;
+  // Unsaved TI input he TYPED on the open job (a shade value, a shade name, or a
+  // picked sampling number) — never the auto-filled view of an existing entry
+  // (editingEntryId set). A change to that job is then offered as a strip, not
+  // swapped under him.
+  const tiTyped =
+    editingEntryId === null &&
+    tiEntries.some(e =>
+      e.samplingNo !== null || e.shadeName.trim() !== "" ||
+      Object.values(e.shadeValues).some(v => Number(v) > 0));
+  const heldRef = useRef<number[]>([]);
+  heldRef.current = Array.from(new Set([
+    ...assignedOrders.map(o => o.id),
+    ...assignedSplits.map(s => s.orderId),
+    ...completedSplits.map(s => s.orderId),
+    ...completedOrders.flatMap(a => (typeof a.orderId === "number" ? [a.orderId] : [])),
+  ]));
+  const operatorLive = useTintOperatorLive({
+    hold:        holdLive,
+    tiTyped,
+    openOrderId: selectedJob?.orderId ?? null,
+    heldIds:     () => heldRef.current,
+    refetch:     () => fetchOrders({ keepSelection: true }),
+  });
 
   const queueBadgeRef = useRef<HTMLDivElement>(null);
 
@@ -2775,6 +2826,12 @@ export function TintOperatorContent() {
         component returns null when samplingPopup is null, so mounting here
         unconditionally is safe. */}
     <SaveSamplingPopup result={samplingPopup} onClose={() => setSamplingPopup(null)} />
+
+    {/* Live feed only (tint step 5): his open job changed elsewhere while he had
+        a modal up or unsaved TI input — offered, never swapped under him. */}
+    {operatorLive.live && operatorLive.openJobChanged && (
+      <DetailChangedStrip onReload={operatorLive.reloadNow} />
+    )}
 
     {/* Same-formula reuse modal — new-shade save found existing matches.
         "Use" routes through applySuggestionToEntry (attaches the existing
