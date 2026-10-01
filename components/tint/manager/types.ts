@@ -75,6 +75,9 @@ export interface TintOrder {
   dispatchWindowId:   number | null;
   /** dispatch_slot_master.windowTime of that window, e.g. "16:00". */
   dispatchWindowTime: string | null;
+  /** orders.handAt (ISO) — the dealer collects. Spread onto the payload by the
+   *  route's `...o`; null/absent = not Hand. Read by the bar's Hand toggle. */
+  handAt?:            string | null;
 
   customer: {
     customerName:       string;
@@ -318,8 +321,18 @@ export interface BoardRow {
   seqRank:        number | null;
   canMoveUp:      boolean;
   canMoveDown:    boolean;
-  /** Bulk-selectable. Whole ORDERS still WAITING only — see buildBoardRows. */
+  /** Click-selectable (2026-10-01, tabs build step 6): whole ORDERS whose
+   *  tinting is not finished — assigned, tinting or paused. Splits and today's
+   *  finished rows are not: every bar action acts on a whole bill. */
   selectable:     boolean;
+  /** The Floor dispatch window — orders only; null on split / finished rows. */
+  slotDate:       string | null;
+  slotWindowId:   number | null;
+  slotWindowTime: string | null;
+  /** dispatchStatus === "hold" (orders only). */
+  isHeld:         boolean;
+  /** orders.handAt set (orders only). */
+  isHand:         boolean;
   order?:         TintOrder;
   split?:         SplitCard;
   completed?:     CompletedAssignment;

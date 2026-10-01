@@ -55,7 +55,18 @@ export interface CiReasonOption {
   sortOrder: number;
 }
 
-type Tab = "ci" | "cancel";
+export type OffFloorTab = "ci" | "cancel";
+type Tab = OffFloorTab;
+
+/** Where the two tabs post. Floor's own routes unless a caller says otherwise. */
+export interface OffFloorEndpoints {
+  /** Raise CI — body { orderIds, reasonId, remark? } → { raised, skipped }. */
+  ci: string;
+  /** Cancel — body { action: "cancel", orderIds, reasonKey, remark? } → { done, failed }. */
+  cancel: string;
+}
+
+const FLOOR_ENDPOINTS: OffFloorEndpoints = { ci: "/api/floor/ci", cancel: "/api/floor/actions" };
 
 interface NotDone {
   orderId: number;
@@ -70,6 +81,9 @@ export function OffFloorDialog({
   onApplied,
   onBusyChange,
   onClose,
+  endpoints = FLOOR_ENDPOINTS,
+  initialTab = "ci",
+  tabs = ["ci", "cancel"],
 }: {
   bills: OffFloorFormBill[];
   /** Active CI reasons, pinned first then sortOrder. null while loading. */
@@ -83,9 +97,21 @@ export function OffFloorDialog({
   /** Lets floor-page's Esc refuse to close the form mid-request. */
   onBusyChange: (busy: boolean) => void;
   onClose: () => void;
+  /**
+   * Where the tabs post (2026-10-01, Tint Manager tabs build step 6). Default =
+   * Floor's routes, so Floor is unchanged. The Tint Manager passes
+   * /api/tint/manager/ci and /api/tint/manager/cancel — same bodies, same
+   * response shapes (they call the same shared lib functions).
+   */
+  endpoints?: OffFloorEndpoints;
+  /** The tab the form opens on. Default "ci" — Floor's owner rule, unchanged. */
+  initialTab?: Tab;
+  /** The tabs to offer (a caller without a tick hides that tab). Default both. */
+  tabs?: readonly Tab[];
 }) {
-  // 🔴 RAISE CI IS THE DEFAULT TAB, EVERY TIME THE FORM OPENS (owner).
-  const [tab, setTab] = useState<Tab>("ci");
+  // 🔴 RAISE CI IS THE DEFAULT TAB, EVERY TIME THE FORM OPENS (owner) — for
+  // Floor. A caller may open on another tab it offers (initialTab).
+  const [tab, setTab] = useState<Tab>(tabs.includes(initialTab) ? initialTab : tabs[0]);
   // Each tab keeps its own answers — switching tabs loses nothing typed.
   const [ciReasonId, setCiReasonId] = useState<number | null>(null);
   const [ciRemark, setCiRemark] = useState("");
@@ -123,7 +149,7 @@ export function OffFloorDialog({
     const preRefused: NotDone[] = refused.map((b) => ({ orderId: b.orderId, obdNumber: b.obdNumber, reason: b.refusal ?? "" }));
     try {
       if (tab === "ci") {
-        const res = await fetch("/api/floor/ci", {
+        const res = await fetch(endpoints.ci, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orderIds, reasonId: ciReasonId, remark: trimmed === "" ? undefined : trimmed }),
@@ -151,7 +177,7 @@ export function OffFloorDialog({
         }
         setResult({ tab, done: body.raised.length, notDone });
       } else {
-        const res = await fetch("/api/floor/actions", {
+        const res = await fetch(endpoints.cancel, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -238,13 +264,13 @@ export function OffFloorDialog({
               <h3 className="text-[18px] font-bold text-ink-900">{title}</h3>
 
               {/* ── The two tabs — Raise CI first (owner) ───────────────────── */}
-              <div className="mt-4 grid grid-cols-2 rounded-[10px] bg-ink-50 p-1">
+              <div className={`mt-4 grid ${tabs.length === 1 ? "grid-cols-1" : "grid-cols-2"} rounded-[10px] bg-ink-50 p-1`}>
                 {(
                   [
                     { key: "ci", label: "Raise CI", hint: "Return goes to billing" },
                     { key: "cancel", label: "Cancel", hint: "Bill stops here" },
                   ] as const
-                ).map((t) => (
+                ).filter((t) => tabs.includes(t.key)).map((t) => (
                   <button
                     key={t.key}
                     type="button"

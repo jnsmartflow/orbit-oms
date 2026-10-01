@@ -18,6 +18,8 @@ import { ObdCode } from "@/components/shared/obd-code";
 // row in a section belongs to them. The avatar still ships in board-bits for the
 // rail and the detail panel.
 import { StatusPill, formatSmu } from "./board-bits";
+import { BoardSlotCell } from "./board-slot-cell";
+import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { BoardGroup, BoardRow } from "./types";
 
 // ── Column widths ────────────────────────────────────────────────────────────
@@ -38,7 +40,12 @@ import type { BoardGroup, BoardRow } from "./types";
 //
 // ⚠ WIDTHS MAP POSITIONALLY. Moving a column means moving its <col>, its <th>
 // and its <td> together; any one left behind shunts every column to its right.
-const COLS = ["4%", "4%", "13%", "5%", "17%", "20%", "9%", "6%", "9%", "13%"] as const;
+//
+// 2026-10-01 (tabs build step 6): the ☐ column went (a row click selects) and
+// two arrived — Slot after Route, and ⋯ (the detail panel) at the row's end:
+// # 4 · OBD 12 · SMU 4 · Bill To 15 · Ship To 19 · Route 8 · Slot 11 · Vol 5 ·
+// Art. 8 · Status 11 · ⋯ 3  = 100.
+const COLS = ["4%", "12%", "4%", "15%", "19%", "8%", "11%", "5%", "8%", "11%", "3%"] as const;
 
 // ── Typography, copied from Floor's floor-table.tsx ──────────────────────────
 // Floor's four class strings verbatim, so header, cells and pills read
@@ -54,15 +61,27 @@ const TD_NARROW      = "px-1 py-2 text-center text-[11px] border-b border-[#f0f0
 
 export function BoardTable({
   groups, selection, onToggleRow, onOpenRow, onReorder, busyKeys,
+  windows, canSlot, slotBusy, onSetSlot, barUp = false,
 }: {
   groups:      BoardGroup[];
   selection:   Set<string>;
+  /** A row click — selects / deselects a selectable row (step 6). */
   onToggleRow: (row: BoardRow) => void;
+  /** The row's ⋯ — opens the detail panel. */
   onOpenRow:   (row: BoardRow) => void;
   onReorder:   (row: BoardRow, direction: "up" | "down") => void;
   /** Rows with a reorder request in flight — arrows go inert so a double-tap
    *  cannot queue two swaps against a list the first one is about to change. */
   busyKeys:    Set<string>;
+  /** Active dispatch windows for the Slot cell's picker. */
+  windows:     DispatchWindow[];
+  /** tint_manager canEdit && tint_slot canEdit — without it the cell is read-only. */
+  canSlot:     boolean;
+  /** A write is in flight — the slot cells go inert. */
+  slotBusy:    boolean;
+  onSetSlot:   (row: BoardRow, v: DispatchSlotValue) => void;
+  /** The bottom bar is up — pad the scroller so it never covers the last rows. */
+  barUp?:      boolean;
 }) {
   const total = groups.reduce((n, g) => n + g.rows.length, 0);
 
@@ -81,29 +100,30 @@ export function BoardTable({
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto bg-white">
+      <div className={cn("flex-1 overflow-y-auto bg-white", barUp && "pb-[96px]")}>
         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
           <colgroup>
             {COLS.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
           <thead>
             <tr>
-              <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")} />
               <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")}>#</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>OBD</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>SMU</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Route</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Slot</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Art.</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Status</th>
+              <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")} />
             </tr>
           </thead>
           <tbody>
             {total === 0 && (
               <tr>
-                <td colSpan={10} className="text-center text-[11.5px] text-gray-400 py-10">
+                <td colSpan={11} className="text-center text-[11.5px] text-gray-400 py-10">
                   Nothing on the floor. Assign an OBD from the rail to get started.
                 </td>
               </tr>
@@ -117,6 +137,10 @@ export function BoardTable({
                 onOpenRow={onOpenRow}
                 onReorder={onReorder}
                 busyKeys={busyKeys}
+                windows={windows}
+                canSlot={canSlot}
+                slotBusy={slotBusy}
+                onSetSlot={onSetSlot}
               />
             ))}
           </tbody>
@@ -128,6 +152,7 @@ export function BoardTable({
 
 function GroupSection({
   group, selection, onToggleRow, onOpenRow, onReorder, busyKeys,
+  windows, canSlot, slotBusy, onSetSlot,
 }: {
   group:       BoardGroup;
   selection:   Set<string>;
@@ -135,6 +160,10 @@ function GroupSection({
   onOpenRow:   (row: BoardRow) => void;
   onReorder:   (row: BoardRow, direction: "up" | "down") => void;
   busyKeys:    Set<string>;
+  windows:     DispatchWindow[];
+  canSlot:     boolean;
+  slotBusy:    boolean;
+  onSetSlot:   (row: BoardRow, v: DispatchSlotValue) => void;
 }) {
   return (
     <>
@@ -142,7 +171,7 @@ function GroupSection({
         {/* Name only. The job count that used to trail it was noise: the rows
             it counted are directly underneath, and the table header already
             carries the board total. */}
-        <td colSpan={10} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
+        <td colSpan={11} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
           {group.operatorName}
         </td>
       </tr>
@@ -155,6 +184,10 @@ function GroupSection({
           onOpen={() => onOpenRow(r)}
           onReorder={onReorder}
           busy={busyKeys.has(r.key)}
+          windows={windows}
+          canSlot={canSlot}
+          slotBusy={slotBusy}
+          onSetSlot={(v) => onSetSlot(r, v)}
         />
       ))}
     </>
@@ -162,7 +195,7 @@ function GroupSection({
 }
 
 function Row({
-  row, selected, onToggle, onOpen, onReorder, busy,
+  row, selected, onToggle, onOpen, onReorder, busy, windows, canSlot, slotBusy, onSetSlot,
 }: {
   row:       BoardRow;
   selected:  boolean;
@@ -170,31 +203,25 @@ function Row({
   onOpen:    () => void;
   onReorder: (row: BoardRow, direction: "up" | "down") => void;
   busy:      boolean;
+  windows:   DispatchWindow[];
+  canSlot:   boolean;
+  slotBusy:  boolean;
+  onSetSlot: (v: DispatchSlotValue) => void;
 }) {
+  // A ROW CLICK SELECTS (2026-10-01, step 6 — owner decision 5). No checkbox:
+  // the selected row fills brand-50 with a brand bar on its first cell (the
+  // mockup's tr.row.sel). A row that cannot be selected (a split, a job
+  // finished today) does nothing on click; its ⋯ still opens the panel.
   return (
-    <tr className="group cursor-pointer hover:bg-gray-50" onClick={onOpen}>
-      {/* Checkbox. A row that cannot be bulk-selected renders NOTHING here —
-          the padlock that used to sit in this cell said "forbidden" on three of
-          the four statuses, which is most of a busy board, and the reason is
-          already on the row (its Status pill) and in the panel's disabled
-          action. An empty cell is the honest affordance: no checkbox, no claim. */}
-      <td className={TD_NARROW} onClick={(e) => e.stopPropagation()}>
-        {row.selectable && (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label={selected ? "Deselect row" : "Select row"}
-            className={cn(
-              "w-3.5 h-3.5 border-[1.5px] rounded-[4px] inline-flex items-center justify-center text-[9px] align-middle transition-opacity",
-              selected
-                ? "bg-brand-600 border-brand-600 text-white opacity-100"
-                : "bg-white border-gray-300 text-transparent opacity-0 group-hover:opacity-100",
-            )}
-          >
-            ✓
-          </button>
-        )}
-      </td>
+    <tr
+      className={cn(
+        "group",
+        row.selectable ? "cursor-pointer" : "cursor-default",
+        selected ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
+      )}
+      onClick={row.selectable ? onToggle : undefined}
+      aria-selected={row.selectable ? selected : undefined}
+    >
 
       {/* # — the queue rank.
           ⚠ THE WRAPPER IS THE SAME ON EVERY ROW, and that is the whole point.
@@ -327,6 +354,24 @@ function Row({
       </td>
 
       <td className={TD}>{row.route ?? "—"}</td>
+      {/* Slot — the bill's Floor dispatch window; one click opens Floor's
+          picker (board-slot-cell.tsx). Split and finished rows carry no
+          window of their own on this board — a dash. */}
+      <td className={TD}>
+        {row.type === "order" && row.selectable ? (
+          <BoardSlotCell
+            date={row.slotDate}
+            windowId={row.slotWindowId}
+            windowTime={row.slotWindowTime}
+            windows={windows}
+            canSlot={canSlot}
+            disabled={slotBusy}
+            onPick={onSetSlot}
+          />
+        ) : (
+          <span className="text-[#9ca3af]">—</span>
+        )}
+      </td>
       <td className={cn(TD, "text-right tabular-nums")}>{row.volumeLitres ?? 0}</td>
       {/* NULL articleTag means UNKNOWN, never zero — only ~40% of live tint OBDs
           carry one at all, so an em dash is the honest render. */}
@@ -336,6 +381,17 @@ function Row({
 
       <td className={TD}>
         <StatusPill status={row.status} at={row.statusAt} pauseCount={row.pauseCount} />
+      </td>
+      {/* ⋯ — the detail panel. Its own click; it never selects the row. */}
+      <td className={TD_NARROW} onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onOpen}
+          title="Bill details"
+          className="rounded-md px-1 text-[15px] leading-5 tracking-[1px] text-ink-400 hover:bg-ink-50 hover:text-ink-900"
+        >
+          ⋯
+        </button>
       </td>
     </tr>
   );

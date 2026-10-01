@@ -119,14 +119,20 @@ function rowFromOrder(o: TintOrder, status: BoardRowStatus): BoardRow | null {
     seqRank:         null,
     canMoveUp:       false,
     canMoveDown:     false,
-    // Bulk targets are whole ORDERS still WAITING. In-progress and paused are
-    // excluded because the server now REJECTS them with a 400 (the upsert would
-    // mint a second assignment row and orphan the first one's startedAt /
-    // accumulatedMinutes / pauseCount / currentProgress), and a done job cannot
-    // be moved at all. Splits are excluded because they reassign through a
-    // different endpoint (/api/tint/manager/splits/reassign) — the bulk bar
-    // drives the whole-order one only.
-    selectable:      status === "assigned",
+    // Selectable since 2026-10-01 (step 6): every whole ORDER still in the tint
+    // room — assigned, tinting or paused — because the bar acts on whole bills
+    // (hold, hand, slot, ship-to, Stop & cancel, CI). RE-ASSIGN stays
+    // assigned-only: the bar disables it when the selection holds a running or
+    // paused job (the server 400s them — the upsert would mint a second
+    // assignment row and orphan the first one's startedAt / accumulatedMinutes /
+    // pauseCount / currentProgress). Splits stay unselectable — they reassign
+    // through their own endpoint and every bar action is a whole-bill one.
+    selectable:      status !== "tinting_done",
+    slotDate:        o.dispatchTargetDate ?? null,
+    slotWindowId:    o.dispatchWindowId ?? null,
+    slotWindowTime:  o.dispatchWindowTime ?? null,
+    isHeld:          o.dispatchStatus === "hold",
+    isHand:          o.handAt != null,
     order:           o,
   };
 }
@@ -165,6 +171,11 @@ function rowFromSplit(s: SplitCard, status: BoardRowStatus): BoardRow {
     canMoveUp:       false,
     canMoveDown:     false,
     selectable:      false,
+    slotDate:        null,
+    slotWindowId:    null,
+    slotWindowTime:  null,
+    isHeld:          false,
+    isHand:          false,
     split:           s,
   };
 }
@@ -199,6 +210,11 @@ function rowFromCompletedAssignment(a: CompletedAssignment): BoardRow {
     canMoveUp:       false,
     canMoveDown:     false,
     selectable:      false,
+    slotDate:        null,
+    slotWindowId:    null,
+    slotWindowTime:  null,
+    isHeld:          false,
+    isHand:          false,
     completed:       a,
   };
 }
