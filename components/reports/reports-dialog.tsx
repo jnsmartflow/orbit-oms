@@ -230,7 +230,21 @@ export function ReportsDialog({
                 column is ~550px: the period picker's 392px popover, anchored
                 134px in, then fits without a horizontal scroll. */}
             <div className="min-h-0 overflow-auto">
-              {current?.id === "trip-detail" && <TripDetailPanel deliveryTypes={options.deliveryTypes} />}
+              {current?.id === "trip-detail" && (
+                <TripDetailPanel key="trip-detail" deliveryTypes={options.deliveryTypes} />
+              )}
+              {current?.id === "trip-detail-old" && (
+                // Same panel, the old-layout route. Keyed so switching between
+                // the two starts each with its own period and type.
+                <TripDetailPanel
+                  key="trip-detail-old"
+                  deliveryTypes={options.deliveryTypes}
+                  endpoint="/api/reports/trip-detail-old"
+                  title="Trip Detail — Old Format"
+                  description="The old NTS layout, for sheets that still expect it."
+                  filePrefix="TripDetailOld"
+                />
+              )}
               {current?.id === "tint-summary" && (
                 <ReportsTopBar params={tintParams} roster={options.roster} onParamsChange={setTintParams} />
               )}

@@ -21,6 +21,7 @@ import {
   PICK_CHECKED,
   DISPATCHED,
 } from "@/lib/workflow-stages";
+import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 
 /** One bill on one trip, already resolved to what the sheet prints. `null` =
  *  unknown, which the workbook writes as NO CELL (never 0, "—" or "N/A"). */
@@ -57,6 +58,27 @@ export interface TripDetailRow {
   tripNote: string | null;
   /** Sort key only — not a column. */
   dropSeq: number;
+
+  // ── Fields only the OLD NTS layout prints (trip-detail-old-workbook.ts).
+  // The current workbook does not read them, so its output is unchanged. ──
+
+  /** dispatch_slot_master.windowTime alone — no label fallback. */
+  dispatchWindowTime: string | null;
+  /** vehicle_master.category alone — no trips.vehicleSize fallback. */
+  vehicleCategory: string | null;
+  /** The BILL-TO party's area, through delivery_point_master by its code. */
+  billToArea: string | null;
+  /** INV or PROMO — see invTypeFor(). */
+  invType: "INV" | "PROMO";
+  /** The TRIP's totals over the bills in this report, repeated on each row.
+   *  Gifts add 0 L / 0 kg (lib/orders/gift.ts); unknown kg adds nothing. */
+  tripTotalLitres: number;
+  tripTotalKg: number;
+  /** Distinct stops on the trip that hold at least one bill in this report. */
+  tripDealerCount: number;
+  /** trips.createdBy.name and trips.createdAt. */
+  entryBy: string | null;
+  entryAt: Date;
 }
 
 export interface TripDetailParams {
@@ -134,6 +156,12 @@ function istDay(d: Date | null): Date | null {
   return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
 }
 
+/** INV or PROMO for one bill — the ONE place both workbooks get it from. */
+function invTypeFor(materialType: string | null): "INV" | "PROMO" {
+  // GIFTS = free goods = PROMO; FG = ordinary finished goods = INV. Owner's rule, 2026-10-01.
+  return isGiftBill(materialType) ? "PROMO" : "INV";
+}
+
 const blank = (s: string | null | undefined): string | null => {
   if (s === null || s === undefined) return null;
   const t = s.trim();
@@ -166,6 +194,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       dispatchWindow: { select: { windowTime: true, label: true } },
       vehicle: { select: { vehicleNo: true, category: true } },
       transporter: { select: { name: true } },
+      createdAt: true,
+      createdBy: { select: { name: true } },
     },
   });
   if (trips.length === 0) return [];
@@ -214,6 +244,7 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       workflowStage: true,
       grossWeight: true,
       volume: true,
+      materialType: true,
     },
   });
   if (orders.length === 0) return [];
@@ -262,8 +293,28 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
     : [];
   const custById = new Map(customers.map((c) => [c.id, c]));
 
+  // ── 7. The bill-to party's area (old layout's Customer Area) ─────────────
+  // SAP's bill-to code → delivery_point_master.customerCode → area.
+  const billToCodes = Array.from(
+    new Set(
+      Array.from(billToByObd.values())
+        .map((b) => blank(b.code))
+        .filter((c): c is string => c !== null),
+    ),
+  );
+  const billToCusts = billToCodes.length
+    ? await prisma.delivery_point_master.findMany({
+        where: { customerCode: { in: billToCodes } },
+        select: { customerCode: true, area: { select: { name: true } } },
+      })
+    : [];
+  const billToAreaByCode = new Map(billToCusts.map((c) => [c.customerCode, c.area.name]));
+
   // ── Assemble ─────────────────────────────────────────────────────────────
   const rows: TripDetailRow[] = [];
+  // Parallel to `rows` (same index) — needed for the totals, not columns.
+  const giftByRow: boolean[] = [];
+  const dropIdByRow: number[] = [];
   for (const o of orders) {
     const drop = o.tripDropId !== null ? dropById.get(o.tripDropId) : undefined;
     const trip = drop ? tripById.get(drop.tripId) : undefined;
@@ -321,7 +372,43 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       billStage: billStageWord(o.workflowStage),
       tripNote: blank(trip.note),
       dropSeq: drop.dropSeq,
+
+      dispatchWindowTime: blank(trip.dispatchWindow?.windowTime),
+      vehicleCategory: blank(trip.vehicle?.category),
+      billToArea: (() => {
+        const code = blank(billTo?.code);
+        return code !== null ? (billToAreaByCode.get(code) ?? null) : null;
+      })(),
+      invType: invTypeFor(o.materialType),
+      // Filled in below, once every bill of the trip is known.
+      tripTotalLitres: 0,
+      tripTotalKg: 0,
+      tripDealerCount: 0,
+      entryBy: blank(trip.createdBy.name),
+      entryAt: trip.createdAt,
     });
+    giftByRow.push(isGiftBill(o.materialType));
+    dropIdByRow.push(drop.id);
+  }
+
+  // ── Per-trip totals (old layout's Total LT / Total KG / Total Dealer) ─────
+  // Over the bills in THIS report (held and removed bills are already out).
+  // Gifts add 0 L and 0 kg — the house rule (lib/orders/gift.ts) every other
+  // trip total follows; an unknown kg adds nothing.
+  const totals = new Map<string, { litres: number; kg: number; drops: Set<number> }>();
+  rows.forEach((r, i) => {
+    const t = totals.get(r.tripNo) ?? { litres: 0, kg: 0, drops: new Set<number>() };
+    t.litres += loadLitres(r.litres, giftByRow[i]);
+    t.kg += loadKg(r.kg, giftByRow[i]) ?? 0;
+    t.drops.add(dropIdByRow[i]);
+    totals.set(r.tripNo, t);
+  });
+  for (const r of rows) {
+    const t = totals.get(r.tripNo);
+    if (!t) continue;
+    r.tripTotalLitres = t.litres;
+    r.tripTotalKg = t.kg;
+    r.tripDealerCount = t.drops.size;
   }
 
   // Trip Date, Trip No, stop order, OBD No.

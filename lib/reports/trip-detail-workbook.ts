@@ -54,6 +54,19 @@ const COLUMNS: { header: string; width: number }[] = [
 
 const SHEET_NAME = "Trip Detail";
 const DATE_FORMAT = "dd-mm-yyyy";
+
+/**
+ * 🔴 THE DATE FORMAT MUST SIT AT numFmtId ≥ 164. Left to itself, xlsx 0.18.5
+ * files a new custom format under id 60 — inside Excel's RESERVED built-in
+ * range (0-163; 50-81 are locale-specific East-Asian date formats). Excel then
+ * ignores the formatCode we wrote and applies its own idea of id 60, which is
+ * how a plain whole-day serial came out as "2026-09-21 00:00:00" (fixed
+ * 2026-10-01). Registering the pattern at 164 — the first id Excel leaves to
+ * the file — makes the writer emit `<numFmt numFmtId="164" …>`. The cell
+ * values were always date-only (whole-day serials); only the format was wrong.
+ * SSF's table is module-global; loading the same pattern twice is harmless.
+ */
+XLSX.SSF.load(DATE_FORMAT, 164);
 /** 0-based column indexes that hold dates (Trip Date, Invoice Date). */
 const DATE_COLS = [0, 20];
 

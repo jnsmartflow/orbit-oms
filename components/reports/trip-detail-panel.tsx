@@ -18,10 +18,24 @@ import { PeriodPicker, istToday, type PeriodValue } from "@/components/reports/p
 // (components/admin/customers-table.tsx). The SERVER still owns the filename:
 // it is read back from Content-Disposition, never rebuilt here.
 
+const DEFAULT_DESCRIPTION =
+  "Every bill loaded on a trip, one row per bill, as an Excel file. Held bills, removed bills and cancelled trips are not included.";
+
+/** One panel for both Trip Detail layouts. Defaults are the current layout;
+ *  the Old Format passes its own route, title, description and fallback
+ *  filename prefix. The server still names the file. */
 export function TripDetailPanel({
   deliveryTypes,
+  endpoint = "/api/reports/trip-detail",
+  title = "Trip Detail",
+  description = DEFAULT_DESCRIPTION,
+  filePrefix = "TripDetail",
 }: {
   deliveryTypes: { id: number; name: string }[];
+  endpoint?: string;
+  title?: string;
+  description?: string;
+  filePrefix?: string;
 }) {
   const [period, setPeriod] = useState<PeriodValue>(() => {
     const t = istToday();
@@ -37,7 +51,7 @@ export function TripDetailPanel({
     try {
       const sp = new URLSearchParams({ from: period.from, to: period.to });
       if (typeId !== "") sp.set("deliveryTypeId", typeId);
-      const res = await fetch(`/api/reports/trip-detail?${sp.toString()}`, { cache: "no-store" });
+      const res = await fetch(`${endpoint}?${sp.toString()}`, { cache: "no-store" });
 
       if (res.status === 403) {
         setError("You do not have access to this report.");
@@ -57,7 +71,7 @@ export function TripDetailPanel({
 
       const blob = await res.blob();
       const cd = res.headers.get("Content-Disposition") ?? "";
-      const name = /filename="([^"]+)"/.exec(cd)?.[1] ?? `TripDetail-${period.from}-to-${period.to}.xlsx`;
+      const name = /filename="([^"]+)"/.exec(cd)?.[1] ?? `${filePrefix}-${period.from}-to-${period.to}.xlsx`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -75,11 +89,8 @@ export function TripDetailPanel({
 
   return (
     <div className="flex max-w-[560px] flex-col px-6 py-[22px]">
-      <h2 className="mb-1 text-[17px] font-bold text-gray-900">Trip Detail</h2>
-      <p className="mb-5 text-[12px] leading-relaxed text-gray-400">
-        Every bill loaded on a trip, one row per bill, as an Excel file. Held bills, removed bills and
-        cancelled trips are not included.
-      </p>
+      <h2 className="mb-1 text-[17px] font-bold text-gray-900">{title}</h2>
+      <p className="mb-5 text-[12px] leading-relaxed text-gray-400">{description}</p>
 
       <div className="mb-3.5 grid max-w-[420px] grid-cols-[96px_1fr] items-center gap-3.5">
         <label htmlFor="td-period" className="text-[12.5px] text-gray-600">

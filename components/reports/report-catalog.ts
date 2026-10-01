@@ -10,7 +10,7 @@
 
 import type { REPORT_PAGE_KEYS } from "@/lib/permissions";
 
-export type ReportId = "trip-detail" | "tint-summary" | "ti-report";
+export type ReportId = "trip-detail" | "trip-detail-old" | "tint-summary" | "ti-report";
 
 export interface ReportCatalogItem {
   id: ReportId;
@@ -23,6 +23,9 @@ export interface ReportCatalogItem {
 
 export const REPORT_CATALOG: readonly ReportCatalogItem[] = [
   { id: "trip-detail",  label: "Trip Detail",  pageKey: "reports_trip_detail",  module: "Trip" },
+  // Same rows, the old NTS 26-column layout. Same tick — it is the same report
+  // in another shape, not a new permission.
+  { id: "trip-detail-old", label: "Trip Detail — Old Format", pageKey: "reports_trip_detail", module: "Trip" },
   { id: "tint-summary", label: "Tint Summary", pageKey: "reports_tint_summary", module: "Tint" },
   { id: "ti-report",    label: "TI Report",    pageKey: "reports_ti_report",    module: "Tint" },
 ];
