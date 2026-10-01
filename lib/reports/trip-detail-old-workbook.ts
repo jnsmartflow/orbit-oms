@@ -1,6 +1,6 @@
 // lib/reports/trip-detail-old-workbook.ts
 //
-// The Trip Detail rows in the OLD NTS layout — the 26-column sheet the depot's
+// The Trip Detail rows in the OLD NTS layout — the 28-column sheet the depot's
 // existing workbooks were built against. Read by
 // app/api/reports/trip-detail-old/route.ts and nothing else.
 //
@@ -16,7 +16,7 @@ import * as XLSX from "xlsx";
 import type { TripDetailRow } from "./trip-detail-data";
 
 /**
- * The 26 headers, character for character from the old file — INCLUDING the
+ * The 28 headers, character for character from the old file — INCLUDING the
  * "Deilvery No" typo and the trailing dots on "Vehicle No." / "Mobile No." /
  * "Del. Type". Downstream sheets key off these strings. Do not fix one.
  * Widths are cosmetic.
@@ -38,6 +38,7 @@ const COLUMNS: { header: string; width: number }[] = [
   { header: "Del. Type", width: 9 },
   { header: "Customer Area", width: 16 },
   { header: "Site Area", width: 16 },
+  { header: "Other Delivery Area", width: 18 },
   { header: "No of Article", width: 11 },
   { header: "LT", width: 9 },
   { header: "Dispatch LT", width: 11 },
@@ -46,6 +47,7 @@ const COLUMNS: { header: string; width: number }[] = [
   { header: "Total Dealer", width: 11 },
   { header: "KG", width: 9 },
   { header: "INV TYPE", width: 9 },
+  { header: "Remark", width: 30 },
   { header: "Entry By", width: 16 },
   { header: "Entry Date", width: 22 },
 ];
@@ -102,8 +104,13 @@ function delType(name: string): string {
  * stop order, then OBD (getTripDetailRows) — i.e. by trip, then as the
  * trip's stops run.
  *
- * Site = the ship-to is a DIFFERENT party from the bill-to (codes differ).
- * When they are the same party, Site Name and Site Area are blank.
+ * Three places, owner's rule 2026-10-01 — A the dealer billed, B SAP's
+ * ship-to, C where the floor actually sent it:
+ *   Customer Code / Name / Area  = A, always.
+ *   Site Name / Site Area        = B, only when B is a real site that is not A
+ *                                  (isSiteDelivery() in trip-detail-data.ts —
+ *                                  the same rule as the new layout's Site).
+ *   Remark / Other Delivery Area = C's name / area, only when redirected.
  *
  * An empty range returns a header-only workbook.
  */
@@ -111,8 +118,6 @@ export function buildTripDetailOldWorkbook(rows: readonly TripDetailRow[]): Arra
   const sheet: Cell[][] = [COLUMNS.map((c) => c.header)];
 
   for (const r of rows) {
-    const hasSite =
-      r.shipToCode !== null && (r.billToCode === null || r.shipToCode !== r.billToCode);
     sheet.push([
       r.tripNo,
       ddmmyyyy(r.tripDate),
@@ -126,10 +131,12 @@ export function buildTripDetailOldWorkbook(rows: readonly TripDetailRow[]): Arra
       r.obdNo,
       r.billToCode,
       r.billToName,
-      hasSite ? r.shipToName : null,
+      r.siteName,
       delType(r.deliveryType),
       r.billToArea,
-      hasSite ? r.area : null,
+      r.siteArea,
+      r.redirectArea, // Other Delivery Area — C's area
+
       num(r.articles),
       num(r.litres),
       num(r.litres), // Dispatch LT — the same value as LT, as the old file had it
@@ -138,6 +145,7 @@ export function buildTripDetailOldWorkbook(rows: readonly TripDetailRow[]): Arra
       String(r.tripDealerCount),
       num(r.kg),
       r.invType === "PROMO" ? "PROMO" : "INV",
+      r.redirectName, // Remark — C's name
       r.entryBy,
       istStamp(r.entryAt),
     ]);

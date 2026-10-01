@@ -41,6 +41,7 @@ export interface TripDetailRow {
   billToName: string | null;
   shipToCode: string | null;
   shipToName: string | null;
+  /** isSiteDelivery() — the same rule the old layout's Site columns use. */
   site: "Yes" | "No";
   area: string | null;
   route: string | null;
@@ -70,6 +71,14 @@ export interface TripDetailRow {
   billToArea: string | null;
   /** INV or PROMO — see invTypeFor(). */
   invType: "INV" | "PROMO";
+  /** B — SAP's ship-to, ONLY when isSiteDelivery() says it is a real site that
+   *  is not the billed party. Otherwise both null. */
+  siteName: string | null;
+  siteArea: string | null;
+  /** C — the floor's redirect target (shipToOverrideCustomer), when there is
+   *  one with a master row. Otherwise both null. */
+  redirectName: string | null;
+  redirectArea: string | null;
   /** The TRIP's totals over the bills in this report, repeated on each row.
    *  Gifts add 0 L / 0 kg (lib/orders/gift.ts); unknown kg adds nothing. */
   tripTotalLitres: number;
@@ -129,18 +138,43 @@ function billStageWord(stage: string): string | null {
   return PICK_STAGE_WORD[stage] ?? LADDER_LABEL.get(stage) ?? null;
 }
 
-/**
- * The "site" rule, as Floor applies it: a project SMU on a bill whose ship-to
- * was NOT overridden.
- *
- * ⚠ THERE IS NO SHARED HELPER. The same set and test are written out three
- * times — lib/floor/filter.ts:35, components/floor/floor-table.tsx:78-88 and
- * app/api/floor/order/[orderId]/route.ts:20 — with `isShipToOverride` being
- * `shipToOverrideCustomerId !== null` (lib/floor/queries.ts:968). This is a
- * fourth copy of that rule as written, not a new one. If the set changes, all
- * four move together.
- */
+/** The project SMUs — the same set Floor's own site badge uses
+ *  (lib/floor/filter.ts:35, components/floor/floor-table.tsx:78,
+ *  app/api/floor/order/[orderId]/route.ts:20). Here it is only the FALLBACK
+ *  for a ship-to point the master has not typed — see isSiteDelivery(). */
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
+
+/**
+ * Is SAP's ship-to (B) a real SITE, and a different party from the dealer
+ * billed (A)? The ONE site rule — both workbooks read its answer (`site`,
+ * `siteName`, `siteArea`). Owner's rule, 2026-10-01.
+ *
+ * 1. Same party → never a site: B's code equals A's code (SAP's own ship-to
+ *    and bill-to codes).
+ * 2. The PLACE decides, when the master says what it is: the ship-to point's
+ *    customerType (falling back to premisesType) — "Site" is a site, anything
+ *    else (Dealer / Shop …) is not. Verified 2026-10-01 over trip bills of the
+ *    last 60 days: the two fields always agree (Site/Site, Dealer/Shop).
+ * 3. Only when the point is UNTYPED (or not in the master) does the ORDER's
+ *    SMU decide — project SMU = site. 272 of the 378 project-SMU bills on
+ *    trips sat on untyped or unmatched points, so the fallback is needed.
+ *
+ * ⚠ Unlike Floor's badge, a ship-to REDIRECT does not unmark a site here: B is
+ * SAP's ship-to, and where the floor sent it (C) is reported separately.
+ */
+function isSiteDelivery(args: {
+  billToCode: string | null;
+  sapShipToCode: string | null;
+  shipToType: string | null;
+  smu: string | null;
+}): boolean {
+  const a = args.billToCode?.trim() || null;
+  const b = args.sapShipToCode?.trim() || null;
+  if (a !== null && b !== null && a === b) return false;
+  const type = args.shipToType?.trim() || null;
+  if (type !== null) return type.toLowerCase() === "site";
+  return args.smu !== null && PROJECT_SMUS.has(args.smu);
+}
 
 /**
  * orders.invoiceDate is a plain timestamp, not @db.Date. The import builds it
@@ -276,8 +310,15 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   // (lib/trips/drop-key.ts effectiveCustomerId) ─────────────────────────────
   const effId = (o: { customerId: number | null; shipToOverrideCustomerId: number | null }) =>
     o.shipToOverrideCustomerId ?? o.customerId;
+  // Also SAP's own ship-to point (customerId, "B") and the redirect target
+  // (shipToOverrideCustomerId, "C") — the effective id is always one of these
+  // two, so one read covers all three.
   const custIds = Array.from(
-    new Set(orders.map(effId).filter((id): id is number => id !== null)),
+    new Set(
+      orders
+        .flatMap((o) => [o.customerId, o.shipToOverrideCustomerId])
+        .filter((id): id is number => id !== null),
+    ),
   );
   const customers = custIds.length
     ? await prisma.delivery_point_master.findMany({
@@ -288,6 +329,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
           customerName: true,
           area: { select: { name: true } },
           primaryRoute: { select: { name: true } },
+          customerType: { select: { name: true } },
+          premisesType: { select: { name: true } },
         },
       })
     : [];
@@ -341,6 +384,24 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
     const litres = snap ? snap.totalVolume : o.volume;
     const articles = snap ? snap.totalArticle : null;
 
+    // B — SAP's own ship-to point (orders.customerId), and whether it is a site.
+    const sapShipTo = o.customerId !== null ? custById.get(o.customerId) : undefined;
+    const isSite = isSiteDelivery({
+      billToCode: billTo?.code ?? null,
+      sapShipToCode: o.shipToCustomerId,
+      shipToType: sapShipTo?.customerType?.name ?? sapShipTo?.premisesType?.name ?? null,
+      smu: o.smu,
+    });
+    // C — where the floor sent it. Only a master row carries a name and area;
+    // a legacy flag-only redirect (shipToOverride true, no id) stores no name
+    // anywhere on the order, so it leaves both blank. Never "(Unmatched)".
+    // An override pointing at SAP's own ship-to point (C = B) changed nothing,
+    // so it is not a redirect either (seen live: OBD 9109619675).
+    const redirect =
+      o.shipToOverrideCustomerId !== null && o.shipToOverrideCustomerId !== o.customerId
+        ? custById.get(o.shipToOverrideCustomerId)
+        : undefined;
+
     rows.push({
       tripDate: trip.tripDate,
       tripNo: trip.tripNumber,
@@ -356,8 +417,7 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       billToName: blank(billTo?.name),
       shipToCode: blank(cust?.customerCode) ?? blank(o.shipToCustomerId) ?? blank(drop.shipToCode),
       shipToName: blank(cust?.customerName) ?? blank(o.shipToCustomerName) ?? blank(drop.customerName),
-      site:
-        o.smu !== null && PROJECT_SMUS.has(o.smu) && o.shipToOverrideCustomerId === null ? "Yes" : "No",
+      site: isSite ? "Yes" : "No",
       area: blank(cust?.area.name) ?? blank(drop.areaName),
       route: blank(cust?.primaryRoute?.name) ?? blank(drop.routeName),
       obdNo: o.obdNumber,
@@ -380,6 +440,10 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
         return code !== null ? (billToAreaByCode.get(code) ?? null) : null;
       })(),
       invType: invTypeFor(o.materialType),
+      siteName: isSite ? (blank(sapShipTo?.customerName) ?? blank(o.shipToCustomerName)) : null,
+      siteArea: isSite ? blank(sapShipTo?.area.name) : null,
+      redirectName: blank(redirect?.customerName),
+      redirectArea: blank(redirect?.area.name),
       // Filled in below, once every bill of the trip is known.
       tripTotalLitres: 0,
       tripTotalKg: 0,
