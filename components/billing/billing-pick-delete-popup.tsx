@@ -48,6 +48,19 @@
 // The poll still pauses during a write and while the confirmation panel shows
 // (the queue holds the marker pause); while that is up the popup ignores the
 // provider's answers too, and takes its count from the queue.
+//
+// THE TINT MANAGER MOUNTS IT TOO (2026-10-01, tabs build step 8) with two
+// optional props — Billing passes neither, so nothing here changes for Billing:
+//   · base   — the API base (default PICK_DELETE_BASE, Billing's routes); the
+//              Tint Manager passes /api/tint/manager/pick-delete (owner "tint").
+//   · pollMs — outside Billing's BillingPickDeleteMarkerProvider there is no
+//              provider poll (useBillingPickDeleteMarkerValue is null there), so
+//              a host that wants the popup to appear on its own passes an
+//              interval and the popup polls its own marker. Skipped while a
+//              decision / confirmation holds the queue, as the provider is.
+// Both provider hooks are null-safe outside Billing: the live context defaults
+// to null (billing-live.tsx), the marker value to null and the pause /
+// subscription context to an inert API (billing-marker-provider.tsx).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -82,7 +95,15 @@ if (typeof window !== "undefined") {
 
 // ── The host ────────────────────────────────────────────────────────────────
 
-export function BillingPickDeletePopup() {
+export function BillingPickDeletePopup({
+  base = PICK_DELETE_BASE,
+  pollMs,
+}: {
+  /** API base for the marker and the queue. Default = Billing's routes. */
+  base?: string;
+  /** Own marker poll for a host with no Billing provider. Default: none. */
+  pollMs?: number;
+} = {}) {
   /** Actionable groups — from the marker, then from each queue load. */
   const [count, setCount] = useState(0);
   /** A write is in flight or the confirmation panel is up. */
@@ -103,7 +124,7 @@ export function BillingPickDeletePopup() {
     const seq = ++reqRef.current;
     lastCheckAtRef.current = Date.now();
     try {
-      const res = await fetch(`${PICK_DELETE_BASE}/marker`, { cache: "no-store" });
+      const res = await fetch(`${base}/marker`, { cache: "no-store" });
       if (!res.ok) return;
       const body = (await res.json()) as { count?: number };
       if (seq !== reqRef.current) return;
@@ -114,7 +135,17 @@ export function BillingPickDeletePopup() {
     } catch {
       // Silent — the next trigger or tick retries.
     }
-  }, []);
+  }, [base]);
+
+  // Own poll — ONLY when the host asks for one (pollMs). Billing never does:
+  // its provider polls. Held (a write / confirmation) → skip that tick.
+  useEffect(() => {
+    if (!pollMs) return;
+    const id = setInterval(() => {
+      if (!heldRef.current) void check();
+    }, pollMs);
+    return () => clearInterval(id);
+  }, [pollMs, check]);
 
   // First look on mount (the throttle cannot hold it — nothing has checked yet).
   useEffect(() => {
@@ -238,7 +269,7 @@ export function BillingPickDeletePopup() {
           </span>
           {count > 0 && <span className="ml-auto text-[12px] font-semibold text-warn-text">{count} left</span>}
         </div>
-        <PickDeleteQueue canEdit onState={onQueueState} />
+        <PickDeleteQueue canEdit onState={onQueueState} base={base} />
       </div>
     </div>,
     host,

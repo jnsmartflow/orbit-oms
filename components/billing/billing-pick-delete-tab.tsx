@@ -16,6 +16,14 @@
 //
 // 🔴 HIDE, NEVER DISABLE, FOR PERMISSION (CLAUDE_UI §10): without canEdit the
 // Undo column is not drawn at all.
+//
+// THE TINT MANAGER REUSES IT (2026-10-01, tabs build step 8) through three
+// optional props — Billing passes none, so its tab is unchanged:
+//   · base    — API base (default PICK_DELETE_BASE, Billing's routes);
+//   · columns — "tint" relabels Customer → "Site" (the column already shows the
+//               ship-to site first) and OBD → "OBD removed" (the deleted OBD on a
+//               pick delete, "—" on an All OK). Default "billing" = as before;
+//   · onCount — the decided-row count of the month shown, for a tab badge.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -41,7 +49,20 @@ const TH =
   "h-[32px] border-b border-ink-100 px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400 whitespace-nowrap overflow-hidden text-ellipsis";
 const TD = "h-[36px] border-b border-ink-50 px-3.5 text-[11px] text-ink-600 whitespace-nowrap overflow-hidden text-ellipsis";
 
-export function BillingPickDeleteTab({ canEdit }: { canEdit: boolean }) {
+export function BillingPickDeleteTab({
+  canEdit,
+  base = PICK_DELETE_BASE,
+  columns = "billing",
+  onCount,
+}: {
+  canEdit: boolean;
+  /** API base for list / undo. Default = Billing's routes. */
+  base?: string;
+  /** "tint" = the Tint Manager's labels (Site, OBD removed). Default "billing". */
+  columns?: "billing" | "tint";
+  /** Called with the decided-row count after every load. */
+  onCount?: (n: number) => void;
+}) {
   const [month, setMonth] = useState<string>(() => currentIstMonth(new Date()));
   const [data, setData] = useState<PickDeleteList | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -52,7 +73,7 @@ export function BillingPickDeleteTab({ canEdit }: { canEdit: boolean }) {
   const load = useCallback(async () => {
     const seq = ++reqRef.current;
     try {
-      const res = await fetch(`${PICK_DELETE_BASE}/list?month=${encodeURIComponent(month)}`, { cache: "no-store" });
+      const res = await fetch(`${base}/list?month=${encodeURIComponent(month)}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as PickDeleteList & { error?: string };
       if (seq !== reqRef.current) return;
       if (!res.ok) {
@@ -64,7 +85,12 @@ export function BillingPickDeleteTab({ canEdit }: { canEdit: boolean }) {
     } catch {
       if (seq === reqRef.current) setLoadError("Could not load the list — check the connection.");
     }
-  }, [month]);
+  }, [month, base]);
+
+  // The host's tab badge — the decided rows of the month on screen.
+  useEffect(() => {
+    if (data !== null) onCount?.(data.decided.length);
+  }, [data, onCount]);
 
   useEffect(() => {
     void load();
@@ -78,13 +104,13 @@ export function BillingPickDeleteTab({ canEdit }: { canEdit: boolean }) {
     async (row: PickDeleteDecidedRow) => {
       setBusy(true);
       setNotice(null);
-      const r = await postJson(`${PICK_DELETE_BASE}/undo`, { decisionId: row.id });
+      const r = await postJson(`${base}/undo`, { decisionId: row.id });
       setBusy(false);
       if (!r.ok) setNotice(String(r.data.error ?? "Undo did not go through."));
       else window.dispatchEvent(new Event(PICK_DELETE_CHECK_EVENT));
       await load();
     },
-    [load],
+    [load, base],
   );
 
   return (
@@ -113,7 +139,7 @@ export function BillingPickDeleteTab({ canEdit }: { canEdit: boolean }) {
             Loading…
           </div>
         ) : (
-          <DecidedTable rows={data.decided} canEdit={canEdit} busy={busy} onUndo={(row) => void undo(row)} />
+          <DecidedTable rows={data.decided} canEdit={canEdit} busy={busy} onUndo={(row) => void undo(row)} columns={columns} />
         )}
       </div>
     </div>
@@ -127,12 +153,15 @@ function DecidedTable({
   canEdit,
   busy,
   onUndo,
+  columns = "billing",
 }: {
   rows: PickDeleteDecidedRow[];
   canEdit: boolean;
   busy: boolean;
   onUndo: (row: PickDeleteDecidedRow) => void;
+  columns?: "billing" | "tint";
 }) {
+  const tint = columns === "tint";
   // SO · OBD · Customer · Decision · By · When · (Undo). Without canEdit the
   // Undo column is not drawn and Customer takes its width.
   const widths = canEdit ? [13, 20, 25, 13, 11, 10, 8] : [13, 20, 33, 13, 11, 10];
@@ -147,8 +176,8 @@ function DecidedTable({
         <thead>
           <tr>
             <th className={TH}>SO</th>
-            <th className={TH}>OBD</th>
-            <th className={TH}>Customer</th>
+            <th className={TH}>{tint ? "OBD removed" : "OBD"}</th>
+            <th className={TH}>{tint ? "Site" : "Customer"}</th>
             <th className={TH}>Decision</th>
             <th className={TH}>By</th>
             <th className={TH}>When</th>
@@ -174,9 +203,17 @@ function DecidedTable({
               return (
                 <tr key={r.id}>
                   <td className={`${TD} font-mono text-ink-900`}>{r.soNumber}</td>
-                  <td className={`${TD} font-mono`} title={r.obdNumbers.join(", ")}>
-                    {r.obdNumbers.join(", ")}
-                  </td>
+                  {tint ? (
+                    // "OBD removed": the deleted OBD on a pick delete (obdNumbers
+                    // is exactly that one there), nothing on an All OK.
+                    <td className={`${TD} font-mono`}>
+                      {r.kind === "pick_delete" ? r.obdNumbers.join(", ") : <span className="font-sans text-ink-400">—</span>}
+                    </td>
+                  ) : (
+                    <td className={`${TD} font-mono`} title={r.obdNumbers.join(", ")}>
+                      {r.obdNumbers.join(", ")}
+                    </td>
+                  )}
                   <td className={TD}>{customerOf(r.customerName)}</td>
                   <td className={TD}>
                     <span className={pill}>{label}</span>

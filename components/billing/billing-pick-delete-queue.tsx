@@ -53,8 +53,11 @@ import type {
   PickDeleteList,
 } from "@/lib/billing/pick-delete-types";
 
+/** Billing's Pick delete routes — the DEFAULT `base` of the queue, the popup
+ *  and the History tab. The Tint Manager passes its own base
+ *  (/api/tint/manager/pick-delete, same shapes, owner "tint" — 2026-10-01); a
+ *  Billing mount passes nothing and keeps hitting these. */
 export const PICK_DELETE_BASE = "/api/billing/pick-delete";
-const BASE = PICK_DELETE_BASE;
 
 /**
  * "Check the Pick delete count now." Fired on window by anything that knows a
@@ -153,9 +156,12 @@ export interface PickDeleteQueueState {
 export function PickDeleteQueue({
   canEdit,
   onState,
+  base = PICK_DELETE_BASE,
 }: {
   canEdit: boolean;
   onState?: (s: PickDeleteQueueState) => void;
+  /** API base for list / all-ok / delete / undo. Default = Billing's. */
+  base?: string;
 }) {
   // The list route also returns the History month; the queue reads only the
   // groups (ALL DATES), so any valid month will do.
@@ -173,7 +179,7 @@ export function PickDeleteQueue({
   const load = useCallback(async () => {
     const seq = ++reqRef.current;
     try {
-      const res = await fetch(`${BASE}/list?month=${encodeURIComponent(month)}`, { cache: "no-store" });
+      const res = await fetch(`${base}/list?month=${encodeURIComponent(month)}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as PickDeleteList & { error?: string };
       if (seq !== reqRef.current) return;
       if (!res.ok) {
@@ -185,7 +191,7 @@ export function PickDeleteQueue({
     } catch {
       if (seq === reqRef.current) setLoadError("Could not load the list — check the connection.");
     }
-  }, [month]);
+  }, [month, base]);
 
   useEffect(() => {
     void load();
@@ -231,7 +237,7 @@ export function PickDeleteQueue({
     async (g: PickDeleteGroup) => {
       setBusy(true);
       setNotice(null);
-      const r = await postJson(`${BASE}/all-ok`, { soNumber: g.soNumber, orderIds: g.orderIds });
+      const r = await postJson(`${base}/all-ok`, { soNumber: g.soNumber, orderIds: g.orderIds });
       setBusy(false);
       if (!r.ok) return fail(String(r.data.error ?? "All OK was not saved."));
       setJustDone({
@@ -243,14 +249,14 @@ export function PickDeleteQueue({
       });
       await load();
     },
-    [fail, load],
+    [fail, load, base],
   );
 
   const decideDelete = useCallback(
     async (g: PickDeleteGroup, b: PickDeleteBill) => {
       setBusy(true);
       setNotice(null);
-      const r = await postJson(`${BASE}/delete`, { orderId: b.orderId });
+      const r = await postJson(`${base}/delete`, { orderId: b.orderId });
       setBusy(false);
       if (!r.ok) return fail(String(r.data.error ?? "The bill was not pick deleted."));
       const kept = Array.isArray(r.data.keptObdNumbers) ? (r.data.keptObdNumbers as string[]) : [];
@@ -264,21 +270,21 @@ export function PickDeleteQueue({
       if (typeof r.data.warning === "string") setNotice(r.data.warning);
       await load();
     },
-    [fail, load],
+    [fail, load, base],
   );
 
   const undo = useCallback(
     async (decisionId: number, soNumber: string | null) => {
       setBusy(true);
       setNotice(null);
-      const r = await postJson(`${BASE}/undo`, { decisionId });
+      const r = await postJson(`${base}/undo`, { decisionId });
       setBusy(false);
       setJustDone(null);
       if (!r.ok) return fail(String(r.data.error ?? "Undo did not go through."));
       if (soNumber !== null) setFocusSo(soNumber);
       await load();
     },
-    [fail, load],
+    [fail, load, base],
   );
 
   // Tell the host what it needs to stay open or close — after each load, and

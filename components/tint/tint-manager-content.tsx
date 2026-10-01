@@ -51,7 +51,10 @@ import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-moda
 import { BoardRail } from "@/components/tint/manager/board-rail";
 import { BaseTiPanel } from "@/components/tint/manager/base-ti-panel";
 import { BoardTable } from "@/components/tint/manager/board-table";
-import { BoardTabs, BoardTabComingNext, type BoardTab } from "@/components/tint/manager/board-tabs";
+import { BoardTabs, type BoardTab } from "@/components/tint/manager/board-tabs";
+import { BoardPickDeleteTab, TINT_PICK_DELETE_BASE } from "@/components/tint/manager/board-pick-delete-tab";
+// Billing's blocking popup, REUSED with the tint base (2026-10-01, step 8).
+import { BillingPickDeletePopup } from "@/components/billing/billing-pick-delete-popup";
 import { BoardTiTab } from "@/components/tint/manager/board-ti-tab";
 // BoardAssignBar (board-assign-bar.tsx) is RETIRED, not deleted (CORE §3): the
 // bottom bar replaced it in tabs build step 6.
@@ -157,6 +160,9 @@ export function TintManagerContent() {
   const [cancelledRows, setCancelledRows] = useState<FloorCancelledRow[] | null>(null);
   const [cancelledError, setCancelledError] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<number | null>(null);
+  // The Pick delete tab's badge — its own decided-row count for the month shown
+  // (null until the tab has loaded once). Step 8.
+  const [pickDecidedCount, setPickDecidedCount] = useState<number | null>(null);
   // Bumped after every board reload so an open panel re-reads its bill.
   const [panelReload, setPanelReload] = useState(0);
   const [dialogBusy, setDialogBusy] = useState(false);
@@ -1458,6 +1464,7 @@ export function TintManagerContent() {
               ti:      basePending.length,
               ...(holdRows !== null ? { hold: holdRows.length } : {}),
               ...(cancelledRows !== null ? { ci: cancelledRows.length } : {}),
+              ...(pickDecidedCount !== null ? { pick: pickDecidedCount } : {}),
             }}
           />
           {activeTab === "tinting" && (
@@ -1527,9 +1534,11 @@ export function TintManagerContent() {
               onRestore={(r) => { void handleRestore(r); }}
             />
           )}
-          {/* Pick delete's body lands in build step 8; the tab is already gated
-              on its tick (board-tabs.tsx). */}
-          {activeTab === "pick" && <BoardTabComingNext label="Pick delete" />}
+          {/* Pick delete — the decision HISTORY (Billing's tab on the tint routes);
+              the tab itself is gated on tint_pick_delete canView (board-tabs.tsx). */}
+          {activeTab === "pick" && (
+            <BoardPickDeleteTab canEdit={access.canPickDelete} onCount={setPickDecidedCount} />
+          )}
 
           {barMode !== null && (
             <BoardBottomBar
@@ -1603,6 +1612,18 @@ export function TintManagerContent() {
             onPick: () => { setBarOpAnchor(null); void handleRailBase(); },
           } : undefined}
         />
+      )}
+
+      {/* ── Pick delete — Billing's BLOCKING popup on the Tint Manager's groups
+          (every bill SMU 74/77). Mounted only for tint_pick_delete canView AND
+          canEdit holders, exactly as Billing mounts its own (view-only → never
+          mounted, nothing polls). Outside Billing's marker provider it polls its
+          own marker (pollMs, the board's 15 s cadence). While open it makes every
+          other <body> child inert — rail, table, bottom bar, panel — and its
+          capture-phase key guard stops each keydown before this page's window
+          Esc listener, so the one Esc owner never fires behind it. */}
+      {access.canViewPickDelete && access.canPickDelete && (
+        <BillingPickDeletePopup base={TINT_PICK_DELETE_BASE} pollMs={15_000} />
       )}
 
       {offFloor && (
