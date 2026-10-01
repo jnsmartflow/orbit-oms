@@ -1,10 +1,11 @@
 // /so-lab order storage — live draft, saved drafts, favourite tiles, two star
-// lists (C.2a, 2026-10-01). A FORK of app/po2/v2-storage.ts.
+// lists. A FORK of app/po2/v2-storage.ts (C.2a 2026-10-01; server sync C.2b).
 //
-// 🔴 LOCAL ONLY IN C.2a, AND SCOPED PER SALES OFFICER. Every key is
-// `sopage_{soId}_*` — set once by setStorageScope(so.id) before the board reads
-// anything — so two salesmen sharing one phone never see each other's drafts.
-// C.2b moves these to the so_* tables (sql/2026-09-30-so-drafts-favourites.sql).
+// 🔴 THE DATABASE IS THE SOURCE OF TRUTH SINCE C.2b (Schema v27.49: so_saved_drafts,
+// so_live_drafts, so_fav_products, so_starred_dealers — see SERVER SYNC at the
+// foot). The `sopage_{soId}_*` keys here are the instant cache and offline copy,
+// SCOPED PER SALES OFFICER — set once by setStorageScope(so.id) before the board
+// reads anything — so two salesmen sharing one phone never see each other's data.
 //
 // 🔴 THIS FILE NEVER READS OR WRITES A po2_* KEY (owner, 2026-10-01: no import
 // of old /po2 phone data). /po2's two migration chains (po2_fav_customers →
@@ -301,9 +302,24 @@ export function labelFor(snapshot: V2Snapshot): string {
 
 // ── 1. The live draft — one object, overwritten as the order changes ───────
 
-export function saveLiveDraft(snapshot: V2Snapshot): void {
+/**
+ * Local write every time (the page debounces it at 400 ms); the SERVER copy
+ * follows the C.2b rules in liveSync — "edit" is throttled to once a minute,
+ * "screen" and "hide" go now (hide with fetch keepalive).
+ */
+export function saveLiveDraft(snapshot: V2Snapshot, reason: LiveSyncReason = "edit"): void {
   const entry: LiveDraft = { ...snapshot, version: 1, updatedAt: Date.now() };
   writeRaw(LIVE_KEY, entry);
+  liveSync(snapshot, reason);
+}
+
+/** This phone's copy with its stamp, 24 h-expired — for loadLiveDraftSynced. */
+function readLocalLive(): { snapshot: V2Snapshot; updatedAt: number } | null {
+  const parsed = readRaw(LIVE_KEY) as Partial<LiveDraft> | null;
+  if (!parsed || typeof parsed.updatedAt !== "number") return null;
+  const updatedAt = parsed.updatedAt;
+  const snapshot = loadLiveDraft();
+  return snapshot ? { snapshot, updatedAt } : null;
 }
 
 /**
@@ -337,8 +353,10 @@ export function loadLiveDraft(): V2Snapshot | null {
   });
 }
 
-export function clearLiveDraft(): void {
+/** Empty order: local key removed; the server row is DELETEd once (liveSync). */
+export function clearLiveDraft(reason: LiveSyncReason = "edit"): void {
   removeRaw(LIVE_KEY);
+  liveSync(null, reason);
 }
 
 // ── 2. Saved drafts — upsert by id, cap 20, newest first ──────────────────
@@ -364,14 +382,24 @@ export function newDraftId(): string {
 
 /** Upsert: saving a REOPENED draft under its own id replaces it in place. */
 export function upsertSavedDraft(draft: V2SavedDraft): V2SavedDraft[] {
-  const next = [draft, ...readDrafts().filter((d) => d.id !== draft.id)].slice(0, MAX_DRAFTS);
+  const prev = readDrafts();
+  const next = [draft, ...prev.filter((d) => d.id !== draft.id)].slice(0, MAX_DRAFTS);
   writeRaw(DRAFTS_KEY, { version: 1, drafts: next } satisfies DraftStore);
+  // C.2b: optimistic — the server keeps the 20 newest too.
+  syncOrRevert(
+    callApi("PUT", draftPath(draft.id), {
+      name: draft.name ?? null, label: draft.label, snapshot: draft.snapshot, savedAt: draft.savedAt,
+    }),
+    revertDrafts(prev),
+  );
   return next;
 }
 
 export function removeSavedDraft(id: string): V2SavedDraft[] {
-  const next = readDrafts().filter((d) => d.id !== id);
+  const prev = readDrafts();
+  const next = prev.filter((d) => d.id !== id);
   writeRaw(DRAFTS_KEY, { version: 1, drafts: next } satisfies DraftStore);
+  syncOrRevert(callApi("DELETE", draftPath(id)), revertDrafts(prev));
   return next;
 }
 
@@ -401,9 +429,11 @@ export function draftDisplayName(draft: V2SavedDraft): string {
  */
 export function renameSavedDraft(id: string, name: string): V2SavedDraft[] {
   const clean = name.trim().slice(0, 40);
-  const next = readDrafts().map((d) =>
+  const prev = readDrafts();
+  const next = prev.map((d) =>
     d.id === id ? (clean.length > 0 ? { ...d, name: clean } : stripName(d)) : d);
   writeRaw(DRAFTS_KEY, { version: 1, drafts: next } satisfies DraftStore);
+  syncOrRevert(callApi("PATCH", draftPath(id), { name: clean.length > 0 ? clean : null }), revertDrafts(prev));
   return next;
 }
 
@@ -516,10 +546,22 @@ export function toggleStarred(
   list: V2StarList = "dealer",
 ): V2Star[] {
   const current = loadStarred(list);
-  const next = current.some((d) => d.code === c.code)
-    ? current.filter((d) => d.code !== c.code)
-    : cleanStars([{ name: c.name, code: c.code, area: c.area ?? null, at: Date.now() }, ...current]);
+  const starring = !current.some((d) => d.code === c.code);
+  const next = starring
+    ? cleanStars([{ name: c.name, code: c.code, area: c.area ?? null, at: Date.now() }, ...current])
+    : current.filter((d) => d.code !== c.code);
   writeRaw(starKey(list), { version: 1, dealers: next } satisfies StarStore);
+  // C.2b: optimistic — one INSERT … ON CONFLICT DO NOTHING or one DELETE.
+  syncOrRevert(
+    callApi("POST", "/api/so-lab/stars", {
+      list, customerCode: c.code, name: c.name, area: c.area ?? null, starred: starring,
+    }),
+    () => {
+      writeRaw(starKey(list), { version: 1, dealers: current } satisfies StarStore);
+      handlers?.onStars(list, current);
+    },
+    "Star list full — remove one first",
+  );
   return next;
 }
 
@@ -645,14 +687,25 @@ export function addFavProduct(key: string, favs: V2FavProduct[]):
   if (favs.length >= MAX_FAV_PRODUCTS)  return { result: "full",  favs };
   const next = [...favs, { key, at: Date.now() }];
   writeRaw(FAV_PRODUCTS_KEY, { version: 2, favs: next } satisfies FavProductStore);
+  // C.2b: optimistic. The server refuses a 9th too (another device may have
+  // filled the list) — then this add is undone with /po2's "full" message.
+  syncOrRevert(callApi("POST", "/api/so-lab/favourites", { tileKey: key }), revertFavs(favs), FAV_FULL_TOAST);
   return { result: "added", favs: next };
 }
 
-/** Remove one. Never fails, never confirms — un-starring is not destructive. */
+/** Remove one. Never confirms — un-starring is not destructive. */
 export function removeFavProduct(key: string, favs: V2FavProduct[]): V2FavProduct[] {
   const next = favs.filter((f) => f.key !== key);
   writeRaw(FAV_PRODUCTS_KEY, { version: 2, favs: next } satisfies FavProductStore);
+  syncOrRevert(callApi("DELETE", "/api/so-lab/favourites", { tileKey: key }), revertFavs(favs));
   return next;
+}
+
+function revertFavs(prev: V2FavProduct[]): () => void {
+  return () => {
+    writeRaw(FAV_PRODUCTS_KEY, { version: 2, favs: prev } satisfies FavProductStore);
+    handlers?.onFavs(prev);
+  };
 }
 
 /**
@@ -679,4 +732,262 @@ export function unitsOf(snapshot: V2Snapshot): number {
     for (const qty of Object.values(line.qtys)) if (qty > 0) units += qty;
   }
   return units;
+}
+
+// ══ SERVER SYNC (C.2b, 2026-10-01, Schema v27.49) ═════════════════════════
+//
+// The so_* tables are the SOURCE OF TRUTH; the sopage_{soId}_* keys above are
+// the instant cache and the offline copy. 🔴 No polling anywhere:
+//   • ONE GET /api/so-lab/state per board load (serverState(), memoised);
+//   • saved drafts / favourites / stars: the local write happens first
+//     (optimistic), the server call follows; on failure the local copy is put
+//     back, the page is told (setSyncHandlers) and a toast says why;
+//   • the live draft goes to the server ONLY on screen change, on page hide
+//     (fetch keepalive) and at most once per 60 s while editing — never when
+//     the JSON is identical to the last one sent. Empty order → DELETE once.
+// 🔴 2026-10-01: no import of old po2_* phone data — owner decision; do not add one.
+
+export type LiveSyncReason = "edit" | "screen" | "hide";
+
+type SyncHandlers = {
+  onDrafts: (drafts: V2SavedDraft[]) => void;
+  onFavs:   (favs: V2FavProduct[]) => void;
+  onStars:  (list: V2StarList, stars: V2Star[]) => void;
+  onToast:  (message: string, tone: "info" | "warn") => void;
+};
+let handlers: SyncHandlers | null = null;
+
+/** Registered once by the board so a failed write can be reverted on screen. */
+export function setSyncHandlers(h: SyncHandlers): void {
+  handlers = h;
+}
+
+const OFFLINE_TOAST = "Not saved to your account — check the connection and try again";
+const FAV_FULL_TOAST = "Favourites full (8 of 8) — remove one first";
+
+async function callApi(
+  method: "GET" | "PUT" | "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+  keepalive = false,
+): Promise<{ status: number; data: Record<string, unknown> | null }> {
+  try {
+    const res = await fetch(path, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+      keepalive,
+    });
+    let data: Record<string, unknown> | null = null;
+    if ((res.headers.get("content-type") ?? "").includes("application/json")) {
+      try { data = (await res.json()) as Record<string, unknown>; } catch { data = null; }
+    }
+    return { status: res.status, data };
+  } catch {
+    return { status: 0, data: null };
+  }
+}
+
+function deviceId(): string | null {
+  const existing = readRaw("device");
+  if (typeof existing === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(existing)) return existing;
+  const fresh = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  writeRaw("device", fresh);
+  return readRaw("device") === fresh ? fresh : null;
+}
+
+// ── The one state read ─────────────────────────────────────────────────────
+
+type ServerState = {
+  live: { snapshot: V2Snapshot; updatedAt: number } | null;
+  drafts: V2SavedDraft[];
+  favs: V2FavProduct[];
+  stars: { dealer: V2Star[]; shipto: V2Star[] };
+};
+
+let stateLoaded = false;
+let statePromise: Promise<ServerState | null> | null = null;
+
+function toSnapshot(raw: unknown): V2Snapshot | null {
+  const s = raw as Partial<V2Snapshot> | null;
+  if (!validSnapshot(s)) return null;
+  return migrateSnapshot({
+    customer: s.customer ?? null, lines: s.lines,
+    shipToCode: typeof s.shipToCode === "string" ? s.shipToCode : null,
+    dispatch:   s.dispatch   ?? "Normal",
+    callTarget: s.callTarget ?? "SO",
+    marker:     s.marker     ?? null,
+    crossDepot: typeof s.crossDepot === "string" ? s.crossDepot : "",
+    notes:      typeof s.notes === "string" ? s.notes : "",
+  });
+}
+
+async function fetchServerState(): Promise<ServerState | null> {
+  const { status, data } = await callApi("GET", "/api/so-lab/state");
+  if (status !== 200 || !data) return null;
+
+  type RawDraft = { clientId?: unknown; name?: unknown; label?: unknown; snapshot?: unknown; savedAt?: unknown };
+  const rawDrafts: RawDraft[] = Array.isArray(data.savedDrafts) ? (data.savedDrafts as RawDraft[]) : [];
+  const drafts: V2SavedDraft[] = [];
+  for (const d of rawDrafts) {
+    if (typeof d.clientId !== "string" || typeof d.label !== "string" || typeof d.savedAt !== "number") continue;
+    const snapshot = toSnapshot(d.snapshot);
+    if (!snapshot) continue;
+    drafts.push({
+      id: d.clientId, label: d.label, savedAt: d.savedAt, snapshot,
+      ...(typeof d.name === "string" && d.name.trim() ? { name: d.name } : {}),
+    });
+  }
+
+  type RawFav = { tileKey?: unknown; addedAt?: unknown };
+  const rawFavs: RawFav[] = Array.isArray(data.favProducts) ? (data.favProducts as RawFav[]) : [];
+  // Dead tile keys are dropped from the VIEW only — no write on read.
+  const favs: V2FavProduct[] = rawFavs
+    .filter((f): f is { tileKey: string; addedAt?: unknown } =>
+      typeof f.tileKey === "string" && boardTile(f.tileKey) !== null)
+    .map((f) => ({ key: f.tileKey, at: typeof f.addedAt === "number" ? f.addedAt : 1 }))
+    .slice(0, MAX_FAV_PRODUCTS);
+
+  type RawStar = { customerCode?: unknown; name?: unknown; area?: unknown; starredAt?: unknown };
+  const toStars = (raw: unknown): V2Star[] =>
+    cleanStars((Array.isArray(raw) ? (raw as RawStar[]) : [])
+      .map((s) => ({ code: s.customerCode, name: s.name, area: s.area, at: s.starredAt })));
+  const starsRaw = (data.stars ?? {}) as { dealer?: unknown; shipto?: unknown };
+  const stars = { dealer: toStars(starsRaw.dealer), shipto: toStars(starsRaw.shipto) };
+
+  let live: ServerState["live"] = null;
+  const rawLive = data.liveDraft as { snapshot?: unknown; revision?: unknown; updatedAt?: unknown } | null;
+  liveRevision = null;
+  serverHasLive = false;
+  if (rawLive && typeof rawLive.revision === "number" && typeof rawLive.updatedAt === "number") {
+    liveRevision = rawLive.revision;
+    serverHasLive = true;
+    const snap = toSnapshot(rawLive.snapshot);
+    if (snap && Date.now() - rawLive.updatedAt <= LIVE_TTL_MS) {
+      live = { snapshot: snap, updatedAt: rawLive.updatedAt };
+      lastSentJson = JSON.stringify(snap);
+    }
+  }
+
+  // The server is the source of truth: refresh the local cache from it.
+  writeRaw(DRAFTS_KEY, { version: 1, drafts } satisfies DraftStore);
+  writeRaw(FAV_PRODUCTS_KEY, { version: 2, favs } satisfies FavProductStore);
+  writeRaw(STAR_KEY, { version: 1, dealers: stars.dealer } satisfies StarStore);
+  writeRaw(SHIPTO_STAR_KEY, { version: 1, dealers: stars.shipto } satisfies StarStore);
+  stateLoaded = true;
+  return { live, drafts, favs, stars };
+}
+
+/** The board's one server read, memoised for the page's life. null = offline / failed. */
+export function serverState(): Promise<ServerState | null> {
+  if (!statePromise) statePromise = fetchServerState();
+  return statePromise;
+}
+
+/**
+ * The in-progress order to restore: the NEWER of this phone's copy and the
+ * server's (each already 24 h-expired on read). A server winner is also written
+ * to the local cache so the two agree.
+ */
+export async function loadLiveDraftSynced(): Promise<V2Snapshot | null> {
+  const local = readLocalLive();
+  const server = (await serverState())?.live ?? null;
+  if (server && (!local || server.updatedAt > local.updatedAt)) {
+    writeRaw(LIVE_KEY, { ...server.snapshot, version: 1, updatedAt: server.updatedAt } satisfies LiveDraft);
+    return server.snapshot;
+  }
+  return local ? local.snapshot : null;
+}
+
+// ── The live draft's server copy ──────────────────────────────────────────
+
+const LIVE_MIN_GAP_MS = 60_000;    // at most once a minute while editing
+const LIVE_FIRST_EDIT_MS = 15_000; // a lone edit still reaches the server soon
+
+let liveRevision: number | null = null;
+let serverHasLive = false;
+let lastSentJson: string | null = null;
+let lastSentAt = 0;
+let liveConflict = false;
+let liveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingLive: V2Snapshot | null | undefined = undefined;
+
+function liveSync(snapshot: V2Snapshot | null, reason: LiveSyncReason): void {
+  pendingLive = snapshot;
+  if (reason === "edit" && snapshot !== null) {
+    if (liveTimer) return; // already scheduled; it sends the newest pending
+    const delay = Math.max(LIVE_FIRST_EDIT_MS, lastSentAt + LIVE_MIN_GAP_MS - Date.now());
+    liveTimer = setTimeout(() => {
+      liveTimer = null;
+      if (pendingLive !== undefined) void pushLive(pendingLive, false);
+    }, delay);
+    return;
+  }
+  // Screen change, page hide, or the order was emptied — now.
+  if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
+  void pushLive(snapshot, reason === "hide");
+}
+
+async function pushLive(snapshot: V2Snapshot | null, keepalive: boolean): Promise<void> {
+  // Before the state read lands this device does not know the server revision;
+  // writing then would only manufacture a conflict. The phone copy is safe.
+  if (liveConflict || !stateLoaded) return;
+
+  if (snapshot === null) {
+    if (!serverHasLive) return;
+    serverHasLive = false;
+    const { status } = await callApi("DELETE", "/api/so-lab/live-draft", undefined, keepalive);
+    if (status === 200) { liveRevision = null; lastSentJson = null; }
+    else serverHasLive = true; // retried on the next trigger
+    return;
+  }
+
+  const json = JSON.stringify(snapshot);
+  if (json === lastSentJson) return;
+  lastSentAt = Date.now();
+  const { status, data } = await callApi(
+    "PUT", "/api/so-lab/live-draft",
+    { snapshot, expectedRevision: liveRevision, deviceId: deviceId() },
+    keepalive,
+  );
+  if (status === 200 && data && typeof data.revision === "number") {
+    liveRevision = data.revision;
+    serverHasLive = true;
+    lastSentJson = json;
+    return;
+  }
+  if (status === 409) {
+    // Another device wrote the in-progress order first. Never overwrite it
+    // silently: stop sending for this page's life (the phone copy stays).
+    liveConflict = true;
+    handlers?.onToast("This order was changed on another device — reload to see the latest", "warn");
+  }
+  // Anything else (offline, 5xx): left for the next trigger.
+}
+
+// ── Optimistic writes for drafts, favourites, stars ────────────────────────
+
+/** Runs the server call; on failure restores `revert()` and toasts. */
+function syncOrRevert(
+  call: Promise<{ status: number; data: Record<string, unknown> | null }>,
+  revert: () => void,
+  fullToast?: string,
+): void {
+  void call.then(({ status }) => {
+    if (status === 200) return;
+    revert();
+    handlers?.onToast(status === 409 && fullToast ? fullToast : OFFLINE_TOAST, "warn");
+  });
+}
+
+function draftPath(id: string): string {
+  return `/api/so-lab/drafts/${encodeURIComponent(id)}`;
+}
+
+function revertDrafts(prev: V2SavedDraft[]): () => void {
+  return () => {
+    writeRaw(DRAFTS_KEY, { version: 1, drafts: prev } satisfies DraftStore);
+    handlers?.onDrafts(prev);
+  };
 }

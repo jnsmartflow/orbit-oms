@@ -765,6 +765,12 @@ model sales_officer_master {
   orderAccess             so_order_access[]         @relation("SoOrderAccessOfficer")
   loginCodes              so_login_codes[]          @relation("SoLoginCodeOfficer")
   soSessions              so_sessions[]             @relation("SoSessionOfficer")
+  // SO order pipeline phase B (2026-10-01, Schema v27.49) — /so-lab drafts,
+  // live draft, favourite tiles and both star lists, per SO. lib/so-order/store.ts.
+  savedDrafts             so_saved_drafts[]         @relation("SoSavedDraftOfficer")
+  liveDraft               so_live_drafts?           @relation("SoLiveDraftOfficer")
+  favProducts             so_fav_products[]         @relation("SoFavProductOfficer")
+  starredDealers          so_starred_dealers[]      @relation("SoStarredDealerOfficer")
 }
 
 model sales_officer_group {
@@ -3967,4 +3973,85 @@ model live_feed_meta {
   prunedThroughTxId Unsupported("xid8")?
   prunedAt          DateTime?           @db.Timestamptz(6)
   updatedAt         DateTime            @default(now()) @db.Timestamptz(6)
+}
+
+// ─────────────────────────────────────────────
+// SO ORDER PIPELINE PHASE B — drafts + favourites per SO (2026-10-01, Schema v27.49)
+// ─────────────────────────────────────────────
+// Applied BY HAND in the Supabase SQL Editor 2026-09-30 and hand-mirrored here
+// (never db push / db pull — CORE §3). DDL of record:
+// sql/2026-09-30-so-drafts-favourites.sql. Code: lib/so-order/store.ts,
+// app/api/so-lab/{state,live-draft,drafts,favourites,stars}, app/so-lab/_board/so-storage.ts.
+// Every FK → sales_officer_master ON DELETE CASCADE (personal UI state).
+// Row-count caps (20 drafts, 8 favourites refused-not-evicted, 200 stars per
+// list) and the 24 h live-draft expiry are CODE rules — a CHECK cannot count rows.
+
+// Named drafts (was po2_saved_drafts on the phone). snapshot = the V2Snapshot
+// shape, migrated ON READ by migrateLine on the client.
+// LIVE CHECKs not expressible here: chk_so_saved_drafts_client_id (1-64),
+// chk_so_saved_drafts_name (≤ 60), chk_so_saved_drafts_label (≤ 200),
+// chk_so_saved_drafts_snapshot_shape (object with lines[]),
+// chk_so_saved_drafts_snapshot_size (≤ 65536 bytes), chk_so_saved_drafts_snapshot_version (≥ 1).
+model so_saved_drafts {
+  id              Int                  @id @default(autoincrement())
+  salesOfficerId  Int
+  salesOfficer    sales_officer_master @relation("SoSavedDraftOfficer", fields: [salesOfficerId], references: [id], onDelete: Cascade)
+  clientId        String
+  name            String?
+  label           String
+  snapshot        Json
+  snapshotVersion Int                  @default(1) @db.SmallInt
+  savedAt         DateTime             @default(now()) @db.Timestamptz(6)
+  createdAt       DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([salesOfficerId, clientId], map: "so_saved_drafts_so_client_key")
+  @@index([salesOfficerId, savedAt(sort: Desc)], map: "so_saved_drafts_so_saved_idx")
+}
+
+// The in-progress order (was po2_draft), ONE row per SO. The phone stays
+// primary; the server copy is written on screen change, page hide, and at most
+// once per 60 s while editing. Empty order → DELETE. 24 h expiry on read.
+// UPDATE … WHERE revision = expected (optimistic concurrency).
+// LIVE CHECKs: chk_so_live_drafts_snapshot_shape, _snapshot_size, _snapshot_version,
+// _revision (≥ 1), _device_id (≤ 64).
+model so_live_drafts {
+  salesOfficerId  Int                  @id
+  salesOfficer    sales_officer_master @relation("SoLiveDraftOfficer", fields: [salesOfficerId], references: [id], onDelete: Cascade)
+  snapshot        Json
+  snapshotVersion Int                  @default(1) @db.SmallInt
+  revision        Int                  @default(1)
+  deviceId        String?
+  createdAt       DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+// Favourite board tiles (was po2_fav_products). tileKey = V2BoardTile.key,
+// a FROZEN identifier (CLAUDE_PO2.md §6). Cap 8, the 9th REFUSED — code.
+// LIVE CHECK: chk_so_fav_products_tile_key (1-200).
+model so_fav_products {
+  id             Int                  @id @default(autoincrement())
+  salesOfficerId Int
+  salesOfficer   sales_officer_master @relation("SoFavProductOfficer", fields: [salesOfficerId], references: [id], onDelete: Cascade)
+  tileKey        String
+  addedAt        DateTime             @default(now()) @db.Timestamptz(6)
+
+  @@unique([salesOfficerId, tileKey], map: "so_fav_products_so_tile_key")
+}
+
+// Both star lists (was po2_starred_dealers 'dealer' / po2_starred_shipto
+// 'shipto'). Fuse 200 per list — code.
+// LIVE CHECKs: chk_so_starred_dealers_list (IN ('dealer','shipto')),
+// chk_so_starred_dealers_code (btrim 1-40), chk_so_starred_dealers_name (≤ 200).
+model so_starred_dealers {
+  id             Int                  @id @default(autoincrement())
+  salesOfficerId Int
+  salesOfficer   sales_officer_master @relation("SoStarredDealerOfficer", fields: [salesOfficerId], references: [id], onDelete: Cascade)
+  list           String
+  customerCode   String
+  name           String
+  area           String?
+  starredAt      DateTime             @default(now()) @db.Timestamptz(6)
+
+  @@unique([salesOfficerId, list, customerCode], map: "so_starred_dealers_so_list_code_key")
 }

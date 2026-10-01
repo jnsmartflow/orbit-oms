@@ -14,8 +14,8 @@ import { buildV2Email, buildV2MailtoUrl } from "./v2-email";
 import { DraftsScreen, SentScreen } from "./drafts-sent";
 import OrderDetail, { ATTENTION, ATTENTION_BG, NAV_H, belowNav } from "./order-sheet";
 import {
-  clearLiveDraft, draftDisplayName, labelFor, loadLiveDraft, loadSavedDrafts,
-  newDraftId, removeSavedDraft, setStorageScope, renameSavedDraft,
+  clearLiveDraft, draftDisplayName, labelFor, loadLiveDraftSynced, loadSavedDrafts,
+  newDraftId, removeSavedDraft, setStorageScope, setSyncHandlers, serverState, renameSavedDraft,
   formatSavedAt, formatTime,
   loadStarred, toggleStarred, type V2Star,
   addFavProduct, isFavProduct, loadFavProducts, removeFavProduct, type V2FavProduct,
@@ -612,7 +612,9 @@ export default function PoV2Page({
       // not clobber whatever the salesman has typed since.
       if (!restoredRef.current) {
         restoredRef.current = true;
-        const draft = loadLiveDraft();
+        // C.2b: the NEWER of this phone's copy and the account's (so an order
+        // started on another device continues here).
+        const draft = await loadLiveDraftSynced();
         if (draft) applySnapshot(draft, data.customers ?? []);
         setHydrated(true);
       }
@@ -629,6 +631,25 @@ export default function PoV2Page({
     setSavedDrafts(loadSavedDrafts());
     // /so-lab FORK: no sent log — the Sent tab is "coming soon" until phase E
     // reads sent orders from mo_orders. sentOrders stays [].
+
+    // C.2b: the phone cache above draws instantly; the account's copy replaces
+    // it when the ONE /api/so-lab/state read lands (never polled). A failed
+    // optimistic write is put back through these handlers, with a toast.
+    setSyncHandlers({
+      onDrafts: setSavedDrafts,
+      onFavs: setFavProducts,
+      onStars: (list, stars) => (list === "shipto" ? setShipToStarred(stars) : setStarred(stars)),
+      onToast: (message, tone) => { setToastTone(tone); setToast(message); },
+    });
+    let alive = true;
+    void serverState().then((s) => {
+      if (!alive || !s) return;
+      setSavedDrafts(s.drafts);
+      setFavProducts(s.favs);
+      setStarred(s.stars.dealer);
+      setShipToStarred(s.stars.shipto);
+    });
+    return () => { alive = false; };
   }, []);
 
   // Brief confirmation, self-dismissing. Cleared on unmount so a pending
@@ -728,8 +749,9 @@ export default function PoV2Page({
       // Before hydration there is nothing real to write, and writing would
       // clobber a stored draft with the empty initial state.
       if (!s.hydrated) return;
-      if (s.lines.length > 0) saveLiveDraft(snapshotOf(s.dealer, s.lines, s.shipTo, s.order));
-      else clearLiveDraft();
+      // C.2b: "hide" also sends the account copy NOW, with fetch keepalive.
+      if (s.lines.length > 0) saveLiveDraft(snapshotOf(s.dealer, s.lines, s.shipTo, s.order), "hide");
+      else clearLiveDraft("hide");
     };
     const onVisibility = (): void => {
       if (document.visibilityState === "hidden") flush();
@@ -741,6 +763,19 @@ export default function PoV2Page({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
+
+  /**
+   * C.2b: a SCREEN CHANGE sends the in-progress order to the account now (the
+   * debounced effect above only schedules it, at most once a minute). Read from
+   * liveRef, like the hide flush, so it is the order as it is at this moment.
+   * so-storage skips the write when nothing changed since the last one.
+   */
+  useEffect(() => {
+    const s = liveRef.current;
+    if (!s.hydrated) return;
+    if (s.lines.length > 0) saveLiveDraft(snapshotOf(s.dealer, s.lines, s.shipTo, s.order), "screen");
+    else clearLiveDraft("screen");
+  }, [screen]);
 
   const countsByTile = useMemo(() => {
     const counts: Record<string, number> = {};

@@ -35,6 +35,47 @@
 Discovery: `docs/prompts/drafts/code-discovery-2026-09-29-po2-so-login.md` (§A Option 2, §G).
 SQL (run live 2026-09-29 by Smart Flow, verified): `sql/2026-09-29-so-login-tables.sql`.
 
+## Update 2026-10-01 (d) — C.2b: drafts, favourites and stars saved per SO in the database (Schema v27.49)
+
+> **2026-10-01: no import of old po2_* phone data — owner decision; do not add one.**
+
+- **Tables now used** (run live 2026-09-30, `sql/2026-09-30-so-drafts-favourites.sql`, minted **v27.49** — the file
+  was drafted as v27.48, which the tint trigger took first; header relabelled): `so_saved_drafts`,
+  `so_live_drafts`, `so_fav_products`, `so_starred_dealers`. Prisma models + back-relations on
+  `sales_officer_master` (`SoSavedDraftOfficer`, `SoLiveDraftOfficer`, `SoFavProductOfficer`,
+  `SoStarredDealerOfficer`). CORE → v120 · Schema v27.49.
+- **Routes** (all under `/api/so-lab/`, all `force-dynamic`, every handler's first line `requireSoApi()`, the SO id
+  only from the session — never the body; inputs validated; 400 / 401 / 404 / 409 JSON):
+  - `GET state` → `{ liveDraft, savedDrafts, favProducts, stars: { dealer, shipto } }` in one call (4 small reads).
+  - `PUT live-draft { snapshot, expectedRevision, deviceId }` (stale revision → **409**) · `DELETE live-draft`.
+  - `PUT / PATCH / DELETE drafts/[clientId]` (upsert by `(SO, clientId)`, rename, delete).
+  - `POST / DELETE favourites { tileKey }` (9th → **409 "full"**).
+  - `POST stars { list, customerCode, name, area, starred }` (INSERT … ON CONFLICT DO NOTHING via `createMany
+    skipDuplicates`, or DELETE; 201st → **409**).
+  - **No `/api/so-lab/import`.** Nothing reads a `po2_*` key.
+- **Caps (code, `lib/so-order/store.ts`):** saved drafts trimmed to the 20 newest per SO after each save;
+  favourites 8, the 9th refused, never evicted; stars 200 per list. Snapshots stored raw, ≤ 64 KB, object with
+  `lines[]`; `migrateLine` runs on the client on every read.
+- **Client (`app/so-lab/_board/so-storage.ts`):** the database is the source of truth, the `sopage_{soId}_*` keys
+  are the instant cache / offline copy. One `GET state` per board load (memoised), which refreshes the local cache.
+  Saved drafts / favourites / stars are **optimistic**: local first, then the server call; on failure the local copy
+  is put back, the screen is updated through `setSyncHandlers`, and a toast says why ("Favourites full (8 of 8) —
+  remove one first" for a server-side 9th, otherwise "Not saved to your account — check the connection…").
+- **Live draft write rules:** the phone still saves on its 400 ms debounce. The server copy is written ONLY on a
+  screen change, on `pagehide` / `visibilitychange → hidden` (fetch `keepalive`), and while editing at most once per
+  60 s (first trailing write 15 s after an edit) — and never when the JSON is identical to the last one sent. An
+  emptied order DELETEs the row once. Nothing is sent before the state read lands (so the revision is known). On a
+  409 (another device wrote first) the board stops sending for that page's life and toasts "This order was changed
+  on another device — reload to see the latest". On load, the NEWER of the phone copy and the server copy wins
+  (both 24 h-expired on read).
+- **Writes per active SO, typical 10-minute ordering session:** live draft ~8–12 (≈ one a minute while editing +
+  a few screen changes + one hide), DELETE after Send 1, saved drafts 1–2 (+ a trim delete only past 20),
+  favourites / stars 0–3, `lastSeenAt` 1 → **~12–18 writes per session, ≈ 15–20 per active hour**; ceiling ~70/h
+  for non-stop editing. Reads: one `state` + one cached catalogue per page load. No polling.
+- Known edge: offline, a draft save / favourite / star is undone with the "Not saved" toast (it is never kept
+  half-synced); the in-progress order keeps saving on the phone and reaches the account on the next trigger once
+  online. A page load while offline shows the phone copy.
+
 ## Update 2026-10-01 (c) — OTP send survives a cold start; a failed send no longer blocks Resend
 
 > **2026-10-01: OTP send gets 10 s + one 8 s retry and maxDuration 30; a failed send deletes its code row so the cooldown never blocks a retry — do not restore the single 8 s attempt.**
