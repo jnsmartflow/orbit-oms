@@ -282,6 +282,13 @@ other way). Reversing this order would strand the order at `pick_assigned` with 
 record — locked, no trace of who had it. Both routes write an `order_status_logs` audit row
 (`fromStage`/`toStage`/`changedById`/note).
 
+**The two unassign writes live in ONE helper (2026-10-01): `returnAssignedBillToQueue(orderId,
+alsoWrite?)`, `lib/picking/unassign.ts`.** The route calls it with no extra columns (writes
+unchanged). Its second caller is Floor's Release of a bill HELD at `pick_assigned`
+(`lib/floor/release.ts`, `CLAUDE_FLOOR.md` §4.2), which passes the slot and `dispatchStatus` so the
+move stays ONE `orders.update`. The stage guard and the log row stay with each caller. No push from
+either — unassign has never sent one (`CLAUDE_NOTIFICATIONS.md` §2).
+
 **Bulk-assign IS built and live** — `web-update-2026-07-11-picking-assign-shipped-bulk-assign-planned.md`
 called this "not built"; that was superseded within two days. The supervisor board's Assign tab (§5)
 drives the `/api/picking/assign` batch endpoint — as does Floor's per-bill Reassign/Unassign in the

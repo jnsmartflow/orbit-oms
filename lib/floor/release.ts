@@ -24,6 +24,23 @@
 //                         overwriting a human's chosen slot (the engine skips
 //                         'manual' — CORE §7.4)
 //
+// ── A HELD BILL AT A PICKER STAGE (owner decision 2026-10-01) ──────────────
+// Hold flips `dispatchStatus` only, so a bill held while a picker had it sits
+// on the Hold tab at `pick_assigned` / `pick_done` / `pick_checked`. Release
+// used to refuse all three ("Not releasable at stage …") and the hold could
+// never be cleared from the floor. Now, for a HELD bill only:
+//   pick_assigned → the picker is REMOVED and the bill is released fresh: the
+//                   full write above (slot, status, stage, provenance) through
+//                   the shared unassign helper (lib/picking/unassign.ts), which
+//                   also deletes the pick_assignments row — no "Already
+//                   assigned" trap. Outcome `picker_removed`.
+//   pick_done /   → the hold is cleared and NOTHING else: `dispatchStatus`
+//   pick_checked    'dispatch', stage / slot / assignment untouched (the slot
+//                   the operator picked is ignored). Log note
+//                   FLOOR_CLEAR_HOLD_NOTE. Outcome `hold_cleared`.
+// A picker-stage bill that is NOT held is still refused, as before.
+// FLOOR_RELEASABLE_STAGES is unchanged — these branches run before it.
+//
 // ⚠ EXACTLY ONE `orders.update` PER BILL. The live-sync markers key on
 // MAX(orders.updatedAt), so a second write fires a false "changed" on every
 // board in the depot (FLOOR §4/§10, PICKING §10).
@@ -36,18 +53,34 @@
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";
-import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE, PICK_CHECKED } from "@/lib/workflow-stages";
 import { FLOOR_RELEASABLE_STAGES } from "./release-stages";
+import { FLOOR_CLEAR_HOLD_NOTE } from "./hold-log";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
+import { returnAssignedBillToQueue } from "@/lib/picking/unassign";
 
 export interface ReleaseFailure {
   orderId: number;
   error: string;
 }
 
+/** What Release did to one bill (2026-10-01).
+ *   released       — the classic release: slot, status, stage, provenance.
+ *   picker_removed — held at pick_assigned: the picker was removed AND the bill
+ *                    was released fresh (same columns as `released`).
+ *   hold_cleared   — held at pick_done / pick_checked: dispatchStatus only. */
+export type ReleaseBillOutcome = "released" | "picker_removed" | "hold_cleared";
+
+/** Held bills at these stages have their hold cleared and nothing else. Written
+ *  out, never derived: a new picking stage must be a decision to admit here. */
+const HOLD_CLEAR_ONLY_STAGES: string[] = [PICK_DONE, PICK_CHECKED];
+
 export interface ReleaseOutcome {
-  /** The full write happened: slot, status, stage, provenance, and a log row. */
+  /** Every bill that was WRITTEN, whatever the kind — `outcomes` says which.
+   *  Kept as the "anything written?" set so the callers' 422 rule is unchanged. */
   released: number[];
+  /** One entry per written bill. */
+  outcomes: Array<{ orderId: number; outcome: ReleaseBillOutcome }>;
   /**
    * Skipped because the bill is mid-tint — NOT an error.
    *
@@ -106,6 +139,7 @@ export async function releaseBillsToFloor(opts: {
   const { orderIds, targetDate, windowId, windowLabel, actorId, noteLabel } = opts;
 
   const released: number[] = [];
+  const outcomes: Array<{ orderId: number; outcome: ReleaseBillOutcome }> = [];
   const waitingForTint: Array<{ orderId: number; workflowStage: string }> = [];
   const failed: ReleaseFailure[] = [];
 
@@ -136,6 +170,63 @@ export async function releaseBillsToFloor(opts: {
       // generic "not releasable at stage X", which is true but useless.
       if (TINT_IN_PROGRESS_STAGES.has(order.workflowStage)) {
         waitingForTint.push({ orderId, workflowStage: order.workflowStage });
+        continue;
+      }
+
+      const isHeld = order.dispatchStatus === "hold";
+
+      // HELD AT pick_assigned — remove the picker, release fresh. ONE
+      // orders.update (the helper's, carrying the slot) + the assignment delete
+      // after it, then ONE log row that names both halves of the move.
+      if (isHeld && order.workflowStage === PICK_ASSIGNED) {
+        // A read only — the picker's name for the log, before the row goes.
+        const pa = await prisma.pick_assignments.findUnique({
+          where: { orderId },
+          select: { picker: { select: { name: true } } },
+        });
+        await returnAssignedBillToQueue(
+          orderId,
+          {
+            dispatchTargetDate: targetDate,
+            dispatchWindowId: windowId,
+            dispatchStatus: "dispatch",
+            dispatchSlotSource: "manual",
+          },
+          "floor/release",
+        );
+        await prisma.order_status_logs.create({
+          data: {
+            orderId,
+            fromStage: order.workflowStage,
+            toStage: SUPPORT_DONE_OUTPUT,
+            changedById: actorId,
+            note: `${noteLabel} · picker removed (${pa?.picker?.name ?? "none on record"}) · ${targetDate.toISOString().slice(0, 10)} ${windowLabel}`,
+          },
+        });
+        released.push(orderId);
+        outcomes.push({ orderId, outcome: "picker_removed" });
+        continue;
+      }
+
+      // HELD AT pick_done / pick_checked — clear the hold, nothing else. The
+      // stage is untouched, so toStage = fromStage and the NOTE identifies the
+      // event (the same note as Floor's unhold — kept out of HOLD_LOG_NOTES).
+      if (isHeld && HOLD_CLEAR_ONLY_STAGES.includes(order.workflowStage)) {
+        await prisma.orders.update({
+          where: { id: orderId },
+          data: { dispatchStatus: "dispatch" },
+        });
+        await prisma.order_status_logs.create({
+          data: {
+            orderId,
+            fromStage: order.workflowStage,
+            toStage: order.workflowStage,
+            changedById: actorId,
+            note: FLOOR_CLEAR_HOLD_NOTE,
+          },
+        });
+        released.push(orderId);
+        outcomes.push({ orderId, outcome: "hold_cleared" });
         continue;
       }
 
@@ -170,10 +261,11 @@ export async function releaseBillsToFloor(opts: {
       });
 
       released.push(orderId);
+      outcomes.push({ orderId, outcome: "released" });
     } catch (err) {
       failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
     }
   }
 
-  return { released, waitingForTint, failed };
+  return { released, outcomes, waitingForTint, failed };
 }

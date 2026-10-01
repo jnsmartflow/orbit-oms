@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED } from "@/lib/workflow-stages";
+import { returnAssignedBillToQueue } from "@/lib/picking/unassign";
 
 export const dynamic = "force-dynamic";
 
@@ -48,25 +49,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Order is not assigned." }, { status: 409 });
   }
 
-  // c. FIRST write — revert the stage. Mirrors the undo-dispatch pattern
-  // (app/api/support/orders/[id]/undo-dispatch/route.ts): if the SECOND
-  // write (d, below) fails, the bill is already back in the queue — visible,
-  // mutable, with a stale pick_assignments row left over. That's a fixable
-  // leftover, not a lost order. Reversed, a failed second write would strand
-  // the order at PICK_ASSIGNED with its assignment record already gone —
-  // locked, with no trace of who had it. Never reverse this order.
-  await prisma.orders.update({
-    where: { id: orderId },
-    data: { workflowStage: SUPPORT_DONE_OUTPUT },
-  });
-
-  // d. SECOND write — delete the assignment row. deleteMany (not delete) so
-  // a missing row is NOT an error — undo must work even if the row was
-  // already cleared some other way; log and continue rather than throw.
-  const deleted = await prisma.pick_assignments.deleteMany({ where: { orderId } });
-  if (deleted.count === 0) {
-    console.warn(`[picking/unassign] No pick_assignments row found for order ${orderId} during undo.`);
-  }
+  // c + d. The two writes — stage back to the queue FIRST, assignment row
+  // deleted SECOND, never reversed. Moved verbatim into the shared helper
+  // (2026-10-01) so Floor's Release of a held pick_assigned bill removes the
+  // picker by the same writes; read its header for why the order matters.
+  await returnAssignedBillToQueue(orderId);
 
   // e. Audit log.
   await prisma.order_status_logs.create({

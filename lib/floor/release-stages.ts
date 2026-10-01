@@ -27,6 +27,11 @@ export const FLOOR_RELEASABLE_STAGES: string[] = [
   // exact silent-no-op bug this list fixes.
   "pending_picking",
 ];
+// ⚠ A HELD bill at pick_assigned / pick_done / pick_checked is NOT refused by
+// this list any more (2026-10-01) — lib/floor/release.ts handles those three
+// BEFORE consulting it. Do not add them here: a release writes
+// workflowStage=pending_picking, which would move a picked or checked bill
+// backwards with its pick_assignments row still in place.
 
 // ── CLEAR HOLD (slice 3b, 2026-09-14) ───────────────────────────────────────
 //
@@ -48,8 +53,17 @@ export const FLOOR_RELEASABLE_STAGES: string[] = [
 //
 // ⚠ WRITTEN OUT, NOT PICKING_ACTIVE_STAGES by import. They are the same four
 // today; a stage added to the picking ladder must be a decision to make it
-// clearable, never something this list inherits. Pure and import-free so the
-// detail panel (client) and the actions route (server) read ONE list.
+// clearable, never something this list inherits. Pure and import-free.
+//
+// WHO READS IT (verified 2026-10-01 — CORRECTED: this comment used to say "the
+// detail panel (client) and the actions route (server)"; the detail panel has
+// never imported it):
+//   - app/api/floor/actions/route.ts                — `unhold` (the bulk-Hold 8 s Undo)
+//   - app/api/billing/mail-order/actions/route.ts   — Hold OFF and Hand ON
+// The Hold tab's Release (lib/floor/release.ts) does NOT read this list. It
+// handles a held pick_assigned / pick_done / pick_checked bill by its own,
+// owner-decided rule (2026-10-01): pick_assigned has its picker removed and is
+// released fresh; pick_done / pick_checked have the hold cleared only.
 export const FLOOR_CLEAR_HOLD_STAGES: string[] = [
   "pending_picking",
   "pick_assigned",

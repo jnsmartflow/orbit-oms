@@ -30,6 +30,8 @@ Three, all fired from picking write routes (no new `orders.update` — see the m
 (`assign/route.ts:208`, `done/route.ts:177`, `cancel/route.ts:266`) + the `test-saved` diagnostic.
 Nothing else calls it: not the approve route, not any Floor route (Floor's own cancel,
 `/api/floor/actions`, does NOT push — only `/api/picking/cancel` does), not the Billing mark-done.
+Unassign does not push either, and neither does Floor's Release when it removes the picker from a
+bill held at `pick_assigned` (2026-10-01, `lib/picking/unassign.ts`) — the picker is NOT told.
 ⚠ A caller sweep on `sendToUser` alone misses one more sending path: `POST /api/picking/push-test`
 calls `web-push`'s `sendNotification` directly (§9). **Floor DOES fire the assign trigger
 indirectly** — its detail panel's reassign (`onReassign`, `components/floor/floor-page.tsx:1241-1251`)

@@ -227,6 +227,8 @@ interface WriteBody {
   failed?: Array<{ orderId?: number; error?: string }>;
   /** POST /api/floor/actions hand | unhand — repeat presses, nothing written. */
   skipped?: number[];
+  /** POST /api/floor/release — what Release did to each WRITTEN bill (2026-10-01). */
+  outcomes?: Array<{ orderId: number; outcome: "released" | "picker_removed" | "hold_cleared" }>;
 }
 
 async function postJson(url: string, payload: unknown, method: "POST" | "PATCH" = "POST"): Promise<{ ok: boolean; body: WriteBody }> {
@@ -260,6 +262,25 @@ function reportWrite(label: string, r: { ok: boolean; body: WriteBody }): boolea
     return false;
   }
   return true;
+}
+
+// Release (Hold tab bulk + the panel's Release) — the failures through
+// reportWrite as before, PLUS one success line built from the per-bill outcomes
+// (2026-10-01), because a release now does three different things: "3 released
+// · 1 hold cleared · 1 picker removed". Silent when nothing was written.
+function reportRelease(r: { ok: boolean; body: WriteBody }): void {
+  reportWrite("Release", r);
+  const outcomes = Array.isArray(r.body.outcomes) ? r.body.outcomes : [];
+  if (outcomes.length === 0) return;
+  const count = (k: "released" | "hold_cleared" | "picker_removed") => outcomes.filter((o) => o.outcome === k).length;
+  const parts = [
+    [count("released"), "released"],
+    [count("hold_cleared"), "hold cleared"],
+    [count("picker_removed"), "picker removed"],
+  ]
+    .filter(([n]) => (n as number) > 0)
+    .map(([n, label]) => `${n} ${label}`);
+  toast.success(parts.join(" · "));
 }
 
 // ── The Cancel / Raise CI form's bills (2026-09-22) ─────────────────────────
@@ -1385,12 +1406,15 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // Each ticked bill gets the SAME chosen date+window; the route advances it to
   // pending_picking with dispatchStatus="dispatch", so it leaves Hold and lands
   // on the floor like any other released bill. A held-after-auto-dispatch bill is
-  // already at pending_picking — accepted via FLOOR_RELEASABLE_STAGES.
+  // already at pending_picking — accepted via FLOOR_RELEASABLE_STAGES. A bill
+  // held while a picker had it (2026-10-01): pick_assigned → picker removed and
+  // released fresh; pick_done / pick_checked → hold cleared only, slot ignored.
+  // The server decides per bill; the toast says which (reportRelease).
   const holdRelease = useCallback(
     async (orderIds: number[], date: string, windowId: number) => {
       const releases = orderIds.map((orderId) => ({ orderId, dispatchTargetDate: date, dispatchWindowId: windowId }));
       const r = await postJson("/api/floor/release", { releases });
-      reportWrite("Release", r);
+      reportRelease(r);
       await load();
     },
     [load],
@@ -1839,7 +1863,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     () => ({
       onRelease: async (orderId, date, windowId) => {
         const r = await postJson("/api/floor/release", { releases: [{ orderId, dispatchTargetDate: date, dispatchWindowId: windowId }] });
-        reportWrite("Release", r);
+        reportRelease(r);
         await load();
       },
       // Ship-to change → Floor's OWN thin route (step 2/8 of the Support

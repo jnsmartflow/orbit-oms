@@ -163,6 +163,17 @@ Body `{ releases: [{ orderId, dispatchTargetDate, dispatchWindowId }] }`. The wr
 
 **Releasable stages — `FLOOR_RELEASABLE_STAGES = ["pending_support","pending_picking"]`** (`lib/floor/release-stages.ts`). Floor's own explicit list, deliberately **NOT** `supportMayEdit()` (`lib/workflow-stages.ts`) — that predicate encoded Support's permission model, and Floor's release gate answers a different question. It is now dead code with zero callers, kept pending a ROADMAP cleanup; do not wire it back in here. `pending_support` = a bill with no dispatch decision (the stage name is historical — nothing named Support writes it any more); `pending_picking` = a bill held after auto-dispatch (hold flips status only, never stage). Same 422/partial contract as §4.1.
 
+**A HELD bill at a picker stage (owner decision 2026-10-01).** Hold never moves the stage, so a bill held while a picker had it sat on the Hold tab and Release refused it ("Not releasable at stage pick_assigned") — the hold could never be cleared from the floor. `releaseBillsToFloor` now handles a held bill at these three stages **before** consulting `FLOOR_RELEASABLE_STAGES`, after the live-CI guard and the tint skip:
+
+| Held at | Write | Log |
+|---|---|---|
+| `pick_assigned` | Picker REMOVED, released fresh: the full release columns (popup slot included) through the shared unassign helper `returnAssignedBillToQueue` (`lib/picking/unassign.ts`) — one `orders.update`, then `pick_assignments.deleteMany`, the same writes in the same order as `POST /api/picking/unassign`. No "Already assigned" trap. No push (unassign sends none) | `pick_assigned → pending_picking` · `Released to floor · picker removed ({name}) · {date} {window}` |
+| `pick_done`, `pick_checked` | `dispatchStatus="dispatch"` only. Stage, slot (the popup's is ignored) and assignment untouched | `{stage} → {stage}` · `FLOOR_CLEAR_HOLD_NOTE` |
+
+A picker-stage bill that is **not** held is still refused. `FLOOR_RELEASABLE_STAGES` is unchanged and must not gain these stages (a release writes `pending_picking`, which would move a picked bill backwards with its assignment row still in place). The response is `{ released, outcomes: [{ orderId, outcome: "released" | "picker_removed" | "hold_cleared" }], failed }` — `released` is every bill written, so the 422 rule is unchanged; the client's `reportRelease` (`floor-page.tsx`) turns `outcomes` into "3 released · 1 hold cleared · 1 picker removed".
+
+⚠ Known, not fixed: a held `pick_checked` bill on an EARLIER-DAY trip, once cleared, is on no Floor surface unless its trip still holds an unfinished bill (`live-trips.ts:60`, `:117-120`; arm 3 and `isPoolRow` need `tripDropId` null) — it does reappear on billing's Picking tab (`picking-where.ts:66-82`) and Print tab (`print.ts:216`, `:311`). Trip handling of held bills stays parked (`CLAUDE_FLOOR_TRIPS.md` §16.6).
+
 ### 4.3 Assign / unassign
 
 **Reused from Picking, unchanged** — the detail panel's Assign/Reassign and ⋯ Unassign call `POST /api/picking/assign` and `/api/picking/unassign` as a caller (`floor-page.tsx:1241-1267`). Reassign = unassign (only if already assigned) then assign. Nothing on the desk assigns in bulk any more (`floor-page.tsx:995-1000`); that is the supervisor's job on `/picking`. → behaviour owned by **`CLAUDE_PICKING.md §4`**.

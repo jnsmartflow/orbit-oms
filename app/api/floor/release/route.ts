@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { releaseBillsToFloor, type ReleaseFailure } from "@/lib/floor/release";
+import { releaseBillsToFloor, type ReleaseFailure, type ReleaseBillOutcome } from "@/lib/floor/release";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +25,10 @@ function parseDateOnly(s: string): Date | null {
 // the left rail (bills at pending_support) and the Hold tab (bills held after
 // auto-dispatch, at pending_picking) — see FLOOR_RELEASABLE_STAGES.
 // Body: { releases: [{ orderId, dispatchTargetDate, dispatchWindowId }] }.
+// Response: { released, outcomes: [{ orderId, outcome }], failed }. `released`
+// is every bill WRITTEN; `outcomes` says how — a HELD bill at pick_assigned has
+// its picker removed and is released fresh, one held at pick_done/pick_checked
+// has its hold cleared only (2026-10-01, see lib/floor/release.ts).
 // Single = an array of one; bulk = each bill with its own suggested slot.
 // Returns 422 when EVERY requested bill failed (nothing written); a partial
 // success stays 200 but always carries the `failed` list so the client can
@@ -79,6 +83,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   const windowTimeById = new Map(windows.map((w) => [w.id, w.windowTime]));
 
   const released: number[] = [];
+  // Per-bill outcome (2026-10-01) — what Release did: released, picker
+  // removed (held at pick_assigned) or hold cleared (held at pick_done /
+  // pick_checked). The client builds its toast from it.
+  const outcomes: Array<{ orderId: number; outcome: ReleaseBillOutcome }> = [];
   const failed: ReleaseFailure[] = [];
 
   for (const r of releases) {
@@ -111,6 +119,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     });
 
     released.push(...out.released);
+    outcomes.push(...out.outcomes);
     failed.push(...out.failed);
     // Folded back into `failed`, deliberately — see the header.
     for (const t of out.waitingForTint) {
@@ -121,5 +130,5 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Nothing written at all → 422 so the failure cannot be read as success. A
   // partial success stays 200 but always carries `failed` for the client.
   const status = released.length === 0 && failed.length > 0 ? 422 : 200;
-  return NextResponse.json({ released, failed }, { status });
+  return NextResponse.json({ released, outcomes, failed }, { status });
 }
