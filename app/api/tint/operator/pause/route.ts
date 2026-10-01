@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
+import { minutesSinceRunStart } from "@/lib/tint/elapsed-time";
 
 export const dynamic = "force-dynamic";
 
@@ -194,12 +195,9 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // ── 5. Compute elapsedMinutes for this run ─────────────────────────────────
   const now = new Date();
-  const baseline =
-    asg.lastPausedAt && asg.lastPausedAt.getTime() > asg.startedAt.getTime()
-      ? asg.lastPausedAt
-      : asg.startedAt;
-  const elapsedMs = now.getTime() - baseline.getTime();
-  const elapsedMinutes = Math.max(0, Math.floor(elapsedMs / 60000));
+  // The arithmetic is lib/tint/elapsed-time.ts minutesSinceRunStart (moved
+  // there 2026-10-01, unchanged) — shared with the Tint Manager's Stop & cancel.
+  const elapsedMinutes = minutesSinceRunStart({ startedAt: asg.startedAt, lastPausedAt: asg.lastPausedAt }, now);
   const newAccumulated = asg.accumulatedMinutes + elapsedMinutes;
   const newPauseCount  = asg.pauseCount + 1;
 

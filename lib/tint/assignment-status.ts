@@ -57,3 +57,15 @@ export const TINT_STATUS_DONE = "tinting_done";
 
 /** Whole-OBD and split cancellation. */
 export const TINT_STATUS_CANCELLED = "cancelled";
+
+/**
+ * A split's LIVE states (`order_splits.status`). Splits have no `paused` and
+ * no `assigned` — their claim starts at `tint_assigned` (splits/create) and
+ * runs through `tinting_in_progress` (split/start) to TINT_STATUS_DONE.
+ * Added 2026-10-01 for lib/tint/stop-work.ts, which cancels them; the board
+ * and feed queries that still spell the pair inline predate this constant.
+ */
+export const TINT_SPLIT_LIVE_STATUSES = [
+  "tint_assigned",
+  "tinting_in_progress",
+] as const;

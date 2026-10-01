@@ -61,15 +61,24 @@ export interface OffFloorBill {
  * ⚠ NOT the retired detail-panel tint lock (CLAUDE_FLOOR §4.7, inert since
  * the rail went). That was a UI gate on `source === "rail"`; this is enforced
  * by the routes themselves.
+ *
+ * `allowTintRoom` (2026-10-01, Tint Manager tabs build step 3) lifts ONLY the
+ * tint-room refusal. Passed ONLY by the Tint Manager's Stop & cancel and its
+ * mid-tint Raise CI, and only AFTER lib/tint/stop-work.ts has ended the live
+ * assignment and splits — so the orphan this refusal exists to prevent cannot
+ * happen. Floor never passes it.
  */
-export function offFloorRefusal(bill: OffFloorBill): string | null {
+export function offFloorRefusal(bill: OffFloorBill, opts?: { allowTintRoom?: boolean }): string | null {
   if (bill.workflowStage === "cancelled") return "Already cancelled";
   if (bill.workflowStage === "dispatched") return "Already dispatched";
   if (bill.tripDropId !== null) {
     return `On trip ${bill.tripNumber ?? "(unknown)"} — remove it from the trip first`;
   }
-  if (bill.workflowStage === "tint_assigned" || bill.workflowStage === "tinting_in_progress") {
-    return "In the tint room — cancel from Tint Manager";
+  if (
+    opts?.allowTintRoom !== true &&
+    (bill.workflowStage === "tint_assigned" || bill.workflowStage === "tinting_in_progress")
+  ) {
+    return "In the tint room — use Stop & cancel on Tint Manager";
   }
   return null;
 }

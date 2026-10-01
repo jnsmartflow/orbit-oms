@@ -34,6 +34,8 @@ import { buildCancelNote, type CancelReason } from "@/lib/picking/cancel-reasons
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { billingRefusal } from "@/lib/billing/refusal";
+import { stopTintWork } from "@/lib/tint/stop-work";
+import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 
 /** The log notes for the Hand mark (2026-09-24). Plain strings: nothing reads
  *  them back — the mark itself is orders.handAt. */
@@ -55,6 +57,8 @@ export const BILL_ACTION_ORDER_SELECT = {
   obdEmailDate: true,
   dispatchStatus: true,
   isRemoved: true,
+  // cancel (split cleanup) + restore (tint queue): tint bills only (2026-10-01).
+  orderType: true,
   // hand / unhand: the repeat-press skip.
   handAt: true,
   // cancel's refusals (offFloorRefusal) — the trip number is for the message.
@@ -76,6 +80,10 @@ export interface BillActionOpts {
   cancelRemark?: string | null;
   /** cancel: legacy free-text note, used only when cancelReason is absent. */
   reason?: string;
+  /** cancel: lift offFloorRefusal's tint-room refusal. ONLY the Tint Manager's
+   *  Stop & cancel passes it, after lib/tint/stop-work.ts has ended the live
+   *  jobs (2026-10-01). Floor never does. */
+  allowTintRoom?: boolean;
 }
 
 /** done = wrote one update + one log · failed = refused, nothing written ·
@@ -198,13 +206,32 @@ export async function applyBillAction(
     // 🔴 THE SAME REFUSALS AS RAISE CI (lib/floor/off-floor.ts, owner
     // 2026-09-22): already cancelled, dispatched, on a trip, or in the tint
     // room. Per bill, into `failed`, never the whole batch.
-    const refusal = offFloorRefusal({
-      workflowStage: order.workflowStage,
-      tripDropId: order.tripDropId,
-      tripNumber: order.tripDrop?.trip.tripNumber ?? null,
-    });
+    const refusal = offFloorRefusal(
+      {
+        workflowStage: order.workflowStage,
+        tripDropId: order.tripDropId,
+        tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+      },
+      { allowTintRoom: opts.allowTintRoom === true },
+    );
     if (refusal !== null) {
       return { kind: "failed", error: refusal };
+    }
+    // 🔴 TINT BILLS: CANCEL ANY LIVE SPLITS FIRST (2026-10-01, Tint Manager tabs
+    // build step 3 — plan §D, owner-approved). A partly-split bill sits at
+    // pending_tint_assignment while legacy splits are still live; cancelling the
+    // bill used to leave them in the operator's queue, workable, and able to
+    // write slotId onto the cancelled parent at Done. lib/tint/stop-work.ts owns
+    // the split cancel (no orders write; idempotent). BEFORE the stage write, so
+    // a failure here leaves the bill un-cancelled with nothing orphaned, and the
+    // same press heals it. A bill with no live split writes nothing here.
+    if (order.orderType === "tint") {
+      await stopTintWork({
+        orderId,
+        managerId: changedById,
+        note: "bill cancelled",
+        parts: { assignments: false, splits: true },
+      });
     }
     updateData = { workflowStage: "cancelled", dispatchStatus: null };
     toStage = "cancelled";
@@ -243,7 +270,9 @@ export async function applyBillAction(
     // restore — cancelled → back onto the board as a `no slot` row, through
     // floorBoardWhere's arm 2 (floorUnslottedWhere: rank < 60 +
     // dispatchStatus null; the decision rail this once fed retired
-    // 2026-09-13). Splits were never touched by cancel, so nothing to reset.
+    // 2026-09-13) — or, for a tint bill that never finished, back onto the
+    // Tint Manager rail (below). Splits a cancel ended stay cancelled; the next
+    // Assign mints a fresh job.
     if (order.workflowStage !== "cancelled") {
       return { kind: "failed", error: "Order is not cancelled" };
     }
@@ -263,9 +292,28 @@ export async function applyBillAction(
         error: `Return ${liveCi.ciNumber ?? `CI #${liveCi.id}`} is with billing — it can't be restored here`,
       };
     }
-    updateData = { workflowStage: "pending_support", dispatchStatus: null };
-    toStage = "pending_support";
-    note = "Restored to decisions";
+    // 🔴 A TINT BILL THAT NEVER FINISHED TINTING GOES BACK TO THE TINT QUEUE
+    // (owner 2026-10-01, plan §J-1). "Never finished" = no tint_assignments row
+    // at TINT_STATUS_DONE (any assignee — the Base placeholder counts, its
+    // bypass IS a finish) and no split at TINT_STATUS_DONE. Its shades were
+    // never made, so pending_support would send it past the tint room. A tint
+    // bill cancelled AFTER finishing keeps the floor's pending_support. Same
+    // destination Pick-delete Undo uses (lib/billing/pick-delete.ts).
+    let neverTinted = false;
+    if (order.orderType === "tint") {
+      const doneAssignments = await prisma.tint_assignments.count({ where: { orderId, status: TINT_STATUS_DONE } });
+      const doneSplits = doneAssignments > 0 ? 0 : await prisma.order_splits.count({ where: { orderId, status: TINT_STATUS_DONE } });
+      neverTinted = doneAssignments === 0 && doneSplits === 0;
+    }
+    if (neverTinted) {
+      updateData = { workflowStage: "pending_tint_assignment", dispatchStatus: null, sequenceOrder: 0 };
+      toStage = "pending_tint_assignment";
+      note = "Restored to tint queue";
+    } else {
+      updateData = { workflowStage: "pending_support", dispatchStatus: null };
+      toStage = "pending_support";
+      note = "Restored to decisions";
+    }
   } else {
     // unhold (2026-09-22) — the 8 s Undo on the bottom bar's bulk Hold; the
     // Tint Manager's Release (2026-10-01). Puts back the ONE thing hold

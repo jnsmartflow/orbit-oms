@@ -47,3 +47,30 @@ export function computeElapsedMs(args: ComputeElapsedArgs): number | null {
   const liveMs = Math.max(0, nowMs - startMs);
   return accumulatedMs + liveMs;
 }
+
+/** What minutesSinceRunStart needs off a tint_assignments row. */
+interface RunStartArgs {
+  /** The current run's start — the resume route resets it to "now". */
+  startedAt:    Date;
+  /** Set by pause, nulled by resume. */
+  lastPausedAt: Date | null;
+}
+
+/**
+ * Whole minutes in the CURRENT run, floored, never negative — the amount a
+ * pause (or a Tint Manager Stop & cancel) folds into accumulatedMinutes.
+ *
+ * Extracted 2026-10-01 (Tint Manager tabs build step 3) from
+ * app/api/tint/operator/pause/route.ts, which computed it inline, so pause and
+ * lib/tint/stop-work.ts freeze a running timer by ONE rule. The arithmetic is
+ * the pause route's, unchanged: baseline = lastPausedAt when it is later than
+ * startedAt, else startedAt.
+ */
+export function minutesSinceRunStart(asg: RunStartArgs, now: Date): number {
+  const baseline =
+    asg.lastPausedAt && asg.lastPausedAt.getTime() > asg.startedAt.getTime()
+      ? asg.lastPausedAt
+      : asg.startedAt;
+  const elapsedMs = now.getTime() - baseline.getTime();
+  return Math.max(0, Math.floor(elapsedMs / 60000));
+}

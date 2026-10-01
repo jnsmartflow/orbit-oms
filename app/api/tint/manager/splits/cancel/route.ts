@@ -73,15 +73,32 @@ export async function POST(req: Request): Promise<NextResponse> {
       data:  { status: "cancelled", sequenceOrder: 0 },
     });
 
-    // Always reset to pending_tint_assignment.
-    // Cancelling any tint_assigned split always frees qty, meaning there is
-    // now unassigned qty remaining on the OBD — regardless of how many other
-    // active splits exist. The Pending column card must reappear with the
-    // correct remaining qty indicator.
-    await tx.orders.update({
-      where: { id: split.orderId },
-      data:  { workflowStage: "pending_tint_assignment" },
+    // Reset to pending_tint_assignment — ONLY while the parent is still in the
+    // tint stages. Cancelling a tint_assigned split frees qty, so a parent that
+    // is still being tinted has unassigned qty again and must reappear on the
+    // rail with the correct remaining-qty indicator.
+    //
+    // 🔴 GUARDED 2026-10-01 (Tint Manager tabs build step 3, plan §D). This used
+    // to write unconditionally, with no order_status_logs row — so cancelling a
+    // leftover split on a bill Floor (or the Tint Manager) had CANCELLED put the
+    // bill silently back on the rail, un-cancelled with no trace. A parent
+    // anywhere else (cancelled, finished, on the floor) is left exactly where it
+    // is; only the split is cancelled.
+    // ⚠ This route's $transaction is pre-existing and deliberately deferred
+    // (CLAUDE_TINT §1.8, ROADMAP) — not changed here.
+    const parent = await tx.orders.findUnique({
+      where:  { id: split.orderId },
+      select: { workflowStage: true },
     });
+    if (
+      parent !== null &&
+      ["pending_tint_assignment", "tint_assigned", "tinting_in_progress"].includes(parent.workflowStage)
+    ) {
+      await tx.orders.update({
+        where: { id: split.orderId },
+        data:  { workflowStage: "pending_tint_assignment" },
+      });
+    }
   });
 
   return NextResponse.json({ ok: true });
