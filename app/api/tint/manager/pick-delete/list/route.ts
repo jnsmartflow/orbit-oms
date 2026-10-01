@@ -8,19 +8,21 @@ import { listPickDelete } from "@/lib/billing/pick-delete";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/billing/pick-delete/list?month=YYYY-MM — the Pick delete tab: the open
- * same-SO groups billing can act on (getActionableGroups — at least one bill
- * passes pickDeleteCheck; ALL DATES, oldest first) and the History list for the IST
- * month (newest first). `month` defaults to the current IST month; a malformed
- * one is a 400. READ-ONLY. Gate: billing_pick_delete canView. Logic:
- * lib/billing/pick-delete.ts.
+ * GET /api/tint/manager/pick-delete/list?month=YYYY-MM — the Tint Manager's
+ * Pick delete: the open same-SO groups whose EVERY bill is SMU 74/77 (owner
+ * "tint", 2026-10-01 — plan §E) and this desk's decided list for the IST month.
+ * Billing's route, shape and month rule exactly; the same lib function with
+ * owner "tint". READ-ONLY.
+ * Gate: tint_manager canView AND tint_pick_delete canView.
  */
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // checkAnyPermission, never checkPermission — the latter reads only the primary role.
   const roles = session.user.roles ?? [session.user.role];
-  if (!(await checkAnyPermission(roles, "billing_pick_delete", "canView"))) {
+  if (
+    !(await checkAnyPermission(roles, "tint_manager", "canView")) ||
+    !(await checkAnyPermission(roles, "tint_pick_delete", "canView"))
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -30,7 +32,6 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: `Invalid month "${month}" — expected YYYY-MM` }, { status: 400 });
   }
 
-  // Billing's groups only — all-74/77 groups are the Tint Manager's (2026-10-01).
-  const list = await listPickDelete(month, "billing");
+  const list = await listPickDelete(month, "tint");
   return NextResponse.json(list, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

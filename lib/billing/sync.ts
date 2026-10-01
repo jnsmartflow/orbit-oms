@@ -123,6 +123,7 @@ export async function billingSync(body: SyncBody, arms: SyncArms, now: Date = ne
   if (touched.picking) counts.picking = await countBillingPending();
   if (touched.print) counts.print = await getPrintCount();
   if (touched.telephonic) counts.telephonic = (await getTelephonicMarker(now)).count;
-  if (touched.pickDelete) counts.pickDelete = (await getPickDeleteMarker()).count;
+  // Billing's groups only (2026-10-01) — the Tint Manager's never count here.
+  if (touched.pickDelete) counts.pickDelete = (await getPickDeleteMarker("billing")).count;
   return { touched, counts };
 }

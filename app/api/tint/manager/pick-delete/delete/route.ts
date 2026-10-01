@@ -1,26 +1,24 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { checkAnyPermission } from "@/lib/permissions";
 import { pickDelete } from "@/lib/billing/pick-delete";
+import { checkTintAction } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/billing/pick-delete/delete — body { orderId }.
- * Cancels ONE bill of a same-SO group as a duplicate (reason duplicate_bill).
- * 409 with a plain message when: already cancelled, dispatched, on a trip, in
- * the tint room (Floor's offFloorRefusal), legacy closed, a live CI, no other
- * live bill on the SO, already pick deleted, or the bill changed mid-press.
- * Write order (claim → cancel → clean-up → push) and why: lib/billing/pick-delete.ts
- * pickDelete(). Gate: billing_pick_delete canEdit. Never calls Floor/Picking routes.
+ * POST /api/tint/manager/pick-delete/delete — body { orderId }.
+ * Billing's Pick delete on a Tint Manager group (owner "tint", 2026-10-01 —
+ * plan §E): the same lib function, refusals and write order (claim → cancel →
+ * clean-up → push), plus "This SO is decided in Billing" when the group is not
+ * all-74/77. A twin an operator is mixing stays undeletable (owner §J-3).
+ * Gate: tint_manager canEdit AND tint_pick_delete canEdit.
  */
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const roles = session.user.roles ?? [session.user.role];
-  if (!(await checkAnyPermission(roles, "billing_pick_delete", "canEdit"))) {
-    return NextResponse.json({ error: "You do not have permission to pick delete a bill." }, { status: 403 });
-  }
+  const refused = await checkTintAction(roles, "pick-delete");
+  if (refused !== null) return NextResponse.json({ error: refused }, { status: 403 });
   const userId = Number(session.user.id);
   if (!Number.isInteger(userId) || userId <= 0) {
     return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
@@ -32,7 +30,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "orderId must be a positive integer" }, { status: 400 });
   }
 
-  const r = await pickDelete({ orderId, userId, owner: "billing" });
+  const r = await pickDelete({ orderId, userId, owner: "tint" });
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
   return NextResponse.json({ ok: true, ...r.data });
 }

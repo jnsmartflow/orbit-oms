@@ -1,25 +1,24 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { checkAnyPermission } from "@/lib/permissions";
 import { undoDecision } from "@/lib/billing/pick-delete";
+import { checkTintAction } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/billing/pick-delete/undo — body { decisionId }.
- * All OK → stamped undone (the flag returns). Pick delete → the bill is restored
- * if it is still cancelled (pending_tint_assignment + null status when it was
- * deleted while waiting for tint; pending_picking + 'dispatch' otherwise), then
- * stamped undone; refused (409) while the bill carries a live CI. Already
- * undone → 409. Gate: billing_pick_delete canEdit.
+ * POST /api/tint/manager/pick-delete/undo — body { decisionId }.
+ * Billing's Undo on a Tint Manager decision (owner "tint", 2026-10-01 — plan
+ * §E): the same lib function and restore rule (a bill deleted while waiting for
+ * tint goes back to pending_tint_assignment), plus "This SO is decided in
+ * Billing" for a decision on a group that is not all-74/77.
+ * Gate: tint_manager canEdit AND tint_pick_delete canEdit.
  */
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const roles = session.user.roles ?? [session.user.role];
-  if (!(await checkAnyPermission(roles, "billing_pick_delete", "canEdit"))) {
-    return NextResponse.json({ error: "You do not have permission to undo a same-SO decision." }, { status: 403 });
-  }
+  const refused = await checkTintAction(roles, "pick-delete");
+  if (refused !== null) return NextResponse.json({ error: refused }, { status: 403 });
   const userId = Number(session.user.id);
   if (!Number.isInteger(userId) || userId <= 0) {
     return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
@@ -31,7 +30,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "decisionId must be a positive integer" }, { status: 400 });
   }
 
-  const r = await undoDecision({ decisionId, userId, owner: "billing" });
+  const r = await undoDecision({ decisionId, userId, owner: "tint" });
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
   return NextResponse.json({ ok: true, ...r.data });
 }

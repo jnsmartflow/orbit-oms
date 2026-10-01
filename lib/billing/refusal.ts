@@ -41,10 +41,13 @@
 //   billingRefusal("shipTo", { workflowStage: "pending_picking", tripDropId: 7,
 //                              tripNumber: "L-260924-02" })                          → "On trip L-260924-02 — remove it from the trip first"
 //   billingRefusal("hand",   { workflowStage: "tint_assigned" })                    → null
-//   billingRefusal("ci",     { workflowStage: "tinting_in_progress" })              → "In the tint room — …"
+//   billingRefusal("ci",     { workflowStage: "tinting_in_progress" })              → TINT_ROOM_REFUSAL
 //   billingRefusal("ci",     { workflowStage: "pending_tint_assignment" })          → null
 //   billingRefusal("ci",     { workflowStage: "pick_checked" })                     → null   (caller clears the assignment)
 //   billingRefusal("ci",     { workflowStage: "pending_support", isRemoved: true }) → "Bill removed"
+
+// The tint-room wording is Floor's constant (2026-10-01): one sentence, both desks.
+import { TINT_ROOM_REFUSAL } from "@/lib/floor/off-floor";
 
 export const BILLING_ACTIONS = ["hold", "urgent", "slot", "shipTo", "hand", "ci"] as const;
 export type BillingAction = (typeof BILLING_ACTIONS)[number];
@@ -107,7 +110,7 @@ export function billingRefusal(
   }
 
   if (TINT_ROOM_STAGES.includes(stage) && REFUSED_IN_TINT_ROOM.has(action)) {
-    return "In the tint room — cancel from Tint Manager";
+    return TINT_ROOM_REFUSAL;
   }
 
   return null;

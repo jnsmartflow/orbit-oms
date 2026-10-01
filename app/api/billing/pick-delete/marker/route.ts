@@ -21,6 +21,8 @@ export async function GET(): Promise<NextResponse> {
   if (!(await checkAnyPermission(roles, "billing_pick_delete", "canView"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const marker = await getPickDeleteMarker();
+  // Billing's groups only (2026-10-01) — this count also drives the blocking
+  // popup, so a Tint Manager group can never block Billing.
+  const marker = await getPickDeleteMarker("billing");
   return NextResponse.json(marker, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

@@ -14,6 +14,9 @@
  *           marks touched must carry the marker's count, and every count must equal it.
  *   3. An unrelated order id (and an unrelated trip id) → all touched = false, no counts.
  * A comparison that differs is re-run (up to 3 tries) before it counts. Exit 1 on any difference.
+ *
+ * 2026-10-01: section 0 asserts the pick-delete owner split (billing + tint = legacy), and the
+ * expected pickDelete count is legacy − tint, since Billing's sync counts Billing's groups only.
  */
 import "dotenv/config";
 import { prisma } from "@/lib/prisma";
@@ -23,6 +26,7 @@ import { getPrintWorkTripIds, loadPrintTrips } from "@/lib/billing/print";
 import { billingSync, classifyBillingSync, type SyncArms } from "@/lib/billing/sync";
 import type { SyncBody } from "@/lib/billing/sync-rule";
 import { getPickDeleteMarkerLegacy } from "./parity-pick-delete-legacy";
+import { getPickDeleteMarker } from "@/lib/billing/pick-delete";
 
 // ── OLD marker logic, frozen ───────────────────────────────────────────────
 
@@ -84,7 +88,11 @@ async function markerCounts(now: Date) {
     picking: await pickingCountLegacy(),
     print: await printCountLegacy(),
     telephonic: (await telephonicMarkerLegacy(now)).count,
-    pickDelete: (await getPickDeleteMarkerLegacy()).count,
+    // 2026-10-01 (Tint Manager tabs build step 4): Billing's sync now counts
+    // Billing's groups only, so the expected count is the single-desk legacy
+    // count MINUS the Tint Manager's (all-74/77) groups. Section 0 proves
+    // billing + tint = legacy on its own, so this subtraction is not circular.
+    pickDelete: (await getPickDeleteMarkerLegacy()).count - (await getPickDeleteMarker("tint")).count,
   };
 }
 
@@ -134,6 +142,14 @@ const body = (p: Partial<SyncBody>): SyncBody => ({
 
 (async () => {
   console.log(`Billing sync parity — ${new Date().toISOString()}\n`);
+
+  console.log("0. Pick delete split (2026-10-01): billing + tint = legacy");
+  await compare("pick delete marker count: legacy = billing + tint", async () => {
+    const b = (await getPickDeleteMarker("billing")).count;
+    const t = (await getPickDeleteMarker("tint")).count;
+    console.log(`    billing ${b} · tint ${t}`);
+    return [(await getPickDeleteMarkerLegacy()).count, b + t];
+  });
 
   console.log("1. Telephonic marker, OLD (7 statements) vs NEW (1)");
   await compare("telephonic marker — every field", async () => {

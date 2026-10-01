@@ -16,6 +16,16 @@
 // scripts/parity-pick-delete.ts. Change the rule there → change it here too.
 // The DECISION is Billing's: only this module writes pick_delete_decisions.
 //
+// 🔴 TWO DESKS, ONE MODULE (2026-10-01, Tint Manager tabs build step 4 — plan
+// docs/prompts/drafts/code-discovery-2026-10-01-tint-manager-build-plan.md §E).
+// Every reader and writer below takes an `owner`: a group whose EVERY live twin
+// is SMU 74/77 is decided on the Tint Manager ("tint"), every other group in
+// Billing ("billing") — ownerOfSmus / PROJECT_SMU_NAMES in pick-delete-rule.ts,
+// tm_owned in the SQL. Billing's routes pass "billing", the Tint Manager's
+// (app/api/tint/manager/pick-delete/*) "tint". A writer re-reads the twins' SMU
+// and refuses (409) a group that belongs to the other desk, so a stale tab on
+// either side cannot decide the other's group. Same functions, never a copy.
+//
 // REUSED, NOT COPIED: offFloorRefusal (lib/floor/off-floor.ts) · findLiveCi +
 // liveCiRefusal (lib/ci/live-ci.ts) · buildCancelNote("duplicate_bill")
 // (lib/picking/cancel-reasons.ts) · resolveCatalogByCode
@@ -29,7 +39,14 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTwinIdsBySo } from "@/lib/picking/duplicate-so";
-import { JS_TRIM_CHARS, compareGroups, type OpenGroupRow } from "@/lib/billing/pick-delete-rule";
+import {
+  JS_TRIM_CHARS,
+  PROJECT_SMU_NAMES,
+  compareGroups,
+  ownerOfSmus,
+  type OpenGroupRow,
+  type PickDeleteOwner,
+} from "@/lib/billing/pick-delete-rule";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { buildCancelNote } from "@/lib/picking/cancel-reasons";
@@ -112,7 +129,13 @@ const NOT_DELETABLE_STAGES = ["cancelled", "dispatched", "closed", "tint_assigne
 function openGroupsCte(): Prisma.Sql {
   return Prisma.sql`
     grp AS (
-      SELECT "soNumber" AS so, array_agg(id ORDER BY id) AS ids, max("updatedAt") AS latest
+      SELECT "soNumber" AS so, array_agg(id ORDER BY id) AS ids, max("updatedAt") AS latest,
+             -- tm_owned: EVERY live twin is SMU 74/77 → the Tint Manager decides
+             -- (2026-10-01). 🔴 The coalesce is LOAD-BEARING: bool_and IGNORES
+             -- NULLs, so without it a group of (null-SMU bill, 74 bill) would read
+             -- TRUE and vanish from Billing. A null SMU must count as "not
+             -- project" — the same answer ownerOfSmus gives in JS.
+             bool_and(coalesce("smu" = ANY (${PROJECT_SMU_NAMES as string[]}::text[]), false)) AS tm_owned
         FROM orders
        WHERE "isRemoved" = false
          AND "workflowStage" <> 'cancelled'
@@ -123,7 +146,7 @@ function openGroupsCte(): Prisma.Sql {
          AND bool_or(NOT ("workflowStage" = ANY (${OPEN_STAGE_EXCLUDED}::text[])))
     ),
     open_groups AS (
-      SELECT g.so, g.ids, g.latest,
+      SELECT g.so, g.ids, g.latest, g.tm_owned,
              EXISTS (
                SELECT 1 FROM orders o
                 WHERE o.id = ANY (g.ids)
@@ -146,19 +169,21 @@ function openGroupsCte(): Prisma.Sql {
     )`;
 }
 
-/** Every open (not acknowledged) same-SO group, ONE statement. Ordered by SO. */
-async function readOpenGroupRows(): Promise<OpenGroupRow[]> {
+/** Every open (not acknowledged) same-SO group OF THIS OWNER, ONE statement. Ordered by SO. */
+async function readOpenGroupRows(owner: PickDeleteOwner): Promise<OpenGroupRow[]> {
   return prisma.$queryRaw<OpenGroupRow[]>`
     WITH ${openGroupsCte()}
-    SELECT so, ids, latest, actionable FROM open_groups ORDER BY so`;
+    SELECT so, ids, latest, actionable FROM open_groups
+     WHERE tm_owned = ${owner === "tint"}
+     ORDER BY so`;
 }
 
 /**
  * The open groups: SO → sorted live bill ids (≥ 2 live twins, ≥ 1 still before
  * dispatch, not covered by an active All OK). One statement — see above.
  */
-export async function getOpenGroups(): Promise<Map<string, number[]>> {
-  const rows = await readOpenGroupRows();
+export async function getOpenGroups(owner: PickDeleteOwner): Promise<Map<string, number[]>> {
+  const rows = await readOpenGroupRows(owner);
   return new Map(rows.map((r) => [r.so, r.ids]));
 }
 
@@ -278,6 +303,8 @@ const BILL_SELECT = {
   tripDropId: true,
   shipToCustomerName: true,
   updatedAt: true,
+  // The SMU name — the decided list's owner filter (ownerOfSmus, 2026-10-01).
+  smu: true,
   tripDrop: { select: { trip: { select: { tripNumber: true } } } },
   customer: { select: { customerName: true } },
   shipToOverrideCustomer: { select: { customerName: true } },
@@ -321,7 +348,7 @@ async function readBills(ids: number[]): Promise<Map<number, BillRow>> {
  * Picking's red Same SO flag is NOT this rule and does not change
  * (lib/picking/duplicate-so.ts) — a hidden group still flags on the boards.
  */
-export async function getActionableGroups(): Promise<{
+export async function getActionableGroups(owner: PickDeleteOwner): Promise<{
   /** SO → sorted live bill ids, shown groups only. */
   groups: Map<string, number[]>;
   /** Every open group's bill ids, shown or not — the marker's clock watches all. */
@@ -336,7 +363,7 @@ export async function getActionableGroups(): Promise<{
   // not every open bill. pickDeleteCheck still decides each bill's button and
   // label, so the list and the delete route keep sharing one rule; the SQL's
   // `actionable` only chooses which groups to look at.
-  const rows = await readOpenGroupRows();
+  const rows = await readOpenGroupRows(owner);
   const openIds = rows.flatMap((r) => r.ids);
   const candidates = rows.filter((r) => r.actionable);
   const billsById = await readBills(candidates.flatMap((r) => r.ids));
@@ -361,12 +388,12 @@ export async function getActionableGroups(): Promise<{
   return { groups, openIds, billsById, checks };
 }
 
-export async function listPickDelete(month: string): Promise<PickDeleteList> {
+export async function listPickDelete(month: string, owner: PickDeleteOwner): Promise<PickDeleteList> {
   const range = istMonthRange(month);
   if (range === null) throw new Error(`Invalid month "${month}"`);
 
   // ── Open groups — only those billing can act on (getActionableGroups) ──
-  const { groups, billsById, checks } = await getActionableGroups();
+  const { groups, billsById, checks } = await getActionableGroups(owner);
   const allIds = Array.from(groups.values()).flat();
 
   // ONE batched line read for EVERY shown bill (hint, line counts AND the cards'
@@ -458,7 +485,15 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
   const decidedBills = await readBills(decidedIds);
   const obdOf = (id: number) => decidedBills.get(id)?.obdNumber ?? `#${id}`;
 
-  const decided: PickDeleteDecidedRow[] = decisions.map((d) => {
+  // Only THIS desk's decisions (2026-10-01): a decision belongs to whoever owns
+  // its group — ownerOfSmus over the SMU of every bill it was taken against.
+  // Derived, never stored; orders.smu does not change after import. A bill that
+  // cannot be read reads as no SMU, i.e. Billing — the safe side.
+  const mine = decisions.filter(
+    (d) => ownerOfSmus(d.orderIds.map((id) => decidedBills.get(id)?.smu ?? null)) === owner,
+  );
+
+  const decided: PickDeleteDecidedRow[] = mine.map((d) => {
     const first = decidedBills.get(d.orderIds[0]);
     const deleted = d.deletedOrderId !== null ? decidedBills.get(d.deletedOrderId) : undefined;
     return {
@@ -490,11 +525,15 @@ export async function listPickDelete(month: string): Promise<PickDeleteList> {
  * (pick-delete-rule.ts markerFromRows does the same in JS), fed by one round
  * trip instead of ≈ 14.
  */
-export async function getPickDeleteMarker(): Promise<PickDeleteMarker> {
+export async function getPickDeleteMarker(owner: PickDeleteOwner): Promise<PickDeleteMarker> {
+  // Owner-scoped (2026-10-01): count + group clock over THIS desk's groups only,
+  // so a Tint Manager group never moves Billing's pill or blocks its popup. The
+  // decisions clock stays global — a false "changed" costs one reload.
+  const tm = owner === "tint";
   const res = await prisma.$queryRaw<{ count: number; latest: Date | null; decisions: Date | null }[]>`
     WITH ${openGroupsCte()}
-    SELECT (SELECT count(*) FROM open_groups WHERE actionable)::int AS count,
-           (SELECT max(latest) FROM open_groups) AS latest,
+    SELECT (SELECT count(*) FROM open_groups WHERE actionable AND tm_owned = ${tm})::int AS count,
+           (SELECT max(latest) FROM open_groups WHERE tm_owned = ${tm}) AS latest,
            (SELECT max("updatedAt") FROM pick_delete_decisions) AS decisions`;
   const r = res[0];
   const times = [r?.latest ?? null, r?.decisions ?? null]
@@ -539,16 +578,31 @@ function isP2002(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 }
 
+/**
+ * The desk check every writer runs (2026-10-01): re-read these bills' SMU and,
+ * when the group belongs to the OTHER desk, the 409 text — else null. ONE
+ * helper, called by markAllOk, pickDelete and undoDecision.
+ */
+async function ownerRefusal(orderIds: readonly number[], owner: PickDeleteOwner): Promise<string | null> {
+  const rows = await prisma.orders.findMany({ where: { id: { in: [...orderIds] } }, select: { smu: true } });
+  const actual = ownerOfSmus(rows.map((r) => r.smu));
+  if (actual === owner) return null;
+  return actual === "tint" ? "This SO is decided on Tint Manager" : "This SO is decided in Billing";
+}
+
 /** All OK — saved against the SO's current live set, which must equal `orderIds`. */
 export async function markAllOk(args: {
   soNumber: string;
   orderIds: number[];
   userId: number;
+  owner: PickDeleteOwner;
 }): Promise<WriteResult<{ decisionId: number }>> {
   const twins = (await getTwinIdsBySo([args.soNumber])).get(args.soNumber) ?? [];
   if (twins.length < 2 || !sameSet(twins, args.orderIds)) {
     return { ok: false, status: 409, error: "Group changed — refresh" };
   }
+  const wrongDesk = await ownerRefusal(twins, args.owner);
+  if (wrongDesk !== null) return { ok: false, status: 409, error: wrongDesk };
   try {
     const row = await prisma.pick_delete_decisions.create({
       data: {
@@ -594,6 +648,7 @@ export async function markAllOk(args: {
 export async function pickDelete(args: {
   orderId: number;
   userId: number;
+  owner: PickDeleteOwner;
 }): Promise<WriteResult<{ decisionId: number; obdNumber: string; keptObdNumbers: string[]; warning?: string }>> {
   // ── Read (picker FIRST — the assignment row is deleted in step 3) ──
   const order = await prisma.orders.findUnique({
@@ -616,6 +671,12 @@ export async function pickDelete(args: {
   }
 
   const twins = (await getTwinIdsBySo([soNumber])).get(soNumber) ?? [];
+  // The desk check first — the other desk's group is not this desk's to judge.
+  // Over the live twins (getTwinIdsBySo includes this bill while it is live).
+  if (twins.length > 0) {
+    const wrongDesk = await ownerRefusal(twins, args.owner);
+    if (wrongDesk !== null) return { ok: false, status: 409, error: wrongDesk };
+  }
   const refusal = await pickDeleteRefusal(
     {
       id: order.id,
@@ -744,13 +805,18 @@ export async function pickDelete(args: {
 export async function undoDecision(args: {
   decisionId: number;
   userId: number;
+  owner: PickDeleteOwner;
 }): Promise<WriteResult<{ restored: boolean }>> {
   const d = await prisma.pick_delete_decisions.findUnique({
     where: { id: args.decisionId },
-    select: { id: true, kind: true, undoneAt: true, deletedOrderId: true, deletedFromStage: true },
+    select: { id: true, kind: true, undoneAt: true, deletedOrderId: true, deletedFromStage: true, orderIds: true },
   });
   if (!d) return { ok: false, status: 404, error: "Decision not found" };
   if (d.undoneAt !== null) return { ok: false, status: 409, error: "Already undone" };
+  // The desk check — over every bill the decision was taken against, the same
+  // set the decided list's owner filter reads.
+  const wrongDesk = await ownerRefusal(d.orderIds, args.owner);
+  if (wrongDesk !== null) return { ok: false, status: 409, error: wrongDesk };
 
   const stamp = async (): Promise<boolean> => {
     const res = await prisma.pick_delete_decisions.updateMany({

@@ -2,7 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { JS_TRIM_CHARS, compareGroups, markerFromRows, type OpenGroupRow } from "./pick-delete-rule";
+import { JS_TRIM_CHARS, PROJECT_SMU_NAMES, compareGroups, markerFromRows, ownerOfSmus, type OpenGroupRow } from "./pick-delete-rule";
 
 test("JS_TRIM_CHARS is exactly the set of UTF-16 code units trim() removes", () => {
   const expected: number[] = [];
@@ -38,4 +38,31 @@ test("compareGroups: oldest first punch first, unknown last, then SO number", ()
     compareGroups,
   );
   assert.deepEqual(sorted.map((x) => x.soNumber), ["7", "3", "5", "1", "9"]);
+});
+
+// ── Owner (2026-10-01, Tint Manager tabs build step 4) ───────────────────────
+
+test("PROJECT_SMU_NAMES is exactly the 74 / 77 names, derived not typed", () => {
+  assert.deepEqual([...PROJECT_SMU_NAMES].sort(), ["Decorative Projects", "Retail Offtake"]);
+});
+
+test("ownerOfSmus: every twin 74/77 → tint", () => {
+  assert.equal(ownerOfSmus(["Decorative Projects", "Retail Offtake"]), "tint");
+  assert.equal(ownerOfSmus(["Retail Offtake", "Retail Offtake"]), "tint");
+});
+
+test("ownerOfSmus: mixed → billing", () => {
+  assert.equal(ownerOfSmus(["Decorative Projects", "Deco Retail"]), "billing");
+  assert.equal(ownerOfSmus(["Retail Offtake", "Distributor"]), "billing");
+});
+
+test("ownerOfSmus: any null / blank / unknown → billing", () => {
+  assert.equal(ownerOfSmus(["Decorative Projects", null]), "billing");
+  assert.equal(ownerOfSmus([undefined, "Retail Offtake"]), "billing");
+  assert.equal(ownerOfSmus(["Decorative Projects", ""]), "billing");
+  assert.equal(ownerOfSmus(["Decorative Projects", "74"]), "billing"); // a code is not a name
+});
+
+test("ownerOfSmus: empty is billing (safe side)", () => {
+  assert.equal(ownerOfSmus([]), "billing");
 });

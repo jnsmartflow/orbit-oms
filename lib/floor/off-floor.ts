@@ -37,6 +37,11 @@ export const FLOOR_REMARK_MAX = CANCEL_NOTE_MAX;
 
 // ── The refusals ────────────────────────────────────────────────────────────
 
+/** The ONE wording for "an operator holds this bill" (2026-10-01). Read by
+ *  offFloorRefusal below AND by lib/billing/refusal.ts (Billing's CI), so the two
+ *  desks name the same remedy — the Tint Manager's Stop & cancel. */
+export const TINT_ROOM_REFUSAL = "In the tint room — use Stop & cancel on Tint Manager";
+
 /** What offFloorRefusal needs to know about a bill. */
 export interface OffFloorBill {
   workflowStage: string;
@@ -78,7 +83,7 @@ export function offFloorRefusal(bill: OffFloorBill, opts?: { allowTintRoom?: boo
     opts?.allowTintRoom !== true &&
     (bill.workflowStage === "tint_assigned" || bill.workflowStage === "tinting_in_progress")
   ) {
-    return "In the tint room — use Stop & cancel on Tint Manager";
+    return TINT_ROOM_REFUSAL;
   }
   return null;
 }
