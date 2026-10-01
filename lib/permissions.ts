@@ -158,6 +158,7 @@ const ROLE_HREF_OVERRIDES: Record<string, Record<string, string>> = {
 export const REPORT_PAGE_KEYS = [
   "reports_tint_summary",
   "reports_ti_report",
+  "reports_trip_detail",
 ] as const satisfies readonly PageKey[];
 
 /** The PAGE_NAV_MAP row that links to the Reports hub. Its identity only. */
@@ -340,6 +341,10 @@ export type PageKey =
   // ⚠ `ti_report` just above gates NOTHING since this change; kept, relabelled.
   | "reports_tint_summary"
   | "reports_ti_report"
+  // reports_trip_detail (2026-10-01) — the Trip Detail .xlsx (every bill on a
+  // Floor trip). canExport gates GET /api/reports/trip-detail; canView is the
+  // hub/rail visibility like its two siblings.
+  | "reports_trip_detail"
   | "attendance"
   | "attendance_admin"
   | "settings_hide";
@@ -397,7 +402,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "billing_hand", "billing_ci",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   // The per-report ticks, beside the legacy hub key they replace.
-  "reports_tint_summary", "reports_ti_report",
+  "reports_tint_summary", "reports_ti_report", "reports_trip_detail",
   "settings_hide",
 ];
 
@@ -481,7 +486,8 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
   // reports_ti_report (2026-09-17): the TI Report Download Excel button, read in
   // app/reports/page.tsx and passed to TIReportContent. UI-only (the XLSX is
   // built in the browser from rows already fetched).
-  canExport: ["mrn", "reports_ti_report"],
+  // reports_trip_detail (2026-10-01): api/reports/trip-detail gates on canExport.
+  canExport: ["mrn", "reports_ti_report", "reports_trip_detail"],
   // MRN ONLY: api/mrn/[mrnId]/delete:53. Every other delete path uses a role
   // check instead (§5).
   canDelete: ["mrn"],
