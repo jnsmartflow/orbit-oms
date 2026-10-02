@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Missing Customer Card</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-600:#7C3AED;--brand-700:#6D28D9;
+--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5C5869;--ink-700:#3F3B4B;--ink-900:#1B1826;
+--ok:#059669;--ok-bg:#ECFDF5;--ok-text:#047857;--warn:#D97706;--warn-bg:#FFFBEB;--warn-text:#B45309;--warn-bd:#FDE68A;--line:#EEEDF3}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:13px;color:var(--ink-900);background:#fff}
+.mono{font-family:"JetBrains Mono",monospace;font-size:11.5px}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+.note{background:var(--ink-900);color:#fff;font-size:12px;padding:7px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.note b{color:#C4B5FD}.note .sw{margin-left:auto;display:flex;gap:6px}
+.note .sw button{background:#2E2A3B;color:#fff;border:1px solid #4A4558;border-radius:6px;padding:3px 10px;font-size:11.5px}
+.note .sw button.on{background:var(--brand-600);border-color:var(--brand-600)}
+.app{position:relative;height:calc(100vh - 33px);display:flex;flex-direction:column}
+.trow{height:40px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--line);gap:8px}
+.tabs{display:flex;gap:20px;font-size:12.5px;color:var(--ink-500)}.tabs b{color:var(--ink-900)}
+.sp{flex:1}
+.chip{height:28px;border:0;border-radius:6px;padding:0 12px;font-size:12px;font-weight:700;background:var(--warn);color:#fff;box-shadow:0 2px 8px rgba(217,119,6,.3)}
+.chip.pulse{animation:pl 1.2s ease-in-out 3}
+@keyframes pl{50%{box-shadow:0 0 0 7px rgba(217,119,6,.28)}}
+.ctl{height:26px;border:1px solid var(--ink-200);background:#fff;border-radius:6px;padding:0 10px;font-size:11.5px;color:var(--ink-700)}
+.board{flex:1;padding:20px 24px;color:var(--ink-400)}
+.board .r{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 10px}
+.board .r.m{background:#FFFBEB;box-shadow:inset 4px 0 0 var(--warn);color:var(--ink-700)}
+
+.card{position:absolute;right:24px;bottom:24px;width:440px;background:#fff;border:1px solid var(--warn-bd);border-top:4px solid var(--warn);border-radius:14px;box-shadow:0 18px 40px rgba(27,24,38,.18);display:none;overflow:hidden}
+.card.on{display:block}
+.ch{display:flex;align-items:flex-start;gap:10px;padding:14px 16px 10px}
+.ch .ic{width:30px;height:30px;border-radius:8px;background:var(--warn-bg);color:var(--warn);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+.ch h4{margin:0;font-size:14px}
+.ch p{margin:2px 0 0;font-size:12px;color:var(--ink-500)}
+.ch .x{margin-left:auto;border:0;background:none;color:var(--ink-400);font-size:15px}
+.list{max-height:220px;overflow:auto;border-top:1px solid var(--line)}
+.it{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.it:last-child{border-bottom:0}
+.it b{display:block;font-size:13px}
+.it span{font-size:11.5px;color:var(--ink-500)}
+.it .add{height:28px;border-radius:7px;border:0;background:var(--brand-600);color:#fff;font-weight:600;padding:0 12px;font-size:12px}
+.it.done{background:var(--ok-bg)}.it.done .add{background:var(--ok);}
+.cf{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:var(--ink-25);border-top:1px solid var(--line)}
+.cf span{font-size:11.5px;color:var(--ink-400)}
+.cf button{height:30px;border-radius:7px;border:1px solid var(--ink-200);background:#fff;padding:0 14px;font-weight:600;color:var(--ink-700)}
+.one{padding:4px 16px 14px 56px}
+.one b{font-size:15px;display:block}
+.one .meta{font-size:12px;color:var(--ink-500);margin-top:3px}
+.bar{height:4px;background:var(--ink-50);border-radius:4px;margin-top:12px;overflow:hidden}
+.bar i{display:block;height:100%;width:85%;background:var(--warn);border-radius:4px;transition:width .3s}
+.tm{font-size:11px;color:var(--ink-400);margin-top:5px}
+.cf .add{background:var(--ink-900);color:#fff;border-color:var(--ink-900)}
+.cf .add.ok{background:var(--ok);border-color:var(--ok)}
+.lbl{position:absolute;font-size:11px;background:var(--ink-900);color:#fff;border-radius:6px;padding:3px 8px}
+</style></head>
+<body>
+<div class="note"><span><b>Missing customer card</b> · one customer per card · oldest first (FIFO) · 2 min each, then next</span>
+<div class="sw"><button data-m="one">1 missing</button><button data-m="many" class="on">3 missing · card 1</button><button data-m="saved">Card 1 saved</button><button data-m="next">→ Card 2 (FIFO)</button><button data-m="later">Queue done → chip</button></div></div>
+<div class="app">
+  <div class="trow">
+    <div class="tabs"><b>Tint 5</b><span>Base ● 15</span><span>TI 12</span><span>Hold 6</span><span>CI 0</span><span>Delete 1</span></div>
+    <div class="sp"></div>
+    <button class="chip" id="chip">⚠ <span id="n">3</span> missing customer</button>
+    <button class="ctl">‹ Today · 02 Oct ⌄ ›</button><button class="ctl">Filter</button><button class="ctl" style="background:#1B1826;color:#fff;border-color:#1B1826">+ Add to Tint</button>
+  </div>
+  <div class="board">
+    <div class="r">Tint board — unchanged</div><div class="r">…</div><div class="r">…</div>
+  </div>
+
+  <div class="card" id="card">
+    <div class="ch"><div class="ic">⚠</div>
+      <div><h4>Missing customer</h4><p id="pos">1 of 3 · oldest first</p></div>
+      </div>
+    <div class="one">
+      <b id="nm">AKSHAY GROUP</b>
+      <div class="meta"><span class="mono" id="cd">3587967</span> · OBD <span class="mono" id="ob">9109817339</span> · <span id="tb">Base</span></div>
+      <div class="bar"><i id="bar"></i></div>
+      <div class="tm" id="tm">1:42 left · then it moves to the orange chip</div>
+    </div>
+    <div class="cf" style="justify-content:flex-end"><button class="add" id="add">+ Add ship-to</button></div>
+  </div>
+</div>
+</div>
+<script>
+const Q=[["AKSHAY GROUP","3587967","9109817339","Base"],["MARITIME MUSEUM LOTHAL","3326424","9109584084","Base"],["SHIVALIK SKY","3301874","9109880512","Rail · tint"]];
+let i=0;
+function show(idx,total,state){
+ const c=document.getElementById('card'),x=Q[idx];
+ c.classList.add('on');
+ document.getElementById('nm').textContent=x[0];document.getElementById('cd').textContent=x[1];
+ document.getElementById('ob').textContent=x[2];document.getElementById('tb').textContent=x[3];
+ document.getElementById('pos').textContent=(total>1?(idx+1)+' of '+total+' · oldest first':'1 new');
+ const add=document.getElementById('add');add.textContent=state=='saved'?'✓ Added':'+ Add ship-to';add.classList.toggle('ok',state=='saved');
+ document.getElementById('bar').style.width=state=='saved'?'0%':'85%';
+ document.getElementById('tm').textContent=state=='saved'?'Next one in a moment…':'1:42 left · then it moves to the orange chip';
+}
+function set(m){
+ document.querySelectorAll('.sw button').forEach(b=>b.classList.toggle('on',b.dataset.m==m));
+ const c=document.getElementById('card'),chip=document.getElementById('chip'),n=document.getElementById('n');
+ chip.classList.remove('pulse');void chip.offsetWidth;
+ if(m=='one'){show(0,1);n.textContent='1';chip.classList.add('pulse')}
+ if(m=='many'){show(0,3);n.textContent='3';chip.classList.add('pulse')}
+ if(m=='saved'){show(0,3,'saved');n.textContent='2'}
+ if(m=='next'){show(1,3);n.textContent='2'}
+ if(m=='later'){c.classList.remove('on');n.textContent='3';chip.classList.add('pulse')}
+}
+document.querySelectorAll('.sw button').forEach(b=>b.onclick=()=>set(b.dataset.m));
+document.getElementById('add').onclick=()=>set('saved');
+set('many');
+</script>
+</body></html>

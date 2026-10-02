@@ -49,6 +49,7 @@ export async function GET(): Promise<NextResponse> {
       orderType: true,
       obdEmailDate: true,
       dispatchTargetDate: true,
+      createdAt: true,
       tripDrop: { select: { trip: { select: { tripDate: true } } } },
     },
     orderBy: { createdAt: "desc" },
@@ -77,6 +78,7 @@ export async function GET(): Promise<NextResponse> {
     urgentToday:
       r.dispatchTargetDate?.getTime() === today ||
       r.tripDrop?.trip.tripDate.getTime() === today,
+    createdAt: r.createdAt.toISOString(),
   }));
 
   return NextResponse.json({ count: orders.length, orders });

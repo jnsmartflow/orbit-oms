@@ -65,6 +65,8 @@ export interface MissingCustomerBill {
   obdEmailDate:       string | null;
   /** Dispatch target day or trip day is today (IST) — see the header. */
   urgentToday:        boolean;
+  /** orders.createdAt (import time), ISO — the missing-customer card's FIFO order. */
+  createdAt:          string;
 }
 
 /** The Tint Manager places a bill can show today (ids). */

@@ -96,8 +96,8 @@ import { LegacyTintManagerSync } from "@/components/tint/manager/use-tint-manage
 import { boardOrderIds, useTintManagerLive } from "@/components/tint/manager/use-tint-manager-live";
 import { useMissingCustomersPoll } from "@/components/tint/manager/use-missing-customers-poll";
 import { MissingCustomerContext, type MissingCustomerContextValue } from "@/components/tint/manager/missing-customer";
-import { missingOnBoard, type MissingCustomerBill, type MissingPlace } from "@/lib/tint/customer-missing";
-import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
+import { MissingCustomerCard, useMissingCardQueue } from "@/components/tint/manager/missing-card";
+import { missingOnBoard, type MissingCustomerBill } from "@/lib/tint/customer-missing";
 import { buildGroups, buildRail, queueSignature } from "@/components/tint/manager/rows";
 import type {
   BasePendingLine,
@@ -247,8 +247,7 @@ export function TintManagerContent() {
   const [missingLoaded, setMissingLoaded] = useState(false);
   /** Order ids a save just fixed — their rows flash green ~2s. */
   const [missingFlash, setMissingFlash] = useState<ReadonlySet<number>>(new Set());
-  /** The new-arrival nudge (one card) and the chip's 3× pulse (key bump). */
-  const [missingNudge, setMissingNudge] = useState<{ bill: MissingCustomerBill; place: MissingPlace } | null>(null);
+  /** The chip's single pulse when the missing-customer card queue empties (key bump). */
   const [chipPulse, setChipPulse] = useState(0);
   const [missingSheetOpen,    setMissingSheetOpen]    = useState(false);
   const [missingSheetOrder,   setMissingSheetOrder]   = useState<TintOrder | null>(null);
@@ -369,6 +368,7 @@ export function TintManagerContent() {
   ), [historyDate, missingCustomers, payload, baseRows, basePending, holdRows, access.canViewHoldTab]);
   const missingBoardRef = useRef(missingBoard);
   missingBoardRef.current = missingBoard;
+  const missingCardMarkAddedRef = useRef<(code: string) => void>(() => {});
   const missingOnly = (headerFilters.missing ?? []).includes("missing");
   // (The box no longer filters the rail / Tint tab as you type — since
   // 2026-10-02 it runs on Enter into a results dropdown; see "Header search".)
@@ -435,7 +435,6 @@ export function TintManagerContent() {
     setMissingSheetWarning(undefined);
     setMissingSheetOrder({ shipToCustomerId: bill.shipToCustomerId, shipToCustomerName: bill.shipToCustomerName } as TintOrder);
     setMissingSheetOpen(true);
-    setMissingNudge(null);
   }, [access.canAddCustomer]);
 
   /** After an Add ship-to save: the ONE success toast (the server's re-linked
@@ -448,6 +447,7 @@ export function TintManagerContent() {
       .filter((b) => (b.shipToCustomerId ?? "").toUpperCase() === code)
       .map((b) => b.orderId);
     toast.success(`✓ ${r.customerName} added to master · ${r.billsUpdated} ${r.billsUpdated === 1 ? "bill" : "bills"} updated`);
+    missingCardMarkAddedRef.current(code);
     for (const w of r.warnings) toast.warning(w);
     void fetchBoard();
     const list = await fetchMissingCustomers();
@@ -467,40 +467,22 @@ export function TintManagerContent() {
     flash:   missingFlash,
   }), [missingBoard, access.canAddCustomer, handleAddShipTo, missingFlash]);
 
-  // ── New-arrival nudge: a missing bill this browser session has not seen →
-  // ONE card (8s) + the chip pulses 3×. Never on the first load (everything
-  // there is seeded silently), never in history, never twice for a bill, and it
-  // never opens the form by itself. Seeded only once the board, Base and (when
-  // visible) Hold have all loaded, so a slow first read is not "new".
-  const missingSeenRef = useRef<Set<number> | null>(null);
-  useEffect(() => {
-    if (historyDate !== null || isLoading || !missingLoaded || baseRows === null) return;
-    if (access.canViewHoldTab && holdRows === null) return;
-    const KEY = "tm_missing_seen";
-    const ids = Array.from(missingBoard.byOrder.keys());
-    if (missingSeenRef.current === null) {
-      let stored: number[] = [];
-      try { stored = JSON.parse(sessionStorage.getItem(KEY) ?? "[]") as number[]; } catch { /* private mode */ }
-      missingSeenRef.current = new Set([...stored, ...ids]);
-      try { sessionStorage.setItem(KEY, JSON.stringify(Array.from(missingSeenRef.current))); } catch { /* ignore */ }
-      return;
-    }
-    const seen = missingSeenRef.current;
-    const fresh = ids.filter((id) => !seen.has(id));
-    if (fresh.length === 0) return;
-    for (const id of fresh) seen.add(id);
-    try { sessionStorage.setItem(KEY, JSON.stringify(Array.from(seen))); } catch { /* ignore */ }
-    const bill = missingBoard.byOrder.get(fresh[0]);
-    const place = missingBoard.placeOf.get(fresh[0]);
-    if (bill && place) setMissingNudge({ bill, place });
-    setChipPulse((n) => n + 1);
-  }, [missingBoard, historyDate, isLoading, missingLoaded, baseRows, holdRows, access.canViewHoldTab]);
-  useEffect(() => {
-    if (!missingNudge) return;
-    const t = window.setTimeout(() => setMissingNudge(null), 8000);
-    return () => window.clearTimeout(t);
-  }, [missingNudge]);
-  useEffect(() => { if (historyDate !== null) setMissingNudge(null); }, [historyDate]);
+  // ── The missing-customer CARD (2026-10-02, components/tint/manager/missing-card.tsx):
+  // one customer per card, this user's undismissed bills oldest first, 2 min each,
+  // paused while the Add ship-to form is open, ends in the chip. Starts once the
+  // board, Base and (when visible) Hold have loaded so the first order is whole.
+  const missingCardReady =
+    !isLoading && missingLoaded && baseRows !== null && (!access.canViewHoldTab || holdRows !== null);
+  const missingCard = useMissingCardQueue({
+    board:      missingBoard,
+    ready:      missingCardReady,
+    history:    historyDate !== null,
+    userId:     session?.user?.id ?? null,
+    paused:     missingSheetOpen,
+    onQueueEnd: () => setChipPulse((n) => n + 1),
+  });
+  // afterCustomerSaved (declared above) reaches the card through this ref.
+  missingCardMarkAddedRef.current = missingCard.markAdded;
 
   /** The chip: filter on → jump to the tab holding them (Base, else Hold, else
    *  TI / Tint; the rail is always visible). Again → filter off, tab unchanged. */
@@ -1958,7 +1940,7 @@ export function TintManagerContent() {
                         ? "bg-[#E11D48] hover:bg-[#BE123C] shadow-[0_0_0_3px_rgba(225,29,72,0.18)]"
                         : "bg-warn hover:bg-warn-text shadow-[0_0_0_3px_rgba(217,119,6,0.18)]",
                       missingOnly && (missingBoard.urgent > 0 ? "ring-2 ring-[#9F1239] ring-offset-1" : "ring-2 ring-warn-text ring-offset-1"),
-                      chipPulse > 0 && "animate-pulse [animation-iteration-count:3]",
+                      chipPulse > 0 && "animate-pulse [animation-iteration-count:1]",
                     )}
                   >
                     ⚠ {missingBoard.urgent > 0 && <>{missingBoard.urgent} urgent · </>}{missingBoard.byOrder.size} missing customer
@@ -2440,62 +2422,16 @@ export function TintManagerContent() {
         />
       )}
 
-      {/* New-arrival nudge (mockup "0 · New site arrives") — one card, 8s. */}
-      {missingNudge && (
-        <MissingNudge
-          bill={missingNudge.bill}
-          place={missingNudge.place}
+      {/* The missing-customer card — one customer at a time, 2 min each. */}
+      {missingCard.card && (
+        <MissingCustomerCard
+          card={missingCard.card}
           canAdd={access.canAddCustomer}
-          onAdd={() => handleAddShipTo(missingNudge.bill)}
-          onClose={() => setMissingNudge(null)}
+          onAdd={() => { if (missingCard.card) handleAddShipTo(missingCard.card.bill); }}
         />
       )}
     </div>
     </MissingCustomerContext.Provider>
-  );
-}
-
-const PLACE_LABEL: Record<MissingPlace, string> = {
-  rail: "Needs assignment", tinting: "Tint", base: "Base", ti: "TI", hold: "Hold",
-};
-
-/** The new-arrival card, bottom-right. Never opens the form by itself. */
-function MissingNudge({ bill, place, canAdd, onAdd, onClose }: {
-  bill: MissingCustomerBill; place: MissingPlace; canAdd: boolean; onAdd: () => void; onClose: () => void;
-}) {
-  // The 8-second bar: full on mount, then drains (the timer itself is the page's).
-  const [go, setGo] = useState(false);
-  useEffect(() => { const r = requestAnimationFrame(() => setGo(true)); return () => cancelAnimationFrame(r); }, []);
-  const smuCode = bill.smu ? SMU_CODE_BY_NAME[bill.smu] ?? bill.smu : null;
-  return (
-    <div className="fixed bottom-[22px] right-[24px] z-[60] w-[400px] rounded-[12px] border border-[#FDE68A] border-l-4 border-l-warn bg-white px-4 py-3.5 shadow-[0_14px_34px_rgba(27,24,38,0.16)]">
-      <button type="button" onClick={onClose} className="absolute right-3 top-2.5 text-[13px] text-gray-400 hover:text-gray-700" aria-label="Close">✕</button>
-      <p className="flex items-center gap-1.5 text-[13px] font-bold text-gray-900">⚠ New ship-to — not in master</p>
-      <p className="mt-1 text-[12.5px] text-gray-600">
-        <b className="font-semibold text-gray-800">{bill.shipToCustomerName ?? "—"}</b>
-        {bill.shipToCustomerId && <> · <span className="font-mono text-[11.5px]">{bill.shipToCustomerId}</span></>}
-        {" — "}<span className="font-mono text-[11.5px]">{bill.obdNumber}</span>
-        {" "}({[bill.billToName, smuCode ? `SMU ${smuCode}` : null, PLACE_LABEL[place]].filter(Boolean).join(", ")})
-      </p>
-      <div className="mt-3 flex items-center gap-2">
-        {canAdd ? (
-          <button type="button" onClick={onAdd} className="h-[30px] rounded-md bg-warn px-3 text-[12.5px] font-semibold text-white hover:bg-warn-text">
-            Add now
-          </button>
-        ) : (
-          <span title="No permission to add customers">
-            <span className="inline-flex h-[30px] cursor-not-allowed items-center rounded-md bg-gray-100 px-3 text-[12.5px] font-semibold text-gray-400">Add now</span>
-          </span>
-        )}
-        <button type="button" onClick={onClose} className="h-[30px] rounded-md border border-gray-200 bg-white px-3 text-[12.5px] font-semibold text-gray-700 hover:bg-gray-50">
-          Later
-        </button>
-        <span className="ml-auto text-[11px] text-gray-400">closes in 8 s · chip stays</span>
-      </div>
-      <div className="mt-3 h-[3px] overflow-hidden rounded bg-gray-100">
-        <i className="block h-full bg-warn transition-[width] ease-linear" style={{ width: go ? "0%" : "100%", transitionDuration: "8000ms" }} />
-      </div>
-    </div>
   );
 }
 
