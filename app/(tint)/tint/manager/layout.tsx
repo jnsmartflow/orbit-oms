@@ -88,6 +88,8 @@ export default async function TintManagerLayout({
             canViewHoldTab:    view("tint_hold"),
             canViewCiTab:      view("tint_ci") || view("tint_cancel"),
             canViewPickDelete: view("tint_pick_delete"),
+            // The customer save's own gate (POST /api/admin/customers) — the tag.
+            canAddCustomer:    allPerms["customers"]?.canEdit ?? false,
           }}
         >
           {children}

@@ -27,6 +27,7 @@ import type { TintHoldRow } from "./types";
 import { StatusPill } from "./board-bits";
 import { StatusPill as FloorStatusPill, rowStatus } from "@/components/floor/status-pill";
 import { BoardSlotCell } from "./board-slot-cell";
+import { MissingShipToLine, missingRowCls, useMissingCustomers } from "./missing-customer";
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
@@ -94,6 +95,8 @@ export function BoardHoldTab({
   onSetSlot: (row: TintHoldRow, v: DispatchSlotValue) => void;
   barUp:     boolean;
 }) {
+  // Missing customer marks (2026-10-02) — one read; missingRowCls per row.
+  const missingCtx = useMissingCustomers();
   const now = new Date();
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
@@ -134,6 +137,7 @@ export function BoardHoldTab({
                     className={cn(
                       "cursor-pointer",
                       sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
+                      !sel && missingRowCls(missingCtx, r.orderId),
                     )}
                   >
                     <td className={TD}><ObdCode code={r.obdNumber} /></td>
@@ -150,6 +154,7 @@ export function BoardHoldTab({
                           <b className="font-semibold">{r.dealerName}</b>
                         </div>
                       )}
+                      <MissingShipToLine orderId={r.orderId} />
                     </td>
                     <td className={TD}>{r.route ?? "—"}</td>
                     <td className={TD}>

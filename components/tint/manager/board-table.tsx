@@ -20,6 +20,7 @@ import { InvoiceLines, ObdDateLine } from "@/components/floor/bill-ref-cells";
 // rail and the detail panel.
 import { StatusPill, formatSmu } from "./board-bits";
 import { BoardSlotCell } from "./board-slot-cell";
+import { MissingShipToLine, missingRowCls, useMissingCustomers } from "./missing-customer";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { BoardGroup, BoardRow } from "./types";
 
@@ -254,12 +255,15 @@ export function TintBoardRow({
   // the selected row fills brand-50 with a brand bar on its first cell (the
   // mockup's tr.row.sel). A row that cannot be selected (a split, a job
   // finished today) does nothing on click; its ⋯ still opens the panel.
+  // Missing customer (2026-10-02): amber row + orange bar, ship-to tag below.
+  const missingCtx = useMissingCustomers();
   return (
     <tr
       className={cn(
         "group",
         row.selectable && !readOnly ? "cursor-pointer" : "cursor-default",
         selected ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
+        !selected && missingRowCls(missingCtx, row.orderId),
         tall && "[&>td]:h-[52px]",
       )}
       onClick={row.selectable && !readOnly ? onToggle : undefined}
@@ -405,6 +409,7 @@ export function TintBoardRow({
             <b className="font-semibold">{row.siteName}</b>
           </div>
         )}
+        <MissingShipToLine orderId={row.orderId} />
       </td>
 
       <td className={TD}>{row.route ?? "—"}</td>

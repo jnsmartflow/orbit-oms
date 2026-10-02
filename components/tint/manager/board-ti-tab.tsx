@@ -23,6 +23,7 @@ import { ObdCode } from "@/components/shared/obd-code";
 import { InvoiceLines, ObdDateLine } from "@/components/floor/bill-ref-cells";
 import { formatSmu } from "./board-bits";
 import type { BasePendingLine, BasePendingOrder } from "./types";
+import { MissingShipToLine, missingRowCls, useMissingCustomers } from "./missing-customer";
 
 // Same four class strings as board-table.tsx (themselves Floor's floor-table.tsx).
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
@@ -70,6 +71,8 @@ export function BoardTiTab({
    *  the TI column who wrote it, when. */
   history?:   boolean;
 }) {
+  // Missing customer marks (2026-10-02) — one read; missingRowCls per row.
+  const missingCtx = useMissingCustomers();
   // ── Drilldown: one bypassed bill's tinting lines + the TI form ────────────
   // The manager is paying off one bill's paperwork now; the list steps aside.
   if (drill) {
@@ -194,6 +197,7 @@ export function BoardTiTab({
                     className={cn(
                       readOnly ? "cursor-default" : "cursor-pointer",
                       sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
+                      !sel && missingRowCls(missingCtx, o.orderId),
                     )}
                   >
                     <td className={TD}>
@@ -219,6 +223,7 @@ export function BoardTiTab({
                           {o.originalSiteName}<span className="mx-1 opacity-60">→</span><b className="font-semibold">{o.shipToName}</b>
                         </div>
                       )}
+                      <MissingShipToLine orderId={o.orderId} />
                     </td>
                     <td className={TD}>{o.route ?? "—"}</td>
                     <td className={cn(TD, "text-right tabular-nums")}>{o.totalVolume ?? "—"}</td>

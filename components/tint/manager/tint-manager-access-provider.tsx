@@ -80,6 +80,10 @@ export interface TintManagerAccess {
   canViewCiTab: boolean;
   /** tint_pick_delete canView — the Pick delete tab. */
   canViewPickDelete: boolean;
+  /** customers canEdit (2026-10-02) — the gate CustomerMissingSheet's save uses
+   *  (POST /api/admin/customers). Drives the "+ Add Ship to" tag. NOT ANDed with
+   *  tint_manager canEdit: it is the customer master's own tick. */
+  canAddCustomer: boolean;
 }
 
 const NONE: TintManagerAccess = {
@@ -89,6 +93,7 @@ const NONE: TintManagerAccess = {
   canHold: false, canHand: false, canSlot: false, canShipTo: false,
   canCancel: false, canCi: false, canPickDelete: false, canShopDelivery: false, canUrgent: false, canTiBulk: false,
   canViewHoldTab: false, canViewCiTab: false, canViewPickDelete: false,
+  canAddCustomer: false,
 };
 
 const TintManagerAccessContext = createContext<TintManagerAccess>(NONE);
@@ -113,6 +118,7 @@ export function TintManagerAccessProvider({
       canCancel: a.canCancel, canCi: a.canCi, canPickDelete: a.canPickDelete,
       canShopDelivery: a.canShopDelivery, canUrgent: a.canUrgent, canTiBulk: a.canTiBulk,
       canViewHoldTab: a.canViewHoldTab, canViewCiTab: a.canViewCiTab, canViewPickDelete: a.canViewPickDelete,
+      canAddCustomer: a.canAddCustomer,
     }),
     [
       a.canPanelItems, a.canPanelDetails, a.canPanelActivity, a.canReports,
@@ -120,6 +126,7 @@ export function TintManagerAccessProvider({
       a.canHold, a.canHand, a.canSlot, a.canShipTo,
       a.canCancel, a.canCi, a.canPickDelete, a.canShopDelivery, a.canUrgent, a.canTiBulk,
       a.canViewHoldTab, a.canViewCiTab, a.canViewPickDelete,
+      a.canAddCustomer,
     ],
   );
   return (

@@ -25,11 +25,11 @@
 // The "Tinter Issue pending" list that used to sit under this queue MOVED to
 // the TI tab (board-ti-tab.tsx).
 
-import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ageDays, istDateTime } from "./board-bits";
 import { siteNameOf } from "./rows";
 import type { TintOrder } from "./types";
+import { MissingShipToLine, missingCardCls, useMissingCustomers } from "./missing-customer";
 
 export function BoardRail({
   rail, selected, onToggle, onOpenPanel,
@@ -42,6 +42,8 @@ export function BoardRail({
   /** The card's ⋯ — the detail panel. Never selects. */
   onOpenPanel: (order: TintOrder) => void;
 }) {
+  // Missing customer marks (2026-10-02): amber card + orange bar, ship-to tag.
+  const missingCtx = useMissingCustomers();
   return (
     // 440px — the mockup's rail width (was 344px before the card redesign).
     <div className="w-[440px] flex-shrink-0 bg-ink-25 border-r border-gray-200 flex flex-col overflow-hidden">
@@ -67,6 +69,7 @@ export function BoardRail({
             const vol  = o.querySnapshot?.totalVolume ?? null;
             const art  = o.articleTag ?? o.querySnapshot?.articleTag ?? null;
             const sel  = selected.has(o.id);
+            const missingBill = missingCtx.byOrder.get(o.id) ?? null;
             return (
               <div
                 key={o.id}
@@ -82,6 +85,7 @@ export function BoardRail({
                   sel
                     ? "border-brand-600 bg-brand-50 shadow-[0_0_0_1px_theme(colors.brand.600)]"
                     : "border-ink-100 bg-white hover:border-ink-200 hover:shadow-[0_2px_8px_rgba(27,24,38,0.05)]",
+                  !sel && missingCardCls(missingBill, missingCtx.flash.has(o.id)),
                 )}
               >
                 {/* ── top: site + billed to · litres + articles ───────────── */}
@@ -96,12 +100,10 @@ export function BoardRail({
                           (board-table.tsx copies the same two). */}
                       {o.isKeyCustomer && <span className="ml-1.5 text-[14px]" style={{ color: "#f59e0b" }} title="Key customer">★</span>}
                       {o.priorityLevel <= 2 && <span className="ml-1 text-[14px]" style={{ color: "#ef4444" }} title="Urgent">⚡</span>}
-                      {o.customerMissing && (
-                        <span title="Customer master data missing — Assign from the bar resolves it first" className="ml-1.5 inline-block align-[-2px] text-amber-600">
-                          <AlertCircle size={14} />
-                        </span>
-                      )}
                     </p>
+                    {/* Missing customer: SAP ship-to code + "+ Add Ship to" (replaces the
+                        old ⚠ icon; the Assign / Base — No Tint interceptor is unchanged). */}
+                    <MissingShipToLine orderId={o.id} className="mt-1" />
                     <p className="text-[13px] text-ink-500 mt-1 truncate">billed to {o.billToName ?? "—"}</p>
                   </div>
                   <div className="text-right flex-shrink-0">

@@ -64,6 +64,8 @@ export interface SearchInputs {
   hold:    TintHoldRow[] | null;
   ci:      FloorCancelledRow[] | null;
   deleted: PickDeleteDecidedRow[] | null;
+  /** Missing-customer bills shown on the board (2026-10-02) — "missing" finds them. */
+  missingIds?: ReadonlySet<number>;
 }
 
 const GREY_PILL = "inline-flex items-center rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]";
@@ -85,7 +87,7 @@ export function buildSearchSources(i: SearchInputs): SearchSource[] {
         pill: pill(GREY_PILL, "Waiting"),
         views: searchViews({
           obdNumber: o.obdNumber, invoiceNo: o.invoiceNo, soNumber: o.soNumber, shipTo: s.site,
-          route: o.route, inMaster: !o.customerMissing,
+          route: o.route, inMaster: !o.customerMissing, missingCustomer: i.missingIds?.has(o.id),
           names: [o.billToName, s.original], codes: [o.shipToCustomerId, o.billToCode],
         }),
         target: { tab: null, railId: o.id, panelKey: `pending-${o.id}`, flashKey: `rail-${o.id}` },
@@ -103,7 +105,7 @@ export function buildSearchSources(i: SearchInputs): SearchSource[] {
       pill: <StatusPill status={r.status} at={r.statusAt} pauseCount={r.pauseCount} />,
       views: searchViews({
         obdNumber: r.obdNumber, invoiceNo: r.invoiceNo, soNumber: r.soNumber, shipTo: r.siteName,
-        route: r.route, inMaster: !r.customerMissing,
+        route: r.route, inMaster: !r.customerMissing, missingCustomer: i.missingIds?.has(r.orderId),
         names: [r.billToName, r.originalSiteName], codes: [r.order?.shipToCustomerId, r.order?.billToCode],
       }),
       target: { tab: "tinting", panelKey: r.key, flashKey: r.key, clearFocus: true },
@@ -121,6 +123,7 @@ export function buildSearchSources(i: SearchInputs): SearchSource[] {
       views: searchViews({
         obdNumber: r.obdNumber, invoiceNo: r.invoiceNo, soNumber: r.soNumber, shipTo: r.dealerName,
         route: r.route, inMaster: r.dealerInMaster, names: [r.billToName, r.customerName],
+        missingCustomer: i.missingIds?.has(r.orderId),
       }),
       target: { tab: "base", panelKey: `base-${r.orderId}`, flashKey: `base-${r.orderId}` },
     })),
@@ -139,6 +142,7 @@ export function buildSearchSources(i: SearchInputs): SearchSource[] {
         views: searchViews({
           obdNumber: o.obdNumber, invoiceNo: o.invoiceNo, shipTo: o.shipToName, route: o.route,
           names: [o.billToName, o.originalSiteName], codes: [o.shipToCode, o.billToCode],
+          missingCustomer: i.missingIds?.has(o.orderId),
         }),
         target: { tab: "ti", flashKey: `ti-${o.tintAssignmentId}` },
       };
@@ -157,6 +161,7 @@ export function buildSearchSources(i: SearchInputs): SearchSource[] {
         views: searchViews({
           obdNumber: r.obdNumber, invoiceNo: r.invoiceNo, soNumber: r.soNumber, shipTo: r.dealerName,
           route: r.route, inMaster: r.dealerInMaster, names: [r.billToName, r.originalSiteName],
+          missingCustomer: i.missingIds?.has(r.orderId),
         }),
         target: { tab: "hold", panelKey: `hold-${r.orderId}`, flashKey: `hold-${r.orderId}` },
       })),

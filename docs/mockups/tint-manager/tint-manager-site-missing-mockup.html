@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site Missing Flow</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-600:#7C3AED;--brand-700:#6D28D9;
+--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5C5869;--ink-700:#3F3B4B;--ink-900:#1B1826;
+--ok:#059669;--ok-bg:#ECFDF5;--ok-text:#047857;--warn:#D97706;--warn-bg:#FFFBEB;--warn-text:#B45309;--warn-bd:#FDE68A;--line:#EEEDF3}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:13px;color:var(--ink-900);background:#fff}
+.mono{font-family:"JetBrains Mono",monospace;font-size:12px}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+.note{background:var(--ink-900);color:#fff;font-size:12px;padding:7px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.note b{color:#C4B5FD}.note .sw{margin-left:auto;display:flex;gap:6px}
+.note .sw button{background:#2E2A3B;color:#fff;border:1px solid #4A4558;border-radius:6px;padding:3px 10px;font-size:11.5px}
+.note .sw button.on{background:var(--brand-600);border-color:var(--brand-600)}
+.app{display:flex;height:calc(100vh - 33px)}
+.nav{width:56px;border-right:1px solid var(--line);flex-shrink:0}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.hdr{height:46px;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 12px;border-bottom:1px solid var(--line)}
+.imp{height:30px;padding:0 12px;border-radius:6px;border:0;background:var(--ink-900);color:#fff;font-weight:600;font-size:12.5px}
+.srch{width:240px;height:30px;border:1px solid var(--ink-100);border-radius:6px;display:flex;align-items:center;padding:0 10px;color:var(--ink-400);font-size:12.5px}
+.trow{height:38px;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid var(--line);gap:8px}
+.tabs{display:flex;gap:20px;height:100%;font-size:12.5px}
+.tab{background:none;border:0;padding:0;color:var(--ink-500);display:flex;gap:6px;align-items:center;border-bottom:2px solid transparent;font-weight:500}
+.tab .c{font-size:11px;background:var(--ink-50);color:var(--ink-600);border-radius:6px;padding:1px 7px;font-weight:600}
+.tab.on{color:var(--ink-900);font-weight:700;border-bottom-color:var(--ink-900)}.tab.on .c{background:var(--ink-900);color:#fff}
+.sp{flex:1}
+.ctl{height:26px;border:1px solid var(--ink-200);background:#fff;border-radius:6px;padding:0 10px;font-size:11.5px;color:var(--ink-700);display:flex;align-items:center;gap:5px}
+.ctl.pri{background:var(--ink-900);color:#fff;border-color:var(--ink-900)}
+.chip{height:26px;border:1px solid var(--warn-bd);background:var(--warn-bg);color:var(--warn-text);border-radius:6px;padding:0 10px;font-size:11.5px;font-weight:700;display:flex;align-items:center;gap:6px}
+.chip.on{background:var(--warn);color:#fff;border-color:var(--warn)}
+.chip.gone{display:none}
+.chip.red{background:#FFF1F2;border-color:#FECDD3;color:#BE123C}
+.chip.red.on{background:#E11D48;color:#fff;border-color:#E11D48}
+.chip.pulse{animation:pl 1.2s ease-in-out 3}
+@keyframes pl{0%,100%{box-shadow:0 0 0 0 rgba(217,119,6,.0)}50%{box-shadow:0 0 0 6px rgba(217,119,6,.25)}}
+.nudge{position:absolute;bottom:22px;right:24px;width:400px;background:#fff;border:1px solid var(--warn-bd);border-left:4px solid var(--warn);border-radius:12px;box-shadow:0 14px 34px rgba(27,24,38,.16);padding:14px 16px;display:none;z-index:9}
+body.new .nudge{display:block}
+.nudge .t{font-weight:700;font-size:13px;display:flex;gap:6px;align-items:center}
+.nudge .d{color:var(--ink-600);font-size:12.5px;margin-top:4px}
+.nudge .a{display:flex;gap:8px;margin-top:12px;align-items:center}
+.nudge .a .btn{height:30px;padding:0 12px;font-size:12.5px}
+.nudge .x{position:absolute;top:10px;right:12px;color:var(--ink-400);cursor:pointer}
+.nudge .bar{height:3px;background:var(--ink-50);border-radius:3px;margin-top:12px;overflow:hidden}
+.nudge .bar i{display:block;height:100%;width:60%;background:var(--warn)}
+.urg{font-size:10.5px;font-weight:700;border-radius:5px;padding:1px 7px;background:#FFF1F2;color:#BE123C;border:1px solid #FECDD3;margin-left:6px}
+.urg.hide2{display:none}
+.callout{position:relative}
+.callout:after{content:attr(data-n);position:absolute;top:-9px;left:-9px;width:18px;height:18px;border-radius:50%;background:var(--brand-600);color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;z-index:3}
+.scroll{flex:1;overflow:auto}
+.page{padding:18px 24px}
+.sec{border:1px solid var(--ink-100);border-radius:14px;overflow:hidden}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400);font-weight:600;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);background:var(--ink-25)}
+td{padding:11px 10px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td small{display:block;color:var(--ink-400);font-size:11px}
+tr.hide{display:none}
+tr.fixed td{background:var(--ok-bg);transition:background .4s}
+.tag{display:inline-flex;align-items:center;gap:4px;margin-left:6px;font-size:10.5px;font-weight:700;border-radius:5px;padding:1px 7px;background:var(--warn-bg);color:var(--warn-text);border:1px solid var(--warn-bd);cursor:pointer}
+.tag:hover{background:#FEF3C7}
+.sapname{color:var(--ink-500)}
+.pill{font-size:11px;font-weight:600;border-radius:5px;padding:2px 8px;background:var(--ink-50);color:var(--ink-600)}
+.nt{font-size:10.5px;border-radius:5px;padding:1px 6px;background:var(--ink-50);color:var(--ink-500);margin-left:6px}
+
+/* sheet */
+.scrim{position:absolute;inset:0;background:rgba(27,24,38,.28);display:none;z-index:10}
+.sheet{position:absolute;top:0;right:0;bottom:0;width:480px;background:#fff;border-left:1px solid var(--ink-100);box-shadow:-12px 0 32px rgba(27,24,38,.12);display:none;flex-direction:column;z-index:11}
+body.sheet .scrim{display:block}body.sheet .sheet{display:flex}
+.sh{padding:18px 22px 14px;border-bottom:1px solid var(--line)}
+.sh h3{margin:0;font-size:16px}.sh p{margin:4px 0 0;color:var(--ink-500);font-size:12.5px}
+.warn{margin:14px 22px 0;background:var(--warn-bg);border:1px solid var(--warn-bd);color:var(--warn-text);border-radius:10px;padding:10px 12px;font-size:12px}
+.sb{flex:1;overflow:auto;padding:16px 22px;display:flex;flex-direction:column;gap:14px}
+.f label{display:block;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-500);font-weight:600;margin-bottom:5px}
+.f input,.f select{width:100%;height:34px;border:1px solid var(--ink-200);border-radius:8px;padding:0 10px;font-family:inherit;font-size:13px;background:#fff}
+.f input[readonly]{background:var(--ink-25);color:var(--ink-600)}
+.f .hint{font-size:11px;color:var(--ink-400);margin-top:4px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sf{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+.btn{height:34px;border-radius:8px;padding:0 16px;font-weight:600;border:1px solid var(--ink-200);background:#fff}
+.btn.pri{background:var(--brand-600);color:#fff;border-color:var(--brand-600)}
+.toast{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink-900);color:#fff;border-radius:10px;padding:10px 16px;font-size:12.5px;display:none;z-index:12}
+body.done .toast{display:block}
+.steps{display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap}
+.steps span{font-size:11.5px;color:var(--ink-600);background:var(--ink-25);border:1px solid var(--ink-100);border-radius:6px;padding:4px 9px}
+.steps span b{color:var(--brand-700)}
+</style></head>
+<body>
+<div class="note"><span><b>Missing site — Tint Manager</b> · SMU 74 / 77 only · create new site</span>
+<div class="sw"><button data-m="n">0 · New site arrives</button><button data-m="a" class="on">1 · Sees chip</button><button data-m="r">1b · Urgent (red)</button><button data-m="b">2 · Filter on</button><button data-m="c">3 · Sheet open</button><button data-m="d">4 · Saved</button></div></div>
+<div class="app"><div class="nav"></div>
+<div class="main">
+  <div class="hdr"><button class="imp">⤒ Import</button><div class="srch">⌕&nbsp; Search orders…</div></div>
+  <div class="trow">
+    <div class="tabs"><button class="tab">Tint <span class="c">5</span></button><button class="tab on">Base <span class="c">15</span></button><button class="tab">TI <span class="c">3</span></button><button class="tab">Hold <span class="c">6</span></button><button class="tab">CI <span class="c">0</span></button><button class="tab">Delete <span class="c">1</span></button></div>
+    <div class="sp"></div>
+    <button class="chip callout" data-n="1" id="chip">⚠ <span id="chipTxt"></span><span id="cnt">3</span> site missing</button>
+    <button class="ctl">‹</button><button class="ctl">Today · 02 Oct ⌄</button><button class="ctl">›</button>
+    <button class="ctl" id="flt">Filter</button>
+    <button class="ctl pri">+ Add to Tint</button>
+  </div>
+  <div class="scroll"><div class="page">
+    <div class="steps"><span><b>1</b> Amber chip shows how many bills have a site not in master</span><span><b>2</b> Click chip → only those bills</span><span><b>3</b> Click <b>Site?</b> → add-site sheet</span><span><b>4</b> Save → added to master, tag gone everywhere</span><span><b>New</b> arrives → message once + chip pulses, no popup</span><span><b>Red</b> chip = a missing-site bill has a slot / trip today</span></div>
+    <div class="sec"><table>
+      <colgroup><col style="width:11%"><col style="width:5%"><col style="width:17%"><col style="width:26%"><col style="width:9%"><col style="width:10%"><col style="width:7%"><col style="width:15%"></colgroup>
+      <tr><th>OBD</th><th>SMU</th><th>Bill to</th><th>Ship to</th><th>Route</th><th>Due</th><th>Vol</th><th>Status</th></tr>
+      <tr data-m="1" id="r1"><td class="mono">9109880512<small>02 Oct 10:41</small></td><td>74</td><td>UPKAR PAINTS</td><td class="st"><span class="sapname">SHIVALIK SKY · 3301874</span><span class="tag callout" data-n="3" onclick="set('c')">Site?</span><span class="urg hide2" id="urg1">Trip today</span></td><td>—</td><td><span class="pill" id="due1">No due date</span></td><td>400</td><td><span class="pill">Waiting</span></td></tr>
+      <tr><td class="mono">9109880490<small>02 Oct 09:12</small></td><td>74</td><td>SARITA COLOURS</td><td>Iscon Infinity Tower</td><td>Varachha</td><td><span class="pill">No due date</span></td><td>160</td><td><span class="pill">Picking</span></td></tr>
+      <tr data-m="1"><td class="mono">9109880497<small>02 Oct 09:30</small><span class="nt">No tint</span></td><td>77</td><td>KRISHNA ENTERPRISE</td><td><span class="sapname">RAJ PALACE · 3302210</span><span class="tag">Site?</span></td><td>—</td><td><span class="pill">No due date</span></td><td>220</td><td><span class="pill">Waiting</span></td></tr>
+      <tr><td class="mono">9109880455<small>01 Oct 16:20</small></td><td>74</td><td>MARUTI PAINTS</td><td>RAJHANS CINEMA</td><td>Vapi</td><td><span class="pill">3 Oct 10:00</span></td><td>240</td><td><span class="pill">Picked</span></td></tr>
+      <tr data-m="1"><td class="mono">9109880431<small>01 Oct 12:05</small></td><td>74</td><td>UPKAR PAINTS</td><td><span class="sapname">SHIVALIK SKY · 3301874</span><span class="tag">Site?</span></td><td>—</td><td><span class="pill">No due date</span></td><td>120</td><td><span class="pill">Waiting</span></td></tr>
+    </table></div>
+  </div></div>
+
+  <div class="scrim" onclick="set('b')"></div>
+  <div class="sheet">
+    <div class="sh"><h3>Add delivery site</h3><p>Site 3301874 is not in the customer master. Saving adds it for every bill.</p></div>
+    <div class="warn">2 open bills use this site: 9109880512, 9109880431.</div>
+    <div class="sb">
+      <div class="row2"><div class="f"><label>Site code</label><input readonly value="3301874"><div class="hint">from SAP</div></div>
+      <div class="f"><label>Customer type</label><select><option>Project site</option></select></div></div>
+      <div class="f"><label>Site name</label><input value="SHIVALIK SKY"><div class="hint">pre-filled from SAP ship-to name — edit if needed</div></div>
+      <div class="row2"><div class="f"><label>Area</label><select><option>Pal</option></select></div><div class="f"><label>Route</label><select><option>Adajan</option></select></div></div>
+      <div class="f"><label>Delivery type</label><select><option>Local</option></select></div>
+      <div class="f"><label>Sales officer</label><select><option>— pick 1 or more —</option></select></div>
+      <div class="f"><label>Site contact (optional)</label><input placeholder="Name · phone"></div>
+    </div>
+    <div class="sf"><button class="btn" onclick="set('b')">Cancel</button><button class="btn pri" onclick="set('d')">Save site</button></div>
+  </div>
+  <div class="nudge"><span class="x" onclick="set('a')">✕</span>
+    <div class="t">⚠ New site not in master</div>
+    <div class="d"><b>SHIVALIK SKY</b> · 3301874 — bill 9109880512 (UPKAR PAINTS, SMU 74, Base)</div>
+    <div class="a"><button class="btn pri" onclick="set('c')">Add now</button><button class="btn" onclick="set('a')">Later</button><span style="margin-left:auto;font-size:11.5px;color:var(--ink-400)">closes in 8 s · chip stays</span></div>
+    <div class="bar"><i></i></div>
+  </div>
+  <div class="toast">✓ SHIVALIK SKY added to master · 2 bills updated</div>
+</div></div>
+<script>
+function set(m){
+  document.body.className={c:'sheet',d:'done',n:'new'}[m]||'';
+  const ch=document.getElementById('chip');
+  ch.classList.toggle('red',m=='r');ch.classList.remove('pulse');
+  if(m=='n'){void ch.offsetWidth;ch.classList.add('pulse')}
+  document.getElementById('urg1').classList.toggle('hide2',m!='r');
+  document.getElementById('due1').textContent=m=='r'?'Today 16:00':'No due date';
+  document.getElementById('chipTxt').innerHTML=m=='r'?'1 urgent · ':'';
+  document.querySelectorAll('.sw button').forEach(b=>b.classList.toggle('on',b.dataset.m==m));
+  const chip=document.getElementById('chip');
+  chip.classList.toggle('on',m=='b'||m=='c'||m=='d');
+  document.getElementById('flt').innerHTML=(m=='b'||m=='c'||m=='d')?'Filter <b style="background:#7C3AED;color:#fff;border-radius:9px;padding:0 6px;font-size:10.5px">1</b>':'Filter';
+  document.querySelectorAll('tr').forEach((r,i)=>{if(i==0)return;r.classList.toggle('hide',(m=='b'||m=='c'||m=='d')&&!r.dataset.m);r.classList.remove('fixed')});
+  document.getElementById('cnt').textContent=m=='d'?'1':'3';
+  const fix=[...document.querySelectorAll('td.st')];
+  document.querySelectorAll('tr[data-m]').forEach(r=>{
+    const c=r.children[3];
+    if(c.textContent.includes('3301874')){
+      if(m=='d'){c.dataset.o=c.dataset.o||c.innerHTML;c.innerHTML='SHIVALIK SKY';r.children[4].textContent='Adajan';r.classList.add('fixed')}
+      else if(c.dataset.o){c.innerHTML=c.dataset.o;r.children[4].textContent='—'}
+    }
+  });
+}
+document.querySelectorAll('.sw button').forEach(b=>b.onclick=()=>set(b.dataset.m));
+document.getElementById('chip').onclick=()=>set(document.getElementById('chip').classList.contains('on')?'a':'b');
+</script>
+</body></html>

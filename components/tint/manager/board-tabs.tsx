@@ -34,6 +34,7 @@ export function BoardTabs({
   counts,
   rightSlot,
   disabledTabs,
+  dots,
 }: {
   active:   BoardTab;
   onChange: (tab: BoardTab) => void;
@@ -46,6 +47,9 @@ export function BoardTabs({
   /** Tabs drawn greyed, without a badge, and not clickable (2026-10-02: Hold in
    *  history mode — it has no past). Default none. */
   disabledTabs?: BoardTab[];
+  /** Tabs that hold a missing-customer bill (2026-10-02): a small orange dot
+   *  after the label. Default none. */
+  dots?: Partial<Record<BoardTab, boolean>>;
 }) {
   const access = useTintManagerAccess();
   const tabs: { key: BoardTab; label: string; show: boolean }[] = [
@@ -82,6 +86,9 @@ export function BoardTabs({
             }`}
           >
             {t.label}
+            {!off && dots?.[t.key] && (
+              <span className="h-[6px] w-[6px] rounded-full bg-warn" title="Has a bill with a missing customer" />
+            )}
             {count !== undefined && (
               <span className={`rounded px-1.5 py-px text-[10px] font-bold ${on ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"}`}>
                 {count}

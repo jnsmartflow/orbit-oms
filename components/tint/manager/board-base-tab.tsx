@@ -27,6 +27,7 @@ import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispa
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { BoardSlotCell } from "./board-slot-cell";
 import { isNoTintBaseRow } from "@/lib/tint/base-bills";
+import { MissingShipToLine, missingRowCls, useMissingCustomers } from "./missing-customer";
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
@@ -68,6 +69,8 @@ export function BoardBaseTab({
    *  also passes canSlot false) — a past day is read-only. */
   readOnly?: boolean;
 }) {
+  // Missing customer marks (2026-10-02) — one read; missingRowCls per row.
+  const missingCtx = useMissingCustomers();
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
       <div className="px-3.5 py-2.5 text-[10.5px] text-gray-400 border-b border-gray-100">
@@ -110,6 +113,7 @@ export function BoardBaseTab({
                     className={cn(
                       readOnly ? "cursor-default" : "cursor-pointer",
                       sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
+                      !sel && missingRowCls(missingCtx, r.orderId),
                     )}
                   >
                     <td className={TD}>
@@ -142,6 +146,7 @@ export function BoardBaseTab({
                           <b className="font-semibold">{r.shipToOverrideName}</b>
                         </div>
                       )}
+                      <MissingShipToLine orderId={r.orderId} />
                     </td>
                     <td className={TD}>{r.route ?? "—"}</td>
                     <td className={TD}>

@@ -22,6 +22,7 @@
 // header dropdown and GET /api/tint/manager/find share it.
 
 import { matchesSearch, tokenMatchesObd, type ParsedSearch, type Searchable } from "@/lib/floor/search";
+import { MISSING_CUSTOMER_SEARCH_TEXT } from "@/lib/tint/customer-missing";
 
 export interface SearchFields {
   obdNumber:  string;
@@ -36,6 +37,9 @@ export interface SearchFields {
   names?:     Array<string | null | undefined>;
   /** Ship-to / bill-to codes, a sampling number — matched like an OBD. */
   codes?:     Array<string | null | undefined>;
+  /** A missing-customer bill (lib/tint/customer-missing.ts) — the words
+   *  "missing customer" become searchable on it (2026-10-02). Default false. */
+  missingCustomer?: boolean;
 }
 
 const EMPTY: Omit<Searchable, "obdNumber" | "dealerName"> = {
@@ -55,6 +59,8 @@ export function searchViews(f: SearchFields): Searchable[] {
   }];
   for (const n of f.names ?? []) if (n) views.push({ ...EMPTY, obdNumber: "", dealerName: n });
   for (const c of f.codes ?? []) if (c) views.push({ ...EMPTY, obdNumber: c, dealerName: "" });
+  // Text-matched like a name, so typing "missing" finds these bills.
+  if (f.missingCustomer) views.push({ ...EMPTY, obdNumber: "", dealerName: MISSING_CUSTOMER_SEARCH_TEXT });
   return views;
 }
 
