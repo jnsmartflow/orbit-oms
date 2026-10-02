@@ -55,7 +55,8 @@ import { NEEDS_CHECK_SEGMENT } from "./progress-bar";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import type { FloorSelection } from "@/lib/floor/selection";
-import type { FloorBoardRow, FloorRouteClub } from "@/lib/floor/types";
+import type { FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
+import { scopeTypes } from "@/lib/floor/scope";
 
 // ── The placeholder routes (lib/trips/route-label.ts PLACEHOLDER_ROUTE_IDS) ──
 // route_master rows that name no place. Split here by what the owner decided
@@ -220,9 +221,20 @@ function allCards(model: RouteCardModel): RouteCard[] {
   return model.otherCard ? [...model.clubCards, model.otherCard] : model.clubCards;
 }
 
+/**
+ * Is this club on this tab? By the TYPES the tab covers (`scopeTypes`), never
+ * `c.deliveryType === scope` — the "IGT / Cross" tab covers two types and its
+ * key is not a type name (lib/floor/scope.ts), so that compare never matched
+ * it (2026-10-02). Local and Upcountry cover one type each: unchanged. All has
+ * no list (null) and draws no cards.
+ */
+function clubOnTab(c: FloorRouteClub, scope: FloorScope): boolean {
+  return scopeTypes(scope)?.includes(c.deliveryType) ?? false;
+}
+
 /** Does this tab draw cards at all? Only when it has at least one club. */
-export function tabHasClubs(clubs: FloorRouteClub[], deliveryType: string): boolean {
-  return clubs.some((c) => c.deliveryType === deliveryType);
+export function tabHasClubs(clubs: FloorRouteClub[], scope: FloorScope): boolean {
+  return clubs.some((c) => clubOnTab(c, scope));
 }
 
 /**
@@ -236,13 +248,13 @@ export function tabHasClubs(clubs: FloorRouteClub[], deliveryType: string): bool
  *                  of that one other type.
  */
 export function buildRouteCards(
-  deliveryType: string,
+  scope: FloorScope,
   clubs: FloorRouteClub[],
   rows: FloorBoardRow[],
   reachRows: FloorBoardRow[],
 ): RouteCardModel {
   const tabClubs = clubs
-    .filter((c) => c.deliveryType === deliveryType)
+    .filter((c) => clubOnTab(c, scope))
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const clubRouteIds = new Set(tabClubs.flatMap((c) => c.members.map((m) => m.routeId)));
 
