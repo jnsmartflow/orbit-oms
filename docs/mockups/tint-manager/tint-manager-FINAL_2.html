@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tint Manager — FINAL Locked Mockup</title>
+<style>
+  :root{
+    --teal:#0d9488; --teal-dark:#0f766e; --teal-50:#f0fdfa; --teal-200:#99f6e4;
+    --amber-50:#fffbeb; --amber-200:#fde68a; --amber-500:#f59e0b; --amber-600:#d97706; --amber-700:#b45309;
+    --red-50:#fef2f2; --red-200:#fecaca; --red-600:#dc2626; --red-700:#b91c1c;
+    --green-50:#f0fdf4; --green-200:#bbf7d0; --green-600:#16a34a; --green-700:#15803d;
+    --gray-900:#111827; --gray-700:#374151; --gray-600:#4b5563; --gray-500:#6b7280;
+    --gray-400:#9ca3af; --gray-300:#d1d5db; --gray-200:#e5e7eb; --gray-100:#f3f4f6; --gray-50:#f9fafb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f9fafb;color:var(--gray-900);}
+  .banner{background:var(--gray-900);color:#fff;font-size:12px;padding:8px 16px;line-height:1.6;}
+  .banner b{color:#5eead4;}
+
+  .uh-row1{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:#fff;border-bottom:1px solid var(--gray-200);}
+  .uh-title{font-size:14px;font-weight:600;}
+  .uh-stats{font-size:11px;color:var(--gray-400);margin-left:14px;}
+  .uh-stats b{color:var(--gray-900);font-weight:600;}
+  .uh-right{display:flex;align-items:center;gap:14px;font-size:11px;color:var(--gray-400);}
+  .uh-search{width:180px;height:28px;border:1px solid var(--gray-200);border-radius:6px;padding:0 10px;font-size:12px;}
+  .uh-row2{height:40px;display:flex;align-items:center;justify-content:flex-end;padding:0 16px;background:#fff;border-bottom:1px solid var(--gray-200);}
+  .filter-chip{border:1px solid var(--gray-200);color:var(--gray-500);font-size:11px;padding:5px 10px;border-radius:6px;}
+
+  .conn-strip{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gray-500);padding:6px 16px;background:#fff;border-bottom:1px solid var(--gray-100);}
+  .conn-dot{width:6px;height:6px;border-radius:50%;background:var(--green-600);}
+
+  .shell{display:grid;grid-template-columns:344px 1fr;height:calc(100vh - 151px);min-height:600px;}
+
+  .rail{background:#fff;border-right:1px solid var(--gray-200);display:flex;flex-direction:column;overflow:hidden;position:relative;}
+  .rail-head{padding:12px 14px;border-bottom:1px solid var(--gray-100);}
+  .rail-title{font-size:12px;font-weight:700;color:var(--gray-900);}
+  .rail-sub{font-size:10.5px;color:var(--gray-400);margin-top:2px;}
+  .rail-body{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;}
+
+  .rcard{border:1px solid var(--gray-200);border-radius:10px;padding:10px 11px;background:#fff;position:relative;}
+  .rcard.new-flash{animation:newFlash 1.8s ease;}
+  @keyframes newFlash{0%{background:var(--teal-50);border-color:var(--teal);}100%{background:#fff;border-color:var(--gray-200);}}
+  .rcard-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;}
+  .rcard-cust{font-size:12.5px;font-weight:700;}
+  .rcard-x{color:var(--gray-300);font-size:13px;cursor:pointer;}
+  .rcard-x:hover{color:var(--red-600);}
+  .rcard-meta{font-size:10.5px;color:var(--gray-500);margin-bottom:7px;}
+  .rcard-meta .obd-mono{font-family:ui-monospace,monospace;color:var(--gray-700);}
+  .rcard-chips{display:flex;gap:5px;margin-bottom:8px;}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;border:1px solid transparent;}
+  .chip.urgent{background:var(--red-50);color:var(--red-700);border-color:var(--red-200);}
+  .rcard-foot{display:flex;gap:6px;position:relative;}
+  .rassign{flex:1;background:var(--teal);color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;padding:8px 6px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;}
+  .rassign:hover{background:var(--teal-dark);}
+  .rghost{background:#fff;border:1px solid var(--gray-200);color:var(--gray-600);border-radius:7px;font-size:11px;padding:8px 10px;cursor:pointer;}
+  .rghost:hover{background:var(--gray-50);}
+  .rail-empty{padding:40px 16px;text-align:center;color:var(--gray-400);font-size:11.5px;}
+  .rail-empty .tick{font-size:26px;color:var(--green-600);margin-bottom:8px;}
+
+  /* Operator popover menu (assign / reassign) */
+  .op-menu{position:absolute;bottom:calc(100% + 6px);left:0;background:#fff;border:1px solid var(--gray-200);border-radius:9px;
+    box-shadow:0 10px 28px rgba(0,0,0,.14);width:190px;z-index:60;overflow:hidden;}
+  .op-menu-label{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);padding:8px 10px 4px;}
+  .op-item{display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:12px;color:var(--gray-700);cursor:pointer;}
+  .op-item:hover{background:var(--teal-50);color:var(--teal-dark);}
+  .op-avatar{width:20px;height:20px;border-radius:50%;background:var(--teal);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
+  .pane{display:flex;flex-direction:column;overflow:hidden;}
+  .pane-head{display:flex;align-items:baseline;gap:8px;padding:12px 14px;background:#fff;border-bottom:1px solid var(--gray-200);}
+  .pane-title{font-size:12px;font-weight:700;color:var(--gray-900);}
+  .pane-count{font-size:10.5px;color:var(--gray-400);}
+
+  .table-wrap{flex:1;overflow-y:auto;background:#fff;}
+  table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  thead th{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);text-align:left;padding:0 10px;height:32px;border-bottom:1px solid #ebebeb;background:#fff;position:sticky;top:0;}
+  tbody td{font-size:11px;color:var(--gray-700);padding:0 10px;height:40px;border-bottom:1px solid #f0f0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  tbody tr:hover{background:var(--gray-50);}
+  tbody tr.updated{animation:flashRow 1.6s ease;}
+  @keyframes flashRow{0%{background:var(--teal-50);}100%{background:transparent;}}
+  .cust-cell{font-weight:600;color:var(--gray-900);}
+  .cust-cell .flag{font-size:10px;margin-left:5px;}
+  .obd-cell{font-family:ui-monospace,monospace;color:var(--gray-600);}
+  .so-cell{font-family:ui-monospace,monospace;color:var(--gray-400);}
+  .status-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+  .status-assigned{background:var(--teal-50);color:var(--teal-dark);border:1px solid var(--teal-200);}
+  .status-progress{background:var(--amber-50);color:var(--amber-700);border:1px solid var(--amber-200);}
+  .status-paused{background:var(--amber-50);color:var(--amber-700);border:1px solid var(--amber-200);}
+  .status-done{background:var(--green-50);color:var(--green-700);border:1px solid var(--green-200);}
+  tbody tr{cursor:pointer;}
+  .row-chk{width:14px;height:14px;border:1.5px solid var(--gray-300);border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;background:#fff;opacity:0;transition:opacity .1s;}
+  tbody tr:hover .row-chk, .row-chk.on{opacity:1;}
+  .row-chk.on{background:var(--teal);border-color:var(--teal);}
+  .row-lock{opacity:.5;font-size:11px;color:var(--gray-300);}
+  .avatar-sm{width:20px;height:20px;border-radius:50%;background:var(--teal);color:#fff;font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-right:5px;vertical-align:middle;}
+  .seq-cell{display:flex;align-items:center;gap:5px;}
+  .seq-num{font-size:11.5px;font-weight:700;color:var(--gray-700);}
+  .seq-dash{color:var(--gray-300);font-size:11px;}
+  .seq-arrows{display:flex;flex-direction:column;gap:0;opacity:0;transition:opacity .1s;}
+  tbody tr:hover .seq-arrows{opacity:1;}
+  .seq-arrow{width:14px;height:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--gray-400);font-size:9px;line-height:1;border-radius:2px;}
+  .seq-arrow:hover{background:var(--gray-100);color:var(--gray-900);}
+  .seq-arrow.dead{opacity:.25;cursor:default;pointer-events:none;}
+  tr.op-group-row td{background:var(--gray-50);color:var(--gray-600);font-size:10.5px;font-weight:700;padding:5px 14px;border-bottom:1px solid var(--gray-100);cursor:default;}
+  tr.op-group-row:hover td{background:var(--gray-50);}
+  tr.op-group-row .grp-count{font-weight:400;color:var(--gray-400);margin-left:4px;}
+
+  .assign-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(120%);opacity:0;
+    background:#111827;color:#fff;border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:12px;
+    box-shadow:0 12px 32px rgba(0,0,0,.25);transition:transform .18s ease, opacity .18s ease;z-index:40;}
+  .assign-bar.show{transform:translateX(-50%) translateY(0);opacity:1;}
+  .ab-count{background:var(--teal);border-radius:20px;font-size:11px;font-weight:700;padding:4px 10px;}
+  .ab-x{cursor:pointer;color:#9ca3af;font-size:14px;padding:0 2px;}
+  .ab-summary{font-size:12px;color:#d1d5db;}
+  .ab-divider{width:1px;height:22px;background:#374151;}
+  .ab-select{background:#1f2937;border:1px solid #374151;color:#fff;font-size:12px;border-radius:7px;padding:7px 10px;}
+  .ab-assign{background:var(--teal);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer;}
+  .ab-assign:hover{background:var(--teal-dark);}
+  .ab-assign:disabled{background:var(--gray-600);cursor:not-allowed;}
+
+  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .15s;z-index:49;}
+  .backdrop.show{opacity:1;pointer-events:auto;}
+  .panel{position:fixed;top:0;right:0;bottom:0;width:480px;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.12);
+    transform:translateX(100%);transition:transform .2s ease;z-index:50;display:flex;flex-direction:column;}
+  .panel.show{transform:translateX(0);}
+  .panel-head{padding:16px 18px 12px;border-bottom:1px solid var(--gray-100);}
+  .panel-head-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .panel-obd{font-family:ui-monospace,monospace;font-size:11px;color:var(--gray-500);}
+  .panel-close{cursor:pointer;color:var(--gray-400);font-size:16px;}
+  .panel-cust{font-size:15px;font-weight:700;margin-bottom:4px;}
+  .panel-meta{font-size:11px;color:var(--gray-500);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .panel-actions{padding:12px 18px;border-bottom:1px solid var(--gray-100);position:relative;}
+  .panel-actions-row{display:flex;gap:8px;}
+  .btn{border:none;border-radius:7px;font-size:11.5px;font-weight:600;padding:8px 12px;cursor:pointer;}
+  .btn-primary{background:var(--teal);color:#fff;}
+  .btn-primary:hover{background:var(--teal-dark);}
+  .btn-grey{background:#fff;border:1px solid var(--gray-200);color:var(--gray-700);}
+  .btn-grey:hover{background:var(--gray-50);}
+  .btn-disabled{background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200);cursor:not-allowed;}
+  .panel-note{font-size:10.5px;color:var(--gray-400);margin-top:6px;}
+  .panel-tabs{display:flex;gap:4px;padding:0 18px;border-bottom:1px solid var(--gray-100);}
+  .ptab{font-size:11.5px;font-weight:600;color:var(--gray-500);padding:9px 8px;border-bottom:2px solid transparent;cursor:pointer;}
+  .ptab.active{color:var(--gray-900);border-color:var(--teal);}
+  .panel-body{flex:1;overflow-y:auto;padding:14px 18px;font-size:12px;color:var(--gray-600);}
+  .panel-body table{width:100%;border-collapse:collapse;font-size:11.5px;}
+  .panel-body th{text-align:left;font-size:9.5px;text-transform:uppercase;color:var(--gray-400);font-weight:600;padding:6px 4px;border-bottom:1px solid var(--gray-100);}
+  .panel-body td{padding:8px 4px;border-bottom:1px solid var(--gray-50);color:var(--gray-700);}
+  .panel-section-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);font-weight:600;margin:0 0 8px;}
+  .activity-row{padding:6px 0;border-bottom:1px solid var(--gray-50);font-size:11.5px;}
+  .activity-time{color:var(--gray-400);font-family:ui-monospace,monospace;font-size:10.5px;margin-right:6px;}
+  .panel-footer{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-top:1px solid var(--gray-100);}
+  .pf-btn{background:#fff;border:1px solid var(--gray-200);color:var(--gray-600);font-size:11.5px;font-weight:600;padding:7px 12px;border-radius:7px;cursor:pointer;}
+  .pf-btn:hover{background:var(--gray-50);}
+  .pf-btn:disabled{opacity:.4;cursor:not-allowed;}
+  .pf-pos{font-size:11px;color:var(--gray-400);}
+  .op-menu-panel{position:absolute;top:calc(100% + 4px);left:18px;background:#fff;border:1px solid var(--gray-200);border-radius:9px;
+    box-shadow:0 10px 28px rgba(0,0,0,.14);width:200px;z-index:60;overflow:hidden;}
+
+  /* Remove OBD modal */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:80;}
+  .modal-backdrop.show{display:flex;}
+  .modal-box{background:#fff;border-radius:12px;width:400px;box-shadow:0 20px 50px rgba(0,0,0,.25);}
+  .modal-head{padding:16px 18px;border-bottom:1px solid var(--gray-100);font-size:13.5px;font-weight:700;}
+  .modal-body{padding:16px 18px;}
+  .modal-radio{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--gray-700);padding:7px 0;cursor:pointer;}
+  .modal-textarea{width:100%;min-height:64px;border:1px solid var(--gray-200);border-radius:7px;padding:8px 10px;font-size:12px;font-family:inherit;margin-top:8px;resize:vertical;}
+  .modal-warn{background:var(--amber-50);border:1px solid var(--amber-200);color:var(--amber-700);font-size:11px;padding:8px 10px;border-radius:7px;margin-top:10px;}
+  .modal-foot{padding:14px 18px;border-top:1px solid var(--gray-100);display:flex;justify-content:flex-end;gap:8px;}
+  .btn-red{background:var(--red-600);color:#fff;}
+  .btn-red:hover{background:var(--red-700);}
+  .btn-red:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed;}
+
+  /* Toast */
+  .toast{position:fixed;left:20px;bottom:20px;background:#111827;color:#fff;font-size:12px;padding:10px 16px;border-radius:8px;
+    box-shadow:0 10px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;z-index:90;}
+  .toast.show{opacity:1;transform:translateY(0);}
+
+  .callouts{max-width:1400px;margin:18px auto 40px;padding:0 16px;}
+  .callouts h2{font-size:13px;margin-bottom:8px;}
+  .callouts ol{font-size:12px;color:var(--gray-700);line-height:1.75;padding-left:18px;}
+  .callouts b{color:var(--gray-900);}
+</style>
+</head>
+<body>
+
+<div class="banner">
+  FINAL LOCKED MOCKUP &mdash; this is the agreed spec for the Claude Code build &middot; 5 Sep 2026<br/>
+  Try it for real: table is grouped ONE SECTION PER OPERATOR &mdash; every job of theirs (running, queued, paused, done) sits together under their own name, nothing drifts into someone else's block &middot; <b>Seq</b> is its own column, first, before OBD &middot; <b>SO No.</b> stays &middot; <b>Assign</b> a pending card &middot; <b>click any row</b> to open the detail panel and <b>re-assign</b> from there &middot; <b>hover rows</b> to tick checkboxes and <b>bulk-reassign</b> &middot; <b>hover an Assigned row</b> for the &#9650;&#9660; re-sequence arrows in the Seq column &middot; <b>Remove OBD</b> from a pending card &middot; watch a job auto-finish and a new OBD arrive on their own &middot; step through jobs with <b>Prev/Next</b> in the panel. Paused/Done rows are deliberately locked from selection &mdash; that's a real rule, not a bug.
+</div>
+
+<div class="uh-row1">
+  <div style="display:flex;align-items:center;">
+    <span class="uh-title">Tint Manager</span>
+    <span class="uh-stats" id="statsLine">3 pending &middot; 6 on the floor</span>
+  </div>
+  <div class="uh-right">
+    <span>&#128337; <span id="clockTime">11:42</span> IST</span>
+    <span>&#8942; Shortcuts</span>
+    <input class="uh-search" placeholder="Search OBD, customer, SKU..." />
+  </div>
+</div>
+<div class="uh-row2">
+  <span class="filter-chip">Filter &#9662;</span>
+</div>
+<div class="conn-strip" id="connStrip">
+  <span class="conn-dot"></span>
+  <span id="connText">Live &middot; updated 11:42</span>
+</div>
+
+<div class="shell">
+
+  <div class="rail">
+    <div class="rail-head">
+      <div class="rail-title">Needs assignment</div>
+      <div class="rail-sub" id="railSub">3 waiting &middot; oldest first</div>
+    </div>
+    <div class="rail-body" id="railBody"></div>
+  </div>
+
+  <div class="pane">
+    <div class="pane-head">
+      <span class="pane-title">On the floor</span>
+      <span class="pane-count" id="paneCount">6 jobs &middot; grouped by operator</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <colgroup>
+          <col style="width:3%"><col style="width:6%"><col style="width:9%"><col style="width:9%"><col style="width:18%">
+          <col style="width:10%"><col style="width:6%"><col style="width:6%"><col style="width:15%">
+          <col style="width:18%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th></th><th>Seq</th><th>OBD</th><th>SO No.</th><th>Site Name</th><th>Route</th>
+            <th>Vol</th><th>Art.</th><th>Operator</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="assign-bar" id="assignBar">
+  <span class="ab-count" id="abCount">0 selected</span>
+  <span class="ab-x" onclick="clearSelection()">&times;</span>
+  <span class="ab-summary" id="abSummary"></span>
+  <span class="ab-divider"></span>
+  <select class="ab-select" id="abSelect">
+    <option value="">Move to operator...</option>
+    <option value="DV">Deepak Vasava</option>
+    <option value="CV">Chandrasing Valvi</option>
+  </select>
+  <button class="ab-assign" id="abBtn" disabled onclick="bulkReassign()">Reassign selected</button>
+</div>
+
+<div class="backdrop" id="backdrop" onclick="closePanel()"></div>
+<aside class="panel" id="panel">
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <span class="panel-obd" id="pObd">&nbsp;</span>
+      <span class="panel-close" onclick="closePanel()">&times;</span>
+    </div>
+    <div class="panel-cust" id="pCust">&nbsp;</div>
+    <div class="panel-meta" id="pMeta"></div>
+  </div>
+  <div class="panel-actions">
+    <div class="panel-actions-row" id="pActions"></div>
+    <div id="pOpMenuHolder"></div>
+  </div>
+  <div class="panel-tabs">
+    <div class="ptab active" data-tab="items" onclick="ptab(this)">Items</div>
+    <div class="ptab" data-tab="details" onclick="ptab(this)">Details</div>
+    <div class="ptab" data-tab="activity" onclick="ptab(this)">Activity</div>
+  </div>
+  <div class="panel-body">
+    <div id="tab-items"></div>
+    <div id="tab-details" style="display:none;"></div>
+    <div id="tab-activity" style="display:none;"></div>
+  </div>
+  <div class="panel-footer">
+    <button class="pf-btn" id="pfPrev" onclick="stepPanel(-1)">&larr; Prev</button>
+    <span class="pf-pos" id="pfPos"></span>
+    <button class="pf-btn" id="pfNext" onclick="stepPanel(1)">Next &rarr;</button>
+  </div>
+</aside>
+
+<div class="modal-backdrop" id="removeModalBackdrop">
+  <div class="modal-box">
+    <div class="modal-head">Remove OBD?</div>
+    <div class="modal-body">
+      <label class="modal-radio"><input type="radio" name="rmReason" value="CUSTOMER_CANCELLED" checked> Customer cancelled</label>
+      <label class="modal-radio"><input type="radio" name="rmReason" value="WRONG_ORDER"> Wrong order</label>
+      <textarea class="modal-textarea" id="rmRemark" placeholder="Remark (required)..." oninput="checkRemoveValid()"></textarea>
+      <div class="modal-warn">&#9888; Linked delivery challan will be voided.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-grey" onclick="closeRemoveModal()">Cancel</button>
+      <button class="btn btn-red" id="rmConfirmBtn" disabled onclick="confirmRemove()">Remove OBD</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="callouts">
+  <h2>Locked spec &mdash; what every flow does</h2>
+  <ol>
+    <li><b>Assign</b> &mdash; click "Assign &#9662;" on any left-rail card, pick an operator. The card moves to the table for real, and lands at the bottom of that operator's queue (#N = last).</li>
+    <li><b>Re-assign</b> &mdash; click any table row to open the panel, click "Re-assign operator", pick someone else. The job drops to the bottom of the new operator's queue.</li>
+    <li><b>Bulk re-assign</b> &mdash; hover rows, tick 2+ (only Assigned/In-Progress rows can be ticked &mdash; Paused and Done are locked, shown with a grey lock, matching the real rule that a paused job stays with its operator until resume/done, and a done job can't be reassigned at all), pick an operator in the black bar, hit Reassign.</li>
+    <li><b>Grouped by operator (v9 fix)</b> &mdash; earlier the operator header only wrapped the waiting queue, so a running/paused/done job could land right after someone else's header with nothing to say it wasn't theirs (Chandrasing's in-progress job looked like part of Deepak's block). Fixed properly: each operator now owns ONE section holding everything of theirs, in this order top to bottom &mdash; what they're doing now (In Progress), what's next (their Seq 1, 2... queue), what's stuck (Paused), then history (Done). Still one flat table, not a filter/tab &mdash; just an honest grouping.</li>
+    <li><b>Re-sequence</b> &mdash; Seq is its own column, first, ahead of OBD (SO No. stays right after OBD, unchanged). It only applies to the waiting queue &mdash; other rows show a plain dash. Hover an Assigned row to reveal &#9650;&#9660; arrows in the Seq column &mdash; they swap the job one step within that SAME operator's queue only, matching the real reorder rule exactly (no cross-operator moves, one step at a time). If a job is already first/last in its operator's queue, that arrow is greyed out and does nothing. Vora Paints/Om Sai Traders (both Chandrasing) demonstrate a working swap; Bhagwati (Deepak, alone in his queue) demonstrates the disabled state.</li>
+    <li><b>Remove OBD</b> &mdash; only offered on a PENDING card (rail or its panel) &mdash; matches the real rule that removal is blocked once a job is assigned.</li>
+    <li><b>Prev / Next</b> in the panel walks the whole queue, rail cards first then table rows, without closing.</li>
+    <li><b>Activity tab</b> in the panel builds up as you act on a job &mdash; assign it, reassign it, and watch the log grow.</li>
+    <li><b>Left on its own:</b> after ~5s the In Progress job auto-finishes; after ~12s a new OBD arrives on the rail by itself &mdash; both simulate the live 15-30s refresh, not a page reload.</li>
+    <li><b>Scope decision:</b> the old "Create Split" flow (splitting one OBD across multiple operators) is DROPPED from this screen for now, on purpose &mdash; no fallback link. Only plain single-operator Assign ships in this build. Split-creation can come back as its own separate piece of work later if needed.</li>
+  </ol>
+</div>
+
+<script>
+  const operators = { DV:{name:'Deepak Vasava', initials:'DV'}, CV:{name:'Chandrasing Valvi', initials:'CV'} };
+
+  let pending = [
+    { id:'p1', type:'pending', obd:'OBD-88214', so:'SO-44740', customer:'Shree Rang Sarita', route:'Local', vol:'140 L', article:3, urgent:true, time:'09:14',
+      activity:['09:14 &mdash; OBD imported'] },
+    { id:'p2', type:'pending', obd:'OBD-88221', so:'SO-44751', customer:'Patel Hardware', route:'Upcountry', vol:'60 L', article:2, urgent:false, time:'09:40',
+      activity:['09:40 &mdash; OBD imported'] },
+    { id:'p3', type:'pending', obd:'OBD-88230', so:'SO-44758', customer:'Divya Enterprise', route:'Local', vol:'35 L', article:1, urgent:false, time:'09:58',
+      activity:['09:58 &mdash; OBD imported'] },
+  ];
+
+  let board = [
+    { id:'r1', type:'board', obd:'OBD-88099', so:'SO-44718', customer:'Vora Paints', route:'Katargam', vol:'95 L', article:3, urgent:false, key:false,
+      operator:'CV', status:'assigned', seq:1, time:'08:02', activity:['08:02 &mdash; OBD imported','08:05 &mdash; Assigned to Chandrasing Valvi'] },
+    { id:'r2', type:'board', obd:'OBD-88104', so:'SO-44722', customer:'Om Sai Traders', route:'Adajan', vol:'210 L', article:6, urgent:true, key:false,
+      operator:'CV', status:'assigned', seq:2, time:'08:20', activity:['08:20 &mdash; OBD imported','08:22 &mdash; Assigned to Chandrasing Valvi'] },
+    { id:'r3', type:'board', obd:'OBD-88110', so:'SO-44730', customer:'Bhagwati Enterprise', route:'Ghod Dod', vol:'40 L', article:2, urgent:false, key:false,
+      operator:'DV', status:'assigned', seq:1, time:'08:31', activity:['08:31 &mdash; OBD imported','08:33 &mdash; Assigned to Deepak Vasava'] },
+    { id:'r4', type:'board', obd:'OBD-88041', so:'SO-44690', customer:'Krishna Colour Centre', route:'Ghod Dod', vol:'120 L', article:5, urgent:false, key:true,
+      operator:'DV', status:'paused', pausedInfo:'2/3', time:'07:12', activity:['07:12 &mdash; OBD imported','07:15 &mdash; Assigned to Deepak Vasava','10:40 &mdash; Paused: lunch break'] },
+    { id:'r5', type:'board', obd:'OBD-88052', so:'SO-44701', customer:'Jeevan Hardware', route:'Varachha', vol:'75 L', article:3, urgent:false, key:false,
+      operator:'CV', status:'in_progress', time:'07:30', activity:['07:30 &mdash; OBD imported','07:32 &mdash; Assigned to Chandrasing Valvi','07:40 &mdash; Started tinting'] },
+    { id:'r6', type:'board', obd:'OBD-87990', so:'SO-44655', customer:'Nilkanth Traders', route:'Adajan', vol:'130 L', article:4, urgent:false, key:false,
+      operator:'DV', status:'done', time:'09:58', activity:['06:40 &mdash; OBD imported','06:45 &mdash; Assigned to Deepak Vasava','09:58 &mdash; Marked done'] },
+  ];
+
+  const ITEMS = [
+    {sku:'5906723', desc:'WS Powerflexx 90 Base', pack:'4L', qty:6},
+    {sku:'5911204', desc:'Satin Enamel White', pack:'1L', qty:12},
+  ];
+
+  let selected = new Set();
+  let panelState = { id:null };
+  let panelOpMenuOpen = false;
+  let activePtab = 'items';
+
+  function nowTime(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(t._h);
+    t._h = setTimeout(()=>t.classList.remove('show'), 2600);
+  }
+  function findAny(id){ return pending.find(x=>x.id===id) || board.find(x=>x.id===id); }
+  function allQueue(){ return [...pending, ...board]; }
+
+  /* Assigned rows cluster by operator, then by seq within that operator's
+     queue (this mirrors the real per-operator reorder rule -- it is a sort
+     order, not a filter/tab). With only 2-3 operators, EVERY job on the
+     floor -- in progress, queued, paused, done -- is grouped under its
+     operator's own section, so a running/paused/done job never drifts
+     into someone else's block. Within a person's section the order is
+     what's happening now, what's next, what's stuck, what's finished. */
+  function statusPriority(s){ return {in_progress:0, assigned:1, paused:2, done:3}[s] ?? 4; }
+  function groupedBoardList(){
+    const opIds = [...new Set(board.map(r=>r.operator))]
+      .sort((a,b)=>operators[a].name.localeCompare(operators[b].name));
+    return opIds.map(opId => ({
+      opId,
+      rows: board.filter(r=>r.operator===opId).sort((a,b)=>{
+        const pa = statusPriority(a.status), pb = statusPriority(b.status);
+        if(pa!==pb) return pa-pb;
+        if(a.status==='assigned') return a.seq-b.seq;
+        return 0;
+      })
+    }));
+  }
+  function opQueue(operator){ return board.filter(r=>r.status==='assigned' && r.operator===operator).sort((a,b)=>a.seq-b.seq); }
+
+  function render(){
+    renderRail();
+    renderBoard();
+    document.getElementById('statsLine').innerHTML = pending.length+' pending &middot; '+board.length+' on the floor';
+    document.getElementById('railSub').innerHTML = pending.length+' waiting &middot; oldest first';
+    document.getElementById('paneCount').textContent = board.length+' jobs · grouped by operator';
+    updateSelectionUI();
+    delete_flashes();
+  }
+
+  function renderRail(){
+    const body = document.getElementById('railBody');
+    if(pending.length === 0){
+      body.innerHTML = '<div class="rail-empty"><div class="tick">&#10003;</div><b>All clear</b><br/>New OBDs appear here on their own.</div>';
+      return;
+    }
+    body.innerHTML = pending.map(p => `
+      <div class="rcard ${p._flash?'new-flash':''}" data-id="${p.id}">
+        <div class="rcard-top">
+          <span class="rcard-cust" style="cursor:pointer;" onclick="openPanel('${p.id}')">${p.customer}</span>
+          <span class="rcard-x" onclick="openRemoveModal('${p.id}')" title="Remove OBD">&times;</span>
+        </div>
+        <div class="rcard-meta"><span class="obd-mono">${p.obd}</span> &middot; ${p.time} &middot; ${p.route} &middot; ${p.vol}</div>
+        <div class="rcard-chips">${p.urgent ? '<span class="chip urgent">&#9889; Urgent</span>' : ''}</div>
+        <div class="rcard-foot">
+          <button class="rassign" onclick="toggleAssignMenu(event,'${p.id}')">Assign &#9662;</button>
+          <button class="rghost" onclick="openPanel('${p.id}')">&#128065;</button>
+          <div id="opmenu-${p.id}"></div>
+        </div>
+      </div>
+    `).join('');
+  }
+  function delete_flashes(){ pending.forEach(p=>delete p._flash); board.forEach(b=>delete b._flash); }
+
+  function statusPill(row){
+    if(row.status==='assigned') return `<span class="status-pill status-assigned">Assigned &middot; ${row.time}</span>`;
+    if(row.status==='in_progress') return `<span class="status-pill status-progress" id="${row.id==='r5'?'liveStatusPill':''}">In Progress &middot; ${row.time}</span>`;
+    if(row.status==='paused') return `<span class="status-pill status-paused">&#9208; Paused ${row.pausedInfo}</span>`;
+    if(row.status==='done') return `<span class="status-pill status-done">Done &middot; ${row.time}</span>`;
+  }
+  function selectable(row){ return row.status==='assigned' || row.status==='in_progress'; }
+
+  function renderBoard(){
+    const tbody = document.getElementById('boardBody');
+    const groups = groupedBoardList();
+    let html = '';
+    groups.forEach(g => {
+      html += `<tr class="op-group-row"><td colspan="10">${operators[g.opId].name}<span class="grp-count">&middot; ${g.rows.length} job${g.rows.length===1?'':'s'} on the floor</span></td></tr>`;
+      g.rows.forEach(r => { html += rowHtml(r); });
+    });
+    tbody.innerHTML = html;
+  }
+
+  function rowHtml(r){
+    return `
+      <tr data-id="${r.id}" class="${r._flash?'updated':''}" onclick="openPanel('${r.id}')">
+        <td onclick="event.stopPropagation()">
+          ${selectable(r)
+            ? `<div class="row-chk ${selected.has(r.id)?'on':''}" onclick="toggleRowChk(event,'${r.id}')">${selected.has(r.id)?'&#10003;':''}</div>`
+            : `<span class="row-lock" title="${r.status==='paused'?'Locked while paused':'Already done'}">&#128274;</span>`}
+        </td>
+        <td onclick="event.stopPropagation()">${seqCell(r)}</td>
+        <td class="obd-cell">${r.obd}</td>
+        <td class="so-cell">${r.so}</td>
+        <td class="cust-cell">${r.customer}${r.urgent?' <span class="flag">&#9889;</span>':''}${r.key?' <span class="flag" title="Key customer">&#9733;</span>':''}</td>
+        <td>${r.route}</td>
+        <td>${r.vol}</td>
+        <td>${r.article}</td>
+        <td>${operatorCell(r)}</td>
+        <td>${statusPill(r)}</td>
+      </tr>`;
+  }
+
+  function seqCell(r){
+    if(r.status!=='assigned') return `<span class="seq-dash">&mdash;</span>`;
+    const q = opQueue(r.operator);
+    const pos = q.findIndex(x=>x.id===r.id);
+    const atTop = pos<=0, atBottom = pos>=q.length-1;
+    return `<div class="seq-cell">
+      <span class="seq-num">${r.seq}</span>
+      <span class="seq-arrows">
+        <span class="seq-arrow ${atTop?'dead':''}" title="Move up in ${operators[r.operator].name.split(' ')[0]}'s queue" onclick="moveSeq(event,'${r.id}','up')">&#9650;</span>
+        <span class="seq-arrow ${atBottom?'dead':''}" title="Move down in ${operators[r.operator].name.split(' ')[0]}'s queue" onclick="moveSeq(event,'${r.id}','down')">&#9660;</span>
+      </span>
+    </div>`;
+  }
+
+  function operatorCell(r){
+    const avatar = `<span class="avatar-sm" style="${r.status==='done'?'background:var(--green-600);':''}">${operators[r.operator].initials}</span>`;
+    return `${avatar}${operators[r.operator].name.split(' ')[0]}`;
+  }
+
+  function moveSeq(evt, id, dir){
+    evt.stopPropagation();
+    const row = board.find(r=>r.id===id);
+    if(!row || row.status!=='assigned') return;
+    const targetSeq = row.seq + (dir==='up' ? -1 : 1);
+    const sibling = board.find(r=>r.status==='assigned' && r.operator===row.operator && r.seq===targetSeq);
+    if(!sibling) return; // already top/bottom of that operator's queue -- no-op
+    sibling.seq = row.seq;
+    row.seq = targetSeq;
+    row._flash = true; sibling._flash = true;
+    toast('Re-sequenced '+operators[row.operator].name.split(' ')[0]+"'s queue");
+    render();
+  }
+
+  /* ---------- Assign (pending -> board) ---------- */
+  function toggleAssignMenu(evt, pid){
+    evt.stopPropagation();
+    document.querySelectorAll('.op-menu').forEach(m=>m.remove());
+    const holder = document.getElementById('opmenu-'+pid);
+    if(!holder) return;
+    const menu = document.createElement('div');
+    menu.className = 'op-menu';
+    menu.innerHTML = '<div class="op-menu-label">Assign to</div>' +
+      Object.entries(operators).map(([id,o]) =>
+        `<div class="op-item" onclick="assignPending(event,'${pid}','${id}')"><span class="op-avatar">${o.initials}</span>${o.name}</div>`
+      ).join('');
+    holder.appendChild(menu);
+    document.addEventListener('click', closeMenusOnce, {once:true});
+  }
+  function closeMenusOnce(){ document.querySelectorAll('.op-menu').forEach(m=>m.remove()); }
+
+  function assignPending(evt, pid, opId){
+    evt.stopPropagation();
+    const idx = pending.findIndex(p=>p.id===pid);
+    if(idx<0) return;
+    const p = pending[idx];
+    pending.splice(idx,1);
+    const t = nowTime();
+    const existingQ = opQueue(opId);
+    const nextSeq = existingQ.length ? Math.max(...existingQ.map(x=>x.seq))+1 : 1;
+    const newRow = { id:p.id, type:'board', obd:p.obd, so:p.so, customer:p.customer, route:p.route, vol:p.vol, article:p.article,
+      urgent:p.urgent, key:false, operator:opId, status:'assigned', seq:nextSeq, time:t, activity:[...p.activity, t+' &mdash; Assigned to '+operators[opId].name] };
+    newRow._flash = true;
+    board.unshift(newRow);
+    toast('Assigned to '+operators[opId].name);
+    if(panelState.id===pid){ openPanel(pid); }
+    render();
+  }
+
+  /* ---------- Row selection + bulk reassign ---------- */
+  function toggleRowChk(evt, id){
+    evt.stopPropagation();
+    if(selected.has(id)) selected.delete(id); else selected.add(id);
+    renderBoard();
+    updateSelectionUI();
+  }
+  function updateSelectionUI(){
+    const bar = document.getElementById('assignBar');
+    const n = selected.size;
+    if(n>0){
+      bar.classList.add('show');
+      document.getElementById('abCount').textContent = n+' selected';
+      const vols = [...selected].map(id=>board.find(r=>r.id===id)).filter(Boolean);
+      document.getElementById('abSummary').textContent = n===1 ? vols[0].customer : n+' jobs selected';
+    } else {
+      bar.classList.remove('show');
+      document.getElementById('abSelect').value = '';
+      document.getElementById('abBtn').disabled = true;
+    }
+  }
+  document.addEventListener('DOMContentLoaded', ()=>{
+    document.getElementById('abSelect').addEventListener('change', (e)=>{
+      document.getElementById('abBtn').disabled = !e.target.value;
+    });
+  });
+  function clearSelection(){ selected.clear(); renderBoard(); updateSelectionUI(); }
+  function bulkReassign(){
+    const opId = document.getElementById('abSelect').value;
+    if(!opId) return;
+    const t = nowTime();
+    selected.forEach(id=>{
+      const row = board.find(r=>r.id===id);
+      if(row){
+        row.operator = opId;
+        if(row.status==='assigned'){
+          // drops to the back of the new operator's queue -- same rule as a fresh Assign
+          const q = opQueue(opId).filter(x=>x.id!==row.id);
+          row.seq = q.length ? Math.max(...q.map(x=>x.seq))+1 : 1;
+        }
+        row._flash = true;
+        row.activity.push(t+' &mdash; Reassigned to '+operators[opId].name+' (bulk)');
+      }
+    });
+    toast(selected.size+' job(s) moved to '+operators[opId].name);
+    clearSelection();
+    render();
+  }
+
+  /* ---------- Detail panel ---------- */
+  function openPanel(id){
+    panelState.id = id;
+    activePtab = 'items';
+    renderPanel();
+    document.getElementById('panel').classList.add('show');
+    document.getElementById('backdrop').classList.add('show');
+  }
+  function closePanel(){
+    document.getElementById('panel').classList.remove('show');
+    document.getElementById('backdrop').classList.remove('show');
+    panelState.id = null;
+    panelOpMenuOpen = false;
+  }
+  function renderPanel(){
+    const item = findAny(panelState.id);
+    if(!item){ closePanel(); return; }
+    document.getElementById('pObd').textContent = item.obd;
+    document.getElementById('pCust').textContent = item.customer;
+    document.getElementById('pMeta').innerHTML = item.route+' &middot; '+item.vol+' &middot; '+item.article+' articles'
+      + (item.urgent ? ' &middot; <span class="flag">&#9889; Urgent</span>' : '')
+      + (item.key ? ' &middot; <span class="flag">&#9733; Key customer</span>' : '');
+
+    const actions = document.getElementById('pActions');
+    if(item.type==='pending'){
+      actions.innerHTML = `<button class="btn btn-primary" onclick="panelOpenOpMenu(event)">Assign operator</button>
+                            <button class="btn btn-grey" onclick="openRemoveModal('${item.id}')">Remove OBD</button>`;
+    } else if(item.status==='assigned' || item.status==='in_progress'){
+      actions.innerHTML = `<button class="btn btn-primary" onclick="panelOpenOpMenu(event)">Re-assign operator</button>`;
+    } else if(item.status==='paused'){
+      actions.innerHTML = `<button class="btn btn-disabled" disabled title="Owned by operator until resume/done">Locked while paused</button>`;
+    } else {
+      actions.innerHTML = `<button class="btn btn-disabled" disabled>Completed</button>`;
+    }
+    document.getElementById('pOpMenuHolder').innerHTML = '';
+
+    // tabs
+    document.getElementById('tab-items').innerHTML = `<table><tr><th>SKU</th><th>Description</th><th>Pack</th><th>Qty</th></tr>` +
+      ITEMS.map(i=>`<tr><td>${i.sku}</td><td>${i.desc}</td><td>${i.pack}</td><td>${i.qty}</td></tr>`).join('') + `</table>`;
+    document.getElementById('tab-details').innerHTML = `<div class="panel-section-label">Reference</div>
+      Bill To: ${item.customer}<br/>Ship To: same as billing<br/>SO No: ${item.so}<br/>Route: ${item.route}<br/>OBD Date: today, ${item.time}`;
+    document.getElementById('tab-activity').innerHTML = `<div class="panel-section-label">Activity</div>` +
+      item.activity.map(a=>`<div class="activity-row">${a}</div>`).join('');
+
+    ['items','details','activity'].forEach(n=>{
+      document.getElementById('tab-'+n).style.display = (n===activePtab)?'block':'none';
+    });
+    document.querySelectorAll('.ptab').forEach(t=>t.classList.toggle('active', t.dataset.tab===activePtab));
+
+    const q = allQueue();
+    const pos = q.findIndex(x=>x.id===item.id);
+    document.getElementById('pfPos').textContent = 'Job '+(pos+1)+' of '+q.length;
+    document.getElementById('pfPrev').disabled = pos<=0;
+    document.getElementById('pfNext').disabled = pos>=q.length-1;
+  }
+  function ptab(el){ activePtab = el.dataset.tab; renderPanel(); }
+  function stepPanel(dir){
+    const q = allQueue();
+    let pos = q.findIndex(x=>x.id===panelState.id);
+    pos = Math.max(0, Math.min(q.length-1, pos+dir));
+    panelState.id = q[pos].id;
+    activePtab = 'items';
+    renderPanel();
+  }
+  function panelOpenOpMenu(evt){
+    evt.stopPropagation();
+    const holder = document.getElementById('pOpMenuHolder');
+    if(holder.innerHTML){ holder.innerHTML=''; return; }
+    holder.innerHTML = `<div class="op-menu-panel">
+        <div class="op-menu-label">Choose operator</div>
+        ${Object.entries(operators).map(([id,o])=>`<div class="op-item" onclick="panelChooseOperator('${id}')"><span class="op-avatar">${o.initials}</span>${o.name}</div>`).join('')}
+      </div>`;
+  }
+  function panelChooseOperator(opId){
+    const item = findAny(panelState.id);
+    document.getElementById('pOpMenuHolder').innerHTML = '';
+    const t = nowTime();
+    if(item.type==='pending'){
+      assignPending({stopPropagation(){}}, item.id, opId);
+      panelState.id = item.id;
+      renderPanel();
+    } else {
+      item.operator = opId;
+      if(item.status==='assigned'){
+        const q = opQueue(opId).filter(x=>x.id!==item.id);
+        item.seq = q.length ? Math.max(...q.map(x=>x.seq))+1 : 1;
+      }
+      item.activity.push(t+' &mdash; Reassigned to '+operators[opId].name);
+      item._flash = true;
+      toast('Reassigned to '+operators[opId].name);
+      render();
+      renderPanel();
+    }
+  }
+
+  /* ---------- Remove OBD modal (pending only) ---------- */
+  let removeTargetId = null;
+  function openRemoveModal(id){
+    removeTargetId = id;
+    document.getElementById('rmRemark').value = '';
+    document.getElementById('rmConfirmBtn').disabled = true;
+    document.getElementById('removeModalBackdrop').classList.add('show');
+  }
+  function closeRemoveModal(){ document.getElementById('removeModalBackdrop').classList.remove('show'); removeTargetId=null; }
+  function checkRemoveValid(){
+    document.getElementById('rmConfirmBtn').disabled = document.getElementById('rmRemark').value.trim().length===0;
+  }
+  function confirmRemove(){
+    const idx = pending.findIndex(p=>p.id===removeTargetId);
+    if(idx>=0){
+      const obd = pending[idx].obd;
+      pending.splice(idx,1);
+      toast(obd+' removed');
+    }
+    closeRemoveModal();
+    if(panelState.id===removeTargetId) closePanel();
+    render();
+  }
+
+  /* ---------- Auto/live events ---------- */
+  setTimeout(()=>{
+    const r5 = board.find(r=>r.id==='r5');
+    if(r5 && r5.status==='in_progress'){
+      const t = nowTime();
+      r5.status = 'done'; r5.time = t; r5._flash = true;
+      r5.activity.push(t+' &mdash; Marked done');
+      document.getElementById('connText').textContent = 'Live · updated '+t;
+      toast('OBD-88052 marked Done (auto-refresh)');
+      render();
+    }
+  }, 5000);
+
+  setTimeout(()=>{
+    const t = nowTime();
+    const newP = { id:'p'+Date.now(), type:'pending', obd:'OBD-88244', so:'SO-44770', customer:'Ganesh Traders', route:'Local', vol:'55 L', article:2, urgent:false, time:t,
+      activity:[t+' &mdash; OBD imported'], _flash:true };
+    pending.push(newP);
+    toast('New OBD arrived on the rail');
+    render();
+  }, 12000);
+
+  setInterval(()=>{ document.getElementById('clockTime').textContent = nowTime(); }, 15000);
+
+  render();
+</script>
+
+</body>
+</html>

@@ -621,7 +621,6 @@ Grep of `app` + `lib` 2026-09-19, beyond the challan, admin-customers and two ca
 
 ### P2 — Cosmetic cleanups
 
-- CustomerMissingSheet styling to match admin customer split-view form
 - Shade Master `isActive` filter — production verification (deferring; table is retiring)
 - ~~Challan lazy creation removal~~ — **✅ VERIFIED CLOSED 2026-08-04**: the `[orderId]` detail API has no create call; creation is import-time only (`CLAUDE_TINT.md §14`)
 - Challan print CSS audit — old class names `ch-header`, `tint-yes` may persist
@@ -667,11 +666,6 @@ database. These are QA passes, not code changes — each needs a human on the li
 Each was reachable on the old board and is not reachable now. **These are open questions for the
 owner, not settled removals.** Full list in `CLAUDE_TINT.md §1.11`.
 
-- [ ] 🔴 **The per-row StatusPopover — the significant gap.** Set priority (Urgent/Normal) and
-      dispatch status (Dispatch/Hold/Waiting) from any card or row via the ⊕ button. Its removal
-      leaves `PATCH /api/tint/manager/orders/[id]/status` and `/splits/[id]/status` **with no caller
-      at all**. Urgent and Key now render read-only (⚡/★). **Needs an owner decision: does Chandresh
-      still set priority here, and if so where — the detail panel's action row is the natural home.**
 - [ ] **Create Split.** Dropped by scope decision, so this one is a recorded consequence rather than
       an oversight — but the consequence is real: `POST /api/tint/manager/splits/create` now has no
       caller, so **new splits cannot be created anywhere in the app.** Existing splits still display,
@@ -722,6 +716,27 @@ owner, not settled removals.** Full list in `CLAUDE_TINT.md §1.11`.
       is authoritative: either §27's numbers are updated to what the boards actually do, or Floor and
       Tint are moved onto §27 and §27 is enforced. Until then a third board has two defensible
       answers to copy.
+
+## Tint Manager — parked (opened 2026-10-02, after tabs round 1 + round 2)
+
+Shipped work: `docs/prompts/drafts/code-update-2026-10-01-tint-manager-tabs.md` and
+`code-update-2026-10-02-tint-manager-round2.md`. One line each; nothing below is built.
+
+- [ ] **Missing customer, same design on every screen** — Floor, Billing and Picking should get the Tint Manager's chip / tags / Add ship-to (`lib/tint/customer-missing.ts`, `components/tint/manager/add-ship-to-sheet.tsx`). Include **dealer / bill-to missing**: 604087 KRISHNA ENTERPRISE (×6), 827463 G D SALES (×4), 3223592 UPKAR (×8), 783587, 826379 CUBE COLORS — the challan's BILL TO address prints blank for these. Owner to confirm whether 604087 and 3626461 are the same shop. Note: the old ⚠ on rail cards for bills outside SMU 74/77 was removed with the chip.
+- [ ] **Fake 05:30 time on paste-created bills** — `docs/prompts/drafts/code-discovery-2026-10-01-fake-0530-time.md`.
+- [ ] **Rail card ⋯ → ›** — move / restyle the card's details button (`board-rail.tsx`).
+- [ ] **Search gaps** — sampling numbers are not searchable; the Delete tab is not filtered and does not flash (it is Billing's component); the server fallback (`/api/tint/manager/find`) does not match "missing".
+- [ ] **History gaps** — the # column shows "—" (could show finish order); a row click does not open read-only details.
+- [ ] **CI raised from the Tint Manager records source "floor".**
+- [ ] **TI report and sampling use the ORIGINAL site after a ship-to redirect** (by design so far — confirm with the owner).
+- [ ] **Hand is possible before an OBD exists.**
+- [ ] **Mail-order tint bills are invisible on Floor while tinting.**
+- [ ] **Pick-delete shows SMU "10".**
+- [ ] **A mid-tint pick-delete can create twins.**
+- [ ] **Base — No Tint Undo refuses most bypasses** (the `dispatchSlotSource` guard) — known limit; detail under "Tint — CLAUDE_TINT.md" above.
+- [ ] **Code tidy** — mirror the new marker arms into `live.feed.tint` (the P1 above); a lib imports `app/api/tint/operator/_lib`; `PATCH /api/tint/manager/orders/[id]/status` and `/splits/[id]/status` still have no caller (the StatusPopover's job is now bulk Urgent + Hold / Release); `components/shared/customer-missing-sheet.tsx` has no callers since the Add ship-to form.
+- [ ] **Verify** — does the TI report count non-tint lines on mixed bills?
+- [ ] **Owner to-dos** — the import PC's auto-import stopped after 16:01 on 1 Oct: check it. Free disk space on the depot PC's C: drive.
 
 ---
 

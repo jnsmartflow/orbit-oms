@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TI Bulk Shades</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-200:#DDD6FE;--brand-600:#7C3AED;--brand-700:#6D28D9;
+--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5C5869;--ink-700:#3F3B4B;--ink-900:#1B1826;
+--ok-bg:#ECFDF5;--ok-text:#047857;--warn-bg:#FFFBEB;--warn-text:#B45309;--warn-bd:#FDE68A;--danger-text:#BE123C;--line:#EEEDF3}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:13px;color:var(--ink-900);background:#fff}
+.mono{font-family:"JetBrains Mono",monospace;font-size:12px}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+.note{background:var(--ink-900);color:#fff;font-size:12px;padding:7px 16px}.note b{color:#C4B5FD}
+.app{display:flex;height:calc(100vh - 31px)}
+.rail{width:300px;border-right:1px solid var(--line);background:var(--ink-25);padding:14px;flex-shrink:0}
+.rail .t{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-500);font-weight:600}
+.rail .ghost{height:96px;border:1px solid var(--ink-100);background:#fff;border-radius:14px;margin-top:10px;opacity:.55}
+.pane{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.tabs{display:flex;gap:22px;padding:0 20px;border-bottom:1px solid var(--line)}
+.tab{background:none;border:0;padding:12px 0 10px;color:var(--ink-500);display:flex;gap:6px;align-items:center;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab .c{font-size:11px;background:var(--ink-50);color:var(--ink-600);border-radius:5px;padding:1px 6px;font-weight:600}
+.tab.on{color:var(--ink-900);font-weight:700;border-bottom-color:var(--ink-900)}.tab.on .c{background:var(--ink-900);color:#fff}
+.body{flex:1;overflow:auto;padding:0 16px 24px}
+.body.up{padding-bottom:150px}
+.sub{font-size:11.5px;color:var(--ink-400);margin:12px 4px}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-400);font-weight:600;text-align:left;padding:8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
+td{padding:11px 8px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+tr.row{cursor:pointer}tr.row:hover td{background:var(--ink-25)}
+tr.row.sel td{background:var(--brand-50)}tr.row.sel td:first-child{box-shadow:inset 3px 0 0 var(--brand-600)}
+tr.row.donerow td{opacity:.45}
+.r{text-align:right}.mut{color:var(--ink-500)}
+.ti{font-size:11px;font-weight:700;border-radius:5px;padding:2px 7px;background:var(--warn-bg);color:var(--warn-text);border:1px solid var(--warn-bd)}
+.ti.part{background:#fff}
+.ti.ok{background:var(--ok-bg);color:var(--ok-text);border-color:transparent}
+.pk{font-size:11.5px;color:var(--ink-600)}
+.last{font-size:11.5px}.last b{font-family:"JetBrains Mono",monospace;font-weight:500}
+.last .d{color:var(--ink-500)}
+.kbx{border:0;background:none;color:var(--ink-400);font-size:17px;letter-spacing:1px;border-radius:6px;padding:0 7px}
+.kbx:hover{background:var(--ink-50);color:var(--ink-900)}
+
+/* bottom bar */
+.bar{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--ink-100);box-shadow:0 -10px 28px rgba(27,24,38,.08);padding:14px 20px 16px;transform:translateY(110%);transition:transform .18s;z-index:5}
+.bar.show{transform:none}
+.bt{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.bt .n{font-size:20px;font-weight:700}
+.bt .tot{font-size:12.5px;color:var(--ink-500);margin-left:14px}.bt .tot b{color:var(--ink-900)}
+.clr{font-size:12px;border:1px solid var(--ink-100);border-radius:7px;padding:3px 9px;background:var(--ink-25);color:var(--ink-600);margin-left:10px}
+.lbl{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);font-weight:600}
+.chips{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+.chip{border:1px solid var(--ink-200);background:#fff;border-radius:12px;padding:10px 22px;text-align:center;min-width:120px;position:relative}
+.chip:hover{border-color:var(--brand-600);background:var(--brand-50)}
+.chip .no{font-family:"JetBrains Mono",monospace;font-weight:600;font-size:13px}
+.chip .ds{display:flex;align-items:center;gap:6px;margin-top:3px;font-size:12px;color:var(--ink-600)}
+.chip .sw{width:12px;height:12px;border-radius:3px;border:1px solid var(--ink-200);background:#fff}
+.chip .us{font-size:10.5px;color:var(--ink-400);margin-top:2px}
+.chip.sug{border-color:var(--brand-600);box-shadow:0 0 0 1px var(--brand-600)}
+.chip .sg{position:absolute;top:-8px;right:10px;background:var(--brand-600);color:#fff;font-size:9.5px;font-weight:700;border-radius:4px;padding:1px 6px;letter-spacing:.03em}
+.newb{border:1px dashed var(--ink-200);background:#fff;border-radius:12px;padding:9px 16px;font-weight:600;color:var(--ink-700);min-width:130px}
+.newb:hover{border-color:var(--ink-400)}
+.newb small{display:block;font-weight:500;color:var(--ink-400);font-size:10.5px}
+
+/* confirm */
+.mbg{position:fixed;inset:0;background:rgba(27,24,38,.35);display:none;align-items:center;justify-content:center;z-index:60}
+.mbg.show{display:flex}
+.modal{background:#fff;border-radius:16px;width:1040px;max-width:calc(100% - 32px);padding:18px 20px}
+.modal h4{margin:0 0 4px;font-size:15px}
+.modal p{margin:0 0 12px;color:var(--ink-500);font-size:12px}
+.ln{display:grid;grid-template-columns:1fr auto;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.ln:last-child{border-bottom:0}
+.ln .s{font-size:11px;font-weight:600;border-radius:5px;padding:1px 7px}
+.s-ok{background:var(--ok-bg);color:var(--ok-text)}.s-copy{background:var(--brand-50);color:var(--brand-700)}.s-skip{background:var(--warn-bg);color:var(--warn-text)}
+.rb{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.btn{border:1px solid var(--ink-100);background:#fff;border-radius:8px;padding:7px 14px;font-weight:600;color:var(--ink-700)}
+.btn.pri{background:var(--brand-600);border-color:var(--brand-600);color:#fff}
+.ct{table-layout:fixed}
+.ct th{position:sticky;top:0;background:#fff;z-index:1;padding:10px 12px}
+.ct td{padding:11px 12px;white-space:normal;overflow:visible;vertical-align:middle}
+.ct tr.li td:first-child{padding-left:24px}
+.ct tr.og td{background:var(--ink-50);padding:10px 12px;border-bottom:1px solid var(--ink-100);border-top:1px solid var(--ink-100)}
+.ct tr.og td:first-child{border-radius:8px 0 0 8px}.ct tr.og td:last-child{border-radius:0 8px 8px 0}
+.ct tr.gap td{height:12px;padding:0;border:0;background:#fff}
+.ct tr.li:last-of-type td{border-bottom:0}
+.ct tr.tt td{border:0;border-top:2px solid var(--ink-100);padding-top:12px;font-weight:600;color:var(--ink-600)}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--ink-900);color:#fff;padding:9px 16px;border-radius:10px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:70}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="note"><b>MOCKUP — TI tab with bulk shades</b> · click rows to select (one or many) → three white-shot buttons appear (WHT 5 · 20 · 25) · click one → confirm → done · ⋯ = Enter TI by hand / Undo</div>
+<div class="app">
+  <aside class="rail"><div class="t">Needs assignment</div><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div></aside>
+  <section class="pane">
+    <div class="tabs">
+      <button class="tab">Tinting <span class="c">5</span></button>
+      <button class="tab on">TI <span class="c" id="cnt">12</span></button>
+      <button class="tab">Hold <span class="c">6</span></button>
+      <button class="tab">CI <span class="c">0</span></button>
+      <button class="tab">Pick delete <span class="c">1</span></button>
+      <button class="tab">Base <span class="c">23</span></button>
+    </div>
+    <div class="body" id="body"></div>
+    <div class="bar" id="bar"></div>
+  </section>
+</div>
+<div class="mbg" id="mbg"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+const DOSES=[
+ {dose:5, nos:{"20 L":"26-0315"}, main:"26-0315"},
+ {dose:20,nos:{"20 L":"26-0318","10 L":"26-0316","4 L":"26-0307"}, main:"26-0318"},
+ {dose:25,nos:{"20 L":"26-0319","4 L":"26-0106","1 L":"26-0346"}, main:"26-0319"},
+];
+const pickNo=(d,pack)=>({no:d.main});
+const SHADES_OLD=[
+ {no:"26-0318",pack:"20 L",dose:20,uses:10,last:"28 Sep"},
+ {no:"26-0306",pack:"20 L",dose:20,uses:12,last:"24 Sep"},
+ {no:"26-0316",pack:"10 L",dose:20,uses:9,last:"24 Sep"},
+ {no:"26-0307",pack:"4 L",dose:20,uses:6,last:"24 Sep"},
+ {no:"26-0319",pack:"20 L",dose:25,uses:4,last:"28 Sep"},
+ {no:"26-0315",pack:"20 L",dose:5,uses:3,last:"29 Sep"},
+];
+let bills=[
+ {id:1,obd:"9109823864",site:"Atlantic Polymers Pvt Ltd",bill:"Happy Silvassa Colour World",sent:"1 Oct 17:21",vol:160,lines:["20 L","20 L","20 L"],lastAt:null},
+ {id:2,obd:"9109862614",site:"GJ PATEL ESTATE KRISHNA",bill:"KRISHNA ENTERPRISE",sent:"1 Oct 16:53",vol:400,lines:["20 L"],lastAt:"26-0315"},
+ {id:3,obd:"9109584085",site:"GJ PATEL ESTATE KRISHNA",bill:"KRISHNA ENTERPRISE",sent:"30 Sept 22:49",vol:600,lines:["20 L"],lastAt:"26-0315"},
+ {id:4,obd:"9109904409",site:"GJ PATEL ESTATE KRISHNA",bill:"KRISHNA ENTERPRISE",sent:"30 Sept 22:48",vol:200,lines:["20 L"],lastAt:"26-0315"},
+ {id:5,obd:"9109862615",site:"Nilkanth Eminance",bill:"SHRI KRISHNA PAINTS AGENCY",sent:"30 Sept 18:57",vol:20,lines:["20 L"],lastAt:"26-0318"},
+ {id:6,obd:"9109882323",site:"Atlantic Polymers Pvt Ltd",bill:"HAPPY SILVASSA COLOUR WORLD",sent:"30 Sept 17:26",vol:60,lines:["20 L"],lastAt:null},
+ {id:7,obd:"9109837559",site:"MAIRAM VILLA",bill:"HIND HARDWARE & PAINT STORES",sent:"30 Sept 13:19",vol:200,lines:["20 L","20 L"],lastAt:"26-0306"},
+ {id:8,obd:"9109860452",site:"RJD COMPLEX",bill:"Yashvi Enterprise",sent:"29 Sept 23:54",vol:120,lines:["20 L","20 L"],lastAt:null},
+ {id:9,obd:"9109837560",site:"Fortune Landmark 2",bill:"ANMOL TRADING",sent:"29 Sept 23:53",vol:92.5,lines:["18.5 L"],lastAt:"26-0306"},
+ {id:10,obd:"9109794190",site:"R N NAIK ACADEMY",bill:"R.P. ENTERPRISE",sent:"29 Sept 17:10",vol:120,lines:["20 L"],lastAt:"26-0319"},
+ {id:11,obd:"9109827155",site:"Decan Fine Chemicals(India)",bill:"SHREE KHATUSHYAM TRADING CO",sent:"29 Sept 16:18",vol:300,lines:["20 L"],lastAt:null},
+ {id:12,obd:"9109827157",site:"Nilkanth Eminance",bill:"SHRI KRISHNA PAINTS AGENCY",sent:"29 Sept 16:18",vol:134,lines:["1 L","20 L"],lastAt:"26-0318"},
+];
+const SKUS={"20 L":["5818100","WS Protect DP Brl 90 20L"],"18.5 L":["5822410","Max 92 Base 18.5L"],"1 L":["5890014","VT PG 4090 1L"]};
+const ALT=[["5818100","WS Protect DP Brl 90 20L"],["5818112","WS Protect DP Brl 93 20L"],["5876020","Projekt 1092 20L"],["5880401","SuperCover 90 20L"]];
+bills.forEach((b,bi)=>{b.done=b.lines.map(()=>false);b.items=b.lines.map((p,i)=>{const sk=p==="20 L"?ALT[(bi+i)%ALT.length]:SKUS[p];const litres=b.vol/b.lines.length;return{sku:sk[0],desc:sk[1],pack:p,qty:Math.max(1,Math.round(litres/parseFloat(p)))}})});
+let sel=new Set();
+const sh=no=>SHADES.find(s=>s.no===no);
+const packList=ls=>{const c={};ls.forEach(p=>c[p]=(c[p]||0)+1);return Object.entries(c).map(([p,n])=>n>1?`${p} ×${n}`:p).join(" · ")};
+function render(){
+ const open=bills.filter(b=>b.done.some(d=>!d));
+ document.getElementById("cnt").textContent=open.length;
+ document.getElementById("body").classList.toggle("up",sel.size>0);
+ document.getElementById("body").innerHTML=`<div class="sub">${open.length} bills sent as "Base — No Tint" that still owe a TI · click to select</div>
+ <table><colgroup><col style="width:12%"><col style="width:22%"><col style="width:22%"><col style="width:11%"><col style="width:6%"><col style="width:13%"><col style="width:8%"><col style="width:4%"></colgroup>
+ <tr><th>OBD</th><th>Ship to</th><th>Bill to</th><th>Sent</th><th class="r">Vol</th><th>Lines</th><th>TI</th><th></th></tr>
+ ${open.map(b=>{const d=b.done.filter(Boolean).length,n=b.lines.length;
+  return `<tr class="row ${sel.has(b.id)?"sel":""}" onclick="tog(${b.id})">
+  <td class="mono">${b.obd}</td><td>${b.site}</td><td class="mut">${b.bill}</td><td class="mut">${b.sent}</td><td class="r">${b.vol}</td>
+  <td class="pk">${packList(b.lines)}</td>
+  <td><span class="ti ${d?"part":""}">TI ${d}/${n}</span></td>
+  <td><button class="kbx" title="Enter TI by hand / Undo" onclick="event.stopPropagation();toast('⋯ menu: Enter TI (today\\'s per-line screen) · Undo Base')">⋯</button></td></tr>`}).join("")}
+ </table>`;
+ renderBar();
+}
+function renderBar(){
+ const bar=document.getElementById("bar");
+ if(!sel.size){bar.classList.remove("show");return}
+ bar.classList.add("show");
+ const S=bills.filter(b=>sel.has(b.id));
+ const owed=S.reduce((a,b)=>a+b.done.filter(d=>!d).length,0);
+ bar.innerHTML=`<div class="bt"><div style="display:flex;align-items:baseline"><span class="n">${S.length} selected</span><button class="clr" onclick="sel.clear();render()">✕ Clear</button>
+   <span class="tot"><b>${owed}</b> lines owed · ${packList(S.flatMap(b=>b.lines.filter((_,i)=>!b.done[i])))}</span></div>
+   <span class="lbl">White shot</span></div>
+  <div class="chips">${DOSES.map(d=>`<button class="chip dose" onclick="confirmShade(${d.dose})"><div class="no" style="font-family:inherit;font-size:18px">WHT ${d.dose}</div><div class="us">white shot</div></button>`).join("")}
+   <button class="newb" onclick="toast(${S.length>1?"'Opens today\\'s TI screen for the first selected bill'":"'Opens today\\'s TI screen'"})">+ New shade<small>by hand, line by line</small></button></div>`;
+}
+function tog(id){sel.has(id)?sel.delete(id):sel.add(id);render()}
+const mbg=document.getElementById("mbg");
+function confirmShade(dose){
+ const d=DOSES.find(x=>x.dose===dose),S=bills.filter(b=>sel.has(b.id));
+ let rows="",n=0,tins=0;
+ S.forEach(b=>{const its=b.items.map((it,i)=>({it,i})).filter(x=>!b.done[x.i]);if(!its.length)return;
+  const bt=its.reduce((a,x)=>a+x.it.qty,0);
+  rows+=`${rows?'<tr class="gap"><td colspan="6"></td></tr>':""}<tr class="og"><td colspan="5"><span class="mono" style="font-weight:700;color:var(--ink-900);font-size:13px">${b.obd}</span><span style="margin-left:10px;font-weight:600">${b.site}</span></td><td class="r mut">${bt} ${bt===1?"tin":"tins"}</td></tr>`;
+  its.forEach(({it})=>{n++;tins+=it.qty;
+   rows+=`<tr class="li"><td class="mono">${it.sku}</td><td>${it.desc}</td><td>${it.pack}</td><td><b>WHT ${dose}</b></td><td><span class="s s-ok mono">${d.main}</span></td><td class="r"><b>${it.qty}</b></td></tr>`})});
+ document.getElementById("modal").innerHTML=`<h4 style="font-size:17px">Write WHT ${dose} · <span class="mono" style="font-size:15px">${d.main}</span> on ${n} lines of ${S.length} bills?</h4>
+  <p>Same sampling number on every line. Same WHT ${dose} on every tin size (fixed dose, not multiplied). Lines that already have a TI are skipped.</p>
+  <div style="max-height:min(560px,62vh);overflow:auto;border:1px solid var(--line);border-radius:12px;padding:0 4px">
+  <table class="ct"><colgroup><col style="width:14%"><col style="width:40%"><col style="width:10%"><col style="width:12%"><col style="width:14%"><col style="width:10%"></colgroup>
+  <tr><th>SKU</th><th>Description</th><th>Pack</th><th>Shot</th><th>Sampling</th><th class="r">Qty</th></tr>${rows}
+  <tr class="gap"><td colspan="6"></td></tr><tr class="tt"><td colspan="5" class="r">Total · ${n} lines · ${S.length} bills</td><td class="r"><b>${tins}</b></td></tr></table></div>
+  <div class="rb"><button class="btn" onclick="mbg.classList.remove('show')">Back</button><button class="btn pri" onclick="apply(${dose})">Write TI</button></div>`;
+ mbg.classList.add("show");
+}
+function apply(dose){
+ const S=bills.filter(b=>sel.has(b.id));let lines=0;
+ S.forEach(b=>{b.done=b.done.map(x=>{if(!x)lines++;return true})});
+ mbg.classList.remove("show");sel.clear();render();toast(`WHT ${dose} written on ${lines} lines · ${S.length} bills closed · challan formula filled`);
+}
+mbg.addEventListener("click",e=>{if(e.target===mbg)mbg.classList.remove("show")});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(mbg.classList.contains("show"))mbg.classList.remove("show");else{sel.clear();render()}}});
+function toast(t){const e=document.getElementById("toast");e.textContent=t;e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2600)}
+render();
+</script>
+</body>
+</html>

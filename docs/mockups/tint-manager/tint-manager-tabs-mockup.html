@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tint Manager Tabs</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-600:#7C3AED;--brand-700:#6D28D9;--brand-800:#5B21B6;
+  --ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5C5869;--ink-700:#3F3B4B;--ink-900:#1B1826;
+  --tint-bg:#F0F9FF;--tint-bd:#BAE6FD;--tint-700:#0369A1;
+  --ok-bg:#ECFDF5;--ok-text:#047857;
+  --warn-bg:#FFFBEB;--warn-text:#B45309;--warn-bd:#FDE68A;
+  --danger:#E11D48;--danger-bg:#FFF1F2;--danger-text:#BE123C;--danger-bd:#FECDD3;
+  --brown:#92400E;--brown-bg:#FEF3E2;--line:#EEEDF3;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:13px;color:var(--ink-900);background:#fff}
+.mono{font-family:"JetBrains Mono",monospace;font-size:12px}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+.mock-note{background:var(--ink-900);color:#fff;font-size:12px;padding:6px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;height:32px}
+.mock-note b{color:#C4B5FD}
+.mock-note select{font-family:inherit;font-size:12px;border-radius:6px;border:0;padding:2px 6px}
+.app{display:flex;height:calc(100vh - 32px)}
+.side{width:56px;border-right:1px solid var(--line);border-left:3px solid var(--brand-600);display:flex;flex-direction:column;align-items:center;padding-top:12px;gap:18px;flex-shrink:0}
+.side .wm{font-weight:700;color:var(--brand-800);font-size:15px}
+.side i{display:block;width:18px;height:18px;border-radius:5px;background:var(--ink-100)}
+.side i.on{background:var(--brand-100)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--line);gap:12px;flex-shrink:0}
+.stats{color:var(--ink-500);font-size:12px}.stats b{color:var(--ink-900)}
+.hdr-r{display:flex;gap:8px;align-items:center}
+.pill{border:1px solid var(--ink-100);background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;color:var(--ink-700)}
+.search{border:1px solid var(--ink-100);border-radius:8px;padding:6px 10px;width:220px;color:var(--ink-400);font-size:12px}
+.body{flex:1;display:flex;min-height:0}
+
+/* ---------- RAIL ---------- */
+.rail{width:440px;border-right:1px solid var(--line);background:var(--ink-25);display:flex;flex-direction:column;flex-shrink:0;position:relative}
+.rail-h{padding:12px 16px 8px;border-bottom:1px solid var(--line);background:var(--ink-25)}
+.rail-h .t{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-500);font-weight:600}
+.rail-h .s{font-size:11px;color:var(--ink-400);margin-top:2px}
+.rail-list{flex:1;overflow-y:auto;padding:10px 12px}
+.card{background:#fff;border:1px solid var(--ink-100);border-radius:12px;padding:12px 14px;margin-bottom:10px;cursor:pointer;position:relative;transition:border-color .12s,box-shadow .12s;user-select:none}
+.card:hover{border-color:var(--ink-200);box-shadow:0 2px 8px rgba(27,24,38,.05)}
+.card.sel{border-color:var(--brand-600);background:var(--brand-50);box-shadow:0 0 0 1px var(--brand-600)}
+.card .tick{position:absolute;top:12px;right:12px;width:18px;height:18px;border-radius:50%;background:var(--brand-600);color:#fff;font-size:11px;display:none;align-items:center;justify-content:center}
+.card.sel .tick{display:flex}
+.card.sel .age{display:none}
+.card{padding:18px 20px;margin-bottom:12px;border-radius:14px}
+.c-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.c-site{font-weight:700;font-size:16px;line-height:1.25;min-width:0}
+.c-bill{font-size:13px;color:var(--ink-500);margin-top:4px}
+.c-vol{text-align:right;flex-shrink:0}
+.c-vol b{display:block;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.c-vol span{font-size:13px;color:var(--ink-500)}
+.c-meta{display:flex;align-items:center;gap:0;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-700)}
+.c-meta > span{padding:0 12px;border-left:1px solid var(--ink-100)}
+.c-meta > span:first-child{padding-left:0;border-left:0}
+.c-meta .smu{font-weight:700}
+.c-meta .when{margin-left:auto;border-left:0;padding-right:0;color:var(--ink-500);display:flex;gap:8px;align-items:center}
+.card.sel .when{padding-right:0}
+.chip{font-size:10.5px;border-radius:5px;padding:1px 6px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+.age-r{background:var(--danger-bg);color:var(--danger-text);border-color:var(--danger-bd)}
+.age-a{background:var(--warn-bg);color:var(--warn-text);border-color:var(--warn-bd)}
+.smu74{background:var(--ink-50);color:var(--ink-700);border-color:var(--ink-100)}
+.smu77{background:var(--tint-bg);color:var(--tint-700);border-color:var(--tint-bd)}
+.c-hold{background:var(--danger-bg);color:var(--danger-text);border-color:var(--danger-bd)}
+.c-hand{background:var(--brown-bg);color:var(--brown)}
+.c-shipto{background:var(--tint-bg);color:var(--tint-700);border-color:var(--tint-bd)}
+.c-ti{background:var(--warn-bg);color:var(--warn-text);border-color:var(--warn-bd)}
+.ti-sec{border-top:1px solid var(--line);padding:10px 16px;font-size:11px;color:var(--ink-400)}
+
+/* rail action bar — rail width only */
+.rbar{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--ink-100);box-shadow:0 -10px 28px rgba(27,24,38,.10);padding:16px 18px 18px;transform:translateY(110%);transition:transform .18s;z-index:5}
+.rbar.show{transform:none}
+.rbar{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 22px}
+.rbar .l1{display:flex;align-items:center;gap:12px}
+.rbar .n{font-size:22px;font-weight:700;letter-spacing:-.2px}
+.rbar .tot{font-size:13px;color:var(--ink-500);margin-top:4px;display:flex;gap:16px}.rbar .tot b{color:var(--ink-900);font-size:15px;font-variant-numeric:tabular-nums}
+.clr{font-size:12px;border:1px solid var(--ink-100);border-radius:7px;padding:3px 9px;background:var(--ink-25);color:var(--ink-600)}
+.rbar .acts{display:flex;gap:10px}
+.rbar .acts .ab{min-width:120px}
+.rbar .acts .ab.pri{min-width:160px}
+.ab{border:1px solid var(--ink-200);background:#fff;border-radius:12px;padding:12px 14px;font-weight:700;font-size:14px;color:var(--ink-700);display:flex;gap:6px;align-items:center;justify-content:center}
+.ab:hover:not(:disabled){background:var(--ink-25)}
+.ab:disabled{opacity:.35;cursor:not-allowed}
+.ab.pri{background:var(--brand-600);color:#fff;border-color:var(--brand-600)}
+.ab.pri:hover:not(:disabled){background:var(--brand-700)}
+
+/* ---------- PANE ---------- */
+.pane{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.pane.barup .pane-b{padding-bottom:110px}
+.tabs{display:flex;align-items:flex-end;gap:22px;padding:0 20px;border-bottom:1px solid var(--line);flex-shrink:0}
+.tab{background:none;border:0;padding:12px 0 10px;color:var(--ink-500);display:flex;gap:6px;align-items:center;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab .c{font-size:11px;background:var(--ink-50);color:var(--ink-600);border-radius:5px;padding:1px 6px;font-weight:600}
+.tab.on{color:var(--ink-900);font-weight:700;border-bottom-color:var(--ink-900)}
+.tab.on .c{background:var(--ink-900);color:#fff}
+.tab.hidden{display:none}
+.tabs .live{margin-left:auto;font-size:11px;color:var(--ink-500);padding-bottom:12px}
+.tabs .live:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#059669;margin-right:6px}
+.pane-b{flex:1;overflow:auto;padding:4px 16px 24px}
+.sub{font-size:11px;color:var(--ink-400);margin:10px 4px}
+table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:960px}
+th{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-400);font-weight:600;text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
+td{padding:9px 6px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+tr.grp td{background:var(--ink-25);font-weight:600;font-size:12px;color:var(--ink-700);padding:7px 6px}
+tr.row{cursor:pointer}
+tr.row:hover td{background:var(--ink-25)}
+tr.row.sel td{background:var(--brand-50)}
+tr.row.sel td:first-child{box-shadow:inset 3px 0 0 var(--brand-600)}
+.kbx{border:0;background:none;color:var(--ink-400);font-size:17px;line-height:20px;border-radius:6px;padding:0 7px;letter-spacing:1px}
+.kbx:hover{background:var(--ink-50);color:var(--ink-900)}
+.eye{border:0;background:none;color:var(--ink-400);border-radius:6px;padding:2px 6px;font-size:13px;opacity:0}
+tr.row:hover .eye{opacity:1}.eye:hover{background:var(--ink-50);color:var(--ink-900)}
+.sp{padding:6px 4px 4px;min-width:340px}
+.sp .lbl{padding:4px 6px 6px}
+.days{display:flex;gap:6px;padding:0 6px 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.day{flex:1;border:1px solid var(--ink-100);background:var(--ink-25);border-radius:9px;padding:6px 0;text-align:center;line-height:1.15;color:var(--ink-600)}
+.day b{display:block;font-size:15px;color:var(--ink-900)}
+.day small{font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.day.on{background:var(--ink-900);border-color:var(--ink-900);color:#fff}.day.on b{color:#fff}
+.day:hover:not(.on){border-color:var(--ink-200);background:#fff}
+.times{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 6px 4px}
+.time{border:1px solid var(--ink-100);background:#fff;border-radius:9px;padding:8px 0;font-weight:700;color:var(--ink-700);font-variant-numeric:tabular-nums;line-height:1.1}
+.time small{display:block;font-weight:500;font-size:10px;color:var(--ink-400)}
+.time.on{background:var(--ink-900);border-color:var(--ink-900);color:#fff}.time.on small{color:#C9C6D6}
+.time:hover:not(.on){background:var(--ink-25);border-color:var(--ink-200)}
+.sp-foot{display:flex;justify-content:space-between;align-items:center;padding:8px 6px 2px;font-size:11px;color:var(--ink-400)}
+.sp-foot button{border:0;background:none;color:var(--danger-text);font-size:12px;font-weight:600}
+.r{text-align:right}.muted{color:var(--ink-400)}
+.st{font-size:11px;border-radius:5px;padding:2px 7px;font-weight:600;display:inline-flex;gap:6px}
+.st small{font-weight:500;opacity:.7}
+.s-waiting{background:#fff;color:var(--ink-500);border:1px solid var(--ink-100)}
+.s-assigned{background:var(--ink-50);color:var(--ink-600)}
+.s-progress{background:var(--tint-bg);color:var(--tint-700)}
+.s-paused{background:var(--warn-bg);color:var(--warn-text)}
+.s-cancel{background:var(--danger-bg);color:var(--danger-text)}
+.slotc{border:1px solid transparent;background:none;border-radius:6px;padding:3px 7px;font-size:12px;color:var(--ink-700);text-align:left;max-width:100%}
+.slotc:hover{border-color:var(--ink-200);background:#fff}
+.slotc.none{border:1px dashed var(--ink-200);color:var(--ink-400);font-weight:600;font-size:11px}
+.slotc.none:hover{border-color:var(--brand-600);color:var(--brand-700)}
+.slotc:disabled{cursor:default}.slotc:disabled:hover{border-color:transparent;background:none}
+.kebab{border:0;background:none;color:var(--ink-400);font-size:16px;border-radius:6px;padding:0 8px;line-height:24px}
+.kebab:hover{background:var(--ink-50);color:var(--ink-900)}
+.btn{border:1px solid var(--ink-100);background:#fff;border-radius:8px;padding:5px 11px;font-weight:600;color:var(--ink-700);font-size:12px}
+.btn:hover{background:var(--ink-25)}
+.btn.pri{background:var(--brand-600);border-color:var(--brand-600);color:#fff}.btn.pri:hover{background:var(--brand-700)}
+.btn.dng{color:var(--danger-text);border-color:var(--danger-bd)}
+.btn.dngf{background:var(--danger);border-color:var(--danger);color:#fff}
+.src{font-size:10.5px;padding:1px 6px;border-radius:5px;background:var(--ink-50);color:var(--ink-600);font-weight:600}
+.empty{padding:40px;text-align:center;color:var(--ink-400)}
+/* pick delete */
+.pd{border:1px solid var(--ink-100);border-radius:12px;margin:12px 0;overflow:hidden}
+.pd-h{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--ink-25);border-bottom:1px solid var(--line)}
+.pd-b{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+.pd-c{border:1px solid var(--ink-100);border-radius:10px;padding:12px}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+.kv label{display:block;font-size:10px;color:var(--ink-400);text-transform:uppercase;letter-spacing:.04em}
+
+/* detail panel */
+.dp-bg{position:fixed;inset:0;background:rgba(27,24,38,.18);display:none;z-index:40}
+.dp-bg.show{display:block}
+.dp{position:fixed;top:0;right:0;bottom:0;width:472px;max-width:100%;background:#fff;border-left:1px solid var(--ink-100);box-shadow:-12px 0 32px rgba(27,24,38,.12);transform:translateX(102%);transition:transform .2s;z-index:41;display:flex;flex-direction:column}
+.dp.show{transform:none}
+.dp-h{padding:18px 20px 12px;border-bottom:1px solid var(--line)}
+.dp-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.dp-nav{display:flex;gap:4px}.dp-nav button,.dp-h .x{border:1px solid var(--ink-100);background:#fff;border-radius:7px;width:28px;height:28px;color:var(--ink-600)}
+.dp-h .x{border:0;font-size:16px}
+.sc{border:1px solid var(--ink-200);background:#fff;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;color:var(--ink-700)}
+.sc.none{border-style:dashed;color:var(--ink-400)}
+.dp-act{display:flex;gap:8px;margin-top:12px}
+.tintbox{background:var(--tint-bg);border:1px solid var(--tint-bd);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--tint-700);display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.tintbox b{color:var(--ink-900)}
+.dp-h .nm{font-size:17px;font-weight:700}
+.dp-h .sub2{font-size:12px;color:var(--ink-500);margin-top:3px}
+.dp-h .idl{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:12px;color:var(--ink-600);flex-wrap:wrap}
+.dp-tabs{display:flex;gap:20px;padding:0 20px;border-bottom:1px solid var(--line)}
+.dp-tabs button{background:none;border:0;padding:10px 0;color:var(--ink-500);border-bottom:2px solid transparent;margin-bottom:-1px}
+.dp-tabs button.on{color:var(--ink-900);font-weight:700;border-bottom-color:var(--ink-900)}
+.dp-b{flex:1;overflow:auto;padding:14px 20px}
+.dl{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;gap:12px}
+.dl .k{color:var(--ink-400)}
+.dp-f{padding:10px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:12px;color:var(--ink-500)}
+/* pick delete popup */
+.pdm{width:900px;max-width:calc(100% - 32px);padding:0;overflow:hidden}
+.pdm-h{background:var(--warn-bg);border-bottom:1px solid var(--warn-bd);padding:12px 18px;display:flex;justify-content:space-between;align-items:center}
+.pdm-h b{font-size:15px}.pdm-h span{color:var(--ink-600);font-size:12px;margin-left:8px}
+.pdm-b{padding:12px 18px 18px}
+.dec{font-size:11px;font-weight:600;border-radius:5px;padding:2px 7px}
+.dec-ok{background:var(--ok-bg);color:var(--ok-text)}.dec-del{background:var(--danger-bg);color:var(--danger-text)}.dec-undo{background:var(--ink-50);color:var(--ink-600)}
+/* popover / modal / toast */
+.pop{z-index:55!important;position:fixed;background:#fff;border:1px solid var(--ink-100);border-radius:12px;box-shadow:0 12px 32px rgba(27,24,38,.14);padding:8px;min-width:240px;display:none;z-index:50}
+.pop.show{display:block}
+.pop .it{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;color:var(--ink-700)}
+.pop .it:hover:not(:disabled){background:var(--ink-25)}
+.pop .it:disabled{opacity:.35;cursor:not-allowed}
+.pop .it small{display:block;color:var(--ink-400);font-size:11px}
+.pop .it.dng{color:var(--danger-text)}
+.pop hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.pop .lbl{font-size:10.5px;color:var(--ink-400);text-transform:uppercase;letter-spacing:.04em;padding:6px 10px 4px}
+.seg{display:flex;gap:6px;padding:4px 6px}
+.seg button{flex:1;border:1px solid var(--ink-100);background:#fff;border-radius:8px;padding:7px 4px;font-weight:600;color:var(--ink-600)}
+.seg button.on{background:var(--brand-600);border-color:var(--brand-600);color:#fff}
+.seg button:hover:not(.on){background:var(--ink-25)}
+.modal-bg{position:fixed;inset:0;background:rgba(27,24,38,.35);display:none;align-items:center;justify-content:center;z-index:60}
+.modal-bg.show{display:flex}
+.modal{background:#fff;border-radius:14px;width:460px;max-width:calc(100% - 32px);padding:18px}
+.modal h4{margin:0 0 4px;font-size:15px}
+.modal p{margin:0 0 12px;color:var(--ink-500);font-size:12px}
+.modal select,.modal input,.modal textarea{width:100%;border:1px solid var(--ink-100);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13px;margin-bottom:10px}
+.modal .row-b{display:flex;justify-content:flex-end;gap:8px}
+.warnbox{background:var(--warn-bg);border:1px solid var(--warn-bd);color:var(--warn-text);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:10px}
+.res{border:1px solid var(--ink-100);border-radius:8px;margin-bottom:10px}
+.res div{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer}.res div:last-child{border:0}
+.res div:hover{background:var(--brand-50)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink-900);color:#fff;padding:9px 16px;border-radius:10px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:70}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="mock-note">
+  <span><b>MOCKUP v7</b> · Tint Manager · not wired</span>
+  <span>Click a rail card OR a table row to select → bar opens at the bottom · Slot · Assign · More · ⋯ opens bill details · Pick delete pops up, its tab is history</span>
+  <span>View as:
+    <select id="who">
+      <option value="all">Chandresh — all tint ticks</option>
+      <option value="dt">Deepanshu — tint_hold + tint_pick_delete only</option>
+    </select>
+  </span>
+</div>
+<div class="app">
+  <nav class="side"><span class="wm">Orbit</span><i></i><i class="on"></i><i></i><i></i><i></i><i></i></nav>
+  <div class="main">
+    <div class="hdr">
+      <div class="stats" id="stats"></div>
+      <div class="hdr-r"><span class="pill">⤒ Import</span><span class="pill">Reports</span><span class="pill">+ Add to Tint</span><span class="search">Search OBD, SO, site…</span></div>
+    </div>
+    <div class="body">
+      <aside class="rail">
+        <div class="rail-h"><div class="t">Needs assignment</div><div class="s" id="railSub"></div></div>
+        <div class="rail-list" id="railList"></div>
+</aside>
+      <section class="pane">
+        <div class="tabs" id="tabs"></div>
+        <div class="pane-b" id="paneB"></div>
+        <div class="rbar" id="rbar">
+          <div><div class="l1"><span class="n" id="selN"></span><button class="clr" onclick="clearSel()">✕ Clear</button></div>
+          <div class="tot" id="selTot"></div></div>
+          <div class="acts" id="acts"></div>
+        </div>
+            </section>
+    </div>
+  </div>
+</div>
+<div class="dp-bg" id="dpbg" onclick="closeDetail()"></div><aside class="dp" id="dp"></aside>
+<div class="pop" id="pop"></div>
+<div class="modal-bg" id="mbg"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const OPS=["Chandrasing Valvi","Deepak Vasava"];
+const SMU={"74":"Projects","77":"Retail Offtake"};
+let id=0;
+const B=o=>Object.assign({id:++id,smu:"74",slot:null,hold:false,hand:false,shipTo2:null},o);
+let bills=[
+ B({obd:"9109788063",so:"1046951201",billTo:"VEER ARIHANTA",shipTo:"VEER ARIHANTA",route:"Adajan",vol:2000,art:"100 Drum",stage:"waiting",arr:"26 Sept 21:55",age:5}),
+ B({obd:"9109819302",so:"1046951202",billTo:"VEER ARIHANTA",shipTo:"VEER ARIHANTA",route:"Adajan",vol:1000,art:"50 Drum",stage:"waiting",arr:"26 Sept 21:55",age:5}),
+ B({obd:"9109815715",so:"1046951203",billTo:"VEER ARIHANTA",shipTo:"VEER ARIHANTA",route:"Adajan",vol:1000,art:"50 Drum",stage:"waiting",arr:"26 Sept 21:56",age:5}),
+ B({obd:"9109713547",so:"1046953310",billTo:"VEER ARIHANTA",shipTo:"VEER ARIHANTA",route:"Adajan",vol:580,art:"29 Drum",stage:"waiting",arr:"27 Sept 13:11",age:4}),
+ B({obd:"9109584083",so:"1046966002",billTo:"VEER ARIHANTA",shipTo:"VEER ARIHANTA",route:"Adajan",vol:300,art:"15 Drum",stage:"waiting",arr:"30 Sept 21:50",age:1,slot:{d:"01-10",t:"12:30"}}),
+ B({obd:"9109838567",so:"1046967450",billTo:"SAI COLOUR HOUSE",shipTo:"SMC SMIMER HOSPITAL TAWOR 2",route:"Adajan",vol:40,art:"2 Drum",stage:"waiting",arr:"30 Sept 23:10",age:1,smu:"77"}),
+ B({obd:"9109744666",billTo:"HIND HARDWARE & PAINT STORES",shipTo:"SIDDHI VINAYAK ELENTS",route:"Adajan",vol:2000,art:"100 Drum",stage:"assigned",op:0,t:"10:09"}),
+ B({obd:"9109833440",billTo:"JAINAM PAINTS",shipTo:"Sumeru Sky Leaf",route:"Adajan",vol:220,art:"11 Drum",stage:"assigned",op:0,t:"22:49"}),
+ B({obd:"9109775231",billTo:"Paragon Traders",shipTo:"SSA TITAN BUILDERS",route:"IGT / CROSS",vol:560,art:"28 Drum",stage:"paused",op:0,t:"1/3"}),
+ B({obd:"9109836048",billTo:"SAMRUDDHI INTERIORS",shipTo:"GINGER HOTEL (VAPI)",route:"Vapi",vol:52,art:"2 Drum, 3 Tin",stage:"assigned",op:1,t:"15:37"}),
+ B({obd:"9109744667",billTo:"Aai Shree Khodiyar Hardware",shipTo:"AADARSH NIVASH SCHOOL VA",route:"Bardoli",vol:1440,art:"72 Drum",stage:"assigned",op:1,t:"11:51"}),
+ B({obd:"9109837555",billTo:"ASHIRWAD COLOUR",shipTo:"PAVITRA RESIDENCY",route:"Udhana",vol:300,art:"15 Drum",stage:"assigned",op:1,t:"10:10"}),
+ B({obd:"9109837557",billTo:"YOGI HW & PLYWOOD CENTRE",shipTo:"SILICON PALACE",route:"Parvat",vol:400,art:"20 Drum",stage:"assigned",op:1,t:"10:10",hand:true}),
+ B({obd:"9109860449",billTo:"SHIVANSHI ENTERPRISE",shipTo:"SANCTUM PALACIO",route:"Adajan",vol:500,art:"25 Drum",stage:"progress",op:1,t:"11:22",slot:{d:"02-10",t:"10:30"}}),
+ B({obd:"9109836050",billTo:"Ideal Enterprise",shipTo:"EDEN HEAVEN",route:"Varachha",vol:400,art:"20 Drum",stage:"assigned",op:1,t:"15:37"}),
+ B({obd:"9109879386",billTo:"COLOUR CLASS PAINTS",shipTo:"PRAMUKH AMAYA",route:"Adajan",vol:37,art:"2 Drum",stage:"assigned",op:1,t:"16:49"}),
+ B({obd:"9109875326",billTo:"COLOUR CLASS PAINTS",shipTo:"Petronet Lng Limited 3",route:"Vapi",vol:10,art:"1 Drum",stage:"assigned",op:1,t:"20:12",smu:"77"}),
+ B({obd:"9109880029",billTo:"G D SALES CORPORATION",shipTo:"Aarohi Heights",route:"Bharuch",vol:480,art:"24 Drum",stage:"assigned",op:1,t:"21:36"}),
+ B({obd:"9109584082",billTo:"SHREE RAM SALES AGENCY",shipTo:"KESHAVAM VALLEY",route:"Varachha",vol:200,art:"10 Drum",stage:"assigned",op:1,t:"22:50"}),
+ B({obd:"9109879387",billTo:"JAINAM PAINTS",shipTo:"Avadh Heliconia Homes",route:"Vapi",vol:28,art:"1 Drum, 2 Tin",stage:"paused",op:1,t:"1/3",hold:true,heldAt:"30 Sept 18:40"}),
+ B({obd:"9109811020",billTo:"KRISHNA ENTERPRISE",shipTo:"GJ PATEL ESTATE KRISHNA",route:"IGT / CROSS",vol:400,art:"20 Drum",stage:"waiting",arr:"29 Sept 11:02",age:2,hold:true,heldAt:"30 Sept 10:15"}),
+ B({obd:"9109802211",billTo:"RAVIRAJ HARDWARE",shipTo:"Globcon Splendora",route:"Adajan",vol:47,art:"2 Drum",stage:"cancelled",reason:"Customer cancelled",ci:"CI-2026-00412",src:"Tint",by:"Chandresh",at:"Today 09:02"}),
+];
+const tiBills=[
+ {obd:"9109584085",site:"GJ PATEL ESTATE KRISHNA",billTo:"KRISHNA ENTERPRISE",at:"30 Sept 22:49",ti:"0/1",vol:200},
+ {obd:"9109904409",site:"GJ PATEL ESTATE KRISHNA",billTo:"KRISHNA ENTERPRISE",at:"30 Sept 22:48",ti:"0/1",vol:120},
+ {obd:"9109837559",site:"MAIRAM VILLA",billTo:"HIND HARDWARE & PAINT STORES",at:"29 Sept 19:32",ti:"1/3",vol:200},
+ {obd:"9109813742",site:"PRAMUKH AMAYA",billTo:"COLOUR CLASS PAINTS",at:"30 Sept 19:36",ti:"0/2",vol:9000},
+];
+let pdGroups=[{so:"1046967114",site:"Keshavam Valley",smu:"74",bills:[
+ {obd:"9109866414",at:"30 Sept · 23:08",vol:"1200 L",line:"5818100 · WS PU Elastomeric Brl White 20Ltr",qty:60,note:"First punch"},
+ {obd:"9109856440",at:"30 Sept · 23:09",vol:"100 L",line:"5818100 · WS PU Elastomeric Brl White 20Ltr",qty:5,note:"Compared with first bill: 1 qty changed",was:60}]}];
+
+let tab="tinting", sel=new Set(), who="all";
+const TICKS={all:["hold","hand","slot","shipto","cancel","ci","pick","assign"],dt:["hold","pick"]};
+const can=k=>TICKS[who].includes(k);
+const stLabel={waiting:"Waiting",assigned:"Assigned",progress:"Tinting",paused:"Paused",cancelled:"Cancelled"};
+const stCls={waiting:"s-waiting",assigned:"s-assigned",progress:"s-progress",paused:"s-paused",cancelled:"s-cancel"};
+const open=()=>bills.filter(b=>b.stage!=="cancelled");
+const rail=()=>open().filter(b=>b.stage==="waiting"&&!b.hold);
+const byId=i=>bills.find(b=>b.id===i);
+
+/* ---------- render ---------- */
+function render(){
+ const o=open();
+ document.getElementById("stats").innerHTML=`<b>${rail().length}</b> pending · <b>${o.filter(b=>b.stage==="assigned").length}</b> assigned · <b>${o.filter(b=>b.stage==="progress").length}</b> in progress · <b>${o.filter(b=>b.stage==="paused").length}</b> paused · <b>0</b> done today`;
+ renderRail();renderTabs();renderPane();renderBar();
+ if(document.getElementById("dp").classList.contains("show"))renderDetail();
+}
+function card(b){
+ return `<div class="card ${sel.has(b.id)?"sel":""}" onclick="tog(${b.id})">
+  <div class="c-top">
+   <div style="min-width:0"><div class="c-site">${b.shipTo}</div><div class="c-bill">billed to ${b.billTo}</div></div>
+   <div class="c-vol"><b>${b.vol.toLocaleString("en-IN")} L</b><span>${b.art}</span></div>
+  </div>
+  <div class="c-meta">
+   <span class="mono">${b.obd}</span><span class="smu">${b.smu}</span><span>${b.route}</span>
+   <span class="when">${b.arr} <span class="chip age ${b.age>=3?"age-r":"age-a"}">${b.age}d</span><span class="tick" style="position:static">✓</span><button class="kbx" title="Bill details" onclick="event.stopPropagation();openDetail(${b.id})">⋯</button></span>
+  </div>
+ </div>`;
+}
+function renderRail(){
+ const R=rail();
+ document.getElementById("railSub").textContent=`${R.length} waiting · oldest first · click to select · ⋯ for details`;
+ document.getElementById("railList").innerHTML=(R.map(card).join("")||'<div class="empty">Nothing waiting</div>')+'<div style="height:12px"></div>';
+}
+function renderTabs(){
+ const c={tinting:open().filter(b=>b.stage!=="waiting").length,ti:tiBills.length,hold:open().filter(b=>b.hold).length,ci:bills.filter(b=>b.stage==="cancelled").length,pick:pdHist.length};
+ const T=[["tinting","Tinting"],["ti","TI"],["hold","Hold"],["ci","CI"],["pick","Pick delete"]];
+ document.getElementById("tabs").innerHTML=T.map(([k,l])=>{
+  const hide=(k==="pick"&&!can("pick"))||(k==="ci"&&!(can("cancel")||can("ci")))||(k==="hold"&&!can("hold"));
+  return `<button class="tab ${tab===k?"on":""} ${hide?"hidden":""}" onclick="go('${k}')">${l} <span class="c">${c[k]}</span></button>`}).join("")+`<span class="live">Live · 09:31</span>`;
+}
+const slotTxt=sl=>`${sl.d} · ${sl.t}`;
+function slotCell(b){
+ if(!can("slot")) return b.slot?`<span>${slotTxt(b.slot)}</span>`:'<span class="muted">No slot</span>';
+ return b.slot?`<button class="slotc" onclick="event.stopPropagation();popSlot(this,[${b.id}])">${slotTxt(b.slot)}</button>`
+              :`<button class="slotc none" onclick="event.stopPropagation();popSlot(this,[${b.id}])">No slot</button>`;
+}
+function shipCell(b){
+ return b.shipTo2?`<span class="chip c-shipto">↪ ${b.shipTo2}</span> <span class="muted" style="text-decoration:line-through;font-size:11px">${b.shipTo}</span>`:b.shipTo;
+}
+function flags(b){return (b.hold?` <span class="chip c-hold">⚑ Hold</span>`:"")+(b.hand?` <span class="chip c-hand">✋ Hand</span>`:"")}
+const keb=b=>`<button class="kbx" title="Bill details" onclick="event.stopPropagation();openDetail(${b.id})">⋯</button>`;
+
+function renderPane(){
+ const P=document.getElementById("paneB");
+ if(tab==="tinting"){
+  let rows="";
+  OPS.forEach((op,oi)=>{
+   const mine=open().filter(b=>b.op===oi&&b.stage!=="waiting");
+   const ord={progress:0,assigned:1,paused:2};mine.sort((a,b)=>ord[a.stage]-ord[b.stage]);
+   rows+=`<tr class="grp"><td colspan="11">${op} <span class="muted" style="font-weight:500">· ${mine.length} jobs</span></td></tr>`;
+   let n=0;
+   mine.forEach(b=>{rows+=`<tr class="row ${sel.has(b.id)?"sel":""}" onclick="tog(${b.id},'table')"><td class="muted">${b.stage==="assigned"?++n:"—"}</td><td class="mono">${b.obd}</td><td class="muted">${b.smu}</td><td>${b.billTo}</td><td>${shipCell(b)}${flags(b)}</td><td class="muted">${b.route}</td><td>${slotCell(b)}</td><td class="r">${b.vol}</td><td class="muted">${b.art}</td><td><span class="st ${stCls[b.stage]}">${stLabel[b.stage]} <small>${b.t}</small></span></td><td>${keb(b)}</td></tr>`});
+  });
+  P.innerHTML=`<div class="sub">${open().filter(b=>b.stage!=="waiting").length} jobs · grouped by operator · click a row to select · ⋯ for details · finished jobs show for today only</div>
+  <table><colgroup><col style="width:3%"><col style="width:10%"><col style="width:4%"><col style="width:17%"><col style="width:22%"><col style="width:8%"><col style="width:12%"><col style="width:5%"><col style="width:8%"><col style="width:10%"><col style="width:4%"></colgroup>
+  <tr><th>#</th><th>OBD</th><th>SMU</th><th>Bill to</th><th>Ship to</th><th>Route</th><th>Slot</th><th class="r">Vol</th><th>Art.</th><th>Status</th><th></th></tr>${rows}</table>`;
+ }
+ if(tab==="hold"){
+  const H=open().filter(b=>b.hold);
+  P.innerHTML=`<div class="sub">${H.length} bills · click to select · Release: a waiting bill goes back to the rail, a mid-tint bill keeps tinting and goes to picking when done</div>
+  ${H.length?`<table><colgroup><col style="width:11%"><col style="width:17%"><col style="width:20%"><col style="width:9%"><col style="width:12%"><col style="width:11%"><col style="width:6%"><col style="width:10%"><col style="width:9%"><col style="width:4%"></colgroup>
+  <tr><th>OBD</th><th>Bill to</th><th>Ship to</th><th>Route</th><th>Slot</th><th>Held since</th><th class="r">Vol</th><th>Tint stage</th><th></th><th></th></tr>
+  ${H.map(b=>`<tr class="row ${sel.has(b.id)?"sel":""}" onclick="tog(${b.id},'table')"><td class="mono">${b.obd}</td><td>${b.billTo}</td><td>${shipCell(b)}</td><td class="muted">${b.route}</td><td>${slotCell(b)}</td><td class="muted">${b.heldAt}</td><td class="r">${b.vol}</td><td><span class="st ${stCls[b.stage]}">${stLabel[b.stage]}${b.op!=null?` <small>${OPS[b.op].split(" ")[0]}</small>`:""}</span></td><td></td><td>${keb(b)}</td></tr>`).join("")}</table>`:'<div class="empty">No bills on hold</div>'}`;
+ }
+ if(tab==="ci"){
+  const C=bills.filter(b=>b.stage==="cancelled");
+  P.innerHTML=`<div class="sub">Tint bills cancelled or sent back · Restore returns a bill to the tint rail</div>
+  ${C.length?`<table><colgroup><col style="width:11%"><col style="width:17%"><col style="width:18%"><col style="width:14%"><col style="width:12%"><col style="width:7%"><col style="width:9%"><col style="width:9%"><col style="width:10%"></colgroup>
+  <tr><th>OBD</th><th>Bill to</th><th>Ship to</th><th>Reason</th><th>CI No.</th><th>Source</th><th>By</th><th>When</th><th></th></tr>
+  ${C.map(b=>`<tr class="row"><td class="mono">${b.obd}</td><td>${b.billTo}</td><td>${b.shipTo}</td><td>${b.reason}</td><td class="mono">${b.ci||'<span class="muted">— no CI</span>'}</td><td><span class="src">${b.src}</span></td><td class="muted">${b.by}</td><td class="muted">${b.at}</td><td>${can("cancel")&&!b.ci?`<button class="btn" onclick="doRestore(${b.id})">↺ Restore</button>`:b.ci?'<span class="muted" style="font-size:11px">CI live</span>':""}</td></tr>`).join("")}</table>`:'<div class="empty">Nothing cancelled</div>'}`;
+ }
+ if(tab==="ti"){
+  P.innerHTML=`<div class="sub">${tiBills.length} bills sent as "Base — No Tint" that still owe a TI</div>
+  <table><colgroup><col style="width:12%"><col style="width:23%"><col style="width:23%"><col style="width:13%"><col style="width:8%"><col style="width:8%"><col style="width:13%"></colgroup>
+  <tr><th>OBD</th><th>Ship to</th><th>Bill to</th><th>Sent</th><th class="r">Vol</th><th>TI</th><th></th></tr>
+  ${tiBills.map(b=>`<tr class="row"><td class="mono">${b.obd}</td><td>${b.site}</td><td class="muted">${b.billTo}</td><td class="muted">${b.at}</td><td class="r">${b.vol}</td><td><span class="chip c-ti">TI ${b.ti}</span></td><td><button class="btn pri" onclick="toast('Opens the TI panel for this bill (as today)')">Enter TI</button> <button class="btn" onclick="toast('Undo Base — refused once a TI line, pick or slot exists')">↶ Undo</button></td></tr>`).join("")}</table>`;
+ }
+ if(tab==="pick"){
+  const lab={ok:["All OK · kept all","dec-ok"],del:["Pick deleted","dec-del"],undo:["Undo","dec-undo"]};
+  P.innerHTML=`<div class="sub">History of duplicate-SO decisions for SMU 74 / 77 · new groups pop up on their own</div>
+  <table><colgroup><col style="width:13%"><col style="width:13%"><col style="width:24%"><col style="width:16%"><col style="width:13%"><col style="width:11%"><col style="width:10%"></colgroup>
+  <tr><th>When</th><th>SO</th><th>Site</th><th>Decision</th><th>OBD removed</th><th>By</th><th></th></tr>
+  ${pdHist.map((h,i)=>`<tr class="row" style="cursor:default"><td class="muted">${h.d}</td><td class="mono">${h.so}</td><td>${h.site}</td><td><span class="dec ${lab[h.dec][1]}">${lab[h.dec][0]}</span></td><td class="mono">${h.obd||'<span class="muted">—</span>'}</td><td class="muted">${h.by}</td><td>${h.dec==="del"&&!h.undone&&can("pick")?`<button class="btn" onclick="pdUndo(${i})">↶ Undo</button>`:""}</td></tr>`).join("")}</table>`;
+ }
+}
+function renderBar(){
+ const bar=document.getElementById("rbar");const S=[...sel].map(byId).filter(Boolean);
+ const pn=document.querySelector('.pane');
+ if(!S.length){bar.classList.remove("show");pn.classList.remove('barup');return}
+ bar.classList.add("show");pn.classList.add('barup');
+ document.getElementById("selN").textContent=`${S.length} selected`;
+ const arts=S.reduce((a,b)=>a+parseInt(b.art),0), routes=[...new Set(S.map(b=>b.route))];
+ document.getElementById("selTot").innerHTML=`<span><b>${S.reduce((a,b)=>a+b.vol,0).toLocaleString("en-IN")}</b> L</span><span><b>${arts}</b> articles</span><span><b>${routes.length}</b> ${routes.length>1?"routes":"route"}</span>`;
+ const moreAny=can("hold")||can("hand")||can("shipto")||can("cancel")||can("ci")||(selMode==="table"&&can("assign"));
+ let main;
+ if(selMode==="table"&&tab==="hold"){
+  main=`<button class="ab pri" ${can("hold")?"":"disabled"} onclick="doRelease([...sel])">Release</button>`;
+ }else if(selMode==="table"){
+  const asg=S.every(b=>b.stage==="assigned");
+  main=`<button class="ab pri" ${can("assign")&&asg?"":"disabled"} title="${asg?"":"Only Assigned jobs — a running or paused job belongs to its operator"}" onclick="popAssign(this,'Re-assign')">Re-assign ▾</button>`;
+ }else{
+  main=`<button class="ab pri" ${can("assign")?"":"disabled"} onclick="popAssign(this,'Assign')">Assign ▾</button>`;
+ }
+ document.getElementById("acts").innerHTML=
+  `<button class="ab" ${can("slot")?"":"disabled"} onclick="popSlot(this,[...sel])">🕑 Slot</button>`+main+
+  `<button class="ab" ${moreAny?"":"disabled"} onclick="popMore(this)">⋯ More</button>`;
+}
+
+/* ---------- detail panel (view only) ---------- */
+let dpId=null,dpTab="items";
+function lines(b){const n=parseInt(b.art)||1;const rows=[["5818100","WS PU Elastomeric Brl White 20Ltr",Math.max(1,Math.round(n*.6))],["5887121","Weathershield Max Base 1 20Ltr",Math.max(0,n-Math.round(n*.6))]];return rows.filter(r=>r[2]>0)}
+function openDetail(i){dpId=i;dpTab="items";renderDetail();document.getElementById("dp").classList.add("show");document.getElementById("dpbg").classList.add("show")}
+function closeDetail(){document.getElementById("dp").classList.remove("show");document.getElementById("dpbg").classList.remove("show")}
+function dpList(){return selMode==="rail"&&rail().some(x=>x.id===dpId)?rail():open().filter(x=>x.stage!=="waiting")}
+function dpStep(d){const L=dpList();const i=L.findIndex(x=>x.id===dpId);const n=L[i+d];if(n){dpId=n.id;renderDetail()}}
+function renderDetail(){
+ const b=byId(dpId);if(!b)return;
+ const L=dpList(),pos=L.findIndex(x=>x.id===dpId);
+ const tabs=["items","details","activity"].map(t=>`<button class="${dpTab===t?"on":""}" onclick="dpTab='${t}';renderDetail()">${t[0].toUpperCase()+t.slice(1)}</button>`).join("");
+ let body="";
+ const tint=b.op!=null?`<div class="tintbox"><span>Operator <b>${OPS[b.op]}</b></span><span>Status <b>${stLabel[b.stage]}</b></span><span>Assigned <b>${b.t||"—"}</b></span><span>Shades <b>${b.stage==="progress"?"1 / 2":"0 / 2"}</b></span></div>`:"";
+ if(dpTab==="items") body=tint+lines(b).map(l=>`<div class="dl"><span><span class="mono">${l[0]}</span> · ${l[1]} <span class="chip c-ti" style="margin-left:4px">Tint</span></span><b>${l[2]}</b></div>`).join("");
+ if(dpTab==="details") body=[["SO No.",b.so||"1046950000"],["Bill to",b.billTo],["Ship to",b.shipTo2?`${b.shipTo2} (was ${b.shipTo})`:b.shipTo],["Route",b.route],["SMU",b.smu],["Volume",b.vol+" L · "+b.art],["Arrived",b.arr||"30 Sept"]].map(([k,v])=>`<div class="dl"><span class="k">${k}</span><span>${v}</span></div>`).join("");
+ if(dpTab==="activity") body=[["Imported from SAP","30 Sept 21:55 · system"],b.op!=null?["Assigned to "+OPS[b.op],"Today "+(b.t||"")+" · Chandresh"]:null,b.slot?["Slot set "+slotTxt(b.slot),"Today · Chandresh"]:null,b.hold?["Placed on hold",b.heldAt]:null].filter(Boolean).map(([a,w])=>`<div class="dl"><span>${a}</span><span class="k">${w}</span></div>`).join("");
+ const prim=b.hold?`<button class="btn pri" onclick="closeDetail();doRelease([${b.id}])">Release</button>`
+   :b.stage==="waiting"?`<button class="btn pri" onclick="closeDetail();sel.clear();selMode='rail';sel.add(${b.id});render();popAssign(document.querySelector('.ab.pri'),'Assign')">Assign</button>`
+   :b.stage==="assigned"?`<button class="btn pri" onclick="closeDetail();sel.clear();selMode='table';sel.add(${b.id});render();popAssign(document.querySelector('.ab.pri'),'Re-assign')">Re-assign</button>`:"";
+ document.getElementById("dp").innerHTML=`<div class="dp-h">
+  <div class="dp-top"><div class="dp-nav"><button onclick="dpStep(-1)" ${pos<=0?"disabled":""}>‹</button><button onclick="dpStep(1)" ${pos>=L.length-1?"disabled":""}>›</button><span class="muted" style="font-size:11px;align-self:center;margin-left:6px">${pos+1} of ${L.length}</span></div><button class="x" onclick="closeDetail()">✕</button></div>
+  <div class="nm">${b.shipTo2||b.shipTo}</div><div class="sub2">billed to ${b.billTo}</div>
+  <div class="idl"><span class="mono">${b.obd}</span><span>· ${b.arr||"30 Sept"}</span>${can("slot")?`<button class="sc ${b.slot?"":"none"}" onclick="popSlot(this,[${b.id}])">${b.slot?slotTxt(b.slot):"No slot"}</button>`:""}<span class="st ${stCls[b.stage]}">${stLabel[b.stage]}</span>${flags(b)}</div>
+  <div class="dp-act">${prim}${can("shipto")?`<button class="btn" onclick="openShipTo(${b.id})">↪ Change ship-to</button>`:""}<button class="btn" onclick="pop.innerHTML=moreItems([byId(${b.id})],${b.stage==="waiting"});place(this,false)">⋯</button></div></div>
+  <div class="dp-tabs">${tabs}</div><div class="dp-b">${body||'<div class="muted">Nothing yet</div>'}</div>
+  <div class="dp-f"><span>Same layout as Floor's detail panel</span><span>Esc to close</span></div>`;
+}
+
+/* ---------- pick delete: popup decides, tab = history ---------- */
+let pdHist=[
+ {d:"30 Sept 18:12",so:"1046961002",site:"Mohan Godown",dec:"ok",obd:"",by:"Chandresh"},
+ {d:"30 Sept 11:40",so:"1046958871",site:"SANCTUM PALACIO",dec:"del",obd:"9109851120",by:"Prakash"},
+ {d:"29 Sept 16:05",so:"1046955530",site:"EDEN HEAVEN",dec:"undo",obd:"9109840017",by:"Chandresh"},
+];
+function showPD(){
+ if(!pdGroups.length||!can("pick")){closeModal();return}
+ const g=pdGroups[0];
+ modal.className="modal pdm";
+ modal.innerHTML=`<div class="pdm-h"><div><b>⚠ Pick delete</b><span>Two or more bills share one SO number. Decide each group to continue.</span></div><span class="muted">${pdGroups.length} left</span></div>
+ <div class="pdm-b"><div class="sub" style="margin:4px 0 10px"><b style="color:var(--ink-900)">${g.site}</b> · SO <span class="mono">${g.so}</span> · SMU ${g.smu}</div>
+ <div class="pd-b" style="padding:0">${g.bills.map((b,bi)=>`<div class="pd-c"><div style="display:flex;justify-content:space-between"><b>${g.site}</b><span class="st s-waiting">Waiting for tint</span></div>
+  <div class="kv"><div><label>Punched</label>${b.at}</div><div><label>OBD</label><span class="mono">${b.obd}</span></div><div><label>Volume</label>${b.vol}</div></div>
+  <div style="font-size:12px;border-top:1px solid var(--line);padding-top:8px;display:flex;justify-content:space-between"><span>${b.line} ${b.was?`<span class="chip c-ti">Qty was ${b.was}</span>`:""}</span><b>${b.qty}</b></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px"><span class="muted" style="font-size:12px">${b.note}</span><button class="btn dng" onclick="pdDel(0,${bi})">Pick delete</button></div></div>`).join("")}</div>
+ <div style="display:flex;gap:10px;align-items:center;margin-top:14px;border-top:1px solid var(--line);padding-top:12px"><b>Both bills genuine?</b><button class="btn pri" onclick="allOk(0)">All OK, keep all bills</button><span class="muted" style="font-size:12px">or pick delete the wrong one above</span></div></div>`;
+ mbg.classList.add("show");mbg.dataset.lock="1";
+}
+
+/* ---------- interaction ---------- */
+let selMode="rail";
+function tog(i,mode){mode=mode||"rail";if(mode!==selMode){sel.clear();selMode=mode}sel.has(i)?sel.delete(i):sel.add(i);closePop();render()}
+function clearSel(){sel.clear();closePop();render()}
+function go(t){tab=t;if(selMode==="table")sel.clear();closePop();render()}
+const pop=document.getElementById("pop");
+function place(el,up){const r=el.getBoundingClientRect();pop.classList.add("show");const h=pop.offsetHeight,w=pop.offsetWidth;
+ let top=up?r.top-h-8:r.bottom+6; if(!up&&top+h>innerHeight-8) top=r.top-h-6;
+ pop.style.left=Math.max(8,Math.min(r.left,innerWidth-w-12))+"px";pop.style.top=Math.max(8,top)+"px"}
+function closePop(){pop.classList.remove("show")}
+document.addEventListener("click",e=>{if(!pop.contains(e.target)&&!e.target.closest(".ab,.kebab,.slotc"))closePop()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(mbg.dataset.lock)return;if(document.getElementById("dp").classList.contains("show"))closeDetail();else if(mbg.classList.contains("show"))closeModal();else if(pop.classList.contains("show"))closePop();else clearSel()}});
+
+let target=[];
+function popAssign(el,lbl){
+ target=[...sel];
+ pop.innerHTML=`<div class="lbl">${lbl} ${target.length} bill(s) to</div>${OPS.map((o,i)=>`<button class="it" onclick="doAssign(${i})">${o}<small>${open().filter(b=>b.op===i&&b.stage==="assigned").length} in queue</small></button>`).join("")}
+ ${lbl==="Assign"?`<hr><button class="it" onclick="doBase()">Base — No Tint<small>No tinting needed — close without an operator</small></button>`:""}`;place(el,true)}
+const DAYS=[["01","Thu","Today"],["02","Fri",""],["03","Sat",""],["05","Mon",""],["06","Tue",""],["07","Wed",""]];
+const TIMES=[["10:30","Local"],["12:30","Local"],["16:00","Local"],["18:00","Upcountry"]];
+let pickDay=null,slotEl=null;
+function popSlot(el,ids,keepDay){
+ target=ids;slotEl=el;
+ const cur=ids.length===1?byId(ids[0]).slot:null;
+ if(!keepDay) pickDay=cur?cur.d.slice(0,2):null;   // honest highlight: the bill's own day, else nothing
+ pop.innerHTML=`<div class="sp" data-slot-popover="open"><div class="lbl">Dispatch slot · ${ids.length} bill(s)</div>
+ <div class="days">${DAYS.map(([d,w,t])=>`<button class="day ${pickDay===d?"on":""}" onclick="event.stopPropagation();pickDay='${d}';popSlot(slotEl,target,true)"><small>${t||w}</small><b>${d}</b><small>Oct</small></button>`).join("")}</div>
+ <div class="times">${TIMES.map(([t,k])=>`<button class="time ${cur&&cur.t===t&&(!pickDay||pickDay===cur.d.slice(0,2))?"on":""}" onclick="doSlot('${t}')">${t}<small>${k}</small></button>`).join("")}</div>
+ <div class="sp-foot"><span>Tap a time to set · same picker as Floor</span>${ids.some(i=>byId(i).slot)?`<button onclick="doSlot(null)">Clear</button>`:""}</div></div>`;
+ place(el,el.classList.contains("ab"))}
+function moreItems(S,inRail){
+ const running=S.some(b=>["progress","paused"].includes(b.stage));
+ const one=S.length===1, ids=`[${S.map(b=>b.id)}]`;
+ let h="";
+ if(!inRail&&can("assign")&&tab==="tinting"){
+  const asg=S.every(b=>b.stage==="assigned");
+  h+=`<button class="it" ${asg?"":"disabled"} onclick="sendBack(${ids})">Send back to pending</button><hr>`;
+ }
+ if(can("hold")) h+= S.every(b=>b.hold)?`<button class="it" onclick="doRelease(${ids})">Release hold</button>`:`<button class="it" onclick="doHold(${ids})">⚑ Hold<small>${inRail?"Moves to the Hold tab":"Keeps tinting · won't go to picking until released"}</small></button>`;
+ if(can("hand")) h+=`<button class="it" onclick="doHand(${ids})">${S.every(b=>b.hand)?"✋ Clear Hand":"✋ Hand"}<small>Dealer collects</small></button>`;
+ if(can("shipto")) h+=`<button class="it" ${one?"":"disabled"} onclick="openShipTo(${S[0].id})">↪ Change ship-to${one?"":"<small>One bill at a time</small>"}</button>`;
+ if(can("cancel")||can("ci")) h+="<hr>";
+ if(can("cancel")) h+= running?`<button class="it dng" onclick="openCancel('stop',${ids})">Stop &amp; cancel<small>Ends the operator's job first</small></button>`
+                              :`<button class="it dng" onclick="openCancel('cancel',${ids})">Cancel bill<small>Goes to the CI tab · can be restored</small></button>`;
+ if(can("ci")) h+=`<button class="it dng" onclick="openCancel('ci',${ids})">Raise CI (cancels)</button>`;
+ if(can("cancel")&&inRail) h+=`<button class="it" ${one?"":"disabled"} onclick="openCancel('remove',${ids})">Remove OBD<small>Wrong order · voids challan</small></button>`;
+ return h||'<div class="lbl">No actions for your ticks</div>';
+}
+function popMore(el){pop.innerHTML=moreItems([...sel].map(byId),selMode==="rail");place(el,true)}
+function popRow(el,i){pop.innerHTML=moreItems([byId(i)],false);place(el,false)}
+function popAssignFor(el){pop.innerHTML=`<div class="lbl">Re-assign to</div>${OPS.map((o,i)=>`<button class="it" onclick="doAssign(${i})">${o}</button>`).join("")}`;}
+
+function toast(t){const e=document.getElementById("toast");e.textContent=t;e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2600)}
+function done(msg,keepSel){closePop();closeModal();if(!keepSel)target.forEach(i=>sel.delete(i));render();toast(msg)}
+function doAssign(i){target.forEach(x=>{const b=byId(x);b.stage="assigned";b.op=i;b.t="now";b.age=null});done(`Assigned to ${OPS[i]} · operator queue updated`)}
+function doBase(){target.forEach(x=>{bills=bills.filter(b=>b.id!==x);const b=byId(x)});done("Base — No Tint · bill moves to TI tab and to picking")}
+function doSlot(w){target.forEach(x=>{const b=byId(x);const d=pickDay||(b.slot?b.slot.d.slice(0,2):"01");b.slot=w?{d:d+"-10",t:w}:null});done(w?"Slot set · Floor shows it · kept when tinting finishes":"Slot cleared",true)}
+function doHand(ids){target=ids;const on=!ids.every(i=>byId(i).hand);ids.forEach(i=>byId(i).hand=on);done(on?"Hand set · ✋ on Floor + picker card":"Hand cleared")}
+function doHold(ids){target=ids;ids.forEach(i=>{const b=byId(i);b.hold=true;b.heldAt="Today 09:31"});done("On hold · Hold tab (and Floor's Hold tab)")}
+function doRelease(ids){target=ids;ids.forEach(i=>byId(i).hold=false);done("Released · waiting bills back on the rail, mid-tint bills carry on")}
+function sendBack(ids){target=ids;ids.forEach(i=>{const b=byId(i);b.stage="waiting";b.op=null;b.age=0;b.arr="sent back"});done("Sent back to pending")}
+function doRestore(i){const b=byId(i);b.stage="waiting";b.age=0;b.arr="restored";b.op=null;target=[];done("Restored to the tint rail")}
+function allOk(gi){const g=pdGroups.splice(gi,1)[0];pdHist.unshift({d:"Today 10:06",so:g.so,site:g.site,dec:"ok",obd:"",by:"Chandresh"});afterPD("All OK · both bills kept")}
+function pdDel(gi,bi){const g=pdGroups[gi],b=g.bills[bi];pdGroups.splice(gi,1);pdHist.unshift({d:"Today 10:06",so:g.so,site:g.site,dec:"del",obd:b.obd,by:"Chandresh"});afterPD(`Pick deleted ${b.obd} · Undo from the Pick delete tab`)}
+function afterPD(msg){delete mbg.dataset.lock;closeModal();modal.className="modal";render();toast(msg);if(pdGroups.length)setTimeout(showPD,400)}
+function pdUndo(i){const h=pdHist[i];pdHist.unshift({d:"Today 10:06",so:h.so,site:h.site,dec:"undo",obd:h.obd,by:"Chandresh"});h.undone=true;render();toast(`Undo · ${h.obd} back on the tint rail`)}
+
+const mbg=document.getElementById("mbg"),modal=document.getElementById("modal");
+function closeModal(){mbg.classList.remove("show")}
+mbg.addEventListener("click",e=>{if(e.target===mbg&&!mbg.dataset.lock)closeModal()});
+function openCancel(kind,ids){
+ closePop();modal.className="modal";target=ids;const S=ids.map(byId);
+ const title={stop:"Stop & cancel",cancel:"Cancel bill",ci:"Raise CI and cancel",remove:"Remove OBD"}[kind];
+ const reasons=kind==="remove"?["Customer cancelled","Wrong order"]:["Customer cancelled","Wrong order by SO","Duplicate bill","Material short","Other"];
+ modal.innerHTML=`<h4>${title} · ${S.length} bill(s)</h4><p>${S.map(b=>b.obd).join(", ")}</p>
+ ${kind==="stop"?`<div class="warnbox">The operator's job ends now and the timer stops. Mixed paint stays in the room — note it in the remark.</div>`:""}
+ ${kind==="remove"?`<div class="warnbox">The challan is voided and the bill disappears from every screen. Only admin can restore it.</div>`:""}
+ <select id="rsn"><option value="">Reason…</option>${reasons.map(r=>`<option>${r}</option>`).join("")}</select>
+ <textarea id="rmk" rows="2" placeholder="Remark ${kind==="remove"?"(required)":"(optional)"}"></textarea>
+ <div class="row-b"><button class="btn" onclick="closeModal()">Back</button><button class="btn dngf" id="cbtn" onclick="confirmCancel('${kind}',1)">${title}</button></div>`;
+ mbg.classList.add("show");
+}
+function confirmCancel(kind,step){
+ const r=document.getElementById("rsn").value;
+ if(!r){toast("Pick a reason");return}
+ if(kind==="remove"&&!document.getElementById("rmk").value.trim()){toast("Remark is required");return}
+ if(step===1){const b=document.getElementById("cbtn");b.textContent="Yes, confirm";b.setAttribute("onclick",`confirmCancel('${kind}',2)`);return}
+ target.forEach(i=>{const b=byId(i); if(kind==="remove"){bills=bills.filter(x=>x!==b);return}
+  Object.assign(b,{stage:"cancelled",reason:r,src:"Tint",by:"Chandresh",at:"Today 09:31",hold:false,ci:kind==="ci"?"CI-2026-00418":null,op:null})});
+ done(kind==="remove"?"Removed · challan voided":kind==="ci"?"CI raised · on the CI tab and Floor's Cancel & CI":"Cancelled · on the CI tab and Floor's Cancel & CI");
+}
+const SITES=["KESHAVAM VALLEY","KESHAV RESIDENCY","Mohan Godown","SANCTUM PALACIO","Shree Rang Sarovar"];
+let shipId=null;
+function openShipTo(i){
+ closePop();modal.className="modal";shipId=i;const b=byId(i);
+ modal.innerHTML=`<h4>Change ship-to</h4><p><span class="mono">${b.obd}</span> · now: <b>${b.shipTo2||b.shipTo}</b></p>
+ <input id="q" placeholder="Search site (min 2 letters)" oninput="shipRes()"><div class="res" id="res"></div>
+ <p>Floor, Billing, Picking, this board and the challan show the new site. TI history and shade suggestions stay on the original site.</p>
+ <div class="row-b">${b.shipTo2?`<button class="btn dng" onclick="setShip(null)">✕ Clear redirect</button>`:""}<button class="btn" onclick="closeModal()">Cancel</button></div>`;
+ mbg.classList.add("show");document.getElementById("q").focus();shipRes();
+}
+function shipRes(){const q=(document.getElementById("q").value||"").toLowerCase();
+ document.getElementById("res").innerHTML=(q.length<2?SITES.slice(0,3):SITES.filter(s=>s.toLowerCase().includes(q))).map(s=>`<div onclick="setShip('${s}')">${s}</div>`).join("")||'<div class="muted">No match</div>'}
+function setShip(s){byId(shipId).shipTo2=s;target=[shipId];done(s?`Ship-to → ${s} · visible everywhere`:"Redirect cleared",true)}
+
+document.getElementById("who").addEventListener("change",e=>{who=e.target.value;if((tab==="pick"&&!can("pick"))||(tab==="ci"&&!can("cancel")))tab="tinting";sel.clear();render();if(can("pick"))showPD()});
+render();setTimeout(showPD,600);
+</script>
+</body>
+</html>
