@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tint Tab Redesign</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+--brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-600:#7C3AED;--brand-700:#6D28D9;--brand-800:#5B21B6;
+--ink-0:#fff;--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5C5869;--ink-700:#3F3B4B;--ink-900:#1B1826;
+--tint-bg:#F0F9FF;--tint-bd:#BAE6FD;--tint-600:#0284C7;--tint-700:#0369A1;
+--ok:#059669;--ok-bg:#ECFDF5;--ok-text:#047857;
+--warn:#D97706;--warn-bg:#FFFBEB;--warn-text:#B45309;--warn-bd:#FDE68A;
+--danger-text:#BE123C;--line:#EEEDF3;
+--r-sm:6px;--r-md:10px;--r-lg:14px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:13px;line-height:1.4;color:var(--ink-900);background:var(--ink-0);-webkit-font-smoothing:antialiased}
+.mono{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:-.01em}
+.num{font-variant-numeric:tabular-nums}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+.note{background:var(--ink-900);color:#fff;font-size:12px;padding:7px 16px}.note b{color:#C4B5FD}
+
+.app{display:flex;height:calc(100vh - 31px)}
+/* side nav */
+.nav{width:56px;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding-top:14px;gap:18px;flex-shrink:0}
+.nav .wm{font-weight:700;color:var(--brand-800);font-size:14px;letter-spacing:-.02em}
+.nav i{width:18px;height:18px;border-radius:5px;background:var(--ink-100)}.nav i.on{background:var(--brand-100);box-shadow:0 0 0 6px var(--brand-50)}
+/* rail */
+.rail{width:340px;border-right:1px solid var(--line);background:var(--ink-25);display:flex;flex-direction:column;flex-shrink:0}
+.rh{padding:16px 18px 10px}
+.rh .t{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-500);font-weight:600}
+.rh .s{font-size:12px;color:var(--ink-400);margin-top:2px}
+.rl{flex:1;overflow:auto;padding:4px 12px 16px}
+.rc{background:#fff;border:1px solid var(--ink-100);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:10px}
+.rc .a{display:flex;justify-content:space-between;gap:10px}
+.rc .n{font-weight:700;font-size:14.5px}
+.rc .b{font-size:12px;color:var(--ink-500);margin-top:2px}
+.rc .v{text-align:right}.rc .v b{font-size:15px}.rc .v span{display:block;font-size:11.5px;color:var(--ink-500)}
+.rc .m{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-600)}
+.rc .m .sep{width:1px;height:12px;background:var(--ink-100)}
+.age{margin-left:auto;font-size:11px;font-weight:700;border-radius:5px;padding:1px 6px;background:var(--warn-bg);color:var(--warn-text)}
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;justify-content:space-between;height:52px;padding:0 24px;border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:26px;height:100%}
+.tab{background:none;border:0;padding:0;color:var(--ink-500);display:flex;gap:7px;align-items:center;border-bottom:2px solid transparent;font-weight:500}
+.tab .c{font-size:11px;background:var(--ink-50);color:var(--ink-600);border-radius:6px;padding:1px 7px;font-weight:600}
+.tab.on{color:var(--ink-900);font-weight:700;border-bottom-color:var(--ink-900)}.tab.on .c{background:var(--ink-900);color:#fff}
+.live{font-size:12px;color:var(--ink-500);display:flex;align-items:center;gap:7px}
+.live:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.scroll{flex:1;overflow:auto}
+.page{padding:24px 28px 48px;display:flex;flex-direction:column;gap:20px;max-width:1500px}
+
+/* section */
+.sec{border:1px solid var(--ink-100);border-radius:var(--r-lg);background:#fff;overflow:hidden}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line)}
+.sh h3{margin:0;font-size:14px;font-weight:700;letter-spacing:-.01em}
+.sh .meta{font-size:12px;color:var(--ink-500)}
+.legend{display:flex;gap:16px;font-size:11.5px;color:var(--ink-500)}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* KPI */
+.kpi{display:grid;grid-template-columns:repeat(4,1fr)}
+.kpi>div{padding:18px 22px;border-left:1px solid var(--line)}
+.kpi>div:first-child{border-left:0}
+.kl{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400);font-weight:600}
+.kv{font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:6px;line-height:1}
+.kv small{font-size:13px;font-weight:500;color:var(--ink-500);letter-spacing:0;margin-left:3px}
+.ks{font-size:12px;color:var(--ink-500);margin-top:8px}
+.prog{height:6px;border-radius:4px;background:var(--ink-50);margin-top:10px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--ok);border-radius:4px}
+
+/* operator board */
+.grid{display:grid;grid-template-columns:300px 1fr 132px}
+.axis{border-bottom:1px solid var(--line);background:var(--ink-25);font-size:11px;color:var(--ink-400);height:30px;align-items:center}
+.axis .c1{padding-left:20px;letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+.axis .c3{text-align:right;padding-right:20px;letter-spacing:.05em;text-transform:uppercase;font-weight:600}
+.ticks{position:relative;height:100%;margin:0 8px}
+.ticks span{position:absolute;top:8px;transform:translateX(-50%)}
+.ticks .nowp{top:5px;background:var(--ink-900);color:#fff;border-radius:5px;padding:1px 6px;font-weight:600;font-size:10.5px;z-index:2}
+.orow{min-height:84px;border-bottom:1px solid var(--line);cursor:pointer;position:relative;transition:background .12s}
+.orow:last-child{border-bottom:0}
+.orow:hover{background:var(--ink-25)}
+.orow.on{background:var(--brand-50)}
+.orow.on:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--brand-600)}
+.who{display:flex;gap:12px;align-items:center;padding:14px 16px 14px 20px;min-width:0}
+.av{width:36px;height:36px;border-radius:50%;background:var(--ink-50);border:1px solid var(--ink-100);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px;color:var(--ink-600);flex-shrink:0;position:relative}
+.av .sd{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid #fff;background:var(--ink-200)}
+.tinting .av .sd{background:var(--tint-600)}.paused .av .sd{background:var(--warn)}
+.who .nm{font-weight:700;font-size:14.5px;display:flex;align-items:baseline;gap:8px}
+.who .q{font-size:11.5px;font-weight:600;color:var(--ink-500);background:var(--ink-50);border-radius:5px;padding:1px 7px}
+.who .st{font-size:12px;color:var(--ink-500);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.tinting .who .st{color:var(--tint-700)}.paused .who .st{color:var(--warn-text)}
+.who .st b{font-weight:700}
+.lanebox{padding:0 8px;position:relative;height:100%;display:flex;align-items:center}
+.res{text-align:right;padding-right:20px}
+.res b{display:block;font-size:18px;letter-spacing:-.01em}
+.res span{font-size:11.5px;color:var(--ink-500)}
+svg text{font-family:"Plus Jakarta Sans",sans-serif}
+.tip{position:fixed;pointer-events:none;background:var(--ink-900);color:#fff;font-size:11.5px;padding:8px 10px;border-radius:8px;opacity:0;transition:opacity .1s;z-index:9;line-height:1.5;box-shadow:0 6px 18px rgba(27,24,38,.2)}
+
+/* tables */
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400);font-weight:600;text-align:left;padding:10px 10px;border-bottom:1px solid var(--line);background:#fff}
+td{padding:0 10px;height:52px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.row{cursor:pointer}tr.row:hover td{background:var(--ink-25)}
+tr.grp td{height:38px;background:var(--ink-25);font-weight:700;font-size:12.5px;border-bottom:1px solid var(--line)}
+tr.grp td .gm{font-weight:500;color:var(--ink-500);margin-left:8px}
+tr.tinting td{background:var(--tint-bg)}tr.tinting td:first-child{box-shadow:inset 3px 0 0 var(--tint-600)}
+tr.paused td{background:var(--warn-bg)}
+tr.done td{color:var(--ink-600)}
+.r{text-align:right}.mut{color:var(--ink-500)}
+.obd .d{display:block;font-family:"Plus Jakarta Sans";font-size:11px;color:var(--ink-400);margin-top:1px}
+.inv .d{display:block;font-size:11px;color:var(--ink-400);margin-top:1px}
+.rank{display:flex;align-items:center;gap:8px}
+.rank b{width:16px;text-align:center;font-size:12.5px}
+.mv{display:flex;flex-direction:column;gap:3px;opacity:0;transition:opacity .12s}
+tr.row:hover .mv{opacity:1}
+.mv button{width:32px;height:21px;border:1px solid var(--ink-200);background:#fff;border-radius:6px;font-size:12px;line-height:1;color:var(--ink-700);display:flex;align-items:center;justify-content:center;padding:0}
+.mv button:hover:not(:disabled){background:var(--brand-50);border-color:var(--brand-600);color:var(--brand-700)}
+.mv button:disabled{opacity:.25;cursor:default}
+.due{display:inline-block;border:1px solid var(--ink-200);border-radius:var(--r-sm);padding:2px 8px;font-size:12px;background:#fff}
+.due.none{border-style:dashed;color:var(--ink-400);font-weight:600;font-size:11px}
+.pill{font-size:11px;border-radius:6px;padding:3px 8px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
+.pill small{font-weight:500;opacity:.75}
+.p-tint{background:#fff;color:var(--tint-700);border:1px solid var(--tint-bd)}
+.p-tint:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--tint-600)}
+.p-asg{background:var(--ink-50);color:var(--ink-600)}
+.p-pause{background:#fff;color:var(--warn-text);border:1px solid var(--warn-bd)}
+.p-done{background:var(--ok-bg);color:var(--ok-text)}
+.keb{color:var(--ink-400);font-size:16px;letter-spacing:1px;text-align:center}
+.ophead{display:flex;align-items:baseline;gap:10px;padding:14px 20px 4px;font-weight:700;font-size:13.5px}
+.ophead .gm{font-weight:500;font-size:12px;color:var(--ink-500)}
+.opgap{height:18px;border-top:1px solid var(--ink-100);background:var(--ink-25);border-bottom:1px solid var(--ink-100)}
+.empty{padding:28px;text-align:center;color:var(--ink-400)}
+</style></head><body>
+<div class="note"><b>MOCKUP v13</b> · summary · operators (one row each, shared time scale) · queue below — click an operator row to focus it · "now" 18:40</div>
+<div class="app">
+ <nav class="nav"><span class="wm">Orbit</span><i></i><i class="on"></i><i></i><i></i><i></i><i></i></nav>
+ <aside class="rail"><div class="rh"><div class="t">Needs assignment</div><div class="s">4 waiting · oldest first</div></div><div class="rl" id="rail"></div></aside>
+ <section class="main">
+  <div class="top"><div class="tabs">
+   <button class="tab on">Tint <span class="c">21</span></button><button class="tab">Base <span class="c">23</span></button><button class="tab">TI <span class="c">12</span></button><button class="tab">Hold <span class="c">6</span></button><button class="tab">CI <span class="c">0</span></button><button class="tab">Delete <span class="c">1</span></button>
+  </div><span class="live">Live · 18:40</span></div>
+  <div class="scroll"><div class="page" id="page"></div></div>
+ </section>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const NOW=18*60+40,T0=8*60,T1=20*60;
+const toM=s=>{const[h,m]=s.split(":").map(Number);return h*60+m};
+const hm=m=>`${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+const fmtL=v=>(+v).toLocaleString("en-IN",{maximumFractionDigits:1});
+const OPS=[
+ {name:"Chandrasing Valvi",jobs:[
+  {obd:"9109880030",site:"AAROHI HEIGHTS",bill:"G D SALES CORPORATION",vol:500,art:"25 Drum",st:"tinting",start:"18:15"},
+  {obd:"9109880029",site:"Aarohi Heights (Agrim Heights)",bill:"G D SALES CORPORATION",vol:480,art:"24 Drum",st:"assigned"},
+  {obd:"9109860449",site:"SANCTUM PALACIO",bill:"SHIVANSHI ENTERPRISE",vol:500,art:"25 Drum",st:"done",start:"17:20",end:"18:09"},
+  {obd:"9109584082",site:"KESHAVAM VALLEY",bill:"SHREE RAM SALES AGENCY",vol:200,art:"10 Drum",st:"done",start:"16:10",end:"16:34"},
+  {obd:"9109775231",site:"SSA TITAN BUILDERS",bill:"Paragon Traders",vol:560,art:"28 Drum",st:"done",start:"14:20",end:"16:34",pause:["15:05","15:40"]},
+  {obd:"9109744666",site:"SIDDHI VINAYAK ELENTS",bill:"HIND HARDWARE & PAINT STORES",vol:2000,art:"100 Drum",st:"done",start:"10:15",end:"13:09"},
+  {obd:"9109838567",site:"SMC SMIMER HOSPITAL TAWOR 2",bill:"ACHCHHELAL RAMDULARE YADAV",vol:40,art:"2 Drum",st:"done",start:"09:40",end:"10:04"}]},
+ {name:"Deepak Vasava",jobs:[
+  {obd:"9109880452",site:"Iscon Infinity Tower",bill:"SARITA COLOURS",vol:100,art:"5 Drum",st:"paused",start:"18:30",pause:["18:34",null]},
+  {obd:"9109880451",site:"RAJHANS CINEMA",bill:"MARUTI PAINTS",vol:240,art:"12 Drum",st:"assigned"},
+  {obd:"9109833440",site:"Sumeru Sky Leaf",bill:"JAINAM PAINTS",vol:220,art:"11 Drum",st:"assigned"},
+  {obd:"9109875326",site:"Petronet Lng Limited 3",bill:"COLOUR CLASS PAINTS",vol:10,art:"1 Drum",st:"done",start:"18:15",end:"18:23"},
+  {obd:"9109836050",site:"EDEN HEAVEN",bill:"Ideal Enterprise",vol:400,art:"20 Drum",st:"done",start:"17:30",end:"18:23"},
+  {obd:"9109837557",site:"SILICON PALACE",bill:"YOGI HW & PLYWOOD CENTRE",vol:400,art:"20 Drum",st:"done",start:"16:45",end:"18:22"},
+  {obd:"9109879388",site:"Bhagwat Elita",bill:"SHREE RAM SALES AGENCY",vol:80,art:"4 Drum",st:"done",start:"16:24",end:"16:30"},
+  {obd:"9109879387",site:"Avadh Heliconia Homes",bill:"JAINAM PAINTS",vol:28,art:"1 Drum, 2 Tin",st:"done",start:"16:22",end:"16:29"},
+  {obd:"9109744667",site:"AADARSH NIVASH SCHOOL VA",bill:"Aai Shree Khodiyar Hardware",vol:1440,art:"72 Drum",st:"done",start:"13:40",end:"16:20"},
+  {obd:"9109879386",site:"PRAMUKH AMAYA",bill:"COLOUR CLASS PAINTS",vol:37,art:"2 Drum",st:"done",start:"13:15",end:"13:26"},
+  {obd:"9109860644",site:"SHUBHAM MART",bill:"Shivam Paints",vol:140,art:"8 Drum, 3 Carton",st:"done",start:"12:58",end:"13:12"},
+  {obd:"9109880031",site:"Globcon Splendora",bill:"RAVIRAJ HARDWARE",vol:47.4,art:"2 Drum, 2 Tin",st:"done",start:"12:35",end:"12:57"},
+  {obd:"9109837555",site:"PAVITRA RESIDENCY",bill:"ASHIRWAD COLOUR",vol:300,art:"15 Drum",st:"done",start:"11:10",end:"12:30"},
+  {obd:"9109836048",site:"GINGER HOTEL (VAPI)",bill:"SAMRUDDHI INTERIORS",vol:52,art:"2 Drum, 3 Tin",st:"done",start:"10:00",end:"10:21"}]}];
+const EXTRA={"9109880030":["74","Bharuch",null],"9109880029":["74","Bharuch",null],"9109860449":["74","Adajan",null],"9109584082":["74","Varachha",null],"9109775231":["74","IGT / CROSS",null],"9109744666":["74","Adajan",null],"9109838567":["74","Adajan",null],
+"9109880452":["74","Varachha","02-10 · 10:30"],"9109880451":["74","Vapi",null],"9109833440":["74","Adajan",null],"9109875326":["77","Vapi",null],"9109836050":["74","Varachha",null],"9109837557":["74","Parvat",null],"9109879388":["74","Varachha",null],"9109879387":["74","Vapi",null],"9109744667":["74","Bardoli",null],"9109879386":["74","Adajan",null],"9109860644":["77","Bardoli",null],"9109880031":["74","Adajan",null],"9109837555":["74","Udhana",null],"9109836048":["74","Vapi",null]};
+
+const EX2={"9109880030":["74","Bharuch","30 Sep 21:36",null],"9109880029":["74","Bharuch","30 Sep 21:36",null],"9109880452":["74","Varachha","1 Oct 15:49","02-10 · 10:30"],"9109880451":["74","Vapi","1 Oct 15:49",null],"9109833440":["74","Adajan","30 Sep 22:49",null]};
+const ex=o=>EX2[o]||["74",["Adajan","Vapi","Varachha","Bardoli","Udhana"][o.charCodeAt(9)%5],"1 Oct 0"+(o.charCodeAt(8)%9+1)+":"+(10+o.charCodeAt(7)%49),null];
+let sel=null;
+const arts=jobs=>{const t={};jobs.forEach(j=>(j.art.match(/\d+\s*[A-Za-z]+/g)||[]).forEach(p=>{const m=p.match(/(\d+)\s*([A-Za-z]+)/);t[m[2]]=(t[m[2]]||0)+ +m[1]}));return ["Drum","Carton","Tin"].filter(k=>t[k]).map(k=>`${t[k]} ${k}`).join(" · ")||"—"};
+const stats=op=>{const done=op.jobs.filter(j=>j.st==="done"),q=op.jobs.filter(j=>j.st!=="done");return{done,q,doneL:done.reduce((a,j)=>a+j.vol,0),qL:q.reduce((a,j)=>a+j.vol,0),now:op.jobs.find(j=>j.st==="tinting")||op.jobs.find(j=>j.st==="paused")}};
+const tip=document.getElementById("tip");
+function sT(e,h){tip.innerHTML=h;tip.style.opacity=1;tip.style.left=(e.clientX+14)+"px";tip.style.top=(e.clientY+14)+"px"}
+function hT(){tip.style.opacity=0}
+const pct=m=>(m-T0)/(T1-T0)*100;
+
+document.getElementById("rail").innerHTML=[["VEER ARIHANTA","SHIVSHAKTI TRADERS","9109584083","Adajan","30 Sep 21:50",300,"15 Drum","1d"],["Triyom Palace","JAINAM PAINTS","9109923900","Ghod Dod","1 Oct",60,"3 Drum",""],["Mulberry Plus","Om Shiv Shakti Traders","9109923901","Adajan","1 Oct",400,"20 Drum",""],["Jainam Grand Vissta","JAINAM PAINTS","9109923902","Ghod Dod","1 Oct",60,"3 Drum",""]]
+ .map(r=>`<div class="rc"><div class="a"><div><div class="n">${r[0]}</div><div class="b">billed to ${r[1]}</div></div><div class="v"><b class="num">${r[5]} L</b><span>${r[6]}</span></div></div>
+ <div class="m"><span class="mono">${r[2]}</span><span class="sep"></span><b>74</b><span class="sep"></span>${r[3]}${r[7]?`<span class="age">${r[7]}</span>`:`<span style="margin-left:auto;color:var(--ink-400)">${r[4]}</span>`}</div></div>`).join("");
+
+function lane(op){
+ const W=1000,H=36,x=m=>(m-T0)/(T1-T0)*W;
+ let g=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block;overflow:visible">
+  <rect x="0" y="4" width="${W}" height="${H-8}" rx="8" fill="#FAFAFC" stroke="#F4F3F8" vector-effect="non-scaling-stroke"/>`;
+ for(let m=T0+60;m<T1;m+=60)g+=`<line x1="${x(m)}" x2="${x(m)}" y1="4" y2="${H-4}" stroke="${(m/60)%2===0?"#E9E7F0":"#F4F3F8"}" vector-effect="non-scaling-stroke"/>`;
+ op.jobs.filter(j=>j.start).forEach(j=>{const a=toM(j.start),b=j.end?toM(j.end):NOW;const f=j.st==="done"?"#10B981":j.st==="tinting"?"#0284C7":"#F59E0B";
+  const t=`<b>${j.obd}</b> · ${j.site.replace(/'/g,"")}<br>${fmtL(j.vol)} L · ${j.art}<br>${j.start} → ${j.end||"now"} · ${(j.end?toM(j.end):NOW)-a} min`;
+  g+=`<rect x="${x(a)+1.5}" y="9" width="${Math.max(6,x(b)-x(a)-3)}" height="${H-18}" rx="4" fill="${f}" onmousemove="sT(evt,'${t}')" onmouseleave="hT()"/>`;
+  if(j.pause){const pa=toM(j.pause[0]),pb=j.pause[1]?toM(j.pause[1]):NOW;g+=`<rect x="${x(pa)}" y="9" width="${Math.max(5,x(pb)-x(pa))}" height="${H-18}" fill="url(#hh)" pointer-events="none"/>`}});
+ g+=`<line x1="${x(NOW)}" x2="${x(NOW)}" y1="0" y2="${H}" stroke="#1B1826" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;return g}
+
+function summary(){
+ const all=OPS.flatMap(o=>o.jobs),dn=all.filter(j=>j.st==="done"),qq=all.filter(j=>j.st!=="done");
+ const dL=dn.reduce((a,j)=>a+j.vol,0),qL=qq.reduce((a,j)=>a+j.vol,0);
+ const first=Math.min(...dn.map(j=>toM(j.start))),pace=Math.round(dL/((NOW-first)/60));
+ const avg=Math.round(dn.reduce((a,j)=>a+(toM(j.end)-toM(j.start)),0)/dn.length);
+ const p=Math.round(dL/(dL+qL)*100);
+ return `<div class="sec"><div class="kpi">
+  <div><div class="kl">Tinted today</div><div class="kv num">${fmtL(dL)}<small>L</small></div><div class="ks">${dn.length} jobs · ${arts(dn)}</div></div>
+  <div><div class="kl">Still to tint</div><div class="kv num">${fmtL(qL)}<small>L</small></div><div class="ks">${qq.length} jobs across ${OPS.length} operators</div></div>
+  <div><div class="kl">Pace</div><div class="kv num">${fmtL(pace)}<small>L / hr</small></div><div class="ks">since first job at ${hm(first)}</div></div>
+  <div><div class="kl">Average job</div><div class="kv num">${Math.round(avg)}<small>min</small></div><div class="ks">start to done · ${dn.length} jobs</div></div>
+ </div></div>`}
+
+function board(){
+ let ticks="";for(let m=T0;m<=T1;m+=120)ticks+=`<span style="left:${pct(m)}%">${hm(m)}</span>`;
+ ticks+=`<span class="nowp" style="left:${pct(NOW)}%">${hm(NOW)}</span>`;
+ const rows=OPS.map((op,i)=>{const s=stats(op),k=s.now?s.now.st:"idle";
+  const st=k==="tinting"?`<b>Tinting</b> · ${s.now.site} · since ${s.now.start}`:k==="paused"?`<b>Paused</b> · ${s.now.site} · ${s.now.pause[0]}`:`<b>Idle</b> · nothing running`;
+  const ini=op.name.split(" ").map(w=>w[0]).join("");
+  return `<div class="grid orow ${k} ${sel===i?"on":""}" onclick="pick(${i})">
+   <div class="who"><div class="av">${ini}<span class="sd"></span></div><div style="min-width:0"><div class="nm">${op.name}<span class="q">${s.q.length} in queue</span></div><div class="st">${st}</div></div></div>
+   <div class="lanebox">${lane(op)}</div>
+   <div class="res"><b class="num">${fmtL(s.doneL)} L</b><span>${arts(s.done)}</span></div></div>`}).join("");
+ return `<svg width="0" height="0" style="position:absolute"><defs><pattern id="hh" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#FDE68A"/><rect width="3" height="6" fill="#F59E0B"/></pattern></defs></svg>
+ <div class="sec"><div class="sh"><h3>Operators</h3><div class="legend"><span><i style="background:#10B981"></i>Done</span><span><i style="background:#0284C7"></i>Tinting</span><span><i style="background:repeating-linear-gradient(45deg,#F59E0B 0 3px,#FDE68A 3px 6px)"></i>Paused</span></div></div>
+ <div class="grid axis"><div class="c1">Operator</div><div class="ticks">${ticks}</div><div class="c3">Today</div></div>${rows}</div>`}
+
+const COLS=`<colgroup><col style="width:84px"><col style="width:11%"><col style="width:9%"><col style="width:44px"><col style="width:15%"><col style="width:17%"><col style="width:8%"><col style="width:9%"><col style="width:6%"><col style="width:8%"><col style="width:12%"><col style="width:36px"></colgroup>
+<tr><th>#</th><th>OBD</th><th>Invoice</th><th>SMU</th><th>Bill to</th><th>Ship to</th><th>Route</th><th>Due</th><th class="r">Vol</th><th>Art.</th><th>Status</th><th></th></tr>`;
+function cells(j){const [smu,route,dt,due]=ex(j.obd);
+ return `<td class="obd"><span class="mono">${j.obd}</span><span class="d">${dt}</span></td><td class="inv mut"></td><td class="mut">${smu}</td><td>${j.bill}</td><td>${j.site}</td><td class="mut">${route}</td>
+ <td>${j.st==="done"?'<span class="mut">—</span>':due?`<span class="due">${due}</span>`:'<span class="due none">No due date</span>'}</td><td class="r num">${fmtL(j.vol)}</td><td class="mut">${j.art}</td>`}
+function queueRows(op){
+ const s=stats(op),ord={tinting:0,assigned:1,paused:2},q=[...s.q].sort((a,b)=>ord[a.st]-ord[b.st]),asg=q.filter(j=>j.st==="assigned");
+ return q.map(j=>{let rank;
+  if(j.st==="assigned"){const k=asg.indexOf(j);rank=`<div class="rank"><b>${k+1}</b><div class="mv"><button ${k===0?"disabled":""} onclick="event.stopPropagation()">▲</button><button ${k===asg.length-1?"disabled":""} onclick="event.stopPropagation()">▼</button></div></div>`}
+  else rank=`<div class="rank"><b style="color:${j.st==="tinting"?"var(--tint-600)":"var(--warn)"}">${j.st==="tinting"?"▶":"Ⅱ"}</b></div>`;
+  const pill=j.st==="tinting"?`<span class="pill p-tint">Tinting <small>${j.start}</small></span>`:j.st==="paused"?`<span class="pill p-pause">Paused <small>${j.pause[0]}</small></span>`:`<span class="pill p-asg">Assigned</span>`;
+  return `<tr class="row ${j.st}"><td>${rank}</td>${cells(j)}<td>${pill}</td><td class="keb">⋯</td></tr>`}).join("")}
+function queue(){
+ const ops=sel===null?OPS:[OPS[sel]];
+ const tot=ops.reduce((a,o)=>a+stats(o).q.length,0),L=ops.reduce((a,o)=>a+stats(o).qL,0);
+ return `<div class="sec"><div class="sh"><h3>Now &amp; next</h3><span class="meta">${tot} jobs · ${fmtL(L)} L · hover a row for ▲▼</span></div>
+ ${ops.map((op,i)=>{const st=stats(op);
+  return `${i?'<div class="opgap"></div>':""}<div class="ophead"><span>${op.name}</span><span class="gm">${st.q.length} jobs · ${fmtL(st.qL)} L</span></div>
+  <table>${COLS}${queueRows(op)||'<tr><td colspan="12" class="empty">Nothing waiting</td></tr>'}</table>`}).join("")}</div>`}
+function done(){
+ if(sel===null)return "";
+ const op=OPS[sel],s=stats(op),d=[...s.done].sort((a,b)=>toM(a.end)-toM(b.end));
+ return `<div class="sec"><div class="sh"><h3>Done today · ${op.name}</h3><span class="meta">${d.length} jobs · ${fmtL(s.doneL)} L · first finished first</span></div>
+ <table>${COLS}${d.map((j,i)=>`<tr class="row done"><td><div class="rank"><b class="mut">${i+1}</b></div></td>${cells(j)}<td><span class="pill p-done">Done <small>${j.end}</small></span></td><td class="keb">⋯</td></tr>`).join("")}</table></div>`}
+function render(){document.getElementById("page").innerHTML=summary()+board()+queue()+done()}
+function pick(i){sel=sel===i?null:i;render()}
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&sel!==null){sel=null;render()}});
+render();
+</script></body></html>

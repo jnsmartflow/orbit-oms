@@ -50,7 +50,10 @@ import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-moda
 
 import { BoardRail } from "@/components/tint/manager/board-rail";
 import { BaseTiPanel } from "@/components/tint/manager/base-ti-panel";
-import { BoardTable } from "@/components/tint/manager/board-table";
+// The Tint tab is BoardTintTab since 2026-10-02 (summary · operator board ·
+// Now & next); its rows are board-table.tsx's TintBoardRow, so BoardTable itself
+// is no longer mounted (kept — CORE §3, nothing is deleted).
+import { BoardTintTab } from "@/components/tint/manager/board-tint-tab";
 import { BoardTabs, type BoardTab } from "@/components/tint/manager/board-tabs";
 import { BoardPickDeleteTab, TINT_PICK_DELETE_BASE } from "@/components/tint/manager/board-pick-delete-tab";
 // Billing's blocking popup, REUSED with the tint base (2026-10-01, step 8).
@@ -156,6 +159,9 @@ export function TintManagerContent() {
   const [tiSel, setTiSel] = useState<Set<number>>(new Set());
   const [tiBulkDose, setTiBulkDose] = useState<WhiteShotDose | null>(null);
   const [tiUndoBusy, setTiUndoBusy] = useState(false);
+  // The Tint tab's focused operator (2026-10-02) — a VIEW filter on the
+  // Operators card / Now & next, never a selection. Esc clears it last.
+  const [focusedOperatorId, setFocusedOperatorId] = useState<number | null>(null);
   // The bar's ··· More menu and its operator menu (anchored to the primary).
   const [barMenuOpen, setBarMenuOpen] = useState(false);
   const [barOpAnchor, setBarOpAnchor] = useState<HTMLElement | null>(null);
@@ -631,6 +637,8 @@ export function TintManagerContent() {
         }
         if (panelKey !== null) { setPanelKey(null); return; }
         if (selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 || tiSel.size > 0) { clearAllSelection(); return; }
+        // Last rung (2026-10-02): the Tint tab's focused operator → back to all.
+        if (focusedOperatorId !== null) { setFocusedOperatorId(null); return; }
         return;
       }
       // M — Add OBD to Tint. Ignored while typing, and while the panel is open
@@ -642,7 +650,7 @@ export function TintManagerContent() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelKey, selection, railSel, holdSel, baseSel, tiSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, tiBulkDose, dialogBusy, clearAllSelection]);
+  }, [panelKey, selection, railSel, holdSel, baseSel, tiSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, tiBulkDose, dialogBusy, clearAllSelection, focusedOperatorId]);
 
   // ── Hold + CI lists (step 7) — read when the person can see the tab, and
   // again after every board reload (payload changes), so the tab counts track
@@ -1639,7 +1647,9 @@ export function TintManagerContent() {
             }}
           />
           {activeTab === "tinting" && (
-            <BoardTable
+            <BoardTintTab
+              focusedOperatorId={focusedOperatorId}
+              onFocusOperator={setFocusedOperatorId}
               groups={groups}
               selection={selection}
               busyKeys={reorderBusy}

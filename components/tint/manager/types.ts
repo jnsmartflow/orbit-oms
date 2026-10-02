@@ -225,6 +225,9 @@ export interface SplitCard {
 
 export interface CompletedAssignment {
   id:               number;
+  /** tint_assignments.startedAt — already on the payload (the route spreads the
+   *  row's scalars); declared 2026-10-02 for the operator board's day lanes. */
+  startedAt?:       string | null;
   completedAt:      string | null;
   smu:              string | null;
   smuCode:          string | null;
@@ -361,6 +364,15 @@ export interface BoardRow {
   slotWindowTime: string | null;
   /** dispatchStatus === "hold" (orders only). */
   isHeld:         boolean;
+  /** The job's clock for the Tint tab's operator board (2026-10-02). startedAt =
+   *  tint_assignments / order_splits .startedAt — ⚠ RESET to the resume time on a
+   *  resume (CLAUDE_TINT §3.8), so after a pause it is the last resume, not the
+   *  first start. completedAt = when it finished today (done rows only).
+   *  pausedAt = the latest pause's time while the job is paused (orders only —
+   *  pauseSummary.lastPausedAt); null otherwise. */
+  startedAt:      string | null;
+  completedAt:    string | null;
+  pausedAt:       string | null;
   /** orders.handAt set (orders only). */
   isHand:         boolean;
   order?:         TintOrder;

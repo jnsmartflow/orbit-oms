@@ -137,6 +137,9 @@ function rowFromOrder(o: TintOrder, status: BoardRowStatus): BoardRow | null {
     slotWindowTime:  o.dispatchWindowTime ?? null,
     isHeld:          o.dispatchStatus === "hold",
     isHand:          o.handAt != null,
+    startedAt:       a.startedAt ?? null,
+    completedAt:     null,
+    pausedAt:        status === "paused" ? (o.pauseSummary?.lastPausedAt ?? null) : null,
     order:           o,
   };
 }
@@ -184,6 +187,10 @@ function rowFromSplit(s: SplitCard, status: BoardRowStatus): BoardRow {
     slotWindowTime:  null,
     isHeld:          false,
     isHand:          false,
+    startedAt:       s.startedAt ?? null,
+    completedAt:     status === "tinting_done" ? (s.completedAt ?? null) : null,
+    // Splits never pause (the operator route 400s a split pause, CLAUDE_TINT §5).
+    pausedAt:        null,
     split:           s,
   };
 }
@@ -227,6 +234,9 @@ function rowFromCompletedAssignment(a: CompletedAssignment): BoardRow {
     slotWindowTime:  null,
     isHeld:          false,
     isHand:          false,
+    startedAt:       a.startedAt ?? null,
+    completedAt:     a.completedAt ?? null,
+    pausedAt:        null,
     completed:       a,
   };
 }

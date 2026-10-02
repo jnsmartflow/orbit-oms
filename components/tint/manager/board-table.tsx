@@ -52,7 +52,12 @@ import type { BoardGroup, BoardRow } from "./types";
 // Slot is renamed Due:
 // # 4 · OBD 11 · Invoice 9 · SMU 4 · Bill To 13 · Ship To 17 · Route 7 · Due 10 ·
 // Vol 5 · Art. 8 · Status 9 · ⋯ 3  = 100.
-const COLS = ["4%", "11%", "9%", "4%", "13%", "17%", "7%", "10%", "5%", "8%", "9%", "3%"] as const;
+//
+// 2026-10-02 (Tint tab redesign): the ▲▼ grew to 32×21 (mockup v13), so # widens
+// 4 → 6, paid by OBD 11 → 10 and Ship To 17 → 16. Same columns, same order:
+// # 6 · OBD 10 · Invoice 9 · SMU 4 · Bill To 13 · Ship To 16 · Route 7 · Due 10 ·
+// Vol 5 · Art. 8 · Status 9 · ⋯ 3  = 100.
+const COLS = ["6%", "10%", "9%", "4%", "13%", "16%", "7%", "10%", "5%", "8%", "9%", "3%"] as const;
 
 // ── Typography, copied from Floor's floor-table.tsx ──────────────────────────
 // Floor's four class strings verbatim, so header, cells and pills read
@@ -109,9 +114,7 @@ export function BoardTable({
 
       <div className={cn("flex-1 overflow-y-auto bg-white", barUp && "pb-[96px]")}>
         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-          <colgroup>
-            {COLS.map((w, i) => <col key={i} style={{ width: w }} />)}
-          </colgroup>
+          <BoardColGroup />
           <thead>
             <tr>
               <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")}>#</th>
@@ -158,6 +161,32 @@ export function BoardTable({
   );
 }
 
+/** The board's colgroup — exported (2026-10-02) so the Tint tab's per-operator
+ *  tables (board-tint-tab.tsx) use the SAME widths as this table. */
+export function BoardColGroup() {
+  return <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>;
+}
+
+/** The board's header row — exported (2026-10-02) for the Tint tab's tables. */
+export function BoardHeadRow() {
+  return (
+    <tr>
+      <th className={HEAD_TH_NARROW}>#</th>
+      <th className={HEAD_TH}>OBD</th>
+      <th className={HEAD_TH}>Invoice</th>
+      <th className={HEAD_TH}>SMU</th>
+      <th className={HEAD_TH}>Bill To</th>
+      <th className={HEAD_TH}>Ship To</th>
+      <th className={HEAD_TH}>Route</th>
+      <th className={HEAD_TH}>Due</th>
+      <th className={cn(HEAD_TH, "text-right")}>Vol</th>
+      <th className={HEAD_TH}>Art.</th>
+      <th className={HEAD_TH}>Status</th>
+      <th className={HEAD_TH_NARROW} />
+    </tr>
+  );
+}
+
 function GroupSection({
   group, selection, onToggleRow, onOpenRow, onReorder, busyKeys,
   windows, canSlot, slotBusy, onSetSlot,
@@ -184,7 +213,7 @@ function GroupSection({
         </td>
       </tr>
       {group.rows.map((r) => (
-        <Row
+        <TintBoardRow
           key={r.key}
           row={r}
           selected={selection.has(r.key)}
@@ -202,8 +231,10 @@ function GroupSection({
   );
 }
 
-function Row({
-  row, selected, onToggle, onOpen, onReorder, busy, windows, canSlot, slotBusy, onSetSlot,
+/** One board row — exported (2026-10-02) so the Tint tab renders the SAME cells.
+ *  `tall` = the Tint tab's 52px rows (mockup v13); the cells are unchanged. */
+export function TintBoardRow({
+  row, selected, onToggle, onOpen, onReorder, busy, windows, canSlot, slotBusy, onSetSlot, tall = false,
 }: {
   row:       BoardRow;
   selected:  boolean;
@@ -215,6 +246,7 @@ function Row({
   canSlot:   boolean;
   slotBusy:  boolean;
   onSetSlot: (v: DispatchSlotValue) => void;
+  tall?:     boolean;
 }) {
   // A ROW CLICK SELECTS (2026-10-01, step 6 — owner decision 5). No checkbox:
   // the selected row fills brand-50 with a brand bar on its first cell (the
@@ -226,6 +258,7 @@ function Row({
         "group",
         row.selectable ? "cursor-pointer" : "cursor-default",
         selected ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
+        tall && "[&>td]:h-[52px]",
       )}
       onClick={row.selectable ? onToggle : undefined}
       aria-selected={row.selectable ? selected : undefined}
@@ -249,7 +282,7 @@ function Row({
           )}
           {row.status === "assigned" && row.seqRank !== null ? (
             <span className={cn(
-              "flex w-3.5 flex-col transition-opacity",
+              "flex w-8 flex-col gap-[3px] transition-opacity",
               busy ? "opacity-30" : "opacity-0 group-hover:opacity-100",
             )}>
               <button
@@ -258,10 +291,11 @@ function Row({
                 onClick={() => onReorder(row, "up")}
                 title={row.canMoveUp ? `Move up in ${row.operatorName.split(" ")[0]}'s queue` : "Already first"}
                 className={cn(
-                  "w-3.5 h-[11px] flex items-center justify-center text-[9px] leading-none rounded-[2px]",
+                  // 32×21 (owner 2026-10-02, mockup v13 .mv button): big enough to hit.
+                  "flex h-[21px] w-8 items-center justify-center rounded-md border text-[12px] leading-none",
                   row.canMoveUp && !busy
-                    ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900"
-                    : "text-gray-300 opacity-25 cursor-default",
+                    ? "border-ink-200 bg-white text-ink-700 hover:border-brand-600 hover:bg-brand-50 hover:text-brand-700"
+                    : "border-ink-200 bg-white text-ink-400 opacity-25 cursor-default",
                 )}
               >
                 ▲
@@ -272,10 +306,11 @@ function Row({
                 onClick={() => onReorder(row, "down")}
                 title={row.canMoveDown ? `Move down in ${row.operatorName.split(" ")[0]}'s queue` : "Already last"}
                 className={cn(
-                  "w-3.5 h-[11px] flex items-center justify-center text-[9px] leading-none rounded-[2px]",
+                  // 32×21 (owner 2026-10-02, mockup v13 .mv button): big enough to hit.
+                  "flex h-[21px] w-8 items-center justify-center rounded-md border text-[12px] leading-none",
                   row.canMoveDown && !busy
-                    ? "text-gray-400 hover:bg-gray-100 hover:text-gray-900"
-                    : "text-gray-300 opacity-25 cursor-default",
+                    ? "border-ink-200 bg-white text-ink-700 hover:border-brand-600 hover:bg-brand-50 hover:text-brand-700"
+                    : "border-ink-200 bg-white text-ink-400 opacity-25 cursor-default",
                 )}
               >
                 ▼
@@ -284,7 +319,7 @@ function Row({
           ) : (
             // The arrows' footprint, reserved but empty — this is what keeps the
             // dash under the numbers.
-            <span className="w-3.5" aria-hidden="true" />
+            <span className="w-8" aria-hidden="true" />
           )}
         </span>
       </td>
