@@ -25,8 +25,21 @@ import { getHideExclusion } from "@/lib/hide/visibility";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { Prisma } from "@prisma/client";
+import { getISTDayRange } from "@/lib/dates";
+import { floorBoardWhere, floorHoldWhere, getISTTodayDateOnly, getFloorCancelled } from "@/lib/floor/queries";
+import { BASE_BILL_WHERE } from "@/lib/tint/manager-bill";
+import { PROJECT_SMU_NAMES } from "@/lib/billing/pick-delete-rule";
+import { getTintBaseRows } from "@/lib/tint/base-feed";
 
 type Sig = { count: number; latest: string | null };
+
+// ── 2026-10-01 (Base tab — code-discovery-2026-10-01-tint-manager-base-tab.md §F)
+// OLD = the step-9 route (tint block arms 1–5 + seven stamps, ci_returns tint-only).
+// NEW = the Base route: the tint block OR arm 6 (Floor's floorBoardWhere ∩ Base),
+// arm 7 (held Base), arm 8 (Base cancelled today), and the ci_returns stamp widened
+// to tint OR project-SMU bills. The FINGERPRINT adds the Base tab (the feed's own
+// rows, through the route's builder, cut-off included), the Hold tab's Base rows
+// and the CI tab's Base rows + their CIs.
 
 // ── 2026-10-01 (Tint Manager tabs build step 9) ────────────────────────────
 // OLD = the marker as it stood before step 9 (arms 1–3 + three stamp tables).
@@ -70,20 +83,40 @@ async function oldSig(where: Prisma.ordersWhereInput): Promise<Sig> {
   return { count: agg._count, latest: iso(agg._max.updatedAt) };
 }
 
-/** OLD route: arms 1–3 aggregate + the three original stamps. */
-async function oldRouteSig(): Promise<Sig> {
-  const base = await oldSig(await markerWhere(false));
-  const rows = await prisma.$queryRaw<{ m: Date | null }[]>`
-    SELECT GREATEST(
-      (SELECT max("updatedAt") FROM tint_assignments),
-      (SELECT max("updatedAt") FROM order_splits),
-      (SELECT max("updatedAt") FROM delivery_challans)) AS m`;
-  return { count: base.count, latest: later(base.latest, iso(rows[0]?.m ?? null)) };
+/** The Base route's predicate: the step-9 tint block OR arms 6–8, AND hide — the route's, verbatim. */
+async function baseRouteWhere(): Promise<Prisma.ordersWhereInput> {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const tint = await markerWhere(true); // { AND: [tintBlock, hide] }
+  const [tintBlock, hide] = (tint.AND as Prisma.ordersWhereInput[]);
+  return {
+    AND: [
+      { OR: [
+        tintBlock,
+        { AND: [floorBoardWhere(getISTDayRange(), getISTTodayDateOnly()), BASE_BILL_WHERE] },
+        { AND: [floorHoldWhere(), BASE_BILL_WHERE] },
+        { AND: [{ isRemoved: false, workflowStage: "cancelled", updatedAt: { gte: startOfToday } }, BASE_BILL_WHERE] },
+      ] },
+      hide,
+    ],
+  };
 }
 
-/** NEW route: arms 1–5 aggregate + the seven stamps — the route's statement, verbatim. */
+/** OLD route: the step-9 statement (arms 1–5 + seven stamps, tint-only CIs). */
+async function oldRouteSig(): Promise<Sig> {
+  return routeSig(await markerWhere(true), false);
+}
+
+/** NEW route: the Base statement (arms 1–8 + seven stamps, tint ∪ project-SMU CIs). */
 async function newRouteSig(): Promise<Sig> {
-  const base = await oldSig(await markerWhere(true));
+  return routeSig(await baseRouteWhere(), true);
+}
+
+async function routeSig(where: Prisma.ordersWhereInput, wideCi: boolean): Promise<Sig> {
+  const base = await oldSig(where);
+  const ciJoin = wideCi
+    ? Prisma.sql`(o."orderType" = 'tint' OR o.smu IN (${Prisma.join([...PROJECT_SMU_NAMES])}))`
+    : Prisma.sql`o."orderType" = 'tint'`;
   const baseOperatorId = await getBaseOperatorId();
   const baseTiTerms = baseOperatorId !== null
     ? Prisma.sql`,
@@ -98,7 +131,7 @@ async function newRouteSig(): Promise<Sig> {
       (SELECT max("updatedAt") FROM order_splits),
       (SELECT max("updatedAt") FROM delivery_challans),
       (SELECT max(c."updatedAt") FROM ci_returns c
-         JOIN orders o ON o.id = c."orderId" AND o."orderType" = 'tint'),
+         JOIN orders o ON o.id = c."orderId" AND ${ciJoin}),
       (SELECT max("updatedAt") FROM pick_delete_decisions)${baseTiTerms}) AS m`;
   return { count: base.count, latest: later(base.latest, iso(rows[0]?.m ?? null)) };
 }
@@ -139,7 +172,22 @@ async function fingerprint(): Promise<string> {
           WHERE a."assignedToId" = ${baseId}) AS ti_n
     FROM ci_returns c JOIN orders o ON o.id = c."orderId" AND o."orderType" = 'tint'`;
   const t = tabs[0];
-  return `${set.length}|${max ?? "-"}|ci ${t?.ci}/${t?.ci_n}|pd ${t?.pd}/${t?.pd_n}|ti ${t?.ti}/${t?.ti_n}`;
+
+  // ── The Base tab (2026-10-01) — what a person sees there, via the route's own builders.
+  const baseRows = await getTintBaseRows();
+  const hide = await getHideExclusion();
+  const heldBase = await prisma.orders.findMany({ where: { AND: [floorHoldWhere(), BASE_BILL_WHERE, hide] }, select: { id: true } });
+  const cancBase = await getFloorCancelled("All", undefined, undefined, BASE_BILL_WHERE);
+  const baseIds = Array.from(new Set([...baseRows.map((r) => r.orderId), ...heldBase.map((r) => r.id), ...cancBase.map((r) => r.orderId)]));
+  const baseMax = baseIds.length
+    ? iso((await prisma.orders.aggregate({ where: { id: { in: baseIds } }, _max: { updatedAt: true } }))._max.updatedAt)
+    : null;
+  const baseCi = cancBase.length
+    ? await prisma.ci_returns.aggregate({ where: { orderId: { in: cancBase.map((r) => r.orderId) } }, _max: { updatedAt: true }, _count: true })
+    : null;
+  const baseFp = `base ${baseRows.length}/${heldBase.length}/${cancBase.length}|${baseMax ?? "-"}|bci ${iso(baseCi?._max.updatedAt ?? null) ?? "-"}/${baseCi?._count ?? 0}`;
+
+  return `${set.length}|${max ?? "-"}|ci ${t?.ci}/${t?.ci_n}|pd ${t?.pd}/${t?.pd_n}|ti ${t?.ti}/${t?.ti_n}|${baseFp}`;
 }
 
 const key = (s: Sig) => `${s.count}|${s.latest ?? "-"}`;
@@ -199,7 +247,7 @@ async function main(): Promise<void> {
   console.log(`| windows re-taken (a write landed mid-read) | ${unstable} |`);
   console.log(`| board + tabs fingerprint changes | ${fpChanges} |`);
   console.log(`| **MISSED** — fingerprint moved, NEW signature did not | **${missed}** |`);
-  console.log(`| OLD (pre-step-9) signature missed | ${oldMissed} |`);
+  console.log(`| OLD (step-9, pre-Base) signature missed | ${oldMissed} |`);
   console.log(`| NEW false fires (moved, board did not) | ${falseFires} |`);
   if (missedDetail.length) { console.log("\nMISSED windows:"); missedDetail.forEach((l) => console.log("  " + l)); }
   if (oldMissedDetail.length) { console.log("\nOLD-missed windows:"); oldMissedDetail.forEach((l) => console.log("  " + l)); }

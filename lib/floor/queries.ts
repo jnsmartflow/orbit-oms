@@ -378,7 +378,9 @@ const FLOOR_DEALER_SELECT = {
 
 // ── Date helpers (IST, UTC-midnight anchored — same basis as picking/queue) ──
 
-function getISTTodayDateOnly(): Date {
+// Exported 2026-10-01 for the Tint Manager's marker (Base arm, floorBoardWhere
+// needs today in the trips.tripDate @db.Date shape). Body unchanged.
+export function getISTTodayDateOnly(): Date {
   const istNow = new Date(Date.now() + IST_OFFSET_MS);
   return new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()));
 }
@@ -720,6 +722,13 @@ export async function getFloorBoard(
     // describe only the subset and must not be used — the rows endpoint returns
     // rows only.
     onlyIds?: number[];
+    // OPTIONAL extra filter AND-ed onto the SAME query (2026-10-01, the Tint
+    // Manager's Base tab — code-discovery-2026-10-01-tint-manager-base-tab.md
+    // §A). The predicate stays Floor's own; this only narrows it. Omitted → the
+    // where is byte-identical to before (scripts/parity-floor-rows.ts). Like
+    // onlyIds, the whole-set extras describe the subset and the two SKU reads
+    // are skipped.
+    extraWhere?: Prisma.ordersWhereInput;
   } = {},
 ): Promise<FloorBoardResult> {
   const mode = opts.mode ?? "live";
@@ -841,8 +850,10 @@ export async function getFloorBoard(
         // names; both are handed over rather than re-derived inside.
         floorBoardWhere(getISTDayRange(), todayDateOnly);
 
+  const boardTerms: Prisma.ordersWhereInput[] = opts.onlyIds ? [base, hide, { id: { in: opts.onlyIds } }] : [base, hide];
+  if (opts.extraWhere) boardTerms.push(opts.extraWhere);
   const orders = await prisma.orders.findMany({
-    where: { AND: opts.onlyIds ? [base, hide, { id: { in: opts.onlyIds } }] : [base, hide] },
+    where: { AND: boardTerms },
     include: FLOOR_BOARD_INCLUDE,
   });
 
@@ -1171,10 +1182,11 @@ export async function getFloorBoard(
   // instead of an answer.
   // 7a: the by-id path (opts.onlyIds) skips these two reads — no Floor reader
   // uses them (FLOOR §10b "dead payload") and they would describe a subset.
-  const waitingRows = opts.onlyIds
+  const subset = opts.onlyIds !== undefined || opts.extraWhere !== undefined;
+  const waitingRows = subset
     ? []
     : rows.filter((r) => r.zone !== "upcoming" && !r.isAssigned && !r.isDone && !r.isChecked);
-  const waitingSkuMap = opts.onlyIds ? new Map<string, string[]>() : await skusByObd(waitingRows.map((r) => r.obdNumber));
+  const waitingSkuMap = subset ? new Map<string, string[]>() : await skusByObd(waitingRows.map((r) => r.obdNumber));
   // Emitted in `rows` order, which is FLOOR_SPINE-sorted and obdNumber-tie-
   // broken above — so this array is byte-stable across loads, which is what
   // lib/picking/grouping.ts's determinism contract rests on. A bill with no
@@ -1191,7 +1203,7 @@ export async function getFloorBoard(
   // all, and buildOilGroups against an empty set produces no groups, so the
   // feature is gone rather than merely hidden. The field is always present, so
   // no caller's type moves with the flag.
-  const oilSkus: FloorOilSkus[] = RULE2_ENABLED && !opts.onlyIds ? await oilSkusByOrder(waitingSkus) : [];
+  const oilSkus: FloorOilSkus[] = RULE2_ENABLED && !subset ? await oilSkusByOrder(waitingSkus) : [];
 
   return { mode, date: anchorIso, rows, windows, total: dueRows.length, waitingSkus, oilSkus };
 }

@@ -24,8 +24,11 @@
 // ⚠ NOT canSeeAllOperatorRows (CLAUDE_TINT §13.4) — nothing here decides whose
 // operator rows a query may touch, and nothing here may ever be used to.
 
+import type { Prisma } from "@prisma/client";
 import type { PageKey } from "@/lib/permissions";
 import { checkAnyPermission } from "@/lib/permissions";
+import { PROJECT_SMU_NAMES } from "@/lib/billing/pick-delete-rule";
+import { PICK_ASSIGNED, PICK_DONE } from "@/lib/workflow-stages";
 
 /** Every Tint Manager action that has its own tick. Assign / Re-assign / Send
  *  back / Base bypass are NOT here: they stay on `tint_manager` canEdit alone
@@ -94,10 +97,14 @@ export async function checkTintAction(roles: string[], action: TintAction): Prom
   return null;
 }
 
-/** What tintBillRefusal needs to know about a bill. */
+/** What tintBillRefusal needs to know about a bill. `smu` and `workflowStage`
+ *  are read only by tintManagerBillRefusal (the Base rule); tintBillRefusal
+ *  ignores them, so its callers need not select them. */
 export interface TintBillFacts {
   orderType: string;
   isRemoved: boolean;
+  smu?: string | null;
+  workflowStage?: string;
 }
 
 /**
@@ -108,5 +115,63 @@ export interface TintBillFacts {
 export function tintBillRefusal(order: TintBillFacts | null): string | null {
   if (order === null || order.isRemoved) return "Order not found";
   if (order.orderType !== "tint") return "Not a tint bill — use Floor";
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 THE BASE TAB'S BILLS — "tint OR Base", one owner (2026-10-01)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// docs/prompts/drafts/code-discovery-2026-10-01-tint-manager-base-tab.md §D, §I.
+// A BASE bill is a NON-tint bill (orderType ≠ "tint") whose SMU is a project SMU
+// — 74 Decorative Projects or 77 Retail Offtake. The SMU names come from ONE
+// owner, PROJECT_SMU_NAMES (lib/billing/pick-delete-rule.ts, itself derived from
+// SMU_CODE_BY_NAME + PROJECT_SMU_CODES), and BOTH forms below are built from it,
+// so the Prisma filter and the row predicate cannot describe different sets.
+//
+// The Tint Manager may act on a Base bill ONLY through BASE_ACTIONS. Every other
+// route keeps tintBillRefusal above — tint bills only — so a widening here can
+// never leak into assign / cancel / restore / splits / pick delete.
+
+/** Base bills as a Prisma filter — the Base feed, the Hold / CI tabs and the marker. */
+export const BASE_BILL_WHERE: Prisma.ordersWhereInput = {
+  orderType: { not: "tint" },
+  smu: { in: [...PROJECT_SMU_NAMES] },
+};
+
+/** Base bills as a row predicate — the same rule as BASE_BILL_WHERE. */
+export function isBaseBill(o: { orderType: string; smu?: string | null }): boolean {
+  return o.orderType !== "tint" && typeof o.smu === "string" && PROJECT_SMU_NAMES.includes(o.smu);
+}
+
+/** What the Tint Manager may do to a Base bill (owner, §I). No Hand (decision 5),
+ *  no plain Cancel / Restore / Assign / pick delete (decision 3). */
+export const BASE_ACTIONS: readonly TintAction[] = ["hold", "unhold", "change-slot", "shop-delivery", "ship-to", "ci"];
+
+/** Decision 1 — a Base bill a picker holds is not held from the Tint Manager. */
+export const BASE_PICKER_HOLD_REFUSAL = "A picker has this bill — hold it from Floor if you must";
+const BASE_PICKER_STAGES: readonly string[] = [PICK_ASSIGNED, PICK_DONE];
+
+/**
+ * Why the Tint Manager may NOT do `action` to this bill, or null when it may.
+ *
+ *   - removed / missing → "Order not found" (as tintBillRefusal);
+ *   - a tint bill → allowed (any action; the shared function's stage rules follow);
+ *   - a Base bill → allowed only for BASE_ACTIONS, and hold is refused at
+ *     pick_assigned / pick_done (owner decision 1 — a hold there takes the bill
+ *     off the picker's list mid-pick, lib/picking/queue.ts pins 'dispatch');
+ *   - anything else → "Not a tint or Base bill — use Floor".
+ *
+ * `smu` and (for hold) `workflowStage` must be selected by the caller; a
+ * missing smu reads as not-Base, so a caller that forgets fails closed.
+ */
+export function tintManagerBillRefusal(order: TintBillFacts | null, action: TintAction): string | null {
+  if (order === null || order.isRemoved) return "Order not found";
+  if (order.orderType === "tint") return null;
+  if (!isBaseBill(order)) return "Not a tint or Base bill — use Floor";
+  if (!BASE_ACTIONS.includes(action)) return "Not available on a Base bill — use Floor";
+  if (action === "hold" && order.workflowStage !== undefined && BASE_PICKER_STAGES.includes(order.workflowStage)) {
+    return BASE_PICKER_HOLD_REFUSAL;
+  }
   return null;
 }
