@@ -1754,7 +1754,7 @@ export function TintManagerContent() {
         importVariant="primary"
         suppressFilterBar
         showDatePicker={false}
-        searchPlaceholder="Search OBD, SO, site, route…"
+        searchPlaceholder="Search orders…"
         searchValue={searchQuery}
         onSearchChange={onSearchChange}
         onSearchKeyDown={onSearchKeyDown}
@@ -1865,34 +1865,56 @@ export function TintManagerContent() {
                     )}
                   </div>
                 )}
-                {/* The day — Floor's / Billing's HeaderDateStepper, as-is, plus two
+                {/* ONE CONTROL SET (2026-10-02): every control here is Billing's Filter
+                    button's size — 24px tall, 5px radius, gray-200 border, 10px
+                    text, 11px icons, 7px side padding — so the row reads as one set
+                    centred on the tabs. The shared components are sized from
+                    OUTSIDE by these wrappers (Tint Manager only); their own
+                    defaults — and Floor / Billing — are untouched. The selectors
+                    reach only each control's own trigger buttons: the stepper's
+                    calendar and the popovers' chips render elsewhere / deeper. */}
+                {/* The day — Floor's / Billing's HeaderDateStepper, plus its two
                     defaulted props: weekday labels and the warn tone on a past day. */}
-                <HeaderDateStepper
-                  currentDate={stepperDate}
-                  onDateChange={onStepperChange}
-                  pastLabel="weekday"
-                  tone={historyDate !== null ? "warn" : "default"}
-                />
+                <div className="[&>div>button]:inline-flex [&>div>button]:h-[24px] [&>div>button]:items-center [&>div>button:first-child]:rounded-l-[5px] [&>div>button:last-child]:rounded-r-[5px] [&>div>button>svg]:h-[11px] [&>div>button>svg]:w-[11px]">
+                  <HeaderDateStepper
+                    currentDate={stepperDate}
+                    onDateChange={onStepperChange}
+                    pastLabel="weekday"
+                    tone={historyDate !== null ? "warn" : "default"}
+                  />
+                </div>
                 <div className="w-px h-4 bg-gray-200" />
-                <HeaderFilter
-                  groups={filterGroups}
-                  activeFilters={headerFilters}
-                  onFilterChange={setHeaderFilters}
-                  open={filterOpen}
-                  onOpenChange={setFilterOpen}
-                />
-                {historyDate === null && <button
-                  type="button"
-                  onClick={() => setPullModalOpen(true)}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                  title="Add OBD to Tint (M)"
-                >
-                  <Plus size={12} />
-                  Add to Tint
-                </button>}
-                <div className="w-px h-4 bg-gray-200" />
-                {/* Billing's ⌨ popover in "row" style; controlled so the page's Esc closes it. */}
-                <HeaderShortcuts shortcuts={shortcuts} variant="row" open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+                {/* Filter — the reference control; pinned to the set's 24px. */}
+                <div className="[&>div>button]:h-[24px]">
+                  <HeaderFilter
+                    groups={filterGroups}
+                    activeFilters={headerFilters}
+                    onFilterChange={setHeaderFilters}
+                    open={filterOpen}
+                    onOpenChange={setFilterOpen}
+                  />
+                </div>
+                {/* Billing's ⌨ popover in "row" style, as a 24px square; controlled
+                    so the page's Esc closes it. */}
+                <div className="[&>div>button]:h-[24px] [&>div>button]:w-[24px] [&>div>button]:justify-center [&>div>button]:px-0 [&>div>button>svg]:h-[11px] [&>div>button>svg]:w-[11px]">
+                  <HeaderShortcuts shortcuts={shortcuts} variant="row" open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+                </div>
+                {/* + Add to Tint — the row's primary: the black Import style
+                    (ink-900, white) at the set's size, after a thin divider. */}
+                {historyDate === null && (
+                  <>
+                    <div className="w-px h-4 bg-gray-200" />
+                    <button
+                      type="button"
+                      onClick={() => setPullModalOpen(true)}
+                      className="inline-flex h-[24px] items-center gap-[4px] rounded-[5px] border border-ink-900 bg-ink-900 px-[7px] text-[10px] font-medium text-white transition-colors hover:border-ink-700 hover:bg-ink-700"
+                      title="Add OBD to Tint (M)"
+                    >
+                      <Plus size={11} />
+                      Add to Tint
+                    </button>
+                  </>
+                )}
               </>
             }
           />
