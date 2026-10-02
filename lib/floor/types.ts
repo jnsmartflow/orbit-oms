@@ -494,7 +494,9 @@ export interface FloorHoldRow extends FloorPartyFields {
   heldFrom: HoldSourceLabel;
   /** The latest hold log's changedById; null with no hold log. */
   heldById: number | null;
-  /** heldByLabel(): the person, "System" for user 1 on an import note, null with no log. */
+  /** Set in getFloorHold (876acb50): the person when known; "System" whenever the hold
+   *  is automatic — user 1 on an import note (heldByLabel) OR heldFrom "Auto (mail
+   *  order)", logged or not; null ("—") only when nothing is known. */
   heldByName: string | null;
 }
 

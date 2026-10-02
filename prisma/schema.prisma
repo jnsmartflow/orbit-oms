@@ -228,6 +228,12 @@ model users {
   mailOrdersHand              mo_orders[]              @relation("MoOrderHandBy")
   // Who pressed ⚑ Hold on a mail order (2026-10-01, Schema v27.50) — the FOURTH FK.
   moOrdersHeld                mo_orders[]              @relation("MoOrderHeldBy")
+  // Freight Trips (2026-10-02, Schema v27.51) — all named on both sides.
+  freightTripsCreated         freight_trips[]          @relation("FreightTripCreatedBy")
+  freightTripsCancelled       freight_trips[]          @relation("FreightTripCancelledBy")
+  freightBillsAdded           freight_trip_bills[]     @relation("FreightTripBillAddedBy")
+  freightBillsRemoved         freight_trip_bills[]     @relation("FreightTripBillRemovedBy")
+  freightTripActivity         freight_trip_activity[]  @relation("FreightTripActivityActor")
   lineStatuses                mo_line_status[]
   // Multi-role back-relations
   userRoles                   user_roles[]             @relation("UserRoleAssignments")
@@ -527,6 +533,8 @@ model transporter_master {
   // Trip module (2026-09-09). ONE FK from `trips` to this model, so the
   // relation is deliberately UNNAMED — same call as `vehicles` above.
   trips             trips[]
+  // Freight Trips (2026-10-02) — ONE FK from freight_trips, so unnamed too.
+  freightTrips      freight_trips[]
 }
 
 // ─────────────────────────────────────────────
@@ -1121,6 +1129,9 @@ model orders {
   // cancelled THIS bill as a same-SO duplicate. NAMED in the SoTagMatchOrder
   // style. A stored link only: the cancel itself is workflowStage/dispatchStatus.
   pickDeleteDecisions      pick_delete_decisions[]   @relation("PickDeleteDeletedOrder")
+  // Freight Trips (2026-10-02, Schema v27.51) — membership rows only. A STORED
+  // LINK: no freight action ever writes this order (lib/freight-trips/*).
+  freightTripBills         freight_trip_bills[]      @relation("FreightTripBillOrder")
   // TM Remove OBD (Feature 1)
   isRemoved                Boolean                   @default(false)
   removalReason            String?
@@ -1603,6 +1614,9 @@ model vehicle_master {
   // here; it is denormalised on purpose, the same call pick_findings makes for
   // obdNumber/skuCodeRaw (CORE §7.4).
   trips               trips[]
+  // Freight Trips (2026-10-02) — ONE FK from freight_trips, so unnamed. Same
+  // snapshot rule: the freight trip's driver is copied, never read through here.
+  freightTrips        freight_trips[]
 }
 
 model dispatch_plans {
@@ -3863,6 +3877,96 @@ model trip_activity {
   // second is for a future cross-trip audit view; it has no caller today.
   @@index([tripId, createdAt], map: "trip_activity_trip_idx")
   @@index([createdAt(sort: Desc)], map: "trip_activity_created_idx")
+}
+
+// ─────────────────────────────────────────────
+// FREIGHT TRIPS (2026-10-02, Schema v27.51, sql/2026-10-02-freight-trips.sql)
+// ─────────────────────────────────────────────
+//
+// A REPORT-ONLY "paper trip" layer over HELD bills — NOT Orbit's `trips` above.
+// Ops group held bills into a freight trip with its own vehicle / transporter /
+// driver; a future freight report reads the active freight trip's vehicle for a
+// bill instead of its real trip. Code: lib/freight-trips/*, app/api/freight-trips/*.
+//
+// 🔴 A FREIGHT TRIP NEVER WRITES orders, trips, trip_drops, trip_activity or
+// order_status_logs. A held bill stays held; the floor never sees freight.
+// 🔴 NO live_changes trigger on these three tables, on purpose (CORE §13): the
+// generic trip trigger would publish freight ids as entity='trip' into Floor's
+// feed, where they are a different id space.
+// Rows are never deleted: cancel / remove stamp removedAt, and freight_trip_activity
+// is ON DELETE RESTRICT.
+
+model freight_trips {
+  id             Int       @id @default(autoincrement())
+  tripNumber     String    @unique // F-YYMMDD-NN, never reused (lib/freight-trips/number.ts)
+  tripDate       DateTime  @db.Date
+  seq            Int
+  vehicleId      Int?
+  vehicle        vehicle_master?     @relation(fields: [vehicleId], references: [id])
+  adhocVehicleNo String?
+  transporterId  Int?
+  transporter    transporter_master? @relation(fields: [transporterId], references: [id])
+  driverName     String? // SNAPSHOT — copied from vehicle_master or typed; never read through vehicleId
+  driverPhone    String? // SNAPSHOT
+  note           String?
+  status         String    @default("active") // FREIGHT_TRIP_STATUS (lib/freight-trips/status.ts)
+  cancelledAt    DateTime? @db.Timestamptz(6)
+  cancelledById  Int?
+  cancelledBy    users?    @relation("FreightTripCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  createdById    Int
+  createdBy      users     @relation("FreightTripCreatedBy", fields: [createdById], references: [id])
+  updatedAt      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  bills          freight_trip_bills[]
+  activity       freight_trip_activity[]
+
+  // Live CHECKs, not expressible here (sql/2026-10-02-freight-trips.sql):
+  //   chk_freight_trips_status            status IN ('active','cancelled')
+  //   chk_freight_trips_seq_positive      seq >= 1
+  //   chk_freight_trips_number_shape      "tripNumber" = 'F-' || YYMMDD("tripDate") || '-' || lpad(seq, greatest(2, len))
+  //   chk_freight_trips_vehicle_one_of    NOT (vehicleId AND adhocVehicleNo)
+  //   chk_freight_trips_cancelled_complete status <> 'cancelled' OR (cancelledAt AND cancelledById)
+  // Its index leads on tripDate: serves the day's list AND the report's date range.
+  @@unique([tripDate, seq])
+}
+
+model freight_trip_bills {
+  id            Int       @id @default(autoincrement())
+  freightTripId Int
+  freightTrip   freight_trips @relation(fields: [freightTripId], references: [id], onDelete: Restrict)
+  orderId       Int
+  order         orders    @relation("FreightTripBillOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  addedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  addedById     Int
+  addedBy       users     @relation("FreightTripBillAddedBy", fields: [addedById], references: [id])
+  removedAt     DateTime? @db.Timestamptz(6)
+  removedById   Int?
+  removedBy     users?    @relation("FreightTripBillRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+  removedReason String? // REMOVED_REASON: removed | trip_cancelled (chk_freight_trip_bills_removed_reason)
+
+  // 🔴 THE RULE "one bill on at most ONE active freight trip" is a PARTIAL unique
+  // index, live-only and NOT modellable here — do NOT add @@unique([orderId]):
+  //   freight_trip_bills_order_active_key UNIQUE ("orderId") WHERE "removedAt" IS NULL
+  // A P2002 from it reports meta.target = ["orderId"] (field names — lib/trips/number.ts note).
+  // chk_freight_trip_bills_removed_complete: (removedAt IS NULL) = (removedReason IS NULL)
+  //   AND (removedById IS NULL OR removedAt IS NOT NULL).
+  @@index([freightTripId])
+  @@index([orderId])
+}
+
+model freight_trip_activity {
+  id            Int      @id @default(autoincrement())
+  freightTripId Int
+  freightTrip   freight_trips @relation(fields: [freightTripId], references: [id], onDelete: Restrict)
+  action        String   // FREIGHT_ACTIONS (chk_freight_trip_activity_action)
+  actorId       Int
+  actor         users    @relation("FreightTripActivityActor", fields: [actorId], references: [id])
+  summary       String
+  detail        Json?
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([freightTripId, createdAt])
+  @@index([createdAt(sort: Desc)], map: "freight_trip_activity_created_idx")
 }
 
 // ─────────────────────────────────────────────

@@ -378,6 +378,15 @@ export type PageKey =
   // It joins the nav in step 6, and its POSITION there is behaviour, not
   // cosmetics — see the PAGE_NAV_MAP comment above `mrn`.
   | "ci"
+  // Freight Trips (2026-10-02) — the report-only "paper trip" layer over HELD
+  // bills (lib/freight-trips, app/api/freight-trips). canView = read the pool,
+  // trips and options; canEdit = create / edit / add-remove bills / cancel.
+  // ⚠ NOT `floor`: freight routes gate on this key ONLY. Granted per user
+  // (user_page_access rows, Smart Flow SQL), never seed.
+  // ⚠ NOT YET in PAGE_NAV_MAP / ACCESS_SECTIONS / ICON_MAP — the screen and nav
+  // land in step 7. Until then /admin/access shows its "Section map out of step"
+  // banner naming this key (a runtime banner, not a compile error).
+  | "freight_trips"
   | "delivery_challans"
   | "shade_master"
   | "sampling_library"
@@ -452,7 +461,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // its host screen. It is NOT `picking` on the line above — that is the floor
   // board. Keep them visually apart in this list, never adjacent.
   "place_order", "place_order_ship_to", "trip_report", "mail_orders", "billing_picking", "billing_print",
-  "billing_telephonic", "billing_pick_delete", "mrn", "ci",
+  "billing_telephonic", "billing_pick_delete", "mrn", "ci", "freight_trips",
   // The six Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
   // /mail-orders, not routes of their own.
@@ -540,6 +549,9 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     "tint_urgent",
     // Bulk TI (2026-10-02) — app/api/tint/manager/ti-bulk.
     "tint_ti_bulk",
+    // Freight Trips (2026-10-02) — every write under app/api/freight-trips gates
+    // on freight_trips canEdit (create, PATCH, bills add/remove, cancel).
+    "freight_trips",
   ],
   // Two helper call sites — import/obd:3796 and sampling-library:253 — plus the
   // CSV import buttons on the four master-data screens, which read canImport
