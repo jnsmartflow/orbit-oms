@@ -4,14 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getISTTodayDateOnly } from "@/lib/floor/queries";
-import { customerMissingWhere, type MissingCustomerBill } from "@/lib/tint/customer-missing";
+import { CUSTOMER_MISSING_IDS_SQL, CUSTOMER_MISSING_SMUS, type MissingCustomerBill } from "@/lib/tint/customer-missing";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/tint/manager/missing-customers — the open SMU 74/77 bills whose SAP
  * ship-to is not in the customer master. The rule is lib/tint/customer-missing.ts
- * (customerMissingWhere); the page narrows it to the bills it shows today.
+ * (CUSTOMER_MISSING_IDS_SQL — open stages up to checked, effective ship-to vs
+ * the master, not the flag alone); the page narrows it to the bills it shows today.
  *
  * Gate: tint_manager canView. READ-ONLY, sequential awaits (CORE §3).
  *
@@ -33,8 +34,12 @@ export async function GET(): Promise<NextResponse> {
 
   const hideExclusion = await getHideExclusion();
 
-  const rows = await prisma.orders.findMany({
-    where: { AND: [customerMissingWhere(), hideExclusion] },
+  // The rule — one read-only statement (ids), then the details + hide rules.
+  const idRows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(CUSTOMER_MISSING_IDS_SQL, CUSTOMER_MISSING_SMUS);
+  const ids = idRows.map((r) => Number(r.id));
+
+  const rows = ids.length === 0 ? [] : await prisma.orders.findMany({
+    where: { AND: [{ id: { in: ids } }, hideExclusion] },
     select: {
       id: true,
       obdNumber: true,

@@ -7,11 +7,20 @@
 // A bill is a MISSING-CUSTOMER bill when:
 //   - SMU is one of the two project divisions (PROJECT_SMU_NAMES: 74 Decorative
 //     Projects, 77 Retail Offtake);
-//   - it is open: not removed, not cancelled, not past support;
-//   - `orders.customerMissing` is true: its SAP ship-to code is not in
-//     delivery_point_master (stamped at import; flipped false by a re-import
-//     or by the customer save's backfill, app/api/admin/customers POST).
-// The ROUTE applies this (plus the admin hide rules). The page then marks only
+//   - it is OPEN: not removed, not cancelled, not dispatched. ANY other stage
+//     counts — picking, picked and checked included (2026-10-02 fix: the first
+//     version fenced out every stage ranked >= 60, copied from the old badge,
+//     so no Base bill past the support desk could ever qualify);
+//   - its EFFECTIVE ship-to is not in the customer master: no ship-to override
+//     customer is set (an override always points at a real master row — it is
+//     a foreign key — so an overridden bill is NOT missing) AND either the SAP
+//     ship-to code has no delivery_point_master row OR `orders.customerMissing`
+//     is still true. The flag alone is not trusted (it is stamped at import and
+//     only cleared by a re-import or the customer save's backfill), and the
+//     master alone is not trusted either (a flag still set means nobody linked
+//     the bill).
+// The ROUTE applies this as ONE SQL statement (CUSTOMER_MISSING_IDS_SQL, a
+// plain string so this file stays client-safe), then the admin hide rules. The page then marks only
 // the bills it actually SHOWS today (rail, Base, Hold, and Tint / TI if any),
 // via `missingOnBoard`: never CI, Delete or history.
 //
@@ -22,19 +31,26 @@
 // PURE apart from Prisma TYPES: no prisma client, no clock, so client
 // components import it too.
 
-import type { Prisma } from "@prisma/client";
 import { PROJECT_SMU_NAMES } from "@/lib/billing/pick-delete-rule";
-import { SUPPORT_DONE_STAGE_NAMES } from "@/lib/workflow-stages";
 
-/** The scope rule — AND it with the hide exclusion. */
-export function customerMissingWhere(): Prisma.ordersWhereInput {
-  return {
-    customerMissing: true,
-    smu:             { in: [...PROJECT_SMU_NAMES] },
-    workflowStage:   { notIn: ["cancelled", ...SUPPORT_DONE_STAGE_NAMES] },
-    isRemoved:       false,
-  };
-}
+/** The SMU names the rule covers — the SQL's $1. */
+export const CUSTOMER_MISSING_SMUS: string[] = [...PROJECT_SMU_NAMES];
+
+/**
+ * THE RULE, as one read-only statement returning order ids. One LEFT JOIN on
+ * the unique customerCode — no per-bill lookup. Run with
+ * prisma.$queryRawUnsafe(CUSTOMER_MISSING_IDS_SQL, CUSTOMER_MISSING_SMUS).
+ */
+export const CUSTOMER_MISSING_IDS_SQL = `
+  SELECT o.id
+  FROM orders o
+  LEFT JOIN delivery_point_master d ON d."customerCode" = o."shipToCustomerId"
+  WHERE o.smu = ANY($1::text[])
+    AND o."isRemoved" = false
+    AND o."workflowStage" NOT IN ('cancelled', 'dispatched')
+    AND o."shipToOverrideCustomerId" IS NULL
+    AND (d.id IS NULL OR o."customerMissing" = true)
+`;
 
 /** One missing-customer bill, as the route returns it. */
 export interface MissingCustomerBill {
