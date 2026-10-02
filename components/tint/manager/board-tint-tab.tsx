@@ -67,6 +67,8 @@ const pct = (m: number) => Math.min(100, Math.max(0, ((m - T0) / (T1 - T0)) * 10
 const fmtL = (v: number) => v.toLocaleString("en-IN", { maximumFractionDigits: 1 });
 /** "2 Drum, 3 Tin" → "2 Drum · 3 Tin"; NULL article tags never become zero. */
 const artsOf = (rows: BoardRow[]) => aggregateArticleTags(rows.map((r) => r.articleTag))?.replace(/, /g, " · ") ?? "—";
+// Litres / articles are TINT LINES ONLY since 2026-10-02: every row's
+// volumeLitres + articleTag come from lib/tint/tint-lines.ts (via rows.ts).
 const litresOf = (rows: BoardRow[]) => rows.reduce((n, r) => n + (r.volumeLitres ?? 0), 0);
 const isDone = (r: BoardRow) => r.status === "tinting_done";
 const ms = (iso: string | null) => (iso ? Date.parse(iso) : NaN);
@@ -254,6 +256,23 @@ export function BoardTintTab({
   );
 }
 
+/**
+ * PACE — ONE rule for the top card and each operator (2026-10-02): tint litres
+ * of the finished jobs ÷ hours from the FIRST job start on the day (any status)
+ * to now — on a history day, to the LAST finish. Null with no start or no time.
+ */
+function paceOf(rows: BoardRow[], nowMs: number, history: boolean) {
+  const done = rows.filter(isDone);
+  const day = istDay(nowMs);
+  const starts = rows.map((r) => ms(r.startedAt)).filter((t) => !Number.isNaN(t) && istDay(t) === day);
+  const first = starts.length > 0 ? Math.min(...starts) : null;
+  const finishes = done.map((r) => ms(r.completedAt)).filter((t) => !Number.isNaN(t));
+  const until = history && finishes.length > 0 ? Math.max(...finishes) : nowMs;
+  const hours = first !== null ? (until - first) / 3_600_000 : 0;
+  const pace = first !== null && hours > 0 ? litresOf(done) / hours : null;
+  return { pace, first, until };
+}
+
 // ── 1. Summary ───────────────────────────────────────────────────────────────
 
 function SummaryCard({ groups, nowMs, history = false }: { groups: BoardGroup[]; nowMs: number; history?: boolean }) {
@@ -262,15 +281,8 @@ function SummaryCard({ groups, nowMs, history = false }: { groups: BoardGroup[];
     const done = rows.filter(isDone);
     const open = rows.filter((r) => !isDone(r));
     const doneL = litresOf(done);
-    const today = istDay(nowMs);
-    // Pace: litres done per hour since the FIRST job start today (any status).
-    const starts = rows.map((r) => ms(r.startedAt)).filter((t) => !Number.isNaN(t) && istDay(t) === today);
-    const first = starts.length > 0 ? Math.min(...starts) : null;
-    // History: pace runs to the LAST finish on D, not to the end of the day.
-    const finishes = done.map((r) => ms(r.completedAt)).filter((t) => !Number.isNaN(t));
-    const until = history && finishes.length > 0 ? Math.max(...finishes) : nowMs;
-    const hours = first !== null ? (until - first) / 3_600_000 : 0;
-    const pace = first !== null && hours > 0 ? doneL / hours : null;
+    // Pace: tint litres done per hour since the FIRST job start (paceOf).
+    const { pace, first, until } = paceOf(rows, nowMs, history);
     // Average job: start → done minutes over today's finished jobs that carry both.
     const spans = done
       .map((r) => (ms(r.completedAt) - ms(r.startedAt)) / 60000)
@@ -306,7 +318,7 @@ function SummaryCard({ groups, nowMs, history = false }: { groups: BoardGroup[];
             <div className={label}>Still to tint</div>
             <div className={value}>{fmtL(s.openL)}<small className={unit}>L</small></div>
             <div className={sub}>
-              {s.open.length} {s.open.length === 1 ? "job" : "jobs"} across {s.openOps} {s.openOps === 1 ? "operator" : "operators"}
+              {s.open.length} {s.open.length === 1 ? "job" : "jobs"} · {artsOf(s.open)} · {s.openOps} {s.openOps === 1 ? "operator" : "operators"}
             </div>
           </div>
         )}
@@ -451,10 +463,16 @@ function OperatorsCard({
               <DayLane rows={g.rows} nowMs={nowMs} patternId={patternId} showNow={!history} />
             </div>
 
-            {/* right — today's output */}
-            <div className="flex flex-col items-end justify-center pr-5 text-right">
+            {/* right — this operator's tinted litres (tint lines only) + their own
+                pace (paceOf, the top card's rule). "—" before a finished job. */}
+            <div className="flex flex-col items-end justify-center pr-5 text-right" title={artsOf(done)}>
               <b className="text-[18px] tracking-[-.01em] tabular-nums text-ink-900">{fmtL(litresOf(done))} L</b>
-              <span className="text-[11.5px] text-ink-500">{artsOf(done)}</span>
+              <span className="text-[11.5px] text-ink-500">
+                {(() => {
+                  const p = done.length > 0 ? paceOf(g.rows, nowMs, history).pace : null;
+                  return p !== null ? `avg ${fmtL(Math.round(p))} L/hr` : "—";
+                })()}
+              </span>
             </div>
           </div>
         );

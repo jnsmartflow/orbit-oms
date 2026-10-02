@@ -104,6 +104,10 @@ export interface TintOrder {
     totalLines:  number;
     articleTag:  string | null;
   } | null;
+  /** Tint lines only (lib/tint/tint-lines.ts) — the Tint tab's figures. Null =
+   *  no tint line on file (fall back to the whole bill). Added 2026-10-02. */
+  tintVolume?:     number | null;
+  tintArticleTag?: string | null;
   tintAssignments: TintAssignmentInfo[];
   lineItems: {
     id:                number;
@@ -260,6 +264,9 @@ export interface CompletedAssignment {
   isKeyCustomer:    boolean;
   /** The bill's redirected site (orders.shipToOverrideCustomerId), or null. */
   shipToOverrideName: string | null;
+  /** Tint lines only (lib/tint/tint-lines.ts), added 2026-10-02. */
+  tintVolume?:     number | null;
+  tintArticleTag?: string | null;
   assignedTo:  { id: number; name: string | null };
   order: {
     id:                 number;

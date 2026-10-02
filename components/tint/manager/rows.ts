@@ -108,8 +108,10 @@ function rowFromOrder(o: TintOrder, status: BoardRowStatus): BoardRow | null {
     siteName:        siteNameOf(o, o.shipToOverrideName).site,
     originalSiteName: siteNameOf(o, o.shipToOverrideName).original,
     route:           o.route ?? null,
-    volumeLitres:    o.querySnapshot?.totalVolume ?? null,
-    articleTag:      o.articleTag ?? o.querySnapshot?.articleTag ?? null,
+    // Tint lines only (2026-10-02, lib/tint/tint-lines.ts); the whole bill only
+    // when no tint line is on file.
+    volumeLitres:    o.tintVolume ?? o.querySnapshot?.totalVolume ?? null,
+    articleTag:      o.tintVolume != null ? o.tintArticleTag ?? null : (o.articleTag ?? o.querySnapshot?.articleTag ?? null),
     splitNumber:     null,
     operatorId:      a.assignedTo.id,
     operatorName:    a.assignedTo.name ?? "—",
@@ -213,8 +215,10 @@ function rowFromCompletedAssignment(a: CompletedAssignment): BoardRow {
     siteName:        siteNameOf(a.order, a.shipToOverrideName).site,
     originalSiteName: siteNameOf(a.order, a.shipToOverrideName).original,
     route:           a.route ?? null,
-    volumeLitres:    a.order.querySnapshot?.totalVolume ?? null,
-    articleTag:      a.articleTag ?? a.order.querySnapshot?.articleTag ?? null,
+    // Tint lines only (2026-10-02, lib/tint/tint-lines.ts); the whole bill only
+    // when no tint line is on file.
+    volumeLitres:    a.tintVolume ?? a.order.querySnapshot?.totalVolume ?? null,
+    articleTag:      a.tintVolume != null ? a.tintArticleTag ?? null : (a.articleTag ?? a.order.querySnapshot?.articleTag ?? null),
     splitNumber:     null,
     operatorId:      a.assignedTo.id,
     operatorName:    a.assignedTo.name ?? "—",

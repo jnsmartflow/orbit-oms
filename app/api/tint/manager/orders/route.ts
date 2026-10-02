@@ -6,6 +6,7 @@ import { resolveFiniMap } from "@/lib/fini-resolver";
 import { buildSkuDisplay } from "@/types/sku-display";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { aggregateArticleTags } from "@/lib/article-tag-parse";
+import { tintLinesOf } from "@/lib/tint/tint-lines";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
@@ -679,6 +680,26 @@ export async function GET(req: Request): Promise<NextResponse> {
       linesByObd.get(line.obdNumber)!.push(line);
     }
 
+    // ── Tint-only litres + articles (2026-10-02, lib/tint/tint-lines.ts) ──────
+    // The Tint tab counts ONLY tint lines. Completed jobs (Set E, live and
+    // history) are keyed on tint_assignments and their bills are not all in
+    // `linesByObd`, so their lines are read here — ONE batched SELECT.
+    const tintLinesByObd = new Map<string, Array<{ isTinting: boolean; volumeLine: number | null; articleTag: string | null }>>();
+    for (const [obd, ls] of Array.from(linesByObd.entries())) tintLinesByObd.set(obd, ls);
+    const missingTintObds = Array.from(new Set(completedAssignments.map((a) => a.order.obdNumber)))
+      .filter((obd) => !tintLinesByObd.has(obd));
+    if (missingTintObds.length > 0) {
+      const extra = await prisma.import_raw_line_items.findMany({
+        where:  { obdNumber: { in: missingTintObds }, lineStatus: "active" },
+        select: { obdNumber: true, isTinting: true, volumeLine: true, articleTag: true },
+      });
+      for (const l of extra) {
+        const list = tintLinesByObd.get(l.obdNumber) ?? [];
+        list.push(l);
+        tintLinesByObd.set(l.obdNumber, list);
+      }
+    }
+
     // ── Assemble final payloads ────────────────────────────────────────────────
     const ordersWithLines = orders.map((o) => {
       // Compute remainingQty: total raw-line unitQty minus qty assigned to non-cancelled splits.
@@ -829,6 +850,8 @@ export async function GET(req: Request): Promise<NextResponse> {
         // article tag at all (untagged = loose tins), so the consumer must
         // render an em dash rather than a zero.
         articleTag:       aggregateArticleTags(lines.map((l) => l.articleTag)),
+        // NEW fields — the Tint tab's tint-only figures (full-bill fields unchanged).
+        ...tintLinesOf(lines),
 
         isKeyCustomer:    (o as any).customer?.isKeyCustomer ?? false,
 
@@ -941,6 +964,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       soNumber:         a.order.soNumber ?? null,
       route:            (a.order as any).customer?.area?.primaryRoute?.name ?? null,
       articleTag:       (a.order as any).querySnapshot?.articleTag ?? null,
+      // NEW fields — the Tint tab's tint-only figures (full-bill fields unchanged).
+      ...tintLinesOf(tintLinesByObd.get(a.order.obdNumber) ?? []),
       isKeyCustomer:    (a.order as any).customer?.isKeyCustomer ?? false,
       shipToOverrideName: overrideNameOf(a.order.id),
     }));
