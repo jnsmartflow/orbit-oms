@@ -13,6 +13,11 @@
 // Fixed table (CLAUDE_UI §27), the board table's Floor-copied typography.
 // "Held since" is Floor's read-side rule (CLAUDE_FLOOR §4.5): the hold EVENT's
 // time, "~" when only the arrival date is known.
+//
+// BASE BILLS (2026-10-01, Base tab 4B — owner §I-7): held non-tint SMU 74/77
+// bills are listed here too (a held bill leaves Floor's board, so this is where
+// it is released). Their stage cell is FLOOR'S pill, not a tint stage; Release
+// works as for any row (unhold). The bar hides the tint-only items for them.
 
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
@@ -20,6 +25,7 @@ import { heldSinceLabel, holdAgeDays } from "@/lib/floor/hold-log";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { TintHoldRow } from "./types";
 import { StatusPill } from "./board-bits";
+import { StatusPill as FloorStatusPill, rowStatus } from "@/components/floor/status-pill";
 import { BoardSlotCell } from "./board-slot-cell";
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
@@ -29,8 +35,23 @@ const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-
 // Tint stage 15 · ⋯ 4 = 100.
 const COLS = ["11%", "15%", "20%", "8%", "11%", "10%", "6%", "15%", "4%"] as const;
 
+/** A held BASE bill's Floor pill. The row carries only its stage, so the flags
+ *  are derived with the SAME rule getFloorBoard and getOrderDetail use
+ *  (lib/floor/queries.ts, lib/floor/order-detail.ts): checked includes
+ *  dispatched. Then Floor's own rowStatus decides the pill. */
+function FloorStageCell({ stage }: { stage: string }) {
+  const status = rowStatus({
+    isAssigned:   stage === "pick_assigned",
+    isDone:       stage === "pick_done",
+    isChecked:    stage === "pick_checked" || stage === "dispatched",
+    isDispatched: stage === "dispatched",
+  });
+  return <FloorStatusPill status={status} heldBack={false} />;
+}
+
 /** The tint stage, in the board's own pill where one exists. */
 function StageCell({ r }: { r: TintHoldRow }) {
+  if (!r.isTint) return <FloorStageCell stage={r.workflowStage} />;
   const first = r.operatorName?.split(" ")[0] ?? null;
   if (r.workflowStage === "pending_tint_assignment") {
     return <span className="rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]">Waiting</span>;
@@ -83,7 +104,7 @@ export function BoardHoldTab({
       {error && <div className="px-3.5 py-2 text-[11px] text-danger-text bg-danger-bg border-b border-danger-bd">{error}</div>}
       <div className={cn("flex-1 overflow-y-auto", barUp && "pb-[96px]")}>
         {rows !== null && rows.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[11.5px] text-gray-400">No tint bills on hold</div>
+          <div className="px-4 py-10 text-center text-[11.5px] text-gray-400">No bills on hold</div>
         ) : rows !== null ? (
           <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
             <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
@@ -96,7 +117,7 @@ export function BoardHoldTab({
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Slot</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Held since</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
-                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Tint stage</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Stage</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")} />
               </tr>
             </thead>

@@ -11,6 +11,11 @@
 // number — the feed reads only non-voided, non-draft CIs) shows "CI live"
 // instead: its return is on billing's desk, and the route refuses it anyway.
 //
+// BASE BILLS (2026-10-01, Base tab 4B — owner §I-3): a Base bill's CI shows here
+// too. Restore stays TINT-ONLY — a Base row never draws the button (the restore
+// route refuses it anyway): "CI live" when it carries a live CI, else nothing (a
+// Base bill Floor cancelled without a CI is restored from Floor).
+//
 // Not selectable: the tab's only job is per-row Restore, so there is nothing for
 // the bottom bar to do here. Fixed table (CLAUDE_UI §27), board typography.
 
@@ -48,7 +53,7 @@ export function BoardCiTab({
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
       <div className="px-3.5 py-2.5 text-[10.5px] text-gray-400 border-b border-gray-100">
-        Tint bills cancelled or returned today · Restore sends a bill that never finished tinting back to the tint rail
+        Tint and Base bills cancelled or returned today · Restore (tint bills only) sends a bill that never finished tinting back to the tint rail
       </div>
       {error && <div className="px-3.5 py-2 text-[11px] text-danger-text bg-danger-bg border-b border-danger-bd">{error}</div>}
       <div className="flex-1 overflow-y-auto">
@@ -103,7 +108,7 @@ export function BoardCiTab({
                     <td className={cn(TD, "text-right")}>
                       {ciLive ? (
                         <span className="text-[10.5px] text-[#9ca3af]" title="The return is on billing's desk — it can't be restored here">CI live</span>
-                      ) : canRestore ? (
+                      ) : canRestore && r.isTint ? (
                         <button
                           type="button"
                           disabled={restoringId !== null}

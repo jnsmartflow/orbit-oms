@@ -31,6 +31,15 @@
 // z-50 modals rendered after it (pause / skip history, Remove OBD, the
 // customer-missing sheet) still open ABOVE it.
 // ⚠ NO KEY LISTENER — tint-manager-content.tsx is the single Esc owner.
+//
+// BASE BILLS (2026-10-01, Base tab 4B — owner §I): a non-tint SMU 74/77 bill,
+// opened from the Base tab (target "base") or as a held bill from the Hold tab.
+// It gets Floor's status pill (rowStatus over the payload's picking flags) and
+// the trip number as Floor stores it; the action row is Release when held, else
+// Change ship-to as the brand button (Floor's own panel rule, UI §10); ⋯ offers
+// only the Base actions — Hold · Shop delivery · Raise CI. Assign / Re-assign /
+// Send back / Stop & cancel / Cancel / Remove OBD / Hand, the tint operator box
+// and the pause / skip links never render for a non-tint bill.
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, History, Loader2, Pause, Scissors, SkipForward, Undo2, X } from "lucide-react";
@@ -40,11 +49,11 @@ import { HandBadge } from "@/components/shared/hand-badge";
 import { DetailItems } from "@/components/floor/detail-items";
 import { DetailDetails } from "@/components/floor/detail-details";
 import { DetailActivity } from "@/components/floor/detail-activity";
-import { ON_HOLD_PILL_CLS } from "@/components/floor/status-pill";
+import { ON_HOLD_PILL_CLS, StatusPill as FloorStatusPill, rowStatus } from "@/components/floor/status-pill";
 import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import { ShipToEditor } from "@/components/floor/ship-to-editor";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
-import type { FloorDetail } from "@/lib/floor/types";
+import type { FloorBoardRow, FloorDetail } from "@/lib/floor/types";
 import { humaniseReason } from "@/lib/tint/pause-reasons";
 import { OperatorAvatar, OperatorMenu, StatusPill, istDateTime } from "./board-bits";
 import { slotLabel, slotValueOf } from "./board-slot-cell";
@@ -54,7 +63,8 @@ import type { BoardRow, BoardRowStatus, Operator, TintHoldRow, TintOrder } from 
 export type PanelTarget =
   | { kind: "pending"; order: TintOrder }
   | { kind: "row"; row: BoardRow }
-  | { kind: "hold"; hold: TintHoldRow };
+  | { kind: "hold"; hold: TintHoldRow }
+  | { kind: "base"; row: FloorBoardRow };
 
 type Tab = "items" | "details" | "activity";
 
@@ -81,6 +91,8 @@ export interface TintPanelActions {
   onCancel:      (bill: PanelBill) => void;
   onStopCancel:  (bill: PanelBill & { operatorName: string; status: string }) => void;
   onRaiseCi:     (bill: PanelBill) => void;
+  /** Base bills only — Shop delivery for this one bill (the bar's confirm). */
+  onShopDelivery: (bill: PanelBill) => void;
 }
 
 /** The bill as the cancel / CI forms need it. */
@@ -146,13 +158,22 @@ export function BoardDetailPanel({
   const order: TintOrder | undefined =
     target.kind === "pending" ? target.order : target.kind === "row" ? target.row.order : undefined;
   const row = target.kind === "row" ? target.row : null;
+  const baseRow = target.kind === "base" ? target.row : null;
   const orderId =
-    target.kind === "pending" ? target.order.id : target.kind === "row" ? target.row.orderId : target.hold.orderId;
-  const targetKey = target.kind === "pending" ? `pending-${orderId}` : target.kind === "row" ? target.row.key : `hold-${orderId}`;
+    target.kind === "pending" ? target.order.id
+    : target.kind === "row" ? target.row.orderId
+    : target.kind === "hold" ? target.hold.orderId
+    : target.row.orderId;
+  const targetKey =
+    target.kind === "pending" ? `pending-${orderId}`
+    : target.kind === "row" ? target.row.key
+    : target.kind === "hold" ? `hold-${orderId}`
+    : `base-${orderId}`;
   const isHand =
     target.kind === "pending" ? target.order.handAt != null
     : target.kind === "row" ? target.row.isHand
-    : target.hold.isHand;
+    : target.kind === "hold" ? target.hold.isHand
+    : target.row.isHand;
 
   // ── The bill's payload — the SAME builder Floor's panel reads ──────────
   const [detail, setDetail] = useState<FloorDetail | null>(null);
@@ -181,13 +202,29 @@ export function BoardDetailPanel({
   }, [targetKey, firstTab]);
 
   const d = detail;
-  const status = d ? stageStatus(d) : null;
+  // A BASE bill (non-tint): from the Base tab, a held one from the Hold tab, or —
+  // once loaded — whatever the payload says. Decides every tint-only render.
+  const nonTint =
+    target.kind === "base" || (target.kind === "hold" && !target.hold.isTint) || (d !== null && !d.isTint);
+  const status = d && !nonTint ? stageStatus(d) : null;
+  // Floor's pill for a Base bill — the payload carries Floor's picking flags.
+  const floorStatus = d && nonTint && d.workflowStage !== "cancelled" ? rowStatus(d) : null;
+  const tripNumber = baseRow?.tripNumber ?? null;
   const held = d?.dispatchStatus === "hold";
   const inTintRoom = d ? TINT_ROOM.includes(d.workflowStage) : false;
-  const siteName = d ? d.shipToName : target.kind === "row" ? target.row.siteName : target.kind === "hold" ? target.hold.dealerName : "—";
+  const siteName = d ? d.shipToName
+    : target.kind === "row" ? target.row.siteName
+    : target.kind === "hold" ? target.hold.dealerName
+    : target.kind === "base" ? target.row.dealerName
+    : "—";
   const bill: PanelBill = {
     orderId,
-    obdNumber: d?.obdNumber ?? (target.kind === "pending" ? target.order.obdNumber : target.kind === "row" ? target.row.obdNumber : target.hold.obdNumber),
+    obdNumber: d?.obdNumber ?? (
+      target.kind === "pending" ? target.order.obdNumber
+      : target.kind === "row" ? target.row.obdNumber
+      : target.kind === "hold" ? target.hold.obdNumber
+      : target.row.obdNumber
+    ),
     siteName,
     litres: d?.totalLitres ?? null,
   };
@@ -203,6 +240,13 @@ export function BoardDetailPanel({
           Release
         </button>
       );
+    }
+    // A Base bill's job here is its delivery point — Floor's panel rule (UI §10:
+    // Ship-to is the brand button in most states). Never Assign / Re-assign.
+    if (nonTint) {
+      return access.canShipTo && d.workflowStage !== "cancelled" ? (
+        <button type="button" onClick={() => setEditingShipTo(true)} className={BRAND_BTN}>Ship-to</button>
+      ) : null;
     }
     if (target.kind === "pending" && access.canEdit) {
       return (
@@ -241,7 +285,15 @@ export function BoardDetailPanel({
   // ── ⋯ — the bar's More items, same ticks (board-bottom-bar.tsx) ─────────
   type Item = { key: string; label: string; danger?: boolean; disabled?: string; fn: () => void };
   const items: Item[] = [];
-  if (d) {
+  if (d && nonTint) {
+    // BASE ACTIONS ONLY (lib/tint/manager-bill.ts BASE_ACTIONS). Release is the
+    // brand primary when held; the server refuses Hold once a picker has it.
+    if (d.workflowStage !== "cancelled") {
+      if (access.canHold && !held) items.push({ key: "hold", label: "Hold", fn: () => actions.onHold(orderId) });
+      if (access.canShopDelivery) items.push({ key: "shop", label: "Shop delivery", fn: () => actions.onShopDelivery(bill) });
+      if (access.canCi) items.push({ key: "ci", label: "Raise CI (cancels)", danger: true, fn: () => actions.onRaiseCi(bill) });
+    }
+  } else if (d) {
     if (row && row.status === "assigned" && access.canEdit) {
       items.push({ key: "send-back", label: "Send back to pending", fn: () => setConfirmSendBack(true) });
     }
@@ -341,6 +393,17 @@ export function BoardDetailPanel({
             {status && status !== "waiting" && status !== "cancelled" && (
               <StatusPill status={status} at={row?.statusAt ?? null} pauseCount={row?.pauseCount ?? 0} />
             )}
+            {/* Base bill — Floor's pill (heldBack always false, owner §I-6) and the trip
+                number exactly as Floor stores it (letter first). */}
+            {floorStatus && <FloorStatusPill status={floorStatus} heldBack={false} />}
+            {nonTint && d?.workflowStage === "cancelled" && (
+              <span className="rounded-[4px] bg-[#fef2f2] px-2 py-[2px] text-[10px] font-semibold text-[#b91c1c]">Cancelled</span>
+            )}
+            {tripNumber && (
+              <span title={`On trip ${tripNumber}`} className="rounded-[3px] bg-gray-900 px-[5px] py-px font-mono text-[9.5px] font-semibold text-white">
+                {tripNumber}
+              </span>
+            )}
             {held && <span className={`rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${ON_HOLD_PILL_CLS}`}>⚑ Hold</span>}
             {isHand && <HandBadge />}
             {row?.type === "split" && (
@@ -398,7 +461,8 @@ export function BoardDetailPanel({
         ) : (
           <div className="relative flex items-center gap-2 border-y border-gray-200 bg-gray-50 px-4 py-2.5">
             {primary()}
-            {access.canShipTo && d && d.workflowStage !== "cancelled" && (
+            {/* Neutral Ship-to beside a tint bill's primary; a Base bill carries it AS the primary. */}
+            {access.canShipTo && d && d.workflowStage !== "cancelled" && (!nonTint || held) && (
               <button type="button" onClick={() => setEditingShipTo(true)} className={NEUTRAL_BTN}>Ship-to</button>
             )}
             {items.length > 0 && (
@@ -511,7 +575,8 @@ export function BoardDetailPanel({
             </>
           )}
 
-          {d && activeTab === "activity" && (
+          {d && activeTab === "activity" && nonTint && <DetailActivity d={d} />}
+          {d && activeTab === "activity" && !nonTint && (
             <div>
               {/* The operator box — the tint facts the shared payload carries. */}
               <div className="px-5 pt-3">

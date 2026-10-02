@@ -64,7 +64,8 @@ import { BoardStopCancelDialog, type StopCancelBill } from "@/components/tint/ma
 import { BoardShopDeliveryDialog, type ShopDeliveryBill } from "@/components/tint/manager/board-shop-delivery-dialog";
 import { BoardHoldTab } from "@/components/tint/manager/board-hold-tab";
 import { BoardCiTab } from "@/components/tint/manager/board-ci-tab";
-import type { FloorCancelledRow } from "@/lib/floor/types";
+import type { FloorBoardRow, FloorCancelledRow } from "@/lib/floor/types";
+import { BoardBaseTab } from "@/components/tint/manager/board-base-tab";
 import { slotValueOf } from "@/components/tint/manager/board-slot-cell";
 import { OffFloorDialog, type CiReasonOption, type OffFloorFormBill, type OffFloorTab } from "@/components/floor/off-floor-dialog";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
@@ -145,6 +146,8 @@ export function TintManagerContent() {
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [railSel, setRailSel] = useState<Set<number>>(new Set());
   const [holdSel, setHoldSel] = useState<Set<number>>(new Set());
+  // The Base tab's selection (2026-10-01, Base tab 4B) — the fourth, disjoint.
+  const [baseSel, setBaseSel] = useState<Set<number>>(new Set());
   // The bar's ··· More menu and its operator menu (anchored to the primary).
   const [barMenuOpen, setBarMenuOpen] = useState(false);
   const [barOpAnchor, setBarOpAnchor] = useState<HTMLElement | null>(null);
@@ -160,6 +163,9 @@ export function TintManagerContent() {
   const [holdRows, setHoldRows] = useState<TintHoldRow[] | null>(null);
   const [holdError, setHoldError] = useState<string | null>(null);
   const [cancelledRows, setCancelledRows] = useState<FloorCancelledRow[] | null>(null);
+  // Base tab rows (GET /api/tint/manager/base — Floor's board, narrowed). null = not loaded yet.
+  const [baseRows, setBaseRows] = useState<FloorBoardRow[] | null>(null);
+  const [baseError, setBaseError] = useState<string | null>(null);
   const [cancelledError, setCancelledError] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<number | null>(null);
   // The Pick delete tab's badge — its own decided-row count for the month shown
@@ -370,24 +376,27 @@ export function TintManagerContent() {
   const toggleRail = useCallback((o: TintOrder) => {
     setSelection(new Set());
     setHoldSel(new Set());
+    setBaseSel(new Set());
     setRailSel((s) => { const n = new Set(s); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n; });
   }, []);
   const toggleRow = useCallback((r: BoardRow) => {
     setRailSel(new Set());
     setHoldSel(new Set());
+    setBaseSel(new Set());
     setSelection((s) => { const n = new Set(s); if (n.has(r.key)) n.delete(r.key); else n.add(r.key); return n; });
   }, []);
   const clearAllSelection = useCallback(() => {
     setSelection(new Set());
     setRailSel(new Set());
     setHoldSel(new Set());
+    setBaseSel(new Set());
     setBarMenuOpen(false);
     setBarOpAnchor(null);
   }, []);
 
   // ── What the bar acts on ─────────────────────────────────────────────────
   const barMode: BarMode | null =
-    railSel.size > 0 ? "rail" : selection.size > 0 ? "table" : holdSel.size > 0 ? "hold" : null;
+    railSel.size > 0 ? "rail" : selection.size > 0 ? "table" : holdSel.size > 0 ? "hold" : baseSel.size > 0 ? "base" : null;
   /** One shape for every selected bill, whichever side it came from. */
   const barBills = useMemo(() => {
     if (barMode === "rail") {
@@ -400,7 +409,7 @@ export function TintManagerContent() {
         route: o.route ?? null,
         slotDate: o.dispatchTargetDate ?? null, slotWindowId: o.dispatchWindowId ?? null, slotWindowTime: o.dispatchWindowTime ?? null,
         isHeld: o.dispatchStatus === "hold", isHand: o.handAt != null,
-        status: "pending" as string, operatorName: "",
+        status: "pending" as string, operatorName: "", isBase: false,
       }));
     }
     if (barMode === "table") {
@@ -410,7 +419,7 @@ export function TintManagerContent() {
         litres: r.volumeLitres, articleTag: r.articleTag, route: r.route,
         slotDate: r.slotDate, slotWindowId: r.slotWindowId, slotWindowTime: r.slotWindowTime,
         isHeld: r.isHeld, isHand: r.isHand,
-        status: r.status as string, operatorName: r.operatorName,
+        status: r.status as string, operatorName: r.operatorName, isBase: false,
       }));
     }
     if (barMode === "hold") {
@@ -422,14 +431,42 @@ export function TintManagerContent() {
         isHeld: true, isHand: h.isHand,
         // The STAGE, so the bar knows a tint-room bill needs Stop & cancel.
         status: h.workflowStage, operatorName: h.operatorName ?? "",
+        // A held BASE bill (non-tint) — the bar hides the tint-only items.
+        isBase: !h.isTint,
+      }));
+    }
+    if (barMode === "base") {
+      return (baseRows ?? []).filter((r) => baseSel.has(r.orderId)).map((r) => ({
+        orderId: r.orderId, obdNumber: r.obdNumber,
+        site: r.dealerName,
+        original: r.isShipToOverride ? r.customerName : null,
+        litres: r.volumeLitres, articleTag: r.articleTag, route: r.route,
+        slotDate: r.dispatchTargetDate, slotWindowId: r.windowId, slotWindowTime: r.windowTime,
+        isHeld: false, isHand: r.isHand,
+        status: "base" as string, operatorName: "", isBase: true,
       }));
     }
     return [];
-  }, [barMode, selectedRail, selectedRows, holdRows, holdSel]);
+  }, [barMode, selectedRail, selectedRows, holdRows, holdSel, baseRows, baseSel]);
+
+  const toggleBase = useCallback((r: FloorBoardRow) => {
+    setSelection(new Set());
+    setRailSel(new Set());
+    setHoldSel(new Set());
+    setBaseSel((s) => { const n = new Set(s); if (n.has(r.orderId)) n.delete(r.orderId); else n.add(r.orderId); return n; });
+  }, []);
+  // Base selection prunes like the others: a bill that left Floor's board (or
+  // its trip day passed) leaves the list.
+  useEffect(() => {
+    if (baseSel.size === 0 || baseRows === null) return;
+    const live = Array.from(baseSel).filter((id) => baseRows.some((r) => r.orderId === id));
+    if (live.length !== baseSel.size) setBaseSel(new Set(live));
+  }, [baseRows, baseSel]);
 
   const toggleHold = useCallback((h: TintHoldRow) => {
     setSelection(new Set());
     setRailSel(new Set());
+    setBaseSel(new Set());
     setHoldSel((s) => { const n = new Set(s); if (n.has(h.orderId)) n.delete(h.orderId); else n.add(h.orderId); return n; });
   }, []);
   // Hold selection prunes like the others: a released bill leaves the list.
@@ -454,8 +491,9 @@ export function TintManagerContent() {
     if (panelKey === null) return [];
     if (panelKey.startsWith("pending-")) return rail.map((o) => ({ key: `pending-${o.id}` }));
     if (panelKey.startsWith("hold-")) return (holdRows ?? []).map((h) => ({ key: `hold-${h.orderId}` }));
+    if (panelKey.startsWith("base-")) return (baseRows ?? []).map((r) => ({ key: `base-${r.orderId}` }));
     return groups.flatMap((g) => g.rows.map((r) => ({ key: r.key })));
-  }, [panelKey, rail, holdRows, groups]);
+  }, [panelKey, rail, holdRows, baseRows, groups]);
   const panelIndex = panelKey === null ? -1 : walk.findIndex((w) => w.key === panelKey);
 
   const panelTarget: PanelTarget | null = useMemo(() => {
@@ -470,9 +508,14 @@ export function TintManagerContent() {
       const h = (holdRows ?? []).find((x) => x.orderId === id);
       return h ? { kind: "hold", hold: h } : null;
     }
+    if (panelKey.startsWith("base-")) {
+      const id = Number(panelKey.slice("base-".length));
+      const b = (baseRows ?? []).find((x) => x.orderId === id);
+      return b ? { kind: "base", row: b } : null;
+    }
     const r = rowsByKey.get(panelKey);
     return r ? { kind: "row", row: r } : null;
-  }, [panelKey, rail, holdRows, rowsByKey]);
+  }, [panelKey, rail, holdRows, baseRows, rowsByKey]);
 
   // The panel's target vanished under it (finished, reassigned away, filtered
   // out). Close rather than showing a stale ghost.
@@ -492,7 +535,7 @@ export function TintManagerContent() {
   // The feed holds for MORE than the marker did: a re-sequence or any write in
   // flight, and every modal / sheet / popover this page opens.
   const holdLive =
-    panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 ||
+    panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 ||
     barMenuOpen || barOpAnchor !== null || offFloor !== null || stopCancelBill !== null || restoringId !== null ||
     reorderBusy.size > 0 || writeBusy || railMenuOpen ||
     baseUndoBusyId !== null || missingBadgeOpen || missingSheetOpen || pullModalOpen ||
@@ -506,7 +549,7 @@ export function TintManagerContent() {
     panelTarget === null ? null
     : panelTarget.kind === "pending" ? panelTarget.order.id
     : panelTarget.kind === "hold" ? panelTarget.hold.orderId
-    : panelTarget.row.orderId;
+    : panelTarget.row.orderId; // "row" and "base" both carry row.orderId
 
   // "Changed — Reload" (feed only): the open bill changed elsewhere → a quiet
   // board read; the strip shows only if that bill really differs. Never swaps
@@ -568,7 +611,7 @@ export function TintManagerContent() {
           return;
         }
         if (panelKey !== null) { setPanelKey(null); return; }
-        if (selection.size > 0 || railSel.size > 0 || holdSel.size > 0) { clearAllSelection(); return; }
+        if (selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0) { clearAllSelection(); return; }
         return;
       }
       // M — Add OBD to Tint. Ignored while typing, and while the panel is open
@@ -580,7 +623,7 @@ export function TintManagerContent() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelKey, selection, railSel, holdSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, dialogBusy, clearAllSelection]);
+  }, [panelKey, selection, railSel, holdSel, baseSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, dialogBusy, clearAllSelection]);
 
   // ── Hold + CI lists (step 7) — read when the person can see the tab, and
   // again after every board reload (payload changes), so the tab counts track
@@ -605,6 +648,19 @@ export function TintManagerContent() {
       setCancelledRows(body.rows);
     } catch { setCancelledError("Could not load the CI list."); }
   }, [access.canViewCiTab]);
+  // The Base tab (2026-10-01, Base tab 4B) — on tint_manager canView alone (owner
+  // §I-4), which this page already requires. Reloads with the Hold / CI lists
+  // below: on load, after this page's writes, and on every marker change (the
+  // marker's Base arms 6–8, d788a2d1) — under the same pause rule.
+  const fetchBase = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tint/manager/base", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as { rows?: FloorBoardRow[]; error?: string };
+      if (!res.ok || !Array.isArray(body.rows)) { setBaseError(body.error ?? `Base list HTTP ${res.status}`); return; }
+      setBaseError(null);
+      setBaseRows(body.rows);
+    } catch { setBaseError("Could not load the Base list."); }
+  }, []);
   // ── Tab badges + list refresh (step 9) ───────────────────────────────────
   // Every board reload — on page load, after this page's own writes, and on a
   // MARKER CHANGE (LegacyTintManagerSync → fetchBoard; the marker's arms 4–5 and
@@ -618,8 +674,9 @@ export function TintManagerContent() {
   useEffect(() => {
     void fetchHold();
     void fetchCancelled();
+    void fetchBase();
     setSideReload((n) => n + 1);
-  }, [payload, fetchHold, fetchCancelled]);
+  }, [payload, fetchHold, fetchCancelled, fetchBase]);
 
   // The Pick delete badge from page load (step 9 — it used to appear only once
   // the tab had been opened): the decided rows of the current IST month, the
@@ -654,6 +711,7 @@ export function TintManagerContent() {
   useEffect(() => {
     setSelection(new Set());
     setHoldSel(new Set());
+    setBaseSel(new Set());
     setBarMenuOpen(false);
     setBarOpAnchor(null);
   }, [activeTab]);
@@ -1293,6 +1351,7 @@ export function TintManagerContent() {
     onCancel:      (b) => openOffFloor("cancel", [b]),
     onStopCancel:  (b) => setStopCancelBill({ orderId: b.orderId, obdNumber: b.obdNumber, siteName: b.siteName, operatorName: b.operatorName, status: b.status }),
     onRaiseCi:     (b) => openOffFloor("ci", [b]),
+    onShopDelivery: (b) => setShopDeliveryBills([{ orderId: b.orderId, obdNumber: b.obdNumber }]),
   }), [handleAssign, handleBaseBypass, handleReassignOrder, handleReassignSplit, handleSendBack, postTintAction, handleShipTo, openOffFloor]);
 
   /**
@@ -1470,7 +1529,7 @@ export function TintManagerContent() {
           (tint step 4). Same props as the page passed before the feed. */}
       {!feedLive && (
         <LegacyTintManagerSync
-          paused={panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0}
+          paused={panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0}
           onProbe={setConnected}
           onChange={() => { void fetchBoard(); }}
         />
@@ -1501,6 +1560,7 @@ export function TintManagerContent() {
               ...(holdRows !== null ? { hold: holdRows.length } : {}),
               ...(cancelledRows !== null ? { ci: cancelledRows.length } : {}),
               ...(pickDecidedCount !== null ? { pick: pickDecidedCount } : {}),
+              ...(baseRows !== null ? { base: baseRows.length } : {}),
             }}
           />
           {activeTab === "tinting" && (
@@ -1575,6 +1635,20 @@ export function TintManagerContent() {
           {activeTab === "pick" && (
             <BoardPickDeleteTab canEdit={access.canPickDelete} onCount={setPickDecidedCount} reloadSignal={sideReload} />
           )}
+          {activeTab === "base" && (
+            <BoardBaseTab
+              rows={baseRows}
+              error={baseError}
+              selected={baseSel}
+              onToggle={toggleBase}
+              onOpen={(r) => setPanelKey(`base-${r.orderId}`)}
+              windows={windows}
+              canSlot={access.canSlot}
+              slotBusy={writeBusy}
+              onSetSlot={(r, v) => { void postTintAction("change-slot", [r.orderId], { slot: v, keepSelection: true }); }}
+              barUp={barMode !== null}
+            />
+          )}
 
           {barMode !== null && (
             <BoardBottomBar
@@ -1591,6 +1665,7 @@ export function TintManagerContent() {
                   (barMode === "hold" && barBills.some((b) => b.status === "tint_assigned" || b.status === "tinting_in_progress")),
                 allHeld:       barBills.length > 0 && barBills.every((b) => b.isHeld),
                 allHand:       barBills.length > 0 && barBills.every((b) => b.isHand),
+                anyBase:       barBills.some((b) => b.isBase),
               }}
               busy={writeBusy}
               windows={windows}

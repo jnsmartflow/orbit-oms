@@ -17,12 +17,16 @@
 // tint_pick_delete canView. A tab without its tick is never drawn. Tinting and
 // TI need nothing beyond the screen itself.
 //
+// Base (2026-10-01, Base tab 4B) is the LAST tab: every non-tint SMU 74/77 bill
+// Floor's live board shows (GET /api/tint/manager/base). It needs no tick of its
+// own (owner §I-4) — the screen's canView, which the page already requires.
+//
 // Counts: Tinting and TI only for now. Hold / CI / Pick delete get theirs in the
 // steps that build their bodies (7, 8) — no number is better than a wrong one.
 
 import { useTintManagerAccess } from "./tint-manager-access-provider";
 
-export type BoardTab = "tinting" | "ti" | "hold" | "ci" | "pick";
+export type BoardTab = "tinting" | "ti" | "hold" | "ci" | "pick" | "base";
 
 export function BoardTabs({
   active,
@@ -41,6 +45,7 @@ export function BoardTabs({
     { key: "hold",    label: "Hold",        show: access.canViewHoldTab },
     { key: "ci",      label: "CI",          show: access.canViewCiTab },
     { key: "pick",    label: "Pick delete", show: access.canViewPickDelete },
+    { key: "base",    label: "Base",        show: true },
   ];
 
   return (

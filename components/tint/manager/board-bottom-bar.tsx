@@ -19,7 +19,16 @@
 //                           running or paused — the server 400s those, §1.6)
 //   hold  → "Release"      (= unhold, owner decision 9 — the page posts it;
 //                           tint_hold)
-// The three selections never mix — the page keeps them disjoint.
+//   base  → 🕑 Slot        (Base tab 4B, owner §I-2 — the slot picker IS the
+//                           primary; no separate Slot button, no Assign)
+// The four selections never mix — the page keeps them disjoint.
+//
+// BASE BILLS (non-tint SMU 74/77 — lib/tint/manager-bill.ts BASE_ACTIONS): More
+// offers only Hold · Shop delivery · Raise CI. Hand, Cancel / Stop & cancel and
+// Remove OBD are hidden whenever a Base bill is in the selection (the Base tab,
+// or a held Base bill on the Hold tab — facts.anyBase); the routes refuse them
+// anyway. A Hold the server refuses (a picker has the bill) comes back per bill
+// in the page's done / failed toast, in the server's own words.
 //
 // ··· More items are each HIDDEN without their tick (TintManagerAccessProvider;
 // the routes re-check).
@@ -44,7 +53,7 @@ import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { useTintManagerAccess } from "./tint-manager-access-provider";
 
-export type BarMode = "rail" | "table" | "hold";
+export type BarMode = "rail" | "table" | "hold" | "base";
 
 export interface BarSelectionFacts {
   /** Every selected table job is Assigned (Re-assign / Send back allowed). */
@@ -59,6 +68,8 @@ export interface BarSelectionFacts {
   operatorHolds: boolean;
   allHeld:     boolean;
   allHand:     boolean;
+  /** Some selected bill is a BASE bill (non-tint SMU 74/77) — tint-only items hide. */
+  anyBase:     boolean;
 }
 
 export function BoardBottomBar({
@@ -124,7 +135,22 @@ export function BoardBottomBar({
   // ── The primary — one brand button, the state's real job ──────────────────
   const reassignBlocked = mode === "table" && !facts.allAssigned;
   const primary =
-    mode === "rail" ? (
+    mode === "base" ? (
+      // 🕑 Slot — the Base selection's real job (owner §I-2). The one brand button;
+      // grey and inert without tint_slot (UI §10 — never a faded brand).
+      <SlotPickerButton
+        value={slotValue}
+        onPick={onSlot}
+        windows={windows}
+        disabled={busy || !access.canSlot || windows.length === 0}
+        popoverDir="up"
+        popoverAlign="right"
+        className={BAR_PRIMARY}
+      >
+        <Clock size={15} strokeWidth={2.2} />
+        Slot
+      </SlotPickerButton>
+    ) : mode === "rail" ? (
       <button type="button" disabled={busy || !access.canEdit} onClick={(e) => onPrimary(e.currentTarget)} className={BAR_PRIMARY}>
         Assign ▾
       </button>
@@ -177,14 +203,16 @@ export function BoardBottomBar({
         : {
             key: "hold",
             label: "Hold",
-            hint: mode === "rail" ? "Moves to the Hold tab" : "Keeps tinting · won't go to picking until released",
+            hint: mode === "rail" ? "Moves to the Hold tab"
+              : mode === "base" ? "Moves to the Hold tab · refused once a picker has it"
+              : "Keeps tinting · won't go to picking until released",
             icon: <Pause size={15} strokeWidth={2.2} />,
             dividerBefore: items.length > 0,
             onSelect: onHold,
           },
     );
   }
-  if (access.canHand) {
+  if (access.canHand && !facts.anyBase) {
     items.push({
       key: "hand",
       label: facts.allHand ? "Clear Hand" : "Hand",
@@ -202,7 +230,7 @@ export function BoardBottomBar({
       onSelect: onShopDelivery,
     });
   }
-  if (access.canCancel) {
+  if (access.canCancel && !facts.anyBase) {
     items.push(
       facts.operatorHolds
         ? {
@@ -233,11 +261,11 @@ export function BoardBottomBar({
       hint: "Full-bill return to billing",
       icon: <FileX2 size={15} strokeWidth={2.2} />,
       danger: true,
-      dividerBefore: !access.canCancel,
+      dividerBefore: !access.canCancel || facts.anyBase,
       onSelect: onRaiseCi,
     });
   }
-  if (access.canCancel && mode === "rail") {
+  if (access.canCancel && mode === "rail" && !facts.anyBase) {
     items.push({
       key: "remove",
       label: "Remove OBD",
@@ -250,7 +278,7 @@ export function BoardBottomBar({
 
   return (
     <FloorActionBar count={count} figures={figures} onClear={onClear} clearDisabled={busy}>
-      {access.canSlot ? (
+      {access.canSlot && mode !== "base" ? (
         <SlotPickerButton
           value={slotValue}
           onPick={onSlot}
