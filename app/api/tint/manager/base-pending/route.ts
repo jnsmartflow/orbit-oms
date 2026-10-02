@@ -76,6 +76,9 @@ interface PendingOrder {
   smuCode:           string | null;
   route:             string | null;
   articleTag:        string | null;
+  /** Header filters (2026-10-02) — delivery_type_master.name via the AREA, and the priority. */
+  deliveryTypeName:  string | null;
+  priorityLevel:     number;
   tintAssignmentId:   number;
   /** When the bypass closed the bill — tint_assignments.completedAt. */
   bypassedAt:         string | null;
@@ -146,8 +149,9 @@ export async function GET(): Promise<NextResponse> {
           invoiceNo:     true,
           invoiceDate:   true,
           smu:           true,
+          priorityLevel: true,
           // The AREA route, matching FLOOR_DEALER_SELECT / the board's Route column.
-          customer:      { select: { customerName: true, area: { select: { primaryRoute: { select: { name: true } } } } } },
+          customer:      { select: { customerName: true, area: { select: { primaryRoute: { select: { name: true } }, deliveryType: { select: { name: true } } } } } },
         },
       },
     },
@@ -240,6 +244,8 @@ export async function GET(): Promise<NextResponse> {
       smuCode:           null, // filled below with the dealer name, same query
       route:             a.order.customer?.area?.primaryRoute?.name ?? null,
       articleTag:        a.order.querySnapshot?.articleTag ?? null,
+      deliveryTypeName:  a.order.customer?.area?.deliveryType?.name ?? null,
+      priorityLevel:     a.order.priorityLevel,
       billToName:        null, // filled below, one query for the whole page
       tintAssignmentId:  a.id,
       bypassedAt:        a.completedAt ? a.completedAt.toISOString() : null,

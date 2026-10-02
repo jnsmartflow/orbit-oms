@@ -361,16 +361,13 @@ export function OperatorMenu({
  * Mirrors components/floor/connection-strip.tsx: a thin strip, NEVER a modal —
  * when the marker probe can't reach the server the board stays fully readable
  * and this only says how stale it is.
+ *
+ * 2026-10-02 (header like Billing): renders NOTHING while connected, exactly as
+ * Floor's does — the always-on "● Live · updated HH:MM" line is gone, so the
+ * board moves up. Only the disconnected strip remains.
  */
 export function ConnectionStrip({ connected, lastSyncedAt }: { connected: boolean; lastSyncedAt: Date | null }) {
-  if (connected) {
-    return (
-      <div className="flex items-center gap-1.5 border-b border-gray-100 bg-white px-4 py-[6px] text-[11px] text-gray-500">
-        <span className="h-1.5 w-1.5 rounded-full bg-green-600" />
-        Live · updated {lastSyncedAt ? hhmm(lastSyncedAt.toISOString()) : "—"}
-      </div>
-    );
-  }
+  if (connected) return null;
   return (
     <div className="flex items-center gap-2 border-b border-gray-200 bg-[#f3f4f6] px-4 py-[6px] text-[11px] text-gray-500">
       <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />

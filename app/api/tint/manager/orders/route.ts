@@ -10,6 +10,7 @@ import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { resolveFloorDisplayDate } from "@/lib/floor/format";
+import { getISTDayRange } from "@/lib/dates";
 
 /**
  * The OBD cell's date line and the Invoice column (2026-10-02, owner) — the SAME
@@ -126,8 +127,11 @@ export async function GET(): Promise<NextResponse> {
   if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   try {
-    const now          = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    // IST MIDNIGHT (2026-10-02). Was server-local midnight — on Vercel (UTC)
+    // that is 05:30 IST, so between 00:00 and 05:30 "done today" still showed
+    // yesterday's completions. getISTDayRange (lib/dates.ts) is the repo's one
+    // IST day helper; the marker uses the SAME expression (fixed together).
+    const startOfToday = getISTDayRange().start;
 
     // Hide-feature exclusion — AND-merged into the display queries below so
     // manually-hidden + rule-matched OBDs drop out of the Tint Manager board.

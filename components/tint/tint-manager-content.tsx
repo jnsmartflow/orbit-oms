@@ -36,10 +36,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 import { toast } from "sonner";
-import { AlertCircle, FileBarChart, Plus, RotateCcw } from "lucide-react";
+import { AlertCircle, Plus, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { UniversalHeader } from "@/components/universal-header";
+// Billing's tab-row controls (mail-orders-page.tsx billingHeaderSlot), the SAME
+// components — Filter with its count badge, and the ⌨ popover in "row" style.
+import { HeaderFilter, type FilterGroup } from "@/components/header-filter";
+import { HeaderShortcuts, type ShortcutItem } from "@/components/header-shortcuts";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { RemoveObdModal } from "@/components/tint/RemoveObdModal";
 import { HideObdModal } from "@/components/tint/HideObdModal";
@@ -109,10 +113,10 @@ const EMPTY_PAYLOAD: TintBoardPayload = {
 export function TintManagerContent() {
   const { data: session } = useSession();
 
-  // Ticks, resolved in the layout (TintManagerAccessProvider). The Reports pill
-  // reads canReports; the bar, its menus and the Slot cell read the action ticks.
+  // Ticks, resolved in the layout (TintManagerAccessProvider). The bar, its
+  // menus and the Slot cell read the action ticks. (The Reports pill that read
+  // canReports left the header 2026-10-02 — the sidebar keeps Reports.)
   const access = useTintManagerAccess();
-  const { canReports } = access;
 
   // Import button: the Import OBDs tick, the same rule the import route enforces.
   const canImportOBDs = useCanImportObds();
@@ -139,9 +143,14 @@ export function TintManagerContent() {
   const [connected, setConnected] = useState(true);
 
   // ── Header filters + search ───────────────────────────────────────────────
+  // 2026-10-02 (header like Billing): Delivery Type + one "Urgent only" chip;
+  // the Split/Whole "Type" group is gone (no split since 2026-06-26). The Filter
+  // and ⌨ popovers are CONTROLLED here so this page's one Esc owner closes them.
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({
-    deliveryType: [], priority: [], type: [],
+    deliveryType: [], urgent: [],
   });
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // ── Selection / panel / modals ────────────────────────────────────────────
@@ -309,19 +318,22 @@ export function TintManagerContent() {
 
   // ── Derived board ─────────────────────────────────────────────────────────
 
-  const delTypes  = useMemo(() => new Set(headerFilters.deliveryType ?? []), [headerFilters]);
-  const priority  = (headerFilters.priority ?? [])[0] ?? null;
-  const rowType   = (headerFilters.type ?? [])[0] ?? null;
-  const q         = searchQuery.trim().toLowerCase();
+  const delTypes   = useMemo(() => new Set(headerFilters.deliveryType ?? []), [headerFilters]);
+  const urgentOnly = (headerFilters.urgent ?? []).includes("urgent");
+  const q          = searchQuery.trim().toLowerCase();
+  /** The header filters, ONE predicate for every tab (2026-10-02): a row passes
+   *  when its delivery type is ticked (or none is) and, with "Urgent only", its
+   *  priority is urgent — the board's own rule, priorityLevel ≤ 2 (rows.ts). */
+  const passesFilters = useCallback(
+    (deliveryType: string | null | undefined, priorityLevel: number | null | undefined) =>
+      (delTypes.size === 0 || delTypes.has(deliveryType ?? "")) &&
+      (!urgentOnly || (priorityLevel != null && priorityLevel <= 2)),
+    [delTypes, urgentOnly],
+  );
 
   const rail = useMemo(() => {
     return buildRail(payload).filter((o) => {
-      if (delTypes.size > 0 && !delTypes.has(o.deliveryTypeName ?? "")) return false;
-      if (priority === "urgent" && !(o.priorityLevel <= 2)) return false;
-      if (priority === "normal" && !(o.priorityLevel > 2)) return false;
-      // A pending order is always a whole order — the "split" filter cannot match
-      // anything on the rail, so it empties it rather than silently ignoring.
-      if (rowType === "split") return false;
+      if (!passesFilters(o.deliveryTypeName, o.priorityLevel)) return false;
       if (!q) return true;
       return (
         o.obdNumber.toLowerCase().includes(q) ||
@@ -330,21 +342,18 @@ export function TintManagerContent() {
         (o.route ?? "").toLowerCase().includes(q)
       );
     });
-  }, [payload, delTypes, priority, rowType, q]);
+  }, [payload, passesFilters, q]);
 
   const groups = useMemo(() => {
     const all = buildGroups(payload);
-    if (delTypes.size === 0 && !priority && !rowType && !q) return all;
+    if (delTypes.size === 0 && !urgentOnly && !q) return all;
     return all
       .map((g) => ({
         ...g,
         rows: g.rows.filter((r) => {
           const dt = r.order?.deliveryTypeName ?? r.split?.deliveryTypeName ?? r.completed?.deliveryTypeName ?? "";
           if (delTypes.size > 0 && !delTypes.has(dt)) return false;
-          if (priority === "urgent" && !r.isUrgent) return false;
-          if (priority === "normal" && r.isUrgent) return false;
-          if (rowType === "split" && r.type !== "split") return false;
-          if (rowType === "whole" && r.type !== "order") return false;
+          if (urgentOnly && !r.isUrgent) return false;
           if (!q) return true;
           return (
             r.obdNumber.toLowerCase().includes(q) ||
@@ -356,7 +365,26 @@ export function TintManagerContent() {
         }),
       }))
       .filter((g) => g.rows.length > 0);
-  }, [payload, delTypes, priority, rowType, q]);
+  }, [payload, delTypes, urgentOnly, q]);
+
+  // Every other tab's rows through the SAME filters (2026-10-02). Display +
+  // badges + Prev/Next walk read these; selections and writes keep the full lists.
+  const baseRowsShown = useMemo(
+    () => (baseRows === null ? null : baseRows.filter((r) => passesFilters(r.deliveryType, r.priorityLevel))),
+    [baseRows, passesFilters],
+  );
+  const holdRowsShown = useMemo(
+    () => (holdRows === null ? null : holdRows.filter((r) => passesFilters(r.deliveryType, r.priorityLevel))),
+    [holdRows, passesFilters],
+  );
+  const cancelledRowsShown = useMemo(
+    () => (cancelledRows === null ? null : cancelledRows.filter((r) => passesFilters(r.deliveryType, r.priorityLevel))),
+    [cancelledRows, passesFilters],
+  );
+  const basePendingShown = useMemo(
+    () => basePending.filter((o) => passesFilters(o.deliveryTypeName, o.priorityLevel)),
+    [basePending, passesFilters],
+  );
 
   const rowsByKey = useMemo(() => {
     const m = new Map<string, BoardRow>();
@@ -514,10 +542,11 @@ export function TintManagerContent() {
   const walk = useMemo<Array<{ key: string }>>(() => {
     if (panelKey === null) return [];
     if (panelKey.startsWith("pending-")) return rail.map((o) => ({ key: `pending-${o.id}` }));
-    if (panelKey.startsWith("hold-")) return (holdRows ?? []).map((h) => ({ key: `hold-${h.orderId}` }));
-    if (panelKey.startsWith("base-")) return (baseRows ?? []).map((r) => ({ key: `base-${r.orderId}` }));
+    // The FILTERED lists (2026-10-02) — Prev/Next walks what the tab shows.
+    if (panelKey.startsWith("hold-")) return (holdRowsShown ?? []).map((h) => ({ key: `hold-${h.orderId}` }));
+    if (panelKey.startsWith("base-")) return (baseRowsShown ?? []).map((r) => ({ key: `base-${r.orderId}` }));
     return groups.flatMap((g) => g.rows.map((r) => ({ key: r.key })));
-  }, [panelKey, rail, holdRows, baseRows, groups]);
+  }, [panelKey, rail, holdRowsShown, baseRowsShown, groups]);
   const panelIndex = panelKey === null ? -1 : walk.findIndex((w) => w.key === panelKey);
 
   const panelTarget: PanelTarget | null = useMemo(() => {
@@ -628,6 +657,9 @@ export function TintManagerContent() {
         //   panel open → close it · selection → clear all three
         if (document.querySelector('[data-slot-popover="open"]')) return;
         if (typing) return;
+        // The tab row's Filter / ⌨ popovers (2026-10-02) — controlled here.
+        if (filterOpen) { setFilterOpen(false); return; }
+        if (shortcutsOpen) { setShortcutsOpen(false); return; }
         if (barOpAnchor !== null) { setBarOpAnchor(null); return; }
         if (barMenuOpen) { setBarMenuOpen(false); return; }
         if (offFloor !== null || stopCancelBill !== null || shopDeliveryBills !== null || tiBulkDose !== null) {
@@ -650,7 +682,7 @@ export function TintManagerContent() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelKey, selection, railSel, holdSel, baseSel, tiSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, tiBulkDose, dialogBusy, clearAllSelection, focusedOperatorId]);
+  }, [panelKey, selection, railSel, holdSel, baseSel, tiSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, tiBulkDose, dialogBusy, clearAllSelection, focusedOperatorId, filterOpen, shortcutsOpen]);
 
   // ── Hold + CI lists (step 7) — read when the person can see the tab, and
   // again after every board reload (payload changes), so the tab counts track
@@ -1479,23 +1511,30 @@ export function TintManagerContent() {
 
   // ── Header pieces ─────────────────────────────────────────────────────────
 
-  const stats = useMemo(() => {
-    const flat = groups.flatMap((g) => g.rows);
-    return [
-      { label: "pending",     value: rail.length },
-      { label: "assigned",    value: flat.filter((r) => r.status === "assigned").length },
-      { label: "in progress", value: flat.filter((r) => r.status === "tinting_in_progress").length },
-      { label: "paused",      value: flat.filter((r) => r.status === "paused").length },
-      { label: "done today",  value: flat.filter((r) => r.status === "tinting_done").length },
-    ];
-  }, [rail, groups]);
+  // The stats line left the header 2026-10-02 (the tab badges carry the counts).
+
+  /** Filter groups. Delivery Type values are delivery_type_master.name exactly
+   *  as the master holds them (read-only SELECT 2026-10-02: Local · Upcountry ·
+   *  IGT · Cross) — the old "Cross Depot" value matched nothing. */
+  const filterGroups: FilterGroup[] = [
+    { label: "Delivery Type", key: "deliveryType", options: [
+      { value: "Local", label: "Local" }, { value: "Upcountry", label: "UPC" },
+      { value: "IGT", label: "IGT" }, { value: "Cross", label: "Cross" },
+    ] },
+    { label: "Priority", key: "urgent", options: [{ value: "urgent", label: "Urgent only" }] },
+  ];
+  const shortcuts: ShortcutItem[] = [
+    { key: "M",   label: "Add OBD to Tint" },
+    { key: "Esc", label: "Close panel / clear selection" },
+    { key: "▲▼",  label: "Re-sequence (hover an Assigned row)" },
+  ];
+
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white">
         <div className="h-[52px] bg-white border-b border-gray-200" />
-        <div className="h-[40px] bg-white border-b border-gray-200" />
-        <div className="flex" style={{ height: "calc(100vh - 92px)" }}>
+        <div className="flex" style={{ height: "calc(100vh - 52px)" }}>
           <div className="w-[344px] border-r border-gray-200 p-2 flex flex-col gap-2">
             {[0, 1, 2].map((i) => <div key={i} className="h-[130px] bg-gray-100 rounded-[10px] animate-pulse" />)}
           </div>
@@ -1510,100 +1549,22 @@ export function TintManagerContent() {
   return (
     <div className="h-screen flex flex-col bg-white overflow-hidden">
 
+      {/* HEADER = BILLING'S (2026-10-02): the exact props the Billing face passes
+          (mail-orders-page.tsx) — black primary Import, the wide search box with
+          its "/" hint top-right, no clock, no ⌨ button, no Row 2, empty left.
+          The stats line, the Reports pill and the clock are gone; Filter,
+          + Add to Tint, the missing badge and ⌨ moved to the tab row below. */}
       <UniversalHeader
         showImport={canImportOBDs}
-        stats={stats}
-        /* ⚠ NO `segments` / `activeSegment` / `onSegmentChange`. The operator
-           workload pills are gone on purpose: the table's per-operator sections
-           replace them, and they show the actual jobs rather than a count. This
-           is the ONLY prop change vs the Kanban header — everything else below is
-           wired exactly as it was. */
-        filterGroups={[
-          { label: "Delivery Type", key: "deliveryType", options: [{ value: "Local", label: "Local" }, { value: "Upcountry", label: "UPC" }, { value: "IGT", label: "IGT" }, { value: "Cross Depot", label: "Cross" }] },
-          { label: "Priority", key: "priority", options: [{ value: "urgent", label: "Urgent" }, { value: "normal", label: "Normal" }] },
-          { label: "Type", key: "type", options: [{ value: "split", label: "Split" }, { value: "whole", label: "Whole" }] },
-        ]}
-        activeFilters={headerFilters}
-        onFilterChange={setHeaderFilters}
+        importVariant="primary"
+        suppressFilterBar
         showDatePicker={false}
         searchPlaceholder="Search OBD, SO, site, route…"
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
-        rightExtra={
-          <div className="flex items-center gap-1">
-            {missingCustomers.length > 0 && (
-              <div className="relative">
-                <button
-                  ref={missingBadgeRef}
-                  onClick={() => setMissingBadgeOpen(!missingBadgeOpen)}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-0.5 cursor-pointer hover:bg-amber-100 transition-colors"
-                >
-                  <AlertCircle size={12} />
-                  {missingCustomers.length} missing
-                </button>
-                {missingBadgeOpen && (
-                  <div className="absolute right-0 top-full mt-1 z-50 w-[300px] bg-white border border-gray-200 rounded-lg shadow-lg max-h-[320px] overflow-y-auto">
-                    <div className="px-3 py-2 border-b border-gray-100">
-                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Missing Customers</p>
-                    </div>
-                    {missingCustomers.map((mc) => (
-                      <button
-                        key={mc.orderId}
-                        type="button"
-                        onClick={() => {
-                          setMissingSheetOrder({ shipToCustomerId: mc.shipToCustomerId, shipToCustomerName: mc.shipToCustomerName } as TintOrder);
-                          setMissingSheetOpen(true);
-                          setMissingBadgeOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[11px] text-gray-600">{mc.obdNumber}</span>
-                          <span className={cn(
-                            "text-[9px] font-medium px-1.5 py-0.5 rounded border",
-                            mc.orderType === "tint"
-                              ? "bg-tint-bg text-tint-600 border-tint-bd"
-                              : "bg-gray-50 text-gray-500 border-gray-200",
-                          )}>
-                            {mc.orderType === "tint" ? "Tint" : "Non-Tint"}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-gray-900 font-medium mt-0.5 truncate">{mc.shipToCustomerName ?? "Unknown"}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">{mc.smu === "Decorative Projects" ? "Deco Projects" : mc.smu}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Any report tick (REPORT_PAGE_KEYS), couriered by the layout. Links
-                to the bare hub, which opens the first report this person may see. */}
-            {canReports && (
-              <a
-                href="/reports"
-                className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                title="Open Reports (Tint Summary holds the full completion history; this board shows today only)"
-              >
-                <FileBarChart size={12} />
-                Reports
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={() => setPullModalOpen(true)}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-              title="Add OBD to Tint (M)"
-            >
-              <Plus size={12} />
-              Add to Tint
-            </button>
-          </div>
-        }
-        shortcuts={[
-          { key: "M",   label: "Add OBD to Tint" },
-          { key: "Esc", label: "Close panel / clear selection" },
-          { key: "▲▼",  label: "Re-sequence (hover an Assigned row)" },
-        ]}
+        searchLayout="wide-right"
+        showClock={false}
+        showShortcutsButton={false}
       />
 
       <ConnectionStrip connected={feedLive ? liveSync.connected : connected} lastSyncedAt={lastSyncedAt} />
@@ -1639,12 +1600,82 @@ export function TintManagerContent() {
             onChange={setActiveTab}
             counts={{
               tinting: groups.reduce((n, g) => n + g.rows.length, 0),
-              ti:      basePending.length,
-              ...(holdRows !== null ? { hold: holdRows.length } : {}),
-              ...(cancelledRows !== null ? { ci: cancelledRows.length } : {}),
+              ti:      basePendingShown.length,
+              ...(holdRowsShown !== null ? { hold: holdRowsShown.length } : {}),
+              ...(cancelledRowsShown !== null ? { ci: cancelledRowsShown.length } : {}),
               ...(pickDecidedCount !== null ? { pick: pickDecidedCount } : {}),
-              ...(baseRows !== null ? { base: baseRows.length } : {}),
+              ...(baseRowsShown !== null ? { base: baseRowsShown.length } : {}),
             }}
+            rightSlot={
+              <>
+                {/* The "N missing" badge — moved from the header's Row 2, unchanged. */}
+                {missingCustomers.length > 0 && (
+                  <div className="relative">
+                    <button
+                      ref={missingBadgeRef}
+                      onClick={() => setMissingBadgeOpen(!missingBadgeOpen)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-0.5 cursor-pointer hover:bg-amber-100 transition-colors"
+                    >
+                      <AlertCircle size={12} />
+                      {missingCustomers.length} missing
+                    </button>
+                    {missingBadgeOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-50 w-[300px] bg-white border border-gray-200 rounded-lg shadow-lg max-h-[320px] overflow-y-auto">
+                        <div className="px-3 py-2 border-b border-gray-100">
+                          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Missing Customers</p>
+                        </div>
+                        {missingCustomers.map((mc) => (
+                          <button
+                            key={mc.orderId}
+                            type="button"
+                            onClick={() => {
+                              setMissingSheetOrder({ shipToCustomerId: mc.shipToCustomerId, shipToCustomerName: mc.shipToCustomerName } as TintOrder);
+                              setMissingSheetOpen(true);
+                              setMissingBadgeOpen(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[11px] text-gray-600">{mc.obdNumber}</span>
+                              <span className={cn(
+                                "text-[9px] font-medium px-1.5 py-0.5 rounded border",
+                                mc.orderType === "tint"
+                                  ? "bg-tint-bg text-tint-600 border-tint-bd"
+                                  : "bg-gray-50 text-gray-500 border-gray-200",
+                              )}>
+                                {mc.orderType === "tint" ? "Tint" : "Non-Tint"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-gray-900 font-medium mt-0.5 truncate">{mc.shipToCustomerName ?? "Unknown"}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">{mc.smu === "Decorative Projects" ? "Deco Projects" : mc.smu}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* ⟵ The date stepper lands HERE, just left of Filter (round 2, step 3). */}
+                <HeaderFilter
+                  groups={filterGroups}
+                  activeFilters={headerFilters}
+                  onFilterChange={setHeaderFilters}
+                  open={filterOpen}
+                  onOpenChange={setFilterOpen}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPullModalOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                  title="Add OBD to Tint (M)"
+                >
+                  <Plus size={12} />
+                  Add to Tint
+                </button>
+                <div className="w-px h-4 bg-gray-200" />
+                {/* Billing's ⌨ popover in "row" style; controlled so the page's Esc closes it. */}
+                <HeaderShortcuts shortcuts={shortcuts} variant="row" open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+              </>
+            }
           />
           {activeTab === "tinting" && (
             <BoardTintTab
@@ -1665,7 +1696,7 @@ export function TintManagerContent() {
           )}
           {activeTab === "ti" && (
             <BoardTiTab
-              pending={basePending}
+              pending={basePendingShown}
               drill={baseDrill}
               lineId={baseLine?.rawLineItemId ?? null}
               undoBusyId={baseUndoBusyId}
@@ -1698,7 +1729,7 @@ export function TintManagerContent() {
           )}
           {activeTab === "hold" && (
             <BoardHoldTab
-              rows={holdRows}
+              rows={holdRowsShown}
               error={holdError}
               selected={holdSel}
               onToggle={toggleHold}
@@ -1712,7 +1743,7 @@ export function TintManagerContent() {
           )}
           {activeTab === "ci" && (
             <BoardCiTab
-              rows={cancelledRows}
+              rows={cancelledRowsShown}
               error={cancelledError}
               canRestore={access.canCancel}
               restoringId={restoringId}
@@ -1726,7 +1757,7 @@ export function TintManagerContent() {
           )}
           {activeTab === "base" && (
             <BoardBaseTab
-              rows={baseRows}
+              rows={baseRowsShown}
               error={baseError}
               selected={baseSel}
               onToggle={toggleBase}

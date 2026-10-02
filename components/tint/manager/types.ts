@@ -416,6 +416,9 @@ export interface BasePendingOrder {
   smuCode:           string | null;
   route:             string | null;
   articleTag:        string | null;
+  /** Header filters (2026-10-02). */
+  deliveryTypeName:  string | null;
+  priorityLevel:     number;
   siteName:          string;
   /** orders.customerId — the numeric site FK the suggest endpoint needs. */
   siteId:            number | null;

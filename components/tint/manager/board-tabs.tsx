@@ -32,11 +32,16 @@ export function BoardTabs({
   active,
   onChange,
   counts,
+  rightSlot,
 }: {
   active:   BoardTab;
   onChange: (tab: BoardTab) => void;
   /** A tab missing from this map shows no badge. */
   counts:   Partial<Record<BoardTab, number>>;
+  /** The tab row's right side (2026-10-02, header like Billing): the controls
+   *  that left the header — Filter, + Add to Tint, ⌨. Same slot classes as
+   *  components/billing/billing-tab-bar.tsx `rightSlot`. */
+  rightSlot?: React.ReactNode;
 }) {
   const access = useTintManagerAccess();
   const tabs: { key: BoardTab; label: string; show: boolean }[] = [
@@ -53,7 +58,9 @@ export function BoardTabs({
   ];
 
   return (
-    <div className="flex items-end gap-[18px] px-3.5 bg-white border-b border-gray-200 flex-shrink-0">
+    // Billing's tab-row container (billing-tab-bar.tsx), so both rows are the same
+    // height and alignment; flex-shrink-0 keeps it from collapsing in the pane.
+    <div className="flex flex-shrink-0 items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
       {tabs.filter((t) => t.show).map((t) => {
         const on = active === t.key;
         const count = counts[t.key];
@@ -75,6 +82,7 @@ export function BoardTabs({
           </button>
         );
       })}
+      {rightSlot && <div className="ml-auto flex items-center gap-2 py-1.5">{rightSlot}</div>}
     </div>
   );
 }

@@ -89,13 +89,11 @@ export const dynamic = "force-dynamic";
  * ⚠ If any of those feeds gains or loses a stage, THIS predicate must move
  * with it, or the board will stop refreshing on a change it displays.
  *
- * ⚠ `startOfToday` is deliberately computed the SAME (server-local, not IST) way
- * as the board's, in app/api/tint/manager/orders/route.ts. That expression is
- * arguably wrong — on Vercel the server runs UTC, so "today" starts at 05:30 IST
- * rather than midnight — but it is PRE-EXISTING and out of scope here. Copying it
- * verbatim keeps the marker and the board on one boundary; "fixing" it in only
- * one of the two would put them 5.5 hours apart and make the Completed column
- * refresh at the wrong moment. Fix both together or neither.
+ * ⚠ `startOfToday` is computed the SAME way as the board's, in
+ * app/api/tint/manager/orders/route.ts — IST midnight via getISTDayRange()
+ * since 2026-10-02 (it was server-local midnight = 05:30 IST on Vercel; both
+ * were fixed in one commit). Keep the two identical: changing only one puts
+ * the marker and the board on different day boundaries.
  */
 export async function GET(): Promise<NextResponse> {
   const session = await auth();
@@ -108,8 +106,8 @@ export async function GET(): Promise<NextResponse> {
   const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
   if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
-  const now          = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  // IST midnight — the board's exact expression (orders/route.ts). See the header.
+  const startOfToday = getISTDayRange().start;
 
   // Sequential await, never $transaction (CORE §3). The hide-exclusion is
   // AND-merged exactly as the board's six queries merge it, so a hidden OBD

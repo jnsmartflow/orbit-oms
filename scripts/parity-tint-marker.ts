@@ -50,10 +50,10 @@ type Sig = { count: number; latest: string | null };
 // the Tint Manager can see change — so MISSED = "a tab or the board moved and
 // the NEW marker did not".
 
-/** The marker's predicate (UTC-midnight "today" kept, as the route). wide = with arms 4–5. */
+/** The marker's predicate (IST-midnight "today", as the route since 2026-10-02). wide = with arms 4–5. */
 async function markerWhere(wide: boolean): Promise<Prisma.ordersWhereInput> {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  // IST midnight — the route's expression since 2026-10-02 (marker/route.ts).
+  const startOfToday = getISTDayRange().start;
   const hideExclusion = await getHideExclusion();
   const baseOperatorId = await getBaseOperatorId();
   const notBase = baseOperatorId !== null ? { assignedToId: { not: baseOperatorId } } : {};
@@ -85,8 +85,7 @@ async function oldSig(where: Prisma.ordersWhereInput): Promise<Sig> {
 
 /** The Base route's predicate: the step-9 tint block OR arms 6–8, AND hide — the route's, verbatim. */
 async function baseRouteWhere(): Promise<Prisma.ordersWhereInput> {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const startOfToday = getISTDayRange().start;
   const tint = await markerWhere(true); // { AND: [tintBlock, hide] }
   const [tintBlock, hide] = (tint.AND as Prisma.ordersWhereInput[]);
   return {
