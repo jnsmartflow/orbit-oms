@@ -102,6 +102,11 @@ export const PAGE_NAV_MAP: NavItemConfig[] = [
   //   operations        /operations/tinting (idx 0,  operations_tinting) unchanged
   // Re-derive that comparison before moving this line; do not trust this comment.
   { pageKey: "ci",                 label: "CI",            href: "/ci" },
+  // Freight Trips (2026-10-02) — the report-only paper-trip layer over held
+  // bills. Placed AFTER ci, so it displaces nobody's navItems[0] (MobileShell's
+  // Home): at this commit NO user holds freight_trips, so the derived Home is
+  // unchanged for every person. Re-derive against the grants before moving it.
+  { pageKey: "freight_trips",      label: "Freight Trips", href: "/freight-trips" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },
@@ -383,9 +388,8 @@ export type PageKey =
   // trips and options; canEdit = create / edit / add-remove bills / cancel.
   // ⚠ NOT `floor`: freight routes gate on this key ONLY. Granted per user
   // (user_page_access rows, Smart Flow SQL), never seed.
-  // ⚠ NOT YET in PAGE_NAV_MAP / ACCESS_SECTIONS / ICON_MAP — the screen and nav
-  // land in step 7. Until then /admin/access shows its "Section map out of step"
-  // banner naming this key (a runtime banner, not a compile error).
+  // In PAGE_NAV_MAP (→ /freight-trips, after ci), ACCESS_SECTIONS "Operations"
+  // and ICON_MAP since the screen shipped (step 7, 2026-10-02).
   | "freight_trips"
   | "delivery_challans"
   | "shade_master"
@@ -701,7 +705,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     // The six action ticks follow "Billing · Picking" so the whole Billing
     // family reads as one block on /admin/access: the screen, its Picking tab,
     // then the six decisions the Orders tab allows.
-    "picking", "floor", "mrn", "ci", "mail_orders", "billing_picking",
+    "picking", "floor", "mrn", "ci", "freight_trips", "mail_orders", "billing_picking",
     "billing_print", "billing_telephonic", "billing_pick_delete",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
     "billing_hand", "billing_ci",
@@ -717,7 +721,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     "tint_operator", "operations_tinting",
     "operations_tint_operator", "delivery_challans", "shade_master",
     "sampling_library", "ti_report",
-    "reports_tint_summary", "reports_ti_report",
+    "reports_tint_summary", "reports_ti_report", "reports_trip_detail",
   ] },
   { label: "Master data", keys: ["customers", "skus", "routes_areas", "vehicles"] },
   { label: "Admin panel", keys: [

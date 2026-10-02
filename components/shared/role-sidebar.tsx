@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
   Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard, Mail,
-  FlaskConical, Route, PackageCheck, Container, Undo2, LayoutGrid,
+  FlaskConical, Route, PackageCheck, Container, Undo2, LayoutGrid, ReceiptText,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -82,6 +82,10 @@ export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }
   // indistinguishable at a glance. Same rule that kept `Truck` off MRN because
   // `vehicles` already had it.
   ci:                  Undo2,
+  // Freight Trips (2026-10-02). `ReceiptText` — a freight record on paper. Not
+  // `Truck` (vehicles), `Route` (trip_report) or `Container` (mrn): each is
+  // already a row in the same sidebar and Menu sheet.
+  freight_trips:       ReceiptText,
 };
 
 export const DEFAULT_ICON = User;
