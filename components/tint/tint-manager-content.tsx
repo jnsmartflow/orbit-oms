@@ -45,7 +45,9 @@ import { UniversalHeader } from "@/components/universal-header";
 import { HeaderFilter, type FilterGroup } from "@/components/header-filter";
 import { HeaderDateStepper } from "@/components/header-date-stepper";
 import { HeaderShortcuts, type ShortcutItem } from "@/components/header-shortcuts";
-import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
+// The one-page Add ship-to form (2026-10-02) replaced CustomerMissingSheet here —
+// the tag, the nudge and the Assign / Base — No Tint interceptor all open it.
+import { AddShipToSheet, type AddShipToResult } from "@/components/tint/manager/add-ship-to-sheet";
 import { RemoveObdModal } from "@/components/tint/RemoveObdModal";
 import { HideObdModal } from "@/components/tint/HideObdModal";
 import { SkipHistoryModal } from "@/components/tint/SkipHistoryModal";
@@ -436,19 +438,22 @@ export function TintManagerContent() {
     setMissingNudge(null);
   }, [access.canAddCustomer]);
 
-  /** After a sheet save: refetch, then flash every bill of that ship-to code that
-   *  is no longer missing (~2s) and say how many were updated. The save route's
-   *  backfill re-links them (orders.customerMissing → false) in the same request. */
-  const afterCustomerSaved = useCallback(async (code: string | null | undefined, name: string | null | undefined) => {
-    const before = code
-      ? Array.from(missingBoardRef.current.byOrder.values()).filter((b) => b.shipToCustomerId === code).map((b) => b.orderId)
-      : [];
+  /** After an Add ship-to save: the ONE success toast (the server's re-linked
+   *  bill count), refetch, then flash every board bill of that ship-to code that
+   *  is no longer missing (~2s). The save route's backfill re-links them
+   *  (orders.customerMissing → false) in the same request. */
+  const afterCustomerSaved = useCallback(async (r: AddShipToResult) => {
+    const code = r.customerCode;
+    const before = Array.from(missingBoardRef.current.byOrder.values())
+      .filter((b) => (b.shipToCustomerId ?? "").toUpperCase() === code)
+      .map((b) => b.orderId);
+    toast.success(`✓ ${r.customerName} added to master · ${r.billsUpdated} ${r.billsUpdated === 1 ? "bill" : "bills"} updated`);
+    for (const w of r.warnings) toast.warning(w);
     void fetchBoard();
     const list = await fetchMissingCustomers();
-    if (!code || list === null) return;
+    if (list === null) return;
     const still = new Set(list.map((b) => b.orderId));
     const fixed = before.filter((id) => !still.has(id));
-    toast.success(`✓ ${name ?? code} added to master · ${fixed.length} ${fixed.length === 1 ? "bill" : "bills"} updated`);
     if (fixed.length > 0) {
       setMissingFlash(new Set(fixed));
       window.setTimeout(() => setMissingFlash(new Set()), 2000);
@@ -2340,7 +2345,7 @@ export function TintManagerContent() {
 
       {/* ── Modals, all single-instance ──────────────────────────────────── */}
 
-      <CustomerMissingSheet
+      <AddShipToSheet
         open={missingSheetOpen}
         warningMessage={missingSheetWarning}
         onOpenChange={(next) => {
@@ -2353,14 +2358,15 @@ export function TintManagerContent() {
           if (!next) setMissingSheetWarning(undefined);
           setMissingSheetOpen(next);
         }}
-        shipToCustomerId={missingSheetOrder?.shipToCustomerId}
-        shipToCustomerName={missingSheetOrder?.shipToCustomerName}
-        onResolved={() => {
+        shipToCode={missingSheetOrder?.shipToCustomerId}
+        shipToName={missingSheetOrder?.shipToCustomerName}
+        onSaved={(r) => {
           sheetResolvedRef.current = true;
           setMissingSheetWarning(undefined);
           setMissingSheetOpen(false);
-          // Refetch board + list; flash the bills of that code and toast the count.
-          void afterCustomerSaved(missingSheetOrder?.shipToCustomerId, missingSheetOrder?.shipToCustomerName);
+          // One toast + refetch; the interrupted Assign / Base — No Tint then
+          // replays by itself once the refreshed bill is no longer customerMissing.
+          void afterCustomerSaved(r);
         }}
       />
 

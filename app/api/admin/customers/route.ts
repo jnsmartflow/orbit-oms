@@ -4,14 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
-import {
-  validateIncomingSalesOfficers,
-  applyDismissalToggles,
-  reconcileCustomerSalesOfficers,
-  syncSalesOfficerContacts,
-  enforcePrimaryContactRule,
-  SoSyncValidationError,
-} from "@/lib/customers/so-sync";
+import { SoSyncValidationError } from "@/lib/customers/so-sync";
+import { createCustomer } from "@/lib/customers/create-customer";
 
 export const dynamic = 'force-dynamic';
 
@@ -166,62 +160,31 @@ export async function POST(req: Request) {
   }
 
   const { contacts, salesOfficers, dismissalsToToggle, ...data } = parsed.data;
-  const customerCode = data.customerCode.trim().toUpperCase();
 
-  // Stage B — validate FIRST, before any DB writes.
-  // A validation failure here leaves the DB untouched.
+  // The create core — Stage B validate, 409, Stage A create (its pre-existing
+  // $transaction wrapper kept, CORE §3 landmine policy), F → C → D → E SO sync,
+  // the customerMissing backfill, re-fetch. EXTRACTED 2026-10-02 to
+  // lib/customers/create-customer.ts so the Tint Manager's Add ship-to form
+  // creates the same way; behaviour here is unchanged.
+  let created;
   try {
-    await validateIncomingSalesOfficers(salesOfficers, prisma);
+    created = await createCustomer({
+      data, contacts, salesOfficers, dismissalsToToggle,
+      include: fullInclude,
+      wrapCreateInTransaction: true,
+    });
   } catch (err) {
     if (err instanceof SoSyncValidationError) {
       return NextResponse.json({ error: err.message, field: err.field }, { status: err.status });
     }
     throw err;
   }
-
-  const existing = await prisma.delivery_point_master.findUnique({ where: { customerCode } });
-  if (existing) {
+  if (created.kind === "exists") {
     return NextResponse.json({ error: "Customer code already exists." }, { status: 409 });
   }
-
-  // Strip contact-level linkedSalesOfficerId from the nested-create payload.
-  // Stage D owns that field; on initial create there are no SO links yet,
-  // so any value here would be stale/spurious.
-  const contactsForCreate = contacts.map(({ linkedSalesOfficerId: _ignored, ...rest }) => rest);
-
-  // Stage A — existing customer + contacts save (pre-existing $transaction wrapper
-  // kept verbatim per CORE §3 landmine policy).
-  const customer = await prisma.$transaction(async (tx) => {
-    return tx.delivery_point_master.create({
-      data: {
-        ...data,
-        customerCode,
-        ...(contactsForCreate.length > 0 && { contacts: { create: contactsForCreate } }),
-      },
-      include: fullInclude,
-    });
-  });
-
-  // Stages F → C → D → E — multi-SO + Contacts sync.
-  await applyDismissalToggles(customer.id, dismissalsToToggle, prisma);
-  await reconcileCustomerSalesOfficers(customer.id, salesOfficers, prisma);
-  await syncSalesOfficerContacts(customer.id, prisma);
-  await enforcePrimaryContactRule(customer.id, prisma);
-
-  // customerMissing backfill (Finding 2 — preserved untouched). The only change
-  // is that the result is now KEPT: creating a customer silently re-parents
-  // every orphan order carrying this code, and that is the part of the request
-  // a reader of the log would otherwise never see.
-  const backfill = await prisma.orders.updateMany({
-    where: { shipToCustomerId: customerCode, customerId: null },
-    data:  { customerMissing: false, customerId: customer.id },
-  });
-
-  // Re-fetch so the response reflects synced SO links + refreshed contacts.
-  const finalCustomer = await prisma.delivery_point_master.findUnique({
-    where: { id: customer.id },
-    include: fullInclude,
-  });
+  const { customerCode, customer, finalCustomer } = created;
+  const contactsForCreate = { length: created.contactsCreated };
+  const backfill = { count: created.ordersBackfilled };
 
   // AFTER every write in the request has returned (audit RULE 2). One line for
   // the whole create — the customer, its nested contacts, its SO links, and the

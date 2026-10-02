@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add Ship-to Form</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-600:#7C3AED;--brand-700:#6D28D9;
+--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5C5869;--ink-700:#3F3B4B;--ink-900:#1B1826;
+--ok:#059669;--ok-bg:#ECFDF5;--ok-text:#047857;--warn:#D97706;--warn-bg:#FFFBEB;--warn-text:#B45309;--warn-bd:#FDE68A;--line:#EEEDF3}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:13px;color:var(--ink-900);background:#F1F0F5}
+.mono{font-family:"JetBrains Mono",monospace;font-size:12px}
+button,input,select,textarea{font-family:inherit;font-size:inherit}
+.note{background:var(--ink-900);color:#fff;font-size:12px;padding:7px 16px}.note b{color:#C4B5FD}
+.stage{position:relative;height:calc(100vh - 31px);overflow:hidden}
+.bg{position:absolute;inset:0;padding:20px 24px;color:var(--ink-400);background:#fff}
+.bg .r{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:40px;padding:0 10px}
+.bg .r.m{background:#FFFBEB;box-shadow:inset 4px 0 0 var(--warn)}
+.scrim{position:absolute;inset:0;background:rgba(27,24,38,.32)}
+.sheet{position:absolute;top:0;right:0;bottom:0;width:560px;background:#fff;box-shadow:-16px 0 40px rgba(27,24,38,.16);display:flex;flex-direction:column}
+.sh{padding:18px 22px 14px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:flex-start}
+.sh h2{margin:0;font-size:17px;letter-spacing:-.01em}
+.sh p{margin:3px 0 0;color:var(--ink-500);font-size:12.5px}
+.sh .x{margin-left:auto;border:0;background:none;color:var(--ink-400);font-size:18px;cursor:pointer}
+.bills{margin:14px 22px 0;background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--warn-text)}
+.bills b{color:#92400E}
+.bills .o{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.bills .o span{background:#fff;border:1px solid var(--warn-bd);border-radius:5px;padding:1px 7px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-700)}
+.body{flex:1;overflow:auto;padding:16px 22px 20px;display:flex;flex-direction:column;gap:16px}
+.grp{display:flex;flex-direction:column;gap:12px}
+.gl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);font-weight:700;display:flex;align-items:center;gap:8px}
+.gl:after{content:"";flex:1;height:1px;background:var(--line)}
+.f label{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-700);font-weight:600;margin-bottom:6px}
+.f label em{font-style:normal;color:var(--ink-400);font-weight:500}
+.f label .req{color:#E11D48}
+.in{width:100%;height:38px;border:1px solid var(--ink-200);border-radius:9px;padding:0 12px;background:#fff;outline:none;color:var(--ink-900)}
+.in:focus{border-color:var(--brand-600);box-shadow:0 0 0 3px var(--brand-100)}
+.in[readonly]{background:var(--ink-25);color:var(--ink-600)}
+.row2{display:grid;grid-template-columns:150px 1fr;gap:12px}
+.hint{font-size:11.5px;color:var(--ink-400);margin-top:5px}
+/* combobox */
+.cb{position:relative}
+.cb .in{padding-left:34px}
+.cb .ic{position:absolute;left:12px;top:11px;width:13px;height:13px;border:2px solid var(--ink-400);border-radius:50%}
+.cb .ic:after{content:"";position:absolute;width:5px;height:2px;background:var(--ink-400);right:-5px;bottom:-3px;transform:rotate(45deg)}
+.dd{position:absolute;left:0;right:0;top:42px;background:#fff;border:1px solid var(--ink-100);border-radius:10px;box-shadow:0 14px 30px rgba(27,24,38,.14);z-index:5;overflow:hidden;display:none}
+.cb.open .dd{display:block}
+.dd .g{padding:7px 12px 3px;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400);font-weight:700;background:var(--ink-25)}
+.dd .o{display:grid;grid-template-columns:1fr auto;gap:10px;padding:9px 12px;cursor:pointer;align-items:center}
+.dd .o:hover,.dd .o.k{background:var(--brand-50)}
+.dd .o b{font-weight:600}.dd .o b mark{background:#FEF3C7;color:inherit;border-radius:2px}
+.dd .o span{font-size:11.5px;color:var(--ink-500)}
+.dd .ft{padding:7px 12px;font-size:11px;color:var(--ink-400);border-top:1px solid var(--line)}
+.socard{display:none;margin-top:8px;border:1px solid var(--ink-100);background:var(--ink-25);border-radius:10px;padding:10px 12px;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.socard.on{display:grid}
+.socard .av{width:32px;height:32px;border-radius:50%;background:var(--brand-100);color:var(--brand-700);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:12px}
+.socard b{display:block}.socard span{font-size:12px;color:var(--ink-500)}
+.socard em{font-style:normal;font-size:11px;color:var(--ok-text);background:var(--ok-bg);border-radius:5px;padding:2px 7px;font-weight:600}
+.rrow{display:grid;grid-template-columns:1fr 170px 30px;gap:8px;margin-bottom:8px;align-items:center}
+.rrow .rm{border:0;background:none;color:var(--ink-400);font-size:15px;cursor:pointer;height:38px}
+.rrow .rm:hover{color:#E11D48}
+.rrow .main{grid-column:1/-1;font-size:11px;color:var(--ink-400);margin:-4px 0 2px}
+.addr{border:0;background:none;color:var(--brand-700);font-weight:600;padding:2px 0;cursor:pointer;font-size:12.5px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chips button{border:1px solid var(--ink-200);background:#fff;border-radius:16px;padding:3px 10px;font-size:11.5px;color:var(--ink-600);cursor:pointer}
+.chips button:hover{border-color:var(--brand-600);color:var(--brand-700)}
+.chips i{font-style:normal;font-size:11px;color:var(--ink-400);align-self:center;margin-right:2px}
+/* derived */
+.derived{border:1px solid var(--ink-100);border-radius:10px;background:var(--ink-25);display:grid;grid-template-columns:1fr 1fr 1fr;overflow:hidden}
+.derived div{padding:10px 12px;border-left:1px solid var(--ink-100)}.derived div:first-child{border-left:0}
+.derived small{display:block;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400);font-weight:700}
+.derived b{display:block;margin-top:3px;font-size:13px}
+.derived .ch{font-size:11px;color:var(--brand-700);cursor:pointer;font-weight:600;margin-top:2px;display:inline-block}
+.derived.empty b{color:var(--ink-400);font-weight:500}
+.ok{display:none;align-items:center;gap:6px;font-size:11.5px;color:var(--ok-text);margin-top:6px}
+.picked .ok{display:flex}
+.more{border:1px dashed var(--ink-200);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;color:var(--ink-600);cursor:pointer}
+.more:hover{background:var(--ink-25)}
+.more span{font-size:11.5px;color:var(--ink-400)}
+.moreBody{display:none;flex-direction:column;gap:12px}
+.showmore .moreBody{display:flex}.showmore .more .ar{transform:rotate(180deg)}
+textarea.in{height:64px;padding:9px 12px;resize:vertical}
+.foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.foot .msg{font-size:11.5px;color:var(--ink-500);flex:1}
+.btn{height:38px;border-radius:9px;padding:0 16px;font-weight:600;border:1px solid var(--ink-200);background:#fff;cursor:pointer}
+.btn.pri{background:var(--brand-600);color:#fff;border-color:var(--brand-600)}
+.btn.pri:disabled{background:var(--ink-200);border-color:var(--ink-200);cursor:not-allowed}
+.dup{background:var(--ink-25);border:1px solid var(--ink-100);border-radius:10px;padding:9px 12px;font-size:12px;color:var(--ink-600)}
+.dup b{color:var(--ink-900)}
+.callout{display:inline-flex;width:18px;height:18px;border-radius:50%;background:var(--brand-600);color:#fff;font-size:10.5px;font-weight:700;align-items:center;justify-content:center;margin-right:4px;flex-shrink:0}
+</style></head>
+<body>
+<div class="note"><b>Add ship-to — v2</b> · code + name from SAP · address · area · sales person (details auto) · receivers (add more)</div>
+<div class="stage">
+  <div class="bg">
+    <div class="r">OBD · BILL TO · SHIP TO · ROUTE</div>
+    <div class="r m">9109817339 · CUBE COLORS PRIVATE LIMITED · AKSHAY GROUP 3587967 · —</div>
+    <div class="r">9109866414 · SHREE RAM SALES AGENCY · KESHAVAM VALLEY · Varachha</div>
+    <div class="r m">9109584084 · UPKAR DISTRIBUTORS · MARITIME MUSEUM LOTHAL 3326424 · —</div>
+  </div>
+  <div class="scrim"></div>
+
+  <div class="sheet" id="sheet">
+    <div class="sh">
+      <div><h2>Add ship-to</h2><p>Not in the customer master yet. Save once — every bill to this ship-to is fixed.</p></div>
+      <button class="x">✕</button>
+    </div>
+    <div class="body">
+      <div class="grp">
+        <div class="gl"><span class="callout">1</span>Ship-to (from SAP)</div>
+        <div class="row2">
+          <div class="f"><label>Code</label><input class="in mono" readonly value="3587967"></div>
+          <div class="f"><label>Name <em>edit only if SAP spelling is wrong</em></label><input class="in" value="AKSHAY GROUP"></div>
+        </div>
+        <div class="dup">No similar name in master. <span style="color:var(--ink-400)">(A near-match would show here to avoid duplicates.)</span></div>
+      </div>
+
+      <div class="grp">
+        <div class="gl"><span class="callout">2</span>Site address &amp; area</div>
+        <div class="f"><label>Site address <em>for the challan &amp; driver</em></label>
+          <textarea class="in" placeholder="Building / plot, road, landmark&#10;e.g. Akshay Group site, Opp. Star Bazaar, Pal Road"></textarea></div>
+        <div class="f" id="areaF">
+          <label>Area <span class="req">required</span></label>
+          <div class="cb" id="cb">
+            <span class="ic"></span>
+            <input class="in" id="areaIn" placeholder="Type area — e.g. Adajan, Pal, Vapi…" autocomplete="off">
+            <div class="dd" id="dd"></div>
+          </div>
+          
+        </div>
+        </div>
+
+      <div class="grp">
+        <div class="gl"><span class="callout">3</span>Contacts</div>
+        <div class="f"><label>Sales person <span class="req">required</span></label>
+          <div class="cb" id="soCb"><span class="ic"></span><input class="in" id="soIn" placeholder="Search sales officer…" autocomplete="off"><div class="dd" id="soDd"></div></div>
+          <div class="socard" id="soCard"></div>
+          
+        </div>
+        <div class="f"><label>Receiver at site <em>who takes the delivery</em></label>
+          <div id="recv"></div>
+          <button class="addr" id="addR">+ Add another receiver</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="msg" id="msg">Pick area and sales person to save.</div>
+      <button class="btn">Cancel</button>
+      <button class="btn pri" id="save" disabled>Save ship-to</button>
+    </div>
+  </div>
+</div>
+<script>
+const AREAS=[
+ ["Adajan","Adajan","Local"],["Adajan Patia","Adajan","Local"],["Pal","Adajan","Local"],["Palanpur Jakatnaka","Adajan","Local"],
+ ["Varachha","Varachha","Local"],["Vapi","Vapi","Upcountry"],["Valsad","Vapi","Upcountry"],["Bharuch","Bharuch","Upcountry"],
+ ["Ghod Dod Road","Ghod Dod","Local"],["Navsari","Navsari","Upcountry"],["Ahmedabad","IGT / Cross","IGT"],["A.K.Road","Varachha","Local"],
+ ["Amroli","Udhana","Local"],["Udhana","Udhana","Local"],["Vesu","Ghod Dod","Local"],["Althan","Udhana","Local"]];
+const RECENT=["Adajan","Vesu","Bharuch","Vapi"];
+const inp=document.getElementById('areaIn'),cb=document.getElementById('cb'),dd=document.getElementById('dd');
+let k=0,list=[],areaOk=false,soOk=false;
+function gate(){const ok=areaOk&&soOk;document.getElementById('save').disabled=!ok;
+ document.getElementById('msg').innerHTML=ok?'Saves to customer master + order-entry search.':(!areaOk&&!soOk?'Pick area and sales person to save.':(!areaOk?'Pick an area to save.':'Pick a sales person to save.'))}
+const SOS=[["Nirav Tailor","98250 11223","nirav.t@jsw.in"],["Sunil Nishad","98790 44110","sunil.n@jsw.in"],["Harsh Patel","99250 77881","harsh.p@jsw.in"],["Mehul Desai","97277 31122","mehul.d@jsw.in"],["Rakesh Shah","98980 55210","rakesh.s@jsw.in"]];
+
+function hl(n,q){if(!q)return n;const i=n.toLowerCase().indexOf(q.toLowerCase());return i<0?n:n.slice(0,i)+'<mark>'+n.slice(i,i+q.length)+'</mark>'+n.slice(i+q.length)}
+function render(){
+ const q=inp.value.trim();
+ list=AREAS.filter(a=>!q||a[0].toLowerCase().includes(q.toLowerCase())||a[1].toLowerCase().includes(q.toLowerCase())).slice(0,7);
+ dd.innerHTML=list.map((a,i)=>`<div class="o ${i==k?'k':''}" data-i="${i}"><b>${hl(a[0],q)}</b><span></span></div>`).join('')+
+   (list.length?'':'<div class="o"><span>No area matches — ask admin to add it</span></div>')+'<div class="ft">↑ ↓ · Enter to pick</div>';
+ dd.querySelectorAll('.o[data-i]').forEach(o=>o.onmousedown=e=>{e.preventDefault();pick(list[+o.dataset.i])});
+}
+function pick(a){
+ inp.value=a[0];cb.classList.remove('open');
+ document.getElementById('areaF').classList.add('picked');
+ 
+ areaOk=true;gate();
+}
+inp.onfocus=()=>{k=0;cb.classList.add('open');render()};
+inp.oninput=()=>{k=0;cb.classList.add('open');render();areaOk=false;gate();document.getElementById('areaF').classList.remove('picked')};
+inp.onblur=()=>setTimeout(()=>cb.classList.remove('open'),120);
+inp.onkeydown=e=>{if(e.key=='ArrowDown'){k=Math.min(k+1,list.length-1);render()}if(e.key=='ArrowUp'){k=Math.max(k-1,0);render()}if(e.key=='Enter'&&list[k]){pick(list[k])}if(e.key=='Escape')cb.classList.remove('open')};
+const soIn=document.getElementById('soIn'),soCb=document.getElementById('soCb'),soDd=document.getElementById('soDd');
+function soRender(){const q=soIn.value.trim().toLowerCase();const l=SOS.filter(x=>!q||x[0].toLowerCase().includes(q));
+ soDd.innerHTML=l.map(x=>`<div class="o" data-n="${x[0]}"><b>${x[0]}</b><span class="mono">${x[1]}</span></div>`).join('')+'<div class="ft">Sales officer master</div>';
+ soDd.querySelectorAll('.o').forEach(o=>o.onmousedown=e=>{e.preventDefault();soIn.value=o.dataset.n;soCb.classList.remove('open');soOk=true;gate();const x=SOS.find(z=>z[0]==o.dataset.n);const c=document.getElementById('soCard');c.innerHTML=`<div class="av">${x[0].split(' ').map(w=>w[0]).join('')}</div><div><b>${x[0]}</b><span class="mono">${x[1]}</span> · <span>${x[2]}</span></div><em>Main sales person</em>`;c.classList.add('on')})}
+soIn.onfocus=()=>{soCb.classList.add('open');soRender()};soIn.oninput=()=>{soOk=false;gate();document.getElementById('soCard').classList.remove('on');soCb.classList.add('open');soRender()};soIn.onblur=()=>setTimeout(()=>soCb.classList.remove('open'),120);
+
+document.getElementById('save').onclick=()=>{document.getElementById('msg').innerHTML='<b style="color:#047857">✓ AKSHAY GROUP added to master · 1 bill updated</b>';};
+
+const recv=document.getElementById('recv');
+function addRecv(){const n=recv.children.length;const d=document.createElement('div');d.className='rrow';
+ d.innerHTML=`<input class="in" placeholder="Receiver name"><input class="in mono" placeholder="Phone (optional)">`+(n?`<button class="rm" title="Remove">✕</button>`:'<span></span>')+(n?'':'<div class="main">Main receiver</div>');
+ recv.appendChild(d);const rm=d.querySelector('.rm');if(rm)rm.onclick=()=>d.remove();}
+addRecv();document.getElementById('addR').onclick=addRecv;
+</script>
+</body></html>
