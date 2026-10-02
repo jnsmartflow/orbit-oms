@@ -334,6 +334,9 @@ export interface FloorBoardRow extends PickingQueueRow {
   // ⚠ OPAQUE. Compare it for equality only — never parse the `c:`/`s:` prefix
   // or read an id out of it (drop-key.ts explains the two id spaces).
   stopKey: string;
+  /** SAP's ship-to customer code (`orders.shipToCustomerId`), as SAP sent it.
+   *  Display only — the All tab's Missing customer card (2026-10-02). */
+  shipToCode: string;
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()

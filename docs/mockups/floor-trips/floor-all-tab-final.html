@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floor All Tab</title>
+<style>
+  :root{
+    --brand-50:#F5F3FF; --brand-200:#DDD6FE; --brand-600:#7C3AED; --brand-700:#6D28D9;
+    --ink:#111827; --ink-2:#374151; --muted:#6B7280; --faint:#9CA3AF; --ghost:#C4C7CF;
+    --line:#ECEDF1; --line-soft:#F3F4F7; --hover:#FAFAFC; --chip:#F3F4F6;
+    /* exact card StatusBar colours: components/floor/route-cards.tsx:79-85, track :114 */
+    --s-done:#2eb862; --s-check:#fbbf24; --s-pick:#5b8ded; --s-wait:#d3d3dd; --s-tint:#f9a8d4; --s-track:#f1f1f6;
+    --amber-bg:#FFFBEB; --amber-tx:#B45309; --amber-bd:#FCE7B2; --ok-bg:#ECFDF3; --ok-tx:#15803D;
+    --row-h:64px; --pad-x:24px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#fff;color:var(--ink);font-size:13px;-webkit-font-smoothing:antialiased}
+  button{font:inherit}
+  :focus-visible{outline:2px solid var(--brand-600);outline-offset:2px}
+
+  .note{background:var(--brand-50);border-bottom:1px solid var(--brand-200);padding:10px 32px;font-size:12px;color:var(--brand-700);display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center}
+  .note b{color:var(--ink);font-weight:600}
+  .seg{display:inline-flex;background:var(--chip);border-radius:8px;padding:3px;gap:2px}
+  .seg button{border:0;background:transparent;font-size:12px;color:var(--muted);padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .seg button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(17,24,39,.08)}
+  .note .seg{background:#fff;border:1px solid var(--brand-200)}
+  .note .seg button.on{background:var(--brand-600);color:#fff;box-shadow:none}
+
+  .bar{display:flex;align-items:center;gap:8px;padding:12px 32px;border-bottom:1px solid var(--line)}
+  .wrap{display:flex}
+  .rail{width:220px;border-right:1px solid var(--line);padding:20px 16px;flex-shrink:0;min-height:calc(100vh - 104px)}
+  .rail .lbl{font-size:11px;color:var(--faint);font-weight:500}
+  .plan{margin-top:10px;border:1px solid var(--brand-600);border-radius:10px;padding:12px 14px}
+  .plan b{font-size:13px;font-weight:600} .plan div{font-size:12px;color:var(--muted);margin-top:3px}
+  main{flex:1;padding:0 32px 48px;min-width:0}
+  .subtabs{display:flex;align-items:center;gap:20px;height:48px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--faint)}
+  .subtabs .on{color:var(--ink);font-weight:600;box-shadow:inset 0 -2px 0 var(--ink);height:100%;display:inline-flex;align-items:center}
+  .cnt{display:inline-block;background:var(--ink);color:#fff;border-radius:5px;font-size:10.5px;font-weight:600;padding:1px 6px;margin-left:6px}
+  .cnt.mut{background:var(--chip);color:var(--muted);font-weight:500}
+  .right{margin-left:auto}
+
+  .shead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin:32px 0 20px}
+  .shead h2{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .shead p{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
+  .totals{display:flex;gap:28px}
+  .totals div{text-align:right}
+  .totals b{display:block;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .totals span{font-size:11.5px;color:var(--faint)}
+
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;align-items:stretch;margin-top:28px}
+  @media (max-width:1280px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:680px){.grid{grid-template-columns:1fr}.rail{display:none}main{padding:0 16px 40px}.totals{display:none}:root{--pad-x:18px}}
+  .card{border:1px solid var(--line);border-radius:14px;background:#fff;display:flex;flex-direction:column;overflow:hidden}
+  .head{padding:22px var(--pad-x);display:flex;align-items:center;gap:16px;cursor:pointer;border-bottom:1px solid var(--line);transition:background .12s}
+  .head:hover{background:var(--hover)}
+  .head .txt{flex:1;min-width:0}
+  .ttl{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-2)}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .dots{display:inline-flex;gap:3px}
+  .kg{font-size:30px;font-weight:650;margin-top:8px;letter-spacing:-.025em;line-height:1;font-variant-numeric:tabular-nums}
+  .kg small{font-size:13px;font-weight:500;color:var(--faint);margin-left:4px;letter-spacing:0}
+  .meta{display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .meta b{color:var(--ink-2);font-weight:600}
+  .ring{width:64px;height:64px;flex-shrink:0;position:relative}
+  .ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:17px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums}
+  .ring b small{font-size:10px;font-weight:500;color:var(--faint);margin-top:3px}
+
+  .rows{flex:1;display:flex;flex-direction:column;padding:6px 0}
+  .row{height:var(--row-h);padding:0 var(--pad-x);display:flex;flex-direction:column;justify-content:center;cursor:pointer;transition:background .1s}
+  .row + .row{box-shadow:inset 0 1px 0 var(--line-soft)}
+  .row:hover{background:var(--hover)}
+  .rtop{display:flex;align-items:baseline;gap:8px}
+  .rname{font-weight:600;font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rmeta{font-size:12px;color:var(--faint);white-space:nowrap}
+  .rkg{margin-left:auto;font-weight:600;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .rkg small{font-weight:400;color:var(--faint);font-size:11.5px;margin-left:2px}
+  .sbar{display:flex;gap:1.5px;height:4px;border-radius:2px;overflow:hidden;background:var(--s-track);margin-top:10px}
+  .sbar i{display:block;height:100%}
+  .row.empty{cursor:default}
+  .row.empty:hover{background:transparent}
+  .row.empty .rname,.row.empty .rkg{color:var(--ghost);font-weight:500}
+
+  .card.nr .head{cursor:default}
+  .card.nr .head:hover{background:transparent}
+  .card.nr.has{border-color:var(--amber-bd)}
+  .card.nr.has .head{background:var(--amber-bg);border-bottom-color:var(--amber-bd)}
+  .tag{margin-left:auto;font-size:11px;font-weight:600;color:var(--amber-tx);background:#fff;border:1px solid var(--amber-bd);border-radius:999px;padding:2px 8px}
+  .fix{margin-left:auto;font-size:12px;font-weight:600;color:var(--amber-tx);white-space:nowrap}
+  .okbox{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px var(--pad-x);text-align:center}
+  .okbox .tick{width:44px;height:44px;border-radius:50%;background:var(--ok-bg);color:var(--ok-tx);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700}
+  .okbox strong{font-size:13.5px;font-weight:600;color:var(--ok-tx)}
+  .okbox span{color:var(--faint);font-size:12px;max-width:210px;line-height:1.5}
+
+  .key{display:flex;gap:16px;flex-wrap:wrap;margin-top:28px;font-size:12px;color:var(--muted)}
+  .key span{display:inline-flex;align-items:center;gap:6px}
+  .key i{width:16px;height:4px;border-radius:2px;display:inline-block}
+  .why{margin-top:40px;border-top:1px solid var(--line);padding-top:24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px 32px;font-size:12.5px;line-height:1.55;color:var(--muted)}
+  .why h4{margin:0 0 6px;font-size:13px;font-weight:600;color:var(--ink)}
+  code{font-size:11.5px;background:var(--chip);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<div class="note">
+  <b>Final mockup: Floor, All tab, By route</b>
+  <span>Missing customer card</span>
+  <div class="seg" id="nrmode"><button data-n="has" class="on">2 bills</button><button data-n="none">Empty</button></div>
+  <span style="color:var(--muted)">kg from your 2 Oct 18:06 screenshots. Bar statuses are sample data.</span>
+</div>
+
+<div class="bar">
+  <div class="seg"><button class="on">All</button><button>Local</button><button>Upcountry</button><button>IGT / Cross</button></div>
+</div>
+
+<div class="wrap">
+  <aside class="rail">
+    <div class="lbl">0 trips, 0 bills</div>
+    <div class="plan"><b>To plan</b><div>83 bills, 23,837.6 L</div></div>
+  </aside>
+  <main>
+    <div class="subtabs">
+      <span class="on">Floor <span class="cnt">83</span></span>
+      <span>Tinting <span class="cnt mut">10</span></span>
+      <span>On hold <span class="cnt mut">182</span></span>
+      <span>Cancel &amp; CI <span class="cnt mut">0</span></span>
+      <div class="right"><div class="seg"><button>Flat</button><button class="on">By route</button></div></div>
+    </div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="key" aria-label="Mockup colour key">
+      <span><i style="background:var(--s-done)"></i>Done</span>
+      <span><i style="background:var(--s-check)"></i>Needs check</span>
+      <span><i style="background:var(--s-pick)"></i>Picking</span>
+      <span><i style="background:var(--s-wait)"></i>Waiting</span>
+      <span><i style="background:var(--s-tint)"></i>Tint</span>
+      <span style="color:var(--faint)">Key shown for review only. The live cards stay colour-only, as today.</span>
+    </div>
+
+    <div class="why">
+      <div><h4>Four cards, always</h4>Local, Upcountry, IGT / Cross and Missing customer. They're the same height, and every route row is the same 64px, so rows line up across cards. IGT routes with no bills stay in place, greyed out.</div>
+      <div><h4>Today's bar, unchanged</h4>Each route uses the existing card <code>StatusBar</code> from <code>route-cards.tsx</code>: the same five colours, 4px high, 1.5px gaps, each segment as wide as its bill count. A route with 50 bills still takes one line.</div>
+      <div><h4>Ring in the header</h4>The same colours around the type's bill count. Next to it, kg is the headline number, with stops and litres underneath.</div>
+      <div><h4>What a click does</h4>Click a header to open that tab. Click a route to open that tab with the route card already open. On Missing customer, click a bill to give it an area.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+const ORDER=["D","K","P","W","T"];
+const COL={D:"var(--s-done)",K:"var(--s-check)",P:"var(--s-pick)",W:"var(--s-wait)",T:"var(--s-tint)"};
+const CARDS=[
+  {key:"Local",dot:["#2563EB"],bills:22,L:"5,785",rows:[
+    ["Adajan + Olpad",3209,"DDPKW"],["Ghod Dod + Udhana",1030,"DDKT"],["Varachha + Kamrej",3238,"DDDDKPWW"],["Other routes",69,"DD"]]},
+  {key:"Upcountry",dot:["#EA580C"],bills:50,L:"14,445.6",rows:[
+    ["Navsari",3320,"DDDDDDKKPWW"],["Chikhli + Vansda",4874,"DDDKT"],["Vapi",2759,"DDDDDDDDDKKPPW"],["Bharuch + Kamrej",4528,"DDDDDKPW"],["Bardoli",2353,"DD"],["Other routes",270,"W"]]},
+  {key:"IGT / Cross",dot:["#0D9488","#E11D48"],bills:9,L:"2,307",rows:[
+    ["Gujarat Mainland",2595,"DDDKP"],["Saurashtra & Kutch",3,"D"],["Maharashtra & Goa",244,"W"],["North India",0,""],["South India",0,""],["East & Central India",0,""]]}
+];
+const fmt=n=>n.toLocaleString("en-IN");
+const count=s=>{const c={D:0,K:0,P:0,W:0,T:0};for(const ch of s)c[ch]++;return c;};
+let NRM="has";
+
+function sbar(s){ const c=count(s);
+  return `<div class="sbar">${s.length?ORDER.filter(k=>c[k]).map(k=>`<i style="flex-grow:${c[k]};background:${COL[k]}"></i>`).join(""):""}</div>`; }
+function ring(s,label){ const c=count(s), n=s.length||1, R=23, C=2*Math.PI*R; let off=0;
+  const segs=s.length?ORDER.filter(k=>c[k]).map(k=>{const len=c[k]/n*C; const g=len>3?1.4:0; const el=`<circle r="${R}" cx="27" cy="27" fill="none" stroke="${COL[k]}" stroke-width="4.5" stroke-dasharray="${Math.max(len-g,0.5)} ${C-len+g}" stroke-dashoffset="${-off}" transform="rotate(-90 27 27)"/>`; off+=len; return el;}).join(""):"";
+  return `<div class="ring" aria-hidden="true"><svg width="64" height="64" viewBox="0 0 54 54"><circle r="${R}" cx="27" cy="27" fill="none" stroke="var(--s-track)" stroke-width="4.5"/>${segs}</svg><b>${label}<small>bills</small></b></div>`; }
+function row([name,kg,s]){
+  if(!s.length) return `<div class="row empty"><div class="rtop"><span class="rname">${name}</span><span class="rkg">No bills</span></div>${sbar("")}</div>`;
+  return `<div class="row" tabindex="0"><div class="rtop"><span class="rname">${name}</span><span class="rmeta">${s.length} stop${s.length>1?"s":""}</span><span class="rkg">${fmt(kg)}<small>kg</small></span></div>${sbar(s)}</div>`; }
+function card(cd){
+  const all=cd.rows.map(r=>r[2]).join(""), kg=cd.rows.reduce((a,r)=>a+r[1],0);
+  return `<section class="card"><div class="head" tabindex="0" title="Open ${cd.key}">
+    <div class="txt"><div class="ttl"><span class="dots">${cd.dot.map(d=>`<span class="dot" style="background:${d}"></span>`).join("")}</span>${cd.key}</div>
+    <div class="kg">${fmt(kg)}<small>kg</small></div>
+    <div class="meta"><span><b>${all.length}</b> stops</span><span><b>${cd.L}</b> L</span></div></div>
+    ${ring(all,cd.bills)}</div>
+    <div class="rows">${cd.rows.map(row).join("")}</div></section>`; }
+function nrCard(){
+  if(NRM==="none") return `<section class="card nr"><div class="head"><div class="txt">
+      <div class="ttl"><span class="dot" style="background:var(--faint)"></span>Missing customer</div>
+      <div class="kg">0<small>bills</small></div>
+      <div class="meta"><span>Every bill has a route</span></div></div>${ring("",0)}</div>
+      <div class="okbox"><div class="tick">✓</div><strong>All clear</strong><span>A bill shows up here when its customer or area has no route.</span></div></section>`;
+  return `<section class="card nr has"><div class="head"><div class="txt">
+      <div class="ttl"><span class="dot" style="background:var(--amber-tx)"></span>Missing customer<span class="tag">Needs an area</span></div>
+      <div class="kg">2<small>bills</small></div>
+      <div class="meta"><span><b>1,300</b> L</span><span>Not on any tab</span></div></div></div>
+      <div class="rows">
+        <div class="row" tabindex="0"><div class="rtop"><span class="rname">Akshay Group</span><span class="rmeta">Mumbai site</span><span class="fix">Customer missing</span></div>${sbar("D")}</div>
+        <div class="row" tabindex="0"><div class="rtop"><span class="rname">Maritime Museum Lothal</span><span class="rmeta">Site</span><span class="fix">Fix area</span></div>${sbar("W")}</div>
+      </div></section>`; }
+function render(){
+  document.querySelectorAll("#nrmode button").forEach(b=>b.classList.toggle("on",b.dataset.n===NRM));
+  document.getElementById("grid").innerHTML=CARDS.map(card).join("")+nrCard();
+}
+document.getElementById("nrmode").onclick=e=>{const b=e.target.closest("button"); if(b){NRM=b.dataset.n;render();}};
+render();
+</script>
+</body>
+</html>

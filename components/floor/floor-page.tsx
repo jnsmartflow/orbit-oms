@@ -3207,6 +3207,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
               clubReachRows={clubReachRows}
               openRouteCard={openRouteCard}
               onOpenRouteCard={setOpenRouteCard}
+              onScopeChange={setScope}
               searchActive={searchQuery.trim() !== ""}
               // The trips holding the searched bills — the rail narrows to them
               // (owner, 2026-09-29). Null = no narrowing.

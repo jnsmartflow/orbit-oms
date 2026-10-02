@@ -56,7 +56,7 @@ import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
-import { scopeTypes } from "@/lib/floor/scope";
+import { rowsInScope, scopeTypes } from "@/lib/floor/scope";
 
 // ── The placeholder routes (lib/trips/route-label.ts PLACEHOLDER_ROUTE_IDS) ──
 // route_master rows that name no place. Split here by what the owner decided
@@ -76,7 +76,7 @@ const OTHER_ROUTES_LABEL = "Other routes";
 // ── The bar ─────────────────────────────────────────────────────────────────
 // The trip bar's colours (trip-bar.tsx) plus the tint pink. The colour IS the
 // status — no words, no chips (owner). No held segment: see above.
-const SEGMENTS = [
+export const SEGMENTS = [
   { key: "done", color: "#2eb862" },
   { key: "needsCheck", color: NEEDS_CHECK_SEGMENT },
   { key: "picking", color: "#5b8ded" },
@@ -96,7 +96,7 @@ type BarKey = (typeof SEGMENTS)[number]["key"];
  *   tint       = tinting, plus the two tint-room states (never in the pool — they
  *                are the Tinting tab's — counted anyway so nothing falls through)
  */
-function barCounts(rows: FloorBoardRow[]): Record<BarKey, number> {
+export function barCounts(rows: FloorBoardRow[]): Record<BarKey, number> {
   const c = countByStatus(rows);
   return {
     done: c.done + c.dispatched,
@@ -107,7 +107,7 @@ function barCounts(rows: FloorBoardRow[]): Record<BarKey, number> {
   };
 }
 
-function StatusBar({ rows, className = "" }: { rows: FloorBoardRow[]; className?: string }) {
+export function StatusBar({ rows, className = "" }: { rows: FloorBoardRow[]; className?: string }) {
   if (rows.length === 0) return null;
   const counts = barCounts(rows);
   return (
@@ -124,7 +124,7 @@ function StatusBar({ rows, className = "" }: { rows: FloorBoardRow[]; className?
 // ── Figures ─────────────────────────────────────────────────────────────────
 
 /** Distinct stops — `stopKey` is the trip module's own stop identity. */
-function stopCount(rows: FloorBoardRow[]): number {
+export function stopCount(rows: FloorBoardRow[]): number {
   return new Set(rows.map((r) => r.stopKey)).size;
 }
 
@@ -137,7 +137,7 @@ function stopCount(rows: FloorBoardRow[]): number {
  * there is a weight at all, so the two can never disagree about "—". Display
  * only — nothing rounded here is fed back into arithmetic.
  */
-function kgText(rows: FloorBoardRow[]): string {
+export function kgText(rows: FloorBoardRow[]): string {
   const w = sumWeightKg(rows);
   if (formatWeightKg(w.kg) === null) return "—";
   return `${Math.round(w.kg).toLocaleString("en-US")}${w.unknown > 0 ? "+" : ""}`;
@@ -760,6 +760,297 @@ function OpenPanel({
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// THE ALL TAB — FOUR CARDS (2026-10-02, owner; design:
+// docs/mockups/floor-trips/floor-all-tab-final.html)
+//
+// Local · Upcountry · IGT / Cross · Missing customer, side by side, equal
+// height. Replaces the All tab's long route list (ByRoute) on By route ONLY;
+// the three typed tabs keep their own cards above, untouched.
+//
+// 🔴 NOTHING HERE RE-DERIVES A CARD. Each type card is `buildRouteCards` for
+// that tab — the same clubs, order, reach and Hand exclusion the tab itself
+// draws — so a number here is the number the tab shows when clicked through.
+//
+//   type card  header: dot(s), name, kg, stops + litres, StatusRing. Body: one
+//              row per club (`clubCards`, empty ones INCLUDED — greyed "No
+//              bills", not clickable), then Other routes when it has bills.
+//              Header click → that tab, cards grid; row click → that tab with
+//              that card open (TripDesk's `onOpenTab`).
+//   missing    every pool bill with NO delivery type — on no typed tab, so
+//              nothing else on the screen lists it. Always drawn: amber with
+//              bills, green "All clear" without. Row click → the detail panel.
+//
+// HAND bills are left out of every number (kg, stops, litres, ring, bars),
+// exactly as the tab cards leave them out — they ride no truck.
+
+/** The three typed tabs, in card order. */
+const ALL_TYPE_TABS: Array<Exclude<FloorScope, "All">> = ["Local", "Upcountry", "IGT / Cross"];
+
+/** Each tab's delivery-type dot(s) — the data.* palette (tailwind.config.ts). */
+const TAB_DOTS: Record<Exclude<FloorScope, "All">, string[]> = {
+  Local: ["bg-data-blue"],
+  Upcountry: ["bg-data-orange"],
+  "IGT / Cross": ["bg-data-teal", "bg-data-rose"],
+};
+
+/** One fixed row height, so rows line up across the four cards (64px). */
+const ALL_ROW = "flex h-16 w-full flex-col justify-center px-6 text-left";
+
+const ALL_CARD = "flex min-w-0 flex-col overflow-hidden rounded-[14px] border bg-white";
+
+/**
+ * The header ring — the same five SEGMENTS as StatusBar, around a bill count.
+ * New (2026-10-02); nothing else on the floor draws a ring.
+ */
+export function StatusRing({ rows, label }: { rows: FloorBoardRow[]; label: number }) {
+  const R = 23;
+  const C = 2 * Math.PI * R;
+  const counts = barCounts(rows);
+  const n = rows.length;
+  const parts = n === 0 ? [] : SEGMENTS.filter((s) => counts[s.key] > 0);
+  let offset = 0;
+  return (
+    <span className="relative h-16 w-16 shrink-0" aria-hidden>
+      <svg width="64" height="64" viewBox="0 0 54 54" className="-rotate-90">
+        <circle r={R} cx="27" cy="27" fill="none" stroke="#f1f1f6" strokeWidth="4.5" />
+        {parts.map((s) => {
+          const len = (counts[s.key] / n) * C;
+          // A hairline between segments, never on a lone one (it would read as a break).
+          const gap = parts.length > 1 && len > 3 ? 1.4 : 0;
+          const el = (
+            <circle
+              key={s.key}
+              r={R}
+              cx="27"
+              cy="27"
+              fill="none"
+              stroke={s.color}
+              strokeWidth="4.5"
+              strokeDasharray={`${Math.max(len - gap, 0.5)} ${C - len + gap}`}
+              strokeDashoffset={-offset}
+            />
+          );
+          offset += len;
+          return el;
+        })}
+      </svg>
+      <span className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+        <span className="text-[17px] font-bold tabular-nums text-[#1a1a22]">{label}</span>
+        <span className="mt-[3px] text-[10px] font-medium text-[#96969f]">bills</span>
+      </span>
+    </span>
+  );
+}
+
+/** The header's figures over the bills it counts (due, not Hand). */
+function AllHeadFigures({ rows }: { rows: FloorBoardRow[] }) {
+  return (
+    <>
+      <span className="mt-2 block whitespace-nowrap text-[30px] font-bold leading-none tracking-[-0.025em] tabular-nums text-[#1a1a22]">
+        {kgText(rows)}
+        <small className="ml-1 text-[13px] font-medium tracking-normal text-[#96969f]">kg</small>
+      </span>
+      <span className="mt-2.5 flex gap-4 whitespace-nowrap text-[12px] tabular-nums text-[#6b7280]">
+        <span>
+          <b className="font-semibold text-[#374151]">{stopCount(rows)}</b> stops
+        </span>
+        <span>
+          <b className="font-semibold text-[#374151]">{formatLitres(sumLitres(rows))}</b> L
+        </span>
+      </span>
+    </>
+  );
+}
+
+/** A club (or Other routes) row on a type card. */
+function AllClubRow({ card, onOpen }: { card: RouteCard; onOpen: () => void }) {
+  const empty = card.rows.length === 0 && card.upcoming.length === 0 && card.hand.length === 0;
+  if (empty) {
+    return (
+      <div className={`${ALL_ROW} cursor-default`}>
+        <span className="flex items-baseline gap-2 whitespace-nowrap">
+          <span className="min-w-0 truncate text-[13px] font-medium text-[#c4c7cf]">{card.name}</span>
+          <span className="ml-auto text-[13px] font-medium text-[#c4c7cf]">No bills</span>
+        </span>
+        <span className="mt-2.5 block h-1 rounded-[2px] bg-[#f1f1f6]" aria-hidden />
+      </div>
+    );
+  }
+  // Nothing due — the same words today's card uses (CardButton).
+  const nothingDue = card.rows.length === 0;
+  return (
+    <button type="button" className={`${ALL_ROW} cursor-pointer hover:bg-[#fafafc]`} onClick={onOpen}>
+      <span className="flex w-full items-baseline gap-2 whitespace-nowrap">
+        <span className="min-w-0 truncate text-[13px] font-semibold text-[#1a1a22]">{card.name}</span>
+        {nothingDue ? (
+          <span className="ml-auto text-[12px] text-[#96969f]">{card.upcoming.length > 0 ? "Upcoming only" : "Hand only"}</span>
+        ) : (
+          <>
+            <span className="shrink-0 text-[12px] tabular-nums text-[#96969f]">{plural(stopCount(card.rows), "stop", "stops")}</span>
+            <span className="ml-auto shrink-0 text-[13px] font-semibold tabular-nums text-[#1a1a22]">
+              {kgText(card.rows)}
+              <small className="ml-0.5 text-[11.5px] font-normal text-[#96969f]">kg</small>
+            </span>
+          </>
+        )}
+      </span>
+      {nothingDue ? <span className="mt-2.5 block h-1 w-full" aria-hidden /> : <StatusBar rows={card.rows} className="mt-2.5" />}
+    </button>
+  );
+}
+
+function AllTypeCard({
+  tab,
+  model,
+  onOpenTab,
+}: {
+  tab: Exclude<FloorScope, "All">;
+  model: RouteCardModel;
+  onOpenTab: (tab: Exclude<FloorScope, "All">, cardKey: string | null) => void;
+}) {
+  // Every club, empty ones too; Other routes only when it has a bill.
+  const shownOther = model.otherCard !== null && shownCards({ clubCards: [], otherCard: model.otherCard }).length > 0;
+  const rowCards: RouteCard[] = shownOther && model.otherCard ? [...model.clubCards, model.otherCard] : model.clubCards;
+  const due = rowCards.flatMap((c) => c.rows);
+  return (
+    <section className={`${ALL_CARD} border-[#ecedf1]`}>
+      <button
+        type="button"
+        title={`Open ${tab}`}
+        className="flex items-center gap-4 border-b border-[#ecedf1] px-6 py-[22px] text-left hover:bg-[#fafafc]"
+        onClick={() => onOpenTab(tab, null)}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 text-[13px] font-semibold text-[#374151]">
+            <span className="inline-flex gap-[3px]">
+              {TAB_DOTS[tab].map((d) => (
+                <span key={d} className={`h-2 w-2 rounded-full ${d}`} />
+              ))}
+            </span>
+            {tab}
+          </span>
+          <AllHeadFigures rows={due} />
+        </span>
+        <StatusRing rows={due} label={due.length} />
+      </button>
+      <div className="flex flex-1 flex-col py-1.5 [&>*+*]:shadow-[inset_0_1px_0_#f3f4f7]">
+        {rowCards.map((c) => (
+          <AllClubRow key={c.key} card={c} onOpen={() => onOpenTab(tab, c.key)} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * MISSING CUSTOMER — every pool bill with no delivery type. Its customer is
+ * not in delivery_point_master ("Customer missing", `dealerInMaster` false),
+ * or it is and its area gives no delivery type ("Fix area"). Nothing here is
+ * ever hidden: Hand bills are listed too, only left out of the figures.
+ */
+function MissingCustomerCard({ rows, onOpenDetail }: { rows: FloorBoardRow[]; onOpenDetail: (orderId: number) => void }) {
+  const counted = rows.filter((r) => !r.isHand);
+  const title = (dot: string) => (
+    <span className="flex items-center gap-2 text-[13px] font-semibold text-[#374151]">
+      <span className={`h-2 w-2 rounded-full ${dot}`} />
+      Missing customer
+    </span>
+  );
+  if (rows.length === 0) {
+    return (
+      <section className={`${ALL_CARD} border-[#ecedf1]`}>
+        <div className="flex items-center gap-4 border-b border-[#ecedf1] px-6 py-[22px]">
+          <span className="min-w-0 flex-1">
+            {title("bg-[#9ca3af]")}
+            <span className="mt-2 block text-[30px] font-bold leading-none tracking-[-0.025em] tabular-nums text-[#1a1a22]">
+              0<small className="ml-1 text-[13px] font-medium tracking-normal text-[#96969f]">bills</small>
+            </span>
+            <span className="mt-2.5 block text-[12px] text-[#6b7280]">Every bill has a customer and an area</span>
+          </span>
+          <StatusRing rows={[]} label={0} />
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-6 py-8 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ecfdf3] text-[18px] font-bold text-[#15803d]">
+            ✓
+          </span>
+          <strong className="text-[13.5px] font-semibold text-[#15803d]">All clear</strong>
+          <span className="max-w-[210px] text-[12px] leading-normal text-[#9ca3af]">
+            A bill shows up here when its customer is not on file or its area has no delivery type.
+          </span>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section className={`${ALL_CARD} border-[#fce7b2]`}>
+      <div className="flex items-center gap-4 border-b border-[#fce7b2] bg-[#fffbeb] px-6 py-[22px]">
+        <span className="min-w-0 flex-1">
+          {title("bg-[#b45309]")}
+          <AllHeadFigures rows={counted} />
+        </span>
+        <StatusRing rows={counted} label={rows.length} />
+      </div>
+      <div className="flex flex-1 flex-col py-1.5 [&>*+*]:shadow-[inset_0_1px_0_#f3f4f7]">
+        {sort(rows).map((r) => (
+          <button
+            key={r.orderId}
+            type="button"
+            className={`${ALL_ROW} cursor-pointer hover:bg-[#fafafc]`}
+            onClick={() => onOpenDetail(r.orderId)}
+          >
+            <span className="flex w-full items-baseline gap-2 whitespace-nowrap">
+              <span className="min-w-0 truncate text-[13px] font-semibold text-[#1a1a22]">{r.dealerName}</span>
+              <span className="ml-auto shrink-0 text-[11px] font-semibold text-[#b45309]">
+                {r.dealerInMaster ? "Fix area" : "Customer missing"}
+              </span>
+            </span>
+            <span className="mt-1 flex w-full items-baseline gap-2 whitespace-nowrap text-[12px] tabular-nums text-[#96969f]">
+              <span>{r.shipToCode}</span>
+              <span className="ml-auto text-[13px] font-semibold text-[#1a1a22]">
+                {kgText([r])}
+                <small className="ml-0.5 text-[11.5px] font-normal text-[#96969f]">kg</small>
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The All tab's By route view. `rows` is the pool, both halves, unscoped;
+ * `reachRows` the rows the typed tabs hand buildRouteCards for reach.
+ */
+export function AllRouteCards({
+  rows,
+  clubs,
+  reachRows,
+  onOpenTab,
+  onOpenDetail,
+}: {
+  rows: FloorBoardRow[];
+  clubs: FloorRouteClub[];
+  reachRows: FloorBoardRow[];
+  onOpenTab: (tab: Exclude<FloorScope, "All">, cardKey: string | null) => void;
+  onOpenDetail: (orderId: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 items-stretch gap-5 px-3.5 py-3.5 min-[1280px]:grid-cols-4">
+      {ALL_TYPE_TABS.map((tab) => (
+        <AllTypeCard
+          key={tab}
+          tab={tab}
+          model={buildRouteCards(tab, clubs, rowsInScope(rows, tab), reachRows)}
+          onOpenTab={onOpenTab}
+        />
+      ))}
+      <MissingCustomerCard rows={rows.filter((r) => r.deliveryType === null)} onOpenDetail={onOpenDetail} />
     </div>
   );
 }

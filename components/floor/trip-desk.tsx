@@ -34,7 +34,7 @@ import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
-import { RouteCards, buildRouteCards, shownCards, tabHasClubs, useCardColumns } from "./route-cards";
+import { AllRouteCards, RouteCards, buildRouteCards, shownCards, tabHasClubs, useCardColumns } from "./route-cards";
 import { LoadPlanView } from "./load-plan";
 import { LoadPlanV2View } from "./load-plan-v2";
 import type { VehicleSize } from "@/lib/trips/vehicle-size";
@@ -179,6 +179,7 @@ export function TripDesk({
   clubReachRows,
   openRouteCard,
   onOpenRouteCard,
+  onScopeChange,
   searchActive,
   searchTripIds = null,
   loadPlanConfigs,
@@ -290,6 +291,8 @@ export function TripDesk({
    */
   openRouteCard: string | null;
   onOpenRouteCard: (key: string | null) => void;
+  /** Switch the page's tab — the All tab's cards open a typed tab (2026-10-02). */
+  onScopeChange: (scope: FloorScope) => void;
   /** A search is up — the pool shows Flat until it is cleared (2026-09-19). */
   searchActive: boolean;
   /** Trips holding bills the search matched (2026-09-29). The rail shows only
@@ -333,7 +336,25 @@ export function TripDesk({
   const poolPivot: PoolView = poolViews[scope] ?? defaultPoolView(scope);
   const setPoolPivot = (v: PoolView) => setPoolViews((cur) => ({ ...cur, [scope]: v }));
   const [tintPivot, setTintPivot] = useState<"flat" | "route">("flat");
-  const effectivePoolPivot: PoolView = searchActive ? "flat" : poolPivot;
+  // 🔴 THE ALL TAB IS ALWAYS ITS FOUR CARDS (owner, 2026-10-02): no switch is
+  // drawn there, and a stored "flat" for All is ignored. A search still shows
+  // the pool Flat, on All too — the auto-ticked bills must stay in sight
+  // (see above), and the cards have no ticks to show them in.
+  const effectivePoolPivot: PoolView = searchActive ? "flat" : scope === "All" ? "route" : poolPivot;
+  // The All tab's cards are on screen (vs. its search Flat).
+  const allCardsOn = scope === "All" && effectivePoolPivot === "route";
+  /**
+   * From an All-tab card to a typed tab (2026-10-02): that tab's pool on By
+   * route, and either its card grid (`cardKey` null — a header click) or that
+   * card already open (a route row). One handler, so the three updates land in
+   * one render and the open card is on screen when TripDesk's "not on screen →
+   * clear" effect next looks. Esc then closes it back to that tab's grid.
+   */
+  const openTabFromAll = (tab: FloorScope, cardKey: string | null) => {
+    setPoolViews((cur) => ({ ...cur, [tab]: "route" }));
+    onScopeChange(tab);
+    onOpenRouteCard(cardKey);
+  };
 
   // ── Scrolling in and out of a targeted add (owner, 2026-09-18) ────────────
   //
@@ -544,7 +565,8 @@ export function TripDesk({
   // control that renders and then does nothing when pressed is worse than one
   // that is absent, so it is absent there.
   const showPivot =
-    (activeTab === "floor" && (railSelection.kind === "pool" || addingToTripId !== null)) ||
+    // Not on the All tab's pool: it is always its cards (2026-10-02).
+    (activeTab === "floor" && scope !== "All" && (railSelection.kind === "pool" || addingToTripId !== null)) ||
     activeTab === "tinting";
   // Which of the two states this toggle drives — the open tab's own.
   const onTinting = activeTab === "tinting";
@@ -770,7 +792,9 @@ export function TripDesk({
             {allPool.length === 1 ? "s" : ""} for a Hand trip — tick them and press “+ New trip”.
           </div>
         )}
-        {allPool.length === 0 ? (
+        {/* The All tab's four cards are drawn even with nothing to plan — each
+            reads "No bills" and Missing customer "All clear" (owner, 2026-10-02). */}
+        {allPool.length === 0 && !allCardsOn ? (
           poolEmpty
         ) : effectivePoolPivot === "flat" ? (
           <FloorTable
@@ -839,6 +863,16 @@ export function TripDesk({
                 variant={variant}
                 leaf={selProps}
               />
+            ) : allCardsOn ? (
+              // THE ALL TAB — four cards, not the route list (2026-10-02).
+              // Same pool (both halves) and reach rows the typed tabs build from.
+              <AllRouteCards
+                rows={allPool}
+                clubs={routeClubs}
+                reachRows={clubReachRows.filter(isPoolRow)}
+                onOpenTab={openTabFromAll}
+                onOpenDetail={onOpenDetail}
+              />
             ) : (
               <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
             )}
@@ -846,7 +880,7 @@ export function TripDesk({
                 every upcoming bill is inside its own route's panel instead
                 (owner, 2026-09-19) — rendering it here too would list those
                 bills twice. Flat keeps its block untouched. */}
-            {cardModel === null && poolUpcoming.length > 0 && (
+            {cardModel === null && !allCardsOn && poolUpcoming.length > 0 && (
               <FloorTable
                 rows={[]}
                 upcomingRows={sort(poolUpcoming)}

@@ -1125,6 +1125,7 @@ export async function getFloorBoard(
       // Hand — the dealer collects (2026-09-24). A scalar the include already brings.
       isHand: order.handAt !== null,
       stopKey: computeDropKey(order),
+      shipToCode: order.shipToCustomerId,
       tripDropId: order.tripDropId,
       tripNumber:
         order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.tripNumber ?? null) : null,
