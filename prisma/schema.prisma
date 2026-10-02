@@ -226,6 +226,8 @@ model users {
   // MUST stay explicitly named on BOTH sides or generate fails (CORE §7.3).
   mailOrdersBillOnly          mo_orders[]              @relation("MoOrderBillOnlyBy")
   mailOrdersHand              mo_orders[]              @relation("MoOrderHandBy")
+  // Who pressed ⚑ Hold on a mail order (2026-10-01, Schema v27.50) — the FOURTH FK.
+  moOrdersHeld                mo_orders[]              @relation("MoOrderHeldBy")
   lineStatuses                mo_line_status[]
   // Multi-role back-relations
   userRoles                   user_roles[]             @relation("UserRoleAssignments")
@@ -2180,6 +2182,16 @@ model mo_orders {
   handAt                   DateTime?              @db.Timestamptz(6)
   handById                 Int?
   handBy                   users?                 @relation("MoOrderHandBy", fields: [handById], references: [id], onDelete: SetNull)
+  // Who pressed ⚑ Hold on this mail order (2026-10-01, Schema v27.50,
+  // sql/2026-10-01-mo-orders-held-by.sql). Set by the billing actions route on
+  // a transition TO Hold, cleared on a transition off it. NULL with
+  // dispatchStatus 'Hold' = the parser set it (or a pre-2026-10-01 press).
+  // Enrichment reads heldById to log the bill's hold as billing's, not auto.
+  // Live FK mo_orders_heldById_fkey ON DELETE SET NULL (Prisma default name).
+  // mo_orders now has FOUR FKs to `users` — every one named on both sides.
+  heldAt                   DateTime?              @db.Timestamptz(6)
+  heldById                 Int?
+  heldBy                   users?                 @relation("MoOrderHeldBy", fields: [heldById], references: [id], onDelete: SetNull)
   createdAt                DateTime               @default(now())
   // Maintained by the DATABASE, not by Prisma. Live column is
   // timestamptz NOT NULL DEFAULT now(), kept current by

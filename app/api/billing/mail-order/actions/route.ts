@@ -148,7 +148,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const mailOrder = await prisma.mo_orders.findUnique({
     where: { id: moOrderId },
-    select: { id: true, status: true, soNumber: true, isLocked: true, billOnlyAt: true },
+    select: { id: true, status: true, soNumber: true, isLocked: true, billOnlyAt: true, dispatchStatus: true },
   });
   if (!mailOrder) {
     return NextResponse.json({ error: "Mail order not found" }, { status: 404 });
@@ -250,6 +250,20 @@ export async function POST(req: Request): Promise<NextResponse> {
     ciInfo = { tag: r.tag, applied: r.applied };
     // One of three: a CI-marked mail order is neither held nor Hand.
     if (on) data = { dispatchStatus: "Dispatch", handAt: null, handById: null };
+  }
+
+  // ── WHO HELD THE MAIL ORDER (F2, 2026-10-01, Schema v27.50) ───────────────
+  // heldAt/heldById ride write 1, only on a TRANSITION of the mail order's own
+  // status: to Hold → stamped; off Hold (Release, or Hand / CI setting
+  // "Dispatch" — one of three) → cleared; a repeat press changes nothing.
+  // Enrichment reads heldById when the OBD imports, to log the bill's hold as
+  // this user's (MAIL_ORDER_BILLING_HOLD_NOTE) rather than the parser's.
+  const nextStatus = data.dispatchStatus;
+  if (typeof nextStatus === "string") {
+    const wasHold = (mailOrder.dispatchStatus ?? "").toLowerCase() === "hold";
+    const toHold = nextStatus.toLowerCase() === "hold";
+    if (toHold && !wasHold) data = { ...data, heldAt: new Date(), heldById: userId };
+    else if (!toHold && wasHold) data = { ...data, heldAt: null, heldById: null };
   }
 
   const MO_SELECT = {

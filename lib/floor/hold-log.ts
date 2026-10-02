@@ -94,6 +94,14 @@ export const TINT_HOLD_NOTE = "Held from Tint Manager";
  *  FLOOR_CLEAR_HOLD_NOTE above. */
 export const TINT_CLEAR_HOLD_NOTE = "Hold cleared from Tint Manager";
 
+/** The import's mail-order hold, PARSER-set (2026-10-01, F1): applyMailOrderEnrichment
+ *  carried a 'Hold' mail order with no `mo_orders.heldById` onto the bill. changedById = 1 (system). */
+export const MAIL_ORDER_AUTO_HOLD_NOTE = "Held on import (mail order)";
+
+/** The import's mail-order hold, BILLING-set (2026-10-01, F1/F2): the mail order was held with
+ *  ⚑ Hold before its OBD existed; changedById = that user (`mo_orders.heldById`). */
+export const MAIL_ORDER_BILLING_HOLD_NOTE = "Held on import (billing hold on mail order)";
+
 /** Every note that identifies a hold event, for the `note: { in: … }` filter. */
 export const HOLD_LOG_NOTES: string[] = [
   FLOOR_HOLD_NOTE,
@@ -102,6 +110,8 @@ export const HOLD_LOG_NOTES: string[] = [
   BILLING_CI_HOLD_NOTE,
   BILLING_HOLD_NOTE,
   TINT_HOLD_NOTE,
+  MAIL_ORDER_AUTO_HOLD_NOTE,
+  MAIL_ORDER_BILLING_HOLD_NOTE,
 ];
 
 /** Where a row's `heldSince` came from — surfaced in the UI so an approximated

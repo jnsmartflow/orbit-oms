@@ -43,7 +43,7 @@ import type { ImportAnomaly, QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 import { applySoTagHolds } from "@/lib/billing/telephonic-apply";
-import { BILLING_CI_HOLD_NOTE } from "@/lib/floor/hold-log";
+import { BILLING_CI_HOLD_NOTE, MAIL_ORDER_AUTO_HOLD_NOTE, MAIL_ORDER_BILLING_HOLD_NOTE } from "@/lib/floor/hold-log";
 
 export const dynamic = "force-dynamic";
 
@@ -361,6 +361,22 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
 
     if (Object.keys(updateData).length === 0) continue;
 
+    // F1 (2026-10-01) — the status each bill had BEFORE the updateMany below,
+    // read with the SAME where-clause, so the hold loop further down logs only a
+    // real transition into 'hold' (a bill already held gets no second row).
+    // Read only when this run carries a hold; the updateMany itself is unchanged.
+    const priorStatus =
+      updateData.dispatchStatus === "hold"
+        ? new Map(
+            (
+              await prisma.orders.findMany({
+                where: { soNumber: soNum, isRemoved: false, workflowStage: { not: "cancelled" } },
+                select: { id: true, dispatchStatus: true, workflowStage: true },
+              })
+            ).map((o) => [o.id, o]),
+          )
+        : null;
+
     // 🔴 Never a cancelled or removed bill (2026-09-27, build step 5b). Without
     // this a later import on the same SO re-wrote dispatchStatus onto a bill
     // already cancelled (Floor cancel, Raise CI, Billing Pick delete) — and a
@@ -518,6 +534,24 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
           where: { id: ord.id },
           data: { heldAt: ord.obdEmailDate ?? new Date() },
         });
+        // F1 (2026-10-01) — ONE log row per bill this run moved INTO hold, so
+        // "held since" / "held from" have a real event. A bill already held
+        // before the updateMany, or not in the prior read, gets nothing. Who:
+        // the billing user who pressed ⚑ Hold on the mail order
+        // (mo_orders.heldById, F2), else 1 = system (the parser set it).
+        // toStage stays the unchanged stage — the NOTE identifies the hold.
+        const prior = priorStatus?.get(ord.id);
+        if (prior && prior.dispatchStatus !== "hold") {
+          await prisma.order_status_logs.create({
+            data: {
+              orderId: ord.id,
+              fromStage: prior.workflowStage,
+              toStage: prior.workflowStage,
+              changedById: mailOrder.heldById ?? 1,
+              note: mailOrder.heldById !== null ? MAIL_ORDER_BILLING_HOLD_NOTE : MAIL_ORDER_AUTO_HOLD_NOTE,
+            },
+          });
+        }
       }
     }
 
