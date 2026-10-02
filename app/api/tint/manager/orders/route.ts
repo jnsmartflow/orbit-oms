@@ -9,6 +9,28 @@ import { aggregateArticleTags } from "@/lib/article-tag-parse";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { resolveFloorDisplayDate } from "@/lib/floor/format";
+
+/**
+ * The OBD cell's date line and the Invoice column (2026-10-02, owner) — the SAME
+ * facts Floor's table shows, from the SAME rule: resolveFloorDisplayDate
+ * (lib/floor/format.ts) picks the email clock or SAP's punch clock exactly as
+ * getFloorBoard does (lib/floor/queries.ts), and the invoice is SAP's own
+ * orders.invoiceNo / invoiceDate, as Floor's row carries them. Read off the
+ * ORDER row (every set here includes the full order), never the raw summary's
+ * date-only obdEmailDate.
+ */
+function billRefFields(order: {
+  orderDateTime: Date | null; obdEmailDate: Date | null; invoiceNo: string | null; invoiceDate: Date | null;
+}) {
+  const shown = resolveFloorDisplayDate(order.orderDateTime, order.obdEmailDate);
+  return {
+    obdDateTime: shown.obdDateTime?.toISOString() ?? null,
+    isEmailTime: shown.isEmailTime,
+    invoiceNo:   order.invoiceNo ?? null,
+    invoiceDate: order.invoiceDate ? order.invoiceDate.toISOString() : null,
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -737,6 +759,7 @@ export async function GET(): Promise<NextResponse> {
         obdEmailDate:     obdDateMap.get(o.obdNumber)?.date ?? null,
         obdEmailTime:     obdDateMap.get(o.obdNumber)?.time ?? null,
         orderDateTime:    o.orderDateTime?.toISOString() ?? null,
+        ...billRefFields(o),
         lineItems:        linesByObd.get(o.obdNumber) ?? [],
         existingSplits:   splitsData.flatMap((s) => s.lineItems),
         remainingQty:     effectiveRemainingQty,
@@ -813,6 +836,7 @@ export async function GET(): Promise<NextResponse> {
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
       orderDateTime:    s.order.orderDateTime?.toISOString() ?? null,
+      ...billRefFields(s.order),
       slotId:           s.order.slotId ?? null,
       slotName:         (s.order as any).slot?.name ?? null,
       slotTime:         (s.order as any).slot?.slotTime ?? null,
@@ -844,6 +868,7 @@ export async function GET(): Promise<NextResponse> {
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
       orderDateTime:    s.order.orderDateTime?.toISOString() ?? null,
+      ...billRefFields(s.order),
       slotId:           s.order.slotId ?? null,
       slotName:         (s.order as any).slot?.name ?? null,
       slotTime:         (s.order as any).slot?.slotTime ?? null,
@@ -868,6 +893,7 @@ export async function GET(): Promise<NextResponse> {
       obdEmailDate:     obdDateMap.get(a.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(a.order.obdNumber)?.time ?? null,
       orderDateTime:    a.order.orderDateTime?.toISOString() ?? null,
+      ...billRefFields(a.order),
       slotId:           a.order.slotId ?? null,
       slotName:         (a.order as any).slot?.name ?? null,
       slotTime:         (a.order as any).slot?.slotTime ?? null,

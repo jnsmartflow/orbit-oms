@@ -31,7 +31,7 @@ import { BoardSlotCell } from "./board-slot-cell";
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
 
-// OBD 11 · Bill to 15 · Ship to 20 · Route 8 · Slot 11 · Held since 10 · Vol 6 ·
+// OBD 11 · Bill to 15 · Ship to 20 · Route 8 · Due 11 · Held since 10 · Vol 6 ·
 // Tint stage 15 · ⋯ 4 = 100.
 const COLS = ["11%", "15%", "20%", "8%", "11%", "10%", "6%", "15%", "4%"] as const;
 
@@ -114,7 +114,7 @@ export function BoardHoldTab({
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Route</th>
-                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Slot</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Due</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Held since</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Stage</th>

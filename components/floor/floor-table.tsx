@@ -39,11 +39,13 @@
 //    entirely on the showSlot (By group) arms. See the cell and `showInvoice`.
 
 import type { ReactNode } from "react";
-import { Building2, Mail, MoreHorizontal, Zap } from "lucide-react";
-// formatDateIST is the SHARED date-only formatter — the same one the detail
-// panel's "Invoice date" cell reads (it used to be a private fmtDate in
-// detail-details.tsx). One formatter, so the two surfaces cannot disagree.
-import { formatArticleTag, formatDateIST } from "@/lib/floor/format";
+import { Building2, MoreHorizontal, Zap } from "lucide-react";
+import { formatArticleTag } from "@/lib/floor/format";
+// The OBD date line + Invoice lines + fmtDateTime live in ./bill-ref-cells
+// (2026-10-02) so the Tint Manager renders Floor's markup, not a copy. Output
+// here is byte-identical. formatDateIST (the shared date-only formatter the
+// panel's "Invoice date" reads) is used inside InvoiceLines.
+import { InvoiceLines, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
 // TINT / BASE -- one owner for the word, shared with both picking boards. The
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
@@ -97,12 +99,6 @@ function asStr(v: string | Date | null): string | null {
   if (typeof v === "string") return v;
   if (v instanceof Date) return v.toISOString();
   return null;
-}
-function fmtDateTime(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso)
-    .toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })
-    .replace(",", "");
 }
 function hhmm(iso: string | null): string {
   if (!iso) return "";
@@ -973,14 +969,7 @@ export function FloorTable({
 
               What stays: the OBD number, the duplicate-SO tag and the trip
               tag. Those are identifiers, which is what this cell is for. */}
-          <div className="flex items-center gap-1 text-[10px] text-[#9ca3af]">
-            {fmtDateTime(obd)}
-            {row.isEmailTime && (
-              <span title="Email time" className="inline-flex shrink-0">
-                <Mail size={9.5} />
-              </span>
-            )}
-          </div>
+          <ObdDateLine iso={obd} isEmailTime={row.isEmailTime} />
         </td>
         {/* INVOICE — SAP's own invoiceNo + invoiceDate, shaped like the
             OBD cell it now sits beside: mono number on line 1, muted 10px
@@ -1030,16 +1019,7 @@ export function FloorTable({
             </td>
           ) : (
             <td className={TD}>
-              {row.invoiceNo && (
-                <span className="font-mono text-[11.5px] font-medium text-[#111827]">
-                  {row.invoiceNo}
-                </span>
-              )}
-              {row.invoiceDate && (
-                <div className="text-[10px] text-[#9ca3af]">
-                  {formatDateIST(row.invoiceDate)}
-                </div>
-              )}
+              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} />
             </td>
           ))}
         <td className={TD}>

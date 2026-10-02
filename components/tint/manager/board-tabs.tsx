@@ -40,12 +40,16 @@ export function BoardTabs({
 }) {
   const access = useTintManagerAccess();
   const tabs: { key: BoardTab; label: string; show: boolean }[] = [
-    { key: "tinting", label: "Tinting",     show: true },
-    { key: "ti",      label: "TI",          show: true },
-    { key: "hold",    label: "Hold",        show: access.canViewHoldTab },
-    { key: "ci",      label: "CI",          show: access.canViewCiTab },
-    { key: "pick",    label: "Pick delete", show: access.canViewPickDelete },
-    { key: "base",    label: "Base",        show: true },
+    // Owner 2026-10-02: renamed + reordered — Tint · Base · TI · Hold · CI · Delete.
+    // Keys are unchanged (the page, badges and ticks key on them); only the
+    // labels and the order moved. "Delete" is the pick-delete HISTORY tab; the
+    // blocking pick-delete popup is unchanged.
+    { key: "tinting", label: "Tint",   show: true },
+    { key: "base",    label: "Base",   show: true },
+    { key: "ti",      label: "TI",     show: true },
+    { key: "hold",    label: "Hold",   show: access.canViewHoldTab },
+    { key: "ci",      label: "CI",     show: access.canViewCiTab },
+    { key: "pick",    label: "Delete", show: access.canViewPickDelete },
   ];
 
   return (

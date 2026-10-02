@@ -13,6 +13,7 @@
 import { Scissors } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
+import { InvoiceLines, ObdDateLine } from "@/components/floor/bill-ref-cells";
 // OperatorAvatar is no longer imported here: the Operator column was removed
 // 2026-09-05 as redundant — the group header already names the person, and every
 // row in a section belongs to them. The avatar still ships in board-bits for the
@@ -45,7 +46,13 @@ import type { BoardGroup, BoardRow } from "./types";
 // two arrived — Slot after Route, and ⋯ (the detail panel) at the row's end:
 // # 4 · OBD 12 · SMU 4 · Bill To 15 · Ship To 19 · Route 8 · Slot 11 · Vol 5 ·
 // Art. 8 · Status 11 · ⋯ 3  = 100.
-const COLS = ["4%", "12%", "4%", "15%", "19%", "8%", "11%", "5%", "8%", "11%", "3%"] as const;
+//
+// 2026-10-02 (owner): the OBD cell gains Floor's date line and an INVOICE column
+// arrives right after it (Floor's cells, components/floor/bill-ref-cells.tsx);
+// Slot is renamed Due:
+// # 4 · OBD 11 · Invoice 9 · SMU 4 · Bill To 13 · Ship To 17 · Route 7 · Due 10 ·
+// Vol 5 · Art. 8 · Status 9 · ⋯ 3  = 100.
+const COLS = ["4%", "11%", "9%", "4%", "13%", "17%", "7%", "10%", "5%", "8%", "9%", "3%"] as const;
 
 // ── Typography, copied from Floor's floor-table.tsx ──────────────────────────
 // Floor's four class strings verbatim, so header, cells and pills read
@@ -109,11 +116,12 @@ export function BoardTable({
             <tr>
               <th className={cn(HEAD_TH_NARROW, "sticky top-0 bg-white z-10")}>#</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>OBD</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Invoice</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>SMU</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Route</th>
-              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Slot</th>
+              <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Due</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Art.</th>
               <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Status</th>
@@ -123,7 +131,7 @@ export function BoardTable({
           <tbody>
             {total === 0 && (
               <tr>
-                <td colSpan={11} className="text-center text-[11.5px] text-gray-400 py-10">
+                <td colSpan={12} className="text-center text-[11.5px] text-gray-400 py-10">
                   Nothing on the floor. Assign an OBD from the rail to get started.
                 </td>
               </tr>
@@ -171,7 +179,7 @@ function GroupSection({
         {/* Name only. The job count that used to trail it was noise: the rows
             it counted are directly underneath, and the table header already
             carries the board total. */}
-        <td colSpan={11} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
+        <td colSpan={12} className="bg-gray-50 text-gray-600 text-[10.5px] font-bold px-3.5 py-[5px] border-b border-gray-100">
           {group.operatorName}
         </td>
       </tr>
@@ -295,6 +303,13 @@ function Row({
             </span>
           )}
         </span>
+        {/* Floor's date line — the same component Floor's OBD cell renders. */}
+        <ObdDateLine iso={row.obdDateTime} isEmailTime={row.isEmailTime} />
+      </td>
+
+      {/* INVOICE — Floor's cell (empty when SAP has not stamped one yet). */}
+      <td className={TD}>
+        <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} />
       </td>
 
       {/* SMU — the SHORT ERP CODE (import_raw_summary.smuCode), with the full

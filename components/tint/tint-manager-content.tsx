@@ -410,6 +410,7 @@ export function TintManagerContent() {
         slotDate: o.dispatchTargetDate ?? null, slotWindowId: o.dispatchWindowId ?? null, slotWindowTime: o.dispatchWindowTime ?? null,
         isHeld: o.dispatchStatus === "hold", isHand: o.handAt != null,
         status: "pending" as string, operatorName: "", isBase: false,
+        isUrgent: o.priorityLevel <= 2, // the rail card's ⚡ rule
       }));
     }
     if (barMode === "table") {
@@ -420,6 +421,7 @@ export function TintManagerContent() {
         slotDate: r.slotDate, slotWindowId: r.slotWindowId, slotWindowTime: r.slotWindowTime,
         isHeld: r.isHeld, isHand: r.isHand,
         status: r.status as string, operatorName: r.operatorName, isBase: false,
+        isUrgent: r.isUrgent,
       }));
     }
     if (barMode === "hold") {
@@ -433,6 +435,7 @@ export function TintManagerContent() {
         status: h.workflowStage, operatorName: h.operatorName ?? "",
         // A held BASE bill (non-tint) — the bar hides the tint-only items.
         isBase: !h.isTint,
+        isUrgent: false, // the Hold tab offers no Urgent
       }));
     }
     if (barMode === "base") {
@@ -444,6 +447,7 @@ export function TintManagerContent() {
         slotDate: r.dispatchTargetDate, slotWindowId: r.windowId, slotWindowTime: r.windowTime,
         isHeld: false, isHand: r.isHand,
         status: "base" as string, operatorName: "", isBase: true,
+        isUrgent: r.priorityLevel === 1, // Floor's ⚡ rule (floor-table.tsx)
       }));
     }
     return [];
@@ -1127,9 +1131,9 @@ export function TintManagerContent() {
    * landed; failures are NAMED, never swallowed (FLOOR §6(b)).
    */
   const postTintAction = useCallback(async (
-    action: "hold" | "unhold" | "hand" | "unhand" | "change-slot",
+    action: "hold" | "unhold" | "hand" | "unhand" | "change-slot" | "mark-urgent",
     orderIds: number[],
-    opts: { slot?: DispatchSlotValue; keepSelection?: boolean } = {},
+    opts: { slot?: DispatchSlotValue; keepSelection?: boolean; urgent?: boolean } = {},
   ) => {
     if (orderIds.length === 0) return;
     setWriteBusy(true);
@@ -1141,6 +1145,7 @@ export function TintManagerContent() {
           action,
           orderIds,
           ...(opts.slot ? { dispatchTargetDate: opts.slot.date, dispatchWindowId: opts.slot.dispatchWindowId } : {}),
+          ...(typeof opts.urgent === "boolean" ? { urgent: opts.urgent } : {}),
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
@@ -1151,7 +1156,8 @@ export function TintManagerContent() {
         return;
       }
       const words: Record<typeof action, string> = {
-        hold: "on hold", unhold: "released from hold", hand: "marked Hand", unhand: "Hand cleared", "change-slot": "slot set",
+        hold: "on hold", unhold: "released from hold", hand: "marked Hand", unhand: "Hand cleared", "change-slot": "due date set",
+        "mark-urgent": opts.urgent === false ? "urgent cleared" : "marked urgent",
       };
       const failed = body.failed ?? [];
       const obdOf = (id: number) => barBills.find((b) => b.orderId === id)?.obdNumber ?? `#${id}`;
@@ -1666,6 +1672,7 @@ export function TintManagerContent() {
                 allHeld:       barBills.length > 0 && barBills.every((b) => b.isHeld),
                 allHand:       barBills.length > 0 && barBills.every((b) => b.isHand),
                 anyBase:       barBills.some((b) => b.isBase),
+                allUrgent:     barBills.length > 0 && barBills.every((b) => b.isUrgent),
               }}
               busy={writeBusy}
               windows={windows}
@@ -1683,6 +1690,7 @@ export function TintManagerContent() {
               onHold={() => { void postTintAction("hold", barIds); }}
               onReleaseHold={() => { void postTintAction("unhold", barIds); }}
               onHand={(set) => { void postTintAction(set ? "hand" : "unhand", barIds); }}
+              onUrgent={(set) => { void postTintAction("mark-urgent", barIds, { urgent: set }); }}
               onShopDelivery={() => {
                 setShopDeliveryBills(barBills.map((b) => ({ orderId: b.orderId, obdNumber: b.obdNumber })));
               }}

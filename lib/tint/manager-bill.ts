@@ -46,7 +46,8 @@ export type TintAction =
   | "remove"
   | "ci"
   | "pick-delete"
-  | "shop-delivery";
+  | "shop-delivery"
+  | "mark-urgent";
 
 /** Action → its key. Set and clear share one key, so nobody can create a state
  *  they cannot undo (hold/unhold, hand/unhand, cancel/stop/restore/remove). */
@@ -65,6 +66,8 @@ export const TINT_ACTION_KEY: Record<TintAction, PageKey> = {
   "pick-delete": "tint_pick_delete",
   // Owner 2026-10-01: its OWN tick, independent of tint_ship_to.
   "shop-delivery": "tint_shop_delivery",
+  // Owner 2026-10-02: its OWN tick.
+  "mark-urgent":   "tint_urgent",
 };
 
 /** Human words for the 403, naming what was refused. */
@@ -82,6 +85,7 @@ const ACTION_WORDS: Record<TintAction, string> = {
   ci:            "raise a CI",
   "pick-delete": "decide pick deletes",
   "shop-delivery": "send bills to the dealer's shop",
+  "mark-urgent":   "mark bills urgent",
 };
 
 /**
@@ -146,7 +150,7 @@ export function isBaseBill(o: { orderType: string; smu?: string | null }): boole
 
 /** What the Tint Manager may do to a Base bill (owner, §I). No Hand (decision 5),
  *  no plain Cancel / Restore / Assign / pick delete (decision 3). */
-export const BASE_ACTIONS: readonly TintAction[] = ["hold", "unhold", "change-slot", "shop-delivery", "ship-to", "ci"];
+export const BASE_ACTIONS: readonly TintAction[] = ["hold", "unhold", "change-slot", "shop-delivery", "ship-to", "ci", "mark-urgent"];
 
 /** Decision 1 — a Base bill a picker holds is not held from the Tint Manager. */
 export const BASE_PICKER_HOLD_REFUSAL = "A picker has this bill — hold it from Floor if you must";

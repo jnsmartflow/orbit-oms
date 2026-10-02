@@ -21,6 +21,7 @@
 
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
+import { InvoiceLines, ObdDateLine } from "@/components/floor/bill-ref-cells";
 import { StatusPill as FloorStatusPill, rowStatus } from "@/components/floor/status-pill";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorBoardRow } from "@/lib/floor/types";
@@ -29,9 +30,10 @@ import { BoardSlotCell } from "./board-slot-cell";
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
 
-// OBD 11 · SMU 5 · Bill to 15 · Ship to 18 · Route 8 · Slot 11 · Vol 6 · Art. 8 ·
-// Status 14 · ⋯ 4 = 100.
-const COLS = ["11%", "5%", "15%", "18%", "8%", "11%", "6%", "8%", "14%", "4%"] as const;
+// OBD 11 · Invoice 9 · SMU 4 · Bill to 13 · Ship to 16 · Route 7 · Due 10 · Vol 5 ·
+// Art. 8 · Status 13 · ⋯ 4 = 100. (2026-10-02: Floor's date line under the OBD and
+// Floor's Invoice cell after it — components/floor/bill-ref-cells.tsx; Slot → Due.)
+const COLS = ["11%", "9%", "4%", "13%", "16%", "7%", "10%", "5%", "8%", "13%", "4%"] as const;
 
 /** Floor's trip chip (components/floor/floor-table.tsx), carrying the FULL number. */
 const TRIP_CHIP = "rounded-[3px] bg-gray-900 px-[5px] py-px font-mono text-[9.5px] font-semibold text-white";
@@ -77,11 +79,12 @@ export function BoardBaseTab({
             <thead>
               <tr>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>OBD</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Invoice</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>SMU</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Route</th>
-                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Slot</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Due</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Art.</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Status</th>
@@ -103,13 +106,22 @@ export function BoardBaseTab({
                       sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
                     )}
                   >
-                    <td className={TD}><ObdCode code={r.obdNumber} /></td>
+                    <td className={TD}>
+                      <ObdCode code={r.obdNumber} />
+                      {/* Floor's row carries obdDateTime / isEmailTime already. */}
+                      <ObdDateLine iso={r.obdDateTime} isEmailTime={r.isEmailTime} />
+                    </td>
+                    <td className={TD}>
+                      <InvoiceLines invoiceNo={r.invoiceNo} invoiceDate={r.invoiceDate} />
+                    </td>
                     <td className={cn(TD, "tabular-nums")} title={r.smu ?? undefined}>{r.smuCode ?? "—"}</td>
                     <td className={TD} title={r.billToName ?? undefined}>
                       <span className="text-[11.5px] font-medium text-[#111827]">{r.billToName ?? "—"}</span>
                     </td>
                     <td className={TD} title={redirected ? `${r.customerName} → ship to ${r.shipToOverrideName}` : r.dealerName}>
                       <span className="text-[11.5px] font-medium text-[#111827]">{r.dealerName}</span>
+                      {/* ⚡ urgent — Floor's red mark (priorityLevel 1, mark-urgent). */}
+                      {r.priorityLevel === 1 && <span title="Urgent" className="ml-1" style={{ color: "#ef4444" }}>⚡</span>}
                       {redirected && (
                         <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-brand-800">
                           {r.customerName}

@@ -54,12 +54,12 @@ export function BoardSlotCell({
   onPick:     (v: DispatchSlotValue) => void;
 }) {
   const has = date !== null;
-  const text = has ? slotLabel(date, windowTime) : "No slot";
+  const text = has ? slotLabel(date, windowTime) : "No due date";
 
   if (!canSlot) {
     return has
       ? <span className="text-[11px] text-[#4b5563] tabular-nums">{text}</span>
-      : <span className="text-[11px] text-[#9ca3af]">No slot</span>;
+      : <span className="text-[11px] text-[#9ca3af]">No due date</span>;
   }
 
   return (

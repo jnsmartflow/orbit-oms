@@ -39,7 +39,7 @@
 // redirect lives only in the detail panel (tint_ship_to). The page owns every write and both menus' open state —
 // it is the single Esc owner, so nothing here listens for keys.
 
-import { Clock, Hand, Pause, Play, Trash2, Undo2, X, Store, FileX2 } from "lucide-react";
+import { Clock, Hand, Pause, Play, Trash2, Undo2, X, Store, FileX2, Zap } from "lucide-react";
 import {
   BarDivider,
   BAR_PRIMARY,
@@ -70,6 +70,8 @@ export interface BarSelectionFacts {
   allHand:     boolean;
   /** Some selected bill is a BASE bill (non-tint SMU 74/77) — tint-only items hide. */
   anyBase:     boolean;
+  /** Every selected bill is urgent (the ⚡ the board shows) — the item reads "Clear urgent". */
+  allUrgent:   boolean;
 }
 
 export function BoardBottomBar({
@@ -91,6 +93,7 @@ export function BoardBottomBar({
   onHold,
   onReleaseHold,
   onHand,
+  onUrgent,
   onShopDelivery,
   onCancel,
   onStopCancel,
@@ -118,6 +121,8 @@ export function BoardBottomBar({
   onHold:        () => void;
   onReleaseHold: () => void;
   onHand:        (set: boolean) => void;
+  /** ⚡ Urgent (true) / Clear urgent (false) — Floor's mark-urgent, tint_urgent. */
+  onUrgent:      (set: boolean) => void;
   /** Opens the Shop delivery confirm for the whole selection. */
   onShopDelivery: () => void;
   onCancel:      () => void;
@@ -148,7 +153,7 @@ export function BoardBottomBar({
         className={BAR_PRIMARY}
       >
         <Clock size={15} strokeWidth={2.2} />
-        Slot
+        Due
       </SlotPickerButton>
     ) : mode === "rail" ? (
       <button type="button" disabled={busy || !access.canEdit} onClick={(e) => onPrimary(e.currentTarget)} className={BAR_PRIMARY}>
@@ -221,6 +226,18 @@ export function BoardBottomBar({
       onSelect: () => onHand(!facts.allHand),
     });
   }
+  // ⚡ URGENT (2026-10-02, owner) — rail, Tint-table and Base selections, on its
+  // own tick tint_urgent. Floor's mark-urgent via the TM actions route: an
+  // explicit set / clear (priorityLevel 1 ↔ 3), never a per-bill toggle.
+  if (access.canUrgent && mode !== "hold") {
+    items.push({
+      key: "urgent",
+      label: facts.allUrgent ? "Clear urgent" : "⚡ Urgent",
+      hint: facts.allUrgent ? "Back to normal priority" : "Top of the floor's queue",
+      icon: <Zap size={15} strokeWidth={2.2} />,
+      onSelect: () => onUrgent(!facts.allUrgent),
+    });
+  }
   if (access.canShopDelivery) {
     items.push({
       key: "shop-delivery",
@@ -289,7 +306,7 @@ export function BoardBottomBar({
           className={BAR_SECONDARY}
         >
           <Clock size={15} strokeWidth={2.2} />
-          Slot
+          Due
         </SlotPickerButton>
       ) : null}
       {primary}

@@ -38,14 +38,18 @@ export const dynamic = "force-dynamic";
 // Base bill a picker holds (pick_assigned / pick_done, decision 1).
 // cancel / restore / CI are NOT accepted here (build step 3).
 
-type TintBoardAction = "hold" | "unhold" | "hand" | "unhand" | "change-slot";
-const TINT_BOARD_ACTIONS: TintBoardAction[] = ["hold", "unhold", "hand", "unhand", "change-slot"];
+// mark-urgent (2026-10-02, owner): Floor's own mark-urgent arm of applyBillAction
+// (priorityLevel 1 ↔ 3), on its own tick tint_urgent, tint AND Base bills.
+// `urgent` true sets, false clears; omitted toggles (Floor's contract).
+type TintBoardAction = "hold" | "unhold" | "hand" | "unhand" | "change-slot" | "mark-urgent";
+const TINT_BOARD_ACTIONS: TintBoardAction[] = ["hold", "unhold", "hand", "unhand", "change-slot", "mark-urgent"];
 
 interface Body {
   action?: TintBoardAction;
   orderIds?: number[];
   dispatchTargetDate?: string; // change-slot: YYYY-MM-DD
   dispatchWindowId?: number; // change-slot
+  urgent?: boolean; // mark-urgent
 }
 
 interface Failed {
@@ -102,7 +106,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         continue;
       }
 
-      const r = await applyBillAction(order, action, { slot }, changedById, "tint");
+      const r = await applyBillAction(order, action, { slot, urgent: typeof body.urgent === "boolean" ? body.urgent : undefined }, changedById, "tint");
       if (r.kind === "failed") failed.push({ orderId, error: r.error });
       else if (r.kind === "skipped") skipped.push(orderId);
       else done.push(orderId);

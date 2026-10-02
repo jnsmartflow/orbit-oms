@@ -40,6 +40,14 @@ export interface TintOrder {
   obdEmailDate:       string | null;
   obdEmailTime:       string | null;
   orderDateTime:      string | null;
+  // The OBD date line + Invoice column (2026-10-02) — Floor's facts, set by
+  // app/api/tint/manager/orders billRefFields (resolveFloorDisplayDate + SAP's
+  // invoiceNo / invoiceDate). Rendered with components/floor/bill-ref-cells.tsx.
+  // Optional only so the retired tint-table-view.tsx literal still type-checks.
+  obdDateTime?:     string | null;
+  isEmailTime?:     boolean;
+  invoiceNo?:       string | null;
+  invoiceDate?:     string | null;
   slotId:             number | null;
   slotName:           string | null;
   slotTime:           string | null;
@@ -167,6 +175,14 @@ export interface SplitCard {
   obdEmailDate:     string | null;
   obdEmailTime:     string | null;
   orderDateTime:    string | null;
+  // The OBD date line + Invoice column (2026-10-02) — Floor's facts, set by
+  // app/api/tint/manager/orders billRefFields (resolveFloorDisplayDate + SAP's
+  // invoiceNo / invoiceDate). Rendered with components/floor/bill-ref-cells.tsx.
+  // Optional only so the retired tint-table-view.tsx literal still type-checks.
+  obdDateTime?:     string | null;
+  isEmailTime?:     boolean;
+  invoiceNo?:       string | null;
+  invoiceDate?:     string | null;
   slotId:           number | null;
   slotName:         string | null;
   slotTime:         string | null;
@@ -215,6 +231,14 @@ export interface CompletedAssignment {
   obdEmailDate:     string | null;
   obdEmailTime:     string | null;
   orderDateTime:    string | null;
+  // The OBD date line + Invoice column (2026-10-02) — Floor's facts, set by
+  // app/api/tint/manager/orders billRefFields (resolveFloorDisplayDate + SAP's
+  // invoiceNo / invoiceDate). Rendered with components/floor/bill-ref-cells.tsx.
+  // Optional only so the retired tint-table-view.tsx literal still type-checks.
+  obdDateTime?:     string | null;
+  isEmailTime?:     boolean;
+  invoiceNo?:       string | null;
+  invoiceDate?:     string | null;
   slotId:           number | null;
   slotName:         string | null;
   slotTime:         string | null;
@@ -287,6 +311,11 @@ export interface BoardRow {
   /** ALWAYS the parent order id, for the detail panel and the modals. */
   orderId:        number;
   obdNumber:      string;
+  /** Floor's OBD date line + Invoice column facts (2026-10-02) — from the parent bill. */
+  obdDateTime:    string | null;
+  isEmailTime:    boolean;
+  invoiceNo:      string | null;
+  invoiceDate:    string | null;
   soNumber:       string | null;
   /** import_raw_summary.smu — already on the payload, three live values:
    *  "Decorative Projects", "Retail Offtake", "Deco Retail". */

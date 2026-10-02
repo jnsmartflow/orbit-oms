@@ -318,7 +318,7 @@ export function BoardDetailPanel({
   }
 
   const slotValue = d ? slotValueOf(d.dispatchTargetDate, d.dispatchWindowId, d.dispatchWindowTime) : null;
-  const slotText = d?.dispatchTargetDate ? slotLabel(d.dispatchTargetDate, d.dispatchWindowTime) : "No slot";
+  const slotText = d?.dispatchTargetDate ? slotLabel(d.dispatchTargetDate, d.dispatchWindowTime) : "No due date";
   const canSlotHere = access.canSlot && d !== null && d.workflowStage !== "cancelled";
 
   async function saveShipTo(customerId: number | null) {
