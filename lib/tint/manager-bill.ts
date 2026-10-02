@@ -47,7 +47,8 @@ export type TintAction =
   | "ci"
   | "pick-delete"
   | "shop-delivery"
-  | "mark-urgent";
+  | "mark-urgent"
+  | "ti-bulk";
 
 /** Action → its key. Set and clear share one key, so nobody can create a state
  *  they cannot undo (hold/unhold, hand/unhand, cancel/stop/restore/remove). */
@@ -68,6 +69,9 @@ export const TINT_ACTION_KEY: Record<TintAction, PageKey> = {
   "shop-delivery": "tint_shop_delivery",
   // Owner 2026-10-02: its OWN tick.
   "mark-urgent":   "tint_urgent",
+  // Owner 2026-10-02: its OWN tick. NOT a Base-tab action (BASE_ACTIONS) — it
+  // acts on "Base — No Tint" TI rows, a different thing (see base-feed.ts).
+  "ti-bulk":       "tint_ti_bulk",
 };
 
 /** Human words for the 403, naming what was refused. */
@@ -86,6 +90,7 @@ const ACTION_WORDS: Record<TintAction, string> = {
   "pick-delete": "decide pick deletes",
   "shop-delivery": "send bills to the dealer's shop",
   "mark-urgent":   "mark bills urgent",
+  "ti-bulk":       "write bulk Tinter Issue",
 };
 
 /**

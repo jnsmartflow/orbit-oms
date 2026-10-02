@@ -395,6 +395,15 @@ export interface BasePendingLine {
 export interface BasePendingOrder {
   orderId:           number;
   obdNumber:         string;
+  /** Board cells (2026-10-02) — the TI tab uses the Tint / Base table's columns. */
+  obdDateTime:       string | null;
+  isEmailTime:       boolean;
+  invoiceNo:         string | null;
+  invoiceDate:       string | null;
+  smu:               string | null;
+  smuCode:           string | null;
+  route:             string | null;
+  articleTag:        string | null;
   siteName:          string;
   /** orders.customerId — the numeric site FK the suggest endpoint needs. */
   siteId:            number | null;

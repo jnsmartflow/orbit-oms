@@ -104,6 +104,8 @@ const PAGES_CONFIG = [
   { key: "tint_shop_delivery", label: "Tint Manager · Shop delivery", path: "/tint/manager", section: "Operations" },
   // Urgent (2026-10-02) — same canEdit-only meaning and caveat.
   { key: "tint_urgent", label: "Tint Manager · Urgent", path: "/tint/manager", section: "Operations" },
+  // Bulk TI (2026-10-02) — same canEdit-only meaning and caveat.
+  { key: "tint_ti_bulk", label: "Tint Manager · Bulk TI", path: "/tint/manager", section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [

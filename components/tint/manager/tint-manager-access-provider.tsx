@@ -72,6 +72,8 @@ export interface TintManagerAccess {
   canShopDelivery: boolean;
   /** tint_manager canEdit && tint_urgent canEdit — the bar's ⚡ Urgent / Clear urgent. */
   canUrgent: boolean;
+  /** tint_manager canEdit && tint_ti_bulk canEdit — the TI tab's WHT 5 / 20 / 25 buttons. */
+  canTiBulk: boolean;
   /** tint_hold canView — the Hold tab. */
   canViewHoldTab: boolean;
   /** tint_ci canView || tint_cancel canView — the CI tab. */
@@ -85,7 +87,7 @@ const NONE: TintManagerAccess = {
   canReports: false,
   canEdit: false,
   canHold: false, canHand: false, canSlot: false, canShipTo: false,
-  canCancel: false, canCi: false, canPickDelete: false, canShopDelivery: false, canUrgent: false,
+  canCancel: false, canCi: false, canPickDelete: false, canShopDelivery: false, canUrgent: false, canTiBulk: false,
   canViewHoldTab: false, canViewCiTab: false, canViewPickDelete: false,
 };
 
@@ -109,14 +111,14 @@ export function TintManagerAccessProvider({
       canEdit: a.canEdit,
       canHold: a.canHold, canHand: a.canHand, canSlot: a.canSlot, canShipTo: a.canShipTo,
       canCancel: a.canCancel, canCi: a.canCi, canPickDelete: a.canPickDelete,
-      canShopDelivery: a.canShopDelivery, canUrgent: a.canUrgent,
+      canShopDelivery: a.canShopDelivery, canUrgent: a.canUrgent, canTiBulk: a.canTiBulk,
       canViewHoldTab: a.canViewHoldTab, canViewCiTab: a.canViewCiTab, canViewPickDelete: a.canViewPickDelete,
     }),
     [
       a.canPanelItems, a.canPanelDetails, a.canPanelActivity, a.canReports,
       a.canEdit,
       a.canHold, a.canHand, a.canSlot, a.canShipTo,
-      a.canCancel, a.canCi, a.canPickDelete, a.canShopDelivery, a.canUrgent,
+      a.canCancel, a.canCi, a.canPickDelete, a.canShopDelivery, a.canUrgent, a.canTiBulk,
       a.canViewHoldTab, a.canViewCiTab, a.canViewPickDelete,
     ],
   );

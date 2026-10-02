@@ -17,19 +17,21 @@
 // and the fixed-layout rule (CLAUDE_UI §27).
 
 import { ChevronLeft, Loader2, Undo2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ObdCode } from "@/components/shared/obd-code";
-import { istDateTime } from "./board-bits";
+import { InvoiceLines, ObdDateLine } from "@/components/floor/bill-ref-cells";
+import { formatSmu } from "./board-bits";
 import type { BasePendingLine, BasePendingOrder } from "./types";
 
 // Same four class strings as board-table.tsx (themselves Floor's floor-table.tsx).
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
 
-// OBD 12 · Ship to 24 · Bill to 20 · Sent 13 · Vol 6 · TI 9 · actions 16 = 100.
-// (Vol and the override-first Ship To joined in step 7.)
-const COLS = ["12%", "24%", "20%", "13%", "6%", "9%", "16%"] as const;
+// 2026-10-02 (owner): the Tint / Base table's columns, then the TI ones —
+// OBD 11 · Invoice 9 · SMU 4 · Bill to 13 · Ship to 17 · Route 8 · Vol 5 · Art. 8 ·
+// Lines 12 · TI 8 · ⋯ 5 = 100.
+const COLS = ["11%", "9%", "4%", "13%", "17%", "8%", "5%", "8%", "12%", "8%", "5%"] as const;
 
 export function BoardTiTab({
   pending,
@@ -41,6 +43,9 @@ export function BoardTiTab({
   onBack,
   onPickLine,
   onUndo,
+  selected,
+  onToggle,
+  barUp,
 }: {
   pending:    BasePendingOrder[];
   /** The bill whose lines are open, or null for the list. */
@@ -54,6 +59,11 @@ export function BoardTiTab({
   onBack:     () => void;
   onPickLine: (line: BasePendingLine) => void;
   onUndo:     (order: BasePendingOrder) => void;
+  /** Selected bills, by tintAssignmentId (2026-10-02 bulk TI). */
+  selected:   Set<number>;
+  onToggle:   (order: BasePendingOrder) => void;
+  /** The bottom bar is up — pad the list so its last row clears the bar. */
+  barUp:      boolean;
 }) {
   // ── Drilldown: one bypassed bill's tinting lines + the TI form ────────────
   // The manager is paying off one bill's paperwork now; the list steps aside.
@@ -120,12 +130,16 @@ export function BoardTiTab({
   }
 
   // ── The list ──────────────────────────────────────────────────────────────
+  // Bulk TI (2026-10-02, owner): the Tint / Base table's columns and cells, then
+  // the TI-specific Lines · TI · ⋯. A row click SELECTS (the page's fifth
+  // disjoint selection) — the bottom bar then offers WHT 5 / 20 / 25, + New shade
+  // and ↶ Undo Base. Enter TI and Undo moved into the row ⋯ menu, unchanged.
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
       <div className="px-3.5 py-2.5 text-[10.5px] text-gray-400 border-b border-gray-100">
-        {pending.length} {pending.length === 1 ? "bill" : "bills"} sent as &quot;Base — No Tint&quot; that still owe a TI
+        {pending.length} {pending.length === 1 ? "bill" : "bills"} sent as &quot;Base — No Tint&quot; that still owe a TI · click to select
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className={cn("flex-1 overflow-y-auto", barUp && "pb-[96px]")}>
         {pending.length === 0 ? (
           <div className="px-4 py-10 text-center text-[11.5px] text-gray-400">
             <div className="text-[26px] text-green-600 mb-2">✓</div>
@@ -139,69 +153,146 @@ export function BoardTiTab({
             <thead>
               <tr>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>OBD</th>
-                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Invoice</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>SMU</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Bill To</th>
-                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Sent</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Ship To</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Route</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10 text-right")}>Vol</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Art.</th>
+                <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>Lines</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")}>TI</th>
                 <th className={cn(HEAD_TH, "sticky top-0 bg-white z-10")} />
               </tr>
             </thead>
             <tbody>
-              {pending.map((o) => (
-                <tr key={o.tintAssignmentId} className="hover:bg-gray-50">
-                  <td className={TD}><ObdCode code={o.obdNumber} /></td>
-                  <td className={TD} title={o.originalSiteName ? `${o.originalSiteName} → ship to ${o.shipToName}` : o.shipToName}>
-                    <span className="text-[11.5px] font-medium text-[#111827]">{o.shipToName}</span>
-                    {/* Floor's ORIGINAL → REDIRECT pair (CLAUDE_FLOOR §4.9). TI itself
-                        stays on the original site (plan decision 12). */}
-                    {o.originalSiteName && (
-                      <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-brand-800">
-                        {o.originalSiteName}<span className="mx-1 opacity-60">→</span><b className="font-semibold">{o.shipToName}</b>
-                      </div>
+              {pending.map((o) => {
+                const sel = selected.has(o.tintAssignmentId);
+                const owed = owedLines(o);
+                return (
+                  <tr
+                    key={o.tintAssignmentId}
+                    onClick={() => onToggle(o)}
+                    aria-selected={sel}
+                    className={cn(
+                      "cursor-pointer",
+                      sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
                     )}
-                  </td>
-                  <td className={TD} title={o.billToName ?? undefined}>
-                    <span className="text-[#9ca3af]">{o.billToName ?? "—"}</span>
-                  </td>
-                  <td className={cn(TD, "text-[#9ca3af]")}>{istDateTime(o.bypassedAt)}</td>
-                  <td className={cn(TD, "text-right tabular-nums")}>{o.totalVolume ?? "—"}</td>
-                  <td className={TD}>
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
-                      TI {o.coveredLines}/{o.totalTintingLines}
-                    </span>
-                  </td>
-                  <td className={cn(TD, "text-right")}>
-                    <span className="inline-flex items-center gap-1.5">
-                      {/* Enter TI is this tab's job, so it is the row's one
-                          filled button (CLAUDE_UI §10). */}
-                      <button
-                        type="button"
-                        onClick={() => onOpen(o)}
-                        className="rounded-md bg-brand-600 hover:bg-brand-700 text-white px-2 py-1 text-[10.5px] font-semibold transition-colors"
-                      >
-                        Enter TI
-                      </button>
-                      {/* Undo is a quiet ghost, never a primary; disabled is grey
-                          (CLAUDE_UI §10). */}
-                      <button
-                        type="button"
-                        disabled={undoBusyId === o.orderId}
-                        onClick={() => onUndo(o)}
-                        title="Put this bill back on the tint rail. Only possible while no TI has been recorded and nobody has picked it."
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent transition-colors"
-                      >
-                        {undoBusyId === o.orderId ? <Loader2 size={10} className="animate-spin" /> : <Undo2 size={10} />}
-                        Undo
-                      </button>
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                  >
+                    <td className={TD}>
+                      <ObdCode code={o.obdNumber} />
+                      {/* Floor's date line — the shared bill-ref cell. */}
+                      <ObdDateLine iso={o.obdDateTime} isEmailTime={o.isEmailTime} />
+                    </td>
+                    <td className={TD}>
+                      <InvoiceLines invoiceNo={o.invoiceNo} invoiceDate={o.invoiceDate} />
+                    </td>
+                    <td className={cn(TD, "tabular-nums")} title={o.smu ?? undefined}>
+                      {o.smuCode ?? formatSmu(o.smu) ?? "—"}
+                    </td>
+                    <td className={TD} title={o.billToName ?? undefined}>
+                      <span className="text-[11.5px] font-medium text-[#111827]">{o.billToName ?? "—"}</span>
+                    </td>
+                    <td className={TD} title={o.originalSiteName ? `${o.originalSiteName} → ship to ${o.shipToName}` : o.shipToName}>
+                      <span className="text-[11.5px] font-medium text-[#111827]">{o.shipToName}</span>
+                      {/* Floor's ORIGINAL → REDIRECT pair (CLAUDE_FLOOR §4.9). TI itself
+                          stays on the original site (plan decision 12). */}
+                      {o.originalSiteName && (
+                        <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-brand-800">
+                          {o.originalSiteName}<span className="mx-1 opacity-60">→</span><b className="font-semibold">{o.shipToName}</b>
+                        </div>
+                      )}
+                    </td>
+                    <td className={TD}>{o.route ?? "—"}</td>
+                    <td className={cn(TD, "text-right tabular-nums")}>{o.totalVolume ?? "—"}</td>
+                    {/* NULL articleTag means UNKNOWN, never zero (as the Tint table). */}
+                    <td className={cn(TD, "text-[10.5px]")} title={o.articleTag ?? undefined}>
+                      <span className="text-[#6b7280]">{o.articleTag ?? "—"}</span>
+                    </td>
+                    <td className={cn(TD, "text-[11px] text-[#4b5563]")} title={packList(owed.map((l) => l.packCode))}>
+                      {packList(owed.map((l) => l.packCode)) || "—"}
+                    </td>
+                    <td className={TD}>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                        TI {o.coveredLines}/{o.totalTintingLines}
+                      </span>
+                    </td>
+                    <td className={cn(TD, "px-1 text-center overflow-visible")} onClick={(e) => e.stopPropagation()}>
+                      <RowMenu
+                        busy={undoBusyId === o.orderId}
+                        onEnter={() => onOpen(o)}
+                        onUndo={() => onUndo(o)}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The lines this bill still owes (no TI row on this assignment yet). */
+export function owedLines(o: BasePendingOrder): BasePendingLine[] {
+  return o.lines.filter((l) => !l.hasTiEntry);
+}
+
+/** "20 L ×3 · 1 L" — the per-tin packs of a set of lines, counted, in first-seen
+ *  order. Unknown packs read "?". Shared by the Lines column, the bar and the
+ *  bulk confirm. */
+export function packList(packs: Array<string | null>): string {
+  const counts = new Map<string, number>();
+  for (const p of packs) {
+    const k = p ?? "?";
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).map(([p, n]) => (n > 1 ? `${p} ×${n}` : p)).join(" · ");
+}
+
+/** The row ⋯ — Enter TI (today's per-line screen) and ↶ Undo Base, unchanged. */
+function RowMenu({ busy, onEnter, onUndo }: { busy: boolean; onEnter: () => void; onUndo: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Enter TI by hand / Undo Base"
+        className="rounded-md px-1 text-[15px] leading-5 tracking-[1px] text-ink-400 hover:bg-ink-50 hover:text-ink-900"
+      >
+        {busy ? <Loader2 size={12} className="inline animate-spin" /> : "⋯"}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-[210px] overflow-hidden rounded-[8px] border border-gray-200 bg-white text-left shadow-lg">
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onEnter(); }}
+              className="block w-full px-3 py-2 text-left text-[11.5px] text-gray-700 hover:bg-gray-50"
+            >
+              Enter TI
+              <span className="block text-[10.5px] text-gray-400">Line by line, today&apos;s screen</span>
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => { setOpen(false); onUndo(); }}
+              title="Put this bill back on the tint rail. Only possible while no TI has been recorded and nobody has picked it."
+              className="flex w-full items-start gap-1.5 px-3 py-2 text-left text-[11.5px] text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+            >
+              <Undo2 size={12} className="mt-[2px]" />
+              <span>
+                Undo Base
+                <span className="block text-[10.5px] text-gray-400">Back to the Needs-assignment rail</span>
+              </span>
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

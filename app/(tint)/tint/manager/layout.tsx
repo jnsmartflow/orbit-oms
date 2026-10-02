@@ -84,6 +84,7 @@ export default async function TintManagerLayout({
             canPickDelete:     edit("tint_pick_delete"),
             canShopDelivery:   edit("tint_shop_delivery"),
             canUrgent:         edit("tint_urgent"),
+            canTiBulk:         edit("tint_ti_bulk"),
             canViewHoldTab:    view("tint_hold"),
             canViewCiTab:      view("tint_ci") || view("tint_cancel"),
             canViewPickDelete: view("tint_pick_delete"),

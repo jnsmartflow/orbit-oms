@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
+import { resolveFloorDisplayDate } from "@/lib/floor/format";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,18 @@ interface PendingOrder {
   originalSiteName:  string | null;
   /** import_obd_query_summary.totalVolume — the TI tab's Vol column. */
   totalVolume:       number | null;
+  // ── Board cells (2026-10-02, owner — the TI tab uses the Tint / Base table's
+  // columns). DISPLAY ONLY, read-only additions: Floor's OBD date line
+  // (resolveFloorDisplayDate), SAP's invoice, the SMU name + short code, the
+  // area route, and the bill's typed article tag.
+  obdDateTime:       string | null;
+  isEmailTime:       boolean;
+  invoiceNo:         string | null;
+  invoiceDate:       string | null;
+  smu:               string | null;
+  smuCode:           string | null;
+  route:             string | null;
+  articleTag:        string | null;
   tintAssignmentId:   number;
   /** When the bypass closed the bill — tint_assignments.completedAt. */
   bypassedAt:         string | null;
@@ -124,10 +137,17 @@ export async function GET(): Promise<NextResponse> {
           obdNumber:          true,
           shipToCustomerName: true,
           customerId:         true,
-          customer:           { select: { customerName: true } },
           // Display only (step 7): the redirect name and the bill volume.
           shipToOverrideCustomer: { select: { customerName: true } },
-          querySnapshot:          { select: { totalVolume: true } },
+          querySnapshot:          { select: { totalVolume: true, articleTag: true } },
+          // Board cells (2026-10-02) — display only.
+          orderDateTime: true,
+          obdEmailDate:  true,
+          invoiceNo:     true,
+          invoiceDate:   true,
+          smu:           true,
+          // The AREA route, matching FLOOR_DEALER_SELECT / the board's Route column.
+          customer:      { select: { customerName: true, area: { select: { primaryRoute: { select: { name: true } } } } } },
         },
       },
     },
@@ -212,6 +232,14 @@ export async function GET(): Promise<NextResponse> {
       shipToName:        redirect ?? ownSite,
       originalSiteName:  redirect ? ownSite : null,
       totalVolume:       a.order.querySnapshot?.totalVolume ?? null,
+      obdDateTime:       resolveFloorDisplayDate(a.order.orderDateTime, a.order.obdEmailDate).obdDateTime?.toISOString() ?? null,
+      isEmailTime:       resolveFloorDisplayDate(a.order.orderDateTime, a.order.obdEmailDate).isEmailTime,
+      invoiceNo:         a.order.invoiceNo ?? null,
+      invoiceDate:       a.order.invoiceDate ? a.order.invoiceDate.toISOString() : null,
+      smu:               a.order.smu ?? null,
+      smuCode:           null, // filled below with the dealer name, same query
+      route:             a.order.customer?.area?.primaryRoute?.name ?? null,
+      articleTag:        a.order.querySnapshot?.articleTag ?? null,
       billToName:        null, // filled below, one query for the whole page
       tintAssignmentId:  a.id,
       bypassedAt:        a.completedAt ? a.completedAt.toISOString() : null,
@@ -235,12 +263,19 @@ export async function GET(): Promise<NextResponse> {
   if (out.length > 0) {
     const summaries = await prisma.import_raw_summary.findMany({
       where:   { obdNumber: { in: out.map((o) => o.obdNumber) } },
-      select:  { obdNumber: true, billToCustomerName: true, createdAt: true },
+      select:  { obdNumber: true, billToCustomerName: true, smuCode: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     });
     const dealerByObd = new Map<string, string | null>();
-    for (const s of summaries) dealerByObd.set(s.obdNumber, s.billToCustomerName); // newer wins
-    for (const o of out) o.billToName = dealerByObd.get(o.obdNumber) ?? null;
+    const smuCodeByObd = new Map<string, string | null>();
+    for (const s of summaries) {
+      dealerByObd.set(s.obdNumber, s.billToCustomerName); // newer wins
+      smuCodeByObd.set(s.obdNumber, s.smuCode);
+    }
+    for (const o of out) {
+      o.billToName = dealerByObd.get(o.obdNumber) ?? null;
+      o.smuCode    = smuCodeByObd.get(o.obdNumber) ?? null;
+    }
   }
 
   return NextResponse.json({ orders: out });

@@ -59,7 +59,10 @@ import { currentIstMonth } from "@/lib/billing/telephonic-so";
 import { BoardTiTab } from "@/components/tint/manager/board-ti-tab";
 // BoardAssignBar (board-assign-bar.tsx) is RETIRED, not deleted (CORE §3): the
 // bottom bar replaced it in tabs build step 6.
-import { BoardBottomBar, type BarMode } from "@/components/tint/manager/board-bottom-bar";
+import { BoardBottomBar, BoardTiBottomBar, type BarMode } from "@/components/tint/manager/board-bottom-bar";
+import { BoardTiBulkDialog } from "@/components/tint/manager/board-ti-bulk-dialog";
+import { owedLines, packList } from "@/components/tint/manager/board-ti-tab";
+import type { WhiteShotDose } from "@/lib/tint/white-shots";
 import { BoardStopCancelDialog, type StopCancelBill } from "@/components/tint/manager/board-stop-cancel-dialog";
 import { BoardShopDeliveryDialog, type ShopDeliveryBill } from "@/components/tint/manager/board-shop-delivery-dialog";
 import { BoardHoldTab } from "@/components/tint/manager/board-hold-tab";
@@ -148,6 +151,11 @@ export function TintManagerContent() {
   const [holdSel, setHoldSel] = useState<Set<number>>(new Set());
   // The Base tab's selection (2026-10-01, Base tab 4B) — the fourth, disjoint.
   const [baseSel, setBaseSel] = useState<Set<number>>(new Set());
+  // The TI tab's selection (2026-10-02, bulk TI) — the fifth, disjoint; keyed by
+  // tintAssignmentId. Plus the open white-shot confirm, and the bulk Undo Base.
+  const [tiSel, setTiSel] = useState<Set<number>>(new Set());
+  const [tiBulkDose, setTiBulkDose] = useState<WhiteShotDose | null>(null);
+  const [tiUndoBusy, setTiUndoBusy] = useState(false);
   // The bar's ··· More menu and its operator menu (anchored to the primary).
   const [barMenuOpen, setBarMenuOpen] = useState(false);
   const [barOpAnchor, setBarOpAnchor] = useState<HTMLElement | null>(null);
@@ -377,12 +385,14 @@ export function TintManagerContent() {
     setSelection(new Set());
     setHoldSel(new Set());
     setBaseSel(new Set());
+    setTiSel(new Set());
     setRailSel((s) => { const n = new Set(s); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n; });
   }, []);
   const toggleRow = useCallback((r: BoardRow) => {
     setRailSel(new Set());
     setHoldSel(new Set());
     setBaseSel(new Set());
+    setTiSel(new Set());
     setSelection((s) => { const n = new Set(s); if (n.has(r.key)) n.delete(r.key); else n.add(r.key); return n; });
   }, []);
   const clearAllSelection = useCallback(() => {
@@ -390,13 +400,15 @@ export function TintManagerContent() {
     setRailSel(new Set());
     setHoldSel(new Set());
     setBaseSel(new Set());
+    setTiSel(new Set());
     setBarMenuOpen(false);
     setBarOpAnchor(null);
   }, []);
 
   // ── What the bar acts on ─────────────────────────────────────────────────
   const barMode: BarMode | null =
-    railSel.size > 0 ? "rail" : selection.size > 0 ? "table" : holdSel.size > 0 ? "hold" : baseSel.size > 0 ? "base" : null;
+    railSel.size > 0 ? "rail" : selection.size > 0 ? "table" : holdSel.size > 0 ? "hold" : baseSel.size > 0 ? "base"
+    : tiSel.size > 0 ? "ti" : null;
   /** One shape for every selected bill, whichever side it came from. */
   const barBills = useMemo(() => {
     if (barMode === "rail") {
@@ -457,6 +469,7 @@ export function TintManagerContent() {
     setSelection(new Set());
     setRailSel(new Set());
     setHoldSel(new Set());
+    setTiSel(new Set());
     setBaseSel((s) => { const n = new Set(s); if (n.has(r.orderId)) n.delete(r.orderId); else n.add(r.orderId); return n; });
   }, []);
   // Base selection prunes like the others: a bill that left Floor's board (or
@@ -471,6 +484,7 @@ export function TintManagerContent() {
     setSelection(new Set());
     setRailSel(new Set());
     setBaseSel(new Set());
+    setTiSel(new Set());
     setHoldSel((s) => { const n = new Set(s); if (n.has(h.orderId)) n.delete(h.orderId); else n.add(h.orderId); return n; });
   }, []);
   // Hold selection prunes like the others: a released bill leaves the list.
@@ -540,6 +554,7 @@ export function TintManagerContent() {
   // flight, and every modal / sheet / popover this page opens.
   const holdLive =
     panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 ||
+    tiSel.size > 0 || tiBulkDose !== null || tiUndoBusy ||
     barMenuOpen || barOpAnchor !== null || offFloor !== null || stopCancelBill !== null || restoringId !== null ||
     reorderBusy.size > 0 || writeBusy || railMenuOpen ||
     baseUndoBusyId !== null || missingBadgeOpen || missingSheetOpen || pullModalOpen ||
@@ -609,13 +624,13 @@ export function TintManagerContent() {
         if (typing) return;
         if (barOpAnchor !== null) { setBarOpAnchor(null); return; }
         if (barMenuOpen) { setBarMenuOpen(false); return; }
-        if (offFloor !== null || stopCancelBill !== null || shopDeliveryBills !== null) {
+        if (offFloor !== null || stopCancelBill !== null || shopDeliveryBills !== null || tiBulkDose !== null) {
           if (dialogBusy) return;
-          setOffFloor(null); setStopCancelBill(null); setShopDeliveryBills(null);
+          setOffFloor(null); setStopCancelBill(null); setShopDeliveryBills(null); setTiBulkDose(null);
           return;
         }
         if (panelKey !== null) { setPanelKey(null); return; }
-        if (selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0) { clearAllSelection(); return; }
+        if (selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 || tiSel.size > 0) { clearAllSelection(); return; }
         return;
       }
       // M — Add OBD to Tint. Ignored while typing, and while the panel is open
@@ -627,7 +642,7 @@ export function TintManagerContent() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panelKey, selection, railSel, holdSel, baseSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, dialogBusy, clearAllSelection]);
+  }, [panelKey, selection, railSel, holdSel, baseSel, tiSel, barOpAnchor, barMenuOpen, offFloor, stopCancelBill, shopDeliveryBills, tiBulkDose, dialogBusy, clearAllSelection]);
 
   // ── Hold + CI lists (step 7) — read when the person can see the tab, and
   // again after every board reload (payload changes), so the tab counts track
@@ -716,6 +731,7 @@ export function TintManagerContent() {
     setSelection(new Set());
     setHoldSel(new Set());
     setBaseSel(new Set());
+    setTiSel(new Set());
     setBarMenuOpen(false);
     setBarOpAnchor(null);
   }, [activeTab]);
@@ -827,6 +843,59 @@ export function TintManagerContent() {
       setBaseUndoBusyId(null);
     }
   }, [baseDrill, fetchBasePending, fetchBoard]);
+
+  // ── TI tab bulk (2026-10-02) ───────────────────────────────────────────────
+  const toggleTi = useCallback((o: BasePendingOrder) => {
+    setSelection(new Set());
+    setRailSel(new Set());
+    setHoldSel(new Set());
+    setBaseSel(new Set());
+    setTiSel((s) => { const n = new Set(s); if (n.has(o.tintAssignmentId)) n.delete(o.tintAssignmentId); else n.add(o.tintAssignmentId); return n; });
+  }, []);
+  const selectedTi = useMemo(() => basePending.filter((o) => tiSel.has(o.tintAssignmentId)), [basePending, tiSel]);
+  // TI selection prunes like the others: a closed or undone bill leaves the list.
+  useEffect(() => {
+    if (tiSel.size === 0) return;
+    const live = Array.from(tiSel).filter((id) => basePending.some((o) => o.tintAssignmentId === id));
+    if (live.length !== tiSel.size) setTiSel(new Set(live));
+  }, [basePending, tiSel]);
+
+  /** "↶ Undo Base" on every selected TI bill — the SAME route and refusals as
+   *  the row's Undo (POST /api/tint/manager/base-bypass/undo), one bill at a
+   *  time, then ONE toast naming every refused bill in the server's words. */
+  const handleBulkUndoBase = useCallback(async () => {
+    const bills = selectedTi;
+    if (bills.length === 0) return;
+    setTiUndoBusy(true);
+    const refused: string[] = [];
+    let undone = 0;
+    for (const o of bills) {
+      try {
+        const res = await fetch("/api/tint/manager/base-bypass/undo", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ orderId: o.orderId }),
+        });
+        if (res.ok) { undone++; continue; }
+        const b = (await res.json().catch(() => ({}))) as { message?: unknown; error?: unknown };
+        const msg = typeof b.message === "string" ? b.message
+                  : typeof b.error === "string"   ? b.error
+                  : `Undo failed (HTTP ${res.status})`;
+        refused.push(`${o.obdNumber}: ${msg}`);
+      } catch (e) {
+        refused.push(`${o.obdNumber}: ${e instanceof Error ? e.message : "Undo failed"}`);
+      }
+    }
+    const head = `${undone} ${undone === 1 ? "bill" : "bills"} back on the tint rail` + (refused.length > 0 ? ` · ${refused.length} refused` : "");
+    const opts = refused.length > 0 ? { description: refused.join("\n"), duration: 10000 } : undefined;
+    if (undone === 0 && refused.length > 0) toast.error(head, opts);
+    else if (refused.length > 0) toast.warning(head, opts);
+    else toast.success(head);
+    setTiSel(new Set());
+    await fetchBasePending();
+    await fetchBoard();
+    setTiUndoBusy(false);
+  }, [selectedTi, fetchBasePending, fetchBoard]);
 
   // ── Writes ────────────────────────────────────────────────────────────────
 
@@ -1535,7 +1604,7 @@ export function TintManagerContent() {
           (tint step 4). Same props as the page passed before the feed. */}
       {!feedLive && (
         <LegacyTintManagerSync
-          paused={panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0}
+          paused={panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 || tiSel.size > 0}
           onProbe={setConnected}
           onChange={() => { void fetchBoard(); }}
         />
@@ -1603,6 +1672,7 @@ export function TintManagerContent() {
               ) : null}
               onOpen={(o) => {
                 setPanelKey(null);
+                setTiSel(new Set());
                 setBaseDrill(o);
                 // Open the first line still owing a TI, so the common case (one
                 // pending line) is a single click rather than two.
@@ -1611,6 +1681,9 @@ export function TintManagerContent() {
               onBack={() => { setBaseDrill(null); setBaseLine(null); }}
               onPickLine={(l) => setBaseLine(l)}
               onUndo={(o) => { void handleBaseUndo(o); }}
+              selected={tiSel}
+              onToggle={toggleTi}
+              barUp={barMode !== null}
             />
           )}
           {activeTab === "hold" && (
@@ -1656,7 +1729,26 @@ export function TintManagerContent() {
             />
           )}
 
-          {barMode !== null && (
+          {barMode === "ti" && (
+            <BoardTiBottomBar
+              count={selectedTi.length}
+              linesOwed={selectedTi.reduce((n, o) => n + owedLines(o).length, 0)}
+              packs={packList(selectedTi.flatMap((o) => owedLines(o).map((l) => l.packCode)))}
+              busy={tiUndoBusy}
+              onClear={clearAllSelection}
+              onShot={(dose) => setTiBulkDose(dose)}
+              onNewShade={() => {
+                // Today's per-line TI panel, on the first selected bill.
+                const o = selectedTi[0];
+                if (!o) return;
+                setTiSel(new Set());
+                setBaseDrill(o);
+                setBaseLine(o.lines.find((l) => !l.hasTiEntry) ?? null);
+              }}
+              onUndoBase={() => { void handleBulkUndoBase(); }}
+            />
+          )}
+          {barMode !== null && barMode !== "ti" && (
             <BoardBottomBar
               mode={barMode}
               count={barBills.length}
@@ -1762,6 +1854,16 @@ export function TintManagerContent() {
           onDone={() => { clearAllSelection(); void fetchBoard(); }}
           onBusyChange={setDialogBusy}
           onClose={() => setStopCancelBill(null)}
+        />
+      )}
+
+      {tiBulkDose !== null && (
+        <BoardTiBulkDialog
+          bills={selectedTi}
+          dose={tiBulkDose}
+          onDone={() => { setTiSel(new Set()); void fetchBasePending(); }}
+          onBusyChange={setDialogBusy}
+          onClose={() => setTiBulkDose(null)}
         />
       )}
 

@@ -52,8 +52,9 @@ import {
 import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { useTintManagerAccess } from "./tint-manager-access-provider";
+import { WHITE_SHOTS, type WhiteShotDose } from "@/lib/tint/white-shots";
 
-export type BarMode = "rail" | "table" | "hold" | "base";
+export type BarMode = "rail" | "table" | "hold" | "base" | "ti";
 
 export interface BarSelectionFacts {
   /** Every selected table job is Assigned (Re-assign / Send back allowed). */
@@ -316,6 +317,85 @@ export function BoardBottomBar({
           <MoreMenu open={menuOpen} onOpenChange={onMenuOpenChange} items={items} disabled={busy} />
         </>
       )}
+    </FloorActionBar>
+  );
+}
+
+// ── The TI tab's bar (2026-10-02, bulk TI — docs/prompts/drafts/
+// code-discovery-2026-10-02-bulk-tinter-issue.md §G step 3, §I; locked mockup
+// docs/mockups/tint-manager/tint-manager-ti-bulk-mockup.html "bar") ──────────
+//
+//   {N} selected [✕ Clear]   {X} lines owed · 20 L ×3 · 1 L
+//                            WHITE SHOT [WHT 5] [WHT 20] [WHT 25] [+ New shade] │ [↶ Undo Base]
+//
+// A separate component on the same Floor shell (FloorActionBar), not a fifth
+// branch through BoardBottomBar: this mode shares none of the other modes' items
+// — no Due, no Hold, no More. The three WHT buttons are hidden without
+// tint_ti_bulk (canTiBulk); each opens the page's confirm (board-ti-bulk-
+// dialog.tsx) — nothing is written from here. The doses come from
+// lib/tint/white-shots.ts, never retyped. "+ New shade" opens today's per-line
+// TI panel on the first selected bill. "↶ Undo Base" is the existing undo, run
+// per selected bill by the page (owner 2026-10-02).
+//
+// Follows the locked mockup: the shots are bordered white buttons, the new-shade
+// one dashed — no filled brand button in this mode (the confirm carries it).
+
+export function BoardTiBottomBar({
+  count,
+  linesOwed,
+  packs,
+  busy,
+  onClear,
+  onShot,
+  onNewShade,
+  onUndoBase,
+}: {
+  count:      number;
+  linesOwed:  number;
+  /** "20 L ×3 · 1 L" — board-ti-tab.tsx packList over the owed lines. */
+  packs:      string;
+  busy:       boolean;
+  onClear:    () => void;
+  onShot:     (dose: WhiteShotDose) => void;
+  onNewShade: () => void;
+  onUndoBase: () => void;
+}) {
+  const access = useTintManagerAccess();
+  const figures: BarFigure[] = [{ key: "lines", value: String(linesOwed), unit: linesOwed === 1 ? "line owed" : "lines owed" }];
+  return (
+    <FloorActionBar count={count} figures={figures} extra={packs ? <span className="whitespace-nowrap">{packs}</span> : undefined} onClear={onClear} clearDisabled={busy}>
+      {access.canTiBulk && (
+        <>
+          <span className="text-[10.5px] font-semibold uppercase tracking-[.06em] text-ink-400">White shot</span>
+          {WHITE_SHOTS.map((s) => (
+            <button
+              key={s.dose}
+              type="button"
+              disabled={busy || linesOwed === 0}
+              onClick={() => onShot(s.dose)}
+              title={`WHT ${s.dose} · ${s.samplingNo} on every owed line`}
+              className="inline-flex h-[44px] min-w-[96px] flex-col items-center justify-center rounded-xl border border-ink-200 bg-white px-4 text-ink-900 hover:border-brand-600 hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              <span className="text-[15px] font-bold leading-tight">WHT {s.dose}</span>
+              <span className="text-[10px] text-ink-400">white shot</span>
+            </button>
+          ))}
+        </>
+      )}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onNewShade}
+        className="inline-flex h-[44px] min-w-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-ink-200 bg-white px-4 font-semibold text-ink-700 hover:border-ink-400 disabled:cursor-not-allowed disabled:text-gray-400"
+      >
+        <span className="text-[13px] leading-tight">+ New shade</span>
+        <span className="text-[10px] font-medium text-ink-400">by hand, line by line</span>
+      </button>
+      <BarDivider />
+      <button type="button" disabled={busy} onClick={onUndoBase} className={BAR_SECONDARY} title="Back to the Needs-assignment rail — refused once a TI is recorded or a picker has it">
+        <Undo2 size={15} strokeWidth={2.2} />
+        Undo Base
+      </button>
     </FloorActionBar>
   );
 }
