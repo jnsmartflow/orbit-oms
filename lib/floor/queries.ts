@@ -1365,6 +1365,13 @@ export async function getFloorHold(
     } else {
       heldFrom = order.soNumber && moHoldBySo.get(order.soNumber) ? "Auto (mail order)" : "Unknown";
     }
+    // Held by — THE display rule, in one place (owner 2026-10-02): the person
+    // when known; "System" whenever the hold is automatic (heldByLabel's import
+    // notes, OR a mail-order hold with no log row — the pre-2026-10-01 ones);
+    // null ("—" on screen) only when nothing is known.
+    const heldByName =
+      heldByLabel(logNote, holdLog?.changedById ?? null, holdLog?.changedBy?.name ?? null) ??
+      (heldFrom === "Auto (mail order)" ? "System" : null);
     const weight = order.querySnapshot?.totalWeight ?? null;
 
     rows.push({
@@ -1398,7 +1405,7 @@ export async function getFloorHold(
       isGift: isGiftBill(order.materialType),
       heldFrom,
       heldById: holdLog?.changedById ?? null,
-      heldByName: heldByLabel(logNote, holdLog?.changedById ?? null, holdLog?.changedBy?.name ?? null),
+      heldByName,
     });
   }
 

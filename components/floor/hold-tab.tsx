@@ -7,7 +7,7 @@
 //
 // The rows are drawn by the SHARED held-bills table, components/floor/hold-table.tsx
 // (2026-10-02: ☐ · OBD · Invoice · Ship to · Route · Type · L · Kg · Article ·
-// Held since · Held from · Held by) — one <HoldTable> per age band. Everything
+// Held since · Held by) — one <HoldTable> per age band. Everything
 // Floor-only stays HERE: the bands, the Recent-first / Oldest-first toggle, the
 // release bar (bulk selection), row click → detail panel, and Export PDF
 // (components/floor/pdf-preview.tsx, its own five columns, unchanged).

@@ -9,8 +9,9 @@
 // no toolbar. Those belong to the caller. A caller that passes no `onOpenRow`
 // gets rows that do nothing on click; `selectable={false}` drops the tick column.
 //
-// Columns (fixed table standard, CLAUDE_UI §27):
-//   ☐ · OBD · Invoice · Ship to · Route · Type · L · Kg · Article · Held since · Held from · Held by
+// Columns (fixed table standard, CLAUDE_UI §27), default:
+//   ☐ · OBD · Invoice · Ship to · Route · Type · L · Kg · Article · Held since · Held by
+// "Held from" is available on request (`columns`), not shown by default.
 // Rows are `FloorHoldRow` (lib/floor/queries.ts getFloorHold). "Held since" reads
 // heldSince — the real hold moment, "~" when approximated from the arrival date.
 
@@ -39,22 +40,28 @@ export type HoldColumn =
   | "heldFrom"
   | "heldBy";
 
-/** Every data column, in display order, with its share of the row (sums to 97;
- *  the tick column takes 3 → 100). A `columns` subset is re-scaled to fill. */
+/** Each data column's share of the row. The DEFAULT set below sums to 97 (the tick
+ *  column takes 3 → 100); any `columns` choice is re-scaled to fill the row. */
 const COLUMN_WIDTH: Record<HoldColumn, number> = {
-  obd: 11,
-  invoice: 9,
-  shipTo: 21,
-  route: 9,
+  obd: 12,
+  invoice: 10,
+  shipTo: 24,
+  route: 10,
   type: 7,
   litres: 5,
   kg: 5,
-  article: 7,
-  heldSince: 7,
+  article: 8,
+  heldSince: 8,
   heldFrom: 9,
-  heldBy: 7,
+  heldBy: 8,
 };
-export const HOLD_COLUMNS: HoldColumn[] = Object.keys(COLUMN_WIDTH) as HoldColumn[];
+
+/** The default columns, in display order. "Held from" is NOT shown by default
+ *  (owner 2026-10-02) — row.heldFrom stays in the data, and a caller that wants
+ *  the column passes it in `columns`. */
+export const HOLD_COLUMNS: HoldColumn[] = [
+  "obd", "invoice", "shipTo", "route", "type", "litres", "kg", "article", "heldSince", "heldBy",
+];
 const TICK_WIDTH = 3;
 
 const HEADER: Record<HoldColumn, string> = {
@@ -173,6 +180,7 @@ function Cell({ col, row, now }: { col: HoldColumn; row: FloorHoldRow; now: Date
         </td>
       );
     case "heldBy":
+      // getFloorHold decides the text (name / "System" / null) — rendered as-is.
       return (
         <td className={`${TD} ${row.heldByName === "System" ? "text-ink-400" : ""}`}>
           {row.heldByName ?? DASH}
