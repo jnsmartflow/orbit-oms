@@ -66,7 +66,14 @@ import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { isGiftBill } from "@/lib/orders/gift";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
-import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
+import {
+  HOLD_LOG_NOTES,
+  HOLD_SOURCE_BY_NOTE,
+  TELEPHONIC_HOLD_NOTE,
+  heldByLabel,
+  type HeldSinceSource,
+  type HoldSourceLabel,
+} from "./hold-log";
 import type {
   FloorScope,
   FloorBoardRow,
@@ -1248,7 +1255,8 @@ export async function getFloorHold(
     include: {
       customer: { select: FLOOR_DEALER_SELECT },
       shipToOverrideCustomer: { select: FLOOR_DEALER_SELECT },
-      querySnapshot: { select: { articleTag: true, totalVolume: true } },
+      // totalWeight added 2026-10-02 for the shared Hold table's Kg column.
+      querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
     },
   });
 
@@ -1258,18 +1266,67 @@ export async function getFloorHold(
   // the arrival date — see lib/floor/hold-log.ts). Identified by NOTE, never by a
   // sentinel toStage. Latest hold log per order wins, so a re-held bill reports
   // its most recent hold rather than a stale first one.
+  // The SAME read also carries the note and the person (2026-10-02) for the
+  // table's Held from / Held by — no extra query.
   const heldIds = orders.map((o) => o.id);
   const holdLogs =
     heldIds.length > 0
       ? await prisma.order_status_logs.findMany({
           where: { orderId: { in: heldIds }, note: { in: HOLD_LOG_NOTES } },
           orderBy: { createdAt: "desc" },
-          select: { orderId: true, createdAt: true },
+          select: {
+            orderId: true,
+            createdAt: true,
+            note: true,
+            changedById: true,
+            changedBy: { select: { name: true } },
+          },
         })
       : [];
-  const latestHoldLog = new Map<number, Date>();
+  const latestHoldLog = new Map<number, (typeof holdLogs)[number]>();
   for (const log of holdLogs) {
-    if (!latestHoldLog.has(log.orderId)) latestHoldLog.set(log.orderId, log.createdAt);
+    if (!latestHoldLog.has(log.orderId)) latestHoldLog.set(log.orderId, log);
+  }
+
+  // HELD FROM, the two cases the note alone cannot settle (2026-10-02). Each read
+  // runs ONLY when it has ids to ask about; sequential awaits, read-only.
+  //
+  // (1) The telephonic note is written for a 'hold' tag AND for a 'ci' tag that
+  //     fell back to a hold (lib/billing/telephonic-apply.ts). The tag says which.
+  //     Joined by so_tag_matches.orderId — the bill's own id, never the SO text.
+  const telephonicIds = Array.from(latestHoldLog.values())
+    .filter((l) => l.note === TELEPHONIC_HOLD_NOTE)
+    .map((l) => l.orderId);
+  const ciTagIds = new Set<number>();
+  if (telephonicIds.length > 0) {
+    const matches = await prisma.so_tag_matches.findMany({
+      where: { orderId: { in: telephonicIds } },
+      select: { orderId: true, soTag: { select: { tag: true } } },
+    });
+    for (const m of matches) if (m.soTag.tag === "ci") ciTagIds.add(m.orderId);
+  }
+  // (2) No hold log at all: the enrichment holds before 2026-10-01 wrote none.
+  //     The SO's NEWEST mail order (the one enrichment reads) on Hold → auto.
+  //     mo_orders.dispatchStatus is capitalised ("Hold"), orders' is lowercase.
+  const noLogSos = Array.from(
+    new Set(
+      orders
+        .filter((o) => !latestHoldLog.has(o.id) && o.soNumber)
+        .map((o) => o.soNumber as string),
+    ),
+  );
+  const moHoldBySo = new Map<string, boolean>();
+  if (noLogSos.length > 0) {
+    const mos = await prisma.mo_orders.findMany({
+      where: { soNumber: { in: noLogSos } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { soNumber: true, dispatchStatus: true },
+    });
+    for (const m of mos) {
+      if (m.soNumber && !moHoldBySo.has(m.soNumber)) {
+        moHoldBySo.set(m.soNumber, (m.dispatchStatus ?? "").toLowerCase() === "hold");
+      }
+    }
   }
 
   // TINT vs BASE — the Hold table wears the same word as the board (this feed's
@@ -1286,14 +1343,29 @@ export async function getFloorHold(
     if (!inScope(deliveryType, scope)) continue;
 
     // Fallback ladder. A bill with no hold log at all is almost always an
-    // ENRICHMENT hold (app/api/import/obd/route.ts stamps heldAt but writes no
-    // order_status_logs row), where the hold is applied at import time — so the
+    // ENRICHMENT hold from before 2026-10-01 (app/api/import/obd/route.ts stamped
+    // heldAt but wrote no order_status_logs row until e1da66f0), applied at import — so the
     // arrival date is a genuinely close approximation, not a guess. It is still
     // tagged `approx` and rendered with a "~" so it can never silently read as a
     // recorded "held today". Neither available → `unknown`, its own trailing band.
-    const logAt = latestHoldLog.get(order.id) ?? null;
+    const holdLog = latestHoldLog.get(order.id) ?? null;
+    const logAt = holdLog?.createdAt ?? null;
     const heldSinceSource: HeldSinceSource = logAt ? "log" : order.heldAt ? "approx" : "unknown";
     const heldSince = (logAt ?? order.heldAt)?.toISOString() ?? null;
+
+    // Held from / held by — lib/floor/hold-log.ts owns the labels and the
+    // "System" rule; this only picks the inputs.
+    const logNote = holdLog?.note ?? null;
+    let heldFrom: HoldSourceLabel;
+    if (logNote !== null) {
+      heldFrom =
+        logNote === TELEPHONIC_HOLD_NOTE && ciTagIds.has(order.id)
+          ? "Billing · CI"
+          : (HOLD_SOURCE_BY_NOTE[logNote] ?? "Unknown");
+    } else {
+      heldFrom = order.soNumber && moHoldBySo.get(order.soNumber) ? "Auto (mail order)" : "Unknown";
+    }
+    const weight = order.querySnapshot?.totalWeight ?? null;
 
     rows.push({
       orderId: order.id,
@@ -1320,6 +1392,13 @@ export async function getFloorHold(
       invoiceNo: order.invoiceNo ?? null,
       soNumber: order.soNumber ?? null,
       dealerInMaster: dealer != null,
+      // The shared Hold table (2026-10-02) — all from rows already read.
+      invoiceDate: order.invoiceDate ? order.invoiceDate.toISOString() : null,
+      weightKg: weight !== null && weight > 0 ? weight : null,
+      isGift: isGiftBill(order.materialType),
+      heldFrom,
+      heldById: holdLog?.changedById ?? null,
+      heldByName: heldByLabel(logNote, holdLog?.changedById ?? null, holdLog?.changedBy?.name ?? null),
     });
   }
 

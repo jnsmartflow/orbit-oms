@@ -114,6 +114,59 @@ export const HOLD_LOG_NOTES: string[] = [
   MAIL_ORDER_BILLING_HOLD_NOTE,
 ];
 
+// ── Held from / held by (2026-10-02) — the Hold table's two source columns ──
+
+/** Who put a bill on hold, as the Hold table says it. Derived on the read side
+ *  (getFloorHold) from the latest hold log's NOTE; two cases need a second read:
+ *  the telephonic note is split by its so_tags.tag ('ci' → "Billing · CI"), and a
+ *  bill with NO hold log reads "Auto (mail order)" when its SO's newest mail order
+ *  is on Hold (the pre-2026-10-01 enrichment holds wrote no log), else "Unknown". */
+export type HoldSourceLabel =
+  | "Floor"
+  | "Tint Manager"
+  | "Billing"
+  | "Billing · telephonic"
+  | "Billing · CI"
+  | "Billing · mail order"
+  | "Auto (mail order)"
+  | "Support"
+  | "Unknown";
+
+/** Every hold note → its label. Keyed by the constants, never a retyped string.
+ *  hold-log.test.ts proves it covers HOLD_LOG_NOTES exactly. */
+export const HOLD_SOURCE_BY_NOTE: Readonly<Record<string, HoldSourceLabel>> = {
+  [FLOOR_HOLD_NOTE]: "Floor",
+  [TINT_HOLD_NOTE]: "Tint Manager",
+  [BILLING_HOLD_NOTE]: "Billing",
+  [BILLING_CI_HOLD_NOTE]: "Billing · CI",
+  // Split by the tag in getFloorHold: 'hold' keeps this label, 'ci' → "Billing · CI".
+  [TELEPHONIC_HOLD_NOTE]: "Billing · telephonic",
+  [MAIL_ORDER_BILLING_HOLD_NOTE]: "Billing · mail order",
+  [MAIL_ORDER_AUTO_HOLD_NOTE]: "Auto (mail order)",
+  [SUPPORT_HOLD_NOTES[0]]: "Support",
+  [SUPPORT_HOLD_NOTES[1]]: "Support",
+};
+
+/** Import-path notes on which `changedById = 1` means the SYSTEM, not the owner's
+ *  own account (user 1 is both — hold-sources discovery §Q2, owner 2026-10-01).
+ *  On these, held-by reads "System"; on every other note user 1 is a person. */
+export const SYSTEM_PERSON_NOTES: readonly string[] = [MAIL_ORDER_AUTO_HOLD_NOTE, BILLING_CI_HOLD_NOTE];
+
+/** The user id the import paths write for "no person" (CORE convention). */
+export const SYSTEM_USER_ID = 1;
+
+/** The "Held by" text: null with no hold log; "System" for user 1 on an
+ *  import-path note; otherwise the person's name (null if the user row is gone). */
+export function heldByLabel(
+  note: string | null,
+  changedById: number | null,
+  name: string | null,
+): string | null {
+  if (note === null || changedById === null) return null;
+  if (changedById === SYSTEM_USER_ID && SYSTEM_PERSON_NOTES.includes(note)) return "System";
+  return name;
+}
+
 /** Where a row's `heldSince` came from — surfaced in the UI so an approximated
  *  date can never silently read as a recorded one.
  *   - `log`     — a real hold event's wall-clock `createdAt`. Exact.

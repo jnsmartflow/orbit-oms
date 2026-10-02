@@ -5,7 +5,7 @@
 
 import type { PickingQueueRow, SortRule } from "@/lib/picking/types";
 import type { ColourWork } from "@/lib/picking/colour-work";
-import type { HeldSinceSource } from "./hold-log";
+import type { HeldSinceSource, HoldSourceLabel } from "./hold-log";
 
 export type { SortRule };
 
@@ -482,6 +482,20 @@ export interface FloorHoldRow extends FloorPartyFields {
   /** Did the effective dealer resolve in delivery_point_master? Drives the
    *  synthetic "unmatched" search term, as on Picking. */
   dealerInMaster: boolean;
+  // ── The shared Hold table's columns (2026-10-02, components/floor/hold-table.tsx).
+  // ADDITIVE: the Tint Manager's TintHoldRow inherits them and ignores them.
+  /** orders.invoiceDate, ISO — date-only in practice (see FloorBoardRow.invoiceDate). */
+  invoiceDate: string | null;
+  /** querySnapshot.totalWeight; 0 is a MISSING weight (status-pill formatWeightKg), so null. */
+  weightKg: number | null;
+  /** materialType = GIFTS (lib/orders/gift.ts) — 0 L / 0 kg in every total and cell. */
+  isGift: boolean;
+  /** Who put it on hold — lib/floor/hold-log.ts HOLD_SOURCE_BY_NOTE + the two reads in getFloorHold. */
+  heldFrom: HoldSourceLabel;
+  /** The latest hold log's changedById; null with no hold log. */
+  heldById: number | null;
+  /** heldByLabel(): the person, "System" for user 1 on an import note, null with no log. */
+  heldByName: string | null;
 }
 
 /** Cancel & CI source chip. auto_bill_only is Billing (mail-order CI mark) or

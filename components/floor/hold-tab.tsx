@@ -5,10 +5,12 @@
 // rail: "the list can reach 100+, which is why it is a table … the rail only ever
 // holds work he will finish today." (design §8)
 //
-// Five columns only: ☐ · OBD + date · Ship to · Route · Held since. No reason
-// column — it lives in the detail panel (a later step). Grouped by hold age, with
-// a Recent-first / Oldest-first toggle. Bulk selection lifts the release bar.
-// Export PDF opens a preview (components/floor/pdf-preview.tsx).
+// The rows are drawn by the SHARED held-bills table, components/floor/hold-table.tsx
+// (2026-10-02: ☐ · OBD · Invoice · Ship to · Route · Type · L · Kg · Article ·
+// Held since · Held from · Held by) — one <HoldTable> per age band. Everything
+// Floor-only stays HERE: the bands, the Recent-first / Oldest-first toggle, the
+// release bar (bulk selection), row click → detail panel, and Export PDF
+// (components/floor/pdf-preview.tsx, its own five columns, unchanged).
 //
 // "Held since" reads FloorHoldRow.heldSince — the real wall-clock hold moment,
 // derived on the read side (lib/floor/queries.ts getFloorHold + hold-log.ts), NOT
@@ -16,132 +18,16 @@
 // never read as a recorded one.
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { FloorSkeleton } from "./floor-skeleton";
 import { HoldBar } from "./hold-bar";
-// TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
-import { ColourWorkBadge } from "@/components/picking/card-atoms";
-import { HandBadge } from "@/components/shared/hand-badge";
+import { HoldTable } from "./hold-table";
 import { PdfPreview } from "./pdf-preview";
-import { shipMarkers } from "./floor-table";
-import { toggleOne, toggleAllIds, isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
-import { groupByHoldBand, heldSinceLabel, holdAgeDays } from "@/lib/floor/hold-log";
+import { toggleOne, toggleAllIds, type FloorSelection } from "@/lib/floor/selection";
+import { groupByHoldBand } from "@/lib/floor/hold-log";
 import { countArticles } from "@/lib/floor/format";
 import type { FloorHoldRow } from "@/lib/floor/types";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
-
-function fmtDateTime(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso)
-    .toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })
-    .replace(",", "");
-}
-
-const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
-const HEAD_TH_C = "h-[31px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
-const TD = "border-b border-[#f0f0f0] px-3.5 py-2 text-[11px] text-[#4b5563] whitespace-nowrap overflow-hidden text-ellipsis";
-const TD_C = "border-b border-[#f0f0f0] px-1 py-2 text-center text-[11px]";
-
-// ☐ 4 · OBD 20 · Ship to 39 · Route 22 · Held since 15 (sums to 100).
-const WIDTHS = [4, 20, 39, 22, 15];
-
-function HoldRows({
-  rows,
-  now,
-  selection,
-  onToggleRow,
-  onToggleAll,
-  onOpenDetail,
-}: {
-  rows: FloorHoldRow[];
-  now: Date;
-  selection: FloorSelection;
-  onToggleRow: (id: number) => void;
-  onToggleAll: (rows: FloorHoldRow[]) => void;
-  onOpenDetail: (id: number) => void;
-}) {
-  const allOn = isAllIdsSelected(selection, rows);
-  return (
-    <table className="w-full table-fixed border-collapse">
-      <colgroup>
-        {WIDTHS.map((w, i) => (
-          <col key={i} style={{ width: `${w}%` }} />
-        ))}
-      </colgroup>
-      <thead>
-        <tr>
-          <th className={HEAD_TH_C}>
-            <input
-              type="checkbox"
-              aria-label="Select all held bills in this band"
-              className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
-              checked={allOn}
-              onChange={() => onToggleAll(rows)}
-            />
-          </th>
-          <th className={HEAD_TH}>OBD</th>
-          <th className={HEAD_TH}>Ship to</th>
-          <th className={HEAD_TH}>Route</th>
-          <th className={HEAD_TH}>Held since</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const { isSite, isRedirect } = shipMarkers(row);
-          const days = holdAgeDays(row.heldSince, now);
-          const approx = row.heldSinceSource === "approx";
-          const unknown = row.heldSinceSource === "unknown";
-          return (
-            <tr key={row.orderId} className="cursor-pointer hover:bg-[#fafafa]" onClick={() => onOpenDetail(row.orderId)}>
-              <td className={TD_C} onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${row.obdNumber}`}
-                  className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
-                  checked={selection.has(row.orderId)}
-                  onChange={() => onToggleRow(row.orderId)}
-                />
-              </td>
-              <td className={TD}>
-                <span className="font-mono text-[11.5px] font-medium text-[#111827]">{row.obdNumber}</span>
-                <div className="text-[10px] text-[#9ca3af]">{fmtDateTime(row.obdDateTime)}</div>
-              </td>
-              <td className={TD}>
-                <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>
-                {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
-                {row.priorityLevel === 1 && <span className="ml-1 text-[#ef4444]">⚡</span>}
-                {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}
-                {/* TINT / BASE -- the word, replacing a droplet keyed on `orderType`
-                    (which called a "Base -- No Tint" bill tinted). Same `ml-1`. */}
-                {row.colourWork !== null && (
-                  <span className="ml-1 inline-block align-[-1px]">
-                    <ColourWorkBadge work={row.colourWork} />
-                  </span>
-                )}
-                {/* HAND — the dealer collects (2026-09-24). Beside BASE. */}
-                {row.isHand && (
-                  <span className="ml-1 inline-block align-[-1px]">
-                    <HandBadge />
-                  </span>
-                )}
-                {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}
-                {isRedirect && <div className="text-[11px] text-brand-800">→ ship-to changed</div>}
-              </td>
-              <td className={TD}>{row.route ?? "—"}</td>
-              <td
-                className={`${TD} text-[10.5px] ${unknown ? "text-[#9ca3af]" : "text-[#6b7280]"}`}
-                title={approx ? "Approximate — no hold event recorded; showing arrival date" : undefined}
-              >
-                {approx ? "~ " : ""}
-                {heldSinceLabel(days)}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
 
 export function HoldTab({
   rows,
@@ -259,13 +145,13 @@ export function HoldTab({
                 {band.label}
                 <span className="font-normal normal-case tracking-normal text-[#9ca3af]">· {bandRows.length} bills</span>
               </div>
-              <HoldRows
+              <HoldTable
                 rows={bandRows}
                 now={now}
                 selection={selection}
                 onToggleRow={(id) => setSelection((s) => toggleOne(s, id))}
                 onToggleAll={(rs) => setSelection((s) => toggleAllIds(s, rs))}
-                onOpenDetail={onOpenDetail}
+                onOpenRow={onOpenDetail}
               />
             </div>
           ))
