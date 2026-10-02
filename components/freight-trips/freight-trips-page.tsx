@@ -27,7 +27,8 @@ import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { applySearch, parseSearch } from "@/lib/floor/search";
 import { loadKg, loadLitres } from "@/lib/orders/gift";
 import type { FloorSelection } from "@/lib/floor/selection";
-import type { FloorHoldRow, FloorScope } from "@/lib/floor/types";
+import type { FloorHoldRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
+import { rowsInScope } from "@/lib/floor/scope";
 import {
   addBills,
   cancelTrip,
@@ -43,6 +44,7 @@ import {
   type FreightOptions,
   type FreightTripDetail,
   type FreightTripSummary,
+  type FreightPoolRow,
   type TripFields,
 } from "./api";
 import { FreightRail, type RailSelection } from "./freight-rail";
@@ -90,7 +92,10 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
   const [search, setSearch] = useState("");
 
   const [trips, setTrips] = useState<FreightTripSummary[] | null>(null);
-  const [pool, setPool] = useState<FloorHoldRow[]>([]);
+  // The WHOLE held pool (all types) — scoped on the client, so a club member
+  // that draws from another type (Kamrej) still finds its bills.
+  const [pool, setPool] = useState<FreightPoolRow[]>([]);
+  const [clubs, setClubs] = useState<FloorRouteClub[]>([]);
   const [poolLoading, setPoolLoading] = useState(true);
   const [poolError, setPoolError] = useState<string | null>(null);
   const [view, setView] = useState<RailSelection>({ kind: "pool" });
@@ -119,8 +124,9 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
   const loadPool = useCallback(async () => {
     setPoolLoading(true);
     try {
-      const r = await fetchPool(scope);
+      const r = await fetchPool("All");
       setPool(r.rows);
+      setClubs(r.clubs ?? []);
       setPoolError(null);
       // Ticks on bills that left the pool (put on a trip elsewhere, released) go.
       const ids = new Set(r.rows.map((x) => x.orderId));
@@ -130,7 +136,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
     } finally {
       setPoolLoading(false);
     }
-  }, [scope]);
+  }, []);
 
   const loadDetail = useCallback(async (id: number) => {
     try {
@@ -178,8 +184,14 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
 
   // ── Derived ────────────────────────────────────────────────────────────
   const parsed = useMemo(() => parseSearch(search), [search]);
-  const poolRows = useMemo(() => (search.trim() ? applySearch(pool, parsed) : pool), [pool, parsed, search]);
-  const poolLitres = useMemo(() => pool.reduce((s, r) => s + loadLitres(r.volumeLitres, r.isGift), 0), [pool]);
+  // The chip in effect narrows the pool HERE (rowsInScope — Floor's own rule);
+  // the Held bills card and the sections count this scoped list.
+  const scopedPool = useMemo(() => rowsInScope(pool, scope), [pool, scope]);
+  const poolRows = useMemo(
+    () => (search.trim() ? applySearch(scopedPool, parsed) : scopedPool),
+    [scopedPool, parsed, search],
+  );
+  const poolLitres = useMemo(() => scopedPool.reduce((s, r) => s + loadLitres(r.volumeLitres, r.isGift), 0), [scopedPool]);
   const poolSelRows = useMemo(() => pool.filter((r) => poolSel.has(r.orderId)), [pool, poolSel]);
   const tripRows = useMemo(() => (detail ? detail.stops.flatMap((s) => s.bills) : []), [detail]);
   const tripSelRows = useMemo(() => tripRows.filter((r) => tripSel.has(r.orderId)), [tripRows, tripSel]);
@@ -353,6 +365,9 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
             </div>
             <PoolView
               rows={poolRows}
+              allRows={pool}
+              clubs={clubs}
+              scope={scope}
               loading={poolLoading}
               error={poolError}
               selection={poolSel}
@@ -368,6 +383,9 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
     main = (
       <PoolView
         rows={poolRows}
+        allRows={pool}
+        clubs={clubs}
+        scope={scope}
         loading={poolLoading}
         error={poolError}
         selection={poolSel}
@@ -428,7 +446,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
             loading={trips === null}
             selection={view}
             onSelect={(s) => { setAdding(false); setView(s); }}
-            poolCount={pool.length}
+            poolCount={scopedPool.length}
             poolLitres={poolLitres}
             addCount={canEdit && inPool ? poolSel.size : 0}
             onAddToTrip={(id) => void addTo(id, Array.from(poolSel))}

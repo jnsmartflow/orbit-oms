@@ -4,12 +4,13 @@
 // screen writes freight tables only (lib/freight-trips/bills.ts header).
 // Types are imported TYPE-ONLY from the server modules (erased at build).
 
-import type { FloorHoldRow, FloorScope } from "@/lib/floor/types";
+import type { FloorRouteClub, FloorScope } from "@/lib/floor/types";
+import type { FreightPoolRow } from "@/lib/freight-trips/pool";
 import type { FreightTripDetail, FreightTripSummary } from "@/lib/freight-trips/queries";
 import type { FreightOptions } from "@/lib/freight-trips/options";
 import type { BillSkip } from "@/lib/freight-trips/bills";
 
-export type { FreightTripDetail, FreightTripSummary, FreightOptions, BillSkip };
+export type { FreightTripDetail, FreightTripSummary, FreightOptions, BillSkip, FreightPoolRow };
 export type { FreightBillRow, FreightStop } from "@/lib/freight-trips/queries";
 
 const BASE = "/api/freight-trips";
@@ -29,8 +30,11 @@ export function fetchTrips(date: string) {
   return call<{ date: string; trips: FreightTripSummary[] }>(`${BASE}?date=${encodeURIComponent(date)}`);
 }
 
+/** The pool with route ids + stop keys, and Floor's route clubs (for the route cards). */
 export function fetchPool(scope: FloorScope) {
-  return call<{ rows: FloorHoldRow[]; count: number }>(`${BASE}/pool?scope=${encodeURIComponent(scope)}`);
+  return call<{ rows: FreightPoolRow[]; count: number; clubs: FloorRouteClub[] }>(
+    `${BASE}/pool?scope=${encodeURIComponent(scope)}`,
+  );
 }
 
 export function fetchTrip(id: number) {

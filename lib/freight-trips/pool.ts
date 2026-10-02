@@ -10,10 +10,27 @@
 //
 // Held bills that are on a FLOOR trip still appear (owner decision): nothing
 // here reads tripDropId. Read-only.
+//
+// ROUTE CARDS (2026-10-02). The pool screen draws Floor-style club cards, which
+// need two facts a hold row does not carry: the effective dealer's route ID
+// (clubs match on route id, never name) and the stop key (computeDropKey). Both
+// come from ONE extra batched read here — getFloorHold is not touched — and ride
+// each row as additive fields (FreightPoolRow). The clubs themselves are Floor's
+// getRouteClubs() (lib/floor/route-clubs.ts), imported read-only.
 
+import { prisma } from "@/lib/prisma";
 import { getFloorHold } from "@/lib/floor/queries";
 import { applySearch, parseSearch } from "@/lib/floor/search";
+import { computeDropKey } from "@/lib/trips/drop-key";
 import type { FloorScope, FloorHoldRow } from "@/lib/floor/types";
+
+/** A pool row: Floor's hold row + the two facts the route cards need. */
+export interface FreightPoolRow extends FloorHoldRow {
+  /** The effective dealer's area.primaryRouteId — what a club member matches on. */
+  routeId: number | null;
+  /** computeDropKey — one stop per effective customer. */
+  stopKey: string;
+}
 
 export async function getFreightPool(scope: FloorScope = "All", search?: string): Promise<FloorHoldRow[]> {
   const rows = await getFloorHold(scope, undefined, undefined, {
@@ -21,4 +38,32 @@ export async function getFreightPool(scope: FloorScope = "All", search?: string)
   });
   const q = search?.trim() ?? "";
   return q === "" ? rows : applySearch(rows, parseSearch(q));
+}
+
+/** The pool with each row's route id and stop key (one batched read, sequential). */
+export async function getFreightPoolRows(scope: FloorScope = "All", search?: string): Promise<FreightPoolRow[]> {
+  const rows = await getFreightPool(scope, search);
+  if (rows.length === 0) return [];
+  const DEALER = { select: { area: { select: { primaryRouteId: true } } } } as const;
+  const facts = await prisma.orders.findMany({
+    where: { id: { in: rows.map((r) => r.orderId) } },
+    select: {
+      id: true,
+      customerId: true,
+      shipToOverrideCustomerId: true,
+      shipToCustomerId: true,
+      customer: DEALER,
+      shipToOverrideCustomer: DEALER,
+    },
+  });
+  const byId = new Map(facts.map((f) => [f.id, f]));
+  return rows.map((r) => {
+    const f = byId.get(r.orderId);
+    const dealer = f ? f.shipToOverrideCustomer ?? f.customer : null;
+    return {
+      ...r,
+      routeId: dealer?.area?.primaryRouteId ?? null,
+      stopKey: f ? computeDropKey(f) : `o:${r.orderId}`,
+    };
+  });
 }
