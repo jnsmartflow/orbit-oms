@@ -116,7 +116,7 @@ function stageStatus(d: FloorDetail): BoardRowStatus | "waiting" | "cancelled" {
 
 export function BoardDetailPanel({
   target, operators, position, busy, error, canRemove, windows, reloadSignal, actions,
-  onClose, onPrev, onNext, changedElsewhere = false, onReloadChanged,
+  onClose, onPrev, onNext, changedElsewhere = false, onReloadChanged, readOnly = false,
 }: {
   target:    PanelTarget;
   operators: Operator[];
@@ -137,6 +137,9 @@ export function BoardDetailPanel({
   /** Live feed only — this bill changed elsewhere; a quiet bar offers Reload. */
   changedElsewhere?: boolean;
   onReloadChanged?: () => void;
+  /** History (2026-10-02): a past day — NO action row (primary, Ship-to, ⋯) and
+   *  the due date as plain text. The tabs and bodies are unchanged. */
+  readOnly?: boolean;
 }) {
   const access = useTintManagerAccess();
   const visibleTabs = TAB_ORDER.filter((t) =>
@@ -319,7 +322,7 @@ export function BoardDetailPanel({
 
   const slotValue = d ? slotValueOf(d.dispatchTargetDate, d.dispatchWindowId, d.dispatchWindowTime) : null;
   const slotText = d?.dispatchTargetDate ? slotLabel(d.dispatchTargetDate, d.dispatchWindowTime) : "No due date";
-  const canSlotHere = access.canSlot && d !== null && d.workflowStage !== "cancelled";
+  const canSlotHere = !readOnly && access.canSlot && d !== null && d.workflowStage !== "cancelled";
 
   async function saveShipTo(customerId: number | null) {
     setShipBusy(true);
@@ -428,7 +431,9 @@ export function BoardDetailPanel({
         </div>
 
         {/* ── Action row — or the ship-to editor, or the send-back confirm ── */}
-        {editingShipTo ? (
+        {readOnly ? (
+          <div className="border-y border-warn-bg bg-warn-bg px-4 py-2 text-[11.5px] text-warn-text">Read only — a past day.</div>
+        ) : editingShipTo ? (
           <ShipToEditor
             busy={shipBusy}
             searchUrl="/api/tint/manager/ship-to-search"

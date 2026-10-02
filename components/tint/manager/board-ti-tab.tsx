@@ -46,6 +46,7 @@ export function BoardTiTab({
   selected,
   onToggle,
   barUp,
+  history = false,
 }: {
   pending:    BasePendingOrder[];
   /** The bill whose lines are open, or null for the list. */
@@ -64,6 +65,10 @@ export function BoardTiTab({
   onToggle:   (order: BasePendingOrder) => void;
   /** The bottom bar is up — pad the list so its last row clears the bar. */
   barUp:      boolean;
+  /** History (2026-10-02): the rows are bills with TI WRITTEN on that day —
+   *  read-only (no selection, no ⋯); Lines shows the sampling numbers used and
+   *  the TI column who wrote it, when. */
+  history?:   boolean;
 }) {
   // ── Drilldown: one bypassed bill's tinting lines + the TI form ────────────
   // The manager is paying off one bill's paperwork now; the list steps aside.
@@ -137,13 +142,15 @@ export function BoardTiTab({
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
       <div className="px-3.5 py-2.5 text-[10.5px] text-gray-400 border-b border-gray-100">
-        {pending.length} {pending.length === 1 ? "bill" : "bills"} sent as &quot;Base — No Tint&quot; that still owe a TI · click to select
+        {history
+          ? <>{pending.length} &quot;Base — No Tint&quot; {pending.length === 1 ? "bill" : "bills"} with a TI written that day · read only</>
+          : <>{pending.length} {pending.length === 1 ? "bill" : "bills"} sent as &quot;Base — No Tint&quot; that still owe a TI · click to select</>}
       </div>
       <div className={cn("flex-1 overflow-y-auto", barUp && "pb-[96px]")}>
         {pending.length === 0 ? (
           <div className="px-4 py-10 text-center text-[11.5px] text-gray-400">
             <div className="text-[26px] text-green-600 mb-2">✓</div>
-            <b className="text-gray-600">No TI owed</b>
+            <b className="text-gray-600">{history ? "No TI written that day" : "No TI owed"}</b>
           </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
@@ -173,10 +180,10 @@ export function BoardTiTab({
                   <tr
                     key={o.tintAssignmentId}
                     data-search-key={`ti-${o.tintAssignmentId}`}
-                    onClick={() => onToggle(o)}
-                    aria-selected={sel}
+                    onClick={history ? undefined : () => onToggle(o)}
+                    aria-selected={history ? undefined : sel}
                     className={cn(
-                      "cursor-pointer",
+                      history ? "cursor-default" : "cursor-pointer",
                       sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
                     )}
                   >
@@ -210,20 +217,33 @@ export function BoardTiTab({
                     <td className={cn(TD, "text-[10.5px]")} title={o.articleTag ?? undefined}>
                       <span className="text-[#6b7280]">{o.articleTag ?? "—"}</span>
                     </td>
-                    <td className={cn(TD, "text-[11px] text-[#4b5563]")} title={packList(owed.map((l) => l.packCode))}>
-                      {packList(owed.map((l) => l.packCode)) || "—"}
-                    </td>
-                    <td className={TD}>
+                    {history ? (
+                      <td className={cn(TD, "font-mono text-[11px] text-[#4b5563]")} title={(o.tiSamplingNos ?? []).join(" · ")}>
+                        {(o.tiSamplingNos ?? []).join(" · ") || "—"}
+                      </td>
+                    ) : (
+                      <td className={cn(TD, "text-[11px] text-[#4b5563]")} title={packList(owed.map((l) => l.packCode))}>
+                        {packList(owed.map((l) => l.packCode)) || "—"}
+                      </td>
+                    )}
+                    <td className={TD} title={history && o.tiWrittenBy ? `TI by ${o.tiWrittenBy}` : undefined}>
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
                         TI {o.coveredLines}/{o.totalTintingLines}
                       </span>
+                      {history && (
+                        <div className="mt-0.5 truncate text-[10px] text-[#9ca3af]">
+                          {o.tiWrittenBy ?? "—"} · {o.tiWrittenAt ? new Date(o.tiWrittenAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }) : "—"}
+                        </div>
+                      )}
                     </td>
                     <td className={cn(TD, "px-1 text-center overflow-visible")} onClick={(e) => e.stopPropagation()}>
-                      <RowMenu
-                        busy={undoBusyId === o.orderId}
-                        onEnter={() => onOpen(o)}
-                        onUndo={() => onUndo(o)}
-                      />
+                      {!history && (
+                        <RowMenu
+                          busy={undoBusyId === o.orderId}
+                          onEnter={() => onOpen(o)}
+                          onUndo={() => onUndo(o)}
+                        />
+                      )}
                     </td>
                   </tr>
                 );

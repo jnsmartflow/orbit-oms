@@ -33,6 +33,7 @@ export function BoardTabs({
   onChange,
   counts,
   rightSlot,
+  disabledTabs,
 }: {
   active:   BoardTab;
   onChange: (tab: BoardTab) => void;
@@ -42,6 +43,9 @@ export function BoardTabs({
    *  that left the header — Filter, + Add to Tint, ⌨. Same slot classes as
    *  components/billing/billing-tab-bar.tsx `rightSlot`. */
   rightSlot?: React.ReactNode;
+  /** Tabs drawn greyed, without a badge, and not clickable (2026-10-02: Hold in
+   *  history mode — it has no past). Default none. */
+  disabledTabs?: BoardTab[];
 }) {
   const access = useTintManagerAccess();
   const tabs: { key: BoardTab; label: string; show: boolean }[] = [
@@ -62,15 +66,19 @@ export function BoardTabs({
     // height and alignment; flex-shrink-0 keeps it from collapsing in the pane.
     <div className="flex flex-shrink-0 items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
       {tabs.filter((t) => t.show).map((t) => {
-        const on = active === t.key;
-        const count = counts[t.key];
+        const off = disabledTabs?.includes(t.key) ?? false;
+        const on = active === t.key && !off;
+        const count = off ? undefined : counts[t.key];
         return (
           <button
             key={t.key}
             type="button"
+            disabled={off}
+            title={off ? "No history for this tab — back to today to see it" : undefined}
             onClick={() => onChange(t.key)}
             className={`flex items-center gap-1.5 border-b-2 py-3 text-[12px] ${
-              on ? "border-gray-900 font-bold text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"
+              off ? "border-transparent text-gray-300 cursor-not-allowed"
+              : on ? "border-gray-900 font-bold text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
           >
             {t.label}

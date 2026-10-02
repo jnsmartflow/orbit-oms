@@ -43,6 +43,7 @@ import { UniversalHeader } from "@/components/universal-header";
 // Billing's tab-row controls (mail-orders-page.tsx billingHeaderSlot), the SAME
 // components — Filter with its count badge, and the ⌨ popover in "row" style.
 import { HeaderFilter, type FilterGroup } from "@/components/header-filter";
+import { HeaderDateStepper } from "@/components/header-date-stepper";
 import { HeaderShortcuts, type ShortcutItem } from "@/components/header-shortcuts";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { RemoveObdModal } from "@/components/tint/RemoveObdModal";
@@ -176,6 +177,18 @@ export function TintManagerContent() {
   // The Tint tab's focused operator (2026-10-02) — a VIEW filter on the
   // Operators card / Now & next, never a selection. Esc clears it last.
   const [focusedOperatorId, setFocusedOperatorId] = useState<number | null>(null);
+  // ── HISTORY (2026-10-02, round 2 step 3) ────────────────────────────────────
+  // A past IST day "YYYY-MM-DD", or null = live. Held in STATE, as Floor holds
+  // its History day (floor-page.tsx viewMode + histDate) — no URL param. Every
+  // board read goes through `dated()`, so the marker / write reload paths that
+  // call fetchBoard serve the right day without being rewired.
+  const [historyDate, setHistoryDate] = useState<string | null>(null);
+  const historyDateRef = useRef<string | null>(null);
+  historyDateRef.current = historyDate;
+  const dated = useCallback((path: string) => {
+    const d = historyDateRef.current;
+    return d ? `${path}${path.includes("?") ? "&" : "?"}date=${d}` : path;
+  }, []);
   // The bar's ··· More menu and its operator menu (anchored to the primary).
   const [barMenuOpen, setBarMenuOpen] = useState(false);
   const [barOpAnchor, setBarOpAnchor] = useState<HTMLElement | null>(null);
@@ -268,7 +281,7 @@ export function TintManagerContent() {
   const fetchBoard = useCallback(async (): Promise<TintBoardPayload | null> => {
     setPanelReload((n) => n + 1);
     try {
-      const res = await fetch("/api/tint/manager/orders");
+      const res = await fetch(dated("/api/tint/manager/orders"));
       if (!res.ok) return null;
       const data = (await res.json()) as TintBoardPayload;
       const next: TintBoardPayload = {
@@ -583,6 +596,7 @@ export function TintManagerContent() {
   // The feed holds for MORE than the marker did: a re-sequence or any write in
   // flight, and every modal / sheet / popover this page opens.
   const holdLive =
+    historyDate !== null ||
     panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 ||
     tiSel.size > 0 || tiBulkDose !== null || tiUndoBusy ||
     barMenuOpen || barOpAnchor !== null || offFloor !== null || stopCancelBill !== null || restoringId !== null ||
@@ -673,7 +687,7 @@ export function TintManagerContent() {
       }
       // M — Add OBD to Tint. Ignored while typing, and while the panel is open
       // (the panel is a focus context of its own).
-      if ((e.key === "m" || e.key === "M") && !typing && panelKey === null) {
+      if ((e.key === "m" || e.key === "M") && !typing && panelKey === null && historyDateRef.current === null) {
         e.preventDefault();
         setPullModalOpen(true);
       }
@@ -686,7 +700,8 @@ export function TintManagerContent() {
   // again after every board reload (payload changes), so the tab counts track
   // the board. Read-only; the marker widening is build step 9.
   const fetchHold = useCallback(async () => {
-    if (!access.canViewHoldTab) return;
+    // Hold has no history — nothing to read on a past day.
+    if (!access.canViewHoldTab || historyDateRef.current !== null) return;
     try {
       const res = await fetch("/api/tint/manager/hold", { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as { rows?: TintHoldRow[]; error?: string };
@@ -698,7 +713,7 @@ export function TintManagerContent() {
   const fetchCancelled = useCallback(async () => {
     if (!access.canViewCiTab) return;
     try {
-      const res = await fetch("/api/tint/manager/cancelled", { cache: "no-store" });
+      const res = await fetch(dated("/api/tint/manager/cancelled"), { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as { rows?: FloorCancelledRow[]; error?: string };
       if (!res.ok || !Array.isArray(body.rows)) { setCancelledError(body.error ?? `CI list HTTP ${res.status}`); return; }
       setCancelledError(null);
@@ -711,7 +726,7 @@ export function TintManagerContent() {
   // marker's Base arms 6–8, d788a2d1) — under the same pause rule.
   const fetchBase = useCallback(async () => {
     try {
-      const res = await fetch("/api/tint/manager/base", { cache: "no-store" });
+      const res = await fetch(dated("/api/tint/manager/base"), { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as { rows?: FloorBoardRow[]; error?: string };
       if (!res.ok || !Array.isArray(body.rows)) { setBaseError(body.error ?? `Base list HTTP ${res.status}`); return; }
       setBaseError(null);
@@ -797,7 +812,7 @@ export function TintManagerContent() {
    */
   const fetchBasePending = useCallback(async (): Promise<BasePendingOrder[]> => {
     try {
-      const res = await fetch("/api/tint/manager/base-pending");
+      const res = await fetch(dated("/api/tint/manager/base-pending"));
       if (!res.ok) return [];
       const body = (await res.json()) as { orders?: BasePendingOrder[] };
       const list = body.orders ?? [];
@@ -1533,10 +1548,39 @@ export function TintManagerContent() {
     groups:  buildGroups(payload),
     base:    baseRows,
     ti:      basePending,
-    hold:    access.canViewHoldTab ? holdRows : null,
+    hold:    access.canViewHoldTab && historyDate === null ? holdRows : null,
     ci:      access.canViewCiTab ? cancelledRows : null,
     deleted: access.canViewPickDelete ? pickDecidedRows : null,
-  }), [payload, baseRows, basePending, holdRows, cancelledRows, pickDecidedRows, access.canViewHoldTab, access.canViewCiTab, access.canViewPickDelete]);
+  }), [payload, baseRows, basePending, holdRows, cancelledRows, pickDecidedRows, access.canViewHoldTab, access.canViewCiTab, access.canViewPickDelete, historyDate]);
+
+  // Entering / leaving history: drop every selection and the panel, leave the
+  // Hold tab (no past), then read the chosen day (null → live, exactly as before).
+  const historyFirst = useRef(true);
+  useEffect(() => {
+    if (historyFirst.current) { historyFirst.current = false; return; }
+    clearAllSelection();
+    setPanelKey(null);
+    setFocusedOperatorId(null);
+    setBaseDrill(null);
+    setBaseLine(null);
+    if (historyDate !== null) setActiveTab((t) => (t === "hold" ? "tinting" : t));
+    void fetchBoard();
+    // Only the day drives this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyDate]);
+
+  /** The stepper's day as a Date (IST midnight); today when live. */
+  const stepperDate = historyDate ? new Date(`${historyDate}T00:00:00+05:30`) : new Date();
+  const onStepperChange = useCallback((d: Date) => {
+    const istStr = (x: Date) => x.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const picked = istStr(d);
+    const today = istStr(new Date());
+    // Today → live. A future day can't be picked (the stepper caps at today).
+    setHistoryDate(picked >= today ? null : picked);
+  }, []);
+  const historyLabel = historyDate
+    ? new Date(`${historyDate}T12:00:00+05:30`).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", timeZone: "Asia/Kolkata" }).replace(",", "")
+    : null;
 
   const searchGroups = useMemo(() => {
     if (searchRun === null) return null;
@@ -1736,7 +1780,7 @@ export function TintManagerContent() {
           (tint step 4). Same props as the page passed before the feed. */}
       {!feedLive && (
         <LegacyTintManagerSync
-          paused={panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 || tiSel.size > 0}
+          paused={historyDate !== null || panelKey !== null || selection.size > 0 || railSel.size > 0 || holdSel.size > 0 || baseSel.size > 0 || tiSel.size > 0}
           onProbe={setConnected}
           onChange={() => { void fetchBoard(); }}
         />
@@ -1744,12 +1788,15 @@ export function TintManagerContent() {
 
       {/* ── Body shell: 344px rail + one flat table ──────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        <BoardRail
-          rail={rail}
-          selected={railSel}
-          onToggle={toggleRail}
-          onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
-        />
+        {/* The rail is a LIVE queue — hidden on a past day (history). */}
+        {historyDate === null && (
+          <BoardRail
+            rail={rail}
+            selected={railSel}
+            onToggle={toggleRail}
+            onOpenPanel={(o) => setPanelKey(`pending-${o.id}`)}
+          />
+        )}
 
         {/* The right pane: the TAB BAR, then the open tab's body (2026-10-01,
             tabs build step 5). The rail on the left never changes with the
@@ -1761,6 +1808,7 @@ export function TintManagerContent() {
           <BoardTabs
             active={activeTab}
             onChange={setActiveTab}
+            disabledTabs={historyDate !== null ? ["hold"] : undefined}
             counts={{
               tinting: groups.reduce((n, g) => n + g.rows.length, 0),
               ti:      basePendingShown.length,
@@ -1771,8 +1819,8 @@ export function TintManagerContent() {
             }}
             rightSlot={
               <>
-                {/* The "N missing" badge — moved from the header's Row 2, unchanged. */}
-                {missingCustomers.length > 0 && (
+                {/* The "N missing" badge — moved from the header's Row 2, unchanged (live only). */}
+                {historyDate === null && missingCustomers.length > 0 && (
                   <div className="relative">
                     <button
                       ref={missingBadgeRef}
@@ -1817,7 +1865,15 @@ export function TintManagerContent() {
                     )}
                   </div>
                 )}
-                {/* ⟵ The date stepper lands HERE, just left of Filter (round 2, step 3). */}
+                {/* The day — Floor's / Billing's HeaderDateStepper, as-is, plus two
+                    defaulted props: weekday labels and the warn tone on a past day. */}
+                <HeaderDateStepper
+                  currentDate={stepperDate}
+                  onDateChange={onStepperChange}
+                  pastLabel="weekday"
+                  tone={historyDate !== null ? "warn" : "default"}
+                />
+                <div className="w-px h-4 bg-gray-200" />
                 <HeaderFilter
                   groups={filterGroups}
                   activeFilters={headerFilters}
@@ -1825,7 +1881,7 @@ export function TintManagerContent() {
                   open={filterOpen}
                   onOpenChange={setFilterOpen}
                 />
-                <button
+                {historyDate === null && <button
                   type="button"
                   onClick={() => setPullModalOpen(true)}
                   className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
@@ -1833,15 +1889,29 @@ export function TintManagerContent() {
                 >
                   <Plus size={12} />
                   Add to Tint
-                </button>
+                </button>}
                 <div className="w-px h-4 bg-gray-200" />
                 {/* Billing's ⌨ popover in "row" style; controlled so the page's Esc closes it. */}
                 <HeaderShortcuts shortcuts={shortcuts} variant="row" open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
               </>
             }
           />
+          {/* History bar — the whole page is read-only on a past day. */}
+          {historyDate !== null && (
+            <div className="flex flex-shrink-0 items-center gap-3 border-b border-warn bg-warn-bg px-3.5 py-2 text-[12px] text-warn-text">
+              <span>Viewing <b className="font-semibold">{historyLabel}</b> — read only.</span>
+              <button
+                type="button"
+                onClick={() => setHistoryDate(null)}
+                className="ml-auto rounded-md border border-warn bg-white px-2.5 py-1 text-[11.5px] font-semibold text-warn-text hover:bg-warn-bg"
+              >
+                Back to today
+              </button>
+            </div>
+          )}
           {activeTab === "tinting" && (
             <BoardTintTab
+              historyDate={historyDate}
               focusedOperatorId={focusedOperatorId}
               onFocusOperator={setFocusedOperatorId}
               groups={groups}
@@ -1859,6 +1929,7 @@ export function TintManagerContent() {
           )}
           {activeTab === "ti" && (
             <BoardTiTab
+              history={historyDate !== null}
               pending={basePendingShown}
               drill={baseDrill}
               lineId={baseLine?.rawLineItemId ?? null}
@@ -1908,7 +1979,7 @@ export function TintManagerContent() {
             <BoardCiTab
               rows={cancelledRowsShown}
               error={cancelledError}
-              canRestore={access.canCancel}
+              canRestore={access.canCancel && historyDate === null}
               restoringId={restoringId}
               onRestore={(r) => { void handleRestore(r); }}
             />
@@ -1920,13 +1991,14 @@ export function TintManagerContent() {
           )}
           {activeTab === "base" && (
             <BoardBaseTab
+              readOnly={historyDate !== null}
               rows={baseRowsShown}
               error={baseError}
               selected={baseSel}
               onToggle={toggleBase}
               onOpen={(r) => setPanelKey(`base-${r.orderId}`)}
               windows={windows}
-              canSlot={access.canSlot}
+              canSlot={access.canSlot && historyDate === null}
               slotBusy={writeBusy}
               onSetSlot={(r, v) => { void postTintAction("change-slot", [r.orderId], { slot: v, keepSelection: true }); }}
               barUp={barMode !== null}
@@ -2082,6 +2154,7 @@ export function TintManagerContent() {
 
       {panelTarget && (
         <BoardDetailPanel
+          readOnly={historyDate !== null}
           target={panelTarget}
           operators={operators}
           position={{ index: panelIndex, total: walk.length }}

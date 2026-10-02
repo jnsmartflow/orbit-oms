@@ -46,6 +46,8 @@ export function HeaderDateStepper({
   currentDate,
   onDateChange,
   minDate,
+  pastLabel = "default",
+  tone = "default",
 }: {
   currentDate: Date;
   onDateChange: (date: Date) => void;
@@ -61,6 +63,18 @@ export function HeaderDateStepper({
    * Undefined for every pre-existing caller → unchanged behaviour.
    */
   minDate?: Date;
+  /**
+   * OPTIONAL (2026-10-02, the Tint Manager's history): "weekday" labels every
+   * past day "Wed · 30 Sep" (no "Yesterday"). Default "default" — the existing
+   * Today / Yesterday / "30 Sep" rule, so Floor and Billing are unchanged.
+   */
+  pastLabel?: "default" | "weekday";
+  /**
+   * OPTIONAL (2026-10-02): "warn" paints the three parts in the warn tokens (a
+   * read-only past day). Default "default" — the original class strings, byte
+   * for byte.
+   */
+  tone?: "default" | "warn";
 }) {
   const todayIST = getTodayIST();
   const todayStr = toISTDateStr(todayIST);
@@ -74,15 +88,21 @@ export function HeaderDateStepper({
 
   const dateLabel = isToday
     ? `Today · ${formatDateShort(currentDate)}`
-    : currentStr === yesterdayStr
-      ? `Yesterday · ${formatDateShort(currentDate)}`
-      : formatDateShort(currentDate);
+    : pastLabel === "weekday"
+      ? `${currentDate.toLocaleDateString("en-IN", { weekday: "short", timeZone: "Asia/Kolkata" })} · ${formatDateShort(currentDate)}`
+      : currentStr === yesterdayStr
+        ? `Yesterday · ${formatDateShort(currentDate)}`
+        : formatDateShort(currentDate);
+  // `tone` swaps ONLY the colour classes; "default" yields the original strings.
+  const warn  = tone === "warn";
+  const chev  = warn ? "text-warn-text border border-warn bg-warn-bg" : "text-gray-400 border border-gray-200";
+  const label = warn ? "text-warn-text border-t border-b border-warn bg-warn-bg" : "text-gray-900 border-t border-b border-gray-200";
 
   return (
     <div className="inline-flex items-center gap-0">
       <button
         onClick={() => !isAtMin && onDateChange(shiftDay(currentDate, -1))}
-        className={`px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-l-[4px] ${
+        className={`px-[6px] py-[3px] text-[10px] ${chev} rounded-l-[4px] ${
           isAtMin
             ? "opacity-40 cursor-not-allowed pointer-events-none"
             : "cursor-pointer hover:bg-gray-50"
@@ -93,7 +113,7 @@ export function HeaderDateStepper({
       <DatePickerPopover value={currentDate} onChange={onDateChange} minDate={minDate}>
         <button
           type="button"
-          className="px-[10px] py-[3px] text-[10px] font-medium text-gray-900 border-t border-b border-gray-200 hover:bg-gray-50 cursor-pointer inline-flex items-center gap-[3px]"
+          className={`px-[10px] py-[3px] text-[10px] font-medium ${label} hover:bg-gray-50 cursor-pointer inline-flex items-center gap-[3px]`}
         >
           {dateLabel}
           <ChevronDown size={10} className="text-gray-400" />
@@ -101,7 +121,7 @@ export function HeaderDateStepper({
       </DatePickerPopover>
       <button
         onClick={() => !isToday && onDateChange(shiftDay(currentDate, 1))}
-        className={`px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-r-[4px] ${
+        className={`px-[6px] py-[3px] text-[10px] ${chev} rounded-r-[4px] ${
           isToday
             ? "opacity-40 cursor-not-allowed pointer-events-none"
             : "cursor-pointer hover:bg-gray-50"

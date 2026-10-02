@@ -234,7 +234,7 @@ function GroupSection({
 /** One board row — exported (2026-10-02) so the Tint tab renders the SAME cells.
  *  `tall` = the Tint tab's 52px rows (mockup v13); the cells are unchanged. */
 export function TintBoardRow({
-  row, selected, onToggle, onOpen, onReorder, busy, windows, canSlot, slotBusy, onSetSlot, tall = false,
+  row, selected, onToggle, onOpen, onReorder, busy, windows, canSlot, slotBusy, onSetSlot, tall = false, readOnly = false,
 }: {
   row:       BoardRow;
   selected:  boolean;
@@ -247,6 +247,8 @@ export function TintBoardRow({
   slotBusy:  boolean;
   onSetSlot: (v: DispatchSlotValue) => void;
   tall?:     boolean;
+  /** History (2026-10-02): no selection, no ⋯ — a past day is read-only. */
+  readOnly?: boolean;
 }) {
   // A ROW CLICK SELECTS (2026-10-01, step 6 — owner decision 5). No checkbox:
   // the selected row fills brand-50 with a brand bar on its first cell (the
@@ -256,12 +258,12 @@ export function TintBoardRow({
     <tr
       className={cn(
         "group",
-        row.selectable ? "cursor-pointer" : "cursor-default",
+        row.selectable && !readOnly ? "cursor-pointer" : "cursor-default",
         selected ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
         tall && "[&>td]:h-[52px]",
       )}
-      onClick={row.selectable ? onToggle : undefined}
-      aria-selected={row.selectable ? selected : undefined}
+      onClick={row.selectable && !readOnly ? onToggle : undefined}
+      aria-selected={row.selectable && !readOnly ? selected : undefined}
       // Header search (2026-10-02): an opened result scrolls to + flashes this row.
       data-search-key={row.key}
     >
@@ -436,14 +438,14 @@ export function TintBoardRow({
       </td>
       {/* ⋯ — the detail panel. Its own click; it never selects the row. */}
       <td className={TD_NARROW} onClick={(e) => e.stopPropagation()}>
-        <button
+        {!readOnly && <button
           type="button"
           onClick={onOpen}
           title="Bill details"
           className="rounded-md px-1 text-[15px] leading-5 tracking-[1px] text-ink-400 hover:bg-ink-50 hover:text-ink-900"
         >
           ⋯
-        </button>
+        </button>}
       </td>
     </tr>
   );

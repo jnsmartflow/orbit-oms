@@ -49,6 +49,7 @@ export function BoardBaseTab({
   slotBusy,
   onSetSlot,
   barUp,
+  readOnly = false,
 }: {
   /** null while loading. */
   rows:      FloorBoardRow[] | null;
@@ -62,6 +63,9 @@ export function BoardBaseTab({
   slotBusy:  boolean;
   onSetSlot: (row: FloorBoardRow, v: DispatchSlotValue) => void;
   barUp:     boolean;
+  /** History (2026-10-02): no selection, no ⋯, the Due cell read-only (the page
+   *  also passes canSlot false) — a past day is read-only. */
+  readOnly?: boolean;
 }) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
@@ -100,10 +104,10 @@ export function BoardBaseTab({
                   <tr
                     key={r.orderId}
                     data-search-key={`base-${r.orderId}`}
-                    onClick={() => onToggle(r)}
-                    aria-selected={sel}
+                    onClick={readOnly ? undefined : () => onToggle(r)}
+                    aria-selected={readOnly ? undefined : sel}
                     className={cn(
-                      "cursor-pointer",
+                      readOnly ? "cursor-default" : "cursor-pointer",
                       sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
                     )}
                   >
@@ -157,14 +161,16 @@ export function BoardBaseTab({
                       </span>
                     </td>
                     <td className={cn(TD, "px-1 text-center")} onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => onOpen(r)}
-                        title="Bill details"
-                        className="rounded-md px-1 text-[15px] leading-5 tracking-[1px] text-ink-400 hover:bg-ink-50 hover:text-ink-900"
-                      >
-                        ⋯
-                      </button>
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => onOpen(r)}
+                          title="Bill details"
+                          className="rounded-md px-1 text-[15px] leading-5 tracking-[1px] text-ink-400 hover:bg-ink-50 hover:text-ink-900"
+                        >
+                          ⋯
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

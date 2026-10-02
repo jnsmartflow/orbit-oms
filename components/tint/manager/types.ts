@@ -419,6 +419,12 @@ export interface BasePendingOrder {
   smuCode:           string | null;
   route:             string | null;
   articleTag:        string | null;
+  /** History only (base-pending?date=, 2026-10-02): who wrote the TI that day,
+   *  when (the latest), the sampling numbers, and the line count that day. */
+  tiWrittenBy?:      string | null;
+  tiWrittenAt?:      string;
+  tiSamplingNos?:    string[];
+  tiLinesOnDay?:     number;
   /** Header search (2026-10-02) — SAP's ship-to and bill-to customer codes. */
   shipToCode:        string | null;
   billToCode:        string | null;

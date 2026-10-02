@@ -26,6 +26,12 @@
 // new query, no write. "Today" is the payload's own: completed rows are the
 // ones the orders route returns for its start-of-today (unchanged basis).
 //
+// HISTORY (2026-10-02, round 2 step 3): with `historyDate` (a past IST day D)
+// the payload holds only D's COMPLETED jobs (orders?date=D). The summary reads
+// for D (tinted, jobs, pace first start → last finish, average job), the lanes
+// draw D's done blocks with no now line, and Now & next is replaced by
+// "Completed on {D}" — the same rows, read-only (no ▲▼, no ⋯, no selection).
+//
 // ⚠ PAUSES: the payload carries only the LATEST pause per order
 // (pauseSummary), not the pause intervals, so a paused job is drawn as one
 // striped amber block from startedAt to now, and finished jobs draw solid (any
@@ -80,7 +86,7 @@ function blockOf(r: BoardRow, nowMs: number): { a: number; b: number } | null {
 export function BoardTintTab({
   groups, selection, onToggleRow, onOpenRow, onReorder, busyKeys,
   windows, canSlot, slotBusy, onSetSlot, barUp = false,
-  focusedOperatorId, onFocusOperator,
+  focusedOperatorId, onFocusOperator, historyDate = null,
 }: {
   groups:      BoardGroup[];
   selection:   Set<string>;
@@ -96,13 +102,19 @@ export function BoardTintTab({
   /** The operator focused on the Operators card, or null for everyone. */
   focusedOperatorId: number | null;
   onFocusOperator:   (operatorId: number | null) => void;
+  /** A past IST day "YYYY-MM-DD" — read-only history of that day. null = live. */
+  historyDate?: string | null;
 }) {
   // A minute clock for the now line, running blocks and the pace.
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [liveNowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
+  // History: the clock is pinned to the last minute of day D, so blockOf / the
+  // summary treat D as "today" and every block is a finished one.
+  const nowMs = historyDate ? Date.parse(`${historyDate}T23:59:00+05:30`) : liveNowMs;
+  const dayLabel = historyDate ? historyLabel(historyDate) : null;
 
   const focused = focusedOperatorId !== null ? groups.find((g) => g.operatorId === focusedOperatorId) ?? null : null;
   const shown = focused ? [focused] : groups;
@@ -119,6 +131,7 @@ export function BoardTintTab({
     slotBusy,
     onSetSlot: (v: DispatchSlotValue) => onSetSlot(r, v),
     tall:      true,
+    readOnly:  historyDate !== null,
   });
 
   const openOf = (g: BoardGroup) => g.rows.filter((r) => !isDone(r));
@@ -130,11 +143,49 @@ export function BoardTintTab({
       {/* Full pane width, like the Base / Hold / CI tabs (no max-width cap,
           2026-10-02); the 24/28 gutter is the mockup's page padding. */}
       <div className="flex flex-col gap-5 px-7 pt-6 pb-12">
-        <SummaryCard groups={groups} nowMs={nowMs} />
-        <OperatorsCard groups={groups} nowMs={nowMs} focusedId={focused?.operatorId ?? null} onFocus={onFocusOperator} />
+        <SummaryCard groups={groups} nowMs={nowMs} history={historyDate !== null} />
+        <OperatorsCard groups={groups} nowMs={nowMs} focusedId={focused?.operatorId ?? null} onFocus={onFocusOperator} history={historyDate !== null} />
+
+        {/* ── History: Completed on D (replaces Now & next) ─────────────────── */}
+        {historyDate !== null && (() => {
+          const doneOf = (g: BoardGroup) => g.rows.filter(isDone).sort((a, b) => (ms(a.completedAt) || 0) - (ms(b.completedAt) || 0));
+          const all = shown.flatMap(doneOf);
+          return (
+            <section className="overflow-hidden rounded-[14px] border border-ink-100 bg-white">
+              <div className="flex items-center justify-between border-b border-[#EEEDF3] px-5 py-3.5">
+                <h3 className="text-[14px] font-bold tracking-[-.01em] text-ink-900">Completed on {dayLabel}</h3>
+                <span className="text-[12px] text-ink-500">
+                  {all.length} {all.length === 1 ? "job" : "jobs"} · {fmtL(litresOf(all))} L · first finished first
+                </span>
+              </div>
+              {shown.length === 0 && (
+                <p className="px-5 py-7 text-center text-[12px] text-ink-400">No job finished on {dayLabel}.</p>
+              )}
+              {shown.map((g, i) => {
+                const done = doneOf(g);
+                return (
+                  <div key={g.operatorId}>
+                    {i > 0 && <div className="h-[18px] border-y border-ink-100 bg-ink-25" />}
+                    <div className="flex items-baseline gap-2.5 px-5 pt-3.5 pb-1 text-[13.5px] font-bold text-ink-900">
+                      <span>{g.operatorName}</span>
+                      <span className="text-[12px] font-medium text-ink-500">
+                        {done.length} {done.length === 1 ? "job" : "jobs"} · {fmtL(litresOf(done))} L
+                      </span>
+                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                      <BoardColGroup />
+                      <thead><BoardHeadRow /></thead>
+                      <tbody>{done.map((r) => <TintBoardRow key={r.key} {...rowProps(r)} />)}</tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </section>
+          );
+        })()}
 
         {/* ── Now & next ───────────────────────────────────────────────────── */}
-        <section className="overflow-hidden rounded-[14px] border border-ink-100 bg-white">
+        {historyDate === null && <section className="overflow-hidden rounded-[14px] border border-ink-100 bg-white">
           <div className="flex items-center justify-between border-b border-[#EEEDF3] px-5 py-3.5">
             <h3 className="text-[14px] font-bold tracking-[-.01em] text-ink-900">Now &amp; next</h3>
             <span className="text-[12px] text-ink-500">
@@ -169,10 +220,10 @@ export function BoardTintTab({
               </div>
             );
           })}
-        </section>
+        </section>}
 
-        {/* ── Done today · {name} — only while focused ─────────────────────── */}
-        {focused && (() => {
+        {/* ── Done today · {name} — only while focused (live only) ─────────── */}
+        {historyDate === null && focused && (() => {
           const done = focused.rows
             .filter(isDone)
             .sort((a, b) => (ms(a.completedAt) || 0) - (ms(b.completedAt) || 0));
@@ -205,7 +256,7 @@ export function BoardTintTab({
 
 // ── 1. Summary ───────────────────────────────────────────────────────────────
 
-function SummaryCard({ groups, nowMs }: { groups: BoardGroup[]; nowMs: number }) {
+function SummaryCard({ groups, nowMs, history = false }: { groups: BoardGroup[]; nowMs: number; history?: boolean }) {
   const s = useMemo(() => {
     const rows = groups.flatMap((g) => g.rows);
     const done = rows.filter(isDone);
@@ -215,7 +266,10 @@ function SummaryCard({ groups, nowMs }: { groups: BoardGroup[]; nowMs: number })
     // Pace: litres done per hour since the FIRST job start today (any status).
     const starts = rows.map((r) => ms(r.startedAt)).filter((t) => !Number.isNaN(t) && istDay(t) === today);
     const first = starts.length > 0 ? Math.min(...starts) : null;
-    const hours = first !== null ? (nowMs - first) / 3_600_000 : 0;
+    // History: pace runs to the LAST finish on D, not to the end of the day.
+    const finishes = done.map((r) => ms(r.completedAt)).filter((t) => !Number.isNaN(t));
+    const until = history && finishes.length > 0 ? Math.max(...finishes) : nowMs;
+    const hours = first !== null ? (until - first) / 3_600_000 : 0;
     const pace = first !== null && hours > 0 ? doneL / hours : null;
     // Average job: start → done minutes over today's finished jobs that carry both.
     const spans = done
@@ -223,8 +277,9 @@ function SummaryCard({ groups, nowMs }: { groups: BoardGroup[]; nowMs: number })
       .filter((m) => Number.isFinite(m) && m >= 0);
     const avg = spans.length > 0 ? spans.reduce((a, b) => a + b, 0) / spans.length : null;
     const openOps = new Set(open.map((r) => r.operatorId)).size;
-    return { done, open, doneL, openL: litresOf(open), first, pace, avg, spans: spans.length, openOps };
-  }, [groups, nowMs]);
+    const doneOps = new Set(done.map((r) => r.operatorId)).size;
+    return { done, open, doneL, openL: litresOf(open), first, pace, avg, spans: spans.length, openOps, doneOps, until };
+  }, [groups, nowMs, history]);
 
   const cell = "px-[22px] py-[18px] border-l border-[#EEEDF3] first:border-l-0";
   const label = "text-[11px] font-semibold uppercase tracking-[.05em] text-ink-400";
@@ -236,21 +291,33 @@ function SummaryCard({ groups, nowMs }: { groups: BoardGroup[]; nowMs: number })
     <section className="overflow-hidden rounded-[14px] border border-ink-100 bg-white">
       <div className="grid grid-cols-4">
         <div className={cell}>
-          <div className={label}>Tinted today</div>
+          <div className={label}>{history ? "Tinted that day" : "Tinted today"}</div>
           <div className={value}>{fmtL(s.doneL)}<small className={unit}>L</small></div>
           <div className={sub}>{s.done.length} {s.done.length === 1 ? "job" : "jobs"} · {artsOf(s.done)}</div>
         </div>
-        <div className={cell}>
-          <div className={label}>Still to tint</div>
-          <div className={value}>{fmtL(s.openL)}<small className={unit}>L</small></div>
-          <div className={sub}>
-            {s.open.length} {s.open.length === 1 ? "job" : "jobs"} across {s.openOps} {s.openOps === 1 ? "operator" : "operators"}
+        {history ? (
+          <div className={cell}>
+            <div className={label}>Jobs</div>
+            <div className={value}>{s.done.length}<small className={unit}>done</small></div>
+            <div className={sub}>across {s.doneOps} {s.doneOps === 1 ? "operator" : "operators"}</div>
           </div>
-        </div>
+        ) : (
+          <div className={cell}>
+            <div className={label}>Still to tint</div>
+            <div className={value}>{fmtL(s.openL)}<small className={unit}>L</small></div>
+            <div className={sub}>
+              {s.open.length} {s.open.length === 1 ? "job" : "jobs"} across {s.openOps} {s.openOps === 1 ? "operator" : "operators"}
+            </div>
+          </div>
+        )}
         <div className={cell}>
           <div className={label}>Pace</div>
           <div className={value}>{s.pace !== null ? fmtL(Math.round(s.pace)) : "—"}<small className={unit}>L / hr</small></div>
-          <div className={sub}>{s.first !== null ? `since first job at ${hhmm(new Date(s.first).toISOString())}` : "no job started today"}</div>
+          <div className={sub}>
+            {s.first === null ? (history ? "no job started that day" : "no job started today")
+              : history ? `${hhmm(new Date(s.first).toISOString())} → ${hhmm(new Date(s.until).toISOString())}`
+              : `since first job at ${hhmm(new Date(s.first).toISOString())}`}
+          </div>
         </div>
         <div className={cell}>
           <div className={label}>Average job</div>
@@ -265,12 +332,14 @@ function SummaryCard({ groups, nowMs }: { groups: BoardGroup[]; nowMs: number })
 // ── 2. Operators ─────────────────────────────────────────────────────────────
 
 function OperatorsCard({
-  groups, nowMs, focusedId, onFocus,
+  groups, nowMs, focusedId, onFocus, history = false,
 }: {
   groups:    BoardGroup[];
   nowMs:     number;
   focusedId: number | null;
   onFocus:   (operatorId: number | null) => void;
+  /** A past day: no now pill / line, "N done" instead of the queue, a done line. */
+  history?:  boolean;
 }) {
   const patternId = `paused-${useId().replace(/:/g, "")}`;
   const nowM = istMinutes(nowMs);
@@ -308,7 +377,7 @@ function OperatorsCard({
           {ticks.map((m) => (
             <span key={m} className="absolute top-2 -translate-x-1/2" style={{ left: `${pct(m)}%` }}>{hm(m)}</span>
           ))}
-          {nowM >= T0 && nowM <= T1 && (
+          {!history && nowM >= T0 && nowM <= T1 && (
             <span
               className="absolute top-[5px] z-[2] -translate-x-1/2 rounded-[5px] bg-ink-900 px-1.5 py-px text-[10.5px] font-semibold text-white"
               style={{ left: `${pct(nowM)}%` }}
@@ -317,7 +386,7 @@ function OperatorsCard({
             </span>
           )}
         </div>
-        <div className="pr-5 text-right font-semibold uppercase tracking-[.05em]">Today</div>
+        <div className="pr-5 text-right font-semibold uppercase tracking-[.05em]">{history ? "That day" : "Today"}</div>
       </div>
 
       {groups.length === 0 && (
@@ -356,13 +425,17 @@ function OperatorsCard({
               <div className="min-w-0">
                 <div className="flex items-baseline gap-2 text-[14.5px] font-bold text-ink-900">
                   <span className="truncate">{g.operatorName}</span>
-                  <span className="flex-shrink-0 rounded-[5px] bg-ink-50 px-[7px] py-px text-[11.5px] font-semibold text-ink-500">{queue} in queue</span>
+                  <span className="flex-shrink-0 rounded-[5px] bg-ink-50 px-[7px] py-px text-[11.5px] font-semibold text-ink-500">
+                    {history ? `${done.length} done` : `${queue} in queue`}
+                  </span>
                 </div>
                 <div className={cn(
                   "mt-1 max-w-[220px] truncate text-[12px]",
                   kind === "tinting" ? "text-tint-700" : kind === "paused" ? "text-warn-text" : "text-ink-500",
                 )}>
-                  {kind === "tinting" && running ? (
+                  {history ? (
+                    <>Last finished · {hhmm(done.reduce<string | null>((m, r) => (r.completedAt && (!m || r.completedAt > m) ? r.completedAt : m), null))}</>
+                  ) : kind === "tinting" && running ? (
                     <><b className="font-bold">Tinting</b> · {running.siteName} · since {hhmm(running.startedAt)}</>
                   ) : kind === "paused" && paused ? (
                     <><b className="font-bold">Paused</b> · {paused.siteName} · {hhmm(paused.pausedAt)}</>
@@ -375,7 +448,7 @@ function OperatorsCard({
 
             {/* middle — the day lane */}
             <div className="relative flex h-full items-center px-2">
-              <DayLane rows={g.rows} nowMs={nowMs} patternId={patternId} />
+              <DayLane rows={g.rows} nowMs={nowMs} patternId={patternId} showNow={!history} />
             </div>
 
             {/* right — today's output */}
@@ -390,7 +463,7 @@ function OperatorsCard({
   );
 }
 
-function DayLane({ rows, nowMs, patternId }: { rows: BoardRow[]; nowMs: number; patternId: string }) {
+function DayLane({ rows, nowMs, patternId, showNow = true }: { rows: BoardRow[]; nowMs: number; patternId: string; showNow?: boolean }) {
   const W = 1000, H = 36;
   const x = (m: number) => (pct(m) / 100) * W;
   const nowM = istMinutes(nowMs);
@@ -427,9 +500,17 @@ function DayLane({ rows, nowMs, patternId }: { rows: BoardRow[]; nowMs: number; 
           </rect>
         );
       })}
-      {nowM >= T0 && nowM <= T1 && (
+      {showNow && nowM >= T0 && nowM <= T1 && (
         <line x1={x(nowM)} x2={x(nowM)} y1="0" y2={H} className="stroke-ink-900" strokeWidth="2" vectorEffect="non-scaling-stroke" />
       )}
     </svg>
   );
+}
+
+/** "Wed · 30 Sep" for an IST day "YYYY-MM-DD" — the stepper's history label. */
+function historyLabel(date: string): string {
+  const d = new Date(`${date}T12:00:00+05:30`);
+  const wd = d.toLocaleDateString("en-IN", { weekday: "short", timeZone: "Asia/Kolkata" });
+  const dm = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" });
+  return `${wd} · ${dm}`;
 }

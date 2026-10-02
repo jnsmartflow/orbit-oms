@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { resolveFloorDisplayDate } from "@/lib/floor/format";
+import { getISTDayRange } from "@/lib/dates";
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +49,16 @@ interface PendingLine {
   hasTiEntry:        boolean;
 }
 
-interface PendingOrder {
+/** History only (?date=): who wrote the TI on that day, when (the latest), the
+ *  sampling numbers used and how many lines were written that day. */
+interface TiWritten {
+  tiWrittenBy:     string | null;
+  tiWrittenAt:     string;
+  tiSamplingNos:   string[];
+  tiLinesOnDay:    number;
+}
+
+interface PendingOrder extends Partial<TiWritten> {
   orderId:            number;
   obdNumber:          string;
   siteName:           string;
@@ -103,7 +116,14 @@ function derivePack(volumeLine: number | null, unitQty: number): string | null {
   return Number.isInteger(per) ? `${per} L` : `${per.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")} L`;
 }
 
-export async function GET(): Promise<NextResponse> {
+// ?date=YYYY-MM-DD (2026-10-02, history) — the TI tab for a PAST IST day: the
+// "Base — No Tint" bills that had a TI row WRITTEN on that day (either TI
+// table), whether or not they still owe lines, with who wrote it, when, the
+// sampling numbers and the line count (TiWritten). Without the param the
+// response is exactly what it was (the TiWritten fields are never added).
+export async function GET(req: Request): Promise<NextResponse> {
+  const dateParam = new URL(req.url).searchParams.get("date");
+  const history = dateParam !== null && DATE_RE.test(dateParam) ? dateParam : null;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -128,11 +148,32 @@ export async function GET(): Promise<NextResponse> {
   //    obligation does not expire at midnight, and a bill bypassed on Friday
   //    still owes its paperwork on Monday. (Same reasoning as the picker's
   //    Pending tab and /api/warehouse/pickers, both deliberately un-fenced.)
+  //    History: only the assignments that got a TI row on day D (both tables).
+  const writtenOnDay = new Map<number, Array<{ by: string | null; at: Date; samplingNo: string | null }>>();
+  if (history) {
+    const day = getISTDayRange(history);
+    // Typed, so a wrong relation name fails tsc instead of at runtime.
+    const dayWhere: Prisma.tinter_issue_entriesWhereInput & Prisma.tinter_issue_entries_bWhereInput = {
+      createdAt:      { gte: day.start, lt: day.end },
+      tintAssignment: { assignedToId: baseOperatorId },
+    };
+    const sel = { tintAssignmentId: true, createdAt: true, samplingNo: true, submittedBy: { select: { name: true } } } as const;
+    const a = await prisma.tinter_issue_entries.findMany({ where: dayWhere, select: sel });
+    const b = await prisma.tinter_issue_entries_b.findMany({ where: dayWhere, select: sel });
+    for (const e of [...a, ...b]) {
+      if (e.tintAssignmentId == null) continue;
+      const list = writtenOnDay.get(e.tintAssignmentId) ?? [];
+      list.push({ by: e.submittedBy?.name ?? null, at: e.createdAt, samplingNo: e.samplingNo });
+      writtenOnDay.set(e.tintAssignmentId, list);
+    }
+  }
+
   const assignments = await prisma.tint_assignments.findMany({
     where: {
       assignedToId: baseOperatorId,
       status:       TINT_STATUS_DONE,
       order:        { isRemoved: false },
+      ...(history ? { id: { in: Array.from(writtenOnDay.keys()) } } : {}),
     },
     select: {
       id:          true,
@@ -228,7 +269,9 @@ export async function GET(): Promise<NextResponse> {
 
     const covered = coveredByAssignment.get(a.id) ?? new Set<number>();
     const missing = lines.filter((l) => !covered.has(l.id));
-    if (missing.length === 0) continue; // fully covered — drops off the list
+    // Fully covered drops off the LIVE list; a history day keeps it (it is the
+    // record of what was written that day).
+    if (!history && missing.length === 0) continue;
 
     const ownSite = a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—";
     const redirect = a.order.shipToOverrideCustomer?.customerName ?? null;
@@ -266,6 +309,7 @@ export async function GET(): Promise<NextResponse> {
         packCode:          derivePack(l.volumeLine, l.unitQty),
         hasTiEntry:        covered.has(l.id),
       })),
+      ...(history ? tiWrittenOf(writtenOnDay.get(a.id) ?? []) : {}),
     });
   }
 
@@ -294,4 +338,15 @@ export async function GET(): Promise<NextResponse> {
   }
 
   return NextResponse.json({ orders: out });
+}
+
+/** The history fields for one assignment's TI rows written on the day. */
+function tiWrittenOf(rows: Array<{ by: string | null; at: Date; samplingNo: string | null }>): TiWritten {
+  const latest = rows.reduce<{ by: string | null; at: Date } | null>((m, r) => (!m || r.at > m.at ? r : m), null);
+  return {
+    tiWrittenBy:   latest?.by ?? null,
+    tiWrittenAt:   (latest?.at ?? new Date(0)).toISOString(),
+    tiSamplingNos: Array.from(new Set(rows.map((r) => r.samplingNo).filter((s): s is string => !!s))),
+    tiLinesOnDay:  rows.length,
+  };
 }

@@ -115,7 +115,11 @@ function buildPauseSummary(o: {
   };
 }
 
-export async function GET(): Promise<NextResponse> {
+/** A where-term that matches nothing — the live-only sets in history mode. */
+const HISTORY_NONE = { id: { in: [] as number[] } };
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export async function GET(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -132,6 +136,17 @@ export async function GET(): Promise<NextResponse> {
     // yesterday's completions. getISTDayRange (lib/dates.ts) is the repo's one
     // IST day helper; the marker uses the SAME expression (fixed together).
     const startOfToday = getISTDayRange().start;
+
+    // ── HISTORY (?date=YYYY-MM-DD, 2026-10-02) ───────────────────────────────
+    // The Tint tab for a PAST IST day D: only jobs COMPLETED on D (Sets D + E,
+    // windowed to D via getISTDayRange(D)); the live sets (A pending, B the
+    // legacy completed-today orders, C active splits) return nothing. WITHOUT
+    // the param every query below is exactly what it was — `doneWindow` is the
+    // same { gte: startOfToday } object and HISTORY_NONE is never spread.
+    const dateParam = new URL(req.url).searchParams.get("date");
+    const history = dateParam !== null && DATE_RE.test(dateParam) ? dateParam : null;
+    const day = history ? getISTDayRange(history) : null;
+    const doneWindow = day ? { gte: day.start, lt: day.end } : { gte: startOfToday };
 
     // Hide-feature exclusion — AND-merged into the display queries below so
     // manually-hidden + rule-matched OBDs drop out of the Tint Manager board.
@@ -154,6 +169,8 @@ export async function GET(): Promise<NextResponse> {
               isRemoved:     false,
             },
             hideExclusion,
+            // History (?date=): the live sets return nothing — the board shows D's completions only.
+            ...(history ? [HISTORY_NONE] : []),
           ],
         },
         orderBy: [{ sequenceOrder: "asc" }],
@@ -296,6 +313,8 @@ export async function GET(): Promise<NextResponse> {
               },
             },
             hideExclusion,
+            // History (?date=): the live sets return nothing — the board shows D's completions only.
+            ...(history ? [HISTORY_NONE] : []),
           ],
         },
         include: {
@@ -367,6 +386,7 @@ export async function GET(): Promise<NextResponse> {
         where:   {
           status: { in: ["tint_assigned", "tinting_in_progress"] },
           order:  { AND: [{ isRemoved: false }, hideExclusion] },
+          ...(history ? HISTORY_NONE : {}),
         },
         orderBy: [{ sequenceOrder: "asc" }],
         include: {
@@ -415,7 +435,7 @@ export async function GET(): Promise<NextResponse> {
       prisma.order_splits.findMany({
         where: {
           status:      "tinting_done",
-          completedAt: { gte: startOfToday },
+          completedAt: doneWindow,
           order:       { AND: [{ isRemoved: false }, hideExclusion] },
         },
         include: {
@@ -481,7 +501,7 @@ export async function GET(): Promise<NextResponse> {
       prisma.tint_assignments.findMany({
         where: {
           status:      "tinting_done",
-          completedAt: { gte: startOfToday },
+          completedAt: doneWindow,
           order:       { AND: [{ isRemoved: false }, hideExclusion] },
           ...(baseOperatorId !== null ? { assignedToId: { not: baseOperatorId } } : {}),
         },

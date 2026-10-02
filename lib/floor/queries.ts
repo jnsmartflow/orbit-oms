@@ -1378,9 +1378,12 @@ export async function getFloorCancelled(
   // step 7) — the Tint Manager's CI tab passes { orderType: "tint" }. Floor
   // passes nothing, so its rows are exactly what they were.
   extraWhere?: Prisma.ordersWhereInput,
+  // OPTIONAL IST day "YYYY-MM-DD" (2026-10-02, the Tint Manager's history): the
+  // same feed for a PAST day. Omitted → today, exactly as before (Floor passes nothing).
+  date?: string,
 ): Promise<FloorCancelledRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
-  const today = getISTDayRange();
+  const today = getISTDayRange(date);
   const idFilter = onlyIds ? { orderId: { in: onlyIds } } : {};
 
   // ── a) Today's CIs on CANCELLED bills — EVERY source ─────────────────────

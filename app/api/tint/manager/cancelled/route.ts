@@ -23,7 +23,11 @@ export const dynamic = "force-dynamic";
  *
  * Gate: tint_manager canView AND (tint_ci OR tint_cancel) canView.
  */
-export async function GET(): Promise<NextResponse> {
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// ?date=YYYY-MM-DD (2026-10-02, history): the same feed for that IST day —
+// getFloorCancelled's optional date. Without it the response is unchanged.
+export async function GET(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const roles = session.user.roles ?? [session.user.role];
@@ -34,6 +38,8 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const rows = await getFloorCancelled("All", undefined, undefined, { OR: [{ orderType: "tint" }, BASE_BILL_WHERE] });
+  const dateParam = new URL(req.url).searchParams.get("date");
+  const date = dateParam !== null && DATE_RE.test(dateParam) ? dateParam : undefined;
+  const rows = await getFloorCancelled("All", undefined, undefined, { OR: [{ orderType: "tint" }, BASE_BILL_WHERE] }, date);
   return NextResponse.json({ rows, count: rows.length }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

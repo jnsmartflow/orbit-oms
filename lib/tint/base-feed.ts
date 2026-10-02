@@ -54,8 +54,10 @@ import { BASE_BILL_WHERE } from "@/lib/tint/manager-bill";
  * One read (today's `bills_added` rows — bounded by a day's trip presses),
  * one term: OR[ not on a trip, (id ∈ joined-today AND on that same trip) … ].
  */
-export async function baseTripCutoffWhere(): Promise<Prisma.ordersWhereInput> {
-  const today = getISTDayRange();
+export async function baseTripCutoffWhere(date?: string): Promise<Prisma.ordersWhereInput> {
+  // `date` (2026-10-02, history): the same rule for a PAST IST day — a trip bill
+  // counts only if it joined that trip ON that day. Omitted → today, as before.
+  const today = getISTDayRange(date);
   const rows = await prisma.trip_activity.findMany({
     where: { action: TRIP_BILLS_ADDED, createdAt: { gte: today.start, lt: today.end } },
     select: { tripId: true, detail: true },
@@ -79,9 +81,14 @@ export async function baseTripCutoffWhere(): Promise<Prisma.ordersWhereInput> {
   };
 }
 
-/** The Base tab's rows — Floor's live board ∩ Base bills ∩ the trip cut-off. */
-export async function getTintBaseRows(): Promise<FloorBoardRow[]> {
-  const cutoff = await baseTripCutoffWhere();
-  const board = await getFloorBoard({ mode: "live", extraWhere: { AND: [BASE_BILL_WHERE, cutoff] } });
+/** The Base tab's rows — Floor's live board ∩ Base bills ∩ the trip cut-off.
+ *  With `date` (history, 2026-10-02): Floor's HISTORY board for that IST day
+ *  (getFloorBoard mode "history" — promised for D, checked on D, or on D's
+ *  trips) ∩ Base bills ∩ the cut-off dated to D. Omitted → exactly as before. */
+export async function getTintBaseRows(date?: string): Promise<FloorBoardRow[]> {
+  const cutoff = await baseTripCutoffWhere(date);
+  const board = date
+    ? await getFloorBoard({ mode: "history", date, extraWhere: { AND: [BASE_BILL_WHERE, cutoff] } })
+    : await getFloorBoard({ mode: "live", extraWhere: { AND: [BASE_BILL_WHERE, cutoff] } });
   return board.rows;
 }
